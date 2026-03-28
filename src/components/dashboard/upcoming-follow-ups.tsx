@@ -1,6 +1,6 @@
 import Link from 'next/link'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Clock } from 'lucide-react'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Clock, Heart } from 'lucide-react'
 import { differenceInDays, parseISO } from 'date-fns'
 import { formatDate } from '@/lib/utils'
 import type { UpcomingFollowUp } from '@/db/queries/dashboard'
@@ -13,20 +13,28 @@ export function UpcomingFollowUps({ followUps }: UpcomingFollowUpsProps) {
   const today = new Date()
 
   return (
-    <Card className="border-0 shadow-sm">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-forest">
-          <Clock className="h-5 w-5" />
-          Retornos próximos
-        </CardTitle>
+    <Card className="border-0 shadow-sm bg-white rounded-xl">
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-2">
+          <Clock className="h-4 w-4 text-sage" />
+          <span className="text-xs font-medium uppercase tracking-wider text-mid">
+            Retornos proximos
+          </span>
+        </div>
       </CardHeader>
       <CardContent>
         {followUps.length === 0 ? (
-          <p className="py-8 text-center text-mid">
-            Nenhum retorno nos próximos 14 dias
-          </p>
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-petal mb-4">
+              <Heart className="h-7 w-7 text-blush" />
+            </div>
+            <p className="text-charcoal font-medium">Tudo em dia!</p>
+            <p className="mt-1 text-sm text-mid">
+              Nenhum retorno nos proximos 14 dias.
+            </p>
+          </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {followUps.map((fu) => {
               const daysUntil = differenceInDays(
                 parseISO(fu.followUpDate),
@@ -36,31 +44,38 @@ export function UpcomingFollowUps({ followUps }: UpcomingFollowUpsProps) {
                 daysUntil === 0
                   ? 'Hoje'
                   : daysUntil === 1
-                    ? 'Amanhã'
-                    : `em ${daysUntil} dias`
+                    ? 'Amanha'
+                    : `${daysUntil}d`
+
+              const badgeColor =
+                daysUntil <= 0
+                  ? 'bg-amber-light text-amber-dark'
+                  : daysUntil < 7
+                    ? 'bg-sage/10 text-sage'
+                    : 'bg-amber-light/60 text-amber-mid'
 
               return (
                 <Link
                   key={fu.id}
                   href={`/pacientes/${fu.patientId}`}
-                  className="block rounded-lg border border-transparent p-3 transition-colors hover:border-sage/20 hover:bg-petal/50"
+                  className="group block rounded-lg border border-transparent p-3 transition-all duration-200 hover:border-sage/15 hover:bg-petal/30 hover:shadow-sm"
                 >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="font-medium text-charcoal">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-charcoal truncate">
                         {fu.patientName}
                       </p>
-                      <p className="text-sm text-mid">
+                      <p className="text-xs text-mid mt-0.5">
                         {fu.procedureTypeName}
                       </p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-sage">
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${badgeColor}`}>
                         {daysLabel}
-                      </p>
-                      <p className="text-xs text-mid">
+                      </span>
+                      <span className="text-[11px] text-mid">
                         {formatDate(fu.followUpDate)}
-                      </p>
+                      </span>
                     </div>
                   </div>
                 </Link>

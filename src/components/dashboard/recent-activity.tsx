@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import {
   Activity,
   Plus,
@@ -22,6 +22,15 @@ const ACTION_ICONS: Record<string, LucideIcon> = {
   consent_accepted: FileCheck,
 }
 
+const ACTION_ICON_COLORS: Record<string, string> = {
+  create: 'bg-sage/15 text-sage',
+  update: 'bg-mint/15 text-mint',
+  delete: 'bg-red-100 text-red-500',
+  login: 'bg-petal text-forest',
+  logout: 'bg-petal text-mid',
+  consent_accepted: 'bg-sage/10 text-sage',
+}
+
 const ACTION_VERBS: Record<string, string> = {
   create: 'criou',
   update: 'atualizou',
@@ -29,8 +38,8 @@ const ACTION_VERBS: Record<string, string> = {
   login: 'entrou no sistema',
   logout: 'saiu do sistema',
   consent_accepted: 'aceitou um termo de',
-  impersonation_start: 'iniciou impersonação em',
-  impersonation_end: 'finalizou impersonação em',
+  impersonation_start: 'iniciou impersonacao em',
+  impersonation_end: 'finalizou impersonacao em',
 }
 
 const ENTITY_LABELS: Record<string, string> = {
@@ -41,8 +50,8 @@ const ENTITY_LABELS: Record<string, string> = {
   procedure: 'procedimento',
   procedure_record: 'procedimento',
   procedure_records: 'procedimento',
-  financial_entry: 'cobrança',
-  financial_entries: 'cobrança',
+  financial_entry: 'cobranca',
+  financial_entries: 'cobranca',
   installment: 'parcela',
   installments: 'parcela',
   consent_acceptance: 'consentimento',
@@ -53,31 +62,30 @@ const ENTITY_LABELS: Record<string, string> = {
   photo_assets: 'foto',
   face_diagram: 'diagrama facial',
   face_diagrams: 'diagrama facial',
-  tenant: 'clínica',
-  tenants: 'clínica',
-  user: 'usuário',
-  users: 'usuário',
+  tenant: 'clinica',
+  tenants: 'clinica',
+  user: 'usuario',
+  users: 'usuario',
   tenant_user: 'membro da equipe',
   tenant_users: 'membro da equipe',
   procedure_type: 'tipo de procedimento',
   procedure_types: 'tipo de procedimento',
   consent_template: 'modelo de consentimento',
   consent_templates: 'modelo de consentimento',
-  product_application: 'aplicação de produto',
-  product_applications: 'aplicação de produto',
+  product_application: 'aplicacao de produto',
+  product_applications: 'aplicacao de produto',
 }
 
-function formatActivityDescription(entry: RecentActivityEntry): string {
+function formatActivityDescription(entry: RecentActivityEntry): { userName: string; action: string } {
   const verb = ACTION_VERBS[entry.action] ?? entry.action
   const entityLabel =
     ENTITY_LABELS[entry.entityType] ?? entry.entityType
 
-  // For login/logout, no entity is needed
   if (entry.action === 'login' || entry.action === 'logout') {
-    return `${entry.userName} ${verb}`
+    return { userName: entry.userName, action: verb }
   }
 
-  return `${entry.userName} ${verb} um(a) ${entityLabel}`
+  return { userName: entry.userName, action: `${verb} um(a) ${entityLabel}` }
 }
 
 interface RecentActivityProps {
@@ -86,12 +94,14 @@ interface RecentActivityProps {
 
 export function RecentActivity({ activity }: RecentActivityProps) {
   return (
-    <Card className="border-0 shadow-sm">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-forest">
-          <Activity className="h-5 w-5" />
-          Atividade recente
-        </CardTitle>
+    <Card className="border-0 shadow-sm bg-white rounded-xl">
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-2">
+          <Activity className="h-4 w-4 text-sage" />
+          <span className="text-xs font-medium uppercase tracking-wider text-mid">
+            Atividade recente
+          </span>
+        </div>
       </CardHeader>
       <CardContent>
         {activity.length === 0 ? (
@@ -99,30 +109,46 @@ export function RecentActivity({ activity }: RecentActivityProps) {
             Nenhuma atividade recente
           </p>
         ) : (
-          <div className="space-y-3">
-            {activity.map((entry) => {
-              const Icon = ACTION_ICONS[entry.action] ?? Activity
-              const description = formatActivityDescription(entry)
-              const timeAgo = formatDistanceToNow(new Date(entry.createdAt), {
-                addSuffix: true,
-                locale: ptBR,
-              })
+          <div className="relative">
+            {/* Timeline connecting line */}
+            <div className="absolute left-[15px] top-3 bottom-3 w-px bg-petal" />
 
-              return (
-                <div
-                  key={entry.id}
-                  className="flex items-center gap-3 rounded-lg p-2"
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-petal">
-                    <Icon className="h-4 w-4 text-sage" />
+            <div className="space-y-0">
+              {activity.map((entry) => {
+                const Icon = ACTION_ICONS[entry.action] ?? Activity
+                const iconColor = ACTION_ICON_COLORS[entry.action] ?? 'bg-petal text-sage'
+                const { userName, action } = formatActivityDescription(entry)
+                const timeAgo = formatDistanceToNow(new Date(entry.createdAt), {
+                  addSuffix: true,
+                  locale: ptBR,
+                })
+
+                return (
+                  <div
+                    key={entry.id}
+                    className="relative flex items-start gap-4 py-2.5 pl-0"
+                  >
+                    {/* Timeline node */}
+                    <div className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${iconColor}`}>
+                      <Icon className="h-3.5 w-3.5" />
+                    </div>
+
+                    {/* Content */}
+                    <div className="min-w-0 flex-1 pt-0.5">
+                      <p className="text-sm text-charcoal">
+                        <span className="font-medium">{userName}</span>{' '}
+                        <span className="text-mid">{action}</span>
+                      </p>
+                    </div>
+
+                    {/* Timestamp */}
+                    <span className="shrink-0 pt-1 text-xs text-mid/70">
+                      {timeAgo}
+                    </span>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm text-charcoal">{description}</p>
-                  </div>
-                  <span className="shrink-0 text-xs text-mid">{timeAgo}</span>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
           </div>
         )}
       </CardContent>

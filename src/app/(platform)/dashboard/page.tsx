@@ -19,6 +19,15 @@ function getGreeting(): string {
   return 'Boa noite'
 }
 
+function getFormattedDate(): string {
+  const now = new Date()
+  return now.toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  })
+}
+
 export default async function DashboardPage() {
   const [context, data] = await Promise.all([
     getAuthContext(),
@@ -27,28 +36,34 @@ export default async function DashboardPage() {
 
   const firstName = context.fullName.split(' ')[0]
   const greeting = getGreeting()
+  const formattedDate = getFormattedDate()
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-8">
+      {/* Greeting Area */}
+      <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-3xl font-semibold text-forest" data-testid="dashboard-greeting">
-            {greeting}, {firstName}
+          <p className="text-sm uppercase tracking-wider text-mid">
+            {formattedDate}
+          </p>
+          <h1 className="mt-2 text-4xl font-light text-forest" data-testid="dashboard-greeting">
+            {greeting}, <span className="font-semibold">{firstName}</span>
           </h1>
-          <p className="mt-1 text-mid">Bem-vindo ao FloraClin</p>
+          <p className="mt-1.5 text-mid">
+            Bem-vindo ao seu painel FloraClin
+          </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-3">
           <Link
             href="/pacientes?new=true"
-            className="inline-flex items-center justify-center rounded-md border border-forest px-4 py-2 text-sm font-medium text-forest hover:bg-petal transition-colors"
+            className="inline-flex items-center justify-center rounded-lg border border-forest/20 px-5 py-2.5 text-sm font-medium text-forest transition-all duration-200 hover:border-forest hover:bg-petal hover:shadow-sm"
           >
             <UserPlus className="mr-2 h-4 w-4" />
             Novo Paciente
           </Link>
           <Link
             href="/agenda?new=true"
-            className="inline-flex items-center justify-center rounded-md bg-forest px-4 py-2 text-sm font-medium text-cream hover:bg-sage transition-colors"
+            className="inline-flex items-center justify-center rounded-lg bg-forest px-5 py-2.5 text-sm font-medium text-cream shadow-sm transition-all duration-200 hover:bg-sage hover:shadow-md"
           >
             <CalendarPlus className="mr-2 h-4 w-4" />
             Novo Agendamento

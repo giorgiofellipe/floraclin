@@ -1,4 +1,3 @@
-import { Card, CardContent } from '@/components/ui/card'
 import { Users, Stethoscope, DollarSign } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import type { QuickStats as QuickStatsType } from '@/db/queries/dashboard'
@@ -13,23 +12,29 @@ const statCards = [
     key: 'patientsThisWeek' as const,
     label: 'Pacientes esta semana',
     icon: Users,
-    bg: 'bg-petal',
+    gradient: 'bg-gradient-to-br from-cream to-petal',
+    iconBg: 'bg-sage/10',
+    iconColor: 'text-sage',
     format: (v: number | null) => String(v ?? 0),
     revenueOnly: false,
   },
   {
     key: 'proceduresThisMonth' as const,
-    label: 'Procedimentos este mês',
+    label: 'Procedimentos este mes',
     icon: Stethoscope,
-    bg: 'bg-blush',
+    gradient: 'bg-gradient-to-br from-petal to-blush',
+    iconBg: 'bg-mint/15',
+    iconColor: 'text-mint',
     format: (v: number | null) => String(v ?? 0),
     revenueOnly: false,
   },
   {
     key: 'revenueThisMonth' as const,
-    label: 'Receita este mês',
+    label: 'Receita este mes',
     icon: DollarSign,
-    bg: 'bg-petal',
+    gradient: 'bg-gradient-to-br from-cream to-petal',
+    iconBg: 'bg-sage/10',
+    iconColor: 'text-sage',
     format: (v: number | null) => formatCurrency(v ?? 0),
     revenueOnly: true,
   },
@@ -41,23 +46,29 @@ export function QuickStats({ stats, showRevenue = true }: QuickStatsProps) {
     : statCards.filter((card) => !card.revenueOnly)
 
   return (
-    <div className={`grid grid-cols-1 gap-4 ${showRevenue ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`} data-testid="dashboard-stats">
+    <div className={`grid grid-cols-1 gap-5 ${showRevenue ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`} data-testid="dashboard-stats">
       {visibleCards.map((card) => (
-        <Card key={card.key} className={`${card.bg} border-0 shadow-sm`}>
-          <CardContent className="flex items-center gap-4 p-6">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/60">
-              <card.icon className="h-6 w-6 text-forest" />
-            </div>
-            <div>
-              <p className="text-sm uppercase tracking-wider text-mid">
+        <div
+          key={card.key}
+          className={`group relative overflow-hidden rounded-xl ${card.gradient} border border-white/60 p-6 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md`}
+        >
+          {/* Gold accent border at bottom */}
+          <div className="absolute inset-x-0 bottom-0 h-[2px] bg-gradient-to-r from-gold/40 via-gold/60 to-gold/40" />
+
+          <div className="flex items-start justify-between">
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-wider text-mid font-medium">
                 {card.label}
               </p>
-              <p className="text-2xl font-semibold text-forest">
+              <p className="text-3xl font-bold text-forest tracking-tight">
                 {card.format(stats[card.key])}
               </p>
             </div>
-          </CardContent>
-        </Card>
+            <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${card.iconBg}`}>
+              <card.icon className={`h-5 w-5 ${card.iconColor}`} />
+            </div>
+          </div>
+        </div>
       ))}
     </div>
   )
