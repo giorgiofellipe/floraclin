@@ -72,13 +72,13 @@ function getActionBadge(action: string) {
 
 function JsonDiffViewer({ changes }: { changes: unknown }) {
   if (!changes || typeof changes !== 'object') {
-    return <p className="text-sm text-mid">Sem detalhes disponíveis</p>
+    return <p className="text-sm text-mid">Sem detalhes disponiveis</p>
   }
 
   const entries = Object.entries(changes as Record<string, unknown>)
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {entries.map(([key, value]) => {
         const change = value as { old?: unknown; new?: unknown } | unknown
 
@@ -89,26 +89,28 @@ function JsonDiffViewer({ changes }: { changes: unknown }) {
         ) {
           const typed = change as { old?: unknown; new?: unknown }
           return (
-            <div key={key} className="rounded-md border border-petal p-3">
-              <p className="mb-1 text-xs font-medium uppercase tracking-wider text-mid">
-                {key}
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <p className="mb-1 text-xs text-mid">Anterior</p>
-                  <pre className="whitespace-pre-wrap break-all rounded bg-red-50 p-2 text-xs text-charcoal">
+            <div key={key} className="rounded-lg border border-blush/40 overflow-hidden">
+              <div className="px-3 py-1.5 bg-petal/50 border-b border-blush/30">
+                <p className="text-xs font-medium uppercase tracking-wider text-mid">
+                  {key}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 divide-x divide-blush/30">
+                <div className="p-3">
+                  <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-mid/80">Anterior</p>
+                  <pre className="whitespace-pre-wrap break-all rounded-md bg-red-50/60 border border-red-100/50 p-2 text-xs text-charcoal font-mono leading-relaxed">
                     {typed.old === null || typed.old === undefined
-                      ? '(vazio)'
+                      ? <span className="italic text-mid">(vazio)</span>
                       : typeof typed.old === 'object'
                         ? JSON.stringify(typed.old, null, 2)
                         : String(typed.old)}
                   </pre>
                 </div>
-                <div>
-                  <p className="mb-1 text-xs text-mid">Novo</p>
-                  <pre className="whitespace-pre-wrap break-all rounded bg-green-50 p-2 text-xs text-charcoal">
+                <div className="p-3">
+                  <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-mid/80">Novo</p>
+                  <pre className="whitespace-pre-wrap break-all rounded-md bg-sage/5 border border-sage/10 p-2 text-xs text-charcoal font-mono leading-relaxed">
                     {typed.new === null || typed.new === undefined
-                      ? '(vazio)'
+                      ? <span className="italic text-mid">(vazio)</span>
                       : typeof typed.new === 'object'
                         ? JSON.stringify(typed.new, null, 2)
                         : String(typed.new)}
@@ -121,13 +123,17 @@ function JsonDiffViewer({ changes }: { changes: unknown }) {
 
         // Fallback for non-diff entries
         return (
-          <div key={key} className="rounded-md border border-petal p-3">
-            <p className="mb-1 text-xs font-medium uppercase tracking-wider text-mid">
-              {key}
-            </p>
-            <pre className="whitespace-pre-wrap break-all rounded bg-petal p-2 text-xs text-charcoal">
-              {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
-            </pre>
+          <div key={key} className="rounded-lg border border-blush/40 overflow-hidden">
+            <div className="px-3 py-1.5 bg-petal/50 border-b border-blush/30">
+              <p className="text-xs font-medium uppercase tracking-wider text-mid">
+                {key}
+              </p>
+            </div>
+            <div className="p-3">
+              <pre className="whitespace-pre-wrap break-all rounded-md bg-petal/40 p-2 text-xs text-charcoal font-mono leading-relaxed">
+                {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
+              </pre>
+            </div>
           </div>
         )
       })}
@@ -203,11 +209,11 @@ export function AuditLogViewer() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Filters */}
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-end gap-3 rounded-xl bg-petal/30 border border-blush/30 p-4">
         <div className="min-w-[180px]">
-          <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-mid">
+          <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wider text-mid">
             Tipo de Entidade
           </label>
           <Select
@@ -237,7 +243,7 @@ export function AuditLogViewer() {
         </div>
 
         <div>
-          <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-mid">
+          <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wider text-mid">
             Data Inicial
           </label>
           <Input
@@ -252,7 +258,7 @@ export function AuditLogViewer() {
         </div>
 
         <div>
-          <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-mid">
+          <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wider text-mid">
             Data Final
           </label>
           <Input
@@ -280,7 +286,7 @@ export function AuditLogViewer() {
       </p>
 
       {/* Table */}
-      <div className="rounded-md border">
+      <div className="rounded-xl border border-blush/40 overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>

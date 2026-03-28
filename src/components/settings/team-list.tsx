@@ -32,7 +32,7 @@ import { PlusIcon, UserXIcon } from 'lucide-react'
 import type { Role } from '@/types'
 
 const ROLE_LABELS: Record<Role, string> = {
-  owner: 'Proprietário',
+  owner: 'Proprietario',
   practitioner: 'Profissional',
   receptionist: 'Recepcionista',
   financial: 'Financeiro',
@@ -43,6 +43,22 @@ const ROLE_VARIANTS: Record<Role, 'default' | 'secondary' | 'outline'> = {
   practitioner: 'secondary',
   receptionist: 'outline',
   financial: 'outline',
+}
+
+const ROLE_COLORS: Record<Role, string> = {
+  owner: 'bg-forest/10 text-forest border-forest/20',
+  practitioner: 'bg-sage/10 text-sage border-sage/20',
+  receptionist: 'bg-blush text-charcoal border-blush',
+  financial: 'bg-gold/10 text-amber-dark border-gold/20',
+}
+
+function getInitials(name: string): string {
+  return name
+    .split(' ')
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
 }
 
 interface TeamMember {
@@ -98,11 +114,11 @@ export function TeamList({ members, currentUserId, embedded = false }: TeamListP
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-foreground">
+        <p className="text-sm text-mid">
           {members.filter(m => m.isActive).length} {members.filter(m => m.isActive).length === 1 ? 'membro ativo' : 'membros ativos'}
-        </h3>
+        </p>
         <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
           <DialogTrigger render={<Button size="sm" />}>
             <PlusIcon data-icon="inline-start" />
@@ -147,18 +163,25 @@ export function TeamList({ members, currentUserId, embedded = false }: TeamListP
 
               return (
                 <TableRow key={member.id} className={!member.isActive ? 'opacity-50' : ''}>
-                  <TableCell className="font-medium">
-                    {member.user.fullName}
-                    {isCurrentUser && (
-                      <span className="ml-2 text-xs text-muted-foreground">(você)</span>
-                    )}
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-petal text-forest text-xs font-semibold shrink-0">
+                        {getInitials(member.user.fullName)}
+                      </div>
+                      <span className="font-medium text-charcoal">
+                        {member.user.fullName}
+                        {isCurrentUser && (
+                          <span className="ml-1.5 text-xs text-mid font-normal">(voce)</span>
+                        )}
+                      </span>
+                    </div>
                   </TableCell>
                   <TableCell>{member.user.email}</TableCell>
                   <TableCell>
                     {isOwner || isCurrentUser || !member.isActive ? (
-                      <Badge variant={ROLE_VARIANTS[member.role as Role] || 'outline'}>
+                      <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${ROLE_COLORS[member.role as Role] || 'bg-petal text-mid border-blush'}`}>
                         {ROLE_LABELS[member.role as Role] || member.role}
-                      </Badge>
+                      </span>
                     ) : (
                       <Select
                         value={member.role}

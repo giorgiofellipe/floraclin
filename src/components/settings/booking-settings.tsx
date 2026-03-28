@@ -71,61 +71,72 @@ export function BookingSettings({
 
   return (
     <div className="space-y-6">
-      <div className="space-y-4">
-        <h3 className="text-sm font-medium text-foreground">Agendamento Online</h3>
-        <p className="text-sm text-muted-foreground">
-          Permita que pacientes agendem consultas diretamente pela internet através de um link
-          exclusivo da sua clínica.
+      <div className="space-y-2">
+        <p className="text-sm text-mid">
+          Permita que pacientes agendem consultas diretamente pela internet atraves de um link
+          exclusivo da sua clinica.
         </p>
       </div>
 
-      <div className="flex items-center gap-4 rounded-lg border p-4">
+      <div className="flex items-center gap-4 rounded-xl border border-blush/40 bg-petal/30 p-4 transition-colors">
         <Switch
           checked={enabled}
           onCheckedChange={handleToggle}
           disabled={isPending}
         />
         <div className="space-y-0.5">
-          <Label className="text-sm font-medium">
+          <Label className="text-sm font-medium text-charcoal">
             {enabled ? 'Agendamento online ativado' : 'Agendamento online desativado'}
           </Label>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-mid">
             {enabled
-              ? 'Pacientes podem agendar pela página pública da clínica.'
-              : 'Apenas agendamentos internos são permitidos.'}
+              ? 'Pacientes podem agendar pela pagina publica da clinica.'
+              : 'Apenas agendamentos internos sao permitidos.'}
           </p>
         </div>
       </div>
 
       {enabled && (
         <div className="space-y-3">
-          <Label>Link de Agendamento</Label>
+          <label className="uppercase tracking-wider text-xs text-mid font-medium block">
+            Link de Agendamento
+          </label>
           <div className="flex items-center gap-2">
-            <Input
-              value={bookingUrl}
-              readOnly
-              className="font-mono text-sm"
-            />
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={handleCopyUrl}
-              title="Copiar link"
-            >
-              {copied ? <CheckIcon /> : <CopyIcon />}
-            </Button>
+            <div className="flex-1 flex items-center gap-2 bg-petal rounded-full border border-blush/50 pl-4 pr-1.5 py-1.5 min-w-0">
+              <span className="text-sm font-mono text-charcoal truncate flex-1">
+                {bookingUrl}
+              </span>
+              <button
+                type="button"
+                onClick={handleCopyUrl}
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-white border border-blush/50 px-3 py-1.5 text-xs font-medium text-forest hover:bg-forest hover:text-cream transition-colors shadow-sm"
+              >
+                {copied ? (
+                  <>
+                    <CheckIcon className="h-3.5 w-3.5" />
+                    Copiado
+                  </>
+                ) : (
+                  <>
+                    <CopyIcon className="h-3.5 w-3.5" />
+                    Copiar
+                  </>
+                )}
+              </button>
+            </div>
             <Button
               variant="outline"
               size="icon"
               onClick={() => window.open(bookingUrl, '_blank')}
-              title="Abrir página"
+              title="Abrir pagina"
+              className="shrink-0 rounded-full"
             >
               <ExternalLinkIcon />
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-mid">
             Compartilhe este link com seus pacientes para que possam agendar online.
-            O slug &ldquo;{slug}&rdquo; foi definido durante a criação da clínica e não pode ser alterado.
+            O slug &ldquo;{slug}&rdquo; foi definido durante a criacao da clinica e nao pode ser alterado.
           </p>
         </div>
       )}

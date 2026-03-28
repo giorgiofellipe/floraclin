@@ -27,7 +27,7 @@ import { toast } from 'sonner'
 import { PlusIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 
 const CATEGORY_LABELS: Record<string, string> = {
-  botox: 'Toxina Botulínica',
+  botox: 'Toxina Botulinica',
   filler: 'Preenchimento',
   biostimulator: 'Bioestimulador',
   peel: 'Peeling',
@@ -35,6 +35,17 @@ const CATEGORY_LABELS: Record<string, string> = {
   laser: 'Laser',
   microagulhamento: 'Microagulhamento',
   outros: 'Outros',
+}
+
+const CATEGORY_COLORS: Record<string, string> = {
+  botox: 'bg-sage/10 text-sage border-sage/20',
+  filler: 'bg-amber-light text-amber-dark border-amber-mid/20',
+  biostimulator: 'bg-mint/15 text-forest border-mint/25',
+  peel: 'bg-blush text-charcoal border-blush',
+  skinbooster: 'bg-petal text-sage border-sage/20',
+  laser: 'bg-gold/10 text-amber-dark border-gold/20',
+  microagulhamento: 'bg-sage/10 text-forest border-sage/20',
+  outros: 'bg-petal text-mid border-blush',
 }
 
 interface ProcedureType {
@@ -88,11 +99,11 @@ export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = fal
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-foreground">
-          {initialTypes.length} {initialTypes.length === 1 ? 'procedimento' : 'procedimentos'}
-        </h3>
+        <p className="text-sm text-mid">
+          {initialTypes.length} {initialTypes.length === 1 ? 'procedimento cadastrado' : 'procedimentos cadastrados'}
+        </p>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger render={<Button size="sm" />}>
             <PlusIcon data-icon="inline-start" />
@@ -136,9 +147,9 @@ export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = fal
               <TableRow key={pt.id} className={!pt.isActive ? 'opacity-50' : ''}>
                 <TableCell className="font-medium">{pt.name}</TableCell>
                 <TableCell>
-                  <Badge variant="secondary">
+                  <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${CATEGORY_COLORS[pt.category] || CATEGORY_COLORS.outros}`}>
                     {CATEGORY_LABELS[pt.category] || pt.category}
-                  </Badge>
+                  </span>
                 </TableCell>
                 {!embedded && (
                   <TableCell>

@@ -45,16 +45,20 @@ function Logo({ clinicName }: { clinicName: string }) {
     <div className="text-center">
       <div className="font-display text-3xl sm:text-4xl tracking-tight">
         <span className="text-forest font-semibold">Flora</span>
-        <span className="text-sage font-medium">Clin</span>
+        <span className="text-mint font-medium">Clin</span>
       </div>
-      <p className="text-mid text-sm mt-1">{clinicName}</p>
+      <div className="mt-1.5 flex items-center justify-center gap-2">
+        <div className="h-px w-8 bg-blush" />
+        <p className="text-mid text-sm font-medium">{clinicName}</p>
+        <div className="h-px w-8 bg-blush" />
+      </div>
     </div>
   )
 }
 
 function Stepper({ currentStep }: { currentStep: Step }) {
   return (
-    <div className="flex items-center justify-center gap-1 sm:gap-2">
+    <div className="flex items-center justify-center gap-0">
       {STEP_LABELS.map((label, index) => {
         const step = (index + 1) as Step
         const isActive = step === currentStep
@@ -65,20 +69,20 @@ function Stepper({ currentStep }: { currentStep: Step }) {
             {index > 0 && (
               <div
                 className={cn(
-                  'w-6 sm:w-10 h-0.5 mx-1',
+                  'w-8 sm:w-12 h-[2px] transition-colors duration-300',
                   isComplete ? 'bg-sage' : 'bg-blush'
                 )}
               />
             )}
-            <div className="flex flex-col items-center gap-1">
+            <div className="flex flex-col items-center gap-1.5">
               <div
                 className={cn(
-                  'w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-medium transition-colors',
+                  'w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-xs sm:text-sm font-semibold transition-all duration-300',
                   isActive
-                    ? 'bg-forest text-cream'
+                    ? 'bg-forest text-cream shadow-md shadow-forest/20 ring-4 ring-forest/10'
                     : isComplete
                       ? 'bg-sage text-cream'
-                      : 'bg-blush text-mid'
+                      : 'bg-blush/80 text-mid'
                 )}
               >
                 {isComplete ? (
@@ -91,8 +95,8 @@ function Stepper({ currentStep }: { currentStep: Step }) {
               </div>
               <span
                 className={cn(
-                  'text-[10px] sm:text-xs hidden sm:block',
-                  isActive ? 'text-forest font-medium' : 'text-mid'
+                  'text-[10px] sm:text-xs hidden sm:block transition-colors',
+                  isActive ? 'text-forest font-semibold' : isComplete ? 'text-sage font-medium' : 'text-mid'
                 )}
               >
                 {label}
@@ -208,46 +212,46 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
 
   return (
     <div className="min-h-screen bg-cream">
-      <div className="max-w-lg mx-auto px-4 py-6 sm:py-10">
+      <div className="max-w-lg mx-auto px-4 py-8 sm:py-12">
         {/* Header */}
-        <div className="mb-8">
+        <div className="mb-10">
           <Logo clinicName={clinic.name} />
         </div>
 
         {/* Stepper */}
-        <div className="mb-8">
+        <div className="mb-10">
           <Stepper currentStep={step} />
         </div>
 
         {/* Step Content */}
-        <div className="bg-white rounded-2xl shadow-sm border border-blush/50 p-5 sm:p-6">
+        <div className="bg-white rounded-2xl shadow-sm border border-blush/30 p-6 sm:p-8 transition-all duration-300">
           {/* Step 1: Select Practitioner */}
           {step === 1 && (
             <div data-testid="booking-step-1">
-              <h2 className="text-xl sm:text-2xl text-forest mb-1">
+              <h2 className="text-xl sm:text-2xl text-forest font-medium mb-1">
                 Selecione o profissional
               </h2>
-              <p className="text-sm text-mid mb-5">
+              <p className="text-sm text-mid mb-6">
                 Escolha o profissional para seu atendimento
               </p>
-              <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 {practitioners.map((p) => (
                   <button
                     key={p.id}
                     type="button"
                     onClick={() => setSelectedPractitioner(p)}
                     className={cn(
-                      'w-full text-left rounded-xl border p-4 transition-all',
+                      'text-left rounded-xl border p-4 transition-all duration-200',
                       'focus:outline-none focus:ring-2 focus:ring-sage/50',
                       selectedPractitioner?.id === p.id
-                        ? 'border-forest bg-petal shadow-sm'
-                        : 'border-blush hover:border-sage hover:bg-petal/50'
+                        ? 'border-forest bg-petal shadow-md shadow-forest/5 scale-[1.02]'
+                        : 'border-blush hover:border-sage hover:bg-petal/40 hover:shadow-sm'
                     )}
                   >
                     <div className="flex items-center gap-3">
                       <div
                         className={cn(
-                          'w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold',
+                          'w-11 h-11 rounded-full flex items-center justify-center text-sm font-semibold transition-colors duration-200 shrink-0',
                           selectedPractitioner?.id === p.id
                             ? 'bg-forest text-cream'
                             : 'bg-blush text-forest'
@@ -260,15 +264,20 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
                           .join('')
                           .toUpperCase()}
                       </div>
-                      <span className="font-medium text-charcoal">
-                        {p.name}
-                      </span>
+                      <div>
+                        <span className="font-medium text-charcoal block">
+                          {p.name}
+                        </span>
+                        {selectedPractitioner?.id === p.id && (
+                          <span className="text-xs text-sage font-medium">Selecionado</span>
+                        )}
+                      </div>
                     </div>
                   </button>
                 ))}
                 {practitioners.length === 0 && (
-                  <p className="text-center text-mid py-8 text-sm">
-                    Nenhum profissional disponível no momento.
+                  <p className="text-center text-mid py-8 text-sm sm:col-span-2">
+                    Nenhum profissional disponivel no momento.
                   </p>
                 )}
               </div>
@@ -278,14 +287,14 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
           {/* Step 2: Select Date and Time */}
           {step === 2 && (
             <div data-testid="booking-step-2">
-              <h2 className="text-xl sm:text-2xl text-forest mb-1">
-                Selecione a data e horário
+              <h2 className="text-xl sm:text-2xl text-forest font-medium mb-1">
+                Selecione a data e horario
               </h2>
-              <p className="text-sm text-mid mb-5">
-                Escolha o melhor dia e horário para você
+              <p className="text-sm text-mid mb-6">
+                Escolha o melhor dia e horario para voce
               </p>
 
-              <div className="flex justify-center mb-5">
+              <div className="flex justify-center mb-6">
                 <Calendar
                   mode="single"
                   selected={selectedDate}
@@ -294,14 +303,14 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
                   disabled={(date) =>
                     isBefore(date, today) || date > maxDate
                   }
-                  className="rounded-xl border border-blush"
+                  className="rounded-xl border border-blush/50"
                 />
               </div>
 
               {selectedDate && (
                 <div>
-                  <p className="uppercase tracking-wider text-sm text-mid mb-3 font-medium">
-                    Horários disponíveis para {formatDate(selectedDate)}
+                  <p className="uppercase tracking-wider text-xs text-mid mb-3 font-medium">
+                    Horarios disponiveis para {formatDate(selectedDate)}
                   </p>
                   <SlotPicker
                     slots={slots}
@@ -317,11 +326,11 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
           {/* Step 3: Contact Info */}
           {step === 3 && (
             <div data-testid="booking-step-3">
-              <h2 className="text-xl sm:text-2xl text-forest mb-1">
+              <h2 className="text-xl sm:text-2xl text-forest font-medium mb-1">
                 Seus dados
               </h2>
-              <p className="text-sm text-mid mb-5">
-                Preencha suas informações para contato
+              <p className="text-sm text-mid mb-6">
+                Preencha suas informacoes para contato
               </p>
 
               {error && (
@@ -446,61 +455,67 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
 
           {/* Step 4: Confirmation */}
           {step === 4 && (
-            <div className="text-center py-6" data-testid="booking-step-4">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-sage/20 flex items-center justify-center">
-                <svg
-                  className="w-8 h-8 text-sage"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
+            <div className="text-center py-8" data-testid="booking-step-4">
+              <div className="w-20 h-20 mx-auto mb-5 rounded-full bg-sage/15 flex items-center justify-center animate-[scaleIn_0.5s_ease-out]">
+                <div className="w-14 h-14 rounded-full bg-sage/20 flex items-center justify-center">
+                  <svg
+                    className="w-8 h-8 text-sage animate-[checkDraw_0.6s_ease-out_0.3s_both]"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                </div>
               </div>
 
-              <h2 className="text-2xl sm:text-3xl text-forest mb-2" data-testid="booking-success">
+              <h2 className="text-2xl sm:text-3xl text-forest font-medium mb-2 animate-[fadeInUp_0.4s_ease-out_0.4s_both]" data-testid="booking-success">
                 Agendamento solicitado!
               </h2>
-              <p className="text-mid text-sm mb-6">
-                Você receberá uma confirmação em breve.
+              <p className="text-mid text-sm mb-8 animate-[fadeInUp_0.4s_ease-out_0.5s_both]">
+                Voce recebera uma confirmacao em breve.
               </p>
 
-              <div className="inline-block text-left p-5 rounded-xl bg-petal border border-blush/50">
-                <div className="space-y-2 text-sm">
-                  <p>
-                    <span className="text-mid">Profissional:</span>{' '}
+              <div className="inline-block text-left w-full max-w-sm p-5 rounded-xl bg-petal/60 border border-blush/40 animate-[fadeInUp_0.4s_ease-out_0.6s_both]">
+                <p className="uppercase tracking-wider text-[10px] text-mid font-medium mb-3">Resumo do agendamento</p>
+                <div className="space-y-2.5 text-sm">
+                  <div className="flex justify-between items-center">
+                    <span className="text-mid">Profissional</span>
                     <span className="font-medium text-charcoal">
                       {selectedPractitioner?.name}
                     </span>
-                  </p>
-                  <p>
-                    <span className="text-mid">Data:</span>{' '}
+                  </div>
+                  <div className="h-px bg-blush/40" />
+                  <div className="flex justify-between items-center">
+                    <span className="text-mid">Data</span>
                     <span className="font-medium text-charcoal">
                       {selectedDate ? formatDate(selectedDate) : ''}
                     </span>
-                  </p>
-                  <p>
-                    <span className="text-mid">Horário:</span>{' '}
+                  </div>
+                  <div className="h-px bg-blush/40" />
+                  <div className="flex justify-between items-center">
+                    <span className="text-mid">Horario</span>
                     <span className="font-medium text-charcoal">
                       {selectedSlot}
                     </span>
-                  </p>
-                  <p>
-                    <span className="text-mid">Nome:</span>{' '}
+                  </div>
+                  <div className="h-px bg-blush/40" />
+                  <div className="flex justify-between items-center">
+                    <span className="text-mid">Paciente</span>
                     <span className="font-medium text-charcoal">{name}</span>
-                  </p>
+                  </div>
                 </div>
               </div>
 
               {clinic.phone && (
-                <p className="text-xs text-mid mt-6">
-                  Dúvidas? Entre em contato pelo telefone{' '}
-                  <span className="font-medium">{clinic.phone}</span>
+                <p className="text-xs text-mid mt-8 animate-[fadeInUp_0.4s_ease-out_0.7s_both]">
+                  Duvidas? Entre em contato pelo telefone{' '}
+                  <span className="font-medium text-charcoal">{clinic.phone}</span>
                 </p>
               )}
             </div>
@@ -514,7 +529,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
               <button
                 type="button"
                 onClick={() => setStep((s) => (s - 1) as Step)}
-                className="flex-1 rounded-xl border border-forest text-forest py-3 text-sm font-medium hover:bg-petal transition-colors focus:outline-none focus:ring-2 focus:ring-sage/50"
+                className="flex-1 rounded-xl border border-forest/30 text-forest py-3 text-sm font-medium hover:bg-petal hover:border-forest/50 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-sage/50"
               >
                 Voltar
               </button>
@@ -525,13 +540,13 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
                 onClick={() => setStep((s) => (s + 1) as Step)}
                 disabled={!canAdvance()}
                 className={cn(
-                  'flex-1 rounded-xl py-3 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-sage/50',
+                  'flex-1 rounded-xl py-3 text-sm font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-sage/50',
                   canAdvance()
-                    ? 'bg-forest text-cream hover:bg-sage'
+                    ? 'bg-forest text-cream hover:bg-sage shadow-sm hover:shadow-md'
                     : 'bg-blush text-mid cursor-not-allowed'
                 )}
               >
-                Próximo
+                Proximo
               </button>
             )}
             {step === 3 && (
@@ -541,9 +556,9 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
                 disabled={!canAdvance() || submitting}
                 data-testid="booking-submit"
                 className={cn(
-                  'flex-1 rounded-xl py-3 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-sage/50',
+                  'flex-1 rounded-xl py-3 text-sm font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-sage/50',
                   canAdvance() && !submitting
-                    ? 'bg-forest text-cream hover:bg-sage'
+                    ? 'bg-forest text-cream hover:bg-sage shadow-sm hover:shadow-md'
                     : 'bg-blush text-mid cursor-not-allowed'
                 )}
               >
@@ -554,12 +569,12 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
         )}
 
         {/* Footer */}
-        <div className="mt-8 text-center">
-          <p className="text-xs text-mid/60">
+        <div className="mt-10 text-center">
+          <p className="text-[11px] text-gold">
             Powered by{' '}
-            <span className="text-sm">
-              <span className="text-forest">Flora</span>
-              <span className="text-sage">Clin</span>
+            <span className="font-display text-sm">
+              <span className="text-gold">Flora</span>
+              <span className="text-gold/70">Clin</span>
             </span>
           </p>
         </div>

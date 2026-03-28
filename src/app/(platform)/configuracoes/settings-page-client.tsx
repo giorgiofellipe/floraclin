@@ -1,12 +1,13 @@
 'use client'
 
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { useState } from 'react'
 import { ClinicSettingsForm } from '@/components/settings/clinic-settings-form'
 import { ProcedureTypeList } from '@/components/settings/procedure-type-list'
 import { TeamList } from '@/components/settings/team-list'
 import { ConsentTemplateList } from '@/components/settings/consent-template-list'
 import { BookingSettings } from '@/components/settings/booking-settings'
 import { AuditLogViewer } from '@/components/audit/audit-log-viewer'
+import { cn } from '@/lib/utils'
 import {
   BuildingIcon,
   SyringeIcon,
@@ -73,6 +74,17 @@ interface SettingsPageClientProps {
   currentUserId: string
 }
 
+const TABS = [
+  { key: 'clinica', label: 'Clinica', icon: BuildingIcon },
+  { key: 'procedimentos', label: 'Procedimentos', icon: SyringeIcon },
+  { key: 'equipe', label: 'Equipe', icon: UsersIcon },
+  { key: 'termos', label: 'Termos', icon: FileTextIcon },
+  { key: 'agendamento', label: 'Agendamento', icon: CalendarIcon },
+  { key: 'auditoria', label: 'Auditoria', icon: ShieldCheckIcon },
+] as const
+
+type TabKey = (typeof TABS)[number]['key']
+
 export function SettingsPageClient({
   tenant,
   procedureTypes,
@@ -82,79 +94,126 @@ export function SettingsPageClient({
 }: SettingsPageClientProps) {
   const settings = (tenant.settings || {}) as Record<string, unknown>
   const publicBookingEnabled = (settings.online_booking_enabled as boolean) ?? false
+  const [activeTab, setActiveTab] = useState<TabKey>('clinica')
+
+  const activeTabConfig = TABS.find((t) => t.key === activeTab)!
 
   return (
-    <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-forest">Configurações</h1>
-        <p className="text-sm text-muted-foreground">
-          Gerencie as configurações da sua clínica.
+    <div className="p-4 sm:p-6">
+      <div className="mb-6">
+        <h1 className="font-display text-2xl text-forest">Configuracoes</h1>
+        <p className="text-sm text-mid mt-0.5">
+          Gerencie as configuracoes da sua clinica.
         </p>
       </div>
 
-      <Tabs defaultValue="clinica">
-        <TabsList variant="line" className="w-full justify-start">
-          <TabsTrigger value="clinica">
-            <BuildingIcon data-icon="inline-start" />
-            Clínica
-          </TabsTrigger>
-          <TabsTrigger value="procedimentos">
-            <SyringeIcon data-icon="inline-start" />
-            Procedimentos
-          </TabsTrigger>
-          <TabsTrigger value="equipe">
-            <UsersIcon data-icon="inline-start" />
-            Equipe
-          </TabsTrigger>
-          <TabsTrigger value="termos">
-            <FileTextIcon data-icon="inline-start" />
-            Termos
-          </TabsTrigger>
-          <TabsTrigger value="agendamento">
-            <CalendarIcon data-icon="inline-start" />
-            Agendamento
-          </TabsTrigger>
-          <TabsTrigger value="auditoria">
-            <ShieldCheckIcon data-icon="inline-start" />
-            Auditoria
-          </TabsTrigger>
-        </TabsList>
+      {/* Mobile: horizontal scrollable tabs */}
+      <div className="md:hidden mb-6 -mx-4 px-4 overflow-x-auto scrollbar-hide">
+        <div className="flex gap-1 min-w-max bg-petal/60 rounded-xl p-1">
+          {TABS.map((tab) => {
+            const Icon = tab.icon
+            const isActive = activeTab === tab.key
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap',
+                  isActive
+                    ? 'bg-white text-forest shadow-sm'
+                    : 'text-mid hover:text-charcoal'
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {tab.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
 
-        <TabsContent value="clinica" className="pt-6">
-          <ClinicSettingsForm
-            initialData={{
-              name: tenant.name,
-              phone: tenant.phone,
-              email: tenant.email,
-              address: tenant.address as Record<string, string> | null,
-              workingHours: tenant.workingHours as import('@/validations/tenant').WorkingHours | null,
-            }}
-          />
-        </TabsContent>
+      {/* Desktop: sidebar + content layout */}
+      <div className="flex gap-6">
+        {/* Sidebar nav (desktop only) */}
+        <nav className="hidden md:block w-56 shrink-0">
+          <div className="sticky top-6 space-y-1">
+            {TABS.map((tab) => {
+              const Icon = tab.icon
+              const isActive = activeTab === tab.key
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveTab(tab.key)}
+                  className={cn(
+                    'flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-all text-left',
+                    isActive
+                      ? 'bg-petal text-forest shadow-sm'
+                      : 'text-mid hover:bg-petal/50 hover:text-charcoal'
+                  )}
+                >
+                  <Icon className={cn('h-4 w-4', isActive ? 'text-sage' : 'text-mid')} />
+                  {tab.label}
+                </button>
+              )
+            })}
+          </div>
+        </nav>
 
-        <TabsContent value="procedimentos" className="pt-6">
-          <ProcedureTypeList procedureTypes={procedureTypes} />
-        </TabsContent>
+        {/* Content area */}
+        <div className="flex-1 min-w-0">
+          <div className="bg-white rounded-xl border border-blush/40 shadow-sm">
+            {/* Section header */}
+            <div className="px-5 sm:px-6 py-4 border-b border-blush/30">
+              <div className="flex items-center gap-2.5">
+                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-petal">
+                  <activeTabConfig.icon className="h-4 w-4 text-sage" />
+                </div>
+                <h2 className="text-lg font-medium text-forest">{activeTabConfig.label}</h2>
+              </div>
+            </div>
 
-        <TabsContent value="equipe" className="pt-6">
-          <TeamList members={members} currentUserId={currentUserId} />
-        </TabsContent>
+            {/* Section content */}
+            <div className="p-5 sm:p-6">
+              {activeTab === 'clinica' && (
+                <ClinicSettingsForm
+                  initialData={{
+                    name: tenant.name,
+                    phone: tenant.phone,
+                    email: tenant.email,
+                    address: tenant.address as Record<string, string> | null,
+                    workingHours: tenant.workingHours as import('@/validations/tenant').WorkingHours | null,
+                  }}
+                />
+              )}
 
-        <TabsContent value="termos" className="pt-6">
-          <ConsentTemplateList templates={consentTemplates} />
-        </TabsContent>
+              {activeTab === 'procedimentos' && (
+                <ProcedureTypeList procedureTypes={procedureTypes} />
+              )}
 
-        <TabsContent value="agendamento" className="pt-6">
-          <BookingSettings
-            slug={tenant.slug}
-            publicBookingEnabled={publicBookingEnabled}
-          />
-        </TabsContent>
+              {activeTab === 'equipe' && (
+                <TeamList members={members} currentUserId={currentUserId} />
+              )}
 
-        <TabsContent value="auditoria" className="pt-6">
-          <AuditLogViewer />
-        </TabsContent>
-      </Tabs>
+              {activeTab === 'termos' && (
+                <ConsentTemplateList templates={consentTemplates} />
+              )}
+
+              {activeTab === 'agendamento' && (
+                <BookingSettings
+                  slug={tenant.slug}
+                  publicBookingEnabled={publicBookingEnabled}
+                />
+              )}
+
+              {activeTab === 'auditoria' && (
+                <AuditLogViewer />
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

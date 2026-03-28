@@ -45,7 +45,7 @@ function SlotGroup({
 
   return (
     <div>
-      <p className="uppercase tracking-wider text-sm text-mid mb-2 font-medium">
+      <p className="uppercase tracking-wider text-xs text-mid mb-2.5 font-medium">
         {label}
       </p>
       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
@@ -55,11 +55,11 @@ function SlotGroup({
             type="button"
             onClick={() => onSelectSlot(slot.startTime)}
             className={cn(
-              'rounded-lg border px-3 py-2.5 text-sm font-medium transition-all',
-              'focus:outline-none focus:ring-2 focus:ring-sage/50',
+              'rounded-full border px-3 py-2 text-sm font-medium transition-all duration-200',
+              'focus:outline-none focus:ring-2 focus:ring-sage/40 focus:ring-offset-1',
               selectedSlot === slot.startTime
-                ? 'bg-forest text-cream border-forest shadow-sm'
-                : 'bg-white border-blush text-charcoal hover:border-sage hover:bg-petal'
+                ? 'bg-forest text-cream border-forest shadow-md shadow-forest/15 scale-105'
+                : 'bg-white border-forest/25 text-forest hover:border-forest hover:bg-petal/60 hover:shadow-sm'
             )}
           >
             {slot.startTime}

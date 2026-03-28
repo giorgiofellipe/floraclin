@@ -106,18 +106,21 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-8">
       {/* Clinic Info */}
       <div className="space-y-4">
-        <h3 className="text-sm font-medium text-foreground">Informações da Clínica</h3>
+        <div className="flex items-center gap-2 mb-1">
+          <h3 className="uppercase tracking-wider text-xs font-medium text-mid">Informacoes da Clinica</h3>
+          <div className="flex-1 h-px bg-blush/60" />
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="name">Nome da Clínica *</Label>
+            <Label htmlFor="name">Nome da Clinica *</Label>
             <Input
               id="name"
               value={name}
               onChange={(e) => handleFieldChange('name', e.target.value)}
-              placeholder="Nome da clínica"
+              placeholder="Nome da clinica"
               required
             />
           </div>
@@ -146,7 +149,10 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
 
       {/* Address */}
       <div className="space-y-4">
-        <h3 className="text-sm font-medium text-foreground">Endereço</h3>
+        <div className="flex items-center gap-2 mb-1">
+          <h3 className="uppercase tracking-wider text-xs font-medium text-mid">Endereco</h3>
+          <div className="flex-1 h-px bg-blush/60" />
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="street">Rua</Label>
@@ -158,7 +164,7 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="number">Número</Label>
+            <Label htmlFor="number">Numero</Label>
             <Input
               id="number"
               value={address.number}
@@ -218,16 +224,19 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
 
       {/* Working Hours */}
       <div className="space-y-4">
-        <h3 className="text-sm font-medium text-foreground">Horário de Funcionamento</h3>
-        <div className="space-y-3">
+        <div className="flex items-center gap-2 mb-1">
+          <h3 className="uppercase tracking-wider text-xs font-medium text-mid">Horario de Funcionamento</h3>
+          <div className="flex-1 h-px bg-blush/60" />
+        </div>
+        <div className="rounded-xl border border-blush/40 overflow-hidden divide-y divide-blush/30">
           {WEEKDAY_ORDER.map((day) => {
             const schedule = workingHours[day]
             return (
               <div
                 key={day}
-                className="flex items-center gap-4 rounded-lg border p-3"
+                className={`flex items-center gap-4 px-4 py-3 transition-colors ${schedule.enabled ? 'bg-white' : 'bg-petal/30'}`}
               >
-                <div className="flex items-center gap-3 min-w-[140px]">
+                <div className="flex items-center gap-3 min-w-[160px]">
                   <Switch
                     checked={schedule.enabled}
                     onCheckedChange={(checked) =>
@@ -235,11 +244,11 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
                     }
                     size="sm"
                   />
-                  <span className={`text-sm ${schedule.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>
+                  <span className={`text-sm font-medium ${schedule.enabled ? 'text-charcoal' : 'text-mid'}`}>
                     {WEEKDAY_LABELS[day]}
                   </span>
                 </div>
-                {schedule.enabled && (
+                {schedule.enabled ? (
                   <div className="flex items-center gap-2">
                     <Input
                       type="time"
@@ -247,18 +256,20 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
                       onChange={(e) =>
                         updateWorkingHour(day, 'start', e.target.value)
                       }
-                      className="w-[120px]"
+                      className="w-[110px] text-sm"
                     />
-                    <span className="text-sm text-muted-foreground">até</span>
+                    <span className="text-xs text-mid font-medium">ate</span>
                     <Input
                       type="time"
                       value={schedule.end}
                       onChange={(e) =>
                         updateWorkingHour(day, 'end', e.target.value)
                       }
-                      className="w-[120px]"
+                      className="w-[110px] text-sm"
                     />
                   </div>
+                ) : (
+                  <span className="text-xs text-mid italic">Fechado</span>
                 )}
               </div>
             )
@@ -267,9 +278,9 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
       </div>
 
       {!embedded && (
-        <div className="flex justify-end">
+        <div className="flex justify-end pt-2">
           <Button type="submit" disabled={isPending}>
-            {isPending ? 'Salvando...' : 'Salvar Configurações'}
+            {isPending ? 'Salvando...' : 'Salvar Configuracoes'}
           </Button>
         </div>
       )}
