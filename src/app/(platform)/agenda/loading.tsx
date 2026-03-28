@@ -24,7 +24,7 @@ export default function AgendaLoading() {
       </div>
 
       {/* Calendar grid skeleton */}
-      <div className="flex-1 rounded-lg border">
+      <div className="flex-1 rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         {/* Day headers */}
         <div className="grid grid-cols-7 border-b">
           {Array.from({ length: 7 }).map((_, i) => (

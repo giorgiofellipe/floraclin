@@ -74,7 +74,7 @@ export function ConsentHistory({ patientId }: ConsentHistoryProps) {
     return (
       <Card className="border-0 shadow-sm">
         <CardHeader>
-          <CardTitle className="font-display text-forest">Termos de Consentimento</CardTitle>
+          <CardTitle className="font-semibold text-[#2A2A2A]">Termos de Consentimento</CardTitle>
         </CardHeader>
         <CardContent className="py-6 text-center text-sm text-mid">
           Nenhum termo assinado.
@@ -86,7 +86,7 @@ export function ConsentHistory({ patientId }: ConsentHistoryProps) {
   return (
     <Card className="border-0 shadow-sm">
       <CardHeader>
-        <CardTitle className="font-display text-forest">Termos de Consentimento</CardTitle>
+        <CardTitle className="font-semibold text-[#2A2A2A]">Termos de Consentimento</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
@@ -101,7 +101,7 @@ export function ConsentHistory({ patientId }: ConsentHistoryProps) {
 
 function ConsentHistoryItem({ item }: { item: HistoryItem }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-sage/10 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md">
+    <div className="flex items-center justify-between gap-3 rounded-[3px] bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
       <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium text-forest">{item.templateTitle}</span>
@@ -110,7 +110,7 @@ function ConsentHistoryItem({ item }: { item: HistoryItem }) {
           </Badge>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-mid">
-          <Badge className="bg-petal text-mid border-0 text-[11px] px-2 py-0">{CONSENT_TYPE_LABELS[item.templateType] ?? item.templateType}</Badge>
+          <Badge className="bg-white text-mid border-0 text-[11px] px-2 py-0">{CONSENT_TYPE_LABELS[item.templateType] ?? item.templateType}</Badge>
           <span className="text-sage/30">|</span>
           <span>{METHOD_LABELS[item.acceptanceMethod] ?? item.acceptanceMethod}</span>
           <span className="text-sage/30">|</span>
@@ -150,7 +150,7 @@ function ConsentHistoryItem({ item }: { item: HistoryItem }) {
             <DialogHeader>
               <DialogTitle>{item.templateTitle}</DialogTitle>
             </DialogHeader>
-            <ScrollArea className="max-h-96 rounded-xl border border-blush/50 bg-petal/20 p-5">
+            <ScrollArea className="max-h-96 rounded-[3px] border border-gray-100 bg-white p-5">
               <div className="whitespace-pre-wrap text-sm leading-relaxed text-charcoal">
                 {item.contentSnapshot}
               </div>

@@ -231,7 +231,7 @@ export function CalendarView({
               <ChevronRight className="size-4" />
             </Button>
           </div>
-          <h2 className="text-lg font-semibold capitalize text-forest tracking-tight">
+          <h2 className="text-lg font-semibold capitalize text-[#2A2A2A] tracking-tight">
             {view === 'day' && format(currentDate, "d 'de' MMMM 'de' yyyy", { locale: ptBR })}
             {view === 'week' &&
               `${format(startOfWeek(currentDate, { weekStartsOn: 1 }), "d 'de' MMM", { locale: ptBR })} - ${format(endOfWeek(currentDate, { weekStartsOn: 1 }), "d 'de' MMM", { locale: ptBR })}`}
@@ -261,7 +261,7 @@ export function CalendarView({
           </Select>
 
           {/* View toggle - pill style */}
-          <div className="flex rounded-full bg-petal/60 p-0.5" data-testid="calendar-view-toggle">
+          <div className="flex rounded-full bg-gray-100 p-0.5" data-testid="calendar-view-toggle">
             {([
               ['day', 'Dia'],
               ['week', 'Semana'],
@@ -290,10 +290,10 @@ export function CalendarView({
       </div>
 
       {/* Calendar content */}
-      <div className="relative min-h-0 flex-1 overflow-auto rounded-xl border border-sage/10 bg-white shadow-sm">
+      <div className="relative min-h-0 flex-1 overflow-auto rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         {isLoading && (
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-white/60 backdrop-blur-sm">
-            <div className="flex items-center gap-2 rounded-full bg-petal px-5 py-2.5 shadow-sm">
+            <div className="flex items-center gap-2 rounded-full bg-white px-5 py-2.5 shadow-sm">
               <div className="size-2 animate-pulse rounded-full bg-sage" />
               <p className="text-sm font-medium text-forest">Carregando...</p>
             </div>
@@ -302,7 +302,7 @@ export function CalendarView({
 
         {!isLoading && appointments.length === 0 && (
           <div className="absolute inset-x-0 top-6 z-20 flex justify-center pointer-events-none">
-            <div className="flex items-center gap-2 rounded-full bg-petal/80 px-5 py-2.5 shadow-sm backdrop-blur-sm">
+            <div className="flex items-center gap-2 rounded-full bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm">
               <span className="text-sm text-mid">Nenhum agendamento para este periodo.</span>
             </div>
           </div>

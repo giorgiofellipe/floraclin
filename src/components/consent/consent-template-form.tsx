@@ -94,7 +94,7 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
       {/* Form */}
       <Card className="border-0 shadow-sm">
         <CardHeader>
-          <CardTitle className="font-display text-forest">
+          <CardTitle className="font-semibold text-[#2A2A2A]">
             {isEditing ? 'Editar Termo de Consentimento' : 'Novo Termo de Consentimento'}
           </CardTitle>
           {isEditing && (
@@ -208,7 +208,7 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
       <Card className="border-0 shadow-sm">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle className="font-display text-forest">Pre-visualizacao</CardTitle>
+            <CardTitle className="font-semibold text-[#2A2A2A]">Pre-visualizacao</CardTitle>
             {isEditing && (
               <Badge variant="outline" className="border-sage/30 bg-sage/5 text-sage text-xs">
                 v{(template?.version ?? 0) + 1} (rascunho)
@@ -218,7 +218,7 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
         </CardHeader>
         <CardContent>
           {content ? (
-            <ScrollArea className="h-96 rounded-xl border border-blush/50 bg-petal/20 p-5">
+            <ScrollArea className="h-96 rounded-[3px] border border-gray-100 bg-white p-5">
               <div className="space-y-3">
                 <h3 className="text-base font-semibold text-forest">{title || 'Sem titulo'}</h3>
                 <div className="whitespace-pre-wrap text-sm leading-relaxed text-charcoal">
@@ -227,7 +227,7 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
               </div>
             </ScrollArea>
           ) : (
-            <div className="flex h-96 items-center justify-center rounded-xl border border-dashed border-sage/20 bg-cream/30 text-sm text-mid">
+            <div className="flex h-96 items-center justify-center rounded-[3px] border border-dashed border-sage/20 bg-white text-sm text-mid">
               O conteudo do termo aparecera aqui
             </div>
           )}

@@ -17,7 +17,7 @@ export default function ConfiguracoesLoading() {
       </div>
 
       {/* Settings form skeleton */}
-      <div className="rounded-lg border bg-white p-6 space-y-6">
+      <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-6 space-y-6">
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="space-y-2">
             <Skeleton className="h-4 w-28" />

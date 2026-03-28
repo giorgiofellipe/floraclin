@@ -101,7 +101,7 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="font-display text-2xl text-forest">Pacientes</h1>
+          <h1 className="text-2xl font-semibold text-[#2A2A2A]">Pacientes</h1>
           <span className="inline-flex items-center rounded-full bg-sage/10 px-2.5 py-0.5 text-xs font-medium text-sage">
             {result.total}
           </span>
@@ -133,10 +133,10 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-blush/40 bg-white overflow-hidden">
+      <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="border-b border-blush/40 hover:bg-transparent">
+            <TableRow className="border-b border-gray-100 hover:bg-transparent">
               <TableHead className="text-xs uppercase tracking-wider text-mid font-medium">Nome</TableHead>
               <TableHead className="text-xs uppercase tracking-wider text-mid font-medium">Telefone</TableHead>
               <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider text-mid font-medium">E-mail</TableHead>
@@ -150,7 +150,7 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
               <TableRow>
                 <TableCell colSpan={6} className="h-48" data-testid="patient-empty-state">
                   <div className="flex flex-col items-center justify-center gap-3 text-center">
-                    <div className="flex size-14 items-center justify-center rounded-full bg-petal">
+                    <div className="flex size-14 items-center justify-center rounded-full bg-white">
                       <UsersIcon className="size-6 text-sage" />
                     </div>
                     <div className="space-y-1">
@@ -168,7 +168,7 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
               </TableRow>
             ) : (
               result.data.map((patient, index) => (
-                <TableRow key={patient.id} data-testid={`patient-row-${index}`} className="border-b border-blush/20 hover:bg-petal/30 transition-colors">
+                <TableRow key={patient.id} data-testid={`patient-row-${index}`} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                   <TableCell>
                     <Link
                       href={`/pacientes/${patient.id}`}

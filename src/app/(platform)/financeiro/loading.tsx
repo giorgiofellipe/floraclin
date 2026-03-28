@@ -25,7 +25,7 @@ export default function FinanceiroLoading() {
       </div>
 
       {/* Table skeleton */}
-      <div className="rounded-lg border">
+      <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         <div className="border-b p-3">
           <div className="flex gap-4">
             <Skeleton className="h-4 w-8" />

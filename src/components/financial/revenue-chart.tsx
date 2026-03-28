@@ -91,7 +91,7 @@ export function RevenueChart() {
     <div className="space-y-6">
       {/* Summary cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card size="sm" className="rounded-xl border-sage/10 bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
+        <Card size="sm" className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xs uppercase tracking-wider font-medium text-mid">Total Recebido</CardTitle>
             <div className="rounded-full bg-mint/20 p-2">
@@ -105,7 +105,7 @@ export function RevenueChart() {
           </CardContent>
         </Card>
 
-        <Card size="sm" className="rounded-xl border-sage/10 bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
+        <Card size="sm" className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xs uppercase tracking-wider font-medium text-mid">Total Pendente</CardTitle>
             <div className="rounded-full bg-blush p-2">
@@ -119,7 +119,7 @@ export function RevenueChart() {
           </CardContent>
         </Card>
 
-        <Card size="sm" className="rounded-xl border-sage/10 bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
+        <Card size="sm" className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xs uppercase tracking-wider font-medium text-mid">Total Atrasado</CardTitle>
             <div className="rounded-full bg-amber-light p-2">
@@ -137,9 +137,9 @@ export function RevenueChart() {
       {/* Charts */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Monthly revenue bar chart */}
-        <Card className="rounded-xl border-sage/10 shadow-sm">
+        <Card className="rounded-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
           <CardHeader>
-            <CardTitle className="text-base font-semibold text-forest">Receita Mensal</CardTitle>
+            <CardTitle className="text-[14px] font-medium text-[#2A2A2A]">Receita Mensal</CardTitle>
           </CardHeader>
           <CardContent>
             {monthlyChartData.length === 0 ? (
@@ -189,9 +189,9 @@ export function RevenueChart() {
         </Card>
 
         {/* Revenue by procedure type donut chart */}
-        <Card className="rounded-xl border-sage/10 shadow-sm">
+        <Card className="rounded-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
           <CardHeader>
-            <CardTitle className="text-base font-semibold text-forest">Receita por Tipo de Procedimento</CardTitle>
+            <CardTitle className="text-[14px] font-medium text-[#2A2A2A]">Receita por Tipo de Procedimento</CardTitle>
           </CardHeader>
           <CardContent>
             {procedureChartData.length === 0 ? (

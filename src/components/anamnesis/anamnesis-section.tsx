@@ -25,10 +25,10 @@ export function AnamnesisSection({
     <AccordionItem
       value={value}
       className={cn(
-        'rounded-xl border px-5 mb-3 transition-all duration-200 overflow-hidden',
+        'rounded-[3px] border px-5 mb-3 transition-colors duration-200 overflow-hidden',
         isComplete
-          ? 'border-sage/20 bg-sage/[0.02] shadow-sm'
-          : 'border-sage/10 bg-white shadow-sm hover:shadow-md'
+          ? 'border-sage/20 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
+          : 'border-gray-100 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
       )}
     >
       <AccordionTrigger className="py-4 hover:no-underline">

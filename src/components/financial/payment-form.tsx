@@ -173,8 +173,8 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
 
           {/* Installment preview */}
           {installmentPreview.length > 0 && parsedAmount > 0 && (
-            <div className="rounded-xl border border-sage/10 bg-petal/30 p-4 space-y-3">
-              <p className="text-xs uppercase tracking-wider font-medium text-forest">Previa das parcelas</p>
+            <div className="rounded-[3px] border border-gray-100 bg-white p-4 space-y-3">
+              <p className="text-[10px] uppercase tracking-[0.15em] font-medium text-[#7A7A7A]">Previa das parcelas</p>
               <div className="space-y-2">
                 {installmentPreview.map((inst) => (
                   <div
@@ -209,10 +209,10 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
           )}
 
           <DialogFooter className="pt-2 border-t border-sage/10">
-            <Button type="button" variant="outline" className="rounded-full border-sage/20" onClick={onClose}>
+            <Button type="button" variant="outline" className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={isPending || !patientId || parsedAmount <= 0} className="rounded-full bg-forest text-cream hover:bg-sage transition-colors" data-testid="payment-form-submit">
+            <Button type="submit" disabled={isPending || !patientId || parsedAmount <= 0} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="payment-form-submit">
               {isPending ? 'Salvando...' : 'Criar Cobranca'}
             </Button>
           </DialogFooter>

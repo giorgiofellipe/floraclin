@@ -44,11 +44,11 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  pending: 'bg-sage/10 text-sage',
-  partial: 'bg-amber-light text-amber-dark',
-  paid: 'bg-mint/20 text-forest',
-  overdue: 'bg-amber-light text-amber-dark',
-  cancelled: 'bg-petal text-mid',
+  pending: 'bg-[#FFF4EF] text-amber',
+  partial: 'bg-[#FFF4EF] text-amber',
+  paid: 'bg-[#F0F7F1] text-sage',
+  overdue: 'bg-[#FFF4EF] text-amber-dark',
+  cancelled: 'bg-white text-mid',
 }
 
 export function FinancialList({ patients }: { patients: Patient[] }) {
@@ -112,23 +112,23 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
             {total} {total === 1 ? 'registro' : 'registros'}
           </span>
         </div>
-        <Button className="rounded-full bg-forest text-cream hover:bg-sage transition-colors" onClick={() => setShowPaymentForm(true)}>
+        <Button className="bg-forest text-cream hover:bg-sage transition-colors" onClick={() => setShowPaymentForm(true)}>
           <PlusIcon data-icon="inline-start" />
           Nova Cobranca
         </Button>
       </div>
 
-      <div className="rounded-xl border border-sage/10 bg-white shadow-sm overflow-hidden">
+      <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-petal/30 border-b border-sage/10 hover:bg-petal/30">
+            <TableRow className="bg-white border-b border-gray-100 hover:bg-white">
               <TableHead className="w-8" />
-              <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid">Paciente</TableHead>
-              <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid">Descricao</TableHead>
-              <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid text-right">Valor</TableHead>
-              <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid text-center">Parcelas</TableHead>
-              <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid">Status</TableHead>
-              <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid">Data</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A]">Paciente</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A]">Descricao</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] text-right">Valor</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] text-center">Parcelas</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A]">Status</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A]">Data</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -147,7 +147,7 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
             {entries.map((entry) => (
               <TableRow
                 key={entry.id}
-                className="cursor-pointer transition-colors hover:bg-petal/20 border-b border-sage/5"
+                className="cursor-pointer transition-colors hover:bg-gray-50 border-b border-gray-100"
                 onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
               >
                 <TableCell className="text-mid">
@@ -166,7 +166,7 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
                   </span>
                 </TableCell>
                 <TableCell>
-                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ${STATUS_COLORS[entry.status] ?? 'bg-petal text-mid'}`}>
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ${STATUS_COLORS[entry.status] ?? 'bg-white text-mid'}`}>
                     {STATUS_LABELS[entry.status] ?? entry.status}
                   </span>
                 </TableCell>
@@ -178,7 +178,7 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
       </div>
 
       {expandedId && (
-        <div className="rounded-xl border border-sage/10 bg-white p-4 shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
+        <div className="rounded-[3px] bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)] animate-in fade-in slide-in-from-top-2 duration-200">
           <InstallmentTable entryId={expandedId} onPaymentComplete={fetchEntries} />
         </div>
       )}
@@ -188,7 +188,7 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
           <Button
             variant="outline"
             size="sm"
-            className="rounded-full border-sage/20"
+            className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
             disabled={page <= 1}
             onClick={() => setPage((p) => p - 1)}
           >

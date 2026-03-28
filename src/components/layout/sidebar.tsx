@@ -36,8 +36,8 @@ const gestaoItems = [
 ]
 
 const bottomItems = [
-  { href: '#', label: 'Relat\u00f3rios', icon: TrendingUp, disabled: true },
-  { href: '/configuracoes', label: 'Configura\u00e7\u00f5es', icon: Settings },
+  { href: '#', label: 'Relatórios', icon: TrendingUp, disabled: true },
+  { href: '/configuracoes', label: 'Configurações', icon: Settings },
 ]
 
 // ─── Logo ──────────────────────────────────────────────────────────
@@ -142,7 +142,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
         ))}
       </div>
 
-      <SectionLabel label="Gest\u00e3o" />
+      <SectionLabel label="Gestão" />
       <div className="space-y-0.5">
         {gestaoItems.map((item) => (
           <NavItem

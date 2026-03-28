@@ -82,7 +82,7 @@ export function SignaturePad({
       >
         {isEmpty && !disabled && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-            <span className="font-display text-lg text-mid/40 italic">
+            <span className="text-lg text-mid/40 italic">
               Assinar aqui
             </span>
           </div>

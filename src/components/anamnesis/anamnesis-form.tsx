@@ -155,7 +155,7 @@ function TagInput({
   }
 
   return (
-    <div className="flex flex-wrap gap-1.5 rounded-xl border border-sage/20 p-2.5 min-h-[42px] focus-within:border-sage/40 focus-within:ring-2 focus-within:ring-sage/10 transition-all duration-150">
+    <div className="flex flex-wrap gap-1.5 rounded-[3px] border border-sage/20 p-2.5 min-h-[42px] focus-within:border-sage/40 focus-within:ring-2 focus-within:ring-sage/10 transition-all duration-150">
       {value.map((tag, i) => (
         <Badge
           key={i}
@@ -362,7 +362,7 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="font-display text-xl text-forest">Anamnese</h2>
+        <h2 className="text-xl font-semibold text-[#2A2A2A]">Anamnese</h2>
         {isPending && (
           <div className="flex items-center gap-1.5 text-xs text-sage">
             <Loader2 className="size-3 animate-spin" />
@@ -911,7 +911,7 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
           >
             <div className="space-y-3">
               {previousTreatments.fields.map((field, index) => (
-                <div key={field.id} className="space-y-2.5 rounded-xl border border-sage/15 bg-cream/20 p-4">
+                <div key={field.id} className="space-y-2.5 rounded-[3px] border border-gray-100 bg-white p-4">
                   <div className="flex justify-between items-center">
                     <span className="text-xs font-medium text-mid uppercase tracking-wider">
                       Tratamento {index + 1}

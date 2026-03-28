@@ -13,11 +13,11 @@ import type { ProcedureListItem } from '@/db/queries/procedures'
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   completed: {
     label: 'Concluido',
-    className: 'bg-petal text-mid border-0',
+    className: 'bg-[#F0F7F1] text-sage border-0',
   },
   in_progress: {
     label: 'Em andamento',
-    className: 'bg-amber-light text-amber-dark border-0',
+    className: 'bg-[#FFF4EF] text-amber border-0',
   },
   cancelled: {
     label: 'Cancelado',
@@ -49,14 +49,14 @@ export function ProcedureCard({ procedure, onClick }: ProcedureCardProps) {
   return (
     <Card
       className={cn(
-        'cursor-pointer transition-all duration-200 hover:shadow-md hover:translate-y-[-1px]',
-        'border-l-[3px] border-l-sage bg-white border-0 shadow-sm'
+        'cursor-pointer transition-colors duration-200',
+        'border-l-[3px] border-l-sage bg-white border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]'
       )}
       onClick={onClick}
     >
       <CardContent className="flex items-center gap-4 p-4">
         {/* Mini diagram preview placeholder */}
-        <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cream to-petal/50">
+        <div className="flex size-11 shrink-0 items-center justify-center rounded-[3px] bg-sage/10">
           <span className="text-xs font-bold text-forest tracking-wide">{categoryCode}</span>
         </div>
 
@@ -64,7 +64,7 @@ export function ProcedureCard({ procedure, onClick }: ProcedureCardProps) {
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <h3 className="truncate text-sm font-medium text-forest">
+              <h3 className="truncate text-[14px] font-medium text-[#2A2A2A]">
                 {procedure.procedureTypeName}
               </h3>
               <div className="mt-1 flex items-center gap-2 text-xs text-mid">

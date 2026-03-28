@@ -111,10 +111,10 @@ export function ConsentViewer({
 
   return (
     <Card className="border-0 shadow-sm overflow-hidden">
-      <CardHeader className="bg-gradient-to-r from-petal/30 to-cream pb-4">
+      <CardHeader className="bg-white pb-4">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <CardTitle className="text-forest">{template.title}</CardTitle>
+            <CardTitle className="text-[#2A2A2A]">{template.title}</CardTitle>
             <CardDescription className="mt-1 text-mid">
               {CONSENT_TYPE_LABELS[template.type] ?? template.type}
             </CardDescription>
@@ -127,14 +127,14 @@ export function ConsentViewer({
 
       <CardContent className="space-y-5 pt-5">
         {/* Scrollable consent text */}
-        <ScrollArea className="h-72 rounded-xl border border-blush/50 bg-petal/20 p-5">
+        <ScrollArea className="h-72 rounded-[3px] border border-gray-100 bg-white p-5">
           <div className="whitespace-pre-wrap text-sm leading-relaxed text-charcoal">
             {template.content}
           </div>
         </ScrollArea>
 
         {/* Checkbox acceptance */}
-        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-sage/15 p-4 transition-all duration-150 hover:bg-petal/20 hover:border-sage/30">
+        <label className="flex cursor-pointer items-start gap-3 rounded-[3px] border border-gray-100 p-4 transition-colors duration-150 hover:bg-gray-50 hover:border-sage/30">
           <Checkbox
             checked={checked}
             onCheckedChange={(val) => setChecked(val === true)}

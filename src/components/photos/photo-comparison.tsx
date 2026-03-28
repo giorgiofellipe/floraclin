@@ -227,7 +227,7 @@ export function PhotoComparison({
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <p className="text-center text-xs font-medium text-mid uppercase tracking-wider">Foto A</p>
-                  <div className="overflow-hidden rounded-xl border border-sage/15 shadow-sm">
+                  <div className="overflow-hidden rounded-[3px] border border-gray-100 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
                     <img
                       src={urlA}
                       alt="Foto A"
@@ -237,7 +237,7 @@ export function PhotoComparison({
                 </div>
                 <div className="space-y-2">
                   <p className="text-center text-xs font-medium text-mid uppercase tracking-wider">Foto B</p>
-                  <div className="overflow-hidden rounded-xl border border-sage/15 shadow-sm">
+                  <div className="overflow-hidden rounded-[3px] border border-gray-100 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
                     <img
                       src={urlB}
                       alt="Foto B"
@@ -262,7 +262,7 @@ export function PhotoComparison({
                     className="h-2 w-48 cursor-pointer appearance-none rounded-full bg-petal accent-sage"
                   />
                 </div>
-                <div className="relative overflow-hidden rounded-xl border border-sage/15 shadow-sm">
+                <div className="relative overflow-hidden rounded-[3px] border border-gray-100 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
                   <img
                     src={urlA}
                     alt="Foto A"
@@ -282,7 +282,7 @@ export function PhotoComparison({
             <TabsContent value="slider">
               <div
                 ref={sliderContainerRef}
-                className="relative cursor-col-resize select-none overflow-hidden rounded-xl border border-sage/15 shadow-sm"
+                className="relative cursor-col-resize select-none overflow-hidden rounded-[3px] border border-gray-100 shadow-[0_1px_4px_rgba(0,0,0,0.06)]"
               >
                 {/* Right image (Photo B) - full width background */}
                 <img

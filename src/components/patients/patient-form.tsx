@@ -299,11 +299,11 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
       </fieldset>
 
       {/* Endereço - collapsible */}
-      <div className="rounded-xl border border-blush/40 overflow-hidden">
+      <div className="rounded-[3px] border border-gray-100 overflow-hidden">
         <button
           type="button"
           onClick={() => setAddressOpen(!addressOpen)}
-          className="flex w-full items-center justify-between px-4 py-3 text-xs uppercase tracking-wider font-medium text-mid hover:bg-petal/40 transition-colors"
+          className="flex w-full items-center justify-between px-4 py-3 text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] hover:bg-gray-50 transition-colors"
         >
           <span>Endereço</span>
           <ChevronDownIcon className={`size-4 text-mid transition-transform duration-200 ${addressOpen ? 'rotate-0' : '-rotate-90'}`} />
@@ -403,7 +403,7 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="sm:max-w-lg overflow-y-auto">
         <SheetHeader className="pb-2">
-          <SheetTitle className="font-display text-xl text-forest">{isEditing ? 'Editar Paciente' : 'Novo Paciente'}</SheetTitle>
+          <SheetTitle className="text-xl font-semibold text-[#2A2A2A]">{isEditing ? 'Editar Paciente' : 'Novo Paciente'}</SheetTitle>
           <SheetDescription className="text-mid">
             {isEditing
               ? 'Atualize os dados do paciente.'

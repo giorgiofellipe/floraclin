@@ -86,24 +86,24 @@ export function PatientDetailContent({
       </Link>
 
       {/* Patient header */}
-      <div className="rounded-xl border border-blush/40 bg-white p-6 sm:p-8">
+      <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-6 sm:p-8">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-5">
             {/* Large avatar */}
-            <div className="flex size-16 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sage to-mint text-xl font-semibold text-white shadow-sm">
+            <div className="flex size-16 shrink-0 items-center justify-center rounded-full bg-sage/15 text-xl font-semibold text-sage">
               {getInitials(patient.fullName)}
             </div>
             <div className="space-y-3">
-              <h1 className="font-display text-2xl text-forest">{patient.fullName}</h1>
+              <h1 className="text-2xl font-semibold text-[#2A2A2A]">{patient.fullName}</h1>
               <div className="flex flex-wrap items-center gap-2">
                 {age !== null && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-petal px-3 py-1 text-xs font-medium text-charcoal">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-medium text-charcoal">
                     <User className="size-3" />
                     {age} anos
                   </span>
                 )}
                 {patient.gender && (
-                  <span className="inline-flex items-center rounded-full bg-petal px-3 py-1 text-xs font-medium text-charcoal">
+                  <span className="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-medium text-charcoal">
                     {GENDER_LABELS[patient.gender] ?? patient.gender}
                   </span>
                 )}
@@ -112,12 +112,12 @@ export function PatientDetailContent({
                   {patient.phone}
                 </span>
                 {patient.cpf && (
-                  <span className="inline-flex items-center rounded-full bg-blush/50 px-3 py-1 text-xs font-medium text-charcoal">
+                  <span className="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-medium text-charcoal">
                     CPF {maskCPF(patient.cpf)}
                   </span>
                 )}
                 {patient.email && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-petal px-3 py-1 text-xs font-medium text-mid">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-medium text-mid">
                     <Mail className="size-3" />
                     {patient.email}
                   </span>
@@ -178,7 +178,7 @@ export function PatientDetailContent({
 
       {/* Tab content */}
       <div className="min-h-[400px]">
-        <div className="rounded-xl border border-blush/40 bg-white p-6">
+        <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-6">
           {tab === 'dados' && <PatientDataTab patient={patient} />}
           {tab === 'anamnese' && <PatientAnamnesisTab patientId={patient.id} />}
           {tab === 'procedimentos' && (
