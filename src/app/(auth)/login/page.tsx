@@ -5,44 +5,90 @@ import { login, type LoginState } from '@/actions/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import Link from 'next/link'
 
 export default function LoginPage() {
   const [state, formAction, isPending] = useActionState<LoginState, FormData>(login, null)
 
   return (
-    <Card>
-      <CardHeader className="text-center">
-        <h1 className="font-display text-3xl font-semibold tracking-tight">
+    <div className="animate-fade-in-up">
+      {/* Mobile-only branded header */}
+      <div className="lg:hidden text-center mb-10">
+        <h1 className="font-display text-4xl font-semibold tracking-tight">
           <span className="text-forest">Flora</span>
           <span className="text-sage">Clin</span>
         </h1>
-        <CardDescription>Acesse sua conta</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form action={formAction} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="email" className="uppercase tracking-wider text-xs">E-mail</Label>
-            <Input id="email" name="email" type="email" required data-testid="login-email" />
+        <p className="mt-1.5 text-mid text-xs tracking-[0.2em] uppercase">
+          Gestao &middot; HOF &amp; Estetica
+        </p>
+      </div>
+
+      {/* Form section */}
+      <div className="animate-fade-in-up-delay-1">
+        <h2 className="text-2xl font-medium text-forest tracking-tight hidden lg:block">
+          Acesse sua conta
+        </h2>
+        <p className="text-mid text-sm mt-1 mb-8 hidden lg:block">
+          Entre com suas credenciais para continuar
+        </p>
+        <p className="text-mid text-sm text-center mb-8 lg:hidden">
+          Acesse sua conta
+        </p>
+
+        <form action={formAction} className="space-y-5">
+          <div className="space-y-1.5 animate-fade-in-up-delay-1">
+            <Label htmlFor="email" className="uppercase tracking-wider text-xs text-mid">
+              E-mail
+            </Label>
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              required
+              data-testid="login-email"
+              className="auth-input h-11 border-blush/60 bg-white/80 rounded-lg transition-all duration-200 focus:border-sage focus:ring-2 focus:ring-mint/20 placeholder:text-mid/40"
+              placeholder="seu@email.com"
+            />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="password" className="uppercase tracking-wider text-xs">Senha</Label>
-            <Input id="password" name="password" type="password" required data-testid="login-password" />
+          <div className="space-y-1.5 animate-fade-in-up-delay-2">
+            <Label htmlFor="password" className="uppercase tracking-wider text-xs text-mid">
+              Senha
+            </Label>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              required
+              data-testid="login-password"
+              className="auth-input h-11 border-blush/60 bg-white/80 rounded-lg transition-all duration-200 focus:border-sage focus:ring-2 focus:ring-mint/20 placeholder:text-mid/40"
+              placeholder="Sua senha"
+            />
           </div>
           {state?.error?.general && (
-            <p className="text-sm text-red-600" data-testid="login-error">{state.error.general[0]}</p>
+            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+              <p className="text-sm text-red-700" data-testid="login-error">{state.error.general[0]}</p>
+            </div>
           )}
-          <Button type="submit" className="w-full bg-forest text-cream hover:bg-sage uppercase tracking-wider" disabled={isPending} data-testid="login-submit">
-            {isPending ? 'Entrando...' : 'Entrar'}
-          </Button>
-          <div className="text-center">
-            <Link href="/reset-password" className="text-sm text-sage hover:text-forest">
+          <div className="animate-fade-in-up-delay-3 pt-1">
+            <Button
+              type="submit"
+              className="w-full h-11 bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium rounded-lg transition-all duration-300 shadow-sm hover:shadow-md"
+              disabled={isPending}
+              data-testid="login-submit"
+            >
+              {isPending ? 'Entrando...' : 'Entrar'}
+            </Button>
+          </div>
+          <div className="text-center pt-2">
+            <Link
+              href="/reset-password"
+              className="text-sm text-mid/70 hover:text-sage transition-colors duration-200"
+            >
               Esqueci minha senha
             </Link>
           </div>
         </form>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }

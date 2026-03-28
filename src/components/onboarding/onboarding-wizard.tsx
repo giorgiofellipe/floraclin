@@ -25,7 +25,7 @@ interface ProcedureTypeItem {
 }
 
 const STEPS = [
-  { label: 'Clínica', icon: Building2Icon },
+  { label: 'Clinica', icon: Building2Icon },
   { label: 'Procedimentos', icon: SyringeIcon },
   { label: 'Equipe', icon: UsersIcon },
 ]
@@ -73,7 +73,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
   function handleNext() {
     if (currentStep === 0) {
       if (!clinicData.name || (clinicData.name as string).trim().length === 0) {
-        toast.error('Nome da clínica é obrigatório')
+        toast.error('Nome da clinica e obrigatorio')
         return
       }
     }
@@ -106,7 +106,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
       })
 
       if (result?.success) {
-        toast.success('Configuração concluída! Bem-vindo ao FloraClin.')
+        toast.success('Configuracao concluida! Bem-vindo ao FloraClin.')
         router.push('/dashboard')
       } else {
         toast.error(result?.error || 'Erro ao completar o onboarding')
@@ -122,54 +122,55 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
 
+  const isLastStep = currentStep === STEPS.length - 1
+
   return (
     <div className="min-h-screen bg-cream">
-      <div className="mx-auto max-w-3xl px-4 py-8 sm:py-12">
+      <div className="mx-auto max-w-3xl px-4 py-10 sm:py-16">
         {/* Header */}
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl text-forest sm:text-4xl">
-            Bem-vindo ao FloraClin
+        <div className="mb-12 text-center animate-fade-in-up">
+          <h1 className="font-display text-4xl text-forest sm:text-5xl font-semibold tracking-tight">
+            Bem-vindo ao <span className="text-forest">Flora</span><span className="text-sage">Clin</span>
           </h1>
-          <p className="mt-2 text-mid">
-            Configure sua clínica em poucos passos
+          <p className="mt-3 text-mid text-base">
+            Configure sua clinica em poucos passos
           </p>
         </div>
 
         {/* Stepper */}
-        <div className="mb-8">
-          <div className="flex items-center justify-center gap-2">
+        <div className="mb-10 animate-fade-in-up-delay-1">
+          <div className="flex items-center justify-center">
             {STEPS.map((step, index) => {
-              const StepIcon = step.icon
               const isCompleted = index < currentStep
               const isCurrent = index === currentStep
               return (
                 <div key={step.label} className="flex items-center">
                   {index > 0 && (
                     <div
-                      className={`mx-2 h-px w-8 sm:w-16 ${
-                        isCompleted ? 'bg-sage' : 'bg-mid/20'
+                      className={`h-[2px] w-12 sm:w-24 transition-all duration-500 ${
+                        isCompleted ? 'bg-sage' : 'bg-blush/40'
                       }`}
                     />
                   )}
-                  <div className="flex flex-col items-center gap-1.5">
+                  <div className="flex flex-col items-center gap-2">
                     <div
-                      className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+                      className={`flex h-12 w-12 items-center justify-center rounded-full transition-all duration-500 ${
                         isCompleted
-                          ? 'bg-sage text-cream'
+                          ? 'bg-sage text-cream shadow-md shadow-sage/20'
                           : isCurrent
-                            ? 'bg-forest text-cream'
-                            : 'bg-petal text-mid'
+                            ? 'bg-forest text-cream shadow-lg shadow-forest/20'
+                            : 'bg-petal text-mid border border-blush/40'
                       }`}
                     >
                       {isCompleted ? (
                         <CheckIcon className="h-5 w-5" />
                       ) : (
-                        <StepIcon className="h-5 w-5" />
+                        <span className="text-sm font-semibold">{index + 1}</span>
                       )}
                     </div>
                     <span
-                      className={`text-xs font-medium ${
-                        isCurrent ? 'text-forest' : 'text-mid'
+                      className={`text-xs font-medium tracking-wide transition-colors duration-300 ${
+                        isCurrent ? 'text-forest' : isCompleted ? 'text-sage' : 'text-mid/50'
                       }`}
                     >
                       {step.label}
@@ -179,25 +180,21 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
               )
             })}
           </div>
-          {/* Progress bar */}
-          <div className="mt-4 h-1 w-full rounded-full bg-petal">
-            <div
-              className="h-1 rounded-full bg-sage transition-all duration-300"
-              style={{ width: `${((currentStep + 1) / STEPS.length) * 100}%` }}
-            />
-          </div>
         </div>
 
         {/* Step Content */}
-        <Card className="p-6 sm:p-8">
+        <Card
+          key={currentStep}
+          className="animate-fade-in-up border-blush/30 bg-white shadow-sm shadow-sage/5 rounded-xl p-8 sm:p-10"
+        >
           {/* Step 1: Clinic Settings */}
           {currentStep === 0 && (
             <div>
-              <h2 className="text-xl text-forest mb-1">
-                Dados da Clínica
+              <h2 className="text-xl font-medium text-forest mb-1 tracking-tight">
+                Dados da Clinica
               </h2>
-              <p className="text-sm text-mid mb-6">
-                Preencha as informações básicas e configure o horário de funcionamento.
+              <p className="text-sm text-mid mb-8">
+                Preencha as informacoes basicas e configure o horario de funcionamento.
               </p>
 
               <ClinicSettingsForm
@@ -213,9 +210,9 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
               />
 
               {slug && (
-                <div className="mt-4 rounded-lg bg-petal p-3">
-                  <p className="text-xs text-mid">
-                    Link de agendamento online:
+                <div className="mt-6 rounded-lg bg-petal/60 border border-blush/30 p-4">
+                  <p className="text-xs text-mid uppercase tracking-wider mb-1">
+                    Link de agendamento online
                   </p>
                   <p className="text-sm font-medium text-forest">
                     floraclin.com.br/c/{slug}
@@ -228,23 +225,23 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
           {/* Step 2: Procedure Types */}
           {currentStep === 1 && (
             <div>
-              <h2 className="text-xl text-forest mb-1">
+              <h2 className="text-xl font-medium text-forest mb-1 tracking-tight">
                 Tipos de Procedimento
               </h2>
-              <p className="text-sm text-mid mb-6">
-                Selecione os procedimentos que sua clínica oferece. Você pode adicionar mais depois.
+              <p className="text-sm text-mid mb-8">
+                Selecione os procedimentos que sua clinica oferece. Voce pode adicionar mais depois.
               </p>
 
               {/* Default procedure types as checkboxes */}
-              <div className="space-y-3 mb-6">
-                <h3 className="text-sm font-medium text-foreground">Procedimentos Sugeridos</h3>
+              <div className="space-y-3 mb-8">
+                <h3 className="text-xs font-medium text-mid uppercase tracking-wider">Procedimentos Sugeridos</h3>
                 {DEFAULT_PROCEDURE_TYPES.map((pt, index) => (
                   <label
                     key={pt.name}
-                    className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
+                    className={`flex items-center gap-3 rounded-lg border p-4 cursor-pointer transition-all duration-200 ${
                       selectedDefaults[index]
-                        ? 'border-sage bg-sage/5'
-                        : 'border-border'
+                        ? 'border-sage/40 bg-sage/5 shadow-sm'
+                        : 'border-blush/40 hover:border-blush/60 bg-white'
                     }`}
                   >
                     <input
@@ -254,7 +251,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
                       className="h-4 w-4 rounded border-mid text-sage focus:ring-sage"
                     />
                     <div className="flex-1">
-                      <span className="text-sm font-medium text-foreground">{pt.name}</span>
+                      <span className="text-sm font-medium text-charcoal">{pt.name}</span>
                       <span className="ml-2 text-xs text-mid">
                         ({pt.estimatedDurationMin} min)
                       </span>
@@ -265,9 +262,9 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
 
               {/* Existing procedure types (if any were already created via the dialog) */}
               {existingProcedureTypes.length > 0 && (
-                <div className="mb-6">
-                  <h3 className="text-sm font-medium text-foreground mb-3">
-                    Procedimentos já cadastrados
+                <div className="mb-8">
+                  <h3 className="text-xs font-medium text-mid uppercase tracking-wider mb-3">
+                    Procedimentos ja cadastrados
                   </h3>
                   <ProcedureTypeList
                     procedureTypes={existingProcedureTypes}
@@ -277,18 +274,18 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
               )}
 
               {/* Add custom procedure type */}
-              <div className="border-t pt-4">
+              <div className="border-t border-blush/30 pt-5">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={() => setShowAddProcedure(prev => !prev)}
-                  className="mb-3"
+                  className="mb-3 border-sage/30 text-sage hover:bg-sage/5 hover:text-forest"
                 >
                   Adicionar outro procedimento
                 </Button>
                 {showAddProcedure && (
-                  <div className="rounded-lg border p-4">
+                  <div className="rounded-lg border border-blush/30 p-4 bg-petal/20">
                     <ProcedureTypeForm
                       onSuccess={() => {
                         setShowAddProcedure(false)
@@ -304,23 +301,26 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
           {/* Step 3: Team Invites */}
           {currentStep === 2 && (
             <div>
-              <h2 className="text-xl text-forest mb-1">
+              <h2 className="text-xl font-medium text-forest mb-1 tracking-tight">
                 Convide sua Equipe
               </h2>
-              <p className="text-sm text-mid mb-6">
-                Convide profissionais e recepcionistas para usar o sistema. Este passo é opcional.
+              <p className="text-sm text-mid mb-8">
+                Convide profissionais e recepcionistas para usar o sistema. Este passo e opcional.
               </p>
 
               {invitesSent > 0 && (
-                <div className="mb-4 rounded-lg bg-sage/10 p-3">
-                  <p className="text-sm text-sage">
+                <div className="mb-6 rounded-lg bg-sage/10 border border-sage/20 p-4 flex items-center gap-3 animate-fade-in-up">
+                  <div className="w-8 h-8 rounded-full bg-sage/20 flex items-center justify-center flex-shrink-0">
+                    <CheckIcon className="h-4 w-4 text-sage" />
+                  </div>
+                  <p className="text-sm text-sage font-medium">
                     {invitesSent} {invitesSent === 1 ? 'convite enviado' : 'convites enviados'} com sucesso.
                   </p>
                 </div>
               )}
 
               {/* Reuse InviteUserForm -- invites are sent immediately via inviteUserAction */}
-              <div className="rounded-lg border p-4">
+              <div className="rounded-lg border border-blush/30 p-5 bg-white">
                 <InviteUserForm
                   onSuccess={() => {
                     setInvitesSent(prev => prev + 1)
@@ -332,7 +332,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
         </Card>
 
         {/* Navigation Buttons */}
-        <div className="mt-6 flex items-center justify-between">
+        <div className="mt-8 flex items-center justify-between animate-fade-in-up-delay-2">
           <div>
             {currentStep > 0 && (
               <Button
@@ -340,6 +340,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
                 variant="outline"
                 onClick={handlePrev}
                 disabled={isPending}
+                className="border-sage/30 text-sage hover:bg-sage/5 hover:text-forest transition-all duration-200"
               >
                 Anterior
               </Button>
@@ -353,6 +354,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
                 variant="ghost"
                 onClick={handleComplete}
                 disabled={isPending}
+                className="text-mid hover:text-sage transition-colors duration-200"
               >
                 {invitesSent > 0 ? 'Continuar sem mais convites' : 'Pular por enquanto'}
               </Button>
@@ -362,22 +364,29 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
               <Button
                 type="button"
                 onClick={handleNext}
-                className="bg-forest text-cream hover:bg-sage"
+                className="bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium rounded-lg transition-all duration-300 shadow-sm hover:shadow-md px-8"
               >
-                Próximo
+                Proximo
               </Button>
             ) : (
               <Button
                 type="button"
                 onClick={handleComplete}
                 disabled={isPending}
-                className="bg-forest text-cream hover:bg-sage"
+                className={`bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium rounded-lg transition-all duration-300 shadow-md hover:shadow-lg px-8 ${
+                  !isPending ? 'animate-subtle-pulse' : ''
+                }`}
               >
-                {isPending ? 'Finalizando...' : 'Começar a usar'}
+                {isPending ? 'Finalizando...' : 'Comecar a usar'}
               </Button>
             )}
           </div>
         </div>
+
+        {/* Footer */}
+        <p className="mt-12 text-center text-gold/50 text-[11px] tracking-wider">
+          floraclin.com.br
+        </p>
       </div>
     </div>
   )
