@@ -8,7 +8,7 @@ import './globals.css'
 const jost = Jost({ subsets: ['latin'], variable: '--font-sans' })
 const cormorant = Cormorant_Garamond({
   subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700'],
+  weight: ['400', '600'],
   variable: '--font-display',
 })
 

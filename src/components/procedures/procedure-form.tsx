@@ -505,7 +505,7 @@ export function ProcedureForm({
       {/* ── Header ──────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-2xl text-forest">
+          <h1 className="text-2xl text-forest">
             {isEdit
               ? 'Editar Procedimento'
               : mode === 'view'
@@ -1004,7 +1004,7 @@ export function ProcedureForm({
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-display text-forest">
+            <DialogTitle className="text-forest">
               Agendar retorno?
             </DialogTitle>
           </DialogHeader>

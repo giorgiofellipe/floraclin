@@ -127,7 +127,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
       <div className="mx-auto max-w-3xl px-4 py-8 sm:py-12">
         {/* Header */}
         <div className="mb-8 text-center">
-          <h1 className="font-display text-3xl text-forest sm:text-4xl">
+          <h1 className="text-3xl text-forest sm:text-4xl">
             Bem-vindo ao FloraClin
           </h1>
           <p className="mt-2 text-mid">
@@ -193,7 +193,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
           {/* Step 1: Clinic Settings */}
           {currentStep === 0 && (
             <div>
-              <h2 className="font-display text-xl text-forest mb-1">
+              <h2 className="text-xl text-forest mb-1">
                 Dados da Clínica
               </h2>
               <p className="text-sm text-mid mb-6">
@@ -228,7 +228,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
           {/* Step 2: Procedure Types */}
           {currentStep === 1 && (
             <div>
-              <h2 className="font-display text-xl text-forest mb-1">
+              <h2 className="text-xl text-forest mb-1">
                 Tipos de Procedimento
               </h2>
               <p className="text-sm text-mid mb-6">
@@ -304,7 +304,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
           {/* Step 3: Team Invites */}
           {currentStep === 2 && (
             <div>
-              <h2 className="font-display text-xl text-forest mb-1">
+              <h2 className="text-xl text-forest mb-1">
                 Convide sua Equipe
               </h2>
               <p className="text-sm text-mid mb-6">

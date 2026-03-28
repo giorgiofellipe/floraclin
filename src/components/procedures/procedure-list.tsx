@@ -58,7 +58,7 @@ export function ProcedureList({ patientId }: ProcedureListProps) {
     <div className="space-y-4">
       {/* Header with "New Procedure" button */}
       <div className="flex items-center justify-between">
-        <h2 className="font-display text-lg text-forest">
+        <h2 className="text-lg text-forest">
           Evolucao Clinica
         </h2>
         <Button

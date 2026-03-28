@@ -4,9 +4,7 @@ import Link from 'next/link'
 export const metadata: Metadata = {
   title: 'Dashboard | FloraClin',
 }
-import { buttonVariants } from '@/components/ui/button'
 import { UserPlus, CalendarPlus } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import { getAuthContext } from '@/lib/auth'
 import { getDashboardDataAction } from '@/actions/dashboard'
 import { QuickStats } from '@/components/dashboard/quick-stats'
@@ -35,7 +33,7 @@ export default async function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-3xl font-semibold text-forest" data-testid="dashboard-greeting">
+          <h1 className="text-3xl font-semibold text-forest" data-testid="dashboard-greeting">
             {greeting}, {firstName}
           </h1>
           <p className="mt-1 text-mid">Bem-vindo ao FloraClin</p>
@@ -43,20 +41,14 @@ export default async function DashboardPage() {
         <div className="flex gap-2">
           <Link
             href="/pacientes?new=true"
-            className={cn(
-              buttonVariants({ variant: 'outline' }),
-              'border-forest text-forest hover:bg-petal'
-            )}
+            className="inline-flex items-center justify-center rounded-md border border-forest px-4 py-2 text-sm font-medium text-forest hover:bg-petal transition-colors"
           >
             <UserPlus className="mr-2 h-4 w-4" />
             Novo Paciente
           </Link>
           <Link
             href="/agenda?new=true"
-            className={cn(
-              buttonVariants(),
-              'bg-forest text-cream hover:bg-sage'
-            )}
+            className="inline-flex items-center justify-center rounded-md bg-forest px-4 py-2 text-sm font-medium text-cream hover:bg-sage transition-colors"
           >
             <CalendarPlus className="mr-2 h-4 w-4" />
             Novo Agendamento

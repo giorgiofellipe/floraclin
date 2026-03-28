@@ -1,53 +1,172 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500" fill="none" stroke="#d1d5db" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <!-- Face outline -->
-  <path d="M200 30 C130 30, 70 80, 60 160 C50 230, 55 290, 80 340 C100 380, 140 430, 170 455 C185 467, 195 472, 200 475 C205 472, 215 467, 230 455 C260 430, 300 380, 320 340 C345 290, 350 230, 340 160 C330 80, 270 30, 200 30 Z" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 520" fill="none">
+  <!-- FloraClin — Front Face — Feminine, elegant line art -->
 
-  <!-- Hairline -->
-  <path d="M105 95 C130 55, 170 40, 200 38 C230 40, 270 55, 295 95" />
+  <!-- Face contour — soft, feminine jawline -->
+  <path d="M200 32
+    C158 32, 118 58, 92 100
+    C72 135, 62 172, 58 210
+    C54 252, 58 292, 70 328
+    C82 358, 102 384, 126 405
+    C148 424, 170 440, 186 452
+    C194 458, 198 460, 200 462
+    C202 460, 206 458, 214 452
+    C230 440, 252 424, 274 405
+    C298 384, 318 358, 330 328
+    C342 292, 346 252, 342 210
+    C338 172, 328 135, 308 100
+    C282 58, 242 32, 200 32 Z"
+    stroke="#9aaa9e" stroke-width="1.4" stroke-linejoin="round"/>
 
-  <!-- Left eyebrow -->
-  <path d="M120 155 C135 140, 155 138, 175 145" />
+  <!-- Hair — flowing, parted -->
+  <path d="M88 105
+    C78 85, 90 55, 120 40
+    C145 28, 170 24, 200 22
+    C230 24, 255 28, 280 40
+    C310 55, 322 85, 312 105"
+    stroke="#9aaa9e" stroke-width="1.2" opacity="0.7"/>
+  <!-- Hair strands left -->
+  <path d="M88 105 C75 130, 62 165, 55 200" stroke="#b0c0b5" stroke-width="0.8" opacity="0.4"/>
+  <path d="M82 95 C68 120, 56 155, 50 192" stroke="#b0c0b5" stroke-width="0.6" opacity="0.3"/>
+  <!-- Hair strands right -->
+  <path d="M312 105 C325 130, 338 165, 345 200" stroke="#b0c0b5" stroke-width="0.8" opacity="0.4"/>
+  <path d="M318 95 C332 120, 344 155, 350 192" stroke="#b0c0b5" stroke-width="0.6" opacity="0.3"/>
 
-  <!-- Right eyebrow -->
-  <path d="M225 145 C245 138, 265 140, 280 155" />
+  <!-- ─── EYEBROWS — elegant, arched ─── -->
+  <!-- Left brow -->
+  <path d="M118 158
+    C126 146, 138 140, 152 138
+    C162 138, 172 142, 180 150"
+    stroke="#8a9a8e" stroke-width="1.6" stroke-linecap="round"/>
 
-  <!-- Left eye -->
-  <ellipse cx="150" cy="175" rx="22" ry="12" />
-  <circle cx="150" cy="175" r="6" />
+  <!-- Right brow -->
+  <path d="M220 150
+    C228 142, 238 138, 248 138
+    C262 140, 274 146, 282 158"
+    stroke="#8a9a8e" stroke-width="1.6" stroke-linecap="round"/>
 
-  <!-- Right eye -->
-  <ellipse cx="250" cy="175" rx="22" ry="12" />
-  <circle cx="250" cy="175" r="6" />
+  <!-- ─── EYES — almond shaped, feminine ─── -->
+  <!-- Left eye upper lid -->
+  <path d="M124 178
+    C130 166, 140 160, 152 160
+    C164 160, 174 166, 180 178"
+    stroke="#8a9a8e" stroke-width="1.2" stroke-linecap="round"/>
+  <!-- Left eye lower lid -->
+  <path d="M124 178
+    C130 186, 140 190, 152 190
+    C164 190, 174 186, 180 178"
+    stroke="#8a9a8e" stroke-width="0.9" stroke-linecap="round"/>
+  <!-- Left iris -->
+  <circle cx="152" cy="178" r="10" stroke="#8a9a8e" stroke-width="0.8"/>
+  <circle cx="152" cy="178" r="4.5" fill="#9aaa9e" opacity="0.25"/>
+  <!-- Left upper lid crease -->
+  <path d="M127 168 C136 158, 148 154, 158 155 C168 157, 177 162, 182 168"
+    stroke="#b0c0b5" stroke-width="0.5" opacity="0.5"/>
+  <!-- Left lower lash line -->
+  <path d="M128 183 C138 190, 150 193, 162 191 C172 189, 178 184, 180 180"
+    stroke="#b0c0b5" stroke-width="0.4" opacity="0.35"/>
 
-  <!-- Nose bridge -->
-  <path d="M195 160 L190 230" />
-  <path d="M205 160 L210 230" />
+  <!-- Right eye upper lid -->
+  <path d="M220 178
+    C226 166, 236 160, 248 160
+    C260 160, 270 166, 276 178"
+    stroke="#8a9a8e" stroke-width="1.2" stroke-linecap="round"/>
+  <!-- Right eye lower lid -->
+  <path d="M220 178
+    C226 186, 236 190, 248 190
+    C260 190, 270 186, 276 178"
+    stroke="#8a9a8e" stroke-width="0.9" stroke-linecap="round"/>
+  <!-- Right iris -->
+  <circle cx="248" cy="178" r="10" stroke="#8a9a8e" stroke-width="0.8"/>
+  <circle cx="248" cy="178" r="4.5" fill="#9aaa9e" opacity="0.25"/>
+  <!-- Right upper lid crease -->
+  <path d="M218 168 C223 162, 232 157, 242 155 C252 154, 264 158, 273 168"
+    stroke="#b0c0b5" stroke-width="0.5" opacity="0.5"/>
+  <!-- Right lower lash line -->
+  <path d="M220 180 C222 184, 228 189, 238 191 C250 193, 262 190, 272 183"
+    stroke="#b0c0b5" stroke-width="0.4" opacity="0.35"/>
 
-  <!-- Nose tip / nostrils -->
-  <path d="M175 240 C180 250, 190 255, 200 255 C210 255, 220 250, 225 240" />
-  <path d="M190 230 C182 240, 175 242, 175 240" />
-  <path d="M210 230 C218 240, 225 242, 225 240" />
+  <!-- Eyelashes hint (tiny flicks) -->
+  <path d="M122 176 L118 173" stroke="#9aaa9e" stroke-width="0.6" opacity="0.4"/>
+  <path d="M182 176 L186 173" stroke="#9aaa9e" stroke-width="0.6" opacity="0.4"/>
+  <path d="M218 176 L214 173" stroke="#9aaa9e" stroke-width="0.6" opacity="0.4"/>
+  <path d="M278 176 L282 173" stroke="#9aaa9e" stroke-width="0.6" opacity="0.4"/>
 
-  <!-- Nasolabial folds -->
-  <path d="M168 245 C165 270, 162 300, 165 320" opacity="0.5" />
-  <path d="M232 245 C235 270, 238 300, 235 320" opacity="0.5" />
+  <!-- ─── NOSE — delicate, feminine ─── -->
+  <!-- Bridge (very subtle) -->
+  <path d="M194 165 C192 185, 190 210, 188 230"
+    stroke="#b0c0b5" stroke-width="0.6" opacity="0.5"/>
+  <path d="M206 165 C208 185, 210 210, 212 230"
+    stroke="#b0c0b5" stroke-width="0.6" opacity="0.5"/>
 
-  <!-- Upper lip -->
-  <path d="M160 310 C170 305, 185 300, 195 305 L200 300 L205 305 C215 300, 230 305, 240 310" />
+  <!-- Nose tip -->
+  <path d="M188 230
+    C184 238, 182 245, 184 250
+    C186 255, 192 260, 200 260
+    C208 260, 214 255, 216 250
+    C218 245, 216 238, 212 230"
+    stroke="#9aaa9e" stroke-width="1"/>
+
+  <!-- Nostrils -->
+  <path d="M184 250 C178 248, 174 244, 176 240" stroke="#b0c0b5" stroke-width="0.6" opacity="0.6"/>
+  <path d="M216 250 C222 248, 226 244, 224 240" stroke="#b0c0b5" stroke-width="0.6" opacity="0.6"/>
+
+  <!-- ─── NASOLABIAL FOLDS (very subtle) ─── -->
+  <path d="M168 255 C164 278, 162 305, 162 325" stroke="#c0ccb5" stroke-width="0.5" opacity="0.3"/>
+  <path d="M232 255 C236 278, 238 305, 238 325" stroke="#c0ccb5" stroke-width="0.5" opacity="0.3"/>
+
+  <!-- ─── LIPS — full, feminine ─── -->
+  <!-- Upper lip — cupid's bow -->
+  <path d="M160 322
+    C168 316, 178 312, 188 314
+    C192 315, 196 310, 198 306
+    L200 303
+    L202 306
+    C204 310, 208 315, 212 314
+    C222 312, 232 316, 240 322"
+    stroke="#9aaa9e" stroke-width="1.2" stroke-linecap="round"/>
 
   <!-- Lower lip -->
-  <path d="M160 310 C170 325, 185 335, 200 337 C215 335, 230 325, 240 310" />
+  <path d="M160 322
+    C164 334, 174 344, 188 350
+    C194 352, 198 353, 200 353
+    C202 353, 206 352, 212 350
+    C226 344, 236 334, 240 322"
+    stroke="#9aaa9e" stroke-width="1.2" stroke-linecap="round"/>
 
-  <!-- Chin crease -->
-  <path d="M180 370 C190 375, 210 375, 220 370" opacity="0.4" />
+  <!-- Lip center line -->
+  <path d="M164 322 C175 320, 190 318, 200 318 C210 318, 225 320, 236 322"
+    stroke="#b0c0b5" stroke-width="0.5" opacity="0.4"/>
 
-  <!-- Left ear -->
-  <path d="M62 155 C50 160, 42 180, 45 200 C48 220, 55 230, 62 225" />
+  <!-- Lower lip shadow -->
+  <path d="M175 340 C185 346, 195 348, 200 348 C205 348, 215 346, 225 340"
+    stroke="#c0ccb5" stroke-width="0.4" opacity="0.3"/>
 
-  <!-- Right ear -->
-  <path d="M338 155 C350 160, 358 180, 355 200 C352 220, 345 230, 338 225" />
+  <!-- ─── CHIN ─── -->
+  <path d="M178 375 C188 380, 196 382, 200 382 C204 382, 212 380, 222 375"
+    stroke="#c0ccb5" stroke-width="0.5" opacity="0.3"/>
 
-  <!-- Neck -->
-  <path d="M155 460 C160 475, 170 490, 175 500" opacity="0.4" />
-  <path d="M245 460 C240 475, 230 490, 225 500" opacity="0.4" />
+  <!-- ─── EARS (simplified, elegant) ─── -->
+  <!-- Left -->
+  <path d="M60 168
+    C52 172, 44 185, 42 200
+    C40 218, 44 232, 50 240
+    C54 246, 58 244, 58 238"
+    stroke="#9aaa9e" stroke-width="0.9" opacity="0.7"/>
+
+  <!-- Right -->
+  <path d="M340 168
+    C348 172, 356 185, 358 200
+    C360 218, 356 232, 350 240
+    C346 246, 342 244, 342 238"
+    stroke="#9aaa9e" stroke-width="0.9" opacity="0.7"/>
+
+  <!-- ─── NECK ─── -->
+  <path d="M155 455 C158 472, 162 488, 165 500" stroke="#b0c0b5" stroke-width="0.7" opacity="0.4"/>
+  <path d="M245 455 C242 472, 238 488, 235 500" stroke="#b0c0b5" stroke-width="0.7" opacity="0.4"/>
+  <!-- Neck center lines -->
+  <path d="M190 462 L188 500" stroke="#c0ccb5" stroke-width="0.4" opacity="0.2"/>
+  <path d="M210 462 L212 500" stroke="#c0ccb5" stroke-width="0.4" opacity="0.2"/>
+
+  <!-- ─── SUBTLE REFERENCE LINES ─── -->
+  <line x1="200" y1="22" x2="200" y2="462" stroke="#c0ccb5" stroke-width="0.3" opacity="0.08" stroke-dasharray="6,10"/>
 </svg>

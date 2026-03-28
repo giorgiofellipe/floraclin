@@ -76,7 +76,7 @@ export function PatientDetailContent({
       <div className="rounded-lg border bg-white p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-2">
-            <h1 className="font-display text-2xl text-forest">{patient.fullName}</h1>
+            <h1 className="text-2xl text-forest">{patient.fullName}</h1>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-mid">
               {age !== null && (
                 <span className="flex items-center gap-1">

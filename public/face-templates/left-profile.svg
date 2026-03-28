@@ -1,43 +1,118 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500" fill="none" stroke="#d1d5db" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <!-- Head/face outline - left profile (facing left) -->
-  <path d="M280 60 C240 30, 180 25, 150 40 C120 55, 100 80, 95 110 C88 145, 85 160, 85 180 C85 200, 90 220, 95 235 C98 245, 100 255, 95 265 C88 280, 80 285, 82 290 C84 295, 95 290, 100 295 C105 300, 90 310, 95 315 C100 318, 108 312, 112 315 C115 320, 118 330, 130 340 C145 355, 155 365, 160 370 C170 385, 175 400, 175 420 C175 440, 170 460, 168 480 L168 500" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 520" fill="none">
+  <!-- FloraClin — Left Profile — Feminine, elegant line art -->
 
-  <!-- Back of head -->
-  <path d="M280 60 C310 80, 330 120, 335 170 C340 220, 335 270, 320 320 C310 355, 295 390, 280 420 C270 445, 265 470, 262 500" />
+  <!-- Hair silhouette -->
+  <path d="M240 30
+    C200 22, 160 28, 130 50
+    C100 72, 82 100, 75 135
+    C68 170, 68 200, 72 225
+    C65 240, 58 260, 55 280"
+    stroke="#b0c0b5" stroke-width="0.8" opacity="0.4"/>
+  <path d="M240 30
+    C265 35, 285 48, 295 72
+    C305 95, 308 120, 305 145"
+    stroke="#b0c0b5" stroke-width="0.8" opacity="0.4"/>
 
-  <!-- Ear -->
-  <path d="M295 155 C310 160, 320 180, 318 200 C316 220, 308 230, 295 225" />
+  <!-- Face profile contour -->
+  <path d="M240 35
+    C215 32, 175 40, 145 65
+    C120 88, 105 115, 98 145
+    C92 170, 90 195, 95 218
+    C88 222, 80 228, 78 235
+    C76 242, 78 252, 82 256
+    C86 260, 92 255, 95 250
+    C98 248, 100 252, 100 260
+    C100 268, 95 274, 90 278
+    C86 282, 84 288, 88 292
+    C92 295, 98 293, 102 290
+    C104 288, 105 286, 108 288
+    C112 292, 120 302, 126 310
+    C132 320, 135 324, 134 330
+    C133 336, 128 342, 124 348
+    C120 354, 118 362, 125 370
+    C132 378, 145 395, 158 412
+    C168 425, 178 438, 188 450
+    C195 458, 200 462, 205 464"
+    stroke="#9aaa9e" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
 
-  <!-- Hairline -->
-  <path d="M150 40 C160 45, 200 35, 250 45 C270 50, 285 58, 290 70" />
+  <!-- Back of head / neck contour -->
+  <path d="M240 35
+    C270 38, 295 55, 310 85
+    C325 115, 330 150, 328 185
+    C326 220, 318 255, 305 285
+    C295 310, 285 330, 278 350
+    C272 370, 268 388, 268 405
+    C268 425, 265 445, 260 465
+    C258 480, 252 492, 245 500"
+    stroke="#9aaa9e" stroke-width="1.2" opacity="0.6"/>
 
-  <!-- Eyebrow -->
-  <path d="M110 155 C125 140, 145 138, 165 145" />
+  <!-- ─── EYEBROW ─── -->
+  <path d="M118 152
+    C128 140, 142 135, 158 136
+    C172 138, 182 144, 188 152"
+    stroke="#8a9a8e" stroke-width="1.6" stroke-linecap="round"/>
 
-  <!-- Eye -->
-  <path d="M120 170 C130 162, 150 162, 160 170 C150 178, 130 178, 120 170 Z" />
-  <circle cx="142" cy="170" r="5" />
+  <!-- ─── EYE — profile view ─── -->
+  <path d="M132 178
+    C138 168, 148 163, 160 164
+    C170 165, 178 170, 182 178"
+    stroke="#8a9a8e" stroke-width="1.2" stroke-linecap="round"/>
+  <path d="M132 178
+    C136 184, 144 188, 155 189
+    C166 189, 175 186, 182 178"
+    stroke="#8a9a8e" stroke-width="0.9" stroke-linecap="round"/>
+  <path d="M152 168 C158 168, 164 172, 165 178 C164 184, 158 188, 152 188"
+    stroke="#8a9a8e" stroke-width="0.7"/>
+  <path d="M155 172 C158 172, 161 175, 161 178 C161 181, 158 184, 155 184"
+    fill="#9aaa9e" opacity="0.2"/>
+  <path d="M135 170 C142 160, 155 156, 168 158 C178 160, 185 166, 188 172"
+    stroke="#b0c0b5" stroke-width="0.5" opacity="0.45"/>
+  <path d="M130 176 L126 173" stroke="#9aaa9e" stroke-width="0.5" opacity="0.4"/>
 
-  <!-- Nose -->
-  <path d="M110 160 L95 235" />
-  <path d="M95 235 C88 250, 80 258, 82 262 C84 266, 95 260, 100 265 C105 270, 100 275, 95 280 C88 285, 82 288, 82 290" />
+  <!-- ─── NOSE — nostril detail ─── -->
+  <path d="M95 250 C92 255, 90 260, 95 262 C100 264, 104 260, 105 256"
+    stroke="#9aaa9e" stroke-width="0.7" opacity="0.6"/>
 
-  <!-- Lips -->
-  <path d="M100 310 C110 300, 125 298, 135 305 L138 302 C145 305, 155 310, 160 315" />
-  <path d="M100 310 C110 320, 130 328, 145 325 C155 322, 160 318, 160 315" />
+  <!-- ─── LIPS ─── -->
+  <path d="M108 288
+    C112 290, 118 296, 124 302
+    C128 308, 130 312, 132 316"
+    stroke="#9aaa9e" stroke-width="1.1" stroke-linecap="round"/>
+  <path d="M132 316
+    C134 322, 136 328, 134 332
+    C132 336, 128 340, 124 342"
+    stroke="#9aaa9e" stroke-width="1.1" stroke-linecap="round"/>
+  <path d="M108 290 C115 295, 125 304, 134 316"
+    stroke="#b0c0b5" stroke-width="0.5" opacity="0.4"/>
 
-  <!-- Chin -->
-  <path d="M160 315 C165 330, 170 345, 170 360 C170 375, 175 395, 175 420" />
+  <!-- ─── CHIN ─── -->
+  <path d="M124 348 C128 356, 132 365, 135 372"
+    stroke="#b0c0b5" stroke-width="0.5" opacity="0.4"/>
 
-  <!-- Jawline -->
-  <path d="M100 310 C105 320, 112 325, 125 335 C140 345, 155 358, 160 370" />
+  <!-- ─── EAR ─── -->
+  <path d="M265 155
+    C278 158, 290 170, 294 185
+    C298 200, 296 218, 290 230
+    C286 240, 280 245, 276 240
+    C272 235, 274 225, 276 218"
+    stroke="#9aaa9e" stroke-width="1" opacity="0.8"/>
+  <path d="M276 218 C274 212, 270 208, 272 200 C274 192, 278 188, 280 190"
+    stroke="#b0c0b5" stroke-width="0.6" opacity="0.5"/>
 
-  <!-- Nasolabial fold -->
-  <path d="M100 275 C105 290, 105 300, 103 310" opacity="0.5" />
+  <!-- ─── JAWLINE ─── -->
+  <path d="M158 412 C172 402, 188 388, 200 375
+    C218 355, 238 340, 258 330
+    C275 322, 288 315, 298 305"
+    stroke="#b0c0b5" stroke-width="0.6" opacity="0.35"/>
 
-  <!-- Neck back -->
-  <path d="M280 420 C275 445, 270 470, 262 500" opacity="0.4" />
+  <!-- ─── NECK ─── -->
+  <path d="M205 464 C210 475, 215 488, 218 500" stroke="#b0c0b5" stroke-width="0.6" opacity="0.3"/>
+  <path d="M245 500 C248 490, 252 478, 258 465" stroke="#b0c0b5" stroke-width="0.5" opacity="0.25"/>
 
-  <!-- Neck front -->
-  <path d="M175 420 C175 445, 172 470, 168 500" opacity="0.4" />
+  <!-- Forehead lines -->
+  <path d="M115 115 C140 108, 170 105, 195 108" stroke="#c0ccb5" stroke-width="0.4" opacity="0.2"/>
+  <path d="M112 128 C135 122, 165 120, 192 122" stroke="#c0ccb5" stroke-width="0.4" opacity="0.15"/>
+
+  <!-- Cheekbone -->
+  <path d="M110 225 C125 232, 145 238, 160 240" stroke="#c0ccb5" stroke-width="0.4" opacity="0.2"/>
 </svg>

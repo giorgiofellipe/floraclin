@@ -191,24 +191,28 @@ export async function getUpcomingFollowUps(
     conditions.push(eq(procedureRecords.practitionerId, practitionerId))
   }
 
-  const result = await db
-    .select({
-      id: procedureRecords.id,
-      patientId: procedureRecords.patientId,
-      patientName: patients.fullName,
-      procedureTypeName: procedureTypes.name,
-      followUpDate: procedureRecords.followUpDate,
-    })
-    .from(procedureRecords)
-    .innerJoin(patients, eq(procedureRecords.patientId, patients.id))
-    .innerJoin(
-      procedureTypes,
-      eq(procedureRecords.procedureTypeId, procedureTypes.id)
-    )
-    .where(and(...conditions))
-    .orderBy(procedureRecords.followUpDate)
+  try {
+    const result = await db
+      .select({
+        id: procedureRecords.id,
+        patientId: procedureRecords.patientId,
+        patientName: patients.fullName,
+        procedureTypeName: procedureTypes.name,
+        followUpDate: procedureRecords.followUpDate,
+      })
+      .from(procedureRecords)
+      .innerJoin(patients, eq(procedureRecords.patientId, patients.id))
+      .innerJoin(
+        procedureTypes,
+        eq(procedureRecords.procedureTypeId, procedureTypes.id)
+      )
+      .where(and(...conditions))
+      .orderBy(procedureRecords.followUpDate)
 
-  return result as UpcomingFollowUp[]
+    return result as UpcomingFollowUp[]
+  } catch {
+    return []
+  }
 }
 
 export async function getRecentActivity(

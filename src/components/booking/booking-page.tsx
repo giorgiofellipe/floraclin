@@ -224,7 +224,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
           {/* Step 1: Select Practitioner */}
           {step === 1 && (
             <div data-testid="booking-step-1">
-              <h2 className="font-display text-xl sm:text-2xl text-forest mb-1">
+              <h2 className="text-xl sm:text-2xl text-forest mb-1">
                 Selecione o profissional
               </h2>
               <p className="text-sm text-mid mb-5">
@@ -278,7 +278,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
           {/* Step 2: Select Date and Time */}
           {step === 2 && (
             <div data-testid="booking-step-2">
-              <h2 className="font-display text-xl sm:text-2xl text-forest mb-1">
+              <h2 className="text-xl sm:text-2xl text-forest mb-1">
                 Selecione a data e horário
               </h2>
               <p className="text-sm text-mid mb-5">
@@ -317,7 +317,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
           {/* Step 3: Contact Info */}
           {step === 3 && (
             <div data-testid="booking-step-3">
-              <h2 className="font-display text-xl sm:text-2xl text-forest mb-1">
+              <h2 className="text-xl sm:text-2xl text-forest mb-1">
                 Seus dados
               </h2>
               <p className="text-sm text-mid mb-5">
@@ -463,7 +463,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
                 </svg>
               </div>
 
-              <h2 className="font-display text-2xl sm:text-3xl text-forest mb-2" data-testid="booking-success">
+              <h2 className="text-2xl sm:text-3xl text-forest mb-2" data-testid="booking-success">
                 Agendamento solicitado!
               </h2>
               <p className="text-mid text-sm mb-6">
@@ -557,7 +557,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
         <div className="mt-8 text-center">
           <p className="text-xs text-mid/60">
             Powered by{' '}
-            <span className="font-display text-sm">
+            <span className="text-sm">
               <span className="text-forest">Flora</span>
               <span className="text-sage">Clin</span>
             </span>

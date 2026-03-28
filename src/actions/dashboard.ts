@@ -30,10 +30,14 @@ export async function getDashboardDataAction(): Promise<DashboardData> {
 
   const [todayAppointments, quickStats, upcomingFollowUps, recentActivity] =
     await Promise.all([
-      getTodayAppointments(context.tenantId, practitionerId),
-      getQuickStats(context.tenantId, practitionerId),
-      getUpcomingFollowUps(context.tenantId, practitionerId),
-      getRecentActivity(context.tenantId, 10),
+      getTodayAppointments(context.tenantId, practitionerId).catch(() => []),
+      getQuickStats(context.tenantId, practitionerId).catch(() => ({
+        patientsThisWeek: 0,
+        proceduresThisMonth: 0,
+        revenueThisMonth: context.role === 'practitioner' ? null : 0,
+      })),
+      getUpcomingFollowUps(context.tenantId, practitionerId).catch(() => []),
+      getRecentActivity(context.tenantId, 10).catch(() => []),
     ])
 
   return {

@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { Loader2, Plus, Syringe, Calendar } from 'lucide-react'
-import { buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { cn, formatDateTime } from '@/lib/utils'
+import { formatDateTime } from '@/lib/utils'
+import { listProceduresAction } from '@/actions/procedures'
 
 interface ProcedureRecord {
   id: string
@@ -37,43 +37,17 @@ interface PatientProceduresTabProps {
 export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
   const [procedures, setProcedures] = useState<ProcedureRecord[]>([])
   const [loading, setLoading] = useState(true)
-  const [isPending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
 
   const loadProcedures = useCallback(() => {
     startTransition(async () => {
       try {
-        // Dynamic import to avoid hard dependency on procedure queries
-        const { db } = await import('@/db/client')
-        const { procedureRecords, procedureTypes, users } = await import('@/db/schema')
-        const { eq, and, isNull, desc } = await import('drizzle-orm')
-        const { getAuthContext } = await import('@/lib/auth')
-
-        const ctx = await getAuthContext()
-
-        const results = await db
-          .select({
-            id: procedureRecords.id,
-            performedAt: procedureRecords.performedAt,
-            status: procedureRecords.status,
-            technique: procedureRecords.technique,
-            clinicalResponse: procedureRecords.clinicalResponse,
-            notes: procedureRecords.notes,
-            procedureTypeName: procedureTypes.name,
-            practitionerName: users.fullName,
-          })
-          .from(procedureRecords)
-          .innerJoin(procedureTypes, eq(procedureTypes.id, procedureRecords.procedureTypeId))
-          .innerJoin(users, eq(users.id, procedureRecords.practitionerId))
-          .where(
-            and(
-              eq(procedureRecords.tenantId, ctx.tenantId),
-              eq(procedureRecords.patientId, patientId),
-              isNull(procedureRecords.deletedAt)
-            )
-          )
-          .orderBy(desc(procedureRecords.performedAt))
-
-        setProcedures(results)
+        const result = await listProceduresAction(patientId)
+        if (result.success && result.data) {
+          setProcedures(result.data as unknown as ProcedureRecord[])
+        } else {
+          setProcedures([])
+        }
       } catch {
         setProcedures([])
       } finally {
@@ -103,7 +77,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
         </p>
         <Link
           href={`/pacientes/${patientId}/procedimentos/novo`}
-          className={cn(buttonVariants())}
+          className="inline-flex items-center justify-center rounded-md bg-forest px-4 py-2 text-sm font-medium text-cream hover:bg-sage transition-colors"
         >
           <Plus className="size-4 mr-1" />
           Novo Procedimento
