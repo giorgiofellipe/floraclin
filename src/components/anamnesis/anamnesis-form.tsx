@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 import { AnamnesisSection } from './anamnesis-section'
 import {
   anamnesisSchema,
@@ -154,18 +155,18 @@ function TagInput({
   }
 
   return (
-    <div className="flex flex-wrap gap-1.5 rounded-lg border border-input p-2 min-h-[38px] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+    <div className="flex flex-wrap gap-1.5 rounded-xl border border-sage/20 p-2.5 min-h-[42px] focus-within:border-sage/40 focus-within:ring-2 focus-within:ring-sage/10 transition-all duration-150">
       {value.map((tag, i) => (
         <Badge
           key={i}
           variant="secondary"
-          className="gap-1 text-xs"
+          className="gap-1 text-xs rounded-full bg-mint/15 text-forest border-0 px-2.5 py-0.5"
         >
           {tag}
           <button
             type="button"
             onClick={() => removeTag(i)}
-            className="ml-0.5 hover:text-destructive"
+            className="ml-0.5 hover:text-red-600 transition-colors"
           >
             &times;
           </button>
@@ -177,7 +178,7 @@ function TagInput({
         onChange={(e) => setInputValue(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder={value.length === 0 ? placeholder : ''}
-        className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-mid/50"
       />
     </div>
   )
@@ -359,11 +360,11 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
   // ─── Render ───────────────────────────────────────────────────
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Anamnese</h2>
+        <h2 className="font-display text-xl text-forest">Anamnese</h2>
         {isPending && (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5 text-xs text-sage">
             <Loader2 className="size-3 animate-spin" />
             Salvando...
           </div>
@@ -379,8 +380,8 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
             isComplete={isComplaintComplete}
           >
             <div className="space-y-4">
-              <div>
-                <Label htmlFor="mainComplaint">Queixa principal</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="mainComplaint" className="uppercase tracking-wider text-xs text-mid">Queixa principal</Label>
                 <Controller
                   control={control}
                   name="mainComplaint"
@@ -389,21 +390,23 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
                       id="mainComplaint"
                       placeholder="Descreva a queixa principal do paciente..."
                       rows={3}
+                      className="min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
                       {...field}
                     />
                   )}
                 />
               </div>
-              <div>
-                <Label htmlFor="patientGoals">Objetivos do paciente</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="patientGoals" className="uppercase tracking-wider text-xs text-mid">Objetivos do paciente</Label>
                 <Controller
                   control={control}
                   name="patientGoals"
                   render={({ field }) => (
                     <Textarea
                       id="patientGoals"
-                      placeholder="O que o paciente espera alcançar..."
+                      placeholder="O que o paciente espera alcancar..."
                       rows={3}
+                      className="min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
                       {...field}
                     />
                   )}
@@ -419,7 +422,7 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
             isComplete={isMedicalHistoryComplete}
           >
             <div className="space-y-3">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                 {(Object.entries(MEDICAL_HISTORY_LABELS) as [keyof Omit<MedicalHistory, 'outros'>, string][]).map(
                   ([key, label]) => (
                     <Controller
@@ -427,10 +430,16 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
                       control={control}
                       name={`medicalHistory.${key}`}
                       render={({ field }) => (
-                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                        <label className={cn(
+                          'flex items-center gap-2.5 text-sm cursor-pointer rounded-lg border px-3 py-2.5 transition-all duration-150',
+                          field.value
+                            ? 'border-sage/30 bg-sage/5 text-forest'
+                            : 'border-sage/10 hover:border-sage/20 hover:bg-petal/20 text-charcoal'
+                        )}>
                           <Checkbox
                             checked={field.value ?? false}
                             onCheckedChange={field.onChange}
+                            className="border-sage data-[state=checked]:bg-forest data-[state=checked]:border-forest"
                           />
                           {label}
                         </label>
@@ -439,8 +448,8 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
                   )
                 )}
               </div>
-              <div>
-                <Label htmlFor="medicalHistoryOutros">Outros</Label>
+              <div className="space-y-1.5 pt-2 border-t border-petal">
+                <Label htmlFor="medicalHistoryOutros" className="uppercase tracking-wider text-xs text-mid">Outros</Label>
                 <Controller
                   control={control}
                   name="medicalHistory.outros"
@@ -513,6 +522,7 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
                 onClick={() =>
                   medications.append({ name: '', dosage: '', frequency: '', reason: '' })
                 }
+                className="border-sage/30 text-forest hover:bg-petal/30 hover:border-sage/50 transition-all duration-150"
               >
                 <Plus className="size-4 mr-1" />
                 Adicionar medicamento
@@ -575,6 +585,7 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
                 onClick={() =>
                   allergies.append({ substance: '', reaction: '', severity: undefined })
                 }
+                className="border-sage/30 text-forest hover:bg-petal/30 hover:border-sage/50 transition-all duration-150"
               >
                 <Plus className="size-4 mr-1" />
                 Adicionar alergia
@@ -632,6 +643,7 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
                 onClick={() =>
                   previousSurgeries.append({ procedure: '', year: '', notes: '' })
                 }
+                className="border-sage/30 text-forest hover:bg-petal/30 hover:border-sage/50 transition-all duration-150"
               >
                 <Plus className="size-4 mr-1" />
                 Adicionar cirurgia
@@ -701,8 +713,8 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
             isComplete={isLifestyleComplete}
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div>
-                <Label>Tabagismo</Label>
+              <div className="space-y-1.5">
+                <Label className="uppercase tracking-wider text-xs text-mid">Tabagismo</Label>
                 <Controller
                   control={control}
                   name="lifestyle.smoking"
@@ -716,8 +728,8 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
                   )}
                 />
               </div>
-              <div>
-                <Label>Álcool</Label>
+              <div className="space-y-1.5">
+                <Label className="uppercase tracking-wider text-xs text-mid">Alcool</Label>
                 <Controller
                   control={control}
                   name="lifestyle.alcohol"
@@ -731,8 +743,8 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
                   )}
                 />
               </div>
-              <div>
-                <Label>Exercício físico</Label>
+              <div className="space-y-1.5">
+                <Label className="uppercase tracking-wider text-xs text-mid">Exercicio fisico</Label>
                 <Controller
                   control={control}
                   name="lifestyle.exercise"
@@ -746,8 +758,8 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
                   )}
                 />
               </div>
-              <div>
-                <Label>Qualidade do sono</Label>
+              <div className="space-y-1.5">
+                <Label className="uppercase tracking-wider text-xs text-mid">Qualidade do sono</Label>
                 <Controller
                   control={control}
                   name="lifestyle.sleep"
@@ -761,8 +773,8 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
                   )}
                 />
               </div>
-              <div>
-                <Label>Alimentação</Label>
+              <div className="space-y-1.5">
+                <Label className="uppercase tracking-wider text-xs text-mid">Alimentacao</Label>
                 <Controller
                   control={control}
                   name="lifestyle.diet"
@@ -776,8 +788,8 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
                   )}
                 />
               </div>
-              <div>
-                <Label>Exposição solar</Label>
+              <div className="space-y-1.5">
+                <Label className="uppercase tracking-wider text-xs text-mid">Exposicao solar</Label>
                 <Controller
                   control={control}
                   name="lifestyle.sunExposure"
@@ -883,6 +895,7 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
                 onClick={() =>
                   skincareRoutine.append({ product: '', frequency: '', notes: '' })
                 }
+                className="border-sage/30 text-forest hover:bg-petal/30 hover:border-sage/50 transition-all duration-150"
               >
                 <Plus className="size-4 mr-1" />
                 Adicionar produto
@@ -898,9 +911,9 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
           >
             <div className="space-y-3">
               {previousTreatments.fields.map((field, index) => (
-                <div key={field.id} className="space-y-2 rounded-lg border p-3">
+                <div key={field.id} className="space-y-2.5 rounded-xl border border-sage/15 bg-cream/20 p-4">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-medium text-muted-foreground">
+                    <span className="text-xs font-medium text-mid uppercase tracking-wider">
                       Tratamento {index + 1}
                     </span>
                     <Button
@@ -970,6 +983,7 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
                     satisfaction: undefined,
                   })
                 }
+                className="border-sage/30 text-forest hover:bg-petal/30 hover:border-sage/50 transition-all duration-150"
               >
                 <Plus className="size-4 mr-1" />
                 Adicionar tratamento
@@ -1008,13 +1022,14 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
                 name="facialEvaluationNotes"
                 render={({ field }) => (
                   <Textarea
-                    placeholder="Observações da avaliação facial..."
+                    placeholder="Observacoes da avaliacao facial..."
                     rows={4}
+                    className="min-h-[100px] resize-none border-sage/20 focus:border-sage/40"
                     {...field}
                   />
                 )}
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-mid/60">
                 Fotos podem ser adicionadas na aba de Fotos do paciente.
               </p>
             </div>
@@ -1024,8 +1039,8 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
 
       {/* ── Footer: last saved info ── */}
       {lastSaved && (
-        <div className="text-xs text-muted-foreground pt-2 border-t">
-          Última atualização: {formatDateTime(lastSaved)}
+        <div className="text-xs text-mid pt-3 border-t border-petal">
+          Ultima atualizacao: {formatDateTime(lastSaved)}
           {lastSavedBy && <> por {lastSavedBy}</>}
         </div>
       )}

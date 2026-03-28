@@ -142,16 +142,16 @@ export function PhotoComparison({
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-sm text-muted-foreground">Carregando fotos...</span>
+        <Loader2 className="size-6 animate-spin text-sage" />
+        <span className="ml-2 text-sm text-mid">Carregando fotos...</span>
       </div>
     )
   }
 
   if (allPhotos.length < 2) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-        <p className="text-sm">É necessário pelo menos 2 fotos para comparação.</p>
+      <div className="flex flex-col items-center justify-center py-12 text-mid">
+        <p className="text-sm">E necessario pelo menos 2 fotos para comparacao.</p>
       </div>
     )
   }
@@ -161,9 +161,9 @@ export function PhotoComparison({
       {/* Photo selectors */}
       <div className="flex flex-wrap items-end gap-4">
         <div className="space-y-1.5">
-          <Label>Foto A</Label>
+          <Label className="uppercase tracking-wider text-xs text-mid">Foto A</Label>
           <Select value={photoIdA} onValueChange={(v) => v && setPhotoIdA(v)}>
-            <SelectTrigger className="w-64">
+            <SelectTrigger className="w-64 border-sage/20">
               <SelectValue placeholder="Selecione a foto A">
                 {(value: string) => {
                   const photo = allPhotos.find((p) => p.id === value)
@@ -182,9 +182,9 @@ export function PhotoComparison({
         </div>
 
         <div className="space-y-1.5">
-          <Label>Foto B</Label>
+          <Label className="uppercase tracking-wider text-xs text-mid">Foto B</Label>
           <Select value={photoIdB} onValueChange={(v) => v && setPhotoIdB(v)}>
-            <SelectTrigger className="w-64">
+            <SelectTrigger className="w-64 border-sage/20">
               <SelectValue placeholder="Selecione a foto B">
                 {(value: string) => {
                   const photo = allPhotos.find((p) => p.id === value)
@@ -214,10 +214,10 @@ export function PhotoComparison({
         {/* Comparison views */}
         {loadingUrls ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            <Loader2 className="size-6 animate-spin text-sage" />
           </div>
         ) : !urlA || !urlB ? (
-          <div className="flex items-center justify-center py-12 text-muted-foreground">
+          <div className="flex items-center justify-center py-12 text-mid">
             <p className="text-sm">Selecione duas fotos para comparar.</p>
           </div>
         ) : (
@@ -226,8 +226,8 @@ export function PhotoComparison({
             <TabsContent value="side-by-side">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <p className="text-center text-xs font-medium text-muted-foreground">Foto A</p>
-                  <div className="overflow-hidden rounded-lg border">
+                  <p className="text-center text-xs font-medium text-mid uppercase tracking-wider">Foto A</p>
+                  <div className="overflow-hidden rounded-xl border border-sage/15 shadow-sm">
                     <img
                       src={urlA}
                       alt="Foto A"
@@ -236,8 +236,8 @@ export function PhotoComparison({
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <p className="text-center text-xs font-medium text-muted-foreground">Foto B</p>
-                  <div className="overflow-hidden rounded-lg border">
+                  <p className="text-center text-xs font-medium text-mid uppercase tracking-wider">Foto B</p>
+                  <div className="overflow-hidden rounded-xl border border-sage/15 shadow-sm">
                     <img
                       src={urlB}
                       alt="Foto B"
@@ -252,17 +252,17 @@ export function PhotoComparison({
             <TabsContent value="overlay">
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
-                  <Label className="shrink-0 text-xs">Opacidade: {opacity}%</Label>
+                  <Label className="shrink-0 text-xs text-mid uppercase tracking-wider">Opacidade: {opacity}%</Label>
                   <input
                     type="range"
                     min={0}
                     max={100}
                     value={opacity}
                     onChange={(e) => setOpacity(Number(e.target.value))}
-                    className="h-2 w-48 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+                    className="h-2 w-48 cursor-pointer appearance-none rounded-full bg-petal accent-sage"
                   />
                 </div>
-                <div className="relative overflow-hidden rounded-lg border">
+                <div className="relative overflow-hidden rounded-xl border border-sage/15 shadow-sm">
                   <img
                     src={urlA}
                     alt="Foto A"
@@ -282,7 +282,7 @@ export function PhotoComparison({
             <TabsContent value="slider">
               <div
                 ref={sliderContainerRef}
-                className="relative cursor-col-resize select-none overflow-hidden rounded-lg border"
+                className="relative cursor-col-resize select-none overflow-hidden rounded-xl border border-sage/15 shadow-sm"
               >
                 {/* Right image (Photo B) - full width background */}
                 <img
@@ -309,12 +309,12 @@ export function PhotoComparison({
 
                 {/* Divider line */}
                 <div
-                  className="absolute top-0 bottom-0 z-10 w-0.5 bg-white shadow-[0_0_4px_rgba(0,0,0,0.5)]"
+                  className="absolute top-0 bottom-0 z-10 w-0.5 bg-white shadow-[0_0_6px_rgba(0,0,0,0.3)]"
                   style={{ left: `${sliderPosition}%` }}
                 >
                   {/* Drag handle */}
                   <div
-                    className="absolute top-1/2 left-1/2 flex size-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-primary shadow-lg"
+                    className="absolute top-1/2 left-1/2 flex size-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-forest shadow-lg transition-transform hover:scale-110"
                     onMouseDown={handleSliderMouseDown}
                     onTouchStart={handleSliderMouseDown}
                   >

@@ -92,13 +92,13 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       {/* Form */}
-      <Card>
+      <Card className="border-0 shadow-sm">
         <CardHeader>
-          <CardTitle>
+          <CardTitle className="font-display text-forest">
             {isEditing ? 'Editar Termo de Consentimento' : 'Novo Termo de Consentimento'}
           </CardTitle>
           {isEditing && (
-            <CardDescription>
+            <CardDescription className="text-mid">
               Ao salvar, uma nova versao sera criada (v{(template?.version ?? 0) + 1}).
               A versao anterior sera preservada.
             </CardDescription>
@@ -137,7 +137,7 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
 
             {/* Title */}
             <div className="space-y-2">
-              <Label htmlFor="title">Titulo</Label>
+              <Label htmlFor="title" className="uppercase tracking-wider text-xs text-mid">Titulo</Label>
               <Input
                 id="title"
                 name="title"
@@ -145,6 +145,7 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Titulo do termo"
                 required
+                className="border-sage/20 focus:border-sage/40"
               />
               {state?.fieldErrors?.title && (
                 <p className="text-sm text-destructive">{state.fieldErrors.title[0]}</p>
@@ -154,7 +155,7 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
             {/* Content */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="content">Conteudo</Label>
+                <Label htmlFor="content" className="uppercase tracking-wider text-xs text-mid">Conteudo</Label>
                 {!isEditing && selectedType !== 'custom' && (
                   <Button
                     type="button"
@@ -173,7 +174,7 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
                 onChange={(e) => setContent(e.target.value)}
                 placeholder="Texto do termo de consentimento..."
                 rows={16}
-                className="min-h-64 font-mono text-xs"
+                className="min-h-64 font-mono text-xs border-sage/20 focus:border-sage/40"
                 required
               />
               {state?.fieldErrors?.content && (
@@ -192,7 +193,7 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
               </p>
             )}
 
-            <Button type="submit" disabled={isPending} className="w-full">
+            <Button type="submit" disabled={isPending} className="w-full bg-forest text-cream hover:bg-sage shadow-sm hover:shadow-md transition-all duration-200">
               {isPending
                 ? 'Salvando...'
                 : isEditing
@@ -204,12 +205,12 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
       </Card>
 
       {/* Preview */}
-      <Card>
+      <Card className="border-0 shadow-sm">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Pre-visualizacao</CardTitle>
+            <CardTitle className="font-display text-forest">Pre-visualizacao</CardTitle>
             {isEditing && (
-              <Badge variant="outline">
+              <Badge variant="outline" className="border-sage/30 bg-sage/5 text-sage text-xs">
                 v{(template?.version ?? 0) + 1} (rascunho)
               </Badge>
             )}
@@ -217,16 +218,16 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
         </CardHeader>
         <CardContent>
           {content ? (
-            <ScrollArea className="h-96 rounded-lg border bg-muted/20 p-4">
-              <div className="space-y-2">
-                <h3 className="text-base font-semibold">{title || 'Sem titulo'}</h3>
-                <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+            <ScrollArea className="h-96 rounded-xl border border-blush/50 bg-petal/20 p-5">
+              <div className="space-y-3">
+                <h3 className="text-base font-semibold text-forest">{title || 'Sem titulo'}</h3>
+                <div className="whitespace-pre-wrap text-sm leading-relaxed text-charcoal">
                   {content}
                 </div>
               </div>
             </ScrollArea>
           ) : (
-            <div className="flex h-96 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+            <div className="flex h-96 items-center justify-center rounded-xl border border-dashed border-sage/20 bg-cream/30 text-sm text-mid">
               O conteudo do termo aparecera aqui
             </div>
           )}

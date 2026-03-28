@@ -270,9 +270,9 @@ export function PhotoUploader({
     <div className="space-y-4">
       {/* Timeline stage selector */}
       <div className="flex items-center gap-3">
-        <Label htmlFor="timeline-stage">Estágio</Label>
+        <Label htmlFor="timeline-stage" className="uppercase tracking-wider text-xs text-mid">Estagio</Label>
         <Select value={timelineStage} onValueChange={(v) => v && setTimelineStage(v as TimelineStage)}>
-          <SelectTrigger className="w-48">
+          <SelectTrigger className="w-48 border-sage/20">
             <SelectValue>
               {(value: string) => timelineStageLabels[value as TimelineStage] ?? value}
             </SelectValue>
@@ -290,21 +290,23 @@ export function PhotoUploader({
       {/* Drop zone */}
       <div
         className={cn(
-          'relative flex min-h-[160px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 transition-colors',
+          'relative flex min-h-[180px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-all duration-200',
           isDragOver
-            ? 'border-primary bg-primary/5'
-            : 'border-muted-foreground/25 hover:border-muted-foreground/50'
+            ? 'border-sage bg-sage/5 scale-[1.01]'
+            : 'border-blush hover:border-sage/50 hover:bg-petal/20'
         )}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onClick={() => fileInputRef.current?.click()}
       >
-        <Upload className="mb-2 size-8 text-muted-foreground" />
-        <p className="text-sm font-medium text-muted-foreground">
+        <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-petal/60">
+          <Upload className="size-5 text-sage" />
+        </div>
+        <p className="text-sm font-medium text-forest">
           Arraste e solte fotos aqui
         </p>
-        <p className="text-xs text-muted-foreground/60">
+        <p className="mt-1 text-xs text-mid">
           ou clique para selecionar (JPEG, PNG, WebP - max 10MB)
         </p>
         <input
@@ -325,9 +327,11 @@ export function PhotoUploader({
               <div
                 key={f.id}
                 className={cn(
-                  'relative overflow-hidden rounded-lg border bg-muted/30',
-                  f.status === 'error' && 'border-destructive',
-                  f.status === 'done' && 'border-mint'
+                  'relative overflow-hidden rounded-xl border shadow-sm transition-all duration-200',
+                  f.status === 'error' && 'border-red-300 bg-red-50/30',
+                  f.status === 'done' && 'border-mint/50 bg-mint/5',
+                  f.status === 'pending' && 'border-sage/15 bg-cream/30',
+                  (f.status === 'compressing' || f.status === 'uploading') && 'border-sage/15 bg-cream/30'
                 )}
               >
                 <div className="aspect-square">
@@ -391,7 +395,7 @@ export function PhotoUploader({
                 )}
 
                 {/* File name */}
-                <div className="truncate px-2 py-1 text-xs text-muted-foreground">
+                <div className="truncate px-2.5 py-1.5 text-xs text-mid">
                   {f.file.name}
                 </div>
               </div>
@@ -400,11 +404,11 @@ export function PhotoUploader({
 
           {/* Upload button */}
           {pendingCount > 0 && (
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">
+            <div className="flex items-center justify-between rounded-lg bg-petal/30 px-4 py-3">
+              <span className="text-sm text-forest">
                 {pendingCount} {pendingCount === 1 ? 'foto pronta' : 'fotos prontas'} para envio
               </span>
-              <Button onClick={uploadAll} disabled={isUploading}>
+              <Button onClick={uploadAll} disabled={isUploading} className="bg-forest text-cream hover:bg-sage shadow-sm">
                 {isUploading ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />

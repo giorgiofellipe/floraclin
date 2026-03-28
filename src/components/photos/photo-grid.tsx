@@ -12,6 +12,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { formatDateTime } from '@/lib/utils'
 import { listPhotosAction, deletePhotoAction } from '@/actions/photos'
@@ -75,16 +76,18 @@ export function PhotoGrid({
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-sm text-muted-foreground">Carregando fotos...</span>
+        <Loader2 className="size-6 animate-spin text-sage" />
+        <span className="ml-2 text-sm text-mid">Carregando fotos...</span>
       </div>
     )
   }
 
   if (stagesWithPhotos.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-        <ZoomIn className="mb-2 size-8" />
+      <div className="flex flex-col items-center justify-center py-12 text-mid">
+        <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-petal/50">
+          <ZoomIn className="size-5 text-mid/60" />
+        </div>
         <p className="text-sm">Nenhuma foto enviada.</p>
       </div>
     )
@@ -92,22 +95,23 @@ export function PhotoGrid({
 
   return (
     <>
-      <div className="space-y-6">
+      <div className="space-y-8">
         {stagesWithPhotos.map((stageGroup) => (
           <div key={stageGroup.stage}>
-            <h3 className="mb-3 text-sm font-medium text-foreground">
-              {stageGroup.label}
-              <span className="ml-2 text-xs text-muted-foreground">
-                ({stageGroup.photos.length})
+            <div className="mb-3 flex items-center gap-2">
+              <Badge className="bg-sage/10 text-sage border-0 px-2.5 py-0.5 text-xs font-medium">
+                {stageGroup.label}
+              </Badge>
+              <span className="text-xs text-mid">
+                {stageGroup.photos.length} {stageGroup.photos.length === 1 ? 'foto' : 'fotos'}
               </span>
-            </h3>
+            </div>
 
-            <div className="flex gap-3 overflow-x-auto pb-2">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
               {stageGroup.photos.map((photo) => (
                 <div
                   key={photo.id}
-                  className="group relative shrink-0 cursor-pointer overflow-hidden rounded-lg border bg-muted/30 transition-shadow hover:shadow-md"
-                  style={{ width: 160 }}
+                  className="group relative cursor-pointer overflow-hidden rounded-xl border-0 bg-cream/30 shadow-sm transition-all duration-200 hover:shadow-lg hover:translate-y-[-2px]"
                 >
                   <div className="aspect-square">
                     {photo.signedUrl ? (
@@ -118,7 +122,7 @@ export function PhotoGrid({
                         loading="lazy"
                       />
                     ) : (
-                      <div className="flex h-full items-center justify-center text-muted-foreground">
+                      <div className="flex h-full items-center justify-center text-mid/60 text-xs">
                         Erro ao carregar
                       </div>
                     )}
@@ -158,12 +162,12 @@ export function PhotoGrid({
                   </div>
 
                   {/* Info */}
-                  <div className="space-y-0.5 px-2 py-1.5">
-                    <p className="truncate text-xs text-muted-foreground">
+                  <div className="space-y-0.5 px-2.5 py-2">
+                    <p className="truncate text-xs text-mid">
                       {formatDateTime(photo.createdAt)}
                     </p>
                     {photo.notes && (
-                      <p className="truncate text-xs text-muted-foreground/70">
+                      <p className="truncate text-xs text-mid/60">
                         {photo.notes}
                       </p>
                     )}
@@ -184,7 +188,7 @@ export function PhotoGrid({
             </DialogTitle>
           </DialogHeader>
           {selectedPhoto?.signedUrl && (
-            <div className="flex items-center justify-center">
+            <div className="flex items-center justify-center rounded-xl overflow-hidden bg-charcoal/5">
               <img
                 src={selectedPhoto.signedUrl}
                 alt={selectedPhoto.originalFilename ?? 'Foto'}
@@ -193,7 +197,7 @@ export function PhotoGrid({
             </div>
           )}
           {selectedPhoto?.notes && (
-            <p className="text-sm text-muted-foreground">{selectedPhoto.notes}</p>
+            <p className="text-sm text-mid">{selectedPhoto.notes}</p>
           )}
         </DialogContent>
       </Dialog>

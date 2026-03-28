@@ -49,15 +49,15 @@ export function ProcedureCard({ procedure, onClick }: ProcedureCardProps) {
   return (
     <Card
       className={cn(
-        'cursor-pointer transition-shadow hover:shadow-md',
-        'border-l-4 border-l-sage bg-white'
+        'cursor-pointer transition-all duration-200 hover:shadow-md hover:translate-y-[-1px]',
+        'border-l-[3px] border-l-sage bg-white border-0 shadow-sm'
       )}
       onClick={onClick}
     >
       <CardContent className="flex items-center gap-4 p-4">
         {/* Mini diagram preview placeholder */}
-        <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-cream">
-          <span className="text-sm font-bold text-forest">{categoryCode}</span>
+        <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cream to-petal/50">
+          <span className="text-xs font-bold text-forest tracking-wide">{categoryCode}</span>
         </div>
 
         {/* Content */}
@@ -67,28 +67,28 @@ export function ProcedureCard({ procedure, onClick }: ProcedureCardProps) {
               <h3 className="truncate text-sm font-medium text-forest">
                 {procedure.procedureTypeName}
               </h3>
-              <div className="mt-0.5 flex items-center gap-2 text-xs text-mid">
+              <div className="mt-1 flex items-center gap-2 text-xs text-mid">
                 <span>
                   {format(new Date(procedure.performedAt), "dd/MM/yyyy 'as' HH:mm", {
                     locale: ptBR,
                   })}
                 </span>
-                <span className="text-mid/40">|</span>
+                <span className="text-sage/30">|</span>
                 <span className="flex items-center gap-1">
-                  <User className="size-3" />
+                  <User className="size-3 text-sage" />
                   {procedure.practitionerName}
                 </span>
               </div>
             </div>
 
-            <div className="flex shrink-0 items-center gap-2">
-              <Badge className={status.className}>{status.label}</Badge>
-              <ChevronRight className="size-4 text-mid" />
+            <div className="flex shrink-0 items-center gap-2.5">
+              <Badge className={cn(status.className, 'px-2.5 py-0.5 text-[11px] font-medium')}>{status.label}</Badge>
+              <ChevronRight className="size-4 text-mid/50 transition-transform group-hover:translate-x-0.5" />
             </div>
           </div>
 
           {procedure.technique && (
-            <p className="mt-1 truncate text-xs text-mid">
+            <p className="mt-1.5 truncate text-xs text-mid/80 italic">
               {procedure.technique}
             </p>
           )}

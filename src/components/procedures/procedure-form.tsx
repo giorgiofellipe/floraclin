@@ -130,15 +130,17 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <Card className="bg-white">
+    <Card className="bg-white overflow-hidden border-0 shadow-sm hover:shadow-md transition-shadow duration-200">
       <CardHeader
-        className="cursor-pointer pb-3 hover:bg-petal/30"
+        className="cursor-pointer pb-3 hover:bg-petal/30 transition-colors duration-150"
         onClick={onToggle}
       >
         <CardTitle className="flex items-center justify-between text-base">
-          <div className="flex items-center gap-2">
-            {icon}
-            <span className="uppercase tracking-wider text-sm text-forest">
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-7 items-center justify-center rounded-md bg-forest/5">
+              {icon}
+            </div>
+            <span className="uppercase tracking-wider text-sm text-forest font-medium">
               {title}
             </span>
           </div>
@@ -146,14 +148,23 @@ function Section({
             {badge}
             <ChevronDown
               className={cn(
-                'size-4 text-mid transition-transform',
+                'size-4 text-mid transition-transform duration-200',
                 open && 'rotate-180'
               )}
             />
           </div>
         </CardTitle>
       </CardHeader>
-      {open && <CardContent className="pt-0">{children}</CardContent>}
+      <div
+        className={cn(
+          'grid transition-all duration-300 ease-in-out',
+          open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+        )}
+      >
+        <div className="overflow-hidden">
+          <CardContent className="pt-0 pb-5">{children}</CardContent>
+        </div>
+      </div>
     </Card>
   )
 }
@@ -501,11 +512,11 @@ export function ProcedureForm({
   // ─── Render ──────────────────────────────────────────────────────
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 pb-12">
+    <div className="mx-auto max-w-4xl space-y-5 pb-24">
       {/* ── Header ──────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl text-forest">
+          <h1 className="font-display text-2xl text-forest">
             {isEdit
               ? 'Editar Procedimento'
               : mode === 'view'
@@ -513,7 +524,7 @@ export function ProcedureForm({
                 : 'Novo Procedimento'}
           </h1>
           {procedure && (
-            <p className="mt-1 text-sm text-mid">
+            <p className="mt-1.5 text-sm text-mid">
               Realizado em{' '}
               {format(
                 new Date(procedure.performedAt),
@@ -528,6 +539,7 @@ export function ProcedureForm({
           <Badge
             variant="outline"
             className={cn(
+              'px-3 py-1',
               procedure.status === 'completed' &&
                 'border-sage bg-sage/10 text-sage',
               procedure.status === 'in_progress' &&
@@ -542,11 +554,13 @@ export function ProcedureForm({
       </div>
 
       {/* ── Procedure Type Select ───────────────────────────────────── */}
-      <Card className="bg-white">
+      <Card className="bg-white border-0 shadow-sm">
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Stethoscope className="size-4 text-forest" />
-            <span className="uppercase tracking-wider text-sm text-forest">
+          <CardTitle className="flex items-center gap-2.5 text-base">
+            <div className="flex size-7 items-center justify-center rounded-md bg-forest/5">
+              <Stethoscope className="size-4 text-forest" />
+            </div>
+            <span className="uppercase tracking-wider text-sm text-forest font-medium">
               Tipo de Procedimento
             </span>
           </CardTitle>
@@ -712,7 +726,7 @@ export function ProcedureForm({
         onToggle={() => toggleSection('diagram')}
         badge={
           diagramPoints.length > 0 ? (
-            <Badge variant="outline" className="text-xs">
+            <Badge variant="outline" className="text-xs border-sage/30 bg-sage/5 text-sage">
               {diagramPoints.length}{' '}
               {diagramPoints.length === 1 ? 'ponto' : 'pontos'}
             </Badge>
@@ -745,13 +759,13 @@ export function ProcedureForm({
             {productApps.map((app, index) => (
               <div
                 key={`${app.productName}-${app.quantityUnit}-${index}`}
-                className="rounded-lg border bg-cream/30 p-4"
+                className="rounded-xl border border-sage/15 bg-gradient-to-br from-cream/50 to-petal/20 p-5 transition-shadow duration-200 hover:shadow-sm"
               >
-                <div className="mb-3 flex items-center justify-between">
+                <div className="mb-4 flex items-center justify-between">
                   <h4 className="font-medium text-forest">
                     {app.productName}
                   </h4>
-                  <Badge variant="outline" className="text-xs">
+                  <Badge variant="outline" className="text-xs border-sage/30 bg-sage/5 text-sage px-2.5 py-0.5">
                     {app.totalQuantity}
                     {app.quantityUnit}
                   </Badge>
@@ -827,9 +841,9 @@ export function ProcedureForm({
         open={openSections.clinicalNotes}
         onToggle={() => toggleSection('clinicalNotes')}
       >
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div>
-            <Label className="uppercase tracking-wider text-xs text-mid">
+            <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
               Tecnica utilizada
             </Label>
             <Textarea
@@ -837,13 +851,13 @@ export function ProcedureForm({
               onChange={(e) => setTechnique(e.target.value)}
               placeholder="Descreva a tecnica utilizada..."
               disabled={isReadOnly}
-              className="mt-1"
+              className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
               rows={3}
             />
           </div>
 
-          <div>
-            <Label className="uppercase tracking-wider text-xs text-mid">
+          <div className="border-t border-petal pt-5">
+            <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
               Resposta clinica
             </Label>
             <Textarea
@@ -851,13 +865,13 @@ export function ProcedureForm({
               onChange={(e) => setClinicalResponse(e.target.value)}
               placeholder="Descreva a resposta clinica observada..."
               disabled={isReadOnly}
-              className="mt-1"
+              className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
               rows={3}
             />
           </div>
 
-          <div>
-            <Label className="uppercase tracking-wider text-xs text-mid">
+          <div className="border-t border-petal pt-5">
+            <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
               Efeitos adversos
             </Label>
             <Textarea
@@ -865,13 +879,13 @@ export function ProcedureForm({
               onChange={(e) => setAdverseEffects(e.target.value)}
               placeholder="Registre quaisquer efeitos adversos observados..."
               disabled={isReadOnly}
-              className="mt-1"
+              className="mt-1.5 min-h-[60px] resize-none border-sage/20 focus:border-sage/40"
               rows={2}
             />
           </div>
 
-          <div>
-            <Label className="uppercase tracking-wider text-xs text-mid">
+          <div className="border-t border-petal pt-5">
+            <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
               Observacoes gerais
             </Label>
             <Textarea
@@ -879,7 +893,7 @@ export function ProcedureForm({
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Observacoes adicionais..."
               disabled={isReadOnly}
-              className="mt-1"
+              className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
               rows={3}
             />
           </div>
@@ -902,9 +916,9 @@ export function ProcedureForm({
           ) : undefined
         }
       >
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div>
-            <Label className="uppercase tracking-wider text-xs text-mid">
+            <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
               Data do retorno
             </Label>
             <Input
@@ -912,13 +926,13 @@ export function ProcedureForm({
               value={followUpDate}
               onChange={(e) => setFollowUpDate(e.target.value)}
               disabled={isReadOnly}
-              className="mt-1"
+              className="mt-1.5 max-w-xs border-sage/20 focus:border-sage/40"
               min={format(new Date(), 'yyyy-MM-dd')}
             />
           </div>
 
-          <div>
-            <Label className="uppercase tracking-wider text-xs text-mid">
+          <div className="border-t border-petal pt-5">
+            <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
               Objetivos da proxima sessao
             </Label>
             <Textarea
@@ -926,7 +940,7 @@ export function ProcedureForm({
               onChange={(e) => setNextSessionObjectives(e.target.value)}
               placeholder="Descreva os objetivos para a proxima sessao..."
               disabled={isReadOnly}
-              className="mt-1"
+              className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
               rows={3}
             />
           </div>
@@ -951,15 +965,15 @@ export function ProcedureForm({
 
       {/* ── Submit ──────────────────────────────────────────────────── */}
       {!isReadOnly && (
-        <div className="sticky bottom-0 z-10 border-t bg-cream/95 py-4 backdrop-blur-sm">
-          <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
+        <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-sage/10 bg-cream/95 py-4 backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.05)] md:sticky md:left-auto md:right-auto">
+          <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 md:px-0">
             <Button
               variant="outline"
               onClick={() =>
                 router.push(`/pacientes/${patientId}?tab=procedimentos`)
               }
               disabled={isSubmitting}
-              className="border-forest text-forest hover:bg-petal"
+              className="border-forest/30 text-forest hover:bg-petal hover:border-forest/50 transition-colors duration-150"
             >
               Cancelar
             </Button>
@@ -973,7 +987,8 @@ export function ProcedureForm({
             <Button
               onClick={handleSubmit}
               disabled={isSubmitting || !procedureTypeId}
-              className="bg-forest text-cream hover:bg-sage"
+              className="bg-forest text-cream hover:bg-sage shadow-md hover:shadow-lg transition-all duration-200 px-6 py-2.5 text-sm font-medium"
+              size="lg"
             >
               {isSubmitting ? (
                 <>

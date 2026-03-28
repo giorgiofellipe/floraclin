@@ -55,15 +55,15 @@ export function ProcedureList({ patientId }: ProcedureListProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Header with "New Procedure" button */}
       <div className="flex items-center justify-between">
-        <h2 className="text-lg text-forest">
+        <h2 className="font-display text-xl text-forest">
           Evolucao Clinica
         </h2>
         <Button
           onClick={handleNewProcedure}
-          className="bg-forest text-cream hover:bg-sage"
+          className="bg-forest text-cream hover:bg-sage shadow-sm hover:shadow-md transition-all duration-200"
         >
           <Plus className="mr-2 size-4" />
           Novo Procedimento
@@ -72,26 +72,28 @@ export function ProcedureList({ patientId }: ProcedureListProps) {
 
       {/* Vertical timeline */}
       {procedures.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed bg-cream/50 py-16">
-          <FileText className="mb-3 size-10 text-mid/40" />
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-sage/20 bg-gradient-to-b from-cream/50 to-petal/20 py-16">
+          <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-petal/50">
+            <FileText className="size-6 text-mid/50" />
+          </div>
           <p className="text-sm font-medium text-mid">
             Nenhum procedimento registrado
           </p>
-          <p className="mt-1 text-xs text-mid/60">
+          <p className="mt-1.5 text-xs text-mid/60">
             Clique em &quot;Novo Procedimento&quot; para registrar o primeiro atendimento.
           </p>
         </div>
       ) : (
         <div className="relative">
           {/* Timeline line */}
-          <div className="absolute left-6 top-0 bottom-0 w-px bg-sage/20" />
+          <div className="absolute left-6 top-0 bottom-0 w-px bg-gradient-to-b from-sage/30 via-sage/20 to-sage/5" />
 
           {/* Procedure cards */}
           <div className="space-y-3">
             {procedures.map((procedure, index) => (
-              <div key={procedure.id} className="relative pl-14">
+              <div key={procedure.id} className="group relative pl-14">
                 {/* Timeline dot */}
-                <div className="absolute left-[19px] top-5 size-3 rounded-full border-2 border-sage bg-white" />
+                <div className="absolute left-[19px] top-5 size-3 rounded-full border-2 border-sage bg-white shadow-sm transition-colors group-hover:bg-sage/20" />
 
                 <ProcedureCard
                   procedure={procedure}

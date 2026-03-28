@@ -64,7 +64,7 @@ export function SignaturePad({
 
   if (disabled && initialData) {
     return (
-      <div className={cn('rounded-lg border bg-muted/30 p-2', className)}>
+      <div className={cn('rounded-xl border border-sage/15 bg-petal/20 p-3', className)}>
         <img
           src={initialData}
           alt="Assinatura"
@@ -75,21 +75,23 @@ export function SignaturePad({
   }
 
   return (
-    <div className={cn('space-y-2', className)}>
+    <div className={cn('space-y-2.5', className)}>
       <div
         ref={containerRef}
-        className="relative h-40 w-full rounded-lg border-2 border-dashed border-input bg-background"
+        className="relative h-44 w-full rounded-xl border-2 border-dashed border-blush bg-gradient-to-b from-petal/30 to-cream/50 transition-colors duration-150 hover:border-sage/40"
       >
         {isEmpty && !disabled && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-            Assinar aqui
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+            <span className="font-display text-lg text-mid/40 italic">
+              Assinar aqui
+            </span>
           </div>
         )}
         <SignatureCanvas
           ref={sigRef}
-          penColor="#1a1a1a"
+          penColor="#1C2B1E"
           canvasProps={{
-            className: 'absolute inset-0 w-full h-full rounded-lg cursor-crosshair',
+            className: 'absolute inset-0 w-full h-full rounded-xl cursor-crosshair',
           }}
           onEnd={handleEnd}
         />
@@ -102,6 +104,7 @@ export function SignaturePad({
             size="sm"
             onClick={handleClear}
             disabled={isEmpty}
+            className="border-forest/30 text-forest hover:bg-petal text-xs"
           >
             Limpar assinatura
           </Button>

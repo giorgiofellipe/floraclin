@@ -94,14 +94,14 @@ export function ConsentViewer({
 
   if (accepted) {
     return (
-      <Card>
-        <CardContent className="flex flex-col items-center gap-3 py-8">
-          <div className="flex size-12 items-center justify-center rounded-full bg-mint/20 text-forest">
-            <svg className="size-6" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+      <Card className="border-0 shadow-sm">
+        <CardContent className="flex flex-col items-center gap-3 py-10">
+          <div className="flex size-14 items-center justify-center rounded-full bg-mint/20 text-forest">
+            <svg className="size-7" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <p className="text-sm font-medium text-muted-foreground">
+          <p className="text-sm font-medium text-forest">
             Termo aceito com sucesso
           </p>
         </CardContent>
@@ -110,38 +110,38 @@ export function ConsentViewer({
   }
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="border-0 shadow-sm overflow-hidden">
+      <CardHeader className="bg-gradient-to-r from-petal/30 to-cream pb-4">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <CardTitle>{template.title}</CardTitle>
-            <CardDescription className="mt-1">
+            <CardTitle className="text-forest">{template.title}</CardTitle>
+            <CardDescription className="mt-1 text-mid">
               {CONSENT_TYPE_LABELS[template.type] ?? template.type}
             </CardDescription>
           </div>
-          <Badge variant="outline">
+          <Badge variant="outline" className="border-sage/30 bg-sage/5 text-sage text-xs">
             Versao {template.version}
           </Badge>
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5 pt-5">
         {/* Scrollable consent text */}
-        <ScrollArea className="h-64 rounded-lg border bg-muted/20 p-4">
-          <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+        <ScrollArea className="h-72 rounded-xl border border-blush/50 bg-petal/20 p-5">
+          <div className="whitespace-pre-wrap text-sm leading-relaxed text-charcoal">
             {template.content}
           </div>
         </ScrollArea>
 
         {/* Checkbox acceptance */}
-        <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50">
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-sage/15 p-4 transition-all duration-150 hover:bg-petal/20 hover:border-sage/30">
           <Checkbox
             checked={checked}
             onCheckedChange={(val) => setChecked(val === true)}
             disabled={isSubmitting}
-            className="mt-0.5"
+            className="mt-0.5 border-sage data-[state=checked]:bg-forest data-[state=checked]:border-forest"
           />
-          <span className="text-sm font-medium leading-snug">
+          <span className="text-sm font-medium leading-snug text-forest">
             Li e concordo com os termos acima
           </span>
         </label>
@@ -149,8 +149,8 @@ export function ConsentViewer({
         {/* Optional signature pad */}
         {(requireSignature || checked) && (
           <div className="space-y-2">
-            <p className="text-sm font-medium">
-              {requireSignature ? 'Assinatura (obrigatória)' : 'Assinatura (opcional)'}
+            <p className="text-sm font-medium text-forest">
+              {requireSignature ? 'Assinatura (obrigatoria)' : 'Assinatura (opcional)'}
             </p>
             <SignaturePad
               onSignatureChange={setSignatureData}
@@ -161,14 +161,14 @@ export function ConsentViewer({
 
         {/* Error message */}
         {error && (
-          <p className="text-sm text-destructive">{error}</p>
+          <p className="text-sm text-red-600">{error}</p>
         )}
 
         {/* Submit button */}
         <Button
           onClick={handleSubmit}
           disabled={!canSubmit || isSubmitting}
-          className="w-full"
+          className="w-full bg-forest text-cream hover:bg-sage shadow-md hover:shadow-lg transition-all duration-200"
           size="lg"
         >
           {isSubmitting ? 'Registrando...' : 'Confirmar'}
