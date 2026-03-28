@@ -395,7 +395,7 @@ export function AppointmentForm({
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button type="button" variant="destructive" size="sm" className="rounded-full" onClick={handleDelete}>
+                    <Button type="button" variant="destructive" size="sm" onClick={handleDelete}>
                       Excluir
                     </Button>
                   </>
@@ -405,12 +405,12 @@ export function AppointmentForm({
                 <Button
                   type="button"
                   variant="outline"
-                  className="rounded-full border-sage/20"
+                  className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
                   onClick={() => onOpenChange(false)}
                 >
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={isPending} className="rounded-full bg-forest text-cream hover:bg-sage transition-colors" data-testid="appointment-form-submit">
+                <Button type="submit" disabled={isPending} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="appointment-form-submit">
                   {isPending ? 'Salvando...' : 'Salvar'}
                 </Button>
               </div>

@@ -220,7 +220,7 @@ export function CalendarView({
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm" className="rounded-full border-sage/30 text-sage hover:bg-sage/10 hover:text-forest transition-colors" onClick={goToToday}>
+          <Button variant="outline" size="sm" className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors" onClick={goToToday}>
             Hoje
           </Button>
           <div className="flex items-center gap-0.5">
@@ -282,7 +282,7 @@ export function CalendarView({
             ))}
           </div>
 
-          <Button size="sm" className="rounded-full bg-forest text-cream hover:bg-sage transition-colors" onClick={handleNewAppointment} data-testid="calendar-new-appointment">
+          <Button size="sm" className="bg-forest text-cream hover:bg-sage transition-colors" onClick={handleNewAppointment} data-testid="calendar-new-appointment">
             <Plus className="size-4" />
             Agendar
           </Button>

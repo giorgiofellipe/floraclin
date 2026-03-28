@@ -200,7 +200,7 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
           <Button
             variant="outline"
             size="sm"
-            className="rounded-full border-sage/20"
+            className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
             disabled={page >= totalPages}
             onClick={() => setPage((p) => p + 1)}
           >
