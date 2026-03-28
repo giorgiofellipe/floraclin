@@ -106,267 +106,288 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
   }
 
   const formContent = (
-    <form onSubmit={form.handleSubmit(onSubmit)} className={inline ? "flex flex-col gap-4" : "flex flex-col gap-4 px-4"} data-testid="patient-form">
+    <form onSubmit={form.handleSubmit(onSubmit)} className={inline ? "flex flex-col gap-5" : "flex flex-col gap-5 px-4"} data-testid="patient-form">
       {serverError && (
         <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
           {serverError}
         </div>
       )}
 
-      {/* Nome completo */}
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="fullName">Nome completo *</Label>
-        <Input
-          id="fullName"
-          {...form.register('fullName')}
-          aria-invalid={!!form.formState.errors.fullName}
-          data-testid="patient-form-name"
-        />
-        {form.formState.errors.fullName && (
-          <p className="text-xs text-destructive">{form.formState.errors.fullName.message}</p>
-        )}
-      </div>
+      {/* ── Informações Pessoais ── */}
+      <fieldset className="space-y-4">
+        <legend className="text-xs uppercase tracking-wider text-mid font-medium pb-2 border-b border-blush/40 w-full">Informações Pessoais</legend>
 
-      {/* Telefone */}
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="phone">Telefone *</Label>
-        <Controller
-          control={form.control}
-          name="phone"
-          render={({ field }) => (
-            <MaskedInput
-              id="phone"
-              mask={maskPhone}
-              value={field.value}
-              onChange={field.onChange}
-              onBlur={field.onBlur}
-              ref={field.ref}
-              aria-invalid={!!form.formState.errors.phone}
-              data-testid="patient-form-phone"
-            />
+        {/* Nome completo */}
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="fullName" className="text-xs uppercase tracking-wider text-mid">Nome completo *</Label>
+          <Input
+            id="fullName"
+            {...form.register('fullName')}
+            aria-invalid={!!form.formState.errors.fullName}
+            className="border-blush/60 focus:ring-sage/30 transition-shadow"
+            data-testid="patient-form-name"
+          />
+          {form.formState.errors.fullName && (
+            <p className="text-xs text-destructive">{form.formState.errors.fullName.message}</p>
           )}
-        />
-        {form.formState.errors.phone && (
-          <p className="text-xs text-destructive">{form.formState.errors.phone.message}</p>
-        )}
-      </div>
+        </div>
 
-      {/* Telefone secundario */}
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="phoneSecondary">Telefone secundário</Label>
-        <Controller
-          control={form.control}
-          name="phoneSecondary"
-          render={({ field }) => (
-            <MaskedInput
-              id="phoneSecondary"
-              mask={maskPhone}
-              value={field.value}
-              onChange={field.onChange}
-              onBlur={field.onBlur}
-              ref={field.ref}
-            />
+        {/* Data de nascimento + Gênero (side by side) */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="birthDate" className="text-xs uppercase tracking-wider text-mid">Data de nascimento</Label>
+            <Input id="birthDate" type="date" {...form.register('birthDate')} className="border-blush/60 focus:ring-sage/30 transition-shadow" />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs uppercase tracking-wider text-mid">Gênero</Label>
+            <Select
+              value={form.watch('gender') ?? ''}
+              onValueChange={(val) => form.setValue('gender', val ?? '')}
+            >
+              <SelectTrigger className="w-full border-blush/60 focus:ring-sage/30">
+                <SelectValue placeholder="Selecione">
+                  {(value: string) => {
+                    const labels: Record<string, string> = {
+                      feminino: 'Feminino',
+                      masculino: 'Masculino',
+                      outro: 'Outro',
+                      nao_informado: 'Prefiro não informar',
+                    }
+                    return labels[value] ?? value
+                  }}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="feminino">Feminino</SelectItem>
+                <SelectItem value="masculino">Masculino</SelectItem>
+                <SelectItem value="outro">Outro</SelectItem>
+                <SelectItem value="nao_informado">Prefiro não informar</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* CPF */}
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="cpf" className="text-xs uppercase tracking-wider text-mid">CPF</Label>
+          <Controller
+            control={form.control}
+            name="cpf"
+            render={({ field }) => (
+              <MaskedInput
+                id="cpf"
+                mask={maskCPF}
+                value={field.value}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+                ref={field.ref}
+                placeholder="000.000.000-00"
+                className="border-blush/60 focus:ring-sage/30 transition-shadow"
+              />
+            )}
+          />
+        </div>
+      </fieldset>
+
+      {/* ── Contato ── */}
+      <fieldset className="space-y-4">
+        <legend className="text-xs uppercase tracking-wider text-mid font-medium pb-2 border-b border-blush/40 w-full">Contato</legend>
+
+        {/* Telefone */}
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="phone" className="text-xs uppercase tracking-wider text-mid">Telefone *</Label>
+          <Controller
+            control={form.control}
+            name="phone"
+            render={({ field }) => (
+              <MaskedInput
+                id="phone"
+                mask={maskPhone}
+                value={field.value}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+                ref={field.ref}
+                aria-invalid={!!form.formState.errors.phone}
+                className="border-blush/60 focus:ring-sage/30 transition-shadow"
+                data-testid="patient-form-phone"
+              />
+            )}
+          />
+          {form.formState.errors.phone && (
+            <p className="text-xs text-destructive">{form.formState.errors.phone.message}</p>
           )}
-        />
-      </div>
+        </div>
 
-      {/* CPF */}
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="cpf">CPF</Label>
-        <Controller
-          control={form.control}
-          name="cpf"
-          render={({ field }) => (
-            <MaskedInput
-              id="cpf"
-              mask={maskCPF}
-              value={field.value}
-              onChange={field.onChange}
-              onBlur={field.onBlur}
-              ref={field.ref}
-              placeholder="000.000.000-00"
-            />
+        {/* Telefone secundario */}
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="phoneSecondary" className="text-xs uppercase tracking-wider text-mid">Telefone secundário</Label>
+          <Controller
+            control={form.control}
+            name="phoneSecondary"
+            render={({ field }) => (
+              <MaskedInput
+                id="phoneSecondary"
+                mask={maskPhone}
+                value={field.value}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+                ref={field.ref}
+                className="border-blush/60 focus:ring-sage/30 transition-shadow"
+              />
+            )}
+          />
+        </div>
+
+        {/* E-mail */}
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="email" className="text-xs uppercase tracking-wider text-mid">E-mail</Label>
+          <Input
+            id="email"
+            type="email"
+            {...form.register('email')}
+            aria-invalid={!!form.formState.errors.email}
+            className="border-blush/60 focus:ring-sage/30 transition-shadow"
+          />
+          {form.formState.errors.email && (
+            <p className="text-xs text-destructive">{form.formState.errors.email.message}</p>
           )}
-        />
-      </div>
+        </div>
+      </fieldset>
 
-      {/* E-mail */}
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="email">E-mail</Label>
-        <Input
-          id="email"
-          type="email"
-          {...form.register('email')}
-          aria-invalid={!!form.formState.errors.email}
-        />
-        {form.formState.errors.email && (
-          <p className="text-xs text-destructive">{form.formState.errors.email.message}</p>
-        )}
-      </div>
+      {/* ── Dados Complementares ── */}
+      <fieldset className="space-y-4">
+        <legend className="text-xs uppercase tracking-wider text-mid font-medium pb-2 border-b border-blush/40 w-full">Dados Complementares</legend>
 
-      {/* Data de nascimento */}
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="birthDate">Data de nascimento</Label>
-        <Input id="birthDate" type="date" {...form.register('birthDate')} />
-      </div>
+        {/* Profissão */}
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="occupation" className="text-xs uppercase tracking-wider text-mid">Profissão</Label>
+          <Input id="occupation" {...form.register('occupation')} className="border-blush/60 focus:ring-sage/30 transition-shadow" />
+        </div>
 
-      {/* Gênero */}
-      <div className="flex flex-col gap-1.5">
-        <Label>Gênero</Label>
-        <Select
-          value={form.watch('gender') ?? ''}
-          onValueChange={(val) => form.setValue('gender', val ?? '')}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Selecione">
-              {(value: string) => {
-                const labels: Record<string, string> = {
-                  feminino: 'Feminino',
-                  masculino: 'Masculino',
-                  outro: 'Outro',
-                  nao_informado: 'Prefiro não informar',
-                }
-                return labels[value] ?? value
-              }}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="feminino">Feminino</SelectItem>
-            <SelectItem value="masculino">Masculino</SelectItem>
-            <SelectItem value="outro">Outro</SelectItem>
-            <SelectItem value="nao_informado">Prefiro não informar</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Profissão */}
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="occupation">Profissão</Label>
-        <Input id="occupation" {...form.register('occupation')} />
-      </div>
-
-      {/* Como nos conheceu */}
-      <div className="flex flex-col gap-1.5">
-        <Label>Como nos conheceu</Label>
-        <Select
-          value={form.watch('referralSource') ?? ''}
-          onValueChange={(val) => form.setValue('referralSource', val ?? '')}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Selecione">
-              {(value: string) => {
-                const labels: Record<string, string> = {
-                  indicacao: 'Indicação',
-                  instagram: 'Instagram',
-                  google: 'Google',
-                  facebook: 'Facebook',
-                  site: 'Site',
-                  outro: 'Outro',
-                }
-                return labels[value] ?? value
-              }}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="indicacao">Indicação</SelectItem>
-            <SelectItem value="instagram">Instagram</SelectItem>
-            <SelectItem value="google">Google</SelectItem>
-            <SelectItem value="facebook">Facebook</SelectItem>
-            <SelectItem value="site">Site</SelectItem>
-            <SelectItem value="outro">Outro</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+        {/* Como nos conheceu */}
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs uppercase tracking-wider text-mid">Como nos conheceu</Label>
+          <Select
+            value={form.watch('referralSource') ?? ''}
+            onValueChange={(val) => form.setValue('referralSource', val ?? '')}
+          >
+            <SelectTrigger className="w-full border-blush/60 focus:ring-sage/30">
+              <SelectValue placeholder="Selecione">
+                {(value: string) => {
+                  const labels: Record<string, string> = {
+                    indicacao: 'Indicação',
+                    instagram: 'Instagram',
+                    google: 'Google',
+                    facebook: 'Facebook',
+                    site: 'Site',
+                    outro: 'Outro',
+                  }
+                  return labels[value] ?? value
+                }}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="indicacao">Indicação</SelectItem>
+              <SelectItem value="instagram">Instagram</SelectItem>
+              <SelectItem value="google">Google</SelectItem>
+              <SelectItem value="facebook">Facebook</SelectItem>
+              <SelectItem value="site">Site</SelectItem>
+              <SelectItem value="outro">Outro</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </fieldset>
 
       {/* Endereço - collapsible */}
-      <div className="rounded-lg border">
+      <div className="rounded-xl border border-blush/40 overflow-hidden">
         <button
           type="button"
           onClick={() => setAddressOpen(!addressOpen)}
-          className="flex w-full items-center justify-between p-3 text-sm font-medium hover:bg-muted/50 rounded-lg"
+          className="flex w-full items-center justify-between px-4 py-3 text-xs uppercase tracking-wider font-medium text-mid hover:bg-petal/40 transition-colors"
         >
           <span>Endereço</span>
-          {addressOpen ? (
-            <ChevronDownIcon className="size-4 text-muted-foreground" />
-          ) : (
-            <ChevronRightIcon className="size-4 text-muted-foreground" />
-          )}
+          <ChevronDownIcon className={`size-4 text-mid transition-transform duration-200 ${addressOpen ? 'rotate-0' : '-rotate-90'}`} />
         </button>
 
-        {addressOpen && (
-          <div className="flex flex-col gap-3 border-t p-3">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="address.street">Rua</Label>
-              <Input id="address.street" {...form.register('address.street')} />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
+        <div
+          className={`grid transition-all duration-200 ease-in-out ${addressOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+        >
+          <div className="overflow-hidden">
+            <div className="flex flex-col gap-3 border-t border-blush/40 p-4">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="address.number">Número</Label>
-                <Input id="address.number" {...form.register('address.number')} />
+                <Label htmlFor="address.street" className="text-xs uppercase tracking-wider text-mid">Rua</Label>
+                <Input id="address.street" {...form.register('address.street')} className="border-blush/60 focus:ring-sage/30 transition-shadow" />
               </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="address.complement">Complemento</Label>
-                <Input id="address.complement" {...form.register('address.complement')} />
-              </div>
-            </div>
 
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="address.neighborhood">Bairro</Label>
-              <Input id="address.neighborhood" {...form.register('address.neighborhood')} />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="address.city">Cidade</Label>
-                <Input id="address.city" {...form.register('address.city')} />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="address.number" className="text-xs uppercase tracking-wider text-mid">Número</Label>
+                  <Input id="address.number" {...form.register('address.number')} className="border-blush/60 focus:ring-sage/30 transition-shadow" />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="address.complement" className="text-xs uppercase tracking-wider text-mid">Complemento</Label>
+                  <Input id="address.complement" {...form.register('address.complement')} className="border-blush/60 focus:ring-sage/30 transition-shadow" />
+                </div>
               </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="address.state">Estado</Label>
-                <Input id="address.state" {...form.register('address.state')} />
-              </div>
-            </div>
 
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="address.zip">CEP</Label>
-              <Controller
-                control={form.control}
-                name="address.zip"
-                render={({ field }) => (
-                  <MaskedInput
-                    id="address.zip"
-                    mask={maskCEP}
-                    value={field.value}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    ref={field.ref}
-                    placeholder="00000-000"
-                  />
-                )}
-              />
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="address.neighborhood" className="text-xs uppercase tracking-wider text-mid">Bairro</Label>
+                <Input id="address.neighborhood" {...form.register('address.neighborhood')} className="border-blush/60 focus:ring-sage/30 transition-shadow" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="address.city" className="text-xs uppercase tracking-wider text-mid">Cidade</Label>
+                  <Input id="address.city" {...form.register('address.city')} className="border-blush/60 focus:ring-sage/30 transition-shadow" />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="address.state" className="text-xs uppercase tracking-wider text-mid">Estado</Label>
+                  <Input id="address.state" {...form.register('address.state')} className="border-blush/60 focus:ring-sage/30 transition-shadow" />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="address.zip" className="text-xs uppercase tracking-wider text-mid">CEP</Label>
+                <Controller
+                  control={form.control}
+                  name="address.zip"
+                  render={({ field }) => (
+                    <MaskedInput
+                      id="address.zip"
+                      mask={maskCEP}
+                      value={field.value}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      ref={field.ref}
+                      placeholder="00000-000"
+                      className="border-blush/60 focus:ring-sage/30 transition-shadow"
+                    />
+                  )}
+                />
+              </div>
             </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Observações */}
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="notes">Observações</Label>
-        <Textarea id="notes" {...form.register('notes')} rows={3} />
+        <Label htmlFor="notes" className="text-xs uppercase tracking-wider text-mid">Observações</Label>
+        <Textarea id="notes" {...form.register('notes')} rows={3} className="border-blush/60 focus:ring-sage/30 transition-shadow" />
       </div>
 
       {inline ? (
         <div className="flex justify-end gap-2 pt-2">
-          <Button type="submit" disabled={isPending} data-testid="patient-form-submit">
+          <Button type="submit" disabled={isPending} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="patient-form-submit">
             {isPending ? 'Salvando...' : 'Salvar alterações'}
           </Button>
         </div>
       ) : (
-        <SheetFooter className="mx-0 px-0">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+        <SheetFooter className="mx-0 px-0 pt-2">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="border-sage/30 text-mid hover:bg-petal transition-colors">
             Cancelar
           </Button>
-          <Button type="submit" disabled={isPending} data-testid="patient-form-submit">
+          <Button type="submit" disabled={isPending} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="patient-form-submit">
             {isPending ? 'Salvando...' : isEditing ? 'Salvar' : 'Cadastrar'}
           </Button>
         </SheetFooter>
@@ -381,9 +402,9 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="sm:max-w-lg overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>{isEditing ? 'Editar Paciente' : 'Novo Paciente'}</SheetTitle>
-          <SheetDescription>
+        <SheetHeader className="pb-2">
+          <SheetTitle className="font-display text-xl text-forest">{isEditing ? 'Editar Paciente' : 'Novo Paciente'}</SheetTitle>
+          <SheetDescription className="text-mid">
             {isEditing
               ? 'Atualize os dados do paciente.'
               : 'Preencha os dados para cadastrar um novo paciente.'}

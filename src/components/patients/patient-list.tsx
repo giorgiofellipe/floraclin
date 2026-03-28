@@ -28,7 +28,7 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog'
-import { PlusIcon, SearchIcon, PencilIcon, TrashIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
+import { PlusIcon, SearchIcon, PencilIcon, TrashIcon, ChevronLeftIcon, ChevronRightIcon, UsersIcon } from 'lucide-react'
 
 interface PatientListProps {
   result: PaginatedResult<Patient>
@@ -89,26 +89,33 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
     setFormOpen(true)
   }, [])
 
+  /** Build initials from the patient's full name (max 2 chars) */
+  function getInitials(name: string) {
+    const parts = name.trim().split(/\s+/)
+    if (parts.length === 1) return parts[0].charAt(0).toUpperCase()
+    return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase()
+  }
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-forest">Pacientes</h1>
-          <p className="text-sm text-mid">
-            {result.total} {result.total === 1 ? 'paciente cadastrado' : 'pacientes cadastrados'}
-          </p>
+        <div className="flex items-center gap-3">
+          <h1 className="font-display text-2xl text-forest">Pacientes</h1>
+          <span className="inline-flex items-center rounded-full bg-sage/10 px-2.5 py-0.5 text-xs font-medium text-sage">
+            {result.total}
+          </span>
         </div>
-        <Button onClick={handleNewPatient} data-testid="patient-new-button">
+        <Button onClick={handleNewPatient} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="patient-new-button">
           <PlusIcon className="size-4" data-icon="inline-start" />
           Novo Paciente
         </Button>
       </div>
 
       {/* Search bar */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-lg">
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-mid pointer-events-none" />
           <Input
             placeholder="Buscar por nome, telefone ou CPF..."
             value={searchValue}
@@ -116,65 +123,83 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleSearch()
             }}
-            className="pl-8"
+            className="pl-10 rounded-lg border-blush/60 focus:shadow-md focus:ring-sage/30 transition-shadow"
             data-testid="patient-search"
           />
         </div>
-        <Button variant="outline" onClick={handleSearch}>
+        <Button variant="outline" onClick={handleSearch} className="border-sage/30 text-sage hover:bg-petal transition-colors">
           Buscar
         </Button>
       </div>
 
       {/* Table */}
-      <div className="rounded-lg border">
+      <div className="rounded-xl border border-blush/40 bg-white overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Nome</TableHead>
-              <TableHead>Telefone</TableHead>
-              <TableHead className="hidden md:table-cell">E-mail</TableHead>
-              <TableHead className="hidden md:table-cell">CPF</TableHead>
-              <TableHead className="hidden lg:table-cell">Cadastro</TableHead>
-              <TableHead className="w-[100px]">Ações</TableHead>
+            <TableRow className="border-b border-blush/40 hover:bg-transparent">
+              <TableHead className="text-xs uppercase tracking-wider text-mid font-medium">Nome</TableHead>
+              <TableHead className="text-xs uppercase tracking-wider text-mid font-medium">Telefone</TableHead>
+              <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider text-mid font-medium">E-mail</TableHead>
+              <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider text-mid font-medium">CPF</TableHead>
+              <TableHead className="hidden lg:table-cell text-xs uppercase tracking-wider text-mid font-medium">Cadastro</TableHead>
+              <TableHead className="w-[100px] text-xs uppercase tracking-wider text-mid font-medium">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {result.data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground" data-testid="patient-empty-state">
-                  {initialSearch
-                    ? 'Nenhum paciente encontrado para esta busca.'
-                    : 'Nenhum paciente cadastrado. Clique em "Novo Paciente" para começar.'}
+                <TableCell colSpan={6} className="h-48" data-testid="patient-empty-state">
+                  <div className="flex flex-col items-center justify-center gap-3 text-center">
+                    <div className="flex size-14 items-center justify-center rounded-full bg-petal">
+                      <UsersIcon className="size-6 text-sage" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-charcoal">
+                        {initialSearch ? 'Nenhum resultado encontrado' : 'Nenhum paciente cadastrado'}
+                      </p>
+                      <p className="text-sm text-mid">
+                        {initialSearch
+                          ? 'Tente uma busca diferente ou ajuste os termos.'
+                          : 'Comece cadastrando seu primeiro paciente.'}
+                      </p>
+                    </div>
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (
               result.data.map((patient, index) => (
-                <TableRow key={patient.id} data-testid={`patient-row-${index}`}>
+                <TableRow key={patient.id} data-testid={`patient-row-${index}`} className="border-b border-blush/20 hover:bg-petal/30 transition-colors">
                   <TableCell>
                     <Link
                       href={`/pacientes/${patient.id}`}
-                      className="font-medium text-foreground hover:underline"
+                      className="flex items-center gap-3 group"
                     >
-                      {patient.fullName}
+                      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sage/15 text-xs font-medium text-sage">
+                        {getInitials(patient.fullName)}
+                      </span>
+                      <span className="font-medium text-charcoal group-hover:text-forest transition-colors">
+                        {patient.fullName}
+                      </span>
                     </Link>
                   </TableCell>
-                  <TableCell>{patient.phone}</TableCell>
-                  <TableCell className="hidden md:table-cell text-muted-foreground">
+                  <TableCell className="text-mid">{patient.phone}</TableCell>
+                  <TableCell className="hidden md:table-cell text-mid">
                     {patient.email || '—'}
                   </TableCell>
-                  <TableCell className="hidden md:table-cell text-muted-foreground">
+                  <TableCell className="hidden md:table-cell text-mid">
                     {patient.cpf || '—'}
                   </TableCell>
-                  <TableCell className="hidden lg:table-cell text-muted-foreground">
+                  <TableCell className="hidden lg:table-cell text-mid">
                     {formatDate(patient.createdAt)}
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-0.5">
                       <Button
                         variant="ghost"
                         size="icon-sm"
                         onClick={() => handleEdit(patient)}
                         title="Editar"
+                        className="text-mid hover:text-forest hover:bg-sage/10 transition-colors"
                       >
                         <PencilIcon className="size-3.5" />
                       </Button>
@@ -183,8 +208,9 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
                         size="icon-sm"
                         onClick={() => setDeletePatient(patient)}
                         title="Excluir"
+                        className="text-mid hover:text-destructive hover:bg-destructive/10 transition-colors"
                       >
-                        <TrashIcon className="size-3.5 text-destructive" />
+                        <TrashIcon className="size-3.5" />
                       </Button>
                     </div>
                   </TableCell>
@@ -198,27 +224,29 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
       {/* Pagination */}
       {result.totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-xs text-mid">
             Página {currentPage} de {result.totalPages}
           </p>
           <div className="flex items-center gap-1">
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               disabled={currentPage <= 1}
               onClick={() => handlePageChange(currentPage - 1)}
+              className="text-xs text-mid hover:text-forest hover:bg-petal transition-colors disabled:opacity-40"
             >
-              <ChevronLeftIcon className="size-4" />
+              <ChevronLeftIcon className="size-3.5" />
               Anterior
             </Button>
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               disabled={currentPage >= result.totalPages}
               onClick={() => handlePageChange(currentPage + 1)}
+              className="text-xs text-mid hover:text-forest hover:bg-petal transition-colors disabled:opacity-40"
             >
               Próxima
-              <ChevronRightIcon className="size-4" />
+              <ChevronRightIcon className="size-3.5" />
             </Button>
           </div>
         </div>

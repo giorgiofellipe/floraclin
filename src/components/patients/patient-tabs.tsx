@@ -30,22 +30,25 @@ export function PatientTabs({ activeTab }: PatientTabsProps) {
   }
 
   return (
-    <div className="border-b border-border">
-      <nav className="-mb-px flex gap-1 overflow-x-auto px-1" aria-label="Abas do paciente">
+    <div className="border-b border-blush/40">
+      <nav className="-mb-px flex gap-0 overflow-x-auto" aria-label="Abas do paciente">
         {TABS.map((tab) => (
           <button
             key={tab.key}
             onClick={() => handleTabChange(tab.key)}
             data-testid={`patient-tab-${tab.key}`}
             className={cn(
-              'whitespace-nowrap px-4 py-2.5 text-sm font-medium transition-colors rounded-t-lg',
+              'relative whitespace-nowrap px-5 py-3 text-sm font-medium transition-colors',
               activeTab === tab.key
-                ? 'border-b-2 border-sage text-forest bg-white'
-                : 'text-mid hover:text-charcoal hover:bg-petal/50'
+                ? 'text-forest'
+                : 'text-mid hover:text-charcoal'
             )}
             aria-current={activeTab === tab.key ? 'page' : undefined}
           >
             {tab.label}
+            {activeTab === tab.key && (
+              <span className="absolute inset-x-0 bottom-0 h-0.5 bg-forest rounded-full" />
+            )}
           </button>
         ))}
       </nav>

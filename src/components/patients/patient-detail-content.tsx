@@ -1,9 +1,15 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowLeft, Plus, CalendarPlus, Receipt, Phone, User } from 'lucide-react'
+import { ArrowLeft, Plus, CalendarPlus, Receipt, Phone, User, Mail } from 'lucide-react'
 import { buttonVariants } from '@/components/ui/button'
 import { cn, maskCPF } from '@/lib/utils'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { PatientTabs, type PatientTabKey } from './patient-tabs'
 import { PatientDataTab } from './patient-data-tab'
 import { PatientAnamnesisTab } from './patient-anamnesis-tab'
@@ -61,66 +67,109 @@ export function PatientDetailContent({
 
   const age = patient.birthDate ? calculateAge(patient.birthDate) : null
 
+  /** Build initials from the patient's full name (max 2 chars) */
+  function getInitials(name: string) {
+    const parts = name.trim().split(/\s+/)
+    if (parts.length === 1) return parts[0].charAt(0).toUpperCase()
+    return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase()
+  }
+
   return (
     <div className="space-y-6">
       {/* Back link */}
       <Link
         href="/pacientes"
-        className="inline-flex items-center gap-1 text-sm text-mid hover:text-charcoal transition-colors"
+        className="inline-flex items-center gap-1.5 text-sm text-mid hover:text-forest transition-colors"
       >
-        <ArrowLeft className="size-4" />
+        <ArrowLeft className="size-3.5" />
         Voltar para lista
       </Link>
 
       {/* Patient header */}
-      <div className="rounded-lg border bg-white p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-2">
-            <h1 className="text-2xl text-forest">{patient.fullName}</h1>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-mid">
-              {age !== null && (
-                <span className="flex items-center gap-1">
-                  <User className="size-3.5" />
-                  {age} anos
+      <div className="rounded-xl border border-blush/40 bg-white p-6 sm:p-8">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-5">
+            {/* Large avatar */}
+            <div className="flex size-16 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sage to-mint text-xl font-semibold text-white shadow-sm">
+              {getInitials(patient.fullName)}
+            </div>
+            <div className="space-y-3">
+              <h1 className="font-display text-2xl text-forest">{patient.fullName}</h1>
+              <div className="flex flex-wrap items-center gap-2">
+                {age !== null && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-petal px-3 py-1 text-xs font-medium text-charcoal">
+                    <User className="size-3" />
+                    {age} anos
+                  </span>
+                )}
+                {patient.gender && (
+                  <span className="inline-flex items-center rounded-full bg-petal px-3 py-1 text-xs font-medium text-charcoal">
+                    {GENDER_LABELS[patient.gender] ?? patient.gender}
+                  </span>
+                )}
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-sage/10 px-3 py-1 text-xs font-medium text-sage">
+                  <Phone className="size-3" />
+                  {patient.phone}
                 </span>
-              )}
-              {patient.gender && (
-                <span>{GENDER_LABELS[patient.gender] ?? patient.gender}</span>
-              )}
-              <span className="flex items-center gap-1">
-                <Phone className="size-3.5" />
-                {patient.phone}
-              </span>
-              {patient.cpf && (
-                <span>CPF: {maskCPF(patient.cpf)}</span>
-              )}
+                {patient.cpf && (
+                  <span className="inline-flex items-center rounded-full bg-blush/50 px-3 py-1 text-xs font-medium text-charcoal">
+                    CPF {maskCPF(patient.cpf)}
+                  </span>
+                )}
+                {patient.email && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-petal px-3 py-1 text-xs font-medium text-mid">
+                    <Mail className="size-3" />
+                    {patient.email}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Quick action buttons */}
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href={`/pacientes/${patient.id}/procedimentos/novo`}
-              className={cn(buttonVariants({ size: 'sm' }))}
-            >
-              <Plus className="size-4 mr-1" />
-              Novo Procedimento
-            </Link>
-            <Link
-              href={`/agenda?paciente=${patient.id}`}
-              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-            >
-              <CalendarPlus className="size-4 mr-1" />
-              Novo Agendamento
-            </Link>
-            <Link
-              href={`/pacientes/${patient.id}?tab=financeiro`}
-              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-            >
-              <Receipt className="size-4 mr-1" />
-              Nova Cobranca
-            </Link>
-          </div>
+          <TooltipProvider delay={300}>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Link
+                      href={`/pacientes/${patient.id}/procedimentos/novo`}
+                      className={cn(buttonVariants({ size: 'icon-sm' }), 'bg-forest text-cream hover:bg-sage transition-colors size-9 rounded-lg')}
+                    >
+                      <Plus className="size-4" />
+                    </Link>
+                  }
+                />
+                <TooltipContent side="bottom"><p>Novo Procedimento</p></TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Link
+                      href={`/agenda?paciente=${patient.id}`}
+                      className={cn(buttonVariants({ variant: 'outline', size: 'icon-sm' }), 'border-sage/30 text-sage hover:bg-petal transition-colors size-9 rounded-lg')}
+                    >
+                      <CalendarPlus className="size-4" />
+                    </Link>
+                  }
+                />
+                <TooltipContent side="bottom"><p>Novo Agendamento</p></TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Link
+                      href={`/pacientes/${patient.id}?tab=financeiro`}
+                      className={cn(buttonVariants({ variant: 'outline', size: 'icon-sm' }), 'border-sage/30 text-sage hover:bg-petal transition-colors size-9 rounded-lg')}
+                    >
+                      <Receipt className="size-4" />
+                    </Link>
+                  }
+                />
+                <TooltipContent side="bottom"><p>Nova Cobrança</p></TooltipContent>
+              </Tooltip>
+            </div>
+          </TooltipProvider>
         </div>
       </div>
 
@@ -129,22 +178,24 @@ export function PatientDetailContent({
 
       {/* Tab content */}
       <div className="min-h-[400px]">
-        {tab === 'dados' && <PatientDataTab patient={patient} />}
-        {tab === 'anamnese' && <PatientAnamnesisTab patientId={patient.id} />}
-        {tab === 'procedimentos' && (
-          <PatientProceduresTab patientId={patient.id} />
-        )}
-        {tab === 'fotos' && <PatientPhotosTab patientId={patient.id} />}
-        {tab === 'termos' && <PatientConsentTab patientId={patient.id} />}
-        {tab === 'financeiro' && (
-          <PatientFinancialTab
-            patientId={patient.id}
-            patientName={patient.fullName}
-          />
-        )}
-        {tab === 'timeline' && (
-          <PatientTimelineTab patientId={patient.id} />
-        )}
+        <div className="rounded-xl border border-blush/40 bg-white p-6">
+          {tab === 'dados' && <PatientDataTab patient={patient} />}
+          {tab === 'anamnese' && <PatientAnamnesisTab patientId={patient.id} />}
+          {tab === 'procedimentos' && (
+            <PatientProceduresTab patientId={patient.id} />
+          )}
+          {tab === 'fotos' && <PatientPhotosTab patientId={patient.id} />}
+          {tab === 'termos' && <PatientConsentTab patientId={patient.id} />}
+          {tab === 'financeiro' && (
+            <PatientFinancialTab
+              patientId={patient.id}
+              patientName={patient.fullName}
+            />
+          )}
+          {tab === 'timeline' && (
+            <PatientTimelineTab patientId={patient.id} />
+          )}
+        </div>
       </div>
     </div>
   )
