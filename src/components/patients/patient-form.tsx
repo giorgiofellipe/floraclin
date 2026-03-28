@@ -33,9 +33,11 @@ interface PatientFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   patient?: Patient | null
+  /** When true, renders the form inline (no Sheet wrapper) */
+  inline?: boolean
 }
 
-export function PatientForm({ open, onOpenChange, patient }: PatientFormProps) {
+export function PatientForm({ open, onOpenChange, patient, inline }: PatientFormProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [serverError, setServerError] = useState<string | null>(null)
@@ -101,6 +103,204 @@ export function PatientForm({ open, onOpenChange, patient }: PatientFormProps) {
     })
   }
 
+  const formContent = (
+    <form onSubmit={form.handleSubmit(onSubmit)} className={inline ? "flex flex-col gap-4" : "flex flex-col gap-4 px-4"}>
+      {serverError && (
+        <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+          {serverError}
+        </div>
+      )}
+
+      {/* Nome completo */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="fullName">Nome completo *</Label>
+        <Input
+          id="fullName"
+          {...form.register('fullName')}
+          aria-invalid={!!form.formState.errors.fullName}
+        />
+        {form.formState.errors.fullName && (
+          <p className="text-xs text-destructive">{form.formState.errors.fullName.message}</p>
+        )}
+      </div>
+
+      {/* Telefone */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="phone">Telefone *</Label>
+        <Input
+          id="phone"
+          {...form.register('phone')}
+          aria-invalid={!!form.formState.errors.phone}
+        />
+        {form.formState.errors.phone && (
+          <p className="text-xs text-destructive">{form.formState.errors.phone.message}</p>
+        )}
+      </div>
+
+      {/* Telefone secundario */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="phoneSecondary">Telefone secundário</Label>
+        <Input id="phoneSecondary" {...form.register('phoneSecondary')} />
+      </div>
+
+      {/* CPF */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="cpf">CPF</Label>
+        <Input id="cpf" {...form.register('cpf')} placeholder="000.000.000-00" />
+      </div>
+
+      {/* E-mail */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="email">E-mail</Label>
+        <Input
+          id="email"
+          type="email"
+          {...form.register('email')}
+          aria-invalid={!!form.formState.errors.email}
+        />
+        {form.formState.errors.email && (
+          <p className="text-xs text-destructive">{form.formState.errors.email.message}</p>
+        )}
+      </div>
+
+      {/* Data de nascimento */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="birthDate">Data de nascimento</Label>
+        <Input id="birthDate" type="date" {...form.register('birthDate')} />
+      </div>
+
+      {/* Gênero */}
+      <div className="flex flex-col gap-1.5">
+        <Label>Gênero</Label>
+        <Select
+          value={form.watch('gender') ?? ''}
+          onValueChange={(val) => form.setValue('gender', val ?? '')}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Selecione" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="feminino">Feminino</SelectItem>
+            <SelectItem value="masculino">Masculino</SelectItem>
+            <SelectItem value="outro">Outro</SelectItem>
+            <SelectItem value="nao_informado">Prefiro não informar</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Profissão */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="occupation">Profissão</Label>
+        <Input id="occupation" {...form.register('occupation')} />
+      </div>
+
+      {/* Como nos conheceu */}
+      <div className="flex flex-col gap-1.5">
+        <Label>Como nos conheceu</Label>
+        <Select
+          value={form.watch('referralSource') ?? ''}
+          onValueChange={(val) => form.setValue('referralSource', val ?? '')}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Selecione" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="indicacao">Indicação</SelectItem>
+            <SelectItem value="instagram">Instagram</SelectItem>
+            <SelectItem value="google">Google</SelectItem>
+            <SelectItem value="facebook">Facebook</SelectItem>
+            <SelectItem value="site">Site</SelectItem>
+            <SelectItem value="outro">Outro</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Endereço - collapsible */}
+      <div className="rounded-lg border">
+        <button
+          type="button"
+          onClick={() => setAddressOpen(!addressOpen)}
+          className="flex w-full items-center justify-between p-3 text-sm font-medium hover:bg-muted/50 rounded-lg"
+        >
+          <span>Endereço</span>
+          {addressOpen ? (
+            <ChevronDownIcon className="size-4 text-muted-foreground" />
+          ) : (
+            <ChevronRightIcon className="size-4 text-muted-foreground" />
+          )}
+        </button>
+
+        {addressOpen && (
+          <div className="flex flex-col gap-3 border-t p-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="address.street">Rua</Label>
+              <Input id="address.street" {...form.register('address.street')} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="address.number">Número</Label>
+                <Input id="address.number" {...form.register('address.number')} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="address.complement">Complemento</Label>
+                <Input id="address.complement" {...form.register('address.complement')} />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="address.neighborhood">Bairro</Label>
+              <Input id="address.neighborhood" {...form.register('address.neighborhood')} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="address.city">Cidade</Label>
+                <Input id="address.city" {...form.register('address.city')} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="address.state">Estado</Label>
+                <Input id="address.state" {...form.register('address.state')} />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="address.zip">CEP</Label>
+              <Input id="address.zip" {...form.register('address.zip')} placeholder="00000-000" />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Observações */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="notes">Observações</Label>
+        <Textarea id="notes" {...form.register('notes')} rows={3} />
+      </div>
+
+      {inline ? (
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="submit" disabled={isPending}>
+            {isPending ? 'Salvando...' : 'Salvar alterações'}
+          </Button>
+        </div>
+      ) : (
+        <SheetFooter className="mx-0 px-0">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button type="submit" disabled={isPending}>
+            {isPending ? 'Salvando...' : isEditing ? 'Salvar' : 'Cadastrar'}
+          </Button>
+        </SheetFooter>
+      )}
+    </form>
+  )
+
+  if (inline) {
+    return formContent
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="sm:max-w-lg overflow-y-auto">
@@ -112,190 +312,7 @@ export function PatientForm({ open, onOpenChange, patient }: PatientFormProps) {
               : 'Preencha os dados para cadastrar um novo paciente.'}
           </SheetDescription>
         </SheetHeader>
-
-        <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4 px-4">
-          {serverError && (
-            <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-              {serverError}
-            </div>
-          )}
-
-          {/* Nome completo */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="fullName">Nome completo *</Label>
-            <Input
-              id="fullName"
-              {...form.register('fullName')}
-              aria-invalid={!!form.formState.errors.fullName}
-            />
-            {form.formState.errors.fullName && (
-              <p className="text-xs text-destructive">{form.formState.errors.fullName.message}</p>
-            )}
-          </div>
-
-          {/* Telefone */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="phone">Telefone *</Label>
-            <Input
-              id="phone"
-              {...form.register('phone')}
-              aria-invalid={!!form.formState.errors.phone}
-            />
-            {form.formState.errors.phone && (
-              <p className="text-xs text-destructive">{form.formState.errors.phone.message}</p>
-            )}
-          </div>
-
-          {/* Telefone secundario */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="phoneSecondary">Telefone secundário</Label>
-            <Input id="phoneSecondary" {...form.register('phoneSecondary')} />
-          </div>
-
-          {/* CPF */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="cpf">CPF</Label>
-            <Input id="cpf" {...form.register('cpf')} placeholder="000.000.000-00" />
-          </div>
-
-          {/* E-mail */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="email">E-mail</Label>
-            <Input
-              id="email"
-              type="email"
-              {...form.register('email')}
-              aria-invalid={!!form.formState.errors.email}
-            />
-            {form.formState.errors.email && (
-              <p className="text-xs text-destructive">{form.formState.errors.email.message}</p>
-            )}
-          </div>
-
-          {/* Data de nascimento */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="birthDate">Data de nascimento</Label>
-            <Input id="birthDate" type="date" {...form.register('birthDate')} />
-          </div>
-
-          {/* Gênero */}
-          <div className="flex flex-col gap-1.5">
-            <Label>Gênero</Label>
-            <Select
-              value={form.watch('gender') ?? ''}
-              onValueChange={(val) => form.setValue('gender', val ?? '')}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecione" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="feminino">Feminino</SelectItem>
-                <SelectItem value="masculino">Masculino</SelectItem>
-                <SelectItem value="outro">Outro</SelectItem>
-                <SelectItem value="nao_informado">Prefiro não informar</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Profissão */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="occupation">Profissão</Label>
-            <Input id="occupation" {...form.register('occupation')} />
-          </div>
-
-          {/* Como nos conheceu */}
-          <div className="flex flex-col gap-1.5">
-            <Label>Como nos conheceu</Label>
-            <Select
-              value={form.watch('referralSource') ?? ''}
-              onValueChange={(val) => form.setValue('referralSource', val ?? '')}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecione" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="indicacao">Indicação</SelectItem>
-                <SelectItem value="instagram">Instagram</SelectItem>
-                <SelectItem value="google">Google</SelectItem>
-                <SelectItem value="facebook">Facebook</SelectItem>
-                <SelectItem value="site">Site</SelectItem>
-                <SelectItem value="outro">Outro</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Endereço - collapsible */}
-          <div className="rounded-lg border">
-            <button
-              type="button"
-              onClick={() => setAddressOpen(!addressOpen)}
-              className="flex w-full items-center justify-between p-3 text-sm font-medium hover:bg-muted/50 rounded-lg"
-            >
-              <span>Endereço</span>
-              {addressOpen ? (
-                <ChevronDownIcon className="size-4 text-muted-foreground" />
-              ) : (
-                <ChevronRightIcon className="size-4 text-muted-foreground" />
-              )}
-            </button>
-
-            {addressOpen && (
-              <div className="flex flex-col gap-3 border-t p-3">
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="address.street">Rua</Label>
-                  <Input id="address.street" {...form.register('address.street')} />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="address.number">Número</Label>
-                    <Input id="address.number" {...form.register('address.number')} />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="address.complement">Complemento</Label>
-                    <Input id="address.complement" {...form.register('address.complement')} />
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="address.neighborhood">Bairro</Label>
-                  <Input id="address.neighborhood" {...form.register('address.neighborhood')} />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="address.city">Cidade</Label>
-                    <Input id="address.city" {...form.register('address.city')} />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="address.state">Estado</Label>
-                    <Input id="address.state" {...form.register('address.state')} />
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="address.zip">CEP</Label>
-                  <Input id="address.zip" {...form.register('address.zip')} placeholder="00000-000" />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Observações */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="notes">Observações</Label>
-            <Textarea id="notes" {...form.register('notes')} rows={3} />
-          </div>
-
-          <SheetFooter className="mx-0 px-0">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={isPending}>
-              {isPending ? 'Salvando...' : isEditing ? 'Salvar' : 'Cadastrar'}
-            </Button>
-          </SheetFooter>
-        </form>
+        {formContent}
       </SheetContent>
     </Sheet>
   )
