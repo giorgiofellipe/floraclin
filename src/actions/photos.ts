@@ -1,7 +1,7 @@
 'use server'
 
 import { requireRole } from '@/lib/auth'
-import { getStoragePath, uploadFile } from '@/lib/storage'
+import { getStoragePath, uploadFile, deleteFile } from '@/lib/storage'
 import { createAuditLog } from '@/lib/audit'
 import {
   listPhotos as listPhotosQuery,
@@ -58,18 +58,29 @@ export async function uploadPhotoAction(formData: FormData): Promise<PhotoAction
     return { success: false, error: `Erro ao fazer upload: ${uploadError}` }
   }
 
-  // Create photo asset record
-  const photoAsset = await createPhotoAsset(context.tenantId, {
-    patientId,
-    procedureRecordId,
-    storagePath,
-    originalFilename: file.name,
-    mimeType: file.type,
-    fileSizeBytes: file.size,
-    timelineStage,
-    uploadedBy: context.userId,
-    notes,
-  })
+  // Create photo asset record — if DB insert fails, clean up the uploaded file
+  let photoAsset
+  try {
+    photoAsset = await createPhotoAsset(context.tenantId, {
+      patientId,
+      procedureRecordId,
+      storagePath,
+      originalFilename: file.name,
+      mimeType: file.type,
+      fileSizeBytes: file.size,
+      timelineStage,
+      uploadedBy: context.userId,
+      notes,
+    })
+  } catch (dbError) {
+    // Clean up the uploaded file since DB insert failed
+    try {
+      await deleteFile(storagePath)
+    } catch (cleanupError) {
+      console.error('Failed to clean up uploaded file after DB error:', cleanupError)
+    }
+    throw dbError
+  }
 
   await createAuditLog({
     tenantId: context.tenantId,

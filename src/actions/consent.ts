@@ -3,6 +3,7 @@
 import { headers } from 'next/headers'
 import { requireRole, getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
+import { withTransaction } from '@/lib/tenant'
 import { consentTemplateSchema, consentAcceptanceSchema } from '@/validations/consent'
 import {
   listConsentTemplates,
@@ -134,22 +135,26 @@ export async function acceptConsentAction(
       ?? undefined
     const userAgent = headersList.get('user-agent') ?? undefined
 
-    const acceptance = await acceptConsent(ctx.tenantId, parsed.data, {
-      ipAddress,
-      userAgent,
-    })
+    const acceptance = await withTransaction(async (tx) => {
+      const result = await acceptConsent(ctx.tenantId, parsed.data, {
+        ipAddress,
+        userAgent,
+      })
 
-    await createAuditLog({
-      tenantId: ctx.tenantId,
-      userId: ctx.userId,
-      action: 'consent_accepted',
-      entityType: 'consent_acceptance',
-      entityId: acceptance.id,
-      changes: {
-        patientId: { old: null, new: data.patientId },
-        consentTemplateId: { old: null, new: data.consentTemplateId },
-        method: { old: null, new: data.acceptanceMethod },
-      },
+      await createAuditLog({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        action: 'consent_accepted',
+        entityType: 'consent_acceptance',
+        entityId: result.id,
+        changes: {
+          patientId: { old: null, new: data.patientId },
+          consentTemplateId: { old: null, new: data.consentTemplateId },
+          method: { old: null, new: data.acceptanceMethod },
+        },
+      }, tx)
+
+      return result
     })
 
     return { success: true, data: acceptance }

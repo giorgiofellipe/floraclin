@@ -14,6 +14,7 @@ import { DEFAULT_CONSENT_TEMPLATES } from '@/validations/consent'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { eq } from 'drizzle-orm'
+import { withTransaction } from '@/lib/tenant'
 import type { WorkingHours } from '@/validations/tenant'
 
 export type OnboardingActionState = {
@@ -65,64 +66,67 @@ export async function completeOnboarding(data: OnboardingData): Promise<Onboardi
   try {
     const auth = await requireRole('owner')
 
-    // 1. Update tenant with clinic info, working hours, and slug
-    const slug = generateSlug(data.clinic.name)
-
-    await updateTenant(auth.tenantId, {
-      name: data.clinic.name,
-      phone: data.clinic.phone || '',
-      email: data.clinic.email || '',
-      address: Object.values(data.clinic.address || {}).some(v => v) ? data.clinic.address : undefined,
-      workingHours: data.clinic.workingHours,
-    })
-
-    // Update slug directly (not in the updateTenant validation schema)
-    await db
-      .update(tenants)
-      .set({ slug, updatedAt: new Date() })
-      .where(eq(tenants.id, auth.tenantId))
-
-    // 2. Create selected procedure types (only if none exist yet)
+    // Check existing procedure types before entering transaction
     const existingTypes = await listProcedureTypes(auth.tenantId)
-    if (existingTypes.length === 0 && data.procedureTypes.length > 0) {
-      for (const pt of data.procedureTypes) {
-        await createProcedureType(auth.tenantId, {
-          name: pt.name,
-          category: pt.category as 'botox' | 'filler' | 'biostimulator' | 'peel' | 'skinbooster' | 'laser' | 'microagulhamento' | 'outros',
-          estimatedDurationMin: pt.estimatedDurationMin ?? 60,
-          defaultPrice: pt.defaultPrice || '',
-          isActive: true,
+
+    await withTransaction(async (tx) => {
+      // 1. Update tenant with clinic info, working hours, and slug
+      const slug = generateSlug(data.clinic.name)
+
+      await updateTenant(auth.tenantId, {
+        name: data.clinic.name,
+        phone: data.clinic.phone || '',
+        email: data.clinic.email || '',
+        address: Object.values(data.clinic.address || {}).some(v => v) ? data.clinic.address : undefined,
+        workingHours: data.clinic.workingHours,
+      })
+
+      // Update slug directly (not in the updateTenant validation schema)
+      await tx
+        .update(tenants)
+        .set({ slug, updatedAt: new Date() })
+        .where(eq(tenants.id, auth.tenantId))
+
+      // 2. Create selected procedure types (only if none exist yet)
+      if (existingTypes.length === 0 && data.procedureTypes.length > 0) {
+        for (const pt of data.procedureTypes) {
+          await createProcedureType(auth.tenantId, {
+            name: pt.name,
+            category: pt.category as 'botox' | 'filler' | 'biostimulator' | 'peel' | 'skinbooster' | 'laser' | 'microagulhamento' | 'outros',
+            estimatedDurationMin: pt.estimatedDurationMin ?? 60,
+            defaultPrice: pt.defaultPrice || '',
+            isActive: true,
+          })
+        }
+      }
+
+      // 3. Create default consent templates (4 types)
+      const consentTypes = ['general', 'botox', 'filler', 'biostimulator'] as const
+      for (const type of consentTypes) {
+        const template = DEFAULT_CONSENT_TEMPLATES[type]
+        await createConsentTemplate(auth.tenantId, {
+          type,
+          title: template.title,
+          content: template.content,
         })
       }
-    }
 
-    // 3. Create default consent templates (4 types)
-    const consentTypes = ['general', 'botox', 'filler', 'biostimulator'] as const
-    for (const type of consentTypes) {
-      const template = DEFAULT_CONSENT_TEMPLATES[type]
-      await createConsentTemplate(auth.tenantId, {
-        type,
-        title: template.title,
-        content: template.content,
+      // 4. Mark onboarding as completed
+      await updateTenantSettings(auth.tenantId, {
+        onboarding_completed: true,
       })
-    }
 
-    // 4. Mark onboarding as completed
-    // (Team invites are sent directly via InviteUserForm in the wizard)
-    await updateTenantSettings(auth.tenantId, {
-      onboarding_completed: true,
-    })
-
-    // 5. Audit log
-    await createAuditLog({
-      tenantId: auth.tenantId,
-      userId: auth.userId,
-      action: 'update',
-      entityType: 'tenant',
-      entityId: auth.tenantId,
-      changes: {
-        onboarding: { old: null, new: { completed: true, procedureTypesCount: data.procedureTypes.length } },
-      },
+      // 5. Audit log
+      await createAuditLog({
+        tenantId: auth.tenantId,
+        userId: auth.userId,
+        action: 'update',
+        entityType: 'tenant',
+        entityId: auth.tenantId,
+        changes: {
+          onboarding: { old: null, new: { completed: true, procedureTypesCount: data.procedureTypes.length } },
+        },
+      })
     })
 
     return { success: true }

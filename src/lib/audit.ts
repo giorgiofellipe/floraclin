@@ -13,8 +13,9 @@ interface AuditParams {
   userAgent?: string
 }
 
-export async function createAuditLog(params: AuditParams) {
-  await db.insert(auditLogs).values({
+export async function createAuditLog(params: AuditParams, tx?: typeof db) {
+  const target = tx ?? db
+  await target.insert(auditLogs).values({
     tenantId: params.tenantId,
     userId: params.userId,
     action: params.action,

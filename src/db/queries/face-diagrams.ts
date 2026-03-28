@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { faceDiagrams, diagramPoints } from '@/db/schema'
-import { eq, and, desc } from 'drizzle-orm'
+import { eq, and, desc, ne } from 'drizzle-orm'
 import type { DiagramViewType } from '@/types'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -154,24 +154,25 @@ export async function getPreviousDiagramPoints(
   const { procedureRecords } = await import('@/db/schema')
 
   // Find the most recent procedure for this patient (excluding current)
-  const query = db
+  const conditions = [
+    eq(faceDiagrams.tenantId, tenantId),
+    eq(procedureRecords.patientId, patientId),
+  ]
+
+  if (excludeProcedureId) {
+    conditions.push(ne(faceDiagrams.procedureRecordId, excludeProcedureId))
+  }
+
+  const latestDiagrams = await db
     .select({ id: faceDiagrams.id })
     .from(faceDiagrams)
     .innerJoin(
       procedureRecords,
       eq(faceDiagrams.procedureRecordId, procedureRecords.id)
     )
-    .where(
-      and(
-        eq(faceDiagrams.tenantId, tenantId),
-        eq(procedureRecords.patientId, patientId)
-      )
-    )
+    .where(and(...conditions))
     .orderBy(desc(procedureRecords.performedAt))
     .limit(1)
-
-  // If we need to exclude current procedure, we filter after fetch
-  const latestDiagrams = await query
 
   if (latestDiagrams.length === 0) return []
 

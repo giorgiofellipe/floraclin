@@ -21,11 +21,12 @@ export async function listPatients(
     baseConditions.push(eq(patients.responsibleUserId, responsibleUserId))
   }
 
-  const searchCondition = search.trim()
+  const escaped = search.trim().replace(/%/g, '\\%').replace(/_/g, '\\_')
+  const searchCondition = escaped
     ? or(
-        ilike(patients.fullName, `%${search.trim()}%`),
-        ilike(patients.phone, `%${search.trim()}%`),
-        ilike(patients.cpf, `%${search.trim()}%`)
+        ilike(patients.fullName, `%${escaped}%`),
+        ilike(patients.phone, `%${escaped}%`),
+        ilike(patients.cpf, `%${escaped}%`)
       )
     : undefined
 

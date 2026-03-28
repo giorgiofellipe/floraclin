@@ -136,6 +136,11 @@ export async function updateAppointmentAction(
   const checkEnd = data.endTime ?? current.endTime
   const checkPractitioner = data.practitionerId ?? current.practitionerId
 
+  // Validate that startTime < endTime after merging partial updates
+  if (checkStart >= checkEnd) {
+    return { error: 'O horário de início deve ser anterior ao horário de término.' }
+  }
+
   if (data.date || data.startTime || data.endTime || data.practitionerId) {
     const hasConflict = await checkTimeConflict(
       context.tenantId,
@@ -271,7 +276,8 @@ export async function listPatientsForSelectAction(search?: string) {
   ]
 
   if (search && search.length >= 2) {
-    conditions.push(ilike(patients.fullName, `%${search}%`))
+    const escaped = search.trim().replace(/%/g, '\\%').replace(/_/g, '\\_')
+    conditions.push(ilike(patients.fullName, `%${escaped}%`))
   }
 
   const result = await db

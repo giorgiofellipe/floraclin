@@ -1,7 +1,9 @@
 'use server'
 
+import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
+import { withTransaction } from '@/lib/tenant'
 import {
   createFinancialEntrySchema,
   payInstallmentSchema,
@@ -56,6 +58,7 @@ export async function createFinancialEntryAction(
       entityId: entry.id,
     })
 
+    revalidatePath('/financeiro')
     return { success: true, data: entry }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Erro ao criar cobrança' }
@@ -112,24 +115,30 @@ export async function payInstallmentAction(
       return { fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
     }
 
-    const installment = await payInstallment(
-      context.tenantId,
-      parsed.data.installmentId,
-      parsed.data.paymentMethod as PaymentMethod
-    )
+    const installment = await withTransaction(async (tx) => {
+      const result = await payInstallment(
+        context.tenantId,
+        parsed.data.installmentId,
+        parsed.data.paymentMethod as PaymentMethod,
+        tx
+      )
 
-    await createAuditLog({
-      tenantId: context.tenantId,
-      userId: context.userId,
-      action: 'update',
-      entityType: 'installment',
-      entityId: installment.id,
-      changes: {
-        status: { old: 'pending', new: 'paid' },
-        paymentMethod: { old: null, new: paymentMethod },
-      },
+      await createAuditLog({
+        tenantId: context.tenantId,
+        userId: context.userId,
+        action: 'update',
+        entityType: 'installment',
+        entityId: result.id,
+        changes: {
+          status: { old: 'pending', new: 'paid' },
+          paymentMethod: { old: null, new: paymentMethod },
+        },
+      }, tx)
+
+      return result
     })
 
+    revalidatePath('/financeiro')
     return { success: true, data: installment }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Erro ao registrar pagamento' }
