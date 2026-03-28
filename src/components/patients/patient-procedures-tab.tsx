@@ -26,7 +26,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 const STATUS_STYLES: Record<string, string> = {
   in_progress: 'bg-amber-light text-amber-dark',
-  completed: 'bg-petal text-mid',
+  completed: 'bg-[#F0F7F1] text-sage',
   cancelled: 'bg-red-100 text-red-800',
 }
 
@@ -105,7 +105,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                     <h3 className="font-medium text-charcoal truncate">
                       {proc.procedureTypeName}
                     </h3>
-                    <Badge className={STATUS_STYLES[proc.status] ?? 'bg-petal text-mid'}>
+                    <Badge className={STATUS_STYLES[proc.status] ?? 'bg-[#F0F7F1] text-sage'}>
                       {STATUS_LABELS[proc.status] ?? proc.status}
                     </Badge>
                   </div>

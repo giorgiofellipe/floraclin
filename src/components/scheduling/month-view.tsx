@@ -48,14 +48,14 @@ export function MonthView({ date, appointments, onDayClick, onAppointmentClick }
   return (
     <div className="flex flex-col">
       {/* Header */}
-      <div className="border-b border-sage/10 bg-petal/30 px-4 py-3 text-center">
-        <h3 className="text-base font-semibold capitalize text-forest tracking-tight">
+      <div className="border-b border-gray-100 bg-white px-4 py-3 text-center">
+        <h3 className="text-[14px] font-medium capitalize text-[#2A2A2A] tracking-tight">
           {format(date, "MMMM 'de' yyyy", { locale: ptBR })}
         </h3>
       </div>
 
       {/* Weekday headers */}
-      <div className="grid grid-cols-7 border-b border-sage/10 bg-petal/20">
+      <div className="grid grid-cols-7 border-b border-gray-100 bg-white">
         {WEEKDAYS.map((day) => (
           <div key={day} className="px-2 py-2 text-center text-[11px] uppercase tracking-wider font-medium text-mid">
             {day}
@@ -75,8 +75,8 @@ export function MonthView({ date, appointments, onDayClick, onAppointmentClick }
             <div
               key={dateStr}
               className={cn(
-                'min-h-24 cursor-pointer border-b border-r border-sage/8 p-1.5 transition-colors duration-150 hover:bg-petal/30',
-                !isCurrentMonth && 'bg-cream/50 text-mid/60'
+                'min-h-24 cursor-pointer border-b border-r border-sage/8 p-1.5 transition-colors duration-150 hover:bg-[#F0F7F1]/30',
+                !isCurrentMonth && 'bg-gray-50 text-mid/60'
               )}
               onClick={() => onDayClick?.(dateStr)}
             >
@@ -92,7 +92,7 @@ export function MonthView({ date, appointments, onDayClick, onAppointmentClick }
                   {format(day, 'd')}
                 </span>
                 {dayAppointments.length > MAX_VISIBLE_APPOINTMENTS && (
-                  <span className="text-[10px] font-medium text-mid rounded-full bg-petal px-1.5 py-0.5">
+                  <span className="text-[10px] font-medium text-mid rounded-full bg-white px-1.5 py-0.5">
                     +{dayAppointments.length - MAX_VISIBLE_APPOINTMENTS}
                   </span>
                 )}
@@ -101,7 +101,7 @@ export function MonthView({ date, appointments, onDayClick, onAppointmentClick }
               <div className="mt-1 space-y-0.5">
                 {dayAppointments.slice(0, MAX_VISIBLE_APPOINTMENTS).map((appt) => {
                   const statusColor =
-                    APPOINTMENT_STATUS_COLORS[appt.status] ?? 'bg-petal text-mid'
+                    APPOINTMENT_STATUS_COLORS[appt.status] ?? 'bg-[#F0F7F1] text-sage'
                   const displayName = appt.patientName ?? appt.bookingName ?? 'Sem paciente'
 
                   return (
@@ -109,7 +109,7 @@ export function MonthView({ date, appointments, onDayClick, onAppointmentClick }
                       key={appt.id}
                       type="button"
                       className={cn(
-                        'w-full truncate rounded-md px-1.5 py-0.5 text-left text-[10px] leading-tight transition-all duration-150 hover:shadow-sm hover:-translate-y-px',
+                        'w-full truncate rounded-[3px] px-1.5 py-0.5 text-left text-[10px] leading-tight transition-colors duration-150',
                         statusColor
                       )}
                       onClick={(e) => {

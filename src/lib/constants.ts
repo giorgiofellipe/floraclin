@@ -4,7 +4,7 @@ export const APPOINTMENT_STATUS_COLORS: Record<string, string> = {
   scheduled: 'bg-sage/10 text-sage',
   confirmed: 'bg-mint/20 text-forest',
   in_progress: 'bg-amber-light text-amber-dark',
-  completed: 'bg-petal text-mid',
+  completed: 'bg-[#F0F7F1] text-sage',
   cancelled: 'bg-red-100 text-red-800',
   no_show: 'bg-amber-light text-amber-dark',
 }

@@ -125,7 +125,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
   const isLastStep = currentStep === STEPS.length - 1
 
   return (
-    <div className="min-h-screen bg-cream">
+    <div className="min-h-screen bg-[#F4F6F8]">
       <div className="mx-auto max-w-3xl px-4 py-10 sm:py-16">
         {/* Header */}
         <div className="mb-12 text-center animate-fade-in-up">

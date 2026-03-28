@@ -21,7 +21,7 @@ interface AppointmentCardProps {
 }
 
 export function AppointmentCard({ appointment, compact = false, onClick }: AppointmentCardProps) {
-  const statusColor = APPOINTMENT_STATUS_COLORS[appointment.status] ?? 'bg-petal text-mid'
+  const statusColor = APPOINTMENT_STATUS_COLORS[appointment.status] ?? 'bg-[#F0F7F1] text-sage'
   const displayName = appointment.patientName ?? appointment.bookingName ?? 'Sem paciente'
   const timeStr = `${appointment.startTime.slice(0, 5)} - ${appointment.endTime.slice(0, 5)}`
 
@@ -31,7 +31,7 @@ export function AppointmentCard({ appointment, compact = false, onClick }: Appoi
         type="button"
         onClick={() => onClick?.(appointment)}
         className={cn(
-          'w-full rounded-lg px-2 py-1 text-left text-xs transition-all duration-150 hover:shadow-sm hover:-translate-y-px',
+          'w-full rounded-[3px] px-2 py-1 text-left text-xs transition-colors duration-150',
           statusColor
         )}
       >
@@ -46,7 +46,7 @@ export function AppointmentCard({ appointment, compact = false, onClick }: Appoi
       type="button"
       onClick={() => onClick?.(appointment)}
       className={cn(
-        'w-full h-full rounded-lg border-l-[3px] bg-white px-3 py-2 text-left shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5',
+        'w-full h-full rounded-[3px] border-l-[3px] bg-white px-3 py-2 text-left shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-colors duration-200',
         appointment.status === 'scheduled' && 'border-l-sage',
         appointment.status === 'confirmed' && 'border-l-mint',
         appointment.status === 'in_progress' && 'border-l-amber',
@@ -57,10 +57,10 @@ export function AppointmentCard({ appointment, compact = false, onClick }: Appoi
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-charcoal">{displayName}</p>
-          <p className="text-xs text-mid">{timeStr}</p>
+          <p className="truncate text-[14px] font-medium text-[#2A2A2A]">{displayName}</p>
+          <p className="text-[12px] text-[#7A7A7A]">{timeStr}</p>
           {appointment.procedureTypeName && (
-            <p className="mt-0.5 truncate text-xs text-mid">
+            <p className="mt-0.5 truncate text-[12px] text-[#7A7A7A]">
               {appointment.procedureTypeName}
             </p>
           )}

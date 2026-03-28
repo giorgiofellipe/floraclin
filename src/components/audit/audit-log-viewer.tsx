@@ -211,7 +211,7 @@ export function AuditLogViewer() {
   return (
     <div className="space-y-5">
       {/* Filters */}
-      <div className="flex flex-wrap items-end gap-3 rounded-xl bg-petal/30 border border-blush/30 p-4">
+      <div className="flex flex-wrap items-end gap-3 rounded-[3px] bg-white border border-gray-100 p-4">
         <div className="min-w-[180px]">
           <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wider text-mid">
             Tipo de Entidade
@@ -286,7 +286,7 @@ export function AuditLogViewer() {
       </p>
 
       {/* Table */}
-      <div className="rounded-xl border border-blush/40 overflow-hidden">
+      <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
@@ -345,7 +345,7 @@ export function AuditLogViewer() {
                   </TableRow>
                   {expandedRow === log.id && log.changes && (
                     <TableRow key={`${log.id}-detail`}>
-                      <TableCell colSpan={6} className="bg-cream p-4">
+                      <TableCell colSpan={6} className="bg-[#F4F6F8] p-4">
                         <JsonDiffViewer changes={log.changes} />
                       </TableCell>
                     </TableRow>

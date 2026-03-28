@@ -19,7 +19,7 @@ export default async function ProcedurePage({ params }: ProcedurePageProps) {
   // "novo" means create mode
   if (procedureId === 'novo') {
     return (
-      <div className="min-h-screen bg-cream p-6">
+      <div className="min-h-screen p-6">
         <ProcedureForm patientId={patientId} mode="create" />
       </div>
     )
@@ -44,7 +44,7 @@ export default async function ProcedurePage({ params }: ProcedurePageProps) {
   const mode = canEdit ? 'edit' : 'view'
 
   return (
-    <div className="min-h-screen bg-cream p-6">
+    <div className="min-h-screen p-6">
       <ProcedureForm
         patientId={patientId}
         procedure={procedure}

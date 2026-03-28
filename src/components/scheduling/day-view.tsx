@@ -46,8 +46,8 @@ export function DayView({ date, appointments, onSlotClick, onAppointmentClick }:
 
   return (
     <div className="flex flex-col">
-      <div className="border-b border-sage/10 bg-petal/30 px-4 py-3 text-center">
-        <h3 className="text-base font-semibold capitalize text-forest tracking-tight">
+      <div className="border-b border-gray-100 bg-white px-4 py-3 text-center">
+        <h3 className="text-[14px] font-medium capitalize text-[#2A2A2A] tracking-tight">
           {format(date, "EEEE, d 'de' MMMM", { locale: ptBR })}
         </h3>
       </div>
@@ -74,14 +74,14 @@ export function DayView({ date, appointments, onSlotClick, onAppointmentClick }:
           {HOURS.map((hour) => (
             <React.Fragment key={hour}>
               <div
-                className="cursor-pointer border-b border-sage/8 transition-colors hover:bg-petal/30"
+                className="cursor-pointer border-b border-sage/8 transition-colors hover:bg-[#F0F7F1]/30"
                 style={{ height: SLOT_HEIGHT_PX }}
                 onClick={() =>
                   onSlotClick?.(dateStr, `${String(hour).padStart(2, '0')}:00`)
                 }
               />
               <div
-                className="cursor-pointer border-b border-dashed border-sage/5 transition-colors hover:bg-petal/30"
+                className="cursor-pointer border-b border-dashed border-sage/5 transition-colors hover:bg-[#F0F7F1]/30"
                 style={{ height: SLOT_HEIGHT_PX }}
                 onClick={() =>
                   onSlotClick?.(dateStr, `${String(hour).padStart(2, '0')}:30`)
