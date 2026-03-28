@@ -61,7 +61,7 @@ function makePatient(overrides: Partial<PatientStub> = {}): PatientStub {
 
 describe('PatientList', () => {
   it('renders search bar', () => {
-    render(<PatientList result={makeResult([])} />)
+    render(<PatientList result={makeResult([]) as any} />)
 
     expect(
       screen.getByPlaceholderText('Buscar por nome, telefone ou CPF...')
@@ -69,7 +69,7 @@ describe('PatientList', () => {
   })
 
   it('renders "Novo Paciente" button', () => {
-    render(<PatientList result={makeResult([])} />)
+    render(<PatientList result={makeResult([]) as any} />)
 
     expect(
       screen.getByRole('button', { name: /novo paciente/i })
@@ -82,14 +82,14 @@ describe('PatientList', () => {
       makePatient({ id: '2', fullName: 'Joao Santos' }),
     ]
 
-    render(<PatientList result={makeResult(patients)} />)
+    render(<PatientList result={makeResult(patients) as any} />)
 
     expect(screen.getByText('Maria Silva')).toBeInTheDocument()
     expect(screen.getByText('Joao Santos')).toBeInTheDocument()
   })
 
   it('shows empty state when no patients', () => {
-    render(<PatientList result={makeResult([])} />)
+    render(<PatientList result={makeResult([]) as any} />)
 
     expect(
       screen.getByText(
