@@ -102,7 +102,8 @@ export async function updateProcedure(
     .where(
       and(
         eq(procedureRecords.id, procedureId),
-        eq(procedureRecords.tenantId, tenantId)
+        eq(procedureRecords.tenantId, tenantId),
+        isNull(procedureRecords.deletedAt)
       )
     )
     .returning()

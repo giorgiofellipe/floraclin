@@ -6,12 +6,14 @@ import { ProcedureTypeList } from '@/components/settings/procedure-type-list'
 import { TeamList } from '@/components/settings/team-list'
 import { ConsentTemplateList } from '@/components/settings/consent-template-list'
 import { BookingSettings } from '@/components/settings/booking-settings'
+import { AuditLogViewer } from '@/components/audit/audit-log-viewer'
 import {
   BuildingIcon,
   SyringeIcon,
   UsersIcon,
   FileTextIcon,
   CalendarIcon,
+  ShieldCheckIcon,
 } from 'lucide-react'
 
 interface Tenant {
@@ -112,6 +114,10 @@ export function SettingsPageClient({
             <CalendarIcon data-icon="inline-start" />
             Agendamento
           </TabsTrigger>
+          <TabsTrigger value="auditoria">
+            <ShieldCheckIcon data-icon="inline-start" />
+            Auditoria
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="clinica" className="pt-6">
@@ -143,6 +149,10 @@ export function SettingsPageClient({
             slug={tenant.slug}
             publicBookingEnabled={publicBookingEnabled}
           />
+        </TabsContent>
+
+        <TabsContent value="auditoria" className="pt-6">
+          <AuditLogViewer />
         </TabsContent>
       </Tabs>
     </div>
