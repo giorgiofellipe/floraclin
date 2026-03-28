@@ -299,11 +299,11 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
       </fieldset>
 
       {/* Endereço - collapsible */}
-      <div className="rounded-[3px] border border-gray-100 overflow-hidden">
+      <div className="rounded-[3px] border border-[#E8ECEF] overflow-hidden">
         <button
           type="button"
           onClick={() => setAddressOpen(!addressOpen)}
-          className="flex w-full items-center justify-between px-4 py-3 text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] hover:bg-gray-50 transition-colors"
+          className="flex w-full items-center justify-between px-4 py-3 text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] hover:bg-[#F4F6F8] transition-colors"
         >
           <span>Endereço</span>
           <ChevronDownIcon className={`size-4 text-mid transition-transform duration-200 ${addressOpen ? 'rotate-0' : '-rotate-90'}`} />

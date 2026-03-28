@@ -97,7 +97,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
           {procedures.map((proc) => (
             <div
               key={proc.id}
-              className="rounded-lg border bg-white p-4 transition-shadow hover:shadow-sm"
+              className="rounded-[3px] border bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-shadow hover:shadow-md"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">

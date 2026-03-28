@@ -78,7 +78,7 @@ export function BookingSettings({
         </p>
       </div>
 
-      <div className="flex items-center gap-4 rounded-[3px] border border-gray-100 bg-white p-4 transition-colors">
+      <div className="flex items-center gap-4 rounded-[3px] border border-[#E8ECEF] bg-white p-4 transition-colors">
         <Switch
           checked={enabled}
           onCheckedChange={handleToggle}
@@ -102,7 +102,7 @@ export function BookingSettings({
             Link de Agendamento
           </label>
           <div className="flex items-center gap-2">
-            <div className="flex-1 flex items-center gap-2 bg-white rounded-full border border-gray-200 pl-4 pr-1.5 py-1.5 min-w-0">
+            <div className="flex-1 flex items-center gap-2 bg-white rounded-full border border-[#E8ECEF] pl-4 pr-1.5 py-1.5 min-w-0">
               <span className="text-sm font-mono text-charcoal truncate flex-1">
                 {bookingUrl}
               </span>

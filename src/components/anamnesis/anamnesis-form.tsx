@@ -911,7 +911,7 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
           >
             <div className="space-y-3">
               {previousTreatments.fields.map((field, index) => (
-                <div key={field.id} className="space-y-2.5 rounded-[3px] border border-gray-100 bg-white p-4">
+                <div key={field.id} className="space-y-2.5 rounded-[3px] border border-[#E8ECEF] bg-white p-4">
                   <div className="flex justify-between items-center">
                     <span className="text-xs font-medium text-mid uppercase tracking-wider">
                       Tratamento {index + 1}

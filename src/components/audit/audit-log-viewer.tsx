@@ -90,12 +90,12 @@ function JsonDiffViewer({ changes }: { changes: unknown }) {
           const typed = change as { old?: unknown; new?: unknown }
           return (
             <div key={key} className="rounded-lg border border-blush/40 overflow-hidden">
-              <div className="px-3 py-1.5 bg-petal/50 border-b border-blush/30">
+              <div className="px-3 py-1.5 bg-[#F4F6F8] border-b border-[#E8ECEF]">
                 <p className="text-xs font-medium uppercase tracking-wider text-mid">
                   {key}
                 </p>
               </div>
-              <div className="grid grid-cols-2 divide-x divide-blush/30">
+              <div className="grid grid-cols-2 divide-x divide-[#E8ECEF]">
                 <div className="p-3">
                   <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-mid/80">Anterior</p>
                   <pre className="whitespace-pre-wrap break-all rounded-md bg-red-50/60 border border-red-100/50 p-2 text-xs text-charcoal font-mono leading-relaxed">
@@ -124,13 +124,13 @@ function JsonDiffViewer({ changes }: { changes: unknown }) {
         // Fallback for non-diff entries
         return (
           <div key={key} className="rounded-lg border border-blush/40 overflow-hidden">
-            <div className="px-3 py-1.5 bg-petal/50 border-b border-blush/30">
+            <div className="px-3 py-1.5 bg-[#F4F6F8] border-b border-[#E8ECEF]">
               <p className="text-xs font-medium uppercase tracking-wider text-mid">
                 {key}
               </p>
             </div>
             <div className="p-3">
-              <pre className="whitespace-pre-wrap break-all rounded-md bg-petal/40 p-2 text-xs text-charcoal font-mono leading-relaxed">
+              <pre className="whitespace-pre-wrap break-all rounded-md bg-[#F4F6F8] p-2 text-xs text-charcoal font-mono leading-relaxed">
                 {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
               </pre>
             </div>
@@ -211,7 +211,7 @@ export function AuditLogViewer() {
   return (
     <div className="space-y-5">
       {/* Filters */}
-      <div className="flex flex-wrap items-end gap-3 rounded-[3px] bg-white border border-gray-100 p-4">
+      <div className="flex flex-wrap items-end gap-3 rounded-[3px] bg-white border border-[#E8ECEF] p-4">
         <div className="min-w-[180px]">
           <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wider text-mid">
             Tipo de Entidade

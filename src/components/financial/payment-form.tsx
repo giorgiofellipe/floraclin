@@ -81,7 +81,7 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader className="pb-2">
-          <DialogTitle className="text-lg font-semibold text-forest">Nova Cobranca</DialogTitle>
+          <DialogTitle className="text-lg font-semibold text-charcoal">Nova Cobranca</DialogTitle>
           <DialogDescription className="text-mid">
             Preencha os dados da cobranca e defina o parcelamento.
           </DialogDescription>
@@ -132,7 +132,7 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
           <div className="space-y-2">
             <Label htmlFor="totalAmountInput" className="uppercase tracking-wider text-xs font-medium text-mid">Valor Total (R$)</Label>
             <div className="relative">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-forest">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-charcoal">
                 R$
               </span>
               <MaskedInput
@@ -173,7 +173,7 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
 
           {/* Installment preview */}
           {installmentPreview.length > 0 && parsedAmount > 0 && (
-            <div className="rounded-[3px] border border-gray-100 bg-white p-4 space-y-3">
+            <div className="rounded-[3px] border border-[#E8ECEF] bg-white p-4 space-y-3">
               <p className="text-[10px] uppercase tracking-[0.15em] font-medium text-[#7A7A7A]">Previa das parcelas</p>
               <div className="space-y-2">
                 {installmentPreview.map((inst) => (

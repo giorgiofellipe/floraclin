@@ -201,7 +201,7 @@ export function AppointmentForm({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader className="pb-2">
-          <DialogTitle className="text-lg font-semibold text-forest">{isEditing ? 'Editar Agendamento' : 'Novo Agendamento'}</DialogTitle>
+          <DialogTitle className="text-lg font-semibold text-charcoal">{isEditing ? 'Editar Agendamento' : 'Novo Agendamento'}</DialogTitle>
         </DialogHeader>
 
         {state?.error && (

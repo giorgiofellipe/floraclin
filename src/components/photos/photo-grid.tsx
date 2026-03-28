@@ -188,7 +188,7 @@ export function PhotoGrid({
             </DialogTitle>
           </DialogHeader>
           {selectedPhoto?.signedUrl && (
-            <div className="flex items-center justify-center rounded-xl overflow-hidden bg-charcoal/5">
+            <div className="flex items-center justify-center rounded-[3px] overflow-hidden bg-charcoal/5">
               <img
                 src={selectedPhoto.signedUrl}
                 alt={selectedPhoto.originalFilename ?? 'Foto'}

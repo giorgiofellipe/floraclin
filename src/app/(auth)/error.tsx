@@ -21,7 +21,7 @@ export default function AuthError({
         <div className="flex size-16 items-center justify-center rounded-full bg-petal">
           <AlertTriangle className="size-8 text-amber" />
         </div>
-        <h2 className="text-2xl font-semibold text-forest">
+        <h2 className="text-2xl font-semibold text-charcoal">
           Algo deu errado
         </h2>
         <p className="max-w-md text-sm text-mid">

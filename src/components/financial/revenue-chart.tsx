@@ -99,7 +99,7 @@ export function RevenueChart() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-forest tabular-nums tracking-tight">
+            <div className="text-2xl font-bold text-charcoal tabular-nums tracking-tight">
               {formatCurrency(Number(data.summary.totalReceived))}
             </div>
           </CardContent>

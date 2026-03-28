@@ -132,7 +132,7 @@ function Section({
   return (
     <Card className="bg-white overflow-hidden border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">
       <CardHeader
-        className="cursor-pointer pb-3 hover:bg-gray-50 transition-colors duration-150"
+        className="cursor-pointer pb-3 hover:bg-[#F4F6F8] transition-colors duration-150"
         onClick={onToggle}
       >
         <CardTitle className="flex items-center justify-between text-base">
@@ -140,7 +140,7 @@ function Section({
             <div className="flex size-7 items-center justify-center rounded-md bg-forest/5">
               {icon}
             </div>
-            <span className="uppercase tracking-wider text-sm text-forest font-medium">
+            <span className="uppercase tracking-wider text-sm text-charcoal font-medium">
               {title}
             </span>
           </div>
@@ -646,7 +646,7 @@ export function ProcedureForm({
             <div className="flex items-center gap-3 rounded-lg bg-sage/5 p-4">
               <CheckCircle2 className="size-5 text-sage" />
               <div>
-                <p className="text-sm font-medium text-forest">
+                <p className="text-sm font-medium text-charcoal">
                   Termo assinado em{' '}
                   {format(
                     new Date(consentStatus.acceptedAt),
@@ -669,7 +669,7 @@ export function ProcedureForm({
           ) : consentAccepted ? (
             <div className="flex items-center gap-3 rounded-lg bg-sage/5 p-4">
               <CheckCircle2 className="size-5 text-sage" />
-              <p className="text-sm font-medium text-forest">
+              <p className="text-sm font-medium text-charcoal">
                 Termo aceito com sucesso
               </p>
             </div>
@@ -759,10 +759,10 @@ export function ProcedureForm({
             {productApps.map((app, index) => (
               <div
                 key={`${app.productName}-${app.quantityUnit}-${index}`}
-                className="rounded-[3px] border border-gray-100 bg-white p-5"
+                className="rounded-[3px] border border-[#E8ECEF] bg-white p-5"
               >
                 <div className="mb-4 flex items-center justify-between">
-                  <h4 className="font-medium text-forest">
+                  <h4 className="font-medium text-charcoal">
                     {app.productName}
                   </h4>
                   <Badge variant="outline" className="text-xs border-sage/30 bg-sage/5 text-sage px-2.5 py-0.5">
@@ -1019,13 +1019,13 @@ export function ProcedureForm({
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-forest">
+            <DialogTitle className="text-charcoal">
               Agendar retorno?
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-mid">
             Deseja agendar o retorno para{' '}
-            <span className="font-medium text-forest">
+            <span className="font-medium text-charcoal">
               {followUpDate
                 ? format(new Date(followUpDate + 'T12:00:00'), "dd/MM/yyyy", {
                     locale: ptBR,

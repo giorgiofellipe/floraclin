@@ -293,7 +293,7 @@ export function PhotoUploader({
           'relative flex min-h-[180px] cursor-pointer flex-col items-center justify-center rounded-[3px] border-2 border-dashed p-8 transition-all duration-200',
           isDragOver
             ? 'border-sage bg-sage/5 scale-[1.01]'
-            : 'border-gray-200 hover:border-sage/50 hover:bg-gray-50'
+            : 'border-[#E8ECEF] hover:border-sage/50 hover:bg-[#F4F6F8]'
         )}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
@@ -303,7 +303,7 @@ export function PhotoUploader({
         <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-white">
           <Upload className="size-5 text-sage" />
         </div>
-        <p className="text-sm font-medium text-forest">
+        <p className="text-sm font-medium text-charcoal">
           Arraste e solte fotos aqui
         </p>
         <p className="mt-1 text-xs text-mid">
@@ -330,8 +330,8 @@ export function PhotoUploader({
                   'relative overflow-hidden rounded-[3px] border shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-colors duration-200',
                   f.status === 'error' && 'border-red-300 bg-red-50/30',
                   f.status === 'done' && 'border-mint/50 bg-white',
-                  f.status === 'pending' && 'border-gray-100 bg-white',
-                  (f.status === 'compressing' || f.status === 'uploading') && 'border-gray-100 bg-white'
+                  f.status === 'pending' && 'border-[#E8ECEF] bg-white',
+                  (f.status === 'compressing' || f.status === 'uploading') && 'border-[#E8ECEF] bg-white'
                 )}
               >
                 <div className="aspect-square">
@@ -405,7 +405,7 @@ export function PhotoUploader({
           {/* Upload button */}
           {pendingCount > 0 && (
             <div className="flex items-center justify-between rounded-lg bg-[#F4F6F8]/50 px-4 py-3">
-              <span className="text-sm text-forest">
+              <span className="text-sm text-charcoal">
                 {pendingCount} {pendingCount === 1 ? 'foto pronta' : 'fotos prontas'} para envio
               </span>
               <Button onClick={uploadAll} disabled={isUploading} className="bg-forest text-cream hover:bg-sage shadow-sm">

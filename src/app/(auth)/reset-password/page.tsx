@@ -25,7 +25,7 @@ export default function ResetPasswordPage() {
 
       {/* Form section */}
       <div className="animate-fade-in-up-delay-1">
-        <h2 className="text-2xl font-medium text-forest tracking-tight text-center lg:text-left">
+        <h2 className="text-2xl font-medium text-charcoal tracking-tight text-center lg:text-left">
           Redefinir Senha
         </h2>
         <p className="text-mid text-sm mt-1 mb-8 text-center lg:text-left">

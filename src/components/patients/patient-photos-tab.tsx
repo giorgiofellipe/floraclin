@@ -36,7 +36,7 @@ export function PatientPhotosTab({ patientId }: PatientPhotosTabProps) {
       </div>
 
       {showUploader && (
-        <div className="rounded-lg border bg-white p-4">
+        <div className="rounded-[3px] border bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
           <PhotoUploader
             patientId={patientId}
             onUploadComplete={() => {
@@ -48,7 +48,7 @@ export function PatientPhotosTab({ patientId }: PatientPhotosTabProps) {
       )}
 
       {showComparison && (
-        <div className="rounded-lg border bg-white p-4">
+        <div className="rounded-[3px] border bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
           <PhotoComparison patientId={patientId} />
         </div>
       )}

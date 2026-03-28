@@ -25,7 +25,7 @@ export default function LoginPage() {
 
       {/* Form section */}
       <div className="animate-fade-in-up-delay-1">
-        <h2 className="text-2xl font-medium text-forest tracking-tight hidden lg:block">
+        <h2 className="text-2xl font-medium text-charcoal tracking-tight hidden lg:block">
           Acesse sua conta
         </h2>
         <p className="text-mid text-sm mt-1 mb-8 hidden lg:block">

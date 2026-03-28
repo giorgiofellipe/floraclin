@@ -62,7 +62,7 @@ export function ConsentHistory({ patientId }: ConsentHistoryProps) {
 
   if (loading) {
     return (
-      <Card className="border-0 shadow-sm">
+      <Card className="border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         <CardContent className="py-8 text-center text-sm text-mid">
           Carregando...
         </CardContent>
@@ -72,7 +72,7 @@ export function ConsentHistory({ patientId }: ConsentHistoryProps) {
 
   if (history.length === 0) {
     return (
-      <Card className="border-0 shadow-sm">
+      <Card className="border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         <CardHeader>
           <CardTitle className="font-semibold text-[#2A2A2A]">Termos de Consentimento</CardTitle>
         </CardHeader>
@@ -84,7 +84,7 @@ export function ConsentHistory({ patientId }: ConsentHistoryProps) {
   }
 
   return (
-    <Card className="border-0 shadow-sm">
+    <Card className="border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
       <CardHeader>
         <CardTitle className="font-semibold text-[#2A2A2A]">Termos de Consentimento</CardTitle>
       </CardHeader>
@@ -104,7 +104,7 @@ function ConsentHistoryItem({ item }: { item: HistoryItem }) {
     <div className="flex items-center justify-between gap-3 rounded-[3px] bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
       <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium text-forest">{item.templateTitle}</span>
+          <span className="truncate text-sm font-medium text-charcoal">{item.templateTitle}</span>
           <Badge variant="outline" className="shrink-0 text-xs border-sage/30 bg-sage/5 text-sage">
             v{item.templateVersion}
           </Badge>
@@ -150,7 +150,7 @@ function ConsentHistoryItem({ item }: { item: HistoryItem }) {
             <DialogHeader>
               <DialogTitle>{item.templateTitle}</DialogTitle>
             </DialogHeader>
-            <ScrollArea className="max-h-96 rounded-[3px] border border-gray-100 bg-white p-5">
+            <ScrollArea className="max-h-96 rounded-[3px] border border-[#E8ECEF] bg-white p-5">
               <div className="whitespace-pre-wrap text-sm leading-relaxed text-charcoal">
                 {item.contentSnapshot}
               </div>

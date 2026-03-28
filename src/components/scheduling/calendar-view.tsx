@@ -261,7 +261,7 @@ export function CalendarView({
           </Select>
 
           {/* View toggle - pill style */}
-          <div className="flex rounded-full bg-gray-100 p-0.5" data-testid="calendar-view-toggle">
+          <div className="flex rounded-full bg-[#E8ECEF] p-0.5" data-testid="calendar-view-toggle">
             {([
               ['day', 'Dia'],
               ['week', 'Semana'],

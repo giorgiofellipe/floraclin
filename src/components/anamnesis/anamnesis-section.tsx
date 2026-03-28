@@ -28,7 +28,7 @@ export function AnamnesisSection({
         'rounded-[3px] border px-5 mb-3 transition-colors duration-200 overflow-hidden',
         isComplete
           ? 'border-sage/20 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
-          : 'border-gray-100 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
+          : 'border-[#E8ECEF] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
       )}
     >
       <AccordionTrigger className="py-4 hover:no-underline">

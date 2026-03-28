@@ -42,7 +42,7 @@ export function WeekView({ date, appointments, onSlotClick, onAppointmentClick }
   return (
     <div className="flex flex-col overflow-auto">
       {/* Day headers */}
-      <div className="sticky top-0 z-20 flex border-b border-gray-100 bg-white">
+      <div className="sticky top-0 z-20 flex border-b border-[#E8ECEF] bg-white">
         <div className="w-16 flex-shrink-0" />
         {days.map((day) => (
           <div

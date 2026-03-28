@@ -46,7 +46,7 @@ export function DayView({ date, appointments, onSlotClick, onAppointmentClick }:
 
   return (
     <div className="flex flex-col">
-      <div className="border-b border-gray-100 bg-white px-4 py-3 text-center">
+      <div className="border-b border-[#E8ECEF] bg-white px-4 py-3 text-center">
         <h3 className="text-[14px] font-medium capitalize text-[#2A2A2A] tracking-tight">
           {format(date, "EEEE, d 'de' MMMM", { locale: ptBR })}
         </h3>

@@ -109,7 +109,7 @@ export function SettingsPageClient({
 
       {/* Mobile: horizontal scrollable tabs */}
       <div className="md:hidden mb-6 -mx-4 px-4 overflow-x-auto scrollbar-hide">
-        <div className="flex gap-1 min-w-max bg-gray-100 rounded-[3px] p-1">
+        <div className="flex gap-1 min-w-max bg-[#E8ECEF] rounded-[3px] p-1">
           {TABS.map((tab) => {
             const Icon = tab.icon
             const isActive = activeTab === tab.key
@@ -150,7 +150,7 @@ export function SettingsPageClient({
                     'flex items-center gap-3 w-full px-3 py-2.5 rounded-[3px] text-sm font-medium transition-colors text-left',
                     isActive
                       ? 'bg-white text-[#2A2A2A] shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
-                      : 'text-mid hover:bg-gray-50 hover:text-charcoal'
+                      : 'text-mid hover:bg-[#F4F6F8] hover:text-charcoal'
                   )}
                 >
                   <Icon className={cn('h-4 w-4', isActive ? 'text-sage' : 'text-mid')} />
@@ -165,7 +165,7 @@ export function SettingsPageClient({
         <div className="flex-1 min-w-0">
           <div className="bg-white rounded-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
             {/* Section header */}
-            <div className="px-5 sm:px-6 py-4 border-b border-gray-100">
+            <div className="px-5 sm:px-6 py-4 border-b border-[#E8ECEF]">
               <div className="flex items-center gap-2.5">
                 <div className="flex items-center justify-center w-8 h-8 rounded-[3px] bg-sage/10">
                   <activeTabConfig.icon className="h-4 w-4 text-sage" />

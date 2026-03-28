@@ -92,7 +92,7 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       {/* Form */}
-      <Card className="border-0 shadow-sm">
+      <Card className="border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         <CardHeader>
           <CardTitle className="font-semibold text-[#2A2A2A]">
             {isEditing ? 'Editar Termo de Consentimento' : 'Novo Termo de Consentimento'}
@@ -193,7 +193,7 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
               </p>
             )}
 
-            <Button type="submit" disabled={isPending} className="w-full bg-forest text-cream hover:bg-sage shadow-sm hover:shadow-md transition-all duration-200">
+            <Button type="submit" disabled={isPending} className="w-full bg-forest text-cream hover:bg-sage shadow-[0_1px_4px_rgba(0,0,0,0.06)] hover:shadow-md transition-all duration-200">
               {isPending
                 ? 'Salvando...'
                 : isEditing
@@ -205,7 +205,7 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
       </Card>
 
       {/* Preview */}
-      <Card className="border-0 shadow-sm">
+      <Card className="border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="font-semibold text-[#2A2A2A]">Pre-visualizacao</CardTitle>
@@ -218,9 +218,9 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
         </CardHeader>
         <CardContent>
           {content ? (
-            <ScrollArea className="h-96 rounded-[3px] border border-gray-100 bg-white p-5">
+            <ScrollArea className="h-96 rounded-[3px] border border-[#E8ECEF] bg-white p-5">
               <div className="space-y-3">
-                <h3 className="text-base font-semibold text-forest">{title || 'Sem titulo'}</h3>
+                <h3 className="text-base font-semibold text-charcoal">{title || 'Sem titulo'}</h3>
                 <div className="whitespace-pre-wrap text-sm leading-relaxed text-charcoal">
                   {content}
                 </div>

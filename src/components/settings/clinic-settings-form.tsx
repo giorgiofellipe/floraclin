@@ -228,13 +228,13 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
           <h3 className="uppercase tracking-wider text-xs font-medium text-mid">Horario de Funcionamento</h3>
           <div className="flex-1 h-px bg-blush/60" />
         </div>
-        <div className="rounded-[3px] border border-gray-100 overflow-hidden divide-y divide-gray-100">
+        <div className="rounded-[3px] border border-[#E8ECEF] overflow-hidden divide-y divide-gray-100">
           {WEEKDAY_ORDER.map((day) => {
             const schedule = workingHours[day]
             return (
               <div
                 key={day}
-                className={`flex items-center gap-4 px-4 py-3 transition-colors ${schedule.enabled ? 'bg-white' : 'bg-gray-50'}`}
+                className={`flex items-center gap-4 px-4 py-3 transition-colors ${schedule.enabled ? 'bg-white' : 'bg-[#F4F6F8]'}`}
               >
                 <div className="flex items-center gap-3 min-w-[160px]">
                   <Switch

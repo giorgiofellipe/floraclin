@@ -129,7 +129,7 @@ export function InstallmentTable({
         </TableHeader>
         <TableBody>
           {installments.map((inst) => (
-            <TableRow key={inst.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+            <TableRow key={inst.id} className="border-b border-[#E8ECEF] hover:bg-[#F4F6F8] transition-colors">
               <TableCell className="text-charcoal tabular-nums">
                 {inst.installmentNumber}/{installments.length}
               </TableCell>

@@ -136,7 +136,7 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
       <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="border-b border-gray-100 hover:bg-transparent">
+            <TableRow className="border-b border-[#E8ECEF] hover:bg-transparent">
               <TableHead className="text-xs uppercase tracking-wider text-mid font-medium">Nome</TableHead>
               <TableHead className="text-xs uppercase tracking-wider text-mid font-medium">Telefone</TableHead>
               <TableHead className="hidden md:table-cell text-xs uppercase tracking-wider text-mid font-medium">E-mail</TableHead>
@@ -168,7 +168,7 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
               </TableRow>
             ) : (
               result.data.map((patient, index) => (
-                <TableRow key={patient.id} data-testid={`patient-row-${index}`} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                <TableRow key={patient.id} data-testid={`patient-row-${index}`} className="border-b border-[#E8ECEF] hover:bg-[#F4F6F8] transition-colors">
                   <TableCell>
                     <Link
                       href={`/pacientes/${patient.id}`}

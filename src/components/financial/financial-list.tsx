@@ -121,7 +121,7 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
       <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-white border-b border-gray-100 hover:bg-white">
+            <TableRow className="bg-white border-b border-[#E8ECEF] hover:bg-white">
               <TableHead className="w-8" />
               <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A]">Paciente</TableHead>
               <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A]">Descricao</TableHead>
@@ -147,7 +147,7 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
             {entries.map((entry) => (
               <TableRow
                 key={entry.id}
-                className="cursor-pointer transition-colors hover:bg-gray-50 border-b border-gray-100"
+                className="cursor-pointer transition-colors hover:bg-[#F4F6F8] border-b border-[#E8ECEF]"
                 onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
               >
                 <TableCell className="text-mid">

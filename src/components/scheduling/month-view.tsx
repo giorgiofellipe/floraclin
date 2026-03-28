@@ -48,14 +48,14 @@ export function MonthView({ date, appointments, onDayClick, onAppointmentClick }
   return (
     <div className="flex flex-col">
       {/* Header */}
-      <div className="border-b border-gray-100 bg-white px-4 py-3 text-center">
+      <div className="border-b border-[#E8ECEF] bg-white px-4 py-3 text-center">
         <h3 className="text-[14px] font-medium capitalize text-[#2A2A2A] tracking-tight">
           {format(date, "MMMM 'de' yyyy", { locale: ptBR })}
         </h3>
       </div>
 
       {/* Weekday headers */}
-      <div className="grid grid-cols-7 border-b border-gray-100 bg-white">
+      <div className="grid grid-cols-7 border-b border-[#E8ECEF] bg-white">
         {WEEKDAYS.map((day) => (
           <div key={day} className="px-2 py-2 text-center text-[11px] uppercase tracking-wider font-medium text-mid">
             {day}
@@ -76,7 +76,7 @@ export function MonthView({ date, appointments, onDayClick, onAppointmentClick }
               key={dateStr}
               className={cn(
                 'min-h-24 cursor-pointer border-b border-r border-sage/8 p-1.5 transition-colors duration-150 hover:bg-[#F0F7F1]/30',
-                !isCurrentMonth && 'bg-gray-50 text-mid/60'
+                !isCurrentMonth && 'bg-[#F4F6F8] text-mid/60'
               )}
               onClick={() => onDayClick?.(dateStr)}
             >
