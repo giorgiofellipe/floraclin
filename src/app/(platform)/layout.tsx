@@ -31,13 +31,15 @@ export default async function PlatformLayout({ children }: { children: React.Rea
   }))
 
   return (
-    <div className="min-h-screen bg-cream">
+    <div className="min-h-screen bg-[#F4F6F8]">
       <Sidebar
         clinicName={tenant?.name ?? 'FloraClin'}
+        userName={auth.fullName}
+        userRole="HOF"
         tenants={tenantOptions}
         activeTenantId={auth.tenantId}
       />
-      <div className="md:pl-64">
+      <div className="md:pl-[200px]">
         <Header
           userName={auth.fullName}
           userEmail={auth.email}
