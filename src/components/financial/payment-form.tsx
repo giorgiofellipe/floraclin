@@ -80,21 +80,21 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Nova Cobrança</DialogTitle>
-          <DialogDescription>
-            Preencha os dados da cobrança e defina o parcelamento.
+        <DialogHeader className="pb-2">
+          <DialogTitle className="text-lg font-semibold text-forest">Nova Cobranca</DialogTitle>
+          <DialogDescription className="text-mid">
+            Preencha os dados da cobranca e defina o parcelamento.
           </DialogDescription>
         </DialogHeader>
 
-        <form action={formAction} className="space-y-4" data-testid="payment-form">
+        <form action={formAction} className="space-y-5" data-testid="payment-form">
           <input type="hidden" name="patientId" value={patientId} />
           <input type="hidden" name="totalAmount" value={parsedAmount} />
           <input type="hidden" name="installmentCount" value={parsedCount} />
 
           {/* Patient select */}
-          <div className="space-y-1.5">
-            <Label htmlFor="patientSelect">Paciente</Label>
+          <div className="space-y-2">
+            <Label htmlFor="patientSelect" className="uppercase tracking-wider text-xs font-medium text-mid">Paciente</Label>
             <Select value={patientId} onValueChange={(v) => setPatientId(v ?? '')}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Selecione o paciente">
@@ -115,8 +115,8 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
           </div>
 
           {/* Description */}
-          <div className="space-y-1.5">
-            <Label htmlFor="description">Descrição</Label>
+          <div className="space-y-2">
+            <Label htmlFor="description" className="uppercase tracking-wider text-xs font-medium text-mid">Descricao</Label>
             <Input
               id="description"
               name="description"
@@ -129,10 +129,10 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
           </div>
 
           {/* Total amount */}
-          <div className="space-y-1.5">
-            <Label htmlFor="totalAmountInput">Valor Total (R$)</Label>
+          <div className="space-y-2">
+            <Label htmlFor="totalAmountInput" className="uppercase tracking-wider text-xs font-medium text-mid">Valor Total (R$)</Label>
             <div className="relative">
-              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-forest">
                 R$
               </span>
               <MaskedInput
@@ -141,7 +141,7 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
                 value={totalAmount}
                 onChange={(e) => handleAmountChange(e.target.value)}
                 placeholder="0,00"
-                className="pl-9"
+                className="pl-10 text-lg font-medium"
                 inputMode="numeric"
                 data-testid="payment-form-amount"
               />
@@ -152,8 +152,8 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
           </div>
 
           {/* Installment count */}
-          <div className="space-y-1.5">
-            <Label htmlFor="installmentCountSelect">Parcelas</Label>
+          <div className="space-y-2">
+            <Label htmlFor="installmentCountSelect" className="uppercase tracking-wider text-xs font-medium text-mid">Parcelas</Label>
             <Select value={installmentCount} onValueChange={(v) => setInstallmentCount(v ?? '1')}>
               <SelectTrigger className="w-full">
                 <SelectValue />
@@ -173,18 +173,18 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
 
           {/* Installment preview */}
           {installmentPreview.length > 0 && parsedAmount > 0 && (
-            <div className="rounded-lg border p-3 space-y-2">
-              <p className="text-sm font-medium">Prévia das parcelas</p>
-              <div className="space-y-1">
+            <div className="rounded-xl border border-sage/10 bg-petal/30 p-4 space-y-3">
+              <p className="text-xs uppercase tracking-wider font-medium text-forest">Previa das parcelas</p>
+              <div className="space-y-2">
                 {installmentPreview.map((inst) => (
                   <div
                     key={inst.number}
-                    className="flex items-center justify-between text-sm text-muted-foreground"
+                    className="flex items-center justify-between text-sm"
                   >
-                    <span>
-                      {inst.number}ª parcela — {formatDate(inst.dueDate)}
+                    <span className="text-mid">
+                      {inst.number}a parcela -- {formatDate(inst.dueDate)}
                     </span>
-                    <span className="font-medium text-foreground">
+                    <span className="font-medium text-charcoal tabular-nums">
                       {formatCurrency(inst.amount)}
                     </span>
                   </div>
@@ -194,8 +194,8 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
           )}
 
           {/* Notes */}
-          <div className="space-y-1.5">
-            <Label htmlFor="notes">Observações</Label>
+          <div className="space-y-2">
+            <Label htmlFor="notes" className="uppercase tracking-wider text-xs font-medium text-mid">Observacoes</Label>
             <Textarea
               id="notes"
               name="notes"
@@ -208,12 +208,12 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
             <p className="text-sm text-destructive">{state.error}</p>
           )}
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
+          <DialogFooter className="pt-2 border-t border-sage/10">
+            <Button type="button" variant="outline" className="rounded-full border-sage/20" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={isPending || !patientId || parsedAmount <= 0} data-testid="payment-form-submit">
-              {isPending ? 'Salvando...' : 'Criar Cobrança'}
+            <Button type="submit" disabled={isPending || !patientId || parsedAmount <= 0} className="rounded-full bg-forest text-cream hover:bg-sage transition-colors" data-testid="payment-form-submit">
+              {isPending ? 'Salvando...' : 'Criar Cobranca'}
             </Button>
           </DialogFooter>
         </form>

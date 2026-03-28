@@ -9,15 +9,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { listFinancialEntriesAction } from '@/actions/financial'
 import { InstallmentTable } from './installment-table'
 import { PaymentForm } from './payment-form'
-import { ChevronDownIcon, ChevronRightIcon, PlusIcon } from 'lucide-react'
-import type { FinancialStatus } from '@/types'
+import { ChevronRightIcon, PlusIcon } from 'lucide-react'
 
 interface Patient {
   id: string
@@ -45,12 +43,12 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: 'Cancelado',
 }
 
-const STATUS_VARIANTS: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  pending: 'outline',
-  partial: 'secondary',
-  paid: 'default',
-  overdue: 'destructive',
-  cancelled: 'outline',
+const STATUS_COLORS: Record<string, string> = {
+  pending: 'bg-sage/10 text-sage',
+  partial: 'bg-amber-light text-amber-dark',
+  paid: 'bg-mint/20 text-forest',
+  overdue: 'bg-amber-light text-amber-dark',
+  cancelled: 'bg-petal text-mid',
 }
 
 export function FinancialList({ patients }: { patients: Patient[] }) {
@@ -91,9 +89,9 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <Select value={statusFilter || 'all'} onValueChange={handleStatusChange}>
-            <SelectTrigger className="w-[160px]">
+            <SelectTrigger className="w-[160px] rounded-full border-sage/20">
               <SelectValue placeholder="Status">
                 {(value: string) => {
                   if (value === 'all') return 'Todos'
@@ -110,92 +108,103 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
               <SelectItem value="cancelled">Cancelado</SelectItem>
             </SelectContent>
           </Select>
-          <span className="text-sm text-muted-foreground">
+          <span className="text-sm text-mid">
             {total} {total === 1 ? 'registro' : 'registros'}
           </span>
         </div>
-        <Button onClick={() => setShowPaymentForm(true)}>
+        <Button className="rounded-full bg-forest text-cream hover:bg-sage transition-colors" onClick={() => setShowPaymentForm(true)}>
           <PlusIcon data-icon="inline-start" />
-          Nova Cobrança
+          Nova Cobranca
         </Button>
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-8" />
-            <TableHead>Paciente</TableHead>
-            <TableHead>Descrição</TableHead>
-            <TableHead>Valor</TableHead>
-            <TableHead>Parcelas</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Data</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {entries.length === 0 && (
-            <TableRow>
-              <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                {isPending ? 'Carregando...' : 'Nenhuma cobrança registrada.'}
-              </TableCell>
+      <div className="rounded-xl border border-sage/10 bg-white shadow-sm overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-petal/30 border-b border-sage/10 hover:bg-petal/30">
+              <TableHead className="w-8" />
+              <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid">Paciente</TableHead>
+              <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid">Descricao</TableHead>
+              <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid text-right">Valor</TableHead>
+              <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid text-center">Parcelas</TableHead>
+              <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid">Status</TableHead>
+              <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid">Data</TableHead>
             </TableRow>
-          )}
-          {entries.map((entry) => (
-            <TableRow
-              key={entry.id}
-              className="cursor-pointer"
-              onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
-            >
-              <TableCell>
-                {expandedId === entry.id ? (
-                  <ChevronDownIcon className="size-4" />
-                ) : (
-                  <ChevronRightIcon className="size-4" />
-                )}
-              </TableCell>
-              <TableCell className="font-medium">{entry.patientName}</TableCell>
-              <TableCell>{entry.description}</TableCell>
-              <TableCell>{formatCurrency(Number(entry.totalAmount))}</TableCell>
-              <TableCell>
-                {entry.paidInstallments}/{entry.installmentCount}
-              </TableCell>
-              <TableCell>
-                <Badge variant={STATUS_VARIANTS[entry.status] ?? 'outline'}>
-                  {STATUS_LABELS[entry.status] ?? entry.status}
-                </Badge>
-              </TableCell>
-              <TableCell>{formatDate(entry.createdAt)}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {entries.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center text-mid py-12">
+                  {isPending ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="size-2 animate-pulse rounded-full bg-sage" />
+                      Carregando...
+                    </span>
+                  ) : 'Nenhuma cobranca registrada.'}
+                </TableCell>
+              </TableRow>
+            )}
+            {entries.map((entry) => (
+              <TableRow
+                key={entry.id}
+                className="cursor-pointer transition-colors hover:bg-petal/20 border-b border-sage/5"
+                onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
+              >
+                <TableCell className="text-mid">
+                  <div className={`transition-transform duration-200 ${expandedId === entry.id ? 'rotate-90' : ''}`}>
+                    <ChevronRightIcon className="size-4" />
+                  </div>
+                </TableCell>
+                <TableCell className="font-medium text-charcoal">{entry.patientName}</TableCell>
+                <TableCell className="text-charcoal">{entry.description}</TableCell>
+                <TableCell className={`text-right font-medium tabular-nums ${entry.status === 'overdue' ? 'text-amber' : 'text-charcoal'}`}>
+                  {formatCurrency(Number(entry.totalAmount))}
+                </TableCell>
+                <TableCell className="text-center">
+                  <span className="text-sm tabular-nums text-mid">
+                    {entry.paidInstallments}/{entry.installmentCount}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ${STATUS_COLORS[entry.status] ?? 'bg-petal text-mid'}`}>
+                    {STATUS_LABELS[entry.status] ?? entry.status}
+                  </span>
+                </TableCell>
+                <TableCell className="text-mid text-sm">{formatDate(entry.createdAt)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
 
       {expandedId && (
-        <div className="rounded-lg border p-4">
+        <div className="rounded-xl border border-sage/10 bg-white p-4 shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
           <InstallmentTable entryId={expandedId} onPaymentComplete={fetchEntries} />
         </div>
       )}
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
+        <div className="flex items-center justify-center gap-3 pt-2">
           <Button
             variant="outline"
             size="sm"
+            className="rounded-full border-sage/20"
             disabled={page <= 1}
             onClick={() => setPage((p) => p - 1)}
           >
             Anterior
           </Button>
-          <span className="text-sm text-muted-foreground">
-            Página {page} de {totalPages}
+          <span className="text-sm text-mid tabular-nums">
+            Pagina {page} de {totalPages}
           </span>
           <Button
             variant="outline"
             size="sm"
+            className="rounded-full border-sage/20"
             disabled={page >= totalPages}
             onClick={() => setPage((p) => p + 1)}
           >
-            Próxima
+            Proxima
           </Button>
         </div>
       )}

@@ -6,7 +6,6 @@ import {
   Bar,
   XAxis,
   YAxis,
-  CartesianGrid,
   Tooltip,
   ResponsiveContainer,
   PieChart,
@@ -66,8 +65,9 @@ export function RevenueChart() {
 
   if (isPending || !data) {
     return (
-      <div className="flex items-center justify-center py-16 text-muted-foreground">
-        Carregando dados financeiros...
+      <div className="flex items-center justify-center gap-2 py-16">
+        <span className="size-2 animate-pulse rounded-full bg-sage" />
+        <span className="text-sm text-mid">Carregando dados financeiros...</span>
       </div>
     )
   }
@@ -91,37 +91,43 @@ export function RevenueChart() {
     <div className="space-y-6">
       {/* Summary cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card size="sm">
+        <Card size="sm" className="rounded-xl border-sage/10 bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Recebido</CardTitle>
-            <DollarSignIcon className="size-4 text-muted-foreground" />
+            <CardTitle className="text-xs uppercase tracking-wider font-medium text-mid">Total Recebido</CardTitle>
+            <div className="rounded-full bg-mint/20 p-2">
+              <DollarSignIcon className="size-4 text-sage" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <div className="text-2xl font-bold text-forest tabular-nums tracking-tight">
               {formatCurrency(Number(data.summary.totalReceived))}
             </div>
           </CardContent>
         </Card>
 
-        <Card size="sm">
+        <Card size="sm" className="rounded-xl border-sage/10 bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Pendente</CardTitle>
-            <ClockIcon className="size-4 text-muted-foreground" />
+            <CardTitle className="text-xs uppercase tracking-wider font-medium text-mid">Total Pendente</CardTitle>
+            <div className="rounded-full bg-blush p-2">
+              <ClockIcon className="size-4 text-gold" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <div className="text-2xl font-bold text-charcoal tabular-nums tracking-tight">
               {formatCurrency(Number(data.summary.totalPending))}
             </div>
           </CardContent>
         </Card>
 
-        <Card size="sm">
+        <Card size="sm" className="rounded-xl border-sage/10 bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Atrasado</CardTitle>
-            <AlertTriangleIcon className="size-4 text-muted-foreground" />
+            <CardTitle className="text-xs uppercase tracking-wider font-medium text-mid">Total Atrasado</CardTitle>
+            <div className="rounded-full bg-amber-light p-2">
+              <AlertTriangleIcon className="size-4 text-amber" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-amber">
+            <div className="text-2xl font-bold text-amber tabular-nums tracking-tight">
               {formatCurrency(Number(data.summary.totalOverdue))}
             </div>
           </CardContent>
@@ -131,44 +137,50 @@ export function RevenueChart() {
       {/* Charts */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Monthly revenue bar chart */}
-        <Card>
+        <Card className="rounded-xl border-sage/10 shadow-sm">
           <CardHeader>
-            <CardTitle>Receita Mensal</CardTitle>
+            <CardTitle className="text-base font-semibold text-forest">Receita Mensal</CardTitle>
           </CardHeader>
           <CardContent>
             {monthlyChartData.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                Sem dados de receita no período
+              <p className="py-8 text-center text-sm text-mid">
+                Sem dados de receita no periodo
               </p>
             ) : (
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={monthlyChartData}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                <BarChart data={monthlyChartData} barCategoryGap="20%">
                   <XAxis
                     dataKey="name"
-                    className="text-xs fill-muted-foreground"
+                    tick={{ fontSize: 12, fill: '#7A7A7A' }}
                     tickLine={false}
                     axisLine={false}
                   />
                   <YAxis
-                    className="text-xs fill-muted-foreground"
+                    tick={{ fontSize: 11, fill: '#7A7A7A' }}
                     tickLine={false}
                     axisLine={false}
                     tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`}
+                    width={65}
                   />
                   <Tooltip
                     formatter={(value) => [formatCurrency(Number(value)), 'Receita']}
+                    cursor={{ fill: 'rgba(74, 107, 82, 0.05)' }}
                     contentStyle={{
-                      borderRadius: '8px',
-                      border: '1px solid hsl(var(--border))',
-                      backgroundColor: 'hsl(var(--popover))',
-                      color: 'hsl(var(--popover-foreground))',
+                      borderRadius: '12px',
+                      border: 'none',
+                      backgroundColor: '#1C2B1E',
+                      color: '#FAF7F3',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                      padding: '8px 14px',
+                      fontSize: '13px',
                     }}
+                    labelStyle={{ color: '#8FB49A', fontWeight: 500, marginBottom: '2px' }}
+                    itemStyle={{ color: '#FAF7F3' }}
                   />
                   <Bar
                     dataKey="total"
                     fill="#4A6B52"
-                    radius={[4, 4, 0, 0]}
+                    radius={[6, 6, 0, 0]}
                   />
                 </BarChart>
               </ResponsiveContainer>
@@ -177,14 +189,14 @@ export function RevenueChart() {
         </Card>
 
         {/* Revenue by procedure type donut chart */}
-        <Card>
+        <Card className="rounded-xl border-sage/10 shadow-sm">
           <CardHeader>
-            <CardTitle>Receita por Tipo de Procedimento</CardTitle>
+            <CardTitle className="text-base font-semibold text-forest">Receita por Tipo de Procedimento</CardTitle>
           </CardHeader>
           <CardContent>
             {procedureChartData.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                Sem dados de procedimentos no período
+              <p className="py-8 text-center text-sm text-mid">
+                Sem dados de procedimentos no periodo
               </p>
             ) : (
               <ResponsiveContainer width="100%" height={300}>
@@ -193,11 +205,12 @@ export function RevenueChart() {
                     data={procedureChartData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={2}
+                    innerRadius={65}
+                    outerRadius={105}
+                    paddingAngle={3}
                     dataKey="value"
                     nameKey="name"
+                    strokeWidth={0}
                   >
                     {procedureChartData.map((_, index) => (
                       <Cell
@@ -209,15 +222,21 @@ export function RevenueChart() {
                   <Tooltip
                     formatter={(value) => [formatCurrency(Number(value)), 'Receita']}
                     contentStyle={{
-                      borderRadius: '8px',
-                      border: '1px solid hsl(var(--border))',
-                      backgroundColor: 'hsl(var(--popover))',
-                      color: 'hsl(var(--popover-foreground))',
+                      borderRadius: '12px',
+                      border: 'none',
+                      backgroundColor: '#1C2B1E',
+                      color: '#FAF7F3',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                      padding: '8px 14px',
+                      fontSize: '13px',
                     }}
+                    itemStyle={{ color: '#FAF7F3' }}
                   />
                   <Legend
+                    iconType="circle"
+                    iconSize={8}
                     formatter={(value: string) => (
-                      <span className="text-sm text-foreground">{value}</span>
+                      <span className="text-sm text-charcoal">{value}</span>
                     )}
                   />
                 </PieChart>

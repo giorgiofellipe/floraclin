@@ -31,11 +31,11 @@ export function AppointmentCard({ appointment, compact = false, onClick }: Appoi
         type="button"
         onClick={() => onClick?.(appointment)}
         className={cn(
-          'w-full rounded-md px-2 py-1 text-left text-xs transition-opacity hover:opacity-80',
+          'w-full rounded-lg px-2 py-1 text-left text-xs transition-all duration-150 hover:shadow-sm hover:-translate-y-px',
           statusColor
         )}
       >
-        <span className="font-medium">{appointment.startTime.slice(0, 5)}</span>{' '}
+        <span className="font-semibold">{appointment.startTime.slice(0, 5)}</span>{' '}
         <span className="truncate">{displayName}</span>
       </button>
     )
@@ -46,7 +46,7 @@ export function AppointmentCard({ appointment, compact = false, onClick }: Appoi
       type="button"
       onClick={() => onClick?.(appointment)}
       className={cn(
-        'w-full rounded-md border-l-4 bg-white px-3 py-2 text-left shadow-sm transition-shadow hover:shadow-md',
+        'w-full h-full rounded-lg border-l-[3px] bg-white px-3 py-2 text-left shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5',
         appointment.status === 'scheduled' && 'border-l-sage',
         appointment.status === 'confirmed' && 'border-l-mint',
         appointment.status === 'in_progress' && 'border-l-amber',
@@ -57,15 +57,15 @@ export function AppointmentCard({ appointment, compact = false, onClick }: Appoi
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-foreground">{displayName}</p>
-          <p className="text-xs text-muted-foreground">{timeStr}</p>
+          <p className="truncate text-sm font-medium text-charcoal">{displayName}</p>
+          <p className="text-xs text-mid">{timeStr}</p>
           {appointment.procedureTypeName && (
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            <p className="mt-0.5 truncate text-xs text-mid">
               {appointment.procedureTypeName}
             </p>
           )}
         </div>
-        <Badge className={cn('shrink-0', statusColor)}>
+        <Badge className={cn('shrink-0 rounded-full text-[10px] px-2 py-0.5', statusColor)}>
           {STATUS_LABELS[appointment.status] ?? appointment.status}
         </Badge>
       </div>

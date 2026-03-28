@@ -200,22 +200,22 @@ export function AppointmentForm({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{isEditing ? 'Editar Agendamento' : 'Novo Agendamento'}</DialogTitle>
+        <DialogHeader className="pb-2">
+          <DialogTitle className="text-lg font-semibold text-forest">{isEditing ? 'Editar Agendamento' : 'Novo Agendamento'}</DialogTitle>
         </DialogHeader>
 
         {state?.error && (
-          <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <div className="rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-700 border border-red-100">
             {state.error}
           </div>
         )}
 
-        <form action={formAction} className="grid gap-4" data-testid="appointment-form">
+        <form action={formAction} className="grid gap-5" data-testid="appointment-form">
           {isEditing && <input type="hidden" name="id" value={appointment.id} />}
 
           {/* Patient search */}
-          <div className="grid gap-1.5">
-            <Label htmlFor="patient-search">Paciente</Label>
+          <div className="grid gap-2">
+            <Label htmlFor="patient-search" className="uppercase tracking-wider text-xs font-medium text-mid">Paciente</Label>
             <div className="relative">
               <Input
                 id="patient-search"
@@ -257,8 +257,8 @@ export function AppointmentForm({
           </div>
 
           {/* Practitioner */}
-          <div className="grid gap-1.5">
-            <Label>Profissional</Label>
+          <div className="grid gap-2">
+            <Label className="uppercase tracking-wider text-xs font-medium text-mid">Profissional</Label>
             <Select
               value={practitionerId}
               onValueChange={(v) => v && setPractitionerId(v)}
@@ -280,8 +280,8 @@ export function AppointmentForm({
           </div>
 
           {/* Procedure type */}
-          <div className="grid gap-1.5">
-            <Label>Tipo de Procedimento</Label>
+          <div className="grid gap-2">
+            <Label className="uppercase tracking-wider text-xs font-medium text-mid">Tipo de Procedimento</Label>
             <Select
               value={procedureTypeId}
               onValueChange={(v) => v && handleProcedureTypeChange(v)}
@@ -310,8 +310,8 @@ export function AppointmentForm({
           </div>
 
           {/* Date */}
-          <div className="grid gap-1.5">
-            <Label htmlFor="date">Data</Label>
+          <div className="grid gap-2">
+            <Label htmlFor="date" className="uppercase tracking-wider text-xs font-medium text-mid">Data</Label>
             <Input
               id="date"
               name="date"
@@ -326,9 +326,9 @@ export function AppointmentForm({
           </div>
 
           {/* Time */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1.5">
-              <Label>Início</Label>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label className="uppercase tracking-wider text-xs font-medium text-mid">Inicio</Label>
               <Select value={startTime} onValueChange={(v) => v && handleStartTimeChange(v)}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -343,8 +343,8 @@ export function AppointmentForm({
               </Select>
               <input type="hidden" name="startTime" value={startTime} />
             </div>
-            <div className="grid gap-1.5">
-              <Label>Término</Label>
+            <div className="grid gap-2">
+              <Label className="uppercase tracking-wider text-xs font-medium text-mid">Termino</Label>
               <Select value={endTime} onValueChange={(v) => v && setEndTime(v)}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -365,8 +365,8 @@ export function AppointmentForm({
           </div>
 
           {/* Notes */}
-          <div className="grid gap-1.5">
-            <Label htmlFor="notes">Observações</Label>
+          <div className="grid gap-2">
+            <Label htmlFor="notes" className="uppercase tracking-wider text-xs font-medium text-mid">Observacoes</Label>
             <Textarea
               id="notes"
               name="notes"
@@ -376,13 +376,13 @@ export function AppointmentForm({
             />
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="pt-2 border-t border-sage/10">
             <div className="flex w-full items-center justify-between">
               <div className="flex gap-2">
                 {isEditing && (
                   <>
                     <Select onValueChange={(v) => v && handleStatusChange(v as AppointmentStatus)}>
-                      <SelectTrigger className="w-auto">
+                      <SelectTrigger className="w-auto rounded-full text-sm">
                         <SelectValue placeholder="Alterar status">
                           {(value: string) => STATUS_LABELS[value as AppointmentStatus] ?? value}
                         </SelectValue>
@@ -395,7 +395,7 @@ export function AppointmentForm({
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button type="button" variant="destructive" size="sm" onClick={handleDelete}>
+                    <Button type="button" variant="destructive" size="sm" className="rounded-full" onClick={handleDelete}>
                       Excluir
                     </Button>
                   </>
@@ -405,11 +405,12 @@ export function AppointmentForm({
                 <Button
                   type="button"
                   variant="outline"
+                  className="rounded-full border-sage/20"
                   onClick={() => onOpenChange(false)}
                 >
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={isPending} data-testid="appointment-form-submit">
+                <Button type="submit" disabled={isPending} className="rounded-full bg-forest text-cream hover:bg-sage transition-colors" data-testid="appointment-form-submit">
                   {isPending ? 'Salvando...' : 'Salvar'}
                 </Button>
               </div>

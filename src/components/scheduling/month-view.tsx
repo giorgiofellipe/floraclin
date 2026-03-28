@@ -48,16 +48,16 @@ export function MonthView({ date, appointments, onDayClick, onAppointmentClick }
   return (
     <div className="flex flex-col">
       {/* Header */}
-      <div className="mb-2 text-center">
-        <h3 className="text-lg font-semibold capitalize">
+      <div className="border-b border-sage/10 bg-petal/30 px-4 py-3 text-center">
+        <h3 className="text-base font-semibold capitalize text-forest tracking-tight">
           {format(date, "MMMM 'de' yyyy", { locale: ptBR })}
         </h3>
       </div>
 
       {/* Weekday headers */}
-      <div className="grid grid-cols-7 border-b border-border">
+      <div className="grid grid-cols-7 border-b border-sage/10 bg-petal/20">
         {WEEKDAYS.map((day) => (
-          <div key={day} className="px-2 py-1 text-center text-xs font-medium text-muted-foreground">
+          <div key={day} className="px-2 py-2 text-center text-[11px] uppercase tracking-wider font-medium text-mid">
             {day}
           </div>
         ))}
@@ -75,22 +75,24 @@ export function MonthView({ date, appointments, onDayClick, onAppointmentClick }
             <div
               key={dateStr}
               className={cn(
-                'min-h-24 cursor-pointer border-b border-r border-border p-1 transition-colors hover:bg-muted/50',
-                !isCurrentMonth && 'bg-muted/30 text-muted-foreground'
+                'min-h-24 cursor-pointer border-b border-r border-sage/8 p-1.5 transition-colors duration-150 hover:bg-petal/30',
+                !isCurrentMonth && 'bg-cream/50 text-mid/60'
               )}
               onClick={() => onDayClick?.(dateStr)}
             >
               <div className="flex items-center justify-between">
                 <span
                   className={cn(
-                    'inline-flex size-6 items-center justify-center rounded-full text-xs',
-                    todayFlag && 'bg-primary text-primary-foreground font-medium'
+                    'inline-flex size-7 items-center justify-center rounded-full text-xs font-medium',
+                    todayFlag && 'bg-sage text-cream font-semibold',
+                    !todayFlag && isCurrentMonth && 'text-charcoal',
+                    !todayFlag && !isCurrentMonth && 'text-mid/50'
                   )}
                 >
                   {format(day, 'd')}
                 </span>
                 {dayAppointments.length > MAX_VISIBLE_APPOINTMENTS && (
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-[10px] font-medium text-mid rounded-full bg-petal px-1.5 py-0.5">
                     +{dayAppointments.length - MAX_VISIBLE_APPOINTMENTS}
                   </span>
                 )}
@@ -107,7 +109,7 @@ export function MonthView({ date, appointments, onDayClick, onAppointmentClick }
                       key={appt.id}
                       type="button"
                       className={cn(
-                        'w-full truncate rounded px-1 py-0.5 text-left text-[10px] leading-tight transition-opacity hover:opacity-80',
+                        'w-full truncate rounded-md px-1.5 py-0.5 text-left text-[10px] leading-tight transition-all duration-150 hover:shadow-sm hover:-translate-y-px',
                         statusColor
                       )}
                       onClick={(e) => {
@@ -115,7 +117,7 @@ export function MonthView({ date, appointments, onDayClick, onAppointmentClick }
                         onAppointmentClick?.(appt)
                       }}
                     >
-                      <span className="font-medium">{appt.startTime.slice(0, 5)}</span>{' '}
+                      <span className="font-semibold">{appt.startTime.slice(0, 5)}</span>{' '}
                       {displayName}
                     </button>
                   )

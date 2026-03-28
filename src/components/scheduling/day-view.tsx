@@ -3,7 +3,6 @@
 import * as React from 'react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { cn } from '@/lib/utils'
 import { AppointmentCard } from '@/components/scheduling/appointment-card'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
 
@@ -39,24 +38,30 @@ export function DayView({ date, appointments, onSlotClick, onAppointmentClick }:
   const dateStr = format(date, 'yyyy-MM-dd')
   const dayAppointments = appointments.filter((a) => a.date === dateStr)
 
+  // Current time indicator
+  const now = new Date()
+  const isToday = format(now, 'yyyy-MM-dd') === dateStr
+  const currentMinutes = now.getHours() * 60 + now.getMinutes()
+  const currentTimeTop = ((currentMinutes - START_HOUR * 60) / 30) * SLOT_HEIGHT_PX
+
   return (
     <div className="flex flex-col">
-      <div className="mb-2 text-center">
-        <h3 className="text-lg font-semibold capitalize">
+      <div className="border-b border-sage/10 bg-petal/30 px-4 py-3 text-center">
+        <h3 className="text-base font-semibold capitalize text-forest tracking-tight">
           {format(date, "EEEE, d 'de' MMMM", { locale: ptBR })}
         </h3>
       </div>
 
       <div className="relative flex flex-1 overflow-auto">
         {/* Time labels */}
-        <div className="sticky left-0 z-10 w-16 flex-shrink-0 bg-background">
+        <div className="sticky left-0 z-10 w-16 flex-shrink-0 bg-white">
           {HOURS.map((hour) => (
             <div
               key={hour}
-              className="flex items-start border-b border-dashed border-border"
+              className="flex items-start"
               style={{ height: SLOT_HEIGHT_PX * 2 }}
             >
-              <span className="pr-2 text-right text-xs text-muted-foreground w-full -mt-2">
+              <span className="pr-3 text-right text-[11px] font-medium text-mid w-full -mt-2 select-none">
                 {String(hour).padStart(2, '0')}:00
               </span>
             </div>
@@ -64,19 +69,19 @@ export function DayView({ date, appointments, onSlotClick, onAppointmentClick }:
         </div>
 
         {/* Grid + appointments */}
-        <div className="relative flex-1 border-l border-border">
+        <div className="relative flex-1 border-l border-sage/10">
           {/* Grid lines */}
           {HOURS.map((hour) => (
             <React.Fragment key={hour}>
               <div
-                className="cursor-pointer border-b border-border hover:bg-muted/50"
+                className="cursor-pointer border-b border-sage/8 transition-colors hover:bg-petal/30"
                 style={{ height: SLOT_HEIGHT_PX }}
                 onClick={() =>
                   onSlotClick?.(dateStr, `${String(hour).padStart(2, '0')}:00`)
                 }
               />
               <div
-                className="cursor-pointer border-b border-dashed border-border hover:bg-muted/50"
+                className="cursor-pointer border-b border-dashed border-sage/5 transition-colors hover:bg-petal/30"
                 style={{ height: SLOT_HEIGHT_PX }}
                 onClick={() =>
                   onSlotClick?.(dateStr, `${String(hour).padStart(2, '0')}:30`)
@@ -85,13 +90,26 @@ export function DayView({ date, appointments, onSlotClick, onAppointmentClick }:
             </React.Fragment>
           ))}
 
+          {/* Current time indicator */}
+          {isToday && currentMinutes >= START_HOUR * 60 && currentMinutes <= END_HOUR * 60 && (
+            <div
+              className="absolute left-0 right-0 z-30 pointer-events-none"
+              style={{ top: currentTimeTop }}
+            >
+              <div className="flex items-center">
+                <div className="size-2 rounded-full bg-sage" />
+                <div className="h-[2px] flex-1 bg-sage/60" />
+              </div>
+            </div>
+          )}
+
           {/* Appointments */}
           {dayAppointments.map((appt) => {
             const { top, height } = getAppointmentPosition(appt)
             return (
               <div
                 key={appt.id}
-                className="absolute left-1 right-1 z-20"
+                className="absolute left-1 right-2 z-20"
                 style={{ top, height }}
               >
                 <AppointmentCard

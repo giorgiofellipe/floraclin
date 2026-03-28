@@ -22,23 +22,23 @@ export default async function FinanceiroPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-forest">Financeiro</h1>
-        <p className="text-mid mt-1">
+        <h1 className="font-display text-2xl font-semibold text-forest tracking-tight">Financeiro</h1>
+        <p className="text-sm text-mid mt-0.5">
           Gerencie cobranças, parcelas e visualize o desempenho financeiro.
         </p>
       </div>
 
       <Tabs defaultValue="receivables">
-        <TabsList>
-          <TabsTrigger value="receivables">A Receber</TabsTrigger>
-          <TabsTrigger value="overview">Visão Geral</TabsTrigger>
+        <TabsList className="bg-transparent border-b border-sage/10 rounded-none p-0 h-auto gap-0">
+          <TabsTrigger value="receivables" className="rounded-none border-b-2 border-transparent data-[state=active]:border-sage data-[state=active]:bg-transparent data-[state=active]:text-forest data-[state=active]:shadow-none text-mid px-5 py-2.5 font-medium transition-colors hover:text-forest">A Receber</TabsTrigger>
+          <TabsTrigger value="overview" className="rounded-none border-b-2 border-transparent data-[state=active]:border-sage data-[state=active]:bg-transparent data-[state=active]:text-forest data-[state=active]:shadow-none text-mid px-5 py-2.5 font-medium transition-colors hover:text-forest">Visao Geral</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="receivables">
+        <TabsContent value="receivables" className="mt-6">
           <FinancialList patients={patients} />
         </TabsContent>
 
-        <TabsContent value="overview">
+        <TabsContent value="overview" className="mt-6">
           <RevenueChart />
         </TabsContent>
       </Tabs>
