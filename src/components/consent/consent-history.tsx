@@ -77,7 +77,7 @@ export function ConsentHistory({ patientId }: ConsentHistoryProps) {
           <CardTitle>Termos de Consentimento</CardTitle>
         </CardHeader>
         <CardContent className="py-4 text-center text-sm text-muted-foreground">
-          Nenhum termo aceito ainda.
+          Nenhum termo assinado.
         </CardContent>
       </Card>
     )

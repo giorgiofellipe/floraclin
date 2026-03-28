@@ -85,7 +85,7 @@ export function PhotoGrid({
     return (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
         <ZoomIn className="mb-2 size-8" />
-        <p className="text-sm">Nenhuma foto encontrada</p>
+        <p className="text-sm">Nenhuma foto enviada.</p>
       </div>
     )
   }

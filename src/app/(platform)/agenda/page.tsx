@@ -1,4 +1,9 @@
+import type { Metadata } from 'next'
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns'
+
+export const metadata: Metadata = {
+  title: 'Agenda | FloraClin',
+}
 import { getAuthContext } from '@/lib/auth'
 import { listAppointments } from '@/db/queries/appointments'
 import { listPractitioners } from '@/db/queries/appointments'

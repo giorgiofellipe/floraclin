@@ -1,4 +1,9 @@
+import type { Metadata } from 'next'
 import { requireRole } from '@/lib/auth'
+
+export const metadata: Metadata = {
+  title: 'Configurações | FloraClin',
+}
 import { getTenant, listProcedureTypes, listConsentTemplates } from '@/db/queries/tenants'
 import { listTenantUsers } from '@/db/queries/users'
 import { SettingsPageClient } from './settings-page-client'

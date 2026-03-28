@@ -286,6 +286,14 @@ export function CalendarView({
           </div>
         )}
 
+        {!isLoading && appointments.length === 0 && (
+          <div className="absolute inset-x-0 top-4 z-20 flex justify-center pointer-events-none">
+            <p className="rounded-md bg-petal px-4 py-2 text-sm text-mid">
+              Nenhum agendamento para este período.
+            </p>
+          </div>
+        )}
+
         {view === 'day' && (
           <DayView
             date={currentDate}

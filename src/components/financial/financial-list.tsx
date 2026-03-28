@@ -131,7 +131,7 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
           {entries.length === 0 && (
             <TableRow>
               <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                {isPending ? 'Carregando...' : 'Nenhuma cobrança encontrada'}
+                {isPending ? 'Carregando...' : 'Nenhuma cobrança registrada.'}
               </TableCell>
             </TableRow>
           )}

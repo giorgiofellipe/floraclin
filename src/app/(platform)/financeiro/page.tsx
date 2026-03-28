@@ -1,4 +1,9 @@
+import type { Metadata } from 'next'
 import { getAuthContext } from '@/lib/auth'
+
+export const metadata: Metadata = {
+  title: 'Financeiro | FloraClin',
+}
 import { listPatients } from '@/db/queries/patients'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FinancialList } from '@/components/financial/financial-list'

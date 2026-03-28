@@ -1,4 +1,9 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
+
+export const metadata: Metadata = {
+  title: 'Bem-vindo | FloraClin',
+}
 import { getAuthContext } from '@/lib/auth'
 import { getTenant, listProcedureTypes } from '@/db/queries/tenants'
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard'

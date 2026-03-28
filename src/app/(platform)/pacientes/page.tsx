@@ -1,4 +1,9 @@
+import type { Metadata } from 'next'
 import { Suspense } from 'react'
+
+export const metadata: Metadata = {
+  title: 'Pacientes | FloraClin',
+}
 import { listPatientsAction } from '@/actions/patients'
 import { PatientList } from '@/components/patients/patient-list'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'

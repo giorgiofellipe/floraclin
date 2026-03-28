@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { Suspense } from 'react'
 import { getPatientAction } from '@/actions/patients'
@@ -6,6 +7,14 @@ import { PatientDetailContent } from '@/components/patients/patient-detail-conte
 interface PatientDetailPageProps {
   params: Promise<{ id: string }>
   searchParams: Promise<{ tab?: string }>
+}
+
+export async function generateMetadata({ params }: PatientDetailPageProps): Promise<Metadata> {
+  const { id } = await params
+  const patient = await getPatientAction(id)
+  return {
+    title: patient ? `${patient.fullName} | FloraClin` : 'Paciente | FloraClin',
+  }
 }
 
 export default async function PatientDetailPage({
