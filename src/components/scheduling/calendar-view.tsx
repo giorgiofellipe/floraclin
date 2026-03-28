@@ -221,10 +221,10 @@ export function CalendarView({
             Hoje
           </Button>
           <div className="flex items-center gap-0.5">
-            <Button variant="ghost" size="icon-sm" onClick={() => navigate('prev')}>
+            <Button variant="ghost" size="icon-sm" onClick={() => navigate('prev')} data-testid="calendar-date-prev">
               <ChevronLeft className="size-4" />
             </Button>
-            <Button variant="ghost" size="icon-sm" onClick={() => navigate('next')}>
+            <Button variant="ghost" size="icon-sm" onClick={() => navigate('next')} data-testid="calendar-date-next">
               <ChevronRight className="size-4" />
             </Button>
           </div>
@@ -253,7 +253,7 @@ export function CalendarView({
           </Select>
 
           {/* View toggle */}
-          <div className="flex rounded-lg border border-border">
+          <div className="flex rounded-lg border border-border" data-testid="calendar-view-toggle">
             {([
               ['day', 'Dia'],
               ['week', 'Semana'],
@@ -271,7 +271,7 @@ export function CalendarView({
             ))}
           </div>
 
-          <Button size="sm" onClick={handleNewAppointment}>
+          <Button size="sm" onClick={handleNewAppointment} data-testid="calendar-new-appointment">
             <Plus className="size-4" />
             Agendar
           </Button>

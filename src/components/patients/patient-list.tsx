@@ -99,7 +99,7 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
             {result.total} {result.total === 1 ? 'paciente cadastrado' : 'pacientes cadastrados'}
           </p>
         </div>
-        <Button onClick={handleNewPatient}>
+        <Button onClick={handleNewPatient} data-testid="patient-new-button">
           <PlusIcon className="size-4" data-icon="inline-start" />
           Novo Paciente
         </Button>
@@ -117,6 +117,7 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
               if (e.key === 'Enter') handleSearch()
             }}
             className="pl-8"
+            data-testid="patient-search"
           />
         </div>
         <Button variant="outline" onClick={handleSearch}>
@@ -140,15 +141,15 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
           <TableBody>
             {result.data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground" data-testid="patient-empty-state">
                   {initialSearch
                     ? 'Nenhum paciente encontrado para esta busca.'
                     : 'Nenhum paciente cadastrado. Clique em "Novo Paciente" para começar.'}
                 </TableCell>
               </TableRow>
             ) : (
-              result.data.map((patient) => (
-                <TableRow key={patient.id}>
+              result.data.map((patient, index) => (
+                <TableRow key={patient.id} data-testid={`patient-row-${index}`}>
                   <TableCell>
                     <Link
                       href={`/pacientes/${patient.id}`}

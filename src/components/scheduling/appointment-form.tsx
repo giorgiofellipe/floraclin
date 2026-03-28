@@ -205,7 +205,7 @@ export function AppointmentForm({
           </div>
         )}
 
-        <form action={formAction} className="grid gap-4">
+        <form action={formAction} className="grid gap-4" data-testid="appointment-form">
           {isEditing && <input type="hidden" name="id" value={appointment.id} />}
 
           {/* Patient search */}
@@ -394,7 +394,7 @@ export function AppointmentForm({
                 >
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={isPending}>
+                <Button type="submit" disabled={isPending} data-testid="appointment-form-submit">
                   {isPending ? 'Salvando...' : 'Salvar'}
                 </Button>
               </div>

@@ -223,7 +223,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
         <div className="bg-white rounded-2xl shadow-sm border border-blush/50 p-5 sm:p-6">
           {/* Step 1: Select Practitioner */}
           {step === 1 && (
-            <div>
+            <div data-testid="booking-step-1">
               <h2 className="font-display text-xl sm:text-2xl text-forest mb-1">
                 Selecione o profissional
               </h2>
@@ -277,7 +277,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
 
           {/* Step 2: Select Date and Time */}
           {step === 2 && (
-            <div>
+            <div data-testid="booking-step-2">
               <h2 className="font-display text-xl sm:text-2xl text-forest mb-1">
                 Selecione a data e horário
               </h2>
@@ -316,7 +316,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
 
           {/* Step 3: Contact Info */}
           {step === 3 && (
-            <div>
+            <div data-testid="booking-step-3">
               <h2 className="font-display text-xl sm:text-2xl text-forest mb-1">
                 Seus dados
               </h2>
@@ -446,7 +446,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
 
           {/* Step 4: Confirmation */}
           {step === 4 && (
-            <div className="text-center py-6">
+            <div className="text-center py-6" data-testid="booking-step-4">
               <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-sage/20 flex items-center justify-center">
                 <svg
                   className="w-8 h-8 text-sage"
@@ -463,7 +463,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
                 </svg>
               </div>
 
-              <h2 className="font-display text-2xl sm:text-3xl text-forest mb-2">
+              <h2 className="font-display text-2xl sm:text-3xl text-forest mb-2" data-testid="booking-success">
                 Agendamento solicitado!
               </h2>
               <p className="text-mid text-sm mb-6">
@@ -539,6 +539,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
                 type="button"
                 onClick={handleSubmit}
                 disabled={!canAdvance() || submitting}
+                data-testid="booking-submit"
                 className={cn(
                   'flex-1 rounded-xl py-3 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-sage/50',
                   canAdvance() && !submitting

@@ -87,7 +87,7 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
           </DialogDescription>
         </DialogHeader>
 
-        <form action={formAction} className="space-y-4">
+        <form action={formAction} className="space-y-4" data-testid="payment-form">
           <input type="hidden" name="patientId" value={patientId} />
           <input type="hidden" name="totalAmount" value={parsedAmount} />
           <input type="hidden" name="installmentCount" value={parsedCount} />
@@ -141,6 +141,7 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
                 placeholder="0,00"
                 className="pl-9"
                 inputMode="numeric"
+                data-testid="payment-form-amount"
               />
             </div>
             {state?.fieldErrors?.totalAmount && (
@@ -209,7 +210,7 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
             <Button type="button" variant="outline" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={isPending || !patientId || parsedAmount <= 0}>
+            <Button type="submit" disabled={isPending || !patientId || parsedAmount <= 0} data-testid="payment-form-submit">
               {isPending ? 'Salvando...' : 'Criar Cobrança'}
             </Button>
           </DialogFooter>

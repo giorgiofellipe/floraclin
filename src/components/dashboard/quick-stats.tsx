@@ -41,7 +41,7 @@ export function QuickStats({ stats, showRevenue = true }: QuickStatsProps) {
     : statCards.filter((card) => !card.revenueOnly)
 
   return (
-    <div className={`grid grid-cols-1 gap-4 ${showRevenue ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+    <div className={`grid grid-cols-1 gap-4 ${showRevenue ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`} data-testid="dashboard-stats">
       {visibleCards.map((card) => (
         <Card key={card.key} className={`${card.bg} border-0 shadow-sm`}>
           <CardContent className="flex items-center gap-4 p-6">

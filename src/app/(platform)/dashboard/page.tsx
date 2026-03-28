@@ -35,7 +35,7 @@ export default async function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-3xl font-semibold text-forest">
+          <h1 className="font-display text-3xl font-semibold text-forest" data-testid="dashboard-greeting">
             {greeting}, {firstName}
           </h1>
           <p className="mt-1 text-mid">Bem-vindo ao FloraClin</p>

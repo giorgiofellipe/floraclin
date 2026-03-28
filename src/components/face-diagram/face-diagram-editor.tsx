@@ -85,7 +85,7 @@ export function FaceDiagramEditor({
 
   return (
     <TooltipProvider>
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3" data-testid="face-diagram-editor">
         <Tabs
           value={activeView}
           onValueChange={(v) => setActiveView(v as DiagramViewType)}
@@ -93,7 +93,7 @@ export function FaceDiagramEditor({
           <div className="flex items-center justify-between gap-2">
             <TabsList>
               {VIEW_TYPES.map((vt) => (
-                <TabsTrigger key={vt} value={vt}>
+                <TabsTrigger key={vt} value={vt} data-testid={`face-diagram-view-${vt}`}>
                   {VIEW_LABELS[vt]}
                 </TabsTrigger>
               ))}
@@ -129,6 +129,7 @@ export function FaceDiagramEditor({
                         : 'cursor-crosshair'
                     }`}
                     onClick={handleFaceClick}
+                    data-testid="face-diagram-canvas"
                   >
                     <FaceTemplate viewType={vt} />
 

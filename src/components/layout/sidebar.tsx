@@ -38,6 +38,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             key={item.href}
             href={item.href}
             onClick={onNavigate}
+            data-testid={`sidebar-nav-${item.href.replace('/', '')}`}
             className={cn(
               'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
               isActive
@@ -115,7 +116,7 @@ function SidebarLogo({
         <span className="text-cream">Flora</span>
         <span className="text-mint">Clin</span>
       </h1>
-      <p className="text-cream/50 text-xs mt-0.5 truncate">{clinicName}</p>
+      <p className="text-cream/50 text-xs mt-0.5 truncate" data-testid="sidebar-clinic-name">{clinicName}</p>
       {showSwitcher && (
         <TenantSwitcher tenants={tenants} activeTenantId={activeTenantId} />
       )}
@@ -125,7 +126,7 @@ function SidebarLogo({
 
 export function Sidebar({ clinicName, tenants, activeTenantId }: SidebarProps) {
   return (
-    <aside className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 bg-forest">
+    <aside className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 bg-forest" data-testid="sidebar">
       <div className="flex flex-col flex-1 min-h-0">
         <SidebarLogo clinicName={clinicName} tenants={tenants} activeTenantId={activeTenantId} />
         <SidebarNav />

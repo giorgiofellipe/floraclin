@@ -32,13 +32,14 @@ export function Header({ userName, userEmail, clinicName, tenants, activeTenantI
 
   return (
     <>
-      <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-petal bg-cream px-4 md:px-6">
+      <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-petal bg-cream px-4 md:px-6" data-testid="header">
         <Button
           variant="ghost"
           size="icon-sm"
           className="md:hidden"
           onClick={() => setMobileMenuOpen(true)}
           aria-label="Abrir menu"
+          data-testid="header-mobile-menu"
         >
           <Menu className="size-5" />
         </Button>

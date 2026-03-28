@@ -24,16 +24,16 @@ export default function LoginPage() {
         <form action={formAction} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email" className="uppercase tracking-wider text-xs">E-mail</Label>
-            <Input id="email" name="email" type="email" required />
+            <Input id="email" name="email" type="email" required data-testid="login-email" />
           </div>
           <div className="space-y-2">
             <Label htmlFor="password" className="uppercase tracking-wider text-xs">Senha</Label>
-            <Input id="password" name="password" type="password" required />
+            <Input id="password" name="password" type="password" required data-testid="login-password" />
           </div>
           {state?.error?.general && (
-            <p className="text-sm text-red-600">{state.error.general[0]}</p>
+            <p className="text-sm text-red-600" data-testid="login-error">{state.error.general[0]}</p>
           )}
-          <Button type="submit" className="w-full bg-forest text-cream hover:bg-sage uppercase tracking-wider" disabled={isPending}>
+          <Button type="submit" className="w-full bg-forest text-cream hover:bg-sage uppercase tracking-wider" disabled={isPending} data-testid="login-submit">
             {isPending ? 'Entrando...' : 'Entrar'}
           </Button>
           <div className="text-center">

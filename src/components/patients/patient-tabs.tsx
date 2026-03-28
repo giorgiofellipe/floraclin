@@ -36,6 +36,7 @@ export function PatientTabs({ activeTab }: PatientTabsProps) {
           <button
             key={tab.key}
             onClick={() => handleTabChange(tab.key)}
+            data-testid={`patient-tab-${tab.key}`}
             className={cn(
               'whitespace-nowrap px-4 py-2.5 text-sm font-medium transition-colors rounded-t-lg',
               activeTab === tab.key

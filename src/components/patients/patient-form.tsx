@@ -106,7 +106,7 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
   }
 
   const formContent = (
-    <form onSubmit={form.handleSubmit(onSubmit)} className={inline ? "flex flex-col gap-4" : "flex flex-col gap-4 px-4"}>
+    <form onSubmit={form.handleSubmit(onSubmit)} className={inline ? "flex flex-col gap-4" : "flex flex-col gap-4 px-4"} data-testid="patient-form">
       {serverError && (
         <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
           {serverError}
@@ -120,6 +120,7 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
           id="fullName"
           {...form.register('fullName')}
           aria-invalid={!!form.formState.errors.fullName}
+          data-testid="patient-form-name"
         />
         {form.formState.errors.fullName && (
           <p className="text-xs text-destructive">{form.formState.errors.fullName.message}</p>
@@ -141,6 +142,7 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
               onBlur={field.onBlur}
               ref={field.ref}
               aria-invalid={!!form.formState.errors.phone}
+              data-testid="patient-form-phone"
             />
           )}
         />
@@ -333,7 +335,7 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
 
       {inline ? (
         <div className="flex justify-end gap-2 pt-2">
-          <Button type="submit" disabled={isPending}>
+          <Button type="submit" disabled={isPending} data-testid="patient-form-submit">
             {isPending ? 'Salvando...' : 'Salvar alterações'}
           </Button>
         </div>
@@ -342,7 +344,7 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button type="submit" disabled={isPending}>
+          <Button type="submit" disabled={isPending} data-testid="patient-form-submit">
             {isPending ? 'Salvando...' : isEditing ? 'Salvar' : 'Cadastrar'}
           </Button>
         </SheetFooter>

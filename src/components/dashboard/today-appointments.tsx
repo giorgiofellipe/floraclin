@@ -20,7 +20,7 @@ interface TodayAppointmentsProps {
 
 export function TodayAppointments({ appointments }: TodayAppointmentsProps) {
   return (
-    <Card className="border-0 shadow-sm">
+    <Card className="border-0 shadow-sm" data-testid="dashboard-appointments">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-forest">
           <CalendarDays className="h-5 w-5" />
