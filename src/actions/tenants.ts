@@ -83,7 +83,7 @@ export async function updateBookingSettingsAction(data: BookingSettingsInput): P
     }
 
     const tenant = await updateTenantSettings(auth.tenantId, {
-      publicBookingEnabled: parsed.data.publicBookingEnabled,
+      online_booking_enabled: parsed.data.publicBookingEnabled,
     })
 
     if (!tenant) {

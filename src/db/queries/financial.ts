@@ -1,16 +1,28 @@
 import { db } from '@/db/client'
-import { financialEntries, installments, patients, procedureRecords, procedureTypes } from '@/db/schema'
+import { financialEntries, installments, patients, procedureRecords, procedureTypes, appointments } from '@/db/schema'
 import { eq, and, isNull, sql, gte, lte, count, sum, desc } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import type { CreateFinancialEntryInput, FinancialFilterInput } from '@/validations/financial'
 import type { PaymentMethod, FinancialStatus } from '@/types'
 import { addDays } from 'date-fns'
+import { verifyTenantOwnership } from './helpers'
 
 export async function createFinancialEntry(
   tenantId: string,
   userId: string,
   data: CreateFinancialEntryInput
 ) {
+  // Verify foreign IDs belong to this tenant
+  await Promise.all([
+    verifyTenantOwnership(tenantId, patients, data.patientId, 'Patient'),
+    ...(data.procedureRecordId
+      ? [verifyTenantOwnership(tenantId, procedureRecords, data.procedureRecordId, 'Procedure record')]
+      : []),
+    ...(data.appointmentId
+      ? [verifyTenantOwnership(tenantId, appointments, data.appointmentId, 'Appointment')]
+      : []),
+  ])
+
   return withTransaction(async (tx) => {
     const [entry] = await tx
       .insert(financialEntries)
@@ -164,9 +176,10 @@ export async function getFinancialEntry(tenantId: string, entryId: string) {
 export async function payInstallment(
   tenantId: string,
   installmentId: string,
-  paymentMethod: PaymentMethod
+  paymentMethod: PaymentMethod,
+  txDb?: typeof db
 ) {
-  return withTransaction(async (tx) => {
+  const execute = async (tx: typeof db) => {
     const [updated] = await tx
       .update(installments)
       .set({
@@ -224,7 +237,12 @@ export async function payInstallment(
       )
 
     return updated
-  })
+  }
+
+  if (txDb) {
+    return execute(txDb)
+  }
+  return withTransaction(execute)
 }
 
 export async function getRevenueOverview(

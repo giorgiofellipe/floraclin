@@ -36,7 +36,7 @@ async function getClinicData(slug: string): Promise<ClinicApiResponse | null> {
 
   const t = tenant[0]
   const settings = (t.settings as Record<string, unknown>) ?? {}
-  if (settings.online_booking_enabled === false) return null
+  if (settings.online_booking_enabled !== true) return null
 
   const practitioners = await db
     .select({

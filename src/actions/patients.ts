@@ -1,5 +1,6 @@
 'use server'
 
+import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import {
@@ -27,7 +28,7 @@ export async function createPatientAction(data: CreatePatientInput): Promise<Pat
       return { error: 'Dados inválidos', fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
     }
 
-    const patient = await createPatientQuery(auth.tenantId, parsed.data)
+    const patient = await createPatientQuery(auth.tenantId, parsed.data, auth.userId)
 
     await createAuditLog({
       tenantId: auth.tenantId,
@@ -120,7 +121,10 @@ export async function listPatientsAction(search = '', page = 1, limit = 20) {
       return { data: [], total: 0, page: 1, limit: 20, totalPages: 0 }
     }
 
-    return await listPatientsQuery(auth.tenantId, parsed.data)
+    // Practitioners only see their own patients unless shared visibility is enabled
+    const responsibleUserId = auth.role === 'practitioner' ? auth.userId : undefined
+
+    return await listPatientsQuery(auth.tenantId, { ...parsed.data, responsibleUserId })
   } catch {
     return { data: [], total: 0, page: 1, limit: 20, totalPages: 0 }
   }

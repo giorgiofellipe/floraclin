@@ -35,7 +35,7 @@ export interface TodayAppointment {
 export interface QuickStats {
   patientsThisWeek: number
   proceduresThisMonth: number
-  revenueThisMonth: number
+  revenueThisMonth: number | null
 }
 
 export interface UpcomingFollowUp {
@@ -145,29 +145,31 @@ export async function getQuickStats(
     .from(procedureRecords)
     .where(and(...proceduresConditions))
 
-  // Revenue this month (sum of paid installments)
-  const revenueConditions = [
-    eq(installments.tenantId, tenantId),
-    eq(installments.status, 'paid'),
-    gte(installments.paidAt, new Date(monthStart)),
-    lte(installments.paidAt, new Date(monthEnd + 'T23:59:59.999Z')),
-  ]
+  // Revenue this month - only for clinic-wide view (not for practitioners)
+  // Practitioners should not see clinic-wide revenue data
+  let revenueThisMonth: number | null = null
+  if (!practitionerId) {
+    const revenueConditions = [
+      eq(installments.tenantId, tenantId),
+      eq(installments.status, 'paid'),
+      gte(installments.paidAt, new Date(monthStart)),
+      lte(installments.paidAt, new Date(monthEnd + 'T23:59:59.999Z')),
+    ]
 
-  // For practitioner filtering on revenue, join through financialEntries
-  // but installments don't have practitionerId directly. We skip practitioner
-  // filtering on revenue (owners see all revenue, practitioners see all too
-  // since revenue is tied to entries not practitioners in the schema).
-  const revenueResult = await db
-    .select({
-      total: sum(installments.amount),
-    })
-    .from(installments)
-    .where(and(...revenueConditions))
+    const revenueResult = await db
+      .select({
+        total: sum(installments.amount),
+      })
+      .from(installments)
+      .where(and(...revenueConditions))
+
+    revenueThisMonth = Number(revenueResult[0]?.total ?? 0)
+  }
 
   return {
     patientsThisWeek: Number(patientsResult[0]?.total ?? 0),
     proceduresThisMonth: Number(proceduresResult[0]?.total ?? 0),
-    revenueThisMonth: Number(revenueResult[0]?.total ?? 0),
+    revenueThisMonth,
   }
 }
 

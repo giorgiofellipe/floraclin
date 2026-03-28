@@ -1,7 +1,9 @@
 import { db } from '@/db/client'
-import { consentTemplates, consentAcceptances, patients } from '@/db/schema'
+import { consentTemplates, consentAcceptances, patients, procedureRecords } from '@/db/schema'
 import { eq, and, desc } from 'drizzle-orm'
+import { withTransaction } from '@/lib/tenant'
 import type { ConsentTemplateInput, ConsentAcceptanceInput } from '@/validations/consent'
+import { verifyTenantOwnership } from './helpers'
 
 // SHA-256 hash using Web Crypto API
 async function hashContent(content: string): Promise<string> {
@@ -98,31 +100,33 @@ export async function updateConsentTemplate(
     throw new Error('Termo não encontrado')
   }
 
-  // Deactivate old version
-  await db
-    .update(consentTemplates)
-    .set({ isActive: false, updatedAt: new Date() })
-    .where(
-      and(
-        eq(consentTemplates.id, templateId),
-        eq(consentTemplates.tenantId, tenantId)
+  return withTransaction(async (tx) => {
+    // Deactivate old version
+    await tx
+      .update(consentTemplates)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(consentTemplates.id, templateId),
+          eq(consentTemplates.tenantId, tenantId)
+        )
       )
-    )
 
-  // Create new version
-  const [newTemplate] = await db
-    .insert(consentTemplates)
-    .values({
-      tenantId,
-      type: existing.type,
-      title: data.title ?? existing.title,
-      content: data.content,
-      version: existing.version + 1,
-      isActive: true,
-    })
-    .returning()
+    // Create new version
+    const [newTemplate] = await tx
+      .insert(consentTemplates)
+      .values({
+        tenantId,
+        type: existing.type,
+        title: data.title ?? existing.title,
+        content: data.content,
+        version: existing.version + 1,
+        isActive: true,
+      })
+      .returning()
 
-  return newTemplate
+    return newTemplate
+  })
 }
 
 export async function acceptConsent(
@@ -130,6 +134,14 @@ export async function acceptConsent(
   data: ConsentAcceptanceInput,
   meta: { ipAddress?: string; userAgent?: string }
 ) {
+  // Verify foreign IDs belong to this tenant
+  await Promise.all([
+    verifyTenantOwnership(tenantId, patients, data.patientId, 'Patient'),
+    ...(data.procedureRecordId
+      ? [verifyTenantOwnership(tenantId, procedureRecords, data.procedureRecordId, 'Procedure record')]
+      : []),
+  ])
+
   // Load the template to get the content for snapshot and hash
   const template = await getConsentTemplateById(tenantId, data.consentTemplateId)
   if (!template) {

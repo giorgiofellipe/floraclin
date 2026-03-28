@@ -81,7 +81,7 @@ export function SettingsPageClient({
   currentUserId,
 }: SettingsPageClientProps) {
   const settings = (tenant.settings || {}) as Record<string, unknown>
-  const publicBookingEnabled = (settings.publicBookingEnabled as boolean) ?? false
+  const publicBookingEnabled = (settings.online_booking_enabled as boolean) ?? false
 
   return (
     <div className="space-y-6 p-6">

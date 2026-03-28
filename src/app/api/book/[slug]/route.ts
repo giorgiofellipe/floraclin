@@ -76,7 +76,7 @@ export async function GET(
     }
 
     const settings = (tenant.settings as TenantSettings) ?? {}
-    if (settings.online_booking_enabled === false) {
+    if (settings.online_booking_enabled !== true) {
       return NextResponse.json(
         { error: 'Agendamento online não está habilitado para esta clínica' },
         { status: 404 }
@@ -135,7 +135,7 @@ export async function POST(
     }
 
     const settings = (tenant.settings as TenantSettings) ?? {}
-    if (settings.online_booking_enabled === false) {
+    if (settings.online_booking_enabled !== true) {
       return NextResponse.json(
         { error: 'Agendamento online não está habilitado para esta clínica' },
         { status: 404 }

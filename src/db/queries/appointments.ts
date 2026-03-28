@@ -3,6 +3,7 @@ import { appointments, patients, procedureTypes, users, tenants } from '@/db/sch
 import { eq, and, isNull, gte, lte, sql, or, ne } from 'drizzle-orm'
 import type { AppointmentStatus, AppointmentSource } from '@/types'
 import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
+import { verifyTenantOwnership, verifyUserBelongsToTenant } from './helpers'
 
 export interface AppointmentListFilters {
   practitionerId?: string
@@ -176,6 +177,12 @@ export async function createAppointment(
     notes?: string
   }
 ) {
+  // Verify foreign IDs belong to this tenant
+  await Promise.all([
+    ...(data.patientId ? [verifyTenantOwnership(tenantId, patients, data.patientId, 'Patient')] : []),
+    verifyUserBelongsToTenant(tenantId, data.practitionerId, 'Practitioner'),
+  ])
+
   const [result] = await db
     .insert(appointments)
     .values({

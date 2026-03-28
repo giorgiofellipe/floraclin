@@ -65,7 +65,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Quick Stats */}
-      <QuickStats stats={data.quickStats} />
+      <QuickStats stats={data.quickStats} showRevenue={context.role !== 'practitioner'} />
 
       {/* Appointments + Follow-ups */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

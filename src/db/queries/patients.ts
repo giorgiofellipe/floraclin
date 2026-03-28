@@ -8,7 +8,7 @@ export type Patient = typeof patients.$inferSelect
 
 export async function listPatients(
   tenantId: string,
-  { search = '', page = 1, limit = 20 }: { search?: string; page?: number; limit?: number }
+  { search = '', page = 1, limit = 20, responsibleUserId }: { search?: string; page?: number; limit?: number; responsibleUserId?: string }
 ): Promise<PaginatedResult<Patient>> {
   const offset = (page - 1) * limit
 
@@ -16,6 +16,10 @@ export async function listPatients(
     eq(patients.tenantId, tenantId),
     isNull(patients.deletedAt),
   ]
+
+  if (responsibleUserId) {
+    baseConditions.push(eq(patients.responsibleUserId, responsibleUserId))
+  }
 
   const searchCondition = search.trim()
     ? or(
@@ -70,11 +74,16 @@ export async function getPatient(tenantId: string, patientId: string): Promise<P
   return patient ?? null
 }
 
-export async function createPatient(tenantId: string, data: CreatePatientInput): Promise<Patient> {
+export async function createPatient(
+  tenantId: string,
+  data: CreatePatientInput,
+  responsibleUserId?: string
+): Promise<Patient> {
   const [patient] = await db
     .insert(patients)
     .values({
       tenantId,
+      responsibleUserId: responsibleUserId ?? null,
       fullName: data.fullName,
       phone: data.phone,
       cpf: data.cpf || null,

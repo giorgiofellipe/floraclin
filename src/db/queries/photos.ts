@@ -1,9 +1,10 @@
 import { db } from '@/db/client'
-import { photoAssets, photoAnnotations } from '@/db/schema'
+import { photoAssets, photoAnnotations, patients, procedureRecords } from '@/db/schema'
 import { eq, and, isNull, desc } from 'drizzle-orm'
 import { getSignedUrl, deleteFile } from '@/lib/storage'
 import type { TimelineStage } from '@/types'
 import { timelineStageValues } from '@/validations/photo'
+import { verifyTenantOwnership } from './helpers'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -112,6 +113,14 @@ export async function createPhotoAsset(
     notes?: string
   }
 ) {
+  // Verify foreign IDs belong to this tenant
+  await Promise.all([
+    verifyTenantOwnership(tenantId, patients, data.patientId, 'Patient'),
+    ...(data.procedureRecordId
+      ? [verifyTenantOwnership(tenantId, procedureRecords, data.procedureRecordId, 'Procedure record')]
+      : []),
+  ])
+
   const [inserted] = await db
     .insert(photoAssets)
     .values({
@@ -148,8 +157,15 @@ export async function deletePhotoAsset(tenantId: string, photoId: string) {
     )
     .returning()
 
-  // Delete from storage
-  await deleteFile(photo.storagePath)
+  // Delete from storage — log warning if it fails but don't block the operation
+  try {
+    await deleteFile(photo.storagePath)
+  } catch (storageError) {
+    console.warn(
+      `Failed to delete file from storage after soft-delete (photoId=${photoId}, path=${photo.storagePath}):`,
+      storageError
+    )
+  }
 
   return deleted
 }

@@ -2,7 +2,9 @@ import { db } from '@/db/client'
 import {
   procedureRecords,
   procedureTypes,
+  patients,
   users,
+  appointments,
   faceDiagrams,
   diagramPoints,
   productApplications,
@@ -12,6 +14,7 @@ import {
 } from '@/db/schema'
 import { eq, and, desc, isNull } from 'drizzle-orm'
 import type { CreateProcedureInput, UpdateProcedureInput } from '@/validations/procedure'
+import { verifyTenantOwnership, verifyUserBelongsToTenant } from './helpers'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -56,6 +59,15 @@ export async function createProcedure(
   data: CreateProcedureInput,
   txDb: typeof db = db
 ) {
+  // Verify foreign IDs belong to this tenant
+  await Promise.all([
+    verifyTenantOwnership(tenantId, patients, data.patientId, 'Patient'),
+    verifyTenantOwnership(tenantId, procedureTypes, data.procedureTypeId, 'Procedure type'),
+    ...(data.appointmentId
+      ? [verifyTenantOwnership(tenantId, appointments, data.appointmentId, 'Appointment')]
+      : []),
+  ])
+
   const [record] = await txDb
     .insert(procedureRecords)
     .values({
