@@ -340,7 +340,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
                 variant="outline"
                 onClick={handlePrev}
                 disabled={isPending}
-                className="border-sage/30 text-sage hover:bg-sage/5 hover:text-forest transition-all duration-200"
+                className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
               >
                 Anterior
               </Button>
@@ -364,7 +364,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
               <Button
                 type="button"
                 onClick={handleNext}
-                className="bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium rounded-lg transition-all duration-300 shadow-sm hover:shadow-md px-8"
+                className="bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium transition-all duration-300 shadow-sm hover:shadow-md px-8"
               >
                 Proximo
               </Button>
@@ -373,7 +373,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
                 type="button"
                 onClick={handleComplete}
                 disabled={isPending}
-                className={`bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium rounded-lg transition-all duration-300 shadow-md hover:shadow-lg px-8 ${
+                className={`bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium transition-all duration-300 shadow-md hover:shadow-lg px-8 ${
                   !isPending ? 'animate-subtle-pulse' : ''
                 }`}
               >

@@ -382,7 +382,7 @@ export function AppointmentForm({
                 {isEditing && (
                   <>
                     <Select onValueChange={(v) => v && handleStatusChange(v as AppointmentStatus)}>
-                      <SelectTrigger className="w-auto rounded-full text-sm">
+                      <SelectTrigger className="w-auto text-sm">
                         <SelectValue placeholder="Alterar status">
                           {(value: string) => STATUS_LABELS[value as AppointmentStatus] ?? value}
                         </SelectValue>

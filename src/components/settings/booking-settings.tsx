@@ -109,7 +109,7 @@ export function BookingSettings({
               <button
                 type="button"
                 onClick={handleCopyUrl}
-                className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-white border border-blush/50 px-3 py-1.5 text-xs font-medium text-forest hover:bg-forest hover:text-cream transition-colors shadow-sm"
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-white border border-blush/50 px-3 py-1.5 text-xs font-medium text-forest hover:bg-forest hover:text-cream transition-colors shadow-sm"
               >
                 {copied ? (
                   <>

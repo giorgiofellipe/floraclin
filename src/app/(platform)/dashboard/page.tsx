@@ -68,14 +68,14 @@ export default async function DashboardPage() {
           )}
           <Link
             href="/pacientes?new=true"
-            className="inline-flex items-center justify-center rounded-[3px] border border-[#2A2A2A]/20 px-4 py-2 text-[13px] font-medium text-[#2A2A2A]"
+            className="inline-flex items-center justify-center rounded-lg border border-sage/30 px-4 py-2 text-[13px] font-medium text-charcoal hover:bg-[#F0F7F1] transition-colors"
           >
             <UserPlus className="mr-1.5 h-4 w-4" />
             Novo Paciente
           </Link>
           <Link
             href="/agenda?new=true"
-            className="inline-flex items-center justify-center rounded-[3px] bg-[#4A6B52] px-4 py-2 text-[13px] font-medium text-white"
+            className="inline-flex items-center justify-center rounded-lg bg-forest px-4 py-2 text-[13px] font-medium text-cream hover:bg-sage transition-colors"
           >
             <CalendarPlus className="mr-1.5 h-4 w-4" />
             Novo Agendamento

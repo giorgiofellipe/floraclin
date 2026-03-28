@@ -242,7 +242,7 @@ export function CalendarView({
         <div className="flex items-center gap-3">
           {/* Practitioner filter */}
           <Select value={practitionerId} onValueChange={(v) => v && changePractitioner(v)}>
-            <SelectTrigger className="w-auto min-w-[140px] rounded-full border-sage/20">
+            <SelectTrigger className="w-auto min-w-[140px] border-sage/20">
               <SelectValue placeholder="Profissional">
                 {(value: string) => {
                   if (value === 'all') return 'Todos'
