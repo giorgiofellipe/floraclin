@@ -22,12 +22,12 @@ import { ptBR } from 'date-fns/locale'
 import { DollarSignIcon, ClockIcon, AlertTriangleIcon } from 'lucide-react'
 
 const DONUT_COLORS = [
-  'hsl(var(--chart-1, 220 70% 50%))',
-  'hsl(var(--chart-2, 160 60% 45%))',
-  'hsl(var(--chart-3, 30 80% 55%))',
-  'hsl(var(--chart-4, 280 65% 60%))',
-  'hsl(var(--chart-5, 340 75% 55%))',
-  'hsl(var(--chart-6, 200 70% 50%))',
+  '#1C2B1E', // Forest
+  '#4A6B52', // Sage
+  '#8FB49A', // Mint
+  '#E8D5C8', // Blush
+  '#C4A882', // Gold
+  '#D4845A', // Amber
 ]
 
 const MONTH_NAMES: Record<string, string> = {
@@ -121,7 +121,7 @@ export function RevenueChart() {
             <AlertTriangleIcon className="size-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-destructive">
+            <div className="text-2xl font-bold text-amber">
               {formatCurrency(Number(data.summary.totalOverdue))}
             </div>
           </CardContent>
@@ -167,7 +167,7 @@ export function RevenueChart() {
                   />
                   <Bar
                     dataKey="total"
-                    fill="hsl(var(--primary))"
+                    fill="#4A6B52"
                     radius={[4, 4, 0, 0]}
                   />
                 </BarChart>

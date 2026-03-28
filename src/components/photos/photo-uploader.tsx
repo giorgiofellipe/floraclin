@@ -325,7 +325,7 @@ export function PhotoUploader({
                 className={cn(
                   'relative overflow-hidden rounded-lg border bg-muted/30',
                   f.status === 'error' && 'border-destructive',
-                  f.status === 'done' && 'border-green-500'
+                  f.status === 'done' && 'border-mint'
                 )}
               >
                 <div className="aspect-square">
@@ -367,7 +367,7 @@ export function PhotoUploader({
 
                 {/* Done indicator */}
                 {f.status === 'done' && (
-                  <div className="absolute top-1 right-1 rounded-full bg-green-500 p-0.5">
+                  <div className="absolute top-1 right-1 rounded-full bg-mint p-0.5">
                     <svg className="size-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>

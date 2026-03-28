@@ -21,10 +21,13 @@ export function Sidebar({ clinicName }: SidebarProps) {
   const pathname = usePathname()
 
   return (
-    <aside className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 border-r bg-white">
+    <aside className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 bg-forest">
       <div className="flex flex-col flex-1 min-h-0">
-        <div className="flex items-center h-16 flex-shrink-0 px-4 border-b">
-          <h1 className="text-lg font-semibold text-emerald-700">{clinicName}</h1>
+        <div className="flex items-center h-16 flex-shrink-0 px-4 border-b border-sage/20">
+          <h1 className="font-display text-lg font-semibold">
+            <span className="text-cream">Flora</span>
+            <span className="text-mint">Clin</span>
+          </h1>
         </div>
         <nav className="flex-1 px-2 py-4 space-y-1">
           {navItems.map((item) => {
@@ -36,8 +39,8 @@ export function Sidebar({ clinicName }: SidebarProps) {
                 className={cn(
                   'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
                   isActive
-                    ? 'bg-emerald-50 text-emerald-700'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    ? 'bg-sage/20 text-cream'
+                    : 'text-cream/70 hover:bg-sage/10 hover:text-cream'
                 )}
               >
                 <item.icon className="h-5 w-5" />

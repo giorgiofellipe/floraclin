@@ -185,7 +185,7 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
             )}
 
             {state?.success && (
-              <p className="text-sm text-green-600 dark:text-green-400">
+              <p className="text-sm text-sage">
                 {isEditing ? 'Termo atualizado com sucesso!' : 'Termo criado com sucesso!'}
               </p>
             )}

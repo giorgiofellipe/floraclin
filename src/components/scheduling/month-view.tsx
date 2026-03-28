@@ -99,7 +99,7 @@ export function MonthView({ date, appointments, onDayClick, onAppointmentClick }
               <div className="mt-1 space-y-0.5">
                 {dayAppointments.slice(0, MAX_VISIBLE_APPOINTMENTS).map((appt) => {
                   const statusColor =
-                    APPOINTMENT_STATUS_COLORS[appt.status] ?? 'bg-gray-100 text-gray-800'
+                    APPOINTMENT_STATUS_COLORS[appt.status] ?? 'bg-petal text-mid'
                   const displayName = appt.patientName ?? appt.bookingName ?? 'Sem paciente'
 
                   return (

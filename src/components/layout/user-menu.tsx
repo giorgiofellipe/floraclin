@@ -32,7 +32,7 @@ export function UserMenu({ userName, userEmail }: UserMenuProps) {
         render={
           <Button variant="ghost" className="relative h-10 w-10 rounded-full">
             <Avatar className="h-10 w-10">
-              <AvatarFallback className="bg-emerald-100 text-emerald-700">{initials}</AvatarFallback>
+              <AvatarFallback className="bg-sage text-cream">{initials}</AvatarFallback>
             </Avatar>
           </Button>
         }

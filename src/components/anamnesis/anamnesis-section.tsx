@@ -26,9 +26,9 @@ export function AnamnesisSection({
       <AccordionTrigger className="py-3 hover:no-underline">
         <div className="flex items-center gap-2">
           {isComplete && (
-            <CheckCircle2 className="size-4 text-green-600 shrink-0" />
+            <CheckCircle2 className="size-4 text-sage shrink-0" />
           )}
-          <span className={cn('text-sm font-medium', isComplete && 'text-green-700')}>
+          <span className={cn('text-sm font-medium', isComplete && 'text-forest')}>
             {title}
           </span>
         </div>

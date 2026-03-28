@@ -96,7 +96,7 @@ export function ConsentViewer({
     return (
       <Card>
         <CardContent className="flex flex-col items-center gap-3 py-8">
-          <div className="flex size-12 items-center justify-center rounded-full bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400">
+          <div className="flex size-12 items-center justify-center rounded-full bg-mint/20 text-forest">
             <svg className="size-6" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>

@@ -1,12 +1,12 @@
 export const DEFAULT_PAGE_SIZE = 20
 
 export const APPOINTMENT_STATUS_COLORS: Record<string, string> = {
-  scheduled: 'bg-blue-100 text-blue-800',
-  confirmed: 'bg-green-100 text-green-800',
-  in_progress: 'bg-yellow-100 text-yellow-800',
-  completed: 'bg-gray-100 text-gray-800',
+  scheduled: 'bg-sage/10 text-sage',
+  confirmed: 'bg-mint/20 text-forest',
+  in_progress: 'bg-amber-light text-amber-dark',
+  completed: 'bg-petal text-mid',
   cancelled: 'bg-red-100 text-red-800',
-  no_show: 'bg-orange-100 text-orange-800',
+  no_show: 'bg-amber-light text-amber-dark',
 }
 
 export const PROCEDURE_CATEGORIES = [

@@ -22,7 +22,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-cream">
       <Sidebar clinicName={tenant?.name ?? 'FloraClin'} />
       <div className="md:pl-64">
         <Header userName={auth.fullName} userEmail={auth.email} />

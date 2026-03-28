@@ -14,13 +14,17 @@ export default function ResetPasswordPage() {
   return (
     <Card>
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl">Redefinir Senha</CardTitle>
+        <h1 className="font-display text-3xl font-semibold tracking-tight">
+          <span className="text-forest">Flora</span>
+          <span className="text-sage">Clin</span>
+        </h1>
+        <CardTitle className="text-xl">Redefinir Senha</CardTitle>
         <CardDescription>Informe seu e-mail para receber o link de recuperação</CardDescription>
       </CardHeader>
       <CardContent>
         {state?.success ? (
           <div className="space-y-4">
-            <p className="text-sm text-green-600 text-center">
+            <p className="text-sm text-sage text-center">
               E-mail de recuperação enviado! Verifique sua caixa de entrada.
             </p>
             <div className="text-center">

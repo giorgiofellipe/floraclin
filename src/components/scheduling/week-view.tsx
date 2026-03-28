@@ -124,7 +124,7 @@ export function WeekView({ date, appointments, onSlotClick, onAppointmentClick }
                   SLOT_HEIGHT_PX / 2
                 )
                 const statusColor =
-                  APPOINTMENT_STATUS_COLORS[appt.status] ?? 'bg-gray-100 text-gray-800'
+                  APPOINTMENT_STATUS_COLORS[appt.status] ?? 'bg-petal text-mid'
                 const displayName = appt.patientName ?? appt.bookingName ?? 'Sem paciente'
 
                 return (

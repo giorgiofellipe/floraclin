@@ -88,8 +88,8 @@ export default async function AgendaPage({ searchParams }: AgendaPageProps) {
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col gap-4 p-4 lg:p-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Agenda</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="font-display text-2xl font-semibold text-forest">Agenda</h1>
+        <p className="text-sm text-mid">
           Gerencie os agendamentos da clínica
         </p>
       </div>
