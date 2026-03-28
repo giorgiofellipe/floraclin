@@ -1,73 +1,81 @@
-import { Users, Stethoscope, DollarSign } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import type { QuickStats as QuickStatsType } from '@/db/queries/dashboard'
 
 interface QuickStatsProps {
   stats: QuickStatsType
   showRevenue?: boolean
+  todayCount: number
 }
 
-const statCards = [
-  {
-    key: 'patientsThisWeek' as const,
-    label: 'Pacientes esta semana',
-    icon: Users,
-    gradient: 'bg-gradient-to-br from-cream to-petal',
-    iconBg: 'bg-sage/10',
-    iconColor: 'text-sage',
-    format: (v: number | null) => String(v ?? 0),
-    revenueOnly: false,
-  },
-  {
-    key: 'proceduresThisMonth' as const,
-    label: 'Procedimentos este mes',
-    icon: Stethoscope,
-    gradient: 'bg-gradient-to-br from-petal to-blush',
-    iconBg: 'bg-mint/15',
-    iconColor: 'text-mint',
-    format: (v: number | null) => String(v ?? 0),
-    revenueOnly: false,
-  },
-  {
-    key: 'revenueThisMonth' as const,
-    label: 'Receita este mes',
-    icon: DollarSign,
-    gradient: 'bg-gradient-to-br from-cream to-petal',
-    iconBg: 'bg-sage/10',
-    iconColor: 'text-sage',
-    format: (v: number | null) => formatCurrency(v ?? 0),
-    revenueOnly: true,
-  },
-]
+export function QuickStats({ stats, showRevenue = true, todayCount }: QuickStatsProps) {
+  const cards = [
+    {
+      key: 'today',
+      eyebrow: 'HOJE',
+      value: String(todayCount),
+      sublabel: `atendimento${todayCount !== 1 ? 's' : ''}`,
+      accentBorder: false,
+      valueColor: 'text-[#2A2A2A]',
+      sublabelColor: 'text-[#7A7A7A]',
+    },
+    {
+      key: 'month',
+      eyebrow: 'ESTE MES',
+      value: String(stats.proceduresThisMonth),
+      sublabel: 'atendimentos',
+      accentBorder: false,
+      valueColor: 'text-[#2A2A2A]',
+      sublabelColor: 'text-[#7A7A7A]',
+    },
+  ]
 
-export function QuickStats({ stats, showRevenue = true }: QuickStatsProps) {
-  const visibleCards = showRevenue
-    ? statCards
-    : statCards.filter((card) => !card.revenueOnly)
+  if (showRevenue && stats.revenueThisMonth !== null) {
+    const revenueFormatted = stats.revenueThisMonth >= 1000
+      ? `R$ ${(stats.revenueThisMonth / 1000).toFixed(1).replace('.', ',')}k`
+      : formatCurrency(stats.revenueThisMonth)
+
+    cards.push({
+      key: 'received',
+      eyebrow: 'RECEBIDO',
+      value: revenueFormatted,
+      sublabel: 'este mes',
+      accentBorder: false,
+      valueColor: 'text-[#4A6B52]',
+      sublabelColor: 'text-[#7A7A7A]',
+    })
+
+    cards.push({
+      key: 'receivable',
+      eyebrow: 'A RECEBER',
+      value: 'R$ 0',
+      sublabel: '',
+      accentBorder: true,
+      valueColor: 'text-[#D4845A]',
+      sublabelColor: 'text-[#D4845A]',
+    })
+  }
 
   return (
-    <div className={`grid grid-cols-1 gap-5 ${showRevenue ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`} data-testid="dashboard-stats">
-      {visibleCards.map((card) => (
+    <div
+      className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${cards.length === 4 ? 'lg:grid-cols-4' : cards.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}
+      data-testid="dashboard-stats"
+    >
+      {cards.map((card) => (
         <div
           key={card.key}
-          className={`group relative overflow-hidden rounded-xl ${card.gradient} border border-white/60 p-6 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md`}
+          className={`bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px] p-5 ${card.accentBorder ? 'border-t-2 border-[#D4845A]' : ''}`}
         >
-          {/* Gold accent border at bottom */}
-          <div className="absolute inset-x-0 bottom-0 h-[2px] bg-gradient-to-r from-gold/40 via-gold/60 to-gold/40" />
-
-          <div className="flex items-start justify-between">
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-wider text-mid font-medium">
-                {card.label}
-              </p>
-              <p className="text-3xl font-bold text-forest tracking-tight">
-                {card.format(stats[card.key])}
-              </p>
-            </div>
-            <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${card.iconBg}`}>
-              <card.icon className={`h-5 w-5 ${card.iconColor}`} />
-            </div>
-          </div>
+          <p className="text-[11px] font-medium uppercase tracking-wider text-[#7A7A7A]">
+            {card.eyebrow}
+          </p>
+          <p className={`mt-1 text-[28px] font-semibold leading-tight ${card.valueColor}`}>
+            {card.value}
+          </p>
+          {card.sublabel && (
+            <p className={`mt-0.5 text-[13px] ${card.sublabelColor}`}>
+              {card.sublabel}
+            </p>
+          )}
         </div>
       ))}
     </div>
