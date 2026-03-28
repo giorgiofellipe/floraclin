@@ -10,6 +10,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { MaskedInput } from '@/components/ui/masked-input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -17,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { createFinancialEntryAction, type FinancialActionState } from '@/actions/financial'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { addDays } from 'date-fns'
+import { maskCurrency, parseCurrency } from '@/lib/masks'
 
 interface Patient {
   id: string
@@ -47,7 +49,7 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
     null
   )
 
-  const parsedAmount = parseFloat(totalAmount.replace(/[^\d,.-]/g, '').replace(',', '.')) || 0
+  const parsedAmount = totalAmount ? parseCurrency(totalAmount) : 0
   const parsedCount = parseInt(installmentCount, 10) || 1
 
   const installmentPreview = useMemo(() => {
@@ -72,9 +74,7 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
   )
 
   function handleAmountChange(value: string) {
-    // Allow digits, comma, and dot only
-    const clean = value.replace(/[^\d,.-]/g, '')
-    setTotalAmount(clean)
+    setTotalAmount(maskCurrency(value))
   }
 
   return (
@@ -133,12 +133,14 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
               <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
                 R$
               </span>
-              <Input
+              <MaskedInput
                 id="totalAmountInput"
+                mask={maskCurrency}
                 value={totalAmount}
                 onChange={(e) => handleAmountChange(e.target.value)}
                 placeholder="0,00"
                 className="pl-9"
+                inputMode="numeric"
               />
             </div>
             {state?.fieldErrors?.totalAmount && (

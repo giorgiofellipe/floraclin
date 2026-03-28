@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import {
-  CalendarIcon,
   CheckCircle2,
   AlertTriangle,
   Save,
@@ -31,7 +30,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { AppointmentForm } from '@/components/scheduling/appointment-form'
 import { FaceDiagramEditor } from '@/components/face-diagram/face-diagram-editor'
 import type { DiagramPointData } from '@/components/face-diagram/types'
 import { PhotoUploader } from '@/components/photos/photo-uploader'
@@ -45,6 +52,10 @@ import {
   getPreviousDiagramPointsAction,
 } from '@/actions/procedures'
 import { getActiveConsentForTypeAction } from '@/actions/consent'
+import {
+  listPractitionersAction,
+  listProcedureTypesForSelectAction,
+} from '@/actions/appointments'
 import type { DiagramViewType, QuantityUnit } from '@/types'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
@@ -243,6 +254,16 @@ export function ProcedureForm({
   // ─── Submit state ────────────────────────────────────────────────
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  // ─── Follow-up scheduling state ──────────────────────────────────
+  const [showFollowUpPrompt, setShowFollowUpPrompt] = useState(false)
+  const [showAppointmentForm, setShowAppointmentForm] = useState(false)
+  const [appointmentPractitioners, setAppointmentPractitioners] = useState<
+    { id: string; fullName: string }[]
+  >([])
+  const [appointmentProcedureTypes, setAppointmentProcedureTypes] = useState<
+    { id: string; name: string; estimatedDurationMin: number | null }[]
+  >([])
 
   // ─── Section open state ──────────────────────────────────────────
   const [openSections, setOpenSections] = useState({
@@ -445,8 +466,12 @@ export function ProcedureForm({
       }
 
       if (result.success) {
-        router.push(`/pacientes/${patientId}?tab=procedimentos`)
-        router.refresh()
+        if (followUpDate) {
+          setShowFollowUpPrompt(true)
+        } else {
+          router.push(`/pacientes/${patientId}?tab=procedimentos`)
+          router.refresh()
+        }
       } else {
         setSubmitError(result.error ?? 'Erro ao salvar procedimento')
       }
@@ -957,6 +982,82 @@ export function ProcedureForm({
           </div>
         </div>
       )}
+
+      {/* ── Follow-up scheduling prompt ────────────────────────────── */}
+      <Dialog
+        open={showFollowUpPrompt}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowFollowUpPrompt(false)
+            router.push(`/pacientes/${patientId}?tab=procedimentos`)
+            router.refresh()
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-forest">
+              Agendar retorno?
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-mid">
+            Deseja agendar o retorno para{' '}
+            <span className="font-medium text-forest">
+              {followUpDate
+                ? format(new Date(followUpDate + 'T12:00:00'), "dd/MM/yyyy", {
+                    locale: ptBR,
+                  })
+                : ''}
+            </span>
+            ?
+          </p>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              className="border-forest text-forest hover:bg-petal"
+              onClick={() => {
+                setShowFollowUpPrompt(false)
+                router.push(`/pacientes/${patientId}?tab=procedimentos`)
+                router.refresh()
+              }}
+            >
+              Pular
+            </Button>
+            <Button
+              className="bg-forest text-cream hover:bg-sage"
+              onClick={async () => {
+                setShowFollowUpPrompt(false)
+                // Load practitioners and procedure types for appointment form
+                const [practitioners, procTypes] = await Promise.all([
+                  listPractitionersAction(),
+                  listProcedureTypesForSelectAction(),
+                ])
+                setAppointmentPractitioners(practitioners)
+                setAppointmentProcedureTypes(procTypes)
+                setShowAppointmentForm(true)
+              }}
+            >
+              <CalendarPlus className="mr-2 size-4" />
+              Agendar retorno
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Appointment form for follow-up scheduling ──────────────── */}
+      <AppointmentForm
+        open={showAppointmentForm}
+        onOpenChange={(open) => {
+          setShowAppointmentForm(open)
+          if (!open) {
+            router.push(`/pacientes/${patientId}?tab=procedimentos`)
+            router.refresh()
+          }
+        }}
+        practitioners={appointmentPractitioners}
+        procedureTypes={appointmentProcedureTypes}
+        defaultDate={followUpDate}
+      />
     </div>
   )
 }

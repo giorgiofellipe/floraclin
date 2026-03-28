@@ -44,6 +44,11 @@ export type ResetPasswordState = {
   success?: boolean
 } | null
 
+export async function switchTenantAction(tenantId: string) {
+  const { setActiveTenant } = await import('@/lib/auth')
+  await setActiveTenant(tenantId)
+}
+
 export async function resetPassword(_prevState: ResetPasswordState, formData: FormData): Promise<ResetPasswordState> {
   const email = formData.get('email') as string
 

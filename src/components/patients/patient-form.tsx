@@ -1,6 +1,6 @@
 'use client'
 
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
@@ -10,8 +10,10 @@ import type { Patient } from '@/db/queries/patients'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { MaskedInput } from '@/components/ui/masked-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { maskPhone, maskCPF, maskCEP } from '@/lib/masks'
 import {
   Sheet,
   SheetContent,
@@ -127,10 +129,20 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
       {/* Telefone */}
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="phone">Telefone *</Label>
-        <Input
-          id="phone"
-          {...form.register('phone')}
-          aria-invalid={!!form.formState.errors.phone}
+        <Controller
+          control={form.control}
+          name="phone"
+          render={({ field }) => (
+            <MaskedInput
+              id="phone"
+              mask={maskPhone}
+              value={field.value}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
+              ref={field.ref}
+              aria-invalid={!!form.formState.errors.phone}
+            />
+          )}
         />
         {form.formState.errors.phone && (
           <p className="text-xs text-destructive">{form.formState.errors.phone.message}</p>
@@ -140,13 +152,40 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
       {/* Telefone secundario */}
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="phoneSecondary">Telefone secundário</Label>
-        <Input id="phoneSecondary" {...form.register('phoneSecondary')} />
+        <Controller
+          control={form.control}
+          name="phoneSecondary"
+          render={({ field }) => (
+            <MaskedInput
+              id="phoneSecondary"
+              mask={maskPhone}
+              value={field.value}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
+              ref={field.ref}
+            />
+          )}
+        />
       </div>
 
       {/* CPF */}
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="cpf">CPF</Label>
-        <Input id="cpf" {...form.register('cpf')} placeholder="000.000.000-00" />
+        <Controller
+          control={form.control}
+          name="cpf"
+          render={({ field }) => (
+            <MaskedInput
+              id="cpf"
+              mask={maskCPF}
+              value={field.value}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
+              ref={field.ref}
+              placeholder="000.000.000-00"
+            />
+          )}
+        />
       </div>
 
       {/* E-mail */}
@@ -266,7 +305,21 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
 
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="address.zip">CEP</Label>
-              <Input id="address.zip" {...form.register('address.zip')} placeholder="00000-000" />
+              <Controller
+                control={form.control}
+                name="address.zip"
+                render={({ field }) => (
+                  <MaskedInput
+                    id="address.zip"
+                    mask={maskCEP}
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    ref={field.ref}
+                    placeholder="00000-000"
+                  />
+                )}
+              />
             </div>
           </div>
         )}

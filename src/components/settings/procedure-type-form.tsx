@@ -3,8 +3,10 @@
 import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { MaskedInput } from '@/components/ui/masked-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { maskCurrency, parseCurrency } from '@/lib/masks'
 import {
   Select,
   SelectContent,
@@ -47,7 +49,15 @@ export function ProcedureTypeForm({ initialData, onSuccess, onCancel }: Procedur
   const [name, setName] = useState(initialData?.name || '')
   const [category, setCategory] = useState(initialData?.category || '')
   const [description, setDescription] = useState(initialData?.description || '')
-  const [defaultPrice, setDefaultPrice] = useState(initialData?.defaultPrice || '')
+  const [defaultPrice, setDefaultPrice] = useState(() => {
+    if (!initialData?.defaultPrice) return ''
+    // Convert stored value (e.g. "150.00" or "150") to masked format
+    const num = parseFloat(initialData.defaultPrice)
+    if (isNaN(num)) return ''
+    // Convert to cents string then mask
+    const cents = Math.round(num * 100).toString()
+    return maskCurrency(cents)
+  })
   const [estimatedDurationMin, setEstimatedDurationMin] = useState(
     initialData?.estimatedDurationMin?.toString() || '60'
   )
@@ -63,7 +73,7 @@ export function ProcedureTypeForm({ initialData, onSuccess, onCancel }: Procedur
         name,
         category: category as (typeof PROCEDURE_CATEGORIES)[number],
         description,
-        defaultPrice,
+        defaultPrice: defaultPrice ? String(parseCurrency(defaultPrice)) : '',
         estimatedDurationMin: parseInt(estimatedDurationMin) || 60,
         isActive,
       }
@@ -124,13 +134,13 @@ export function ProcedureTypeForm({ initialData, onSuccess, onCancel }: Procedur
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="pt-price">Preço Padrão (R$)</Label>
-          <Input
+          <MaskedInput
             id="pt-price"
-            type="text"
-            inputMode="decimal"
+            mask={maskCurrency}
+            inputMode="numeric"
             value={defaultPrice}
             onChange={(e) => setDefaultPrice(e.target.value)}
-            placeholder="0.00"
+            placeholder="0,00"
           />
         </div>
 

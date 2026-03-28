@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react'
 import { Calendar } from '@/components/ui/calendar'
 import { SlotPicker } from '@/components/booking/slot-picker'
 import { cn, formatDate } from '@/lib/utils'
+import { maskPhone } from '@/lib/masks'
 import { ptBR } from 'date-fns/locale'
 import { format, addDays, isBefore, startOfDay } from 'date-fns'
 
@@ -369,8 +370,8 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
                   <input
                     id="booking-phone"
                     type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    value={maskPhone(phone)}
+                    onChange={(e) => setPhone(maskPhone(e.target.value))}
                     placeholder="(11) 99999-9999"
                     className={cn(
                       'w-full rounded-lg border px-3 py-2.5 text-sm bg-white transition-colors',

@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { MaskedInput } from '@/components/ui/masked-input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card } from '@/components/ui/card'
@@ -10,6 +11,7 @@ import { updateTenantAction } from '@/actions/tenants'
 import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
 import { toast } from 'sonner'
 import type { WorkingHours } from '@/validations/tenant'
+import { maskPhone, maskCEP } from '@/lib/masks'
 
 const WEEKDAY_LABELS: Record<string, string> = {
   mon: 'Segunda-feira',
@@ -121,8 +123,9 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
           </div>
           <div className="space-y-2">
             <Label htmlFor="phone">Telefone</Label>
-            <Input
+            <MaskedInput
               id="phone"
+              mask={maskPhone}
               value={phone}
               onChange={(e) => handleFieldChange('phone', e.target.value)}
               placeholder="(11) 99999-9999"
@@ -202,8 +205,9 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
           </div>
           <div className="space-y-2">
             <Label htmlFor="zip">CEP</Label>
-            <Input
+            <MaskedInput
               id="zip"
+              mask={maskCEP}
               value={address.zip}
               onChange={(e) => updateAddress('zip', e.target.value)}
               placeholder="00000-000"

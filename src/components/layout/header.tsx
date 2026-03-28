@@ -10,14 +10,17 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { UserMenu } from './user-menu'
-import { MobileSidebarContent } from './sidebar'
+import { MobileSidebarContent, type TenantOption } from './sidebar'
 
 interface HeaderProps {
   userName: string
   userEmail: string
+  clinicName?: string
+  tenants?: TenantOption[]
+  activeTenantId?: string
 }
 
-export function Header({ userName, userEmail }: HeaderProps) {
+export function Header({ userName, userEmail, clinicName, tenants, activeTenantId }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const pathname = usePathname()
 
@@ -47,7 +50,12 @@ export function Header({ userName, userEmail }: HeaderProps) {
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
         <SheetContent side="left" showCloseButton={false} className="w-64 p-0">
           <SheetTitle className="sr-only">Menu de navegação</SheetTitle>
-          <MobileSidebarContent onNavigate={() => setMobileMenuOpen(false)} />
+          <MobileSidebarContent
+            onNavigate={() => setMobileMenuOpen(false)}
+            clinicName={clinicName}
+            tenants={tenants}
+            activeTenantId={activeTenantId}
+          />
         </SheetContent>
       </Sheet>
     </>
