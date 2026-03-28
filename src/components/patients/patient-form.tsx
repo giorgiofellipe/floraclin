@@ -218,7 +218,17 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
           onValueChange={(val) => form.setValue('gender', val ?? '')}
         >
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Selecione" />
+            <SelectValue placeholder="Selecione">
+              {(value: string) => {
+                const labels: Record<string, string> = {
+                  feminino: 'Feminino',
+                  masculino: 'Masculino',
+                  outro: 'Outro',
+                  nao_informado: 'Prefiro não informar',
+                }
+                return labels[value] ?? value
+              }}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="feminino">Feminino</SelectItem>
@@ -243,7 +253,19 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
           onValueChange={(val) => form.setValue('referralSource', val ?? '')}
         >
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Selecione" />
+            <SelectValue placeholder="Selecione">
+              {(value: string) => {
+                const labels: Record<string, string> = {
+                  indicacao: 'Indicação',
+                  instagram: 'Instagram',
+                  google: 'Google',
+                  facebook: 'Facebook',
+                  site: 'Site',
+                  outro: 'Outro',
+                }
+                return labels[value] ?? value
+              }}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="indicacao">Indicação</SelectItem>

@@ -204,7 +204,9 @@ function SelectField({
       }}
     >
       <SelectTrigger className="w-full">
-        <SelectValue placeholder={placeholder} />
+        <SelectValue placeholder={placeholder}>
+          {(val: string) => options.find((o) => o.value === val)?.label ?? val}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         {options.map((opt) => (

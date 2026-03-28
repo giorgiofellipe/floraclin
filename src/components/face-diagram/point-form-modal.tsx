@@ -244,7 +244,9 @@ export function PointFormModal({
             <Label htmlFor="depth">Profundidade</Label>
             <Select value={depth} onValueChange={(val) => setDepth(val ?? '')}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecione a profundidade" />
+                <SelectValue placeholder="Selecione a profundidade">
+                  {(value: string) => DEPTH_OPTIONS.find((o) => o.value === value)?.label ?? value}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {DEPTH_OPTIONS.map((option) => (

@@ -94,7 +94,12 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
         <div className="flex items-center gap-2">
           <Select value={statusFilter || 'all'} onValueChange={handleStatusChange}>
             <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Status" />
+              <SelectValue placeholder="Status">
+                {(value: string) => {
+                  if (value === 'all') return 'Todos'
+                  return STATUS_LABELS[value] ?? value
+                }}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>

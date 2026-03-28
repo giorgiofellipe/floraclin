@@ -108,7 +108,9 @@ export function ProcedureTypeForm({ initialData, onSuccess, onCancel }: Procedur
         <Label htmlFor="pt-category">Categoria *</Label>
         <Select value={category} onValueChange={(v) => setCategory(v ?? '')}>
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Selecione a categoria" />
+            <SelectValue placeholder="Selecione a categoria">
+              {(value: string) => CATEGORY_LABELS[value] || value}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {PROCEDURE_CATEGORIES.map((cat) => (

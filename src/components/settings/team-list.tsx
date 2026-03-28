@@ -166,7 +166,9 @@ export function TeamList({ members, currentUserId, embedded = false }: TeamListP
                         disabled={isPending}
                       >
                         <SelectTrigger className="w-[140px] h-7">
-                          <SelectValue />
+                          <SelectValue>
+                            {(value: string) => ROLE_LABELS[value as Role] || value}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="practitioner">

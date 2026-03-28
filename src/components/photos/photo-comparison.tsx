@@ -164,7 +164,12 @@ export function PhotoComparison({
           <Label>Foto A</Label>
           <Select value={photoIdA} onValueChange={(v) => v && setPhotoIdA(v)}>
             <SelectTrigger className="w-64">
-              <SelectValue placeholder="Selecione a foto A" />
+              <SelectValue placeholder="Selecione a foto A">
+                {(value: string) => {
+                  const photo = allPhotos.find((p) => p.id === value)
+                  return photo ? getPhotoLabel(photo) : value
+                }}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {allPhotos.map((p) => (
@@ -180,7 +185,12 @@ export function PhotoComparison({
           <Label>Foto B</Label>
           <Select value={photoIdB} onValueChange={(v) => v && setPhotoIdB(v)}>
             <SelectTrigger className="w-64">
-              <SelectValue placeholder="Selecione a foto B" />
+              <SelectValue placeholder="Selecione a foto B">
+                {(value: string) => {
+                  const photo = allPhotos.find((p) => p.id === value)
+                  return photo ? getPhotoLabel(photo) : value
+                }}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {allPhotos.map((p) => (

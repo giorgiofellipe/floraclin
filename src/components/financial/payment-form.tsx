@@ -97,7 +97,9 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
             <Label htmlFor="patientSelect">Paciente</Label>
             <Select value={patientId} onValueChange={(v) => setPatientId(v ?? '')}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecione o paciente" />
+                <SelectValue placeholder="Selecione o paciente">
+                  {(value: string) => patients.find((p) => p.id === value)?.fullName ?? value}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {patients.map((p) => (

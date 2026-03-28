@@ -177,7 +177,18 @@ export function InstallmentTable({
                 onValueChange={(v) => setPaymentMethod((v ?? 'pix') as PaymentMethod)}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue />
+                  <SelectValue>
+                    {(value: string) => {
+                      const labels: Record<string, string> = {
+                        pix: 'PIX',
+                        credit_card: 'Cartão de Crédito',
+                        debit_card: 'Cartão de Débito',
+                        cash: 'Dinheiro',
+                        transfer: 'Transferência',
+                      }
+                      return labels[value] ?? value
+                    }}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="pix">PIX</SelectItem>

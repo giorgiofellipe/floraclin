@@ -52,6 +52,7 @@ interface PatientOption {
 interface AppointmentFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onSaved?: () => void
   appointment?: AppointmentWithDetails | null
   practitioners: Practitioner[]
   procedureTypes: ProcedureType[]
@@ -84,6 +85,7 @@ function getDefaultEndTime(startTime: string, durationMin: number = 30): string 
 export function AppointmentForm({
   open,
   onOpenChange,
+  onSaved,
   appointment,
   practitioners,
   procedureTypes,
@@ -144,12 +146,13 @@ export function AppointmentForm({
     }
   }, [open, appointment, defaultDate, defaultStartTime, defaultPractitionerId, practitioners])
 
-  // Close on success
+  // Close on success and notify parent
   React.useEffect(() => {
     if (state?.success) {
+      onSaved?.()
       onOpenChange(false)
     }
-  }, [state?.success, onOpenChange])
+  }, [state?.success, onOpenChange, onSaved])
 
   // Search patients
   React.useEffect(() => {
@@ -182,6 +185,7 @@ export function AppointmentForm({
   const handleStatusChange = async (status: AppointmentStatus) => {
     if (!appointment) return
     await updateAppointmentStatusAction(appointment.id, status)
+    onSaved?.()
     onOpenChange(false)
   }
 
@@ -189,6 +193,7 @@ export function AppointmentForm({
     if (!appointment) return
     if (!confirm('Tem certeza que deseja excluir este agendamento?')) return
     await deleteAppointmentAction(appointment.id)
+    onSaved?.()
     onOpenChange(false)
   }
 
@@ -259,7 +264,9 @@ export function AppointmentForm({
               onValueChange={(v) => v && setPractitionerId(v)}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecione o profissional" />
+                <SelectValue placeholder="Selecione o profissional">
+                  {(value: string) => practitioners.find((p) => p.id === value)?.fullName ?? value}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {practitioners.map((p) => (
@@ -280,7 +287,13 @@ export function AppointmentForm({
               onValueChange={(v) => v && handleProcedureTypeChange(v)}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecione (opcional)" />
+                <SelectValue placeholder="Selecione (opcional)">
+                  {(value: string) => {
+                    const pt = procedureTypes.find((p) => p.id === value)
+                    if (!pt) return value
+                    return pt.estimatedDurationMin ? `${pt.name} (${pt.estimatedDurationMin}min)` : pt.name
+                  }}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {procedureTypes.map((pt) => (
@@ -370,7 +383,9 @@ export function AppointmentForm({
                   <>
                     <Select onValueChange={(v) => v && handleStatusChange(v as AppointmentStatus)}>
                       <SelectTrigger className="w-auto">
-                        <SelectValue placeholder="Alterar status" />
+                        <SelectValue placeholder="Alterar status">
+                          {(value: string) => STATUS_LABELS[value as AppointmentStatus] ?? value}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {Object.entries(STATUS_LABELS).map(([value, label]) => (

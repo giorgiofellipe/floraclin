@@ -273,7 +273,9 @@ export function PhotoUploader({
         <Label htmlFor="timeline-stage">Estágio</Label>
         <Select value={timelineStage} onValueChange={(v) => v && setTimelineStage(v as TimelineStage)}>
           <SelectTrigger className="w-48">
-            <SelectValue />
+            <SelectValue>
+              {(value: string) => timelineStageLabels[value as TimelineStage] ?? value}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {timelineStageValues.map((stage) => (

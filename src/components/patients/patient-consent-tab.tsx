@@ -123,7 +123,12 @@ export function PatientConsentTab({ patientId }: PatientConsentTabProps) {
                 </label>
                 <Select value={selectedTemplateId} onValueChange={(v) => setSelectedTemplateId(v ?? '')}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Escolha um modelo de termo..." />
+                    <SelectValue placeholder="Escolha um modelo de termo...">
+                      {(value: string) => {
+                        const t = templates.find((t) => t.id === value)
+                        return t ? `${t.title} (v${t.version})` : value
+                      }}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {templates.map((t) => (

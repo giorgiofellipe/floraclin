@@ -218,7 +218,12 @@ export function AuditLogViewer() {
             }}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Todos" />
+              <SelectValue placeholder="Todos">
+                {(value: string) => {
+                  if (value === '__all__') return 'Todos'
+                  return getEntityTypeLabel(value)
+                }}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">Todos</SelectItem>

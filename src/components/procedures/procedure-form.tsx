@@ -564,7 +564,15 @@ export function ProcedureForm({
               disabled={isReadOnly}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecione o tipo de procedimento" />
+                <SelectValue placeholder="Selecione o tipo de procedimento">
+                  {(value: string) => {
+                    const type = procedureTypes.find((t) => t.id === value)
+                    if (!type) return value
+                    return type.defaultPrice
+                      ? `${type.name} (R$ ${parseFloat(type.defaultPrice).toFixed(2)})`
+                      : type.name
+                  }}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {procedureTypes.map((type) => (

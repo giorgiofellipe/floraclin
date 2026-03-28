@@ -119,7 +119,9 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
                   onValueChange={(val) => setSelectedType(val as ConsentType)}
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Selecione o tipo" />
+                    <SelectValue placeholder="Selecione o tipo">
+                      {(value: string) => CONSENT_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {CONSENT_TYPE_OPTIONS.map((opt) => (

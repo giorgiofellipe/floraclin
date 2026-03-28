@@ -86,7 +86,9 @@ export function InviteUserForm({ onSuccess, onCancel }: InviteUserFormProps) {
         <Label htmlFor="invite-role">Papel *</Label>
         <Select value={role} onValueChange={(v) => setRole(v ?? '')}>
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Selecione o papel" />
+            <SelectValue placeholder="Selecione o papel">
+              {(value: string) => ROLE_LABELS[value as Role] || value}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {INVITABLE_ROLES.map((r) => (

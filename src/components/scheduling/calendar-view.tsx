@@ -196,14 +196,17 @@ export function CalendarView({
     fetchAppointments(newDate, 'day', practitionerId)
   }
 
-  const handleFormOpenChange = (open: boolean) => {
+  const handleFormOpenChange = React.useCallback((open: boolean) => {
     setFormOpen(open)
     if (!open) {
       setEditingAppointment(null)
-      // Refresh appointments after form closes
-      fetchAppointments(currentDate, view, practitionerId)
     }
-  }
+  }, [])
+
+  // Refetch when form closes (separate from the open/close handler to avoid loops)
+  const handleFormSaved = React.useCallback(() => {
+    fetchAppointments(currentDate, view, practitionerId)
+  }, [currentDate, view, practitionerId, fetchAppointments])
 
   const handleNewAppointment = () => {
     setEditingAppointment(null)
@@ -240,7 +243,12 @@ export function CalendarView({
           {/* Practitioner filter */}
           <Select value={practitionerId} onValueChange={(v) => v && changePractitioner(v)}>
             <SelectTrigger className="w-auto min-w-[140px]">
-              <SelectValue placeholder="Profissional" />
+              <SelectValue placeholder="Profissional">
+                {(value: string) => {
+                  if (value === 'all') return 'Todos'
+                  return practitioners.find((p) => p.id === value)?.fullName ?? value
+                }}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
@@ -326,6 +334,7 @@ export function CalendarView({
       <AppointmentForm
         open={formOpen}
         onOpenChange={handleFormOpenChange}
+        onSaved={handleFormSaved}
         appointment={editingAppointment}
         practitioners={practitioners}
         procedureTypes={procedureTypes}
