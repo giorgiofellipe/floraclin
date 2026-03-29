@@ -34,6 +34,7 @@ export interface TemplateRendererProps {
   diagramRendered?: boolean
   products?: CatalogProduct[]
   wizardOverrides?: WizardOverrides
+  showErrors?: boolean
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────
@@ -88,6 +89,7 @@ export function TemplateRenderer({
   onDiagramChange,
   diagramRendered = false,
   products,
+  showErrors = false,
 }: TemplateRendererProps) {
   const sortedSections = React.useMemo(
     () => [...sections].sort((a, b) => a.order - b.order),
@@ -187,6 +189,7 @@ export function TemplateRenderer({
                       onDiagramChange={onDiagramChange}
                       patientGender={patientGender}
                       products={products}
+                      showErrors={showErrors}
                     />
                   )
                 })}
@@ -211,6 +214,7 @@ interface QuestionRendererProps {
   onDiagramChange?: (points: DiagramPointData[]) => void
   patientGender?: string | null
   products?: CatalogProduct[]
+  showErrors?: boolean
 }
 
 function QuestionRenderer({
@@ -223,6 +227,7 @@ function QuestionRenderer({
   onDiagramChange,
   patientGender,
   products,
+  showErrors,
 }: QuestionRendererProps) {
   switch (question.type) {
     case 'radio':
@@ -232,6 +237,7 @@ function QuestionRenderer({
           value={value as string | undefined}
           onChange={onChange}
           readOnly={readOnly}
+          showErrors={showErrors}
         />
       )
     case 'checkbox':
@@ -241,6 +247,7 @@ function QuestionRenderer({
           value={value as string[] | undefined}
           onChange={onChange}
           readOnly={readOnly}
+          showErrors={showErrors}
         />
       )
     case 'scale':
@@ -250,6 +257,7 @@ function QuestionRenderer({
           value={value as number | undefined}
           onChange={onChange}
           readOnly={readOnly}
+          showErrors={showErrors}
         />
       )
     case 'text':
@@ -259,6 +267,7 @@ function QuestionRenderer({
           value={value as string | undefined}
           onChange={onChange}
           readOnly={readOnly}
+          showErrors={showErrors}
         />
       )
     case 'checkbox_with_other':
@@ -268,6 +277,7 @@ function QuestionRenderer({
           value={value as { selected: string[]; other: string } | undefined}
           onChange={onChange}
           readOnly={readOnly}
+          showErrors={showErrors}
         />
       )
     case 'radio_with_other':
@@ -277,6 +287,7 @@ function QuestionRenderer({
           value={value as { selected: string; other: string } | undefined}
           onChange={onChange}
           readOnly={readOnly}
+          showErrors={showErrors}
         />
       )
     case 'face_diagram':

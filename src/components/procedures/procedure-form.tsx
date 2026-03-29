@@ -71,6 +71,7 @@ import type { WizardOverrides } from '@/components/service-wizard/types'
 import type { EvaluationSection, EvaluationResponses } from '@/types/evaluation'
 import { TemplateRenderer } from '@/components/evaluation/template-renderer'
 import { saveEvaluationResponseAction } from '@/actions/evaluation-responses'
+import { validateEvaluationResponses } from '@/lib/evaluation-utils'
 
 // ─── Evaluation template type for the form ────────────────────────
 
@@ -385,6 +386,9 @@ export function ProcedureForm({
     []
   )
 
+  // ─── Evaluation validation state ─────────────────────────────────
+  const [showEvalErrors, setShowEvalErrors] = useState(false)
+
   // ─── Photo state ─────────────────────────────────────────────────
   const [photoRefreshKey, setPhotoRefreshKey] = useState(0)
 
@@ -637,8 +641,45 @@ export function ProcedureForm({
     []
   )
 
+  // ─── Evaluation validation helper ──────────────────────────────────
+  const runEvaluationValidation = useCallback((): string | null => {
+    if (!evalTemplates || evalTemplates.length === 0) return null
+
+    const allMissing: { templateName: string; sectionTitle: string; questionLabel: string }[] = []
+
+    for (const template of evalTemplates) {
+      const responses = (evaluationResponses[template.id] ?? {}) as Record<string, unknown>
+      const result = validateEvaluationResponses(template.sections, responses)
+      if (!result.valid) {
+        for (const m of result.missingQuestions) {
+          allMissing.push({
+            templateName: template.procedureTypeName,
+            sectionTitle: m.sectionTitle,
+            questionLabel: m.questionLabel,
+          })
+        }
+      }
+    }
+
+    if (allMissing.length === 0) return null
+
+    const lines = allMissing.map(
+      (m) => `• ${m.sectionTitle} — ${m.questionLabel}`
+    )
+    return `Preencha os campos obrigatórios:\n${lines.join('\n')}`
+  }, [evalTemplates, evaluationResponses])
+
   const handleSubmit = useCallback(async () => {
     if (isSubmitting || isReadOnly) return
+
+    // Validate evaluation template required questions
+    const evalError = runEvaluationValidation()
+    if (evalError) {
+      setShowEvalErrors(true)
+      setSubmitError(evalError)
+      return
+    }
+    setShowEvalErrors(false)
 
     setIsSubmitting(true)
     setSubmitError(null)
@@ -775,6 +816,7 @@ export function ProcedureForm({
     financialPlan,
     evalTemplates,
     evaluationResponses,
+    runEvaluationValidation,
     router,
   ])
 
@@ -799,6 +841,19 @@ export function ProcedureForm({
         })
         return
       }
+
+      // Validate evaluation template required questions
+      const evalError = runEvaluationValidation()
+      if (evalError) {
+        setShowEvalErrors(true)
+        wizardOverrides?.onSaveComplete?.({
+          success: false,
+          error: evalError,
+          errorType: 'validation',
+        })
+        return
+      }
+      setShowEvalErrors(false)
 
       setIsSubmitting(true)
       setSubmitError(null)
@@ -1234,6 +1289,7 @@ export function ProcedureForm({
                       onDiagramChange={setDiagramPoints}
                       diagramRendered={passDiagramRendered}
                       products={catalogProducts}
+                      showErrors={showEvalErrors}
                     />
                   </div>
                 </div>

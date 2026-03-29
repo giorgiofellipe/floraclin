@@ -16,11 +16,15 @@ import type { DiagramPointData, CatalogProduct } from '@/components/face-diagram
 interface QuestionWrapperProps {
   question: EvaluationQuestion
   children: React.ReactNode
+  hasError?: boolean
 }
 
-function QuestionWrapper({ question, children }: QuestionWrapperProps) {
+function QuestionWrapper({ question, children, hasError }: QuestionWrapperProps) {
   return (
-    <div className="flex flex-col gap-2">
+    <div className={cn(
+      'flex flex-col gap-2 rounded-[3px] p-2 -m-2 transition-colors',
+      hasError && 'border border-red-500/40 bg-red-50/30'
+    )}>
       <div className="flex flex-col gap-0.5">
         <Label className="text-sm font-medium text-charcoal">
           {question.label}
@@ -39,6 +43,10 @@ function QuestionWrapper({ question, children }: QuestionWrapperProps) {
       )}
 
       {children}
+
+      {hasError && (
+        <p className="text-xs text-red-600 font-medium">Campo obrigatório</p>
+      )}
     </div>
   )
 }
@@ -50,11 +58,13 @@ interface RadioQuestionProps {
   value: string | undefined
   onChange: (value: string) => void
   readOnly?: boolean
+  showErrors?: boolean
 }
 
-export function RadioQuestion({ question, value, onChange, readOnly }: RadioQuestionProps) {
+export function RadioQuestion({ question, value, onChange, readOnly, showErrors }: RadioQuestionProps) {
+  const hasError = showErrors && question.required && (!value || value.length === 0)
   return (
-    <QuestionWrapper question={question}>
+    <QuestionWrapper question={question} hasError={hasError}>
       <div className="flex flex-col gap-1.5">
         {question.options?.map((option) => {
           const selected = value === option
@@ -96,9 +106,10 @@ interface CheckboxQuestionProps {
   value: string[] | undefined
   onChange: (value: string[]) => void
   readOnly?: boolean
+  showErrors?: boolean
 }
 
-export function CheckboxQuestion({ question, value = [], onChange, readOnly }: CheckboxQuestionProps) {
+export function CheckboxQuestion({ question, value = [], onChange, readOnly, showErrors }: CheckboxQuestionProps) {
   function toggle(option: string) {
     if (readOnly) return
     if (value.includes(option)) {
@@ -108,8 +119,9 @@ export function CheckboxQuestion({ question, value = [], onChange, readOnly }: C
     }
   }
 
+  const hasError = showErrors && question.required && value.length === 0
   return (
-    <QuestionWrapper question={question}>
+    <QuestionWrapper question={question} hasError={hasError}>
       <div className="flex flex-col gap-1.5">
         {question.options?.map((option) => {
           const checked = value.includes(option)
@@ -151,15 +163,17 @@ interface ScaleQuestionProps {
   value: number | undefined
   onChange: (value: number) => void
   readOnly?: boolean
+  showErrors?: boolean
 }
 
-export function ScaleQuestion({ question, value, onChange, readOnly }: ScaleQuestionProps) {
+export function ScaleQuestion({ question, value, onChange, readOnly, showErrors }: ScaleQuestionProps) {
   const min = question.scaleMin ?? 1
   const max = question.scaleMax ?? 5
   const range = Array.from({ length: max - min + 1 }, (_, i) => min + i)
 
+  const hasError = showErrors && question.required && value === undefined
   return (
-    <QuestionWrapper question={question}>
+    <QuestionWrapper question={question} hasError={hasError}>
       <div className="flex items-center gap-2">
         {question.scaleMinLabel && (
           <span className="text-[11px] text-mid whitespace-nowrap">{question.scaleMinLabel}</span>
@@ -201,11 +215,13 @@ interface TextQuestionProps {
   value: string | undefined
   onChange: (value: string) => void
   readOnly?: boolean
+  showErrors?: boolean
 }
 
-export function TextQuestion({ question, value, onChange, readOnly }: TextQuestionProps) {
+export function TextQuestion({ question, value, onChange, readOnly, showErrors }: TextQuestionProps) {
+  const hasError = showErrors && question.required && (!value || value.trim().length === 0)
   return (
-    <QuestionWrapper question={question}>
+    <QuestionWrapper question={question} hasError={hasError}>
       <Textarea
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value)}
@@ -224,6 +240,7 @@ interface CheckboxWithOtherQuestionProps {
   value: { selected: string[]; other: string } | undefined
   onChange: (value: { selected: string[]; other: string }) => void
   readOnly?: boolean
+  showErrors?: boolean
 }
 
 export function CheckboxWithOtherQuestion({
@@ -231,6 +248,7 @@ export function CheckboxWithOtherQuestion({
   value = { selected: [], other: '' },
   onChange,
   readOnly,
+  showErrors,
 }: CheckboxWithOtherQuestionProps) {
   function toggle(option: string) {
     if (readOnly) return
@@ -240,8 +258,9 @@ export function CheckboxWithOtherQuestion({
     onChange({ ...value, selected })
   }
 
+  const hasError = showErrors && question.required && value.selected.length === 0 && (!value.other || value.other.trim().length === 0)
   return (
-    <QuestionWrapper question={question}>
+    <QuestionWrapper question={question} hasError={hasError}>
       <div className="flex flex-col gap-1.5">
         {question.options?.map((option) => {
           const checked = value.selected.includes(option)
@@ -293,6 +312,7 @@ interface RadioWithOtherQuestionProps {
   value: { selected: string; other: string } | undefined
   onChange: (value: { selected: string; other: string }) => void
   readOnly?: boolean
+  showErrors?: boolean
 }
 
 export function RadioWithOtherQuestion({
@@ -300,9 +320,11 @@ export function RadioWithOtherQuestion({
   value = { selected: '', other: '' },
   onChange,
   readOnly,
+  showErrors,
 }: RadioWithOtherQuestionProps) {
+  const hasError = showErrors && question.required && (!value.selected || value.selected.length === 0) && (!value.other || value.other.trim().length === 0)
   return (
-    <QuestionWrapper question={question}>
+    <QuestionWrapper question={question} hasError={hasError}>
       <div className="flex flex-col gap-1.5">
         {question.options?.map((option) => {
           const selected = value.selected === option
