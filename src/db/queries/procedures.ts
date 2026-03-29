@@ -385,3 +385,52 @@ export async function cancelProcedure(
 
   return updated
 }
+
+export async function getLatestNonExecutedProcedure(
+  tenantId: string,
+  patientId: string
+): Promise<ProcedureWithDetails | null> {
+  const [record] = await db
+    .select({
+      id: procedureRecords.id,
+      tenantId: procedureRecords.tenantId,
+      patientId: procedureRecords.patientId,
+      practitionerId: procedureRecords.practitionerId,
+      procedureTypeId: procedureRecords.procedureTypeId,
+      appointmentId: procedureRecords.appointmentId,
+      performedAt: procedureRecords.performedAt,
+      technique: procedureRecords.technique,
+      clinicalResponse: procedureRecords.clinicalResponse,
+      adverseEffects: procedureRecords.adverseEffects,
+      notes: procedureRecords.notes,
+      followUpDate: procedureRecords.followUpDate,
+      nextSessionObjectives: procedureRecords.nextSessionObjectives,
+      status: procedureRecords.status,
+      plannedSnapshot: procedureRecords.plannedSnapshot,
+      approvedAt: procedureRecords.approvedAt,
+      cancelledAt: procedureRecords.cancelledAt,
+      cancellationReason: procedureRecords.cancellationReason,
+      additionalTypeIds: procedureRecords.additionalTypeIds,
+      financialPlan: procedureRecords.financialPlan,
+      createdAt: procedureRecords.createdAt,
+      updatedAt: procedureRecords.updatedAt,
+      procedureTypeName: procedureTypes.name,
+      procedureTypeCategory: procedureTypes.category,
+      practitionerName: users.fullName,
+    })
+    .from(procedureRecords)
+    .innerJoin(procedureTypes, eq(procedureRecords.procedureTypeId, procedureTypes.id))
+    .innerJoin(users, eq(procedureRecords.practitionerId, users.id))
+    .where(
+      and(
+        eq(procedureRecords.tenantId, tenantId),
+        eq(procedureRecords.patientId, patientId),
+        inArray(procedureRecords.status, ['planned', 'approved']),
+        isNull(procedureRecords.deletedAt)
+      )
+    )
+    .orderBy(desc(procedureRecords.createdAt))
+    .limit(1)
+
+  return record ?? null
+}
