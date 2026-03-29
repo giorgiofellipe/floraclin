@@ -92,10 +92,14 @@ export function ProcedureTypeStep({
   }, {})
 
   const CATEGORY_LABELS: Record<string, string> = {
+    botox: 'Toxina Botulínica',
     toxina_botulinica: 'Toxina Botulínica',
+    filler: 'Preenchimento',
     preenchimento: 'Preenchimento',
+    biostimulator: 'Bioestimulador',
     bioestimulador: 'Bioestimulador',
     skinbooster: 'Skinbooster',
+    peel: 'Peeling',
     peeling: 'Peeling',
     laser: 'Laser',
     microagulhamento: 'Microagulhamento',
