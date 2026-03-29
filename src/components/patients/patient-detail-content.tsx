@@ -147,14 +147,14 @@ export function PatientDetailContent({
                 <TooltipTrigger
                   render={
                     <Link
-                      href={`/pacientes/${patient.id}/procedimentos/novo`}
+                      href={`/pacientes/${patient.id}/atendimento`}
                       className={cn(buttonVariants({ size: 'icon-sm' }), 'bg-forest text-cream hover:bg-sage transition-colors size-9 rounded-lg')}
                     >
                       <Plus className="size-4" />
                     </Link>
                   }
                 />
-                <TooltipContent side="bottom"><p>Novo Procedimento</p></TooltipContent>
+                <TooltipContent side="bottom"><p>Novo Atendimento</p></TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger

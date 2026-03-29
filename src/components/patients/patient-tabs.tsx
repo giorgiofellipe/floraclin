@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 const TABS = [
   { key: 'dados', label: 'Dados' },
   { key: 'anamnese', label: 'Anamnese' },
-  { key: 'procedimentos', label: 'Procedimentos' },
+  { key: 'procedimentos', label: 'Atendimentos' },
   { key: 'fotos', label: 'Fotos' },
   { key: 'termos', label: 'Contratos e Termos' },
   { key: 'financeiro', label: 'Financeiro' },
