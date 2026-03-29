@@ -24,7 +24,8 @@ import { updateProcedureTypeAction, deleteProcedureTypeAction } from '@/actions/
 import { formatCurrency } from '@/lib/utils'
 import { PROCEDURE_CATEGORIES } from '@/lib/constants'
 import { toast } from 'sonner'
-import { PlusIcon, PencilIcon, Trash2Icon } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { PlusIcon, PencilIcon, Trash2Icon, ClipboardListIcon } from 'lucide-react'
 
 const CATEGORY_LABELS: Record<string, string> = {
   botox: 'Toxina Botulínica',
@@ -65,6 +66,7 @@ interface ProcedureTypeListProps {
 }
 
 export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = false }: ProcedureTypeListProps) {
+  const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [createOpen, setCreateOpen] = useState(false)
   const [editingType, setEditingType] = useState<ProcedureType | null>(null)
@@ -171,6 +173,14 @@ export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = fal
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => router.push(`/configuracoes/avaliacao/${pt.id}`)}
+                      title="Ficha de Avaliacao"
+                    >
+                      <ClipboardListIcon />
+                    </Button>
                     <Dialog
                       open={editingType?.id === pt.id}
                       onOpenChange={(open) => {
