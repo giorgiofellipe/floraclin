@@ -105,18 +105,20 @@ function StepItem({
   vertical,
 }: StepItemProps) {
   const content = (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={!available}
+    <div
+      role="button"
+      tabIndex={available ? 0 : -1}
+      onClick={available ? onClick : undefined}
+      onKeyDown={available ? (e) => { if (e.key === 'Enter' || e.key === ' ') onClick() } : undefined}
       className={cn(
         'w-full text-left transition-colors',
         vertical ? 'flex items-center gap-3 px-4 py-3' : 'flex items-center gap-3 px-4 py-3',
         isCurrent && 'bg-forest/5',
         !available && 'cursor-not-allowed opacity-50',
-        available && !isCurrent && 'hover:bg-petal/50',
+        available && !isCurrent && 'hover:bg-petal/50 cursor-pointer',
       )}
       aria-current={isCurrent ? 'step' : undefined}
+      aria-disabled={!available}
     >
       {/* Step indicator circle */}
       <div
@@ -151,7 +153,7 @@ function StepItem({
       {isCurrent && !vertical && (
         <div className="ml-auto h-1 w-8 rounded-full bg-forest" />
       )}
-    </button>
+    </div>
   )
 
   // Wrap unavailable steps with tooltip
