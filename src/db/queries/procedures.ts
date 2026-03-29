@@ -52,6 +52,9 @@ export interface ProcedureListItem {
   technique: string | null
   notes: string | null
   financialPlan: unknown
+  approvedAt: Date | null
+  cancelledAt: Date | null
+  cancellationReason: string | null
   procedureTypeName: string
   procedureTypeCategory: string
   practitionerName: string
@@ -191,6 +194,9 @@ export async function listProcedures(
       technique: procedureRecords.technique,
       notes: procedureRecords.notes,
       financialPlan: procedureRecords.financialPlan,
+      approvedAt: procedureRecords.approvedAt,
+      cancelledAt: procedureRecords.cancelledAt,
+      cancellationReason: procedureRecords.cancellationReason,
       procedureTypeName: procedureTypes.name,
       procedureTypeCategory: procedureTypes.category,
       practitionerName: users.fullName,
