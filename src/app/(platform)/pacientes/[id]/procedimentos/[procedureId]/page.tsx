@@ -118,7 +118,39 @@ export default async function ProcedurePage({ params, searchParams }: ProcedureP
     )
   }
 
-  // ─── Default: procedure form (plan/edit/view) ─────────────────────
+  // ─── Cancelled procedure → read-only view ────────────────────────
+  if (procedure.status === 'cancelled') {
+    return (
+      <div className="min-h-screen p-6">
+        <ProcedureForm
+          patientId={patientId}
+          patientGender={patient.gender}
+          procedure={procedure}
+          diagrams={diagrams}
+          existingApplications={applications}
+          mode="view"
+        />
+      </div>
+    )
+  }
+
+  // ─── Approved procedure (no action) → read-only summary ──────────
+  if (procedure.status === 'approved') {
+    return (
+      <div className="min-h-screen p-6">
+        <ProcedureForm
+          patientId={patientId}
+          patientGender={patient.gender}
+          procedure={procedure}
+          diagrams={diagrams}
+          existingApplications={applications}
+          mode="view"
+        />
+      </div>
+    )
+  }
+
+  // ─── Default: planned procedure form (edit/view) ─────────────────
   const canEdit =
     ctx.role === 'owner' || ctx.userId === procedure.practitionerId
   const mode = canEdit ? 'edit' : 'view'
