@@ -114,6 +114,12 @@ export async function completeOnboarding(data: OnboardingData): Promise<Onboardi
           biostimulator: 'biostimulator',
           skinbooster: 'skinbooster',
           microagulhamento: 'microagulhamento',
+          peel: 'limpeza_pele',
+          enzima: 'enzima',
+          limpeza_pele: 'limpeza_pele',
+          skincare: 'skincare',
+          laser: 'skincare',
+          outros: 'skincare',
         }
 
         // Fetch newly created procedure types to get their IDs

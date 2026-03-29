@@ -28,13 +28,11 @@ export async function saveEvaluationResponse(
   )
 
   if (existing) {
-    // Update existing response
+    // Update existing response — preserve the original snapshot/version
     const [updated] = await db
       .update(evaluationResponses)
       .set({
         responses: data.responses,
-        templateVersion: template.version,
-        templateSnapshot: template.sections,
         updatedAt: new Date(),
       })
       .where(

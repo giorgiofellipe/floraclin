@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "uq_evaluation_responses_tenant_procedure_template" ON "floraclin"."evaluation_responses" USING btree ("tenant_id","procedure_record_id","template_id");

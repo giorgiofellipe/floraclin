@@ -372,6 +372,7 @@ export const evaluationResponses = floraclinSchema.table('evaluation_responses',
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  uniqueIndex('uq_evaluation_responses_tenant_procedure_template').on(table.tenantId, table.procedureRecordId, table.templateId),
   index('idx_evaluation_responses_procedure').on(table.tenantId, table.procedureRecordId),
 ])
 

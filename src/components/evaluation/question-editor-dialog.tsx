@@ -24,12 +24,12 @@ import { PlusIcon, XIcon } from 'lucide-react'
 import type { EvaluationQuestion, EvaluationQuestionType } from '@/types/evaluation'
 
 const QUESTION_TYPE_LABELS: Record<EvaluationQuestionType, string> = {
-  radio: 'Escolha unica',
-  checkbox: 'Multipla escolha',
+  radio: 'Escolha única',
+  checkbox: 'Múltipla escolha',
   scale: 'Escala',
   text: 'Texto livre',
-  checkbox_with_other: 'Multipla escolha com "Outro"',
-  radio_with_other: 'Escolha unica com "Outro"',
+  checkbox_with_other: 'Múltipla escolha com "Outro"',
+  radio_with_other: 'Escolha única com "Outro"',
   face_diagram: 'Diagrama facial',
 }
 
@@ -169,7 +169,9 @@ export function QuestionEditorDialog({
             </Label>
             <Select value={type} onValueChange={(v) => setType(v as EvaluationQuestionType)}>
               <SelectTrigger className="w-full">
-                <SelectValue />
+                <SelectValue>
+                  {(value: string) => QUESTION_TYPE_LABELS[value as EvaluationQuestionType] ?? value}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {(Object.entries(QUESTION_TYPE_LABELS) as [EvaluationQuestionType, string][]).map(

@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { evaluationTemplates, procedureTypes } from '@/db/schema'
-import { eq, and, isNull, inArray } from 'drizzle-orm'
+import { eq, and, isNull, inArray, sql } from 'drizzle-orm'
 import type { EvaluationSection } from '@/types/evaluation'
 import { defaultTemplates } from '@/lib/default-evaluation-templates'
 import type { ProcedureCategory } from '@/types/evaluation'
@@ -64,16 +64,11 @@ export async function updateTemplate(
   templateId: string,
   sections: EvaluationSection[]
 ) {
-  const existing = await getTemplateById(tenantId, templateId)
-  if (!existing) {
-    throw new Error('Template de avaliacao nao encontrado')
-  }
-
   const [updated] = await db
     .update(evaluationTemplates)
     .set({
       sections,
-      version: existing.version + 1,
+      version: sql`${evaluationTemplates.version} + 1`,
       updatedAt: new Date(),
     })
     .where(
@@ -84,6 +79,10 @@ export async function updateTemplate(
       )
     )
     .returning()
+
+  if (!updated) {
+    throw new Error('Template de avaliacao nao encontrado')
+  }
 
   return updated
 }

@@ -94,11 +94,17 @@ export function TemplateRenderer({
     [sections]
   )
 
-  // Track whether we've already rendered a face diagram in this template
-  const diagramRenderedRef = React.useRef(false)
-
-  // Reset each render cycle
-  diagramRenderedRef.current = diagramRendered
+  // Pre-compute which face_diagram question ID gets the real diagram (first occurrence only)
+  const firstDiagramQuestionId = React.useMemo(() => {
+    for (const section of [...sections].sort((a, b) => a.order - b.order)) {
+      for (const question of [...section.questions].sort((a, b) => a.order - b.order)) {
+        if (question.type === 'face_diagram') {
+          return question.id
+        }
+      }
+    }
+    return null
+  }, [sections])
 
   function updateResponse(questionId: string, value: unknown) {
     onChange({ ...responses, [questionId]: value })
@@ -111,7 +117,7 @@ export function TemplateRenderer({
   )
 
   return (
-    <Accordion defaultValue={defaultOpen} className="flex flex-col gap-0">
+    <Accordion type="multiple" defaultValue={defaultOpen} className="flex flex-col gap-0">
       {sortedSections.map((section, sectionIndex) => {
         const { answered, total } = getSectionCompletion(section, responses)
         const isComplete = answered === total && total > 0
@@ -163,16 +169,11 @@ export function TemplateRenderer({
             <AccordionContent className="pb-5 pt-1">
               <div className="flex flex-col gap-5">
                 {sortedQuestions.map((question) => {
-                  // Determine if this face_diagram has already been rendered
-                  let showDiagramAsRendered = false
-                  if (question.type === 'face_diagram') {
-                    if (diagramRenderedRef.current) {
-                      showDiagramAsRendered = true
-                    } else {
-                      // First occurrence — render it and mark as rendered
-                      diagramRenderedRef.current = true
-                    }
-                  }
+                  // Show diagram as already rendered for all face_diagram questions
+                  // except the very first one across the entire template
+                  const showDiagramAsRendered =
+                    question.type === 'face_diagram' &&
+                    (diagramRendered || question.id !== firstDiagramQuestionId)
 
                   return (
                     <QuestionRenderer
