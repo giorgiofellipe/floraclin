@@ -198,6 +198,7 @@ export function SettingsPageClient({
                     email: tenant.email,
                     address: tenant.address as Record<string, string> | null,
                     workingHours: tenant.workingHours as import('@/validations/tenant').WorkingHours | null,
+                    settings: tenant.settings as Record<string, unknown> | null,
                   }}
                 />
               )}

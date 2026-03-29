@@ -2,9 +2,10 @@ import type { QuickStats } from '@/db/queries/dashboard'
 
 interface FinancialSummaryProps {
   stats: QuickStats
+  monthlyGoal?: number
 }
 
-export function FinancialSummary({ stats }: FinancialSummaryProps) {
+export function FinancialSummary({ stats, monthlyGoal = 0 }: FinancialSummaryProps) {
   const now = new Date()
   const monthName = now.toLocaleDateString('pt-BR', { month: 'long' })
   const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1)
@@ -13,7 +14,7 @@ export function FinancialSummary({ stats }: FinancialSummaryProps) {
   const received = stats.revenueThisMonth ?? 0
   const receivable = 0 // Placeholder — would come from real financial data
   const expenses = 0 // Placeholder — would come from real financial data
-  const goal = 12000
+  const goal = monthlyGoal
   const progressPercent = goal > 0 ? Math.min(100, Math.round((received / goal) * 100)) : 0
   const netProfit = received - expenses
 
@@ -32,23 +33,25 @@ export function FinancialSummary({ stats }: FinancialSummaryProps) {
         </span>
       </div>
 
-      {/* Progress bar */}
-      <div className="mb-5">
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[12px] text-[#7A7A7A]">
-            Meta mensal R$ {goal.toLocaleString('pt-BR')}
-          </span>
-          <span className="text-[12px] text-[#7A7A7A]">
-            {progressPercent}% atingido
-          </span>
+      {/* Progress bar — only shown when a monthly goal is configured */}
+      {goal > 0 && (
+        <div className="mb-5">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[12px] text-[#7A7A7A]">
+              Meta mensal R$ {goal.toLocaleString('pt-BR')}
+            </span>
+            <span className="text-[12px] text-[#7A7A7A]">
+              {progressPercent}% atingido
+            </span>
+          </div>
+          <div className="h-2 w-full rounded-full bg-[#F0F0F0] overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[#8FB49A] to-[#4A6B52]"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
         </div>
-        <div className="h-2 w-full rounded-full bg-[#F0F0F0] overflow-hidden">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-[#8FB49A] to-[#4A6B52]"
-            style={{ width: `${progressPercent}%` }}
-          />
-        </div>
-      </div>
+      )}
 
       {/* Breakdown */}
       <div className="space-y-3">

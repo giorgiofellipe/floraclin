@@ -11,7 +11,7 @@ import { updateTenantAction } from '@/actions/tenants'
 import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
 import { toast } from 'sonner'
 import type { WorkingHours } from '@/validations/tenant'
-import { maskPhone, maskCEP } from '@/lib/masks'
+import { maskPhone, maskCEP, maskCurrency, parseCurrency } from '@/lib/masks'
 
 const WEEKDAY_LABELS: Record<string, string> = {
   mon: 'Segunda-feira',
@@ -32,6 +32,7 @@ interface ClinicSettingsFormProps {
     email?: string | null
     address?: Record<string, string> | null
     workingHours?: WorkingHours | null
+    settings?: Record<string, unknown> | null
   }
   /** When embedded in onboarding wizard, hides the save button and exposes data via onChange */
   embedded?: boolean
@@ -54,6 +55,10 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
   })
   const [workingHours, setWorkingHours] = useState<WorkingHours>(
     (initialData.workingHours as WorkingHours) || DEFAULT_WORKING_HOURS
+  )
+  const rawGoal = ((initialData.settings as Record<string, unknown>)?.monthly_revenue_goal as number) || 0
+  const [monthlyGoalDisplay, setMonthlyGoalDisplay] = useState(
+    rawGoal > 0 ? maskCurrency((rawGoal * 100).toString()) : ''
   )
 
   function updateAddress(field: string, value: string) {
@@ -95,6 +100,10 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
         email,
         address: Object.values(address).some(v => v) ? address : undefined,
         workingHours,
+        settings: {
+          ...((initialData.settings as Record<string, unknown>) ?? {}),
+          monthly_revenue_goal: monthlyGoalDisplay ? parseCurrency(monthlyGoalDisplay) : undefined,
+        },
       })
 
       if (result?.success) {
@@ -274,6 +283,32 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
               </div>
             )
           })}
+        </div>
+      </div>
+
+      {/* Meta Mensal */}
+      <div className="space-y-3 pt-4">
+        <h3 className="uppercase tracking-wider text-xs font-medium text-mid">Meta Financeira</h3>
+        <div className="flex flex-col gap-1.5 max-w-xs">
+          <Label className="uppercase tracking-wider text-xs text-mid">Meta mensal (R$)</Label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mid">R$</span>
+            <MaskedInput
+              mask={maskCurrency}
+              value={monthlyGoalDisplay}
+              onChange={(e) => {
+                const masked = maskCurrency(e.target.value)
+                setMonthlyGoalDisplay(masked)
+                const parsed = parseCurrency(masked)
+                onChange?.({ name, phone, email, address, workingHours, monthlyRevenueGoal: parsed })
+              }}
+              placeholder="0,00"
+              className="pl-10"
+            />
+          </div>
+          <p className="text-xs text-mid">
+            Valor exibido na barra de progresso do painel financeiro
+          </p>
         </div>
       </div>
 

@@ -7,6 +7,7 @@ export const metadata: Metadata = {
 import { UserPlus, CalendarPlus } from 'lucide-react'
 import { getAuthContext } from '@/lib/auth'
 import { getDashboardDataAction } from '@/actions/dashboard'
+import { getTenant } from '@/db/queries/tenants'
 import { QuickStats } from '@/components/dashboard/quick-stats'
 import { TodayAppointments } from '@/components/dashboard/today-appointments'
 import { FinancialSummary } from '@/components/dashboard/financial-summary'
@@ -20,9 +21,10 @@ function getGreeting(): string {
 }
 
 export default async function DashboardPage() {
-  const [context, data] = await Promise.all([
-    getAuthContext(),
+  const context = await getAuthContext()
+  const [data, tenant] = await Promise.all([
     getDashboardDataAction(),
+    getTenant(context.tenantId),
   ])
 
   const firstName = context.fullName.split(' ')[0]
@@ -90,7 +92,10 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <TodayAppointments appointments={data.todayAppointments} />
         {showRevenue && (
-          <FinancialSummary stats={data.quickStats} />
+          <FinancialSummary
+            stats={data.quickStats}
+            monthlyGoal={((tenant?.settings as Record<string, unknown>)?.monthly_revenue_goal as number) || 0}
+          />
         )}
       </div>
 
