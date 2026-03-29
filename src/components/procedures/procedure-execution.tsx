@@ -42,6 +42,7 @@ import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
 import type { ProductApplicationItem } from '@/validations/procedure'
+import type { WizardOverrides } from '@/components/service-wizard/types'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ interface ProcedureExecutionProps {
   procedure: ProcedureWithDetails
   diagrams?: DiagramWithPoints[]
   existingApplications?: ProductApplicationRecord[]
+  wizardOverrides?: WizardOverrides
 }
 
 // ─── Collapsible Section ───────────────────────────────────────────
@@ -240,6 +242,7 @@ export function ProcedureExecution({
   procedure,
   diagrams,
   existingApplications,
+  wizardOverrides,
 }: ProcedureExecutionProps) {
   const router = useRouter()
   const isExecuted = procedure.status === 'executed'
@@ -504,7 +507,9 @@ export function ProcedureExecution({
       }
 
       // Redirect to patient's procedures tab
-      router.push(`/pacientes/${patientId}?tab=procedimentos`)
+      if (!wizardOverrides?.hideNavigation) {
+        router.push(`/pacientes/${patientId}?tab=procedimentos`)
+      }
     } catch {
       setSubmitError('Erro inesperado ao registrar execucao')
     } finally {
@@ -524,48 +529,128 @@ export function ProcedureExecution({
     procedure.id,
     patientId,
     router,
+    wizardOverrides?.hideNavigation,
   ])
+
+  // ─── Wizard triggerSave: execute and call onSaveComplete ──────────
+  useEffect(() => {
+    if (!wizardOverrides?.triggerSave) return
+    async function doSave() {
+      if (isSubmitting || isReadOnly) {
+        wizardOverrides?.onSaveComplete?.({
+          success: false,
+          error: 'Formulario indisponivel',
+          errorType: 'precondition',
+        })
+        return
+      }
+
+      setIsSubmitting(true)
+      setSubmitError(null)
+
+      try {
+        const diagramsPayload =
+          diagramPoints.length > 0
+            ? [
+                {
+                  viewType: 'front' as DiagramViewType,
+                  points: diagramPoints.map((p) => ({
+                    x: p.x,
+                    y: p.y,
+                    productName: p.productName,
+                    activeIngredient: p.activeIngredient,
+                    quantity: p.quantity,
+                    quantityUnit: p.quantityUnit,
+                    technique: p.technique,
+                    depth: p.depth,
+                    notes: p.notes,
+                  })),
+                },
+              ]
+            : undefined
+
+        const result = await executeProcedureAction(procedure.id, {
+          technique: technique || undefined,
+          clinicalResponse: clinicalResponse || undefined,
+          adverseEffects: adverseEffects || undefined,
+          notes: notes || undefined,
+          followUpDate: followUpDate || undefined,
+          nextSessionObjectives: nextSessionObjectives || undefined,
+          diagrams: diagramsPayload,
+          productApplications:
+            productApps.length > 0 ? productApps : undefined,
+        })
+
+        if (result.success) {
+          wizardOverrides?.onSaveComplete?.({
+            success: true,
+            procedureId: procedure.id,
+          })
+        } else {
+          setSubmitError(result.error ?? 'Erro ao registrar execucao')
+          wizardOverrides?.onSaveComplete?.({
+            success: false,
+            error: result.error ?? 'Erro ao registrar execucao',
+            errorType: 'server',
+          })
+        }
+      } catch {
+        setSubmitError('Erro inesperado ao registrar execucao')
+        wizardOverrides?.onSaveComplete?.({
+          success: false,
+          error: 'Erro inesperado ao registrar execucao',
+          errorType: 'server',
+        })
+      } finally {
+        setIsSubmitting(false)
+      }
+    }
+    doSave()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wizardOverrides?.triggerSave])
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       {/* ── Header ──────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => router.push(`/pacientes/${patientId}?tab=procedimentos`)}
-            className="text-mid hover:text-charcoal"
-          >
-            <ArrowLeft className="size-4" />
-          </Button>
-          <div>
-            <h1 className="font-display text-xl text-forest">
-              {isExecuted ? 'Detalhes da Execucao' : 'Registrar Execucao'}
-            </h1>
-            <p className="mt-0.5 text-sm text-mid">
-              {procedure.procedureTypeName}
-              {procedure.approvedAt && (
-                <> &mdash; Aprovado em{' '}
-                  {format(new Date(procedure.approvedAt), "dd 'de' MMMM 'de' yyyy", {
-                    locale: ptBR,
-                  })}
-                </>
-              )}
-            </p>
+      {!wizardOverrides?.hideTitle && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => router.push(`/pacientes/${patientId}?tab=procedimentos`)}
+              className="text-mid hover:text-charcoal"
+            >
+              <ArrowLeft className="size-4" />
+            </Button>
+            <div>
+              <h1 className="font-display text-xl text-forest">
+                {isExecuted ? 'Detalhes da Execucao' : 'Registrar Execucao'}
+              </h1>
+              <p className="mt-0.5 text-sm text-mid">
+                {procedure.procedureTypeName}
+                {procedure.approvedAt && (
+                  <> &mdash; Aprovado em{' '}
+                    {format(new Date(procedure.approvedAt), "dd 'de' MMMM 'de' yyyy", {
+                      locale: ptBR,
+                    })}
+                  </>
+                )}
+              </p>
+            </div>
           </div>
+          <Badge
+            className={cn(
+              'px-3 py-1 text-xs font-medium border-0',
+              isExecuted
+                ? 'bg-[#F0F7F1] text-[#2A2A2A]'
+                : 'bg-[#F0F7F1] text-sage'
+            )}
+          >
+            {isExecuted ? 'Executado' : 'Aprovado'}
+          </Badge>
         </div>
-        <Badge
-          className={cn(
-            'px-3 py-1 text-xs font-medium border-0',
-            isExecuted
-              ? 'bg-[#F0F7F1] text-[#2A2A2A]'
-              : 'bg-[#F0F7F1] text-sage'
-          )}
-        >
-          {isExecuted ? 'Executado' : 'Aprovado'}
-        </Badge>
-      </div>
+      )}
 
       {/* ── Diagram Editor ──────────────────────────────────────────── */}
       <Section
@@ -963,7 +1048,7 @@ export function ProcedureExecution({
       )}
 
       {/* ── Submit ──────────────────────────────────────────────────── */}
-      {!isReadOnly && (
+      {!isReadOnly && !wizardOverrides?.hideSaveButton && (
         <div className="flex flex-col gap-3">
           {submitError && (
             <div className="rounded-[3px] border border-red-200 bg-red-50 px-4 py-3">

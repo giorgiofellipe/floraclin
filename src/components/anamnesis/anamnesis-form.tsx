@@ -30,6 +30,7 @@ import {
 } from '@/validations/anamnesis'
 import { upsertAnamnesisAction } from '@/actions/anamnesis'
 import { formatDateTime } from '@/lib/utils'
+import type { WizardOverrides } from '@/components/service-wizard/types'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -41,6 +42,7 @@ interface AnamnesisFormProps {
     updatedBy?: string | null
   }
   updatedByName?: string
+  wizardOverrides?: WizardOverrides
 }
 
 // ─── Constants ──────────────────────────────────────────────────────
@@ -222,7 +224,7 @@ function SelectField({
 
 // ─── Main Component ─────────────────────────────────────────────────
 
-export function AnamnesisForm({ patientId, initialData, updatedByName }: AnamnesisFormProps) {
+export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOverrides }: AnamnesisFormProps) {
   const [isPending, startTransition] = useTransition()
   const [lastSaved, setLastSaved] = useState<Date | null>(
     initialData?.updatedAt ? new Date(initialData.updatedAt) : null
@@ -329,6 +331,47 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
     }
   }, [watch, debouncedSave])
 
+  // ─── Wizard triggerSave: flush debounce and await save ─────────
+  useEffect(() => {
+    if (!wizardOverrides?.triggerSave) return
+    async function doSave() {
+      // Flush any pending debounce timer
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+        debounceTimerRef.current = null
+      }
+      // Force an immediate save and wait for it
+      const data = getValues()
+      try {
+        const result = await upsertAnamnesisAction(
+          patientId,
+          data,
+          expectedUpdatedAtRef.current
+        )
+        if (result.success && result.data) {
+          expectedUpdatedAtRef.current = new Date(result.data.updatedAt).toISOString()
+          setLastSaved(new Date(result.data.updatedAt))
+          setLastSavedBy(null)
+          wizardOverrides?.onSaveComplete?.({ success: true })
+        } else {
+          wizardOverrides?.onSaveComplete?.({
+            success: false,
+            error: result.error ?? 'Erro ao salvar anamnese',
+            errorType: 'server',
+          })
+        }
+      } catch {
+        wizardOverrides?.onSaveComplete?.({
+          success: false,
+          error: 'Erro inesperado ao salvar anamnese',
+          errorType: 'server',
+        })
+      }
+    }
+    doSave()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wizardOverrides?.triggerSave])
+
   // ─── Section completeness checks ─────────────────────────────
 
   const formValues = watch()
@@ -361,15 +404,17 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-[#2A2A2A]">Anamnese</h2>
-        {isPending && (
-          <div className="flex items-center gap-1.5 text-xs text-sage">
-            <Loader2 className="size-3 animate-spin" />
-            Salvando...
-          </div>
-        )}
-      </div>
+      {!wizardOverrides?.hideTitle && (
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-[#2A2A2A]">Anamnese</h2>
+          {isPending && (
+            <div className="flex items-center gap-1.5 text-xs text-sage">
+              <Loader2 className="size-3 animate-spin" />
+              Salvando...
+            </div>
+          )}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit(saveForm)}>
         <Accordion defaultValue={['complaint']}>
