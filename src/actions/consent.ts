@@ -1,6 +1,7 @@
 'use server'
 
 import { headers } from 'next/headers'
+import { revalidatePath } from 'next/cache'
 import { requireRole, getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import { withTransaction } from '@/lib/tenant'
@@ -67,6 +68,7 @@ export async function createConsentTemplateAction(
       changes: { template: { old: null, new: parsed.data } },
     })
 
+    revalidatePath('/configuracoes')
     return { success: true, data: template }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Erro ao criar termo' }
@@ -104,6 +106,7 @@ export async function updateConsentTemplateAction(
       },
     })
 
+    revalidatePath('/configuracoes')
     return { success: true, data: template }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Erro ao atualizar termo' }

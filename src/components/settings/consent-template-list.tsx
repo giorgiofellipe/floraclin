@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -46,8 +47,15 @@ interface ConsentTemplateListProps {
 }
 
 export function ConsentTemplateList({ templates, embedded = false }: ConsentTemplateListProps) {
+  const router = useRouter()
   const [createOpen, setCreateOpen] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<ConsentTemplate | null>(null)
+
+  function handleSuccess() {
+    setCreateOpen(false)
+    setEditingTemplate(null)
+    router.refresh()
+  }
 
   const grouped = templates.reduce<Record<string, ConsentTemplate[]>>((acc, template) => {
     if (!acc[template.type]) {
@@ -151,7 +159,7 @@ export function ConsentTemplateList({ templates, embedded = false }: ConsentTemp
             <DialogTitle>Novo Termo de Consentimento</DialogTitle>
           </DialogHeader>
           <ConsentTemplateForm
-            onSuccess={() => setCreateOpen(false)}
+            onSuccess={handleSuccess}
           />
         </DialogContent>
       </Dialog>
@@ -165,7 +173,7 @@ export function ConsentTemplateList({ templates, embedded = false }: ConsentTemp
           {editingTemplate && (
             <ConsentTemplateForm
               template={editingTemplate}
-              onSuccess={() => setEditingTemplate(null)}
+              onSuccess={handleSuccess}
             />
           )}
         </DialogContent>
