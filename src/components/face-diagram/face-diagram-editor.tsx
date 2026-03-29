@@ -140,7 +140,7 @@ export function FaceDiagramEditor({
                     {/* Ghost overlay from previous session — filtered by view */}
                     {showPrevious &&
                       previousPoints
-                        ?.filter((p) => !p.viewType || p.viewType === vt)
+                        ?.filter((p) => (p.viewType || 'front') === vt)
                         .map((point) => (
                           <DiagramPoint
                             key={`ghost-${point.id}`}
@@ -151,7 +151,7 @@ export function FaceDiagramEditor({
 
                     {/* Current points — filtered by view */}
                     {points
-                      .filter((p) => !p.viewType || p.viewType === vt)
+                      .filter((p) => (p.viewType || 'front') === vt)
                       .map((point) => (
                       <DiagramPoint
                         key={point.id}

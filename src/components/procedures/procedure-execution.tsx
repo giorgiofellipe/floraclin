@@ -255,6 +255,7 @@ export function ProcedureExecution({
             id: p.id,
             x: parseFloat(p.x),
             y: parseFloat(p.y),
+            viewType: diagram.viewType || 'front',
             productName: p.productName,
             activeIngredient: p.activeIngredient ?? undefined,
             quantity: parseFloat(p.quantity),

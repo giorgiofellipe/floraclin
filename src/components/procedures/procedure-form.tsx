@@ -278,6 +278,7 @@ export function ProcedureForm({
             id: p.id,
             x: parseFloat(p.x),
             y: parseFloat(p.y),
+            viewType: d.viewType || 'front',
             productName: p.productName,
             activeIngredient: p.activeIngredient ?? undefined,
             quantity: parseFloat(p.quantity),
