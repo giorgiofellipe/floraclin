@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
-import { LogOut, ChevronLeft, ChevronRight } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn, maskCPF } from '@/lib/utils'
 import { useServiceWizard, type WizardStep } from '@/hooks/use-service-wizard'
@@ -320,8 +320,8 @@ export function ServiceWizard({
             onClick={handleExit}
             className="flex items-center gap-1.5 rounded-[3px] px-3 py-1.5 text-sm font-medium text-mid transition-colors hover:bg-petal hover:text-charcoal"
           >
-            <LogOut className="h-4 w-4" />
-            Sair
+            <X className="h-4 w-4" />
+            Fechar
           </button>
         </div>
       </header>
@@ -540,7 +540,7 @@ export function ServiceWizard({
       <Dialog open={showExitDialog} onOpenChange={setShowExitDialog}>
         <DialogContent showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>Sair do atendimento</DialogTitle>
+            <DialogTitle>Fechar atendimento</DialogTitle>
             <DialogDescription>
               Tem certeza que deseja sair? O progresso do passo atual será perdido.
             </DialogDescription>
@@ -558,7 +558,7 @@ export function ServiceWizard({
               onClick={confirmExit}
               className="rounded-[3px] bg-forest px-4 py-2 text-sm font-medium text-cream transition-colors hover:bg-sage"
             >
-              Sair
+              Sim, fechar
             </button>
           </DialogFooter>
         </DialogContent>
