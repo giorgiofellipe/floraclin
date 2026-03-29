@@ -114,7 +114,7 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
         </div>
         <Button className="bg-forest text-cream hover:bg-sage transition-colors" onClick={() => setShowPaymentForm(true)}>
           <PlusIcon data-icon="inline-start" />
-          Nova Cobranca
+          Nova Cobrança
         </Button>
       </div>
 
@@ -140,7 +140,7 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
                       <span className="size-2 animate-pulse rounded-full bg-sage" />
                       Carregando...
                     </span>
-                  ) : 'Nenhuma cobranca registrada.'}
+                  ) : 'Nenhuma cobrança registrada.'}
                 </TableCell>
               </TableRow>
             )}

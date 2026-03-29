@@ -5,9 +5,9 @@ const STATUS_LABELS: Record<string, string> = {
   scheduled: 'Aguardando',
   confirmed: 'Confirmado',
   in_progress: 'Em andamento',
-  completed: 'Concluido',
+  completed: 'Concluído',
   cancelled: 'Cancelado',
-  no_show: 'Nao compareceu',
+  no_show: 'Não compareceu',
 }
 
 const STATUS_BADGE_STYLES: Record<string, string> = {

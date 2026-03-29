@@ -36,10 +36,10 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             <span className="text-mint">Clin</span>
           </h1>
           <p className="mt-3 text-cream/50 text-sm tracking-[0.25em] uppercase">
-            Gestao &middot; HOF &amp; Estetica
+            Gestão &middot; HOF &amp; Estética
           </p>
           <p className="mt-8 text-cream/40 text-sm max-w-xs text-center leading-relaxed">
-            Plataforma completa para gestao de clinicas de harmonizacao e estetica
+            Plataforma completa para gestão de clínicas de harmonização e estética
           </p>
         </div>
 

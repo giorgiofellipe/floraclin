@@ -37,7 +37,7 @@ const GENDER_LABELS: Record<string, string> = {
   feminino: 'Feminino',
   masculino: 'Masculino',
   outro: 'Outro',
-  nao_informado: 'Nao informado',
+  nao_informado: 'Não informado',
 }
 
 const VALID_TABS: PatientTabKey[] = [

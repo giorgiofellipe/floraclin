@@ -19,7 +19,7 @@ export default function ResetPasswordPage() {
           <span className="text-sage">Clin</span>
         </h1>
         <p className="mt-1.5 text-mid text-xs tracking-[0.2em] uppercase">
-          Gestao &middot; HOF &amp; Estetica
+          Gestão &middot; HOF &amp; Estética
         </p>
       </div>
 
@@ -29,7 +29,7 @@ export default function ResetPasswordPage() {
           Redefinir Senha
         </h2>
         <p className="text-mid text-sm mt-1 mb-8 text-center lg:text-left">
-          Informe seu e-mail para receber o link de recuperacao
+          Informe seu e-mail para receber o link de recuperação
         </p>
 
         {state?.success ? (
@@ -48,7 +48,7 @@ export default function ResetPasswordPage() {
                 </svg>
               </div>
               <p className="text-sm text-sage text-center font-medium">
-                E-mail de recuperacao enviado!
+                E-mail de recuperação enviado!
               </p>
               <p className="text-sm text-mid text-center mt-1">
                 Verifique sua caixa de entrada.
@@ -89,7 +89,7 @@ export default function ResetPasswordPage() {
                 className="w-full h-11 bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium rounded-lg transition-all duration-300 shadow-sm hover:shadow-md"
                 disabled={isPending}
               >
-                {isPending ? 'Enviando...' : 'Enviar link de recuperacao'}
+                {isPending ? 'Enviando...' : 'Enviar link de recuperação'}
               </Button>
             </div>
             <div className="text-center pt-2">

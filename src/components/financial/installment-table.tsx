@@ -123,8 +123,8 @@ export function InstallmentTable({
             <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] text-right">Valor</TableHead>
             <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A]">Vencimento</TableHead>
             <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A]">Status</TableHead>
-            <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A]">Metodo</TableHead>
-            <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A]">Acoes</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A]">Método</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A]">Ações</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -178,7 +178,7 @@ export function InstallmentTable({
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-2">
-              <Label htmlFor="paymentMethod" className="uppercase tracking-wider text-xs font-medium text-mid">Metodo de Pagamento</Label>
+              <Label htmlFor="paymentMethod" className="uppercase tracking-wider text-xs font-medium text-mid">Método de Pagamento</Label>
               <Select
                 value={paymentMethod}
                 onValueChange={(v) => setPaymentMethod((v ?? 'pix') as PaymentMethod)}

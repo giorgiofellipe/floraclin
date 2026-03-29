@@ -19,7 +19,7 @@ export default function LoginPage() {
           <span className="text-sage">Clin</span>
         </h1>
         <p className="mt-1.5 text-mid text-xs tracking-[0.2em] uppercase">
-          Gestao &middot; HOF &amp; Estetica
+          Gestão &middot; HOF &amp; Estética
         </p>
       </div>
 

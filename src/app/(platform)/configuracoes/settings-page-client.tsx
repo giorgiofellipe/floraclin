@@ -87,7 +87,7 @@ interface SettingsPageClientProps {
 }
 
 const TABS = [
-  { key: 'clinica', label: 'Clinica', icon: BuildingIcon },
+  { key: 'clinica', label: 'Clínica', icon: BuildingIcon },
   { key: 'procedimentos', label: 'Procedimentos', icon: SyringeIcon },
   { key: 'produtos', label: 'Produtos', icon: PackageIcon },
   { key: 'equipe', label: 'Equipe', icon: UsersIcon },
@@ -115,9 +115,9 @@ export function SettingsPageClient({
   return (
     <div className="p-4 sm:p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-[#2A2A2A]">Configuracoes</h1>
+        <h1 className="text-2xl font-semibold text-[#2A2A2A]">Configurações</h1>
         <p className="text-sm text-mid mt-0.5">
-          Gerencie as configuracoes da sua clinica.
+          Gerencie as configurações da sua clínica.
         </p>
       </div>
 

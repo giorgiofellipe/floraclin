@@ -94,18 +94,18 @@ export function PatientFinancialTab({ patientId, patientName }: PatientFinancial
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-mid">
-          {entries.length} {entries.length === 1 ? 'cobranca' : 'cobrancas'}
+          {entries.length} {entries.length === 1 ? 'cobrança' : 'cobranças'}
         </p>
         <Button onClick={() => setShowPaymentForm(true)}>
           <Plus className="size-4 mr-1" />
-          Nova Cobranca
+          Nova Cobrança
         </Button>
       </div>
 
       {entries.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-mid">
           <Wallet className="mb-2 size-8" />
-          <p className="text-sm">Nenhuma cobranca registrada</p>
+          <p className="text-sm">Nenhuma cobrança registrada</p>
         </div>
       ) : (
         <>

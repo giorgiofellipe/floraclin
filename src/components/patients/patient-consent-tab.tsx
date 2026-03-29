@@ -112,7 +112,7 @@ export function PatientConsentTab({ patientId }: PatientConsentTabProps) {
               <FileCheck className="mb-2 size-8" />
               <p className="text-sm">Nenhum modelo de termo cadastrado.</p>
               <p className="text-xs mt-1">
-                Cadastre modelos em Configuracoes &gt; Termos de Consentimento.
+                Cadastre modelos em Configurações &gt; Termos de Consentimento.
               </p>
             </div>
           ) : (

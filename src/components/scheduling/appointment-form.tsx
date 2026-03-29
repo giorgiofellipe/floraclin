@@ -366,7 +366,7 @@ export function AppointmentForm({
 
           {/* Notes */}
           <div className="grid gap-2">
-            <Label htmlFor="notes" className="uppercase tracking-wider text-xs font-medium text-mid">Observacoes</Label>
+            <Label htmlFor="notes" className="uppercase tracking-wider text-xs font-medium text-mid">Observações</Label>
             <Textarea
               id="notes"
               name="notes"

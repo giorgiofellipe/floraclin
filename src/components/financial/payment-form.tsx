@@ -81,9 +81,9 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader className="pb-2">
-          <DialogTitle className="text-lg font-semibold text-charcoal">Nova Cobranca</DialogTitle>
+          <DialogTitle className="text-lg font-semibold text-charcoal">Nova Cobrança</DialogTitle>
           <DialogDescription className="text-mid">
-            Preencha os dados da cobranca e defina o parcelamento.
+            Preencha os dados da cobrança e defina o parcelamento.
           </DialogDescription>
         </DialogHeader>
 
@@ -195,7 +195,7 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
 
           {/* Notes */}
           <div className="space-y-2">
-            <Label htmlFor="notes" className="uppercase tracking-wider text-xs font-medium text-mid">Observacoes</Label>
+            <Label htmlFor="notes" className="uppercase tracking-wider text-xs font-medium text-mid">Observações</Label>
             <Textarea
               id="notes"
               name="notes"
@@ -213,7 +213,7 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
               Cancelar
             </Button>
             <Button type="submit" disabled={isPending || !patientId || parsedAmount <= 0} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="payment-form-submit">
-              {isPending ? 'Salvando...' : 'Criar Cobranca'}
+              {isPending ? 'Salvando...' : 'Criar Cobrança'}
             </Button>
           </DialogFooter>
         </form>

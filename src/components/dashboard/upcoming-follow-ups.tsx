@@ -18,7 +18,7 @@ export function UpcomingFollowUps({ followUps }: UpcomingFollowUpsProps) {
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4 text-sage" />
           <span className="text-xs font-medium uppercase tracking-wider text-mid">
-            Retornos proximos
+            Retornos próximos
           </span>
         </div>
       </CardHeader>
@@ -30,7 +30,7 @@ export function UpcomingFollowUps({ followUps }: UpcomingFollowUpsProps) {
             </div>
             <p className="text-charcoal font-medium">Tudo em dia!</p>
             <p className="mt-1 text-sm text-mid">
-              Nenhum retorno nos proximos 14 dias.
+              Nenhum retorno nos próximos 14 dias.
             </p>
           </div>
         ) : (

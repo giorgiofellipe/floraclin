@@ -95,7 +95,7 @@ export default async function AgendaPage({ searchParams }: AgendaPageProps) {
       <div>
         <h1 className="text-2xl font-semibold text-[#2A2A2A] tracking-tight">Agenda</h1>
         <p className="text-sm text-mid mt-0.5">
-          Gerencie os agendamentos da clinica
+          Gerencie os agendamentos da clínica
         </p>
       </div>
 

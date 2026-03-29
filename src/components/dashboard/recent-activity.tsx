@@ -28,8 +28,8 @@ const ACTION_VERBS: Record<string, string> = {
   login: 'entrou no sistema',
   logout: 'saiu do sistema',
   consent_accepted: 'aceitou um termo de',
-  impersonation_start: 'iniciou impersonacao em',
-  impersonation_end: 'finalizou impersonacao em',
+  impersonation_start: 'iniciou impersonação em',
+  impersonation_end: 'finalizou impersonação em',
 }
 
 const ENTITY_LABELS: Record<string, string> = {
@@ -40,8 +40,8 @@ const ENTITY_LABELS: Record<string, string> = {
   procedure: 'procedimento',
   procedure_record: 'procedimento',
   procedure_records: 'procedimento',
-  financial_entry: 'cobranca',
-  financial_entries: 'cobranca',
+  financial_entry: 'cobrança',
+  financial_entries: 'cobrança',
   installment: 'parcela',
   installments: 'parcela',
   consent_acceptance: 'consentimento',
@@ -52,18 +52,18 @@ const ENTITY_LABELS: Record<string, string> = {
   photo_assets: 'foto',
   face_diagram: 'diagrama facial',
   face_diagrams: 'diagrama facial',
-  tenant: 'clinica',
-  tenants: 'clinica',
-  user: 'usuario',
-  users: 'usuario',
+  tenant: 'clínica',
+  tenants: 'clínica',
+  user: 'usuário',
+  users: 'usuário',
   tenant_user: 'membro da equipe',
   tenant_users: 'membro da equipe',
   procedure_type: 'tipo de procedimento',
   procedure_types: 'tipo de procedimento',
   consent_template: 'modelo de consentimento',
   consent_templates: 'modelo de consentimento',
-  product_application: 'aplicacao de produto',
-  product_applications: 'aplicacao de produto',
+  product_application: 'aplicação de produto',
+  product_applications: 'aplicação de produto',
 }
 
 function formatActivityDescription(entry: RecentActivityEntry): { userName: string; action: string } {
