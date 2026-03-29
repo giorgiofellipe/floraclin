@@ -824,6 +824,20 @@ export function ProcedureForm({
     router,
   ])
 
+  // ─── Refs for latest values (avoids stale closures in triggerSave useEffect) ──
+  const runEvaluationValidationRef = useRef(runEvaluationValidation)
+  runEvaluationValidationRef.current = runEvaluationValidation
+  const evaluationResponsesRef = useRef(evaluationResponses)
+  evaluationResponsesRef.current = evaluationResponses
+  const diagramPointsRef = useRef(diagramPoints)
+  diagramPointsRef.current = diagramPoints
+  const financialPlanRef = useRef(financialPlan)
+  financialPlanRef.current = financialPlan
+  const procedureTypeIdRef = useRef(procedureTypeId)
+  procedureTypeIdRef.current = procedureTypeId
+  const additionalTypeIdsRef = useRef(additionalTypeIds)
+  additionalTypeIdsRef.current = additionalTypeIds
+
   // ─── Wizard triggerSave: run save logic and call onSaveComplete ──
   useEffect(() => {
     if (!wizardOverrides?.triggerSave) return
@@ -846,8 +860,8 @@ export function ProcedureForm({
         return
       }
 
-      // Validate evaluation template required questions
-      const evalError = runEvaluationValidation()
+      // Validate evaluation template required questions (use ref for latest state)
+      const evalError = runEvaluationValidationRef.current()
       if (evalError) {
         setShowEvalErrors(true)
         wizardOverrides?.onSaveComplete?.({
