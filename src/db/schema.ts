@@ -110,6 +110,7 @@ export const products = floraclinSchema.table('products', {
   activeIngredient: varchar('active_ingredient', { length: 255 }),
   defaultUnit: varchar('default_unit', { length: 10 }).notNull().default('U'),
   isActive: boolean('is_active').notNull().default(true),
+  showInDiagram: boolean('show_in_diagram').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),

@@ -32,6 +32,7 @@ import {
   updateProductAction,
   deleteProductAction,
   toggleProductActiveAction,
+  toggleProductDiagramAction,
 } from '@/actions/products-catalog'
 import { PROCEDURE_CATEGORIES } from '@/lib/constants'
 import { toast } from 'sonner'
@@ -240,6 +241,17 @@ export function ProductList({ products: initialProducts }: ProductListProps) {
     })
   }
 
+  function handleToggleDiagram(product: Product) {
+    startTransition(async () => {
+      const result = await toggleProductDiagramAction(product.id, !product.showInDiagram)
+      if (result?.success) {
+        toast.success(product.showInDiagram ? 'Removido do diagrama' : 'Adicionado ao diagrama')
+      } else {
+        toast.error(result?.error || 'Erro ao atualizar')
+      }
+    })
+  }
+
   function handleDelete(id: string) {
     startTransition(async () => {
       const result = await deleteProductAction(id)
@@ -282,6 +294,7 @@ export function ProductList({ products: initialProducts }: ProductListProps) {
               <TableHead>Principio Ativo</TableHead>
               <TableHead>Unidade</TableHead>
               <TableHead>Ativo</TableHead>
+              <TableHead>Diagrama</TableHead>
               <TableHead className="text-right">Acoes</TableHead>
             </TableRow>
           </TableHeader>
@@ -304,6 +317,14 @@ export function ProductList({ products: initialProducts }: ProductListProps) {
                     onCheckedChange={() => handleToggleActive(product)}
                     size="sm"
                     disabled={isPending}
+                  />
+                </TableCell>
+                <TableCell>
+                  <Switch
+                    checked={product.showInDiagram}
+                    onCheckedChange={() => handleToggleDiagram(product)}
+                    size="sm"
+                    disabled={isPending || !product.isActive}
                   />
                 </TableCell>
                 <TableCell className="text-right">

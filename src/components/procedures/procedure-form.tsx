@@ -53,7 +53,7 @@ import {
   checkConsentStatusAction,
   getPreviousDiagramPointsAction,
 } from '@/actions/procedures'
-import { listActiveProductsAction } from '@/actions/products-catalog'
+import { listDiagramProductsAction } from '@/actions/products-catalog'
 import { getActiveConsentForTypeAction } from '@/actions/consent'
 import {
   listPractitionersAction,
@@ -307,7 +307,7 @@ export function ProcedureForm({
       try {
         const [types, prods] = await Promise.all([
           listProcedureTypesAction(),
-          listActiveProductsAction(),
+          listDiagramProductsAction(),
         ])
         setProcedureTypes(types as ProcedureType[])
         setCatalogProducts(prods as CatalogProduct[])

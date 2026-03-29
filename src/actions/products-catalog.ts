@@ -10,6 +10,7 @@ import {
   updateProduct as updateProductQuery,
   deleteProduct as deleteProductQuery,
   toggleProductActive as toggleProductActiveQuery,
+  toggleProductDiagram as toggleProductDiagramQuery,
 } from '@/db/queries/products'
 
 export type ProductActionState = {
@@ -19,10 +20,19 @@ export type ProductActionState = {
 
 // ─── List Products (all roles for active, owner for all) ────────────
 
+export async function listDiagramProductsAction() {
+  try {
+    const ctx = await getAuthContext()
+    return await listProductsQuery(ctx.tenantId, { diagramOnly: true })
+  } catch {
+    return []
+  }
+}
+
 export async function listActiveProductsAction() {
   try {
     const ctx = await getAuthContext()
-    return await listProductsQuery(ctx.tenantId, true)
+    return await listProductsQuery(ctx.tenantId, { activeOnly: true })
   } catch {
     return []
   }
@@ -31,7 +41,7 @@ export async function listActiveProductsAction() {
 export async function listAllProductsAction() {
   try {
     const ctx = await requireRole('owner')
-    return await listProductsQuery(ctx.tenantId, false)
+    return await listProductsQuery(ctx.tenantId)
   } catch {
     return []
   }
@@ -176,5 +186,38 @@ export async function toggleProductActiveAction(
       return { error: 'Sem permissão para alterar produtos' }
     }
     return { error: 'Erro ao alterar status do produto' }
+  }
+}
+
+// ─── Toggle Show in Diagram ────────────────────────────────────────
+
+export async function toggleProductDiagramAction(
+  id: string,
+  showInDiagram: boolean
+): Promise<ProductActionState> {
+  try {
+    const auth = await requireRole('owner')
+
+    const product = await toggleProductDiagramQuery(auth.tenantId, id, showInDiagram)
+    if (!product) {
+      return { error: 'Produto não encontrado' }
+    }
+
+    await createAuditLog({
+      tenantId: auth.tenantId,
+      userId: auth.userId,
+      action: 'update',
+      entityType: 'product',
+      entityId: id,
+      changes: { showInDiagram: { old: !showInDiagram, new: showInDiagram } },
+    })
+
+    revalidatePath('/configuracoes')
+    return { success: true }
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
+      return { error: 'Sem permissão para alterar produtos' }
+    }
+    return { error: 'Erro ao alterar visibilidade no diagrama' }
   }
 }

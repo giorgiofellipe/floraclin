@@ -8,15 +8,20 @@ export type Product = typeof products.$inferSelect
 
 export async function listProducts(
   tenantId: string,
-  activeOnly?: boolean
+  options?: { activeOnly?: boolean; diagramOnly?: boolean }
 ): Promise<Product[]> {
   const conditions = [
     eq(products.tenantId, tenantId),
     isNull(products.deletedAt),
   ]
 
-  if (activeOnly) {
+  if (options?.activeOnly) {
     conditions.push(eq(products.isActive, true))
+  }
+
+  if (options?.diagramOnly) {
+    conditions.push(eq(products.isActive, true))
+    conditions.push(eq(products.showInDiagram, true))
   }
 
   return db
@@ -53,6 +58,7 @@ export async function createProduct(
     activeIngredient?: string
     defaultUnit?: string
     isActive?: boolean
+    showInDiagram?: boolean
   },
   txDb: typeof db = db
 ): Promise<Product> {
@@ -65,6 +71,7 @@ export async function createProduct(
       activeIngredient: data.activeIngredient ?? null,
       defaultUnit: data.defaultUnit ?? 'U',
       isActive: data.isActive ?? true,
+      showInDiagram: data.showInDiagram ?? true,
     })
     .returning()
 
@@ -80,6 +87,7 @@ export async function updateProduct(
     activeIngredient: string
     defaultUnit: string
     isActive: boolean
+    showInDiagram: boolean
   }>
 ): Promise<Product | null> {
   const updateData: Record<string, unknown> = { updatedAt: new Date() }
@@ -89,6 +97,7 @@ export async function updateProduct(
   if (data.activeIngredient !== undefined) updateData.activeIngredient = data.activeIngredient || null
   if (data.defaultUnit !== undefined) updateData.defaultUnit = data.defaultUnit
   if (data.isActive !== undefined) updateData.isActive = data.isActive
+  if (data.showInDiagram !== undefined) updateData.showInDiagram = data.showInDiagram
 
   const [product] = await db
     .update(products)
@@ -132,6 +141,26 @@ export async function toggleProductActive(
   const [product] = await db
     .update(products)
     .set({ isActive, updatedAt: new Date() })
+    .where(
+      and(
+        eq(products.id, id),
+        eq(products.tenantId, tenantId),
+        isNull(products.deletedAt)
+      )
+    )
+    .returning()
+
+  return product ?? null
+}
+
+export async function toggleProductDiagram(
+  tenantId: string,
+  id: string,
+  showInDiagram: boolean
+): Promise<Product | null> {
+  const [product] = await db
+    .update(products)
+    .set({ showInDiagram, updatedAt: new Date() })
     .where(
       and(
         eq(products.id, id),
