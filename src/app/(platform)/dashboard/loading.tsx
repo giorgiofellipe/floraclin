@@ -12,7 +12,7 @@ export default function DashboardLoading() {
       {/* Stat cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="rounded-lg border bg-white p-4 space-y-3">
+          <div key={i} className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-4 space-y-3">
             <div className="flex items-center justify-between">
               <Skeleton className="h-4 w-24" />
               <Skeleton className="size-5 rounded" />
@@ -25,18 +25,18 @@ export default function DashboardLoading() {
 
       {/* Charts row */}
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-lg border bg-white p-4 space-y-3">
+        <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-4 space-y-3">
           <Skeleton className="h-5 w-40" />
           <Skeleton className="h-48 w-full" />
         </div>
-        <div className="rounded-lg border bg-white p-4 space-y-3">
+        <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-4 space-y-3">
           <Skeleton className="h-5 w-40" />
           <Skeleton className="h-48 w-full" />
         </div>
       </div>
 
       {/* Recent items */}
-      <div className="rounded-lg border bg-white p-4 space-y-3">
+      <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-4 space-y-3">
         <Skeleton className="h-5 w-48" />
         {Array.from({ length: 5 }).map((_, i) => (
           <div key={i} className="flex items-center gap-3">

@@ -42,7 +42,7 @@ export function WeekView({ date, appointments, onSlotClick, onAppointmentClick }
   return (
     <div className="flex flex-col overflow-auto">
       {/* Day headers */}
-      <div className="sticky top-0 z-20 flex border-b border-sage/10 bg-petal/30">
+      <div className="sticky top-0 z-20 flex border-b border-[#E8ECEF] bg-white">
         <div className="w-16 flex-shrink-0" />
         {days.map((day) => (
           <div
@@ -103,14 +103,14 @@ export function WeekView({ date, appointments, onSlotClick, onAppointmentClick }
               {HOURS.map((hour) => (
                 <React.Fragment key={hour}>
                   <div
-                    className="cursor-pointer border-b border-sage/8 transition-colors hover:bg-petal/30"
+                    className="cursor-pointer border-b border-sage/8 transition-colors hover:bg-[#F0F7F1]/30"
                     style={{ height: SLOT_HEIGHT_PX }}
                     onClick={() =>
                       onSlotClick?.(dateStr, `${String(hour).padStart(2, '0')}:00`)
                     }
                   />
                   <div
-                    className="cursor-pointer border-b border-dashed border-sage/5 transition-colors hover:bg-petal/30"
+                    className="cursor-pointer border-b border-dashed border-sage/5 transition-colors hover:bg-[#F0F7F1]/30"
                     style={{ height: SLOT_HEIGHT_PX }}
                     onClick={() =>
                       onSlotClick?.(dateStr, `${String(hour).padStart(2, '0')}:30`)
@@ -143,7 +143,7 @@ export function WeekView({ date, appointments, onSlotClick, onAppointmentClick }
                   SLOT_HEIGHT_PX / 2
                 )
                 const statusColor =
-                  APPOINTMENT_STATUS_COLORS[appt.status] ?? 'bg-petal text-mid'
+                  APPOINTMENT_STATUS_COLORS[appt.status] ?? 'bg-[#F0F7F1] text-sage'
                 const displayName = appt.patientName ?? appt.bookingName ?? 'Sem paciente'
                 const statusBorder =
                   appt.status === 'scheduled' ? 'border-l-sage' :
@@ -158,7 +158,7 @@ export function WeekView({ date, appointments, onSlotClick, onAppointmentClick }
                     key={appt.id}
                     type="button"
                     className={cn(
-                      'absolute inset-x-0.5 z-20 overflow-hidden rounded-lg border-l-[3px] px-1.5 py-0.5 text-left text-[10px] leading-tight transition-all duration-150 hover:shadow-md hover:-translate-y-px',
+                      'absolute inset-x-0.5 z-20 overflow-hidden rounded-[3px] border-l-[3px] px-1.5 py-0.5 text-left text-[10px] leading-tight transition-colors duration-150',
                       statusColor,
                       statusBorder
                     )}

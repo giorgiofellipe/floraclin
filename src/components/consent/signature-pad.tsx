@@ -64,7 +64,7 @@ export function SignaturePad({
 
   if (disabled && initialData) {
     return (
-      <div className={cn('rounded-xl border border-sage/15 bg-petal/20 p-3', className)}>
+      <div className={cn('rounded-[3px] border border-sage/15 bg-[#F0F7F1] p-3', className)}>
         <img
           src={initialData}
           alt="Assinatura"
@@ -78,11 +78,11 @@ export function SignaturePad({
     <div className={cn('space-y-2.5', className)}>
       <div
         ref={containerRef}
-        className="relative h-44 w-full rounded-xl border-2 border-dashed border-blush bg-gradient-to-b from-petal/30 to-cream/50 transition-colors duration-150 hover:border-sage/40"
+        className="relative h-44 w-full rounded-[3px] border-2 border-dashed border-blush bg-gradient-to-b from-white to-[#F4F6F8] transition-colors duration-150 hover:border-sage/40"
       >
         {isEmpty && !disabled && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-            <span className="font-display text-lg text-mid/40 italic">
+            <span className="text-lg text-mid/40 italic">
               Assinar aqui
             </span>
           </div>
@@ -91,7 +91,7 @@ export function SignaturePad({
           ref={sigRef}
           penColor="#1C2B1E"
           canvasProps={{
-            className: 'absolute inset-0 w-full h-full rounded-xl cursor-crosshair',
+            className: 'absolute inset-0 w-full h-full rounded-[3px] cursor-crosshair',
           }}
           onEnd={handleEnd}
         />

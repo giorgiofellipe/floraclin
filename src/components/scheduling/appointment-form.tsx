@@ -201,7 +201,7 @@ export function AppointmentForm({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader className="pb-2">
-          <DialogTitle className="text-lg font-semibold text-forest">{isEditing ? 'Editar Agendamento' : 'Novo Agendamento'}</DialogTitle>
+          <DialogTitle className="text-lg font-semibold text-charcoal">{isEditing ? 'Editar Agendamento' : 'Novo Agendamento'}</DialogTitle>
         </DialogHeader>
 
         {state?.error && (
@@ -382,7 +382,7 @@ export function AppointmentForm({
                 {isEditing && (
                   <>
                     <Select onValueChange={(v) => v && handleStatusChange(v as AppointmentStatus)}>
-                      <SelectTrigger className="w-auto rounded-full text-sm">
+                      <SelectTrigger className="w-auto text-sm">
                         <SelectValue placeholder="Alterar status">
                           {(value: string) => STATUS_LABELS[value as AppointmentStatus] ?? value}
                         </SelectValue>
@@ -395,7 +395,7 @@ export function AppointmentForm({
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button type="button" variant="destructive" size="sm" className="rounded-full" onClick={handleDelete}>
+                    <Button type="button" variant="destructive" size="sm" onClick={handleDelete}>
                       Excluir
                     </Button>
                   </>
@@ -405,12 +405,12 @@ export function AppointmentForm({
                 <Button
                   type="button"
                   variant="outline"
-                  className="rounded-full border-sage/20"
+                  className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
                   onClick={() => onOpenChange(false)}
                 >
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={isPending} className="rounded-full bg-forest text-cream hover:bg-sage transition-colors" data-testid="appointment-form-submit">
+                <Button type="submit" disabled={isPending} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="appointment-form-submit">
                   {isPending ? 'Salvando...' : 'Salvar'}
                 </Button>
               </div>

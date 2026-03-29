@@ -101,7 +101,7 @@ export function SettingsPageClient({
   return (
     <div className="p-4 sm:p-6">
       <div className="mb-6">
-        <h1 className="font-display text-2xl text-forest">Configuracoes</h1>
+        <h1 className="text-2xl font-semibold text-[#2A2A2A]">Configuracoes</h1>
         <p className="text-sm text-mid mt-0.5">
           Gerencie as configuracoes da sua clinica.
         </p>
@@ -109,7 +109,7 @@ export function SettingsPageClient({
 
       {/* Mobile: horizontal scrollable tabs */}
       <div className="md:hidden mb-6 -mx-4 px-4 overflow-x-auto scrollbar-hide">
-        <div className="flex gap-1 min-w-max bg-petal/60 rounded-xl p-1">
+        <div className="flex gap-1 min-w-max bg-[#E8ECEF] rounded-[3px] p-1">
           {TABS.map((tab) => {
             const Icon = tab.icon
             const isActive = activeTab === tab.key
@@ -119,9 +119,9 @@ export function SettingsPageClient({
                 type="button"
                 onClick={() => setActiveTab(tab.key)}
                 className={cn(
-                  'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap',
+                  'flex items-center gap-1.5 px-3 py-2 rounded-[3px] text-sm font-medium transition-colors whitespace-nowrap',
                   isActive
-                    ? 'bg-white text-forest shadow-sm'
+                    ? 'bg-white text-[#2A2A2A] shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
                     : 'text-mid hover:text-charcoal'
                 )}
               >
@@ -147,10 +147,10 @@ export function SettingsPageClient({
                   type="button"
                   onClick={() => setActiveTab(tab.key)}
                   className={cn(
-                    'flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-all text-left',
+                    'flex items-center gap-3 w-full px-3 py-2.5 rounded-[3px] text-sm font-medium transition-colors text-left',
                     isActive
-                      ? 'bg-petal text-forest shadow-sm'
-                      : 'text-mid hover:bg-petal/50 hover:text-charcoal'
+                      ? 'bg-white text-[#2A2A2A] shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
+                      : 'text-mid hover:bg-[#F4F6F8] hover:text-charcoal'
                   )}
                 >
                   <Icon className={cn('h-4 w-4', isActive ? 'text-sage' : 'text-mid')} />
@@ -163,14 +163,14 @@ export function SettingsPageClient({
 
         {/* Content area */}
         <div className="flex-1 min-w-0">
-          <div className="bg-white rounded-xl border border-blush/40 shadow-sm">
+          <div className="bg-white rounded-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
             {/* Section header */}
-            <div className="px-5 sm:px-6 py-4 border-b border-blush/30">
+            <div className="px-5 sm:px-6 py-4 border-b border-[#E8ECEF]">
               <div className="flex items-center gap-2.5">
-                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-petal">
+                <div className="flex items-center justify-center w-8 h-8 rounded-[3px] bg-sage/10">
                   <activeTabConfig.icon className="h-4 w-4 text-sage" />
                 </div>
-                <h2 className="text-lg font-medium text-forest">{activeTabConfig.label}</h2>
+                <h2 className="text-lg font-medium text-[#2A2A2A]">{activeTabConfig.label}</h2>
               </div>
             </div>
 

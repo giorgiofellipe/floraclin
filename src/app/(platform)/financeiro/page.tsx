@@ -22,7 +22,7 @@ export default async function FinanceiroPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-2xl font-semibold text-forest tracking-tight">Financeiro</h1>
+        <h1 className="text-2xl font-semibold text-[#2A2A2A] tracking-tight">Financeiro</h1>
         <p className="text-sm text-mid mt-0.5">
           Gerencie cobranças, parcelas e visualize o desempenho financeiro.
         </p>

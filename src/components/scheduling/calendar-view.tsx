@@ -220,7 +220,7 @@ export function CalendarView({
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm" className="rounded-full border-sage/30 text-sage hover:bg-sage/10 hover:text-forest transition-colors" onClick={goToToday}>
+          <Button variant="outline" size="sm" className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors" onClick={goToToday}>
             Hoje
           </Button>
           <div className="flex items-center gap-0.5">
@@ -231,7 +231,7 @@ export function CalendarView({
               <ChevronRight className="size-4" />
             </Button>
           </div>
-          <h2 className="text-lg font-semibold capitalize text-forest tracking-tight">
+          <h2 className="text-lg font-semibold capitalize text-[#2A2A2A] tracking-tight">
             {view === 'day' && format(currentDate, "d 'de' MMMM 'de' yyyy", { locale: ptBR })}
             {view === 'week' &&
               `${format(startOfWeek(currentDate, { weekStartsOn: 1 }), "d 'de' MMM", { locale: ptBR })} - ${format(endOfWeek(currentDate, { weekStartsOn: 1 }), "d 'de' MMM", { locale: ptBR })}`}
@@ -242,7 +242,7 @@ export function CalendarView({
         <div className="flex items-center gap-3">
           {/* Practitioner filter */}
           <Select value={practitionerId} onValueChange={(v) => v && changePractitioner(v)}>
-            <SelectTrigger className="w-auto min-w-[140px] rounded-full border-sage/20">
+            <SelectTrigger className="w-auto min-w-[140px] border-sage/20">
               <SelectValue placeholder="Profissional">
                 {(value: string) => {
                   if (value === 'all') return 'Todos'
@@ -261,7 +261,7 @@ export function CalendarView({
           </Select>
 
           {/* View toggle - pill style */}
-          <div className="flex rounded-full bg-petal/60 p-0.5" data-testid="calendar-view-toggle">
+          <div className="flex rounded-full bg-[#E8ECEF] p-0.5" data-testid="calendar-view-toggle">
             {([
               ['day', 'Dia'],
               ['week', 'Semana'],
@@ -282,7 +282,7 @@ export function CalendarView({
             ))}
           </div>
 
-          <Button size="sm" className="rounded-full bg-forest text-cream hover:bg-sage transition-colors" onClick={handleNewAppointment} data-testid="calendar-new-appointment">
+          <Button size="sm" className="bg-forest text-cream hover:bg-sage transition-colors" onClick={handleNewAppointment} data-testid="calendar-new-appointment">
             <Plus className="size-4" />
             Agendar
           </Button>
@@ -290,10 +290,10 @@ export function CalendarView({
       </div>
 
       {/* Calendar content */}
-      <div className="relative min-h-0 flex-1 overflow-auto rounded-xl border border-sage/10 bg-white shadow-sm">
+      <div className="relative min-h-0 flex-1 overflow-auto rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         {isLoading && (
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-white/60 backdrop-blur-sm">
-            <div className="flex items-center gap-2 rounded-full bg-petal px-5 py-2.5 shadow-sm">
+            <div className="flex items-center gap-2 rounded-full bg-white px-5 py-2.5 shadow-sm">
               <div className="size-2 animate-pulse rounded-full bg-sage" />
               <p className="text-sm font-medium text-forest">Carregando...</p>
             </div>
@@ -302,7 +302,7 @@ export function CalendarView({
 
         {!isLoading && appointments.length === 0 && (
           <div className="absolute inset-x-0 top-6 z-20 flex justify-center pointer-events-none">
-            <div className="flex items-center gap-2 rounded-full bg-petal/80 px-5 py-2.5 shadow-sm backdrop-blur-sm">
+            <div className="flex items-center gap-2 rounded-full bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm">
               <span className="text-sm text-mid">Nenhum agendamento para este periodo.</span>
             </div>
           </div>

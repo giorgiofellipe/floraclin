@@ -106,6 +106,7 @@ interface ConsentTemplate {
 
 interface ProcedureFormProps {
   patientId: string
+  patientGender?: string | null
   procedure?: ProcedureWithDetails | null
   diagrams?: DiagramWithPoints[]
   existingApplications?: ProductApplicationRecord[]
@@ -130,9 +131,9 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <Card className="bg-white overflow-hidden border-0 shadow-sm hover:shadow-md transition-shadow duration-200">
+    <Card className="bg-white overflow-hidden border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">
       <CardHeader
-        className="cursor-pointer pb-3 hover:bg-petal/30 transition-colors duration-150"
+        className="cursor-pointer pb-3 hover:bg-[#F4F6F8] transition-colors duration-150"
         onClick={onToggle}
       >
         <CardTitle className="flex items-center justify-between text-base">
@@ -140,7 +141,7 @@ function Section({
             <div className="flex size-7 items-center justify-center rounded-md bg-forest/5">
               {icon}
             </div>
-            <span className="uppercase tracking-wider text-sm text-forest font-medium">
+            <span className="uppercase tracking-wider text-sm text-charcoal font-medium">
               {title}
             </span>
           </div>
@@ -173,6 +174,7 @@ function Section({
 
 export function ProcedureForm({
   patientId,
+  patientGender,
   procedure,
   diagrams: existingDiagrams,
   existingApplications,
@@ -516,7 +518,7 @@ export function ProcedureForm({
       {/* ── Header ──────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-2xl text-forest">
+          <h1 className="text-2xl font-semibold text-[#2A2A2A]">
             {isEdit
               ? 'Editar Procedimento'
               : mode === 'view'
@@ -554,13 +556,13 @@ export function ProcedureForm({
       </div>
 
       {/* ── Procedure Type Select ───────────────────────────────────── */}
-      <Card className="bg-white border-0 shadow-sm">
+      <Card className="bg-white border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2.5 text-base">
             <div className="flex size-7 items-center justify-center rounded-md bg-forest/5">
               <Stethoscope className="size-4 text-forest" />
             </div>
-            <span className="uppercase tracking-wider text-sm text-forest font-medium">
+            <span className="uppercase tracking-wider text-sm text-[#2A2A2A] font-medium">
               Tipo de Procedimento
             </span>
           </CardTitle>
@@ -646,7 +648,7 @@ export function ProcedureForm({
             <div className="flex items-center gap-3 rounded-lg bg-sage/5 p-4">
               <CheckCircle2 className="size-5 text-sage" />
               <div>
-                <p className="text-sm font-medium text-forest">
+                <p className="text-sm font-medium text-charcoal">
                   Termo assinado em{' '}
                   {format(
                     new Date(consentStatus.acceptedAt),
@@ -669,7 +671,7 @@ export function ProcedureForm({
           ) : consentAccepted ? (
             <div className="flex items-center gap-3 rounded-lg bg-sage/5 p-4">
               <CheckCircle2 className="size-5 text-sage" />
-              <p className="text-sm font-medium text-forest">
+              <p className="text-sm font-medium text-charcoal">
                 Termo aceito com sucesso
               </p>
             </div>
@@ -738,6 +740,7 @@ export function ProcedureForm({
           onChange={setDiagramPoints}
           previousPoints={previousPoints}
           readOnly={isReadOnly}
+          gender={patientGender}
         />
       </Section>
 
@@ -759,10 +762,10 @@ export function ProcedureForm({
             {productApps.map((app, index) => (
               <div
                 key={`${app.productName}-${app.quantityUnit}-${index}`}
-                className="rounded-xl border border-sage/15 bg-gradient-to-br from-cream/50 to-petal/20 p-5 transition-shadow duration-200 hover:shadow-sm"
+                className="rounded-[3px] border border-[#E8ECEF] bg-white p-5"
               >
                 <div className="mb-4 flex items-center justify-between">
-                  <h4 className="font-medium text-forest">
+                  <h4 className="font-medium text-charcoal">
                     {app.productName}
                   </h4>
                   <Badge variant="outline" className="text-xs border-sage/30 bg-sage/5 text-sage px-2.5 py-0.5">
@@ -965,7 +968,7 @@ export function ProcedureForm({
 
       {/* ── Submit ──────────────────────────────────────────────────── */}
       {!isReadOnly && (
-        <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-sage/10 bg-cream/95 py-4 backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.05)] md:sticky md:left-auto md:right-auto">
+        <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-sage/10 bg-white/95 py-4 backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.05)] md:sticky md:left-auto md:right-auto">
           <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 md:px-0">
             <Button
               variant="outline"
@@ -1019,13 +1022,13 @@ export function ProcedureForm({
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-forest">
+            <DialogTitle className="text-charcoal">
               Agendar retorno?
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-mid">
             Deseja agendar o retorno para{' '}
-            <span className="font-medium text-forest">
+            <span className="font-medium text-charcoal">
               {followUpDate
                 ? format(new Date(followUpDate + 'T12:00:00'), "dd/MM/yyyy", {
                     locale: ptBR,

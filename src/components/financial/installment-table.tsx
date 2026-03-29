@@ -51,9 +51,9 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  pending: 'bg-sage/10 text-sage',
-  paid: 'bg-mint/20 text-forest',
-  overdue: 'bg-amber-light text-amber-dark',
+  pending: 'bg-[#FFF4EF] text-amber',
+  paid: 'bg-[#F0F7F1] text-sage',
+  overdue: 'bg-[#FFF4EF] text-amber-dark',
 }
 
 export function InstallmentTable({
@@ -119,17 +119,17 @@ export function InstallmentTable({
       <Table>
         <TableHeader>
           <TableRow className="border-b border-sage/10 hover:bg-transparent">
-            <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid">Parcela</TableHead>
-            <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid text-right">Valor</TableHead>
-            <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid">Vencimento</TableHead>
-            <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid">Status</TableHead>
-            <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid">Metodo</TableHead>
-            <TableHead className="text-[11px] uppercase tracking-wider font-medium text-mid">Acoes</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A]">Parcela</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] text-right">Valor</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A]">Vencimento</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A]">Status</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A]">Metodo</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A]">Acoes</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {installments.map((inst) => (
-            <TableRow key={inst.id} className="border-b border-sage/5 hover:bg-petal/20 transition-colors">
+            <TableRow key={inst.id} className="border-b border-[#E8ECEF] hover:bg-[#F4F6F8] transition-colors">
               <TableCell className="text-charcoal tabular-nums">
                 {inst.installmentNumber}/{installments.length}
               </TableCell>
@@ -138,7 +138,7 @@ export function InstallmentTable({
               </TableCell>
               <TableCell className="text-mid text-sm">{formatDate(inst.dueDate)}</TableCell>
               <TableCell>
-                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ${STATUS_COLORS[inst.status] ?? 'bg-petal text-mid'}`}>
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ${STATUS_COLORS[inst.status] ?? 'bg-white text-mid'}`}>
                   {STATUS_LABELS[inst.status] ?? inst.status}
                 </span>
               </TableCell>
@@ -152,7 +152,7 @@ export function InstallmentTable({
                   <Button
                     size="sm"
                     variant="outline"
-                    className="rounded-full border-sage/20 text-sage hover:bg-sage/10 hover:text-forest transition-colors"
+                    className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
                     onClick={(e) => {
                       e.stopPropagation()
                       handleOpenPayDialog(inst.id)
@@ -171,7 +171,7 @@ export function InstallmentTable({
       <Dialog open={payDialogOpen} onOpenChange={setPayDialogOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-lg font-semibold text-forest">Registrar Pagamento</DialogTitle>
+            <DialogTitle className="text-lg font-semibold text-[#2A2A2A]">Registrar Pagamento</DialogTitle>
             <DialogDescription className="text-mid">
               Selecione o metodo de pagamento para esta parcela.
             </DialogDescription>
@@ -208,10 +208,10 @@ export function InstallmentTable({
             </div>
           </div>
           <DialogFooter className="pt-2">
-            <Button variant="outline" className="rounded-full border-sage/20" onClick={() => setPayDialogOpen(false)}>
+            <Button variant="outline" className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors" onClick={() => setPayDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button className="rounded-full bg-forest text-cream hover:bg-sage transition-colors" onClick={handleConfirmPayment} disabled={isPending}>
+            <Button className="bg-forest text-cream hover:bg-sage transition-colors" onClick={handleConfirmPayment} disabled={isPending}>
               {isPending ? 'Salvando...' : 'Confirmar Pagamento'}
             </Button>
           </DialogFooter>

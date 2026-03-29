@@ -224,11 +224,11 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
         </div>
 
         {/* Step Content */}
-        <div className="bg-white rounded-2xl shadow-sm border border-blush/30 p-6 sm:p-8 transition-all duration-300">
+        <div className="bg-white rounded-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.06)] border border-blush/30 p-6 sm:p-8 transition-all duration-300">
           {/* Step 1: Select Practitioner */}
           {step === 1 && (
             <div data-testid="booking-step-1">
-              <h2 className="text-xl sm:text-2xl text-forest font-medium mb-1">
+              <h2 className="text-xl sm:text-2xl text-charcoal font-medium mb-1">
                 Selecione o profissional
               </h2>
               <p className="text-sm text-mid mb-6">
@@ -241,7 +241,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
                     type="button"
                     onClick={() => setSelectedPractitioner(p)}
                     className={cn(
-                      'text-left rounded-xl border p-4 transition-all duration-200',
+                      'text-left rounded-[3px] border p-4 transition-all duration-200',
                       'focus:outline-none focus:ring-2 focus:ring-sage/50',
                       selectedPractitioner?.id === p.id
                         ? 'border-forest bg-petal shadow-md shadow-forest/5 scale-[1.02]'
@@ -287,7 +287,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
           {/* Step 2: Select Date and Time */}
           {step === 2 && (
             <div data-testid="booking-step-2">
-              <h2 className="text-xl sm:text-2xl text-forest font-medium mb-1">
+              <h2 className="text-xl sm:text-2xl text-charcoal font-medium mb-1">
                 Selecione a data e horario
               </h2>
               <p className="text-sm text-mid mb-6">
@@ -303,7 +303,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
                   disabled={(date) =>
                     isBefore(date, today) || date > maxDate
                   }
-                  className="rounded-xl border border-blush/50"
+                  className="rounded-[3px] border border-blush/50"
                 />
               </div>
 
@@ -326,7 +326,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
           {/* Step 3: Contact Info */}
           {step === 3 && (
             <div data-testid="booking-step-3">
-              <h2 className="text-xl sm:text-2xl text-forest font-medium mb-1">
+              <h2 className="text-xl sm:text-2xl text-charcoal font-medium mb-1">
                 Seus dados
               </h2>
               <p className="text-sm text-mid mb-6">
@@ -432,7 +432,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
               </div>
 
               {/* Summary preview */}
-              <div className="mt-6 p-4 rounded-xl bg-petal/50 border border-blush/50">
+              <div className="mt-6 p-4 rounded-[3px] bg-[#F0F7F1] border border-sage/20">
                 <p className="uppercase tracking-wider text-xs text-mid font-medium mb-2">
                   Resumo
                 </p>
@@ -474,14 +474,14 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
                 </div>
               </div>
 
-              <h2 className="text-2xl sm:text-3xl text-forest font-medium mb-2 animate-[fadeInUp_0.4s_ease-out_0.4s_both]" data-testid="booking-success">
+              <h2 className="text-2xl sm:text-3xl text-charcoal font-medium mb-2 animate-[fadeInUp_0.4s_ease-out_0.4s_both]" data-testid="booking-success">
                 Agendamento solicitado!
               </h2>
               <p className="text-mid text-sm mb-8 animate-[fadeInUp_0.4s_ease-out_0.5s_both]">
                 Voce recebera uma confirmacao em breve.
               </p>
 
-              <div className="inline-block text-left w-full max-w-sm p-5 rounded-xl bg-petal/60 border border-blush/40 animate-[fadeInUp_0.4s_ease-out_0.6s_both]">
+              <div className="inline-block text-left w-full max-w-sm p-5 rounded-[3px] bg-[#F0F7F1] border border-sage/20 animate-[fadeInUp_0.4s_ease-out_0.6s_both]">
                 <p className="uppercase tracking-wider text-[10px] text-mid font-medium mb-3">Resumo do agendamento</p>
                 <div className="space-y-2.5 text-sm">
                   <div className="flex justify-between items-center">
@@ -529,7 +529,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
               <button
                 type="button"
                 onClick={() => setStep((s) => (s - 1) as Step)}
-                className="flex-1 rounded-xl border border-forest/30 text-forest py-3 text-sm font-medium hover:bg-petal hover:border-forest/50 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-sage/50"
+                className="flex-1 rounded-lg border border-forest/30 text-forest py-3 text-sm font-medium hover:bg-petal hover:border-forest/50 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-sage/50"
               >
                 Voltar
               </button>
@@ -540,7 +540,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
                 onClick={() => setStep((s) => (s + 1) as Step)}
                 disabled={!canAdvance()}
                 className={cn(
-                  'flex-1 rounded-xl py-3 text-sm font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-sage/50',
+                  'flex-1 rounded-lg py-3 text-sm font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-sage/50',
                   canAdvance()
                     ? 'bg-forest text-cream hover:bg-sage shadow-sm hover:shadow-md'
                     : 'bg-blush text-mid cursor-not-allowed'
@@ -556,7 +556,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
                 disabled={!canAdvance() || submitting}
                 data-testid="booking-submit"
                 className={cn(
-                  'flex-1 rounded-xl py-3 text-sm font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-sage/50',
+                  'flex-1 rounded-lg py-3 text-sm font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-sage/50',
                   canAdvance() && !submitting
                     ? 'bg-forest text-cream hover:bg-sage shadow-sm hover:shadow-md'
                     : 'bg-blush text-mid cursor-not-allowed'

@@ -153,7 +153,7 @@ export function PatientFinancialTab({ patientId, patientName }: PatientFinancial
           </Table>
 
           {expandedId && (
-            <div className="rounded-lg border p-4">
+            <div className="rounded-[3px] border p-4">
               <InstallmentTable
                 entryId={expandedId}
                 onPaymentComplete={fetchEntries}

@@ -165,7 +165,7 @@ export function TeamList({ members, currentUserId, embedded = false }: TeamListP
                 <TableRow key={member.id} className={!member.isActive ? 'opacity-50' : ''}>
                   <TableCell>
                     <div className="flex items-center gap-3">
-                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-petal text-forest text-xs font-semibold shrink-0">
+                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-sage/15 text-sage text-xs font-semibold shrink-0">
                         {getInitials(member.user.fullName)}
                       </div>
                       <span className="font-medium text-charcoal">

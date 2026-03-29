@@ -94,14 +94,14 @@ export function ConsentViewer({
 
   if (accepted) {
     return (
-      <Card className="border-0 shadow-sm">
+      <Card className="border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         <CardContent className="flex flex-col items-center gap-3 py-10">
-          <div className="flex size-14 items-center justify-center rounded-full bg-mint/20 text-forest">
+          <div className="flex size-14 items-center justify-center rounded-full bg-mint/20 text-sage">
             <svg className="size-7" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <p className="text-sm font-medium text-forest">
+          <p className="text-sm font-medium text-charcoal">
             Termo aceito com sucesso
           </p>
         </CardContent>
@@ -110,11 +110,11 @@ export function ConsentViewer({
   }
 
   return (
-    <Card className="border-0 shadow-sm overflow-hidden">
-      <CardHeader className="bg-gradient-to-r from-petal/30 to-cream pb-4">
+    <Card className="border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)] overflow-hidden">
+      <CardHeader className="bg-white pb-4">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <CardTitle className="text-forest">{template.title}</CardTitle>
+            <CardTitle className="text-[#2A2A2A]">{template.title}</CardTitle>
             <CardDescription className="mt-1 text-mid">
               {CONSENT_TYPE_LABELS[template.type] ?? template.type}
             </CardDescription>
@@ -127,21 +127,21 @@ export function ConsentViewer({
 
       <CardContent className="space-y-5 pt-5">
         {/* Scrollable consent text */}
-        <ScrollArea className="h-72 rounded-xl border border-blush/50 bg-petal/20 p-5">
+        <ScrollArea className="h-72 rounded-[3px] border border-[#E8ECEF] bg-white p-5">
           <div className="whitespace-pre-wrap text-sm leading-relaxed text-charcoal">
             {template.content}
           </div>
         </ScrollArea>
 
         {/* Checkbox acceptance */}
-        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-sage/15 p-4 transition-all duration-150 hover:bg-petal/20 hover:border-sage/30">
+        <label className="flex cursor-pointer items-start gap-3 rounded-[3px] border border-[#E8ECEF] p-4 transition-colors duration-150 hover:bg-[#F4F6F8] hover:border-sage/30">
           <Checkbox
             checked={checked}
             onCheckedChange={(val) => setChecked(val === true)}
             disabled={isSubmitting}
             className="mt-0.5 border-sage data-[state=checked]:bg-forest data-[state=checked]:border-forest"
           />
-          <span className="text-sm font-medium leading-snug text-forest">
+          <span className="text-sm font-medium leading-snug text-charcoal">
             Li e concordo com os termos acima
           </span>
         </label>
@@ -149,7 +149,7 @@ export function ConsentViewer({
         {/* Optional signature pad */}
         {(requireSignature || checked) && (
           <div className="space-y-2">
-            <p className="text-sm font-medium text-forest">
+            <p className="text-sm font-medium text-charcoal">
               {requireSignature ? 'Assinatura (obrigatoria)' : 'Assinatura (opcional)'}
             </p>
             <SignaturePad

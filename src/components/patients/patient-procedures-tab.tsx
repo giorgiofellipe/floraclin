@@ -26,7 +26,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 const STATUS_STYLES: Record<string, string> = {
   in_progress: 'bg-amber-light text-amber-dark',
-  completed: 'bg-petal text-mid',
+  completed: 'bg-[#F0F7F1] text-sage',
   cancelled: 'bg-red-100 text-red-800',
 }
 
@@ -97,7 +97,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
           {procedures.map((proc) => (
             <div
               key={proc.id}
-              className="rounded-lg border bg-white p-4 transition-shadow hover:shadow-sm"
+              className="rounded-[3px] border bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-shadow hover:shadow-md"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
@@ -105,7 +105,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                     <h3 className="font-medium text-charcoal truncate">
                       {proc.procedureTypeName}
                     </h3>
-                    <Badge className={STATUS_STYLES[proc.status] ?? 'bg-petal text-mid'}>
+                    <Badge className={STATUS_STYLES[proc.status] ?? 'bg-[#F0F7F1] text-sage'}>
                       {STATUS_LABELS[proc.status] ?? proc.status}
                     </Badge>
                   </div>

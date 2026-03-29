@@ -125,12 +125,12 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
   const isLastStep = currentStep === STEPS.length - 1
 
   return (
-    <div className="min-h-screen bg-cream">
+    <div className="min-h-screen bg-[#F4F6F8]">
       <div className="mx-auto max-w-3xl px-4 py-10 sm:py-16">
         {/* Header */}
         <div className="mb-12 text-center animate-fade-in-up">
-          <h1 className="font-display text-4xl text-forest sm:text-5xl font-semibold tracking-tight">
-            Bem-vindo ao <span className="text-forest">Flora</span><span className="text-sage">Clin</span>
+          <h1 className="text-4xl text-charcoal sm:text-5xl font-semibold tracking-tight">
+            Bem-vindo ao <span className="font-display text-forest">Flora</span><span className="font-display text-sage">Clin</span>
           </h1>
           <p className="mt-3 text-mid text-base">
             Configure sua clinica em poucos passos
@@ -185,12 +185,12 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
         {/* Step Content */}
         <Card
           key={currentStep}
-          className="animate-fade-in-up border-blush/30 bg-white shadow-sm shadow-sage/5 rounded-xl p-8 sm:p-10"
+          className="animate-fade-in-up border-blush/30 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px] p-8 sm:p-10"
         >
           {/* Step 1: Clinic Settings */}
           {currentStep === 0 && (
             <div>
-              <h2 className="text-xl font-medium text-forest mb-1 tracking-tight">
+              <h2 className="text-xl font-medium text-charcoal mb-1 tracking-tight">
                 Dados da Clinica
               </h2>
               <p className="text-sm text-mid mb-8">
@@ -210,7 +210,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
               />
 
               {slug && (
-                <div className="mt-6 rounded-lg bg-petal/60 border border-blush/30 p-4">
+                <div className="mt-6 rounded-[3px] bg-[#F0F7F1] border border-sage/20 p-4">
                   <p className="text-xs text-mid uppercase tracking-wider mb-1">
                     Link de agendamento online
                   </p>
@@ -225,7 +225,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
           {/* Step 2: Procedure Types */}
           {currentStep === 1 && (
             <div>
-              <h2 className="text-xl font-medium text-forest mb-1 tracking-tight">
+              <h2 className="text-xl font-medium text-charcoal mb-1 tracking-tight">
                 Tipos de Procedimento
               </h2>
               <p className="text-sm text-mid mb-8">
@@ -285,7 +285,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
                   Adicionar outro procedimento
                 </Button>
                 {showAddProcedure && (
-                  <div className="rounded-lg border border-blush/30 p-4 bg-petal/20">
+                  <div className="rounded-[3px] border border-blush/30 p-4 bg-white">
                     <ProcedureTypeForm
                       onSuccess={() => {
                         setShowAddProcedure(false)
@@ -301,7 +301,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
           {/* Step 3: Team Invites */}
           {currentStep === 2 && (
             <div>
-              <h2 className="text-xl font-medium text-forest mb-1 tracking-tight">
+              <h2 className="text-xl font-medium text-charcoal mb-1 tracking-tight">
                 Convide sua Equipe
               </h2>
               <p className="text-sm text-mid mb-8">
@@ -340,7 +340,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
                 variant="outline"
                 onClick={handlePrev}
                 disabled={isPending}
-                className="border-sage/30 text-sage hover:bg-sage/5 hover:text-forest transition-all duration-200"
+                className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
               >
                 Anterior
               </Button>
@@ -364,7 +364,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
               <Button
                 type="button"
                 onClick={handleNext}
-                className="bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium rounded-lg transition-all duration-300 shadow-sm hover:shadow-md px-8"
+                className="bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium transition-all duration-300 shadow-sm hover:shadow-md px-8"
               >
                 Proximo
               </Button>
@@ -373,7 +373,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
                 type="button"
                 onClick={handleComplete}
                 disabled={isPending}
-                className={`bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium rounded-lg transition-all duration-300 shadow-md hover:shadow-lg px-8 ${
+                className={`bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium transition-all duration-300 shadow-md hover:shadow-lg px-8 ${
                   !isPending ? 'animate-subtle-pulse' : ''
                 }`}
               >

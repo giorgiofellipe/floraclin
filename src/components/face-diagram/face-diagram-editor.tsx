@@ -19,6 +19,7 @@ export function FaceDiagramEditor({
   onChange,
   previousPoints,
   readOnly = false,
+  gender,
 }: FaceDiagramEditorProps) {
   const [activeView, setActiveView] = React.useState<DiagramViewType>('front')
   const [showPrevious, setShowPrevious] = React.useState(false)
@@ -131,7 +132,7 @@ export function FaceDiagramEditor({
                     onClick={handleFaceClick}
                     data-testid="face-diagram-canvas"
                   >
-                    <FaceTemplate viewType={vt} />
+                    <FaceTemplate viewType={vt} gender={gender} />
 
                     {/* Ghost overlay from previous session */}
                     {showPrevious &&

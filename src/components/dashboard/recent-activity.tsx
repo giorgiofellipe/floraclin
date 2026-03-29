@@ -1,4 +1,3 @@
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import {
   Activity,
   Plus,
@@ -20,15 +19,6 @@ const ACTION_ICONS: Record<string, LucideIcon> = {
   login: LogIn,
   logout: LogOut,
   consent_accepted: FileCheck,
-}
-
-const ACTION_ICON_COLORS: Record<string, string> = {
-  create: 'bg-sage/15 text-sage',
-  update: 'bg-mint/15 text-mint',
-  delete: 'bg-red-100 text-red-500',
-  login: 'bg-petal text-forest',
-  logout: 'bg-petal text-mid',
-  consent_accepted: 'bg-sage/10 text-sage',
 }
 
 const ACTION_VERBS: Record<string, string> = {
@@ -94,64 +84,55 @@ interface RecentActivityProps {
 
 export function RecentActivity({ activity }: RecentActivityProps) {
   return (
-    <Card className="border-0 shadow-sm bg-white rounded-xl">
-      <CardHeader className="pb-2">
-        <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4 text-sage" />
-          <span className="text-xs font-medium uppercase tracking-wider text-mid">
-            Atividade recente
-          </span>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {activity.length === 0 ? (
-          <p className="py-8 text-center text-mid">
-            Nenhuma atividade recente
-          </p>
-        ) : (
-          <div className="relative">
-            {/* Timeline connecting line */}
-            <div className="absolute left-[15px] top-3 bottom-3 w-px bg-petal" />
+    <div
+      className="bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px] p-5"
+      data-testid="dashboard-activity"
+    >
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-[14px] font-medium text-[#2A2A2A]">
+          Atividade recente
+        </span>
+      </div>
 
-            <div className="space-y-0">
-              {activity.map((entry) => {
-                const Icon = ACTION_ICONS[entry.action] ?? Activity
-                const iconColor = ACTION_ICON_COLORS[entry.action] ?? 'bg-petal text-sage'
-                const { userName, action } = formatActivityDescription(entry)
-                const timeAgo = formatDistanceToNow(new Date(entry.createdAt), {
-                  addSuffix: true,
-                  locale: ptBR,
-                })
+      {activity.length === 0 ? (
+        <p className="py-6 text-center text-[13px] text-[#7A7A7A]">
+          Nenhuma atividade recente
+        </p>
+      ) : (
+        <div>
+          {activity.map((entry, index) => {
+            const Icon = ACTION_ICONS[entry.action] ?? Activity
+            const { userName, action } = formatActivityDescription(entry)
+            const timeAgo = formatDistanceToNow(new Date(entry.createdAt), {
+              addSuffix: true,
+              locale: ptBR,
+            })
 
-                return (
-                  <div
-                    key={entry.id}
-                    className="relative flex items-start gap-4 py-2.5 pl-0"
-                  >
-                    {/* Timeline node */}
-                    <div className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${iconColor}`}>
-                      <Icon className="h-3.5 w-3.5" />
-                    </div>
-
-                    {/* Content */}
-                    <div className="min-w-0 flex-1 pt-0.5">
-                      <p className="text-sm text-charcoal">
-                        <span className="font-medium">{userName}</span>{' '}
-                        <span className="text-mid">{action}</span>
-                      </p>
-                    </div>
-
-                    {/* Timestamp */}
-                    <span className="shrink-0 pt-1 text-xs text-mid/70">
-                      {timeAgo}
-                    </span>
+            return (
+              <div key={entry.id}>
+                <div className="flex items-center gap-3 py-2.5">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#F4F6F8]">
+                    <Icon className="h-3.5 w-3.5 text-[#7A7A7A]" />
                   </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] text-[#2A2A2A]">
+                      <span className="font-medium">{userName}</span>{' '}
+                      <span className="text-[#7A7A7A]">{action}</span>
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-[11px] text-[#7A7A7A]">
+                    {timeAgo}
+                  </span>
+                </div>
+                {index < activity.length - 1 && (
+                  <div className="border-b border-[#F0F0F0]" />
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }

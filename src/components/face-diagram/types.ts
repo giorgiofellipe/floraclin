@@ -18,4 +18,5 @@ export interface FaceDiagramEditorProps {
   onChange: (points: DiagramPointData[]) => void
   previousPoints?: DiagramPointData[] // ghost overlay
   readOnly?: boolean
+  gender?: string | null // inferred from patient — 'masculino' | 'feminino'
 }

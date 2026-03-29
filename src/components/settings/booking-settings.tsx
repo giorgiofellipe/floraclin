@@ -78,7 +78,7 @@ export function BookingSettings({
         </p>
       </div>
 
-      <div className="flex items-center gap-4 rounded-xl border border-blush/40 bg-petal/30 p-4 transition-colors">
+      <div className="flex items-center gap-4 rounded-[3px] border border-[#E8ECEF] bg-white p-4 transition-colors">
         <Switch
           checked={enabled}
           onCheckedChange={handleToggle}
@@ -102,14 +102,14 @@ export function BookingSettings({
             Link de Agendamento
           </label>
           <div className="flex items-center gap-2">
-            <div className="flex-1 flex items-center gap-2 bg-petal rounded-full border border-blush/50 pl-4 pr-1.5 py-1.5 min-w-0">
+            <div className="flex-1 flex items-center gap-2 bg-white rounded-full border border-[#E8ECEF] pl-4 pr-1.5 py-1.5 min-w-0">
               <span className="text-sm font-mono text-charcoal truncate flex-1">
                 {bookingUrl}
               </span>
               <button
                 type="button"
                 onClick={handleCopyUrl}
-                className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-white border border-blush/50 px-3 py-1.5 text-xs font-medium text-forest hover:bg-forest hover:text-cream transition-colors shadow-sm"
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-white border border-blush/50 px-3 py-1.5 text-xs font-medium text-forest hover:bg-forest hover:text-cream transition-colors shadow-sm"
               >
                 {copied ? (
                   <>

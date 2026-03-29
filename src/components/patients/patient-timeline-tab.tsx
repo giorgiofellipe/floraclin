@@ -26,8 +26,8 @@ const TYPE_CONFIG: Record<TimelineEntryType, {
   procedure: { icon: Syringe, label: 'Procedimento', color: 'bg-sage/20 text-sage' },
   photo: { icon: Camera, label: 'Foto', color: 'bg-mint/20 text-forest' },
   consent: { icon: FileCheck, label: 'Termo', color: 'bg-amber-light text-amber-dark' },
-  appointment: { icon: Calendar, label: 'Agendamento', color: 'bg-petal text-charcoal' },
-  payment: { icon: CreditCard, label: 'Pagamento', color: 'bg-blush text-forest' },
+  appointment: { icon: Calendar, label: 'Agendamento', color: 'bg-[#F0F7F1] text-sage' },
+  payment: { icon: CreditCard, label: 'Pagamento', color: 'bg-[#FFF4EF] text-amber' },
 }
 
 // ─── Component ──────────────────────────────────────────────────────

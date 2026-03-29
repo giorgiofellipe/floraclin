@@ -58,12 +58,12 @@ export function ProcedureList({ patientId }: ProcedureListProps) {
     <div className="space-y-5">
       {/* Header with "New Procedure" button */}
       <div className="flex items-center justify-between">
-        <h2 className="font-display text-xl text-forest">
+        <h2 className="text-xl font-semibold text-[#2A2A2A]">
           Evolucao Clinica
         </h2>
         <Button
           onClick={handleNewProcedure}
-          className="bg-forest text-cream hover:bg-sage shadow-sm hover:shadow-md transition-all duration-200"
+          className="bg-forest text-cream hover:bg-sage transition-colors"
         >
           <Plus className="mr-2 size-4" />
           Novo Procedimento
@@ -72,8 +72,8 @@ export function ProcedureList({ patientId }: ProcedureListProps) {
 
       {/* Vertical timeline */}
       {procedures.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-sage/20 bg-gradient-to-b from-cream/50 to-petal/20 py-16">
-          <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-petal/50">
+        <div className="flex flex-col items-center justify-center rounded-[3px] border border-dashed border-sage/20 bg-white py-16">
+          <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-white">
             <FileText className="size-6 text-mid/50" />
           </div>
           <p className="text-sm font-medium text-mid">

@@ -85,7 +85,7 @@ export function PhotoGrid({
   if (stagesWithPhotos.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-mid">
-        <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-petal/50">
+        <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-white">
           <ZoomIn className="size-5 text-mid/60" />
         </div>
         <p className="text-sm">Nenhuma foto enviada.</p>
@@ -111,7 +111,7 @@ export function PhotoGrid({
               {stageGroup.photos.map((photo) => (
                 <div
                   key={photo.id}
-                  className="group relative cursor-pointer overflow-hidden rounded-xl border-0 bg-cream/30 shadow-sm transition-all duration-200 hover:shadow-lg hover:translate-y-[-2px]"
+                  className="group relative cursor-pointer overflow-hidden rounded-[3px] border-0 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-colors duration-200"
                 >
                   <div className="aspect-square">
                     {photo.signedUrl ? (
@@ -188,7 +188,7 @@ export function PhotoGrid({
             </DialogTitle>
           </DialogHeader>
           {selectedPhoto?.signedUrl && (
-            <div className="flex items-center justify-center rounded-xl overflow-hidden bg-charcoal/5">
+            <div className="flex items-center justify-center rounded-[3px] overflow-hidden bg-charcoal/5">
               <img
                 src={selectedPhoto.signedUrl}
                 alt={selectedPhoto.originalFilename ?? 'Foto'}

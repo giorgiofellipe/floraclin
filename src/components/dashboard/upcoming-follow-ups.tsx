@@ -13,7 +13,7 @@ export function UpcomingFollowUps({ followUps }: UpcomingFollowUpsProps) {
   const today = new Date()
 
   return (
-    <Card className="border-0 shadow-sm bg-white rounded-xl">
+    <Card className="border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)] bg-white rounded-[3px]">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4 text-sage" />

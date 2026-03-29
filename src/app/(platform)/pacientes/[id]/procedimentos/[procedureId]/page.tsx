@@ -3,6 +3,7 @@ import { getAuthContext } from '@/lib/auth'
 import { getProcedure } from '@/db/queries/procedures'
 import { getFaceDiagram } from '@/db/queries/face-diagrams'
 import { getProductApplications } from '@/db/queries/product-applications'
+import { getPatient } from '@/db/queries/patients'
 import { ProcedureForm } from '@/components/procedures/procedure-form'
 
 interface ProcedurePageProps {
@@ -16,11 +17,15 @@ export default async function ProcedurePage({ params }: ProcedurePageProps) {
   const { id: patientId, procedureId } = await params
   const ctx = await getAuthContext()
 
+  // Fetch patient to get gender
+  const patient = await getPatient(ctx.tenantId, patientId)
+  if (!patient) notFound()
+
   // "novo" means create mode
   if (procedureId === 'novo') {
     return (
-      <div className="min-h-screen bg-cream p-6">
-        <ProcedureForm patientId={patientId} mode="create" />
+      <div className="min-h-screen p-6">
+        <ProcedureForm patientId={patientId} patientGender={patient.gender} mode="create" />
       </div>
     )
   }
@@ -44,9 +49,10 @@ export default async function ProcedurePage({ params }: ProcedurePageProps) {
   const mode = canEdit ? 'edit' : 'view'
 
   return (
-    <div className="min-h-screen bg-cream p-6">
+    <div className="min-h-screen p-6">
       <ProcedureForm
         patientId={patientId}
+        patientGender={patient.gender}
         procedure={procedure}
         diagrams={diagrams}
         existingApplications={applications}

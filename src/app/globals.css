@@ -18,6 +18,11 @@
   --color-amber-light: #F5E6DE;
   --color-amber-mid: #E8A882;
   --color-amber-dark: #A85A32;
+  --color-content-bg: #F4F6F8;
+  --color-topbar-border: #E8ECEF;
+  --color-confirmed-bg: #F0F7F1;
+  --color-pending-bg: #FFF4EF;
+  --color-pending-border: #F5D5C4;
 
   --font-display: 'Cormorant Garamond', serif;
 
@@ -137,7 +142,7 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-cream text-charcoal;
+    @apply bg-[#F4F6F8] text-charcoal;
   }
   html {
     @apply font-sans;

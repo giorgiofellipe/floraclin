@@ -24,7 +24,7 @@ export default function PatientDetailLoading() {
       {/* Tab content skeleton */}
       <div className="grid gap-4 md:grid-cols-2">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="rounded-lg border p-4 space-y-3">
+          <div key={i} className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-4 space-y-3">
             <Skeleton className="h-5 w-28" />
             <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-3/4" />
