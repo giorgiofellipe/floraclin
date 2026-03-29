@@ -120,6 +120,7 @@ export function ServiceWizard({
     getSkipLabel,
     getNextLabel,
     updateProcedureStatus,
+    updateStepTimestamp,
   } = wizard
 
   // ─── Lift procedure data into client state (CRITICAL 1 fix) ────
@@ -142,8 +143,8 @@ export function ServiceWizard({
       setShowExitDialog(true)
     }
 
-    // Push an extra history entry so we can intercept back
-    window.history.pushState(null, '', window.location.href)
+    // Replace current history entry so we can intercept back without accumulating entries
+    window.history.replaceState(null, '', window.location.href)
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     window.addEventListener('popstate', handlePopState)
@@ -173,12 +174,13 @@ export function ServiceWizard({
   // ─── Smart context message ─────────────────────────────────────
 
   function getContextMessage(): { text: string; dotColor: string } | null {
-    if (!procedureStatus) {
+    const currentStatus = state.procedureStatus
+    if (!currentStatus) {
       return { text: 'Novo atendimento', dotColor: 'bg-forest' }
     }
-    if (procedureStatus === 'planned') {
-      const dateStr = stepTimestamps?.planning
-        ? format(new Date(stepTimestamps.planning), 'dd/MM/yyyy')
+    if (currentStatus === 'planned') {
+      const dateStr = state.stepTimestamps.planning
+        ? format(new Date(state.stepTimestamps.planning), 'dd/MM/yyyy')
         : null
       return {
         text: dateStr
@@ -187,7 +189,7 @@ export function ServiceWizard({
         dotColor: 'bg-amber',
       }
     }
-    if (procedureStatus === 'approved') {
+    if (currentStatus === 'approved') {
       return {
         text: 'Procedimento aprovado \u2014 pronto para execu\u00e7\u00e3o',
         dotColor: 'bg-sage',
@@ -205,6 +207,18 @@ export function ServiceWizard({
       onSaveComplete(result)
 
       if (result.success) {
+        // Update step timestamp on successful save
+        const stepTimestampMap: Record<number, 'anamnesis' | 'planning' | 'approval' | 'execution'> = {
+          1: 'anamnesis',
+          2: 'planning',
+          3: 'approval',
+          4: 'execution',
+        }
+        const timestampKey = stepTimestampMap[state.currentStep]
+        if (timestampKey) {
+          updateStepTimestamp(timestampKey, new Date())
+        }
+
         // After step 2 creates/updates a procedure, fetch fresh data client-side
         if (state.currentStep === 2 && result.procedureId) {
           try {
@@ -233,7 +247,7 @@ export function ServiceWizard({
         nextStep()
       }
     },
-    [onSaveComplete, state.currentStep, nextStep, updateProcedureStatus, router, patient.id]
+    [onSaveComplete, state.currentStep, nextStep, updateProcedureStatus, updateStepTimestamp, router, patient.id]
   )
 
   // ─── Skip/Adiar handler ────────────────────────────────────────
@@ -330,6 +344,7 @@ export function ServiceWizard({
           isStepAvailable={isStepAvailable}
           isStepCompleted={isStepCompleted}
           onStepClick={goToStep}
+          disabled={state.isSaving}
         />
 
         {/* Step content — all steps mounted, only active visible */}
@@ -338,7 +353,7 @@ export function ServiceWizard({
           <div style={{ display: state.currentStep === 1 ? 'block' : 'none' }}>
             <WizardStepWrapper
               title="Anamnese"
-              timestamp={stepTimestamps?.anamnesis}
+              timestamp={state.stepTimestamps.anamnesis}
             >
               {isReadOnlyAfterApproval && (
                 <div className="mb-4 rounded-[3px] border border-amber-200 bg-amber-50 px-4 py-3">
@@ -362,7 +377,7 @@ export function ServiceWizard({
           <div style={{ display: state.currentStep === 2 ? 'block' : 'none' }}>
             <WizardStepWrapper
               title="Planejamento"
-              timestamp={stepTimestamps?.planning}
+              timestamp={state.stepTimestamps.planning}
             >
               <ProcedureForm
                 patientId={patient.id}
@@ -386,7 +401,7 @@ export function ServiceWizard({
           <div style={{ display: state.currentStep === 3 ? 'block' : 'none' }}>
             <WizardStepWrapper
               title="Aprovação"
-              timestamp={stepTimestamps?.approval}
+              timestamp={state.stepTimestamps.approval}
             >
               {state.procedureId && localProcedure ? (
                 <ProcedureApproval
@@ -416,7 +431,7 @@ export function ServiceWizard({
           <div style={{ display: state.currentStep === 4 ? 'block' : 'none' }}>
             <WizardStepWrapper
               title="Execução"
-              timestamp={stepTimestamps?.execution}
+              timestamp={state.stepTimestamps.execution}
             >
               {state.procedureId && state.procedureStatus === 'approved' && localProcedure ? (
                 <ProcedureExecution
@@ -461,7 +476,11 @@ export function ServiceWizard({
               <button
                 type="button"
                 onClick={prevStep}
-                className="flex items-center gap-1.5 rounded-[3px] border border-forest px-4 py-2.5 text-sm font-medium text-forest transition-colors hover:bg-petal min-h-[48px]"
+                disabled={state.isSaving}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-[3px] border border-forest px-4 py-2.5 text-sm font-medium text-forest transition-colors hover:bg-petal min-h-[48px]',
+                  state.isSaving && 'opacity-50 cursor-not-allowed',
+                )}
               >
                 <ChevronLeft className="h-4 w-4" />
                 Voltar
@@ -489,7 +508,11 @@ export function ServiceWizard({
               <button
                 type="button"
                 onClick={handleSkip}
-                className="w-full rounded-[3px] border border-forest px-4 py-2.5 text-sm font-medium text-forest transition-colors hover:bg-petal min-h-[48px] md:w-auto md:order-1"
+                disabled={state.isSaving}
+                className={cn(
+                  'w-full rounded-[3px] border border-forest px-4 py-2.5 text-sm font-medium text-forest transition-colors hover:bg-petal min-h-[48px] md:w-auto md:order-1',
+                  state.isSaving && 'opacity-50 cursor-not-allowed',
+                )}
               >
                 {skipLabel}
               </button>
@@ -499,7 +522,11 @@ export function ServiceWizard({
               <button
                 type="button"
                 onClick={prevStep}
-                className="flex w-full items-center justify-center gap-1.5 rounded-[3px] border border-forest px-4 py-2.5 text-sm font-medium text-forest transition-colors hover:bg-petal min-h-[48px] md:hidden"
+                disabled={state.isSaving}
+                className={cn(
+                  'flex w-full items-center justify-center gap-1.5 rounded-[3px] border border-forest px-4 py-2.5 text-sm font-medium text-forest transition-colors hover:bg-petal min-h-[48px] md:hidden',
+                  state.isSaving && 'opacity-50 cursor-not-allowed',
+                )}
               >
                 <ChevronLeft className="h-4 w-4" />
                 Voltar

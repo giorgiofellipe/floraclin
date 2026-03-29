@@ -20,6 +20,7 @@ interface WizardStepperProps {
   isStepAvailable: (step: WizardStep) => boolean
   isStepCompleted: (step: WizardStep) => boolean
   onStepClick: (step: WizardStep) => void
+  disabled?: boolean
 }
 
 const STEPS: WizardStep[] = [1, 2, 3, 4]
@@ -29,6 +30,7 @@ export function WizardStepper({
   isStepAvailable,
   isStepCompleted,
   onStepClick,
+  disabled,
 }: WizardStepperProps) {
   return (
     <TooltipProvider>
@@ -39,7 +41,7 @@ export function WizardStepper({
         {/* Desktop: horizontal */}
         <ol className="hidden md:flex items-center divide-x divide-gray-100">
           {STEPS.map((step) => {
-            const available = isStepAvailable(step)
+            const available = isStepAvailable(step) && !disabled
             const completed = isStepCompleted(step)
             const isCurrent = step === currentStep
 
@@ -60,7 +62,7 @@ export function WizardStepper({
         {/* Mobile: vertical */}
         <ol className="flex flex-col md:hidden divide-y divide-gray-100">
           {STEPS.map((step) => {
-            const available = isStepAvailable(step)
+            const available = isStepAvailable(step) && !disabled
             const completed = isStepCompleted(step)
             const isCurrent = step === currentStep
 

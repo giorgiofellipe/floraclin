@@ -36,6 +36,7 @@ type WizardAction =
   | { type: 'SAVE_COMPLETE'; result: StepResult }
   | { type: 'SET_SAVING'; isSaving: boolean }
   | { type: 'UPDATE_PROCEDURE_STATUS'; status: ProcedureStatus }
+  | { type: 'UPDATE_STEP_TIMESTAMP'; step: 'anamnesis' | 'planning' | 'approval' | 'execution'; timestamp: Date }
 
 // ─── Step labels ────────────────────────────────────────────────────
 
@@ -155,6 +156,15 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
 
     case 'UPDATE_PROCEDURE_STATUS':
       return { ...state, procedureStatus: action.status }
+
+    case 'UPDATE_STEP_TIMESTAMP':
+      return {
+        ...state,
+        stepTimestamps: {
+          ...state.stepTimestamps,
+          [action.step]: action.timestamp,
+        },
+      }
 
     default:
       return state
@@ -402,6 +412,13 @@ export function useServiceWizard({
     dispatch({ type: 'UPDATE_PROCEDURE_STATUS', status })
   }, [])
 
+  const updateStepTimestamp = useCallback(
+    (step: 'anamnesis' | 'planning' | 'approval' | 'execution', timestamp: Date) => {
+      dispatch({ type: 'UPDATE_STEP_TIMESTAMP', step, timestamp })
+    },
+    []
+  )
+
   return {
     state,
     goToStep,
@@ -419,6 +436,7 @@ export function useServiceWizard({
     clearError,
     setProcedureId,
     updateProcedureStatus,
+    updateStepTimestamp,
     patientId,
   }
 }
