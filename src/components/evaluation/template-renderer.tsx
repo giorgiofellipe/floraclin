@@ -117,7 +117,7 @@ export function TemplateRenderer({
   )
 
   return (
-    <Accordion type="multiple" defaultValue={defaultOpen} className="flex flex-col gap-0">
+    <Accordion multiple defaultValue={defaultOpen} className="flex flex-col gap-0">
       {sortedSections.map((section, sectionIndex) => {
         const { answered, total } = getSectionCompletion(section, responses)
         const isComplete = answered === total && total > 0
