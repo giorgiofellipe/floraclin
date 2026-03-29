@@ -146,7 +146,7 @@ function ConsentHistoryItem({ item }: { item: HistoryItem }) {
           <DialogTrigger render={<Button variant="ghost" size="sm" />}>
             Ver termo
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{item.templateTitle}</DialogTitle>
             </DialogHeader>

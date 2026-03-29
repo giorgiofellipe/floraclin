@@ -181,7 +181,7 @@ export function PhotoGrid({
 
       {/* Full-size view dialog */}
       <Dialog open={!!selectedPhoto} onOpenChange={(open) => !open && setSelectedPhoto(null)}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>
               {selectedPhoto?.originalFilename ?? 'Foto'}
@@ -204,7 +204,7 @@ export function PhotoGrid({
 
       {/* Delete confirmation dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Excluir foto</DialogTitle>
           </DialogHeader>
