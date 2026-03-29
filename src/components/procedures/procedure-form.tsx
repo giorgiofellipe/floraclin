@@ -370,9 +370,16 @@ export function ProcedureForm({
           setConsentTemplate(null)
         } else {
           setConsentStatus(null)
-          const template = await getActiveConsentForTypeAction(consentType)
+          // Try to load template — also try 'general' as fallback
+          let template = await getActiveConsentForTypeAction(consentType).catch(() => null)
+          if (!template && consentType !== 'general') {
+            template = await getActiveConsentForTypeAction('general').catch(() => null)
+          }
           setConsentTemplate(template ?? null)
         }
+      } catch {
+        setConsentStatus(null)
+        setConsentTemplate(null)
       } finally {
         setConsentChecking(false)
       }
