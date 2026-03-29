@@ -160,7 +160,10 @@ export function ScaleQuestion({ question, value, onChange, readOnly }: ScaleQues
 
   return (
     <QuestionWrapper question={question}>
-      <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2">
+        {question.scaleMinLabel && (
+          <span className="text-[11px] text-mid whitespace-nowrap">{question.scaleMinLabel}</span>
+        )}
         <div className="flex gap-1.5">
           {range.map((n) => {
             const selected = value === n
@@ -183,11 +186,8 @@ export function ScaleQuestion({ question, value, onChange, readOnly }: ScaleQues
             )
           })}
         </div>
-        {(question.scaleMinLabel || question.scaleMaxLabel) && (
-          <div className="flex justify-between px-1">
-            <span className="text-[11px] text-mid">{question.scaleMinLabel ?? ''}</span>
-            <span className="text-[11px] text-mid">{question.scaleMaxLabel ?? ''}</span>
-          </div>
+        {question.scaleMaxLabel && (
+          <span className="text-[11px] text-mid whitespace-nowrap">{question.scaleMaxLabel}</span>
         )}
       </div>
     </QuestionWrapper>
