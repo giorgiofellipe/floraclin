@@ -870,7 +870,8 @@ export function ProcedureForm({
       </div>
       )}
 
-      {/* ── Procedure Type Multi-Select ──────────────────────────────── */}
+      {/* ── Procedure Type Multi-Select (hidden in wizard — handled by step 2) ── */}
+      {!wizardOverrides?.hideProcedureTypes && (
       <Card className="bg-white border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2.5 text-base">
@@ -968,6 +969,7 @@ export function ProcedureForm({
           )}
         </CardContent>
       </Card>
+      )}
 
       {/* ── Consent Section (HIDDEN in planning mode) ──────────────── */}
       {!isPlanningMode && procedureTypeId && (

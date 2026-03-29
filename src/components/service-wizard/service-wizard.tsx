@@ -433,7 +433,7 @@ export function ServiceWizard({
                       ? 'edit'
                       : 'create'
                 }
-                wizardOverrides={baseOverrides}
+                wizardOverrides={{ ...baseOverrides, hideProcedureTypes: true }}
               />
             </WizardStepWrapper>
           </div>

@@ -54,7 +54,7 @@ export const STEP_LABELS: Record<WizardStep, string> = {
 export const STEP_SUBTITLES: Record<WizardStep, string> = {
   1: 'Histórico e avaliação do paciente',
   2: 'Tipos de procedimento',
-  3: 'Diagrama facial e orçamento',
+  3: 'Avaliação e orçamento',
   4: 'Consentimento e contrato',
   5: 'Registro do procedimento',
 }

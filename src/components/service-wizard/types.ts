@@ -11,6 +11,7 @@ export interface WizardOverrides {
   hideSaveButton: boolean
   hideNavigation: boolean
   hideTitle: boolean
+  hideProcedureTypes?: boolean
   onSaveComplete?: (result: StepResult) => void
   triggerSave?: number
 }
