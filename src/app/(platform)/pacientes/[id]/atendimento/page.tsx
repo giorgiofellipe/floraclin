@@ -62,6 +62,7 @@ export default async function AtendimentoPage({
   // ─── Build step timestamps ─────────────────────────────────────
   const stepTimestamps = {
     anamnesis: anamnesis?.updatedAt ? new Date(anamnesis.updatedAt) : null,
+    procedureTypes: procedure?.procedureTypeId ? (procedure?.createdAt ? new Date(procedure.createdAt) : new Date()) : null,
     planning: procedure?.updatedAt ? new Date(procedure.updatedAt) : null,
     approval: procedure?.approvedAt ? new Date(procedure.approvedAt) : null,
     execution: procedure?.performedAt && procedure.status === 'executed'
@@ -111,7 +112,7 @@ export default async function AtendimentoPage({
         id: tenant.id,
         name: tenant.name,
       }}
-      initialStep={initialStep && initialStep >= 1 && initialStep <= 4 ? initialStep : undefined}
+      initialStep={initialStep && initialStep >= 1 && initialStep <= 5 ? initialStep : undefined}
       procedureId={procedure?.id ?? null}
       procedureStatus={(procedure?.status as ProcedureStatus) ?? null}
       procedure={procedure ?? null}

@@ -7,14 +7,16 @@ import type { StepResult } from '@/components/service-wizard/types'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
-export type WizardStep = 1 | 2 | 3 | 4
+export type WizardStep = 1 | 2 | 3 | 4 | 5
 
 export interface WizardState {
   currentStep: WizardStep
   procedureId: string | null
   procedureStatus: ProcedureStatus | null
+  selectedTypeIds: string[]
   stepTimestamps: {
     anamnesis: Date | null
+    procedureTypes: Date | null
     planning: Date | null
     approval: Date | null
     execution: Date | null
@@ -30,28 +32,31 @@ type WizardAction =
   | { type: 'NEXT_STEP' }
   | { type: 'PREV_STEP' }
   | { type: 'SET_PROCEDURE_ID'; procedureId: string; status: ProcedureStatus }
+  | { type: 'SET_SELECTED_TYPES'; typeIds: string[] }
   | { type: 'SET_ERROR'; error: string; errorType: 'validation' | 'precondition' | 'server' }
   | { type: 'CLEAR_ERROR' }
   | { type: 'TRIGGER_SAVE' }
   | { type: 'SAVE_COMPLETE'; result: StepResult }
   | { type: 'SET_SAVING'; isSaving: boolean }
   | { type: 'UPDATE_PROCEDURE_STATUS'; status: ProcedureStatus }
-  | { type: 'UPDATE_STEP_TIMESTAMP'; step: 'anamnesis' | 'planning' | 'approval' | 'execution'; timestamp: Date }
+  | { type: 'UPDATE_STEP_TIMESTAMP'; step: 'anamnesis' | 'procedureTypes' | 'planning' | 'approval' | 'execution'; timestamp: Date }
 
 // ─── Step labels ────────────────────────────────────────────────────
 
 export const STEP_LABELS: Record<WizardStep, string> = {
   1: 'Anamnese',
-  2: 'Planejamento',
-  3: 'Aprovação',
-  4: 'Execução',
+  2: 'Procedimentos',
+  3: 'Planejamento',
+  4: 'Aprovação',
+  5: 'Execução',
 }
 
 export const STEP_SUBTITLES: Record<WizardStep, string> = {
   1: 'Histórico e avaliação do paciente',
-  2: 'Diagrama facial e orçamento',
-  3: 'Consentimento e contrato',
-  4: 'Registro do procedimento',
+  2: 'Tipos de procedimento',
+  3: 'Diagrama facial e orçamento',
+  4: 'Consentimento e contrato',
+  5: 'Registro do procedimento',
 }
 
 // ─── Unavailable step reasons ───────────────────────────────────────
@@ -59,14 +64,15 @@ export const STEP_SUBTITLES: Record<WizardStep, string> = {
 export const STEP_UNAVAILABLE_REASONS: Record<WizardStep, string> = {
   1: '',
   2: '',
-  3: 'Complete o planejamento para acessar a aprovação',
-  4: 'Aprove o procedimento para acessar a execução',
+  3: 'Selecione os tipos de procedimento para acessar o planejamento',
+  4: 'Complete o planejamento para acessar a aprovação',
+  5: 'Aprove o procedimento para acessar a execução',
 }
 
 // ─── Reducer ────────────────────────────────────────────────────────
 
 function getNextStep(current: WizardStep): WizardStep {
-  return Math.min(current + 1, 4) as WizardStep
+  return Math.min(current + 1, 5) as WizardStep
 }
 
 function getPrevStep(current: WizardStep): WizardStep {
@@ -87,8 +93,9 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
       const nextStep = getNextStep(state.currentStep)
       if (nextStep === state.currentStep) return state
       // Check availability before advancing
-      if (nextStep === 3 && !state.procedureId) return state
-      if (nextStep === 4 && state.procedureStatus !== 'approved') return state
+      if (nextStep === 3 && state.selectedTypeIds.length === 0) return state
+      if (nextStep === 4 && !state.procedureId) return state
+      if (nextStep === 5 && state.procedureStatus !== 'approved') return state
       return {
         ...state,
         currentStep: nextStep,
@@ -103,6 +110,12 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
         currentStep: getPrevStep(state.currentStep),
         error: null,
         errorType: null,
+      }
+
+    case 'SET_SELECTED_TYPES':
+      return {
+        ...state,
+        selectedTypeIds: action.typeIds,
       }
 
     case 'SET_PROCEDURE_ID':
@@ -181,19 +194,19 @@ function determineInitialStep(
   // Determine the "natural" step based on procedure status
   let naturalStep: WizardStep = 1
   if (procedureStatus === 'approved') {
-    naturalStep = 4
+    naturalStep = 5
   } else if (procedureStatus === 'planned' && procedureId) {
-    naturalStep = 3
+    naturalStep = 4
   }
 
   // If URL provides a step, validate it
-  if (urlStep && urlStep >= 1 && urlStep <= 4) {
+  if (urlStep && urlStep >= 1 && urlStep <= 5) {
     const requestedStep = urlStep as WizardStep
 
-    // Cannot go to step 3 without a procedure
-    if (requestedStep === 3 && !procedureId) return naturalStep
-    // Cannot go to step 4 without approved status
-    if (requestedStep === 4 && procedureStatus !== 'approved') return naturalStep
+    // Cannot go to step 4 without a procedure
+    if (requestedStep === 4 && !procedureId) return naturalStep
+    // Cannot go to step 5 without approved status
+    if (requestedStep === 5 && procedureStatus !== 'approved') return naturalStep
 
     return requestedStep
   }
@@ -208,8 +221,10 @@ interface UseServiceWizardOptions {
   initialStep?: number
   procedureId?: string | null
   procedureStatus?: ProcedureStatus | null
+  selectedTypeIds?: string[]
   stepTimestamps?: {
     anamnesis: Date | null
+    procedureTypes: Date | null
     planning: Date | null
     approval: Date | null
     execution: Date | null
@@ -221,6 +236,7 @@ export function useServiceWizard({
   initialStep,
   procedureId: initialProcedureId,
   procedureStatus: initialProcedureStatus,
+  selectedTypeIds: initialSelectedTypeIds,
   stepTimestamps: initialTimestamps,
 }: UseServiceWizardOptions) {
   const router = useRouter()
@@ -235,8 +251,10 @@ export function useServiceWizard({
     currentStep: startStep,
     procedureId: initialProcedureId ?? null,
     procedureStatus: initialProcedureStatus ?? null,
+    selectedTypeIds: initialSelectedTypeIds ?? [],
     stepTimestamps: initialTimestamps ?? {
       anamnesis: null,
+      procedureTypes: null,
       planning: null,
       approval: null,
       execution: null,
@@ -267,14 +285,16 @@ export function useServiceWizard({
         case 2:
           return true
         case 3:
-          return !!state.procedureId
+          return state.selectedTypeIds.length > 0
         case 4:
+          return !!state.procedureId
+        case 5:
           return state.procedureStatus === 'approved'
         default:
           return false
       }
     },
-    [state.procedureId, state.procedureStatus]
+    [state.selectedTypeIds, state.procedureId, state.procedureStatus]
   )
 
   // ─── Step completion ────────────────────────────────────────────
@@ -285,16 +305,18 @@ export function useServiceWizard({
         case 1:
           return !!state.stepTimestamps.anamnesis
         case 2:
-          return !!state.procedureId
+          return state.selectedTypeIds.length > 0
         case 3:
-          return state.procedureStatus === 'approved'
+          return !!state.procedureId
         case 4:
+          return state.procedureStatus === 'approved'
+        case 5:
           return state.procedureStatus === 'executed'
         default:
           return false
       }
     },
-    [state.stepTimestamps.anamnesis, state.procedureId, state.procedureStatus]
+    [state.stepTimestamps.anamnesis, state.selectedTypeIds, state.procedureId, state.procedureStatus]
   )
 
   // ─── Skip logic ─────────────────────────────────────────────────
@@ -307,8 +329,10 @@ export function useServiceWizard({
         case 2:
           return false // required
         case 3:
-          return true // "Adiar Aprovacao"
+          return false // required
         case 4:
+          return true // "Adiar Aprovacao"
+        case 5:
           return false // final step
         default:
           return false
@@ -321,7 +345,7 @@ export function useServiceWizard({
 
   const isStepReadOnly = useCallback(
     (step: WizardStep): boolean => {
-      if (step === 1 || step === 2) {
+      if (step === 1 || step === 2 || step === 3) {
         return state.procedureStatus === 'approved'
       }
       return false
@@ -334,7 +358,7 @@ export function useServiceWizard({
   const getSkipLabel = useCallback(
     (step: WizardStep): string | null => {
       if (!canSkip(step)) return null
-      if (step === 3) return 'Adiar Aprovação'
+      if (step === 4) return 'Adiar Aprovação'
       return 'Pular'
     },
     [canSkip]
@@ -344,7 +368,7 @@ export function useServiceWizard({
 
   const getNextLabel = useCallback(
     (step: WizardStep): string => {
-      if (step === 4) return 'Finalizar Atendimento'
+      if (step === 5) return 'Finalizar Atendimento'
       return 'Próximo'
     },
     []
@@ -413,11 +437,15 @@ export function useServiceWizard({
   }, [])
 
   const updateStepTimestamp = useCallback(
-    (step: 'anamnesis' | 'planning' | 'approval' | 'execution', timestamp: Date) => {
+    (step: 'anamnesis' | 'procedureTypes' | 'planning' | 'approval' | 'execution', timestamp: Date) => {
       dispatch({ type: 'UPDATE_STEP_TIMESTAMP', step, timestamp })
     },
     []
   )
+
+  const setSelectedTypeIds = useCallback((typeIds: string[]) => {
+    dispatch({ type: 'SET_SELECTED_TYPES', typeIds })
+  }, [])
 
   return {
     state,
@@ -437,6 +465,7 @@ export function useServiceWizard({
     setProcedureId,
     updateProcedureStatus,
     updateStepTimestamp,
+    setSelectedTypeIds,
     patientId,
   }
 }

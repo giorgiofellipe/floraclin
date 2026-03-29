@@ -136,6 +136,7 @@ interface ProcedureFormProps {
   procedure?: ProcedureWithDetails | null
   diagrams?: DiagramWithPoints[]
   existingApplications?: ProductApplicationRecord[]
+  initialTypeIds?: string[]
   mode?: 'create' | 'edit' | 'view'
   wizardOverrides?: WizardOverrides
 }
@@ -205,6 +206,7 @@ export function ProcedureForm({
   procedure,
   diagrams: existingDiagrams,
   existingApplications,
+  initialTypeIds,
   mode = 'create',
   wizardOverrides,
 }: ProcedureFormProps) {
@@ -218,7 +220,7 @@ export function ProcedureForm({
 
   // ─── Form state ──────────────────────────────────────────────────
   const [procedureTypeId, setProcedureTypeId] = useState(
-    procedure?.procedureTypeId ?? ''
+    procedure?.procedureTypeId ?? (initialTypeIds && initialTypeIds.length > 0 ? initialTypeIds[0] : '')
   )
   const [technique, setTechnique] = useState(procedure?.technique ?? '')
   const [clinicalResponse, setClinicalResponse] = useState(
@@ -236,8 +238,27 @@ export function ProcedureForm({
   )
   const [additionalTypeIds, setAdditionalTypeIds] = useState<string[]>(() => {
     const existing = (procedure as unknown as Record<string, unknown> | null | undefined)?.additionalTypeIds
-    return Array.isArray(existing) ? existing as string[] : []
+    if (Array.isArray(existing) && existing.length > 0) return existing as string[]
+    if (initialTypeIds && initialTypeIds.length > 1) return initialTypeIds.slice(1)
+    return []
   })
+
+  // ─── Sync type selection from wizard step 2 (initialTypeIds) ────
+  const initialTypeIdsRef = useRef(initialTypeIds)
+  useEffect(() => {
+    if (
+      initialTypeIds &&
+      initialTypeIds.length > 0 &&
+      JSON.stringify(initialTypeIds) !== JSON.stringify(initialTypeIdsRef.current)
+    ) {
+      initialTypeIdsRef.current = initialTypeIds
+      // Only apply if no procedure exists yet (create mode)
+      if (!procedure) {
+        setProcedureTypeId(initialTypeIds[0])
+        setAdditionalTypeIds(initialTypeIds.slice(1))
+      }
+    }
+  }, [initialTypeIds, procedure])
 
   // ─── Financial plan state ───────────────────────────────────────
   const [financialPlan, setFinancialPlan] = useState<FinancialPlanState>(() => {

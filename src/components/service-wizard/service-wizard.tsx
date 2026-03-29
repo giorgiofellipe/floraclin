@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dialog'
 import { WizardStepper } from './wizard-stepper'
 import { WizardStep as WizardStepWrapper } from './wizard-step'
+import { ProcedureTypeStep } from './procedure-type-step'
 import { AnamnesisForm } from '@/components/anamnesis/anamnesis-form'
 import { ProcedureForm } from '@/components/procedures/procedure-form'
 import { ProcedureApproval } from '@/components/procedures/procedure-approval'
@@ -62,6 +63,7 @@ interface ServiceWizardProps {
   anamnesisUpdatedByName?: string
   stepTimestamps?: {
     anamnesis: Date | null
+    procedureTypes: Date | null
     planning: Date | null
     approval: Date | null
     execution: Date | null
@@ -98,11 +100,22 @@ export function ServiceWizard({
 }: ServiceWizardProps) {
   const router = useRouter()
 
+  // Derive initial selected type IDs from existing procedure
+  const initialSelectedTypeIds = (() => {
+    if (!procedure) return []
+    const ids: string[] = []
+    if (procedure.procedureTypeId) ids.push(procedure.procedureTypeId)
+    const additional = (procedure as unknown as Record<string, unknown>)?.additionalTypeIds
+    if (Array.isArray(additional)) ids.push(...(additional as string[]))
+    return ids
+  })()
+
   const wizard = useServiceWizard({
     patientId: patient.id,
     initialStep,
     procedureId,
     procedureStatus,
+    selectedTypeIds: initialSelectedTypeIds,
     stepTimestamps,
   })
 
@@ -121,6 +134,7 @@ export function ServiceWizard({
     getNextLabel,
     updateProcedureStatus,
     updateStepTimestamp,
+    setSelectedTypeIds,
   } = wizard
 
   // ─── Lift procedure data into client state (CRITICAL 1 fix) ────
@@ -128,7 +142,7 @@ export function ServiceWizard({
   const [localDiagrams, setLocalDiagrams] = useState<DiagramWithPoints[] | null>(diagrams ?? null)
   const [localApplications, setLocalApplications] = useState<ProductApplicationRecord[] | null>(existingApplications ?? null)
 
-  // ─── beforeunload protection for steps 2-4 ─────────────────────
+  // ─── beforeunload protection for steps 2-5 ─────────────────────
 
   useEffect(() => {
     if (state.currentStep === 1) return
@@ -208,19 +222,20 @@ export function ServiceWizard({
 
       if (result.success) {
         // Update step timestamp on successful save
-        const stepTimestampMap: Record<number, 'anamnesis' | 'planning' | 'approval' | 'execution'> = {
+        const stepTimestampMap: Record<number, 'anamnesis' | 'procedureTypes' | 'planning' | 'approval' | 'execution'> = {
           1: 'anamnesis',
-          2: 'planning',
-          3: 'approval',
-          4: 'execution',
+          2: 'procedureTypes',
+          3: 'planning',
+          4: 'approval',
+          5: 'execution',
         }
         const timestampKey = stepTimestampMap[state.currentStep]
         if (timestampKey) {
           updateStepTimestamp(timestampKey, new Date())
         }
 
-        // After step 2 creates/updates a procedure, fetch fresh data client-side
-        if (state.currentStep === 2 && result.procedureId) {
+        // After step 3 creates/updates a procedure, fetch fresh data client-side
+        if (state.currentStep === 3 && result.procedureId) {
           try {
             const res = await getProcedureAction(result.procedureId)
             if (res.success && res.data) {
@@ -229,15 +244,15 @@ export function ServiceWizard({
               setLocalApplications((res.data as { productApplications?: ProductApplicationRecord[] }).productApplications ?? null)
             }
           } catch {
-            // Non-blocking — steps 3-4 will show placeholder if fetch fails
+            // Non-blocking — steps 4-5 will show placeholder if fetch fails
           }
         }
 
         // Update procedure status if the step changed it
-        if (state.currentStep === 3) {
+        if (state.currentStep === 4) {
           updateProcedureStatus('approved')
         }
-        if (state.currentStep === 4) {
+        if (state.currentStep === 5) {
           // Execution complete — redirect to patient detail
           toast.success('Atendimento finalizado com sucesso')
           router.push(`/pacientes/${patient.id}`)
@@ -253,7 +268,7 @@ export function ServiceWizard({
   // ─── Skip/Adiar handler ────────────────────────────────────────
 
   const handleSkip = useCallback(() => {
-    if (state.currentStep === 3) {
+    if (state.currentStep === 4) {
       // "Adiar Aprovacao" — exits wizard
       toast.info('Atendimento salvo como planejado. Retorne para aprovar quando o paciente estiver pronto.')
       router.push(`/pacientes/${patient.id}`)
@@ -268,9 +283,10 @@ export function ServiceWizard({
   const handleNext = useCallback(() => {
     // All steps trigger save via triggerSave.
     // Step 1: flushes debounce and advances on success
-    // Step 2: creates/updates procedure and advances on success
-    // Step 3: calls approveProcedureAction and advances on success
-    // Step 4: calls executeProcedureAction and redirects on success
+    // Step 2: validates type selection (no server save) and advances
+    // Step 3: creates/updates procedure and advances on success
+    // Step 4: calls approveProcedureAction and advances on success
+    // Step 5: calls executeProcedureAction and redirects on success
     triggerSave()
   }, [triggerSave])
 
@@ -373,8 +389,32 @@ export function ServiceWizard({
             </WizardStepWrapper>
           </div>
 
-          {/* Step 2: Planejamento */}
+          {/* Step 2: Procedimentos (type selection) */}
           <div style={{ display: state.currentStep === 2 ? 'block' : 'none' }}>
+            <WizardStepWrapper
+              title="Procedimentos"
+              timestamp={state.stepTimestamps.procedureTypes}
+            >
+              {isReadOnlyAfterApproval && (
+                <div className="mb-4 rounded-[3px] border border-amber-200 bg-amber-50 px-4 py-3">
+                  <p className="text-sm text-amber-800">
+                    Tipos de procedimento não podem ser alterados após aprovação.
+                  </p>
+                </div>
+              )}
+              <div className={isReadOnlyAfterApproval ? 'pointer-events-none opacity-75' : undefined}>
+                <ProcedureTypeStep
+                  selectedTypeIds={state.selectedTypeIds}
+                  onSelectedTypeIdsChange={setSelectedTypeIds}
+                  wizardOverrides={baseOverrides}
+                  readOnly={isReadOnlyAfterApproval}
+                />
+              </div>
+            </WizardStepWrapper>
+          </div>
+
+          {/* Step 3: Planejamento */}
+          <div style={{ display: state.currentStep === 3 ? 'block' : 'none' }}>
             <WizardStepWrapper
               title="Planejamento"
               timestamp={state.stepTimestamps.planning}
@@ -385,6 +425,7 @@ export function ServiceWizard({
                 procedure={localProcedure ?? undefined}
                 diagrams={localDiagrams ?? undefined}
                 existingApplications={localApplications ?? undefined}
+                initialTypeIds={state.selectedTypeIds}
                 mode={
                   isReadOnlyAfterApproval
                     ? 'view'
@@ -397,8 +438,8 @@ export function ServiceWizard({
             </WizardStepWrapper>
           </div>
 
-          {/* Step 3: Aprovação */}
-          <div style={{ display: state.currentStep === 3 ? 'block' : 'none' }}>
+          {/* Step 4: Aprovação */}
+          <div style={{ display: state.currentStep === 4 ? 'block' : 'none' }}>
             <WizardStepWrapper
               title="Aprovação"
               timestamp={state.stepTimestamps.approval}
@@ -427,8 +468,8 @@ export function ServiceWizard({
             </WizardStepWrapper>
           </div>
 
-          {/* Step 4: Execução */}
-          <div style={{ display: state.currentStep === 4 ? 'block' : 'none' }}>
+          {/* Step 5: Execução */}
+          <div style={{ display: state.currentStep === 5 ? 'block' : 'none' }}>
             <WizardStepWrapper
               title="Execução"
               timestamp={state.stepTimestamps.execution}
@@ -501,7 +542,7 @@ export function ServiceWizard({
               )}
             >
               {state.isSaving ? 'Salvando...' : nextLabel}
-              {state.currentStep < 4 && !state.isSaving && <ChevronRight className="h-4 w-4" />}
+              {state.currentStep < 5 && !state.isSaving && <ChevronRight className="h-4 w-4" />}
             </button>
 
             {showSkip && skipLabel && (

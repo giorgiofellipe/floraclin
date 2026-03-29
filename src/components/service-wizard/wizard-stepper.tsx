@@ -23,7 +23,7 @@ interface WizardStepperProps {
   disabled?: boolean
 }
 
-const STEPS: WizardStep[] = [1, 2, 3, 4]
+const STEPS: WizardStep[] = [1, 2, 3, 4, 5]
 
 export function WizardStepper({
   currentStep,
