@@ -27,7 +27,7 @@ export async function updateTemplateAction(data: {
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
-      return { error: 'Sem permissao para alterar templates' }
+      return { error: 'Sem permissão para alterar templates' }
     }
     return { error: 'Erro ao salvar template' }
   }
@@ -45,7 +45,7 @@ export async function createTemplateAction(data: {
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
-      return { error: 'Sem permissao para criar templates' }
+      return { error: 'Sem permissão para criar templates' }
     }
     return { error: 'Erro ao criar template' }
   }
@@ -79,12 +79,12 @@ export async function resetTemplateToDefaultAction(data: {
         (t) => t.category === data.procedureCategory
       )
       if (!defaultTemplate) {
-        return { error: 'Nenhum template padrao disponivel para esta categoria' }
+        return { error: 'Nenhum template padrão disponível para esta categoria' }
       }
       const created = await createTemplate(
         auth.tenantId,
         data.procedureTypeId,
-        data.procedureTypeName || 'Ficha de Avaliacao',
+        data.procedureTypeName || 'Ficha de Avaliação',
         defaultTemplate.sections
       )
       revalidatePath('/configuracoes')
@@ -94,12 +94,12 @@ export async function resetTemplateToDefaultAction(data: {
       }
     }
 
-    return { error: 'Parametros invalidos' }
+    return { error: 'Parâmetros inválidos' }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
-      return { error: 'Sem permissao para restaurar template' }
+      return { error: 'Sem permissão para restaurar template' }
     }
-    return { error: 'Erro ao restaurar template padrao' }
+    return { error: 'Erro ao restaurar template padrão' }
   }
 }
 

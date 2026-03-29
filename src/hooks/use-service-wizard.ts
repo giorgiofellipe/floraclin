@@ -331,7 +331,7 @@ export function useServiceWizard({
         case 3:
           return false // required
         case 4:
-          return true // "Adiar Aprovacao"
+          return true // "Adiar Aprovação"
         case 5:
           return false // final step
         default:

@@ -17,7 +17,7 @@ export async function saveEvaluationResponse(
   // Load the current template to get version and snapshot
   const template = await getTemplateById(tenantId, data.templateId)
   if (!template) {
-    throw new Error('Template de avaliacao nao encontrado')
+    throw new Error('Template de avaliação não encontrado')
   }
 
   // Check if a response already exists for this procedure + template

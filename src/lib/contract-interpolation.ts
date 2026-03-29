@@ -39,16 +39,16 @@ export const CONTRACT_PLACEHOLDERS: { placeholder: string; description: string }
   { placeholder: '{{valor_total}}', description: 'Valor total do contrato (R$)' },
   { placeholder: '{{forma_pagamento}}', description: 'Forma de pagamento escolhida' },
   { placeholder: '{{parcelas}}', description: 'Detalhamento das parcelas' },
-  { placeholder: '{{profissional}}', description: 'Nome do profissional responsavel' },
-  { placeholder: '{{clinica}}', description: 'Nome da clinica' },
+  { placeholder: '{{profissional}}', description: 'Nome do profissional responsável' },
+  { placeholder: '{{clinica}}', description: 'Nome da clínica' },
 ]
 
 const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   pix: 'PIX',
-  credit_card: 'Cartao de Credito',
-  debit_card: 'Cartao de Debito',
+  credit_card: 'Cartão de Crédito',
+  debit_card: 'Cartão de Débito',
   cash: 'Dinheiro',
-  transfer: 'Transferencia Bancaria',
+  transfer: 'Transferência Bancária',
 }
 
 /**
@@ -137,7 +137,7 @@ export function buildContractData(
   const parcelas =
     financialPlan.installmentCount > 1
       ? `Parcelamento: ${financialPlan.installmentCount}x de ${formatCurrency(financialPlan.totalAmount / financialPlan.installmentCount)}`
-      : 'Pagamento a vista'
+      : 'Pagamento à vista'
 
   return {
     nomePaciente: patient.fullName,

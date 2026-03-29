@@ -246,7 +246,7 @@ const preenchimentosSections: EvaluationSection[] = [
         options: [
           'Ácido Hialurônico',
           'PMMA (polimetilmetacrilato)',
-          'Hidroxiapatita de calcio',
+          'Hidroxiapatita de cálcio',
           'Não sabe informar',
         ],
       },

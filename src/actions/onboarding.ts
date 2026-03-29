@@ -185,7 +185,7 @@ export async function completeOnboarding(data: OnboardingData): Promise<Onboardi
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
-      return { error: 'Sem permissao para completar o onboarding' }
+      return { error: 'Sem permissão para completar o onboarding' }
     }
     console.error('Onboarding error:', error)
     return { error: 'Erro ao completar o onboarding. Tente novamente.' }

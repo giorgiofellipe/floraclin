@@ -81,7 +81,7 @@ export async function updateTemplate(
     .returning()
 
   if (!updated) {
-    throw new Error('Template de avaliacao nao encontrado')
+    throw new Error('Template de avaliação não encontrado')
   }
 
   return updated
@@ -104,7 +104,7 @@ export async function deleteTemplate(tenantId: string, templateId: string) {
     .returning()
 
   if (!deleted) {
-    throw new Error('Template de avaliacao nao encontrado')
+    throw new Error('Template de avaliação não encontrado')
   }
 
   return deleted
@@ -117,7 +117,7 @@ export async function resetTemplateToDefault(
 ) {
   const defaultTemplate = defaultTemplates.find((t) => t.category === procedureCategory)
   if (!defaultTemplate) {
-    throw new Error('Nenhum template padrao encontrado para esta categoria')
+    throw new Error('Nenhum template padrão encontrado para esta categoria')
   }
 
   return updateTemplate(tenantId, templateId, defaultTemplate.sections)

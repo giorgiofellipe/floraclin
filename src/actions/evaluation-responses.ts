@@ -41,7 +41,7 @@ export async function saveEvaluationResponseAction(data: {
 
     return { success: true, data: response }
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Erro ao salvar respostas da avaliacao' }
+    return { error: err instanceof Error ? err.message : 'Erro ao salvar respostas da avaliação' }
   }
 }
 
