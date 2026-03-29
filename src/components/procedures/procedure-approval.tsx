@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   CheckCircle2,
@@ -399,8 +399,11 @@ export function ProcedureApproval({
   }, [canApprove, isApproving, procedure.id, patient.id, router, wizardOverrides?.hideNavigation])
 
   // ─── Wizard triggerSave: call approveProcedureAction ──────────────
+  const lastTriggerSaveRef = useRef(wizardOverrides?.triggerSave ?? 0)
   useEffect(() => {
-    if (!wizardOverrides?.triggerSave) return
+    const current = wizardOverrides?.triggerSave ?? 0
+    if (current === 0 || current === lastTriggerSaveRef.current) return
+    lastTriggerSaveRef.current = current
     async function doSave() {
       if (!canApprove) {
         wizardOverrides?.onSaveComplete?.({

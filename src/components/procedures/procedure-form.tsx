@@ -839,8 +839,12 @@ export function ProcedureForm({
   additionalTypeIdsRef.current = additionalTypeIds
 
   // ─── Wizard triggerSave: run save logic and call onSaveComplete ──
+  const lastTriggerSaveRef = useRef(wizardOverrides?.triggerSave ?? 0)
   useEffect(() => {
-    if (!wizardOverrides?.triggerSave) return
+    const current = wizardOverrides?.triggerSave ?? 0
+    // Only react to CHANGES, not the initial mount value
+    if (current === 0 || current === lastTriggerSaveRef.current) return
+    lastTriggerSaveRef.current = current
     async function doSave() {
       if (isSubmitting || isReadOnly) {
         wizardOverrides?.onSaveComplete?.({

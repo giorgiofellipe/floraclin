@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -533,8 +533,11 @@ export function ProcedureExecution({
   ])
 
   // ─── Wizard triggerSave: execute and call onSaveComplete ──────────
+  const lastTriggerSaveRef = useRef(wizardOverrides?.triggerSave ?? 0)
   useEffect(() => {
-    if (!wizardOverrides?.triggerSave) return
+    const current = wizardOverrides?.triggerSave ?? 0
+    if (current === 0 || current === lastTriggerSaveRef.current) return
+    lastTriggerSaveRef.current = current
     async function doSave() {
       if (isSubmitting || isReadOnly) {
         wizardOverrides?.onSaveComplete?.({
