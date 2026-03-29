@@ -29,6 +29,10 @@ import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
 import type { AnamnesisFormData } from '@/validations/anamnesis'
 import { getProcedureAction } from '@/actions/procedures'
+import { getTemplatesForProcedureTypesAction } from '@/actions/evaluation-templates'
+import { getEvaluationResponsesForProcedureAction } from '@/actions/evaluation-responses'
+import type { EvaluationTemplateForForm, ExistingEvaluationResponse } from '@/components/procedures/procedure-form'
+import type { EvaluationSection, EvaluationResponses } from '@/types/evaluation'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -141,6 +145,75 @@ export function ServiceWizard({
   const [localProcedure, setLocalProcedure] = useState<ProcedureWithDetails | null>(procedure ?? null)
   const [localDiagrams, setLocalDiagrams] = useState<DiagramWithPoints[] | null>(diagrams ?? null)
   const [localApplications, setLocalApplications] = useState<ProductApplicationRecord[] | null>(existingApplications ?? null)
+
+  // ─── Evaluation templates + responses ─────────────────────────
+  const [evalTemplates, setEvalTemplates] = useState<EvaluationTemplateForForm[]>([])
+  const [existingEvalResponses, setExistingEvalResponses] = useState<ExistingEvaluationResponse[]>([])
+  const [evalTemplatesLoadedForIds, setEvalTemplatesLoadedForIds] = useState<string>('')
+
+  // Load evaluation templates when selectedTypeIds change
+  useEffect(() => {
+    const typeIds = state.selectedTypeIds
+    const key = typeIds.slice().sort().join(',')
+    if (!key || key === evalTemplatesLoadedForIds) return
+
+    async function loadTemplates() {
+      try {
+        const templates = await getTemplatesForProcedureTypesAction(typeIds)
+        // We need procedure type names — load them from the procedure type step data
+        // Templates are returned with procedureTypeId, we need names
+        // Fetch procedure types for names (re-use the action from procedures)
+        const { listProcedureTypesAction } = await import('@/actions/procedures')
+        const allTypes = await listProcedureTypesAction()
+
+        const typeNameMap = new Map<string, string>()
+        for (const t of allTypes as { id: string; name: string }[]) {
+          typeNameMap.set(t.id, t.name)
+        }
+
+        const formTemplates: EvaluationTemplateForForm[] = templates
+          .filter((t) => typeIds.includes(t.procedureTypeId))
+          .map((t) => ({
+            id: t.id,
+            procedureTypeId: t.procedureTypeId,
+            procedureTypeName: typeNameMap.get(t.procedureTypeId) ?? 'Procedimento',
+            sections: t.sections as EvaluationSection[],
+            version: t.version,
+          }))
+          // Preserve the order from selectedTypeIds
+          .sort((a, b) => typeIds.indexOf(a.procedureTypeId) - typeIds.indexOf(b.procedureTypeId))
+
+        setEvalTemplates(formTemplates)
+        setEvalTemplatesLoadedForIds(key)
+      } catch {
+        // Non-blocking — templates won't show
+      }
+    }
+    loadTemplates()
+  }, [state.selectedTypeIds, evalTemplatesLoadedForIds])
+
+  // Load existing evaluation responses when resuming a procedure
+  useEffect(() => {
+    if (!state.procedureId) return
+
+    async function loadResponses() {
+      try {
+        const responses = await getEvaluationResponsesForProcedureAction(state.procedureId!)
+        if (responses && responses.length > 0) {
+          setExistingEvalResponses(
+            responses.map((r) => ({
+              templateId: r.templateId,
+              responses: r.responses as EvaluationResponses,
+              templateSnapshot: r.templateSnapshot as EvaluationSection[],
+            }))
+          )
+        }
+      } catch {
+        // Non-blocking
+      }
+    }
+    loadResponses()
+  }, [state.procedureId])
 
   // ─── beforeunload protection for steps 2-5 ─────────────────────
 
@@ -434,6 +507,8 @@ export function ServiceWizard({
                       : 'create'
                 }
                 wizardOverrides={{ ...baseOverrides, hideProcedureTypes: true }}
+                evaluationTemplates={evalTemplates.length > 0 ? evalTemplates : undefined}
+                existingEvaluationResponses={existingEvalResponses.length > 0 ? existingEvalResponses : undefined}
               />
             </WizardStepWrapper>
           </div>
