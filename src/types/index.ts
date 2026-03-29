@@ -4,11 +4,11 @@ export type AppointmentStatus = 'scheduled' | 'confirmed' | 'in_progress' | 'com
 
 export type AppointmentSource = 'internal' | 'online_booking'
 
-export type ProcedureStatus = 'in_progress' | 'completed' | 'cancelled'
+export type ProcedureStatus = 'planned' | 'approved' | 'executed' | 'cancelled'
 
 export type TimelineStage = 'pre' | 'immediate_post' | '7d' | '30d' | '90d' | 'other'
 
-export type ConsentType = 'general' | 'botox' | 'filler' | 'biostimulator' | 'custom'
+export type ConsentType = 'general' | 'botox' | 'filler' | 'biostimulator' | 'custom' | 'service_contract'
 
 export type AcceptanceMethod = 'checkbox' | 'signature' | 'both'
 
