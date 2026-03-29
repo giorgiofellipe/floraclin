@@ -225,10 +225,12 @@ export function ServiceWizard({
     if (state.currentStep === 1) return
 
     function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (isExitingRef.current) return
       e.preventDefault()
     }
 
     function handlePopState() {
+      if (isExitingRef.current) return // allow navigation when exiting
       // Push state back so the user stays on the page
       window.history.pushState(null, '', window.location.href)
       setShowExitDialog(true)
@@ -257,7 +259,9 @@ export function ServiceWizard({
     router.push(`/pacientes/${patient.id}`)
   }, [state.currentStep, router, patient.id])
 
+  const isExitingRef = useRef(false)
   const confirmExit = useCallback(() => {
+    isExitingRef.current = true
     setShowExitDialog(false)
     router.push(`/pacientes/${patient.id}`)
   }, [router, patient.id])
