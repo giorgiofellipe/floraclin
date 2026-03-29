@@ -112,8 +112,8 @@ export async function completeOnboarding(data: OnboardingData): Promise<Onboardi
         }, tx)
       }
 
-      // 4. Create default consent templates (4 types)
-      const consentTypes = ['general', 'botox', 'filler', 'biostimulator'] as const
+      // 4. Create default consent templates (4 types + service contract)
+      const consentTypes = ['general', 'botox', 'filler', 'biostimulator', 'service_contract'] as const
       for (const type of consentTypes) {
         const template = DEFAULT_CONSENT_TEMPLATES[type]
         await createConsentTemplate(auth.tenantId, {

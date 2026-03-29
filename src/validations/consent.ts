@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const consentTypes = ['general', 'botox', 'filler', 'biostimulator', 'custom'] as const
+export const consentTypes = ['general', 'botox', 'filler', 'biostimulator', 'custom', 'service_contract'] as const
 export const acceptanceMethods = ['checkbox', 'signature', 'both'] as const
 
 export const consentTemplateSchema = z.object({
@@ -209,5 +209,49 @@ Recebi orientações sobre os cuidados pós-procedimento:
 • Retornar para avaliação conforme agendamento
 
 Ao aceitar este termo, confirmo que li, compreendi e concordo com todas as informações acima.`,
+  },
+  service_contract: {
+    title: 'Contrato de Prestacao de Servicos Esteticos',
+    content: `CONTRATO DE PRESTACAO DE SERVICOS
+
+Pelo presente instrumento, {{nome_paciente}}, CPF {{cpf_paciente}}, declara que contrata os servicos esteticos descritos abaixo, prestados pela clinica {{clinica}}, sob responsabilidade do(a) profissional {{profissional}}.
+
+1. PROCEDIMENTOS CONTRATADOS
+{{procedimentos}}
+
+2. PRODUTOS A SEREM UTILIZADOS
+{{produtos}}
+
+3. VALOR E FORMA DE PAGAMENTO
+Valor total: {{valor_total}}
+Forma de pagamento: {{forma_pagamento}}
+{{parcelas}}
+
+4. OBRIGACOES DO CONTRATANTE
+O(a) contratante se compromete a:
+a) Comparecer nas datas e horarios agendados;
+b) Seguir todas as orientacoes pre e pos-procedimento;
+c) Informar sobre qualquer condicao de saude relevante;
+d) Efetuar o pagamento conforme acordado.
+
+5. OBRIGACOES DO CONTRATADO
+A clinica se compromete a:
+a) Realizar os procedimentos conforme descrito, utilizando produtos de qualidade e dentro da validade;
+b) Fornecer todas as orientacoes necessarias ao paciente;
+c) Manter sigilo sobre as informacoes do paciente.
+
+6. CANCELAMENTO E REAGENDAMENTO
+Em caso de cancelamento com menos de 24 horas de antecedencia, podera ser cobrada taxa de ate 20% do valor do procedimento. Reagendamentos podem ser feitos com ate 24 horas de antecedencia sem custo adicional.
+
+7. DISPOSICOES GERAIS
+Este contrato e regido pelas leis brasileiras. Eventuais disputas serao resolvidas no foro da comarca da clinica.
+
+Data: {{data}}
+
+_______________________________
+Assinatura do paciente
+
+_______________________________
+Assinatura do profissional`,
   },
 } as const

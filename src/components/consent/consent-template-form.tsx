@@ -21,6 +21,7 @@ import {
   type ConsentActionState,
 } from '@/actions/consent'
 import { DEFAULT_CONSENT_TEMPLATES } from '@/validations/consent'
+import { CONTRACT_PLACEHOLDERS } from '@/lib/contract-interpolation'
 import type { ConsentType } from '@/types'
 
 const CONSENT_TYPE_OPTIONS: { value: ConsentType; label: string }[] = [
@@ -182,6 +183,28 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
                 <p className="text-sm text-destructive">{state.fieldErrors.content[0]}</p>
               )}
             </div>
+
+            {/* Placeholder documentation for service_contract */}
+            {selectedType === 'service_contract' && (
+              <div className="rounded-[3px] border border-sage/20 bg-petal p-4 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wider text-sage">
+                  Variaveis disponiveis
+                </p>
+                <p className="text-xs text-mid">
+                  Use as variaveis abaixo no texto do contrato. Elas serao substituidas automaticamente pelos dados do paciente e do procedimento.
+                </p>
+                <div className="grid gap-1">
+                  {CONTRACT_PLACEHOLDERS.map((p) => (
+                    <div key={p.placeholder} className="flex items-start gap-2 text-xs">
+                      <code className="shrink-0 rounded bg-white px-1.5 py-0.5 font-mono text-forest border border-sage/20">
+                        {p.placeholder}
+                      </code>
+                      <span className="text-mid">{p.description}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Errors */}
             {state?.error && (
