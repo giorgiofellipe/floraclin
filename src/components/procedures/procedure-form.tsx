@@ -473,7 +473,11 @@ export function ProcedureForm({
     if (!isPlanningMode || isReadOnly) return
     if (procedureTypes.length === 0) return
 
-    const allSelectedIds = [procedureTypeId, ...additionalTypeIds].filter(Boolean)
+    // Use initialTypeIds if procedureTypeId hasn't been set yet (wizard mode)
+    let allSelectedIds = [procedureTypeId, ...additionalTypeIds].filter(Boolean)
+    if (allSelectedIds.length === 0 && initialTypeIds && initialTypeIds.length > 0) {
+      allSelectedIds = initialTypeIds
+    }
     if (allSelectedIds.length === 0) {
       lastAutoSumRef.current = ''
       return
@@ -503,7 +507,7 @@ export function ProcedureForm({
       lastAutoSumRef.current = masked
       return prev
     })
-  }, [procedureTypeId, additionalTypeIds, procedureTypes, isPlanningMode, isReadOnly])
+  }, [procedureTypeId, additionalTypeIds, procedureTypes, isPlanningMode, isReadOnly, initialTypeIds])
 
   // ─── Check consent when procedure type changes (skip in planning mode) ──
   const selectedType = useMemo(
