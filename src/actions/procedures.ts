@@ -363,7 +363,7 @@ export async function approveProcedureAction(
           totalAmount: financialPlan.totalAmount,
           installmentCount: financialPlan.installmentCount,
           notes: financialPlan.notes,
-        })
+        }, tx)
       }
 
       return updated

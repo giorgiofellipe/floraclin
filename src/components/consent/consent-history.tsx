@@ -15,15 +15,7 @@ import {
 import { SignaturePad } from './signature-pad'
 import { getConsentHistoryAction } from '@/actions/consent'
 import { formatDateTime } from '@/lib/utils'
-
-const CONSENT_TYPE_LABELS: Record<string, string> = {
-  general: 'Consentimento Geral',
-  botox: 'Toxina Botulínica',
-  filler: 'Preenchedor / Ácido Hialurônico',
-  biostimulator: 'Bioestimulador',
-  custom: 'Personalizado',
-  service_contract: 'Contrato de Serviço',
-}
+import { CONSENT_TYPE_LABELS } from '@/lib/constants'
 
 const METHOD_LABELS: Record<string, string> = {
   checkbox: 'Checkbox',

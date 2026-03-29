@@ -21,15 +21,7 @@ import {
 import { formatDateTime } from '@/lib/utils'
 import { ConsentTemplateForm } from '@/components/consent/consent-template-form'
 import { PlusIcon, PencilIcon } from 'lucide-react'
-
-const CONSENT_TYPE_LABELS: Record<string, string> = {
-  general: 'Geral',
-  botox: 'Toxina Botulínica',
-  filler: 'Preenchimento',
-  biostimulator: 'Bioestimulador',
-  custom: 'Personalizado',
-  service_contract: 'Contrato de Serviço',
-}
+import { CONSENT_TYPE_LABELS } from '@/lib/constants'
 
 interface ConsentTemplate {
   id: string

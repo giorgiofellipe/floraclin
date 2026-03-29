@@ -33,6 +33,7 @@ import {
   buildContractData,
 } from '@/lib/contract-interpolation'
 import { cn } from '@/lib/utils'
+import { CONSENT_TYPE_LABELS } from '@/lib/constants'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { DiagramPointData } from '@/components/face-diagram/types'
@@ -47,14 +48,6 @@ const CATEGORY_TO_CONSENT: Record<string, string> = {
   filler: 'filler',
   bioestimulador: 'biostimulator',
   biostimulator: 'biostimulator',
-}
-
-const CONSENT_TYPE_LABELS: Record<string, string> = {
-  general: 'Consentimento Geral',
-  botox: 'Toxina Botulinica',
-  filler: 'Preenchedor / Acido Hialuronico',
-  biostimulator: 'Bioestimulador',
-  service_contract: 'Contrato de Servico',
 }
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {

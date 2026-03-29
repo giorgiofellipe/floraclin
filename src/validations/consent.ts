@@ -211,10 +211,10 @@ Recebi orientações sobre os cuidados pós-procedimento:
 Ao aceitar este termo, confirmo que li, compreendi e concordo com todas as informações acima.`,
   },
   service_contract: {
-    title: 'Contrato de Prestacao de Servicos Esteticos',
-    content: `CONTRATO DE PRESTACAO DE SERVICOS
+    title: 'Contrato de Prestação de Serviços Estéticos',
+    content: `CONTRATO DE PRESTAÇÃO DE SERVIÇOS
 
-Pelo presente instrumento, {{nome_paciente}}, CPF {{cpf_paciente}}, declara que contrata os servicos esteticos descritos abaixo, prestados pela clinica {{clinica}}, sob responsabilidade do(a) profissional {{profissional}}.
+Pelo presente instrumento, {{nome_paciente}}, CPF {{cpf_paciente}}, declara que contrata os serviços estéticos descritos abaixo, prestados pela clínica {{clinica}}, sob responsabilidade do(a) profissional {{profissional}}.
 
 1. PROCEDIMENTOS CONTRATADOS
 {{procedimentos}}
@@ -227,24 +227,24 @@ Valor total: {{valor_total}}
 Forma de pagamento: {{forma_pagamento}}
 {{parcelas}}
 
-4. OBRIGACOES DO CONTRATANTE
+4. OBRIGAÇÕES DO CONTRATANTE
 O(a) contratante se compromete a:
-a) Comparecer nas datas e horarios agendados;
-b) Seguir todas as orientacoes pre e pos-procedimento;
-c) Informar sobre qualquer condicao de saude relevante;
+a) Comparecer nas datas e horários agendados;
+b) Seguir todas as orientações pré e pós-procedimento;
+c) Informar sobre qualquer condição de saúde relevante;
 d) Efetuar o pagamento conforme acordado.
 
-5. OBRIGACOES DO CONTRATADO
-A clinica se compromete a:
+5. OBRIGAÇÕES DO CONTRATADO
+A clínica se compromete a:
 a) Realizar os procedimentos conforme descrito, utilizando produtos de qualidade e dentro da validade;
-b) Fornecer todas as orientacoes necessarias ao paciente;
-c) Manter sigilo sobre as informacoes do paciente.
+b) Fornecer todas as orientações necessárias ao paciente;
+c) Manter sigilo sobre as informações do paciente.
 
 6. CANCELAMENTO E REAGENDAMENTO
-Em caso de cancelamento com menos de 24 horas de antecedencia, podera ser cobrada taxa de ate 20% do valor do procedimento. Reagendamentos podem ser feitos com ate 24 horas de antecedencia sem custo adicional.
+Em caso de cancelamento com menos de 24 horas de antecedência, poderá ser cobrada taxa de até 20% do valor do procedimento. Reagendamentos podem ser feitos com até 24 horas de antecedência sem custo adicional.
 
-7. DISPOSICOES GERAIS
-Este contrato e regido pelas leis brasileiras. Eventuais disputas serao resolvidas no foro da comarca da clinica.
+7. DISPOSIÇÕES GERAIS
+Este contrato é regido pelas leis brasileiras. Eventuais disputas serão resolvidas no foro da comarca da clínica.
 
 Data: {{data}}
 

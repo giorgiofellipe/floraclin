@@ -47,11 +47,11 @@ export const DEFAULT_PRODUCTS = [
 
 export const CONSENT_TYPE_LABELS: Record<string, string> = {
   general: 'Consentimento Geral',
-  botox: 'Toxina Botulinica',
-  filler: 'Preenchedor / Acido Hialuronico',
+  botox: 'Toxina Botulínica',
+  filler: 'Preenchedor / Ácido Hialurônico',
   biostimulator: 'Bioestimulador',
   custom: 'Personalizado',
-  service_contract: 'Contrato de Servico',
+  service_contract: 'Contrato de Serviço',
 }
 
 export const PROCEDURE_STATUS_COLORS: Record<string, string> = {

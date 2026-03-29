@@ -10,7 +10,8 @@ import { verifyTenantOwnership } from './helpers'
 export async function createFinancialEntry(
   tenantId: string,
   userId: string,
-  data: CreateFinancialEntryInput
+  data: CreateFinancialEntryInput,
+  txDb?: typeof db
 ) {
   // Verify foreign IDs belong to this tenant
   await Promise.all([
@@ -23,7 +24,7 @@ export async function createFinancialEntry(
       : []),
   ])
 
-  return withTransaction(async (tx) => {
+  const execute = async (tx: typeof db) => {
     const [entry] = await tx
       .insert(financialEntries)
       .values({
@@ -59,7 +60,12 @@ export async function createFinancialEntry(
     await tx.insert(installments).values(installmentRows)
 
     return entry
-  })
+  }
+
+  if (txDb) {
+    return execute(txDb)
+  }
+  return withTransaction(execute)
 }
 
 export async function listFinancialEntries(

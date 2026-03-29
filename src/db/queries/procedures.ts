@@ -12,7 +12,7 @@ import {
   consentAcceptances,
   consentTemplates,
 } from '@/db/schema'
-import { eq, and, desc, isNull, sql } from 'drizzle-orm'
+import { eq, and, desc, isNull, sql, inArray } from 'drizzle-orm'
 import type { CreateProcedureInput, UpdateProcedureInput } from '@/validations/procedure'
 import { verifyTenantOwnership, verifyUserBelongsToTenant } from './helpers'
 
@@ -94,7 +94,6 @@ export async function createProcedure(
       nextSessionObjectives: data.nextSessionObjectives ?? null,
       financialPlan: data.financialPlan ?? null,
       status: 'planned',
-      performedAt: new Date(),
     })
     .returning()
 
@@ -376,6 +375,7 @@ export async function cancelProcedure(
       and(
         eq(procedureRecords.id, procedureId),
         eq(procedureRecords.tenantId, tenantId),
+        inArray(procedureRecords.status, ['planned', 'approved']),
         isNull(procedureRecords.deletedAt)
       )
     )

@@ -28,6 +28,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 import { PROCEDURE_STATUS_COLORS, PROCEDURE_STATUS_LABELS } from '@/lib/constants'
 import { cancelProcedureAction } from '@/actions/procedures'
 import type { ProcedureListItem } from '@/db/queries/procedures'
@@ -108,6 +109,8 @@ export function ProcedureCard({
         setCancelDialogOpen(false)
         setCancelReason('')
         onStatusChange?.()
+      } else {
+        toast.error(result.error ?? 'Erro ao cancelar procedimento')
       }
     } finally {
       setCancelling(false)

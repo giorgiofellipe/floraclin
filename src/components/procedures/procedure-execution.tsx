@@ -864,6 +864,7 @@ export function ProcedureExecution({
             patientId={patientId}
             procedureRecordId={procedure.id}
             refreshKey={photoRefreshKey}
+            timelineStage="pre"
           />
         </div>
       </Section>
@@ -890,6 +891,7 @@ export function ProcedureExecution({
             patientId={patientId}
             procedureRecordId={procedure.id}
             refreshKey={photoRefreshKey}
+            timelineStage="immediate_post"
           />
         </div>
       </Section>
