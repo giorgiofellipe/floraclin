@@ -29,6 +29,7 @@ const CONSENT_TYPE_OPTIONS: { value: ConsentType; label: string }[] = [
   { value: 'filler', label: 'Preenchedor / Ácido Hialurônico' },
   { value: 'biostimulator', label: 'Bioestimulador' },
   { value: 'custom', label: 'Personalizado' },
+  { value: 'service_contract', label: 'Contrato de Serviço' },
 ]
 
 interface ExistingTemplate {

@@ -22,6 +22,7 @@ const CONSENT_TYPE_LABELS: Record<string, string> = {
   filler: 'Preenchedor / Ácido Hialurônico',
   biostimulator: 'Bioestimulador',
   custom: 'Personalizado',
+  service_contract: 'Contrato de Serviço',
 }
 
 const METHOD_LABELS: Record<string, string> = {
@@ -74,7 +75,7 @@ export function ConsentHistory({ patientId }: ConsentHistoryProps) {
     return (
       <Card className="border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         <CardHeader>
-          <CardTitle className="font-semibold text-[#2A2A2A]">Termos de Consentimento</CardTitle>
+          <CardTitle className="font-semibold text-[#2A2A2A]">Contratos e Termos de Consentimento</CardTitle>
         </CardHeader>
         <CardContent className="py-6 text-center text-sm text-mid">
           Nenhum termo assinado.
@@ -86,7 +87,7 @@ export function ConsentHistory({ patientId }: ConsentHistoryProps) {
   return (
     <Card className="border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
       <CardHeader>
-        <CardTitle className="font-semibold text-[#2A2A2A]">Termos de Consentimento</CardTitle>
+        <CardTitle className="font-semibold text-[#2A2A2A]">Contratos e Termos de Consentimento</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-3">

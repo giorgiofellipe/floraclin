@@ -16,6 +16,7 @@ const CONSENT_TYPE_LABELS: Record<string, string> = {
   filler: 'Preenchedor / Ácido Hialurônico',
   biostimulator: 'Bioestimulador',
   custom: 'Personalizado',
+  service_contract: 'Contrato de Serviço',
 }
 
 interface ConsentTemplate {

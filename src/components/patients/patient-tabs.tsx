@@ -8,7 +8,7 @@ const TABS = [
   { key: 'anamnese', label: 'Anamnese' },
   { key: 'procedimentos', label: 'Procedimentos' },
   { key: 'fotos', label: 'Fotos' },
-  { key: 'termos', label: 'Termos' },
+  { key: 'termos', label: 'Contratos e Termos' },
   { key: 'financeiro', label: 'Financeiro' },
   { key: 'timeline', label: 'Timeline' },
 ] as const
