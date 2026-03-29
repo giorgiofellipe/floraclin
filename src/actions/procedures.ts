@@ -20,7 +20,7 @@ import {
   getConsentAcceptancesForProcedure,
 } from '@/db/queries/procedures'
 import { createFinancialEntry } from '@/db/queries/financial'
-import { financialEntries } from '@/db/schema'
+import { financialEntries, installments } from '@/db/schema'
 import { eq, and, isNull } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { saveFaceDiagram, getFaceDiagram, getPreviousDiagramPoints } from '@/db/queries/face-diagrams'
@@ -165,7 +165,6 @@ export async function updateProcedureAction(
     notes?: string
     followUpDate?: string
     nextSessionObjectives?: string
-    status?: 'planned' | 'approved' | 'executed' | 'cancelled'
     diagrams?: Array<{
       viewType: DiagramViewType
       points: Array<{
@@ -191,7 +190,9 @@ export async function updateProcedureAction(
 ): Promise<ProcedureActionResult> {
   const ctx = await requireRole('owner', 'practitioner')
 
-  const parsed = updateProcedureSchema.safeParse({ id, ...formData })
+  // Defense-in-depth: strip status from payload to prevent lifecycle bypass
+  const { status: _stripStatus, ...safeFormData } = formData as Record<string, unknown>
+  const parsed = updateProcedureSchema.safeParse({ id, ...safeFormData })
   if (!parsed.success) {
     return { success: false, fieldErrors: parsed.error.flatten().fieldErrors }
   }
@@ -250,7 +251,7 @@ export async function updateProcedureAction(
 // ─── Get Procedure ──────────────────────────────────────────────────
 
 export async function getProcedureAction(id: string) {
-  const ctx = await getAuthContext()
+  const ctx = await requireRole('owner', 'practitioner')
 
   const procedure = await getProcedure(ctx.tenantId, id)
   if (!procedure) {
@@ -530,9 +531,9 @@ export async function cancelProcedureAction(
         throw new Error('Falha ao cancelar procedimento')
       }
 
-      // 2. If approved, cancel associated financial entry
+      // 2. If approved, cancel associated financial entry and its installments
       if (procedure.status === 'approved') {
-        await (tx as unknown as typeof db)
+        const cancelledEntries = await (tx as unknown as typeof db)
           .update(financialEntries)
           .set({
             status: 'cancelled',
@@ -545,6 +546,23 @@ export async function cancelProcedureAction(
               isNull(financialEntries.deletedAt)
             )
           )
+          .returning({ id: financialEntries.id })
+
+        // Cancel all installments associated with the cancelled financial entries
+        for (const entry of cancelledEntries) {
+          await (tx as unknown as typeof db)
+            .update(installments)
+            .set({
+              status: 'cancelled',
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(installments.financialEntryId, entry.id),
+                eq(installments.tenantId, ctx.tenantId)
+              )
+            )
+        }
       }
 
       return updated

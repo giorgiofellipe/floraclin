@@ -20,7 +20,6 @@ import { FaceDiagramEditor } from '@/components/face-diagram/face-diagram-editor
 import { ConsentViewer } from '@/components/consent/consent-viewer'
 import { SignaturePad } from '@/components/consent/signature-pad'
 import {
-  checkConsentStatusAction,
   approveProcedureAction,
 } from '@/actions/procedures'
 import {
@@ -254,7 +253,7 @@ export function ProcedureApproval({
 
     const updated = await Promise.all(
       statuses.map(async (s) => {
-        const result = await checkConsentStatusAction(patient.id, s.type)
+        const result = await checkConsentForProcedureAction(patient.id, procedure.id, s.type)
         return {
           ...s,
           signed: !!result.data,
@@ -263,7 +262,7 @@ export function ProcedureApproval({
       })
     )
     setConsentStatuses(updated)
-  }, [requiredConsentTypes, patient.id])
+  }, [requiredConsentTypes, patient.id, procedure.id])
 
   useEffect(() => {
     if (requiredConsentTypes.length > 0) {

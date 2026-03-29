@@ -125,7 +125,7 @@ export async function acceptConsentAction(
     signatureData?: string
   }
 ): Promise<ConsentActionState> {
-  const ctx = await getAuthContext()
+  const ctx = await requireRole('owner', 'practitioner')
 
   const parsed = consentAcceptanceSchema.safeParse(data)
   if (!parsed.success) {
