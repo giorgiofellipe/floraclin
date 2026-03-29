@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { financialEntries, installments, patients, procedureRecords, procedureTypes, appointments } from '@/db/schema'
-import { eq, and, isNull, sql, gte, lte, count, sum, desc } from 'drizzle-orm'
+import { eq, and, isNull, sql, gte, lte, count, sum, desc, inArray } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import type { CreateFinancialEntryInput, FinancialFilterInput } from '@/validations/financial'
 import type { PaymentMethod, FinancialStatus } from '@/types'
@@ -198,7 +198,7 @@ export async function payInstallment(
         and(
           eq(installments.tenantId, tenantId),
           eq(installments.id, installmentId),
-          eq(installments.status, 'pending')
+          inArray(installments.status, ['pending', 'overdue'])
         )
       )
       .returning()

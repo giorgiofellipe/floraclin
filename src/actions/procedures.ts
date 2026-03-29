@@ -2,6 +2,7 @@
 
 import { requireRole, getAuthContext } from '@/lib/auth'
 import { withTransaction } from '@/lib/tenant'
+import { revalidatePath } from 'next/cache'
 import { createAuditLog } from '@/lib/audit'
 import {
   createProcedureSchema,
@@ -142,6 +143,7 @@ export async function createProcedureAction(
       },
     })
 
+    revalidatePath('/pacientes')
     return { success: true, data: result }
   } catch (err) {
     return {
@@ -239,6 +241,7 @@ export async function updateProcedureAction(
       entityId: id,
     })
 
+    revalidatePath('/pacientes')
     return { success: true, data: result }
   } catch (err) {
     return {
@@ -435,6 +438,8 @@ export async function approveProcedureAction(
       },
     })
 
+    revalidatePath('/pacientes')
+    revalidatePath('/financeiro')
     return { success: true, data: result }
   } catch (err) {
     return {
@@ -541,6 +546,7 @@ export async function executeProcedureAction(
       },
     })
 
+    revalidatePath('/pacientes')
     return { success: true, data: result }
   } catch (err) {
     return {
@@ -634,6 +640,8 @@ export async function cancelProcedureAction(
       },
     })
 
+    revalidatePath('/pacientes')
+    revalidatePath('/financeiro')
     return { success: true, data: result }
   } catch (err) {
     return {

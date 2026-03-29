@@ -1,6 +1,7 @@
 'use server'
 
 import { requireRole, getAuthContext } from '@/lib/auth'
+import { revalidatePath } from 'next/cache'
 import { withTransaction } from '@/lib/tenant'
 import { createAuditLog } from '@/lib/audit'
 import { productApplicationSchema } from '@/validations/procedure'
@@ -59,6 +60,7 @@ export async function saveProductApplicationsAction(
       },
     })
 
+    revalidatePath('/pacientes')
     return { success: true, data: result }
   } catch (err) {
     return {

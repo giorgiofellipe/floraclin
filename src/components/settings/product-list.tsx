@@ -67,6 +67,7 @@ interface Product {
   activeIngredient: string | null
   defaultUnit: string
   isActive: boolean
+  showInDiagram: boolean
 }
 
 interface ProductListProps {
