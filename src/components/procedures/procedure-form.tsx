@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -18,6 +18,7 @@ import {
   CalendarPlus,
   PlusIcon,
   Trash2Icon,
+  DollarSign,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -39,6 +40,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import { MaskedInput } from '@/components/ui/masked-input'
+import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { cn } from '@/lib/utils'
 import { AppointmentForm } from '@/components/scheduling/appointment-form'
 import { FaceDiagramEditor } from '@/components/face-diagram/face-diagram-editor'
@@ -59,7 +62,7 @@ import {
   listPractitionersAction,
   listProcedureTypesForSelectAction,
 } from '@/actions/appointments'
-import type { DiagramViewType, QuantityUnit } from '@/types'
+import type { DiagramViewType, QuantityUnit, PaymentMethod } from '@/types'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
@@ -77,9 +80,21 @@ const CATEGORY_TO_CONSENT: Record<string, string> = {
 }
 
 const STATUS_LABELS: Record<string, string> = {
+  planned: 'Planejado',
+  approved: 'Aprovado',
+  executed: 'Executado',
+  cancelled: 'Cancelado',
+  // Legacy
   in_progress: 'Em andamento',
   completed: 'Concluído',
-  cancelled: 'Cancelado',
+}
+
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  pix: 'PIX',
+  credit_card: 'Cartão de Crédito',
+  debit_card: 'Cartão de Débito',
+  cash: 'Dinheiro',
+  transfer: 'Transferência',
 }
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -105,6 +120,13 @@ interface ConsentTemplate {
   title: string
   content: string
   version: number
+}
+
+interface FinancialPlanState {
+  totalAmount: string // masked currency string
+  installmentCount: number
+  paymentMethod: PaymentMethod | ''
+  notes: string
 }
 
 interface ProcedureFormProps {
@@ -187,6 +209,10 @@ export function ProcedureForm({
   const isReadOnly = mode === 'view'
   const isEdit = mode === 'edit'
 
+  // Determine if we are in planning mode:
+  // Planning mode = creating new procedure OR editing a 'planned' procedure
+  const isPlanningMode = mode === 'create' || procedure?.status === 'planned'
+
   // ─── Form state ──────────────────────────────────────────────────
   const [procedureTypeId, setProcedureTypeId] = useState(
     procedure?.procedureTypeId ?? ''
@@ -208,6 +234,25 @@ export function ProcedureForm({
   const [additionalTypeIds, setAdditionalTypeIds] = useState<string[]>(() => {
     const existing = (procedure as unknown as Record<string, unknown> | null | undefined)?.additionalTypeIds
     return Array.isArray(existing) ? existing as string[] : []
+  })
+
+  // ─── Financial plan state ───────────────────────────────────────
+  const [financialPlan, setFinancialPlan] = useState<FinancialPlanState>(() => {
+    const fp = procedure?.financialPlan as {
+      totalAmount?: number
+      installmentCount?: number
+      paymentMethod?: PaymentMethod
+      notes?: string
+    } | null
+    if (fp && typeof fp === 'object') {
+      return {
+        totalAmount: fp.totalAmount ? maskCurrency(String(Math.round(fp.totalAmount * 100))) : '',
+        installmentCount: fp.installmentCount ?? 1,
+        paymentMethod: fp.paymentMethod ?? '',
+        notes: fp.notes ?? '',
+      }
+    }
+    return { totalAmount: '', installmentCount: 1, paymentMethod: '', notes: '' }
   })
 
   // ─── Data loading state ──────────────────────────────────────────
@@ -233,6 +278,7 @@ export function ProcedureForm({
             id: p.id,
             x: parseFloat(p.x),
             y: parseFloat(p.y),
+            viewType: d.viewType || 'front',
             productName: p.productName,
             activeIngredient: p.activeIngredient ?? undefined,
             quantity: parseFloat(p.quantity),
@@ -295,6 +341,7 @@ export function ProcedureForm({
     clinicalNotes: true,
     followUp: true,
     postPhotos: true,
+    financialPlan: true,
   })
 
   const toggleSection = (section: keyof typeof openSections) => {
@@ -345,13 +392,55 @@ export function ProcedureForm({
     load()
   }, [patientId, procedure?.id])
 
-  // ─── Check consent when procedure type changes ───────────────────
+  // ─── Auto-sum default prices for financial plan total ──────────────
+  const lastAutoSumRef = useRef<string>('')
+
+  useEffect(() => {
+    if (!isPlanningMode || isReadOnly) return
+    if (procedureTypes.length === 0) return
+
+    const allSelectedIds = [procedureTypeId, ...additionalTypeIds].filter(Boolean)
+    if (allSelectedIds.length === 0) {
+      lastAutoSumRef.current = ''
+      return
+    }
+
+    const sum = allSelectedIds.reduce((acc, id) => {
+      const type = procedureTypes.find((t) => t.id === id)
+      if (type?.defaultPrice) {
+        return acc + parseFloat(type.defaultPrice)
+      }
+      return acc
+    }, 0)
+
+    if (sum <= 0) return
+
+    // Convert sum to cents string then mask
+    const centsStr = String(Math.round(sum * 100))
+    const masked = maskCurrency(centsStr)
+
+    setFinancialPlan((prev) => {
+      // Only auto-fill if current total is empty or matches the previous auto-calculated value
+      if (prev.totalAmount === '' || prev.totalAmount === lastAutoSumRef.current) {
+        lastAutoSumRef.current = masked
+        return { ...prev, totalAmount: masked }
+      }
+      // User has manually changed the value — don't override
+      lastAutoSumRef.current = masked
+      return prev
+    })
+  }, [procedureTypeId, additionalTypeIds, procedureTypes, isPlanningMode, isReadOnly])
+
+  // ─── Check consent when procedure type changes (skip in planning mode) ──
   const selectedType = useMemo(
     () => procedureTypes.find((t) => t.id === procedureTypeId),
     [procedureTypes, procedureTypeId]
   )
 
   useEffect(() => {
+    // In planning mode, consent is handled at approval — skip
+    if (isPlanningMode) return
+
     if (!selectedType) {
       setConsentStatus(null)
       setConsentTemplate(null)
@@ -386,11 +475,13 @@ export function ProcedureForm({
     }
 
     checkConsent()
-  }, [selectedType, patientId])
+  }, [selectedType, patientId, isPlanningMode])
 
   // ─── Auto-populate product applications from diagram points ──────
   useEffect(() => {
     if (isReadOnly) return
+    // In planning mode, skip product application auto-population (batch/lot is for execution)
+    if (isPlanningMode) return
 
     const totals = new Map<
       string,
@@ -435,7 +526,7 @@ export function ProcedureForm({
 
       return newApps
     })
-  }, [diagramPoints, isReadOnly])
+  }, [diagramPoints, isReadOnly, isPlanningMode])
 
   // ─── Handlers ────────────────────────────────────────────────────
 
@@ -503,18 +594,30 @@ export function ProcedureForm({
             ]
           : undefined
 
+      // Build financial plan payload (planning mode only)
+      const financialPlanPayload = isPlanningMode && financialPlan.totalAmount
+        ? {
+            totalAmount: parseCurrency(financialPlan.totalAmount),
+            installmentCount: financialPlan.installmentCount,
+            paymentMethod: financialPlan.paymentMethod || undefined,
+            notes: financialPlan.notes || undefined,
+          }
+        : undefined
+
       const payload = {
         patientId,
         procedureTypeId,
         additionalTypeIds: additionalTypeIds.length > 0 ? additionalTypeIds : undefined,
-        technique: technique || undefined,
-        clinicalResponse: clinicalResponse || undefined,
-        adverseEffects: adverseEffects || undefined,
-        notes: notes || undefined,
-        followUpDate: followUpDate || undefined,
-        nextSessionObjectives: nextSessionObjectives || undefined,
+        // In planning mode, don't send execution-phase fields
+        technique: isPlanningMode ? undefined : (technique || undefined),
+        clinicalResponse: isPlanningMode ? undefined : (clinicalResponse || undefined),
+        adverseEffects: isPlanningMode ? undefined : (adverseEffects || undefined),
+        notes: isPlanningMode ? undefined : (notes || undefined),
+        followUpDate: isPlanningMode ? undefined : (followUpDate || undefined),
+        nextSessionObjectives: isPlanningMode ? undefined : (nextSessionObjectives || undefined),
         diagrams: diagramsPayload,
-        productApplications: productApps.length > 0 ? productApps : undefined,
+        productApplications: isPlanningMode ? undefined : (productApps.length > 0 ? productApps : undefined),
+        financialPlan: financialPlanPayload,
       }
 
       let result
@@ -525,7 +628,22 @@ export function ProcedureForm({
       }
 
       if (result.success) {
-        if (followUpDate) {
+        if (isPlanningMode) {
+          if (isEdit) {
+            // Editing existing planned procedure — stay on page, just show success
+            router.refresh()
+          } else {
+            // Creating new planned procedure — redirect to its edit page
+            const createdId = (result.data as { id: string } | undefined)?.id
+            if (createdId) {
+              router.push(`/pacientes/${patientId}/procedimentos/${createdId}/editar`)
+              router.refresh()
+            } else {
+              router.push(`/pacientes/${patientId}?tab=procedimentos`)
+              router.refresh()
+            }
+          }
+        } else if (followUpDate) {
           setShowFollowUpPrompt(true)
         } else {
           router.push(`/pacientes/${patientId}?tab=procedimentos`)
@@ -543,6 +661,7 @@ export function ProcedureForm({
     isSubmitting,
     isReadOnly,
     isEdit,
+    isPlanningMode,
     procedure?.id,
     patientId,
     procedureTypeId,
@@ -555,6 +674,7 @@ export function ProcedureForm({
     nextSessionObjectives,
     diagramPoints,
     productApps,
+    financialPlan,
     router,
   ])
 
@@ -566,13 +686,15 @@ export function ProcedureForm({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-[#2A2A2A]">
-            {isEdit
-              ? 'Editar Procedimento'
-              : mode === 'view'
-                ? 'Procedimento'
-                : 'Novo Procedimento'}
+            {isPlanningMode
+              ? (isEdit ? 'Editar Planejamento' : 'Novo Planejamento')
+              : (isEdit
+                  ? 'Editar Procedimento'
+                  : mode === 'view'
+                    ? 'Procedimento'
+                    : 'Novo Procedimento')}
           </h1>
-          {procedure && (
+          {procedure && !isPlanningMode && (
             <p className="mt-1.5 text-sm text-mid">
               Realizado em{' '}
               {format(
@@ -582,6 +704,11 @@ export function ProcedureForm({
               )}
             </p>
           )}
+          {isPlanningMode && (
+            <p className="mt-1.5 text-sm text-mid">
+              Defina os procedimentos, pontos de aplicacao e plano financeiro.
+            </p>
+          )}
         </div>
 
         {procedure && (
@@ -589,12 +716,19 @@ export function ProcedureForm({
             variant="outline"
             className={cn(
               'px-3 py-1',
+              procedure.status === 'planned' &&
+                'border-amber bg-[#FFF4EF] text-amber-dark',
+              procedure.status === 'approved' &&
+                'border-sage bg-[#F0F7F1] text-sage',
+              procedure.status === 'executed' &&
+                'border-sage bg-[#F0F7F1] text-[#2A2A2A]',
+              procedure.status === 'cancelled' &&
+                'border-red-300 bg-red-100 text-red-800',
+              // Legacy
               procedure.status === 'completed' &&
                 'border-sage bg-sage/10 text-sage',
               procedure.status === 'in_progress' &&
                 'border-amber bg-amber-light text-amber-dark',
-              procedure.status === 'cancelled' &&
-                'border-red-300 bg-red-100 text-red-800'
             )}
           >
             {STATUS_LABELS[procedure.status] ?? procedure.status}
@@ -701,8 +835,8 @@ export function ProcedureForm({
         </CardContent>
       </Card>
 
-      {/* ── Consent Section ─────────────────────────────────────────── */}
-      {procedureTypeId && (
+      {/* ── Consent Section (HIDDEN in planning mode) ──────────────── */}
+      {!isPlanningMode && procedureTypeId && (
         <Section
           title="Consentimento"
           icon={<FileText className="size-4 text-forest" />}
@@ -778,31 +912,33 @@ export function ProcedureForm({
         </Section>
       )}
 
-      {/* ── Pre-Procedure Photos ────────────────────────────────────── */}
-      <Section
-        title="Fotos Pre-Procedimento"
-        icon={<Camera className="size-4 text-forest" />}
-        open={openSections.prePhotos}
-        onToggle={() => toggleSection('prePhotos')}
-      >
-        {!isReadOnly && (
-          <PhotoUploader
-            patientId={patientId}
-            procedureRecordId={procedure?.id}
-            onUploadComplete={() => setPhotoRefreshKey((k) => k + 1)}
-            defaultStage="pre"
-          />
-        )}
-        {procedure?.id && (
-          <div className="mt-4">
-            <PhotoGrid
+      {/* ── Pre-Procedure Photos (HIDDEN in planning mode) ─────────── */}
+      {!isPlanningMode && (
+        <Section
+          title="Fotos Pre-Procedimento"
+          icon={<Camera className="size-4 text-forest" />}
+          open={openSections.prePhotos}
+          onToggle={() => toggleSection('prePhotos')}
+        >
+          {!isReadOnly && (
+            <PhotoUploader
               patientId={patientId}
-              procedureRecordId={procedure.id}
-              refreshKey={photoRefreshKey}
+              procedureRecordId={procedure?.id}
+              onUploadComplete={() => setPhotoRefreshKey((k) => k + 1)}
+              defaultStage="pre"
             />
-          </div>
-        )}
-      </Section>
+          )}
+          {procedure?.id && (
+            <div className="mt-4">
+              <PhotoGrid
+                patientId={patientId}
+                procedureRecordId={procedure.id}
+                refreshKey={photoRefreshKey}
+              />
+            </div>
+          )}
+        </Section>
+      )}
 
       {/* ── Face Diagram ────────────────────────────────────────────── */}
       <Section
@@ -840,8 +976,155 @@ export function ProcedureForm({
         />
       </Section>
 
-      {/* ── Product Details ─────────────────────────────────────────── */}
-      {productApps.length > 0 && (
+      {/* ── Financial Plan (ONLY in planning mode) ──────────────────── */}
+      {isPlanningMode && (
+        <Section
+          title="Plano Financeiro"
+          icon={<DollarSign className="size-4 text-forest" />}
+          open={openSections.financialPlan}
+          onToggle={() => toggleSection('financialPlan')}
+          badge={
+            financialPlan.totalAmount ? (
+              <Badge variant="outline" className="text-xs border-sage/30 bg-sage/5 text-sage">
+                R$ {financialPlan.totalAmount}
+              </Badge>
+            ) : undefined
+          }
+        >
+          <div className="space-y-5">
+            <p className="text-xs text-mid">
+              Defina o valor e condicoes de pagamento. A entrada financeira sera criada somente apos a aprovacao.
+            </p>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {/* Total Amount */}
+              <div>
+                <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
+                  Valor total
+                </Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mid">
+                    R$
+                  </span>
+                  <MaskedInput
+                    mask={maskCurrency}
+                    value={financialPlan.totalAmount}
+                    onChange={(e) =>
+                      setFinancialPlan((prev) => ({
+                        ...prev,
+                        totalAmount: e.target.value,
+                      }))
+                    }
+                    placeholder="0,00"
+                    disabled={isReadOnly}
+                    className="pl-10 border-sage/20 focus:border-sage/40"
+                  />
+                </div>
+              </div>
+
+              {/* Installment Count */}
+              <div>
+                <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
+                  Parcelas
+                </Label>
+                <Select
+                  value={String(financialPlan.installmentCount)}
+                  onValueChange={(value) =>
+                    setFinancialPlan((prev) => ({
+                      ...prev,
+                      installmentCount: parseInt(String(value ?? '1'), 10),
+                    }))
+                  }
+                  disabled={isReadOnly}
+                >
+                  <SelectTrigger className="border-sage/20 focus:border-sage/40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n}x {n === 1 ? '(a vista)' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Payment Method */}
+            <div>
+              <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
+                Forma de pagamento
+              </Label>
+              <Select
+                value={financialPlan.paymentMethod}
+                onValueChange={(value) =>
+                  setFinancialPlan((prev) => ({
+                    ...prev,
+                    paymentMethod: value as PaymentMethod,
+                  }))
+                }
+                disabled={isReadOnly}
+              >
+                <SelectTrigger className="max-w-sm border-sage/20 focus:border-sage/40">
+                  <SelectValue placeholder="Selecione...">
+                    {(value: string) => PAYMENT_METHOD_LABELS[value] ?? value}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
+                Observacoes
+              </Label>
+              <Textarea
+                value={financialPlan.notes}
+                onChange={(e) =>
+                  setFinancialPlan((prev) => ({
+                    ...prev,
+                    notes: e.target.value,
+                  }))
+                }
+                placeholder="Condicoes especiais, descontos, etc."
+                disabled={isReadOnly}
+                className="min-h-[60px] resize-none border-sage/20 focus:border-sage/40"
+                rows={2}
+              />
+            </div>
+
+            {/* Installment preview */}
+            {financialPlan.totalAmount && financialPlan.installmentCount > 1 && (
+              <div className="rounded-[3px] bg-[#F4F6F8] p-3">
+                <p className="text-xs text-mid">
+                  {financialPlan.installmentCount}x de{' '}
+                  <span className="font-medium text-charcoal">
+                    R${' '}
+                    {(
+                      parseCurrency(financialPlan.totalAmount) /
+                      financialPlan.installmentCount
+                    ).toLocaleString('pt-BR', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
+                </p>
+              </div>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {/* ── Product Details (HIDDEN in planning mode) ──────────────── */}
+      {!isPlanningMode && productApps.length > 0 && (
         <Section
           title="Detalhes dos Produtos"
           icon={<Package className="size-4 text-forest" />}
@@ -938,7 +1221,7 @@ export function ProcedureForm({
 
                     <div className="mt-3">
                       <Label className="uppercase tracking-wider text-xs text-mid">
-                        Áreas de aplicação
+                        Areas de aplicacao
                       </Label>
                       <Input
                         value={app.applicationAreas ?? ''}
@@ -977,135 +1260,141 @@ export function ProcedureForm({
         </Section>
       )}
 
-      {/* ── Clinical Notes ──────────────────────────────────────────── */}
-      <Section
-        title="Notas Clínicas"
-        icon={<FileText className="size-4 text-forest" />}
-        open={openSections.clinicalNotes}
-        onToggle={() => toggleSection('clinicalNotes')}
-      >
-        <div className="space-y-5">
-          <div>
-            <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Técnica utilizada
-            </Label>
-            <Textarea
-              value={technique}
-              onChange={(e) => setTechnique(e.target.value)}
-              placeholder="Descreva a técnica utilizada..."
-              disabled={isReadOnly}
-              className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
-              rows={3}
-            />
-          </div>
+      {/* ── Clinical Notes (HIDDEN in planning mode) ───────────────── */}
+      {!isPlanningMode && (
+        <Section
+          title="Notas Clinicas"
+          icon={<FileText className="size-4 text-forest" />}
+          open={openSections.clinicalNotes}
+          onToggle={() => toggleSection('clinicalNotes')}
+        >
+          <div className="space-y-5">
+            <div>
+              <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
+                Tecnica utilizada
+              </Label>
+              <Textarea
+                value={technique}
+                onChange={(e) => setTechnique(e.target.value)}
+                placeholder="Descreva a tecnica utilizada..."
+                disabled={isReadOnly}
+                className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
+                rows={3}
+              />
+            </div>
 
-          <div className="border-t border-petal pt-5">
-            <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Resposta clínica
-            </Label>
-            <Textarea
-              value={clinicalResponse}
-              onChange={(e) => setClinicalResponse(e.target.value)}
-              placeholder="Descreva a resposta clínica observada..."
-              disabled={isReadOnly}
-              className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
-              rows={3}
-            />
-          </div>
+            <div className="border-t border-petal pt-5">
+              <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
+                Resposta clinica
+              </Label>
+              <Textarea
+                value={clinicalResponse}
+                onChange={(e) => setClinicalResponse(e.target.value)}
+                placeholder="Descreva a resposta clinica observada..."
+                disabled={isReadOnly}
+                className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
+                rows={3}
+              />
+            </div>
 
-          <div className="border-t border-petal pt-5">
-            <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Efeitos adversos
-            </Label>
-            <Textarea
-              value={adverseEffects}
-              onChange={(e) => setAdverseEffects(e.target.value)}
-              placeholder="Registre quaisquer efeitos adversos observados..."
-              disabled={isReadOnly}
-              className="mt-1.5 min-h-[60px] resize-none border-sage/20 focus:border-sage/40"
-              rows={2}
-            />
-          </div>
+            <div className="border-t border-petal pt-5">
+              <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
+                Efeitos adversos
+              </Label>
+              <Textarea
+                value={adverseEffects}
+                onChange={(e) => setAdverseEffects(e.target.value)}
+                placeholder="Registre quaisquer efeitos adversos observados..."
+                disabled={isReadOnly}
+                className="mt-1.5 min-h-[60px] resize-none border-sage/20 focus:border-sage/40"
+                rows={2}
+              />
+            </div>
 
-          <div className="border-t border-petal pt-5">
-            <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Observações gerais
-            </Label>
-            <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Observações adicionais..."
-              disabled={isReadOnly}
-              className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
-              rows={3}
-            />
+            <div className="border-t border-petal pt-5">
+              <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
+                Observacoes gerais
+              </Label>
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Observacoes adicionais..."
+                disabled={isReadOnly}
+                className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
+                rows={3}
+              />
+            </div>
           </div>
-        </div>
-      </Section>
+        </Section>
+      )}
 
-      {/* ── Follow-up ───────────────────────────────────────────────── */}
-      <Section
-        title="Retorno / Follow-up"
-        icon={<CalendarPlus className="size-4 text-forest" />}
-        open={openSections.followUp}
-        onToggle={() => toggleSection('followUp')}
-        badge={
-          followUpDate ? (
-            <Badge variant="outline" className="text-xs">
-              {format(new Date(followUpDate + 'T12:00:00'), 'dd/MM/yyyy', {
-                locale: ptBR,
-              })}
-            </Badge>
-          ) : undefined
-        }
-      >
-        <div className="space-y-5">
-          <div>
-            <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Data do retorno
-            </Label>
-            <Input
-              type="date"
-              value={followUpDate}
-              onChange={(e) => setFollowUpDate(e.target.value)}
-              disabled={isReadOnly}
-              className="mt-1.5 max-w-xs border-sage/20 focus:border-sage/40"
-              min={format(new Date(), 'yyyy-MM-dd')}
-            />
+      {/* ── Follow-up (HIDDEN in planning mode) ────────────────────── */}
+      {!isPlanningMode && (
+        <Section
+          title="Retorno / Follow-up"
+          icon={<CalendarPlus className="size-4 text-forest" />}
+          open={openSections.followUp}
+          onToggle={() => toggleSection('followUp')}
+          badge={
+            followUpDate ? (
+              <Badge variant="outline" className="text-xs">
+                {format(new Date(followUpDate + 'T12:00:00'), 'dd/MM/yyyy', {
+                  locale: ptBR,
+                })}
+              </Badge>
+            ) : undefined
+          }
+        >
+          <div className="space-y-5">
+            <div>
+              <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
+                Data do retorno
+              </Label>
+              <Input
+                type="date"
+                value={followUpDate}
+                onChange={(e) => setFollowUpDate(e.target.value)}
+                disabled={isReadOnly}
+                className="mt-1.5 max-w-xs border-sage/20 focus:border-sage/40"
+                min={format(new Date(), 'yyyy-MM-dd')}
+              />
+            </div>
+
+            <div className="border-t border-petal pt-5">
+              <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
+                Objetivos da proxima sessao
+              </Label>
+              <Textarea
+                value={nextSessionObjectives}
+                onChange={(e) => setNextSessionObjectives(e.target.value)}
+                placeholder="Descreva os objetivos para a proxima sessao..."
+                disabled={isReadOnly}
+                className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
+                rows={3}
+              />
+            </div>
           </div>
+        </Section>
+      )}
 
-          <div className="border-t border-petal pt-5">
-            <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Objetivos da proxima sessao
-            </Label>
-            <Textarea
-              value={nextSessionObjectives}
-              onChange={(e) => setNextSessionObjectives(e.target.value)}
-              placeholder="Descreva os objetivos para a proxima sessao..."
-              disabled={isReadOnly}
-              className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
-              rows={3}
+      {/* ── Post-Procedure Photos (HIDDEN in planning mode) ────────── */}
+      {!isPlanningMode && (
+        <Section
+          title="Fotos Pos-Procedimento"
+          icon={<Camera className="size-4 text-forest" />}
+          open={openSections.postPhotos}
+          onToggle={() => toggleSection('postPhotos')}
+        >
+          {!isReadOnly && (
+            <PhotoUploader
+              patientId={patientId}
+              procedureRecordId={procedure?.id}
+              onUploadComplete={() => setPhotoRefreshKey((k) => k + 1)}
+              defaultStage="immediate_post"
             />
-          </div>
-        </div>
-      </Section>
-
-      {/* ── Post-Procedure Photos ───────────────────────────────────── */}
-      <Section
-        title="Fotos Pos-Procedimento"
-        icon={<Camera className="size-4 text-forest" />}
-        open={openSections.postPhotos}
-        onToggle={() => toggleSection('postPhotos')}
-      >
-        {!isReadOnly && (
-          <PhotoUploader
-            patientId={patientId}
-            procedureRecordId={procedure?.id}
-            onUploadComplete={() => setPhotoRefreshKey((k) => k + 1)}
-            defaultStage="immediate_post"
-          />
-        )}
-      </Section>
+          )}
+        </Section>
+      )}
 
       {/* ── Submit ──────────────────────────────────────────────────── */}
       {!isReadOnly && (
@@ -1142,7 +1431,9 @@ export function ProcedureForm({
               ) : (
                 <>
                   <Save className="mr-2 size-4" />
-                  {isEdit ? 'Salvar Alterações' : 'Salvar Procedimento'}
+                  {isPlanningMode
+                    ? (isEdit ? 'Salvar Planejamento' : 'Criar Planejamento')
+                    : (isEdit ? 'Salvar Alteracoes' : 'Salvar Procedimento')}
                 </>
               )}
             </Button>

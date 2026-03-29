@@ -127,6 +127,7 @@ export function PointFormModal({
       id: point.id ?? crypto.randomUUID(),
       x: point.x,
       y: point.y,
+      viewType: point.viewType,
       productName: productName.trim(),
       activeIngredient: activeIngredient.trim() || undefined,
       quantity: parsedQuantity,

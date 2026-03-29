@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { financialEntries, installments, patients, procedureRecords, procedureTypes, appointments } from '@/db/schema'
-import { eq, and, isNull, sql, gte, lte, count, sum, desc } from 'drizzle-orm'
+import { eq, and, isNull, sql, gte, lte, count, sum, desc, inArray } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import type { CreateFinancialEntryInput, FinancialFilterInput } from '@/validations/financial'
 import type { PaymentMethod, FinancialStatus } from '@/types'
@@ -10,7 +10,8 @@ import { verifyTenantOwnership } from './helpers'
 export async function createFinancialEntry(
   tenantId: string,
   userId: string,
-  data: CreateFinancialEntryInput
+  data: CreateFinancialEntryInput,
+  txDb?: typeof db
 ) {
   // Verify foreign IDs belong to this tenant
   await Promise.all([
@@ -23,7 +24,7 @@ export async function createFinancialEntry(
       : []),
   ])
 
-  return withTransaction(async (tx) => {
+  const execute = async (tx: typeof db) => {
     const [entry] = await tx
       .insert(financialEntries)
       .values({
@@ -59,7 +60,12 @@ export async function createFinancialEntry(
     await tx.insert(installments).values(installmentRows)
 
     return entry
-  })
+  }
+
+  if (txDb) {
+    return execute(txDb)
+  }
+  return withTransaction(execute)
 }
 
 export async function listFinancialEntries(
@@ -192,7 +198,7 @@ export async function payInstallment(
         and(
           eq(installments.tenantId, tenantId),
           eq(installments.id, installmentId),
-          eq(installments.status, 'pending')
+          inArray(installments.status, ['pending', 'overdue'])
         )
       )
       .returning()

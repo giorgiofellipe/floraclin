@@ -173,7 +173,12 @@ export const procedureRecords = floraclinSchema.table('procedure_records', {
   followUpDate: date('follow_up_date'),
   nextSessionObjectives: text('next_session_objectives'),
   additionalTypeIds: jsonb('additional_type_ids').default([]),
-  status: varchar('status', { length: 20 }).notNull().default('completed'), // CHECK in migration
+  status: varchar('status', { length: 20 }).notNull().default('planned'), // CHECK in migration: ('planned', 'approved', 'executed', 'cancelled')
+  plannedSnapshot: jsonb('planned_snapshot'), // frozen diagram points + quantities at approval
+  approvedAt: timestamp('approved_at', { withTimezone: true }),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  cancellationReason: text('cancellation_reason'),
+  financialPlan: jsonb('financial_plan'), // {totalAmount, installmentCount, paymentMethod, notes}
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -269,7 +274,7 @@ export const productApplications = floraclinSchema.table('product_applications',
 export const consentTemplates = floraclinSchema.table('consent_templates', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
-  type: varchar('type', { length: 30 }).notNull(), // CHECK in migration
+  type: varchar('type', { length: 30 }).notNull(), // CHECK in migration: ('general', 'botox', 'filler', 'biostimulator', 'custom', 'service_contract')
   title: varchar('title', { length: 255 }).notNull(),
   content: text('content').notNull(),
   version: integer('version').notNull().default(1),

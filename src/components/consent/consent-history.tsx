@@ -15,14 +15,7 @@ import {
 import { SignaturePad } from './signature-pad'
 import { getConsentHistoryAction } from '@/actions/consent'
 import { formatDateTime } from '@/lib/utils'
-
-const CONSENT_TYPE_LABELS: Record<string, string> = {
-  general: 'Consentimento Geral',
-  botox: 'Toxina Botulínica',
-  filler: 'Preenchedor / Ácido Hialurônico',
-  biostimulator: 'Bioestimulador',
-  custom: 'Personalizado',
-}
+import { CONSENT_TYPE_LABELS } from '@/lib/constants'
 
 const METHOD_LABELS: Record<string, string> = {
   checkbox: 'Checkbox',
@@ -74,7 +67,7 @@ export function ConsentHistory({ patientId }: ConsentHistoryProps) {
     return (
       <Card className="border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         <CardHeader>
-          <CardTitle className="font-semibold text-[#2A2A2A]">Termos de Consentimento</CardTitle>
+          <CardTitle className="font-semibold text-[#2A2A2A]">Contratos e Termos de Consentimento</CardTitle>
         </CardHeader>
         <CardContent className="py-6 text-center text-sm text-mid">
           Nenhum termo assinado.
@@ -86,7 +79,7 @@ export function ConsentHistory({ patientId }: ConsentHistoryProps) {
   return (
     <Card className="border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
       <CardHeader>
-        <CardTitle className="font-semibold text-[#2A2A2A]">Termos de Consentimento</CardTitle>
+        <CardTitle className="font-semibold text-[#2A2A2A]">Contratos e Termos de Consentimento</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-3">

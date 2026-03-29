@@ -30,17 +30,9 @@ export function FaceDiagramEditor({
   >(null)
 
   // Derive existing product names for autocomplete
-  const existingProducts = React.useMemo(() => {
-    const names = new Set<string>()
-    for (const p of points) {
-      names.add(p.productName)
-    }
-    if (previousPoints) {
-      for (const p of previousPoints) {
-        names.add(p.productName)
-      }
-    }
-    return Array.from(names).sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  // Point count for display
+  const _pointCount = React.useMemo(() => {
+    return points.length
   }, [points, previousPoints])
 
   function handleFaceClick(e: React.MouseEvent<HTMLDivElement>) {
@@ -58,6 +50,7 @@ export function FaceDiagramEditor({
     setEditingPoint({
       x: Math.round(clampedX * 100) / 100,
       y: Math.round(clampedY * 100) / 100,
+      viewType: activeView,
     })
     setModalOpen(true)
   }
@@ -136,10 +129,10 @@ export function FaceDiagramEditor({
                   >
                     <FaceTemplate viewType={vt} gender={gender} />
 
-                    {/* Ghost overlay from previous session */}
+                    {/* Ghost overlay from previous session — filtered by view */}
                     {showPrevious &&
                       previousPoints
-                        ?.filter(() => true)
+                        ?.filter((p) => (p.viewType || 'front') === vt)
                         .map((point) => (
                           <DiagramPoint
                             key={`ghost-${point.id}`}
@@ -148,13 +141,25 @@ export function FaceDiagramEditor({
                           />
                         ))}
 
-                    {/* Current points */}
-                    {points.map((point) => (
+                    {/* Current points — filtered by view */}
+                    {points
+                      .filter((p) => (p.viewType || 'front') === vt)
+                      .map((point) => (
                       <DiagramPoint
                         key={point.id}
                         point={point}
                         onClick={() => handlePointClick(point)}
                         readOnly={readOnly}
+                        changed={
+                          !!previousPoints &&
+                          !!previousPoints.find(
+                            (pp) =>
+                              Math.abs(pp.x - point.x) < 1 &&
+                              Math.abs(pp.y - point.y) < 1 &&
+                              pp.productName === point.productName &&
+                              pp.quantity !== point.quantity
+                          )
+                        }
                       />
                     ))}
 
@@ -175,7 +180,7 @@ export function FaceDiagramEditor({
                 {/* Summary panel */}
                 <div className="w-full md:w-56 lg:w-64">
                   <div className="rounded-lg border p-3">
-                    <DiagramSummary points={points} />
+                    <DiagramSummary points={points} previousPoints={previousPoints} />
                   </div>
                 </div>
               </div>
@@ -191,7 +196,6 @@ export function FaceDiagramEditor({
             point={editingPoint}
             onSave={handleSavePoint}
             onDelete={editingPoint.id ? handleDeletePoint : undefined}
-            existingProducts={existingProducts}
             products={products}
           />
         )}

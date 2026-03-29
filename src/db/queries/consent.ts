@@ -132,7 +132,7 @@ export async function updateConsentTemplate(
 export async function acceptConsent(
   tenantId: string,
   data: ConsentAcceptanceInput,
-  meta: { ipAddress?: string; userAgent?: string }
+  meta: { ipAddress?: string; userAgent?: string; renderedContent?: string }
 ) {
   // Verify foreign IDs belong to this tenant
   await Promise.all([
@@ -148,8 +148,14 @@ export async function acceptConsent(
     throw new Error('Termo não encontrado')
   }
 
-  // Hash the content using Web Crypto API
-  const contentHash = await hashContent(template.content)
+  // For service contracts, use the rendered (interpolated) text the patient actually read
+  // instead of the raw template with placeholders
+  const snapshotContent = (template.type === 'service_contract' && meta.renderedContent)
+    ? meta.renderedContent
+    : template.content
+
+  // Hash the actual content the patient saw
+  const contentHash = await hashContent(snapshotContent)
 
   const [acceptance] = await db
     .insert(consentAcceptances)
@@ -161,7 +167,7 @@ export async function acceptConsent(
       acceptanceMethod: data.acceptanceMethod,
       signatureData: data.signatureData ?? null,
       contentHash,
-      contentSnapshot: template.content,
+      contentSnapshot: snapshotContent,
       acceptedAt: new Date(),
       ipAddress: meta.ipAddress ?? null,
       userAgent: meta.userAgent ?? null,
@@ -199,6 +205,36 @@ export async function getConsentHistory(tenantId: string, patientId: string) {
     .orderBy(desc(consentAcceptances.acceptedAt))
 
   return history
+}
+
+export async function getConsentForProcedure(
+  tenantId: string,
+  patientId: string,
+  procedureRecordId: string,
+  consentType: string
+) {
+  const [acceptance] = await db
+    .select({
+      id: consentAcceptances.id,
+      acceptedAt: consentAcceptances.acceptedAt,
+      acceptanceMethod: consentAcceptances.acceptanceMethod,
+      templateTitle: consentTemplates.title,
+      templateType: consentTemplates.type,
+    })
+    .from(consentAcceptances)
+    .innerJoin(consentTemplates, eq(consentAcceptances.consentTemplateId, consentTemplates.id))
+    .where(
+      and(
+        eq(consentAcceptances.tenantId, tenantId),
+        eq(consentAcceptances.patientId, patientId),
+        eq(consentAcceptances.procedureRecordId, procedureRecordId),
+        eq(consentTemplates.type, consentType)
+      )
+    )
+    .orderBy(desc(consentAcceptances.acceptedAt))
+    .limit(1)
+
+  return acceptance ?? null
 }
 
 export async function getAllTemplateVersions(tenantId: string, type: string) {

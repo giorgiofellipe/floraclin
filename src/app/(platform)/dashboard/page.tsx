@@ -53,7 +53,7 @@ export default async function DashboardPage() {
             className="text-[24px] font-medium text-[#2A2A2A]"
             data-testid="dashboard-greeting"
           >
-            {greeting}, Dra. {firstName}
+            {greeting}, {firstName}
           </h1>
           <p className="mt-1 text-[13px] text-[#7A7A7A]">
             {subtitleParts.join(' · ')}

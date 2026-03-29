@@ -25,6 +25,7 @@ interface PhotoGridProps {
   procedureRecordId?: string
   onAnnotate?: (photo: PhotoAssetWithUrl) => void
   refreshKey?: number
+  timelineStage?: string
 }
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -34,6 +35,7 @@ export function PhotoGrid({
   procedureRecordId,
   onAnnotate,
   refreshKey,
+  timelineStage,
 }: PhotoGridProps) {
   const [photosByStage, setPhotosByStage] = useState<PhotosByStage[]>([])
   const [loading, setLoading] = useState(true)
@@ -71,7 +73,9 @@ export function PhotoGrid({
     }
   }, [deleteTarget, loadPhotos])
 
-  const stagesWithPhotos = photosByStage.filter((s) => s.photos.length > 0)
+  const stagesWithPhotos = photosByStage
+    .filter((s) => s.photos.length > 0)
+    .filter((s) => !timelineStage || s.stage === timelineStage)
 
   if (loading) {
     return (

@@ -6,7 +6,7 @@ import Link from 'next/link'
 import type { Patient } from '@/db/queries/patients'
 import type { PaginatedResult } from '@/types'
 import { deletePatientAction } from '@/actions/patients'
-import { formatDate } from '@/lib/utils'
+import { formatDate, maskCPF } from '@/lib/utils'
 import { PatientForm } from './patient-form'
 
 import { Button } from '@/components/ui/button'
@@ -187,7 +187,7 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
                     {patient.email || '—'}
                   </TableCell>
                   <TableCell className="hidden md:table-cell text-mid">
-                    {patient.cpf || '—'}
+                    {patient.cpf ? maskCPF(patient.cpf) : '—'}
                   </TableCell>
                   <TableCell className="hidden lg:table-cell text-mid">
                     {formatDate(patient.createdAt)}

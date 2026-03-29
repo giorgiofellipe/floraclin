@@ -53,7 +53,7 @@
       "anamnesis": "Anamnese",
       "procedures": "Procedimentos",
       "photos": "Fotos",
-      "consent": "Termos",
+      "consent": "Contratos e Termos",
       "financial": "Financeiro",
       "timeline": "Timeline"
     }
@@ -129,7 +129,7 @@
     }
   },
   "consent": {
-    "title": "Termos de Consentimento",
+    "title": "Contratos e Termos de Consentimento",
     "newConsent": "Novo Termo",
     "accept": "Li e concordo com os termos acima",
     "sign": "Assinar",
@@ -141,7 +141,8 @@
       "botox": "Toxina Botulínica",
       "filler": "Preenchedor / Ácido Hialurônico",
       "biostimulator": "Bioestimulador",
-      "custom": "Personalizado"
+      "custom": "Personalizado",
+      "service_contract": "Contrato de Serviço"
     }
   },
   "scheduling": {
@@ -196,7 +197,7 @@
       "clinic": "Clínica",
       "procedures": "Procedimentos",
       "team": "Equipe",
-      "consent": "Termos",
+      "consent": "Contratos e Termos",
       "scheduling": "Agendamento"
     },
     "clinicName": "Nome da clínica",

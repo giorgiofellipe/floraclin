@@ -85,7 +85,7 @@ export function PatientConsentTab({ patientId }: PatientConsentTabProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-mid">Termos de consentimento do paciente</p>
+        <p className="text-sm text-mid">Contratos e termos de consentimento do paciente</p>
         <Button onClick={() => setShowNewConsent(true)}>
           <Plus className="size-4 mr-1" />
           Novo Termo
@@ -112,7 +112,7 @@ export function PatientConsentTab({ patientId }: PatientConsentTabProps) {
               <FileCheck className="mb-2 size-8" />
               <p className="text-sm">Nenhum modelo de termo cadastrado.</p>
               <p className="text-xs mt-1">
-                Cadastre modelos em Configurações &gt; Termos de Consentimento.
+                Cadastre modelos em Configurações &gt; Contratos e Termos.
               </p>
             </div>
           ) : (

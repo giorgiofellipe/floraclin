@@ -14,6 +14,7 @@ import {
   getConsentHistory,
   getActiveConsentForType,
   getConsentTemplateById,
+  getConsentForProcedure,
 } from '@/db/queries/consent'
 
 export type ConsentActionState = {
@@ -122,9 +123,10 @@ export async function acceptConsentAction(
     procedureRecordId?: string
     acceptanceMethod: 'checkbox' | 'signature' | 'both'
     signatureData?: string
+    renderedContent?: string
   }
 ): Promise<ConsentActionState> {
-  const ctx = await getAuthContext()
+  const ctx = await requireRole('owner', 'practitioner')
 
   const parsed = consentAcceptanceSchema.safeParse(data)
   if (!parsed.success) {
@@ -142,6 +144,7 @@ export async function acceptConsentAction(
       const result = await acceptConsent(ctx.tenantId, parsed.data, {
         ipAddress,
         userAgent,
+        renderedContent: data.renderedContent,
       })
 
       await createAuditLog({
@@ -164,6 +167,18 @@ export async function acceptConsentAction(
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Erro ao registrar aceite' }
   }
+}
+
+// ─── Per-Procedure Consent Check ───────────────────────────────────
+
+export async function checkConsentForProcedureAction(
+  patientId: string,
+  procedureRecordId: string,
+  consentType: string
+) {
+  const ctx = await getAuthContext()
+  const consent = await getConsentForProcedure(ctx.tenantId, patientId, procedureRecordId, consentType)
+  return { success: true, data: consent }
 }
 
 // ─── History Actions ────────────────────────────────────────────────

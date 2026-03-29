@@ -59,7 +59,7 @@ export function ProcedureList({ patientId }: ProcedureListProps) {
       {/* Header with "New Procedure" button */}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-[#2A2A2A]">
-          Evolução Clínica
+          Evolucao Clinica
         </h2>
         <Button
           onClick={handleNewProcedure}
@@ -90,14 +90,16 @@ export function ProcedureList({ patientId }: ProcedureListProps) {
 
           {/* Procedure cards */}
           <div className="space-y-3">
-            {procedures.map((procedure, index) => (
+            {procedures.map((procedure) => (
               <div key={procedure.id} className="group relative pl-14">
                 {/* Timeline dot */}
                 <div className="absolute left-[19px] top-5 size-3 rounded-full border-2 border-sage bg-white shadow-sm transition-colors group-hover:bg-sage/20" />
 
                 <ProcedureCard
                   procedure={procedure}
+                  patientId={patientId}
                   onClick={() => handleProcedureClick(procedure.id)}
+                  onStatusChange={loadProcedures}
                 />
               </div>
             ))}

@@ -4,6 +4,7 @@ export interface DiagramPointData {
   id: string
   x: number // 0-100 relative
   y: number // 0-100 relative
+  viewType?: string // 'front' | 'left_profile' | 'right_profile' — which face view this point belongs to
   productName: string
   activeIngredient?: string
   quantity: number

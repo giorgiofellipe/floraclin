@@ -45,6 +45,29 @@ export const DEFAULT_PRODUCTS = [
   { name: 'Skinvive', category: 'skinbooster', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL' },
 ] as const
 
+export const CONSENT_TYPE_LABELS: Record<string, string> = {
+  general: 'Consentimento Geral',
+  botox: 'Toxina Botulínica',
+  filler: 'Preenchedor / Ácido Hialurônico',
+  biostimulator: 'Bioestimulador',
+  custom: 'Personalizado',
+  service_contract: 'Contrato de Serviço',
+}
+
+export const PROCEDURE_STATUS_COLORS: Record<string, string> = {
+  planned: 'bg-[#FFF4EF] text-[#D4845A]',
+  approved: 'bg-[#F0F7F1] text-[#4A6B52]',
+  executed: 'bg-[#F0F7F1] text-[#2A2A2A]',
+  cancelled: 'bg-[#F4F6F8] text-[#7A7A7A]',
+}
+
+export const PROCEDURE_STATUS_LABELS: Record<string, string> = {
+  planned: 'Planejado',
+  approved: 'Aprovado',
+  executed: 'Executado',
+  cancelled: 'Cancelado',
+}
+
 export const DEFAULT_WORKING_HOURS = {
   mon: { start: '08:00', end: '18:00', enabled: true },
   tue: { start: '08:00', end: '18:00', enabled: true },

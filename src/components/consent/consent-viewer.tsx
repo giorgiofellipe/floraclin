@@ -9,14 +9,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { SignaturePad } from './signature-pad'
 import { acceptConsentAction } from '@/actions/consent'
 import type { AcceptanceMethod } from '@/types'
-
-const CONSENT_TYPE_LABELS: Record<string, string> = {
-  general: 'Consentimento Geral',
-  botox: 'Toxina Botulínica',
-  filler: 'Preenchedor / Ácido Hialurônico',
-  biostimulator: 'Bioestimulador',
-  custom: 'Personalizado',
-}
+import { CONSENT_TYPE_LABELS } from '@/lib/constants'
 
 interface ConsentTemplate {
   id: string

@@ -75,6 +75,7 @@ interface Product {
   activeIngredient: string | null
   defaultUnit: string
   isActive: boolean
+  showInDiagram: boolean
 }
 
 interface SettingsPageClientProps {
@@ -91,7 +92,7 @@ const TABS = [
   { key: 'procedimentos', label: 'Procedimentos', icon: SyringeIcon },
   { key: 'produtos', label: 'Produtos', icon: PackageIcon },
   { key: 'equipe', label: 'Equipe', icon: UsersIcon },
-  { key: 'termos', label: 'Termos', icon: FileTextIcon },
+  { key: 'termos', label: 'Contratos e Termos', icon: FileTextIcon },
   { key: 'agendamento', label: 'Agendamento', icon: CalendarIcon },
   { key: 'auditoria', label: 'Auditoria', icon: ShieldCheckIcon },
 ] as const
