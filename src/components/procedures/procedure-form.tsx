@@ -979,7 +979,7 @@ export function ProcedureForm({
       {/* ── Financial Plan (ONLY in planning mode) ──────────────────── */}
       {isPlanningMode && (
         <Section
-          title="Plano Financeiro"
+          title="Orçamento"
           icon={<DollarSign className="size-4 text-forest" />}
           open={openSections.financialPlan}
           onToggle={() => toggleSection('financialPlan')}
