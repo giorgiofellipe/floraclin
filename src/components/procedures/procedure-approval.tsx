@@ -355,6 +355,7 @@ export function ProcedureApproval({
         procedureRecordId: procedure.id,
         acceptanceMethod: 'both',
         signatureData: contractSignature,
+        renderedContent: contractText,
       })
 
       if (result?.error) {

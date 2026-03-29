@@ -37,6 +37,7 @@ export interface ProcedureWithDetails {
   approvedAt: Date | null
   cancelledAt: Date | null
   cancellationReason: string | null
+  additionalTypeIds: unknown
   financialPlan: unknown
   createdAt: Date
   updatedAt: Date
@@ -114,7 +115,7 @@ export async function updateProcedure(
   if (data.notes !== undefined) updateData.notes = data.notes ?? null
   if (data.followUpDate !== undefined) updateData.followUpDate = data.followUpDate ?? null
   if (data.nextSessionObjectives !== undefined) updateData.nextSessionObjectives = data.nextSessionObjectives ?? null
-  if (data.status !== undefined) updateData.status = data.status
+  // status is intentionally NOT settable here — use dedicated lifecycle actions
   if (data.procedureTypeId !== undefined) updateData.procedureTypeId = data.procedureTypeId
   if (data.additionalTypeIds !== undefined) updateData.additionalTypeIds = data.additionalTypeIds ?? []
   if (data.appointmentId !== undefined) updateData.appointmentId = data.appointmentId ?? null
@@ -159,6 +160,7 @@ export async function getProcedure(
       approvedAt: procedureRecords.approvedAt,
       cancelledAt: procedureRecords.cancelledAt,
       cancellationReason: procedureRecords.cancellationReason,
+      additionalTypeIds: procedureRecords.additionalTypeIds,
       financialPlan: procedureRecords.financialPlan,
       createdAt: procedureRecords.createdAt,
       updatedAt: procedureRecords.updatedAt,

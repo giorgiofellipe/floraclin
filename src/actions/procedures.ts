@@ -325,10 +325,64 @@ export async function approveProcedureAction(
       return { success: false, error: 'Apenas procedimentos planejados podem ser aprovados' }
     }
 
-    // Verify all required consents are signed
+    // ─── Determine all required consent types from procedure categories ───
+    const CATEGORY_TO_CONSENT: Record<string, string> = {
+      toxina_botulinica: 'botox',
+      botox: 'botox',
+      preenchimento: 'filler',
+      filler: 'filler',
+      bioestimulador: 'biostimulator',
+      biostimulator: 'biostimulator',
+    }
+
+    const requiredConsentTypes = new Set<string>()
+    requiredConsentTypes.add('general') // always required
+
+    // Map primary procedure type category
+    const primaryConsentType = CATEGORY_TO_CONSENT[procedure.procedureTypeCategory?.toLowerCase()]
+    if (primaryConsentType) {
+      requiredConsentTypes.add(primaryConsentType)
+    }
+
+    // Map additional procedure type categories
+    const additionalTypeIds = (procedure.additionalTypeIds ?? []) as string[]
+    if (additionalTypeIds.length > 0) {
+      const allTypes = await listProcedureTypes(ctx.tenantId)
+      for (const typeId of additionalTypeIds) {
+        const pType = allTypes.find((t) => t.id === typeId)
+        if (pType) {
+          const consentType = CATEGORY_TO_CONSENT[pType.category?.toLowerCase()]
+          if (consentType) {
+            requiredConsentTypes.add(consentType)
+          }
+        }
+      }
+    }
+
+    // Also require service_contract
+    requiredConsentTypes.add('service_contract')
+
+    // Verify each required consent type has an acceptance for THIS procedure
     const acceptances = await getConsentAcceptancesForProcedure(ctx.tenantId, procedureId)
-    if (acceptances.length === 0) {
-      return { success: false, error: 'É necessário assinar pelo menos um termo de consentimento' }
+    const signedTypes = new Set(acceptances.map((a) => a.templateType))
+
+    const missingTypes: string[] = []
+    for (const requiredType of requiredConsentTypes) {
+      if (!signedTypes.has(requiredType)) {
+        missingTypes.push(requiredType)
+      }
+    }
+
+    if (missingTypes.length > 0) {
+      const CONSENT_TYPE_LABELS: Record<string, string> = {
+        general: 'Termo Geral',
+        botox: 'Termo de Toxina Botulínica',
+        filler: 'Termo de Preenchimento',
+        biostimulator: 'Termo de Bioestimulador',
+        service_contract: 'Contrato de Serviço',
+      }
+      const missingLabels = missingTypes.map((t) => CONSENT_TYPE_LABELS[t] ?? t).join(', ')
+      return { success: false, error: `Termos pendentes de assinatura: ${missingLabels}` }
     }
 
     // Get diagram points as planned snapshot

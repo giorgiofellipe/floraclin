@@ -31,7 +31,6 @@ export type CreateProcedureInput = z.infer<typeof createProcedureSchema>
 
 export const updateProcedureSchema = createProcedureSchema.partial().extend({
   id: z.string().uuid('ID do procedimento inválido'),
-  status: procedureStatusSchema.optional(),
 })
 
 export type UpdateProcedureInput = z.infer<typeof updateProcedureSchema>

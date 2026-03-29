@@ -123,6 +123,7 @@ export async function acceptConsentAction(
     procedureRecordId?: string
     acceptanceMethod: 'checkbox' | 'signature' | 'both'
     signatureData?: string
+    renderedContent?: string
   }
 ): Promise<ConsentActionState> {
   const ctx = await requireRole('owner', 'practitioner')
@@ -143,6 +144,7 @@ export async function acceptConsentAction(
       const result = await acceptConsent(ctx.tenantId, parsed.data, {
         ipAddress,
         userAgent,
+        renderedContent: data.renderedContent,
       })
 
       await createAuditLog({

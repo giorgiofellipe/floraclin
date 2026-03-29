@@ -45,6 +45,34 @@ export type ResetPasswordState = {
 } | null
 
 export async function switchTenantAction(tenantId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    throw new Error('Usuário não autenticado')
+  }
+
+  // Verify the user has an active membership in the requested tenant
+  const { db } = await import('@/db/client')
+  const { tenantUsers } = await import('@/db/schema')
+  const { eq, and } = await import('drizzle-orm')
+
+  const [membership] = await db
+    .select({ id: tenantUsers.id })
+    .from(tenantUsers)
+    .where(
+      and(
+        eq(tenantUsers.tenantId, tenantId),
+        eq(tenantUsers.userId, user.id),
+        eq(tenantUsers.isActive, true)
+      )
+    )
+    .limit(1)
+
+  if (!membership) {
+    throw new Error('Acesso negado: você não é membro desta clínica')
+  }
+
   const { setActiveTenant } = await import('@/lib/auth')
   await setActiveTenant(tenantId)
 }

@@ -132,7 +132,7 @@ export async function updateConsentTemplate(
 export async function acceptConsent(
   tenantId: string,
   data: ConsentAcceptanceInput,
-  meta: { ipAddress?: string; userAgent?: string }
+  meta: { ipAddress?: string; userAgent?: string; renderedContent?: string }
 ) {
   // Verify foreign IDs belong to this tenant
   await Promise.all([
@@ -148,8 +148,14 @@ export async function acceptConsent(
     throw new Error('Termo não encontrado')
   }
 
-  // Hash the content using Web Crypto API
-  const contentHash = await hashContent(template.content)
+  // For service contracts, use the rendered (interpolated) text the patient actually read
+  // instead of the raw template with placeholders
+  const snapshotContent = (template.type === 'service_contract' && meta.renderedContent)
+    ? meta.renderedContent
+    : template.content
+
+  // Hash the actual content the patient saw
+  const contentHash = await hashContent(snapshotContent)
 
   const [acceptance] = await db
     .insert(consentAcceptances)
@@ -161,7 +167,7 @@ export async function acceptConsent(
       acceptanceMethod: data.acceptanceMethod,
       signatureData: data.signatureData ?? null,
       contentHash,
-      contentSnapshot: template.content,
+      contentSnapshot: snapshotContent,
       acceptedAt: new Date(),
       ipAddress: meta.ipAddress ?? null,
       userAgent: meta.userAgent ?? null,

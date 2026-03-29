@@ -5,6 +5,8 @@ import { withTransaction } from '@/lib/tenant'
 import { createAuditLog } from '@/lib/audit'
 import { productApplicationSchema } from '@/validations/procedure'
 import { saveProductApplications, getProductApplications } from '@/db/queries/product-applications'
+import { verifyTenantOwnership } from '@/db/queries/helpers'
+import { procedureRecords } from '@/db/schema'
 import type { ProductApplicationItem } from '@/validations/procedure'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -34,6 +36,9 @@ export async function saveProductApplicationsAction(
   }
 
   try {
+    // Verify procedure belongs to current tenant
+    await verifyTenantOwnership(ctx.tenantId, procedureRecords, procedureRecordId, 'Procedure record')
+
     const result = await withTransaction(async (tx) => {
       return saveProductApplications(
         ctx.tenantId,

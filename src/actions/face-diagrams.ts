@@ -5,6 +5,8 @@ import { withTransaction } from '@/lib/tenant'
 import { createAuditLog } from '@/lib/audit'
 import { diagramSaveSchema } from '@/validations/procedure'
 import { saveFaceDiagram, getFaceDiagram, getPreviousDiagramPoints } from '@/db/queries/face-diagrams'
+import { verifyTenantOwnership } from '@/db/queries/helpers'
+import { procedureRecords } from '@/db/schema'
 import type { DiagramViewType } from '@/types'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -46,6 +48,9 @@ export async function saveFaceDiagramAction(
   }
 
   try {
+    // Verify procedure belongs to current tenant
+    await verifyTenantOwnership(ctx.tenantId, procedureRecords, procedureRecordId, 'Procedure record')
+
     const diagramId = await withTransaction(async (tx) => {
       return saveFaceDiagram(
         ctx.tenantId,
