@@ -148,43 +148,62 @@ export function PatientTimelineTab({ patientId }: PatientTimelineTabProps) {
   // Sort descending (newest first)
   chronologicalItems.sort((a, b) => b.sortDate - a.sortDate)
 
+  // Outer timeline: continuous vertical line through all items
+  // Icon circles (size-8 = 32px) are centered on the line
+  // Line position: left offset = 16px (half of 32px icon)
+
   return (
-    <div className="space-y-3">
-      {chronologicalItems.map((item) =>
-        item.kind === 'group' ? (
-          <ServiceGroup
-            key={item.group.id}
-            group={item.group}
-            isExpanded={expandedGroups.has(item.group.id)}
-            onToggle={() => toggleGroup(item.group.id)}
-          />
-        ) : (
-          <UngroupedEntry key={item.entry.id} entry={item.entry} />
-        )
-      )}
+    <div className="relative">
+      {/* Continuous outer timeline line */}
+      <div
+        className="absolute left-[15px] top-4 bottom-4 w-px bg-[#E8ECEF]"
+        aria-hidden="true"
+      />
+
+      <div className="relative space-y-0">
+        {chronologicalItems.map((item, index) => {
+          const isLast = index === chronologicalItems.length - 1
+          return item.kind === 'group' ? (
+            <ServiceGroup
+              key={item.group.id}
+              group={item.group}
+              isExpanded={expandedGroups.has(item.group.id)}
+              onToggle={() => toggleGroup(item.group.id)}
+              isLast={isLast}
+            />
+          ) : (
+            <UngroupedEntry
+              key={item.entry.id}
+              entry={item.entry}
+              isLast={isLast}
+            />
+          )
+        })}
+      </div>
     </div>
   )
 }
 
 // ─── Ungrouped Entry ────────────────────────────────────────────────
 
-function UngroupedEntry({ entry }: { entry: TimelineEntry }) {
+function UngroupedEntry({ entry, isLast }: { entry: TimelineEntry; isLast: boolean }) {
   const config = TYPE_CONFIG[entry.type]
   const Icon = config.icon
 
   return (
-    <div className="flex items-start gap-3 py-2">
+    <div className={`relative flex items-start gap-3 pl-0 ${isLast ? 'pb-0' : 'pb-6'}`}>
+      {/* Icon on the timeline line */}
       <div
-        className={`flex size-8 shrink-0 items-center justify-center rounded-full ${config.color}`}
+        className={`relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full ${config.color} bg-white ring-4 ring-white`}
       >
         <Icon className="size-4" />
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 pt-1">
         <p className="text-sm font-medium text-charcoal">{entry.title}</p>
         {entry.description && (
           <p className="text-sm text-mid">{entry.description}</p>
         )}
-        <p className="text-xs text-mid">{formatDateTime(entry.date)}</p>
+        <p className="text-xs text-mid mt-0.5">{formatDateTime(entry.date)}</p>
         {entry.meta && <p className="text-xs text-mid">{entry.meta}</p>}
       </div>
     </div>
@@ -197,81 +216,89 @@ function ServiceGroup({
   group,
   isExpanded,
   onToggle,
+  isLast,
 }: {
   group: TimelineGroup
   isExpanded: boolean
   onToggle: () => void
+  isLast: boolean
 }) {
   const statusConfig = STATUS_BADGE[group.status] ?? {
     label: group.status,
     className: 'bg-[#F4F6F8] text-mid',
   }
 
-  // Date range
   const dates = group.entries.map((e) => new Date(e.date).getTime())
   const firstDate = dates.length > 0 ? new Date(Math.min(...dates)) : null
   const lastDate = dates.length > 0 ? new Date(Math.max(...dates)) : null
 
   return (
-    <div className="bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px] overflow-hidden">
-      {/* Group header */}
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-cream/50 transition-colors"
-      >
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sage/10 text-sage">
+    <div className={`relative ${isLast ? 'pb-0' : 'pb-6'}`}>
+      {/* Group header row — aligned to outer timeline */}
+      <div className="flex items-start gap-3">
+        {/* Icon on the outer timeline line */}
+        <button
+          type="button"
+          onClick={onToggle}
+          className="relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full bg-sage/10 text-sage ring-4 ring-white hover:bg-sage/20 transition-colors"
+        >
           {isExpanded ? (
             <ChevronDown className="size-4" />
           ) : (
             <ChevronRight className="size-4" />
           )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-charcoal truncate">
-              Atendimento: {group.title}
-            </span>
-            <Badge
-              variant="outline"
-              className={`text-[11px] border-0 ${statusConfig.className}`}
-            >
-              {statusConfig.label}
-            </Badge>
-          </div>
-          {firstDate && lastDate && (
-            <p className="text-xs text-mid mt-0.5">
-              {formatDate(firstDate)}
-              {firstDate.getTime() !== lastDate.getTime() &&
-                ` — ${formatDate(lastDate)}`}
-            </p>
-          )}
-        </div>
-        <span className="text-xs text-mid shrink-0">
-          {group.entries.length}{' '}
-          {group.entries.length === 1 ? 'evento' : 'eventos'}
-        </span>
-      </button>
+        </button>
 
-      {/* Group entries */}
-      {isExpanded && (
-        <div className="px-4 pb-3">
-          {group.entries.length === 0 ? (
-            <p className="text-xs text-mid py-2 pl-11">
-              Nenhuma atividade neste atendimento
-            </p>
-          ) : (
-            <div className="relative ml-4 border-l border-sage/20">
-              {group.entries.map((entry, index) => (
-                <GroupEntry
-                  key={entry.id}
-                  entry={entry}
-                  isLast={index === group.entries.length - 1}
-                />
-              ))}
+        {/* Group header content */}
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex flex-1 items-center gap-2 min-w-0 pt-0.5 text-left"
+        >
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-medium text-charcoal">
+                Atendimento: {group.title}
+              </span>
+              <Badge
+                variant="outline"
+                className={`text-[11px] border-0 ${statusConfig.className}`}
+              >
+                {statusConfig.label}
+              </Badge>
             </div>
-          )}
+            {firstDate && lastDate && (
+              <p className="text-xs text-mid mt-0.5">
+                {formatDate(firstDate)}
+                {firstDate.getTime() !== lastDate.getTime() &&
+                  ` — ${formatDate(lastDate)}`}
+              </p>
+            )}
+          </div>
+          <span className="text-xs text-mid shrink-0">
+            {group.entries.length}{' '}
+            {group.entries.length === 1 ? 'evento' : 'eventos'}
+          </span>
+        </button>
+      </div>
+
+      {/* Group entries — indented, with inner timeline line */}
+      {isExpanded && group.entries.length > 0 && (
+        <div className="relative ml-[15px] mt-2 pl-[25px] border-l border-sage/20">
+          {group.entries.map((entry, index) => (
+            <GroupEntry
+              key={entry.id}
+              entry={entry}
+              isLast={index === group.entries.length - 1}
+            />
+          ))}
         </div>
+      )}
+
+      {isExpanded && group.entries.length === 0 && (
+        <p className="text-xs text-mid py-2 ml-11">
+          Nenhuma atividade neste atendimento
+        </p>
       )}
     </div>
   )
@@ -290,13 +317,14 @@ function GroupEntry({
   const Icon = config.icon
 
   return (
-    <div className={`flex items-start gap-3 pl-4 ${isLast ? 'pb-1' : 'pb-3'}`}>
+    <div className={`relative flex items-start gap-3 ${isLast ? 'pb-1' : 'pb-4'}`}>
+      {/* Small icon centered on the inner line */}
       <div
-        className={`flex size-6 shrink-0 items-center justify-center rounded-full ${config.color} -ml-[calc(1rem+0.75rem/2+0.5px)]`}
+        className={`relative z-10 flex size-6 shrink-0 items-center justify-center rounded-full ${config.color} ring-2 ring-white -ml-[37px]`}
       >
         <Icon className="size-3" />
       </div>
-      <div className="flex-1 min-w-0 pt-0.5">
+      <div className="flex-1 min-w-0">
         <p className="text-sm text-charcoal">{entry.title}</p>
         {entry.description && (
           <p className="text-xs text-mid">{entry.description}</p>
