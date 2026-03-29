@@ -155,6 +155,16 @@ export function FaceDiagramEditor({
                         point={point}
                         onClick={() => handlePointClick(point)}
                         readOnly={readOnly}
+                        changed={
+                          !!previousPoints &&
+                          !!previousPoints.find(
+                            (pp) =>
+                              Math.abs(pp.x - point.x) < 1 &&
+                              Math.abs(pp.y - point.y) < 1 &&
+                              pp.productName === point.productName &&
+                              pp.quantity !== point.quantity
+                          )
+                        }
                       />
                     ))}
 

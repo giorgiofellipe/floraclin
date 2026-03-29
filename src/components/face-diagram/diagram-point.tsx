@@ -53,6 +53,7 @@ interface DiagramPointProps {
   onClick?: () => void
   ghost?: boolean
   readOnly?: boolean
+  changed?: boolean // quantity differs from planned
 }
 
 export function DiagramPoint({
@@ -60,8 +61,9 @@ export function DiagramPoint({
   onClick,
   ghost = false,
   readOnly = false,
+  changed = false,
 }: DiagramPointProps) {
-  const color = getPointColor(point.productName)
+  const color = changed ? '#D4845A' : getPointColor(point.productName)
   const unitLabel = point.quantityUnit === 'U' ? 'U' : 'mL'
   const quantityLabel = `${point.quantity}${unitLabel}`
 
