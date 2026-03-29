@@ -1,19 +1,13 @@
 'use client'
 
 import { useReducer, useCallback, useEffect } from 'react'
-import { useRouter, usePathname, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import type { ProcedureStatus } from '@/types'
+import type { StepResult } from '@/components/service-wizard/types'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
 export type WizardStep = 1 | 2 | 3 | 4
-
-export interface StepResult {
-  success: boolean
-  procedureId?: string
-  error?: string
-  errorType?: 'validation' | 'precondition' | 'server'
-}
 
 export interface WizardState {
   currentStep: WizardStep
@@ -48,13 +42,13 @@ type WizardAction =
 export const STEP_LABELS: Record<WizardStep, string> = {
   1: 'Anamnese',
   2: 'Planejamento',
-  3: 'Aprovacao',
-  4: 'Execucao',
+  3: 'Aprovação',
+  4: 'Execução',
 }
 
 export const STEP_SUBTITLES: Record<WizardStep, string> = {
-  1: 'Historico e avaliacao do paciente',
-  2: 'Diagrama facial e orcamento',
+  1: 'Histórico e avaliação do paciente',
+  2: 'Diagrama facial e orçamento',
   3: 'Consentimento e contrato',
   4: 'Registro do procedimento',
 }
@@ -64,8 +58,8 @@ export const STEP_SUBTITLES: Record<WizardStep, string> = {
 export const STEP_UNAVAILABLE_REASONS: Record<WizardStep, string> = {
   1: '',
   2: '',
-  3: 'Complete o planejamento para acessar a aprovacao',
-  4: 'Aprove o procedimento para acessar a execucao',
+  3: 'Complete o planejamento para acessar a aprovação',
+  4: 'Aprove o procedimento para acessar a execução',
 }
 
 // ─── Reducer ────────────────────────────────────────────────────────
@@ -88,13 +82,19 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
         errorType: null,
       }
 
-    case 'NEXT_STEP':
+    case 'NEXT_STEP': {
+      const nextStep = getNextStep(state.currentStep)
+      if (nextStep === state.currentStep) return state
+      // Check availability before advancing
+      if (nextStep === 3 && !state.procedureId) return state
+      if (nextStep === 4 && state.procedureStatus !== 'approved') return state
       return {
         ...state,
-        currentStep: getNextStep(state.currentStep),
+        currentStep: nextStep,
         error: null,
         errorType: null,
       }
+    }
 
     case 'PREV_STEP':
       return {
@@ -214,8 +214,6 @@ export function useServiceWizard({
   stepTimestamps: initialTimestamps,
 }: UseServiceWizardOptions) {
   const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
 
   const startStep = determineInitialStep(
     initialStep ?? null,
@@ -242,10 +240,13 @@ export function useServiceWizard({
   // ─── URL sync ───────────────────────────────────────────────────
 
   useEffect(() => {
-    const params = new URLSearchParams(searchParams.toString())
-    params.set('step', String(state.currentStep))
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
-  }, [state.currentStep, pathname, router, searchParams])
+    const params = new URLSearchParams(window.location.search)
+    const currentParam = params.get('step')
+    if (currentParam !== String(state.currentStep)) {
+      params.set('step', String(state.currentStep))
+      router.replace(`?${params.toString()}`, { scroll: false })
+    }
+  }, [state.currentStep, router])
 
   // ─── Step availability ──────────────────────────────────────────
 
@@ -323,7 +324,7 @@ export function useServiceWizard({
   const getSkipLabel = useCallback(
     (step: WizardStep): string | null => {
       if (!canSkip(step)) return null
-      if (step === 3) return 'Adiar Aprovacao'
+      if (step === 3) return 'Adiar Aprovação'
       return 'Pular'
     },
     [canSkip]
@@ -334,7 +335,7 @@ export function useServiceWizard({
   const getNextLabel = useCallback(
     (step: WizardStep): string => {
       if (step === 4) return 'Finalizar Atendimento'
-      return 'Proximo'
+      return 'Próximo'
     },
     []
   )

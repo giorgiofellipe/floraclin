@@ -15,7 +15,7 @@ export function WizardStep({ title, timestamp, children }: WizardStepProps) {
         <h2 className="text-lg font-semibold text-charcoal">{title}</h2>
         {timestamp && (
           <span className="text-sm text-mid">
-            Ultima atualizacao: {format(new Date(timestamp), "dd/MM/yyyy")} as{' '}
+            Última atualização: {format(new Date(timestamp), "dd/MM/yyyy")} às{' '}
             {format(new Date(timestamp), 'HH:mm')}
           </span>
         )}

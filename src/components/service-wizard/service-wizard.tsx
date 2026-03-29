@@ -27,6 +27,7 @@ import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
 import type { AnamnesisFormData } from '@/validations/anamnesis'
+import { getProcedureAction } from '@/actions/procedures'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -121,6 +122,11 @@ export function ServiceWizard({
     updateProcedureStatus,
   } = wizard
 
+  // ─── Lift procedure data into client state (CRITICAL 1 fix) ────
+  const [localProcedure, setLocalProcedure] = useState<ProcedureWithDetails | null>(procedure ?? null)
+  const [localDiagrams, setLocalDiagrams] = useState<DiagramWithPoints[] | null>(diagrams ?? null)
+  const [localApplications, setLocalApplications] = useState<ProductApplicationRecord[] | null>(existingApplications ?? null)
+
   // ─── beforeunload protection for steps 2-4 ─────────────────────
 
   useEffect(() => {
@@ -195,10 +201,24 @@ export function ServiceWizard({
   // ─── Step completion handler ───────────────────────────────────
 
   const handleStepComplete = useCallback(
-    (result: StepResult) => {
+    async (result: StepResult) => {
       onSaveComplete(result)
 
       if (result.success) {
+        // After step 2 creates/updates a procedure, fetch fresh data client-side
+        if (state.currentStep === 2 && result.procedureId) {
+          try {
+            const res = await getProcedureAction(result.procedureId)
+            if (res.success && res.data) {
+              setLocalProcedure(res.data as ProcedureWithDetails)
+              setLocalDiagrams((res.data as { diagrams?: DiagramWithPoints[] }).diagrams ?? null)
+              setLocalApplications((res.data as { productApplications?: ProductApplicationRecord[] }).productApplications ?? null)
+            }
+          } catch {
+            // Non-blocking — steps 3-4 will show placeholder if fetch fails
+          }
+        }
+
         // Update procedure status if the step changed it
         if (state.currentStep === 3) {
           updateProcedureStatus('approved')
@@ -256,7 +276,7 @@ export function ServiceWizard({
     state.procedureStatus === 'approved' || state.procedureStatus === 'executed'
 
   // additionalTypeIds from procedure record
-  const additionalTypeIds = (procedure?.additionalTypeIds as string[] | null) ?? []
+  const additionalTypeIds = (localProcedure?.additionalTypeIds as string[] | null) ?? []
 
   // ─── Render ────────────────────────────────────────────────────
 
@@ -320,12 +340,21 @@ export function ServiceWizard({
               title="Anamnese"
               timestamp={stepTimestamps?.anamnesis}
             >
-              <AnamnesisForm
-                patientId={patient.id}
-                initialData={anamnesis ?? undefined}
-                updatedByName={anamnesisUpdatedByName}
-                wizardOverrides={baseOverrides}
-              />
+              {isReadOnlyAfterApproval && (
+                <div className="mb-4 rounded-[3px] border border-amber-200 bg-amber-50 px-4 py-3">
+                  <p className="text-sm text-amber-800">
+                    Anamnese não pode ser editada após aprovação do procedimento.
+                  </p>
+                </div>
+              )}
+              <div className={isReadOnlyAfterApproval ? 'pointer-events-none opacity-75' : undefined}>
+                <AnamnesisForm
+                  patientId={patient.id}
+                  initialData={anamnesis ?? undefined}
+                  updatedByName={anamnesisUpdatedByName}
+                  wizardOverrides={baseOverrides}
+                />
+              </div>
             </WizardStepWrapper>
           </div>
 
@@ -338,13 +367,13 @@ export function ServiceWizard({
               <ProcedureForm
                 patientId={patient.id}
                 patientGender={patient.gender}
-                procedure={procedure ?? undefined}
-                diagrams={diagrams ?? undefined}
-                existingApplications={existingApplications ?? undefined}
+                procedure={localProcedure ?? undefined}
+                diagrams={localDiagrams ?? undefined}
+                existingApplications={localApplications ?? undefined}
                 mode={
                   isReadOnlyAfterApproval
                     ? 'view'
-                    : procedure
+                    : localProcedure
                       ? 'edit'
                       : 'create'
                 }
@@ -353,16 +382,16 @@ export function ServiceWizard({
             </WizardStepWrapper>
           </div>
 
-          {/* Step 3: Aprovacao */}
+          {/* Step 3: Aprovação */}
           <div style={{ display: state.currentStep === 3 ? 'block' : 'none' }}>
             <WizardStepWrapper
-              title="Aprovacao"
+              title="Aprovação"
               timestamp={stepTimestamps?.approval}
             >
-              {state.procedureId && procedure ? (
+              {state.procedureId && localProcedure ? (
                 <ProcedureApproval
-                  procedure={procedure}
-                  diagrams={diagrams ?? []}
+                  procedure={localProcedure}
+                  diagrams={localDiagrams ?? []}
                   patient={{
                     id: patient.id,
                     fullName: patient.fullName,
@@ -376,32 +405,32 @@ export function ServiceWizard({
               ) : (
                 <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
                   <p className="text-mid">
-                    Complete o planejamento para acessar a aprovacao.
+                    Complete o planejamento para acessar a aprovação.
                   </p>
                 </div>
               )}
             </WizardStepWrapper>
           </div>
 
-          {/* Step 4: Execucao */}
+          {/* Step 4: Execução */}
           <div style={{ display: state.currentStep === 4 ? 'block' : 'none' }}>
             <WizardStepWrapper
-              title="Execucao"
+              title="Execução"
               timestamp={stepTimestamps?.execution}
             >
-              {state.procedureId && state.procedureStatus === 'approved' && procedure ? (
+              {state.procedureId && state.procedureStatus === 'approved' && localProcedure ? (
                 <ProcedureExecution
                   patientId={patient.id}
                   patientGender={patient.gender}
-                  procedure={procedure}
-                  diagrams={diagrams ?? undefined}
-                  existingApplications={existingApplications ?? undefined}
+                  procedure={localProcedure}
+                  diagrams={localDiagrams ?? undefined}
+                  existingApplications={localApplications ?? undefined}
                   wizardOverrides={baseOverrides}
                 />
               ) : (
                 <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
                   <p className="text-mid">
-                    Aprove o procedimento para acessar a execucao.
+                    Aprove o procedimento para acessar a execução.
                   </p>
                 </div>
               )}
@@ -412,6 +441,19 @@ export function ServiceWizard({
 
       {/* ─── Sticky bottom navigation bar ─────────────────────────── */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-gray-100 bg-white shadow-[0_-1px_4px_rgba(0,0,0,0.06)]">
+        {/* Error display above navigation controls */}
+        {state.error && (
+          <div className="border-b border-red-100 bg-red-50 px-4 py-2">
+            <p className="mx-auto max-w-5xl text-sm text-red-800">
+              {state.errorType === 'validation' &&
+                'Corrija os campos destacados antes de continuar.'}
+              {state.errorType === 'precondition' && state.error}
+              {state.errorType === 'server' && 'Erro ao salvar. Tente novamente.'}
+              {!state.errorType && state.error}
+            </p>
+          </div>
+        )}
+
         <div className="mx-auto flex max-w-5xl flex-col gap-2 px-4 py-3 md:flex-row md:items-center md:justify-between">
           {/* Left: Voltar */}
           <div className="hidden md:block md:min-w-[100px]">
@@ -465,19 +507,6 @@ export function ServiceWizard({
             )}
           </div>
         </div>
-
-        {/* Error display inline below nav bar */}
-        {state.error && (
-          <div className="border-t border-red-100 bg-red-50 px-4 py-2">
-            <p className="mx-auto max-w-5xl text-sm text-red-800">
-              {state.errorType === 'validation' &&
-                'Corrija os campos destacados antes de continuar.'}
-              {state.errorType === 'precondition' && state.error}
-              {state.errorType === 'server' && 'Erro ao salvar. Tente novamente.'}
-              {!state.errorType && state.error}
-            </p>
-          </div>
-        )}
       </nav>
 
       {/* ─── Exit confirmation dialog ─────────────────────────────── */}
@@ -486,7 +515,7 @@ export function ServiceWizard({
           <DialogHeader>
             <DialogTitle>Sair do atendimento</DialogTitle>
             <DialogDescription>
-              Tem certeza que deseja sair? O progresso do passo atual sera perdido.
+              Tem certeza que deseja sair? O progresso do passo atual será perdido.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
