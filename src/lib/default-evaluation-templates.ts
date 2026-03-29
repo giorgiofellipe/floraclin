@@ -202,24 +202,9 @@ const toxinaBotulínicaSections: EvaluationSection[] = [
     ],
   },
   {
-    id: 'botox-s5',
-    title: 'Registro Fotográfico',
-    order: 5,
-    questions: [
-      {
-        id: 'botox-s5-q1',
-        label: 'Observações sobre o registro fotográfico',
-        type: 'text',
-        required: false,
-        order: 1,
-        helpText: 'Frontal repouso, frontal expressão, perfil direito, perfil esquerdo',
-      },
-    ],
-  },
-  {
     id: 'botox-s6',
     title: 'Observações do Profissional',
-    order: 6,
+    order: 5,
     questions: [
       {
         id: 'botox-s6-q1',
@@ -389,24 +374,9 @@ const preenchimentosSections: EvaluationSection[] = [
     ],
   },
   {
-    id: 'filler-s5',
-    title: 'Registro Fotográfico',
-    order: 5,
-    questions: [
-      {
-        id: 'filler-s5-q1',
-        label: 'Observações sobre o registro fotográfico',
-        type: 'text',
-        required: false,
-        order: 1,
-        helpText: 'Frontal repouso, 3/4 direito, 3/4 esquerdo, detalhe da área',
-      },
-    ],
-  },
-  {
     id: 'filler-s6',
     title: 'Observações do Profissional',
-    order: 6,
+    order: 5,
     questions: [
       {
         id: 'filler-s6-q1',
@@ -574,24 +544,9 @@ const bioestimuladorSections: EvaluationSection[] = [
     ],
   },
   {
-    id: 'bio-s5',
-    title: 'Registro Fotográfico',
-    order: 5,
-    questions: [
-      {
-        id: 'bio-s5-q1',
-        label: 'Observações sobre o registro fotográfico',
-        type: 'text',
-        required: false,
-        order: 1,
-        helpText: 'Frontal repouso, 3/4 direito, 3/4 esquerdo, perfil',
-      },
-    ],
-  },
-  {
     id: 'bio-s6',
     title: 'Observações do Profissional',
-    order: 6,
+    order: 5,
     questions: [
       {
         id: 'bio-s6-q1',
@@ -758,24 +713,9 @@ const skinboosterSections: EvaluationSection[] = [
     ],
   },
   {
-    id: 'sb-s5',
-    title: 'Registro Fotográfico',
-    order: 5,
-    questions: [
-      {
-        id: 'sb-s5-q1',
-        label: 'Observações sobre o registro fotográfico',
-        type: 'text',
-        required: false,
-        order: 1,
-        helpText: 'Frontal, 3/4, perfil, textura close',
-      },
-    ],
-  },
-  {
     id: 'sb-s6',
     title: 'Observações do Profissional',
-    order: 6,
+    order: 5,
     questions: [
       {
         id: 'sb-s6-q1',
@@ -947,24 +887,9 @@ const enzimaSections: EvaluationSection[] = [
     ],
   },
   {
-    id: 'enz-s5',
-    title: 'Registro Fotográfico',
-    order: 5,
-    questions: [
-      {
-        id: 'enz-s5-q1',
-        label: 'Observações sobre o registro fotográfico',
-        type: 'text',
-        required: false,
-        order: 1,
-        helpText: 'Frente, perfil, detalhe da área, vista posterior',
-      },
-    ],
-  },
-  {
     id: 'enz-s6',
     title: 'Observações do Profissional',
-    order: 6,
+    order: 5,
     questions: [
       {
         id: 'enz-s6-q1',
@@ -1128,24 +1053,9 @@ const limpezaPeleSections: EvaluationSection[] = [
     ],
   },
   {
-    id: 'lp-s4',
-    title: 'Registro Fotográfico',
-    order: 4,
-    questions: [
-      {
-        id: 'lp-s4-q1',
-        label: 'Observações sobre o registro fotográfico',
-        type: 'text',
-        required: false,
-        order: 1,
-        helpText: 'Frontal, zona T close, bochechas direita, bochechas esquerda',
-      },
-    ],
-  },
-  {
     id: 'lp-s5',
     title: 'Observações do Profissional',
-    order: 5,
+    order: 4,
     questions: [
       {
         id: 'lp-s5-q1',
@@ -1494,24 +1404,9 @@ const skincareSections: EvaluationSection[] = [
     ],
   },
   {
-    id: 'sc-s7',
-    title: 'Registro Fotográfico',
-    order: 7,
-    questions: [
-      {
-        id: 'sc-s7-q1',
-        label: 'Observações sobre o registro fotográfico',
-        type: 'text',
-        required: false,
-        order: 1,
-        helpText: 'Frontal com luz, pele limpa, zona T close, detalhe queixa',
-      },
-    ],
-  },
-  {
     id: 'sc-s8',
     title: 'Observações do Profissional / Protocolo Indicado',
-    order: 8,
+    order: 7,
     questions: [
       {
         id: 'sc-s8-q1',
@@ -1697,24 +1592,9 @@ const microagulhamentoSections: EvaluationSection[] = [
     ],
   },
   {
-    id: 'micro-s6',
-    title: 'Registro Fotográfico',
-    order: 6,
-    questions: [
-      {
-        id: 'micro-s6-q1',
-        label: 'Observações sobre o registro fotográfico',
-        type: 'text',
-        required: false,
-        order: 1,
-        helpText: 'Frontal, 3/4 direito, 3/4 esquerdo, detalhe cicatrizes',
-      },
-    ],
-  },
-  {
     id: 'micro-s7',
     title: 'Observações do Profissional',
-    order: 7,
+    order: 6,
     questions: [
       {
         id: 'micro-s7-q1',
