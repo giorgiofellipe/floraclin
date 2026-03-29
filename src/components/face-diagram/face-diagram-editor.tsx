@@ -58,6 +58,7 @@ export function FaceDiagramEditor({
     setEditingPoint({
       x: Math.round(clampedX * 100) / 100,
       y: Math.round(clampedY * 100) / 100,
+      viewType: activeView,
     })
     setModalOpen(true)
   }
@@ -136,10 +137,10 @@ export function FaceDiagramEditor({
                   >
                     <FaceTemplate viewType={vt} gender={gender} />
 
-                    {/* Ghost overlay from previous session */}
+                    {/* Ghost overlay from previous session — filtered by view */}
                     {showPrevious &&
                       previousPoints
-                        ?.filter(() => true)
+                        ?.filter((p) => !p.viewType || p.viewType === vt)
                         .map((point) => (
                           <DiagramPoint
                             key={`ghost-${point.id}`}
@@ -148,8 +149,10 @@ export function FaceDiagramEditor({
                           />
                         ))}
 
-                    {/* Current points */}
-                    {points.map((point) => (
+                    {/* Current points — filtered by view */}
+                    {points
+                      .filter((p) => !p.viewType || p.viewType === vt)
+                      .map((point) => (
                       <DiagramPoint
                         key={point.id}
                         point={point}
