@@ -1193,87 +1193,88 @@ export function ProcedureForm({
 
       {/* ── Evaluation Templates (planning mode with templates) ────── */}
       {isPlanningMode && !loadingEvaluationTemplates && evalTemplates && evalTemplates.length > 0 && (() => {
+        // Count how many templates have face_diagram questions
+        const templatesWithDiagram = evalTemplates.filter((t) =>
+          t.sections.some((s) => s.questions.some((q) => q.type === 'face_diagram'))
+        )
+        // If 2+ templates have diagram → show standalone diagram above orçamento, hide from all templates
+        const showStandaloneDiagram = templatesWithDiagram.length >= 2
         let diagramAlreadyRendered = false
-        return evalTemplates.map((template) => {
-          const passDiagramRendered = diagramAlreadyRendered
-          // Check if this template has a face_diagram question
-          const hasDiagram = template.sections.some((s) =>
-            s.questions.some((q) => q.type === 'face_diagram')
-          )
-          if (hasDiagram && !diagramAlreadyRendered) {
-            diagramAlreadyRendered = true
-          }
 
-          return (
-            <div key={template.id} className="space-y-0">
-              {/* Template header */}
-              <div className="flex items-center gap-2.5 rounded-t-[3px] bg-forest/5 px-5 py-3 border border-b-0 border-[#E8ECEF]">
-                <div className="flex size-6 items-center justify-center rounded-full bg-forest/10">
-                  <Stethoscope className="size-3.5 text-forest" />
+        return (
+          <>
+            {evalTemplates.map((template) => {
+              const passDiagramRendered = showStandaloneDiagram ? true : diagramAlreadyRendered
+              const hasDiagram = template.sections.some((s) =>
+                s.questions.some((q) => q.type === 'face_diagram')
+              )
+              if (hasDiagram && !showStandaloneDiagram && !diagramAlreadyRendered) {
+                diagramAlreadyRendered = true
+              }
+
+              return (
+                <div key={template.id} className="space-y-0">
+                  {/* Template header */}
+                  <div className="flex items-center gap-2.5 rounded-t-[3px] bg-forest/5 px-5 py-3 border border-b-0 border-[#E8ECEF]">
+                    <div className="flex size-6 items-center justify-center rounded-full bg-forest/10">
+                      <Stethoscope className="size-3.5 text-forest" />
+                    </div>
+                    <span className="text-sm font-semibold text-charcoal">
+                      {template.procedureTypeName} — Ficha de Avaliação
+                    </span>
+                  </div>
+                  <div className="rounded-b-[3px] border border-t-0 border-[#E8ECEF] bg-white p-5 shadow-[0_1px_4px_rgba(0,0,0,0.06)] mb-5">
+                    <TemplateRenderer
+                      sections={template.sections}
+                      responses={(evaluationResponses[template.id] ?? {}) as Record<string, unknown>}
+                      onChange={(r) => handleEvaluationResponseChange(template.id, r)}
+                      readOnly={isReadOnly}
+                      patientGender={patientGender}
+                      diagramPoints={diagramPoints}
+                      onDiagramChange={setDiagramPoints}
+                      diagramRendered={passDiagramRendered}
+                      products={catalogProducts}
+                    />
+                  </div>
                 </div>
-                <span className="text-sm font-semibold text-charcoal">
-                  {template.procedureTypeName} — Ficha de Avaliação
-                </span>
-              </div>
-              <div className="rounded-b-[3px] border border-t-0 border-[#E8ECEF] bg-white p-5 shadow-[0_1px_4px_rgba(0,0,0,0.06)] mb-5">
-                <TemplateRenderer
-                  sections={template.sections}
-                  responses={(evaluationResponses[template.id] ?? {}) as Record<string, unknown>}
-                  onChange={(r) => handleEvaluationResponseChange(template.id, r)}
+              )
+            })}
+
+            {/* Standalone face diagram when 2+ templates have diagram questions */}
+            {showStandaloneDiagram && (
+              <Section
+                title="Diagrama Facial"
+                icon={
+                  <svg className="size-4 text-forest" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="10" r="7" />
+                    <path d="M12 17v4M8 21h8" />
+                  </svg>
+                }
+                open={openSections.diagram}
+                onToggle={() => toggleSection('diagram')}
+                badge={
+                  diagramPoints.length > 0 ? (
+                    <Badge variant="outline" className="text-xs border-sage/30 bg-sage/5 text-sage">
+                      {diagramPoints.length} {diagramPoints.length === 1 ? 'ponto' : 'pontos'}
+                    </Badge>
+                  ) : undefined
+                }
+              >
+                <FaceDiagramEditor
+                  points={diagramPoints}
+                  onChange={setDiagramPoints}
+                  previousPoints={previousPoints}
                   readOnly={isReadOnly}
-                  patientGender={patientGender}
-                  diagramPoints={diagramPoints}
-                  onDiagramChange={setDiagramPoints}
-                  diagramRendered={passDiagramRendered}
+                  gender={patientGender}
                   products={catalogProducts}
                 />
-              </div>
-            </div>
-          )
-        })
+              </Section>
+            )}
+          </>
+        )
       })()}
 
-      {/* ── Face Diagram (hidden when templates handle it or loading) ── */}
-      {!loadingEvaluationTemplates && !(isPlanningMode && evalTemplates && evalTemplates.length > 0 &&
-        evalTemplates.some((t) => t.sections.some((s) =>
-          s.questions.some((q) => q.type === 'face_diagram')
-        ))
-      ) && (
-        <Section
-          title="Diagrama Facial"
-          icon={
-            <svg
-              className="size-4 text-forest"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <circle cx="12" cy="10" r="7" />
-              <path d="M12 17v4M8 21h8" />
-            </svg>
-          }
-          open={openSections.diagram}
-          onToggle={() => toggleSection('diagram')}
-          badge={
-            diagramPoints.length > 0 ? (
-              <Badge variant="outline" className="text-xs border-sage/30 bg-sage/5 text-sage">
-                {diagramPoints.length}{' '}
-                {diagramPoints.length === 1 ? 'ponto' : 'pontos'}
-              </Badge>
-            ) : undefined
-          }
-        >
-          <FaceDiagramEditor
-            points={diagramPoints}
-            onChange={setDiagramPoints}
-            previousPoints={previousPoints}
-            readOnly={isReadOnly}
-            gender={patientGender}
-            products={catalogProducts}
-          />
-        </Section>
-      )}
+      {/* Face diagram only shows via templates — no fallback in planning mode */}
 
       {/* ── Financial Plan (ONLY in planning mode) ──────────────────── */}
       {isPlanningMode && (
