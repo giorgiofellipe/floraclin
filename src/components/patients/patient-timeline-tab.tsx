@@ -124,22 +124,44 @@ export function PatientTimelineTab({ patientId }: PatientTimelineTabProps) {
     )
   }
 
+  // Merge groups and ungrouped into a single chronological list
+  // Each item gets a sortDate: for groups, use the earliest event date; for entries, use the entry date
+  const chronologicalItems: Array<
+    | { kind: 'group'; group: TimelineGroup; sortDate: number }
+    | { kind: 'entry'; entry: TimelineEntry; sortDate: number }
+  > = []
+
+  for (const group of timeline.groups) {
+    const dates = group.entries.map((e) => new Date(e.date).getTime())
+    const earliest = dates.length > 0 ? Math.min(...dates) : 0
+    chronologicalItems.push({ kind: 'group', group, sortDate: earliest })
+  }
+
+  for (const entry of timeline.ungrouped) {
+    chronologicalItems.push({
+      kind: 'entry',
+      entry,
+      sortDate: new Date(entry.date).getTime(),
+    })
+  }
+
+  // Sort descending (newest first)
+  chronologicalItems.sort((a, b) => b.sortDate - a.sortDate)
+
   return (
     <div className="space-y-3">
-      {/* Ungrouped entries (top-level) */}
-      {timeline.ungrouped.map((entry) => (
-        <UngroupedEntry key={entry.id} entry={entry} />
-      ))}
-
-      {/* Grouped by procedure */}
-      {timeline.groups.map((group) => (
-        <ServiceGroup
-          key={group.id}
-          group={group}
-          isExpanded={expandedGroups.has(group.id)}
-          onToggle={() => toggleGroup(group.id)}
-        />
-      ))}
+      {chronologicalItems.map((item) =>
+        item.kind === 'group' ? (
+          <ServiceGroup
+            key={item.group.id}
+            group={item.group}
+            isExpanded={expandedGroups.has(item.group.id)}
+            onToggle={() => toggleGroup(item.group.id)}
+          />
+        ) : (
+          <UngroupedEntry key={item.entry.id} entry={item.entry} />
+        )
+      )}
     </div>
   )
 }
