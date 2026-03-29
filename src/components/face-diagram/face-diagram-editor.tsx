@@ -45,6 +45,7 @@ export function FaceDiagramEditor({
 
   function handleFaceClick(e: React.MouseEvent<HTMLDivElement>) {
     if (readOnly) return
+    if (!products || products.length === 0) return
 
     const rect = e.currentTarget.getBoundingClientRect()
     const x = ((e.clientX - rect.left) / rect.width) * 100
@@ -161,7 +162,10 @@ export function FaceDiagramEditor({
                     {points.length === 0 && !readOnly && (
                       <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-4">
                         <span className="rounded-md bg-muted/80 px-3 py-1 text-xs text-muted-foreground backdrop-blur-sm">
-                          Clique no rosto para adicionar um ponto
+                          {(!products || products.length === 0)
+                            ? 'Configure produtos em Configurações → Produtos para usar o diagrama'
+                            : 'Clique no rosto para adicionar um ponto'
+                          }
                         </span>
                       </div>
                     )}
