@@ -236,7 +236,7 @@ export function TemplateEditor({
   const totalQuestions = sections.reduce((sum, s) => sum + s.questions.length, 0)
 
   return (
-    <div className="min-h-screen bg-cream">
+    <div className="min-h-screen">
       {/* Top bar */}
       <div className="sticky top-0 z-10 bg-white border-b border-[#E8ECEF] shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
