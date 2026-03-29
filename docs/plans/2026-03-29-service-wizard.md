@@ -38,7 +38,16 @@
 - No procedure exists → starts at step 1
 - Procedure `planned` → starts at step 3, steps 1-2 show completed
 - Procedure `approved` → starts at step 4, steps 1-3 show completed
-- Professional can navigate back to any completed step
+- Professional can navigate back to any completed step (READ-ONLY after approval — steps 1-2 show plan summary, not editable forms, to avoid desyncing the approved snapshot and financial entry)
+- If multiple non-executed procedures exist for this patient → show a selection dialog: "Continuar atendimento anterior?" with procedure details, or "Iniciar novo atendimento"
+
+**Anamnesis debounce safety:**
+- Step 1 "Próximo" must flush the debounce timer and await the save before advancing. If the auto-save is pending (user just typed), force an immediate save and wait for completion. This prevents the last edit from being dropped.
+
+**Step completion persistence:**
+- Add `wizard_progress` JSONB field to `procedure_records` to track which steps are completed: `{ anamnesis: true, planning: true, approval: false, execution: false }`
+- Timestamps are derived from: anamnesis.updatedAt, procedure.updatedAt, procedure.approvedAt, procedure.performedAt
+- This allows the wizard to resume at the correct step even if the professional closes the browser
 
 **URL-based step tracking:**
 - Current step is stored in the URL search param: `?step=2`
