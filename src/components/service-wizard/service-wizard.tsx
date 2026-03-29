@@ -1,10 +1,19 @@
 'use client'
 
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { format } from 'date-fns'
 import { LogOut, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn, maskCPF } from '@/lib/utils'
 import { useServiceWizard, type WizardStep } from '@/hooks/use-service-wizard'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { WizardStepper } from './wizard-stepper'
 import { WizardStep as WizardStepWrapper } from './wizard-step'
 import type { ProcedureStatus } from '@/types'
@@ -85,21 +94,67 @@ export function ServiceWizard({
       e.preventDefault()
     }
 
+    function handlePopState() {
+      // Push state back so the user stays on the page
+      window.history.pushState(null, '', window.location.href)
+      setShowExitDialog(true)
+    }
+
+    // Push an extra history entry so we can intercept back
+    window.history.pushState(null, '', window.location.href)
+
     window.addEventListener('beforeunload', handleBeforeUnload)
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('popstate', handlePopState)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('popstate', handlePopState)
+    }
   }, [state.currentStep])
 
-  // ─── Exit handler ──────────────────────────────────────────────
+  // ─── Exit confirmation dialog ───────────────────────────────────
+
+  const [showExitDialog, setShowExitDialog] = useState(false)
 
   const handleExit = useCallback(() => {
     if (state.currentStep > 1) {
-      const confirmed = window.confirm(
-        'Tem certeza que deseja sair? Dados nao salvos serao perdidos.'
-      )
-      if (!confirmed) return
+      setShowExitDialog(true)
+      return
     }
     router.push(`/pacientes/${patient.id}`)
   }, [state.currentStep, router, patient.id])
+
+  const confirmExit = useCallback(() => {
+    setShowExitDialog(false)
+    router.push(`/pacientes/${patient.id}`)
+  }, [router, patient.id])
+
+  // ─── Smart context message ─────────────────────────────────────
+
+  function getContextMessage(): { text: string; dotColor: string } | null {
+    if (!procedureStatus) {
+      return { text: 'Novo atendimento', dotColor: 'bg-forest' }
+    }
+    if (procedureStatus === 'planned') {
+      const dateStr = stepTimestamps?.planning
+        ? format(new Date(stepTimestamps.planning), 'dd/MM/yyyy')
+        : null
+      return {
+        text: dateStr
+          ? `Continuando planejamento \u2014 criado em ${dateStr}`
+          : 'Continuando planejamento',
+        dotColor: 'bg-amber',
+      }
+    }
+    if (procedureStatus === 'approved') {
+      return {
+        text: 'Procedimento aprovado \u2014 pronto para execu\u00e7\u00e3o',
+        dotColor: 'bg-sage',
+      }
+    }
+    return null
+  }
+
+  const contextMessage = getContextMessage()
 
   // ─── Skip/Adiar handler ────────────────────────────────────────
 
@@ -159,6 +214,16 @@ export function ServiceWizard({
           </button>
         </div>
       </header>
+
+      {/* ─── Smart context message ─────────────────────────────────── */}
+      {contextMessage && (
+        <div className="mx-auto w-full max-w-5xl px-4 pt-3">
+          <div className="flex items-center gap-2">
+            <span className={cn('inline-block h-2 w-2 rounded-full', contextMessage.dotColor)} />
+            <span className="text-sm text-mid">{contextMessage.text}</span>
+          </div>
+        </div>
+      )}
 
       {/* ─── Main content area ────────────────────────────────────── */}
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-4 pb-24">
@@ -220,9 +285,9 @@ export function ServiceWizard({
 
       {/* ─── Sticky bottom navigation bar ─────────────────────────── */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-gray-100 bg-white shadow-[0_-1px_4px_rgba(0,0,0,0.06)]">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-5xl flex-col gap-2 px-4 py-3 md:flex-row md:items-center md:justify-between">
           {/* Left: Voltar */}
-          <div className="min-w-[100px]">
+          <div className="hidden md:block md:min-w-[100px]">
             {showBack && (
               <button
                 type="button"
@@ -235,24 +300,14 @@ export function ServiceWizard({
             )}
           </div>
 
-          {/* Center + Right: Skip + Next */}
-          <div className="flex items-center gap-3">
-            {showSkip && skipLabel && (
-              <button
-                type="button"
-                onClick={handleSkip}
-                className="rounded-[3px] border border-forest px-4 py-2.5 text-sm font-medium text-forest transition-colors hover:bg-petal min-h-[48px]"
-              >
-                {skipLabel}
-              </button>
-            )}
-
+          {/* Mobile: full-width stacked buttons / Desktop: inline */}
+          <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center md:gap-3">
             <button
               type="button"
               onClick={handleNext}
               disabled={state.isSaving}
               className={cn(
-                'flex items-center gap-1.5 rounded-[3px] px-6 py-2.5 text-sm font-medium transition-colors min-h-[48px]',
+                'flex w-full items-center justify-center gap-1.5 rounded-[3px] px-6 py-2.5 text-sm font-medium transition-colors min-h-[48px] md:w-auto md:order-2',
                 'bg-forest text-cream hover:bg-sage',
                 state.isSaving && 'opacity-50 cursor-not-allowed',
               )}
@@ -260,6 +315,27 @@ export function ServiceWizard({
               {nextLabel}
               {state.currentStep < 4 && <ChevronRight className="h-4 w-4" />}
             </button>
+
+            {showSkip && skipLabel && (
+              <button
+                type="button"
+                onClick={handleSkip}
+                className="w-full rounded-[3px] border border-forest px-4 py-2.5 text-sm font-medium text-forest transition-colors hover:bg-petal min-h-[48px] md:w-auto md:order-1"
+              >
+                {skipLabel}
+              </button>
+            )}
+
+            {showBack && (
+              <button
+                type="button"
+                onClick={prevStep}
+                className="flex w-full items-center justify-center gap-1.5 rounded-[3px] border border-forest px-4 py-2.5 text-sm font-medium text-forest transition-colors hover:bg-petal min-h-[48px] md:hidden"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Voltar
+              </button>
+            )}
           </div>
         </div>
 
@@ -276,6 +352,34 @@ export function ServiceWizard({
           </div>
         )}
       </nav>
+
+      {/* ─── Exit confirmation dialog ─────────────────────────────── */}
+      <Dialog open={showExitDialog} onOpenChange={setShowExitDialog}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Sair do atendimento</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja sair? O progresso do passo atual sera perdido.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setShowExitDialog(false)}
+              className="rounded-[3px] border border-forest px-4 py-2 text-sm font-medium text-forest transition-colors hover:bg-petal"
+            >
+              Continuar atendimento
+            </button>
+            <button
+              type="button"
+              onClick={confirmExit}
+              className="rounded-[3px] bg-forest px-4 py-2 text-sm font-medium text-cream transition-colors hover:bg-sage"
+            >
+              Sair
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

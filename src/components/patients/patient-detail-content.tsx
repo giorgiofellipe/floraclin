@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowLeft, Plus, CalendarPlus, Receipt, Phone, User, Mail } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Plus, CalendarPlus, Receipt, Phone, User, Mail } from 'lucide-react'
 import { buttonVariants } from '@/components/ui/button'
 import { cn, maskCPF } from '@/lib/utils'
 import {
@@ -126,7 +126,19 @@ export function PatientDetailContent({
             </div>
           </div>
 
-          {/* Quick action buttons */}
+          {/* Primary action + Quick action buttons */}
+          <div className="flex flex-col items-end gap-3 sm:flex-row sm:items-center">
+            <Link
+              href={`/pacientes/${patient.id}/atendimento`}
+              className={cn(
+                buttonVariants({ size: 'default' }),
+                'bg-forest text-cream hover:bg-sage transition-colors rounded-lg px-5 py-2.5 text-sm font-semibold gap-2 min-h-[44px]',
+              )}
+            >
+              Iniciar Atendimento
+              <ArrowRight className="size-4" />
+            </Link>
+
           <TooltipProvider delay={300}>
             <div className="flex flex-wrap items-center gap-1.5">
               <Tooltip>
@@ -170,6 +182,7 @@ export function PatientDetailContent({
               </Tooltip>
             </div>
           </TooltipProvider>
+          </div>
         </div>
       </div>
 
