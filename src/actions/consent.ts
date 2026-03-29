@@ -14,6 +14,7 @@ import {
   getConsentHistory,
   getActiveConsentForType,
   getConsentTemplateById,
+  getConsentForProcedure,
 } from '@/db/queries/consent'
 
 export type ConsentActionState = {
@@ -164,6 +165,18 @@ export async function acceptConsentAction(
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Erro ao registrar aceite' }
   }
+}
+
+// ─── Per-Procedure Consent Check ───────────────────────────────────
+
+export async function checkConsentForProcedureAction(
+  patientId: string,
+  procedureRecordId: string,
+  consentType: string
+) {
+  const ctx = await getAuthContext()
+  const consent = await getConsentForProcedure(ctx.tenantId, patientId, procedureRecordId, consentType)
+  return { success: true, data: consent }
 }
 
 // ─── History Actions ────────────────────────────────────────────────

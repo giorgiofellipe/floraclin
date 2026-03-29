@@ -26,6 +26,7 @@ import {
 import {
   getActiveConsentForTypeAction,
   acceptConsentAction,
+  checkConsentForProcedureAction,
 } from '@/actions/consent'
 import { listProcedureTypesAction } from '@/actions/procedures'
 import {
@@ -303,8 +304,8 @@ export function ProcedureApproval({
           }
         }
 
-        // Check if already signed
-        const existing = await checkConsentStatusAction(patient.id, 'service_contract')
+        // Check if already signed for THIS procedure
+        const existing = await checkConsentForProcedureAction(patient.id, procedure.id, 'service_contract')
         if (existing.data) {
           setContractSigned(true)
         }

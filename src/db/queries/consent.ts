@@ -201,6 +201,36 @@ export async function getConsentHistory(tenantId: string, patientId: string) {
   return history
 }
 
+export async function getConsentForProcedure(
+  tenantId: string,
+  patientId: string,
+  procedureRecordId: string,
+  consentType: string
+) {
+  const [acceptance] = await db
+    .select({
+      id: consentAcceptances.id,
+      acceptedAt: consentAcceptances.acceptedAt,
+      acceptanceMethod: consentAcceptances.acceptanceMethod,
+      templateTitle: consentTemplates.title,
+      templateType: consentTemplates.type,
+    })
+    .from(consentAcceptances)
+    .innerJoin(consentTemplates, eq(consentAcceptances.consentTemplateId, consentTemplates.id))
+    .where(
+      and(
+        eq(consentAcceptances.tenantId, tenantId),
+        eq(consentAcceptances.patientId, patientId),
+        eq(consentAcceptances.procedureRecordId, procedureRecordId),
+        eq(consentTemplates.type, consentType)
+      )
+    )
+    .orderBy(desc(consentAcceptances.acceptedAt))
+    .limit(1)
+
+  return acceptance ?? null
+}
+
 export async function getAllTemplateVersions(tenantId: string, type: string) {
   return db
     .select()

@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -392,6 +392,45 @@ export function ProcedureForm({
     load()
   }, [patientId, procedure?.id])
 
+  // ─── Auto-sum default prices for financial plan total ──────────────
+  const lastAutoSumRef = useRef<string>('')
+
+  useEffect(() => {
+    if (!isPlanningMode || isReadOnly) return
+    if (procedureTypes.length === 0) return
+
+    const allSelectedIds = [procedureTypeId, ...additionalTypeIds].filter(Boolean)
+    if (allSelectedIds.length === 0) {
+      lastAutoSumRef.current = ''
+      return
+    }
+
+    const sum = allSelectedIds.reduce((acc, id) => {
+      const type = procedureTypes.find((t) => t.id === id)
+      if (type?.defaultPrice) {
+        return acc + parseFloat(type.defaultPrice)
+      }
+      return acc
+    }, 0)
+
+    if (sum <= 0) return
+
+    // Convert sum to cents string then mask
+    const centsStr = String(Math.round(sum * 100))
+    const masked = maskCurrency(centsStr)
+
+    setFinancialPlan((prev) => {
+      // Only auto-fill if current total is empty or matches the previous auto-calculated value
+      if (prev.totalAmount === '' || prev.totalAmount === lastAutoSumRef.current) {
+        lastAutoSumRef.current = masked
+        return { ...prev, totalAmount: masked }
+      }
+      // User has manually changed the value — don't override
+      lastAutoSumRef.current = masked
+      return prev
+    })
+  }, [procedureTypeId, additionalTypeIds, procedureTypes, isPlanningMode, isReadOnly])
+
   // ─── Check consent when procedure type changes (skip in planning mode) ──
   const selectedType = useMemo(
     () => procedureTypes.find((t) => t.id === procedureTypeId),
@@ -589,7 +628,22 @@ export function ProcedureForm({
       }
 
       if (result.success) {
-        if (!isPlanningMode && followUpDate) {
+        if (isPlanningMode) {
+          if (isEdit) {
+            // Editing existing planned procedure — stay on page, just show success
+            router.refresh()
+          } else {
+            // Creating new planned procedure — redirect to its edit page
+            const createdId = (result.data as { id: string } | undefined)?.id
+            if (createdId) {
+              router.push(`/pacientes/${patientId}/procedimentos/${createdId}/editar`)
+              router.refresh()
+            } else {
+              router.push(`/pacientes/${patientId}?tab=procedimentos`)
+              router.refresh()
+            }
+          }
+        } else if (followUpDate) {
           setShowFollowUpPrompt(true)
         } else {
           router.push(`/pacientes/${patientId}?tab=procedimentos`)
@@ -1013,7 +1067,9 @@ export function ProcedureForm({
                 disabled={isReadOnly}
               >
                 <SelectTrigger className="max-w-sm border-sage/20 focus:border-sage/40">
-                  <SelectValue placeholder="Selecione..." />
+                  <SelectValue placeholder="Selecione...">
+                    {(value: string) => PAYMENT_METHOD_LABELS[value] ?? value}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => (
