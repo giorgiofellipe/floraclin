@@ -1,11 +1,12 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireRole } from '@/lib/auth'
+import { requireRole, getAuthContext } from '@/lib/auth'
 import {
   createTemplate,
   updateTemplate,
   resetTemplateToDefault,
+  getTemplatesForProcedureTypes,
 } from '@/db/queries/evaluation-templates'
 import type { EvaluationSection, ProcedureCategory } from '@/types/evaluation'
 
@@ -100,4 +101,13 @@ export async function resetTemplateToDefaultAction(data: {
     }
     return { error: 'Erro ao restaurar template padrao' }
   }
+}
+
+// ─── Read Actions ──────────────────────────────────────────────────
+
+export async function getTemplatesForProcedureTypesAction(
+  procedureTypeIds: string[]
+) {
+  const ctx = await getAuthContext()
+  return getTemplatesForProcedureTypes(ctx.tenantId, procedureTypeIds)
 }

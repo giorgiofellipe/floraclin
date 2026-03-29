@@ -85,6 +85,7 @@ interface SettingsPageClientProps {
   members: TeamMember[]
   consentTemplates: ConsentTemplate[]
   currentUserId: string
+  templateStatusMap?: Record<string, boolean>
 }
 
 const TABS = [
@@ -106,6 +107,7 @@ export function SettingsPageClient({
   members,
   consentTemplates,
   currentUserId,
+  templateStatusMap,
 }: SettingsPageClientProps) {
   const settings = (tenant.settings || {}) as Record<string, unknown>
   const publicBookingEnabled = (settings.online_booking_enabled as boolean) ?? false
@@ -205,7 +207,7 @@ export function SettingsPageClient({
               )}
 
               {activeTab === 'procedimentos' && (
-                <ProcedureTypeList procedureTypes={procedureTypes} />
+                <ProcedureTypeList procedureTypes={procedureTypes} templateStatusMap={templateStatusMap} />
               )}
 
               {activeTab === 'produtos' && (

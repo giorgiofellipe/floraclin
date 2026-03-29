@@ -13,6 +13,9 @@ import { createConsentTemplate } from '@/db/queries/consent'
 import { DEFAULT_CONSENT_TEMPLATES } from '@/validations/consent'
 import { createProduct } from '@/db/queries/products'
 import { DEFAULT_PRODUCTS } from '@/lib/constants'
+import { createTemplate } from '@/db/queries/evaluation-templates'
+import { defaultTemplates } from '@/lib/default-evaluation-templates'
+import type { ProcedureCategory } from '@/types/evaluation'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { eq } from 'drizzle-orm'
@@ -102,7 +105,39 @@ export async function completeOnboarding(data: OnboardingData): Promise<Onboardi
         }
       }
 
-      // 3. Seed default products
+      // 3. Seed default evaluation templates for created procedure types
+      if (existingTypes.length === 0 && data.procedureTypes.length > 0) {
+        // Map procedure type categories to template categories
+        const categoryToTemplateCategory: Record<string, ProcedureCategory> = {
+          botox: 'botox',
+          filler: 'filler',
+          biostimulator: 'biostimulator',
+          skinbooster: 'skinbooster',
+          microagulhamento: 'microagulhamento',
+        }
+
+        // Fetch newly created procedure types to get their IDs
+        const createdTypes = await listProcedureTypes(auth.tenantId)
+
+        for (const pt of createdTypes) {
+          const templateCategory = categoryToTemplateCategory[pt.category]
+          if (!templateCategory) continue
+
+          const defaultTemplate = defaultTemplates.find(
+            (t) => t.category === templateCategory
+          )
+          if (!defaultTemplate) continue
+
+          await createTemplate(
+            auth.tenantId,
+            pt.id,
+            defaultTemplate.name,
+            defaultTemplate.sections
+          )
+        }
+      }
+
+      // 4. Seed default products
       for (const product of DEFAULT_PRODUCTS) {
         await createProduct(auth.tenantId, {
           name: product.name,
@@ -112,7 +147,7 @@ export async function completeOnboarding(data: OnboardingData): Promise<Onboardi
         }, tx)
       }
 
-      // 4. Create default consent templates (4 types + service contract)
+      // 5. Create default consent templates (4 types + service contract)
       const consentTypes = ['general', 'botox', 'filler', 'biostimulator', 'service_contract'] as const
       for (const type of consentTypes) {
         const template = DEFAULT_CONSENT_TEMPLATES[type]
@@ -123,12 +158,12 @@ export async function completeOnboarding(data: OnboardingData): Promise<Onboardi
         })
       }
 
-      // 5. Mark onboarding as completed
+      // 6. Mark onboarding as completed
       await updateTenantSettings(auth.tenantId, {
         onboarding_completed: true,
       })
 
-      // 6. Audit log
+      // 7. Audit log
       await createAuditLog({
         tenantId: auth.tenantId,
         userId: auth.userId,

@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import {
   Table,
@@ -63,9 +62,11 @@ interface ProcedureTypeListProps {
   procedureTypes: ProcedureType[]
   /** When embedded in wizard, simplifies the layout */
   embedded?: boolean
+  /** Map of procedure type ID to whether a template exists */
+  templateStatusMap?: Record<string, boolean>
 }
 
-export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = false }: ProcedureTypeListProps) {
+export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = false, templateStatusMap }: ProcedureTypeListProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [createOpen, setCreateOpen] = useState(false)
@@ -138,6 +139,7 @@ export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = fal
             <TableRow>
               <TableHead>Nome</TableHead>
               <TableHead>Categoria</TableHead>
+              {!embedded && <TableHead>Ficha</TableHead>}
               {!embedded && <TableHead>Preço</TableHead>}
               <TableHead>Duração</TableHead>
               <TableHead>Status</TableHead>
@@ -153,6 +155,17 @@ export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = fal
                     {CATEGORY_LABELS[pt.category] || pt.category}
                   </span>
                 </TableCell>
+                {!embedded && (
+                  <TableCell>
+                    {templateStatusMap?.[pt.id] ? (
+                      <span className="inline-flex items-center rounded-full bg-[#F0F7F1] px-2.5 py-0.5 text-xs font-medium text-sage">
+                        Ficha configurada
+                      </span>
+                    ) : (
+                      <span className="text-xs text-mid">Sem ficha</span>
+                    )}
+                  </TableCell>
+                )}
                 {!embedded && (
                   <TableCell>
                     {pt.defaultPrice

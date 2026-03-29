@@ -68,6 +68,25 @@ import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
 import type { ProductApplicationItem } from '@/validations/procedure'
 import type { WizardOverrides } from '@/components/service-wizard/types'
+import type { EvaluationSection, EvaluationResponses } from '@/types/evaluation'
+import { TemplateRenderer } from '@/components/evaluation/template-renderer'
+import { saveEvaluationResponseAction } from '@/actions/evaluation-responses'
+
+// ─── Evaluation template type for the form ────────────────────────
+
+export interface EvaluationTemplateForForm {
+  id: string
+  procedureTypeId: string
+  procedureTypeName: string
+  sections: EvaluationSection[]
+  version: number
+}
+
+export interface ExistingEvaluationResponse {
+  templateId: string
+  responses: EvaluationResponses
+  templateSnapshot: EvaluationSection[]
+}
 
 // ─── Consent type mapping from procedure category ──────────────────
 
@@ -139,6 +158,8 @@ interface ProcedureFormProps {
   initialTypeIds?: string[]
   mode?: 'create' | 'edit' | 'view'
   wizardOverrides?: WizardOverrides
+  evaluationTemplates?: EvaluationTemplateForForm[]
+  existingEvaluationResponses?: ExistingEvaluationResponse[]
 }
 
 // ─── Collapsible Section ───────────────────────────────────────────
@@ -209,6 +230,8 @@ export function ProcedureForm({
   initialTypeIds,
   mode = 'create',
   wizardOverrides,
+  evaluationTemplates: evalTemplates,
+  existingEvaluationResponses,
 }: ProcedureFormProps) {
   const router = useRouter()
   const isReadOnly = mode === 'view'
@@ -337,6 +360,27 @@ export function ProcedureForm({
       }
       return []
     }
+  )
+
+  // ─── Evaluation responses state ──────────────────────────────────
+  const [evaluationResponses, setEvaluationResponses] = useState<
+    Record<string, Record<string, unknown>>
+  >(() => {
+    if (existingEvaluationResponses && existingEvaluationResponses.length > 0) {
+      const map: Record<string, Record<string, unknown>> = {}
+      for (const r of existingEvaluationResponses) {
+        map[r.templateId] = r.responses as Record<string, unknown>
+      }
+      return map
+    }
+    return {}
+  })
+
+  const handleEvaluationResponseChange = useCallback(
+    (templateId: string, responses: Record<string, unknown>) => {
+      setEvaluationResponses((prev) => ({ ...prev, [templateId]: responses }))
+    },
+    []
   )
 
   // ─── Photo state ─────────────────────────────────────────────────
@@ -652,6 +696,32 @@ export function ProcedureForm({
       }
 
       if (result.success) {
+        // Save evaluation responses (standalone form)
+        const savedProcedureId = (result.data as { id: string } | undefined)?.id ?? procedure?.id
+        if (savedProcedureId && evalTemplates && evalTemplates.length > 0) {
+          const responsePromises = evalTemplates
+            .filter((t) => {
+              const resp = evaluationResponses[t.id]
+              return resp && Object.keys(resp).length > 0
+            })
+            .map((t) =>
+              saveEvaluationResponseAction({
+                procedureRecordId: savedProcedureId,
+                templateId: t.id,
+                responses: evaluationResponses[t.id] as EvaluationResponses,
+              })
+            )
+
+          if (responsePromises.length > 0) {
+            const responseResults = await Promise.all(responsePromises)
+            const failed = responseResults.find((r) => r?.error)
+            if (failed) {
+              setSubmitError(failed.error ?? 'Erro ao salvar respostas da avaliacao')
+              return
+            }
+          }
+        }
+
         if (wizardOverrides?.hideNavigation) {
           // In wizard mode, suppress all navigation — wizard controls flow
         } else if (isPlanningMode) {
@@ -701,6 +771,8 @@ export function ProcedureForm({
     diagramPoints,
     productApps,
     financialPlan,
+    evalTemplates,
+    evaluationResponses,
     router,
   ])
 
@@ -783,6 +855,37 @@ export function ProcedureForm({
 
         if (result.success) {
           const createdId = (result.data as { id: string } | undefined)?.id ?? procedure?.id
+
+          // Save evaluation responses if we have templates with answers
+          if (createdId && evalTemplates && evalTemplates.length > 0) {
+            const responsePromises = evalTemplates
+              .filter((t) => {
+                const resp = evaluationResponses[t.id]
+                return resp && Object.keys(resp).length > 0
+              })
+              .map((t) =>
+                saveEvaluationResponseAction({
+                  procedureRecordId: createdId,
+                  templateId: t.id,
+                  responses: evaluationResponses[t.id] as EvaluationResponses,
+                })
+              )
+
+            if (responsePromises.length > 0) {
+              const responseResults = await Promise.all(responsePromises)
+              const failed = responseResults.find((r) => r?.error)
+              if (failed) {
+                setSubmitError(failed.error ?? 'Erro ao salvar respostas da avaliacao')
+                wizardOverrides?.onSaveComplete?.({
+                  success: false,
+                  error: failed.error ?? 'Erro ao salvar respostas da avaliacao',
+                  errorType: 'server',
+                })
+                return
+              }
+            }
+          }
+
           wizardOverrides?.onSaveComplete?.({
             success: true,
             procedureId: createdId,
@@ -1076,41 +1179,89 @@ export function ProcedureForm({
         </Section>
       )}
 
-      {/* ── Face Diagram ────────────────────────────────────────────── */}
-      <Section
-        title="Diagrama Facial"
-        icon={
-          <svg
-            className="size-4 text-forest"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <circle cx="12" cy="10" r="7" />
-            <path d="M12 17v4M8 21h8" />
-          </svg>
-        }
-        open={openSections.diagram}
-        onToggle={() => toggleSection('diagram')}
-        badge={
-          diagramPoints.length > 0 ? (
-            <Badge variant="outline" className="text-xs border-sage/30 bg-sage/5 text-sage">
-              {diagramPoints.length}{' '}
-              {diagramPoints.length === 1 ? 'ponto' : 'pontos'}
-            </Badge>
-          ) : undefined
-        }
-      >
-        <FaceDiagramEditor
-          points={diagramPoints}
-          onChange={setDiagramPoints}
-          previousPoints={previousPoints}
-          readOnly={isReadOnly}
-          gender={patientGender}
-          products={catalogProducts}
-        />
-      </Section>
+      {/* ── Evaluation Templates (planning mode with templates) ────── */}
+      {isPlanningMode && evalTemplates && evalTemplates.length > 0 && (() => {
+        let diagramAlreadyRendered = false
+        return evalTemplates.map((template) => {
+          const passDiagramRendered = diagramAlreadyRendered
+          // Check if this template has a face_diagram question
+          const hasDiagram = template.sections.some((s) =>
+            s.questions.some((q) => q.type === 'face_diagram')
+          )
+          if (hasDiagram && !diagramAlreadyRendered) {
+            diagramAlreadyRendered = true
+          }
+
+          return (
+            <div key={template.id} className="space-y-0">
+              {/* Template header */}
+              <div className="flex items-center gap-2.5 rounded-t-[3px] bg-forest/5 px-5 py-3 border border-b-0 border-[#E8ECEF]">
+                <div className="flex size-6 items-center justify-center rounded-full bg-forest/10">
+                  <Stethoscope className="size-3.5 text-forest" />
+                </div>
+                <span className="text-sm font-semibold text-charcoal">
+                  {template.procedureTypeName} — Ficha de Avaliação
+                </span>
+              </div>
+              <div className="rounded-b-[3px] border border-t-0 border-[#E8ECEF] bg-white p-5 shadow-[0_1px_4px_rgba(0,0,0,0.06)] mb-5">
+                <TemplateRenderer
+                  sections={template.sections}
+                  responses={(evaluationResponses[template.id] ?? {}) as Record<string, unknown>}
+                  onChange={(r) => handleEvaluationResponseChange(template.id, r)}
+                  readOnly={isReadOnly}
+                  patientGender={patientGender}
+                  diagramPoints={diagramPoints}
+                  onDiagramChange={setDiagramPoints}
+                  diagramRendered={passDiagramRendered}
+                  products={catalogProducts}
+                />
+              </div>
+            </div>
+          )
+        })
+      })()}
+
+      {/* ── Face Diagram (hidden when templates handle it) ──────────── */}
+      {!(isPlanningMode && evalTemplates && evalTemplates.length > 0 &&
+        evalTemplates.some((t) => t.sections.some((s) =>
+          s.questions.some((q) => q.type === 'face_diagram')
+        ))
+      ) && (
+        <Section
+          title="Diagrama Facial"
+          icon={
+            <svg
+              className="size-4 text-forest"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <circle cx="12" cy="10" r="7" />
+              <path d="M12 17v4M8 21h8" />
+            </svg>
+          }
+          open={openSections.diagram}
+          onToggle={() => toggleSection('diagram')}
+          badge={
+            diagramPoints.length > 0 ? (
+              <Badge variant="outline" className="text-xs border-sage/30 bg-sage/5 text-sage">
+                {diagramPoints.length}{' '}
+                {diagramPoints.length === 1 ? 'ponto' : 'pontos'}
+              </Badge>
+            ) : undefined
+          }
+        >
+          <FaceDiagramEditor
+            points={diagramPoints}
+            onChange={setDiagramPoints}
+            previousPoints={previousPoints}
+            readOnly={isReadOnly}
+            gender={patientGender}
+            products={catalogProducts}
+          />
+        </Section>
+      )}
 
       {/* ── Financial Plan (ONLY in planning mode) ──────────────────── */}
       {isPlanningMode && (

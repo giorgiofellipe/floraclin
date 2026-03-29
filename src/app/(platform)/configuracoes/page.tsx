@@ -7,6 +7,7 @@ export const metadata: Metadata = {
 import { getTenant, listProcedureTypes, listConsentTemplates } from '@/db/queries/tenants'
 import { listProducts } from '@/db/queries/products'
 import { listTenantUsers } from '@/db/queries/users'
+import { getTemplatesForProcedureTypes } from '@/db/queries/evaluation-templates'
 import { SettingsPageClient } from './settings-page-client'
 
 export default async function ConfiguracoesPage() {
@@ -19,6 +20,16 @@ export default async function ConfiguracoesPage() {
     listTenantUsers(auth.tenantId),
     listConsentTemplates(auth.tenantId),
   ])
+
+  // Load template statuses for procedure types
+  const procedureTypeIds = procedureTypes.map((pt) => pt.id)
+  const evaluationTemplates = procedureTypeIds.length > 0
+    ? await getTemplatesForProcedureTypes(auth.tenantId, procedureTypeIds)
+    : []
+  const templateStatusMap: Record<string, boolean> = {}
+  for (const tmpl of evaluationTemplates) {
+    templateStatusMap[tmpl.procedureTypeId] = true
+  }
 
   if (!tenant) {
     return (
@@ -36,6 +47,7 @@ export default async function ConfiguracoesPage() {
       members={members}
       consentTemplates={consentTemplates}
       currentUserId={auth.userId}
+      templateStatusMap={templateStatusMap}
     />
   )
 }
