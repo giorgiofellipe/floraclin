@@ -214,13 +214,13 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                       <>
                         {proc.technique && (
                           <p className="mt-2 text-sm text-charcoal">
-                            <span className="text-mid">Tecnica:</span>{' '}
+                            <span className="text-mid">Técnica:</span>{' '}
                             {proc.technique}
                           </p>
                         )}
                         {proc.clinicalResponse && (
                           <p className="text-sm text-charcoal">
-                            <span className="text-mid">Resposta clinica:</span>{' '}
+                            <span className="text-mid">Resposta clínica:</span>{' '}
                             {proc.clinicalResponse}
                           </p>
                         )}
@@ -297,7 +297,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                             }
                           >
                             <Play className="mr-1 size-3" />
-                            Registrar Execucao
+                            Registrar Execução
                           </Button>
                           <Button
                             size="sm"

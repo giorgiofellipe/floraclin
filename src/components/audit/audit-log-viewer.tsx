@@ -37,7 +37,7 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   appointment: 'Agendamento',
   procedure_record: 'Procedimento',
   procedure_type: 'Tipo de Procedimento',
-  financial_entry: 'Cobranca',
+  financial_entry: 'Cobrança',
   installment: 'Parcela',
   consent_template: 'Termo',
   consent_acceptance: 'Aceite de Termo',

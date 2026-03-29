@@ -6,7 +6,7 @@ import { getTemplateForProcedureType } from '@/db/queries/evaluation-templates'
 import { TemplateEditorPage } from './template-editor-page'
 
 export const metadata: Metadata = {
-  title: 'Ficha de Avaliacao | FloraClin',
+  title: 'Ficha de Avaliação | FloraClin',
 }
 
 interface PageProps {

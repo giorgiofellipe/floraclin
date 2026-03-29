@@ -34,7 +34,7 @@ export function TemplateEditorPage({ procedureType, template }: TemplateEditorPa
     } else {
       return await createTemplateAction({
         procedureTypeId: procedureType.id,
-        name: `Ficha de Avaliacao - ${procedureType.name}`,
+        name: `Ficha de Avaliação - ${procedureType.name}`,
         sections,
       })
     }

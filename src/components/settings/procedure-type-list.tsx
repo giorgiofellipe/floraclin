@@ -190,7 +190,7 @@ export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = fal
                       variant="ghost"
                       size="icon-sm"
                       onClick={() => router.push(`/configuracoes/avaliacao/${pt.id}`)}
-                      title="Ficha de Avaliacao"
+                      title="Ficha de Avaliação"
                     >
                       <ClipboardListIcon />
                     </Button>
