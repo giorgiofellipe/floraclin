@@ -102,22 +102,45 @@ export function DiagramSummary({ points, previousPoints }: DiagramSummaryProps) 
               Pontos
             </h4>
             <div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
-              {points.map((point) => (
-                <div
-                  key={point.id}
-                  className="flex items-center gap-1.5 text-xs"
-                >
-                  <span
-                    className="h-2 w-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: getPointColor(point.productName) }}
-                  />
-                  <span className="truncate">{point.productName}</span>
-                  <span className="ml-auto shrink-0 tabular-nums font-medium">
-                    {formatQuantity(point.quantity)}
-                    {point.quantityUnit}
-                  </span>
-                </div>
-              ))}
+              {points.map((point) => {
+                // Find matching planned point at same coordinates
+                const plannedPoint = previousPoints?.find(
+                  (pp) =>
+                    Math.abs(pp.x - point.x) < 1 &&
+                    Math.abs(pp.y - point.y) < 1 &&
+                    pp.productName === point.productName
+                )
+                const qtyChanged = plannedPoint && plannedPoint.quantity !== point.quantity
+
+                return (
+                  <div
+                    key={point.id}
+                    className={`flex items-center gap-1.5 text-xs rounded px-1 py-0.5 ${
+                      qtyChanged ? 'bg-[#FFF4EF]' : ''
+                    }`}
+                  >
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: getPointColor(point.productName) }}
+                    />
+                    <span className="truncate">{point.productName}</span>
+                    <div className="ml-auto flex shrink-0 items-center gap-1 tabular-nums font-medium">
+                      {qtyChanged && (
+                        <>
+                          <span className="text-[#7A7A7A] line-through">
+                            {formatQuantity(plannedPoint.quantity)}{point.quantityUnit}
+                          </span>
+                          <span className="text-[#7A7A7A]">→</span>
+                        </>
+                      )}
+                      <span className={qtyChanged ? 'text-[#D4845A]' : ''}>
+                        {formatQuantity(point.quantity)}
+                        {point.quantityUnit}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </>
