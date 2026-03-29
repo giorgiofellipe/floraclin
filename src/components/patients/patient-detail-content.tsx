@@ -55,11 +55,13 @@ const VALID_TABS: PatientTabKey[] = [
 interface PatientDetailContentProps {
   patient: Patient
   activeTab?: string
+  hasActiveService?: boolean
 }
 
 export function PatientDetailContent({
   patient,
   activeTab,
+  hasActiveService = false,
 }: PatientDetailContentProps) {
   const tab: PatientTabKey = VALID_TABS.includes(activeTab as PatientTabKey)
     ? (activeTab as PatientTabKey)
@@ -135,7 +137,7 @@ export function PatientDetailContent({
                 'bg-forest text-cream hover:bg-sage transition-colors rounded-lg px-5 py-2.5 text-sm font-semibold gap-2 min-h-[44px]',
               )}
             >
-              Iniciar Atendimento
+              {hasActiveService ? 'Continuar Atendimento' : 'Iniciar Atendimento'}
               <ArrowRight className="size-4" />
             </Link>
 
