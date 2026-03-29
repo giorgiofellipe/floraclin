@@ -160,6 +160,7 @@ interface ProcedureFormProps {
   wizardOverrides?: WizardOverrides
   evaluationTemplates?: EvaluationTemplateForForm[]
   existingEvaluationResponses?: ExistingEvaluationResponse[]
+  loadingEvaluationTemplates?: boolean
 }
 
 // ─── Collapsible Section ───────────────────────────────────────────
@@ -232,6 +233,7 @@ export function ProcedureForm({
   wizardOverrides,
   evaluationTemplates: evalTemplates,
   existingEvaluationResponses,
+  loadingEvaluationTemplates = false,
 }: ProcedureFormProps) {
   const router = useRouter()
   const isReadOnly = mode === 'view'
@@ -1179,8 +1181,18 @@ export function ProcedureForm({
         </Section>
       )}
 
+      {/* ── Loading state for evaluation templates ────── */}
+      {isPlanningMode && loadingEvaluationTemplates && (
+        <div className="bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px] p-8">
+          <div className="flex items-center justify-center gap-3">
+            <Loader2 className="size-5 animate-spin text-sage" />
+            <span className="text-sm text-mid">Carregando fichas de avaliação...</span>
+          </div>
+        </div>
+      )}
+
       {/* ── Evaluation Templates (planning mode with templates) ────── */}
-      {isPlanningMode && evalTemplates && evalTemplates.length > 0 && (() => {
+      {isPlanningMode && !loadingEvaluationTemplates && evalTemplates && evalTemplates.length > 0 && (() => {
         let diagramAlreadyRendered = false
         return evalTemplates.map((template) => {
           const passDiagramRendered = diagramAlreadyRendered
@@ -1221,8 +1233,8 @@ export function ProcedureForm({
         })
       })()}
 
-      {/* ── Face Diagram (hidden when templates handle it) ──────────── */}
-      {!(isPlanningMode && evalTemplates && evalTemplates.length > 0 &&
+      {/* ── Face Diagram (hidden when templates handle it or loading) ── */}
+      {!loadingEvaluationTemplates && !(isPlanningMode && evalTemplates && evalTemplates.length > 0 &&
         evalTemplates.some((t) => t.sections.some((s) =>
           s.questions.some((q) => q.type === 'face_diagram')
         ))

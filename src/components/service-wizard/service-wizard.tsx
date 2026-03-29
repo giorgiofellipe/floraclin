@@ -150,6 +150,7 @@ export function ServiceWizard({
   const [evalTemplates, setEvalTemplates] = useState<EvaluationTemplateForForm[]>([])
   const [existingEvalResponses, setExistingEvalResponses] = useState<ExistingEvaluationResponse[]>([])
   const [evalTemplatesLoadedForIds, setEvalTemplatesLoadedForIds] = useState<string>('')
+  const [loadingEvalTemplates, setLoadingEvalTemplates] = useState(false)
 
   // Load evaluation templates when selectedTypeIds change
   useEffect(() => {
@@ -158,6 +159,7 @@ export function ServiceWizard({
     if (!key || key === evalTemplatesLoadedForIds) return
 
     async function loadTemplates() {
+      setLoadingEvalTemplates(true)
       try {
         const templates = await getTemplatesForProcedureTypesAction(typeIds)
         // We need procedure type names — load them from the procedure type step data
@@ -187,6 +189,8 @@ export function ServiceWizard({
         setEvalTemplatesLoadedForIds(key)
       } catch {
         // Non-blocking — templates won't show
+      } finally {
+        setLoadingEvalTemplates(false)
       }
     }
     loadTemplates()
@@ -509,6 +513,7 @@ export function ServiceWizard({
                 wizardOverrides={{ ...baseOverrides, hideProcedureTypes: true }}
                 evaluationTemplates={evalTemplates.length > 0 ? evalTemplates : undefined}
                 existingEvaluationResponses={existingEvalResponses.length > 0 ? existingEvalResponses : undefined}
+                loadingEvaluationTemplates={loadingEvalTemplates}
               />
             </WizardStepWrapper>
           </div>
