@@ -718,7 +718,7 @@ export function ProcedureForm({
             const responseResults = await Promise.all(responsePromises)
             const failed = responseResults.find((r) => r?.error)
             if (failed) {
-              setSubmitError(failed.error ?? 'Erro ao salvar respostas da avaliacao')
+              setSubmitError(failed.error ?? 'Erro ao salvar respostas da avaliação')
               return
             }
           }
@@ -785,7 +785,7 @@ export function ProcedureForm({
       if (isSubmitting || isReadOnly) {
         wizardOverrides?.onSaveComplete?.({
           success: false,
-          error: 'Formulario indisponivel',
+          error: 'Formulário indisponível',
           errorType: 'precondition',
         })
         return
@@ -877,10 +877,10 @@ export function ProcedureForm({
               const responseResults = await Promise.all(responsePromises)
               const failed = responseResults.find((r) => r?.error)
               if (failed) {
-                setSubmitError(failed.error ?? 'Erro ao salvar respostas da avaliacao')
+                setSubmitError(failed.error ?? 'Erro ao salvar respostas da avaliação')
                 wizardOverrides?.onSaveComplete?.({
                   success: false,
-                  error: failed.error ?? 'Erro ao salvar respostas da avaliacao',
+                  error: failed.error ?? 'Erro ao salvar respostas da avaliação',
                   errorType: 'server',
                 })
                 return
@@ -1156,7 +1156,7 @@ export function ProcedureForm({
       {/* ── Pre-Procedure Photos (HIDDEN in planning mode) ─────────── */}
       {!isPlanningMode && (
         <Section
-          title="Fotos Pre-Procedimento"
+          title="Fotos Pré-Procedimento"
           icon={<Camera className="size-4 text-forest" />}
           open={openSections.prePhotos}
           onToggle={() => toggleSection('prePhotos')}
@@ -1343,7 +1343,7 @@ export function ProcedureForm({
                   <SelectContent>
                     {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
                       <SelectItem key={n} value={String(n)}>
-                        {n}x {n === 1 ? '(a vista)' : ''}
+                        {n}x {n === 1 ? '(à vista)' : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1521,7 +1521,7 @@ export function ProcedureForm({
 
                     <div className="mt-3">
                       <Label className="uppercase tracking-wider text-xs text-mid">
-                        Areas de aplicacao
+                        Áreas de aplicação
                       </Label>
                       <Input
                         value={app.applicationAreas ?? ''}
@@ -1563,7 +1563,7 @@ export function ProcedureForm({
       {/* ── Clinical Notes (HIDDEN in planning mode) ───────────────── */}
       {!isPlanningMode && (
         <Section
-          title="Notas Clinicas"
+          title="Notas Clínicas"
           icon={<FileText className="size-4 text-forest" />}
           open={openSections.clinicalNotes}
           onToggle={() => toggleSection('clinicalNotes')}
@@ -1571,12 +1571,12 @@ export function ProcedureForm({
           <div className="space-y-5">
             <div>
               <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-                Tecnica utilizada
+                Técnica utilizada
               </Label>
               <Textarea
                 value={technique}
                 onChange={(e) => setTechnique(e.target.value)}
-                placeholder="Descreva a tecnica utilizada..."
+                placeholder="Descreva a técnica utilizada..."
                 disabled={isReadOnly}
                 className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
                 rows={3}
@@ -1585,12 +1585,12 @@ export function ProcedureForm({
 
             <div className="border-t border-petal pt-5">
               <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-                Resposta clinica
+                Resposta clínica
               </Label>
               <Textarea
                 value={clinicalResponse}
                 onChange={(e) => setClinicalResponse(e.target.value)}
-                placeholder="Descreva a resposta clinica observada..."
+                placeholder="Descreva a resposta clínica observada..."
                 disabled={isReadOnly}
                 className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
                 rows={3}
@@ -1662,12 +1662,12 @@ export function ProcedureForm({
 
             <div className="border-t border-petal pt-5">
               <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-                Objetivos da proxima sessao
+                Objetivos da próxima sessão
               </Label>
               <Textarea
                 value={nextSessionObjectives}
                 onChange={(e) => setNextSessionObjectives(e.target.value)}
-                placeholder="Descreva os objetivos para a proxima sessao..."
+                placeholder="Descreva os objetivos para a próxima sessão..."
                 disabled={isReadOnly}
                 className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
                 rows={3}
@@ -1680,7 +1680,7 @@ export function ProcedureForm({
       {/* ── Post-Procedure Photos (HIDDEN in planning mode) ────────── */}
       {!isPlanningMode && (
         <Section
-          title="Fotos Pos-Procedimento"
+          title="Fotos Pós-Procedimento"
           icon={<Camera className="size-4 text-forest" />}
           open={openSections.postPhotos}
           onToggle={() => toggleSection('postPhotos')}
@@ -1733,7 +1733,7 @@ export function ProcedureForm({
                   <Save className="mr-2 size-4" />
                   {isPlanningMode
                     ? (isEdit ? 'Salvar Planejamento' : 'Criar Planejamento')
-                    : (isEdit ? 'Salvar Alteracoes' : 'Salvar Procedimento')}
+                    : (isEdit ? 'Salvar Alterações' : 'Salvar Procedimento')}
                 </>
               )}
             </Button>

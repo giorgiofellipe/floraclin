@@ -346,7 +346,7 @@ export function ServiceWizard({
 
   const handleSkip = useCallback(() => {
     if (state.currentStep === 4) {
-      // "Adiar Aprovacao" — exits wizard
+      // "Adiar Aprovação" — exits wizard
       toast.info('Atendimento salvo como planejado. Retorne para aprovar quando o paciente estiver pronto.')
       router.push(`/pacientes/${patient.id}`)
       return

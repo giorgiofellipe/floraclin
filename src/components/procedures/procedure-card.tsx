@@ -312,7 +312,7 @@ export function ProcedureCard({
                       onClick={handleExecute}
                     >
                       <Play className="mr-1 size-3" />
-                      Registrar Execucao
+                      Registrar Execução
                     </Button>
                     <Button
                       size="sm"
@@ -356,7 +356,7 @@ export function ProcedureCard({
               Cancelar Procedimento
             </DialogTitle>
             <DialogDescription className="text-mid text-sm">
-              Informe o motivo do cancelamento. Esta acao nao pode ser desfeita.
+              Informe o motivo do cancelamento. Esta ação não pode ser desfeita.
             </DialogDescription>
           </DialogHeader>
 

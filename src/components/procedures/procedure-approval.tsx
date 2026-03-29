@@ -53,10 +53,10 @@ const CATEGORY_TO_CONSENT: Record<string, string> = {
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   pix: 'PIX',
-  credit_card: 'Cartao de Credito',
-  debit_card: 'Cartao de Debito',
+  credit_card: 'Cartão de Crédito',
+  debit_card: 'Cartão de Débito',
   cash: 'Dinheiro',
-  transfer: 'Transferencia Bancaria',
+  transfer: 'Transferência Bancária',
 }
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -405,7 +405,7 @@ export function ProcedureApproval({
       if (!canApprove) {
         wizardOverrides?.onSaveComplete?.({
           success: false,
-          error: 'Assine todos os termos e o contrato de servico para aprovar',
+          error: 'Assine todos os termos e o contrato de serviço para aprovar',
           errorType: 'precondition',
         })
         return
@@ -590,7 +590,7 @@ export function ProcedureApproval({
                   <span className="text-sm text-mid">Parcelas</span>
                   <span className="text-sm text-charcoal">
                     {financialPlan.installmentCount === 1
-                      ? 'A vista'
+                      ? 'À vista'
                       : `${financialPlan.installmentCount}x de ${formatCurrency(
                           financialPlan.totalAmount / financialPlan.installmentCount
                         )}`}
@@ -697,7 +697,7 @@ export function ProcedureApproval({
                   ) : (
                     <div className="rounded-[3px] border border-amber/30 bg-[#FFF4EF] p-4">
                       <p className="text-sm text-amber-dark">
-                        Modelo de termo nao encontrado. Configure o termo nas configuracoes.
+                        Modelo de termo não encontrado. Configure o termo nas configurações.
                       </p>
                     </div>
                   )}
@@ -716,7 +716,7 @@ export function ProcedureApproval({
               <FileText className="size-4 text-forest" />
             </div>
             <span className="uppercase tracking-wider text-sm text-charcoal font-medium">
-              Contrato de Servico
+              Contrato de Serviço
             </span>
             {contractSigned && (
               <Badge className="bg-mint/20 text-sage text-xs border-0 ml-auto">
@@ -734,14 +734,14 @@ export function ProcedureApproval({
           ) : !contractTemplate ? (
             <div className="rounded-[3px] border border-amber/30 bg-[#FFF4EF] p-4">
               <p className="text-sm text-amber-dark">
-                Modelo de contrato de servico nao encontrado. Configure o contrato nas configuracoes.
+                Modelo de contrato de serviço não encontrado. Configure o contrato nas configurações.
               </p>
             </div>
           ) : contractSigned ? (
             <div className="flex items-center gap-3 rounded-[3px] border border-sage/30 bg-[#F0F7F1] px-4 py-4">
               <CheckCircle2 className="size-5 text-sage" />
               <span className="text-sm text-charcoal">
-                Contrato de servico assinado com sucesso
+                Contrato de serviço assinado com sucesso
               </span>
             </div>
           ) : (
@@ -762,7 +762,7 @@ export function ProcedureApproval({
                   className="mt-0.5 border-sage data-[state=checked]:bg-forest data-[state=checked]:border-forest"
                 />
                 <span className="text-sm font-medium leading-snug text-charcoal">
-                  Li e concordo com os termos do contrato de prestacao de servicos
+                  Li e concordo com os termos do contrato de prestação de serviços
                 </span>
               </label>
 
@@ -770,7 +770,7 @@ export function ProcedureApproval({
               {contractChecked && (
                 <div className="space-y-2">
                   <p className="text-sm font-medium text-charcoal">
-                    Assinatura do paciente (obrigatoria)
+                    Assinatura do paciente (obrigatória)
                   </p>
                   <SignaturePad
                     onSignatureChange={setContractSignature}
@@ -845,7 +845,7 @@ export function ProcedureApproval({
                       contractSigned ? 'text-sage font-medium' : 'text-mid'
                     )}
                   >
-                    Contrato de servico assinado
+                    Contrato de serviço assinado
                   </span>
                 </div>
               </div>
@@ -871,7 +871,7 @@ export function ProcedureApproval({
 
               {!canApprove && (
                 <p className="text-xs text-mid text-center">
-                  Assine todos os termos e o contrato de servico para aprovar
+                  Assine todos os termos e o contrato de serviço para aprovar
                 </p>
               )}
             </div>

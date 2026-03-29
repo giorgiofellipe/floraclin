@@ -130,7 +130,7 @@ export function ProcedureTypeStep({
         ) : (
           <div className="space-y-4">
             <p className="text-xs text-mid">
-              Selecione um ou mais tipos de procedimento (o primeiro sera o principal).
+              Selecione um ou mais tipos de procedimento (o primeiro será o principal).
             </p>
 
             {Object.entries(grouped).map(([category, types]) => (

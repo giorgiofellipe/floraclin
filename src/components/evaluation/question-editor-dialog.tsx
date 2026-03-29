@@ -158,7 +158,7 @@ export function QuestionEditorDialog({
               id="q-label"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="Ex: Possui historico de alergia?"
+              placeholder="Ex: Possui histórico de alergia?"
             />
           </div>
 
@@ -188,7 +188,7 @@ export function QuestionEditorDialog({
           {/* Required */}
           <div className="flex items-center justify-between">
             <Label className="uppercase tracking-wider text-xs text-mid">
-              Obrigatoria
+              Obrigatória
             </Label>
             <Switch
               checked={required}
@@ -201,7 +201,7 @@ export function QuestionEditorDialog({
           {showOptions && (
             <div className="space-y-1.5">
               <Label className="uppercase tracking-wider text-xs text-mid">
-                Opcoes
+                Opções
               </Label>
               <div className="space-y-2">
                 {options.map((option, index) => (
@@ -209,7 +209,7 @@ export function QuestionEditorDialog({
                     <Input
                       value={option}
                       onChange={(e) => handleOptionChange(index, e.target.value)}
-                      placeholder={`Opcao ${index + 1}`}
+                      placeholder={`Opção ${index + 1}`}
                       className="flex-1"
                     />
                     {options.length > 1 && (
@@ -230,7 +230,7 @@ export function QuestionEditorDialog({
                   className="w-full"
                 >
                   <PlusIcon data-icon="inline-start" />
-                  Adicionar opcao
+                  Adicionar opção
                 </Button>
               </div>
             </div>
@@ -242,7 +242,7 @@ export function QuestionEditorDialog({
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="scale-min" className="uppercase tracking-wider text-xs text-mid">
-                    Minimo
+                    Mínimo
                   </Label>
                   <Input
                     id="scale-min"
@@ -253,7 +253,7 @@ export function QuestionEditorDialog({
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="scale-max" className="uppercase tracking-wider text-xs text-mid">
-                    Maximo
+                    Máximo
                   </Label>
                   <Input
                     id="scale-max"
@@ -266,7 +266,7 @@ export function QuestionEditorDialog({
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="scale-min-label" className="uppercase tracking-wider text-xs text-mid">
-                    Label minimo
+                    Label mínimo
                   </Label>
                   <Input
                     id="scale-min-label"
@@ -277,7 +277,7 @@ export function QuestionEditorDialog({
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="scale-max-label" className="uppercase tracking-wider text-xs text-mid">
-                    Label maximo
+                    Label máximo
                   </Label>
                   <Input
                     id="scale-max-label"

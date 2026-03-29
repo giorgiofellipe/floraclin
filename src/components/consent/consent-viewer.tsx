@@ -113,7 +113,7 @@ export function ConsentViewer({
             </CardDescription>
           </div>
           <Badge variant="outline" className="border-sage/30 bg-sage/5 text-sage text-xs">
-            Versao {template.version}
+            Versão {template.version}
           </Badge>
         </div>
       </CardHeader>
@@ -143,7 +143,7 @@ export function ConsentViewer({
         {(requireSignature || checked) && (
           <div className="space-y-2">
             <p className="text-sm font-medium text-charcoal">
-              {requireSignature ? 'Assinatura (obrigatoria)' : 'Assinatura (opcional)'}
+              {requireSignature ? 'Assinatura (obrigatória)' : 'Assinatura (opcional)'}
             </p>
             <SignaturePad
               onSignatureChange={setSignatureData}

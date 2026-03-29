@@ -502,7 +502,7 @@ export function ProcedureExecution({
       })
 
       if (!result.success) {
-        setSubmitError(result.error ?? 'Erro ao registrar execucao')
+        setSubmitError(result.error ?? 'Erro ao registrar execução')
         return
       }
 
@@ -511,7 +511,7 @@ export function ProcedureExecution({
         router.push(`/pacientes/${patientId}?tab=procedimentos`)
       }
     } catch {
-      setSubmitError('Erro inesperado ao registrar execucao')
+      setSubmitError('Erro inesperado ao registrar execução')
     } finally {
       setIsSubmitting(false)
     }
@@ -539,7 +539,7 @@ export function ProcedureExecution({
       if (isSubmitting || isReadOnly) {
         wizardOverrides?.onSaveComplete?.({
           success: false,
-          error: 'Formulario indisponivel',
+          error: 'Formulário indisponível',
           errorType: 'precondition',
         })
         return
@@ -587,18 +587,18 @@ export function ProcedureExecution({
             procedureId: procedure.id,
           })
         } else {
-          setSubmitError(result.error ?? 'Erro ao registrar execucao')
+          setSubmitError(result.error ?? 'Erro ao registrar execução')
           wizardOverrides?.onSaveComplete?.({
             success: false,
-            error: result.error ?? 'Erro ao registrar execucao',
+            error: result.error ?? 'Erro ao registrar execução',
             errorType: 'server',
           })
         }
       } catch {
-        setSubmitError('Erro inesperado ao registrar execucao')
+        setSubmitError('Erro inesperado ao registrar execução')
         wizardOverrides?.onSaveComplete?.({
           success: false,
-          error: 'Erro inesperado ao registrar execucao',
+          error: 'Erro inesperado ao registrar execução',
           errorType: 'server',
         })
       } finally {
@@ -625,7 +625,7 @@ export function ProcedureExecution({
             </Button>
             <div>
               <h1 className="font-display text-xl text-forest">
-                {isExecuted ? 'Detalhes da Execucao' : 'Registrar Execucao'}
+                {isExecuted ? 'Detalhes da Execução' : 'Registrar Execução'}
               </h1>
               <p className="mt-0.5 text-sm text-mid">
                 {procedure.procedureTypeName}
@@ -816,7 +816,7 @@ export function ProcedureExecution({
 
                     <div className="mt-3">
                       <Label className="uppercase tracking-wider text-xs text-mid">
-                        Areas de aplicacao
+                        Áreas de aplicação
                       </Label>
                       <Input
                         value={app.applicationAreas ?? ''}
@@ -857,7 +857,7 @@ export function ProcedureExecution({
 
       {/* ── Clinical Notes ───────────────────────────────────────────── */}
       <Section
-        title="Notas Clinicas"
+        title="Notas Clínicas"
         icon={<FileText className="size-4 text-forest" />}
         open={openSections.clinicalNotes}
         onToggle={() => toggleSection('clinicalNotes')}
@@ -865,12 +865,12 @@ export function ProcedureExecution({
         <div className="space-y-5">
           <div>
             <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Tecnica utilizada
+              Técnica utilizada
             </Label>
             <Textarea
               value={technique}
               onChange={(e) => setTechnique(e.target.value)}
-              placeholder="Descreva a tecnica utilizada..."
+              placeholder="Descreva a técnica utilizada..."
               disabled={isReadOnly}
               className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
               rows={3}
@@ -879,12 +879,12 @@ export function ProcedureExecution({
 
           <div className="border-t border-petal pt-5">
             <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Resposta clinica
+              Resposta clínica
             </Label>
             <Textarea
               value={clinicalResponse}
               onChange={(e) => setClinicalResponse(e.target.value)}
-              placeholder="Descreva a resposta clinica observada..."
+              placeholder="Descreva a resposta clínica observada..."
               disabled={isReadOnly}
               className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
               rows={3}
@@ -907,12 +907,12 @@ export function ProcedureExecution({
 
           <div className="border-t border-petal pt-5">
             <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Observacoes gerais
+              Observações gerais
             </Label>
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Observacoes adicionais sobre o procedimento..."
+              placeholder="Observações adicionais sobre o procedimento..."
               disabled={isReadOnly}
               className="mt-1.5 min-h-[60px] resize-none border-sage/20 focus:border-sage/40"
               rows={2}
@@ -923,7 +923,7 @@ export function ProcedureExecution({
 
       {/* ── Pre-Procedure Photos ────────────────────────────────────── */}
       <Section
-        title="Fotos Pre-Procedimento"
+        title="Fotos Pré-Procedimento"
         icon={<Camera className="size-4 text-forest" />}
         open={openSections.prePhotos}
         onToggle={() => toggleSection('prePhotos')}
@@ -950,7 +950,7 @@ export function ProcedureExecution({
 
       {/* ── Post-Procedure Photos ───────────────────────────────────── */}
       <Section
-        title="Fotos Pos-Procedimento"
+        title="Fotos Pós-Procedimento"
         icon={<Camera className="size-4 text-forest" />}
         open={openSections.postPhotos}
         onToggle={() => toggleSection('postPhotos')}
@@ -978,7 +978,7 @@ export function ProcedureExecution({
       {/* ── Follow-up (optional) ──────────────────────────────────────── */}
       {!isReadOnly && (
         <Section
-          title="Retorno e Proxima Sessao"
+          title="Retorno e Próxima Sessão"
           icon={<CalendarPlus className="size-4 text-forest" />}
           open={openSections.followUp}
           onToggle={() => toggleSection('followUp')}
@@ -998,12 +998,12 @@ export function ProcedureExecution({
 
             <div className="border-t border-petal pt-5">
               <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-                Objetivos para proxima sessao
+                Objetivos para próxima sessão
               </Label>
               <Textarea
                 value={nextSessionObjectives}
                 onChange={(e) => setNextSessionObjectives(e.target.value)}
-                placeholder="Descreva os objetivos para a proxima sessao..."
+                placeholder="Descreva os objetivos para a próxima sessão..."
                 className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
                 rows={3}
               />
@@ -1015,7 +1015,7 @@ export function ProcedureExecution({
       {/* ── Read-only follow-up info ──────────────────────────────────── */}
       {isReadOnly && (procedure.followUpDate || procedure.nextSessionObjectives) && (
         <Section
-          title="Retorno e Proxima Sessao"
+          title="Retorno e Próxima Sessão"
           icon={<CalendarPlus className="size-4 text-forest" />}
           open={openSections.followUp}
           onToggle={() => toggleSection('followUp')}
@@ -1036,7 +1036,7 @@ export function ProcedureExecution({
             {procedure.nextSessionObjectives && (
               <div className="border-t border-petal pt-4">
                 <Label className="uppercase tracking-wider text-xs text-mid mb-1 block">
-                  Objetivos para proxima sessao
+                  Objetivos para próxima sessão
                 </Label>
                 <p className="text-sm text-charcoal whitespace-pre-wrap">
                   {procedure.nextSessionObjectives}

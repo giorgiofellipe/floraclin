@@ -449,7 +449,7 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
                   render={({ field }) => (
                     <Textarea
                       id="patientGoals"
-                      placeholder="O que o paciente espera alcancar..."
+                      placeholder="O que o paciente espera alcançar..."
                       rows={3}
                       className="min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
                       {...field}
@@ -774,7 +774,7 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="uppercase tracking-wider text-xs text-mid">Alcool</Label>
+                <Label className="uppercase tracking-wider text-xs text-mid">Álcool</Label>
                 <Controller
                   control={control}
                   name="lifestyle.alcohol"
@@ -789,7 +789,7 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="uppercase tracking-wider text-xs text-mid">Exercicio fisico</Label>
+                <Label className="uppercase tracking-wider text-xs text-mid">Exercício físico</Label>
                 <Controller
                   control={control}
                   name="lifestyle.exercise"
@@ -819,7 +819,7 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="uppercase tracking-wider text-xs text-mid">Alimentacao</Label>
+                <Label className="uppercase tracking-wider text-xs text-mid">Alimentação</Label>
                 <Controller
                   control={control}
                   name="lifestyle.diet"
@@ -834,7 +834,7 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="uppercase tracking-wider text-xs text-mid">Exposicao solar</Label>
+                <Label className="uppercase tracking-wider text-xs text-mid">Exposição solar</Label>
                 <Controller
                   control={control}
                   name="lifestyle.sunExposure"
@@ -1085,7 +1085,7 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
       {/* ── Footer: last saved info ── */}
       {lastSaved && (
         <div className="text-xs text-mid pt-3 border-t border-petal">
-          Ultima atualizacao: {formatDateTime(lastSaved)}
+          Última atualização: {formatDateTime(lastSaved)}
           {lastSavedBy && <> por {lastSavedBy}</>}
         </div>
       )}
