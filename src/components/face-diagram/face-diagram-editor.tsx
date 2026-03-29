@@ -175,7 +175,7 @@ export function FaceDiagramEditor({
                 {/* Summary panel */}
                 <div className="w-full md:w-56 lg:w-64">
                   <div className="rounded-lg border p-3">
-                    <DiagramSummary points={points} />
+                    <DiagramSummary points={points} previousPoints={previousPoints} />
                   </div>
                 </div>
               </div>

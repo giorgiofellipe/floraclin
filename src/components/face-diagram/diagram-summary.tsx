@@ -5,6 +5,7 @@ import type { DiagramPointData } from './types'
 
 interface DiagramSummaryProps {
   points: DiagramPointData[]
+  previousPoints?: DiagramPointData[] // planned points for comparison
 }
 
 interface ProductTotal {
@@ -15,8 +16,17 @@ interface ProductTotal {
   color: string
 }
 
-export function DiagramSummary({ points }: DiagramSummaryProps) {
+export function DiagramSummary({ points, previousPoints }: DiagramSummaryProps) {
   const totals = getTotals(points)
+  const plannedTotals = previousPoints ? getTotals(previousPoints) : null
+
+  // Build a map for quick planned lookup
+  const plannedMap = new Map<string, ProductTotal>()
+  if (plannedTotals) {
+    for (const t of plannedTotals) {
+      plannedMap.set(`${t.productName}|${t.unit}`, t)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -33,30 +43,54 @@ export function DiagramSummary({ points }: DiagramSummaryProps) {
         </p>
       ) : (
         <div className="flex flex-col gap-2">
-          {totals.map((total) => (
-            <div
-              key={`${total.productName}-${total.unit}`}
-              className="flex items-center gap-2 rounded-md border px-2.5 py-1.5"
-            >
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: total.color }}
-              />
-              <div className="flex flex-1 flex-col">
-                <span className="text-sm font-medium leading-tight">
-                  {total.productName}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {total.pointCount}{' '}
-                  {total.pointCount === 1 ? 'ponto' : 'pontos'}
-                </span>
+          {totals.map((total) => {
+            const key = `${total.productName}|${total.unit}`
+            const planned = plannedMap.get(key)
+            const hasPlanned = !!planned
+            const changed = hasPlanned && planned.totalQuantity !== total.totalQuantity
+
+            return (
+              <div
+                key={key}
+                className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 ${
+                  changed ? 'border-[#D4845A]/30 bg-[#FFF4EF]' : ''
+                }`}
+              >
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: total.color }}
+                />
+                <div className="flex flex-1 flex-col">
+                  <span className="text-sm font-medium leading-tight">
+                    {total.productName}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {total.pointCount}{' '}
+                    {total.pointCount === 1 ? 'ponto' : 'pontos'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {hasPlanned && changed && (
+                    <span className="text-xs text-[#7A7A7A] line-through tabular-nums">
+                      {formatQuantity(planned.totalQuantity)}{total.unit}
+                    </span>
+                  )}
+                  {hasPlanned && changed && (
+                    <span className="text-xs text-[#7A7A7A]">→</span>
+                  )}
+                  <span className={`text-sm font-semibold tabular-nums ${
+                    changed ? 'text-[#D4845A]' : ''
+                  }`}>
+                    {formatQuantity(total.totalQuantity)}
+                    {total.unit}
+                  </span>
+                  {hasPlanned && !changed && (
+                    <span className="text-xs text-sage">✓</span>
+                  )}
+                </div>
               </div>
-              <span className="text-sm font-semibold tabular-nums">
-                {formatQuantity(total.totalQuantity)}
-                {total.unit}
-              </span>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -68,7 +102,7 @@ export function DiagramSummary({ points }: DiagramSummaryProps) {
               Pontos
             </h4>
             <div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
-              {points.map((point, index) => (
+              {points.map((point) => (
                 <div
                   key={point.id}
                   className="flex items-center gap-1.5 text-xs"
@@ -118,7 +152,6 @@ function getTotals(points: DiagramPointData[]): ProductTotal[] {
 }
 
 function formatQuantity(n: number): string {
-  // Show integer if whole number, otherwise up to 2 decimal places
   if (Number.isInteger(n)) return n.toString()
   return n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
 }
