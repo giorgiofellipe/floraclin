@@ -14,7 +14,15 @@ import {
   listProcedures,
   listProcedureTypes,
   getLatestConsentForPatientType,
+  approveProcedure,
+  executeProcedure,
+  cancelProcedure,
+  getConsentAcceptancesForProcedure,
 } from '@/db/queries/procedures'
+import { createFinancialEntry } from '@/db/queries/financial'
+import { financialEntries } from '@/db/schema'
+import { eq, and, isNull } from 'drizzle-orm'
+import { db } from '@/db/client'
 import { saveFaceDiagram, getFaceDiagram, getPreviousDiagramPoints } from '@/db/queries/face-diagrams'
 import { saveProductApplications, getProductApplications } from '@/db/queries/product-applications'
 import type { DiagramViewType } from '@/types'
@@ -58,6 +66,12 @@ export async function createProcedureAction(
       }>
     }>
     productApplications?: ProductApplicationItem[]
+    financialPlan?: {
+      totalAmount: number
+      installmentCount: number
+      paymentMethod?: 'pix' | 'credit_card' | 'debit_card' | 'cash' | 'transfer'
+      notes?: string
+    }
   }
 ): Promise<ProcedureActionResult> {
   const ctx = await requireRole('owner', 'practitioner')
@@ -73,6 +87,7 @@ export async function createProcedureAction(
     notes: formData.notes,
     followUpDate: formData.followUpDate,
     nextSessionObjectives: formData.nextSessionObjectives,
+    financialPlan: formData.financialPlan,
   })
 
   if (!parsed.success) {
@@ -150,7 +165,7 @@ export async function updateProcedureAction(
     notes?: string
     followUpDate?: string
     nextSessionObjectives?: string
-    status?: 'in_progress' | 'completed' | 'cancelled'
+    status?: 'planned' | 'approved' | 'executed' | 'cancelled'
     diagrams?: Array<{
       viewType: DiagramViewType
       points: Array<{
@@ -166,6 +181,12 @@ export async function updateProcedureAction(
       }>
     }>
     productApplications?: ProductApplicationItem[]
+    financialPlan?: {
+      totalAmount: number
+      installmentCount: number
+      paymentMethod?: 'pix' | 'credit_card' | 'debit_card' | 'cash' | 'transfer'
+      notes?: string
+    }
   }
 ): Promise<ProcedureActionResult> {
   const ctx = await requireRole('owner', 'practitioner')
@@ -284,4 +305,268 @@ export async function checkConsentStatusAction(
   const ctx = await getAuthContext()
   const consent = await getLatestConsentForPatientType(ctx.tenantId, patientId, consentType)
   return { success: true, data: consent }
+}
+
+// ─── Approve Procedure ─────────────────────────────────────────────
+
+export async function approveProcedureAction(
+  procedureId: string
+): Promise<ProcedureActionResult> {
+  const ctx = await requireRole('owner', 'practitioner')
+
+  try {
+    const procedure = await getProcedure(ctx.tenantId, procedureId)
+    if (!procedure) {
+      return { success: false, error: 'Procedimento não encontrado' }
+    }
+
+    if (procedure.status !== 'planned') {
+      return { success: false, error: 'Apenas procedimentos planejados podem ser aprovados' }
+    }
+
+    // Verify all required consents are signed
+    const acceptances = await getConsentAcceptancesForProcedure(ctx.tenantId, procedureId)
+    if (acceptances.length === 0) {
+      return { success: false, error: 'É necessário assinar pelo menos um termo de consentimento' }
+    }
+
+    // Get diagram points as planned snapshot
+    const diagrams = await getFaceDiagram(ctx.tenantId, procedureId)
+    const plannedSnapshot = diagrams
+
+    const result = await withTransaction(async (tx) => {
+      // 1. Set status to approved with snapshot
+      const updated = await approveProcedure(
+        ctx.tenantId,
+        procedureId,
+        plannedSnapshot,
+        tx
+      )
+
+      if (!updated) {
+        throw new Error('Falha ao aprovar procedimento')
+      }
+
+      // 2. Create financial entry from financialPlan if it exists
+      const financialPlan = procedure.financialPlan as {
+        totalAmount: number
+        installmentCount: number
+        paymentMethod?: string
+        notes?: string
+      } | null
+
+      if (financialPlan) {
+        await createFinancialEntry(ctx.tenantId, ctx.userId, {
+          patientId: procedure.patientId,
+          procedureRecordId: procedureId,
+          description: `Procedimento: ${procedure.procedureTypeName}`,
+          totalAmount: financialPlan.totalAmount,
+          installmentCount: financialPlan.installmentCount,
+          notes: financialPlan.notes,
+        })
+      }
+
+      return updated
+    })
+
+    await createAuditLog({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      action: 'update',
+      entityType: 'procedure_record',
+      entityId: procedureId,
+      changes: {
+        status: { old: 'planned', new: 'approved' },
+      },
+    })
+
+    return { success: true, data: result }
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Erro ao aprovar procedimento',
+    }
+  }
+}
+
+// ─── Execute Procedure ─────────────────────────────────────────────
+
+export async function executeProcedureAction(
+  procedureId: string,
+  formData: {
+    technique?: string
+    clinicalResponse?: string
+    adverseEffects?: string
+    notes?: string
+    followUpDate?: string
+    nextSessionObjectives?: string
+    diagrams?: Array<{
+      viewType: DiagramViewType
+      points: Array<{
+        x: number
+        y: number
+        productName: string
+        activeIngredient?: string
+        quantity: number
+        quantityUnit: string
+        technique?: string
+        depth?: string
+        notes?: string
+      }>
+    }>
+    productApplications?: ProductApplicationItem[]
+  }
+): Promise<ProcedureActionResult> {
+  const ctx = await requireRole('owner', 'practitioner')
+
+  try {
+    const procedure = await getProcedure(ctx.tenantId, procedureId)
+    if (!procedure) {
+      return { success: false, error: 'Procedimento não encontrado' }
+    }
+
+    if (procedure.status !== 'approved') {
+      return { success: false, error: 'Apenas procedimentos aprovados podem ser executados' }
+    }
+
+    const result = await withTransaction(async (tx) => {
+      // 1. Update procedure to executed status with clinical data
+      const updated = await executeProcedure(
+        ctx.tenantId,
+        procedureId,
+        {
+          technique: formData.technique,
+          clinicalResponse: formData.clinicalResponse,
+          adverseEffects: formData.adverseEffects,
+          notes: formData.notes,
+          followUpDate: formData.followUpDate,
+          nextSessionObjectives: formData.nextSessionObjectives,
+        },
+        tx
+      )
+
+      if (!updated) {
+        throw new Error('Falha ao executar procedimento')
+      }
+
+      // 2. Save updated face diagrams (real quantities)
+      if (formData.diagrams && formData.diagrams.length > 0) {
+        for (const diagram of formData.diagrams) {
+          await saveFaceDiagram(
+            ctx.tenantId,
+            procedureId,
+            diagram.viewType,
+            diagram.points,
+            tx
+          )
+        }
+      }
+
+      // 3. Save product applications (batch/lot numbers)
+      if (formData.productApplications !== undefined) {
+        await saveProductApplications(
+          ctx.tenantId,
+          procedureId,
+          formData.productApplications,
+          tx
+        )
+      }
+
+      return updated
+    })
+
+    await createAuditLog({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      action: 'update',
+      entityType: 'procedure_record',
+      entityId: procedureId,
+      changes: {
+        status: { old: 'approved', new: 'executed' },
+      },
+    })
+
+    return { success: true, data: result }
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Erro ao executar procedimento',
+    }
+  }
+}
+
+// ─── Cancel Procedure ──────────────────────────────────────────────
+
+export async function cancelProcedureAction(
+  procedureId: string,
+  reason: string
+): Promise<ProcedureActionResult> {
+  const ctx = await requireRole('owner', 'practitioner')
+
+  if (!reason || reason.trim().length === 0) {
+    return { success: false, error: 'Motivo do cancelamento é obrigatório' }
+  }
+
+  try {
+    const procedure = await getProcedure(ctx.tenantId, procedureId)
+    if (!procedure) {
+      return { success: false, error: 'Procedimento não encontrado' }
+    }
+
+    if (procedure.status !== 'planned' && procedure.status !== 'approved') {
+      return { success: false, error: 'Apenas procedimentos planejados ou aprovados podem ser cancelados' }
+    }
+
+    const result = await withTransaction(async (tx) => {
+      // 1. Cancel the procedure
+      const updated = await cancelProcedure(
+        ctx.tenantId,
+        procedureId,
+        reason.trim(),
+        tx
+      )
+
+      if (!updated) {
+        throw new Error('Falha ao cancelar procedimento')
+      }
+
+      // 2. If approved, cancel associated financial entry
+      if (procedure.status === 'approved') {
+        await (tx as unknown as typeof db)
+          .update(financialEntries)
+          .set({
+            status: 'cancelled',
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(financialEntries.procedureRecordId, procedureId),
+              eq(financialEntries.tenantId, ctx.tenantId),
+              isNull(financialEntries.deletedAt)
+            )
+          )
+      }
+
+      return updated
+    })
+
+    await createAuditLog({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      action: 'update',
+      entityType: 'procedure_record',
+      entityId: procedureId,
+      changes: {
+        status: { old: procedure.status, new: 'cancelled' },
+        cancellationReason: { old: null, new: reason.trim() },
+      },
+    })
+
+    return { success: true, data: result }
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Erro ao cancelar procedimento',
+    }
+  }
 }

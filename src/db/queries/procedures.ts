@@ -12,7 +12,7 @@ import {
   consentAcceptances,
   consentTemplates,
 } from '@/db/schema'
-import { eq, and, desc, isNull } from 'drizzle-orm'
+import { eq, and, desc, isNull, sql } from 'drizzle-orm'
 import type { CreateProcedureInput, UpdateProcedureInput } from '@/validations/procedure'
 import { verifyTenantOwnership, verifyUserBelongsToTenant } from './helpers'
 
@@ -33,6 +33,11 @@ export interface ProcedureWithDetails {
   followUpDate: string | null
   nextSessionObjectives: string | null
   status: string
+  plannedSnapshot: unknown
+  approvedAt: Date | null
+  cancelledAt: Date | null
+  cancellationReason: string | null
+  financialPlan: unknown
   createdAt: Date
   updatedAt: Date
   procedureTypeName: string
@@ -46,6 +51,7 @@ export interface ProcedureListItem {
   status: string
   technique: string | null
   notes: string | null
+  financialPlan: unknown
   procedureTypeName: string
   procedureTypeCategory: string
   practitionerName: string
@@ -83,7 +89,8 @@ export async function createProcedure(
       notes: data.notes ?? null,
       followUpDate: data.followUpDate ?? null,
       nextSessionObjectives: data.nextSessionObjectives ?? null,
-      status: 'completed',
+      financialPlan: data.financialPlan ?? null,
+      status: 'planned',
       performedAt: new Date(),
     })
     .returning()
@@ -109,6 +116,7 @@ export async function updateProcedure(
   if (data.procedureTypeId !== undefined) updateData.procedureTypeId = data.procedureTypeId
   if (data.additionalTypeIds !== undefined) updateData.additionalTypeIds = data.additionalTypeIds ?? []
   if (data.appointmentId !== undefined) updateData.appointmentId = data.appointmentId ?? null
+  if (data.financialPlan !== undefined) updateData.financialPlan = data.financialPlan ?? null
 
   const [updated] = await txDb
     .update(procedureRecords)
@@ -145,6 +153,11 @@ export async function getProcedure(
       followUpDate: procedureRecords.followUpDate,
       nextSessionObjectives: procedureRecords.nextSessionObjectives,
       status: procedureRecords.status,
+      plannedSnapshot: procedureRecords.plannedSnapshot,
+      approvedAt: procedureRecords.approvedAt,
+      cancelledAt: procedureRecords.cancelledAt,
+      cancellationReason: procedureRecords.cancellationReason,
+      financialPlan: procedureRecords.financialPlan,
       createdAt: procedureRecords.createdAt,
       updatedAt: procedureRecords.updatedAt,
       procedureTypeName: procedureTypes.name,
@@ -177,6 +190,7 @@ export async function listProcedures(
       status: procedureRecords.status,
       technique: procedureRecords.technique,
       notes: procedureRecords.notes,
+      financialPlan: procedureRecords.financialPlan,
       procedureTypeName: procedureTypes.name,
       procedureTypeCategory: procedureTypes.category,
       practitionerName: users.fullName,
@@ -191,7 +205,16 @@ export async function listProcedures(
         isNull(procedureRecords.deletedAt)
       )
     )
-    .orderBy(desc(procedureRecords.performedAt))
+    .orderBy(
+      sql`CASE ${procedureRecords.status}
+        WHEN 'planned' THEN 1
+        WHEN 'approved' THEN 2
+        WHEN 'executed' THEN 3
+        WHEN 'cancelled' THEN 4
+        ELSE 5
+      END`,
+      desc(procedureRecords.performedAt)
+    )
 
   return records
 }
@@ -259,4 +282,98 @@ export async function getLatestConsentForPatientType(
     .limit(1)
 
   return acceptance ?? null
+}
+
+// ─── Lifecycle Queries ─────────────────────────────────────────────
+
+export async function approveProcedure(
+  tenantId: string,
+  procedureId: string,
+  plannedSnapshot: unknown,
+  txDb: typeof db = db
+) {
+  const [updated] = await txDb
+    .update(procedureRecords)
+    .set({
+      status: 'approved',
+      plannedSnapshot,
+      approvedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(procedureRecords.id, procedureId),
+        eq(procedureRecords.tenantId, tenantId),
+        eq(procedureRecords.status, 'planned'),
+        isNull(procedureRecords.deletedAt)
+      )
+    )
+    .returning()
+
+  return updated
+}
+
+export async function executeProcedure(
+  tenantId: string,
+  procedureId: string,
+  data: {
+    technique?: string | null
+    clinicalResponse?: string | null
+    adverseEffects?: string | null
+    notes?: string | null
+    followUpDate?: string | null
+    nextSessionObjectives?: string | null
+  },
+  txDb: typeof db = db
+) {
+  const [updated] = await txDb
+    .update(procedureRecords)
+    .set({
+      status: 'executed',
+      performedAt: new Date(),
+      technique: data.technique ?? null,
+      clinicalResponse: data.clinicalResponse ?? null,
+      adverseEffects: data.adverseEffects ?? null,
+      notes: data.notes ?? null,
+      followUpDate: data.followUpDate ?? null,
+      nextSessionObjectives: data.nextSessionObjectives ?? null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(procedureRecords.id, procedureId),
+        eq(procedureRecords.tenantId, tenantId),
+        eq(procedureRecords.status, 'approved'),
+        isNull(procedureRecords.deletedAt)
+      )
+    )
+    .returning()
+
+  return updated
+}
+
+export async function cancelProcedure(
+  tenantId: string,
+  procedureId: string,
+  reason: string,
+  txDb: typeof db = db
+) {
+  const [updated] = await txDb
+    .update(procedureRecords)
+    .set({
+      status: 'cancelled',
+      cancelledAt: new Date(),
+      cancellationReason: reason,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(procedureRecords.id, procedureId),
+        eq(procedureRecords.tenantId, tenantId),
+        isNull(procedureRecords.deletedAt)
+      )
+    )
+    .returning()
+
+  return updated
 }

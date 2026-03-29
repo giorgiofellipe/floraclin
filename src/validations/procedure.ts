@@ -2,6 +2,17 @@ import { z } from 'zod'
 
 // ─── Procedure Schemas ─────────────────────────────────────────────
 
+export const procedureStatusSchema = z.enum(['planned', 'approved', 'executed', 'cancelled'])
+
+export const financialPlanSchema = z.object({
+  totalAmount: z.number().positive('Valor total deve ser maior que zero'),
+  installmentCount: z.number().int().min(1, 'Mínimo 1 parcela').max(12, 'Máximo 12 parcelas'),
+  paymentMethod: z.enum(['pix', 'credit_card', 'debit_card', 'cash', 'transfer']).optional(),
+  notes: z.string().max(1000, 'Observações devem ter no máximo 1000 caracteres').optional(),
+})
+
+export type FinancialPlan = z.infer<typeof financialPlanSchema>
+
 export const createProcedureSchema = z.object({
   patientId: z.string().uuid('ID do paciente inválido'),
   procedureTypeId: z.string().uuid('Tipo de procedimento é obrigatório'),
@@ -13,13 +24,14 @@ export const createProcedureSchema = z.object({
   notes: z.string().max(5000, 'Notas devem ter no máximo 5000 caracteres').optional(),
   followUpDate: z.string().optional(),
   nextSessionObjectives: z.string().max(5000, 'Objetivos devem ter no máximo 5000 caracteres').optional(),
+  financialPlan: financialPlanSchema.optional(),
 })
 
 export type CreateProcedureInput = z.infer<typeof createProcedureSchema>
 
 export const updateProcedureSchema = createProcedureSchema.partial().extend({
   id: z.string().uuid('ID do procedimento inválido'),
-  status: z.enum(['in_progress', 'completed', 'cancelled']).optional(),
+  status: procedureStatusSchema.optional(),
 })
 
 export type UpdateProcedureInput = z.infer<typeof updateProcedureSchema>
