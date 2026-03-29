@@ -30,17 +30,9 @@ export function FaceDiagramEditor({
   >(null)
 
   // Derive existing product names for autocomplete
-  const existingProducts = React.useMemo(() => {
-    const names = new Set<string>()
-    for (const p of points) {
-      names.add(p.productName)
-    }
-    if (previousPoints) {
-      for (const p of previousPoints) {
-        names.add(p.productName)
-      }
-    }
-    return Array.from(names).sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  // Point count for display
+  const _pointCount = React.useMemo(() => {
+    return points.length
   }, [points, previousPoints])
 
   function handleFaceClick(e: React.MouseEvent<HTMLDivElement>) {
@@ -204,7 +196,6 @@ export function FaceDiagramEditor({
             point={editingPoint}
             onSave={handleSavePoint}
             onDelete={editingPoint.id ? handleDeletePoint : undefined}
-            existingProducts={existingProducts}
             products={products}
           />
         )}
