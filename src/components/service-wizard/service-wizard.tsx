@@ -320,7 +320,7 @@ export function ServiceWizard({
     <div className="flex min-h-screen flex-col bg-[#F4F6F8]">
       {/* ─── Patient compact bar ──────────────────────────────────── */}
       <header className="sticky top-0 z-30 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+        <div className="mx-auto flex items-center justify-between px-4 py-3">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             <span className="font-semibold text-charcoal">{patient.fullName}</span>
             {age !== null && (
@@ -344,7 +344,7 @@ export function ServiceWizard({
 
       {/* ─── Smart context message ─────────────────────────────────── */}
       {contextMessage && (
-        <div className="mx-auto w-full max-w-5xl px-4 pt-3">
+        <div className="mx-auto w-full px-4 pt-3">
           <div className="flex items-center gap-2">
             <span className={cn('inline-block h-2 w-2 rounded-full', contextMessage.dotColor)} />
             <span className="text-sm text-mid">{contextMessage.text}</span>
@@ -353,7 +353,7 @@ export function ServiceWizard({
       )}
 
       {/* ─── Main content area ────────────────────────────────────── */}
-      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-4 pb-24">
+      <main className="mx-auto flex w-full flex-1 flex-col gap-4 px-4 py-4 pb-24">
         {/* Stepper */}
         <WizardStepper
           currentStep={state.currentStep}
@@ -500,7 +500,7 @@ export function ServiceWizard({
         {/* Error display above navigation controls */}
         {state.error && (
           <div className="border-b border-red-100 bg-red-50 px-4 py-2">
-            <p className="mx-auto max-w-5xl text-sm text-red-800">
+            <p className="mx-auto text-sm text-red-800">
               {state.errorType === 'validation' &&
                 'Corrija os campos destacados antes de continuar.'}
               {state.errorType === 'precondition' && state.error}
@@ -510,7 +510,7 @@ export function ServiceWizard({
           </div>
         )}
 
-        <div className="mx-auto flex max-w-5xl flex-col gap-2 px-4 py-3 md:flex-row md:items-center md:justify-between">
+        <div className="mx-auto flex flex-col gap-2 px-4 py-3 md:flex-row md:items-center md:justify-between">
           {/* Left: Voltar */}
           <div className="hidden md:block md:min-w-[100px]">
             {showBack && (
