@@ -15,12 +15,12 @@ import {
 import type { EvaluationQuestion, EvaluationSection } from '@/types/evaluation'
 
 const QUESTION_TYPE_LABELS: Record<string, string> = {
-  radio: 'Escolha unica',
-  checkbox: 'Multipla escolha',
+  radio: 'Escolha única',
+  checkbox: 'Múltipla escolha',
   scale: 'Escala',
   text: 'Texto livre',
-  checkbox_with_other: 'Multipla escolha + Outro',
-  radio_with_other: 'Escolha unica + Outro',
+  checkbox_with_other: 'Múltipla escolha + Outro',
+  radio_with_other: 'Escolha única + Outro',
   face_diagram: 'Diagrama facial',
 }
 
@@ -87,7 +87,7 @@ export function SectionEditor({
             size="icon-xs"
             onClick={onMoveUp}
             disabled={sectionIndex === 0}
-            title="Mover secao para cima"
+            title="Mover seção para cima"
           >
             <ArrowUpIcon className="h-3 w-3" />
           </Button>
@@ -96,7 +96,7 @@ export function SectionEditor({
             size="icon-xs"
             onClick={onMoveDown}
             disabled={sectionIndex === totalSections - 1}
-            title="Mover secao para baixo"
+            title="Mover seção para baixo"
           >
             <ArrowDownIcon className="h-3 w-3" />
           </Button>
@@ -224,7 +224,7 @@ export function SectionEditor({
                     </span>
                     {question.options && question.options.length > 0 && (
                       <span className="text-xs text-mid/60">
-                        ({question.options.length} opcoes)
+                        ({question.options.length} opções)
                       </span>
                     )}
                     {question.warningText && (

@@ -1,6 +1,5 @@
 'use client'
 
-import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 
 const TABS = [
@@ -17,25 +16,17 @@ export type PatientTabKey = (typeof TABS)[number]['key']
 
 interface PatientTabsProps {
   activeTab: PatientTabKey
+  onTabChange: (tab: PatientTabKey) => void
 }
 
-export function PatientTabs({ activeTab }: PatientTabsProps) {
-  const router = useRouter()
-  const pathname = usePathname()
-
-  function handleTabChange(tab: PatientTabKey) {
-    const params = new URLSearchParams()
-    params.set('tab', tab)
-    router.push(`${pathname}?${params.toString()}`)
-  }
-
+export function PatientTabs({ activeTab, onTabChange }: PatientTabsProps) {
   return (
     <div className="border-b border-blush/40">
       <nav className="-mb-px flex gap-0 overflow-x-auto" aria-label="Abas do paciente">
         {TABS.map((tab) => (
           <button
             key={tab.key}
-            onClick={() => handleTabChange(tab.key)}
+            onClick={() => onTabChange(tab.key)}
             data-testid={`patient-tab-${tab.key}`}
             className={cn(
               'relative whitespace-nowrap px-5 py-3 text-sm font-medium transition-colors',
