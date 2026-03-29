@@ -1022,7 +1022,7 @@ export function AnamnesisForm({ patientId, initialData, updatedByName }: Anamnes
                 name="facialEvaluationNotes"
                 render={({ field }) => (
                   <Textarea
-                    placeholder="Observacoes da avaliacao facial..."
+                    placeholder="Observações da avaliação facial..."
                     rows={4}
                     className="min-h-[100px] resize-none border-sage/20 focus:border-sage/40"
                     {...field}

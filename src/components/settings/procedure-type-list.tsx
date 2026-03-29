@@ -27,7 +27,7 @@ import { toast } from 'sonner'
 import { PlusIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 
 const CATEGORY_LABELS: Record<string, string> = {
-  botox: 'Toxina Botulinica',
+  botox: 'Toxina Botulínica',
   filler: 'Preenchimento',
   biostimulator: 'Bioestimulador',
   peel: 'Peeling',

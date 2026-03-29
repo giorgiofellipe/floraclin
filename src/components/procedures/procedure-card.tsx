@@ -12,7 +12,7 @@ import type { ProcedureListItem } from '@/db/queries/procedures'
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   completed: {
-    label: 'Concluido',
+    label: 'Concluído',
     className: 'bg-[#F0F7F1] text-sage border-0',
   },
   in_progress: {

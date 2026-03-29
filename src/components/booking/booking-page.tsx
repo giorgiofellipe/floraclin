@@ -288,10 +288,10 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
           {step === 2 && (
             <div data-testid="booking-step-2">
               <h2 className="text-xl sm:text-2xl text-charcoal font-medium mb-1">
-                Selecione a data e horario
+                Selecione a data e horário
               </h2>
               <p className="text-sm text-mid mb-6">
-                Escolha o melhor dia e horario para voce
+                Escolha o melhor dia e horário para você
               </p>
 
               <div className="flex justify-center mb-6">
@@ -310,7 +310,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
               {selectedDate && (
                 <div>
                   <p className="uppercase tracking-wider text-xs text-mid mb-3 font-medium">
-                    Horarios disponiveis para {formatDate(selectedDate)}
+                    Horários disponíveis para {formatDate(selectedDate)}
                   </p>
                   <SlotPicker
                     slots={slots}
@@ -330,7 +330,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
                 Seus dados
               </h2>
               <p className="text-sm text-mid mb-6">
-                Preencha suas informacoes para contato
+                Preencha suas informações para contato
               </p>
 
               {error && (
@@ -478,7 +478,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
                 Agendamento solicitado!
               </h2>
               <p className="text-mid text-sm mb-8 animate-[fadeInUp_0.4s_ease-out_0.5s_both]">
-                Voce recebera uma confirmacao em breve.
+                Você receberá uma confirmação em breve.
               </p>
 
               <div className="inline-block text-left w-full max-w-sm p-5 rounded-[3px] bg-[#F0F7F1] border border-sage/20 animate-[fadeInUp_0.4s_ease-out_0.6s_both]">
@@ -499,7 +499,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
                   </div>
                   <div className="h-px bg-blush/40" />
                   <div className="flex justify-between items-center">
-                    <span className="text-mid">Horario</span>
+                    <span className="text-mid">Horário</span>
                     <span className="font-medium text-charcoal">
                       {selectedSlot}
                     </span>
@@ -514,7 +514,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
 
               {clinic.phone && (
                 <p className="text-xs text-mid mt-8 animate-[fadeInUp_0.4s_ease-out_0.7s_both]">
-                  Duvidas? Entre em contato pelo telefone{' '}
+                  Dúvidas? Entre em contato pelo telefone{' '}
                   <span className="font-medium text-charcoal">{clinic.phone}</span>
                 </p>
               )}
@@ -546,7 +546,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
                     : 'bg-blush text-mid cursor-not-allowed'
                 )}
               >
-                Proximo
+                Próximo
               </button>
             )}
             {step === 3 && (

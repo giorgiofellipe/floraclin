@@ -110,17 +110,17 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
       {/* Clinic Info */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 mb-1">
-          <h3 className="uppercase tracking-wider text-xs font-medium text-mid">Informacoes da Clinica</h3>
+          <h3 className="uppercase tracking-wider text-xs font-medium text-mid">Informações da Clínica</h3>
           <div className="flex-1 h-px bg-blush/60" />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="name">Nome da Clinica *</Label>
+            <Label htmlFor="name">Nome da Clínica *</Label>
             <Input
               id="name"
               value={name}
               onChange={(e) => handleFieldChange('name', e.target.value)}
-              placeholder="Nome da clinica"
+              placeholder="Nome da clínica"
               required
             />
           </div>
@@ -150,7 +150,7 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
       {/* Address */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 mb-1">
-          <h3 className="uppercase tracking-wider text-xs font-medium text-mid">Endereco</h3>
+          <h3 className="uppercase tracking-wider text-xs font-medium text-mid">Endereço</h3>
           <div className="flex-1 h-px bg-blush/60" />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -164,7 +164,7 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="number">Numero</Label>
+            <Label htmlFor="number">Número</Label>
             <Input
               id="number"
               value={address.number}
@@ -225,7 +225,7 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
       {/* Working Hours */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 mb-1">
-          <h3 className="uppercase tracking-wider text-xs font-medium text-mid">Horario de Funcionamento</h3>
+          <h3 className="uppercase tracking-wider text-xs font-medium text-mid">Horário de Funcionamento</h3>
           <div className="flex-1 h-px bg-blush/60" />
         </div>
         <div className="rounded-[3px] border border-[#E8ECEF] overflow-hidden divide-y divide-gray-100">
@@ -258,7 +258,7 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
                       }
                       className="w-[110px] text-sm"
                     />
-                    <span className="text-xs text-mid font-medium">ate</span>
+                    <span className="text-xs text-mid font-medium">até</span>
                     <Input
                       type="time"
                       value={schedule.end}
@@ -280,7 +280,7 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
       {!embedded && (
         <div className="flex justify-end pt-2">
           <Button type="submit" disabled={isPending}>
-            {isPending ? 'Salvando...' : 'Salvar Configuracoes'}
+            {isPending ? 'Salvando...' : 'Salvar Configurações'}
           </Button>
         </div>
       )}

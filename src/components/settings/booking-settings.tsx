@@ -74,7 +74,7 @@ export function BookingSettings({
       <div className="space-y-2">
         <p className="text-sm text-mid">
           Permita que pacientes agendem consultas diretamente pela internet atraves de um link
-          exclusivo da sua clinica.
+          exclusivo da sua clínica.
         </p>
       </div>
 
@@ -90,8 +90,8 @@ export function BookingSettings({
           </Label>
           <p className="text-xs text-mid">
             {enabled
-              ? 'Pacientes podem agendar pela pagina publica da clinica.'
-              : 'Apenas agendamentos internos sao permitidos.'}
+              ? 'Pacientes podem agendar pela página pública da clínica.'
+              : 'Apenas agendamentos internos são permitidos.'}
           </p>
         </div>
       </div>
@@ -128,7 +128,7 @@ export function BookingSettings({
               variant="outline"
               size="icon"
               onClick={() => window.open(bookingUrl, '_blank')}
-              title="Abrir pagina"
+              title="Abrir página"
               className="shrink-0 rounded-full"
             >
               <ExternalLinkIcon />
@@ -136,7 +136,7 @@ export function BookingSettings({
           </div>
           <p className="text-xs text-mid">
             Compartilhe este link com seus pacientes para que possam agendar online.
-            O slug &ldquo;{slug}&rdquo; foi definido durante a criacao da clinica e nao pode ser alterado.
+            O slug &ldquo;{slug}&rdquo; foi definido durante a criação da clínica e não pode ser alterado.
           </p>
         </div>
       )}

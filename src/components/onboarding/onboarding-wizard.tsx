@@ -25,7 +25,7 @@ interface ProcedureTypeItem {
 }
 
 const STEPS = [
-  { label: 'Clinica', icon: Building2Icon },
+  { label: 'Clínica', icon: Building2Icon },
   { label: 'Procedimentos', icon: SyringeIcon },
   { label: 'Equipe', icon: UsersIcon },
 ]
@@ -73,7 +73,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
   function handleNext() {
     if (currentStep === 0) {
       if (!clinicData.name || (clinicData.name as string).trim().length === 0) {
-        toast.error('Nome da clinica e obrigatorio')
+        toast.error('Nome da clínica é obrigatório')
         return
       }
     }
@@ -133,7 +133,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
             Bem-vindo ao <span className="font-display text-forest">Flora</span><span className="font-display text-sage">Clin</span>
           </h1>
           <p className="mt-3 text-mid text-base">
-            Configure sua clinica em poucos passos
+            Configure sua clínica em poucos passos
           </p>
         </div>
 
@@ -191,10 +191,10 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
           {currentStep === 0 && (
             <div>
               <h2 className="text-xl font-medium text-charcoal mb-1 tracking-tight">
-                Dados da Clinica
+                Dados da Clínica
               </h2>
               <p className="text-sm text-mid mb-8">
-                Preencha as informacoes basicas e configure o horario de funcionamento.
+                Preencha as informações básicas e configure o horário de funcionamento.
               </p>
 
               <ClinicSettingsForm
@@ -229,7 +229,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
                 Tipos de Procedimento
               </h2>
               <p className="text-sm text-mid mb-8">
-                Selecione os procedimentos que sua clinica oferece. Voce pode adicionar mais depois.
+                Selecione os procedimentos que sua clínica oferece. Você pode adicionar mais depois.
               </p>
 
               {/* Default procedure types as checkboxes */}
@@ -366,7 +366,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
                 onClick={handleNext}
                 className="bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium transition-all duration-300 shadow-sm hover:shadow-md px-8"
               >
-                Proximo
+                Próximo
               </Button>
             ) : (
               <Button

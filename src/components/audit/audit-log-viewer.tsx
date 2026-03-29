@@ -42,18 +42,18 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   consent_template: 'Termo',
   consent_acceptance: 'Aceite de Termo',
   photo_asset: 'Foto',
-  photo_annotation: 'Anotacao de Foto',
+  photo_annotation: 'Anotação de Foto',
   face_diagram: 'Diagrama Facial',
-  product_application: 'Aplicacao de Produto',
+  product_application: 'Aplicação de Produto',
   anamnesis: 'Anamnese',
-  tenant: 'Clinica',
+  tenant: 'Clínica',
   tenant_user: 'Membro da Equipe',
 }
 
 const ACTION_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  create: { label: 'Criacao', variant: 'default' },
-  update: { label: 'Atualizacao', variant: 'secondary' },
-  delete: { label: 'Exclusao', variant: 'destructive' },
+  create: { label: 'Criação', variant: 'default' },
+  update: { label: 'Atualização', variant: 'secondary' },
+  delete: { label: 'Exclusão', variant: 'destructive' },
   consent_accepted: { label: 'Aceite', variant: 'outline' },
   login: { label: 'Login', variant: 'outline' },
   logout: { label: 'Logout', variant: 'outline' },
@@ -72,7 +72,7 @@ function getActionBadge(action: string) {
 
 function JsonDiffViewer({ changes }: { changes: unknown }) {
   if (!changes || typeof changes !== 'object') {
-    return <p className="text-sm text-mid">Sem detalhes disponiveis</p>
+    return <p className="text-sm text-mid">Sem detalhes disponíveis</p>
   }
 
   const entries = Object.entries(changes as Record<string, unknown>)

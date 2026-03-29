@@ -59,7 +59,7 @@ export function ProcedureList({ patientId }: ProcedureListProps) {
       {/* Header with "New Procedure" button */}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-[#2A2A2A]">
-          Evolucao Clinica
+          Evolução Clínica
         </h2>
         <Button
           onClick={handleNewProcedure}

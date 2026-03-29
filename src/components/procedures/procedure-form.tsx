@@ -78,7 +78,7 @@ const CATEGORY_TO_CONSENT: Record<string, string> = {
 
 const STATUS_LABELS: Record<string, string> = {
   in_progress: 'Em andamento',
-  completed: 'Concluido',
+  completed: 'Concluído',
   cancelled: 'Cancelado',
 }
 
@@ -931,7 +931,7 @@ export function ProcedureForm({
 
                     <div className="mt-3">
                       <Label className="uppercase tracking-wider text-xs text-mid">
-                        Areas de aplicacao
+                        Áreas de aplicação
                       </Label>
                       <Input
                         value={app.applicationAreas ?? ''}
@@ -972,7 +972,7 @@ export function ProcedureForm({
 
       {/* ── Clinical Notes ──────────────────────────────────────────── */}
       <Section
-        title="Notas Clinicas"
+        title="Notas Clínicas"
         icon={<FileText className="size-4 text-forest" />}
         open={openSections.clinicalNotes}
         onToggle={() => toggleSection('clinicalNotes')}
@@ -980,12 +980,12 @@ export function ProcedureForm({
         <div className="space-y-5">
           <div>
             <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Tecnica utilizada
+              Técnica utilizada
             </Label>
             <Textarea
               value={technique}
               onChange={(e) => setTechnique(e.target.value)}
-              placeholder="Descreva a tecnica utilizada..."
+              placeholder="Descreva a técnica utilizada..."
               disabled={isReadOnly}
               className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
               rows={3}
@@ -994,12 +994,12 @@ export function ProcedureForm({
 
           <div className="border-t border-petal pt-5">
             <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Resposta clinica
+              Resposta clínica
             </Label>
             <Textarea
               value={clinicalResponse}
               onChange={(e) => setClinicalResponse(e.target.value)}
-              placeholder="Descreva a resposta clinica observada..."
+              placeholder="Descreva a resposta clínica observada..."
               disabled={isReadOnly}
               className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
               rows={3}
@@ -1022,12 +1022,12 @@ export function ProcedureForm({
 
           <div className="border-t border-petal pt-5">
             <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Observacoes gerais
+              Observações gerais
             </Label>
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Observacoes adicionais..."
+              placeholder="Observações adicionais..."
               disabled={isReadOnly}
               className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
               rows={3}
@@ -1135,7 +1135,7 @@ export function ProcedureForm({
               ) : (
                 <>
                   <Save className="mr-2 size-4" />
-                  {isEdit ? 'Salvar Alteracoes' : 'Salvar Procedimento'}
+                  {isEdit ? 'Salvar Alterações' : 'Salvar Procedimento'}
                 </>
               )}
             </Button>

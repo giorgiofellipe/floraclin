@@ -171,7 +171,7 @@ export function TeamList({ members, currentUserId, embedded = false }: TeamListP
                       <span className="font-medium text-charcoal">
                         {member.user.fullName}
                         {isCurrentUser && (
-                          <span className="ml-1.5 text-xs text-mid font-normal">(voce)</span>
+                          <span className="ml-1.5 text-xs text-mid font-normal">(você)</span>
                         )}
                       </span>
                     </div>

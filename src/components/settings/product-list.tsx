@@ -39,7 +39,7 @@ import { toast } from 'sonner'
 import { PlusIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 
 const CATEGORY_LABELS: Record<string, string> = {
-  botox: 'Toxina Botulinica',
+  botox: 'Toxina Botulínica',
   filler: 'Preenchimento',
   biostimulator: 'Bioestimulador',
   peel: 'Peeling',
@@ -170,16 +170,16 @@ function ProductFormDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label className="uppercase tracking-wider text-xs text-mid">Principio Ativo</Label>
+            <Label className="uppercase tracking-wider text-xs text-mid">Princípio Ativo</Label>
             <Input
               value={form.activeIngredient}
               onChange={(e) => setForm((f) => ({ ...f, activeIngredient: e.target.value }))}
-              placeholder="Ex: Toxina botulinica tipo A"
+              placeholder="Ex: Toxina botulínica tipo A"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label className="uppercase tracking-wider text-xs text-mid">Unidade Padrao</Label>
+            <Label className="uppercase tracking-wider text-xs text-mid">Unidade Padrão</Label>
             <div className="flex h-9 overflow-hidden rounded-lg border border-input">
               <button
                 type="button"
@@ -256,7 +256,7 @@ export function ProductList({ products: initialProducts }: ProductListProps) {
     startTransition(async () => {
       const result = await deleteProductAction(id)
       if (result?.success) {
-        toast.success('Produto excluido')
+        toast.success('Produto excluído')
         setDeleteConfirm(null)
       } else {
         toast.error(result?.error || 'Erro ao excluir')
@@ -291,11 +291,11 @@ export function ProductList({ products: initialProducts }: ProductListProps) {
             <TableRow>
               <TableHead>Nome</TableHead>
               <TableHead>Categoria</TableHead>
-              <TableHead>Principio Ativo</TableHead>
+              <TableHead>Princípio Ativo</TableHead>
               <TableHead>Unidade</TableHead>
               <TableHead>Ativo</TableHead>
               <TableHead>Diagrama</TableHead>
-              <TableHead className="text-right">Acoes</TableHead>
+              <TableHead className="text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
