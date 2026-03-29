@@ -942,7 +942,7 @@ export function ProcedureForm({
           )}
           {isPlanningMode && (
             <p className="mt-1.5 text-sm text-mid">
-              Defina os procedimentos, pontos de aplicacao e plano financeiro.
+              Defina os procedimentos, pontos de aplicação e plano financeiro.
             </p>
           )}
         </div>
@@ -994,7 +994,7 @@ export function ProcedureForm({
             </div>
           ) : (
             <div className="space-y-2">
-              <p className="text-xs text-mid">Selecione um ou mais tipos (o primeiro sera o principal).</p>
+              <p className="text-xs text-mid">Selecione um ou mais tipos (o primeiro será o principal).</p>
               <div className="grid gap-2 sm:grid-cols-2">
                 {procedureTypes.map((type) => {
                   const allSelected = [procedureTypeId, ...additionalTypeIds]
@@ -1280,7 +1280,7 @@ export function ProcedureForm({
         >
           <div className="space-y-5">
             <p className="text-xs text-mid">
-              Defina o valor e condicoes de pagamento. A entrada financeira sera criada somente apos a aprovacao.
+              Defina o valor e condições de pagamento. A entrada financeira será criada somente após a aprovação.
             </p>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -1371,7 +1371,7 @@ export function ProcedureForm({
             {/* Notes */}
             <div>
               <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-                Observacoes
+                Observações
               </Label>
               <Textarea
                 value={financialPlan.notes}
@@ -1381,7 +1381,7 @@ export function ProcedureForm({
                     notes: e.target.value,
                   }))
                 }
-                placeholder="Condicoes especiais, descontos, etc."
+                placeholder="Condições especiais, descontos, etc."
                 disabled={isReadOnly}
                 className="min-h-[60px] resize-none border-sage/20 focus:border-sage/40"
                 rows={2}
@@ -1600,12 +1600,12 @@ export function ProcedureForm({
 
             <div className="border-t border-petal pt-5">
               <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-                Observacoes gerais
+                Observações gerais
               </Label>
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Observacoes adicionais..."
+                placeholder="Observações adicionais..."
                 disabled={isReadOnly}
                 className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
                 rows={3}
