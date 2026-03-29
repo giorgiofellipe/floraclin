@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { LogOut, ChevronLeft, ChevronRight } from 'lucide-react'
+import { toast } from 'sonner'
 import { cn, maskCPF } from '@/lib/utils'
 import { useServiceWizard, type WizardStep } from '@/hooks/use-service-wizard'
 import {
@@ -16,7 +17,16 @@ import {
 } from '@/components/ui/dialog'
 import { WizardStepper } from './wizard-stepper'
 import { WizardStep as WizardStepWrapper } from './wizard-step'
+import { AnamnesisForm } from '@/components/anamnesis/anamnesis-form'
+import { ProcedureForm } from '@/components/procedures/procedure-form'
+import { ProcedureApproval } from '@/components/procedures/procedure-approval'
+import { ProcedureExecution } from '@/components/procedures/procedure-execution'
+import type { StepResult } from './types'
 import type { ProcedureStatus } from '@/types'
+import type { ProcedureWithDetails } from '@/db/queries/procedures'
+import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
+import type { ProductApplicationRecord } from '@/db/queries/product-applications'
+import type { AnamnesisFormData } from '@/validations/anamnesis'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -26,13 +36,29 @@ interface PatientInfo {
   birthDate: string | null
   phone: string
   cpf: string | null
+  gender?: string | null
+}
+
+interface TenantInfo {
+  id: string
+  name: string
 }
 
 interface ServiceWizardProps {
   patient: PatientInfo
+  tenant: TenantInfo
   initialStep?: number
   procedureId?: string | null
   procedureStatus?: ProcedureStatus | null
+  procedure?: ProcedureWithDetails | null
+  diagrams?: DiagramWithPoints[] | null
+  existingApplications?: ProductApplicationRecord[] | null
+  anamnesis?: (AnamnesisFormData & {
+    id?: string
+    updatedAt?: Date | string
+    updatedBy?: string | null
+  }) | null
+  anamnesisUpdatedByName?: string
   stepTimestamps?: {
     anamnesis: Date | null
     planning: Date | null
@@ -58,9 +84,15 @@ function calculateAge(birthDate: string): number {
 
 export function ServiceWizard({
   patient,
+  tenant,
   initialStep,
   procedureId,
   procedureStatus,
+  procedure,
+  diagrams,
+  existingApplications,
+  anamnesis,
+  anamnesisUpdatedByName,
   stepTimestamps,
 }: ServiceWizardProps) {
   const router = useRouter()
@@ -78,11 +110,15 @@ export function ServiceWizard({
     goToStep,
     nextStep,
     prevStep,
+    triggerSave,
+    onSaveComplete,
     canSkip,
     isStepAvailable,
     isStepCompleted,
+    isStepReadOnly,
     getSkipLabel,
     getNextLabel,
+    updateProcedureStatus,
   } = wizard
 
   // ─── beforeunload protection for steps 2-4 ─────────────────────
@@ -156,11 +192,36 @@ export function ServiceWizard({
 
   const contextMessage = getContextMessage()
 
+  // ─── Step completion handler ───────────────────────────────────
+
+  const handleStepComplete = useCallback(
+    (result: StepResult) => {
+      onSaveComplete(result)
+
+      if (result.success) {
+        // Update procedure status if the step changed it
+        if (state.currentStep === 3) {
+          updateProcedureStatus('approved')
+        }
+        if (state.currentStep === 4) {
+          // Execution complete — redirect to patient detail
+          toast.success('Atendimento finalizado com sucesso')
+          router.push(`/pacientes/${patient.id}`)
+          return
+        }
+        // Auto-advance to next step after successful save
+        nextStep()
+      }
+    },
+    [onSaveComplete, state.currentStep, nextStep, updateProcedureStatus, router, patient.id]
+  )
+
   // ─── Skip/Adiar handler ────────────────────────────────────────
 
   const handleSkip = useCallback(() => {
     if (state.currentStep === 3) {
       // "Adiar Aprovacao" — exits wizard
+      toast.info('Atendimento salvo como planejado. Retorne para aprovar quando o paciente estiver pronto.')
       router.push(`/pacientes/${patient.id}`)
       return
     }
@@ -171,15 +232,31 @@ export function ServiceWizard({
   // ─── Next handler ──────────────────────────────────────────────
 
   const handleNext = useCallback(() => {
-    // In future tasks, step 2+ will trigger save via triggerSave.
-    // For now (shell), just advance.
-    if (state.currentStep === 4) {
-      // Finalizar — would trigger save + redirect
-      router.push(`/pacientes/${patient.id}`)
-      return
-    }
-    nextStep()
-  }, [state.currentStep, nextStep, router, patient.id])
+    // All steps trigger save via triggerSave.
+    // Step 1: flushes debounce and advances on success
+    // Step 2: creates/updates procedure and advances on success
+    // Step 3: calls approveProcedureAction and advances on success
+    // Step 4: calls executeProcedureAction and redirects on success
+    triggerSave()
+  }, [triggerSave])
+
+  // ─── Wizard overrides for each step ────────────────────────────
+
+  const baseOverrides = {
+    hideSaveButton: true,
+    hideNavigation: true,
+    hideTitle: true,
+    onSaveComplete: handleStepComplete,
+    triggerSave: state.triggerSave,
+  }
+
+  // ─── Derived state ─────────────────────────────────────────────
+
+  const isReadOnlyAfterApproval =
+    state.procedureStatus === 'approved' || state.procedureStatus === 'executed'
+
+  // additionalTypeIds from procedure record
+  const additionalTypeIds = (procedure?.additionalTypeIds as string[] | null) ?? []
 
   // ─── Render ────────────────────────────────────────────────────
 
@@ -237,47 +314,97 @@ export function ServiceWizard({
 
         {/* Step content — all steps mounted, only active visible */}
         <div className="flex-1">
+          {/* Step 1: Anamnese */}
           <div style={{ display: state.currentStep === 1 ? 'block' : 'none' }}>
             <WizardStepWrapper
               title="Anamnese"
               timestamp={stepTimestamps?.anamnesis}
             >
-              <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-                <p className="text-mid">Conteudo da Anamnese</p>
-              </div>
+              <AnamnesisForm
+                patientId={patient.id}
+                initialData={anamnesis ?? undefined}
+                updatedByName={anamnesisUpdatedByName}
+                wizardOverrides={baseOverrides}
+              />
             </WizardStepWrapper>
           </div>
 
+          {/* Step 2: Planejamento */}
           <div style={{ display: state.currentStep === 2 ? 'block' : 'none' }}>
             <WizardStepWrapper
               title="Planejamento"
               timestamp={stepTimestamps?.planning}
             >
-              <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-                <p className="text-mid">Conteudo do Planejamento</p>
-              </div>
+              <ProcedureForm
+                patientId={patient.id}
+                patientGender={patient.gender}
+                procedure={procedure ?? undefined}
+                diagrams={diagrams ?? undefined}
+                existingApplications={existingApplications ?? undefined}
+                mode={
+                  isReadOnlyAfterApproval
+                    ? 'view'
+                    : procedure
+                      ? 'edit'
+                      : 'create'
+                }
+                wizardOverrides={baseOverrides}
+              />
             </WizardStepWrapper>
           </div>
 
+          {/* Step 3: Aprovacao */}
           <div style={{ display: state.currentStep === 3 ? 'block' : 'none' }}>
             <WizardStepWrapper
               title="Aprovacao"
               timestamp={stepTimestamps?.approval}
             >
-              <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-                <p className="text-mid">Conteudo da Aprovacao</p>
-              </div>
+              {state.procedureId && procedure ? (
+                <ProcedureApproval
+                  procedure={procedure}
+                  diagrams={diagrams ?? []}
+                  patient={{
+                    id: patient.id,
+                    fullName: patient.fullName,
+                    cpf: patient.cpf,
+                    gender: patient.gender,
+                  }}
+                  tenant={tenant}
+                  additionalTypeIds={additionalTypeIds}
+                  wizardOverrides={baseOverrides}
+                />
+              ) : (
+                <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+                  <p className="text-mid">
+                    Complete o planejamento para acessar a aprovacao.
+                  </p>
+                </div>
+              )}
             </WizardStepWrapper>
           </div>
 
+          {/* Step 4: Execucao */}
           <div style={{ display: state.currentStep === 4 ? 'block' : 'none' }}>
             <WizardStepWrapper
               title="Execucao"
               timestamp={stepTimestamps?.execution}
             >
-              <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-                <p className="text-mid">Conteudo da Execucao</p>
-              </div>
+              {state.procedureId && state.procedureStatus === 'approved' && procedure ? (
+                <ProcedureExecution
+                  patientId={patient.id}
+                  patientGender={patient.gender}
+                  procedure={procedure}
+                  diagrams={diagrams ?? undefined}
+                  existingApplications={existingApplications ?? undefined}
+                  wizardOverrides={baseOverrides}
+                />
+              ) : (
+                <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+                  <p className="text-mid">
+                    Aprove o procedimento para acessar a execucao.
+                  </p>
+                </div>
+              )}
             </WizardStepWrapper>
           </div>
         </div>
@@ -312,8 +439,8 @@ export function ServiceWizard({
                 state.isSaving && 'opacity-50 cursor-not-allowed',
               )}
             >
-              {nextLabel}
-              {state.currentStep < 4 && <ChevronRight className="h-4 w-4" />}
+              {state.isSaving ? 'Salvando...' : nextLabel}
+              {state.currentStep < 4 && !state.isSaving && <ChevronRight className="h-4 w-4" />}
             </button>
 
             {showSkip && skipLabel && (
