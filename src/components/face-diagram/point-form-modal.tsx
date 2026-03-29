@@ -20,7 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { DiagramPointData } from './types'
+import { ChevronDown } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import type { DiagramPointData, CatalogProduct } from './types'
 import type { QuantityUnit } from '@/types'
 
 const DEPTH_OPTIONS = [
@@ -31,6 +33,17 @@ const DEPTH_OPTIONS = [
   { value: 'intramuscular', label: 'Intramuscular' },
 ] as const
 
+const CATEGORY_LABELS: Record<string, string> = {
+  botox: 'Toxina Botulinica',
+  filler: 'Preenchimento',
+  biostimulator: 'Bioestimulador',
+  peel: 'Peeling',
+  skinbooster: 'Skinbooster',
+  laser: 'Laser',
+  microagulhamento: 'Microagulhamento',
+  outros: 'Outros',
+}
+
 interface PointFormModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -38,6 +51,7 @@ interface PointFormModalProps {
   onSave: (point: DiagramPointData) => void
   onDelete?: () => void
   existingProducts?: string[]
+  products?: CatalogProduct[]
 }
 
 export function PointFormModal({
@@ -47,9 +61,12 @@ export function PointFormModal({
   onSave,
   onDelete,
   existingProducts = [],
+  products,
 }: PointFormModalProps) {
   const isEditing = !!point.id
+  const hasCatalog = products && products.length > 0
 
+  const [selectedProductId, setSelectedProductId] = React.useState<string>('')
   const [productName, setProductName] = React.useState(point.productName ?? '')
   const [activeIngredient, setActiveIngredient] = React.useState(
     point.activeIngredient ?? ''
@@ -65,6 +82,18 @@ export function PointFormModal({
   const [notes, setNotes] = React.useState(point.notes ?? '')
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
   const [showSuggestions, setShowSuggestions] = React.useState(false)
+  const [showDetails, setShowDetails] = React.useState(false)
+
+  // Group products by category
+  const groupedProducts = React.useMemo(() => {
+    if (!products) return {}
+    const groups: Record<string, CatalogProduct[]> = {}
+    for (const p of products) {
+      if (!groups[p.category]) groups[p.category] = []
+      groups[p.category].push(p)
+    }
+    return groups
+  }, [products])
 
   // Reset form when point changes
   React.useEffect(() => {
@@ -77,7 +106,27 @@ export function PointFormModal({
     setNotes(point.notes ?? '')
     setShowDeleteConfirm(false)
     setShowSuggestions(false)
-  }, [point])
+    setShowDetails(!!(point.technique || point.depth || point.notes))
+
+    // Try to match existing point to a catalog product
+    if (products && point.productName) {
+      const match = products.find((p) => p.name === point.productName)
+      setSelectedProductId(match?.id ?? '')
+    } else {
+      setSelectedProductId('')
+    }
+  }, [point, products])
+
+  function handleProductSelect(productId: string | null) {
+    if (!productId) return
+    const product = products?.find((p) => p.id === productId)
+    if (!product) return
+
+    setSelectedProductId(productId)
+    setProductName(product.name)
+    setActiveIngredient(product.activeIngredient ?? '')
+    setQuantityUnit(product.defaultUnit as QuantityUnit)
+  }
 
   const filteredProducts = React.useMemo(() => {
     if (!productName.trim()) return existingProducts
@@ -130,59 +179,88 @@ export function PointFormModal({
             {isEditing ? 'Editar ponto' : 'Adicionar ponto'}
           </DialogTitle>
           <DialogDescription>
-            Preencha os detalhes do produto aplicado neste ponto.
+            {hasCatalog
+              ? 'Selecione o produto e a quantidade.'
+              : 'Preencha os detalhes do produto aplicado neste ponto.'}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          {/* Product name with autocomplete */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="product-name">Produto *</Label>
-            <div className="relative">
-              <Input
-                id="product-name"
-                value={productName}
-                onChange={(e) => setProductName(e.target.value)}
-                onFocus={() => setShowSuggestions(true)}
-                onBlur={() => {
-                  // Delay to allow click on suggestion
-                  setTimeout(() => setShowSuggestions(false), 150)
-                }}
-                placeholder="Nome do produto"
-                required
-                autoComplete="off"
-              />
-              {showSuggestions && filteredProducts.length > 0 && (
-                <div className="absolute top-full left-0 z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md">
-                  {filteredProducts.map((product) => (
-                    <button
-                      key={product}
-                      type="button"
-                      className="w-full rounded-sm px-2 py-1 text-left text-sm hover:bg-accent hover:text-accent-foreground"
-                      onMouseDown={(e) => {
-                        e.preventDefault()
-                        setProductName(product)
-                        setShowSuggestions(false)
-                      }}
-                    >
-                      {product}
-                    </button>
+          {/* Product select from catalog */}
+          {hasCatalog ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="product-select">Produto *</Label>
+              <Select
+                value={selectedProductId}
+                onValueChange={handleProductSelect}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Selecione o produto">
+                    {(value: string) => {
+                      const p = products?.find((prod) => prod.id === value)
+                      return p?.name ?? value
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(groupedProducts).map(([category, prods]) => (
+                    <React.Fragment key={category}>
+                      <div className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-mid">
+                        {CATEGORY_LABELS[category] || category}
+                      </div>
+                      {prods.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </React.Fragment>
                   ))}
-                </div>
+                </SelectContent>
+              </Select>
+              {selectedProductId && activeIngredient && (
+                <p className="text-xs text-mid">
+                  Principio ativo: {activeIngredient}
+                </p>
               )}
             </div>
-          </div>
-
-          {/* Active ingredient */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="active-ingredient">Princípio ativo</Label>
-            <Input
-              id="active-ingredient"
-              value={activeIngredient}
-              onChange={(e) => setActiveIngredient(e.target.value)}
-              placeholder="Princípio ativo"
-            />
-          </div>
+          ) : (
+            /* Fallback: manual product name with autocomplete */
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="product-name">Produto *</Label>
+              <div className="relative">
+                <Input
+                  id="product-name"
+                  value={productName}
+                  onChange={(e) => setProductName(e.target.value)}
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => {
+                    setTimeout(() => setShowSuggestions(false), 150)
+                  }}
+                  placeholder="Nome do produto"
+                  required
+                  autoComplete="off"
+                />
+                {showSuggestions && filteredProducts.length > 0 && (
+                  <div className="absolute top-full left-0 z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md">
+                    {filteredProducts.map((product) => (
+                      <button
+                        key={product}
+                        type="button"
+                        className="w-full rounded-sm px-2 py-1 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          setProductName(product)
+                          setShowSuggestions(false)
+                        }}
+                      >
+                        {product}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Quantity + Unit */}
           <div className="flex gap-2">
@@ -228,47 +306,79 @@ export function PointFormModal({
             </div>
           </div>
 
-          {/* Technique */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="technique">Técnica</Label>
-            <Input
-              id="technique"
-              value={technique}
-              onChange={(e) => setTechnique(e.target.value)}
-              placeholder="Técnica utilizada"
+          {/* Optional expandable section */}
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-sm text-mid hover:text-charcoal transition-colors mt-1"
+            onClick={() => setShowDetails(!showDetails)}
+          >
+            <ChevronDown
+              className={cn(
+                'size-4 transition-transform duration-200',
+                showDetails && 'rotate-180'
+              )}
             />
-          </div>
+            Detalhes adicionais
+          </button>
 
-          {/* Depth */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="depth">Profundidade</Label>
-            <Select value={depth} onValueChange={(val) => setDepth(val ?? '')}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecione a profundidade">
-                  {(value: string) => DEPTH_OPTIONS.find((o) => o.value === value)?.label ?? value}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {DEPTH_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {showDetails && (
+            <div className="flex flex-col gap-3 border-t border-petal pt-3">
+              {/* Active ingredient (only if no catalog) */}
+              {!hasCatalog && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="active-ingredient">Principio ativo</Label>
+                  <Input
+                    id="active-ingredient"
+                    value={activeIngredient}
+                    onChange={(e) => setActiveIngredient(e.target.value)}
+                    placeholder="Principio ativo"
+                  />
+                </div>
+              )}
 
-          {/* Notes */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="notes">Observações</Label>
-            <Textarea
-              id="notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Observações sobre este ponto"
-              rows={2}
-            />
-          </div>
+              {/* Technique */}
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="technique">Tecnica</Label>
+                <Input
+                  id="technique"
+                  value={technique}
+                  onChange={(e) => setTechnique(e.target.value)}
+                  placeholder="Tecnica utilizada"
+                />
+              </div>
+
+              {/* Depth */}
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="depth">Profundidade</Label>
+                <Select value={depth} onValueChange={(val) => setDepth(val ?? '')}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Selecione a profundidade">
+                      {(value: string) => DEPTH_OPTIONS.find((o) => o.value === value)?.label ?? value}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DEPTH_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Notes */}
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="notes">Observacoes</Label>
+                <Textarea
+                  id="notes"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Observacoes sobre este ponto"
+                  rows={2}
+                />
+              </div>
+            </div>
+          )}
 
           <DialogFooter className="gap-2 sm:gap-0">
             {isEditing && onDelete && (
@@ -278,7 +388,7 @@ export function PointFormModal({
                 onClick={handleDelete}
                 className="mr-auto"
               >
-                {showDeleteConfirm ? 'Confirmar exclusão' : 'Excluir'}
+                {showDeleteConfirm ? 'Confirmar exclusao' : 'Excluir'}
               </Button>
             )}
             <Button

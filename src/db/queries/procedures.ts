@@ -75,6 +75,7 @@ export async function createProcedure(
       patientId: data.patientId,
       practitionerId,
       procedureTypeId: data.procedureTypeId,
+      additionalTypeIds: data.additionalTypeIds ?? [],
       appointmentId: data.appointmentId ?? null,
       technique: data.technique ?? null,
       clinicalResponse: data.clinicalResponse ?? null,
@@ -106,6 +107,7 @@ export async function updateProcedure(
   if (data.nextSessionObjectives !== undefined) updateData.nextSessionObjectives = data.nextSessionObjectives ?? null
   if (data.status !== undefined) updateData.status = data.status
   if (data.procedureTypeId !== undefined) updateData.procedureTypeId = data.procedureTypeId
+  if (data.additionalTypeIds !== undefined) updateData.additionalTypeIds = data.additionalTypeIds ?? []
   if (data.appointmentId !== undefined) updateData.appointmentId = data.appointmentId ?? null
 
   const [updated] = await txDb

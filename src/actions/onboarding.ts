@@ -11,6 +11,8 @@ import {
 } from '@/db/queries/tenants'
 import { createConsentTemplate } from '@/db/queries/consent'
 import { DEFAULT_CONSENT_TEMPLATES } from '@/validations/consent'
+import { createProduct } from '@/db/queries/products'
+import { DEFAULT_PRODUCTS } from '@/lib/constants'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { eq } from 'drizzle-orm'
@@ -100,7 +102,17 @@ export async function completeOnboarding(data: OnboardingData): Promise<Onboardi
         }
       }
 
-      // 3. Create default consent templates (4 types)
+      // 3. Seed default products
+      for (const product of DEFAULT_PRODUCTS) {
+        await createProduct(auth.tenantId, {
+          name: product.name,
+          category: product.category,
+          activeIngredient: product.activeIngredient,
+          defaultUnit: product.defaultUnit,
+        }, tx)
+      }
+
+      // 4. Create default consent templates (4 types)
       const consentTypes = ['general', 'botox', 'filler', 'biostimulator'] as const
       for (const type of consentTypes) {
         const template = DEFAULT_CONSENT_TEMPLATES[type]
@@ -111,12 +123,12 @@ export async function completeOnboarding(data: OnboardingData): Promise<Onboardi
         })
       }
 
-      // 4. Mark onboarding as completed
+      // 5. Mark onboarding as completed
       await updateTenantSettings(auth.tenantId, {
         onboarding_completed: true,
       })
 
-      // 5. Audit log
+      // 6. Audit log
       await createAuditLog({
         tenantId: auth.tenantId,
         userId: auth.userId,

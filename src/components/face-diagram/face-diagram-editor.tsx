@@ -20,6 +20,7 @@ export function FaceDiagramEditor({
   previousPoints,
   readOnly = false,
   gender,
+  products,
 }: FaceDiagramEditorProps) {
   const [activeView, setActiveView] = React.useState<DiagramViewType>('front')
   const [showPrevious, setShowPrevious] = React.useState(false)
@@ -187,6 +188,7 @@ export function FaceDiagramEditor({
             onSave={handleSavePoint}
             onDelete={editingPoint.id ? handleDeletePoint : undefined}
             existingProducts={existingProducts}
+            products={products}
           />
         )}
       </div>

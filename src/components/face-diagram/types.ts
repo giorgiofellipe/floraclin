@@ -13,10 +13,20 @@ export interface DiagramPointData {
   notes?: string
 }
 
+export interface CatalogProduct {
+  id: string
+  name: string
+  category: string
+  activeIngredient: string | null
+  defaultUnit: string
+  isActive: boolean
+}
+
 export interface FaceDiagramEditorProps {
   points: DiagramPointData[]
   onChange: (points: DiagramPointData[]) => void
   previousPoints?: DiagramPointData[] // ghost overlay
   readOnly?: boolean
   gender?: string | null // inferred from patient — 'masculino' | 'feminino'
+  products?: CatalogProduct[] // active products from catalog
 }

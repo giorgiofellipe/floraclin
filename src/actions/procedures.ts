@@ -35,6 +35,7 @@ export async function createProcedureAction(
   formData: {
     patientId: string
     procedureTypeId: string
+    additionalTypeIds?: string[]
     appointmentId?: string
     technique?: string
     clinicalResponse?: string
@@ -64,6 +65,7 @@ export async function createProcedureAction(
   const parsed = createProcedureSchema.safeParse({
     patientId: formData.patientId,
     procedureTypeId: formData.procedureTypeId,
+    additionalTypeIds: formData.additionalTypeIds,
     appointmentId: formData.appointmentId,
     technique: formData.technique,
     clinicalResponse: formData.clinicalResponse,
@@ -140,6 +142,7 @@ export async function updateProcedureAction(
   id: string,
   formData: {
     procedureTypeId?: string
+    additionalTypeIds?: string[]
     appointmentId?: string
     technique?: string
     clinicalResponse?: string

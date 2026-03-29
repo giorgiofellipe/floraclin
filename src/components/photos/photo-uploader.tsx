@@ -29,6 +29,7 @@ interface PhotoUploaderProps {
   patientId: string
   procedureRecordId?: string
   onUploadComplete?: () => void
+  defaultStage?: TimelineStage
 }
 
 interface PendingFile {
@@ -128,9 +129,10 @@ export function PhotoUploader({
   patientId,
   procedureRecordId,
   onUploadComplete,
+  defaultStage,
 }: PhotoUploaderProps) {
   const [files, setFiles] = useState<PendingFile[]>([])
-  const [timelineStage, setTimelineStage] = useState<TimelineStage>('pre')
+  const [timelineStage, setTimelineStage] = useState<TimelineStage>(defaultStage ?? 'pre')
   const [isDragOver, setIsDragOver] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)

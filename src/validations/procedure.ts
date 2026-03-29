@@ -5,6 +5,7 @@ import { z } from 'zod'
 export const createProcedureSchema = z.object({
   patientId: z.string().uuid('ID do paciente inválido'),
   procedureTypeId: z.string().uuid('Tipo de procedimento é obrigatório'),
+  additionalTypeIds: z.array(z.string().uuid()).optional(),
   appointmentId: z.string().uuid('ID do agendamento inválido').optional(),
   technique: z.string().max(5000, 'Técnica deve ter no máximo 5000 caracteres').optional(),
   clinicalResponse: z.string().max(5000, 'Resposta clínica deve ter no máximo 5000 caracteres').optional(),

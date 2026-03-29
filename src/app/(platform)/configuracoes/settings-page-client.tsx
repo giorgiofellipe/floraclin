@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ClinicSettingsForm } from '@/components/settings/clinic-settings-form'
 import { ProcedureTypeList } from '@/components/settings/procedure-type-list'
+import { ProductList } from '@/components/settings/product-list'
 import { TeamList } from '@/components/settings/team-list'
 import { ConsentTemplateList } from '@/components/settings/consent-template-list'
 import { BookingSettings } from '@/components/settings/booking-settings'
@@ -11,6 +12,7 @@ import { cn } from '@/lib/utils'
 import {
   BuildingIcon,
   SyringeIcon,
+  PackageIcon,
   UsersIcon,
   FileTextIcon,
   CalendarIcon,
@@ -66,9 +68,19 @@ interface ConsentTemplate {
   updatedAt: Date
 }
 
+interface Product {
+  id: string
+  name: string
+  category: string
+  activeIngredient: string | null
+  defaultUnit: string
+  isActive: boolean
+}
+
 interface SettingsPageClientProps {
   tenant: Tenant
   procedureTypes: ProcedureType[]
+  products: Product[]
   members: TeamMember[]
   consentTemplates: ConsentTemplate[]
   currentUserId: string
@@ -77,6 +89,7 @@ interface SettingsPageClientProps {
 const TABS = [
   { key: 'clinica', label: 'Clinica', icon: BuildingIcon },
   { key: 'procedimentos', label: 'Procedimentos', icon: SyringeIcon },
+  { key: 'produtos', label: 'Produtos', icon: PackageIcon },
   { key: 'equipe', label: 'Equipe', icon: UsersIcon },
   { key: 'termos', label: 'Termos', icon: FileTextIcon },
   { key: 'agendamento', label: 'Agendamento', icon: CalendarIcon },
@@ -88,6 +101,7 @@ type TabKey = (typeof TABS)[number]['key']
 export function SettingsPageClient({
   tenant,
   procedureTypes,
+  products,
   members,
   consentTemplates,
   currentUserId,
@@ -190,6 +204,10 @@ export function SettingsPageClient({
 
               {activeTab === 'procedimentos' && (
                 <ProcedureTypeList procedureTypes={procedureTypes} />
+              )}
+
+              {activeTab === 'produtos' && (
+                <ProductList products={products} />
               )}
 
               {activeTab === 'equipe' && (

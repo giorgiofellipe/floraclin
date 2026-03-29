@@ -16,6 +16,8 @@ import {
   Camera,
   Stethoscope,
   CalendarPlus,
+  PlusIcon,
+  Trash2Icon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -40,7 +42,7 @@ import {
 import { cn } from '@/lib/utils'
 import { AppointmentForm } from '@/components/scheduling/appointment-form'
 import { FaceDiagramEditor } from '@/components/face-diagram/face-diagram-editor'
-import type { DiagramPointData } from '@/components/face-diagram/types'
+import type { DiagramPointData, CatalogProduct } from '@/components/face-diagram/types'
 import { PhotoUploader } from '@/components/photos/photo-uploader'
 import { PhotoGrid } from '@/components/photos/photo-grid'
 import { ConsentViewer } from '@/components/consent/consent-viewer'
@@ -51,6 +53,7 @@ import {
   checkConsentStatusAction,
   getPreviousDiagramPointsAction,
 } from '@/actions/procedures'
+import { listActiveProductsAction } from '@/actions/products-catalog'
 import { getActiveConsentForTypeAction } from '@/actions/consent'
 import {
   listPractitionersAction,
@@ -202,10 +205,15 @@ export function ProcedureForm({
   const [nextSessionObjectives, setNextSessionObjectives] = useState(
     procedure?.nextSessionObjectives ?? ''
   )
+  const [additionalTypeIds, setAdditionalTypeIds] = useState<string[]>(() => {
+    const existing = (procedure as unknown as Record<string, unknown> | null | undefined)?.additionalTypeIds
+    return Array.isArray(existing) ? existing as string[] : []
+  })
 
   // ─── Data loading state ──────────────────────────────────────────
   const [procedureTypes, setProcedureTypes] = useState<ProcedureType[]>([])
   const [loadingTypes, setLoadingTypes] = useState(true)
+  const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>([])
 
   // ─── Consent state ───────────────────────────────────────────────
   const [consentStatus, setConsentStatus] = useState<ConsentInfo | null>(null)
@@ -293,12 +301,16 @@ export function ProcedureForm({
     setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }))
   }
 
-  // ─── Load procedure types ────────────────────────────────────────
+  // ─── Load procedure types and products ────────────────────────────
   useEffect(() => {
     async function load() {
       try {
-        const types = await listProcedureTypesAction()
+        const [types, prods] = await Promise.all([
+          listProcedureTypesAction(),
+          listActiveProductsAction(),
+        ])
         setProcedureTypes(types as ProcedureType[])
+        setCatalogProducts(prods as CatalogProduct[])
       } finally {
         setLoadingTypes(false)
       }
@@ -431,6 +443,32 @@ export function ProcedureForm({
     []
   )
 
+  const handleAddBatch = useCallback(
+    (sourceIndex: number) => {
+      setProductApps((prev) => {
+        const source = prev[sourceIndex]
+        const newEntry: ProductApplicationItem = {
+          productName: source.productName,
+          activeIngredient: source.activeIngredient,
+          totalQuantity: 0,
+          quantityUnit: source.quantityUnit,
+        }
+        const updated = [...prev]
+        // Insert after the source entry
+        updated.splice(sourceIndex + 1, 0, newEntry)
+        return updated
+      })
+    },
+    []
+  )
+
+  const handleRemoveBatch = useCallback(
+    (index: number) => {
+      setProductApps((prev) => prev.filter((_, i) => i !== index))
+    },
+    []
+  )
+
   const handleSubmit = useCallback(async () => {
     if (isSubmitting || isReadOnly) return
 
@@ -461,6 +499,7 @@ export function ProcedureForm({
       const payload = {
         patientId,
         procedureTypeId,
+        additionalTypeIds: additionalTypeIds.length > 0 ? additionalTypeIds : undefined,
         technique: technique || undefined,
         clinicalResponse: clinicalResponse || undefined,
         adverseEffects: adverseEffects || undefined,
@@ -500,6 +539,7 @@ export function ProcedureForm({
     procedure?.id,
     patientId,
     procedureTypeId,
+    additionalTypeIds,
     technique,
     clinicalResponse,
     adverseEffects,
@@ -555,7 +595,7 @@ export function ProcedureForm({
         )}
       </div>
 
-      {/* ── Procedure Type Select ───────────────────────────────────── */}
+      {/* ── Procedure Type Multi-Select ──────────────────────────────── */}
       <Card className="bg-white border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2.5 text-base">
@@ -574,35 +614,82 @@ export function ProcedureForm({
               Carregando tipos...
             </div>
           ) : (
-            <Select
-              value={procedureTypeId}
-              onValueChange={(val) => val && setProcedureTypeId(val)}
-              disabled={isReadOnly}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecione o tipo de procedimento">
-                  {(value: string) => {
-                    const type = procedureTypes.find((t) => t.id === value)
-                    if (!type) return value
-                    return type.defaultPrice
-                      ? `${type.name} (R$ ${parseFloat(type.defaultPrice).toFixed(2)})`
-                      : type.name
-                  }}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {procedureTypes.map((type) => (
-                  <SelectItem key={type.id} value={type.id}>
-                    {type.name}
-                    {type.defaultPrice && (
-                      <span className="ml-2 text-mid">
-                        (R$ {parseFloat(type.defaultPrice).toFixed(2)})
-                      </span>
-                    )}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="space-y-2">
+              <p className="text-xs text-mid">Selecione um ou mais tipos (o primeiro sera o principal).</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {procedureTypes.map((type) => {
+                  const allSelected = [procedureTypeId, ...additionalTypeIds]
+                  const isSelected = allSelected.includes(type.id)
+
+                  function handleToggle() {
+                    if (isReadOnly) return
+                    if (isSelected) {
+                      // Remove
+                      if (type.id === procedureTypeId) {
+                        // Removing primary: promote first additional or clear
+                        if (additionalTypeIds.length > 0) {
+                          setProcedureTypeId(additionalTypeIds[0])
+                          setAdditionalTypeIds(additionalTypeIds.slice(1))
+                        } else {
+                          setProcedureTypeId('')
+                        }
+                      } else {
+                        setAdditionalTypeIds(additionalTypeIds.filter((id) => id !== type.id))
+                      }
+                    } else {
+                      // Add
+                      if (!procedureTypeId) {
+                        setProcedureTypeId(type.id)
+                      } else {
+                        setAdditionalTypeIds([...additionalTypeIds, type.id])
+                      }
+                    }
+                  }
+
+                  return (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={handleToggle}
+                      disabled={isReadOnly}
+                      className={cn(
+                        'flex items-center gap-3 rounded-[3px] border p-3 text-left text-sm transition-colors',
+                        isSelected
+                          ? 'border-sage bg-sage/5 text-charcoal'
+                          : 'border-[#E8ECEF] bg-white text-mid hover:border-sage/50 hover:bg-[#F4F6F8]',
+                        isReadOnly && 'cursor-default opacity-70'
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          'flex size-5 shrink-0 items-center justify-center rounded-[3px] border-2 transition-colors',
+                          isSelected
+                            ? 'border-sage bg-sage'
+                            : 'border-[#E8ECEF]'
+                        )}
+                      >
+                        {isSelected && (
+                          <svg className="size-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium text-charcoal">{type.name}</span>
+                        {type.defaultPrice && (
+                          <span className="ml-2 text-xs text-mid">
+                            R$ {parseFloat(type.defaultPrice).toFixed(2)}
+                          </span>
+                        )}
+                        {type.id === procedureTypeId && (
+                          <span className="ml-2 text-xs text-sage font-medium">(principal)</span>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -696,6 +783,7 @@ export function ProcedureForm({
             patientId={patientId}
             procedureRecordId={procedure?.id}
             onUploadComplete={() => setPhotoRefreshKey((k) => k + 1)}
+            defaultStage="pre"
           />
         )}
         {procedure?.id && (
@@ -741,6 +829,7 @@ export function ProcedureForm({
           previousPoints={previousPoints}
           readOnly={isReadOnly}
           gender={patientGender}
+          products={catalogProducts}
         />
       </Section>
 
@@ -754,85 +843,129 @@ export function ProcedureForm({
           badge={
             <Badge variant="outline" className="text-xs">
               {productApps.length}{' '}
-              {productApps.length === 1 ? 'produto' : 'produtos'}
+              {productApps.length === 1 ? 'item' : 'itens'}
             </Badge>
           }
         >
           <div className="space-y-4">
-            {productApps.map((app, index) => (
-              <div
-                key={`${app.productName}-${app.quantityUnit}-${index}`}
-                className="rounded-[3px] border border-[#E8ECEF] bg-white p-5"
-              >
-                <div className="mb-4 flex items-center justify-between">
-                  <h4 className="font-medium text-charcoal">
-                    {app.productName}
-                  </h4>
-                  <Badge variant="outline" className="text-xs border-sage/30 bg-sage/5 text-sage px-2.5 py-0.5">
-                    {app.totalQuantity}
-                    {app.quantityUnit}
-                  </Badge>
-                </div>
+            {productApps.map((app, index) => {
+              // Check if this is the first entry for this product (show header)
+              const isFirstForProduct = index === 0 || productApps[index - 1].productName !== app.productName
+              // Check if the next entry is for a different product (show "add batch" button)
+              const isLastForProduct = index === productApps.length - 1 || productApps[index + 1]?.productName !== app.productName
+              // Count entries for this product
+              const entriesForProduct = productApps.filter((a) => a.productName === app.productName).length
+              const canRemove = entriesForProduct > 1
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <Label className="uppercase tracking-wider text-xs text-mid">
-                      Lote / Batch
-                    </Label>
-                    <Input
-                      value={app.batchNumber ?? ''}
-                      onChange={(e) =>
-                        handleProductAppChange(
-                          index,
-                          'batchNumber',
-                          e.target.value
-                        )
-                      }
-                      placeholder="Ex: ABC12345"
-                      disabled={isReadOnly}
-                      className="mt-1"
-                    />
-                  </div>
-                  <div>
-                    <Label className="uppercase tracking-wider text-xs text-mid">
-                      Validade
-                    </Label>
-                    <Input
-                      type="date"
-                      value={app.expirationDate ?? ''}
-                      onChange={(e) =>
-                        handleProductAppChange(
-                          index,
-                          'expirationDate',
-                          e.target.value
-                        )
-                      }
-                      disabled={isReadOnly}
-                      className="mt-1"
-                    />
-                  </div>
-                </div>
+              return (
+                <div key={`${app.productName}-${app.quantityUnit}-${index}`}>
+                  {isFirstForProduct && (
+                    <div className="mb-2 flex items-center justify-between">
+                      <h4 className="font-medium text-charcoal">
+                        {app.productName}
+                      </h4>
+                      <Badge variant="outline" className="text-xs border-sage/30 bg-sage/5 text-sage px-2.5 py-0.5">
+                        {app.totalQuantity}
+                        {app.quantityUnit}
+                      </Badge>
+                    </div>
+                  )}
 
-                <div className="mt-3">
-                  <Label className="uppercase tracking-wider text-xs text-mid">
-                    Areas de aplicacao
-                  </Label>
-                  <Input
-                    value={app.applicationAreas ?? ''}
-                    onChange={(e) =>
-                      handleProductAppChange(
-                        index,
-                        'applicationAreas',
-                        e.target.value
-                      )
-                    }
-                    placeholder="Ex: Frontal, Glabela, Periorbital"
-                    disabled={isReadOnly}
-                    className="mt-1"
-                  />
+                  <div className="rounded-[3px] border border-[#E8ECEF] bg-white p-5">
+                    {entriesForProduct > 1 && (
+                      <div className="mb-3 flex items-center justify-between">
+                        <span className="text-xs text-mid uppercase tracking-wider">
+                          Lote {productApps.slice(0, index + 1).filter((a) => a.productName === app.productName).length}
+                        </span>
+                        {canRemove && !isReadOnly && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => handleRemoveBatch(index)}
+                          >
+                            <Trash2Icon className="size-3.5 text-mid" />
+                          </Button>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <Label className="uppercase tracking-wider text-xs text-mid">
+                          Lote / Batch
+                        </Label>
+                        <Input
+                          value={app.batchNumber ?? ''}
+                          onChange={(e) =>
+                            handleProductAppChange(
+                              index,
+                              'batchNumber',
+                              e.target.value
+                            )
+                          }
+                          placeholder="Ex: ABC12345"
+                          disabled={isReadOnly}
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label className="uppercase tracking-wider text-xs text-mid">
+                          Validade
+                        </Label>
+                        <Input
+                          type="date"
+                          value={app.expirationDate ?? ''}
+                          onChange={(e) =>
+                            handleProductAppChange(
+                              index,
+                              'expirationDate',
+                              e.target.value
+                            )
+                          }
+                          disabled={isReadOnly}
+                          className="mt-1"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <Label className="uppercase tracking-wider text-xs text-mid">
+                        Areas de aplicacao
+                      </Label>
+                      <Input
+                        value={app.applicationAreas ?? ''}
+                        onChange={(e) =>
+                          handleProductAppChange(
+                            index,
+                            'applicationAreas',
+                            e.target.value
+                          )
+                        }
+                        placeholder="Ex: Frontal, Glabela, Periorbital"
+                        disabled={isReadOnly}
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
+
+                  {isLastForProduct && !isReadOnly && (
+                    <div className="mt-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleAddBatch(index)}
+                        className="text-xs border-sage/30 text-sage hover:bg-sage/5"
+                      >
+                        <PlusIcon className="size-3.5 mr-1" />
+                        Adicionar lote
+                      </Button>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </Section>
       )}
@@ -962,6 +1095,7 @@ export function ProcedureForm({
             patientId={patientId}
             procedureRecordId={procedure?.id}
             onUploadComplete={() => setPhotoRefreshKey((k) => k + 1)}
+            defaultStage="immediate_post"
           />
         )}
       </Section>

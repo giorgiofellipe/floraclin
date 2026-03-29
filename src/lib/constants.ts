@@ -30,6 +30,21 @@ export const DEFAULT_PROCEDURE_TYPES = [
   { name: 'Skinbooster', category: 'skinbooster', estimatedDurationMin: 45 },
 ]
 
+export const DEFAULT_PRODUCTS = [
+  { name: 'Botox Allergan 100U', category: 'botox', activeIngredient: 'Toxina botulínica tipo A', defaultUnit: 'U' },
+  { name: 'Dysport 300U', category: 'botox', activeIngredient: 'Toxina botulínica tipo A', defaultUnit: 'U' },
+  { name: 'Xeomin 100U', category: 'botox', activeIngredient: 'Toxina botulínica tipo A', defaultUnit: 'U' },
+  { name: 'Juvederm Ultra XC', category: 'filler', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL' },
+  { name: 'Juvederm Voluma XC', category: 'filler', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL' },
+  { name: 'Restylane', category: 'filler', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL' },
+  { name: 'Restylane Lyft', category: 'filler', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL' },
+  { name: 'Radiesse', category: 'biostimulator', activeIngredient: 'Hidroxiapatita de cálcio', defaultUnit: 'mL' },
+  { name: 'Sculptra', category: 'biostimulator', activeIngredient: 'Ácido poli-L-láctico', defaultUnit: 'mL' },
+  { name: 'Ellansé', category: 'biostimulator', activeIngredient: 'Policaprolactona', defaultUnit: 'mL' },
+  { name: 'Profhilo', category: 'skinbooster', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL' },
+  { name: 'Skinvive', category: 'skinbooster', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL' },
+] as const
+
 export const DEFAULT_WORKING_HOURS = {
   mon: { start: '08:00', end: '18:00', enabled: true },
   tue: { start: '08:00', end: '18:00', enabled: true },

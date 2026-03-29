@@ -100,6 +100,23 @@ export const anamneses = floraclinSchema.table('anamneses', {
   index('idx_anamneses_patient').on(table.tenantId, table.patientId),
 ])
 
+// ─── PRODUCTS CATALOG ───────────────────────────────────────────────
+
+export const products = floraclinSchema.table('products', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  name: varchar('name', { length: 255 }).notNull(),
+  category: varchar('category', { length: 50 }).notNull(),
+  activeIngredient: varchar('active_ingredient', { length: 255 }),
+  defaultUnit: varchar('default_unit', { length: 10 }).notNull().default('U'),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => [
+  index('idx_products_tenant').on(table.tenantId),
+])
+
 // ─── PROCEDURES ──────────────────────────────────────────────────────
 
 export const procedureTypes = floraclinSchema.table('procedure_types', {
@@ -154,6 +171,7 @@ export const procedureRecords = floraclinSchema.table('procedure_records', {
   notes: text('notes'),
   followUpDate: date('follow_up_date'),
   nextSessionObjectives: text('next_session_objectives'),
+  additionalTypeIds: jsonb('additional_type_ids').default([]),
   status: varchar('status', { length: 20 }).notNull().default('completed'), // CHECK in migration
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -339,10 +357,15 @@ export const auditLogs = floraclinSchema.table('audit_logs', {
 
 // ─── RELATIONS ───────────────────────────────────────────────────────
 
+export const productsRelations = relations(products, ({ one }) => ({
+  tenant: one(tenants, { fields: [products.tenantId], references: [tenants.id] }),
+}))
+
 export const tenantsRelations = relations(tenants, ({ many }) => ({
   tenantUsers: many(tenantUsers),
   patients: many(patients),
   procedureTypes: many(procedureTypes),
+  products: many(products),
   appointments: many(appointments),
   consentTemplates: many(consentTemplates),
 }))
