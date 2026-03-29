@@ -566,21 +566,6 @@ export function ProcedureExecution({
         </Badge>
       </div>
 
-      {/* ── Plan Comparison (only for executed procedures) ────────── */}
-      {isExecuted && plannedSnapshot && Array.isArray(plannedSnapshot) && (
-        <Section
-          title="Comparativo Planejado vs Executado"
-          icon={<ArrowRightLeft className="size-4 text-forest" />}
-          open={openSections.comparison}
-          onToggle={() => toggleSection('comparison')}
-        >
-          <PlanComparison
-            plannedSnapshot={plannedSnapshot}
-            currentPoints={diagramPoints}
-          />
-        </Section>
-      )}
-
       {/* ── Diagram Editor ──────────────────────────────────────────── */}
       <Section
         title="Diagrama Facial"
@@ -597,22 +582,30 @@ export function ProcedureExecution({
         }
       >
         <div className="space-y-3">
-          {/* Planned overlay toggle */}
+          {/* Planned overlay toggle + inline comparison */}
           {plannedPoints.length > 0 && (
-            <div className="flex items-center gap-2 rounded-[3px] border border-[#E8ECEF] bg-[#F4F6F8]/50 px-4 py-2.5">
-              <Switch
-                checked={showPlannedOverlay}
-                onCheckedChange={setShowPlannedOverlay}
-                id="show-planned"
-                size="sm"
-              />
-              <Label
-                htmlFor="show-planned"
-                className="cursor-pointer text-sm text-mid"
-              >
-                <Eye className="mr-1.5 inline-block size-3.5" />
-                Ver planejamento original
-              </Label>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 rounded-[3px] border border-[#E8ECEF] bg-[#F4F6F8]/50 px-4 py-2.5">
+                <Switch
+                  checked={showPlannedOverlay}
+                  onCheckedChange={setShowPlannedOverlay}
+                  id="show-planned"
+                  size="sm"
+                />
+                <Label
+                  htmlFor="show-planned"
+                  className="cursor-pointer text-sm text-mid"
+                >
+                  <Eye className="mr-1.5 inline-block size-3.5" />
+                  Ver planejamento original
+                </Label>
+              </div>
+              {showPlannedOverlay && plannedSnapshot && Array.isArray(plannedSnapshot) && (
+                <PlanComparison
+                  plannedSnapshot={plannedSnapshot}
+                  currentPoints={diagramPoints}
+                />
+              )}
             </div>
           )}
 
