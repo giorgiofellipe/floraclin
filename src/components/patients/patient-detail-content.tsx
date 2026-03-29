@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowLeft, Plus, CalendarPlus, Receipt, Phone, User, Mail } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Plus, CalendarPlus, Receipt, Phone, User, Mail } from 'lucide-react'
 import { buttonVariants } from '@/components/ui/button'
 import { cn, maskCPF } from '@/lib/utils'
 import {
@@ -55,11 +55,13 @@ const VALID_TABS: PatientTabKey[] = [
 interface PatientDetailContentProps {
   patient: Patient
   activeTab?: string
+  hasActiveService?: boolean
 }
 
 export function PatientDetailContent({
   patient,
   activeTab,
+  hasActiveService = false,
 }: PatientDetailContentProps) {
   const tab: PatientTabKey = VALID_TABS.includes(activeTab as PatientTabKey)
     ? (activeTab as PatientTabKey)
@@ -126,21 +128,33 @@ export function PatientDetailContent({
             </div>
           </div>
 
-          {/* Quick action buttons */}
+          {/* Primary action + Quick action buttons */}
+          <div className="flex flex-col items-end gap-3 sm:flex-row sm:items-center">
+            <Link
+              href={`/pacientes/${patient.id}/atendimento`}
+              className={cn(
+                buttonVariants({ size: 'default' }),
+                'bg-forest text-cream hover:bg-sage transition-colors rounded-lg px-5 py-2.5 text-sm font-semibold gap-2 min-h-[44px]',
+              )}
+            >
+              {hasActiveService ? 'Continuar Atendimento' : 'Iniciar Atendimento'}
+              <ArrowRight className="size-4" />
+            </Link>
+
           <TooltipProvider delay={300}>
             <div className="flex flex-wrap items-center gap-1.5">
               <Tooltip>
                 <TooltipTrigger
                   render={
                     <Link
-                      href={`/pacientes/${patient.id}/procedimentos/novo`}
+                      href={`/pacientes/${patient.id}/atendimento`}
                       className={cn(buttonVariants({ size: 'icon-sm' }), 'bg-forest text-cream hover:bg-sage transition-colors size-9 rounded-lg')}
                     >
                       <Plus className="size-4" />
                     </Link>
                   }
                 />
-                <TooltipContent side="bottom"><p>Novo Procedimento</p></TooltipContent>
+                <TooltipContent side="bottom"><p>Novo Atendimento</p></TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger
@@ -170,6 +184,7 @@ export function PatientDetailContent({
               </Tooltip>
             </div>
           </TooltipProvider>
+          </div>
         </div>
       </div>
 

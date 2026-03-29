@@ -38,6 +38,7 @@ import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { DiagramPointData } from '@/components/face-diagram/types'
 import type { PaymentMethod } from '@/types'
+import type { WizardOverrides } from '@/components/service-wizard/types'
 
 // ─── Consent type mapping from procedure category ──────────────────
 
@@ -106,6 +107,7 @@ interface ProcedureApprovalProps {
   patient: PatientData
   tenant: TenantData
   additionalTypeIds: string[]
+  wizardOverrides?: WizardOverrides
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -164,6 +166,7 @@ export function ProcedureApproval({
   patient,
   tenant,
   additionalTypeIds,
+  wizardOverrides,
 }: ProcedureApprovalProps) {
   const router = useRouter()
 
@@ -380,9 +383,11 @@ export function ProcedureApproval({
       const result = await approveProcedureAction(procedure.id)
       if (result.success) {
         setApproved(true)
-        setTimeout(() => {
-          router.push(`/pacientes/${patient.id}?tab=procedimentos`)
-        }, 1500)
+        if (!wizardOverrides?.hideNavigation) {
+          setTimeout(() => {
+            router.push(`/pacientes/${patient.id}?tab=procedimentos`)
+          }, 1500)
+        }
       } else {
         setApproveError(result.error ?? 'Erro ao aprovar procedimento')
       }
@@ -391,11 +396,59 @@ export function ProcedureApproval({
     } finally {
       setIsApproving(false)
     }
-  }, [canApprove, isApproving, procedure.id, patient.id, router])
+  }, [canApprove, isApproving, procedure.id, patient.id, router, wizardOverrides?.hideNavigation])
+
+  // ─── Wizard triggerSave: call approveProcedureAction ──────────────
+  useEffect(() => {
+    if (!wizardOverrides?.triggerSave) return
+    async function doSave() {
+      if (!canApprove) {
+        wizardOverrides?.onSaveComplete?.({
+          success: false,
+          error: 'Assine todos os termos e o contrato de servico para aprovar',
+          errorType: 'precondition',
+        })
+        return
+      }
+
+      if (isApproving) return
+
+      setIsApproving(true)
+      setApproveError(null)
+      try {
+        const result = await approveProcedureAction(procedure.id)
+        if (result.success) {
+          setApproved(true)
+          wizardOverrides?.onSaveComplete?.({
+            success: true,
+            procedureId: procedure.id,
+          })
+        } else {
+          setApproveError(result.error ?? 'Erro ao aprovar procedimento')
+          wizardOverrides?.onSaveComplete?.({
+            success: false,
+            error: result.error ?? 'Erro ao aprovar procedimento',
+            errorType: 'server',
+          })
+        }
+      } catch {
+        setApproveError('Erro inesperado ao aprovar procedimento')
+        wizardOverrides?.onSaveComplete?.({
+          success: false,
+          error: 'Erro inesperado ao aprovar procedimento',
+          errorType: 'server',
+        })
+      } finally {
+        setIsApproving(false)
+      }
+    }
+    doSave()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wizardOverrides?.triggerSave])
 
   // ─── Render ───────────────────────────────────────────────────────
 
-  if (approved) {
+  if (approved && !wizardOverrides) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <Card className="border-0 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px] max-w-md w-full">
@@ -418,26 +471,30 @@ export function ProcedureApproval({
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => router.back()}
-          className="text-mid hover:text-charcoal"
-        >
-          <ArrowLeft className="size-4 mr-1" />
-          Voltar
-        </Button>
-      </div>
+      {!wizardOverrides?.hideTitle && (
+        <>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.back()}
+              className="text-mid hover:text-charcoal"
+            >
+              <ArrowLeft className="size-4 mr-1" />
+              Voltar
+            </Button>
+          </div>
 
-      <div>
-        <h1 className="font-display text-2xl text-forest">
-          Aprovar Procedimento
-        </h1>
-        <p className="text-sm text-mid mt-1">
-          Revise o plano, assine os termos e aprove para prosseguir.
-        </p>
-      </div>
+          <div>
+            <h1 className="font-display text-2xl text-forest">
+              Aprovar Procedimento
+            </h1>
+            <p className="text-sm text-mid mt-1">
+              Revise o plano, assine os termos e aprove para prosseguir.
+            </p>
+          </div>
+        </>
+      )}
 
       {/* 1. Plan Summary */}
       <Card className="border-0 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">
@@ -749,76 +806,78 @@ export function ProcedureApproval({
       </Card>
 
       {/* 4. Approve Button */}
-      <Card className="border-0 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">
-        <CardContent className="py-6">
-          {approveError && (
-            <div className="rounded-[3px] border border-red-200 bg-red-50 px-4 py-3 mb-4">
-              <p className="text-sm text-red-700">{approveError}</p>
-            </div>
-          )}
-
-          <div className="space-y-3">
-            {/* Status summary */}
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                {allConsentsSigned ? (
-                  <CheckCircle2 className="size-4 text-sage" />
-                ) : (
-                  <div className="size-4 rounded-full border-2 border-[#E8ECEF]" />
-                )}
-                <span
-                  className={cn(
-                    'text-sm',
-                    allConsentsSigned ? 'text-sage font-medium' : 'text-mid'
-                  )}
-                >
-                  Todos os termos de consentimento assinados
-                </span>
+      {!wizardOverrides?.hideSaveButton && (
+        <Card className="border-0 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">
+          <CardContent className="py-6">
+            {approveError && (
+              <div className="rounded-[3px] border border-red-200 bg-red-50 px-4 py-3 mb-4">
+                <p className="text-sm text-red-700">{approveError}</p>
               </div>
-              <div className="flex items-center gap-2">
-                {contractSigned ? (
-                  <CheckCircle2 className="size-4 text-sage" />
-                ) : (
-                  <div className="size-4 rounded-full border-2 border-[#E8ECEF]" />
-                )}
-                <span
-                  className={cn(
-                    'text-sm',
-                    contractSigned ? 'text-sage font-medium' : 'text-mid'
-                  )}
-                >
-                  Contrato de servico assinado
-                </span>
-              </div>
-            </div>
-
-            <Button
-              onClick={handleApprove}
-              disabled={!canApprove || isApproving}
-              className="w-full bg-forest text-cream hover:bg-sage shadow-md hover:shadow-lg transition-all duration-200 disabled:opacity-50"
-              size="lg"
-            >
-              {isApproving ? (
-                <>
-                  <Loader2 className="size-4 animate-spin mr-2" />
-                  Aprovando...
-                </>
-              ) : (
-                <>
-                  <ShieldCheck className="size-4 mr-2" />
-                  Aprovar Procedimento
-                </>
-              )}
-            </Button>
-
-            {!canApprove && (
-              <p className="text-xs text-mid text-center">
-                Assine todos os termos e o contrato de servico para aprovar
-              </p>
             )}
-          </div>
-        </CardContent>
-      </Card>
+
+            <div className="space-y-3">
+              {/* Status summary */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  {allConsentsSigned ? (
+                    <CheckCircle2 className="size-4 text-sage" />
+                  ) : (
+                    <div className="size-4 rounded-full border-2 border-[#E8ECEF]" />
+                  )}
+                  <span
+                    className={cn(
+                      'text-sm',
+                      allConsentsSigned ? 'text-sage font-medium' : 'text-mid'
+                    )}
+                  >
+                    Todos os termos de consentimento assinados
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {contractSigned ? (
+                    <CheckCircle2 className="size-4 text-sage" />
+                  ) : (
+                    <div className="size-4 rounded-full border-2 border-[#E8ECEF]" />
+                  )}
+                  <span
+                    className={cn(
+                      'text-sm',
+                      contractSigned ? 'text-sage font-medium' : 'text-mid'
+                    )}
+                  >
+                    Contrato de servico assinado
+                  </span>
+                </div>
+              </div>
+
+              <Button
+                onClick={handleApprove}
+                disabled={!canApprove || isApproving}
+                className="w-full bg-forest text-cream hover:bg-sage shadow-md hover:shadow-lg transition-all duration-200 disabled:opacity-50"
+                size="lg"
+              >
+                {isApproving ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin mr-2" />
+                    Aprovando...
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="size-4 mr-2" />
+                    Aprovar Procedimento
+                  </>
+                )}
+              </Button>
+
+              {!canApprove && (
+                <p className="text-xs text-mid text-center">
+                  Assine todos os termos e o contrato de servico para aprovar
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

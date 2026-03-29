@@ -118,23 +118,23 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-mid">
-          {procedures.length} {procedures.length === 1 ? 'procedimento' : 'procedimentos'}
+          {procedures.length} {procedures.length === 1 ? 'atendimento' : 'atendimentos'}
         </p>
         <Link
-          href={`/pacientes/${patientId}/procedimentos/novo`}
+          href={`/pacientes/${patientId}/atendimento`}
           className="inline-flex items-center justify-center rounded-md bg-forest px-4 py-2 text-sm font-medium text-cream hover:bg-sage transition-colors"
         >
           <Plus className="size-4 mr-1" />
-          Novo Procedimento
+          Novo Atendimento
         </Link>
       </div>
 
       {procedures.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-mid">
           <Syringe className="mb-2 size-8" />
-          <p className="text-sm">Nenhum procedimento registrado</p>
+          <p className="text-sm">Nenhum atendimento registrado</p>
           <p className="text-xs mt-1">
-            Clique em &quot;Novo Procedimento&quot; para registrar o primeiro.
+            Clique em &quot;Novo Atendimento&quot; para registrar o primeiro.
           </p>
         </div>
       ) : (

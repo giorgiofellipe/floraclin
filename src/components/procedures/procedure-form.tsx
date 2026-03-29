@@ -67,6 +67,7 @@ import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
 import type { ProductApplicationItem } from '@/validations/procedure'
+import type { WizardOverrides } from '@/components/service-wizard/types'
 
 // ─── Consent type mapping from procedure category ──────────────────
 
@@ -135,7 +136,9 @@ interface ProcedureFormProps {
   procedure?: ProcedureWithDetails | null
   diagrams?: DiagramWithPoints[]
   existingApplications?: ProductApplicationRecord[]
+  initialTypeIds?: string[]
   mode?: 'create' | 'edit' | 'view'
+  wizardOverrides?: WizardOverrides
 }
 
 // ─── Collapsible Section ───────────────────────────────────────────
@@ -203,7 +206,9 @@ export function ProcedureForm({
   procedure,
   diagrams: existingDiagrams,
   existingApplications,
+  initialTypeIds,
   mode = 'create',
+  wizardOverrides,
 }: ProcedureFormProps) {
   const router = useRouter()
   const isReadOnly = mode === 'view'
@@ -215,7 +220,7 @@ export function ProcedureForm({
 
   // ─── Form state ──────────────────────────────────────────────────
   const [procedureTypeId, setProcedureTypeId] = useState(
-    procedure?.procedureTypeId ?? ''
+    procedure?.procedureTypeId ?? (initialTypeIds && initialTypeIds.length > 0 ? initialTypeIds[0] : '')
   )
   const [technique, setTechnique] = useState(procedure?.technique ?? '')
   const [clinicalResponse, setClinicalResponse] = useState(
@@ -233,8 +238,27 @@ export function ProcedureForm({
   )
   const [additionalTypeIds, setAdditionalTypeIds] = useState<string[]>(() => {
     const existing = (procedure as unknown as Record<string, unknown> | null | undefined)?.additionalTypeIds
-    return Array.isArray(existing) ? existing as string[] : []
+    if (Array.isArray(existing) && existing.length > 0) return existing as string[]
+    if (initialTypeIds && initialTypeIds.length > 1) return initialTypeIds.slice(1)
+    return []
   })
+
+  // ─── Sync type selection from wizard step 2 (initialTypeIds) ────
+  const initialTypeIdsRef = useRef(initialTypeIds)
+  useEffect(() => {
+    if (
+      initialTypeIds &&
+      initialTypeIds.length > 0 &&
+      JSON.stringify(initialTypeIds) !== JSON.stringify(initialTypeIdsRef.current)
+    ) {
+      initialTypeIdsRef.current = initialTypeIds
+      // Only apply if no procedure exists yet (create mode)
+      if (!procedure) {
+        setProcedureTypeId(initialTypeIds[0])
+        setAdditionalTypeIds(initialTypeIds.slice(1))
+      }
+    }
+  }, [initialTypeIds, procedure])
 
   // ─── Financial plan state ───────────────────────────────────────
   const [financialPlan, setFinancialPlan] = useState<FinancialPlanState>(() => {
@@ -628,7 +652,9 @@ export function ProcedureForm({
       }
 
       if (result.success) {
-        if (isPlanningMode) {
+        if (wizardOverrides?.hideNavigation) {
+          // In wizard mode, suppress all navigation — wizard controls flow
+        } else if (isPlanningMode) {
           if (isEdit) {
             // Editing existing planned procedure — stay on page, just show success
             router.refresh()
@@ -678,11 +704,118 @@ export function ProcedureForm({
     router,
   ])
 
+  // ─── Wizard triggerSave: run save logic and call onSaveComplete ──
+  useEffect(() => {
+    if (!wizardOverrides?.triggerSave) return
+    async function doSave() {
+      if (isSubmitting || isReadOnly) {
+        wizardOverrides?.onSaveComplete?.({
+          success: false,
+          error: 'Formulario indisponivel',
+          errorType: 'precondition',
+        })
+        return
+      }
+
+      if (!procedureTypeId) {
+        wizardOverrides?.onSaveComplete?.({
+          success: false,
+          error: 'Selecione pelo menos um tipo de procedimento',
+          errorType: 'validation',
+        })
+        return
+      }
+
+      setIsSubmitting(true)
+      setSubmitError(null)
+
+      try {
+        const diagramsPayload =
+          diagramPoints.length > 0
+            ? [
+                {
+                  viewType: 'front' as DiagramViewType,
+                  points: diagramPoints.map((p) => ({
+                    x: p.x,
+                    y: p.y,
+                    productName: p.productName,
+                    activeIngredient: p.activeIngredient,
+                    quantity: p.quantity,
+                    quantityUnit: p.quantityUnit,
+                    technique: p.technique,
+                    depth: p.depth,
+                    notes: p.notes,
+                  })),
+                },
+              ]
+            : undefined
+
+        const financialPlanPayload = isPlanningMode && financialPlan.totalAmount
+          ? {
+              totalAmount: parseCurrency(financialPlan.totalAmount),
+              installmentCount: financialPlan.installmentCount,
+              paymentMethod: financialPlan.paymentMethod || undefined,
+              notes: financialPlan.notes || undefined,
+            }
+          : undefined
+
+        const payload = {
+          patientId,
+          procedureTypeId,
+          additionalTypeIds: additionalTypeIds.length > 0 ? additionalTypeIds : undefined,
+          technique: isPlanningMode ? undefined : (technique || undefined),
+          clinicalResponse: isPlanningMode ? undefined : (clinicalResponse || undefined),
+          adverseEffects: isPlanningMode ? undefined : (adverseEffects || undefined),
+          notes: isPlanningMode ? undefined : (notes || undefined),
+          followUpDate: isPlanningMode ? undefined : (followUpDate || undefined),
+          nextSessionObjectives: isPlanningMode ? undefined : (nextSessionObjectives || undefined),
+          diagrams: diagramsPayload,
+          productApplications: isPlanningMode ? undefined : (productApps.length > 0 ? productApps : undefined),
+          financialPlan: financialPlanPayload,
+        }
+
+        let result
+        if (isEdit && procedure?.id) {
+          result = await updateProcedureAction(procedure.id, payload)
+        } else {
+          result = await createProcedureAction(payload)
+        }
+
+        if (result.success) {
+          const createdId = (result.data as { id: string } | undefined)?.id ?? procedure?.id
+          wizardOverrides?.onSaveComplete?.({
+            success: true,
+            procedureId: createdId,
+          })
+        } else {
+          setSubmitError(result.error ?? 'Erro ao salvar procedimento')
+          wizardOverrides?.onSaveComplete?.({
+            success: false,
+            error: result.error ?? 'Erro ao salvar procedimento',
+            errorType: result.error?.includes('campo') ? 'validation' : 'server',
+          })
+        }
+      } catch {
+        setSubmitError('Erro inesperado ao salvar procedimento')
+        wizardOverrides?.onSaveComplete?.({
+          success: false,
+          error: 'Erro inesperado ao salvar procedimento',
+          errorType: 'server',
+        })
+      } finally {
+        setIsSubmitting(false)
+      }
+    }
+    doSave()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wizardOverrides?.triggerSave])
+
   // ─── Render ──────────────────────────────────────────────────────
 
   return (
     <div className="mx-auto max-w-4xl space-y-5 pb-24">
       {/* ── Header ──────────────────────────────────────────────────── */}
+      {!wizardOverrides?.hideTitle && (
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-[#2A2A2A]">
@@ -735,8 +868,10 @@ export function ProcedureForm({
           </Badge>
         )}
       </div>
+      )}
 
-      {/* ── Procedure Type Multi-Select ──────────────────────────────── */}
+      {/* ── Procedure Type Multi-Select (hidden in wizard — handled by step 2) ── */}
+      {!wizardOverrides?.hideProcedureTypes && (
       <Card className="bg-white border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2.5 text-base">
@@ -834,6 +969,7 @@ export function ProcedureForm({
           )}
         </CardContent>
       </Card>
+      )}
 
       {/* ── Consent Section (HIDDEN in planning mode) ──────────────── */}
       {!isPlanningMode && procedureTypeId && (
@@ -979,7 +1115,7 @@ export function ProcedureForm({
       {/* ── Financial Plan (ONLY in planning mode) ──────────────────── */}
       {isPlanningMode && (
         <Section
-          title="Plano Financeiro"
+          title="Orçamento"
           icon={<DollarSign className="size-4 text-forest" />}
           open={openSections.financialPlan}
           onToggle={() => toggleSection('financialPlan')}
@@ -1397,7 +1533,7 @@ export function ProcedureForm({
       )}
 
       {/* ── Submit ──────────────────────────────────────────────────── */}
-      {!isReadOnly && (
+      {!isReadOnly && !wizardOverrides?.hideSaveButton && (
         <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-sage/10 bg-white/95 py-4 backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.05)] md:sticky md:left-auto md:right-auto">
           <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 md:px-0">
             <Button

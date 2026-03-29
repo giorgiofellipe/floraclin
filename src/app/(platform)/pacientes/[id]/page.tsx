@@ -2,6 +2,8 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { Suspense } from 'react'
 import { getPatientAction } from '@/actions/patients'
+import { getAuthContext } from '@/lib/auth'
+import { getLatestNonExecutedProcedure } from '@/db/queries/procedures'
 import { PatientDetailContent } from '@/components/patients/patient-detail-content'
 
 interface PatientDetailPageProps {
@@ -24,11 +26,16 @@ export default async function PatientDetailPage({
   const { id } = await params
   const { tab } = await searchParams
 
-  const patient = await getPatientAction(id)
+  const [patient, auth] = await Promise.all([
+    getPatientAction(id),
+    getAuthContext(),
+  ])
 
   if (!patient) {
     notFound()
   }
+
+  const activeService = await getLatestNonExecutedProcedure(auth.tenantId, id).catch(() => null)
 
   return (
     <Suspense
@@ -38,7 +45,7 @@ export default async function PatientDetailPage({
         </div>
       }
     >
-      <PatientDetailContent patient={patient} activeTab={tab} />
+      <PatientDetailContent patient={patient} activeTab={tab} hasActiveService={!!activeService} />
     </Suspense>
   )
 }
