@@ -1106,7 +1106,7 @@ const limpezaPeleSections: EvaluationSection[] = [
       },
       {
         id: 'lp-s3-q2',
-        label: 'Esta em tratamento com dermatologista para a pele?',
+        label: 'Está em tratamento com dermatologista para a pele?',
         type: 'radio',
         required: false,
         order: 2,

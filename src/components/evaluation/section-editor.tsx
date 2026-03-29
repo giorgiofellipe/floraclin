@@ -119,7 +119,7 @@ export function SectionEditor({
             type="button"
             className="flex-1 text-left text-sm font-medium text-charcoal hover:text-sage transition-colors"
             onClick={() => setIsEditingTitle(true)}
-            title="Clique para editar o titulo"
+            title="Clique para editar o título"
           >
             {section.title}
           </button>
@@ -166,7 +166,7 @@ export function SectionEditor({
             variant="ghost"
             size="icon-xs"
             onClick={() => setDeleteSectionConfirm(true)}
-            title="Excluir secao"
+            title="Excluir seção"
           >
             <Trash2Icon className="h-3.5 w-3.5 text-red-500" />
           </Button>
@@ -179,7 +179,7 @@ export function SectionEditor({
           {section.questions.length === 0 ? (
             <div className="px-4 py-6 text-center">
               <p className="text-sm text-mid">
-                Nenhuma pergunta nesta secao.
+                Nenhuma pergunta nesta seção.
               </p>
             </div>
           ) : (
@@ -262,7 +262,7 @@ export function SectionEditor({
                         size="xs"
                         onClick={() => setDeleteQuestionConfirm(null)}
                       >
-                        Nao
+                        Não
                       </Button>
                     </div>
                   ) : (

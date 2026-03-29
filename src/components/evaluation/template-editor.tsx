@@ -221,7 +221,7 @@ export function TemplateEditor({
       const result = await onResetToDefault()
       if (result?.success && result.sections) {
         setSections(result.sections)
-        toast.success('Template restaurado ao padrao')
+        toast.success('Template restaurado ao padrão')
       } else if (result?.error) {
         toast.error(result.error)
       }
@@ -246,7 +246,7 @@ export function TemplateEditor({
             </Button>
             <div className="min-w-0">
               <h1 className="text-base font-medium text-charcoal truncate">
-                Ficha de Avaliacao
+                Ficha de Avaliação
               </h1>
               <p className="text-xs text-mid truncate">{procedureTypeName}</p>
             </div>
@@ -255,7 +255,7 @@ export function TemplateEditor({
           <div className="flex items-center gap-2">
             {resetConfirm ? (
               <div className="flex items-center gap-1">
-                <span className="text-xs text-mid hidden sm:inline">Restaurar padrao?</span>
+                <span className="text-xs text-mid hidden sm:inline">Restaurar padrão?</span>
                 <Button
                   variant="destructive"
                   size="xs"
@@ -284,7 +284,7 @@ export function TemplateEditor({
                 disabled={isSaving}
               >
                 <RotateCcwIcon data-icon="inline-start" />
-                <span className="hidden sm:inline">Restaurar padrao</span>
+                <span className="hidden sm:inline">Restaurar padrão</span>
               </Button>
             )}
 
@@ -308,13 +308,13 @@ export function TemplateEditor({
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-4">
         {/* Stats */}
         <div className="flex items-center gap-4 text-sm text-mid">
-          <span>{sections.length} {sections.length === 1 ? 'secao' : 'secoes'}</span>
+          <span>{sections.length} {sections.length === 1 ? 'seção' : 'seções'}</span>
           <span className="text-mid/30">|</span>
           <span>{totalQuestions} {totalQuestions === 1 ? 'pergunta' : 'perguntas'}</span>
           {hasChanges && (
             <>
               <span className="text-mid/30">|</span>
-              <span className="text-amber-dark">Alteracoes nao salvas</span>
+              <span className="text-amber-dark">Alterações não salvas</span>
             </>
           )}
         </div>
@@ -343,13 +343,13 @@ export function TemplateEditor({
           <div className="bg-white rounded-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-4">
             <div className="space-y-2">
               <Label className="uppercase tracking-wider text-xs text-mid">
-                Titulo da secao
+                Título da seção
               </Label>
               <div className="flex gap-2">
                 <Input
                   value={newSectionTitle}
                   onChange={(e) => setNewSectionTitle(e.target.value)}
-                  placeholder="Ex: Historico do paciente"
+                  placeholder="Ex: Histórico do paciente"
                   className="flex-1"
                   autoFocus
                   onKeyDown={(e) => {
@@ -388,7 +388,7 @@ export function TemplateEditor({
             className="w-full rounded-[3px] border-2 border-dashed border-sage/20 hover:border-sage/40 py-6 flex items-center justify-center gap-2 text-sm text-sage hover:text-forest transition-colors"
           >
             <PlusIcon className="h-4 w-4" />
-            Adicionar secao
+            Adicionar seção
           </button>
         )}
 
@@ -396,10 +396,10 @@ export function TemplateEditor({
         {sections.length === 0 && !showNewSectionInput && (
           <div className="text-center py-12">
             <p className="text-sm text-mid mb-2">
-              Nenhuma secao adicionada ainda.
+              Nenhuma seção adicionada ainda.
             </p>
             <p className="text-xs text-mid/60">
-              Adicione secoes e perguntas para criar a ficha de avaliacao ou restaure o modelo padrao.
+              Adicione seções e perguntas para criar a ficha de avaliação ou restaure o modelo padrão.
             </p>
           </div>
         )}
