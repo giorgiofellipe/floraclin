@@ -2,11 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { TemplateEditor } from '@/components/evaluation/template-editor'
-import {
-  updateTemplateAction,
-  createTemplateAction,
-  resetTemplateToDefaultAction,
-} from '@/actions/evaluation-templates'
+import { useSaveEvaluationTemplate } from '@/hooks/mutations/use-evaluation-mutations'
 import type { EvaluationSection, ProcedureCategory } from '@/types/evaluation'
 
 interface TemplateEditorPageProps {
@@ -24,17 +20,20 @@ interface TemplateEditorPageProps {
 
 export function TemplateEditorPage({ procedureType, template }: TemplateEditorPageProps) {
   const router = useRouter()
+  const saveTemplate = useSaveEvaluationTemplate()
 
   async function handleSave(sections: EvaluationSection[]) {
     if (template) {
-      return await updateTemplateAction({
+      return await saveTemplate.mutateAsync({
+        action: 'update',
         templateId: template.id,
         sections,
       })
     } else {
-      return await createTemplateAction({
+      return await saveTemplate.mutateAsync({
+        action: 'create',
         procedureTypeId: procedureType.id,
-        name: `Ficha de Avaliação - ${procedureType.name}`,
+        name: `Ficha de Avaliacao - ${procedureType.name}`,
         sections,
       })
     }
@@ -42,13 +41,14 @@ export function TemplateEditorPage({ procedureType, template }: TemplateEditorPa
 
   async function handleResetToDefault() {
     if (template) {
-      return await resetTemplateToDefaultAction({
+      return await saveTemplate.mutateAsync({
+        action: 'reset',
         templateId: template.id,
         procedureCategory: procedureType.category as ProcedureCategory,
       })
     } else {
-      // No template exists yet — create from default
-      return await resetTemplateToDefaultAction({
+      return await saveTemplate.mutateAsync({
+        action: 'reset',
         procedureTypeId: procedureType.id,
         procedureCategory: procedureType.category as ProcedureCategory,
         createIfMissing: true,
