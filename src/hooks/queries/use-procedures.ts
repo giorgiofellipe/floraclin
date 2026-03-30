@@ -1,27 +1,29 @@
-import { useQuery } from '@tanstack/react-query'
+'use client'
 
-export function useProcedures(patientId: string | undefined) {
+import { useQuery } from '@tanstack/react-query'
+import { listProceduresAction, getProcedureAction, getLatestNonExecutedProcedureAction } from '@/actions/procedures'
+import { queryKeys } from './query-keys'
+
+export function useProcedures(patientId: string) {
   return useQuery({
-    queryKey: ['procedures', { patientId }],
-    queryFn: async () => {
-      const params = new URLSearchParams()
-      params.set('patientId', patientId!)
-      const res = await fetch(`/api/procedures?${params}`)
-      if (!res.ok) throw new Error('Failed to fetch procedures')
-      return res.json()
-    },
+    queryKey: queryKeys.procedures.list(patientId),
+    queryFn: () => listProceduresAction(patientId),
     enabled: !!patientId,
   })
 }
 
-export function useProcedure(id: string | undefined) {
+export function useProcedure(id: string) {
   return useQuery({
-    queryKey: ['procedures', id],
-    queryFn: async () => {
-      const res = await fetch(`/api/procedures/${id}`)
-      if (!res.ok) throw new Error('Failed to fetch procedure')
-      return res.json()
-    },
+    queryKey: queryKeys.procedures.detail(id),
+    queryFn: () => getProcedureAction(id),
     enabled: !!id,
+  })
+}
+
+export function useLatestNonExecutedProcedure(patientId: string) {
+  return useQuery({
+    queryKey: queryKeys.procedures.latestNonExecuted(patientId),
+    queryFn: () => getLatestNonExecutedProcedureAction(patientId),
+    enabled: !!patientId,
   })
 }

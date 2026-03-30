@@ -1,6 +1,5 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import {
@@ -55,7 +54,6 @@ export async function inviteUserAction(data: InviteUserInput): Promise<ActionSta
       changes: { invite: { old: null, new: { email: parsed.data.email, role: parsed.data.role } } },
     })
 
-    revalidatePath('/configuracoes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
@@ -88,7 +86,6 @@ export async function updateUserRoleAction(data: UpdateUserRoleInput): Promise<A
       changes: { role: { old: null, new: parsed.data.role } },
     })
 
-    revalidatePath('/configuracoes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
@@ -126,7 +123,6 @@ export async function deactivateUserAction(userId: string): Promise<ActionState>
       changes: { isActive: { old: true, new: false } },
     })
 
-    revalidatePath('/configuracoes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {

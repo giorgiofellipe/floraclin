@@ -1,6 +1,5 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import { withTransaction } from '@/lib/tenant'
@@ -58,7 +57,6 @@ export async function createFinancialEntryAction(
       entityId: entry.id,
     })
 
-    revalidatePath('/financeiro')
     return { success: true, data: entry }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Erro ao criar cobrança' }
@@ -138,7 +136,6 @@ export async function payInstallmentAction(
       return result
     })
 
-    revalidatePath('/financeiro')
     return { success: true, data: installment }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Erro ao registrar pagamento' }

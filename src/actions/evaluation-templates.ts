@@ -1,6 +1,5 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { requireRole, getAuthContext } from '@/lib/auth'
 import {
   createTemplate,
@@ -23,7 +22,6 @@ export async function updateTemplateAction(data: {
   try {
     const auth = await requireRole('owner')
     await updateTemplate(auth.tenantId, data.templateId, data.sections)
-    revalidatePath('/configuracoes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
@@ -41,7 +39,6 @@ export async function createTemplateAction(data: {
   try {
     const auth = await requireRole('owner')
     await createTemplate(auth.tenantId, data.procedureTypeId, data.name, data.sections)
-    revalidatePath('/configuracoes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
@@ -67,7 +64,6 @@ export async function resetTemplateToDefaultAction(data: {
         data.templateId,
         data.procedureCategory
       )
-      revalidatePath('/configuracoes')
       return {
         success: true,
         sections: updated.sections as EvaluationSection[],
@@ -87,7 +83,6 @@ export async function resetTemplateToDefaultAction(data: {
         data.procedureTypeName || 'Ficha de Avaliação',
         defaultTemplate.sections
       )
-      revalidatePath('/configuracoes')
       return {
         success: true,
         sections: created.sections as EvaluationSection[],

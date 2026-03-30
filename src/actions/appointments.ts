@@ -1,6 +1,5 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { requireRole, getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import {
@@ -90,7 +89,6 @@ export async function createAppointmentAction(
       entityId: appointment.id,
     })
 
-    revalidatePath('/agenda')
     return { success: true }
   } catch (err) {
     // DB exclusion constraint violation
@@ -171,7 +169,6 @@ export async function updateAppointmentAction(
       entityId: id,
     })
 
-    revalidatePath('/agenda')
     return { success: true }
   } catch (err) {
     if (err instanceof Error && err.message.includes('exclusion')) {
@@ -211,7 +208,6 @@ export async function updateAppointmentStatusAction(
     changes: { status: { old: '', new: status } },
   })
 
-  revalidatePath('/agenda')
   return { success: true }
 }
 
@@ -232,7 +228,6 @@ export async function deleteAppointmentAction(id: string): Promise<AppointmentAc
     entityId: id,
   })
 
-  revalidatePath('/agenda')
   return { success: true }
 }
 

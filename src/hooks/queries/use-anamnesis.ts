@@ -1,13 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
+'use client'
 
-export function useAnamnesis(patientId: string | undefined) {
+import { useQuery } from '@tanstack/react-query'
+import { getAnamnesisAction } from '@/actions/anamnesis'
+import { queryKeys } from './query-keys'
+
+export function useAnamnesis(patientId: string) {
   return useQuery({
-    queryKey: ['anamnesis', patientId],
-    queryFn: async () => {
-      const res = await fetch(`/api/anamnesis/${patientId}`)
-      if (!res.ok) throw new Error('Failed to fetch anamnesis')
-      return res.json()
-    },
+    queryKey: queryKeys.anamnesis(patientId),
+    queryFn: () => getAnamnesisAction(patientId),
     enabled: !!patientId,
   })
 }

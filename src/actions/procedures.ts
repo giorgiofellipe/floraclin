@@ -2,7 +2,6 @@
 
 import { requireRole, getAuthContext } from '@/lib/auth'
 import { withTransaction } from '@/lib/tenant'
-import { revalidatePath } from 'next/cache'
 import { createAuditLog } from '@/lib/audit'
 import {
   createProcedureSchema,
@@ -15,6 +14,7 @@ import {
   listProcedures,
   listProcedureTypes,
   getLatestConsentForPatientType,
+  getLatestNonExecutedProcedure,
   approveProcedure,
   executeProcedure,
   cancelProcedure,
@@ -143,7 +143,6 @@ export async function createProcedureAction(
       },
     })
 
-    revalidatePath('/pacientes')
     return { success: true, data: result }
   } catch (err) {
     return {
@@ -241,7 +240,6 @@ export async function updateProcedureAction(
       entityId: id,
     })
 
-    revalidatePath('/pacientes')
     return { success: true, data: result }
   } catch (err) {
     return {
@@ -280,6 +278,13 @@ export async function listProceduresAction(patientId: string) {
   const ctx = await getAuthContext()
   const procedures = await listProcedures(ctx.tenantId, patientId)
   return { success: true, data: procedures }
+}
+
+// ─── Get Latest Non-Executed Procedure ─────────────────────────────
+
+export async function getLatestNonExecutedProcedureAction(patientId: string) {
+  const ctx = await getAuthContext()
+  return getLatestNonExecutedProcedure(ctx.tenantId, patientId).catch(() => null)
 }
 
 // ─── List Procedure Types ───────────────────────────────────────────
@@ -438,8 +443,6 @@ export async function approveProcedureAction(
       },
     })
 
-    revalidatePath('/pacientes')
-    revalidatePath('/financeiro')
     return { success: true, data: result }
   } catch (err) {
     return {
@@ -546,7 +549,6 @@ export async function executeProcedureAction(
       },
     })
 
-    revalidatePath('/pacientes')
     return { success: true, data: result }
   } catch (err) {
     return {
@@ -640,8 +642,6 @@ export async function cancelProcedureAction(
       },
     })
 
-    revalidatePath('/pacientes')
-    revalidatePath('/financeiro')
     return { success: true, data: result }
   } catch (err) {
     return {

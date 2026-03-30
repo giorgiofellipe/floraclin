@@ -1,41 +1,34 @@
+'use client'
+
 import { useQuery } from '@tanstack/react-query'
+import {
+  listAppointmentsAction,
+  listPractitionersAction,
+  listProcedureTypesForSelectAction,
+} from '@/actions/appointments'
+import { queryKeys } from './query-keys'
 
 export function useAppointments(
+  practitionerId: string | undefined,
   dateFrom: string,
-  dateTo: string,
-  practitionerId?: string
+  dateTo: string
 ) {
   return useQuery({
-    queryKey: ['appointments', { dateFrom, dateTo, practitionerId }],
-    queryFn: async () => {
-      const params = new URLSearchParams()
-      params.set('dateFrom', dateFrom)
-      params.set('dateTo', dateTo)
-      if (practitionerId) params.set('practitionerId', practitionerId)
-      const res = await fetch(`/api/appointments?${params}`)
-      if (!res.ok) throw new Error('Failed to fetch appointments')
-      return res.json()
-    },
-    enabled: !!dateFrom && !!dateTo,
+    queryKey: queryKeys.appointments.list(practitionerId, dateFrom, dateTo),
+    queryFn: () => listAppointmentsAction(practitionerId, dateFrom, dateTo),
   })
 }
 
-export function useAvailableSlots(
-  practitionerId: string | undefined,
-  date: string | undefined,
-  durationMin = 30
-) {
+export function usePractitioners() {
   return useQuery({
-    queryKey: ['appointments', 'slots', { practitionerId, date, durationMin }],
-    queryFn: async () => {
-      const params = new URLSearchParams()
-      params.set('practitionerId', practitionerId!)
-      params.set('date', date!)
-      params.set('durationMin', String(durationMin))
-      const res = await fetch(`/api/appointments/slots?${params}`)
-      if (!res.ok) throw new Error('Failed to fetch available slots')
-      return res.json()
-    },
-    enabled: !!practitionerId && !!date,
+    queryKey: queryKeys.appointments.practitioners,
+    queryFn: () => listPractitionersAction(),
+  })
+}
+
+export function useAppointmentProcedureTypes() {
+  return useQuery({
+    queryKey: queryKeys.appointments.procedureTypes,
+    queryFn: () => listProcedureTypesForSelectAction(),
   })
 }

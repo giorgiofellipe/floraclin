@@ -1,14 +1,12 @@
-import { useQuery } from '@tanstack/react-query'
+'use client'
 
-export function useDashboard(practitionerId?: string) {
+import { useQuery } from '@tanstack/react-query'
+import { getDashboardDataAction } from '@/actions/dashboard'
+import { queryKeys } from './query-keys'
+
+export function useDashboard() {
   return useQuery({
-    queryKey: ['dashboard', { practitionerId }],
-    queryFn: async () => {
-      const params = new URLSearchParams()
-      if (practitionerId) params.set('practitionerId', practitionerId)
-      const res = await fetch(`/api/dashboard?${params}`)
-      if (!res.ok) throw new Error('Failed to fetch dashboard data')
-      return res.json()
-    },
+    queryKey: queryKeys.dashboard,
+    queryFn: () => getDashboardDataAction(),
   })
 }

@@ -1,6 +1,5 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import {
@@ -63,7 +62,6 @@ export async function updateTenantAction(data: UpdateTenantInput): Promise<Actio
       changes: { tenant: { old: existing, new: parsed.data } },
     })
 
-    revalidatePath('/configuracoes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
@@ -99,7 +97,6 @@ export async function updateBookingSettingsAction(data: BookingSettingsInput): P
       changes: { bookingSettings: { old: null, new: parsed.data } },
     })
 
-    revalidatePath('/configuracoes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
@@ -140,7 +137,6 @@ export async function createProcedureTypeAction(data: ProcedureTypeInput): Promi
       changes: { procedureType: { old: null, new: parsed.data } },
     })
 
-    revalidatePath('/configuracoes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
@@ -179,7 +175,6 @@ export async function updateProcedureTypeAction(data: UpdateProcedureTypeInput):
       changes: { procedureType: { old: existing, new: updateData } },
     })
 
-    revalidatePath('/configuracoes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
@@ -206,7 +201,6 @@ export async function deleteProcedureTypeAction(id: string): Promise<ActionState
       entityId: id,
     })
 
-    revalidatePath('/configuracoes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {

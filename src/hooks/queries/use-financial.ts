@@ -1,42 +1,21 @@
-import { useQuery } from '@tanstack/react-query'
-import type { FinancialStatus } from '@/types'
+'use client'
 
-interface FinancialFilters {
+import { useQuery } from '@tanstack/react-query'
+import { listFinancialEntriesAction, getRevenueOverviewAction } from '@/actions/financial'
+import { listPatientsAction } from '@/actions/patients'
+import { queryKeys } from './query-keys'
+
+export function useFinancialEntries(filters?: {
   patientId?: string
-  status?: FinancialStatus
+  status?: string
   dateFrom?: string
   dateTo?: string
   page?: number
   limit?: number
-}
-
-export function useFinancialEntries(filters: FinancialFilters = {}) {
+}) {
   return useQuery({
-    queryKey: ['financial', filters],
-    queryFn: async () => {
-      const params = new URLSearchParams()
-      if (filters.patientId) params.set('patientId', filters.patientId)
-      if (filters.status) params.set('status', filters.status)
-      if (filters.dateFrom) params.set('dateFrom', filters.dateFrom)
-      if (filters.dateTo) params.set('dateTo', filters.dateTo)
-      params.set('page', String(filters.page ?? 1))
-      params.set('limit', String(filters.limit ?? 20))
-      const res = await fetch(`/api/financial?${params}`)
-      if (!res.ok) throw new Error('Failed to fetch financial entries')
-      return res.json()
-    },
-  })
-}
-
-export function useFinancialEntry(id: string | undefined) {
-  return useQuery({
-    queryKey: ['financial', id],
-    queryFn: async () => {
-      const res = await fetch(`/api/financial/${id}`)
-      if (!res.ok) throw new Error('Failed to fetch financial entry')
-      return res.json()
-    },
-    enabled: !!id,
+    queryKey: queryKeys.financial.entries(filters as Record<string, unknown>),
+    queryFn: () => listFinancialEntriesAction(filters ?? {}),
   })
 }
 
@@ -46,16 +25,21 @@ export function useRevenueOverview(
   practitionerId?: string
 ) {
   return useQuery({
-    queryKey: ['financial', 'overview', { dateFrom, dateTo, practitionerId }],
-    queryFn: async () => {
-      const params = new URLSearchParams()
-      params.set('dateFrom', dateFrom)
-      params.set('dateTo', dateTo)
-      if (practitionerId) params.set('practitionerId', practitionerId)
-      const res = await fetch(`/api/financial/overview?${params}`)
-      if (!res.ok) throw new Error('Failed to fetch revenue overview')
-      return res.json()
-    },
+    queryKey: queryKeys.financial.revenue(dateFrom, dateTo, practitionerId),
+    queryFn: () => getRevenueOverviewAction(dateFrom, dateTo, practitionerId),
     enabled: !!dateFrom && !!dateTo,
+  })
+}
+
+export function useFinancialPatients() {
+  return useQuery({
+    queryKey: queryKeys.financial.patients,
+    queryFn: async () => {
+      const result = await listPatientsAction('', 1, 500)
+      return result.data.map((p) => ({
+        id: p.id,
+        fullName: p.fullName,
+      }))
+    },
   })
 }

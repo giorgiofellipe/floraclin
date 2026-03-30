@@ -1,6 +1,5 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import {
@@ -39,7 +38,6 @@ export async function createPatientAction(data: CreatePatientInput): Promise<Pat
       changes: { patient: { old: null, new: parsed.data } },
     })
 
-    revalidatePath('/pacientes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
@@ -78,7 +76,6 @@ export async function updatePatientAction(data: UpdatePatientInput): Promise<Pat
       changes: { patient: { old: existing, new: updateData } },
     })
 
-    revalidatePath('/pacientes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
@@ -105,7 +102,6 @@ export async function deletePatientAction(patientId: string): Promise<PatientAct
       entityId: patientId,
     })
 
-    revalidatePath('/pacientes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {

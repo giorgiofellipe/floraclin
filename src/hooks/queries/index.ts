@@ -6,4 +6,4 @@ export { useAppointments, usePractitioners, useAppointmentProcedureTypes } from 
 export { useFinancialEntries, useRevenueOverview, useFinancialPatients } from './use-financial'
 export { useTenant, useProcedureTypes, useProducts, useTenantUsers, useConsentTemplates } from './use-settings'
 export { useAnamnesis } from './use-anamnesis'
-export { useProcedures, useProcedure } from './use-procedures'
+export { useProcedures, useProcedure, useLatestNonExecutedProcedure } from './use-procedures'

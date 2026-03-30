@@ -1,6 +1,5 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { requireRole, getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import {
@@ -73,7 +72,6 @@ export async function createProductAction(data: {
       changes: { product: { old: null, new: data } },
     })
 
-    revalidatePath('/configuracoes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
@@ -117,7 +115,6 @@ export async function updateProductAction(
       changes: { product: { old: existing, new: data } },
     })
 
-    revalidatePath('/configuracoes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
@@ -146,7 +143,6 @@ export async function deleteProductAction(id: string): Promise<ProductActionStat
       entityId: id,
     })
 
-    revalidatePath('/configuracoes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
@@ -179,7 +175,6 @@ export async function toggleProductActiveAction(
       changes: { isActive: { old: !isActive, new: isActive } },
     })
 
-    revalidatePath('/configuracoes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
@@ -212,7 +207,6 @@ export async function toggleProductDiagramAction(
       changes: { showInDiagram: { old: !showInDiagram, new: showInDiagram } },
     })
 
-    revalidatePath('/configuracoes')
     return { success: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
