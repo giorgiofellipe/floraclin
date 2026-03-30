@@ -3,6 +3,7 @@ import { Cormorant_Garamond, Jost } from 'next/font/google'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
 import { Toaster } from '@/components/ui/sonner'
+import { QueryProvider } from '@/components/providers/query-provider'
 import './globals.css'
 
 const jost = Jost({ subsets: ['latin'], variable: '--font-sans' })
@@ -25,8 +26,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang={locale}>
       <body className={`${jost.variable} ${cormorant.variable} font-sans antialiased`}>
         <NextIntlClientProvider messages={messages}>
-          {children}
-          <Toaster richColors position="top-right" />
+          <QueryProvider>
+            {children}
+            <Toaster richColors position="top-right" />
+          </QueryProvider>
         </NextIntlClientProvider>
       </body>
     </html>
