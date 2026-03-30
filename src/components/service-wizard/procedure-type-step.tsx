@@ -53,17 +53,13 @@ export function ProcedureTypeStep({
   selectedTypeIdsRef.current = selectedTypeIds
   const onSaveCompleteRef = useRef(wizardOverrides?.onSaveComplete)
   onSaveCompleteRef.current = wizardOverrides?.onSaveComplete
-  const prevTriggerRef = useRef(-1) // -1 means "never fired"
+  const prevTriggerRef = useRef(wizardOverrides?.triggerSave ?? 0)
 
   useEffect(() => {
     const current = wizardOverrides?.triggerSave ?? 0
-    console.log('[ProcedureTypeStep] triggerSave effect:', { current, prev: prevTriggerRef.current })
-    // Skip if: zero (inactive), or same as last seen, or first non-zero value (just became active)
-    if (current === 0) { prevTriggerRef.current = -1; return }
-    if (prevTriggerRef.current === -1) { console.log('[ProcedureTypeStep] First activation, absorbing'); prevTriggerRef.current = current; return }
-    if (current === prevTriggerRef.current) return
+    // Only fire on actual changes, skip if zero (inactive step)
+    if (current === 0 || current === prevTriggerRef.current) return
     prevTriggerRef.current = current
-    console.log('[ProcedureTypeStep] FIRING save, selectedTypes:', selectedTypeIdsRef.current)
 
     if (selectedTypeIdsRef.current.length === 0) {
       onSaveCompleteRef.current?.({
@@ -73,7 +69,6 @@ export function ProcedureTypeStep({
       })
       return
     }
-    console.log('[ProcedureTypeStep] Calling onSaveComplete success')
     onSaveCompleteRef.current?.({ success: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wizardOverrides?.triggerSave])

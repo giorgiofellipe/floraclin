@@ -362,9 +362,8 @@ export function ServiceWizard({
   // ─── Next handler ──────────────────────────────────────────────
 
   const handleNext = useCallback(() => {
-    console.log('[Wizard] handleNext called, currentStep:', state.currentStep, 'isSaving:', state.isSaving, 'triggerSave:', state.triggerSave)
     triggerSave()
-  }, [triggerSave, state.currentStep, state.isSaving, state.triggerSave])
+  }, [triggerSave])
 
   // ─── Wizard overrides for each step ────────────────────────────
 
