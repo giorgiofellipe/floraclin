@@ -1,5 +1,4 @@
-'use server'
-
+import { NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import {
@@ -22,29 +21,6 @@ import { eq } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import type { WorkingHours } from '@/validations/tenant'
 
-export type OnboardingActionState = {
-  success?: boolean
-  error?: string
-} | null
-
-interface OnboardingData {
-  // Step 1: Clinic info
-  clinic: {
-    name: string
-    phone?: string
-    email?: string
-    address?: Record<string, string>
-    workingHours: WorkingHours
-  }
-  // Step 2: Procedure types
-  procedureTypes: Array<{
-    name: string
-    category: string
-    estimatedDurationMin?: number
-    defaultPrice?: string
-  }>
-}
-
 function generateSlug(name: string): string {
   return name
     .toLowerCase()
@@ -55,21 +31,43 @@ function generateSlug(name: string): string {
     .substring(0, 80)
 }
 
-export async function checkOnboardingCompleted(): Promise<boolean> {
+interface OnboardingData {
+  clinic: {
+    name: string
+    phone?: string
+    email?: string
+    address?: Record<string, string>
+    workingHours: WorkingHours
+  }
+  procedureTypes: Array<{
+    name: string
+    category: string
+    estimatedDurationMin?: number
+    defaultPrice?: string
+  }>
+}
+
+export async function GET() {
   try {
     const auth = await requireRole('owner')
     const tenant = await getTenant(auth.tenantId)
-    if (!tenant) return false
+    if (!tenant) {
+      return NextResponse.json({ completed: false })
+    }
     const settings = (tenant.settings as Record<string, unknown>) || {}
-    return settings.onboarding_completed === true
-  } catch {
-    return false
+    return NextResponse.json({ completed: settings.onboarding_completed === true })
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ completed: false })
   }
 }
 
-export async function completeOnboarding(data: OnboardingData): Promise<OnboardingActionState> {
+export async function POST(request: Request) {
   try {
     const auth = await requireRole('owner')
+    const data: OnboardingData = await request.json()
 
     // Check existing procedure types before entering transaction
     const existingTypes = await listProcedureTypes(auth.tenantId)
@@ -107,7 +105,6 @@ export async function completeOnboarding(data: OnboardingData): Promise<Onboardi
 
       // 3. Seed default evaluation templates for created procedure types
       if (existingTypes.length === 0 && data.procedureTypes.length > 0) {
-        // Map procedure type categories to template categories
         const categoryToTemplateCategory: Record<string, ProcedureCategory> = {
           botox: 'botox',
           filler: 'filler',
@@ -122,7 +119,6 @@ export async function completeOnboarding(data: OnboardingData): Promise<Onboardi
           outros: 'skincare',
         }
 
-        // Fetch newly created procedure types to get their IDs
         const createdTypes = await listProcedureTypes(auth.tenantId)
 
         for (const pt of createdTypes) {
@@ -182,12 +178,16 @@ export async function completeOnboarding(data: OnboardingData): Promise<Onboardi
       })
     })
 
-    return { success: true }
+    return NextResponse.json({ success: true })
   } catch (error) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
-      return { error: 'Sem permissão para completar o onboarding' }
+      return NextResponse.json({ success: false, error: 'Sem permissao para completar o onboarding' }, { status: 403 })
+    }
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     console.error('Onboarding error:', error)
-    return { error: 'Erro ao completar o onboarding. Tente novamente.' }
+    return NextResponse.json({ success: false, error: 'Erro ao completar o onboarding. Tente novamente.' }, { status: 500 })
   }
 }

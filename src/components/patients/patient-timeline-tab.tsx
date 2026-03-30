@@ -25,7 +25,7 @@ import type {
   PatientTimeline,
   TimelineEntry,
   TimelineGroup,
-} from '@/actions/timeline'
+} from '@/types/timeline'
 
 // ─── Config ─────────────────────────────────────────────────────────
 

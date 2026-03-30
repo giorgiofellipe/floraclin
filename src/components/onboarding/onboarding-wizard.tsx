@@ -8,7 +8,6 @@ import { ClinicSettingsForm } from '@/components/settings/clinic-settings-form'
 import { ProcedureTypeList } from '@/components/settings/procedure-type-list'
 import { ProcedureTypeForm } from '@/components/settings/procedure-type-form'
 import { InviteUserForm } from '@/components/settings/invite-user-form'
-import { completeOnboarding } from '@/actions/onboarding'
 import { DEFAULT_PROCEDURE_TYPES, DEFAULT_WORKING_HOURS } from '@/lib/constants'
 import { toast } from 'sonner'
 import { CheckIcon, Building2Icon, SyringeIcon, UsersIcon } from 'lucide-react'
@@ -94,16 +93,22 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
           estimatedDurationMin: pt.estimatedDurationMin,
         }))
 
-      const result = await completeOnboarding({
-        clinic: {
-          name: (clinicData.name as string) || tenantName,
-          phone: (clinicData.phone as string) || undefined,
-          email: (clinicData.email as string) || undefined,
-          address: (clinicData.address as Record<string, string>) || undefined,
-          workingHours: (clinicData.workingHours as WorkingHours) || DEFAULT_WORKING_HOURS,
-        },
-        procedureTypes,
+      const res = await fetch('/api/onboarding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clinic: {
+            name: (clinicData.name as string) || tenantName,
+            phone: (clinicData.phone as string) || undefined,
+            email: (clinicData.email as string) || undefined,
+            address: (clinicData.address as Record<string, string>) || undefined,
+            workingHours: (clinicData.workingHours as WorkingHours) || DEFAULT_WORKING_HOURS,
+          },
+          procedureTypes,
+        }),
       })
+
+      const result = await res.json()
 
       if (result?.success) {
         toast.success('Configuracao concluida! Bem-vindo ao FloraClin.')

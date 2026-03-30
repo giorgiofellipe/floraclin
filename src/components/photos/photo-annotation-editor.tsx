@@ -21,7 +21,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { saveAnnotationAction, getAnnotationAction } from '@/actions/photos'
 import type { PhotoAssetWithUrl } from '@/db/queries/photos'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -143,7 +142,8 @@ export function PhotoAnnotationEditor({
 
         // Load existing annotation
         try {
-          const result = await getAnnotationAction(photo.id)
+          const annotationRes = await fetch(`/api/photos/annotations/${photo.id}`)
+          const result = await annotationRes.json()
           if (result.success && result.data?.annotationData) {
             const annotationData = result.data.annotationData as Record<string, unknown>
             // Load annotation objects onto canvas, keeping the background
@@ -342,7 +342,11 @@ export function PhotoAnnotationEditor({
     setSaving(true)
     try {
       const annotationData = canvas.toJSON() as Record<string, unknown>
-      await saveAnnotationAction(photo.id, annotationData)
+      await fetch('/api/photos/annotations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photoAssetId: photo.id, annotationData }),
+      })
     } finally {
       setSaving(false)
     }
