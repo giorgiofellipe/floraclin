@@ -468,6 +468,16 @@ export function ProcedureForm({
 
   // ─── Auto-sum default prices for financial plan total ──────────────
   const lastAutoSumRef = useRef<string>('')
+  const prevInitialTypeIdsRef = useRef<string>(initialTypeIds?.join(',') ?? '')
+
+  // Reset auto-sum protection when initialTypeIds changes (wizard step 2 re-selection)
+  useEffect(() => {
+    const key = initialTypeIds?.join(',') ?? ''
+    if (key !== prevInitialTypeIdsRef.current) {
+      prevInitialTypeIdsRef.current = key
+      lastAutoSumRef.current = '' // allow auto-sum to override on next run
+    }
+  }, [initialTypeIds])
 
   useEffect(() => {
     if (!isPlanningMode || isReadOnly) return
@@ -476,7 +486,7 @@ export function ProcedureForm({
     // Use initialTypeIds if procedureTypeId hasn't been set yet (wizard mode)
     let allSelectedIds = [procedureTypeId, ...additionalTypeIds].filter(Boolean)
     if (allSelectedIds.length === 0 && initialTypeIds && initialTypeIds.length > 0) {
-      allSelectedIds = initialTypeIds
+      allSelectedIds = [...initialTypeIds]
     }
     if (allSelectedIds.length === 0) {
       lastAutoSumRef.current = ''

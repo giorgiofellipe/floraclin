@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Loader2, Stethoscope } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
@@ -49,6 +49,7 @@ export function ProcedureTypeStep({
   }, [])
 
   // ─── Handle wizard triggerSave ─────────────────────────────────────
+  const lastTriggerRef = useRef(wizardOverrides?.triggerSave ?? 0)
   const handleTriggerSave = useCallback(() => {
     if (selectedTypeIds.length === 0) {
       wizardOverrides?.onSaveComplete?.({
@@ -64,9 +65,10 @@ export function ProcedureTypeStep({
   }, [selectedTypeIds, wizardOverrides])
 
   useEffect(() => {
-    if (wizardOverrides?.triggerSave && wizardOverrides.triggerSave > 0) {
-      handleTriggerSave()
-    }
+    const current = wizardOverrides?.triggerSave ?? 0
+    if (current === 0 || current === lastTriggerRef.current) return
+    lastTriggerRef.current = current
+    handleTriggerSave()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wizardOverrides?.triggerSave])
 
