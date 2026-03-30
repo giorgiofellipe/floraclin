@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Loader2, Stethoscope } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import { listProcedureTypesAction } from '@/actions/procedures'
 import type { WizardOverrides } from './types'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -39,8 +38,11 @@ export function ProcedureTypeStep({
   useEffect(() => {
     async function load() {
       try {
-        const types = await listProcedureTypesAction()
-        setProcedureTypes(types as ProcedureType[])
+        const res = await fetch('/api/procedure-types')
+        if (res.ok) {
+          const types = await res.json()
+          setProcedureTypes(types as ProcedureType[])
+        }
       } finally {
         setLoading(false)
       }

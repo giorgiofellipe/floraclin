@@ -28,9 +28,6 @@ import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
 import type { AnamnesisFormData } from '@/validations/anamnesis'
-import { getProcedureAction } from '@/actions/procedures'
-import { getTemplatesForProcedureTypesAction } from '@/actions/evaluation-templates'
-import { getEvaluationResponsesForProcedureAction } from '@/actions/evaluation-responses'
 import type { EvaluationTemplateForForm, ExistingEvaluationResponse } from '@/components/procedures/procedure-form'
 import type { EvaluationSection, EvaluationResponses } from '@/types/evaluation'
 
@@ -161,19 +158,20 @@ export function ServiceWizard({
     async function loadTemplates() {
       setLoadingEvalTemplates(true)
       try {
-        const templates = await getTemplatesForProcedureTypesAction(typeIds)
-        // We need procedure type names — load them from the procedure type step data
-        // Templates are returned with procedureTypeId, we need names
-        // Fetch procedure types for names (re-use the action from procedures)
-        const { listProcedureTypesAction } = await import('@/actions/procedures')
-        const allTypes = await listProcedureTypesAction()
+        const params = new URLSearchParams()
+        typeIds.forEach((id) => params.append('typeId', id))
+        const templatesRes = await fetch(`/api/evaluation/templates?${params}`)
+        const templates = templatesRes.ok ? await templatesRes.json() : []
+        // Load procedure types for names
+        const typesRes = await fetch('/api/procedure-types')
+        const allTypes = typesRes.ok ? await typesRes.json() : []
 
         const typeNameMap = new Map<string, string>()
         for (const t of allTypes as { id: string; name: string }[]) {
           typeNameMap.set(t.id, t.name)
         }
 
-        const formTemplates: EvaluationTemplateForForm[] = templates
+        const formTemplates: EvaluationTemplateForForm[] = (templates as { id: string; procedureTypeId: string; sections: unknown; version: number }[])
           .filter((t) => typeIds.includes(t.procedureTypeId))
           .map((t) => ({
             id: t.id,
@@ -183,7 +181,7 @@ export function ServiceWizard({
             version: t.version,
           }))
           // Preserve the order from selectedTypeIds
-          .sort((a, b) => typeIds.indexOf(a.procedureTypeId) - typeIds.indexOf(b.procedureTypeId))
+          .sort((a: EvaluationTemplateForForm, b: EvaluationTemplateForForm) => typeIds.indexOf(a.procedureTypeId) - typeIds.indexOf(b.procedureTypeId))
 
         setEvalTemplates(formTemplates)
         setEvalTemplatesLoadedForIds(key)
@@ -202,10 +200,11 @@ export function ServiceWizard({
 
     async function loadResponses() {
       try {
-        const responses = await getEvaluationResponsesForProcedureAction(state.procedureId!)
+        const evalRes = await fetch(`/api/evaluation/responses/${state.procedureId}`)
+        const responses = evalRes.ok ? await evalRes.json() : []
         if (responses && responses.length > 0) {
           setExistingEvalResponses(
-            responses.map((r) => ({
+            (responses as { templateId: string; responses: EvaluationResponses; templateSnapshot: unknown }[]).map((r) => ({
               templateId: r.templateId,
               responses: r.responses as EvaluationResponses,
               templateSnapshot: r.templateSnapshot as EvaluationSection[],
@@ -318,11 +317,12 @@ export function ServiceWizard({
         // After step 3 creates/updates a procedure, fetch fresh data client-side
         if (state.currentStep === 3 && result.procedureId) {
           try {
-            const res = await getProcedureAction(result.procedureId)
-            if (res.success && res.data) {
-              setLocalProcedure(res.data as ProcedureWithDetails)
-              setLocalDiagrams((res.data as { diagrams?: DiagramWithPoints[] }).diagrams ?? null)
-              setLocalApplications((res.data as { productApplications?: ProductApplicationRecord[] }).productApplications ?? null)
+            const fetchRes = await fetch(`/api/procedures/${result.procedureId}`)
+            if (fetchRes.ok) {
+              const procData = await fetchRes.json()
+              setLocalProcedure(procData as ProcedureWithDetails)
+              setLocalDiagrams((procData as { diagrams?: DiagramWithPoints[] }).diagrams ?? null)
+              setLocalApplications((procData as { productApplications?: ProductApplicationRecord[] }).productApplications ?? null)
             }
           } catch {
             // Non-blocking — steps 4-5 will show placeholder if fetch fails

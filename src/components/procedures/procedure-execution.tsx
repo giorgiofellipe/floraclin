@@ -32,12 +32,7 @@ import { FaceDiagramEditor } from '@/components/face-diagram/face-diagram-editor
 import type { DiagramPointData, CatalogProduct } from '@/components/face-diagram/types'
 import { PhotoUploader } from '@/components/photos/photo-uploader'
 import { PhotoGrid } from '@/components/photos/photo-grid'
-import {
-  executeProcedureAction,
-  getPreviousDiagramPointsAction,
-} from '@/actions/procedures'
-import { listDiagramProductsAction } from '@/actions/products-catalog'
-import { useInvalidation } from '@/hooks/queries/use-invalidation'
+import { useExecuteProcedure } from '@/hooks/mutations/use-procedure-mutations'
 import type { DiagramViewType, QuantityUnit } from '@/types'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
@@ -246,7 +241,7 @@ export function ProcedureExecution({
   wizardOverrides,
 }: ProcedureExecutionProps) {
   const router = useRouter()
-  const { invalidateProcedures } = useInvalidation()
+  const executeProcedure = useExecuteProcedure()
   const isExecuted = procedure.status === 'executed'
   const isReadOnly = isExecuted
 
@@ -363,8 +358,11 @@ export function ProcedureExecution({
   // ─── Load catalog products ────────────────────────────────────────
   useEffect(() => {
     async function load() {
-      const prods = await listDiagramProductsAction()
-      setCatalogProducts(prods as CatalogProduct[])
+      const res = await fetch('/api/products?filter=diagram')
+      if (res.ok) {
+        const prods = await res.json()
+        setCatalogProducts(prods as CatalogProduct[])
+      }
     }
     load()
   }, [])
@@ -491,24 +489,23 @@ export function ProcedureExecution({
             ]
           : undefined
 
-      const result = await executeProcedureAction(procedure.id, {
-        technique: technique || undefined,
-        clinicalResponse: clinicalResponse || undefined,
-        adverseEffects: adverseEffects || undefined,
-        notes: notes || undefined,
-        followUpDate: followUpDate || undefined,
-        nextSessionObjectives: nextSessionObjectives || undefined,
-        diagrams: diagramsPayload,
-        productApplications:
-          productApps.length > 0 ? productApps : undefined,
-      })
-
-      if (!result.success) {
-        setSubmitError(result.error ?? 'Erro ao registrar execução')
+      try {
+        await executeProcedure.mutateAsync({
+          id: procedure.id,
+          technique: technique || undefined,
+          clinicalResponse: clinicalResponse || undefined,
+          adverseEffects: adverseEffects || undefined,
+          notes: notes || undefined,
+          followUpDate: followUpDate || undefined,
+          nextSessionObjectives: nextSessionObjectives || undefined,
+          diagrams: diagramsPayload,
+          productApplications:
+            productApps.length > 0 ? productApps : undefined,
+        })
+      } catch (err) {
+        setSubmitError(err instanceof Error ? err.message : 'Erro ao registrar execução')
         return
       }
-
-      invalidateProcedures(patientId)
 
       // Redirect to patient's procedures tab
       if (!wizardOverrides?.hideNavigation) {
@@ -577,29 +574,28 @@ export function ProcedureExecution({
               ]
             : undefined
 
-        const result = await executeProcedureAction(procedure.id, {
-          technique: technique || undefined,
-          clinicalResponse: clinicalResponse || undefined,
-          adverseEffects: adverseEffects || undefined,
-          notes: notes || undefined,
-          followUpDate: followUpDate || undefined,
-          nextSessionObjectives: nextSessionObjectives || undefined,
-          diagrams: diagramsPayload,
-          productApplications:
-            productApps.length > 0 ? productApps : undefined,
-        })
-
-        if (result.success) {
-          invalidateProcedures(patientId)
+        try {
+          await executeProcedure.mutateAsync({
+            id: procedure.id,
+            technique: technique || undefined,
+            clinicalResponse: clinicalResponse || undefined,
+            adverseEffects: adverseEffects || undefined,
+            notes: notes || undefined,
+            followUpDate: followUpDate || undefined,
+            nextSessionObjectives: nextSessionObjectives || undefined,
+            diagrams: diagramsPayload,
+            productApplications:
+              productApps.length > 0 ? productApps : undefined,
+          })
           wizardOverrides?.onSaveComplete?.({
             success: true,
             procedureId: procedure.id,
           })
-        } else {
-          setSubmitError(result.error ?? 'Erro ao registrar execução')
+        } catch (execErr) {
+          setSubmitError(execErr instanceof Error ? execErr.message : 'Erro ao registrar execução')
           wizardOverrides?.onSaveComplete?.({
             success: false,
-            error: result.error ?? 'Erro ao registrar execução',
+            error: execErr instanceof Error ? execErr.message : 'Erro ao registrar execução',
             errorType: 'server',
           })
         }

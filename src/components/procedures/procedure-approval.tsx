@@ -19,16 +19,8 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { FaceDiagramEditor } from '@/components/face-diagram/face-diagram-editor'
 import { ConsentViewer } from '@/components/consent/consent-viewer'
 import { SignaturePad } from '@/components/consent/signature-pad'
-import {
-  approveProcedureAction,
-} from '@/actions/procedures'
-import { useInvalidation } from '@/hooks/queries/use-invalidation'
-import {
-  getActiveConsentForTypeAction,
-  acceptConsentAction,
-  checkConsentForProcedureAction,
-} from '@/actions/consent'
-import { listProcedureTypesAction } from '@/actions/procedures'
+import { useApproveProcedure } from '@/hooks/mutations/use-procedure-mutations'
+import { useAcceptConsent } from '@/hooks/mutations/use-consent-mutations'
 import {
   interpolateContract,
   buildContractData,
@@ -170,7 +162,8 @@ export function ProcedureApproval({
   wizardOverrides,
 }: ProcedureApprovalProps) {
   const router = useRouter()
-  const { invalidateProcedures, invalidateFinancial } = useInvalidation()
+  const approveProcedure = useApproveProcedure()
+  const acceptConsent = useAcceptConsent()
 
   // ─── State ────────────────────────────────────────────────────────
   const [procedureTypes, setProcedureTypes] = useState<ProcedureType[]>([])
@@ -240,8 +233,8 @@ export function ProcedureApproval({
   // ─── Load procedure types ─────────────────────────────────────────
   useEffect(() => {
     async function load() {
-      const types = await listProcedureTypesAction()
-      setProcedureTypes(types)
+      const res = await fetch('/api/procedure-types')
+      if (res.ok) setProcedureTypes(await res.json())
     }
     load()
   }, [])
@@ -258,7 +251,8 @@ export function ProcedureApproval({
 
     const updated = await Promise.all(
       statuses.map(async (s) => {
-        const result = await checkConsentForProcedureAction(patient.id, procedure.id, s.type)
+        const checkRes = await fetch(`/api/consent/history/${patient.id}?procedureId=${procedure.id}&type=${s.type}`)
+        const result = checkRes.ok ? await checkRes.json() : { data: null }
         return {
           ...s,
           signed: !!result.data,
@@ -280,7 +274,8 @@ export function ProcedureApproval({
     async function loadContract() {
       setLoadingContract(true)
       try {
-        const template = await getActiveConsentForTypeAction('service_contract')
+        const tplRes = await fetch('/api/consent/templates?type=service_contract&active=true')
+        const template = tplRes.ok ? await tplRes.json() : null
         if (template) {
           setContractTemplate(template as unknown as ConsentTemplate)
 
@@ -309,7 +304,8 @@ export function ProcedureApproval({
         }
 
         // Check if already signed for THIS procedure
-        const existing = await checkConsentForProcedureAction(patient.id, procedure.id, 'service_contract')
+        const existRes = await fetch(`/api/consent/history/${patient.id}?procedureId=${procedure.id}&type=service_contract`)
+        const existing = existRes.ok ? await existRes.json() : { data: null }
         if (existing.data) {
           setContractSigned(true)
         }
@@ -330,9 +326,10 @@ export function ProcedureApproval({
     setActiveConsentType(type)
     setLoadingConsentTemplate(true)
     try {
-      const template = await getActiveConsentForTypeAction(type)
-      if (template) {
-        setActiveConsentTemplate(template as unknown as ConsentTemplate)
+      const tplRes = await fetch(`/api/consent/templates?type=${type}&active=true`)
+      if (tplRes.ok) {
+        const template = await tplRes.json()
+        if (template) setActiveConsentTemplate(template as unknown as ConsentTemplate)
       }
     } catch {
       // ignore
@@ -354,7 +351,7 @@ export function ProcedureApproval({
     setContractSigning(true)
     setContractError(null)
     try {
-      const result = await acceptConsentAction({
+      await acceptConsent.mutateAsync({
         patientId: patient.id,
         consentTemplateId: contractTemplate.id,
         procedureRecordId: procedure.id,
@@ -362,14 +359,9 @@ export function ProcedureApproval({
         signatureData: contractSignature,
         renderedContent: contractText,
       })
-
-      if (result?.error) {
-        setContractError(result.error)
-      } else {
-        setContractSigned(true)
-      }
-    } catch {
-      setContractError('Erro inesperado ao assinar contrato')
+      setContractSigned(true)
+    } catch (err) {
+      setContractError(err instanceof Error ? err.message : 'Erro inesperado ao assinar contrato')
     } finally {
       setContractSigning(false)
     }
@@ -382,21 +374,15 @@ export function ProcedureApproval({
     setIsApproving(true)
     setApproveError(null)
     try {
-      const result = await approveProcedureAction(procedure.id)
-      if (result.success) {
-        setApproved(true)
-        invalidateProcedures(patient.id)
-        invalidateFinancial()
-        if (!wizardOverrides?.hideNavigation) {
-          setTimeout(() => {
-            router.push(`/pacientes/${patient.id}?tab=procedimentos`)
-          }, 1500)
-        }
-      } else {
-        setApproveError(result.error ?? 'Erro ao aprovar procedimento')
+      await approveProcedure.mutateAsync(procedure.id)
+      setApproved(true)
+      if (!wizardOverrides?.hideNavigation) {
+        setTimeout(() => {
+          router.push(`/pacientes/${patient.id}?tab=procedimentos`)
+        }, 1500)
       }
-    } catch {
-      setApproveError('Erro inesperado ao aprovar procedimento')
+    } catch (err) {
+      setApproveError(err instanceof Error ? err.message : 'Erro ao aprovar procedimento')
     } finally {
       setIsApproving(false)
     }
@@ -424,28 +410,18 @@ export function ProcedureApproval({
       setIsApproving(true)
       setApproveError(null)
       try {
-        const result = await approveProcedureAction(procedure.id)
-        if (result.success) {
-          setApproved(true)
-          invalidateProcedures(patient.id)
-          invalidateFinancial()
-          wizardOverrides?.onSaveComplete?.({
-            success: true,
-            procedureId: procedure.id,
-          })
-        } else {
-          setApproveError(result.error ?? 'Erro ao aprovar procedimento')
-          wizardOverrides?.onSaveComplete?.({
-            success: false,
-            error: result.error ?? 'Erro ao aprovar procedimento',
-            errorType: 'server',
-          })
-        }
-      } catch {
-        setApproveError('Erro inesperado ao aprovar procedimento')
+        await approveProcedure.mutateAsync(procedure.id)
+        setApproved(true)
+        wizardOverrides?.onSaveComplete?.({
+          success: true,
+          procedureId: procedure.id,
+        })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Erro ao aprovar procedimento'
+        setApproveError(msg)
         wizardOverrides?.onSaveComplete?.({
           success: false,
-          error: 'Erro inesperado ao aprovar procedimento',
+          error: msg,
           errorType: 'server',
         })
       } finally {
