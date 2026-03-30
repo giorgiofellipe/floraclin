@@ -362,14 +362,9 @@ export function ServiceWizard({
   // ─── Next handler ──────────────────────────────────────────────
 
   const handleNext = useCallback(() => {
-    // All steps trigger save via triggerSave.
-    // Step 1: flushes debounce and advances on success
-    // Step 2: validates type selection (no server save) and advances
-    // Step 3: creates/updates procedure and advances on success
-    // Step 4: calls approveProcedureAction and advances on success
-    // Step 5: calls executeProcedureAction and redirects on success
+    console.log('[Wizard] handleNext called, currentStep:', state.currentStep, 'isSaving:', state.isSaving, 'triggerSave:', state.triggerSave)
     triggerSave()
-  }, [triggerSave])
+  }, [triggerSave, state.currentStep, state.isSaving, state.triggerSave])
 
   // ─── Wizard overrides for each step ────────────────────────────
 
