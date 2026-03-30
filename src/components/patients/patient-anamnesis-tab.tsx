@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
 import { Loader2 } from 'lucide-react'
 import { AnamnesisForm } from '@/components/anamnesis/anamnesis-form'
-import { getAnamnesisAction } from '@/actions/anamnesis'
+import { useAnamnesis } from '@/hooks/queries/use-anamnesis'
 import type { AnamnesisFormData } from '@/validations/anamnesis'
 
 interface PatientAnamnesisTabProps {
@@ -11,52 +11,35 @@ interface PatientAnamnesisTabProps {
 }
 
 export function PatientAnamnesisTab({ patientId }: PatientAnamnesisTabProps) {
-  const [loading, setLoading] = useState(true)
-  const [initialData, setInitialData] = useState<
-    (AnamnesisFormData & { id?: string; updatedAt?: Date | string; updatedBy?: string | null }) | undefined
-  >(undefined)
-  const [updatedByName, setUpdatedByName] = useState<string | undefined>(undefined)
+  const { data: rawData, isLoading } = useAnamnesis(patientId)
 
-  useEffect(() => {
-    let cancelled = false
+  const initialData = useMemo(() => {
+    if (!rawData) return undefined
+    return {
+      ...rawData,
+      id: rawData.id,
+      updatedAt: rawData.updatedAt,
+      updatedBy: rawData.updatedBy,
+      mainComplaint: rawData.mainComplaint ?? '',
+      patientGoals: rawData.patientGoals ?? '',
+      medicalHistory: (rawData.medicalHistory as AnamnesisFormData['medicalHistory']) ?? {},
+      medications: (rawData.medications as AnamnesisFormData['medications']) ?? [],
+      allergies: (rawData.allergies as AnamnesisFormData['allergies']) ?? [],
+      previousSurgeries: (rawData.previousSurgeries as AnamnesisFormData['previousSurgeries']) ?? [],
+      chronicConditions: (rawData.chronicConditions as string[]) ?? [],
+      isPregnant: rawData.isPregnant ?? false,
+      isBreastfeeding: rawData.isBreastfeeding ?? false,
+      lifestyle: (rawData.lifestyle as AnamnesisFormData['lifestyle']) ?? {},
+      skinType: (rawData.skinType as AnamnesisFormData['skinType']) ?? undefined,
+      skinConditions: (rawData.skinConditions as string[]) ?? [],
+      skincareRoutine: (rawData.skincareRoutine as AnamnesisFormData['skincareRoutine']) ?? [],
+      previousAestheticTreatments: (rawData.previousAestheticTreatments as AnamnesisFormData['previousAestheticTreatments']) ?? [],
+      contraindications: (rawData.contraindications as string[]) ?? [],
+      facialEvaluationNotes: rawData.facialEvaluationNotes ?? '',
+    } as AnamnesisFormData & { id?: string; updatedAt?: Date | string; updatedBy?: string | null }
+  }, [rawData])
 
-    async function load() {
-      try {
-        const data = await getAnamnesisAction(patientId)
-        if (!cancelled && data) {
-          setInitialData({
-            ...data,
-            id: data.id,
-            updatedAt: data.updatedAt,
-            updatedBy: data.updatedBy,
-            mainComplaint: data.mainComplaint ?? '',
-            patientGoals: data.patientGoals ?? '',
-            medicalHistory: (data.medicalHistory as AnamnesisFormData['medicalHistory']) ?? {},
-            medications: (data.medications as AnamnesisFormData['medications']) ?? [],
-            allergies: (data.allergies as AnamnesisFormData['allergies']) ?? [],
-            previousSurgeries: (data.previousSurgeries as AnamnesisFormData['previousSurgeries']) ?? [],
-            chronicConditions: (data.chronicConditions as string[]) ?? [],
-            isPregnant: data.isPregnant ?? false,
-            isBreastfeeding: data.isBreastfeeding ?? false,
-            lifestyle: (data.lifestyle as AnamnesisFormData['lifestyle']) ?? {},
-            skinType: (data.skinType as AnamnesisFormData['skinType']) ?? undefined,
-            skinConditions: (data.skinConditions as string[]) ?? [],
-            skincareRoutine: (data.skincareRoutine as AnamnesisFormData['skincareRoutine']) ?? [],
-            previousAestheticTreatments: (data.previousAestheticTreatments as AnamnesisFormData['previousAestheticTreatments']) ?? [],
-            contraindications: (data.contraindications as string[]) ?? [],
-            facialEvaluationNotes: data.facialEvaluationNotes ?? '',
-          })
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-
-    load()
-    return () => { cancelled = true }
-  }, [patientId])
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="size-6 animate-spin text-mid" />
@@ -70,7 +53,7 @@ export function PatientAnamnesisTab({ patientId }: PatientAnamnesisTabProps) {
       <AnamnesisForm
         patientId={patientId}
         initialData={initialData}
-        updatedByName={updatedByName}
+        updatedByName={undefined}
       />
     </div>
   )

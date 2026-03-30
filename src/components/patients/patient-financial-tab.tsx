@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState, useTransition } from 'react'
+import { useState } from 'react'
 import {
   Table,
   TableBody,
@@ -12,7 +12,8 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { listFinancialEntriesAction } from '@/actions/financial'
+import { useFinancialEntries } from '@/hooks/queries/use-financial'
+import { useInvalidation } from '@/hooks/mutations/use-invalidation'
 import { InstallmentTable } from '@/components/financial/installment-table'
 import { PaymentForm } from '@/components/financial/payment-form'
 import {
@@ -57,32 +58,15 @@ interface PatientFinancialTabProps {
 }
 
 export function PatientFinancialTab({ patientId, patientName }: PatientFinancialTabProps) {
-  const [entries, setEntries] = useState<FinancialEntry[]>([])
+  const { data: rawData, isLoading } = useFinancialEntries({ patientId })
+  const { invalidateFinancial } = useInvalidation()
+  const entries = (rawData?.data ?? []) as FinancialEntry[]
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [showPaymentForm, setShowPaymentForm] = useState(false)
-  const [isPending, startTransition] = useTransition()
-  const [loading, setLoading] = useState(true)
-
-  const fetchEntries = useCallback(() => {
-    startTransition(async () => {
-      const result = await listFinancialEntriesAction({
-        patientId,
-      })
-
-      if (result.data) {
-        setEntries(result.data.data as FinancialEntry[])
-      }
-      setLoading(false)
-    })
-  }, [patientId])
-
-  useEffect(() => {
-    fetchEntries()
-  }, [fetchEntries])
 
   const patients = [{ id: patientId, fullName: patientName }]
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <span className="text-sm text-mid">Carregando financeiro...</span>
@@ -156,7 +140,7 @@ export function PatientFinancialTab({ patientId, patientName }: PatientFinancial
             <div className="rounded-[3px] border p-4">
               <InstallmentTable
                 entryId={expandedId}
-                onPaymentComplete={fetchEntries}
+                onPaymentComplete={() => invalidateFinancial()}
               />
             </div>
           )}
@@ -170,7 +154,7 @@ export function PatientFinancialTab({ patientId, patientName }: PatientFinancial
           onClose={() => setShowPaymentForm(false)}
           onSuccess={() => {
             setShowPaymentForm(false)
-            fetchEntries()
+            invalidateFinancial()
           }}
         />
       )}

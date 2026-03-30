@@ -20,11 +20,11 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { formatDateTime, formatDate } from '@/lib/utils'
-import {
-  getPatientTimelineAction,
-  type PatientTimeline,
-  type TimelineEntry,
-  type TimelineGroup,
+import { usePatientTimeline } from '@/hooks/queries/use-patients'
+import type {
+  PatientTimeline,
+  TimelineEntry,
+  TimelineGroup,
 } from '@/actions/timeline'
 
 // ─── Config ─────────────────────────────────────────────────────────
@@ -63,33 +63,15 @@ interface PatientTimelineTabProps {
 }
 
 export function PatientTimelineTab({ patientId }: PatientTimelineTabProps) {
-  const [timeline, setTimeline] = useState<PatientTimeline | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { data: timeline, isLoading } = usePatientTimeline(patientId)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
+  // Expand all groups by default when timeline data first loads
   useEffect(() => {
-    let cancelled = false
-
-    async function loadTimeline() {
-      try {
-        const data = await getPatientTimelineAction(patientId)
-        if (!cancelled) {
-          setTimeline(data)
-          // Expand all groups by default
-          setExpandedGroups(new Set(data.groups.map((g) => g.id)))
-        }
-      } catch {
-        if (!cancelled) setTimeline({ groups: [], ungrouped: [] })
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
+    if (timeline?.groups) {
+      setExpandedGroups(new Set(timeline.groups.map((g: TimelineGroup) => g.id)))
     }
-
-    loadTimeline()
-    return () => {
-      cancelled = true
-    }
-  }, [patientId])
+  }, [timeline])
 
   function toggleGroup(groupId: string) {
     setExpandedGroups((prev) => {
@@ -103,7 +85,7 @@ export function PatientTimelineTab({ patientId }: PatientTimelineTabProps) {
     })
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="size-6 animate-spin text-mid" />

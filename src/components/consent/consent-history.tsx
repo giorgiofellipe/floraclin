@@ -1,6 +1,5 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -13,7 +12,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { SignaturePad } from './signature-pad'
-import { getConsentHistoryAction } from '@/actions/consent'
+import { useConsentHistory } from '@/hooks/queries/use-consent'
 import { formatDateTime } from '@/lib/utils'
 import { CONSENT_TYPE_LABELS } from '@/lib/constants'
 
@@ -27,33 +26,23 @@ interface ConsentHistoryProps {
   patientId: string
 }
 
-type HistoryItem = Awaited<ReturnType<typeof getConsentHistoryAction>>[number]
+interface HistoryItem {
+  id: string
+  templateTitle: string
+  templateVersion: number
+  templateType: string
+  acceptanceMethod: string
+  acceptedAt: string | Date
+  signatureData: string | null
+  contentSnapshot: string
+  contentHash: string
+}
 
 export function ConsentHistory({ patientId }: ConsentHistoryProps) {
-  const [history, setHistory] = useState<HistoryItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const { data: rawHistory, isLoading } = useConsentHistory(patientId)
+  const history = (rawHistory ?? []) as HistoryItem[]
 
-  useEffect(() => {
-    let cancelled = false
-
-    async function load() {
-      try {
-        const data = await getConsentHistoryAction(patientId)
-        if (!cancelled) {
-          setHistory(data)
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
-      }
-    }
-
-    load()
-    return () => { cancelled = true }
-  }, [patientId])
-
-  if (loading) {
+  if (isLoading) {
     return (
       <Card className="border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         <CardContent className="py-8 text-center text-sm text-mid">

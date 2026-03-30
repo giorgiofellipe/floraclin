@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Loader2, Plus, FileCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -18,10 +18,9 @@ import {
 } from '@/components/ui/select'
 import { ConsentHistory } from '@/components/consent/consent-history'
 import { ConsentViewer } from '@/components/consent/consent-viewer'
-import {
-  listConsentTemplatesAction,
-  getConsentTemplateByIdAction,
-} from '@/actions/consent'
+import { useConsentTemplates } from '@/hooks/queries/use-consent'
+import { useInvalidation } from '@/hooks/mutations/use-invalidation'
+import { getConsentTemplateByIdAction } from '@/actions/consent'
 
 interface ConsentTemplate {
   id: string
@@ -38,28 +37,14 @@ interface PatientConsentTabProps {
 
 export function PatientConsentTab({ patientId }: PatientConsentTabProps) {
   const [showNewConsent, setShowNewConsent] = useState(false)
-  const [templates, setTemplates] = useState<ConsentTemplate[]>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [selectedTemplate, setSelectedTemplate] = useState<ConsentTemplate | null>(null)
-  const [loadingTemplates, setLoadingTemplates] = useState(false)
-  const [refreshKey, setRefreshKey] = useState(0)
+  const { invalidateConsent } = useInvalidation()
 
-  const loadTemplates = useCallback(async () => {
-    setLoadingTemplates(true)
-    try {
-      const data = await listConsentTemplatesAction()
-      const allTemplates = Object.values(data).flat() as unknown as ConsentTemplate[]
-      setTemplates(allTemplates.filter((t) => t.isActive))
-    } finally {
-      setLoadingTemplates(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (showNewConsent) {
-      loadTemplates()
-    }
-  }, [showNewConsent, loadTemplates])
+  const { data: rawTemplates, isLoading: loadingTemplates } = useConsentTemplates()
+  const templates = (rawTemplates
+    ? (Object.values(rawTemplates).flat() as unknown as ConsentTemplate[]).filter((t) => t.isActive)
+    : [])
 
   useEffect(() => {
     if (!selectedTemplateId) {
@@ -79,7 +64,7 @@ export function PatientConsentTab({ patientId }: PatientConsentTabProps) {
     setShowNewConsent(false)
     setSelectedTemplateId('')
     setSelectedTemplate(null)
-    setRefreshKey((k) => k + 1)
+    invalidateConsent()
   }
 
   return (
@@ -92,9 +77,7 @@ export function PatientConsentTab({ patientId }: PatientConsentTabProps) {
         </Button>
       </div>
 
-      <div key={refreshKey}>
-        <ConsentHistory patientId={patientId} />
-      </div>
+      <ConsentHistory patientId={patientId} />
 
       <Dialog open={showNewConsent} onOpenChange={setShowNewConsent}>
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">

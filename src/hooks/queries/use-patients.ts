@@ -1,29 +1,22 @@
-import { useQuery } from '@tanstack/react-query'
+'use client'
 
-export function usePatients(search?: string, page = 1, limit = 20, responsibleUserId?: string) {
+import { useQuery } from '@tanstack/react-query'
+import { listPatientsAction, getPatientAction } from '@/actions/patients'
+import { getPatientTimelineAction } from '@/actions/timeline'
+import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
+import { queryKeys } from './query-keys'
+
+export function usePatients(search = '', page = 1) {
   return useQuery({
-    queryKey: ['patients', { search, page, limit, responsibleUserId }],
-    queryFn: async () => {
-      const params = new URLSearchParams()
-      if (search) params.set('search', search)
-      params.set('page', String(page))
-      params.set('limit', String(limit))
-      if (responsibleUserId) params.set('responsibleUserId', responsibleUserId)
-      const res = await fetch(`/api/patients?${params}`)
-      if (!res.ok) throw new Error('Failed to fetch patients')
-      return res.json()
-    },
+    queryKey: queryKeys.patients.list(search, page),
+    queryFn: () => listPatientsAction(search, page, DEFAULT_PAGE_SIZE),
   })
 }
 
-export function usePatient(id: string | undefined) {
+export function usePatient(id: string) {
   return useQuery({
-    queryKey: ['patients', id],
-    queryFn: async () => {
-      const res = await fetch(`/api/patients/${id}`)
-      if (!res.ok) throw new Error('Failed to fetch patient')
-      return res.json()
-    },
+    queryKey: queryKeys.patients.detail(id),
+    queryFn: () => getPatientAction(id),
     enabled: !!id,
   })
 }
@@ -31,11 +24,7 @@ export function usePatient(id: string | undefined) {
 export function usePatientTimeline(patientId: string | undefined) {
   return useQuery({
     queryKey: ['patients', patientId, 'timeline'],
-    queryFn: async () => {
-      const res = await fetch(`/api/patients/${patientId}/timeline`)
-      if (!res.ok) throw new Error('Failed to fetch patient timeline')
-      return res.json()
-    },
+    queryFn: () => getPatientTimelineAction(patientId!),
     enabled: !!patientId,
   })
 }
