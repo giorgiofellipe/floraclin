@@ -49,24 +49,20 @@ export function ProcedureTypeStep({
   }, [])
 
   // ─── Handle wizard triggerSave ─────────────────────────────────────
-  const lastTriggerRef = useRef(wizardOverrides?.triggerSave ?? 0)
-  const wasActiveRef = useRef((wizardOverrides?.triggerSave ?? 0) > 0)
-
-  // Use refs for values accessed in the triggerSave effect to avoid stale closures
   const selectedTypeIdsRef = useRef(selectedTypeIds)
   selectedTypeIdsRef.current = selectedTypeIds
   const onSaveCompleteRef = useRef(wizardOverrides?.onSaveComplete)
   onSaveCompleteRef.current = wizardOverrides?.onSaveComplete
+  const prevTriggerRef = useRef(-1) // -1 means "never fired"
 
   useEffect(() => {
     const current = wizardOverrides?.triggerSave ?? 0
-    const isNowActive = current > 0
-    if (isNowActive && !wasActiveRef.current) { lastTriggerRef.current = current; wasActiveRef.current = true; return }
-    if (!isNowActive) { wasActiveRef.current = false; return }
-    if (current === lastTriggerRef.current) return
-    lastTriggerRef.current = current
+    // Skip if: zero (inactive), or same as last seen, or first non-zero value (just became active)
+    if (current === 0) { prevTriggerRef.current = -1; return }
+    if (prevTriggerRef.current === -1) { prevTriggerRef.current = current; return }
+    if (current === prevTriggerRef.current) return
+    prevTriggerRef.current = current
 
-    // Inline save logic using refs for latest values
     if (selectedTypeIdsRef.current.length === 0) {
       onSaveCompleteRef.current?.({
         success: false,

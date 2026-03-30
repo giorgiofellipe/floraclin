@@ -399,15 +399,14 @@ export function ProcedureApproval({
   }, [canApprove, isApproving, procedure.id, patient.id, router, wizardOverrides?.hideNavigation])
 
   // ─── Wizard triggerSave: call approveProcedureAction ──────────────
-  const lastTriggerSaveRef = useRef(wizardOverrides?.triggerSave ?? 0)
-  const wasActiveRef = useRef((wizardOverrides?.triggerSave ?? 0) > 0)
+  const prevTriggerSaveRef = useRef(-1)
+  
   useEffect(() => {
     const current = wizardOverrides?.triggerSave ?? 0
-    const isNowActive = current > 0
-    if (isNowActive && !wasActiveRef.current) { lastTriggerSaveRef.current = current; wasActiveRef.current = true; return }
-    if (!isNowActive) { wasActiveRef.current = false; return }
-    if (current === lastTriggerSaveRef.current) return
-    lastTriggerSaveRef.current = current
+    if (current === 0) { prevTriggerSaveRef.current = -1; return }
+    if (prevTriggerSaveRef.current === -1) { prevTriggerSaveRef.current = current; return }
+    if (current === prevTriggerSaveRef.current) return
+    prevTriggerSaveRef.current = current
     async function doSave() {
       if (!canApprove) {
         wizardOverrides?.onSaveComplete?.({

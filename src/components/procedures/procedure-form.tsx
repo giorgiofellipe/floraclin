@@ -851,28 +851,14 @@ export function ProcedureForm({
   additionalTypeIdsRef.current = additionalTypeIds
 
   // ─── Wizard triggerSave: run save logic and call onSaveComplete ──
-  const lastTriggerSaveRef = useRef(wizardOverrides?.triggerSave ?? 0)
-  const wasActiveRef = useRef((wizardOverrides?.triggerSave ?? 0) > 0)
+  const prevTriggerSaveRef = useRef(-1)
+  
   useEffect(() => {
     const current = wizardOverrides?.triggerSave ?? 0
-    const isNowActive = current > 0
-    const wasActive = wasActiveRef.current
-
-    // Step just became active (0 → N): sync ref to current, don't fire
-    if (isNowActive && !wasActive) {
-      lastTriggerSaveRef.current = current
-      wasActiveRef.current = true
-      return
-    }
-    // Step became inactive (N → 0): reset
-    if (!isNowActive) {
-      wasActiveRef.current = false
-      return
-    }
-    // Same value — don't fire
-    if (current === lastTriggerSaveRef.current) return
-    // Actual increment while active — fire save
-    lastTriggerSaveRef.current = current
+    if (current === 0) { prevTriggerSaveRef.current = -1; return }
+    if (prevTriggerSaveRef.current === -1) { prevTriggerSaveRef.current = current; return }
+    if (current === prevTriggerSaveRef.current) return
+    prevTriggerSaveRef.current = current
     async function doSave() {
       if (isSubmitting || isReadOnly) {
         wizardOverrides?.onSaveComplete?.({
