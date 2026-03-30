@@ -7,7 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { SignaturePad } from './signature-pad'
-import { acceptConsentAction } from '@/actions/consent'
+import { useAcceptConsent } from '@/hooks/mutations/use-consent-mutations'
 import type { AcceptanceMethod } from '@/types'
 import { CONSENT_TYPE_LABELS } from '@/lib/constants'
 
@@ -36,9 +36,10 @@ export function ConsentViewer({
 }: ConsentViewerProps) {
   const [checked, setChecked] = useState(false)
   const [signatureData, setSignatureData] = useState<string | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [accepted, setAccepted] = useState(false)
+  const acceptConsent = useAcceptConsent()
+  const isSubmitting = acceptConsent.isPending
 
   const acceptanceMethod: AcceptanceMethod = requireSignature
     ? signatureData && checked
@@ -57,33 +58,22 @@ export function ConsentViewer({
   const handleSubmit = useCallback(async () => {
     if (!canSubmit || isSubmitting) return
 
-    setIsSubmitting(true)
     setError(null)
 
     try {
-      const result = await acceptConsentAction({
+      await acceptConsent.mutateAsync({
         patientId,
         consentTemplateId: template.id,
         procedureRecordId,
         acceptanceMethod: signatureData ? (checked ? 'both' : 'signature') : 'checkbox',
         signatureData: signatureData ?? undefined,
       })
-
-      if (result?.error) {
-        setError(result.error)
-      } else if (result?.fieldErrors) {
-        const firstError = Object.values(result.fieldErrors).flat()[0]
-        setError(firstError ?? 'Erro de validação')
-      } else {
-        setAccepted(true)
-        onAccepted?.()
-      }
-    } catch {
-      setError('Erro inesperado ao registrar aceite')
-    } finally {
-      setIsSubmitting(false)
+      setAccepted(true)
+      onAccepted?.()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro inesperado ao registrar aceite')
     }
-  }, [canSubmit, isSubmitting, patientId, template.id, procedureRecordId, signatureData, checked, onAccepted])
+  }, [canSubmit, isSubmitting, patientId, template.id, procedureRecordId, signatureData, checked, onAccepted, acceptConsent])
 
   if (accepted) {
     return (

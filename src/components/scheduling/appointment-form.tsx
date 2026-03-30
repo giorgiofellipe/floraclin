@@ -1,7 +1,6 @@
 'use client'
 
 import * as React from 'react'
-import { useActionState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -21,14 +20,11 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  createAppointmentAction,
-  updateAppointmentAction,
-  updateAppointmentStatusAction,
-  deleteAppointmentAction,
-  listPatientsForSelectAction,
-  type AppointmentActionState,
-} from '@/actions/appointments'
-import { useInvalidation } from '@/hooks/queries/use-invalidation'
+  useCreateAppointment,
+  useUpdateAppointment,
+  useUpdateAppointmentStatus,
+  useDeleteAppointment,
+} from '@/hooks/mutations/use-appointment-mutations'
 import { STATUS_LABELS } from '@/components/scheduling/appointment-card'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
 import type { AppointmentStatus } from '@/types'
@@ -95,7 +91,11 @@ export function AppointmentForm({
   defaultPractitionerId,
 }: AppointmentFormProps) {
   const isEditing = !!appointment
-  const { invalidateAppointments } = useInvalidation()
+  const createAppointment = useCreateAppointment()
+  const updateAppointment = useUpdateAppointment()
+  const updateAppointmentStatus = useUpdateAppointmentStatus()
+  const deleteAppointmentMutation = useDeleteAppointment()
+  const [error, setError] = React.useState<string | null>(null)
 
   const [patientSearch, setPatientSearch] = React.useState('')
   const [patientOptions, setPatientOptions] = React.useState<PatientOption[]>([])
@@ -120,8 +120,7 @@ export function AppointmentForm({
     appointment?.endTime?.slice(0, 5) ?? getDefaultEndTime(defaultStartTime ?? '08:00')
   )
 
-  const action = isEditing ? updateAppointmentAction : createAppointmentAction
-  const [state, formAction, isPending] = useActionState(action, null)
+  const isPending = createAppointment.isPending || updateAppointment.isPending
 
   // Reset form on open
   React.useEffect(() => {
@@ -148,24 +147,30 @@ export function AppointmentForm({
     }
   }, [open, appointment, defaultDate, defaultStartTime, defaultPractitionerId, practitioners])
 
-  // Close on success and notify parent
-  React.useEffect(() => {
-    if (state?.success) {
-      invalidateAppointments()
-      onSaved?.()
-      onOpenChange(false)
-    }
-  }, [state?.success, onOpenChange, onSaved, invalidateAppointments])
-
-  // Search patients
+  // Search patients via API
   React.useEffect(() => {
     if (patientSearch.length < 2) {
       setPatientOptions([])
       return
     }
     const timer = setTimeout(async () => {
-      const results = await listPatientsForSelectAction(patientSearch)
-      setPatientOptions(results)
+      try {
+        const params = new URLSearchParams({ search: patientSearch, limit: '20' })
+        const res = await fetch(`/api/patients?${params}`)
+        if (res.ok) {
+          const json = await res.json()
+          const data = json.data ?? json
+          setPatientOptions(
+            (data as { id: string; fullName: string; phone: string }[]).map((p) => ({
+              id: p.id,
+              fullName: p.fullName,
+              phone: p.phone,
+            }))
+          )
+        }
+      } catch {
+        // ignore search errors
+      }
     }, 300)
     return () => clearTimeout(timer)
   }, [patientSearch])
@@ -187,19 +192,25 @@ export function AppointmentForm({
 
   const handleStatusChange = async (status: AppointmentStatus) => {
     if (!appointment) return
-    await updateAppointmentStatusAction(appointment.id, status)
-    invalidateAppointments()
-    onSaved?.()
-    onOpenChange(false)
+    try {
+      await updateAppointmentStatus.mutateAsync({ id: appointment.id, status })
+      onSaved?.()
+      onOpenChange(false)
+    } catch {
+      // error handled by mutation
+    }
   }
 
   const handleDelete = async () => {
     if (!appointment) return
     if (!confirm('Tem certeza que deseja excluir este agendamento?')) return
-    await deleteAppointmentAction(appointment.id)
-    invalidateAppointments()
-    onSaved?.()
-    onOpenChange(false)
+    try {
+      await deleteAppointmentMutation.mutateAsync(appointment.id)
+      onSaved?.()
+      onOpenChange(false)
+    } catch {
+      // error handled by mutation
+    }
   }
 
   return (
@@ -209,13 +220,37 @@ export function AppointmentForm({
           <DialogTitle className="text-lg font-semibold text-charcoal">{isEditing ? 'Editar Agendamento' : 'Novo Agendamento'}</DialogTitle>
         </DialogHeader>
 
-        {state?.error && (
+        {error && (
           <div className="rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-700 border border-red-100">
-            {state.error}
+            {error}
           </div>
         )}
 
-        <form action={formAction} className="grid gap-5" data-testid="appointment-form">
+        <form onSubmit={async (e) => {
+          e.preventDefault()
+          setError(null)
+          const formData = new FormData(e.currentTarget)
+          const data: Record<string, unknown> = {
+            patientId: selectedPatientId,
+            practitionerId,
+            procedureTypeId: procedureTypeId || undefined,
+            date,
+            startTime,
+            endTime,
+            notes: formData.get('notes') as string || undefined,
+          }
+          try {
+            if (isEditing && appointment) {
+              await updateAppointment.mutateAsync({ id: appointment.id, ...data })
+            } else {
+              await createAppointment.mutateAsync(data)
+            }
+            onSaved?.()
+            onOpenChange(false)
+          } catch (err) {
+            setError(err instanceof Error ? err.message : 'Erro ao salvar agendamento')
+          }
+        }} className="grid gap-5" data-testid="appointment-form">
           {isEditing && <input type="hidden" name="id" value={appointment.id} />}
 
           {/* Patient search */}
@@ -325,9 +360,6 @@ export function AppointmentForm({
               onChange={(e) => setDate((e.target as HTMLInputElement).value)}
               required
             />
-            {state?.fieldErrors?.date && (
-              <p className="text-xs text-destructive">{state.fieldErrors.date[0]}</p>
-            )}
           </div>
 
           {/* Time */}
@@ -363,9 +395,6 @@ export function AppointmentForm({
                 </SelectContent>
               </Select>
               <input type="hidden" name="endTime" value={endTime} />
-              {state?.fieldErrors?.endTime && (
-                <p className="text-xs text-destructive">{state.fieldErrors.endTime[0]}</p>
-              )}
             </div>
           </div>
 

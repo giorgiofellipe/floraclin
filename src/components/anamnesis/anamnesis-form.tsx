@@ -28,8 +28,7 @@ import {
   type AnamnesisFormData,
   type MedicalHistory,
 } from '@/validations/anamnesis'
-import { upsertAnamnesisAction } from '@/actions/anamnesis'
-import { useInvalidation } from '@/hooks/queries/use-invalidation'
+import { useUpsertAnamnesis } from '@/hooks/mutations/use-anamnesis-mutations'
 import { formatDateTime } from '@/lib/utils'
 import type { WizardOverrides } from '@/components/service-wizard/types'
 
@@ -226,8 +225,8 @@ function SelectField({
 // ─── Main Component ─────────────────────────────────────────────────
 
 export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOverrides }: AnamnesisFormProps) {
-  const { invalidateAnamnesis } = useInvalidation()
-  const [isPending, startTransition] = useTransition()
+  const upsertAnamnesis = useUpsertAnamnesis()
+  const isPending = upsertAnamnesis.isPending
   const [lastSaved, setLastSaved] = useState<Date | null>(
     initialData?.updatedAt ? new Date(initialData.updatedAt) : null
   )
@@ -293,24 +292,23 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
 
   // ─── Auto-save ──────────────────────────────────────────────────
 
-  const saveForm = useCallback(() => {
+  const saveForm = useCallback(async () => {
     const data = getValues()
-    startTransition(async () => {
-      const result = await upsertAnamnesisAction(
+    try {
+      const result = await upsertAnamnesis.mutateAsync({
         patientId,
-        data,
-        expectedUpdatedAtRef.current
-      )
-      if (result.success && result.data) {
-        expectedUpdatedAtRef.current = new Date(result.data.updatedAt).toISOString()
-        setLastSaved(new Date(result.data.updatedAt))
-        setLastSavedBy(null) // current user just saved
-        invalidateAnamnesis(patientId)
-      } else if (!result.success && result.error) {
-        toast.error(result.error)
+        formData: data as Record<string, unknown>,
+        expectedUpdatedAt: expectedUpdatedAtRef.current,
+      })
+      if (result?.updatedAt) {
+        expectedUpdatedAtRef.current = new Date(result.updatedAt).toISOString()
+        setLastSaved(new Date(result.updatedAt))
+        setLastSavedBy(null)
       }
-    })
-  }, [patientId, getValues, invalidateAnamnesis])
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao salvar anamnese')
+    }
+  }, [patientId, getValues, upsertAnamnesis])
 
   const debouncedSave = useCallback(() => {
     if (debounceTimerRef.current) {
@@ -350,23 +348,18 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
       // Force an immediate save and wait for it
       const data = getValues()
       try {
-        const result = await upsertAnamnesisAction(
+        const result = await upsertAnamnesis.mutateAsync({
           patientId,
-          data,
-          expectedUpdatedAtRef.current
-        )
-        if (result.success && result.data) {
-          expectedUpdatedAtRef.current = new Date(result.data.updatedAt).toISOString()
-          setLastSaved(new Date(result.data.updatedAt))
+          formData: data as Record<string, unknown>,
+          expectedUpdatedAt: expectedUpdatedAtRef.current,
+        })
+        if (result?.updatedAt) {
+          expectedUpdatedAtRef.current = new Date(result.updatedAt).toISOString()
+          setLastSaved(new Date(result.updatedAt))
           setLastSavedBy(null)
-          invalidateAnamnesis(patientId)
           wizardOverrides?.onSaveComplete?.({ success: true })
         } else {
-          wizardOverrides?.onSaveComplete?.({
-            success: false,
-            error: result.error ?? 'Erro ao salvar anamnese',
-            errorType: 'server',
-          })
+          wizardOverrides?.onSaveComplete?.({ success: true })
         }
       } catch {
         wizardOverrides?.onSaveComplete?.({

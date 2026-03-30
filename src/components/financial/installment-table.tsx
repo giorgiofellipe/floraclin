@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   Table,
   TableBody,
@@ -21,7 +22,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { getFinancialEntryAction, payInstallmentAction } from '@/actions/financial'
+import { usePayInstallment } from '@/hooks/mutations/use-financial-mutations'
 import { CheckIcon } from 'lucide-react'
 import type { PaymentMethod } from '@/types'
 
@@ -63,27 +64,26 @@ export function InstallmentTable({
   entryId: string
   onPaymentComplete?: () => void
 }) {
-  const [installments, setInstallments] = useState<Installment[]>([])
   const [payDialogOpen, setPayDialogOpen] = useState(false)
   const [selectedInstallment, setSelectedInstallment] = useState<string | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix')
-  const [isPending, startTransition] = useTransition()
-  const [isLoading, setIsLoading] = useState(true)
+  const payInstallment = usePayInstallment()
+  const isPending = payInstallment.isPending
 
-  useEffect(() => {
-    loadInstallments()
-  }, [entryId])
-
-  function loadInstallments() {
-    setIsLoading(true)
-    startTransition(async () => {
-      const result = await getFinancialEntryAction(entryId)
-      if (result.data) {
-        setInstallments(result.data.installments as Installment[])
+  const { data: entryData, isLoading } = useQuery({
+    queryKey: ['financial', 'detail', entryId],
+    queryFn: async () => {
+      const res = await fetch(`/api/financial/${entryId}`)
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Erro ao carregar parcelas')
       }
-      setIsLoading(false)
-    })
-  }
+      return res.json()
+    },
+    enabled: !!entryId,
+  })
+
+  const installments: Installment[] = entryData?.installments ?? []
 
   function handleOpenPayDialog(installmentId: string) {
     setSelectedInstallment(installmentId)
@@ -91,18 +91,17 @@ export function InstallmentTable({
     setPayDialogOpen(true)
   }
 
-  function handleConfirmPayment() {
+  async function handleConfirmPayment() {
     if (!selectedInstallment) return
 
-    startTransition(async () => {
-      const result = await payInstallmentAction(selectedInstallment, paymentMethod)
-      if (result?.success) {
-        setPayDialogOpen(false)
-        setSelectedInstallment(null)
-        loadInstallments()
-        onPaymentComplete?.()
-      }
-    })
+    try {
+      await payInstallment.mutateAsync({ id: selectedInstallment, paymentMethod })
+      setPayDialogOpen(false)
+      setSelectedInstallment(null)
+      onPaymentComplete?.()
+    } catch {
+      // error handled by mutation
+    }
   }
 
   if (isLoading) {

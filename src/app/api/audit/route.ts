@@ -1,16 +1,22 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
-import { listAuditLogs } from '@/db/queries/audit'
+import { listAuditLogs, getDistinctEntityTypes } from '@/db/queries/audit'
 
 export async function GET(request: Request) {
   try {
     const ctx = await getAuthContext()
-    // Audit: owner ONLY
     if (ctx.role !== 'owner') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const { searchParams } = new URL(request.url)
+
+    // Check if this is a request for distinct entity types
+    if (searchParams.get('distinct') === 'entityTypes') {
+      const types = await getDistinctEntityTypes(ctx.tenantId)
+      return NextResponse.json(types)
+    }
+
     const filters = {
       entityType: searchParams.get('entityType') ?? undefined,
       entityId: searchParams.get('entityId') ?? undefined,

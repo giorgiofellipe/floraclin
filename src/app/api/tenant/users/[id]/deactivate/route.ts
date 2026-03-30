@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import { deactivateUser } from '@/db/queries/users'
-import { deactivateUserSchema } from '@/validations/user'
 
 export async function PUT(
   _request: Request,
@@ -14,18 +13,13 @@ export async function PUT(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { id } = await params
-    const parsed = deactivateUserSchema.safeParse({ userId: id })
-    if (!parsed.success) {
-      return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
-    }
+    const { id: userId } = await params
 
-    // Can't deactivate yourself
-    if (parsed.data.userId === ctx.userId) {
+    if (userId === ctx.userId) {
       return NextResponse.json({ error: 'Você não pode desativar sua própria conta' }, { status: 400 })
     }
 
-    const result = await deactivateUser(ctx.tenantId, parsed.data.userId)
+    const result = await deactivateUser(ctx.tenantId, userId)
     if (!result) {
       return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 })
     }
@@ -35,7 +29,7 @@ export async function PUT(
       userId: ctx.userId,
       action: 'update',
       entityType: 'tenant_user',
-      entityId: id,
+      entityId: userId,
       changes: { isActive: { old: true, new: false } },
     })
 

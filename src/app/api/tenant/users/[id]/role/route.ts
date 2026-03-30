@@ -15,9 +15,9 @@ export async function PUT(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { id } = await params
+    const { id: userId } = await params
     const body = await request.json()
-    const parsed = updateUserRoleSchema.safeParse({ userId: id, role: body.role })
+    const parsed = updateUserRoleSchema.safeParse({ userId, role: body.role })
     if (!parsed.success) {
       return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
     }
@@ -32,7 +32,7 @@ export async function PUT(
       userId: ctx.userId,
       action: 'update',
       entityType: 'tenant_user',
-      entityId: id,
+      entityId: userId,
       changes: { role: { old: null, new: body.role } },
     })
 

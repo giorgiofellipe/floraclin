@@ -1,14 +1,13 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MaskedInput } from '@/components/ui/masked-input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card } from '@/components/ui/card'
-import { updateTenantAction } from '@/actions/tenants'
-import { useInvalidation } from '@/hooks/queries/use-invalidation'
+import { useUpdateTenant } from '@/hooks/mutations/use-tenant-mutations'
 import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
 import { toast } from 'sonner'
 import type { WorkingHours } from '@/validations/tenant'
@@ -41,8 +40,8 @@ interface ClinicSettingsFormProps {
 }
 
 export function ClinicSettingsForm({ initialData, embedded = false, onChange }: ClinicSettingsFormProps) {
-  const { invalidateTenant } = useInvalidation()
-  const [isPending, startTransition] = useTransition()
+  const updateTenant = useUpdateTenant()
+  const isPending = updateTenant.isPending
   const [name, setName] = useState(initialData.name || '')
   const [phone, setPhone] = useState(initialData.phone || '')
   const [email, setEmail] = useState(initialData.email || '')
@@ -91,12 +90,12 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
     })
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (embedded) return
 
-    startTransition(async () => {
-      const result = await updateTenantAction({
+    try {
+      await updateTenant.mutateAsync({
         name,
         phone,
         email,
@@ -107,14 +106,10 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
           monthly_revenue_goal: monthlyGoalDisplay ? parseCurrency(monthlyGoalDisplay) : undefined,
         },
       })
-
-      if (result?.success) {
-        toast.success('Configurações atualizadas com sucesso')
-        invalidateTenant()
-      } else {
-        toast.error(result?.error || 'Erro ao atualizar configurações')
-      }
-    })
+      toast.success('Configurações atualizadas com sucesso')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao atualizar configurações')
+    }
   }
 
   return (

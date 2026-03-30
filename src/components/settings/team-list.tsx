@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -26,8 +26,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { InviteUserForm } from './invite-user-form'
-import { updateUserRoleAction, deactivateUserAction } from '@/actions/users'
-import { useInvalidation } from '@/hooks/queries/use-invalidation'
+import { useUpdateUserRole, useDeactivateUser } from '@/hooks/mutations/use-user-mutations'
 import { toast } from 'sonner'
 import { PlusIcon, UserXIcon } from 'lucide-react'
 import type { Role } from '@/types'
@@ -87,34 +86,29 @@ interface TeamListProps {
 }
 
 export function TeamList({ members, currentUserId, embedded = false }: TeamListProps) {
-  const { invalidateMembers } = useInvalidation()
-  const [isPending, startTransition] = useTransition()
+  const updateUserRole = useUpdateUserRole()
+  const deactivateUser = useDeactivateUser()
+  const isPending = updateUserRole.isPending || deactivateUser.isPending
   const [inviteOpen, setInviteOpen] = useState(false)
   const [deactivateConfirm, setDeactivateConfirm] = useState<string | null>(null)
 
-  function handleRoleChange(userId: string, newRole: string) {
-    startTransition(async () => {
-      const result = await updateUserRoleAction({ userId, role: newRole as Role })
-      if (result?.success) {
-        toast.success('Papel atualizado')
-        invalidateMembers()
-      } else {
-        toast.error(result?.error || 'Erro ao atualizar papel')
-      }
-    })
+  async function handleRoleChange(userId: string, newRole: string) {
+    try {
+      await updateUserRole.mutateAsync({ id: userId, role: newRole })
+      toast.success('Papel atualizado')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao atualizar papel')
+    }
   }
 
-  function handleDeactivate(userId: string) {
-    startTransition(async () => {
-      const result = await deactivateUserAction(userId)
-      if (result?.success) {
-        toast.success('Membro desativado')
-        invalidateMembers()
-        setDeactivateConfirm(null)
-      } else {
-        toast.error(result?.error || 'Erro ao desativar membro')
-      }
-    })
+  async function handleDeactivate(userId: string) {
+    try {
+      await deactivateUser.mutateAsync(userId)
+      toast.success('Membro desativado')
+      setDeactivateConfirm(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao desativar membro')
+    }
   }
 
   return (

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -19,8 +19,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { ProcedureTypeForm } from './procedure-type-form'
-import { updateProcedureTypeAction, deleteProcedureTypeAction } from '@/actions/tenants'
-import { useInvalidation } from '@/hooks/queries/use-invalidation'
+import { useUpdateProcedureType, useDeleteProcedureType } from '@/hooks/mutations/use-procedure-type-mutations'
 import { formatCurrency } from '@/lib/utils'
 import { PROCEDURE_CATEGORIES } from '@/lib/constants'
 import { toast } from 'sonner'
@@ -69,40 +68,35 @@ interface ProcedureTypeListProps {
 
 export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = false, templateStatusMap }: ProcedureTypeListProps) {
   const router = useRouter()
-  const { invalidateProcedureTypes } = useInvalidation()
-  const [isPending, startTransition] = useTransition()
+  const updateProcedureType = useUpdateProcedureType()
+  const deleteProcedureTypeMutation = useDeleteProcedureType()
+  const isPending = updateProcedureType.isPending || deleteProcedureTypeMutation.isPending
   const [createOpen, setCreateOpen] = useState(false)
   const [editingType, setEditingType] = useState<ProcedureType | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
-  function handleToggleActive(pt: ProcedureType) {
-    startTransition(async () => {
-      const result = await updateProcedureTypeAction({
+  async function handleToggleActive(pt: ProcedureType) {
+    try {
+      await updateProcedureType.mutateAsync({
         id: pt.id,
         name: pt.name,
         category: pt.category as (typeof PROCEDURE_CATEGORIES)[number],
         isActive: !pt.isActive,
       })
-      if (result?.success) {
-        toast.success(pt.isActive ? 'Procedimento desativado' : 'Procedimento ativado')
-        invalidateProcedureTypes()
-      } else {
-        toast.error(result?.error || 'Erro ao atualizar')
-      }
-    })
+      toast.success(pt.isActive ? 'Procedimento desativado' : 'Procedimento ativado')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao atualizar')
+    }
   }
 
-  function handleDelete(id: string) {
-    startTransition(async () => {
-      const result = await deleteProcedureTypeAction(id)
-      if (result?.success) {
-        toast.success('Procedimento excluído')
-        invalidateProcedureTypes()
-        setDeleteConfirm(null)
-      } else {
-        toast.error(result?.error || 'Erro ao excluir')
-      }
-    })
+  async function handleDelete(id: string) {
+    try {
+      await deleteProcedureTypeMutation.mutateAsync(id)
+      toast.success('Procedimento excluído')
+      setDeleteConfirm(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao excluir')
+    }
   }
 
   return (

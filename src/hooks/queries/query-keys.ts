@@ -5,6 +5,7 @@ export const queryKeys = {
     all: ['patients'] as const,
     list: (search: string, page: number) => ['patients', 'list', search, page] as const,
     detail: (id: string) => ['patients', 'detail', id] as const,
+    timeline: (id: string) => ['patients', 'timeline', id] as const,
   },
   appointments: {
     all: ['appointments'] as const,
@@ -16,6 +17,7 @@ export const queryKeys = {
   financial: {
     all: ['financial'] as const,
     entries: (filters?: Record<string, unknown>) => ['financial', 'entries', filters] as const,
+    detail: (id: string) => ['financial', 'detail', id] as const,
     revenue: (dateFrom: string, dateTo: string, practitionerId?: string) =>
       ['financial', 'revenue', dateFrom, dateTo, practitionerId] as const,
     patients: ['financial', 'patients'] as const,
@@ -37,5 +39,29 @@ export const queryKeys = {
     detail: (id: string) => ['procedures', 'detail', id] as const,
     latestNonExecuted: (patientId: string) =>
       ['procedures', 'latestNonExecuted', patientId] as const,
+  },
+  consent: {
+    all: ['consent'] as const,
+    templates: ['consent', 'templates'] as const,
+    history: (patientId: string) => ['consent', 'history', patientId] as const,
+  },
+  evaluation: {
+    all: ['evaluation'] as const,
+    templates: (typeIds: string[]) => ['evaluation', 'templates', typeIds] as const,
+    responses: (procedureId: string) => ['evaluation', 'responses', procedureId] as const,
+  },
+  products: {
+    all: ['products'] as const,
+    list: (filter?: string) => ['products', 'list', filter] as const,
+  },
+  procedureTypes: ['procedure-types'] as const,
+  tenant: {
+    all: ['tenant'] as const,
+    detail: ['tenant', 'detail'] as const,
+    users: ['tenant', 'users'] as const,
+  },
+  audit: {
+    all: ['audit'] as const,
+    logs: (filters?: Record<string, unknown>) => ['audit', 'logs', filters] as const,
   },
 } as const

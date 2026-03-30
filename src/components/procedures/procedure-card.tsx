@@ -30,8 +30,7 @@ import {
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { PROCEDURE_STATUS_COLORS, PROCEDURE_STATUS_LABELS } from '@/lib/constants'
-import { cancelProcedureAction } from '@/actions/procedures'
-import { useInvalidation } from '@/hooks/queries/use-invalidation'
+import { useCancelProcedure } from '@/hooks/mutations/use-procedure-mutations'
 import type { ProcedureListItem } from '@/db/queries/procedures'
 
 // ─── Category Icons ────────────────────────────────────────────────
@@ -61,10 +60,10 @@ export function ProcedureCard({
   onStatusChange,
 }: ProcedureCardProps) {
   const router = useRouter()
-  const { invalidateProcedures, invalidateFinancial } = useInvalidation()
+  const cancelProcedure = useCancelProcedure()
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
-  const [cancelling, setCancelling] = useState(false)
+  const cancelling = cancelProcedure.isPending
 
   const statusColor =
     PROCEDURE_STATUS_COLORS[procedure.status] ?? PROCEDURE_STATUS_COLORS.planned
@@ -104,20 +103,13 @@ export function ProcedureCard({
 
   const handleCancelConfirm = async () => {
     if (!cancelReason.trim()) return
-    setCancelling(true)
     try {
-      const result = await cancelProcedureAction(procedure.id, cancelReason.trim())
-      if (result.success) {
-        setCancelDialogOpen(false)
-        setCancelReason('')
-        invalidateProcedures(patientId)
-        invalidateFinancial()
-        onStatusChange?.()
-      } else {
-        toast.error(result.error ?? 'Erro ao cancelar procedimento')
-      }
-    } finally {
-      setCancelling(false)
+      await cancelProcedure.mutateAsync({ id: procedure.id, reason: cancelReason.trim() })
+      setCancelDialogOpen(false)
+      setCancelReason('')
+      onStatusChange?.()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao cancelar procedimento')
     }
   }
 

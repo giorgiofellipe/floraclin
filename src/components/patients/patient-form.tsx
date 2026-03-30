@@ -2,11 +2,10 @@
 
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createPatientSchema, type CreatePatientInput, type UpdatePatientInput } from '@/validations/patient'
-import { createPatientAction, updatePatientAction } from '@/actions/patients'
-import { useInvalidation } from '@/hooks/queries/use-invalidation'
+import { useCreatePatient, useUpdatePatient } from '@/hooks/mutations/use-patient-mutations'
 import type { Patient } from '@/db/queries/patients'
 
 import { Button } from '@/components/ui/button'
@@ -42,10 +41,11 @@ interface PatientFormProps {
 
 export function PatientForm({ open, onOpenChange, patient, inline }: PatientFormProps) {
   const router = useRouter()
-  const [isPending, startTransition] = useTransition()
   const [serverError, setServerError] = useState<string | null>(null)
   const [addressOpen, setAddressOpen] = useState(false)
-  const { invalidatePatients, invalidatePatient } = useInvalidation()
+  const createPatient = useCreatePatient()
+  const updatePatientMutation = useUpdatePatient()
+  const isPending = createPatient.isPending || updatePatientMutation.isPending
 
   const isEditing = !!patient
 
@@ -76,39 +76,22 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
     },
   })
 
-  function onSubmit(data: CreatePatientInput) {
+  async function onSubmit(data: CreatePatientInput) {
     setServerError(null)
 
-    startTransition(async () => {
-      let result
+    try {
       if (isEditing && patient) {
-        result = await updatePatientAction({ id: patient.id, ...data } as UpdatePatientInput)
+        await updatePatientMutation.mutateAsync({ id: patient.id, ...data })
       } else {
-        result = await createPatientAction(data)
+        await createPatient.mutateAsync(data as Record<string, unknown>)
       }
-
-      if (result?.error) {
-        setServerError(result.error)
-        if (result.fieldErrors) {
-          Object.entries(result.fieldErrors).forEach(([field, errors]) => {
-            if (errors?.[0]) {
-              form.setError(field as keyof CreatePatientInput, { message: errors[0] })
-            }
-          })
-        }
-        return
-      }
-
-      if (result?.success) {
-        onOpenChange(false)
-        form.reset()
-        invalidatePatients()
-        if (isEditing && patient) {
-          invalidatePatient(patient.id)
-        }
-        router.refresh()
-      }
-    })
+      onOpenChange(false)
+      form.reset()
+      router.refresh()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro ao salvar paciente'
+      setServerError(message)
+    }
   }
 
   const formContent = (

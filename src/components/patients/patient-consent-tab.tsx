@@ -19,8 +19,6 @@ import {
 import { ConsentHistory } from '@/components/consent/consent-history'
 import { ConsentViewer } from '@/components/consent/consent-viewer'
 import { useConsentTemplates } from '@/hooks/queries/use-consent'
-import { useInvalidation } from '@/hooks/queries/use-invalidation'
-import { getConsentTemplateByIdAction } from '@/actions/consent'
 
 interface ConsentTemplate {
   id: string
@@ -39,7 +37,6 @@ export function PatientConsentTab({ patientId }: PatientConsentTabProps) {
   const [showNewConsent, setShowNewConsent] = useState(false)
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [selectedTemplate, setSelectedTemplate] = useState<ConsentTemplate | null>(null)
-  const { invalidateConsent } = useInvalidation()
 
   const { data: rawTemplates, isLoading: loadingTemplates } = useConsentTemplates()
   const templates = (rawTemplates
@@ -52,9 +49,14 @@ export function PatientConsentTab({ patientId }: PatientConsentTabProps) {
       return
     }
     async function load() {
-      const data = await getConsentTemplateByIdAction(selectedTemplateId)
-      if (data) {
-        setSelectedTemplate(data as ConsentTemplate)
+      try {
+        const res = await fetch(`/api/consent/templates/${selectedTemplateId}`)
+        if (res.ok) {
+          const data = await res.json()
+          setSelectedTemplate(data as ConsentTemplate)
+        }
+      } catch {
+        // ignore
       }
     }
     load()
@@ -64,7 +66,6 @@ export function PatientConsentTab({ patientId }: PatientConsentTabProps) {
     setShowNewConsent(false)
     setSelectedTemplateId('')
     setSelectedTemplate(null)
-    invalidateConsent()
   }
 
   return (

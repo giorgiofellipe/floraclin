@@ -28,9 +28,8 @@ import {
 } from '@/components/ui/dialog'
 import { cn, formatDateTime } from '@/lib/utils'
 import { PROCEDURE_STATUS_COLORS, PROCEDURE_STATUS_LABELS } from '@/lib/constants'
-import { cancelProcedureAction } from '@/actions/procedures'
 import { useProcedures } from '@/hooks/queries/use-procedures'
-import { useInvalidation } from '@/hooks/queries/use-invalidation'
+import { useCancelProcedure } from '@/hooks/mutations/use-procedure-mutations'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
@@ -57,13 +56,13 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
   const router = useRouter()
   const { data: proceduresResult, isLoading } = useProcedures(patientId)
   const procedures = (proceduresResult?.data ?? []) as unknown as ProcedureRecord[]
-  const { invalidateProcedures, invalidateFinancial } = useInvalidation()
+  const cancelProcedure = useCancelProcedure()
 
   // Cancel dialog state
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<string | null>(null)
   const [cancelReason, setCancelReason] = useState('')
-  const [cancelling, setCancelling] = useState(false)
+  const cancelling = cancelProcedure.isPending
 
   const handleCancelClick = (procedureId: string) => {
     setCancelTarget(procedureId)
@@ -72,18 +71,13 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
 
   const handleCancelConfirm = async () => {
     if (!cancelTarget || !cancelReason.trim()) return
-    setCancelling(true)
     try {
-      const result = await cancelProcedureAction(cancelTarget, cancelReason.trim())
-      if (result.success) {
-        setCancelDialogOpen(false)
-        setCancelReason('')
-        setCancelTarget(null)
-        invalidateProcedures(patientId)
-        invalidateFinancial()
-      }
-    } finally {
-      setCancelling(false)
+      await cancelProcedure.mutateAsync({ id: cancelTarget, reason: cancelReason.trim() })
+      setCancelDialogOpen(false)
+      setCancelReason('')
+      setCancelTarget(null)
+    } catch {
+      // error handled by mutation
     }
   }
 

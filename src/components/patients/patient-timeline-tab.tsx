@@ -114,7 +114,7 @@ export function PatientTimelineTab({ patientId }: PatientTimelineTabProps) {
   > = []
 
   for (const group of timeline.groups) {
-    const dates = group.entries.map((e) => new Date(e.date).getTime())
+    const dates = group.entries.map((e: TimelineEntry) => new Date(e.date).getTime())
     const earliest = dates.length > 0 ? Math.min(...dates) : 0
     chronologicalItems.push({ kind: 'group', group, sortDate: earliest })
   }

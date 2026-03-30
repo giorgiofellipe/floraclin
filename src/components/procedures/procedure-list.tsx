@@ -1,11 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Loader2, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ProcedureCard } from './procedure-card'
-import { listProceduresAction } from '@/actions/procedures'
+import { useProcedures } from '@/hooks/queries/use-procedures'
 import type { ProcedureListItem } from '@/db/queries/procedures'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -18,24 +17,8 @@ interface ProcedureListProps {
 
 export function ProcedureList({ patientId }: ProcedureListProps) {
   const router = useRouter()
-  const [procedures, setProcedures] = useState<ProcedureListItem[]>([])
-  const [loading, setLoading] = useState(true)
-
-  const loadProcedures = useCallback(async () => {
-    setLoading(true)
-    try {
-      const result = await listProceduresAction(patientId)
-      if (result.success && result.data) {
-        setProcedures(result.data)
-      }
-    } finally {
-      setLoading(false)
-    }
-  }, [patientId])
-
-  useEffect(() => {
-    loadProcedures()
-  }, [loadProcedures])
+  const { data: proceduresResult, isLoading: loading } = useProcedures(patientId)
+  const procedures: ProcedureListItem[] = proceduresResult?.data ?? proceduresResult ?? []
 
   const handleNewProcedure = () => {
     router.push(`/pacientes/${patientId}/procedimentos/novo`)
@@ -99,7 +82,7 @@ export function ProcedureList({ patientId }: ProcedureListProps) {
                   procedure={procedure}
                   patientId={patientId}
                   onClick={() => handleProcedureClick(procedure.id)}
-                  onStatusChange={loadProcedures}
+                  onStatusChange={() => {}}
                 />
               </div>
             ))}

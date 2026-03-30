@@ -1,13 +1,21 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { listProceduresAction, getProcedureAction, getLatestNonExecutedProcedureAction } from '@/actions/procedures'
 import { queryKeys } from './query-keys'
+
+async function fetchJson(url: string) {
+  const res = await fetch(url)
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}))
+    throw new Error(error.error || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
 
 export function useProcedures(patientId: string) {
   return useQuery({
     queryKey: queryKeys.procedures.list(patientId),
-    queryFn: () => listProceduresAction(patientId),
+    queryFn: () => fetchJson(`/api/procedures?patientId=${patientId}`),
     enabled: !!patientId,
   })
 }
@@ -15,7 +23,7 @@ export function useProcedures(patientId: string) {
 export function useProcedure(id: string) {
   return useQuery({
     queryKey: queryKeys.procedures.detail(id),
-    queryFn: () => getProcedureAction(id),
+    queryFn: () => fetchJson(`/api/procedures/${id}`),
     enabled: !!id,
   })
 }
@@ -23,7 +31,7 @@ export function useProcedure(id: string) {
 export function useLatestNonExecutedProcedure(patientId: string) {
   return useQuery({
     queryKey: queryKeys.procedures.latestNonExecuted(patientId),
-    queryFn: () => getLatestNonExecutedProcedureAction(patientId),
+    queryFn: () => fetchJson(`/api/procedures/latest?patientId=${patientId}`),
     enabled: !!patientId,
   })
 }

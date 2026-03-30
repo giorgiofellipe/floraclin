@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MaskedInput } from '@/components/ui/masked-input'
@@ -15,8 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { createProcedureTypeAction, updateProcedureTypeAction } from '@/actions/tenants'
-import { useInvalidation } from '@/hooks/queries/use-invalidation'
+import { useCreateProcedureType, useUpdateProcedureType } from '@/hooks/mutations/use-procedure-type-mutations'
 import { PROCEDURE_CATEGORIES } from '@/lib/constants'
 import { toast } from 'sonner'
 
@@ -46,8 +45,9 @@ interface ProcedureTypeFormProps {
 }
 
 export function ProcedureTypeForm({ initialData, onSuccess, onCancel }: ProcedureTypeFormProps) {
-  const [isPending, startTransition] = useTransition()
-  const { invalidateProcedureTypes } = useInvalidation()
+  const createProcedureType = useCreateProcedureType()
+  const updateProcedureTypeMutation = useUpdateProcedureType()
+  const isPending = createProcedureType.isPending || updateProcedureTypeMutation.isPending
   const [name, setName] = useState(initialData?.name || '')
   const [category, setCategory] = useState(initialData?.category || '')
   const [description, setDescription] = useState(initialData?.description || '')
@@ -67,31 +67,29 @@ export function ProcedureTypeForm({ initialData, onSuccess, onCancel }: Procedur
 
   const isEditing = !!initialData?.id
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
-    startTransition(async () => {
-      const formData = {
-        name,
-        category: category as (typeof PROCEDURE_CATEGORIES)[number],
-        description,
-        defaultPrice: defaultPrice ? String(parseCurrency(defaultPrice)) : '',
-        estimatedDurationMin: parseInt(estimatedDurationMin) || 60,
-        isActive,
-      }
+    const formData = {
+      name,
+      category: category as (typeof PROCEDURE_CATEGORIES)[number],
+      description,
+      defaultPrice: defaultPrice ? String(parseCurrency(defaultPrice)) : '',
+      estimatedDurationMin: parseInt(estimatedDurationMin) || 60,
+      isActive,
+    }
 
-      const result = isEditing
-        ? await updateProcedureTypeAction({ id: initialData!.id, ...formData })
-        : await createProcedureTypeAction(formData)
-
-      if (result?.success) {
-        toast.success(isEditing ? 'Procedimento atualizado' : 'Procedimento criado')
-        invalidateProcedureTypes()
-        onSuccess?.()
+    try {
+      if (isEditing) {
+        await updateProcedureTypeMutation.mutateAsync({ id: initialData!.id, ...formData })
       } else {
-        toast.error(result?.error || 'Erro ao salvar procedimento')
+        await createProcedureType.mutateAsync(formData)
       }
-    })
+      toast.success(isEditing ? 'Procedimento atualizado' : 'Procedimento criado')
+      onSuccess?.()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao salvar procedimento')
+    }
   }
 
   return (
