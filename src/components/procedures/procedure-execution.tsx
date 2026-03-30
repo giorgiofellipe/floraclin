@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -32,11 +32,7 @@ import { FaceDiagramEditor } from '@/components/face-diagram/face-diagram-editor
 import type { DiagramPointData, CatalogProduct } from '@/components/face-diagram/types'
 import { PhotoUploader } from '@/components/photos/photo-uploader'
 import { PhotoGrid } from '@/components/photos/photo-grid'
-import {
-  executeProcedureAction,
-  getPreviousDiagramPointsAction,
-} from '@/actions/procedures'
-import { listDiagramProductsAction } from '@/actions/products-catalog'
+import { useExecuteProcedure } from '@/hooks/mutations/use-procedure-mutations'
 import type { DiagramViewType, QuantityUnit } from '@/types'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
@@ -245,6 +241,7 @@ export function ProcedureExecution({
   wizardOverrides,
 }: ProcedureExecutionProps) {
   const router = useRouter()
+  const executeProcedure = useExecuteProcedure()
   const isExecuted = procedure.status === 'executed'
   const isReadOnly = isExecuted
 
@@ -361,8 +358,11 @@ export function ProcedureExecution({
   // ─── Load catalog products ────────────────────────────────────────
   useEffect(() => {
     async function load() {
-      const prods = await listDiagramProductsAction()
-      setCatalogProducts(prods as CatalogProduct[])
+      const res = await fetch('/api/products?filter=diagram')
+      if (res.ok) {
+        const prods = await res.json()
+        setCatalogProducts(prods as CatalogProduct[])
+      }
     }
     load()
   }, [])
@@ -489,20 +489,21 @@ export function ProcedureExecution({
             ]
           : undefined
 
-      const result = await executeProcedureAction(procedure.id, {
-        technique: technique || undefined,
-        clinicalResponse: clinicalResponse || undefined,
-        adverseEffects: adverseEffects || undefined,
-        notes: notes || undefined,
-        followUpDate: followUpDate || undefined,
-        nextSessionObjectives: nextSessionObjectives || undefined,
-        diagrams: diagramsPayload,
-        productApplications:
-          productApps.length > 0 ? productApps : undefined,
-      })
-
-      if (!result.success) {
-        setSubmitError(result.error ?? 'Erro ao registrar execucao')
+      try {
+        await executeProcedure.mutateAsync({
+          id: procedure.id,
+          technique: technique || undefined,
+          clinicalResponse: clinicalResponse || undefined,
+          adverseEffects: adverseEffects || undefined,
+          notes: notes || undefined,
+          followUpDate: followUpDate || undefined,
+          nextSessionObjectives: nextSessionObjectives || undefined,
+          diagrams: diagramsPayload,
+          productApplications:
+            productApps.length > 0 ? productApps : undefined,
+        })
+      } catch (err) {
+        setSubmitError(err instanceof Error ? err.message : 'Erro ao registrar execução')
         return
       }
 
@@ -511,7 +512,7 @@ export function ProcedureExecution({
         router.push(`/pacientes/${patientId}?tab=procedimentos`)
       }
     } catch {
-      setSubmitError('Erro inesperado ao registrar execucao')
+      setSubmitError('Erro inesperado ao registrar execução')
     } finally {
       setIsSubmitting(false)
     }
@@ -533,13 +534,17 @@ export function ProcedureExecution({
   ])
 
   // ─── Wizard triggerSave: execute and call onSaveComplete ──────────
+  const prevTriggerSaveRef = useRef(wizardOverrides?.triggerSave ?? 0)
+  
   useEffect(() => {
-    if (!wizardOverrides?.triggerSave) return
+    const current = wizardOverrides?.triggerSave ?? 0
+    if (current === 0 || current === prevTriggerSaveRef.current) return
+    prevTriggerSaveRef.current = current
     async function doSave() {
       if (isSubmitting || isReadOnly) {
         wizardOverrides?.onSaveComplete?.({
           success: false,
-          error: 'Formulario indisponivel',
+          error: 'Formulário indisponível',
           errorType: 'precondition',
         })
         return
@@ -569,36 +574,36 @@ export function ProcedureExecution({
               ]
             : undefined
 
-        const result = await executeProcedureAction(procedure.id, {
-          technique: technique || undefined,
-          clinicalResponse: clinicalResponse || undefined,
-          adverseEffects: adverseEffects || undefined,
-          notes: notes || undefined,
-          followUpDate: followUpDate || undefined,
-          nextSessionObjectives: nextSessionObjectives || undefined,
-          diagrams: diagramsPayload,
-          productApplications:
-            productApps.length > 0 ? productApps : undefined,
-        })
-
-        if (result.success) {
+        try {
+          await executeProcedure.mutateAsync({
+            id: procedure.id,
+            technique: technique || undefined,
+            clinicalResponse: clinicalResponse || undefined,
+            adverseEffects: adverseEffects || undefined,
+            notes: notes || undefined,
+            followUpDate: followUpDate || undefined,
+            nextSessionObjectives: nextSessionObjectives || undefined,
+            diagrams: diagramsPayload,
+            productApplications:
+              productApps.length > 0 ? productApps : undefined,
+          })
           wizardOverrides?.onSaveComplete?.({
             success: true,
             procedureId: procedure.id,
           })
-        } else {
-          setSubmitError(result.error ?? 'Erro ao registrar execucao')
+        } catch (execErr) {
+          setSubmitError(execErr instanceof Error ? execErr.message : 'Erro ao registrar execução')
           wizardOverrides?.onSaveComplete?.({
             success: false,
-            error: result.error ?? 'Erro ao registrar execucao',
+            error: execErr instanceof Error ? execErr.message : 'Erro ao registrar execução',
             errorType: 'server',
           })
         }
       } catch {
-        setSubmitError('Erro inesperado ao registrar execucao')
+        setSubmitError('Erro inesperado ao registrar execução')
         wizardOverrides?.onSaveComplete?.({
           success: false,
-          error: 'Erro inesperado ao registrar execucao',
+          error: 'Erro inesperado ao registrar execução',
           errorType: 'server',
         })
       } finally {
@@ -625,7 +630,7 @@ export function ProcedureExecution({
             </Button>
             <div>
               <h1 className="font-display text-xl text-forest">
-                {isExecuted ? 'Detalhes da Execucao' : 'Registrar Execucao'}
+                {isExecuted ? 'Detalhes da Execução' : 'Registrar Execução'}
               </h1>
               <p className="mt-0.5 text-sm text-mid">
                 {procedure.procedureTypeName}
@@ -816,7 +821,7 @@ export function ProcedureExecution({
 
                     <div className="mt-3">
                       <Label className="uppercase tracking-wider text-xs text-mid">
-                        Areas de aplicacao
+                        Áreas de aplicação
                       </Label>
                       <Input
                         value={app.applicationAreas ?? ''}
@@ -857,7 +862,7 @@ export function ProcedureExecution({
 
       {/* ── Clinical Notes ───────────────────────────────────────────── */}
       <Section
-        title="Notas Clinicas"
+        title="Notas Clínicas"
         icon={<FileText className="size-4 text-forest" />}
         open={openSections.clinicalNotes}
         onToggle={() => toggleSection('clinicalNotes')}
@@ -865,12 +870,12 @@ export function ProcedureExecution({
         <div className="space-y-5">
           <div>
             <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Tecnica utilizada
+              Técnica utilizada
             </Label>
             <Textarea
               value={technique}
               onChange={(e) => setTechnique(e.target.value)}
-              placeholder="Descreva a tecnica utilizada..."
+              placeholder="Descreva a técnica utilizada..."
               disabled={isReadOnly}
               className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
               rows={3}
@@ -879,12 +884,12 @@ export function ProcedureExecution({
 
           <div className="border-t border-petal pt-5">
             <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Resposta clinica
+              Resposta clínica
             </Label>
             <Textarea
               value={clinicalResponse}
               onChange={(e) => setClinicalResponse(e.target.value)}
-              placeholder="Descreva a resposta clinica observada..."
+              placeholder="Descreva a resposta clínica observada..."
               disabled={isReadOnly}
               className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
               rows={3}
@@ -907,12 +912,12 @@ export function ProcedureExecution({
 
           <div className="border-t border-petal pt-5">
             <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Observacoes gerais
+              Observações gerais
             </Label>
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Observacoes adicionais sobre o procedimento..."
+              placeholder="Observações adicionais sobre o procedimento..."
               disabled={isReadOnly}
               className="mt-1.5 min-h-[60px] resize-none border-sage/20 focus:border-sage/40"
               rows={2}
@@ -923,7 +928,7 @@ export function ProcedureExecution({
 
       {/* ── Pre-Procedure Photos ────────────────────────────────────── */}
       <Section
-        title="Fotos Pre-Procedimento"
+        title="Fotos Pré-Procedimento"
         icon={<Camera className="size-4 text-forest" />}
         open={openSections.prePhotos}
         onToggle={() => toggleSection('prePhotos')}
@@ -950,7 +955,7 @@ export function ProcedureExecution({
 
       {/* ── Post-Procedure Photos ───────────────────────────────────── */}
       <Section
-        title="Fotos Pos-Procedimento"
+        title="Fotos Pós-Procedimento"
         icon={<Camera className="size-4 text-forest" />}
         open={openSections.postPhotos}
         onToggle={() => toggleSection('postPhotos')}
@@ -978,7 +983,7 @@ export function ProcedureExecution({
       {/* ── Follow-up (optional) ──────────────────────────────────────── */}
       {!isReadOnly && (
         <Section
-          title="Retorno e Proxima Sessao"
+          title="Retorno e Próxima Sessão"
           icon={<CalendarPlus className="size-4 text-forest" />}
           open={openSections.followUp}
           onToggle={() => toggleSection('followUp')}
@@ -998,12 +1003,12 @@ export function ProcedureExecution({
 
             <div className="border-t border-petal pt-5">
               <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-                Objetivos para proxima sessao
+                Objetivos para próxima sessão
               </Label>
               <Textarea
                 value={nextSessionObjectives}
                 onChange={(e) => setNextSessionObjectives(e.target.value)}
-                placeholder="Descreva os objetivos para a proxima sessao..."
+                placeholder="Descreva os objetivos para a próxima sessão..."
                 className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
                 rows={3}
               />
@@ -1015,7 +1020,7 @@ export function ProcedureExecution({
       {/* ── Read-only follow-up info ──────────────────────────────────── */}
       {isReadOnly && (procedure.followUpDate || procedure.nextSessionObjectives) && (
         <Section
-          title="Retorno e Proxima Sessao"
+          title="Retorno e Próxima Sessão"
           icon={<CalendarPlus className="size-4 text-forest" />}
           open={openSections.followUp}
           onToggle={() => toggleSection('followUp')}
@@ -1036,7 +1041,7 @@ export function ProcedureExecution({
             {procedure.nextSessionObjectives && (
               <div className="border-t border-petal pt-4">
                 <Label className="uppercase tracking-wider text-xs text-mid mb-1 block">
-                  Objetivos para proxima sessao
+                  Objetivos para próxima sessão
                 </Label>
                 <p className="text-sm text-charcoal whitespace-pre-wrap">
                   {procedure.nextSessionObjectives}

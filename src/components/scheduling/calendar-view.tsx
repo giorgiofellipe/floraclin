@@ -15,7 +15,7 @@ import {
   endOfMonth,
 } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -29,7 +29,7 @@ import { DayView } from '@/components/scheduling/day-view'
 import { WeekView } from '@/components/scheduling/week-view'
 import { MonthView } from '@/components/scheduling/month-view'
 import { AppointmentForm } from '@/components/scheduling/appointment-form'
-import { listAppointmentsAction } from '@/actions/appointments'
+import { useAppointments } from '@/hooks/queries/use-appointments'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
 
 type ViewType = 'day' | 'week' | 'month'
@@ -92,19 +92,27 @@ export function CalendarView({
   initialAppointments,
 }: CalendarViewProps) {
   const router = useRouter()
-  const searchParams = useSearchParams()
 
   const [currentDate, setCurrentDate] = React.useState(new Date(initialDate + 'T12:00:00'))
   const [view, setView] = React.useState<ViewType>(initialView)
   const [practitionerId, setPractitionerId] = React.useState(initialPractitionerId ?? 'all')
-  const [appointments, setAppointments] = React.useState(initialAppointments)
-  const [isLoading, setIsLoading] = React.useState(false)
 
   // Form dialog state
   const [formOpen, setFormOpen] = React.useState(false)
   const [editingAppointment, setEditingAppointment] = React.useState<AppointmentWithDetails | null>(null)
   const [defaultFormDate, setDefaultFormDate] = React.useState<string>('')
   const [defaultFormTime, setDefaultFormTime] = React.useState<string>('')
+
+  // Derive date range from current state
+  const { dateFrom, dateTo } = getDateRange(currentDate, view)
+  const queryPractitionerId = practitionerId !== 'all' ? practitionerId : undefined
+
+  // Use React Query for appointments data
+  const { data: appointments = initialAppointments, isLoading } = useAppointments(
+    queryPractitionerId,
+    dateFrom,
+    dateTo
+  )
 
   // Update URL params
   const updateUrl = React.useCallback(
@@ -116,25 +124,6 @@ export function CalendarView({
       router.replace(`/agenda?${params.toString()}`, { scroll: false })
     },
     [router]
-  )
-
-  // Fetch appointments when date/view/practitioner changes
-  const fetchAppointments = React.useCallback(
-    async (d: Date, v: ViewType, p: string) => {
-      setIsLoading(true)
-      try {
-        const { dateFrom, dateTo } = getDateRange(d, v)
-        const data = await listAppointmentsAction(
-          p !== 'all' ? p : undefined,
-          dateFrom,
-          dateTo
-        )
-        setAppointments(data)
-      } finally {
-        setIsLoading(false)
-      }
-    },
-    []
   )
 
   const navigate = (direction: 'prev' | 'next') => {
@@ -152,26 +141,22 @@ export function CalendarView({
     }
     setCurrentDate(newDate)
     updateUrl(newDate, view, practitionerId)
-    fetchAppointments(newDate, view, practitionerId)
   }
 
   const goToToday = () => {
     const today = new Date()
     setCurrentDate(today)
     updateUrl(today, view, practitionerId)
-    fetchAppointments(today, view, practitionerId)
   }
 
   const changeView = (newView: ViewType) => {
     setView(newView)
     updateUrl(currentDate, newView, practitionerId)
-    fetchAppointments(currentDate, newView, practitionerId)
   }
 
   const changePractitioner = (newPractitionerId: string) => {
     setPractitionerId(newPractitionerId)
     updateUrl(currentDate, view, newPractitionerId)
-    fetchAppointments(currentDate, view, newPractitionerId)
   }
 
   const handleSlotClick = (date: string, time: string) => {
@@ -193,7 +178,6 @@ export function CalendarView({
     setCurrentDate(newDate)
     setView('day')
     updateUrl(newDate, 'day', practitionerId)
-    fetchAppointments(newDate, 'day', practitionerId)
   }
 
   const handleFormOpenChange = React.useCallback((open: boolean) => {
@@ -203,10 +187,10 @@ export function CalendarView({
     }
   }, [])
 
-  // Refetch when form closes (separate from the open/close handler to avoid loops)
+  // After mutations, React Query invalidation handles refetch automatically
   const handleFormSaved = React.useCallback(() => {
-    fetchAppointments(currentDate, view, practitionerId)
-  }, [currentDate, view, practitionerId, fetchAppointments])
+    // No-op: mutation hooks' onSuccess invalidates appointments query automatically
+  }, [])
 
   const handleNewAppointment = () => {
     setEditingAppointment(null)
@@ -265,7 +249,7 @@ export function CalendarView({
             {([
               ['day', 'Dia'],
               ['week', 'Semana'],
-              ['month', 'Mês'],
+              ['month', 'Mes'],
             ] as const).map(([v, label]) => (
               <button
                 key={v}

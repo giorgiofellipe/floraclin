@@ -49,25 +49,33 @@ import type { DiagramPointData, CatalogProduct } from '@/components/face-diagram
 import { PhotoUploader } from '@/components/photos/photo-uploader'
 import { PhotoGrid } from '@/components/photos/photo-grid'
 import { ConsentViewer } from '@/components/consent/consent-viewer'
-import {
-  createProcedureAction,
-  updateProcedureAction,
-  listProcedureTypesAction,
-  checkConsentStatusAction,
-  getPreviousDiagramPointsAction,
-} from '@/actions/procedures'
-import { listDiagramProductsAction } from '@/actions/products-catalog'
-import { getActiveConsentForTypeAction } from '@/actions/consent'
-import {
-  listPractitionersAction,
-  listProcedureTypesForSelectAction,
-} from '@/actions/appointments'
+import { useCreateProcedure, useUpdateProcedure } from '@/hooks/mutations/use-procedure-mutations'
+import { useSaveEvaluationResponse } from '@/hooks/mutations/use-evaluation-mutations'
 import type { DiagramViewType, QuantityUnit, PaymentMethod } from '@/types'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
 import type { ProductApplicationItem } from '@/validations/procedure'
 import type { WizardOverrides } from '@/components/service-wizard/types'
+import type { EvaluationSection, EvaluationResponses } from '@/types/evaluation'
+import { TemplateRenderer } from '@/components/evaluation/template-renderer'
+import { validateEvaluationResponses } from '@/lib/evaluation-utils'
+
+// ─── Evaluation template type for the form ────────────────────────
+
+export interface EvaluationTemplateForForm {
+  id: string
+  procedureTypeId: string
+  procedureTypeName: string
+  sections: EvaluationSection[]
+  version: number
+}
+
+export interface ExistingEvaluationResponse {
+  templateId: string
+  responses: EvaluationResponses
+  templateSnapshot: EvaluationSection[]
+}
 
 // ─── Consent type mapping from procedure category ──────────────────
 
@@ -139,6 +147,9 @@ interface ProcedureFormProps {
   initialTypeIds?: string[]
   mode?: 'create' | 'edit' | 'view'
   wizardOverrides?: WizardOverrides
+  evaluationTemplates?: EvaluationTemplateForForm[]
+  existingEvaluationResponses?: ExistingEvaluationResponse[]
+  loadingEvaluationTemplates?: boolean
 }
 
 // ─── Collapsible Section ───────────────────────────────────────────
@@ -209,8 +220,14 @@ export function ProcedureForm({
   initialTypeIds,
   mode = 'create',
   wizardOverrides,
+  evaluationTemplates: evalTemplates,
+  existingEvaluationResponses,
+  loadingEvaluationTemplates = false,
 }: ProcedureFormProps) {
   const router = useRouter()
+  const createProcedureMutation = useCreateProcedure()
+  const updateProcedureMutation = useUpdateProcedure()
+  const saveEvalResponse = useSaveEvaluationResponse()
   const isReadOnly = mode === 'view'
   const isEdit = mode === 'edit'
 
@@ -339,6 +356,30 @@ export function ProcedureForm({
     }
   )
 
+  // ─── Evaluation responses state ──────────────────────────────────
+  const [evaluationResponses, setEvaluationResponses] = useState<
+    Record<string, Record<string, unknown>>
+  >(() => {
+    if (existingEvaluationResponses && existingEvaluationResponses.length > 0) {
+      const map: Record<string, Record<string, unknown>> = {}
+      for (const r of existingEvaluationResponses) {
+        map[r.templateId] = r.responses as Record<string, unknown>
+      }
+      return map
+    }
+    return {}
+  })
+
+  const handleEvaluationResponseChange = useCallback(
+    (templateId: string, responses: Record<string, unknown>) => {
+      setEvaluationResponses((prev) => ({ ...prev, [templateId]: responses }))
+    },
+    []
+  )
+
+  // ─── Evaluation validation state ─────────────────────────────────
+  const [showEvalErrors, setShowEvalErrors] = useState(false)
+
   // ─── Photo state ─────────────────────────────────────────────────
   const [photoRefreshKey, setPhotoRefreshKey] = useState(0)
 
@@ -376,12 +417,12 @@ export function ProcedureForm({
   useEffect(() => {
     async function load() {
       try {
-        const [types, prods] = await Promise.all([
-          listProcedureTypesAction(),
-          listDiagramProductsAction(),
+        const [typesRes, prodsRes] = await Promise.all([
+          fetch('/api/procedure-types'),
+          fetch('/api/products?filter=diagram'),
         ])
-        setProcedureTypes(types as ProcedureType[])
-        setCatalogProducts(prods as CatalogProduct[])
+        if (typesRes.ok) setProcedureTypes(await typesRes.json() as ProcedureType[])
+        if (prodsRes.ok) setCatalogProducts(await prodsRes.json() as CatalogProduct[])
       } finally {
         setLoadingTypes(false)
       }
@@ -392,19 +433,20 @@ export function ProcedureForm({
   // ─── Load previous diagram points (ghost overlay) ────────────────
   useEffect(() => {
     async function load() {
-      const result = await getPreviousDiagramPointsAction(
-        patientId,
-        procedure?.id
-      )
-      if (result.success && result.data && result.data.length > 0) {
+      const params = new URLSearchParams({ patientId })
+      if (procedure?.id) params.set('excludeProcedureId', procedure.id)
+      const res = await fetch(`/api/face-diagrams?${params}`)
+      const data = res.ok ? await res.json() : []
+      if (data && data.length > 0) {
         setPreviousPoints(
-          result.data.map((p) => ({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          data.map((p: any) => ({
             id: p.id,
-            x: parseFloat(p.x),
-            y: parseFloat(p.y),
+            x: parseFloat(String(p.x)),
+            y: parseFloat(String(p.y)),
             productName: p.productName,
             activeIngredient: p.activeIngredient ?? undefined,
-            quantity: parseFloat(p.quantity),
+            quantity: parseFloat(String(p.quantity)),
             quantityUnit: p.quantityUnit as QuantityUnit,
             technique: p.technique ?? undefined,
             depth: p.depth ?? undefined,
@@ -417,19 +459,23 @@ export function ProcedureForm({
   }, [patientId, procedure?.id])
 
   // ─── Auto-sum default prices for financial plan total ──────────────
+  // Simplified: compute sum from the best available type IDs + loaded procedure types.
+  // Only auto-fill when totalAmount is empty (never override manual edits).
   const lastAutoSumRef = useRef<string>('')
+  const prevTypeIdsKeyRef = useRef<string>('')
 
   useEffect(() => {
     if (!isPlanningMode || isReadOnly) return
     if (procedureTypes.length === 0) return
 
-    const allSelectedIds = [procedureTypeId, ...additionalTypeIds].filter(Boolean)
-    if (allSelectedIds.length === 0) {
-      lastAutoSumRef.current = ''
-      return
-    }
+    // Best source of selected type IDs: initialTypeIds (from wizard step 2) or local state
+    const fromState = [procedureTypeId, ...additionalTypeIds].filter(Boolean)
+    const selectedIds = fromState.length > 0 ? fromState : (initialTypeIds ?? [])
+    if (selectedIds.length === 0) return
 
-    const sum = allSelectedIds.reduce((acc, id) => {
+    const typeIdsKey = selectedIds.sort().join(',')
+
+    const sum = selectedIds.reduce((acc, id) => {
       const type = procedureTypes.find((t) => t.id === id)
       if (type?.defaultPrice) {
         return acc + parseFloat(type.defaultPrice)
@@ -439,21 +485,26 @@ export function ProcedureForm({
 
     if (sum <= 0) return
 
-    // Convert sum to cents string then mask
     const centsStr = String(Math.round(sum * 100))
     const masked = maskCurrency(centsStr)
 
+    // If the type selection changed, always recalculate (clear protection)
+    if (typeIdsKey !== prevTypeIdsKeyRef.current) {
+      prevTypeIdsKeyRef.current = typeIdsKey
+      lastAutoSumRef.current = masked
+      setFinancialPlan((prev) => ({ ...prev, totalAmount: masked }))
+      return
+    }
+
+    // Otherwise only fill if empty or matches last auto-calculated value
     setFinancialPlan((prev) => {
-      // Only auto-fill if current total is empty or matches the previous auto-calculated value
       if (prev.totalAmount === '' || prev.totalAmount === lastAutoSumRef.current) {
         lastAutoSumRef.current = masked
         return { ...prev, totalAmount: masked }
       }
-      // User has manually changed the value — don't override
-      lastAutoSumRef.current = masked
       return prev
     })
-  }, [procedureTypeId, additionalTypeIds, procedureTypes, isPlanningMode, isReadOnly])
+  }, [procedureTypeId, additionalTypeIds, procedureTypes, isPlanningMode, isReadOnly, initialTypeIds])
 
   // ─── Check consent when procedure type changes (skip in planning mode) ──
   const selectedType = useMemo(
@@ -477,16 +528,20 @@ export function ProcedureForm({
     async function checkConsent() {
       setConsentChecking(true)
       try {
-        const result = await checkConsentStatusAction(patientId, consentType)
-        if (result.success && result.data) {
-          setConsentStatus(result.data)
+        const checkRes = await fetch(`/api/consent/history/${patientId}?type=${consentType}`)
+        const checkData = checkRes.ok ? await checkRes.json() : null
+        if (checkData && checkData.length > 0) {
+          setConsentStatus(checkData[0])
           setConsentTemplate(null)
         } else {
           setConsentStatus(null)
-          // Try to load template — also try 'general' as fallback
-          let template = await getActiveConsentForTypeAction(consentType).catch(() => null)
+          // Try to load template -- also try 'general' as fallback
+          let template = null
+          const tplRes = await fetch(`/api/consent/templates?type=${consentType}&active=true`).catch(() => null)
+          if (tplRes?.ok) template = await tplRes.json()
           if (!template && consentType !== 'general') {
-            template = await getActiveConsentForTypeAction('general').catch(() => null)
+            const fallbackRes = await fetch('/api/consent/templates?type=general&active=true').catch(() => null)
+            if (fallbackRes?.ok) template = await fallbackRes.json()
           }
           setConsentTemplate(template ?? null)
         }
@@ -591,8 +646,45 @@ export function ProcedureForm({
     []
   )
 
+  // ─── Evaluation validation helper ──────────────────────────────────
+  const runEvaluationValidation = useCallback((): string | null => {
+    if (!evalTemplates || evalTemplates.length === 0) return null
+
+    const allMissing: { templateName: string; sectionTitle: string; questionLabel: string }[] = []
+
+    for (const template of evalTemplates) {
+      const responses = (evaluationResponses[template.id] ?? {}) as Record<string, unknown>
+      const result = validateEvaluationResponses(template.sections, responses)
+      if (!result.valid) {
+        for (const m of result.missingQuestions) {
+          allMissing.push({
+            templateName: template.procedureTypeName,
+            sectionTitle: m.sectionTitle,
+            questionLabel: m.questionLabel,
+          })
+        }
+      }
+    }
+
+    if (allMissing.length === 0) return null
+
+    const lines = allMissing.map(
+      (m) => `• ${m.sectionTitle} — ${m.questionLabel}`
+    )
+    return `Preencha os campos obrigatórios:\n${lines.join('\n')}`
+  }, [evalTemplates, evaluationResponses])
+
   const handleSubmit = useCallback(async () => {
     if (isSubmitting || isReadOnly) return
+
+    // Validate evaluation template required questions
+    const evalError = runEvaluationValidation()
+    if (evalError) {
+      setShowEvalErrors(true)
+      setSubmitError(evalError)
+      return
+    }
+    setShowEvalErrors(false)
 
     setIsSubmitting(true)
     setSubmitError(null)
@@ -646,12 +738,38 @@ export function ProcedureForm({
 
       let result
       if (isEdit && procedure?.id) {
-        result = await updateProcedureAction(procedure.id, payload)
+        result = await updateProcedureMutation.mutateAsync({ id: procedure.id, ...payload })
       } else {
-        result = await createProcedureAction(payload)
+        result = await createProcedureMutation.mutateAsync(payload)
       }
 
-      if (result.success) {
+      if (result) {
+        // Save evaluation responses (standalone form)
+        const savedProcedureId = (result.data as { id: string } | undefined)?.id ?? procedure?.id
+        if (savedProcedureId && evalTemplates && evalTemplates.length > 0) {
+          const responsePromises = evalTemplates
+            .filter((t) => {
+              const resp = evaluationResponses[t.id]
+              return resp && Object.keys(resp).length > 0
+            })
+            .map((t) =>
+              saveEvalResponse.mutateAsync({
+                procedureRecordId: savedProcedureId,
+                templateId: t.id,
+                responses: evaluationResponses[t.id] as EvaluationResponses,
+              })
+            )
+
+          if (responsePromises.length > 0) {
+            const responseResults = await Promise.all(responsePromises)
+            const failed = responseResults.find((r: Record<string, unknown>) => r?.error)
+            if (failed) {
+              setSubmitError(failed.error ?? 'Erro ao salvar respostas da avaliação')
+              return
+            }
+          }
+        }
+
         if (wizardOverrides?.hideNavigation) {
           // In wizard mode, suppress all navigation — wizard controls flow
         } else if (isPlanningMode) {
@@ -701,17 +819,47 @@ export function ProcedureForm({
     diagramPoints,
     productApps,
     financialPlan,
+    evalTemplates,
+    evaluationResponses,
+    runEvaluationValidation,
     router,
   ])
 
+  // ─── Refs for latest values (avoids stale closures in triggerSave useEffect) ──
+  const runEvaluationValidationRef = useRef(runEvaluationValidation)
+  runEvaluationValidationRef.current = runEvaluationValidation
+  const evaluationResponsesRef = useRef(evaluationResponses)
+  evaluationResponsesRef.current = evaluationResponses
+  const diagramPointsRef = useRef(diagramPoints)
+  diagramPointsRef.current = diagramPoints
+  const financialPlanRef = useRef(financialPlan)
+  financialPlanRef.current = financialPlan
+  const procedureTypeIdRef = useRef(procedureTypeId)
+  procedureTypeIdRef.current = procedureTypeId
+  const additionalTypeIdsRef = useRef(additionalTypeIds)
+  additionalTypeIdsRef.current = additionalTypeIds
+
   // ─── Wizard triggerSave: run save logic and call onSaveComplete ──
+  // Track last processed trigger value instead of a boolean mount guard.
+  // A boolean fails in React Strict Mode (double-fire consumes the guard).
+  const lastTriggerRef = useRef<number | null>(null)
+
   useEffect(() => {
-    if (!wizardOverrides?.triggerSave) return
+    const current = wizardOverrides?.triggerSave ?? 0
+    if (current === 0) return
+    // First time seeing a non-zero value (step became active): record and skip
+    if (lastTriggerRef.current === null) {
+      lastTriggerRef.current = current
+      return
+    }
+    // Same value as last processed (strict mode re-fire or no change): skip
+    if (current === lastTriggerRef.current) return
+    lastTriggerRef.current = current
     async function doSave() {
       if (isSubmitting || isReadOnly) {
         wizardOverrides?.onSaveComplete?.({
           success: false,
-          error: 'Formulario indisponivel',
+          error: 'Formulário indisponível',
           errorType: 'precondition',
         })
         return
@@ -725,6 +873,19 @@ export function ProcedureForm({
         })
         return
       }
+
+      // Validate evaluation template required questions (use ref for latest state)
+      const evalError = runEvaluationValidationRef.current()
+      if (evalError) {
+        setShowEvalErrors(true)
+        wizardOverrides?.onSaveComplete?.({
+          success: false,
+          error: evalError,
+          errorType: 'validation',
+        })
+        return
+      }
+      setShowEvalErrors(false)
 
       setIsSubmitting(true)
       setSubmitError(null)
@@ -776,13 +937,45 @@ export function ProcedureForm({
 
         let result
         if (isEdit && procedure?.id) {
-          result = await updateProcedureAction(procedure.id, payload)
+          result = await updateProcedureMutation.mutateAsync({ id: procedure.id, ...payload })
         } else {
-          result = await createProcedureAction(payload)
+          result = await createProcedureMutation.mutateAsync(payload)
         }
 
-        if (result.success) {
+        if (result) {
           const createdId = (result.data as { id: string } | undefined)?.id ?? procedure?.id
+
+          // Save evaluation responses if we have templates with answers
+          if (createdId && evalTemplates && evalTemplates.length > 0) {
+            const responsePromises = evalTemplates
+              .filter((t) => {
+                const resp = evaluationResponses[t.id]
+                return resp && Object.keys(resp).length > 0
+              })
+              .map((t) =>
+                saveEvalResponse.mutateAsync({
+                  procedureRecordId: createdId,
+                  templateId: t.id,
+                  responses: evaluationResponses[t.id] as EvaluationResponses,
+                })
+              )
+
+            if (responsePromises.length > 0) {
+              const responseResults = await Promise.all(responsePromises)
+              const failed = responseResults.find((r: Record<string, unknown>) => r?.error)
+              if (failed) {
+                const failedError = (failed as Record<string, string>).error ?? 'Erro ao salvar respostas da avaliação'
+                setSubmitError(failedError)
+                wizardOverrides?.onSaveComplete?.({
+                  success: false,
+                  error: failedError,
+                  errorType: 'server',
+                })
+                return
+              }
+            }
+          }
+
           wizardOverrides?.onSaveComplete?.({
             success: true,
             procedureId: createdId,
@@ -839,7 +1032,7 @@ export function ProcedureForm({
           )}
           {isPlanningMode && (
             <p className="mt-1.5 text-sm text-mid">
-              Defina os procedimentos, pontos de aplicacao e plano financeiro.
+              Defina os procedimentos, pontos de aplicação e plano financeiro.
             </p>
           )}
         </div>
@@ -891,7 +1084,7 @@ export function ProcedureForm({
             </div>
           ) : (
             <div className="space-y-2">
-              <p className="text-xs text-mid">Selecione um ou mais tipos (o primeiro sera o principal).</p>
+              <p className="text-xs text-mid">Selecione um ou mais tipos (o primeiro será o principal).</p>
               <div className="grid gap-2 sm:grid-cols-2">
                 {procedureTypes.map((type) => {
                   const allSelected = [procedureTypeId, ...additionalTypeIds]
@@ -1051,7 +1244,7 @@ export function ProcedureForm({
       {/* ── Pre-Procedure Photos (HIDDEN in planning mode) ─────────── */}
       {!isPlanningMode && (
         <Section
-          title="Fotos Pre-Procedimento"
+          title="Fotos Pré-Procedimento"
           icon={<Camera className="size-4 text-forest" />}
           open={openSections.prePhotos}
           onToggle={() => toggleSection('prePhotos')}
@@ -1076,41 +1269,101 @@ export function ProcedureForm({
         </Section>
       )}
 
-      {/* ── Face Diagram ────────────────────────────────────────────── */}
-      <Section
-        title="Diagrama Facial"
-        icon={
-          <svg
-            className="size-4 text-forest"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <circle cx="12" cy="10" r="7" />
-            <path d="M12 17v4M8 21h8" />
-          </svg>
-        }
-        open={openSections.diagram}
-        onToggle={() => toggleSection('diagram')}
-        badge={
-          diagramPoints.length > 0 ? (
-            <Badge variant="outline" className="text-xs border-sage/30 bg-sage/5 text-sage">
-              {diagramPoints.length}{' '}
-              {diagramPoints.length === 1 ? 'ponto' : 'pontos'}
-            </Badge>
-          ) : undefined
-        }
-      >
-        <FaceDiagramEditor
-          points={diagramPoints}
-          onChange={setDiagramPoints}
-          previousPoints={previousPoints}
-          readOnly={isReadOnly}
-          gender={patientGender}
-          products={catalogProducts}
-        />
-      </Section>
+      {/* ── Loading state for evaluation templates ────── */}
+      {isPlanningMode && loadingEvaluationTemplates && (
+        <div className="bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px] p-8">
+          <div className="flex items-center justify-center gap-3">
+            <Loader2 className="size-5 animate-spin text-sage" />
+            <span className="text-sm text-mid">Carregando fichas de avaliação...</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Evaluation Templates (planning mode with templates) ────── */}
+      {isPlanningMode && !loadingEvaluationTemplates && evalTemplates && evalTemplates.length > 0 && (() => {
+        // Count how many templates have face_diagram questions
+        const templatesWithDiagram = evalTemplates.filter((t) =>
+          t.sections.some((s) => s.questions.some((q) => q.type === 'face_diagram'))
+        )
+        // If 2+ templates have diagram → show standalone diagram above orçamento, hide from all templates
+        const showStandaloneDiagram = templatesWithDiagram.length >= 2
+        let diagramAlreadyRendered = false
+
+        return (
+          <>
+            {evalTemplates.map((template) => {
+              const passDiagramRendered = showStandaloneDiagram ? true : diagramAlreadyRendered
+              const hasDiagram = template.sections.some((s) =>
+                s.questions.some((q) => q.type === 'face_diagram')
+              )
+              if (hasDiagram && !showStandaloneDiagram && !diagramAlreadyRendered) {
+                diagramAlreadyRendered = true
+              }
+
+              return (
+                <div key={template.id} className="space-y-0">
+                  {/* Template header */}
+                  <div className="flex items-center gap-2.5 rounded-t-[3px] bg-forest/5 px-5 py-3 border border-b-0 border-[#E8ECEF]">
+                    <div className="flex size-6 items-center justify-center rounded-full bg-forest/10">
+                      <Stethoscope className="size-3.5 text-forest" />
+                    </div>
+                    <span className="text-sm font-semibold text-charcoal">
+                      {template.procedureTypeName} — Ficha de Avaliação
+                    </span>
+                  </div>
+                  <div className="rounded-b-[3px] border border-t-0 border-[#E8ECEF] bg-white p-5 shadow-[0_1px_4px_rgba(0,0,0,0.06)] mb-5">
+                    <TemplateRenderer
+                      sections={template.sections}
+                      responses={(evaluationResponses[template.id] ?? {}) as Record<string, unknown>}
+                      onChange={(r) => handleEvaluationResponseChange(template.id, r)}
+                      readOnly={isReadOnly}
+                      patientGender={patientGender}
+                      diagramPoints={diagramPoints}
+                      onDiagramChange={setDiagramPoints}
+                      diagramRendered={passDiagramRendered}
+                      products={catalogProducts}
+                      showErrors={showEvalErrors}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+
+            {/* Standalone face diagram when 2+ templates have diagram questions */}
+            {showStandaloneDiagram && (
+              <Section
+                title="Diagrama Facial"
+                icon={
+                  <svg className="size-4 text-forest" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="10" r="7" />
+                    <path d="M12 17v4M8 21h8" />
+                  </svg>
+                }
+                open={openSections.diagram}
+                onToggle={() => toggleSection('diagram')}
+                badge={
+                  diagramPoints.length > 0 ? (
+                    <Badge variant="outline" className="text-xs border-sage/30 bg-sage/5 text-sage">
+                      {diagramPoints.length} {diagramPoints.length === 1 ? 'ponto' : 'pontos'}
+                    </Badge>
+                  ) : undefined
+                }
+              >
+                <FaceDiagramEditor
+                  points={diagramPoints}
+                  onChange={setDiagramPoints}
+                  previousPoints={previousPoints}
+                  readOnly={isReadOnly}
+                  gender={patientGender}
+                  products={catalogProducts}
+                />
+              </Section>
+            )}
+          </>
+        )
+      })()}
+
+      {/* Face diagram only shows via templates — no fallback in planning mode */}
 
       {/* ── Financial Plan (ONLY in planning mode) ──────────────────── */}
       {isPlanningMode && (
@@ -1129,7 +1382,7 @@ export function ProcedureForm({
         >
           <div className="space-y-5">
             <p className="text-xs text-mid">
-              Defina o valor e condicoes de pagamento. A entrada financeira sera criada somente apos a aprovacao.
+              Defina o valor e condições de pagamento. A entrada financeira será criada somente após a aprovação.
             </p>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -1179,7 +1432,7 @@ export function ProcedureForm({
                   <SelectContent>
                     {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
                       <SelectItem key={n} value={String(n)}>
-                        {n}x {n === 1 ? '(a vista)' : ''}
+                        {n}x {n === 1 ? '(à vista)' : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1220,7 +1473,7 @@ export function ProcedureForm({
             {/* Notes */}
             <div>
               <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-                Observacoes
+                Observações
               </Label>
               <Textarea
                 value={financialPlan.notes}
@@ -1230,7 +1483,7 @@ export function ProcedureForm({
                     notes: e.target.value,
                   }))
                 }
-                placeholder="Condicoes especiais, descontos, etc."
+                placeholder="Condições especiais, descontos, etc."
                 disabled={isReadOnly}
                 className="min-h-[60px] resize-none border-sage/20 focus:border-sage/40"
                 rows={2}
@@ -1357,7 +1610,7 @@ export function ProcedureForm({
 
                     <div className="mt-3">
                       <Label className="uppercase tracking-wider text-xs text-mid">
-                        Areas de aplicacao
+                        Áreas de aplicação
                       </Label>
                       <Input
                         value={app.applicationAreas ?? ''}
@@ -1399,7 +1652,7 @@ export function ProcedureForm({
       {/* ── Clinical Notes (HIDDEN in planning mode) ───────────────── */}
       {!isPlanningMode && (
         <Section
-          title="Notas Clinicas"
+          title="Notas Clínicas"
           icon={<FileText className="size-4 text-forest" />}
           open={openSections.clinicalNotes}
           onToggle={() => toggleSection('clinicalNotes')}
@@ -1407,12 +1660,12 @@ export function ProcedureForm({
           <div className="space-y-5">
             <div>
               <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-                Tecnica utilizada
+                Técnica utilizada
               </Label>
               <Textarea
                 value={technique}
                 onChange={(e) => setTechnique(e.target.value)}
-                placeholder="Descreva a tecnica utilizada..."
+                placeholder="Descreva a técnica utilizada..."
                 disabled={isReadOnly}
                 className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
                 rows={3}
@@ -1421,12 +1674,12 @@ export function ProcedureForm({
 
             <div className="border-t border-petal pt-5">
               <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-                Resposta clinica
+                Resposta clínica
               </Label>
               <Textarea
                 value={clinicalResponse}
                 onChange={(e) => setClinicalResponse(e.target.value)}
-                placeholder="Descreva a resposta clinica observada..."
+                placeholder="Descreva a resposta clínica observada..."
                 disabled={isReadOnly}
                 className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
                 rows={3}
@@ -1449,12 +1702,12 @@ export function ProcedureForm({
 
             <div className="border-t border-petal pt-5">
               <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-                Observacoes gerais
+                Observações gerais
               </Label>
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Observacoes adicionais..."
+                placeholder="Observações adicionais..."
                 disabled={isReadOnly}
                 className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
                 rows={3}
@@ -1498,12 +1751,12 @@ export function ProcedureForm({
 
             <div className="border-t border-petal pt-5">
               <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-                Objetivos da proxima sessao
+                Objetivos da próxima sessão
               </Label>
               <Textarea
                 value={nextSessionObjectives}
                 onChange={(e) => setNextSessionObjectives(e.target.value)}
-                placeholder="Descreva os objetivos para a proxima sessao..."
+                placeholder="Descreva os objetivos para a próxima sessão..."
                 disabled={isReadOnly}
                 className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
                 rows={3}
@@ -1516,7 +1769,7 @@ export function ProcedureForm({
       {/* ── Post-Procedure Photos (HIDDEN in planning mode) ────────── */}
       {!isPlanningMode && (
         <Section
-          title="Fotos Pos-Procedimento"
+          title="Fotos Pós-Procedimento"
           icon={<Camera className="size-4 text-forest" />}
           open={openSections.postPhotos}
           onToggle={() => toggleSection('postPhotos')}
@@ -1569,7 +1822,7 @@ export function ProcedureForm({
                   <Save className="mr-2 size-4" />
                   {isPlanningMode
                     ? (isEdit ? 'Salvar Planejamento' : 'Criar Planejamento')
-                    : (isEdit ? 'Salvar Alteracoes' : 'Salvar Procedimento')}
+                    : (isEdit ? 'Salvar Alterações' : 'Salvar Procedimento')}
                 </>
               )}
             </Button>
@@ -1622,12 +1875,12 @@ export function ProcedureForm({
               onClick={async () => {
                 setShowFollowUpPrompt(false)
                 // Load practitioners and procedure types for appointment form
-                const [practitioners, procTypes] = await Promise.all([
-                  listPractitionersAction(),
-                  listProcedureTypesForSelectAction(),
+                const [practRes, typesRes] = await Promise.all([
+                  fetch('/api/appointments/practitioners'),
+                  fetch('/api/appointments/procedure-types'),
                 ])
-                setAppointmentPractitioners(practitioners)
-                setAppointmentProcedureTypes(procTypes)
+                if (practRes.ok) setAppointmentPractitioners(await practRes.json())
+                if (typesRes.ok) setAppointmentProcedureTypes(await typesRes.json())
                 setShowAppointmentForm(true)
               }}
             >

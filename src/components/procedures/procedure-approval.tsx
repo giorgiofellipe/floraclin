@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   CheckCircle2,
@@ -19,15 +19,8 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { FaceDiagramEditor } from '@/components/face-diagram/face-diagram-editor'
 import { ConsentViewer } from '@/components/consent/consent-viewer'
 import { SignaturePad } from '@/components/consent/signature-pad'
-import {
-  approveProcedureAction,
-} from '@/actions/procedures'
-import {
-  getActiveConsentForTypeAction,
-  acceptConsentAction,
-  checkConsentForProcedureAction,
-} from '@/actions/consent'
-import { listProcedureTypesAction } from '@/actions/procedures'
+import { useApproveProcedure } from '@/hooks/mutations/use-procedure-mutations'
+import { useAcceptConsent } from '@/hooks/mutations/use-consent-mutations'
 import {
   interpolateContract,
   buildContractData,
@@ -53,10 +46,10 @@ const CATEGORY_TO_CONSENT: Record<string, string> = {
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   pix: 'PIX',
-  credit_card: 'Cartao de Credito',
-  debit_card: 'Cartao de Debito',
+  credit_card: 'Cartão de Crédito',
+  debit_card: 'Cartão de Débito',
   cash: 'Dinheiro',
-  transfer: 'Transferencia Bancaria',
+  transfer: 'Transferência Bancária',
 }
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -169,6 +162,8 @@ export function ProcedureApproval({
   wizardOverrides,
 }: ProcedureApprovalProps) {
   const router = useRouter()
+  const approveProcedure = useApproveProcedure()
+  const acceptConsent = useAcceptConsent()
 
   // ─── State ────────────────────────────────────────────────────────
   const [procedureTypes, setProcedureTypes] = useState<ProcedureType[]>([])
@@ -235,102 +230,110 @@ export function ProcedureApproval({
   // Can approve = all consents + contract signed
   const canApprove = allConsentsSigned && contractSigned
 
-  // ─── Load procedure types ─────────────────────────────────────────
+  // ─── Single initialization: load all data at once ──────────────────
+  const initRef = useRef(false)
+
   useEffect(() => {
-    async function load() {
-      const types = await listProcedureTypesAction()
-      setProcedureTypes(types)
-    }
-    load()
-  }, [])
+    if (initRef.current) return
+    initRef.current = true
 
-  // ─── Check consent statuses ───────────────────────────────────────
-  const refreshConsentStatuses = useCallback(async () => {
-    const statuses: ConsentStatus[] = requiredConsentTypes.map((type) => ({
-      type,
-      label: CONSENT_TYPE_LABELS[type] ?? type,
-      signed: false,
-      loading: true,
-    }))
-    setConsentStatuses(statuses)
+    async function initAll() {
+      // 1. Load procedure types
+      const typesRes = await fetch('/api/procedure-types')
+      const allProcTypes: ProcedureType[] = typesRes.ok ? await typesRes.json() : []
+      setProcedureTypes(allProcTypes)
 
-    const updated = await Promise.all(
-      statuses.map(async (s) => {
-        const result = await checkConsentForProcedureAction(patient.id, procedure.id, s.type)
-        return {
-          ...s,
-          signed: !!result.data,
-          loading: false,
+      // 2. Determine selected types and required consents
+      const selected = allProcTypes.filter((t) => allTypeIds.includes(t.id))
+      const consentTypes = new Set<string>(['general'])
+      for (const pt of selected) {
+        const ct = CATEGORY_TO_CONSENT[pt.category.toLowerCase()]
+        if (ct) consentTypes.add(ct)
+      }
+      const requiredTypes = Array.from(consentTypes)
+
+      // 3. Load everything in parallel: consent statuses + contract template + contract status
+      const [consentResults, contractTplRes, contractHistRes] = await Promise.all([
+        // Check each consent type
+        Promise.all(
+          requiredTypes.map(async (type) => {
+            const checkRes = await fetch(`/api/consent/history/${patient.id}?procedureId=${procedure.id}&type=${type}`)
+            const result = checkRes.ok ? await checkRes.json() : { data: null }
+            return {
+              type,
+              label: CONSENT_TYPE_LABELS[type] ?? type,
+              signed: !!result.data,
+              loading: false,
+            } as ConsentStatus
+          })
+        ),
+        // Load contract template
+        fetch('/api/consent/templates?type=service_contract&active=true').catch(() => null),
+        // Check if contract already signed
+        fetch(`/api/consent/history/${patient.id}?procedureId=${procedure.id}&type=service_contract`).catch(() => null),
+      ])
+
+      // 4. Apply all state at once
+      setConsentStatuses(consentResults)
+
+      const contractTpl = contractTplRes?.ok ? await contractTplRes.json() : null
+      if (contractTpl) {
+        setContractTemplate(contractTpl as unknown as ConsentTemplate)
+
+        const procedures = selected.map((t) => ({ name: t.name }))
+        const products = productTotals.map((p) => ({
+          name: p.name,
+          quantity: p.quantity,
+          unit: p.unit,
+        }))
+
+        if (financialPlan) {
+          const contractData = buildContractData(
+            procedures,
+            products,
+            financialPlan,
+            { fullName: patient.fullName, cpf: patient.cpf },
+            procedure.practitionerName,
+            tenant.name
+          )
+          setContractText(interpolateContract(contractTpl.content, contractData))
+        } else {
+          setContractText(contractTpl.content)
         }
+      }
+
+      const contractHist = contractHistRes?.ok ? await contractHistRes.json() : { data: null }
+      if (contractHist.data) {
+        setContractSigned(true)
+      }
+
+      setLoadingContract(false)
+    }
+
+    initAll()
+  }, [allTypeIds, patient, procedure, tenant.name, financialPlan, productTotals])
+
+  // ─── Refresh consent statuses (after signing a new one) ───────────
+  const refreshConsentStatuses = useCallback(async () => {
+    const updated = await Promise.all(
+      consentStatuses.map(async (s) => {
+        const checkRes = await fetch(`/api/consent/history/${patient.id}?procedureId=${procedure.id}&type=${s.type}`)
+        const result = checkRes.ok ? await checkRes.json() : { data: null }
+        return { ...s, signed: !!result.data, loading: false }
       })
     )
     setConsentStatuses(updated)
-  }, [requiredConsentTypes, patient.id, procedure.id])
-
-  useEffect(() => {
-    if (requiredConsentTypes.length > 0) {
-      refreshConsentStatuses()
-    }
-  }, [requiredConsentTypes, refreshConsentStatuses])
-
-  // ─── Load service contract template ───────────────────────────────
-  useEffect(() => {
-    async function loadContract() {
-      setLoadingContract(true)
-      try {
-        const template = await getActiveConsentForTypeAction('service_contract')
-        if (template) {
-          setContractTemplate(template as unknown as ConsentTemplate)
-
-          // Build interpolation data
-          const procedures = selectedTypes.map((t) => ({ name: t.name }))
-          const products = productTotals.map((p) => ({
-            name: p.name,
-            quantity: p.quantity,
-            unit: p.unit,
-          }))
-
-          if (financialPlan) {
-            const contractData = buildContractData(
-              procedures,
-              products,
-              financialPlan,
-              { fullName: patient.fullName, cpf: patient.cpf },
-              procedure.practitionerName,
-              tenant.name
-            )
-            const text = interpolateContract(template.content, contractData)
-            setContractText(text)
-          } else {
-            setContractText(template.content)
-          }
-        }
-
-        // Check if already signed for THIS procedure
-        const existing = await checkConsentForProcedureAction(patient.id, procedure.id, 'service_contract')
-        if (existing.data) {
-          setContractSigned(true)
-        }
-      } catch {
-        // Template may not exist yet
-      } finally {
-        setLoadingContract(false)
-      }
-    }
-
-    if (selectedTypes.length > 0) {
-      loadContract()
-    }
-  }, [selectedTypes, productTotals, financialPlan, patient, procedure.practitionerName, tenant.name])
+  }, [consentStatuses, patient.id, procedure.id])
 
   // ─── Open consent for signing ─────────────────────────────────────
   const handleOpenConsent = useCallback(async (type: string) => {
     setActiveConsentType(type)
     setLoadingConsentTemplate(true)
     try {
-      const template = await getActiveConsentForTypeAction(type)
-      if (template) {
-        setActiveConsentTemplate(template as unknown as ConsentTemplate)
+      const tplRes = await fetch(`/api/consent/templates?type=${type}&active=true`)
+      if (tplRes.ok) {
+        const template = await tplRes.json()
+        if (template) setActiveConsentTemplate(template as unknown as ConsentTemplate)
       }
     } catch {
       // ignore
@@ -352,7 +355,7 @@ export function ProcedureApproval({
     setContractSigning(true)
     setContractError(null)
     try {
-      const result = await acceptConsentAction({
+      await acceptConsent.mutateAsync({
         patientId: patient.id,
         consentTemplateId: contractTemplate.id,
         procedureRecordId: procedure.id,
@@ -360,14 +363,9 @@ export function ProcedureApproval({
         signatureData: contractSignature,
         renderedContent: contractText,
       })
-
-      if (result?.error) {
-        setContractError(result.error)
-      } else {
-        setContractSigned(true)
-      }
-    } catch {
-      setContractError('Erro inesperado ao assinar contrato')
+      setContractSigned(true)
+    } catch (err) {
+      setContractError(err instanceof Error ? err.message : 'Erro inesperado ao assinar contrato')
     } finally {
       setContractSigning(false)
     }
@@ -380,32 +378,32 @@ export function ProcedureApproval({
     setIsApproving(true)
     setApproveError(null)
     try {
-      const result = await approveProcedureAction(procedure.id)
-      if (result.success) {
-        setApproved(true)
-        if (!wizardOverrides?.hideNavigation) {
-          setTimeout(() => {
-            router.push(`/pacientes/${patient.id}?tab=procedimentos`)
-          }, 1500)
-        }
-      } else {
-        setApproveError(result.error ?? 'Erro ao aprovar procedimento')
+      await approveProcedure.mutateAsync(procedure.id)
+      setApproved(true)
+      if (!wizardOverrides?.hideNavigation) {
+        setTimeout(() => {
+          router.push(`/pacientes/${patient.id}?tab=procedimentos`)
+        }, 1500)
       }
-    } catch {
-      setApproveError('Erro inesperado ao aprovar procedimento')
+    } catch (err) {
+      setApproveError(err instanceof Error ? err.message : 'Erro ao aprovar procedimento')
     } finally {
       setIsApproving(false)
     }
   }, [canApprove, isApproving, procedure.id, patient.id, router, wizardOverrides?.hideNavigation])
 
   // ─── Wizard triggerSave: call approveProcedureAction ──────────────
+  const prevTriggerSaveRef = useRef(wizardOverrides?.triggerSave ?? 0)
+  
   useEffect(() => {
-    if (!wizardOverrides?.triggerSave) return
+    const current = wizardOverrides?.triggerSave ?? 0
+    if (current === 0 || current === prevTriggerSaveRef.current) return
+    prevTriggerSaveRef.current = current
     async function doSave() {
       if (!canApprove) {
         wizardOverrides?.onSaveComplete?.({
           success: false,
-          error: 'Assine todos os termos e o contrato de servico para aprovar',
+          error: 'Assine todos os termos e o contrato de serviço para aprovar',
           errorType: 'precondition',
         })
         return
@@ -416,26 +414,18 @@ export function ProcedureApproval({
       setIsApproving(true)
       setApproveError(null)
       try {
-        const result = await approveProcedureAction(procedure.id)
-        if (result.success) {
-          setApproved(true)
-          wizardOverrides?.onSaveComplete?.({
-            success: true,
-            procedureId: procedure.id,
-          })
-        } else {
-          setApproveError(result.error ?? 'Erro ao aprovar procedimento')
-          wizardOverrides?.onSaveComplete?.({
-            success: false,
-            error: result.error ?? 'Erro ao aprovar procedimento',
-            errorType: 'server',
-          })
-        }
-      } catch {
-        setApproveError('Erro inesperado ao aprovar procedimento')
+        await approveProcedure.mutateAsync(procedure.id)
+        setApproved(true)
+        wizardOverrides?.onSaveComplete?.({
+          success: true,
+          procedureId: procedure.id,
+        })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Erro ao aprovar procedimento'
+        setApproveError(msg)
         wizardOverrides?.onSaveComplete?.({
           success: false,
-          error: 'Erro inesperado ao aprovar procedimento',
+          error: msg,
           errorType: 'server',
         })
       } finally {
@@ -590,7 +580,7 @@ export function ProcedureApproval({
                   <span className="text-sm text-mid">Parcelas</span>
                   <span className="text-sm text-charcoal">
                     {financialPlan.installmentCount === 1
-                      ? 'A vista'
+                      ? 'À vista'
                       : `${financialPlan.installmentCount}x de ${formatCurrency(
                           financialPlan.totalAmount / financialPlan.installmentCount
                         )}`}
@@ -697,7 +687,7 @@ export function ProcedureApproval({
                   ) : (
                     <div className="rounded-[3px] border border-amber/30 bg-[#FFF4EF] p-4">
                       <p className="text-sm text-amber-dark">
-                        Modelo de termo nao encontrado. Configure o termo nas configuracoes.
+                        Modelo de termo não encontrado. Configure o termo nas configurações.
                       </p>
                     </div>
                   )}
@@ -716,7 +706,7 @@ export function ProcedureApproval({
               <FileText className="size-4 text-forest" />
             </div>
             <span className="uppercase tracking-wider text-sm text-charcoal font-medium">
-              Contrato de Servico
+              Contrato de Serviço
             </span>
             {contractSigned && (
               <Badge className="bg-mint/20 text-sage text-xs border-0 ml-auto">
@@ -734,14 +724,14 @@ export function ProcedureApproval({
           ) : !contractTemplate ? (
             <div className="rounded-[3px] border border-amber/30 bg-[#FFF4EF] p-4">
               <p className="text-sm text-amber-dark">
-                Modelo de contrato de servico nao encontrado. Configure o contrato nas configuracoes.
+                Modelo de contrato de serviço não encontrado. Configure o contrato nas configurações.
               </p>
             </div>
           ) : contractSigned ? (
             <div className="flex items-center gap-3 rounded-[3px] border border-sage/30 bg-[#F0F7F1] px-4 py-4">
               <CheckCircle2 className="size-5 text-sage" />
               <span className="text-sm text-charcoal">
-                Contrato de servico assinado com sucesso
+                Contrato de serviço assinado com sucesso
               </span>
             </div>
           ) : (
@@ -762,7 +752,7 @@ export function ProcedureApproval({
                   className="mt-0.5 border-sage data-[state=checked]:bg-forest data-[state=checked]:border-forest"
                 />
                 <span className="text-sm font-medium leading-snug text-charcoal">
-                  Li e concordo com os termos do contrato de prestacao de servicos
+                  Li e concordo com os termos do contrato de prestação de serviços
                 </span>
               </label>
 
@@ -770,7 +760,7 @@ export function ProcedureApproval({
               {contractChecked && (
                 <div className="space-y-2">
                   <p className="text-sm font-medium text-charcoal">
-                    Assinatura do paciente (obrigatoria)
+                    Assinatura do paciente (obrigatória)
                   </p>
                   <SignaturePad
                     onSignatureChange={setContractSignature}
@@ -845,7 +835,7 @@ export function ProcedureApproval({
                       contractSigned ? 'text-sage font-medium' : 'text-mid'
                     )}
                   >
-                    Contrato de servico assinado
+                    Contrato de serviço assinado
                   </span>
                 </div>
               </div>
@@ -871,7 +861,7 @@ export function ProcedureApproval({
 
               {!canApprove && (
                 <p className="text-xs text-mid text-center">
-                  Assine todos os termos e o contrato de servico para aprovar
+                  Assine todos os termos e o contrato de serviço para aprovar
                 </p>
               )}
             </div>

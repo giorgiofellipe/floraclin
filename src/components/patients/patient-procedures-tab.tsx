@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState, useTransition } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -28,7 +28,8 @@ import {
 } from '@/components/ui/dialog'
 import { cn, formatDateTime } from '@/lib/utils'
 import { PROCEDURE_STATUS_COLORS, PROCEDURE_STATUS_LABELS } from '@/lib/constants'
-import { listProceduresAction, cancelProcedureAction } from '@/actions/procedures'
+import { useProcedures } from '@/hooks/queries/use-procedures'
+import { useCancelProcedure } from '@/hooks/mutations/use-procedure-mutations'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
@@ -53,36 +54,15 @@ interface PatientProceduresTabProps {
 
 export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
   const router = useRouter()
-  const [procedures, setProcedures] = useState<ProcedureRecord[]>([])
-  const [loading, setLoading] = useState(true)
-  const [, startTransition] = useTransition()
+  const { data: proceduresResult, isLoading } = useProcedures(patientId)
+  const procedures = (proceduresResult ?? []) as unknown as ProcedureRecord[]
+  const cancelProcedure = useCancelProcedure()
 
   // Cancel dialog state
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<string | null>(null)
   const [cancelReason, setCancelReason] = useState('')
-  const [cancelling, setCancelling] = useState(false)
-
-  const loadProcedures = useCallback(() => {
-    startTransition(async () => {
-      try {
-        const result = await listProceduresAction(patientId)
-        if (result.success && result.data) {
-          setProcedures(result.data as unknown as ProcedureRecord[])
-        } else {
-          setProcedures([])
-        }
-      } catch {
-        setProcedures([])
-      } finally {
-        setLoading(false)
-      }
-    })
-  }, [patientId])
-
-  useEffect(() => {
-    loadProcedures()
-  }, [loadProcedures])
+  const cancelling = cancelProcedure.isPending
 
   const handleCancelClick = (procedureId: string) => {
     setCancelTarget(procedureId)
@@ -91,21 +71,17 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
 
   const handleCancelConfirm = async () => {
     if (!cancelTarget || !cancelReason.trim()) return
-    setCancelling(true)
     try {
-      const result = await cancelProcedureAction(cancelTarget, cancelReason.trim())
-      if (result.success) {
-        setCancelDialogOpen(false)
-        setCancelReason('')
-        setCancelTarget(null)
-        loadProcedures()
-      }
-    } finally {
-      setCancelling(false)
+      await cancelProcedure.mutateAsync({ id: cancelTarget, reason: cancelReason.trim() })
+      setCancelDialogOpen(false)
+      setCancelReason('')
+      setCancelTarget(null)
+    } catch {
+      // error handled by mutation
     }
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="size-6 animate-spin text-mid" />
@@ -214,13 +190,13 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                       <>
                         {proc.technique && (
                           <p className="mt-2 text-sm text-charcoal">
-                            <span className="text-mid">Tecnica:</span>{' '}
+                            <span className="text-mid">Técnica:</span>{' '}
                             {proc.technique}
                           </p>
                         )}
                         {proc.clinicalResponse && (
                           <p className="text-sm text-charcoal">
-                            <span className="text-mid">Resposta clinica:</span>{' '}
+                            <span className="text-mid">Resposta clínica:</span>{' '}
                             {proc.clinicalResponse}
                           </p>
                         )}
@@ -297,7 +273,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                             }
                           >
                             <Play className="mr-1 size-3" />
-                            Registrar Execucao
+                            Registrar Execução
                           </Button>
                           <Button
                             size="sm"

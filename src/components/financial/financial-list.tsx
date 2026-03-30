@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useState, useTransition } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Table,
   TableBody,
@@ -12,7 +13,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { listFinancialEntriesAction } from '@/actions/financial'
+import { queryKeys } from '@/hooks/queries/query-keys'
 import { InstallmentTable } from './installment-table'
 import { PaymentForm } from './payment-form'
 import { ChevronRightIcon, PlusIcon } from 'lucide-react'
@@ -52,34 +53,36 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export function FinancialList({ patients }: { patients: Patient[] }) {
-  const [entries, setEntries] = useState<FinancialEntry[]>([])
-  const [total, setTotal] = useState(0)
+  const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [showPaymentForm, setShowPaymentForm] = useState(false)
-  const [isPending, startTransition] = useTransition()
+
+  const filters = { status: statusFilter || undefined, page, limit: 20 }
+  const { data: result, isPending } = useQuery({
+    queryKey: queryKeys.financial.entries(filters as Record<string, unknown>),
+    queryFn: async () => {
+      const params = new URLSearchParams()
+      if (statusFilter) params.set('status', statusFilter)
+      params.set('page', String(page))
+      params.set('limit', '20')
+      const res = await fetch(`/api/financial?${params}`)
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Erro ao carregar financeiro')
+      }
+      return res.json()
+    },
+  })
+
+  const entries: FinancialEntry[] = result?.data ?? []
+  const total = result?.total ?? 0
+  const totalPages = result?.totalPages ?? 1
 
   const fetchEntries = useCallback(() => {
-    startTransition(async () => {
-      const result = await listFinancialEntriesAction({
-        status: statusFilter || undefined,
-        page,
-        limit: 20,
-      })
-
-      if (result.data) {
-        setEntries(result.data.data as FinancialEntry[])
-        setTotal(result.data.total)
-        setTotalPages(result.data.totalPages)
-      }
-    })
-  }, [statusFilter, page])
-
-  useEffect(() => {
-    fetchEntries()
-  }, [fetchEntries])
+    queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
+  }, [queryClient])
 
   const handleStatusChange = (value: string | null) => {
     setStatusFilter(!value || value === 'all' ? '' : value)

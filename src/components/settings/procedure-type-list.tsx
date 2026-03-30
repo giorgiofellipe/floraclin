@@ -1,8 +1,7 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import {
   Table,
@@ -20,11 +19,12 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { ProcedureTypeForm } from './procedure-type-form'
-import { updateProcedureTypeAction, deleteProcedureTypeAction } from '@/actions/tenants'
+import { useUpdateProcedureType, useDeleteProcedureType } from '@/hooks/mutations/use-procedure-type-mutations'
 import { formatCurrency } from '@/lib/utils'
 import { PROCEDURE_CATEGORIES } from '@/lib/constants'
 import { toast } from 'sonner'
-import { PlusIcon, PencilIcon, Trash2Icon } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { PlusIcon, PencilIcon, Trash2Icon, ClipboardListIcon } from 'lucide-react'
 
 const CATEGORY_LABELS: Record<string, string> = {
   botox: 'Toxina Botulínica',
@@ -62,40 +62,41 @@ interface ProcedureTypeListProps {
   procedureTypes: ProcedureType[]
   /** When embedded in wizard, simplifies the layout */
   embedded?: boolean
+  /** Map of procedure type ID to whether a template exists */
+  templateStatusMap?: Record<string, boolean>
 }
 
-export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = false }: ProcedureTypeListProps) {
-  const [isPending, startTransition] = useTransition()
+export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = false, templateStatusMap }: ProcedureTypeListProps) {
+  const router = useRouter()
+  const updateProcedureType = useUpdateProcedureType()
+  const deleteProcedureTypeMutation = useDeleteProcedureType()
+  const isPending = updateProcedureType.isPending || deleteProcedureTypeMutation.isPending
   const [createOpen, setCreateOpen] = useState(false)
   const [editingType, setEditingType] = useState<ProcedureType | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
-  function handleToggleActive(pt: ProcedureType) {
-    startTransition(async () => {
-      const result = await updateProcedureTypeAction({
+  async function handleToggleActive(pt: ProcedureType) {
+    try {
+      await updateProcedureType.mutateAsync({
         id: pt.id,
         name: pt.name,
         category: pt.category as (typeof PROCEDURE_CATEGORIES)[number],
         isActive: !pt.isActive,
       })
-      if (result?.success) {
-        toast.success(pt.isActive ? 'Procedimento desativado' : 'Procedimento ativado')
-      } else {
-        toast.error(result?.error || 'Erro ao atualizar')
-      }
-    })
+      toast.success(pt.isActive ? 'Procedimento desativado' : 'Procedimento ativado')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao atualizar')
+    }
   }
 
-  function handleDelete(id: string) {
-    startTransition(async () => {
-      const result = await deleteProcedureTypeAction(id)
-      if (result?.success) {
-        toast.success('Procedimento excluído')
-        setDeleteConfirm(null)
-      } else {
-        toast.error(result?.error || 'Erro ao excluir')
-      }
-    })
+  async function handleDelete(id: string) {
+    try {
+      await deleteProcedureTypeMutation.mutateAsync(id)
+      toast.success('Procedimento excluído')
+      setDeleteConfirm(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao excluir')
+    }
   }
 
   return (
@@ -136,6 +137,7 @@ export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = fal
             <TableRow>
               <TableHead>Nome</TableHead>
               <TableHead>Categoria</TableHead>
+              {!embedded && <TableHead>Ficha</TableHead>}
               {!embedded && <TableHead>Preço</TableHead>}
               <TableHead>Duração</TableHead>
               <TableHead>Status</TableHead>
@@ -151,6 +153,17 @@ export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = fal
                     {CATEGORY_LABELS[pt.category] || pt.category}
                   </span>
                 </TableCell>
+                {!embedded && (
+                  <TableCell>
+                    {templateStatusMap?.[pt.id] ? (
+                      <span className="inline-flex items-center rounded-full bg-[#F0F7F1] px-2.5 py-0.5 text-xs font-medium text-sage">
+                        Ficha configurada
+                      </span>
+                    ) : (
+                      <span className="text-xs text-mid">Sem ficha</span>
+                    )}
+                  </TableCell>
+                )}
                 {!embedded && (
                   <TableCell>
                     {pt.defaultPrice
@@ -171,6 +184,14 @@ export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = fal
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => router.push(`/configuracoes/avaliacao/${pt.id}`)}
+                      title="Ficha de Avaliação"
+                    >
+                      <ClipboardListIcon />
+                    </Button>
                     <Dialog
                       open={editingType?.id === pt.id}
                       onOpenChange={(open) => {

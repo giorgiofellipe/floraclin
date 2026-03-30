@@ -343,6 +343,39 @@ export const installments = floraclinSchema.table('installments', {
   index('idx_installments_due').on(table.tenantId, table.dueDate, table.status),
 ])
 
+// ─── EVALUATION TEMPLATES ───────────────────────────────────────────
+
+export const evaluationTemplates = floraclinSchema.table('evaluation_templates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  procedureTypeId: uuid('procedure_type_id').notNull().references(() => procedureTypes.id),
+  name: varchar('name', { length: 255 }).notNull(),
+  sections: jsonb('sections').notNull().default([]),
+  isActive: boolean('is_active').notNull().default(true),
+  version: integer('version').notNull().default(1),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => [
+  uniqueIndex('uq_evaluation_templates_tenant_procedure').on(table.tenantId, table.procedureTypeId),
+  index('idx_evaluation_templates_tenant').on(table.tenantId),
+])
+
+export const evaluationResponses = floraclinSchema.table('evaluation_responses', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  procedureRecordId: uuid('procedure_record_id').notNull().references(() => procedureRecords.id),
+  templateId: uuid('template_id').notNull().references(() => evaluationTemplates.id),
+  templateVersion: integer('template_version').notNull(),
+  templateSnapshot: jsonb('template_snapshot').notNull(),
+  responses: jsonb('responses').notNull().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('uq_evaluation_responses_tenant_procedure_template').on(table.tenantId, table.procedureRecordId, table.templateId),
+  index('idx_evaluation_responses_procedure').on(table.tenantId, table.procedureRecordId),
+])
+
 // ─── AUDIT ───────────────────────────────────────────────────────────
 
 export const auditLogs = floraclinSchema.table('audit_logs', {
@@ -481,6 +514,17 @@ export const financialEntriesRelations = relations(financialEntries, ({ one, man
 export const installmentsRelations = relations(installments, ({ one }) => ({
   tenant: one(tenants, { fields: [installments.tenantId], references: [tenants.id] }),
   financialEntry: one(financialEntries, { fields: [installments.financialEntryId], references: [financialEntries.id] }),
+}))
+
+export const evaluationTemplatesRelations = relations(evaluationTemplates, ({ one }) => ({
+  tenant: one(tenants, { fields: [evaluationTemplates.tenantId], references: [tenants.id] }),
+  procedureType: one(procedureTypes, { fields: [evaluationTemplates.procedureTypeId], references: [procedureTypes.id] }),
+}))
+
+export const evaluationResponsesRelations = relations(evaluationResponses, ({ one }) => ({
+  tenant: one(tenants, { fields: [evaluationResponses.tenantId], references: [tenants.id] }),
+  procedureRecord: one(procedureRecords, { fields: [evaluationResponses.procedureRecordId], references: [procedureRecords.id] }),
+  template: one(evaluationTemplates, { fields: [evaluationResponses.templateId], references: [evaluationTemplates.id] }),
 }))
 
 export const auditLogsRelations = relations(auditLogs, ({ one }) => ({

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -28,12 +28,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
-  createProductAction,
-  updateProductAction,
-  deleteProductAction,
-  toggleProductActiveAction,
-  toggleProductDiagramAction,
-} from '@/actions/products-catalog'
+  useCreateProduct,
+  useUpdateProduct,
+  useDeleteProduct,
+  useToggleProductActive,
+  useToggleProductDiagram,
+} from '@/hooks/mutations/use-product-mutations'
 import { PROCEDURE_CATEGORIES } from '@/lib/constants'
 import { toast } from 'sonner'
 import { PlusIcon, PencilIcon, Trash2Icon } from 'lucide-react'
@@ -92,7 +92,9 @@ function ProductFormDialog({
   initialData?: Product | null
   onSuccess: () => void
 }) {
-  const [isPending, startTransition] = useTransition()
+  const createProduct = useCreateProduct()
+  const updateProduct = useUpdateProduct()
+  const isPending = createProduct.isPending || updateProduct.isPending
   const [form, setForm] = useState<ProductFormData>({
     name: initialData?.name ?? '',
     category: initialData?.category ?? 'botox',
@@ -100,36 +102,33 @@ function ProductFormDialog({
     defaultUnit: initialData?.defaultUnit ?? 'U',
   })
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim()) return
 
-    startTransition(async () => {
-      let result
+    try {
       if (initialData) {
-        result = await updateProductAction(initialData.id, {
+        await updateProduct.mutateAsync({
+          id: initialData.id,
           name: form.name.trim(),
           category: form.category,
           activeIngredient: form.activeIngredient.trim() || undefined,
           defaultUnit: form.defaultUnit,
         })
       } else {
-        result = await createProductAction({
+        await createProduct.mutateAsync({
           name: form.name.trim(),
           category: form.category,
           activeIngredient: form.activeIngredient.trim() || undefined,
           defaultUnit: form.defaultUnit,
         })
       }
-
-      if (result?.success) {
-        toast.success(initialData ? 'Produto atualizado' : 'Produto criado')
-        onSuccess()
-        onOpenChange(false)
-      } else {
-        toast.error(result?.error || 'Erro ao salvar produto')
-      }
-    })
+      toast.success(initialData ? 'Produto atualizado' : 'Produto criado')
+      onSuccess()
+      onOpenChange(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao salvar produto')
+    }
   }
 
   return (
@@ -226,43 +225,40 @@ function ProductFormDialog({
 }
 
 export function ProductList({ products: initialProducts }: ProductListProps) {
-  const [isPending, startTransition] = useTransition()
+  const toggleActive = useToggleProductActive()
+  const toggleDiagram = useToggleProductDiagram()
+  const deleteProduct = useDeleteProduct()
+  const isPending = toggleActive.isPending || toggleDiagram.isPending || deleteProduct.isPending
   const [createOpen, setCreateOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
-  function handleToggleActive(product: Product) {
-    startTransition(async () => {
-      const result = await toggleProductActiveAction(product.id, !product.isActive)
-      if (result?.success) {
-        toast.success(product.isActive ? 'Produto desativado' : 'Produto ativado')
-      } else {
-        toast.error(result?.error || 'Erro ao atualizar')
-      }
-    })
+  async function handleToggleActive(product: Product) {
+    try {
+      await toggleActive.mutateAsync({ id: product.id, isActive: !product.isActive })
+      toast.success(product.isActive ? 'Produto desativado' : 'Produto ativado')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao atualizar')
+    }
   }
 
-  function handleToggleDiagram(product: Product) {
-    startTransition(async () => {
-      const result = await toggleProductDiagramAction(product.id, !product.showInDiagram)
-      if (result?.success) {
-        toast.success(product.showInDiagram ? 'Removido do diagrama' : 'Adicionado ao diagrama')
-      } else {
-        toast.error(result?.error || 'Erro ao atualizar')
-      }
-    })
+  async function handleToggleDiagram(product: Product) {
+    try {
+      await toggleDiagram.mutateAsync({ id: product.id, showInDiagram: !product.showInDiagram })
+      toast.success(product.showInDiagram ? 'Removido do diagrama' : 'Adicionado ao diagrama')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao atualizar')
+    }
   }
 
-  function handleDelete(id: string) {
-    startTransition(async () => {
-      const result = await deleteProductAction(id)
-      if (result?.success) {
-        toast.success('Produto excluído')
-        setDeleteConfirm(null)
-      } else {
-        toast.error(result?.error || 'Erro ao excluir')
-      }
-    })
+  async function handleDelete(id: string) {
+    try {
+      await deleteProduct.mutateAsync(id)
+      toast.success('Produto excluído')
+      setDeleteConfirm(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao excluir')
+    }
   }
 
   return (
@@ -376,7 +372,7 @@ export function ProductList({ products: initialProducts }: ProductListProps) {
       <ProductFormDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onSuccess={() => setCreateOpen(false)}
+        onSuccess={() => { setCreateOpen(false) }}
       />
 
       {/* Edit dialog */}
@@ -385,7 +381,7 @@ export function ProductList({ products: initialProducts }: ProductListProps) {
           open={!!editingProduct}
           onOpenChange={(open) => { if (!open) setEditingProduct(null) }}
           initialData={editingProduct}
-          onSuccess={() => setEditingProduct(null)}
+          onSuccess={() => { setEditingProduct(null) }}
         />
       )}
     </div>

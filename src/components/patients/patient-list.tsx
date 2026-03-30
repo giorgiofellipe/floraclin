@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useTransition, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import type { Patient } from '@/db/queries/patients'
 import type { PaginatedResult } from '@/types'
-import { deletePatientAction } from '@/actions/patients'
+import { useDeletePatient } from '@/hooks/mutations/use-patient-mutations'
 import { formatDate, maskCPF } from '@/lib/utils'
 import { PatientForm } from './patient-form'
 
@@ -38,11 +38,12 @@ interface PatientListProps {
 export function PatientList({ result, search: initialSearch = '' }: PatientListProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const deletePatientMutation = useDeletePatient()
   const [searchValue, setSearchValue] = useState(initialSearch)
   const [formOpen, setFormOpen] = useState(false)
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null)
   const [deletePatient, setDeletePatient] = useState<Patient | null>(null)
-  const [isPending, startTransition] = useTransition()
+  const isPending = deletePatientMutation.isPending
 
   const currentPage = result.page
 
@@ -70,14 +71,16 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
     [searchParams, router]
   )
 
-  const handleDelete = useCallback(() => {
+  const handleDelete = useCallback(async () => {
     if (!deletePatient) return
-    startTransition(async () => {
-      await deletePatientAction(deletePatient.id)
+    try {
+      await deletePatientMutation.mutateAsync(deletePatient.id)
       setDeletePatient(null)
       router.refresh()
-    })
-  }, [deletePatient, router])
+    } catch {
+      // error handled by mutation
+    }
+  }, [deletePatient, router, deletePatientMutation])
 
   const handleEdit = useCallback((patient: Patient) => {
     setEditingPatient(patient)

@@ -13,7 +13,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { uploadPhotoAction } from '@/actions/photos'
 import {
   timelineStageValues,
   timelineStageLabels,
@@ -235,7 +234,8 @@ export function PhotoUploader({
           formData.set('procedureRecordId', procedureRecordId)
         }
 
-        const result = await uploadPhotoAction(formData)
+        const res = await fetch('/api/photos', { method: 'POST', body: formData })
+        const result = await res.json()
 
         if (result.success) {
           setFiles((prev) =>

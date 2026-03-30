@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { createFinancialEntryAction, type FinancialActionState } from '@/actions/financial'
+import { useCreateFinancialEntry } from '@/hooks/mutations/use-financial-mutations'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { addDays } from 'date-fns'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
@@ -37,17 +37,10 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
   const [totalAmount, setTotalAmount] = useState('')
   const [installmentCount, setInstallmentCount] = useState('1')
   const [patientSearch, setPatientSearch] = useState('')
-
-  const [state, formAction, isPending] = useActionState<FinancialActionState, FormData>(
-    async (prevState, formData) => {
-      const result = await createFinancialEntryAction(prevState, formData)
-      if (result?.success) {
-        onSuccess()
-      }
-      return result
-    },
-    null
-  )
+  const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]> | null>(null)
+  const createFinancialEntry = useCreateFinancialEntry()
+  const isPending = createFinancialEntry.isPending
 
   const parsedAmount = totalAmount ? parseCurrency(totalAmount) : 0
   const parsedCount = parseInt(installmentCount, 10) || 1
@@ -87,10 +80,24 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
           </DialogDescription>
         </DialogHeader>
 
-        <form action={formAction} className="space-y-5" data-testid="payment-form">
-          <input type="hidden" name="patientId" value={patientId} />
-          <input type="hidden" name="totalAmount" value={parsedAmount} />
-          <input type="hidden" name="installmentCount" value={parsedCount} />
+        <form onSubmit={async (e) => {
+          e.preventDefault()
+          setError(null)
+          setFieldErrors(null)
+          const formData = new FormData(e.currentTarget)
+          try {
+            await createFinancialEntry.mutateAsync({
+              patientId,
+              description: (formData.get('description') as string) || '',
+              totalAmount: parsedAmount,
+              installmentCount: parsedCount,
+              notes: (formData.get('notes') as string) || undefined,
+            })
+            onSuccess()
+          } catch (err) {
+            setError(err instanceof Error ? err.message : 'Erro ao criar cobrança')
+          }
+        }} className="space-y-5" data-testid="payment-form">
 
           {/* Patient select */}
           <div className="space-y-2">
@@ -109,8 +116,8 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
                 ))}
               </SelectContent>
             </Select>
-            {state?.fieldErrors?.patientId && (
-              <p className="text-sm text-destructive">{state.fieldErrors.patientId[0]}</p>
+            {fieldErrors?.patientId && (
+              <p className="text-sm text-destructive">{fieldErrors.patientId[0]}</p>
             )}
           </div>
 
@@ -123,8 +130,8 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
               placeholder="Ex: Aplicação de toxina botulínica"
               required
             />
-            {state?.fieldErrors?.description && (
-              <p className="text-sm text-destructive">{state.fieldErrors.description[0]}</p>
+            {fieldErrors?.description && (
+              <p className="text-sm text-destructive">{fieldErrors.description[0]}</p>
             )}
           </div>
 
@@ -146,8 +153,8 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
                 data-testid="payment-form-amount"
               />
             </div>
-            {state?.fieldErrors?.totalAmount && (
-              <p className="text-sm text-destructive">{state.fieldErrors.totalAmount[0]}</p>
+            {fieldErrors?.totalAmount && (
+              <p className="text-sm text-destructive">{fieldErrors.totalAmount[0]}</p>
             )}
           </div>
 
@@ -166,8 +173,8 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
                 ))}
               </SelectContent>
             </Select>
-            {state?.fieldErrors?.installmentCount && (
-              <p className="text-sm text-destructive">{state.fieldErrors.installmentCount[0]}</p>
+            {fieldErrors?.installmentCount && (
+              <p className="text-sm text-destructive">{fieldErrors.installmentCount[0]}</p>
             )}
           </div>
 
@@ -204,8 +211,8 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
             />
           </div>
 
-          {state?.error && (
-            <p className="text-sm text-destructive">{state.error}</p>
+          {error && (
+            <p className="text-sm text-destructive">{error}</p>
           )}
 
           <DialogFooter className="pt-2 border-t border-sage/10">

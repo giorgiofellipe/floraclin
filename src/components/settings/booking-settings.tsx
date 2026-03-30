@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card } from '@/components/ui/card'
-import { updateBookingSettingsAction } from '@/actions/tenants'
+import { useUpdateBookingSettings } from '@/hooks/mutations/use-tenant-mutations'
 import { toast } from 'sonner'
 import { CopyIcon, CheckIcon, ExternalLinkIcon } from 'lucide-react'
 
@@ -24,7 +24,8 @@ export function BookingSettings({
   embedded = false,
   onChange,
 }: BookingSettingsProps) {
-  const [isPending, startTransition] = useTransition()
+  const updateBookingSettings = useUpdateBookingSettings()
+  const isPending = updateBookingSettings.isPending
   const [enabled, setEnabled] = useState(initialEnabled)
   const [copied, setCopied] = useState(false)
 
@@ -33,7 +34,7 @@ export function BookingSettings({
     : process.env.NEXT_PUBLIC_APP_URL || ''
   const bookingUrl = `${appUrl}/c/${slug}`
 
-  function handleToggle(checked: boolean) {
+  async function handleToggle(checked: boolean) {
     setEnabled(checked)
 
     if (embedded) {
@@ -41,21 +42,17 @@ export function BookingSettings({
       return
     }
 
-    startTransition(async () => {
-      const result = await updateBookingSettingsAction({
-        publicBookingEnabled: checked,
-      })
-      if (result?.success) {
-        toast.success(
-          checked
-            ? 'Agendamento online ativado'
-            : 'Agendamento online desativado'
-        )
-      } else {
-        setEnabled(!checked) // revert
-        toast.error(result?.error || 'Erro ao atualizar configurações')
-      }
-    })
+    try {
+      await updateBookingSettings.mutateAsync({ publicBookingEnabled: checked })
+      toast.success(
+        checked
+          ? 'Agendamento online ativado'
+          : 'Agendamento online desativado'
+      )
+    } catch (err) {
+      setEnabled(!checked) // revert
+      toast.error(err instanceof Error ? err.message : 'Erro ao atualizar configurações')
+    }
   }
 
   async function handleCopyUrl() {

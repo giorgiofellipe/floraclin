@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -28,7 +28,8 @@ import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
 import type { AnamnesisFormData } from '@/validations/anamnesis'
-import { getProcedureAction } from '@/actions/procedures'
+import type { EvaluationTemplateForForm, ExistingEvaluationResponse } from '@/components/procedures/procedure-form'
+import type { EvaluationSection, EvaluationResponses } from '@/types/evaluation'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -142,16 +143,93 @@ export function ServiceWizard({
   const [localDiagrams, setLocalDiagrams] = useState<DiagramWithPoints[] | null>(diagrams ?? null)
   const [localApplications, setLocalApplications] = useState<ProductApplicationRecord[] | null>(existingApplications ?? null)
 
+  // ─── Evaluation templates + responses ─────────────────────────
+  const [evalTemplates, setEvalTemplates] = useState<EvaluationTemplateForForm[]>([])
+  const [existingEvalResponses, setExistingEvalResponses] = useState<ExistingEvaluationResponse[]>([])
+  const [evalTemplatesLoadedForIds, setEvalTemplatesLoadedForIds] = useState<string>('')
+  const [loadingEvalTemplates, setLoadingEvalTemplates] = useState(false)
+
+  // Load evaluation templates when selectedTypeIds change
+  useEffect(() => {
+    const typeIds = state.selectedTypeIds
+    const key = typeIds.slice().sort().join(',')
+    if (!key || key === evalTemplatesLoadedForIds) return
+
+    async function loadTemplates() {
+      setLoadingEvalTemplates(true)
+      try {
+        const params = new URLSearchParams()
+        typeIds.forEach((id) => params.append('typeId', id))
+        const templatesRes = await fetch(`/api/evaluation/templates?${params}`)
+        const templates = templatesRes.ok ? await templatesRes.json() : []
+        // Load procedure types for names
+        const typesRes = await fetch('/api/procedure-types')
+        const allTypes = typesRes.ok ? await typesRes.json() : []
+
+        const typeNameMap = new Map<string, string>()
+        for (const t of allTypes as { id: string; name: string }[]) {
+          typeNameMap.set(t.id, t.name)
+        }
+
+        const formTemplates: EvaluationTemplateForForm[] = (templates as { id: string; procedureTypeId: string; sections: unknown; version: number }[])
+          .filter((t) => typeIds.includes(t.procedureTypeId))
+          .map((t) => ({
+            id: t.id,
+            procedureTypeId: t.procedureTypeId,
+            procedureTypeName: typeNameMap.get(t.procedureTypeId) ?? 'Procedimento',
+            sections: t.sections as EvaluationSection[],
+            version: t.version,
+          }))
+          // Preserve the order from selectedTypeIds
+          .sort((a: EvaluationTemplateForForm, b: EvaluationTemplateForForm) => typeIds.indexOf(a.procedureTypeId) - typeIds.indexOf(b.procedureTypeId))
+
+        setEvalTemplates(formTemplates)
+        setEvalTemplatesLoadedForIds(key)
+      } catch {
+        // Non-blocking — templates won't show
+      } finally {
+        setLoadingEvalTemplates(false)
+      }
+    }
+    loadTemplates()
+  }, [state.selectedTypeIds, evalTemplatesLoadedForIds])
+
+  // Load existing evaluation responses when resuming a procedure
+  useEffect(() => {
+    if (!state.procedureId) return
+
+    async function loadResponses() {
+      try {
+        const evalRes = await fetch(`/api/evaluation/responses/${state.procedureId}`)
+        const responses = evalRes.ok ? await evalRes.json() : []
+        if (responses && responses.length > 0) {
+          setExistingEvalResponses(
+            (responses as { templateId: string; responses: EvaluationResponses; templateSnapshot: unknown }[]).map((r) => ({
+              templateId: r.templateId,
+              responses: r.responses as EvaluationResponses,
+              templateSnapshot: r.templateSnapshot as EvaluationSection[],
+            }))
+          )
+        }
+      } catch {
+        // Non-blocking
+      }
+    }
+    loadResponses()
+  }, [state.procedureId])
+
   // ─── beforeunload protection for steps 2-5 ─────────────────────
 
   useEffect(() => {
     if (state.currentStep === 1) return
 
     function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (isExitingRef.current) return
       e.preventDefault()
     }
 
     function handlePopState() {
+      if (isExitingRef.current) return // allow navigation when exiting
       // Push state back so the user stays on the page
       window.history.pushState(null, '', window.location.href)
       setShowExitDialog(true)
@@ -180,7 +258,9 @@ export function ServiceWizard({
     router.push(`/pacientes/${patient.id}`)
   }, [state.currentStep, router, patient.id])
 
+  const isExitingRef = useRef(false)
   const confirmExit = useCallback(() => {
+    isExitingRef.current = true
     setShowExitDialog(false)
     router.push(`/pacientes/${patient.id}`)
   }, [router, patient.id])
@@ -237,11 +317,12 @@ export function ServiceWizard({
         // After step 3 creates/updates a procedure, fetch fresh data client-side
         if (state.currentStep === 3 && result.procedureId) {
           try {
-            const res = await getProcedureAction(result.procedureId)
-            if (res.success && res.data) {
-              setLocalProcedure(res.data as ProcedureWithDetails)
-              setLocalDiagrams((res.data as { diagrams?: DiagramWithPoints[] }).diagrams ?? null)
-              setLocalApplications((res.data as { productApplications?: ProductApplicationRecord[] }).productApplications ?? null)
+            const fetchRes = await fetch(`/api/procedures/${result.procedureId}`)
+            if (fetchRes.ok) {
+              const procData = await fetchRes.json()
+              setLocalProcedure(procData as ProcedureWithDetails)
+              setLocalDiagrams((procData as { diagrams?: DiagramWithPoints[] }).diagrams ?? null)
+              setLocalApplications((procData as { productApplications?: ProductApplicationRecord[] }).productApplications ?? null)
             }
           } catch {
             // Non-blocking — steps 4-5 will show placeholder if fetch fails
@@ -269,7 +350,7 @@ export function ServiceWizard({
 
   const handleSkip = useCallback(() => {
     if (state.currentStep === 4) {
-      // "Adiar Aprovacao" — exits wizard
+      // "Adiar Aprovação" — exits wizard
       toast.info('Atendimento salvo como planejado. Retorne para aprovar quando o paciente estiver pronto.')
       router.push(`/pacientes/${patient.id}`)
       return
@@ -281,23 +362,26 @@ export function ServiceWizard({
   // ─── Next handler ──────────────────────────────────────────────
 
   const handleNext = useCallback(() => {
-    // All steps trigger save via triggerSave.
-    // Step 1: flushes debounce and advances on success
-    // Step 2: validates type selection (no server save) and advances
-    // Step 3: creates/updates procedure and advances on success
-    // Step 4: calls approveProcedureAction and advances on success
-    // Step 5: calls executeProcedureAction and redirects on success
     triggerSave()
   }, [triggerSave])
 
   // ─── Wizard overrides for each step ────────────────────────────
 
-  const baseOverrides = {
+  // Each step gets triggerSave ONLY when it's the active step.
+  // All steps are mounted simultaneously (display:none), so passing
+  // triggerSave to all of them would cause all to fire at once.
+  function getOverridesForStep(step: number): typeof baseOverridesBase & { triggerSave: number } {
+    return {
+      ...baseOverridesBase,
+      triggerSave: state.currentStep === step ? state.triggerSave : 0,
+    }
+  }
+
+  const baseOverridesBase = {
     hideSaveButton: true,
     hideNavigation: true,
     hideTitle: true,
     onSaveComplete: handleStepComplete,
-    triggerSave: state.triggerSave,
   }
 
   // ─── Derived state ─────────────────────────────────────────────
@@ -383,7 +467,7 @@ export function ServiceWizard({
                   patientId={patient.id}
                   initialData={anamnesis ?? undefined}
                   updatedByName={anamnesisUpdatedByName}
-                  wizardOverrides={baseOverrides}
+                  wizardOverrides={getOverridesForStep(1)}
                 />
               </div>
             </WizardStepWrapper>
@@ -406,7 +490,7 @@ export function ServiceWizard({
                 <ProcedureTypeStep
                   selectedTypeIds={state.selectedTypeIds}
                   onSelectedTypeIdsChange={setSelectedTypeIds}
-                  wizardOverrides={baseOverrides}
+                  wizardOverrides={getOverridesForStep(2)}
                   readOnly={isReadOnlyAfterApproval}
                 />
               </div>
@@ -433,7 +517,10 @@ export function ServiceWizard({
                       ? 'edit'
                       : 'create'
                 }
-                wizardOverrides={{ ...baseOverrides, hideProcedureTypes: true }}
+                wizardOverrides={{ ...getOverridesForStep(3), hideProcedureTypes: true }}
+                evaluationTemplates={evalTemplates.length > 0 ? evalTemplates : undefined}
+                existingEvaluationResponses={existingEvalResponses.length > 0 ? existingEvalResponses : undefined}
+                loadingEvaluationTemplates={loadingEvalTemplates}
               />
             </WizardStepWrapper>
           </div>
@@ -456,7 +543,7 @@ export function ServiceWizard({
                   }}
                   tenant={tenant}
                   additionalTypeIds={additionalTypeIds}
-                  wizardOverrides={baseOverrides}
+                  wizardOverrides={getOverridesForStep(4)}
                 />
               ) : (
                 <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
@@ -481,7 +568,7 @@ export function ServiceWizard({
                   procedure={localProcedure}
                   diagrams={localDiagrams ?? undefined}
                   existingApplications={localApplications ?? undefined}
-                  wizardOverrides={baseOverrides}
+                  wizardOverrides={getOverridesForStep(5)}
                 />
               ) : (
                 <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">

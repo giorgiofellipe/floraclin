@@ -15,7 +15,6 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { formatDateTime } from '@/lib/utils'
-import { listPhotosAction, deletePhotoAction } from '@/actions/photos'
 import type { PhotosByStage, PhotoAssetWithUrl } from '@/db/queries/photos'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -46,7 +45,10 @@ export function PhotoGrid({
   const loadPhotos = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await listPhotosAction(patientId, procedureRecordId)
+      const params = new URLSearchParams({ patientId })
+      if (procedureRecordId) params.set('procedureRecordId', procedureRecordId)
+      const res = await fetch(`/api/photos?${params}`)
+      const result = await res.json()
       if (result.success && result.data) {
         setPhotosByStage(result.data)
       }
@@ -63,7 +65,8 @@ export function PhotoGrid({
     if (!deleteTarget) return
     setDeleting(true)
     try {
-      const result = await deletePhotoAction(deleteTarget.id)
+      const res = await fetch(`/api/photos/${deleteTarget.id}`, { method: 'DELETE' })
+      const result = await res.json()
       if (result.success) {
         setDeleteTarget(null)
         await loadPhotos()

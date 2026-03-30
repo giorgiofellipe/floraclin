@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, ArrowRight, Plus, CalendarPlus, Receipt, Phone, User, Mail } from 'lucide-react'
 import { buttonVariants } from '@/components/ui/button'
@@ -63,9 +64,12 @@ export function PatientDetailContent({
   activeTab,
   hasActiveService = false,
 }: PatientDetailContentProps) {
-  const tab: PatientTabKey = VALID_TABS.includes(activeTab as PatientTabKey)
-    ? (activeTab as PatientTabKey)
-    : 'dados'
+  // Manage tab state client-side to avoid server re-renders on tab change
+  const [tab, setTab] = useState<PatientTabKey>(
+    VALID_TABS.includes(activeTab as PatientTabKey)
+      ? (activeTab as PatientTabKey)
+      : 'dados'
+  )
 
   const age = patient.birthDate ? calculateAge(patient.birthDate) : null
 
@@ -189,7 +193,7 @@ export function PatientDetailContent({
       </div>
 
       {/* Tab navigation */}
-      <PatientTabs activeTab={tab} />
+      <PatientTabs activeTab={tab} onTabChange={setTab} />
 
       {/* Tab content */}
       <div className="min-h-[400px]">

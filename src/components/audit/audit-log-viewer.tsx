@@ -26,7 +26,6 @@ import {
   FilterIcon,
   Loader2Icon,
 } from 'lucide-react'
-import { listAuditLogsAction, getDistinctEntityTypesAction } from '@/actions/audit'
 import { formatDateTime } from '@/lib/utils'
 import type { AuditLogWithUser } from '@/db/queries/audit'
 
@@ -37,7 +36,7 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   appointment: 'Agendamento',
   procedure_record: 'Procedimento',
   procedure_type: 'Tipo de Procedimento',
-  financial_entry: 'Cobranca',
+  financial_entry: 'Cobrança',
   installment: 'Parcela',
   consent_template: 'Termo',
   consent_acceptance: 'Aceite de Termo',
@@ -163,16 +162,19 @@ export function AuditLogViewer() {
   const fetchLogs = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await listAuditLogsAction({
-        entityType: entityTypeFilter || undefined,
-        dateFrom: dateFrom || undefined,
-        dateTo: dateTo || undefined,
-        page,
-        limit,
-      })
-      setLogs(result.data)
-      setTotalPages(result.totalPages)
-      setTotal(result.total)
+      const params = new URLSearchParams()
+      if (entityTypeFilter) params.set('entityType', entityTypeFilter)
+      if (dateFrom) params.set('dateFrom', dateFrom)
+      if (dateTo) params.set('dateTo', dateTo)
+      params.set('page', String(page))
+      params.set('limit', String(limit))
+      const res = await fetch(`/api/audit?${params}`)
+      if (res.ok) {
+        const result = await res.json()
+        setLogs(result.data)
+        setTotalPages(result.totalPages)
+        setTotal(result.total)
+      }
     } catch {
       // silently fail
     } finally {
@@ -182,8 +184,11 @@ export function AuditLogViewer() {
 
   const fetchEntityTypes = useCallback(async () => {
     try {
-      const types = await getDistinctEntityTypesAction()
-      setEntityTypes(types)
+      const res = await fetch('/api/audit?distinct=entityType')
+      if (res.ok) {
+        const types = await res.json()
+        setEntityTypes(Array.isArray(types) ? types : [])
+      }
     } catch {
       // silently fail
     }

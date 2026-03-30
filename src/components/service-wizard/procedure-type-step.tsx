@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Loader2, Stethoscope } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import { listProcedureTypesAction } from '@/actions/procedures'
 import type { WizardOverrides } from './types'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -39,8 +38,11 @@ export function ProcedureTypeStep({
   useEffect(() => {
     async function load() {
       try {
-        const types = await listProcedureTypesAction()
-        setProcedureTypes(types as ProcedureType[])
+        const res = await fetch('/api/procedure-types')
+        if (res.ok) {
+          const types = await res.json()
+          setProcedureTypes(types as ProcedureType[])
+        }
       } finally {
         setLoading(false)
       }
@@ -49,24 +51,27 @@ export function ProcedureTypeStep({
   }, [])
 
   // ─── Handle wizard triggerSave ─────────────────────────────────────
-  const handleTriggerSave = useCallback(() => {
-    if (selectedTypeIds.length === 0) {
-      wizardOverrides?.onSaveComplete?.({
+  const selectedTypeIdsRef = useRef(selectedTypeIds)
+  selectedTypeIdsRef.current = selectedTypeIds
+  const onSaveCompleteRef = useRef(wizardOverrides?.onSaveComplete)
+  onSaveCompleteRef.current = wizardOverrides?.onSaveComplete
+  const prevTriggerRef = useRef(wizardOverrides?.triggerSave ?? 0)
+
+  useEffect(() => {
+    const current = wizardOverrides?.triggerSave ?? 0
+    // Only fire on actual changes, skip if zero (inactive step)
+    if (current === 0 || current === prevTriggerRef.current) return
+    prevTriggerRef.current = current
+
+    if (selectedTypeIdsRef.current.length === 0) {
+      onSaveCompleteRef.current?.({
         success: false,
         error: 'Selecione ao menos um tipo de procedimento.',
         errorType: 'validation',
       })
       return
     }
-
-    // No server save needed — just advance
-    wizardOverrides?.onSaveComplete?.({ success: true })
-  }, [selectedTypeIds, wizardOverrides])
-
-  useEffect(() => {
-    if (wizardOverrides?.triggerSave && wizardOverrides.triggerSave > 0) {
-      handleTriggerSave()
-    }
+    onSaveCompleteRef.current?.({ success: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wizardOverrides?.triggerSave])
 
@@ -130,7 +135,7 @@ export function ProcedureTypeStep({
         ) : (
           <div className="space-y-4">
             <p className="text-xs text-mid">
-              Selecione um ou mais tipos de procedimento (o primeiro sera o principal).
+              Selecione um ou mais tipos de procedimento (o primeiro será o principal).
             </p>
 
             {Object.entries(grouped).map(([category, types]) => (

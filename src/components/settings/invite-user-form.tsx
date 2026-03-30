@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { inviteUserAction } from '@/actions/users'
+import { useInviteUser } from '@/hooks/mutations/use-user-mutations'
 import { toast } from 'sonner'
 import type { Role } from '@/types'
 
@@ -30,31 +30,25 @@ interface InviteUserFormProps {
 }
 
 export function InviteUserForm({ onSuccess, onCancel }: InviteUserFormProps) {
-  const [isPending, startTransition] = useTransition()
+  const inviteUser = useInviteUser()
+  const isPending = inviteUser.isPending
   const [email, setEmail] = useState('')
   const [fullName, setFullName] = useState('')
   const [role, setRole] = useState<string>('')
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
-    startTransition(async () => {
-      const result = await inviteUserAction({
-        email,
-        fullName,
-        role: role as Role,
-      })
-
-      if (result?.success) {
-        toast.success('Convite enviado com sucesso')
-        setEmail('')
-        setFullName('')
-        setRole('')
-        onSuccess?.()
-      } else {
-        toast.error(result?.error || 'Erro ao enviar convite')
-      }
-    })
+    try {
+      await inviteUser.mutateAsync({ email, fullName, role })
+      toast.success('Convite enviado com sucesso')
+      setEmail('')
+      setFullName('')
+      setRole('')
+      onSuccess?.()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao enviar convite')
+    }
   }
 
   return (

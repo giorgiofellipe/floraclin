@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   BarChart,
   Bar,
@@ -15,7 +16,7 @@ import {
 } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
-import { getRevenueOverviewAction } from '@/actions/financial'
+import { queryKeys } from '@/hooks/queries/query-keys'
 import { subMonths, format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { DollarSignIcon, ClockIcon, AlertTriangleIcon } from 'lucide-react'
@@ -47,21 +48,29 @@ interface RevenueData {
 }
 
 export function RevenueChart() {
-  const [data, setData] = useState<RevenueData | null>(null)
-  const [isPending, startTransition] = useTransition()
-
-  useEffect(() => {
+  const dateRange = useMemo(() => {
     const now = new Date()
-    const dateFrom = subMonths(now, 6).toISOString().split('T')[0]
-    const dateTo = now.toISOString().split('T')[0]
-
-    startTransition(async () => {
-      const result = await getRevenueOverviewAction(dateFrom, dateTo)
-      if (result.data) {
-        setData(result.data as RevenueData)
-      }
-    })
+    return {
+      dateFrom: subMonths(now, 6).toISOString().split('T')[0],
+      dateTo: now.toISOString().split('T')[0],
+    }
   }, [])
+
+  const { data, isPending } = useQuery({
+    queryKey: queryKeys.financial.revenue(dateRange.dateFrom, dateRange.dateTo),
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        dateFrom: dateRange.dateFrom,
+        dateTo: dateRange.dateTo,
+      })
+      const res = await fetch(`/api/financial/overview?${params}`)
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Erro ao carregar receita')
+      }
+      return res.json() as Promise<RevenueData>
+    },
+  })
 
   if (isPending || !data) {
     return (

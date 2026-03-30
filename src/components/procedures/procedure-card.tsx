@@ -30,7 +30,7 @@ import {
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { PROCEDURE_STATUS_COLORS, PROCEDURE_STATUS_LABELS } from '@/lib/constants'
-import { cancelProcedureAction } from '@/actions/procedures'
+import { useCancelProcedure } from '@/hooks/mutations/use-procedure-mutations'
 import type { ProcedureListItem } from '@/db/queries/procedures'
 
 // ─── Category Icons ────────────────────────────────────────────────
@@ -60,9 +60,10 @@ export function ProcedureCard({
   onStatusChange,
 }: ProcedureCardProps) {
   const router = useRouter()
+  const cancelProcedure = useCancelProcedure()
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
-  const [cancelling, setCancelling] = useState(false)
+  const cancelling = cancelProcedure.isPending
 
   const statusColor =
     PROCEDURE_STATUS_COLORS[procedure.status] ?? PROCEDURE_STATUS_COLORS.planned
@@ -102,18 +103,13 @@ export function ProcedureCard({
 
   const handleCancelConfirm = async () => {
     if (!cancelReason.trim()) return
-    setCancelling(true)
     try {
-      const result = await cancelProcedureAction(procedure.id, cancelReason.trim())
-      if (result.success) {
-        setCancelDialogOpen(false)
-        setCancelReason('')
-        onStatusChange?.()
-      } else {
-        toast.error(result.error ?? 'Erro ao cancelar procedimento')
-      }
-    } finally {
-      setCancelling(false)
+      await cancelProcedure.mutateAsync({ id: procedure.id, reason: cancelReason.trim() })
+      setCancelDialogOpen(false)
+      setCancelReason('')
+      onStatusChange?.()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao cancelar procedimento')
     }
   }
 
@@ -312,7 +308,7 @@ export function ProcedureCard({
                       onClick={handleExecute}
                     >
                       <Play className="mr-1 size-3" />
-                      Registrar Execucao
+                      Registrar Execução
                     </Button>
                     <Button
                       size="sm"
@@ -356,7 +352,7 @@ export function ProcedureCard({
               Cancelar Procedimento
             </DialogTitle>
             <DialogDescription className="text-mid text-sm">
-              Informe o motivo do cancelamento. Esta acao nao pode ser desfeita.
+              Informe o motivo do cancelamento. Esta ação não pode ser desfeita.
             </DialogDescription>
           </DialogHeader>
 

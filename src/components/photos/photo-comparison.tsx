@@ -14,7 +14,6 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import { listPhotosAction, getComparisonUrlsAction } from '@/actions/photos'
 import type { PhotoAssetWithUrl } from '@/db/queries/photos'
 import { timelineStageLabels } from '@/validations/photo'
 import type { TimelineStage } from '@/types'
@@ -52,9 +51,12 @@ export function PhotoComparison({
     async function load() {
       setLoading(true)
       try {
-        const result = await listPhotosAction(patientId, procedureRecordId)
+        const params = new URLSearchParams({ patientId })
+        if (procedureRecordId) params.set('procedureRecordId', procedureRecordId)
+        const res = await fetch(`/api/photos?${params}`)
+        const result = await res.json()
         if (result.success && result.data) {
-          const photos = result.data.flatMap((s) => s.photos)
+          const photos = result.data.flatMap((s: { photos: PhotoAssetWithUrl[] }) => s.photos)
           setAllPhotos(photos)
         }
       } finally {
@@ -75,7 +77,9 @@ export function PhotoComparison({
     async function loadUrls() {
       setLoadingUrls(true)
       try {
-        const result = await getComparisonUrlsAction(photoIdA, photoIdB)
+        const params = new URLSearchParams({ photoIdA, photoIdB })
+        const res = await fetch(`/api/photos?${params}`)
+        const result = await res.json()
         if (result.success && result.data) {
           setUrlA(result.data.urlA)
           setUrlB(result.data.urlB)
