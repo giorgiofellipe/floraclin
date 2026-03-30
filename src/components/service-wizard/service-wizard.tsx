@@ -373,12 +373,21 @@ export function ServiceWizard({
 
   // ─── Wizard overrides for each step ────────────────────────────
 
-  const baseOverrides = {
+  // Each step gets triggerSave ONLY when it's the active step.
+  // All steps are mounted simultaneously (display:none), so passing
+  // triggerSave to all of them would cause all to fire at once.
+  function getOverridesForStep(step: number): typeof baseOverridesBase & { triggerSave: number } {
+    return {
+      ...baseOverridesBase,
+      triggerSave: state.currentStep === step ? state.triggerSave : 0,
+    }
+  }
+
+  const baseOverridesBase = {
     hideSaveButton: true,
     hideNavigation: true,
     hideTitle: true,
     onSaveComplete: handleStepComplete,
-    triggerSave: state.triggerSave,
   }
 
   // ─── Derived state ─────────────────────────────────────────────
@@ -464,7 +473,7 @@ export function ServiceWizard({
                   patientId={patient.id}
                   initialData={anamnesis ?? undefined}
                   updatedByName={anamnesisUpdatedByName}
-                  wizardOverrides={baseOverrides}
+                  wizardOverrides={getOverridesForStep(1)}
                 />
               </div>
             </WizardStepWrapper>
@@ -487,7 +496,7 @@ export function ServiceWizard({
                 <ProcedureTypeStep
                   selectedTypeIds={state.selectedTypeIds}
                   onSelectedTypeIdsChange={setSelectedTypeIds}
-                  wizardOverrides={baseOverrides}
+                  wizardOverrides={getOverridesForStep(2)}
                   readOnly={isReadOnlyAfterApproval}
                 />
               </div>
@@ -514,7 +523,7 @@ export function ServiceWizard({
                       ? 'edit'
                       : 'create'
                 }
-                wizardOverrides={{ ...baseOverrides, hideProcedureTypes: true }}
+                wizardOverrides={{ ...getOverridesForStep(3), hideProcedureTypes: true }}
                 evaluationTemplates={evalTemplates.length > 0 ? evalTemplates : undefined}
                 existingEvaluationResponses={existingEvalResponses.length > 0 ? existingEvalResponses : undefined}
                 loadingEvaluationTemplates={loadingEvalTemplates}
@@ -540,7 +549,7 @@ export function ServiceWizard({
                   }}
                   tenant={tenant}
                   additionalTypeIds={additionalTypeIds}
-                  wizardOverrides={baseOverrides}
+                  wizardOverrides={getOverridesForStep(4)}
                 />
               ) : (
                 <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
@@ -565,7 +574,7 @@ export function ServiceWizard({
                   procedure={localProcedure}
                   diagrams={localDiagrams ?? undefined}
                   existingApplications={localApplications ?? undefined}
-                  wizardOverrides={baseOverrides}
+                  wizardOverrides={getOverridesForStep(5)}
                 />
               ) : (
                 <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
