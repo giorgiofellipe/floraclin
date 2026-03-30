@@ -51,19 +51,12 @@ export function ProcedureTypeStep({
   // ─── Handle wizard triggerSave ─────────────────────────────────────
   const lastTriggerRef = useRef(wizardOverrides?.triggerSave ?? 0)
   const wasActiveRef = useRef((wizardOverrides?.triggerSave ?? 0) > 0)
-  const handleTriggerSave = useCallback(() => {
-    if (selectedTypeIds.length === 0) {
-      wizardOverrides?.onSaveComplete?.({
-        success: false,
-        error: 'Selecione ao menos um tipo de procedimento.',
-        errorType: 'validation',
-      })
-      return
-    }
 
-    // No server save needed — just advance
-    wizardOverrides?.onSaveComplete?.({ success: true })
-  }, [selectedTypeIds, wizardOverrides])
+  // Use refs for values accessed in the triggerSave effect to avoid stale closures
+  const selectedTypeIdsRef = useRef(selectedTypeIds)
+  selectedTypeIdsRef.current = selectedTypeIds
+  const onSaveCompleteRef = useRef(wizardOverrides?.onSaveComplete)
+  onSaveCompleteRef.current = wizardOverrides?.onSaveComplete
 
   useEffect(() => {
     const current = wizardOverrides?.triggerSave ?? 0
@@ -72,7 +65,17 @@ export function ProcedureTypeStep({
     if (!isNowActive) { wasActiveRef.current = false; return }
     if (current === lastTriggerRef.current) return
     lastTriggerRef.current = current
-    handleTriggerSave()
+
+    // Inline save logic using refs for latest values
+    if (selectedTypeIdsRef.current.length === 0) {
+      onSaveCompleteRef.current?.({
+        success: false,
+        error: 'Selecione ao menos um tipo de procedimento.',
+        errorType: 'validation',
+      })
+      return
+    }
+    onSaveCompleteRef.current?.({ success: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wizardOverrides?.triggerSave])
 
