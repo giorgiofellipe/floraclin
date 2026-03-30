@@ -333,9 +333,13 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
 
   // ─── Wizard triggerSave: flush debounce and await save ─────────
   const lastTriggerSaveRef = useRef(wizardOverrides?.triggerSave ?? 0)
+  const wasActiveRef = useRef((wizardOverrides?.triggerSave ?? 0) > 0)
   useEffect(() => {
     const current = wizardOverrides?.triggerSave ?? 0
-    if (current === 0 || current === lastTriggerSaveRef.current) return
+    const isNowActive = current > 0
+    if (isNowActive && !wasActiveRef.current) { lastTriggerSaveRef.current = current; wasActiveRef.current = true; return }
+    if (!isNowActive) { wasActiveRef.current = false; return }
+    if (current === lastTriggerSaveRef.current) return
     lastTriggerSaveRef.current = current
     async function doSave() {
       // Flush any pending debounce timer

@@ -50,6 +50,7 @@ export function ProcedureTypeStep({
 
   // ─── Handle wizard triggerSave ─────────────────────────────────────
   const lastTriggerRef = useRef(wizardOverrides?.triggerSave ?? 0)
+  const wasActiveRef = useRef((wizardOverrides?.triggerSave ?? 0) > 0)
   const handleTriggerSave = useCallback(() => {
     if (selectedTypeIds.length === 0) {
       wizardOverrides?.onSaveComplete?.({
@@ -66,7 +67,10 @@ export function ProcedureTypeStep({
 
   useEffect(() => {
     const current = wizardOverrides?.triggerSave ?? 0
-    if (current === 0 || current === lastTriggerRef.current) return
+    const isNowActive = current > 0
+    if (isNowActive && !wasActiveRef.current) { lastTriggerRef.current = current; wasActiveRef.current = true; return }
+    if (!isNowActive) { wasActiveRef.current = false; return }
+    if (current === lastTriggerRef.current) return
     lastTriggerRef.current = current
     handleTriggerSave()
     // eslint-disable-next-line react-hooks/exhaustive-deps

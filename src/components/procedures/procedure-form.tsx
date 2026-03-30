@@ -476,6 +476,8 @@ export function ProcedureForm({
     if (key !== prevInitialTypeIdsRef.current) {
       prevInitialTypeIdsRef.current = key
       lastAutoSumRef.current = '' // allow auto-sum to override on next run
+      // Also clear the current total so auto-sum can fill it
+      setFinancialPlan((prev) => ({ ...prev, totalAmount: '' }))
     }
   }, [initialTypeIds])
 
@@ -850,10 +852,26 @@ export function ProcedureForm({
 
   // ─── Wizard triggerSave: run save logic and call onSaveComplete ──
   const lastTriggerSaveRef = useRef(wizardOverrides?.triggerSave ?? 0)
+  const wasActiveRef = useRef((wizardOverrides?.triggerSave ?? 0) > 0)
   useEffect(() => {
     const current = wizardOverrides?.triggerSave ?? 0
-    // Only react to CHANGES, not the initial mount value
-    if (current === 0 || current === lastTriggerSaveRef.current) return
+    const isNowActive = current > 0
+    const wasActive = wasActiveRef.current
+
+    // Step just became active (0 → N): sync ref to current, don't fire
+    if (isNowActive && !wasActive) {
+      lastTriggerSaveRef.current = current
+      wasActiveRef.current = true
+      return
+    }
+    // Step became inactive (N → 0): reset
+    if (!isNowActive) {
+      wasActiveRef.current = false
+      return
+    }
+    // Same value — don't fire
+    if (current === lastTriggerSaveRef.current) return
+    // Actual increment while active — fire save
     lastTriggerSaveRef.current = current
     async function doSave() {
       if (isSubmitting || isReadOnly) {
