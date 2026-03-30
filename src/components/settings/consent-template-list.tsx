@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dialog'
 import { formatDateTime } from '@/lib/utils'
 import { ConsentTemplateForm } from '@/components/consent/consent-template-form'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import { PlusIcon, PencilIcon } from 'lucide-react'
 import { CONSENT_TYPE_LABELS } from '@/lib/constants'
 
@@ -41,12 +42,14 @@ interface ConsentTemplateListProps {
 
 export function ConsentTemplateList({ templates, embedded = false }: ConsentTemplateListProps) {
   const router = useRouter()
+  const { invalidateConsentTemplates } = useInvalidation()
   const [createOpen, setCreateOpen] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<ConsentTemplate | null>(null)
 
   function handleSuccess() {
     setCreateOpen(false)
     setEditingTemplate(null)
+    invalidateConsentTemplates()
     router.refresh()
   }
 

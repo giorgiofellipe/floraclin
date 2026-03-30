@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { inviteUserAction } from '@/actions/users'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import { toast } from 'sonner'
 import type { Role } from '@/types'
 
@@ -30,6 +31,7 @@ interface InviteUserFormProps {
 }
 
 export function InviteUserForm({ onSuccess, onCancel }: InviteUserFormProps) {
+  const { invalidateMembers } = useInvalidation()
   const [isPending, startTransition] = useTransition()
   const [email, setEmail] = useState('')
   const [fullName, setFullName] = useState('')
@@ -47,6 +49,7 @@ export function InviteUserForm({ onSuccess, onCancel }: InviteUserFormProps) {
 
       if (result?.success) {
         toast.success('Convite enviado com sucesso')
+        invalidateMembers()
         setEmail('')
         setFullName('')
         setRole('')

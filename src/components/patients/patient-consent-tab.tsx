@@ -19,7 +19,7 @@ import {
 import { ConsentHistory } from '@/components/consent/consent-history'
 import { ConsentViewer } from '@/components/consent/consent-viewer'
 import { useConsentTemplates } from '@/hooks/queries/use-consent'
-import { useInvalidation } from '@/hooks/mutations/use-invalidation'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import { getConsentTemplateByIdAction } from '@/actions/consent'
 
 interface ConsentTemplate {

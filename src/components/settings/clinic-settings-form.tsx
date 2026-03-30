@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card } from '@/components/ui/card'
 import { updateTenantAction } from '@/actions/tenants'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
 import { toast } from 'sonner'
 import type { WorkingHours } from '@/validations/tenant'
@@ -40,6 +41,7 @@ interface ClinicSettingsFormProps {
 }
 
 export function ClinicSettingsForm({ initialData, embedded = false, onChange }: ClinicSettingsFormProps) {
+  const { invalidateTenant } = useInvalidation()
   const [isPending, startTransition] = useTransition()
   const [name, setName] = useState(initialData.name || '')
   const [phone, setPhone] = useState(initialData.phone || '')
@@ -108,6 +110,7 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
 
       if (result?.success) {
         toast.success('Configurações atualizadas com sucesso')
+        invalidateTenant()
       } else {
         toast.error(result?.error || 'Erro ao atualizar configurações')
       }

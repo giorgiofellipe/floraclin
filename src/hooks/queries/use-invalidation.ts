@@ -49,5 +49,17 @@ export function useInvalidation() {
       }
       return queryClient.invalidateQueries({ queryKey: queryKeys.procedures.all })
     },
+
+    invalidateConsent: () =>
+      queryClient.invalidateQueries({ queryKey: ['consent'] }),
+
+    invalidateEvaluation: () =>
+      queryClient.invalidateQueries({ queryKey: ['evaluation'] }),
+
+    invalidateAudit: () =>
+      queryClient.invalidateQueries({ queryKey: ['audit'] }),
+
+    invalidateAll: () =>
+      queryClient.invalidateQueries(),
   }
 }

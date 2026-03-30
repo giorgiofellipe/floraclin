@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useFinancialEntries } from '@/hooks/queries/use-financial'
-import { useInvalidation } from '@/hooks/mutations/use-invalidation'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import { InstallmentTable } from '@/components/financial/installment-table'
 import { PaymentForm } from '@/components/financial/payment-form'
 import {

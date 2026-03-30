@@ -22,6 +22,7 @@ import { SignaturePad } from '@/components/consent/signature-pad'
 import {
   approveProcedureAction,
 } from '@/actions/procedures'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import {
   getActiveConsentForTypeAction,
   acceptConsentAction,
@@ -169,6 +170,7 @@ export function ProcedureApproval({
   wizardOverrides,
 }: ProcedureApprovalProps) {
   const router = useRouter()
+  const { invalidateProcedures, invalidateFinancial } = useInvalidation()
 
   // ─── State ────────────────────────────────────────────────────────
   const [procedureTypes, setProcedureTypes] = useState<ProcedureType[]>([])
@@ -383,6 +385,8 @@ export function ProcedureApproval({
       const result = await approveProcedureAction(procedure.id)
       if (result.success) {
         setApproved(true)
+        invalidateProcedures(patient.id)
+        invalidateFinancial()
         if (!wizardOverrides?.hideNavigation) {
           setTimeout(() => {
             router.push(`/pacientes/${patient.id}?tab=procedimentos`)
@@ -423,6 +427,8 @@ export function ProcedureApproval({
         const result = await approveProcedureAction(procedure.id)
         if (result.success) {
           setApproved(true)
+          invalidateProcedures(patient.id)
+          invalidateFinancial()
           wizardOverrides?.onSaveComplete?.({
             success: true,
             procedureId: procedure.id,

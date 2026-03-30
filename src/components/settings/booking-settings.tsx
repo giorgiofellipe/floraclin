@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card } from '@/components/ui/card'
 import { updateBookingSettingsAction } from '@/actions/tenants'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import { toast } from 'sonner'
 import { CopyIcon, CheckIcon, ExternalLinkIcon } from 'lucide-react'
 
@@ -24,6 +25,7 @@ export function BookingSettings({
   embedded = false,
   onChange,
 }: BookingSettingsProps) {
+  const { invalidateTenant } = useInvalidation()
   const [isPending, startTransition] = useTransition()
   const [enabled, setEnabled] = useState(initialEnabled)
   const [copied, setCopied] = useState(false)
@@ -46,6 +48,7 @@ export function BookingSettings({
         publicBookingEnabled: checked,
       })
       if (result?.success) {
+        invalidateTenant()
         toast.success(
           checked
             ? 'Agendamento online ativado'

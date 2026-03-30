@@ -62,6 +62,7 @@ import {
   listPractitionersAction,
   listProcedureTypesForSelectAction,
 } from '@/actions/appointments'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import type { DiagramViewType, QuantityUnit, PaymentMethod } from '@/types'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
@@ -237,6 +238,7 @@ export function ProcedureForm({
   loadingEvaluationTemplates = false,
 }: ProcedureFormProps) {
   const router = useRouter()
+  const { invalidateProcedures, invalidatePatient } = useInvalidation()
   const isReadOnly = mode === 'view'
   const isEdit = mode === 'edit'
 
@@ -780,6 +782,9 @@ export function ProcedureForm({
             }
           }
         }
+
+        invalidateProcedures(patientId)
+        invalidatePatient(patientId)
 
         if (wizardOverrides?.hideNavigation) {
           // In wizard mode, suppress all navigation — wizard controls flow

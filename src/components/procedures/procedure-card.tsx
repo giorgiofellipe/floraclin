@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { PROCEDURE_STATUS_COLORS, PROCEDURE_STATUS_LABELS } from '@/lib/constants'
 import { cancelProcedureAction } from '@/actions/procedures'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import type { ProcedureListItem } from '@/db/queries/procedures'
 
 // ─── Category Icons ────────────────────────────────────────────────
@@ -60,6 +61,7 @@ export function ProcedureCard({
   onStatusChange,
 }: ProcedureCardProps) {
   const router = useRouter()
+  const { invalidateProcedures, invalidateFinancial } = useInvalidation()
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
@@ -108,6 +110,8 @@ export function ProcedureCard({
       if (result.success) {
         setCancelDialogOpen(false)
         setCancelReason('')
+        invalidateProcedures(patientId)
+        invalidateFinancial()
         onStatusChange?.()
       } else {
         toast.error(result.error ?? 'Erro ao cancelar procedimento')

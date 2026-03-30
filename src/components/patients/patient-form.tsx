@@ -6,6 +6,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createPatientSchema, type CreatePatientInput, type UpdatePatientInput } from '@/validations/patient'
 import { createPatientAction, updatePatientAction } from '@/actions/patients'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import type { Patient } from '@/db/queries/patients'
 
 import { Button } from '@/components/ui/button'
@@ -44,6 +45,7 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
   const [isPending, startTransition] = useTransition()
   const [serverError, setServerError] = useState<string | null>(null)
   const [addressOpen, setAddressOpen] = useState(false)
+  const { invalidatePatients, invalidatePatient } = useInvalidation()
 
   const isEditing = !!patient
 
@@ -100,6 +102,10 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
       if (result?.success) {
         onOpenChange(false)
         form.reset()
+        invalidatePatients()
+        if (isEditing && patient) {
+          invalidatePatient(patient.id)
+        }
         router.refresh()
       }
     })

@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dialog'
 import { ProcedureTypeForm } from './procedure-type-form'
 import { updateProcedureTypeAction, deleteProcedureTypeAction } from '@/actions/tenants'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import { formatCurrency } from '@/lib/utils'
 import { PROCEDURE_CATEGORIES } from '@/lib/constants'
 import { toast } from 'sonner'
@@ -68,6 +69,7 @@ interface ProcedureTypeListProps {
 
 export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = false, templateStatusMap }: ProcedureTypeListProps) {
   const router = useRouter()
+  const { invalidateProcedureTypes } = useInvalidation()
   const [isPending, startTransition] = useTransition()
   const [createOpen, setCreateOpen] = useState(false)
   const [editingType, setEditingType] = useState<ProcedureType | null>(null)
@@ -83,6 +85,7 @@ export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = fal
       })
       if (result?.success) {
         toast.success(pt.isActive ? 'Procedimento desativado' : 'Procedimento ativado')
+        invalidateProcedureTypes()
       } else {
         toast.error(result?.error || 'Erro ao atualizar')
       }
@@ -94,6 +97,7 @@ export function ProcedureTypeList({ procedureTypes: initialTypes, embedded = fal
       const result = await deleteProcedureTypeAction(id)
       if (result?.success) {
         toast.success('Procedimento excluído')
+        invalidateProcedureTypes()
         setDeleteConfirm(null)
       } else {
         toast.error(result?.error || 'Erro ao excluir')

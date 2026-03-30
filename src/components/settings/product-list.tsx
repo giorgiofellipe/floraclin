@@ -34,6 +34,7 @@ import {
   toggleProductActiveAction,
   toggleProductDiagramAction,
 } from '@/actions/products-catalog'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import { PROCEDURE_CATEGORIES } from '@/lib/constants'
 import { toast } from 'sonner'
 import { PlusIcon, PencilIcon, Trash2Icon } from 'lucide-react'
@@ -226,6 +227,7 @@ function ProductFormDialog({
 }
 
 export function ProductList({ products: initialProducts }: ProductListProps) {
+  const { invalidateProducts } = useInvalidation()
   const [isPending, startTransition] = useTransition()
   const [createOpen, setCreateOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
@@ -236,6 +238,7 @@ export function ProductList({ products: initialProducts }: ProductListProps) {
       const result = await toggleProductActiveAction(product.id, !product.isActive)
       if (result?.success) {
         toast.success(product.isActive ? 'Produto desativado' : 'Produto ativado')
+        invalidateProducts()
       } else {
         toast.error(result?.error || 'Erro ao atualizar')
       }
@@ -247,6 +250,7 @@ export function ProductList({ products: initialProducts }: ProductListProps) {
       const result = await toggleProductDiagramAction(product.id, !product.showInDiagram)
       if (result?.success) {
         toast.success(product.showInDiagram ? 'Removido do diagrama' : 'Adicionado ao diagrama')
+        invalidateProducts()
       } else {
         toast.error(result?.error || 'Erro ao atualizar')
       }
@@ -258,6 +262,7 @@ export function ProductList({ products: initialProducts }: ProductListProps) {
       const result = await deleteProductAction(id)
       if (result?.success) {
         toast.success('Produto excluído')
+        invalidateProducts()
         setDeleteConfirm(null)
       } else {
         toast.error(result?.error || 'Erro ao excluir')
@@ -376,7 +381,7 @@ export function ProductList({ products: initialProducts }: ProductListProps) {
       <ProductFormDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onSuccess={() => setCreateOpen(false)}
+        onSuccess={() => { invalidateProducts(); setCreateOpen(false) }}
       />
 
       {/* Edit dialog */}
@@ -385,7 +390,7 @@ export function ProductList({ products: initialProducts }: ProductListProps) {
           open={!!editingProduct}
           onOpenChange={(open) => { if (!open) setEditingProduct(null) }}
           initialData={editingProduct}
-          onSuccess={() => setEditingProduct(null)}
+          onSuccess={() => { invalidateProducts(); setEditingProduct(null) }}
         />
       )}
     </div>

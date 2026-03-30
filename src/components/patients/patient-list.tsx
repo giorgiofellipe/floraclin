@@ -6,6 +6,7 @@ import Link from 'next/link'
 import type { Patient } from '@/db/queries/patients'
 import type { PaginatedResult } from '@/types'
 import { deletePatientAction } from '@/actions/patients'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import { formatDate, maskCPF } from '@/lib/utils'
 import { PatientForm } from './patient-form'
 
@@ -38,6 +39,7 @@ interface PatientListProps {
 export function PatientList({ result, search: initialSearch = '' }: PatientListProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { invalidatePatients } = useInvalidation()
   const [searchValue, setSearchValue] = useState(initialSearch)
   const [formOpen, setFormOpen] = useState(false)
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null)
@@ -75,9 +77,10 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
     startTransition(async () => {
       await deletePatientAction(deletePatient.id)
       setDeletePatient(null)
+      invalidatePatients()
       router.refresh()
     })
-  }, [deletePatient, router])
+  }, [deletePatient, router, invalidatePatients])
 
   const handleEdit = useCallback((patient: Patient) => {
     setEditingPatient(patient)

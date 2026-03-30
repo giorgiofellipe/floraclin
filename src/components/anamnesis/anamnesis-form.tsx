@@ -29,6 +29,7 @@ import {
   type MedicalHistory,
 } from '@/validations/anamnesis'
 import { upsertAnamnesisAction } from '@/actions/anamnesis'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import { formatDateTime } from '@/lib/utils'
 import type { WizardOverrides } from '@/components/service-wizard/types'
 
@@ -225,6 +226,7 @@ function SelectField({
 // ─── Main Component ─────────────────────────────────────────────────
 
 export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOverrides }: AnamnesisFormProps) {
+  const { invalidateAnamnesis } = useInvalidation()
   const [isPending, startTransition] = useTransition()
   const [lastSaved, setLastSaved] = useState<Date | null>(
     initialData?.updatedAt ? new Date(initialData.updatedAt) : null
@@ -303,11 +305,12 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
         expectedUpdatedAtRef.current = new Date(result.data.updatedAt).toISOString()
         setLastSaved(new Date(result.data.updatedAt))
         setLastSavedBy(null) // current user just saved
+        invalidateAnamnesis(patientId)
       } else if (!result.success && result.error) {
         toast.error(result.error)
       }
     })
-  }, [patientId, getValues])
+  }, [patientId, getValues, invalidateAnamnesis])
 
   const debouncedSave = useCallback(() => {
     if (debounceTimerRef.current) {
@@ -356,6 +359,7 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
           expectedUpdatedAtRef.current = new Date(result.data.updatedAt).toISOString()
           setLastSaved(new Date(result.data.updatedAt))
           setLastSavedBy(null)
+          invalidateAnamnesis(patientId)
           wizardOverrides?.onSaveComplete?.({ success: true })
         } else {
           wizardOverrides?.onSaveComplete?.({

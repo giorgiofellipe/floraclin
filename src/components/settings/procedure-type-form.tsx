@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { createProcedureTypeAction, updateProcedureTypeAction } from '@/actions/tenants'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import { PROCEDURE_CATEGORIES } from '@/lib/constants'
 import { toast } from 'sonner'
 
@@ -46,6 +47,7 @@ interface ProcedureTypeFormProps {
 
 export function ProcedureTypeForm({ initialData, onSuccess, onCancel }: ProcedureTypeFormProps) {
   const [isPending, startTransition] = useTransition()
+  const { invalidateProcedureTypes } = useInvalidation()
   const [name, setName] = useState(initialData?.name || '')
   const [category, setCategory] = useState(initialData?.category || '')
   const [description, setDescription] = useState(initialData?.description || '')
@@ -84,6 +86,7 @@ export function ProcedureTypeForm({ initialData, onSuccess, onCancel }: Procedur
 
       if (result?.success) {
         toast.success(isEditing ? 'Procedimento atualizado' : 'Procedimento criado')
+        invalidateProcedureTypes()
         onSuccess?.()
       } else {
         toast.error(result?.error || 'Erro ao salvar procedimento')

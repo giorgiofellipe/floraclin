@@ -28,6 +28,7 @@ import {
   listPatientsForSelectAction,
   type AppointmentActionState,
 } from '@/actions/appointments'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import { STATUS_LABELS } from '@/components/scheduling/appointment-card'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
 import type { AppointmentStatus } from '@/types'
@@ -94,6 +95,7 @@ export function AppointmentForm({
   defaultPractitionerId,
 }: AppointmentFormProps) {
   const isEditing = !!appointment
+  const { invalidateAppointments } = useInvalidation()
 
   const [patientSearch, setPatientSearch] = React.useState('')
   const [patientOptions, setPatientOptions] = React.useState<PatientOption[]>([])
@@ -149,10 +151,11 @@ export function AppointmentForm({
   // Close on success and notify parent
   React.useEffect(() => {
     if (state?.success) {
+      invalidateAppointments()
       onSaved?.()
       onOpenChange(false)
     }
-  }, [state?.success, onOpenChange, onSaved])
+  }, [state?.success, onOpenChange, onSaved, invalidateAppointments])
 
   // Search patients
   React.useEffect(() => {
@@ -185,6 +188,7 @@ export function AppointmentForm({
   const handleStatusChange = async (status: AppointmentStatus) => {
     if (!appointment) return
     await updateAppointmentStatusAction(appointment.id, status)
+    invalidateAppointments()
     onSaved?.()
     onOpenChange(false)
   }
@@ -193,6 +197,7 @@ export function AppointmentForm({
     if (!appointment) return
     if (!confirm('Tem certeza que deseja excluir este agendamento?')) return
     await deleteAppointmentAction(appointment.id)
+    invalidateAppointments()
     onSaved?.()
     onOpenChange(false)
   }

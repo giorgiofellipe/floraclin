@@ -30,7 +30,7 @@ import { cn, formatDateTime } from '@/lib/utils'
 import { PROCEDURE_STATUS_COLORS, PROCEDURE_STATUS_LABELS } from '@/lib/constants'
 import { cancelProcedureAction } from '@/actions/procedures'
 import { useProcedures } from '@/hooks/queries/use-procedures'
-import { useInvalidation } from '@/hooks/mutations/use-invalidation'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 

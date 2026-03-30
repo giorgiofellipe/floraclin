@@ -1,15 +1,19 @@
+'use client'
+
 import { useQuery } from '@tanstack/react-query'
+import {
+  listActiveProductsAction,
+  listDiagramProductsAction,
+  listAllProductsAction,
+} from '@/actions/products-catalog'
 
 export function useProducts(options?: { activeOnly?: boolean; diagramOnly?: boolean }) {
   return useQuery({
     queryKey: ['products', options],
-    queryFn: async () => {
-      const params = new URLSearchParams()
-      if (options?.activeOnly) params.set('activeOnly', 'true')
-      if (options?.diagramOnly) params.set('diagramOnly', 'true')
-      const res = await fetch(`/api/products?${params}`)
-      if (!res.ok) throw new Error('Failed to fetch products')
-      return res.json()
+    queryFn: () => {
+      if (options?.diagramOnly) return listDiagramProductsAction()
+      if (options?.activeOnly) return listActiveProductsAction()
+      return listAllProductsAction()
     },
   })
 }
@@ -21,10 +25,6 @@ export function useDiagramProducts() {
 export function useAllProducts() {
   return useQuery({
     queryKey: ['products', 'all'],
-    queryFn: async () => {
-      const res = await fetch('/api/products/all')
-      if (!res.ok) throw new Error('Failed to fetch all products')
-      return res.json()
-    },
+    queryFn: () => listAllProductsAction(),
   })
 }

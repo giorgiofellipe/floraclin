@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/dialog'
 import { InviteUserForm } from './invite-user-form'
 import { updateUserRoleAction, deactivateUserAction } from '@/actions/users'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import { toast } from 'sonner'
 import { PlusIcon, UserXIcon } from 'lucide-react'
 import type { Role } from '@/types'
@@ -86,6 +87,7 @@ interface TeamListProps {
 }
 
 export function TeamList({ members, currentUserId, embedded = false }: TeamListProps) {
+  const { invalidateMembers } = useInvalidation()
   const [isPending, startTransition] = useTransition()
   const [inviteOpen, setInviteOpen] = useState(false)
   const [deactivateConfirm, setDeactivateConfirm] = useState<string | null>(null)
@@ -95,6 +97,7 @@ export function TeamList({ members, currentUserId, embedded = false }: TeamListP
       const result = await updateUserRoleAction({ userId, role: newRole as Role })
       if (result?.success) {
         toast.success('Papel atualizado')
+        invalidateMembers()
       } else {
         toast.error(result?.error || 'Erro ao atualizar papel')
       }
@@ -106,6 +109,7 @@ export function TeamList({ members, currentUserId, embedded = false }: TeamListP
       const result = await deactivateUserAction(userId)
       if (result?.success) {
         toast.success('Membro desativado')
+        invalidateMembers()
         setDeactivateConfirm(null)
       } else {
         toast.error(result?.error || 'Erro ao desativar membro')

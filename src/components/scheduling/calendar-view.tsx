@@ -30,6 +30,7 @@ import { WeekView } from '@/components/scheduling/week-view'
 import { MonthView } from '@/components/scheduling/month-view'
 import { AppointmentForm } from '@/components/scheduling/appointment-form'
 import { listAppointmentsAction } from '@/actions/appointments'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
 
 type ViewType = 'day' | 'week' | 'month'
@@ -93,6 +94,7 @@ export function CalendarView({
 }: CalendarViewProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { invalidateAppointments } = useInvalidation()
 
   const [currentDate, setCurrentDate] = React.useState(new Date(initialDate + 'T12:00:00'))
   const [view, setView] = React.useState<ViewType>(initialView)
@@ -205,8 +207,9 @@ export function CalendarView({
 
   // Refetch when form closes (separate from the open/close handler to avoid loops)
   const handleFormSaved = React.useCallback(() => {
+    invalidateAppointments()
     fetchAppointments(currentDate, view, practitionerId)
-  }, [currentDate, view, practitionerId, fetchAppointments])
+  }, [currentDate, view, practitionerId, fetchAppointments, invalidateAppointments])
 
   const handleNewAppointment = () => {
     setEditingAppointment(null)

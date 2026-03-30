@@ -37,6 +37,7 @@ import {
   getPreviousDiagramPointsAction,
 } from '@/actions/procedures'
 import { listDiagramProductsAction } from '@/actions/products-catalog'
+import { useInvalidation } from '@/hooks/queries/use-invalidation'
 import type { DiagramViewType, QuantityUnit } from '@/types'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
@@ -245,6 +246,7 @@ export function ProcedureExecution({
   wizardOverrides,
 }: ProcedureExecutionProps) {
   const router = useRouter()
+  const { invalidateProcedures } = useInvalidation()
   const isExecuted = procedure.status === 'executed'
   const isReadOnly = isExecuted
 
@@ -506,6 +508,8 @@ export function ProcedureExecution({
         return
       }
 
+      invalidateProcedures(patientId)
+
       // Redirect to patient's procedures tab
       if (!wizardOverrides?.hideNavigation) {
         router.push(`/pacientes/${patientId}?tab=procedimentos`)
@@ -586,6 +590,7 @@ export function ProcedureExecution({
         })
 
         if (result.success) {
+          invalidateProcedures(patientId)
           wizardOverrides?.onSaveComplete?.({
             success: true,
             procedureId: procedure.id,
