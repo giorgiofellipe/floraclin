@@ -469,35 +469,23 @@ export function ProcedureForm({
   }, [patientId, procedure?.id])
 
   // ─── Auto-sum default prices for financial plan total ──────────────
+  // Simplified: compute sum from the best available type IDs + loaded procedure types.
+  // Only auto-fill when totalAmount is empty (never override manual edits).
   const lastAutoSumRef = useRef<string>('')
-  const prevInitialTypeIdsRef = useRef<string>(initialTypeIds?.join(',') ?? '')
-
-  // Reset auto-sum protection when initialTypeIds changes (wizard step 2 re-selection)
-  useEffect(() => {
-    const key = initialTypeIds?.join(',') ?? ''
-    if (key !== prevInitialTypeIdsRef.current) {
-      prevInitialTypeIdsRef.current = key
-      lastAutoSumRef.current = '' // allow auto-sum to override on next run
-      // Also clear the current total so auto-sum can fill it
-      setFinancialPlan((prev) => ({ ...prev, totalAmount: '' }))
-    }
-  }, [initialTypeIds])
+  const prevTypeIdsKeyRef = useRef<string>('')
 
   useEffect(() => {
     if (!isPlanningMode || isReadOnly) return
     if (procedureTypes.length === 0) return
 
-    // Use initialTypeIds if procedureTypeId hasn't been set yet (wizard mode)
-    let allSelectedIds = [procedureTypeId, ...additionalTypeIds].filter(Boolean)
-    if (allSelectedIds.length === 0 && initialTypeIds && initialTypeIds.length > 0) {
-      allSelectedIds = [...initialTypeIds]
-    }
-    if (allSelectedIds.length === 0) {
-      lastAutoSumRef.current = ''
-      return
-    }
+    // Best source of selected type IDs: initialTypeIds (from wizard step 2) or local state
+    const fromState = [procedureTypeId, ...additionalTypeIds].filter(Boolean)
+    const selectedIds = fromState.length > 0 ? fromState : (initialTypeIds ?? [])
+    if (selectedIds.length === 0) return
 
-    const sum = allSelectedIds.reduce((acc, id) => {
+    const typeIdsKey = selectedIds.sort().join(',')
+
+    const sum = selectedIds.reduce((acc, id) => {
       const type = procedureTypes.find((t) => t.id === id)
       if (type?.defaultPrice) {
         return acc + parseFloat(type.defaultPrice)
@@ -507,18 +495,23 @@ export function ProcedureForm({
 
     if (sum <= 0) return
 
-    // Convert sum to cents string then mask
     const centsStr = String(Math.round(sum * 100))
     const masked = maskCurrency(centsStr)
 
+    // If the type selection changed, always recalculate (clear protection)
+    if (typeIdsKey !== prevTypeIdsKeyRef.current) {
+      prevTypeIdsKeyRef.current = typeIdsKey
+      lastAutoSumRef.current = masked
+      setFinancialPlan((prev) => ({ ...prev, totalAmount: masked }))
+      return
+    }
+
+    // Otherwise only fill if empty or matches last auto-calculated value
     setFinancialPlan((prev) => {
-      // Only auto-fill if current total is empty or matches the previous auto-calculated value
       if (prev.totalAmount === '' || prev.totalAmount === lastAutoSumRef.current) {
         lastAutoSumRef.current = masked
         return { ...prev, totalAmount: masked }
       }
-      // User has manually changed the value — don't override
-      lastAutoSumRef.current = masked
       return prev
     })
   }, [procedureTypeId, additionalTypeIds, procedureTypes, isPlanningMode, isReadOnly, initialTypeIds])
