@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { UserPlus, CalendarPlus } from 'lucide-react'
 import { useDashboard } from '@/hooks/queries/use-dashboard'
-import { useTenant } from '@/hooks/queries/use-settings'
+import { useTenant } from '@/hooks/queries/use-tenant'
 import { QuickStats } from '@/components/dashboard/quick-stats'
 import { TodayAppointments } from '@/components/dashboard/today-appointments'
 import { FinancialSummary } from '@/components/dashboard/financial-summary'

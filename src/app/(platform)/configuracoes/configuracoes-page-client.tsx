@@ -1,10 +1,11 @@
 'use client'
 
 import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { useTenant, useProcedureTypes, useProducts, useTenantUsers, useConsentTemplates } from '@/hooks/queries/use-settings'
-import { queryKeys } from '@/hooks/queries/query-keys'
-import { getTemplatesForProcedureTypesAction } from '@/actions/evaluation-templates'
+import { useTenant, useTenantUsers } from '@/hooks/queries/use-tenant'
+import { useProcedureTypes } from '@/hooks/queries/use-procedure-types'
+import { useAllProducts } from '@/hooks/queries/use-products'
+import { useConsentTemplates } from '@/hooks/queries/use-consent'
+import { useEvaluationTemplates } from '@/hooks/queries/use-evaluation'
 import { SettingsPageClient } from './settings-page-client'
 import ConfiguracoesLoading from './loading'
 
@@ -15,7 +16,7 @@ interface ConfiguracoesPageClientProps {
 export function ConfiguracoesPageClientWrapper({ currentUserId }: ConfiguracoesPageClientProps) {
   const { data: tenant, isLoading: tenantLoading } = useTenant()
   const { data: procedureTypes, isLoading: ptLoading } = useProcedureTypes()
-  const { data: products, isLoading: productsLoading } = useProducts()
+  const { data: products, isLoading: productsLoading } = useAllProducts()
   const { data: members, isLoading: membersLoading } = useTenantUsers()
   const { data: consentTemplates, isLoading: ctLoading } = useConsentTemplates()
 
@@ -24,14 +25,7 @@ export function ConfiguracoesPageClientWrapper({ currentUserId }: ConfiguracoesP
     [procedureTypes]
   )
 
-  const { data: evaluationTemplates } = useQuery({
-    queryKey: queryKeys.settings.evaluationTemplates(procedureTypeIds),
-    queryFn: () =>
-      procedureTypeIds.length > 0
-        ? getTemplatesForProcedureTypesAction(procedureTypeIds)
-        : Promise.resolve([]),
-    enabled: procedureTypeIds.length > 0,
-  })
+  const { data: evaluationTemplates } = useEvaluationTemplates(procedureTypeIds)
 
   const templateStatusMap = useMemo(() => {
     const map: Record<string, boolean> = {}

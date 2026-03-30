@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
-import { getPatientAction } from '@/actions/patients'
+import { getAuthContext } from '@/lib/auth'
+import { getPatient } from '@/db/queries/patients'
 import { PatientDetailPageClient } from './patient-detail-page-client'
 
 interface PatientDetailPageProps {
@@ -9,10 +10,15 @@ interface PatientDetailPageProps {
 }
 
 export async function generateMetadata({ params }: PatientDetailPageProps): Promise<Metadata> {
-  const { id } = await params
-  const patient = await getPatientAction(id)
-  return {
-    title: patient ? `${patient.fullName} | FloraClin` : 'Paciente | FloraClin',
+  try {
+    const { id } = await params
+    const ctx = await getAuthContext()
+    const patient = await getPatient(ctx.tenantId, id)
+    return {
+      title: patient ? `${patient.fullName} | FloraClin` : 'Paciente | FloraClin',
+    }
+  } catch {
+    return { title: 'Paciente | FloraClin' }
   }
 }
 
