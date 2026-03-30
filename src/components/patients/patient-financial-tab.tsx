@@ -13,7 +13,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useFinancialEntries } from '@/hooks/queries/use-financial'
-import { useInvalidation } from '@/hooks/queries/use-invalidation'
+import { useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/hooks/queries/query-keys'
 import { InstallmentTable } from '@/components/financial/installment-table'
 import { PaymentForm } from '@/components/financial/payment-form'
 import {
@@ -59,7 +60,8 @@ interface PatientFinancialTabProps {
 
 export function PatientFinancialTab({ patientId, patientName }: PatientFinancialTabProps) {
   const { data: rawData, isLoading } = useFinancialEntries({ patientId })
-  const { invalidateFinancial } = useInvalidation()
+  const queryClient = useQueryClient()
+  const invalidateFinancial = () => queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
   const entries = (rawData?.data ?? []) as FinancialEntry[]
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [showPaymentForm, setShowPaymentForm] = useState(false)

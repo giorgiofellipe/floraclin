@@ -49,20 +49,8 @@ import type { DiagramPointData, CatalogProduct } from '@/components/face-diagram
 import { PhotoUploader } from '@/components/photos/photo-uploader'
 import { PhotoGrid } from '@/components/photos/photo-grid'
 import { ConsentViewer } from '@/components/consent/consent-viewer'
-import {
-  createProcedureAction,
-  updateProcedureAction,
-  listProcedureTypesAction,
-  checkConsentStatusAction,
-  getPreviousDiagramPointsAction,
-} from '@/actions/procedures'
-import { listDiagramProductsAction } from '@/actions/products-catalog'
-import { getActiveConsentForTypeAction } from '@/actions/consent'
-import {
-  listPractitionersAction,
-  listProcedureTypesForSelectAction,
-} from '@/actions/appointments'
-import { useInvalidation } from '@/hooks/queries/use-invalidation'
+import { useCreateProcedure, useUpdateProcedure } from '@/hooks/mutations/use-procedure-mutations'
+import { useSaveEvaluationResponse } from '@/hooks/mutations/use-evaluation-mutations'
 import type { DiagramViewType, QuantityUnit, PaymentMethod } from '@/types'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
@@ -71,7 +59,6 @@ import type { ProductApplicationItem } from '@/validations/procedure'
 import type { WizardOverrides } from '@/components/service-wizard/types'
 import type { EvaluationSection, EvaluationResponses } from '@/types/evaluation'
 import { TemplateRenderer } from '@/components/evaluation/template-renderer'
-import { saveEvaluationResponseAction } from '@/actions/evaluation-responses'
 import { validateEvaluationResponses } from '@/lib/evaluation-utils'
 
 // ─── Evaluation template type for the form ────────────────────────
@@ -238,7 +225,9 @@ export function ProcedureForm({
   loadingEvaluationTemplates = false,
 }: ProcedureFormProps) {
   const router = useRouter()
-  const { invalidateProcedures, invalidatePatient } = useInvalidation()
+  const createProcedureMutation = useCreateProcedure()
+  const updateProcedureMutation = useUpdateProcedure()
+  const saveEvalResponse = useSaveEvaluationResponse()
   const isReadOnly = mode === 'view'
   const isEdit = mode === 'edit'
 
@@ -428,12 +417,12 @@ export function ProcedureForm({
   useEffect(() => {
     async function load() {
       try {
-        const [types, prods] = await Promise.all([
-          listProcedureTypesAction(),
-          listDiagramProductsAction(),
+        const [typesRes, prodsRes] = await Promise.all([
+          fetch('/api/procedure-types'),
+          fetch('/api/products?filter=diagram'),
         ])
-        setProcedureTypes(types as ProcedureType[])
-        setCatalogProducts(prods as CatalogProduct[])
+        if (typesRes.ok) setProcedureTypes(await typesRes.json() as ProcedureType[])
+        if (prodsRes.ok) setCatalogProducts(await prodsRes.json() as CatalogProduct[])
       } finally {
         setLoadingTypes(false)
       }
@@ -444,19 +433,20 @@ export function ProcedureForm({
   // ─── Load previous diagram points (ghost overlay) ────────────────
   useEffect(() => {
     async function load() {
-      const result = await getPreviousDiagramPointsAction(
-        patientId,
-        procedure?.id
-      )
-      if (result.success && result.data && result.data.length > 0) {
+      const params = new URLSearchParams({ patientId })
+      if (procedure?.id) params.set('excludeProcedureId', procedure.id)
+      const res = await fetch(`/api/face-diagrams?${params}`)
+      const data = res.ok ? await res.json() : []
+      if (data && data.length > 0) {
         setPreviousPoints(
-          result.data.map((p) => ({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          data.map((p: any) => ({
             id: p.id,
-            x: parseFloat(p.x),
-            y: parseFloat(p.y),
+            x: parseFloat(String(p.x)),
+            y: parseFloat(String(p.y)),
             productName: p.productName,
             activeIngredient: p.activeIngredient ?? undefined,
-            quantity: parseFloat(p.quantity),
+            quantity: parseFloat(String(p.quantity)),
             quantityUnit: p.quantityUnit as QuantityUnit,
             technique: p.technique ?? undefined,
             depth: p.depth ?? undefined,
@@ -538,16 +528,20 @@ export function ProcedureForm({
     async function checkConsent() {
       setConsentChecking(true)
       try {
-        const result = await checkConsentStatusAction(patientId, consentType)
-        if (result.success && result.data) {
-          setConsentStatus(result.data)
+        const checkRes = await fetch(`/api/consent/history/${patientId}?type=${consentType}`)
+        const checkData = checkRes.ok ? await checkRes.json() : null
+        if (checkData && checkData.length > 0) {
+          setConsentStatus(checkData[0])
           setConsentTemplate(null)
         } else {
           setConsentStatus(null)
-          // Try to load template — also try 'general' as fallback
-          let template = await getActiveConsentForTypeAction(consentType).catch(() => null)
+          // Try to load template -- also try 'general' as fallback
+          let template = null
+          const tplRes = await fetch(`/api/consent/templates?type=${consentType}&active=true`).catch(() => null)
+          if (tplRes?.ok) template = await tplRes.json()
           if (!template && consentType !== 'general') {
-            template = await getActiveConsentForTypeAction('general').catch(() => null)
+            const fallbackRes = await fetch('/api/consent/templates?type=general&active=true').catch(() => null)
+            if (fallbackRes?.ok) template = await fallbackRes.json()
           }
           setConsentTemplate(template ?? null)
         }
@@ -744,12 +738,12 @@ export function ProcedureForm({
 
       let result
       if (isEdit && procedure?.id) {
-        result = await updateProcedureAction(procedure.id, payload)
+        result = await updateProcedureMutation.mutateAsync({ id: procedure.id, ...payload })
       } else {
-        result = await createProcedureAction(payload)
+        result = await createProcedureMutation.mutateAsync(payload)
       }
 
-      if (result.success) {
+      if (result) {
         // Save evaluation responses (standalone form)
         const savedProcedureId = (result.data as { id: string } | undefined)?.id ?? procedure?.id
         if (savedProcedureId && evalTemplates && evalTemplates.length > 0) {
@@ -759,7 +753,7 @@ export function ProcedureForm({
               return resp && Object.keys(resp).length > 0
             })
             .map((t) =>
-              saveEvaluationResponseAction({
+              saveEvalResponse.mutateAsync({
                 procedureRecordId: savedProcedureId,
                 templateId: t.id,
                 responses: evaluationResponses[t.id] as EvaluationResponses,
@@ -768,16 +762,13 @@ export function ProcedureForm({
 
           if (responsePromises.length > 0) {
             const responseResults = await Promise.all(responsePromises)
-            const failed = responseResults.find((r) => r?.error)
+            const failed = responseResults.find((r: Record<string, unknown>) => r?.error)
             if (failed) {
               setSubmitError(failed.error ?? 'Erro ao salvar respostas da avaliação')
               return
             }
           }
         }
-
-        invalidateProcedures(patientId)
-        invalidatePatient(patientId)
 
         if (wizardOverrides?.hideNavigation) {
           // In wizard mode, suppress all navigation — wizard controls flow
@@ -941,12 +932,12 @@ export function ProcedureForm({
 
         let result
         if (isEdit && procedure?.id) {
-          result = await updateProcedureAction(procedure.id, payload)
+          result = await updateProcedureMutation.mutateAsync({ id: procedure.id, ...payload })
         } else {
-          result = await createProcedureAction(payload)
+          result = await createProcedureMutation.mutateAsync(payload)
         }
 
-        if (result.success) {
+        if (result) {
           const createdId = (result.data as { id: string } | undefined)?.id ?? procedure?.id
 
           // Save evaluation responses if we have templates with answers
@@ -957,7 +948,7 @@ export function ProcedureForm({
                 return resp && Object.keys(resp).length > 0
               })
               .map((t) =>
-                saveEvaluationResponseAction({
+                saveEvalResponse.mutateAsync({
                   procedureRecordId: createdId,
                   templateId: t.id,
                   responses: evaluationResponses[t.id] as EvaluationResponses,
@@ -966,12 +957,13 @@ export function ProcedureForm({
 
             if (responsePromises.length > 0) {
               const responseResults = await Promise.all(responsePromises)
-              const failed = responseResults.find((r) => r?.error)
+              const failed = responseResults.find((r: Record<string, unknown>) => r?.error)
               if (failed) {
-                setSubmitError(failed.error ?? 'Erro ao salvar respostas da avaliação')
+                const failedError = (failed as Record<string, string>).error ?? 'Erro ao salvar respostas da avaliação'
+                setSubmitError(failedError)
                 wizardOverrides?.onSaveComplete?.({
                   success: false,
-                  error: failed.error ?? 'Erro ao salvar respostas da avaliação',
+                  error: failedError,
                   errorType: 'server',
                 })
                 return
@@ -1878,12 +1870,12 @@ export function ProcedureForm({
               onClick={async () => {
                 setShowFollowUpPrompt(false)
                 // Load practitioners and procedure types for appointment form
-                const [practitioners, procTypes] = await Promise.all([
-                  listPractitionersAction(),
-                  listProcedureTypesForSelectAction(),
+                const [practRes, typesRes] = await Promise.all([
+                  fetch('/api/appointments/practitioners'),
+                  fetch('/api/appointments/procedure-types'),
                 ])
-                setAppointmentPractitioners(practitioners)
-                setAppointmentProcedureTypes(procTypes)
+                if (practRes.ok) setAppointmentPractitioners(await practRes.json())
+                if (typesRes.ok) setAppointmentProcedureTypes(await typesRes.json())
                 setShowAppointmentForm(true)
               }}
             >

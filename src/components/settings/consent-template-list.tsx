@@ -20,7 +20,8 @@ import {
 } from '@/components/ui/dialog'
 import { formatDateTime } from '@/lib/utils'
 import { ConsentTemplateForm } from '@/components/consent/consent-template-form'
-import { useInvalidation } from '@/hooks/queries/use-invalidation'
+import { useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/hooks/queries/query-keys'
 import { PlusIcon, PencilIcon } from 'lucide-react'
 import { CONSENT_TYPE_LABELS } from '@/lib/constants'
 
@@ -42,14 +43,14 @@ interface ConsentTemplateListProps {
 
 export function ConsentTemplateList({ templates, embedded = false }: ConsentTemplateListProps) {
   const router = useRouter()
-  const { invalidateConsentTemplates } = useInvalidation()
+  const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<ConsentTemplate | null>(null)
 
   function handleSuccess() {
     setCreateOpen(false)
     setEditingTemplate(null)
-    invalidateConsentTemplates()
+    queryClient.invalidateQueries({ queryKey: queryKeys.consent.all })
     router.refresh()
   }
 
