@@ -18,16 +18,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
 
         {/* CSS botanical element */}
         <div className="relative z-10 flex flex-col items-center animate-fade-in">
-          {/* Decorative botanical circles */}
-          <div className="relative w-48 h-48 mb-8 animate-botanical-sway">
-            <div className="absolute inset-0 rounded-full border border-mint/20" />
-            <div className="absolute inset-4 rounded-full border border-mint/15" />
-            <div className="absolute inset-8 rounded-full border border-mint/10" />
-            <div className="absolute inset-12 rounded-full border border-gold/10" />
-            {/* Leaf-like shapes via CSS */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-24 rounded-[50%] border border-mint/30 rotate-12" />
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-24 rounded-[50%] border border-mint/20 -rotate-12" />
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-20 bg-mint/15 rounded-full" />
+          {/* Logo symbol */}
+          <div className="mb-8">
+            <img src="/brand/logo-mint.svg" alt="" className="size-24 opacity-80" />
           </div>
 
           {/* Brand on visual panel */}

@@ -421,17 +421,19 @@ export function ServiceWizard({
               </p>
             </div>
             {/* Mobile: just name */}
-            <span className="sm:hidden text-[13px] font-semibold text-charcoal">{patient.fullName}</span>
+            <span className="sm:hidden text-[13px] font-semibold text-charcoal truncate max-w-[140px]">{patient.fullName}</span>
           </div>
 
-          {/* Center: stepper */}
-          <WizardStepper
-            currentStep={state.currentStep}
-            isStepAvailable={isStepAvailable}
-            isStepCompleted={isStepCompleted}
-            onStepClick={goToStep}
-            disabled={state.isSaving}
-          />
+          {/* Center: stepper (desktop only) */}
+          <div className="hidden sm:block">
+            <WizardStepper
+              currentStep={state.currentStep}
+              isStepAvailable={isStepAvailable}
+              isStepCompleted={isStepCompleted}
+              onStepClick={goToStep}
+              disabled={state.isSaving}
+            />
+          </div>
 
           {/* Right: close */}
           <button
@@ -442,6 +444,17 @@ export function ServiceWizard({
           >
             <X className="size-4" />
           </button>
+        </div>
+
+        {/* Mobile: stepper on its own row */}
+        <div className="sm:hidden border-t border-[#F4F6F8] px-4 py-2 flex justify-center">
+          <WizardStepper
+            currentStep={state.currentStep}
+            isStepAvailable={isStepAvailable}
+            isStepCompleted={isStepCompleted}
+            onStepClick={goToStep}
+            disabled={state.isSaving}
+          />
         </div>
 
         {/* Context message — inside header as a subtle sub-bar */}
@@ -456,7 +469,7 @@ export function ServiceWizard({
       </header>
 
       {/* ─── Main content area ────────────────────────────────────── */}
-      <main className="mx-auto flex w-full flex-1 flex-col gap-4 px-6 py-4 pb-24">
+      <main className="mx-auto flex w-full flex-1 flex-col gap-4 px-6 py-4 pb-52 md:pb-24">
 
         {/* Step content — all steps mounted, only active visible */}
         <div className="flex-1">

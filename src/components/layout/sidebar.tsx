@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { LogoSymbol } from '@/components/brand/logo-symbol'
 import {
   LayoutDashboard,
   Calendar,
@@ -45,10 +46,13 @@ const bottomItems = [
 function SidebarLogo() {
   return (
     <div className="flex-shrink-0 px-5 pt-6 pb-4">
-      <h1 className="font-display text-xl font-semibold leading-none tracking-wide">
-        <span className="text-cream">Flora</span>
-        <span className="text-mint">Clin</span>
-      </h1>
+      <div className="flex items-center gap-2">
+        <LogoSymbol className="size-6 text-mint" />
+        <h1 className="font-display text-xl font-semibold leading-none tracking-wide">
+          <span className="text-cream">Flora</span>
+          <span className="text-mint">Clin</span>
+        </h1>
+      </div>
     </div>
   )
 }
@@ -172,36 +176,6 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   )
 }
 
-// ─── User Profile Block ───────────────────────────────────────────
-
-function SidebarUserProfile({ userName, userRole }: { userName: string; userRole?: string }) {
-  const initials = userName
-    .split(' ')
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase()
-
-  return (
-    <div className="flex-shrink-0 px-4 pb-4 pt-2">
-      <div className="h-px bg-white/10 mb-3" />
-      <div className="flex items-center gap-2.5">
-        <div className="flex size-8 items-center justify-center rounded-full bg-sage text-[11px] font-semibold text-cream">
-          {initials}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-medium text-white/80">{userName}</p>
-          {userRole && (
-            <span className="inline-block rounded bg-white/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white/40">
-              {userRole}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ─── Desktop Sidebar ───────────────────────────────────────────────
 
 export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantId }: SidebarProps) {
@@ -213,7 +187,6 @@ export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantI
       <div className="relative flex flex-1 flex-col min-h-0">
         <SidebarLogo />
         <SidebarNav />
-        <SidebarUserProfile userName={userName} userRole={userRole} />
       </div>
     </aside>
   )
@@ -223,11 +196,6 @@ export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantI
 
 export function MobileSidebarContent({
   onNavigate,
-  clinicName,
-  userName,
-  userRole,
-  tenants,
-  activeTenantId,
 }: {
   onNavigate?: () => void
   clinicName?: string
@@ -240,7 +208,6 @@ export function MobileSidebarContent({
     <div className="relative flex h-full flex-1 flex-col min-h-0 bg-forest overflow-hidden">
       <SidebarLogo />
       <SidebarNav onNavigate={onNavigate} />
-      <SidebarUserProfile userName={userName ?? ''} userRole={userRole} />
     </div>
   )
 }

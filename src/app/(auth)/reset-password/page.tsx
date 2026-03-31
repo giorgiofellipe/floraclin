@@ -13,7 +13,8 @@ export default function ResetPasswordPage() {
   return (
     <div className="animate-fade-in-up">
       {/* Mobile-only branded header */}
-      <div className="lg:hidden text-center mb-10">
+      <div className="lg:hidden flex flex-col items-center mb-10">
+        <img src="/brand/logo-sage.svg" alt="" className="size-12 mb-3" />
         <h1 className="font-display text-4xl font-semibold tracking-tight">
           <span className="text-forest">Flora</span>
           <span className="text-sage">Clin</span>
