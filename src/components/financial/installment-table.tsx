@@ -35,6 +35,10 @@ interface Installment {
   paidAt: Date | null
   paymentMethod: string | null
   notes: string | null
+  amountPaid?: string | null
+  fineAmount?: string | null
+  interestAmount?: string | null
+  computedInterestAmount?: number | null
 }
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
@@ -94,8 +98,14 @@ export function InstallmentTable({
   async function handleConfirmPayment() {
     if (!selectedInstallment) return
 
+    // Find the installment to get its remaining amount (principal + penalties)
+    const inst = installments.find((i) => i.id === selectedInstallment)
+    const amount = inst
+      ? Number(inst.amount) - Number(inst.amountPaid ?? 0) + Number(inst.fineAmount ?? 0) + Number(inst.computedInterestAmount ?? inst.interestAmount ?? 0)
+      : 0
+
     try {
-      await payInstallment.mutateAsync({ id: selectedInstallment, paymentMethod })
+      await payInstallment.mutateAsync({ id: selectedInstallment, amount, paymentMethod })
       setPayDialogOpen(false)
       setSelectedInstallment(null)
       onPaymentComplete?.()

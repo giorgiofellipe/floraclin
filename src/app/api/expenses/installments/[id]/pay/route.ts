@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
-import { createAuditLog } from '@/lib/audit'
-import { recordPayment } from '@/db/queries/financial'
-import { recordPaymentSchema } from '@/validations/financial'
+import { payExpenseInstallment } from '@/db/queries/expenses'
+import { payExpenseInstallmentSchema } from '@/validations/expenses'
+import type { PaymentMethod } from '@/types'
 
 export async function PUT(
   request: Request,
@@ -10,19 +10,16 @@ export async function PUT(
 ) {
   try {
     const ctx = await getAuthContext()
-    // Pay installment: owner + receptionist + financial
-    if (!['owner', 'receptionist', 'financial'].includes(ctx.role)) {
+    if (!['owner', 'financial'].includes(ctx.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const { id } = await params
     const body = await request.json()
-    const parsed = recordPaymentSchema.safeParse({
+    const parsed = payExpenseInstallmentSchema.safeParse({
       installmentId: id,
-      amount: body.amount,
       paymentMethod: body.paymentMethod,
       paidAt: body.paidAt,
-      notes: body.notes,
     })
     if (!parsed.success) {
       return NextResponse.json(
@@ -31,32 +28,20 @@ export async function PUT(
       )
     }
 
-    const result = await recordPayment(ctx.tenantId, ctx.userId, parsed.data)
+    const installment = await payExpenseInstallment(
+      ctx.tenantId,
+      parsed.data.installmentId,
+      parsed.data.paymentMethod as PaymentMethod,
+      ctx.userId,
+      parsed.data.paidAt
+    )
 
-    await createAuditLog({
-      tenantId: ctx.tenantId,
-      userId: ctx.userId,
-      action: 'update',
-      entityType: 'installment',
-      entityId: id,
-      changes: {
-        payment: {
-          old: null,
-          new: {
-            amount: parsed.data.amount,
-            paymentMethod: parsed.data.paymentMethod,
-            allocation: result.allocation,
-          },
-        },
-      },
-    })
-
-    return NextResponse.json({ success: true, data: result })
+    return NextResponse.json({ success: true, data: installment })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (msg.includes('não encontrada') || msg.includes('já está') || msg.includes('cancelada')) {
+    if (msg.includes('não encontrada') || msg.includes('já foi paga')) {
       return NextResponse.json({ error: msg }, { status: 400 })
     }
     console.error('API error:', error)

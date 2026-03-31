@@ -21,6 +21,11 @@ export const queryKeys = {
     revenue: (dateFrom: string, dateTo: string, practitionerId?: string) =>
       ['financial', 'revenue', dateFrom, dateTo, practitionerId] as const,
     patients: ['financial', 'patients'] as const,
+    settings: ['financial', 'settings'] as const,
+    categories: ['financial', 'categories'] as const,
+    ledger: (filters?: Record<string, unknown>) => ['financial', 'ledger', filters] as const,
+    practitionerPL: (dateFrom: string, dateTo: string, practitionerId?: string) =>
+      ['financial', 'practitioner-pl', dateFrom, dateTo, practitionerId] as const,
   },
   settings: {
     all: ['settings'] as const,
@@ -59,6 +64,12 @@ export const queryKeys = {
     all: ['tenant'] as const,
     detail: ['tenant', 'detail'] as const,
     users: ['tenant', 'users'] as const,
+  },
+  expenses: {
+    all: ['expenses'] as const,
+    list: (filters?: Record<string, unknown>) => ['expenses', 'list', filters] as const,
+    detail: (id: string) => ['expenses', 'detail', id] as const,
+    categories: ['expenses', 'categories'] as const,
   },
   audit: {
     all: ['audit'] as const,

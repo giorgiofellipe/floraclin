@@ -1,26 +1,20 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
-import { createAuditLog } from '@/lib/audit'
-import {
-  listFinancialEntries,
-  createFinancialEntry,
-} from '@/db/queries/financial'
-import { financialFilterSchema, createFinancialEntrySchema } from '@/validations/financial'
+import { listExpenses, createExpense } from '@/db/queries/expenses'
+import { expenseFilterSchema, createExpenseSchema } from '@/validations/expenses'
 
 export async function GET(request: Request) {
   try {
     const ctx = await getAuthContext()
-    // Financial list: owner + financial + receptionist + practitioner (read)
-    if (!['owner', 'financial', 'receptionist', 'practitioner'].includes(ctx.role)) {
+    if (!['owner', 'financial'].includes(ctx.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const { searchParams } = new URL(request.url)
     const filters = {
-      patientId: searchParams.get('patientId') ?? undefined,
       status: searchParams.get('status') ?? undefined,
+      categoryId: searchParams.get('categoryId') ?? undefined,
       isOverdue: searchParams.get('isOverdue') === 'true' ? true : undefined,
-      isPartial: searchParams.get('isPartial') === 'true' ? true : undefined,
       paymentMethod: searchParams.get('paymentMethod') ?? undefined,
       dateFrom: searchParams.get('dateFrom') ?? undefined,
       dateTo: searchParams.get('dateTo') ?? undefined,
@@ -28,12 +22,12 @@ export async function GET(request: Request) {
       limit: searchParams.get('limit') ? Number(searchParams.get('limit')) : undefined,
     }
 
-    const parsed = financialFilterSchema.safeParse(filters)
+    const parsed = expenseFilterSchema.safeParse(filters)
     if (!parsed.success) {
       return NextResponse.json({ error: 'Filtros inválidos' }, { status: 400 })
     }
 
-    const data = await listFinancialEntries(ctx.tenantId, parsed.data)
+    const data = await listExpenses(ctx.tenantId, parsed.data)
     return NextResponse.json(data)
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
@@ -47,13 +41,12 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const ctx = await getAuthContext()
-    // Financial create: owner + receptionist + financial
-    if (!['owner', 'receptionist', 'financial'].includes(ctx.role)) {
+    if (!['owner', 'financial'].includes(ctx.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const body = await request.json()
-    const parsed = createFinancialEntrySchema.safeParse(body)
+    const parsed = createExpenseSchema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json(
         { error: 'Dados inválidos', fieldErrors: parsed.error.flatten().fieldErrors },
@@ -61,21 +54,14 @@ export async function POST(request: Request) {
       )
     }
 
-    const entry = await createFinancialEntry(ctx.tenantId, ctx.userId, parsed.data)
+    const expense = await createExpense(ctx.tenantId, ctx.userId, parsed.data)
 
-    await createAuditLog({
-      tenantId: ctx.tenantId,
-      userId: ctx.userId,
-      action: 'create',
-      entityType: 'financial_entry',
-      entityId: entry.id,
-    })
-
-    return NextResponse.json({ success: true, data: entry })
+    return NextResponse.json({ success: true, data: expense })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (msg.includes('Categoria não encontrada')) return NextResponse.json({ error: msg }, { status: 400 })
     console.error('API error:', error)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
