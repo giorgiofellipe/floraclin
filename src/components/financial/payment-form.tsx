@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCreateFinancialEntry } from '@/hooks/mutations/use-financial-mutations'
+import { useFinancialSettings } from '@/hooks/queries/use-financial-settings'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { addDays } from 'date-fns'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
@@ -41,6 +42,16 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]> | null>(null)
   const createFinancialEntry = useCreateFinancialEntry()
   const isPending = createFinancialEntry.isPending
+  const { data: settings } = useFinancialSettings()
+
+  // Pre-fill defaults from financial settings
+  useEffect(() => {
+    if (settings) {
+      if (settings.defaultInstallmentCount) {
+        setInstallmentCount(String(settings.defaultInstallmentCount))
+      }
+    }
+  }, [settings])
 
   const parsedAmount = totalAmount ? parseCurrency(totalAmount) : 0
   const parsedCount = parseInt(installmentCount, 10) || 1

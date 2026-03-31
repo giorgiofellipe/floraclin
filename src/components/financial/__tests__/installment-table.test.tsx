@@ -1,48 +1,64 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { InstallmentTable } from '../installment-table'
 
 // ─── Mocks ─────────────────────────────────────────────────────────
 
-vi.mock('@/actions/financial', () => ({
-  getFinancialEntryAction: vi.fn().mockResolvedValue({
-    data: {
-      installments: [
-        {
-          id: 'inst-1',
-          installmentNumber: 1,
-          amount: '500.00',
-          dueDate: '2025-03-01',
-          status: 'paid',
-          paidAt: new Date('2025-03-01'),
-          paymentMethod: 'pix',
-          notes: null,
-        },
-        {
-          id: 'inst-2',
-          installmentNumber: 2,
-          amount: '500.00',
-          dueDate: '2025-04-01',
-          status: 'pending',
-          paidAt: null,
-          paymentMethod: null,
-          notes: null,
-        },
-        {
-          id: 'inst-3',
-          installmentNumber: 3,
-          amount: '500.00',
-          dueDate: '2025-05-01',
-          status: 'overdue',
-          paidAt: null,
-          paymentMethod: null,
-          notes: null,
-        },
-      ],
-    },
-  }),
-  payInstallmentAction: vi.fn().mockResolvedValue({ success: true }),
-}))
+const mockInstallments = [
+  {
+    id: 'inst-1',
+    installmentNumber: 1,
+    amount: '500.00',
+    dueDate: '2025-03-01',
+    status: 'paid',
+    paidAt: new Date('2025-03-01'),
+    paymentMethod: 'pix',
+    notes: null,
+    amountPaid: '500.00',
+    fineAmount: '0',
+    interestAmount: '0',
+    paymentRecords: [],
+  },
+  {
+    id: 'inst-2',
+    installmentNumber: 2,
+    amount: '500.00',
+    dueDate: '2025-04-01',
+    status: 'pending',
+    paidAt: null,
+    paymentMethod: null,
+    notes: null,
+    amountPaid: '0',
+    fineAmount: '0',
+    interestAmount: '0',
+    paymentRecords: [],
+  },
+  {
+    id: 'inst-3',
+    installmentNumber: 3,
+    amount: '500.00',
+    dueDate: '2025-05-01',
+    status: 'overdue',
+    paidAt: null,
+    paymentMethod: null,
+    notes: null,
+    amountPaid: '0',
+    fineAmount: '10.00',
+    interestAmount: '0',
+    computedInterestAmount: 5,
+    appliedFineValue: '2.00',
+    appliedInterestRate: '1.00',
+    paymentRecords: [],
+  },
+]
+
+beforeEach(() => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+    ok: true,
+    json: async () => ({ installments: mockInstallments }),
+  } as Response)
+})
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
@@ -50,13 +66,25 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }))
 
+function createWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        {children}
+      </QueryClientProvider>
+    )
+  }
+}
+
 // ─── Tests ─────────────────────────────────────────────────────────
 
 describe('InstallmentTable', () => {
   it('renders installment rows', async () => {
-    render(<InstallmentTable entryId="entry-1" />)
+    render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
 
-    // Wait for loading to finish
     const row1 = await screen.findByText('1/3')
     expect(row1).toBeInTheDocument()
     expect(screen.getByText('2/3')).toBeInTheDocument()
@@ -64,7 +92,7 @@ describe('InstallmentTable', () => {
   })
 
   it('shows correct status badges', async () => {
-    render(<InstallmentTable entryId="entry-1" />)
+    render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
 
     const pago = await screen.findByText('Pago')
     expect(pago).toBeInTheDocument()
@@ -72,14 +100,23 @@ describe('InstallmentTable', () => {
     expect(screen.getByText('Atrasado')).toBeInTheDocument()
   })
 
-  it('shows "Marcar como pago" button for pending installments', async () => {
-    render(<InstallmentTable entryId="entry-1" />)
+  it('shows "Registrar Pagamento" button for pending and overdue installments', async () => {
+    render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
 
-    const payButton = await screen.findByRole('button', { name: /marcar como pago/i })
-    expect(payButton).toBeInTheDocument()
+    await screen.findByText('1/3')
+    const payButtons = screen.getAllByRole('button', { name: /registrar pagamento/i })
+    // Both pending and overdue installments should have the button
+    expect(payButtons).toHaveLength(2)
+  })
 
-    // Should have exactly 1 "Marcar como pago" button (only for 'pending', not 'overdue')
-    const allPayButtons = screen.getAllByRole('button', { name: /marcar como pago/i })
-    expect(allPayButtons).toHaveLength(1)
+  it('shows penalty badge for overdue installment with penalties', async () => {
+    render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
+
+    await screen.findByText('1/3')
+    // The overdue installment has fineAmount=10 and computedInterestAmount=5
+    const penaltyBadges = screen.getAllByTestId('penalty-badge')
+    expect(penaltyBadges.length).toBeGreaterThan(0)
+    const overdueBadge = penaltyBadges.find((b) => b.textContent?.includes('Multa'))
+    expect(overdueBadge).toBeDefined()
   })
 })

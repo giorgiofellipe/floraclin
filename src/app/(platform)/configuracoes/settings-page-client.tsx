@@ -8,6 +8,8 @@ import { TeamList } from '@/components/settings/team-list'
 import { ConsentTemplateList } from '@/components/settings/consent-template-list'
 import { BookingSettings } from '@/components/settings/booking-settings'
 import { AuditLogViewer } from '@/components/audit/audit-log-viewer'
+import { FinancialSettingsForm } from '@/components/financial/settings/financial-settings-form'
+import { ExpenseCategoriesManager } from '@/components/financial/settings/expense-categories-manager'
 import { cn } from '@/lib/utils'
 import {
   BuildingIcon,
@@ -17,6 +19,7 @@ import {
   FileTextIcon,
   CalendarIcon,
   ShieldCheckIcon,
+  DollarSignIcon,
 } from 'lucide-react'
 
 interface Tenant {
@@ -95,6 +98,7 @@ const TABS = [
   { key: 'equipe', label: 'Equipe', icon: UsersIcon },
   { key: 'termos', label: 'Contratos e Termos', icon: FileTextIcon },
   { key: 'agendamento', label: 'Agendamento', icon: CalendarIcon },
+  { key: 'financeiro', label: 'Financeiro', icon: DollarSignIcon },
   { key: 'auditoria', label: 'Auditoria', icon: ShieldCheckIcon },
 ] as const
 
@@ -227,6 +231,13 @@ export function SettingsPageClient({
                   slug={tenant.slug}
                   publicBookingEnabled={publicBookingEnabled}
                 />
+              )}
+
+              {activeTab === 'financeiro' && (
+                <div className="space-y-8">
+                  <FinancialSettingsForm />
+                  <ExpenseCategoriesManager />
+                </div>
               )}
 
               {activeTab === 'auditoria' && (

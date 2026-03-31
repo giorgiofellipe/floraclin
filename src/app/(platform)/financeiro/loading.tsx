@@ -9,10 +9,13 @@ export default function FinanceiroLoading() {
         <Skeleton className="mt-1 h-4 w-72" />
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2">
-        <Skeleton className="h-9 w-28" />
-        <Skeleton className="h-9 w-28" />
+      {/* Tabs — 5 tab skeleton */}
+      <div className="flex gap-2 border-b border-sage/10 pb-0">
+        <Skeleton className="h-9 w-24" />
+        <Skeleton className="h-9 w-24" />
+        <Skeleton className="h-9 w-20" />
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="h-9 w-24" />
       </div>
 
       {/* Controls */}
