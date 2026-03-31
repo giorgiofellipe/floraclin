@@ -150,7 +150,12 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
       }
 
     case 'SAVE_COMPLETE': {
-      const newState = { ...state, isSaving: false }
+      const newState = {
+        ...state,
+        isSaving: false,
+        // Reset triggerSave so the next step doesn't inherit a stale non-zero value
+        triggerSave: 0,
+      }
       if (action.result.success) {
         if (action.result.procedureId) {
           newState.procedureId = action.result.procedureId
@@ -287,14 +292,15 @@ export function useServiceWizard({
         case 3:
           return state.selectedTypeIds.length > 0
         case 4:
-          return !!state.procedureId
+          // Require procedure saved AND step 3 completed (passed validation)
+          return !!state.procedureId && !!state.stepTimestamps.planning
         case 5:
           return state.procedureStatus === 'approved'
         default:
           return false
       }
     },
-    [state.selectedTypeIds, state.procedureId, state.procedureStatus]
+    [state.selectedTypeIds, state.procedureId, state.procedureStatus, state.stepTimestamps.planning]
   )
 
   // ─── Step completion ────────────────────────────────────────────

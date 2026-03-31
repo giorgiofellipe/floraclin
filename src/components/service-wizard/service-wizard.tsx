@@ -403,51 +403,60 @@ export function ServiceWizard({
   const age = patient.birthDate ? calculateAge(patient.birthDate) : null
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#F4F6F8]">
-      {/* ─── Patient compact bar ──────────────────────────────────── */}
+    <div className="-m-6 flex min-h-screen flex-col bg-[#F4F6F8]">
+      {/* ─── Unified header: patient + stepper ─────────────────────── */}
       <header className="sticky top-0 z-30 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-        <div className="mx-auto flex items-center justify-between px-4 py-3">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-            <span className="font-semibold text-charcoal">{patient.fullName}</span>
-            {age !== null && (
-              <span className="text-mid">{age} anos</span>
-            )}
-            <span className="text-mid">{patient.phone}</span>
-            {patient.cpf && (
-              <span className="text-mid">{maskCPF(patient.cpf)}</span>
-            )}
+        <div className="flex items-center justify-between px-6 py-2.5">
+          {/* Left: patient info */}
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="flex size-8 items-center justify-center rounded-full bg-sage/15 text-[12px] font-semibold text-sage">
+              {patient.fullName.split(/\s+/).map(p => p[0]).slice(0, 2).join('').toUpperCase()}
+            </div>
+            <div className="hidden sm:block">
+              <p className="text-[13px] font-semibold text-charcoal leading-tight">{patient.fullName}</p>
+              <p className="text-[11px] text-mid leading-tight">
+                {age !== null && <>{age} anos</>}
+                {age !== null && patient.phone && <> · </>}
+                {patient.phone}
+              </p>
+            </div>
+            {/* Mobile: just name */}
+            <span className="sm:hidden text-[13px] font-semibold text-charcoal">{patient.fullName}</span>
           </div>
+
+          {/* Center: stepper */}
+          <WizardStepper
+            currentStep={state.currentStep}
+            isStepAvailable={isStepAvailable}
+            isStepCompleted={isStepCompleted}
+            onStepClick={goToStep}
+            disabled={state.isSaving}
+          />
+
+          {/* Right: close */}
           <button
             type="button"
             onClick={handleExit}
-            className="flex items-center gap-1.5 rounded-[3px] px-3 py-1.5 text-sm font-medium text-mid transition-colors hover:bg-petal hover:text-charcoal"
+            className="flex items-center justify-center size-8 rounded-lg text-mid transition-colors hover:bg-[#F4F6F8] hover:text-charcoal shrink-0"
+            aria-label="Fechar atendimento"
           >
-            <X className="h-4 w-4" />
-            Fechar
+            <X className="size-4" />
           </button>
         </div>
+
+        {/* Context message — inside header as a subtle sub-bar */}
+        {contextMessage && (
+          <div className="border-t border-[#F4F6F8] px-6 py-1.5">
+            <div className="flex items-center gap-2">
+              <span className={cn('inline-block size-1.5 rounded-full', contextMessage.dotColor)} />
+              <span className="text-[12px] text-mid">{contextMessage.text}</span>
+            </div>
+          </div>
+        )}
       </header>
 
-      {/* ─── Smart context message ─────────────────────────────────── */}
-      {contextMessage && (
-        <div className="mx-auto w-full px-4 pt-3">
-          <div className="flex items-center gap-2">
-            <span className={cn('inline-block h-2 w-2 rounded-full', contextMessage.dotColor)} />
-            <span className="text-sm text-mid">{contextMessage.text}</span>
-          </div>
-        </div>
-      )}
-
       {/* ─── Main content area ────────────────────────────────────── */}
-      <main className="mx-auto flex w-full flex-1 flex-col gap-4 px-4 py-4 pb-24">
-        {/* Stepper */}
-        <WizardStepper
-          currentStep={state.currentStep}
-          isStepAvailable={isStepAvailable}
-          isStepCompleted={isStepCompleted}
-          onStepClick={goToStep}
-          disabled={state.isSaving}
-        />
+      <main className="mx-auto flex w-full flex-1 flex-col gap-4 px-6 py-4 pb-24">
 
         {/* Step content — all steps mounted, only active visible */}
         <div className="flex-1">
@@ -585,10 +594,10 @@ export function ServiceWizard({
       </main>
 
       {/* ─── Sticky bottom navigation bar ─────────────────────────── */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-gray-100 bg-white shadow-[0_-1px_4px_rgba(0,0,0,0.06)]">
+      <nav className="fixed bottom-0 left-0 right-0 md:left-[200px] z-30 border-t border-gray-100 bg-white shadow-[0_-1px_4px_rgba(0,0,0,0.06)]">
         {/* Error display above navigation controls */}
         {state.error && (
-          <div className="border-b border-red-100 bg-red-50 px-4 py-2">
+          <div className="border-b border-red-100 bg-red-50 px-6 py-2">
             <p className="mx-auto text-sm text-red-800">
               {state.errorType === 'validation' &&
                 'Corrija os campos destacados antes de continuar.'}
@@ -599,7 +608,7 @@ export function ServiceWizard({
           </div>
         )}
 
-        <div className="mx-auto flex flex-col gap-2 px-4 py-3 md:flex-row md:items-center md:justify-between">
+        <div className="mx-auto flex flex-col gap-2 px-6 py-3 md:flex-row md:items-center md:justify-between">
           {/* Left: Voltar */}
           <div className="hidden md:block md:min-w-[100px]">
             {showBack && (
