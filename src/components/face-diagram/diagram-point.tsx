@@ -5,12 +5,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 import type { DiagramPointData } from './types'
 
 /**
- * Returns a color based on the product name.
- * botox/toxina = blue, filler/preenchedor/AH = pink,
- * bioestimulador/biostimulator = green, others = purple.
+ * Product-category color mapping.
+ * Uses the brand palette: forest-adjacent tones for clinical categories.
  */
 export function getPointColor(productName: string): string {
   const name = productName.toLowerCase()
@@ -22,7 +22,7 @@ export function getPointColor(productName: string): string {
     name.includes('botulínica') ||
     name.includes('botulinica')
   ) {
-    return '#3b82f6' // blue
+    return '#3b82f6' // blue — neurotoxins
   }
   if (
     name.includes('filler') ||
@@ -34,7 +34,7 @@ export function getPointColor(productName: string): string {
     name.includes('ácido hialurônico') ||
     name.includes('ah')
   ) {
-    return '#ec4899' // pink
+    return '#ec4899' // pink — fillers
   }
   if (
     name.includes('bioestimulador') ||
@@ -43,9 +43,9 @@ export function getPointColor(productName: string): string {
     name.includes('radiesse') ||
     name.includes('ellansé')
   ) {
-    return '#22c55e' // green
+    return '#22c55e' // green — biostimulators
   }
-  return '#a855f7' // purple
+  return '#a855f7' // purple — other
 }
 
 interface DiagramPointProps {
@@ -53,7 +53,7 @@ interface DiagramPointProps {
   onClick?: () => void
   ghost?: boolean
   readOnly?: boolean
-  changed?: boolean // quantity differs from planned
+  changed?: boolean
 }
 
 export function DiagramPoint({
@@ -70,13 +70,16 @@ export function DiagramPoint({
   const marker = (
     <button
       type="button"
-      className="absolute flex items-center justify-center -translate-x-1/2 -translate-y-1/2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={cn(
+        'absolute -translate-x-1/2 -translate-y-1/2 transition-all duration-200 focus-visible:outline-none',
+        !ghost && !readOnly && 'hover:scale-110 cursor-pointer',
+        ghost && 'pointer-events-none',
+        readOnly && 'pointer-events-none cursor-default',
+      )}
       style={{
         left: `${point.x}%`,
         top: `${point.y}%`,
-        opacity: ghost ? 0.35 : 1,
-        pointerEvents: ghost || readOnly ? 'none' : 'auto',
-        cursor: ghost || readOnly ? 'default' : 'pointer',
+        opacity: ghost ? 0.3 : 1,
         zIndex: ghost ? 5 : 10,
       }}
       onClick={(e) => {
@@ -86,8 +89,16 @@ export function DiagramPoint({
       aria-label={`${point.productName} - ${quantityLabel}`}
       disabled={ghost || readOnly}
     >
+      {/* Outer ring — visible on hover */}
+      {!ghost && !readOnly && (
+        <span
+          className="absolute inset-[-4px] rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+          style={{ border: `2px solid ${color}40` }}
+        />
+      )}
+      {/* Point body */}
       <span
-        className="flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-[10px] font-semibold text-white shadow-sm"
+        className="relative flex h-[22px] min-w-[22px] items-center justify-center rounded-full px-1.5 text-[9px] font-bold text-white shadow-[0_1px_3px_rgba(0,0,0,0.3)]"
         style={{ backgroundColor: color }}
       >
         {quantityLabel}
@@ -102,21 +113,32 @@ export function DiagramPoint({
   return (
     <Tooltip>
       <TooltipTrigger render={marker} />
-      <TooltipContent side="top" sideOffset={8}>
-        <div className="flex flex-col gap-0.5">
-          <span className="font-medium">{point.productName}</span>
+      <TooltipContent side="top" sideOffset={10} className="p-0 border-0 shadow-lg">
+        <div className="rounded-lg bg-[#1C2B1E] text-white px-3.5 py-2.5 min-w-[180px]">
+          <p className="text-[13px] font-medium">{point.productName}</p>
           {point.activeIngredient && (
-            <span className="text-muted-foreground">
-              {point.activeIngredient}
-            </span>
+            <p className="text-[11px] text-white/50 mt-0.5">{point.activeIngredient}</p>
           )}
-          <span>
-            {quantityLabel}
-            {point.technique ? ` - ${point.technique}` : ''}
-          </span>
-          {point.depth && <span>Prof.: {point.depth}</span>}
+          <div className="flex items-center gap-3 mt-2 pt-2 border-t border-white/10">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-white/40">Qtd</p>
+              <p className="text-[13px] font-semibold tabular-nums">{quantityLabel}</p>
+            </div>
+            {point.technique && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-white/40">Técnica</p>
+                <p className="text-[12px]">{point.technique}</p>
+              </div>
+            )}
+            {point.depth && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-white/40">Prof.</p>
+                <p className="text-[12px]">{point.depth}</p>
+              </div>
+            )}
+          </div>
           {point.notes && (
-            <span className="text-muted-foreground">{point.notes}</span>
+            <p className="text-[11px] text-white/50 mt-1.5 italic">{point.notes}</p>
           )}
         </div>
       </TooltipContent>

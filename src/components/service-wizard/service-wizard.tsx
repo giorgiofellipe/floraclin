@@ -195,8 +195,10 @@ export function ServiceWizard({
   }, [state.selectedTypeIds, evalTemplatesLoadedForIds])
 
   // Load existing evaluation responses when resuming a procedure
+  // Re-run when navigating back to step 3 (responses may have been saved in a previous visit)
   useEffect(() => {
     if (!state.procedureId) return
+    if (state.currentStep !== 3) return
 
     async function loadResponses() {
       try {
@@ -216,7 +218,7 @@ export function ServiceWizard({
       }
     }
     loadResponses()
-  }, [state.procedureId])
+  }, [state.procedureId, state.currentStep])
 
   // ─── beforeunload protection for steps 2-5 ─────────────────────
 

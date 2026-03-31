@@ -1,11 +1,12 @@
 'use client'
 
 import { getPointColor } from './diagram-point'
+import { cn } from '@/lib/utils'
 import type { DiagramPointData } from './types'
 
 interface DiagramSummaryProps {
   points: DiagramPointData[]
-  previousPoints?: DiagramPointData[] // planned points for comparison
+  previousPoints?: DiagramPointData[]
 }
 
 interface ProductTotal {
@@ -20,7 +21,6 @@ export function DiagramSummary({ points, previousPoints }: DiagramSummaryProps) 
   const totals = getTotals(points)
   const plannedTotals = previousPoints ? getTotals(previousPoints) : null
 
-  // Build a map for quick planned lookup
   const plannedMap = new Map<string, ProductTotal>()
   if (plannedTotals) {
     for (const t of plannedTotals) {
@@ -30,19 +30,22 @@ export function DiagramSummary({ points, previousPoints }: DiagramSummaryProps) 
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium">Totais</h3>
-        <span className="text-xs text-muted-foreground">
+        <h3 className="text-[11px] uppercase tracking-[0.15em] font-medium text-mid">
+          Produtos
+        </h3>
+        <span className="text-[11px] text-mid/50 tabular-nums">
           {points.length} {points.length === 1 ? 'ponto' : 'pontos'}
         </span>
       </div>
 
       {totals.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          Nenhum ponto adicionado. Clique no rosto para adicionar.
+        <p className="text-[12px] text-mid/60 py-2">
+          Clique no rosto para adicionar pontos de aplicação.
         </p>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-1.5">
           {totals.map((total) => {
             const key = `${total.productName}|${total.unit}`
             const planned = plannedMap.get(key)
@@ -52,40 +55,45 @@ export function DiagramSummary({ points, previousPoints }: DiagramSummaryProps) 
             return (
               <div
                 key={key}
-                className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 ${
-                  changed ? 'border-[#D4845A]/30 bg-[#FFF4EF]' : ''
-                }`}
+                className={cn(
+                  'flex items-center gap-2.5 rounded-lg px-3 py-2 transition-colors',
+                  changed
+                    ? 'bg-[#FFF4EF] border border-amber/20'
+                    : 'bg-[#FAFBFC] border border-transparent'
+                )}
               >
                 <span
-                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  className="size-2 shrink-0 rounded-full"
                   style={{ backgroundColor: total.color }}
                 />
-                <div className="flex flex-1 flex-col">
-                  <span className="text-sm font-medium leading-tight">
+                <div className="flex-1 min-w-0">
+                  <span className="text-[13px] font-medium text-charcoal truncate block">
                     {total.productName}
                   </span>
-                  <span className="text-xs text-muted-foreground">
-                    {total.pointCount}{' '}
-                    {total.pointCount === 1 ? 'ponto' : 'pontos'}
+                  <span className="text-[11px] text-mid/50">
+                    {total.pointCount} {total.pointCount === 1 ? 'ponto' : 'pontos'}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 shrink-0">
                   {hasPlanned && changed && (
-                    <span className="text-xs text-[#7A7A7A] line-through tabular-nums">
-                      {formatQuantity(planned.totalQuantity)}{total.unit}
-                    </span>
+                    <>
+                      <span className="text-[11px] text-mid line-through tabular-nums">
+                        {formatQuantity(planned.totalQuantity)}{total.unit}
+                      </span>
+                      <span className="text-[10px] text-mid/40">→</span>
+                    </>
                   )}
-                  {hasPlanned && changed && (
-                    <span className="text-xs text-[#7A7A7A]">→</span>
-                  )}
-                  <span className={`text-sm font-semibold tabular-nums ${
-                    changed ? 'text-[#D4845A]' : ''
-                  }`}>
+                  <span className={cn(
+                    'text-[13px] font-semibold tabular-nums',
+                    changed ? 'text-amber-dark' : 'text-charcoal'
+                  )}>
                     {formatQuantity(total.totalQuantity)}
-                    {total.unit}
+                    <span className="text-[11px] font-normal text-mid/60 ml-0.5">
+                      {total.unit}
+                    </span>
                   </span>
                   {hasPlanned && !changed && (
-                    <span className="text-xs text-sage">✓</span>
+                    <span className="text-[11px] text-sage">✓</span>
                   )}
                 </div>
               </div>
@@ -94,56 +102,54 @@ export function DiagramSummary({ points, previousPoints }: DiagramSummaryProps) 
         </div>
       )}
 
-      {/* Points list */}
+      {/* Individual points list */}
       {points.length > 0 && (
-        <>
-          <div className="border-t pt-2">
-            <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">
-              Pontos
-            </h4>
-            <div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
-              {points.map((point) => {
-                // Find matching planned point at same coordinates
-                const plannedPoint = previousPoints?.find(
-                  (pp) =>
-                    Math.abs(pp.x - point.x) < 1 &&
-                    Math.abs(pp.y - point.y) < 1 &&
-                    pp.productName === point.productName
-                )
-                const qtyChanged = plannedPoint && plannedPoint.quantity !== point.quantity
+        <div className="border-t border-[#F4F6F8] pt-2.5 mt-1">
+          <h4 className="text-[10px] uppercase tracking-wider text-mid/40 font-medium mb-2">
+            Detalhamento
+          </h4>
+          <div className="flex flex-col gap-0.5">
+            {points.map((point) => {
+              const plannedPoint = previousPoints?.find(
+                (pp) =>
+                  Math.abs(pp.x - point.x) < 1 &&
+                  Math.abs(pp.y - point.y) < 1 &&
+                  pp.productName === point.productName
+              )
+              const qtyChanged = plannedPoint && plannedPoint.quantity !== point.quantity
 
-                return (
-                  <div
-                    key={point.id}
-                    className={`flex items-center gap-1.5 text-xs rounded px-1 py-0.5 ${
-                      qtyChanged ? 'bg-[#FFF4EF]' : ''
-                    }`}
-                  >
-                    <span
-                      className="h-2 w-2 shrink-0 rounded-full"
-                      style={{ backgroundColor: getPointColor(point.productName) }}
-                    />
-                    <span className="truncate">{point.productName}</span>
-                    <div className="ml-auto flex shrink-0 items-center gap-1 tabular-nums font-medium">
-                      {qtyChanged && (
-                        <>
-                          <span className="text-[#7A7A7A] line-through">
-                            {formatQuantity(plannedPoint.quantity)}{point.quantityUnit}
-                          </span>
-                          <span className="text-[#7A7A7A]">→</span>
-                        </>
-                      )}
-                      <span className={qtyChanged ? 'text-[#D4845A]' : ''}>
-                        {formatQuantity(point.quantity)}
-                        {point.quantityUnit}
-                      </span>
-                    </div>
+              return (
+                <div
+                  key={point.id}
+                  className={cn(
+                    'flex items-center gap-2 text-[12px] rounded-md px-2 py-1',
+                    qtyChanged && 'bg-[#FFF4EF]'
+                  )}
+                >
+                  <span
+                    className="size-1.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: getPointColor(point.productName) }}
+                  />
+                  <span className="truncate text-mid flex-1">{point.productName}</span>
+                  <div className="ml-auto flex shrink-0 items-center gap-1 tabular-nums font-medium">
+                    {qtyChanged && (
+                      <>
+                        <span className="text-mid/40 line-through text-[11px]">
+                          {formatQuantity(plannedPoint.quantity)}{point.quantityUnit}
+                        </span>
+                        <span className="text-mid/30 text-[10px]">→</span>
+                      </>
+                    )}
+                    <span className={cn('text-charcoal', qtyChanged && 'text-amber-dark')}>
+                      {formatQuantity(point.quantity)}
+                      <span className="text-mid/50 font-normal">{point.quantityUnit}</span>
+                    </span>
                   </div>
-                )
-              })}
-            </div>
+                </div>
+              )
+            })}
           </div>
-        </>
+        </div>
       )}
     </div>
   )

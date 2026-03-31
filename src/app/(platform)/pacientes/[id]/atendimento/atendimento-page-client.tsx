@@ -40,12 +40,10 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
   if (!tenant) notFound()
 
   // Extract diagrams and applications from full procedure detail
-  const fullDetail = procedureDetail?.success
-    ? (procedureDetail.data as ProcedureWithDetails & {
-        diagrams?: DiagramWithPoints[]
-        productApplications?: ProductApplicationRecord[]
-      })
-    : null
+  const fullDetail = procedureDetail as (ProcedureWithDetails & {
+    diagrams?: DiagramWithPoints[]
+    productApplications?: ProductApplicationRecord[]
+  }) | undefined
   const diagrams = fullDetail?.diagrams ?? null
   const applications = fullDetail?.productApplications ?? null
 

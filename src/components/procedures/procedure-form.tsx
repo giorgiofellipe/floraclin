@@ -336,6 +336,33 @@ export function ProcedureForm({
   })
   const [previousPoints, setPreviousPoints] = useState<DiagramPointData[]>([])
 
+  // Sync when existingDiagrams are loaded after mount (e.g. navigating back to step 3)
+  useEffect(() => {
+    if (!existingDiagrams || existingDiagrams.length === 0) return
+    setDiagramPoints((prev) => {
+      if (prev.length > 0) return prev
+      const allPoints: DiagramPointData[] = []
+      for (const d of existingDiagrams) {
+        for (const p of d.points) {
+          allPoints.push({
+            id: p.id,
+            x: parseFloat(p.x),
+            y: parseFloat(p.y),
+            viewType: d.viewType || 'front',
+            productName: p.productName,
+            activeIngredient: p.activeIngredient ?? undefined,
+            quantity: parseFloat(p.quantity),
+            quantityUnit: p.quantityUnit as QuantityUnit,
+            technique: p.technique ?? undefined,
+            depth: p.depth ?? undefined,
+            notes: p.notes ?? undefined,
+          })
+        }
+      }
+      return allPoints
+    })
+  }, [existingDiagrams])
+
   // ─── Product applications state ──────────────────────────────────
   const [productApps, setProductApps] = useState<ProductApplicationItem[]>(
     () => {
@@ -369,6 +396,20 @@ export function ProcedureForm({
     }
     return {}
   })
+
+  // Sync when existingEvaluationResponses are loaded after mount (e.g. navigating back to step 3)
+  useEffect(() => {
+    if (!existingEvaluationResponses || existingEvaluationResponses.length === 0) return
+    setEvaluationResponses((prev) => {
+      // Only apply if current state is empty (don't overwrite in-progress edits)
+      if (Object.keys(prev).length > 0) return prev
+      const map: Record<string, Record<string, unknown>> = {}
+      for (const r of existingEvaluationResponses) {
+        map[r.templateId] = r.responses as Record<string, unknown>
+      }
+      return map
+    })
+  }, [existingEvaluationResponses])
 
   const handleEvaluationResponseChange = useCallback(
     (templateId: string, responses: Record<string, unknown>) => {
@@ -840,21 +881,12 @@ export function ProcedureForm({
   additionalTypeIdsRef.current = additionalTypeIds
 
   // ─── Wizard triggerSave: run save logic and call onSaveComplete ──
-  // Track last processed trigger value instead of a boolean mount guard.
-  // A boolean fails in React Strict Mode (double-fire consumes the guard).
-  const lastTriggerRef = useRef<number | null>(null)
+  const prevTriggerSaveRef = useRef(wizardOverrides?.triggerSave ?? 0)
 
   useEffect(() => {
     const current = wizardOverrides?.triggerSave ?? 0
-    if (current === 0) return
-    // First time seeing a non-zero value (step became active): record and skip
-    if (lastTriggerRef.current === null) {
-      lastTriggerRef.current = current
-      return
-    }
-    // Same value as last processed (strict mode re-fire or no change): skip
-    if (current === lastTriggerRef.current) return
-    lastTriggerRef.current = current
+    if (current === 0 || current === prevTriggerSaveRef.current) return
+    prevTriggerSaveRef.current = current
     async function doSave() {
       if (isSubmitting || isReadOnly) {
         wizardOverrides?.onSaveComplete?.({
@@ -1353,6 +1385,7 @@ export function ProcedureForm({
                   points={diagramPoints}
                   onChange={setDiagramPoints}
                   previousPoints={previousPoints}
+                  showComparison={!isPlanningMode}
                   readOnly={isReadOnly}
                   gender={patientGender}
                   products={catalogProducts}

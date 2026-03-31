@@ -7,6 +7,7 @@ import { useTenant } from '@/hooks/queries/use-tenant'
 import { ProcedureForm } from '@/components/procedures/procedure-form'
 import { ProcedureExecution } from '@/components/procedures/procedure-execution'
 import { ProcedureApproval } from '@/components/procedures/procedure-approval'
+import { ProcedureDetailView } from '@/components/procedures/procedure-detail-view'
 
 interface ProcedurePageClientProps {
   patientId: string
@@ -93,55 +94,39 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
     )
   }
 
-  // View executed procedure (read-only with comparison)
-  if (procedure.status === 'executed') {
+  // Read-only detail view for executed or cancelled procedures
+  if (procedure.status === 'executed' || procedure.status === 'cancelled') {
     return (
       <div className="min-h-screen p-6">
-        <ProcedureExecution
+        <ProcedureDetailView
           patientId={patientId}
+          patientName={patient.fullName}
           patientGender={patient.gender}
           procedure={procedure}
           diagrams={diagrams}
-          existingApplications={applications}
+          applications={applications}
         />
       </div>
     )
   }
 
-  // Cancelled procedure -> read-only view
-  if (procedure.status === 'cancelled') {
-    return (
-      <div className="min-h-screen p-6">
-        <ProcedureForm
-          patientId={patientId}
-          patientGender={patient.gender}
-          procedure={procedure}
-          diagrams={diagrams}
-          existingApplications={applications}
-          mode="view"
-        />
-      </div>
-    )
-  }
-
-  // Approved procedure (no action) -> read-only summary
+  // Approved procedure (no action) -> read-only detail view
   if (procedure.status === 'approved') {
     return (
       <div className="min-h-screen p-6">
-        <ProcedureForm
+        <ProcedureDetailView
           patientId={patientId}
+          patientName={patient.fullName}
           patientGender={patient.gender}
           procedure={procedure}
           diagrams={diagrams}
-          existingApplications={applications}
-          mode="view"
+          applications={applications}
         />
       </div>
     )
   }
 
-  // Default: planned procedure form (edit/view)
-  // Note: role-based canEdit check is now handled by the API layer
+  // Default: planned procedure form (edit)
   return (
     <div className="min-h-screen p-6">
       <ProcedureForm

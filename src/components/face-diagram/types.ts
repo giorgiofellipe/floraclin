@@ -27,6 +27,7 @@ export interface FaceDiagramEditorProps {
   points: DiagramPointData[]
   onChange: (points: DiagramPointData[]) => void
   previousPoints?: DiagramPointData[] // ghost overlay
+  showComparison?: boolean // show changed quantities vs previousPoints (default: true when previousPoints exist)
   readOnly?: boolean
   gender?: string | null // inferred from patient — 'masculino' | 'feminino'
   products?: CatalogProduct[] // active products from catalog

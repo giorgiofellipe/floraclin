@@ -249,6 +249,77 @@
   }
 }
 
+/* Print: only show [data-print-area], full width, all sections expanded */
+@media print {
+  /* Hide everything outside print area */
+  body > *:not(:has([data-print-area])) {
+    display: none !important;
+  }
+  /* Hide siblings of the print area's ancestors */
+  [data-print-area] {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 24px !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+  /* Remove layout constraints and padding from ancestors */
+  main {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+  .min-h-screen {
+    min-height: 0 !important;
+    padding: 0 !important;
+  }
+  [data-print-area] > * {
+    max-width: 100% !important;
+  }
+  /* Print area container */
+  .mx-auto {
+    max-width: 100% !important;
+    margin: 0 !important;
+  }
+  /* Hide sidebar, header, nav */
+  aside, header, nav, [data-print-hide] {
+    display: none !important;
+  }
+  /* Remove sidebar margin */
+  .md\:pl-\[200px\] {
+    padding-left: 0 !important;
+  }
+  /* Force all collapsible sections open */
+  [data-print-area] .grid-rows-\[0fr\] {
+    grid-template-rows: 1fr !important;
+    opacity: 1 !important;
+  }
+  /* White background for print */
+  body, [data-print-area], [data-print-area] * {
+    background-color: white !important;
+  }
+  /* Preserve diagram canvas colors (points, badges) and images */
+  [data-print-area] [data-testid="face-diagram-canvas"],
+  [data-print-area] [data-testid="face-diagram-canvas"] * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  /* Only reset bg on the canvas container itself, not on point markers with inline styles */
+  [data-print-area] [data-testid="face-diagram-canvas"] {
+    background-color: white !important;
+  }
+  /* Make diagram point labels black for print legibility */
+  [data-print-area] [data-testid="face-diagram-canvas"] button span {
+    color: black !important;
+  }
+  /* Ensure Next.js images are visible */
+  [data-print-area] img {
+    visibility: visible !important;
+    display: block !important;
+  }
+}
+
 /* Hide scrollbar for mobile tab navigation */
 .scrollbar-hide {
   -ms-overflow-style: none;

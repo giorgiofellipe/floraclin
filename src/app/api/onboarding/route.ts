@@ -13,7 +13,7 @@ import { DEFAULT_CONSENT_TEMPLATES } from '@/validations/consent'
 import { createProduct } from '@/db/queries/products'
 import { DEFAULT_PRODUCTS } from '@/lib/constants'
 import { createTemplate } from '@/db/queries/evaluation-templates'
-import { defaultTemplates } from '@/lib/default-evaluation-templates'
+// defaultTemplates is dynamically imported below to avoid loading 42KB on startup
 import type { ProcedureCategory } from '@/types/evaluation'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
@@ -125,6 +125,7 @@ export async function POST(request: Request) {
           const templateCategory = categoryToTemplateCategory[pt.category]
           if (!templateCategory) continue
 
+          const { defaultTemplates } = await import('@/lib/default-evaluation-templates')
           const defaultTemplate = defaultTemplates.find(
             (t) => t.category === templateCategory
           )

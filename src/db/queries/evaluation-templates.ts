@@ -2,7 +2,6 @@ import { db } from '@/db/client'
 import { evaluationTemplates, procedureTypes } from '@/db/schema'
 import { eq, and, isNull, inArray, sql } from 'drizzle-orm'
 import type { EvaluationSection } from '@/types/evaluation'
-import { defaultTemplates } from '@/lib/default-evaluation-templates'
 import type { ProcedureCategory } from '@/types/evaluation'
 
 export async function getTemplateForProcedureType(tenantId: string, procedureTypeId: string) {
@@ -115,6 +114,7 @@ export async function resetTemplateToDefault(
   templateId: string,
   procedureCategory: ProcedureCategory
 ) {
+  const { defaultTemplates } = await import('@/lib/default-evaluation-templates')
   const defaultTemplate = defaultTemplates.find((t) => t.category === procedureCategory)
   if (!defaultTemplate) {
     throw new Error('Nenhum template padrão encontrado para esta categoria')
