@@ -199,6 +199,25 @@ describe('replayPayments', () => {
     expect(result.payments[1].paidAt).toBe('2026-03-01T00:00:00Z')
   })
 
+  it('applies fine when installment becomes overdue after on-time partial payment', () => {
+    // First payment is on-time (before due date), second payment is overdue
+    const result = replayPayments(
+      { amount: 1000, dueDate: '2026-03-01', appliedFineValue: 2, appliedFineType: 'percentage', appliedInterestRate: 1, gracePeriodDays: 0 },
+      [
+        { amount: 200, paidAt: '2026-02-15T00:00:00Z' }, // before due date — no fine
+        { amount: 300, paidAt: '2026-04-01T00:00:00Z' }, // 31 days after due — should apply fine
+      ],
+    )
+    // First payment: no penalties (not overdue yet)
+    expect(result.payments[0].fineCovered).toBe(0)
+    expect(result.payments[0].interestCovered).toBe(0)
+    // Second payment: fine should be applied (R$20 = 2% of 1000)
+    // The fine + interest should be covered before principal
+    const totalFineCovered = result.payments.reduce((sum, p) => sum + p.fineCovered, 0)
+    expect(totalFineCovered).toBeGreaterThan(0)
+    expect(totalFineCovered).toBeLessThanOrEqual(20)
+  })
+
   it('applies fine only once even with multiple payments', () => {
     const result = replayPayments(
       { amount: 1000, dueDate: '2026-01-01', appliedFineValue: 2, appliedFineType: 'percentage', appliedInterestRate: 1, gracePeriodDays: 0 },

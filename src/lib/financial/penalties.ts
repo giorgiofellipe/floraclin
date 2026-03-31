@@ -122,8 +122,8 @@ export function replayPayments(
     const interestStartDate = lastCalcAt ? lastCalcAt : base.dueDate
     const daysOverdue = getDaysOverdue(interestStartDate, lastCalcAt ? 0 : base.gracePeriodDays, paymentDate)
 
-    // Apply fine once on first overdue payment
-    if (!fineApplied && daysOverdue > 0 && amountPaid === 0) {
+    // Apply fine once on first overdue payment (regardless of prior on-time payments)
+    if (!fineApplied && daysOverdue > 0) {
       fineAmount = calculateFine(base.amount, base.appliedFineType, base.appliedFineValue)
       fineApplied = true
     }

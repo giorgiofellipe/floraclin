@@ -9,7 +9,7 @@ export const createExpenseSchema = z.object({
   totalAmount: z.number().positive('Valor deve ser positivo'),
   installmentCount: z.number().int().min(1, 'Mínimo 1 parcela').max(24, 'Máximo 24 parcelas'),
   notes: z.string().optional(),
-  customDueDates: z.array(z.string()).optional(), // ISO date strings, one per installment
+  customDueDates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida (esperado YYYY-MM-DD)')).optional(), // ISO date strings, one per installment
 })
 
 export const payExpenseInstallmentSchema = z.object({

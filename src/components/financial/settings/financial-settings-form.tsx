@@ -252,7 +252,7 @@ export function FinancialSettingsForm() {
               render={({ field }) => (
                 <Select
                   value={field.value || ''}
-                  onValueChange={(val) => field.onChange(val || null)}
+                  onValueChange={(val: string | null) => field.onChange(val || null)}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Selecione o tipo" />
@@ -308,7 +308,7 @@ export function FinancialSettingsForm() {
               render={({ field }) => (
                 <Select
                   value={field.value || ''}
-                  onValueChange={(val) => field.onChange(val || null)}
+                  onValueChange={(val: string | null) => field.onChange(val || null)}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Selecione o metodo" />

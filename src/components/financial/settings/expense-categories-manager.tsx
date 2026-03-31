@@ -184,7 +184,7 @@ export function ExpenseCategoriesManager() {
                 key={category.id}
                 className="flex items-center gap-3 p-2.5 rounded-lg bg-[#F4F6F8] border border-[#E8ECEF]"
               >
-                <Select value={editIcon} onValueChange={setEditIcon}>
+                <Select value={editIcon} onValueChange={(val: string | null) => { if (val) setEditIcon(val) }}>
                   <SelectTrigger className="w-[120px]">
                     <SelectValue />
                   </SelectTrigger>
@@ -261,7 +261,7 @@ export function ExpenseCategoriesManager() {
       {/* Add form */}
       {showAddForm ? (
         <div className="flex items-center gap-3 p-2.5 rounded-lg bg-[#F4F6F8] border border-[#E8ECEF]">
-          <Select value={newIcon} onValueChange={setNewIcon}>
+          <Select value={newIcon} onValueChange={(val: string | null) => { if (val) setNewIcon(val) }}>
             <SelectTrigger className="w-[120px]">
               <SelectValue />
             </SelectTrigger>

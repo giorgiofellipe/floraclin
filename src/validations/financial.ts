@@ -66,8 +66,8 @@ export const financialFilterSchema = z.object({
 })
 
 export const revenueFilterSchema = z.object({
-  dateFrom: z.string().min(1, 'Data inicial é obrigatória'),
-  dateTo: z.string().min(1, 'Data final é obrigatória'),
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inicial inválida (esperado YYYY-MM-DD)'),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data final inválida (esperado YYYY-MM-DD)'),
   practitionerId: z.string().uuid().optional(),
 })
 
@@ -76,8 +76,8 @@ export const ledgerFilterSchema = z.object({
   paymentMethod: z.enum(paymentMethods as [string, ...string[]]).optional(),
   patientId: z.string().uuid().optional(),
   categoryId: z.string().uuid().optional(),
-  dateFrom: z.string().min(1),
-  dateTo: z.string().min(1),
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inicial inválida (esperado YYYY-MM-DD)'),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data final inválida (esperado YYYY-MM-DD)'),
   page: z.number().int().positive().optional().default(1),
   limit: z.number().int().positive().max(100).optional().default(50),
 })

@@ -36,11 +36,15 @@ export async function GET(request: Request) {
       categoryId: parsed.data.categoryId,
     })
 
+    // Sanitize filename parts to prevent header injection
+    const safeDateFrom = (parsed.data.dateFrom ?? '').replace(/[^a-zA-Z0-9\-\.]/g, '')
+    const safeDateTo = (parsed.data.dateTo ?? '').replace(/[^a-zA-Z0-9\-\.]/g, '')
+
     return new Response(csv, {
       status: 200,
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="extrato-${parsed.data.dateFrom}-${parsed.data.dateTo}.csv"`,
+        'Content-Disposition': `attachment; filename="extrato-${safeDateFrom}-${safeDateTo}.csv"`,
       },
     })
   } catch (error) {

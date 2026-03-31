@@ -19,8 +19,9 @@ export function PenaltyPreview({
   monthlyInterestPercent,
   gracePeriodDays,
 }: PenaltyPreviewProps) {
-  const fine = calculateFine(SAMPLE_AMOUNT, fineType, fineValue)
-  const interest = calculateInterest(SAMPLE_AMOUNT, SAMPLE_DAYS_OVERDUE, monthlyInterestPercent)
+  const effectiveDaysOverdue = Math.max(0, SAMPLE_DAYS_OVERDUE - gracePeriodDays)
+  const fine = effectiveDaysOverdue > 0 ? calculateFine(SAMPLE_AMOUNT, fineType, fineValue) : 0
+  const interest = calculateInterest(SAMPLE_AMOUNT, effectiveDaysOverdue, monthlyInterestPercent)
   const total = SAMPLE_AMOUNT + fine + interest
 
   const formatBRL = (value: number) =>

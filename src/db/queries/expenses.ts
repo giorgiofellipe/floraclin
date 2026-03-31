@@ -218,29 +218,31 @@ export async function payExpenseInstallment(
   paidAt?: string
 ) {
   return withTransaction(async (tx) => {
-    // Fetch installment and verify tenant ownership through parent expense
-    const [installment] = await tx
-      .select({
-        id: expenseInstallments.id,
-        expenseId: expenseInstallments.expenseId,
-        amount: expenseInstallments.amount,
-        status: expenseInstallments.status,
-        installmentNumber: expenseInstallments.installmentNumber,
-        categoryId: expenses.categoryId,
-      })
-      .from(expenseInstallments)
-      .innerJoin(expenses, eq(expenses.id, expenseInstallments.expenseId))
-      .where(
-        and(
-          eq(expenseInstallments.id, installmentId),
-          eq(expenses.tenantId, tenantId),
-          isNull(expenses.deletedAt)
-        )
-      )
-      .limit(1)
+    // 1. Lock installment row with FOR UPDATE to prevent concurrent payments
+    const lockResult = await tx.execute(
+      sql`SELECT ei.id, ei.expense_id, ei.amount, ei.status, ei.installment_number, e.category_id
+          FROM floraclin.expense_installments ei
+          INNER JOIN floraclin.expenses e ON e.id = ei.expense_id
+          WHERE ei.id = ${installmentId}
+          AND e.tenant_id = ${tenantId}
+          AND e.deleted_at IS NULL
+          FOR UPDATE OF ei`
+    )
 
-    if (!installment) {
+    const rows = Array.isArray(lockResult) ? lockResult : (lockResult as any).rows ?? lockResult
+    const row = rows[0] as Record<string, unknown> | undefined
+
+    if (!row) {
       throw new Error('Parcela não encontrada ou não pertence a esta clínica')
+    }
+
+    const installment = {
+      id: String(row.id),
+      expenseId: String(row.expense_id),
+      amount: String(row.amount),
+      status: String(row.status),
+      installmentNumber: Number(row.installment_number),
+      categoryId: row.category_id ? String(row.category_id) : null,
     }
 
     if (installment.status === 'paid') {
@@ -343,16 +345,9 @@ export async function cancelExpense(
       })
       .where(eq(expenses.id, expenseId))
 
-    // Cancel all unpaid installments (preserve paid ones)
-    await tx
-      .update(expenseInstallments)
-      .set({ status: 'cancelled' as any })
-      .where(
-        and(
-          eq(expenseInstallments.expenseId, expenseId),
-          eq(expenseInstallments.status, 'pending')
-        )
-      )
+    // Unpaid installments remain as 'pending' — the parent expense
+    // status 'cancelled' is the source of truth. Expense installments
+    // only have 'pending' and 'paid' as valid statuses.
 
     await createAuditLog({
       tenantId,

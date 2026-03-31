@@ -119,7 +119,7 @@ export async function getLedgerSummary(
         and(
           eq(installments.tenantId, tenantId),
           sql`${installments.dueDate} < CURRENT_DATE`,
-          sql`${installments.status} IN ('pending', 'overdue')`
+          eq(installments.status, 'pending')
         )
       ),
   ])
