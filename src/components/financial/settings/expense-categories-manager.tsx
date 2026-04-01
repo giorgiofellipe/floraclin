@@ -88,7 +88,8 @@ interface ExpenseCategory {
 }
 
 export function ExpenseCategoriesManager() {
-  const { data: categories = [], isLoading } = useExpenseCategories()
+  const { data: categoriesResponse, isLoading } = useExpenseCategories()
+  const categories = categoriesResponse?.data ?? []
   const createCategory = useCreateExpenseCategory()
   const updateCategory = useUpdateExpenseCategory()
   const deleteCategory = useDeleteExpenseCategory()

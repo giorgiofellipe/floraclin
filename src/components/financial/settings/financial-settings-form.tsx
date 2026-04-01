@@ -41,7 +41,8 @@ const PAYMENT_METHODS = [
 ] as const
 
 export function FinancialSettingsForm() {
-  const { data: settings, isLoading } = useFinancialSettings()
+  const { data: settingsResponse, isLoading } = useFinancialSettings()
+  const settings = settingsResponse?.settings
   const updateSettings = useUpdateFinancialSettings()
 
   const {

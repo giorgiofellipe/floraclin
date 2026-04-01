@@ -81,7 +81,8 @@ export function ExpenseList() {
   }
 
   const { data: result, isPending } = useExpenses(filters)
-  const { data: categories } = useExpenseCategories()
+  const { data: categoriesResponse } = useExpenseCategories()
+  const categories = categoriesResponse?.data ?? []
 
   const entries: ExpenseEntry[] = result?.data ?? []
   const total = result?.total ?? 0

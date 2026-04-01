@@ -49,8 +49,8 @@ interface Category {
 export function ExpenseForm({ open, onClose, onSuccess }: ExpenseFormProps) {
   const [error, setError] = useState<string | null>(null)
   const createExpense = useCreateExpense()
-  const { data: categories } = useExpenseCategories()
-  const categoryList: Category[] = (categories as Category[]) ?? []
+  const { data: categoriesResponse } = useExpenseCategories()
+  const categoryList: Category[] = (categoriesResponse?.data as Category[]) ?? []
 
   const {
     register,

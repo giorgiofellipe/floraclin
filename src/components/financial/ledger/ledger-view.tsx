@@ -60,7 +60,8 @@ export function LedgerView() {
 
   const { data, isPending } = useLedger(filters)
   const { data: patients } = useFinancialPatients()
-  const { data: categories } = useExpenseCategories()
+  const { data: categoriesResponse } = useExpenseCategories()
+  const categories = categoriesResponse?.data ?? []
 
   const hasActiveFilters = movementType !== 'all' || paymentMethod || patientId || categoryId
 

@@ -42,7 +42,8 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]> | null>(null)
   const createFinancialEntry = useCreateFinancialEntry()
   const isPending = createFinancialEntry.isPending
-  const { data: settings } = useFinancialSettings()
+  const { data: settingsResponse } = useFinancialSettings()
+  const settings = settingsResponse?.settings
 
   // Pre-fill defaults from financial settings
   useEffect(() => {
