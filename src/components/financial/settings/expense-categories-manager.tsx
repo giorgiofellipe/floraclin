@@ -187,7 +187,7 @@ export function ExpenseCategoriesManager() {
               >
                 <Select value={editIcon} onValueChange={(val: string | null) => { if (val) setEditIcon(val) }}>
                   <SelectTrigger className="w-[120px]">
-                    <SelectValue />
+                    <SelectValue placeholder="Icone">{(() => { const opt = ICON_OPTIONS.find(o => o.value === editIcon); if (!opt) return 'Icone'; const I = opt.Icon; return <><I className="h-3.5 w-3.5" /> {opt.label}</>; })()}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {ICON_OPTIONS.map((opt) => {
@@ -264,7 +264,7 @@ export function ExpenseCategoriesManager() {
         <div className="flex items-center gap-3 p-2.5 rounded-lg bg-[#F4F6F8] border border-[#E8ECEF]">
           <Select value={newIcon} onValueChange={(val: string | null) => { if (val) setNewIcon(val) }}>
             <SelectTrigger className="w-[120px]">
-              <SelectValue />
+              <SelectValue placeholder="Icone">{(() => { const opt = ICON_OPTIONS.find(o => o.value === newIcon); if (!opt) return 'Icone'; const I = opt.Icon; return <><I className="h-3.5 w-3.5" /> {opt.label}</>; })()}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {ICON_OPTIONS.map((opt) => {

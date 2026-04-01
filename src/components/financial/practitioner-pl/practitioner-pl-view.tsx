@@ -49,13 +49,7 @@ export function PractitionerPLView() {
 
         <Select value={practitionerId || 'all'} onValueChange={(v) => setPractitionerId(!v || v === 'all' ? '' : v)}>
           <SelectTrigger className="w-[200px] border-sage/20">
-            <SelectValue placeholder="Profissional">
-              {(value: string) => {
-                if (value === 'all') return 'Todos os profissionais'
-                const p = (practitioners as { id: string; name: string }[] | undefined)?.find((pr: { id: string }) => pr.id === value)
-                return p?.name ?? value
-              }}
-            </SelectValue>
+            <SelectValue placeholder="Profissional" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos os profissionais</SelectItem>

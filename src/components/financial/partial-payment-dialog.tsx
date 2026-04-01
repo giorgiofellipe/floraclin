@@ -126,9 +126,7 @@ export function PartialPaymentDialog({
             <Label className="uppercase tracking-wider text-xs font-medium text-mid">Metodo de Pagamento</Label>
             <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod((v ?? 'pix') as PaymentMethod)}>
               <SelectTrigger className="w-full">
-                <SelectValue>
-                  {(value: string) => PAYMENT_METHOD_LABELS[value] ?? value}
-                </SelectValue>
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => (

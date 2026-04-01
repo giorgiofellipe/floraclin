@@ -161,19 +161,7 @@ export function ExpenseForm({ open, onClose, onSuccess }: ExpenseFormProps) {
               render={({ field }) => (
                 <Select value={field.value} onValueChange={(v) => field.onChange(v ?? '')}>
                   <SelectTrigger className="w-full" data-testid="expense-category-select">
-                    <SelectValue placeholder="Selecione a categoria">
-                      {(value: string) => {
-                        const cat = categoryList.find((c) => c.id === value)
-                        if (!cat) return value
-                        const Icon = getCategoryIcon(cat.icon)
-                        return (
-                          <span className="flex items-center gap-2">
-                            <Icon className="size-4 text-sage" />
-                            {cat.name}
-                          </span>
-                        )
-                      }}
-                    </SelectValue>
+                    <SelectValue placeholder="Selecione a categoria" />
                   </SelectTrigger>
                   <SelectContent>
                     {categoryList.map((cat) => {

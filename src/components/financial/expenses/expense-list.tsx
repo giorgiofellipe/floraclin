@@ -116,12 +116,7 @@ export function ExpenseList() {
           <Label className="uppercase tracking-wider text-[10px] font-medium text-[#7A7A7A]">Status</Label>
           <Select value={statusFilter || 'all'} onValueChange={handleStatusChange}>
             <SelectTrigger className="w-[140px] border-sage/20" data-testid="expense-status-filter">
-              <SelectValue placeholder="Status">
-                {(value: string) => {
-                  if (value === 'all') return 'Todos'
-                  return STATUS_LABELS[value] ?? value
-                }}
-              </SelectValue>
+              <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
@@ -136,13 +131,7 @@ export function ExpenseList() {
           <Label className="uppercase tracking-wider text-[10px] font-medium text-[#7A7A7A]">Categoria</Label>
           <Select value={categoryFilter || 'all'} onValueChange={handleCategoryChange}>
             <SelectTrigger className="w-[160px] border-sage/20" data-testid="expense-category-filter">
-              <SelectValue placeholder="Categoria">
-                {(value: string) => {
-                  if (value === 'all') return 'Todas'
-                  const cat = (categories as { id: string; name: string }[])?.find((c) => c.id === value)
-                  return cat?.name ?? value
-                }}
-              </SelectValue>
+              <SelectValue placeholder="Categoria" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todas</SelectItem>
@@ -159,12 +148,7 @@ export function ExpenseList() {
           <Label className="uppercase tracking-wider text-[10px] font-medium text-[#7A7A7A]">Metodo Pgto.</Label>
           <Select value={paymentMethodFilter || 'all'} onValueChange={handlePaymentMethodChange}>
             <SelectTrigger className="w-[160px] border-sage/20" data-testid="expense-payment-method-filter">
-              <SelectValue placeholder="Metodo">
-                {(value: string) => {
-                  if (value === 'all') return 'Todos'
-                  return PAYMENT_METHOD_OPTIONS.find((o) => o.value === value)?.label ?? value
-                }}
-              </SelectValue>
+              <SelectValue placeholder="Metodo" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>

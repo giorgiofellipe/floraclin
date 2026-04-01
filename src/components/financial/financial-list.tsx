@@ -230,12 +230,7 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
           {/* Status */}
           <Select value={statusFilter || 'all'} onValueChange={(v) => updateParam('status', !v || v === 'all' ? '' : v)}>
             <SelectTrigger className="w-[160px] border-sage/20">
-              <SelectValue placeholder="Status">
-                {(value: string) => {
-                  if (value === 'all') return 'Todos'
-                  return STATUS_LABELS[value] ?? value
-                }}
-              </SelectValue>
+              <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
@@ -269,12 +264,7 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
           {/* Patient select */}
           <Select value={patientFilter || 'all'} onValueChange={(v) => updateParam('patientId', !v || v === 'all' ? '' : v)}>
             <SelectTrigger className="w-[180px] border-sage/20">
-              <SelectValue placeholder="Paciente">
-                {(value: string) => {
-                  if (value === 'all') return 'Todos pacientes'
-                  return patients.find((p) => p.id === value)?.fullName ?? 'Paciente'
-                }}
-              </SelectValue>
+              <SelectValue placeholder="Paciente" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos pacientes</SelectItem>
@@ -306,12 +296,7 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
           {/* Payment method */}
           <Select value={paymentMethodFilter || 'all'} onValueChange={(v) => updateParam('paymentMethod', !v || v === 'all' ? '' : v)}>
             <SelectTrigger className="w-[160px] border-sage/20">
-              <SelectValue placeholder="Metodo">
-                {(value: string) => {
-                  if (value === 'all') return 'Todos metodos'
-                  return PAYMENT_METHOD_LABELS[value] ?? value
-                }}
-              </SelectValue>
+              <SelectValue placeholder="Metodo" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos metodos</SelectItem>

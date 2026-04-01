@@ -232,9 +232,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
                 onValueChange={(v) => setPaymentMethod((v ?? 'pix') as PaymentMethod)}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue>
-                    {(value: string) => PAYMENT_METHOD_LABELS[value] ?? value}
-                  </SelectValue>
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="pix">PIX</SelectItem>

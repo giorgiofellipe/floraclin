@@ -121,9 +121,7 @@ export function LedgerView() {
         {/* Payment method */}
         <Select value={paymentMethod || 'all'} onValueChange={(v) => { setPaymentMethod(!v || v === 'all' ? '' : v); setPage(1) }}>
           <SelectTrigger className="w-[170px] border-sage/20">
-            <SelectValue placeholder="Metodo">
-              {(value: string) => value === 'all' ? 'Metodo' : (PAYMENT_METHOD_LABELS[value] ?? value)}
-            </SelectValue>
+            <SelectValue placeholder="Metodo" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
@@ -138,13 +136,7 @@ export function LedgerView() {
         {/* Patient filter */}
         <Select value={patientId || 'all'} onValueChange={(v) => { setPatientId(!v || v === 'all' ? '' : v); setPage(1) }}>
           <SelectTrigger className="w-[180px] border-sage/20">
-            <SelectValue placeholder="Paciente">
-              {(value: string) => {
-                if (value === 'all') return 'Paciente'
-                const p = (patients as { id: string; fullName: string }[] | undefined)?.find((pt: { id: string }) => pt.id === value)
-                return p?.fullName ?? value
-              }}
-            </SelectValue>
+            <SelectValue placeholder="Paciente" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
@@ -157,13 +149,7 @@ export function LedgerView() {
         {/* Category filter */}
         <Select value={categoryId || 'all'} onValueChange={(v) => { setCategoryId(!v || v === 'all' ? '' : v); setPage(1) }}>
           <SelectTrigger className="w-[170px] border-sage/20">
-            <SelectValue placeholder="Categoria">
-              {(value: string) => {
-                if (value === 'all') return 'Categoria'
-                const c = (categories as { id: string; name: string }[] | undefined)?.find((cat: { id: string }) => cat.id === value)
-                return c?.name ?? value
-              }}
-            </SelectValue>
+            <SelectValue placeholder="Categoria" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas</SelectItem>
