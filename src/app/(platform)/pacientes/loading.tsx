@@ -1,21 +1,14 @@
 import { Skeleton } from '@/components/ui/skeleton'
 
-export default function PacientesLoading() {
+export default function PatientsLoading() {
   return (
-    <div className="flex flex-col gap-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <Skeleton className="h-8 w-40" />
-          <Skeleton className="mt-1 h-4 w-32" />
-        </div>
-        <Skeleton className="h-9 w-36" />
-      </div>
-
-      {/* Search bar */}
-      <div className="flex items-center gap-2">
-        <Skeleton className="h-9 w-full max-w-sm" />
-        <Skeleton className="h-9 w-20" />
+    <div className="flex flex-col gap-6">
+      {/* Search + actions row (no title — it's in the header) */}
+      <div className="flex items-center gap-3">
+        <Skeleton className="h-9 flex-1 max-w-lg rounded-lg" />
+        <Skeleton className="h-9 w-20 rounded-md" />
+        <div className="flex-1" />
+        <Skeleton className="h-9 w-36 rounded-md" />
       </div>
 
       {/* Table skeleton */}

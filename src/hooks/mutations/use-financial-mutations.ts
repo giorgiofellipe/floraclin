@@ -22,6 +22,9 @@ export function useCreateFinancialEntry() {
     mutationFn: (data: Record<string, unknown>) => mutateJson('/api/financial', 'POST', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'revenue'] })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'ledger'] })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'practitioner-pl'] })
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
     },
   })
@@ -30,10 +33,103 @@ export function useCreateFinancialEntry() {
 export function usePayInstallment() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, paymentMethod }: { id: string; paymentMethod: string }) =>
-      mutateJson(`/api/financial/installments/${id}/pay`, 'PUT', { paymentMethod }),
+    mutationFn: ({
+      id,
+      amount,
+      paymentMethod,
+      paidAt,
+      notes,
+    }: {
+      id: string
+      amount: number
+      paymentMethod: string
+      paidAt?: string
+      notes?: string
+    }) =>
+      mutateJson(`/api/financial/installments/${id}/pay`, 'PUT', {
+        amount,
+        paymentMethod,
+        paidAt,
+        notes,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'revenue'] })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'ledger'] })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'practitioner-pl'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+    },
+  })
+}
+
+export function useRenegotiate() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: {
+      entryIds: string[]
+      newInstallmentCount: number
+      newTotalAmount?: number
+      description: string
+      waivePenalties?: boolean
+      waiveAmount?: number
+      customDueDates?: string[]
+    }) => mutateJson('/api/financial/renegotiate', 'POST', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'revenue'] })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'ledger'] })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'practitioner-pl'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+    },
+  })
+}
+
+export function useBulkPay() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: {
+      installmentIds: string[]
+      paymentMethod: string
+      paidAt?: string
+    }) => mutateJson('/api/financial/bulk/pay', 'POST', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'revenue'] })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'ledger'] })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'practitioner-pl'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+    },
+  })
+}
+
+export function useBulkCancel() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: {
+      entryIds: string[]
+      reason: string
+    }) => mutateJson('/api/financial/bulk/cancel', 'POST', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'revenue'] })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'ledger'] })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'practitioner-pl'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+    },
+  })
+}
+
+export function useReversePayment() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ paymentRecordId, reason }: { paymentRecordId: string; reason?: string }) =>
+      mutateJson(`/api/financial/payments/${paymentRecordId}/reverse`, 'POST', { reason }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'detail'] })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'revenue'] })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'ledger'] })
+      queryClient.invalidateQueries({ queryKey: ['financial', 'practitioner-pl'] })
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
     },
   })

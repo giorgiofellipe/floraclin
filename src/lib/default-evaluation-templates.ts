@@ -340,7 +340,7 @@ const preenchimentosSections: EvaluationSection[] = [
       },
       {
         id: 'filler-s3-q2',
-        label: 'Apresenta tendência a hematomas com fácilidade?',
+        label: 'Apresenta tendência a hematomas com facilidade?',
         type: 'radio',
         required: true,
         order: 2,
@@ -577,7 +577,7 @@ const skinboosterSections: EvaluationSection[] = [
           'Muito ressecada -- descama e aperta',
           'Ressecada -- sinto falta de hidratação',
           'Normal -- sem grandes queixas',
-          'Oleosa -- brilha com fácilidade',
+          'Oleosa -- brilha com facilidade',
         ],
       },
       {
@@ -1100,8 +1100,8 @@ const skincareSections: EvaluationSection[] = [
         options: [
           'Fica brilhosa em poucas horas',
           'Fica ressecada ou com sensação de aperto',
-          'Descama com fácilidade',
-          'Fica vermelha ou irritada fácilmente',
+          'Descama com facilidade',
+          'Fica vermelha ou irritada facilmente',
           'Se mantem equilibrada ao longo do dia',
         ],
       },

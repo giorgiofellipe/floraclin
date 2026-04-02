@@ -16,7 +16,6 @@ import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -199,25 +198,19 @@ function SelectField({
   options: { value: string; label: string }[]
   placeholder: string
 }) {
+  const items = Object.fromEntries(options.map((opt) => [opt.value, opt.label]))
   return (
     <Select
+      items={items}
       value={value ?? ''}
       onValueChange={(val) => {
         if (val !== null) onValueChange(val)
       }}
     >
       <SelectTrigger className="w-full">
-        <SelectValue placeholder={placeholder}>
-          {(val: string) => options.find((o) => o.value === val)?.label ?? val}
-        </SelectValue>
+        <SelectValue placeholder={placeholder} />
       </SelectTrigger>
-      <SelectContent>
-        {options.map((opt) => (
-          <SelectItem key={opt.value} value={opt.value}>
-            {opt.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
+      <SelectContent />
     </Select>
   )
 }

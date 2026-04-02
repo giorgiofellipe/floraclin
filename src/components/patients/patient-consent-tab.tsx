@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Loader2, Plus, FileCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,7 +12,6 @@ import {
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -42,6 +41,14 @@ export function PatientConsentTab({ patientId }: PatientConsentTabProps) {
   const templates = (rawTemplates
     ? (Object.values(rawTemplates).flat() as unknown as ConsentTemplate[]).filter((t) => t.isActive)
     : [])
+
+  const templateItems = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const t of templates) {
+      map[t.id] = `${t.title} (v${t.version})`
+    }
+    return map
+  }, [templates])
 
   useEffect(() => {
     if (!selectedTemplateId) {
@@ -105,22 +112,11 @@ export function PatientConsentTab({ patientId }: PatientConsentTabProps) {
                 <label className="uppercase tracking-wider text-sm text-mid font-medium">
                   Selecione o modelo
                 </label>
-                <Select value={selectedTemplateId} onValueChange={(v) => setSelectedTemplateId(v ?? '')}>
+                <Select items={templateItems} value={selectedTemplateId} onValueChange={(v) => setSelectedTemplateId(v ?? '')}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Escolha um modelo de termo...">
-                      {(value: string) => {
-                        const t = templates.find((t) => t.id === value)
-                        return t ? `${t.title} (v${t.version})` : value
-                      }}
-                    </SelectValue>
+                    <SelectValue placeholder="Escolha um modelo de termo..." />
                   </SelectTrigger>
-                  <SelectContent>
-                    {templates.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        {t.title} (v{t.version})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
+                  <SelectContent />
                 </Select>
               </div>
 

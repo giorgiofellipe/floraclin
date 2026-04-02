@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns'
 import { useAppointments, usePractitioners, useAppointmentProcedureTypes } from '@/hooks/queries/use-appointments'
 import { CalendarView } from '@/components/scheduling/calendar-view'
-import AgendaLoading from './loading'
+import ScheduleLoading from './loading'
 
 type ViewType = 'day' | 'week' | 'month'
 
@@ -62,18 +62,11 @@ export function AgendaPageClient() {
   const { data: procTypes, isLoading: procTypesLoading } = useAppointmentProcedureTypes()
 
   if (appointmentsLoading || practitionersLoading || procTypesLoading) {
-    return <AgendaLoading />
+    return <ScheduleLoading />
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col gap-5 p-4 lg:p-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-[#2A2A2A] tracking-tight">Agenda</h1>
-        <p className="text-sm text-mid mt-0.5">
-          Gerencie os agendamentos da clinica
-        </p>
-      </div>
-
+    <div className="flex h-[calc(100vh-4rem)] flex-col gap-3 p-4 lg:p-6">
       <CalendarView
         initialDate={dateStr}
         initialView={view}

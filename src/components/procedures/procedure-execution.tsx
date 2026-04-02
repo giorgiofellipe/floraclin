@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { DatePicker } from '@/components/ui/date-picker'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -803,14 +804,13 @@ export function ProcedureExecution({
                         <Label className="uppercase tracking-wider text-xs text-mid">
                           Validade
                         </Label>
-                        <Input
-                          type="date"
+                        <DatePicker
                           value={app.expirationDate ?? ''}
-                          onChange={(e) =>
+                          onChange={(v) =>
                             handleProductAppChange(
                               index,
                               'expirationDate',
-                              e.target.value
+                              v
                             )
                           }
                           disabled={isReadOnly}
@@ -993,10 +993,9 @@ export function ProcedureExecution({
               <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
                 Data de retorno
               </Label>
-              <Input
-                type="date"
+              <DatePicker
                 value={followUpDate}
-                onChange={(e) => setFollowUpDate(e.target.value)}
+                onChange={(v) => setFollowUpDate(v)}
                 className="mt-1 max-w-xs"
               />
             </div>

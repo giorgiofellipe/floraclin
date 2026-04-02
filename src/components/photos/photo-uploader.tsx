@@ -8,13 +8,11 @@ import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import {
-  timelineStageValues,
   timelineStageLabels,
   validateImageFile,
   MAX_IMAGE_WIDTH,
@@ -273,19 +271,11 @@ export function PhotoUploader({
       {/* Timeline stage selector */}
       <div className="flex items-center gap-3">
         <Label htmlFor="timeline-stage" className="uppercase tracking-wider text-xs text-mid">Estagio</Label>
-        <Select value={timelineStage} onValueChange={(v) => v && setTimelineStage(v as TimelineStage)}>
+        <Select items={timelineStageLabels} value={timelineStage} onValueChange={(v) => v && setTimelineStage(v as TimelineStage)}>
           <SelectTrigger className="w-48 border-sage/20">
-            <SelectValue>
-              {(value: string) => timelineStageLabels[value as TimelineStage] ?? value}
-            </SelectValue>
+            <SelectValue />
           </SelectTrigger>
-          <SelectContent>
-            {timelineStageValues.map((stage) => (
-              <SelectItem key={stage} value={stage}>
-                {timelineStageLabels[stage]}
-              </SelectItem>
-            ))}
-          </SelectContent>
+          <SelectContent />
         </Select>
       </div>
 

@@ -23,7 +23,6 @@ import {
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -34,7 +33,7 @@ import {
   useToggleProductActive,
   useToggleProductDiagram,
 } from '@/hooks/mutations/use-product-mutations'
-import { PROCEDURE_CATEGORIES } from '@/lib/constants'
+
 import { toast } from 'sonner'
 import { PlusIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 
@@ -151,21 +150,14 @@ function ProductFormDialog({
           <div className="flex flex-col gap-1.5">
             <Label className="uppercase tracking-wider text-xs text-mid">Categoria *</Label>
             <Select
+              items={CATEGORY_LABELS}
               value={form.category}
               onValueChange={(val) => val && setForm((f) => ({ ...f, category: val }))}
             >
               <SelectTrigger className="w-full">
-                <SelectValue>
-                  {(value: string) => CATEGORY_LABELS[value] ?? value}
-                </SelectValue>
+                <SelectValue />
               </SelectTrigger>
-              <SelectContent>
-                {PROCEDURE_CATEGORIES.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {CATEGORY_LABELS[cat] || cat}
-                  </SelectItem>
-                ))}
-              </SelectContent>
+              <SelectContent />
             </Select>
           </div>
 

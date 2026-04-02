@@ -46,8 +46,6 @@ export const DEFAULT_CONSENT_TEMPLATES = {
   general: {
     title: 'Termo de Consentimento Livre e Esclarecido — Procedimentos Estéticos',
     content: `TERMO DE CONSENTIMENTO LIVRE E ESCLARECIDO — PROCEDIMENTOS ESTÉTICOS
-(modelo sugerido)
-
 Eu, paciente abaixo identificado(a), declaro que fui devidamente informado(a) pelo(a) profissional responsável sobre o procedimento estético ao qual serei submetido(a), incluindo:
 
 1. NATUREZA DO PROCEDIMENTO
@@ -76,8 +74,6 @@ Ao aceitar este termo, confirmo que li, compreendi e concordo com todas as infor
   botox: {
     title: 'Termo de Consentimento — Toxina Botulínica',
     content: `TERMO DE CONSENTIMENTO — APLICAÇÃO DE TOXINA BOTULÍNICA
-(modelo sugerido)
-
 Eu, paciente abaixo identificado(a), declaro que fui devidamente informado(a) sobre o procedimento de aplicação de toxina botulínica tipo A, e que compreendo os seguintes aspectos:
 
 1. O PROCEDIMENTO
@@ -117,8 +113,6 @@ Ao aceitar este termo, confirmo que li, compreendi e concordo com todas as infor
   filler: {
     title: 'Termo de Consentimento — Preenchedor / Ácido Hialurônico',
     content: `TERMO DE CONSENTIMENTO — PREENCHIMENTO COM ÁCIDO HIALURÔNICO
-(modelo sugerido)
-
 Eu, paciente abaixo identificado(a), declaro que fui devidamente informado(a) sobre o procedimento de preenchimento com ácido hialurônico, e que compreendo os seguintes aspectos:
 
 1. O PROCEDIMENTO
@@ -164,8 +158,6 @@ Ao aceitar este termo, confirmo que li, compreendi e concordo com todas as infor
   biostimulator: {
     title: 'Termo de Consentimento — Bioestimulador de Colágeno',
     content: `TERMO DE CONSENTIMENTO — BIOESTIMULADOR DE COLÁGENO
-(modelo sugerido)
-
 Eu, paciente abaixo identificado(a), declaro que fui devidamente informado(a) sobre o procedimento de aplicação de bioestimulador de colágeno, e que compreendo os seguintes aspectos:
 
 1. O PROCEDIMENTO
@@ -246,12 +238,6 @@ Em caso de cancelamento com menos de 24 horas de antecedência, poderá ser cobr
 7. DISPOSIÇÕES GERAIS
 Este contrato é regido pelas leis brasileiras. Eventuais disputas serão resolvidas no foro da comarca da clínica.
 
-Data: {{data}}
-
-_______________________________
-Assinatura do paciente
-
-_______________________________
-Assinatura do profissional`,
+Data: {{data}}`,
   },
 } as const

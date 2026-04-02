@@ -16,12 +16,11 @@ import {
 } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, PencilIcon, CalendarPlusIcon, XCircleIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -29,6 +28,17 @@ import { DayView } from '@/components/scheduling/day-view'
 import { WeekView } from '@/components/scheduling/week-view'
 import { MonthView } from '@/components/scheduling/month-view'
 import { AppointmentForm } from '@/components/scheduling/appointment-form'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog'
+import { useUpdateAppointmentStatus } from '@/hooks/mutations/use-appointment-mutations'
+import { toast } from 'sonner'
 import { useAppointments } from '@/hooks/queries/use-appointments'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
 
@@ -92,6 +102,7 @@ export function CalendarView({
   initialAppointments,
 }: CalendarViewProps) {
   const router = useRouter()
+  const cancelAppointment = useUpdateAppointmentStatus()
 
   const [currentDate, setCurrentDate] = React.useState(new Date(initialDate + 'T12:00:00'))
   const [view, setView] = React.useState<ViewType>(initialView)
@@ -103,15 +114,34 @@ export function CalendarView({
   const [defaultFormDate, setDefaultFormDate] = React.useState<string>('')
   const [defaultFormTime, setDefaultFormTime] = React.useState<string>('')
 
+  // Context menu state
+  const [contextMenu, setContextMenu] = React.useState<{
+    appointment: AppointmentWithDetails
+    x: number
+    y: number
+  } | null>(null)
+  const contextMenuRef = React.useRef<HTMLDivElement>(null)
+
+  const practitionerFilterItems = React.useMemo(
+    () => ({ all: 'Todos', ...Object.fromEntries(practitioners.map((p) => [p.id, p.fullName])) }),
+    [practitioners]
+  )
+
   // Derive date range from current state
   const { dateFrom, dateTo } = getDateRange(currentDate, view)
   const queryPractitionerId = practitionerId !== 'all' ? practitionerId : undefined
 
   // Use React Query for appointments data
-  const { data: appointments = initialAppointments, isLoading } = useAppointments(
+  const { data: allAppointments = initialAppointments, isLoading } = useAppointments(
     queryPractitionerId,
     dateFrom,
     dateTo
+  )
+
+  // Hide cancelled appointments from the calendar
+  const appointments = React.useMemo(
+    () => allAppointments.filter((a) => a.status !== 'cancelled'),
+    [allAppointments]
   )
 
   // Update URL params
@@ -160,18 +190,83 @@ export function CalendarView({
   }
 
   const handleSlotClick = (date: string, time: string) => {
+    setContextMenu(null)
     setEditingAppointment(null)
     setDefaultFormDate(date)
     setDefaultFormTime(time)
     setFormOpen(true)
   }
 
-  const handleAppointmentClick = (appointment: AppointmentWithDetails) => {
-    setEditingAppointment(appointment)
+  const handleAppointmentClick = React.useCallback((appointment: AppointmentWithDetails, event?: React.MouseEvent) => {
+    if (event) {
+      event.stopPropagation()
+      setContextMenu({
+        appointment,
+        x: event.clientX,
+        y: event.clientY,
+      })
+    } else {
+      // Fallback: direct edit (e.g., from month view)
+      setEditingAppointment(appointment)
+      setFormOpen(true)
+    }
+  }, [])
+
+  const handleContextEdit = React.useCallback(() => {
+    if (!contextMenu) return
+    setEditingAppointment(contextMenu.appointment)
     setDefaultFormDate('')
     setDefaultFormTime('')
     setFormOpen(true)
-  }
+    setContextMenu(null)
+  }, [contextMenu])
+
+  const handleContextNewSlot = React.useCallback(() => {
+    if (!contextMenu) return
+    const appt = contextMenu.appointment
+    setEditingAppointment(null)
+    setDefaultFormDate(appt.date)
+    setDefaultFormTime(appt.startTime.slice(0, 5))
+    setFormOpen(true)
+    setContextMenu(null)
+  }, [contextMenu])
+
+  const [cancelConfirmOpen, setCancelConfirmOpen] = React.useState(false)
+  const [appointmentToCancel, setAppointmentToCancel] = React.useState<AppointmentWithDetails | null>(null)
+
+  const handleContextCancel = React.useCallback(() => {
+    if (!contextMenu) return
+    setAppointmentToCancel(contextMenu.appointment)
+    setCancelConfirmOpen(true)
+    setContextMenu(null)
+  }, [contextMenu])
+
+  const handleConfirmCancel = React.useCallback(async () => {
+    if (!appointmentToCancel) return
+    try {
+      await cancelAppointment.mutateAsync({
+        id: appointmentToCancel.id,
+        status: 'cancelled',
+      })
+      toast.success('Agendamento cancelado')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao cancelar')
+    }
+    setCancelConfirmOpen(false)
+    setAppointmentToCancel(null)
+  }, [appointmentToCancel, cancelAppointment])
+
+  // Dismiss context menu on outside click
+  React.useEffect(() => {
+    if (!contextMenu) return
+    const dismiss = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null)
+      }
+    }
+    document.addEventListener('mousedown', dismiss)
+    return () => document.removeEventListener('mousedown', dismiss)
+  }, [contextMenu])
 
   const handleDayClick = (dateStr: string) => {
     const newDate = new Date(dateStr + 'T12:00:00')
@@ -225,23 +320,11 @@ export function CalendarView({
 
         <div className="flex items-center gap-3">
           {/* Practitioner filter */}
-          <Select value={practitionerId} onValueChange={(v) => v && changePractitioner(v)}>
+          <Select items={practitionerFilterItems} value={practitionerId} onValueChange={(v) => v && changePractitioner(v)}>
             <SelectTrigger className="w-auto min-w-[140px] border-sage/20">
-              <SelectValue placeholder="Profissional">
-                {(value: string) => {
-                  if (value === 'all') return 'Todos'
-                  return practitioners.find((p) => p.id === value)?.fullName ?? value
-                }}
-              </SelectValue>
+              <SelectValue placeholder="Profissional" />
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              {practitioners.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.fullName}
-                </SelectItem>
-              ))}
-            </SelectContent>
+            <SelectContent />
           </Select>
 
           {/* View toggle - pill style */}
@@ -319,6 +402,84 @@ export function CalendarView({
           />
         )}
       </div>
+
+      {/* Context menu for appointment click */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          data-testid="appointment-context-menu"
+          className="fixed z-50 min-w-[200px] rounded-lg border border-[#E8ECEF] bg-white py-1 shadow-lg"
+          style={{
+            left: Math.min(contextMenu.x, window.innerWidth - 220),
+            top: Math.min(contextMenu.y, window.innerHeight - 120),
+          }}
+        >
+          <div className="px-3 py-1.5 border-b border-[#E8ECEF]">
+            <p className="text-xs font-medium text-[#2A2A2A] truncate">
+              {contextMenu.appointment.patientName ?? contextMenu.appointment.bookingName ?? 'Sem paciente'}
+            </p>
+            <p className="text-[11px] text-mid">
+              {contextMenu.appointment.startTime.slice(0, 5)} - {contextMenu.appointment.endTime.slice(0, 5)} · {contextMenu.appointment.practitionerName}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-[#2A2A2A] hover:bg-[#F4F6F8] transition-colors"
+            data-testid="context-edit"
+            onClick={handleContextEdit}
+          >
+            <PencilIcon className="h-3.5 w-3.5 text-mid" />
+            Editar agendamento
+          </button>
+          {contextMenu.appointment.status !== 'cancelled' && (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+              data-testid="context-cancel"
+              onClick={handleContextCancel}
+            >
+              <XCircleIcon className="h-3.5 w-3.5" />
+              Cancelar agendamento
+            </button>
+          )}
+          <div className="mx-2 my-1 h-px bg-[#E8ECEF]" />
+          <button
+            type="button"
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-[#4A6B52] hover:bg-[#F4F6F8] transition-colors"
+            data-testid="context-new"
+            onClick={handleContextNewSlot}
+          >
+            <CalendarPlusIcon className="h-3.5 w-3.5" />
+            Novo agendamento neste horário
+          </button>
+        </div>
+      )}
+
+      {/* Cancel confirmation dialog */}
+      <Dialog open={cancelConfirmOpen} onOpenChange={setCancelConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancelar Agendamento</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja cancelar o agendamento de{' '}
+              <strong>{appointmentToCancel?.patientName ?? appointmentToCancel?.bookingName ?? 'Sem paciente'}</strong>
+              {' '}em {appointmentToCancel?.date ? format(new Date(appointmentToCancel.date + 'T12:00:00'), "d 'de' MMMM", { locale: ptBR }) : ''}
+              {' '}às {appointmentToCancel?.startTime?.slice(0, 5)}?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>Voltar</DialogClose>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmCancel}
+              disabled={cancelAppointment.isPending}
+              data-testid="confirm-cancel-appointment"
+            >
+              {cancelAppointment.isPending ? 'Cancelando...' : 'Confirmar cancelamento'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Appointment form dialog */}
       <AppointmentForm

@@ -6,7 +6,7 @@ import Link from 'next/link'
 import type { Patient } from '@/db/queries/patients'
 import type { PaginatedResult } from '@/types'
 import { useDeletePatient } from '@/hooks/mutations/use-patient-mutations'
-import { formatDate, maskCPF } from '@/lib/utils'
+import { cn, formatDate, maskCPF } from '@/lib/utils'
 import { PatientForm } from './patient-form'
 
 import { Button } from '@/components/ui/button'
@@ -33,9 +33,10 @@ import { PlusIcon, SearchIcon, PencilIcon, TrashIcon, ChevronLeftIcon, ChevronRi
 interface PatientListProps {
   result: PaginatedResult<Patient>
   search?: string
+  isFetching?: boolean
 }
 
-export function PatientList({ result, search: initialSearch = '' }: PatientListProps) {
+export function PatientList({ result, search: initialSearch = '', isFetching = false }: PatientListProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const deletePatientMutation = useDeletePatient()
@@ -101,21 +102,7 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold text-[#2A2A2A]">Pacientes</h1>
-          <span className="inline-flex items-center rounded-full bg-sage/10 px-2.5 py-0.5 text-xs font-medium text-sage">
-            {result.total}
-          </span>
-        </div>
-        <Button onClick={handleNewPatient} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="patient-new-button">
-          <PlusIcon className="size-4" data-icon="inline-start" />
-          Novo Paciente
-        </Button>
-      </div>
-
-      {/* Search bar */}
+      {/* Search + actions */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-lg">
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-mid pointer-events-none" />
@@ -133,10 +120,15 @@ export function PatientList({ result, search: initialSearch = '' }: PatientListP
         <Button variant="outline" onClick={handleSearch} className="border-sage/30 text-sage hover:bg-petal transition-colors">
           Buscar
         </Button>
+        <div className="flex-1" />
+        <Button onClick={handleNewPatient} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="patient-new-button">
+          <PlusIcon className="size-4" data-icon="inline-start" />
+          Novo Paciente
+        </Button>
       </div>
 
       {/* Table */}
-      <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] overflow-hidden">
+      <div className={cn("rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] overflow-hidden transition-opacity duration-200", isFetching && "opacity-60")}>
         <Table>
           <TableHeader>
             <TableRow className="border-b border-[#E8ECEF] hover:bg-transparent">

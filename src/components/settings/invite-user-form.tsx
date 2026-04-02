@@ -7,7 +7,6 @@ import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -78,19 +77,11 @@ export function InviteUserForm({ onSuccess, onCancel }: InviteUserFormProps) {
 
       <div className="space-y-2">
         <Label htmlFor="invite-role">Papel *</Label>
-        <Select value={role} onValueChange={(v) => setRole(v ?? '')}>
+        <Select items={ROLE_LABELS} value={role} onValueChange={(v) => setRole(v ?? '')}>
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Selecione o papel">
-              {(value: string) => ROLE_LABELS[value as Role] || value}
-            </SelectValue>
+            <SelectValue placeholder="Selecione o papel" />
           </SelectTrigger>
-          <SelectContent>
-            {INVITABLE_ROLES.map((r) => (
-              <SelectItem key={r} value={r}>
-                {ROLE_LABELS[r]}
-              </SelectItem>
-            ))}
-          </SelectContent>
+          <SelectContent />
         </Select>
       </div>
 

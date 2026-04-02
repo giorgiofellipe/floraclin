@@ -3,7 +3,7 @@
 import { useSearchParams } from 'next/navigation'
 import { usePatients } from '@/hooks/queries/use-patients'
 import { PatientList } from '@/components/patients/patient-list'
-import PacientesLoading from './loading'
+import PatientsLoading from './loading'
 
 export function PacientesPageClient() {
   const searchParams = useSearchParams()
@@ -11,11 +11,13 @@ export function PacientesPageClient() {
   const search = searchParams.get('busca') ?? ''
   const page = Math.max(1, Number(searchParams.get('pagina')) || 1)
 
-  const { data, isLoading } = usePatients(search, page)
+  const { data, isLoading, isFetching } = usePatients(search, page)
 
-  if (isLoading || !data) {
-    return <PacientesLoading />
+  if (isLoading && !data) {
+    return <PatientsLoading />
   }
 
-  return <PatientList result={data} search={search} />
+  if (!data) return <PatientsLoading />
+
+  return <PatientList result={data} search={search} isFetching={isFetching} />
 }

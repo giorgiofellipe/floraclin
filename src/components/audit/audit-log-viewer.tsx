@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react'
 import {
   Table,
   TableBody,
@@ -13,12 +13,11 @@ import { Button } from '@/components/ui/button'
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
+import { DatePicker } from '@/components/ui/date-picker'
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -182,6 +181,14 @@ export function AuditLogViewer() {
     }
   }, [entityTypeFilter, dateFrom, dateTo, page])
 
+  const entityTypeItems = useMemo(() => {
+    const map: Record<string, string> = { __all__: 'Todos' }
+    for (const t of entityTypes) {
+      map[t] = getEntityTypeLabel(t)
+    }
+    return map
+  }, [entityTypes])
+
   const fetchEntityTypes = useCallback(async () => {
     try {
       const res = await fetch('/api/audit?distinct=entityType')
@@ -222,28 +229,17 @@ export function AuditLogViewer() {
             Tipo de Entidade
           </label>
           <Select
-            value={entityTypeFilter}
+            items={entityTypeItems}
+            value={entityTypeFilter || '__all__'}
             onValueChange={(value) => {
               setEntityTypeFilter(value === '__all__' || value === null ? '' : value)
               setPage(1)
             }}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Todos">
-                {(value: string) => {
-                  if (value === '__all__') return 'Todos'
-                  return getEntityTypeLabel(value)
-                }}
-              </SelectValue>
+              <SelectValue placeholder="Todos" />
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">Todos</SelectItem>
-              {entityTypes.map((type) => (
-                <SelectItem key={type} value={type}>
-                  {getEntityTypeLabel(type)}
-                </SelectItem>
-              ))}
-            </SelectContent>
+            <SelectContent />
           </Select>
         </div>
 
@@ -251,11 +247,10 @@ export function AuditLogViewer() {
           <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wider text-mid">
             Data Inicial
           </label>
-          <Input
-            type="date"
+          <DatePicker
             value={dateFrom}
-            onChange={(e) => {
-              setDateFrom(e.target.value)
+            onChange={(v) => {
+              setDateFrom(v)
               setPage(1)
             }}
             className="w-[160px]"
@@ -266,11 +261,10 @@ export function AuditLogViewer() {
           <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wider text-mid">
             Data Final
           </label>
-          <Input
-            type="date"
+          <DatePicker
             value={dateTo}
-            onChange={(e) => {
-              setDateTo(e.target.value)
+            onChange={(v) => {
+              setDateTo(v)
               setPage(1)
             }}
             className="w-[160px]"
@@ -321,9 +315,8 @@ export function AuditLogViewer() {
               </TableRow>
             ) : (
               logs.map((log) => (
-                <>
+                <Fragment key={log.id}>
                   <TableRow
-                    key={log.id}
                     className="cursor-pointer hover:bg-petal/50"
                     onClick={() => toggleRow(log.id)}
                   >
@@ -355,7 +348,7 @@ export function AuditLogViewer() {
                       </TableCell>
                     </TableRow>
                   )}
-                </>
+                </Fragment>
               ))
             )}
           </TableBody>

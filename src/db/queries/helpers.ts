@@ -8,6 +8,7 @@ import { eq, and, isNull } from 'drizzle-orm'
  */
 export async function verifyTenantOwnership(
   tenantId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   table: { id: any; tenantId: any; deletedAt?: any },
   id: string,
   label = 'Record'
@@ -19,6 +20,7 @@ export async function verifyTenantOwnership(
 
   const [record] = await db
     .select({ id: table.id })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from(table as any)
     .where(and(...conditions))
     .limit(1)

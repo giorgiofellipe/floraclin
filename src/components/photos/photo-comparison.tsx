@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -143,6 +143,14 @@ export function PhotoComparison({
     []
   )
 
+  const photoItems = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const p of allPhotos) {
+      map[p.id] = getPhotoLabel(p)
+    }
+    return map
+  }, [allPhotos, getPhotoLabel])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -166,14 +174,9 @@ export function PhotoComparison({
       <div className="flex flex-wrap items-end gap-4">
         <div className="space-y-1.5">
           <Label className="uppercase tracking-wider text-xs text-mid">Foto A</Label>
-          <Select value={photoIdA} onValueChange={(v) => v && setPhotoIdA(v)}>
+          <Select items={photoItems} value={photoIdA} onValueChange={(v) => v && setPhotoIdA(v)}>
             <SelectTrigger className="w-64 border-sage/20">
-              <SelectValue placeholder="Selecione a foto A">
-                {(value: string) => {
-                  const photo = allPhotos.find((p) => p.id === value)
-                  return photo ? getPhotoLabel(photo) : value
-                }}
-              </SelectValue>
+              <SelectValue placeholder="Selecione a foto A" />
             </SelectTrigger>
             <SelectContent>
               {allPhotos.map((p) => (
@@ -187,14 +190,9 @@ export function PhotoComparison({
 
         <div className="space-y-1.5">
           <Label className="uppercase tracking-wider text-xs text-mid">Foto B</Label>
-          <Select value={photoIdB} onValueChange={(v) => v && setPhotoIdB(v)}>
+          <Select items={photoItems} value={photoIdB} onValueChange={(v) => v && setPhotoIdB(v)}>
             <SelectTrigger className="w-64 border-sage/20">
-              <SelectValue placeholder="Selecione a foto B">
-                {(value: string) => {
-                  const photo = allPhotos.find((p) => p.id === value)
-                  return photo ? getPhotoLabel(photo) : value
-                }}
-              </SelectValue>
+              <SelectValue placeholder="Selecione a foto B" />
             </SelectTrigger>
             <SelectContent>
               {allPhotos.map((p) => (

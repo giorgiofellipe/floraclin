@@ -2,7 +2,7 @@
 
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createPatientSchema, type CreatePatientInput, type UpdatePatientInput } from '@/validations/patient'
 import { useCreatePatient, useUpdatePatient } from '@/hooks/mutations/use-patient-mutations'
@@ -14,6 +14,7 @@ import { MaskedInput } from '@/components/ui/masked-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { maskPhone, maskCPF, maskCEP } from '@/lib/masks'
+import { DatePicker } from '@/components/ui/date-picker'
 import {
   Sheet,
   SheetContent,
@@ -25,11 +26,26 @@ import {
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
 import { ChevronDownIcon, ChevronRightIcon } from 'lucide-react'
+
+const GENDER_ITEMS: Record<string, string> = {
+  feminino: 'Feminino',
+  masculino: 'Masculino',
+  outro: 'Outro',
+  nao_informado: 'Prefiro não informar',
+}
+
+const REFERRAL_SOURCE_ITEMS: Record<string, string> = {
+  indicacao: 'Indicação',
+  instagram: 'Instagram',
+  google: 'Google',
+  facebook: 'Facebook',
+  site: 'Site',
+  outro: 'Outro',
+}
 
 interface PatientFormProps {
   open: boolean
@@ -51,30 +67,37 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
 
   const address = patient?.address as Record<string, string> | null | undefined
 
+  const patientDefaults = useMemo<CreatePatientInput>(() => ({
+    fullName: patient?.fullName ?? '',
+    phone: patient?.phone ?? '',
+    cpf: patient?.cpf ?? '',
+    birthDate: patient?.birthDate ?? '',
+    gender: patient?.gender ?? '',
+    email: patient?.email ?? '',
+    phoneSecondary: patient?.phoneSecondary ?? '',
+    occupation: patient?.occupation ?? '',
+    referralSource: patient?.referralSource ?? '',
+    notes: patient?.notes ?? '',
+    address: {
+      street: address?.street ?? '',
+      number: address?.number ?? '',
+      complement: address?.complement ?? '',
+      neighborhood: address?.neighborhood ?? '',
+      city: address?.city ?? '',
+      state: address?.state ?? '',
+      zip: address?.zip ?? '',
+    },
+  }), [patient, address])
+
   const form = useForm<CreatePatientInput>({
     resolver: zodResolver(createPatientSchema),
-    defaultValues: {
-      fullName: patient?.fullName ?? '',
-      phone: patient?.phone ?? '',
-      cpf: patient?.cpf ?? '',
-      birthDate: patient?.birthDate ?? '',
-      gender: patient?.gender ?? '',
-      email: patient?.email ?? '',
-      phoneSecondary: patient?.phoneSecondary ?? '',
-      occupation: patient?.occupation ?? '',
-      referralSource: patient?.referralSource ?? '',
-      notes: patient?.notes ?? '',
-      address: {
-        street: address?.street ?? '',
-        number: address?.number ?? '',
-        complement: address?.complement ?? '',
-        neighborhood: address?.neighborhood ?? '',
-        city: address?.city ?? '',
-        state: address?.state ?? '',
-        zip: address?.zip ?? '',
-      },
-    },
+    defaultValues: patientDefaults,
   })
+
+  // Reset form when the patient prop changes (e.g. opening edit for a different patient)
+  useEffect(() => {
+    form.reset(patientDefaults)
+  }, [patientDefaults, form])
 
   async function onSubmit(data: CreatePatientInput) {
     setServerError(null)
@@ -86,7 +109,11 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
         await createPatient.mutateAsync(data as Record<string, unknown>)
       }
       onOpenChange(false)
-      form.reset()
+      // Only reset to blank defaults when creating; in edit mode the form will
+      // either close (Sheet) or stay with up-to-date data after router.refresh().
+      if (!isEditing) {
+        form.reset()
+      }
       router.refresh()
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro ao salvar paciente'
@@ -125,33 +152,26 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="birthDate" className="text-xs uppercase tracking-wider text-mid">Data de nascimento</Label>
-            <Input id="birthDate" type="date" {...form.register('birthDate')} className="border-blush/60 focus:ring-sage/30 transition-shadow" />
+            <DatePicker
+              value={form.watch('birthDate') ?? ''}
+              onChange={(v) => form.setValue('birthDate', v)}
+              placeholder="Selecionar"
+              showYearNavigation
+              yearRange={{ from: 1920, to: new Date().getFullYear() }}
+              maxDate={new Date().toISOString().split('T')[0]}
+            />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs uppercase tracking-wider text-mid">Gênero</Label>
             <Select
+              items={GENDER_ITEMS}
               value={form.watch('gender') ?? ''}
               onValueChange={(val) => form.setValue('gender', val ?? '')}
             >
               <SelectTrigger className="w-full border-blush/60 focus:ring-sage/30">
-                <SelectValue placeholder="Selecione">
-                  {(value: string) => {
-                    const labels: Record<string, string> = {
-                      feminino: 'Feminino',
-                      masculino: 'Masculino',
-                      outro: 'Outro',
-                      nao_informado: 'Prefiro não informar',
-                    }
-                    return labels[value] ?? value
-                  }}
-                </SelectValue>
+                <SelectValue placeholder="Selecione" />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="feminino">Feminino</SelectItem>
-                <SelectItem value="masculino">Masculino</SelectItem>
-                <SelectItem value="outro">Outro</SelectItem>
-                <SelectItem value="nao_informado">Prefiro não informar</SelectItem>
-              </SelectContent>
+              <SelectContent />
             </Select>
           </div>
         </div>
@@ -257,32 +277,14 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs uppercase tracking-wider text-mid">Como nos conheceu</Label>
           <Select
+            items={REFERRAL_SOURCE_ITEMS}
             value={form.watch('referralSource') ?? ''}
             onValueChange={(val) => form.setValue('referralSource', val ?? '')}
           >
             <SelectTrigger className="w-full border-blush/60 focus:ring-sage/30">
-              <SelectValue placeholder="Selecione">
-                {(value: string) => {
-                  const labels: Record<string, string> = {
-                    indicacao: 'Indicação',
-                    instagram: 'Instagram',
-                    google: 'Google',
-                    facebook: 'Facebook',
-                    site: 'Site',
-                    outro: 'Outro',
-                  }
-                  return labels[value] ?? value
-                }}
-              </SelectValue>
+              <SelectValue placeholder="Selecione" />
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="indicacao">Indicação</SelectItem>
-              <SelectItem value="instagram">Instagram</SelectItem>
-              <SelectItem value="google">Google</SelectItem>
-              <SelectItem value="facebook">Facebook</SelectItem>
-              <SelectItem value="site">Site</SelectItem>
-              <SelectItem value="outro">Outro</SelectItem>
-            </SelectContent>
+            <SelectContent />
           </Select>
         </div>
       </fieldset>

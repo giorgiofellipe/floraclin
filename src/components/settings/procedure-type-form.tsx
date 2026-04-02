@@ -10,7 +10,6 @@ import { maskCurrency, parseCurrency } from '@/lib/masks'
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -107,19 +106,11 @@ export function ProcedureTypeForm({ initialData, onSuccess, onCancel }: Procedur
 
       <div className="space-y-2">
         <Label htmlFor="pt-category">Categoria *</Label>
-        <Select value={category} onValueChange={(v) => setCategory(v ?? '')}>
+        <Select items={CATEGORY_LABELS} value={category} onValueChange={(v) => setCategory(v ?? '')}>
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Selecione a categoria">
-              {(value: string) => CATEGORY_LABELS[value] || value}
-            </SelectValue>
+            <SelectValue placeholder="Selecione a categoria" />
           </SelectTrigger>
-          <SelectContent>
-            {PROCEDURE_CATEGORIES.map((cat) => (
-              <SelectItem key={cat} value={cat}>
-                {CATEGORY_LABELS[cat] || cat}
-              </SelectItem>
-            ))}
-          </SelectContent>
+          <SelectContent />
         </Select>
       </div>
 

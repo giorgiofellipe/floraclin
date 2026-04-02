@@ -15,7 +15,7 @@ interface DayViewProps {
   date: Date
   appointments: AppointmentWithDetails[]
   onSlotClick?: (date: string, time: string) => void
-  onAppointmentClick?: (appointment: AppointmentWithDetails) => void
+  onAppointmentClick?: (appointment: AppointmentWithDetails, event?: React.MouseEvent) => void
 }
 
 function timeToMinutes(time: string): number {
@@ -23,20 +23,103 @@ function timeToMinutes(time: string): number {
   return h * 60 + m
 }
 
-function getAppointmentPosition(appointment: AppointmentWithDetails) {
-  const startMin = timeToMinutes(appointment.startTime)
-  const endMin = timeToMinutes(appointment.endTime)
-  const gridStartMin = START_HOUR * 60
+interface LayoutSlot {
+  appointment: AppointmentWithDetails
+  top: number
+  height: number
+  column: number
+  totalColumns: number
+}
 
-  const top = ((startMin - gridStartMin) / 30) * SLOT_HEIGHT_PX
-  const height = Math.max(((endMin - startMin) / 30) * SLOT_HEIGHT_PX, SLOT_HEIGHT_PX / 2)
+/**
+ * Compute overlap layout: assign each appointment a column index and total columns
+ * so overlapping appointments split horizontally (like Google Calendar).
+ */
+function computeOverlapLayout(appointments: AppointmentWithDetails[]): LayoutSlot[] {
+  if (appointments.length === 0) return []
 
-  return { top, height }
+  // Sort by start time, then by end time (longer first)
+  const sorted = [...appointments].sort((a, b) => {
+    const aStart = timeToMinutes(a.startTime)
+    const bStart = timeToMinutes(b.startTime)
+    if (aStart !== bStart) return aStart - bStart
+    return timeToMinutes(b.endTime) - timeToMinutes(a.endTime)
+  })
+
+  // Group overlapping appointments into clusters
+  const clusters: AppointmentWithDetails[][] = []
+  let currentCluster: AppointmentWithDetails[] = []
+  let clusterEnd = 0
+
+  for (const appt of sorted) {
+    const start = timeToMinutes(appt.startTime)
+    const end = timeToMinutes(appt.endTime)
+
+    if (currentCluster.length === 0 || start < clusterEnd) {
+      // Overlaps with current cluster
+      currentCluster.push(appt)
+      clusterEnd = Math.max(clusterEnd, end)
+    } else {
+      // New cluster
+      clusters.push(currentCluster)
+      currentCluster = [appt]
+      clusterEnd = end
+    }
+  }
+  if (currentCluster.length > 0) {
+    clusters.push(currentCluster)
+  }
+
+  // Assign columns within each cluster
+  const result: LayoutSlot[] = []
+
+  for (const cluster of clusters) {
+    const columns: number[][] = [] // columns[col] = list of end times
+
+    for (const appt of cluster) {
+      const startMin = timeToMinutes(appt.startTime)
+      const endMin = timeToMinutes(appt.endTime)
+      const gridStartMin = START_HOUR * 60
+
+      const top = ((startMin - gridStartMin) / 30) * SLOT_HEIGHT_PX
+      const height = Math.max(((endMin - startMin) / 30) * SLOT_HEIGHT_PX, SLOT_HEIGHT_PX / 2)
+
+      // Find first column where this appointment fits (no overlap)
+      let col = 0
+      while (col < columns.length) {
+        const lastEnd = columns[col][columns[col].length - 1]
+        if (startMin >= lastEnd) break
+        col++
+      }
+
+      if (col >= columns.length) {
+        columns.push([])
+      }
+      columns[col].push(endMin)
+
+      result.push({ appointment: appt, top, height, column: col, totalColumns: 0 })
+    }
+
+    // Set totalColumns for all items in this cluster
+    const totalCols = columns.length
+    for (const slot of result) {
+      if (cluster.includes(slot.appointment)) {
+        slot.totalColumns = totalCols
+      }
+    }
+  }
+
+  return result
 }
 
 export function DayView({ date, appointments, onSlotClick, onAppointmentClick }: DayViewProps) {
   const dateStr = format(date, 'yyyy-MM-dd')
   const dayAppointments = appointments.filter((a) => a.date === dateStr)
+
+  const layoutSlots = React.useMemo(
+    () => computeOverlapLayout(dayAppointments),
+    [dayAppointments]
+  )
 
   // Current time indicator
   const now = new Date()
@@ -103,18 +186,25 @@ export function DayView({ date, appointments, onSlotClick, onAppointmentClick }:
             </div>
           )}
 
-          {/* Appointments */}
-          {dayAppointments.map((appt) => {
-            const { top, height } = getAppointmentPosition(appt)
+          {/* Appointments — split horizontally when overlapping */}
+          {layoutSlots.map(({ appointment: appt, top, height, column, totalColumns }) => {
+            const widthPercent = 100 / totalColumns
+            const leftPercent = column * widthPercent
             return (
               <div
                 key={appt.id}
-                className="absolute left-1 right-2 z-20"
-                style={{ top, height }}
+                className="absolute z-20"
+                style={{
+                  top,
+                  height,
+                  left: `calc(${leftPercent}% + 2px)`,
+                  width: `calc(${widthPercent}% - 4px)`,
+                }}
               >
                 <AppointmentCard
                   appointment={appt}
                   onClick={onAppointmentClick}
+                  showPractitioner={totalColumns > 1}
                 />
               </div>
             )

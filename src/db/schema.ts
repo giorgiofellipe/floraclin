@@ -316,6 +316,7 @@ export const financialEntries = floraclinSchema.table('financial_entries', {
   installmentCount: integer('installment_count').notNull().default(1),
   status: varchar('status', { length: 20 }).notNull().default('pending'), // CHECK in migration
   notes: text('notes'),
+  renegotiatedAt: timestamp('renegotiated_at', { withTimezone: true }),
   createdBy: uuid('created_by').notNull().references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -336,12 +337,157 @@ export const installments = floraclinSchema.table('installments', {
   paidAt: timestamp('paid_at', { withTimezone: true }),
   paymentMethod: varchar('payment_method', { length: 20 }), // CHECK in migration
   notes: text('notes'),
+  fineAmount: decimal('fine_amount', { precision: 10, scale: 2 }).notNull().default('0'),
+  interestAmount: decimal('interest_amount', { precision: 10, scale: 2 }).notNull().default('0'),
+  amountPaid: decimal('amount_paid', { precision: 10, scale: 2 }).notNull().default('0'),
+  lastFineInterestCalcAt: timestamp('last_fine_interest_calc_at', { withTimezone: true }),
+  appliedFineType: varchar('applied_fine_type', { length: 20 }),
+  appliedFineValue: decimal('applied_fine_value', { precision: 5, scale: 2 }),
+  appliedInterestRate: decimal('applied_interest_rate', { precision: 5, scale: 2 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('idx_installments_entry').on(table.financialEntryId),
   index('idx_installments_due').on(table.tenantId, table.dueDate, table.status),
 ])
+
+// ─── CASH MOVEMENTS (append-only ledger) ─────────────────────────────
+
+export const cashMovements = floraclinSchema.table('cash_movements', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  type: varchar('type', { length: 20 }).notNull(), // 'inflow' | 'outflow'
+  amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
+  description: varchar('description', { length: 255 }).notNull(),
+  paymentMethod: varchar('payment_method', { length: 20 }),
+  movementDate: timestamp('movement_date', { withTimezone: true }).notNull(),
+  recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+  paymentRecordId: uuid('payment_record_id'),
+  expenseInstallmentId: uuid('expense_installment_id'),
+  patientId: uuid('patient_id').references(() => patients.id),
+  expenseCategoryId: uuid('expense_category_id'),
+  recordedBy: uuid('recorded_by').notNull().references(() => users.id),
+  reversedByMovementId: uuid('reversed_by_movement_id'),
+}, (table) => [
+  index('idx_cash_movements_tenant_date').on(table.tenantId, table.movementDate),
+  index('idx_cash_movements_type').on(table.tenantId, table.type),
+])
+
+// ─── PAYMENT RECORDS ─────────────────────────────────────────────────
+
+export const paymentRecords = floraclinSchema.table('payment_records', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  installmentId: uuid('installment_id').notNull().references(() => installments.id),
+  amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
+  paymentMethod: varchar('payment_method', { length: 20 }).notNull(),
+  interestCovered: decimal('interest_covered', { precision: 10, scale: 2 }).notNull().default('0'),
+  fineCovered: decimal('fine_covered', { precision: 10, scale: 2 }).notNull().default('0'),
+  principalCovered: decimal('principal_covered', { precision: 10, scale: 2 }).notNull().default('0'),
+  paidAt: timestamp('paid_at', { withTimezone: true }).notNull(),
+  recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+  recordedBy: uuid('recorded_by').notNull().references(() => users.id),
+  notes: text('notes'),
+  // Reversal tracking
+  reversedAt: timestamp('reversed_at', { withTimezone: true }),
+  reversedBy: uuid('reversed_by').references(() => users.id),
+  reversalReason: text('reversal_reason'),
+}, (table) => [
+  index('idx_payment_records_installment').on(table.installmentId),
+])
+
+// ─── RENEGOTIATION LINKS ─────────────────────────────────────────────
+
+export const renegotiationLinks = floraclinSchema.table('renegotiation_links', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  originalEntryId: uuid('original_entry_id').notNull().references(() => financialEntries.id),
+  newEntryId: uuid('new_entry_id').notNull().references(() => financialEntries.id),
+  originalRemainingPrincipal: decimal('original_remaining_principal', { precision: 10, scale: 2 }).notNull(),
+  penaltiesIncluded: decimal('penalties_included', { precision: 10, scale: 2 }).notNull().default('0'),
+  penaltiesWaived: decimal('penalties_waived', { precision: 10, scale: 2 }).notNull().default('0'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_renegotiation_links_original').on(table.originalEntryId),
+  index('idx_renegotiation_links_new').on(table.newEntryId),
+])
+
+// ─── EXPENSES ────────────────────────────────────────────────────────
+
+export const expenses = floraclinSchema.table('expenses', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  categoryId: uuid('category_id').notNull(),
+  description: varchar('description', { length: 255 }).notNull(),
+  totalAmount: decimal('total_amount', { precision: 10, scale: 2 }).notNull(),
+  installmentCount: integer('installment_count').notNull().default(1),
+  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  notes: text('notes'),
+  createdBy: uuid('created_by').notNull().references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => [
+  index('idx_expenses_tenant').on(table.tenantId),
+  index('idx_expenses_category').on(table.tenantId, table.categoryId),
+])
+
+export const expenseInstallments = floraclinSchema.table('expense_installments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  expenseId: uuid('expense_id').notNull().references(() => expenses.id),
+  installmentNumber: integer('installment_number').notNull(),
+  amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
+  dueDate: date('due_date').notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  paidAt: timestamp('paid_at', { withTimezone: true }),
+  paymentMethod: varchar('payment_method', { length: 20 }),
+  notes: text('notes'),
+}, (table) => [
+  index('idx_expense_installments_expense').on(table.expenseId),
+])
+
+export const expenseCategories = floraclinSchema.table('expense_categories', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id'), // null = system default
+  name: varchar('name', { length: 100 }).notNull(),
+  icon: varchar('icon', { length: 50 }).notNull().default('circle'),
+  isSystem: boolean('is_system').notNull().default(false),
+  sortOrder: integer('sort_order').notNull().default(0),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => [
+  index('idx_expense_categories_tenant').on(table.tenantId),
+])
+
+export const expenseAttachments = floraclinSchema.table('expense_attachments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  expenseId: uuid('expense_id').notNull().references(() => expenses.id),
+  fileName: varchar('file_name', { length: 255 }).notNull(),
+  fileUrl: text('file_url').notNull(),
+  fileSize: integer('file_size').notNull(),
+  mimeType: varchar('mime_type', { length: 100 }).notNull(),
+  uploadedBy: uuid('uploaded_by').notNull().references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_expense_attachments_expense').on(table.expenseId),
+])
+
+// ─── FINANCIAL SETTINGS ──────────────────────────────────────────────
+
+export const financialSettings = floraclinSchema.table('financial_settings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id).unique(),
+  fineType: varchar('fine_type', { length: 20 }).notNull().default('percentage'),
+  fineValue: decimal('fine_value', { precision: 5, scale: 2 }).notNull().default('2.00'),
+  monthlyInterestPercent: decimal('monthly_interest_percent', { precision: 5, scale: 2 }).notNull().default('1.00'),
+  gracePeriodDays: integer('grace_period_days').notNull().default(0),
+  bankName: varchar('bank_name', { length: 100 }),
+  bankAgency: varchar('bank_agency', { length: 20 }),
+  bankAccount: varchar('bank_account', { length: 30 }),
+  pixKeyType: varchar('pix_key_type', { length: 20 }),
+  pixKey: varchar('pix_key', { length: 100 }),
+  defaultInstallmentCount: integer('default_installment_count').notNull().default(1),
+  defaultPaymentMethod: varchar('default_payment_method', { length: 20 }),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
 
 // ─── EVALUATION TEMPLATES ───────────────────────────────────────────
 
@@ -511,9 +657,51 @@ export const financialEntriesRelations = relations(financialEntries, ({ one, man
   installments: many(installments),
 }))
 
-export const installmentsRelations = relations(installments, ({ one }) => ({
+export const installmentsRelations = relations(installments, ({ one, many }) => ({
   tenant: one(tenants, { fields: [installments.tenantId], references: [tenants.id] }),
   financialEntry: one(financialEntries, { fields: [installments.financialEntryId], references: [financialEntries.id] }),
+  paymentRecords: many(paymentRecords),
+}))
+
+export const paymentRecordsRelations = relations(paymentRecords, ({ one }) => ({
+  installment: one(installments, { fields: [paymentRecords.installmentId], references: [installments.id] }),
+  recordedByUser: one(users, { fields: [paymentRecords.recordedBy], references: [users.id] }),
+}))
+
+export const renegotiationLinksRelations = relations(renegotiationLinks, ({ one }) => ({
+  originalEntry: one(financialEntries, { fields: [renegotiationLinks.originalEntryId], references: [financialEntries.id], relationName: 'renegotiatedFrom' }),
+  newEntry: one(financialEntries, { fields: [renegotiationLinks.newEntryId], references: [financialEntries.id], relationName: 'renegotiatedTo' }),
+}))
+
+export const cashMovementsRelations = relations(cashMovements, ({ one }) => ({
+  tenant: one(tenants, { fields: [cashMovements.tenantId], references: [tenants.id] }),
+  recordedByUser: one(users, { fields: [cashMovements.recordedBy], references: [users.id] }),
+  patient: one(patients, { fields: [cashMovements.patientId], references: [patients.id] }),
+}))
+
+export const expensesRelations = relations(expenses, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [expenses.tenantId], references: [tenants.id] }),
+  category: one(expenseCategories, { fields: [expenses.categoryId], references: [expenseCategories.id] }),
+  createdByUser: one(users, { fields: [expenses.createdBy], references: [users.id] }),
+  installments: many(expenseInstallments),
+  attachments: many(expenseAttachments),
+}))
+
+export const expenseInstallmentsRelations = relations(expenseInstallments, ({ one }) => ({
+  expense: one(expenses, { fields: [expenseInstallments.expenseId], references: [expenses.id] }),
+}))
+
+export const expenseCategoriesRelations = relations(expenseCategories, ({ one }) => ({
+  tenant: one(tenants, { fields: [expenseCategories.tenantId], references: [tenants.id] }),
+}))
+
+export const expenseAttachmentsRelations = relations(expenseAttachments, ({ one }) => ({
+  expense: one(expenses, { fields: [expenseAttachments.expenseId], references: [expenses.id] }),
+  uploadedByUser: one(users, { fields: [expenseAttachments.uploadedBy], references: [users.id] }),
+}))
+
+export const financialSettingsRelations = relations(financialSettings, ({ one }) => ({
+  tenant: one(tenants, { fields: [financialSettings.tenantId], references: [tenants.id] }),
 }))
 
 export const evaluationTemplatesRelations = relations(evaluationTemplates, ({ one }) => ({

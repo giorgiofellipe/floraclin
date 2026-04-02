@@ -20,18 +20,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useMemo } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { DiagramPointData, CatalogProduct } from './types'
 import type { QuantityUnit } from '@/types'
 
-const DEPTH_OPTIONS = [
-  { value: 'subcutâneo', label: 'Subcutâneo' },
-  { value: 'intradérmico', label: 'Intradérmico' },
-  { value: 'supraperiosteal', label: 'Supraperiosteal' },
-  { value: 'subdérmico', label: 'Subdérmico' },
-  { value: 'intramuscular', label: 'Intramuscular' },
-] as const
+const DEPTH_ITEMS: Record<string, string> = {
+  'subcutâneo': 'Subcutâneo',
+  'intradérmico': 'Intradérmico',
+  'supraperiosteal': 'Supraperiosteal',
+  'subdérmico': 'Subdérmico',
+  'intramuscular': 'Intramuscular',
+}
 
 const CATEGORY_LABELS: Record<string, string> = {
   botox: 'Toxina Botulínica',
@@ -82,6 +83,14 @@ export function PointFormModal({
       groups[p.category].push(p)
     }
     return groups
+  }, [products])
+
+  const productItems = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const p of products) {
+      map[p.id] = p.name
+    }
+    return map
   }, [products])
 
   // Reset form when point changes
@@ -171,16 +180,12 @@ export function PointFormModal({
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="product-select">Produto *</Label>
             <Select
+              items={productItems}
               value={selectedProductId}
               onValueChange={handleProductSelect}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecione o produto">
-                  {(value: string) => {
-                    const p = products.find((prod) => prod.id === value)
-                    return p?.name ?? value
-                  }}
-                </SelectValue>
+                <SelectValue placeholder="Selecione o produto" />
               </SelectTrigger>
               <SelectContent>
                 {Object.entries(groupedProducts).map(([category, prods]) => (
@@ -279,19 +284,11 @@ export function PointFormModal({
               {/* Depth */}
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="depth">Profundidade</Label>
-                <Select value={depth} onValueChange={(val) => setDepth(val ?? '')}>
+                <Select items={DEPTH_ITEMS} value={depth} onValueChange={(val) => setDepth(val ?? '')}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Selecione a profundidade">
-                      {(value: string) => DEPTH_OPTIONS.find((o) => o.value === value)?.label ?? value}
-                    </SelectValue>
+                    <SelectValue placeholder="Selecione a profundidade" />
                   </SelectTrigger>
-                  <SelectContent>
-                    {DEPTH_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
+                  <SelectContent />
                 </Select>
               </div>
 

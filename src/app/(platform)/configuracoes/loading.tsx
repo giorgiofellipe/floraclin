@@ -1,6 +1,6 @@
 import { Skeleton } from '@/components/ui/skeleton'
 
-export default function ConfiguracoesLoading() {
+export default function SettingsLoading() {
   return (
     <div className="space-y-6">
       {/* Header */}

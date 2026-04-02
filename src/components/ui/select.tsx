@@ -6,7 +6,47 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+/**
+ * React context to pass the `items` map from Select to SelectContent
+ * so SelectContent can auto-render SelectItem children when none are provided.
+ */
+const SelectItemsContext = React.createContext<Record<string, React.ReactNode> | null>(null)
+
+/**
+ * Select root wrapper.
+ *
+ * Pass an `items` prop (a `Record<string, string>` mapping values to labels)
+ * so that `SelectValue` can resolve labels immediately — without waiting for
+ * the Portal to mount.
+ *
+ * When `items` is provided and `SelectContent` has no children, items are
+ * auto-rendered as `SelectItem` elements.
+ *
+ * @example
+ * ```tsx
+ * const METHODS = { pix: 'PIX', credit_card: 'Cartão de Crédito' }
+ *
+ * <Select items={METHODS} value={v} onValueChange={set}>
+ *   <SelectTrigger><SelectValue placeholder="Método" /></SelectTrigger>
+ *   <SelectContent />
+ * </Select>
+ * ```
+ */
+function Select({
+  items,
+  children,
+  ...props
+}: SelectPrimitive.Root.Props<string, false> & {
+  items?: Record<string, React.ReactNode>
+}) {
+  return (
+    <SelectItemsContext.Provider value={items ?? null}>
+      <SelectPrimitive.Root items={items} {...props}>
+        {children}
+      </SelectPrimitive.Root>
+    </SelectItemsContext.Provider>
+  )
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (
@@ -70,6 +110,15 @@ function SelectContent({
     SelectPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger"
   >) {
+  const itemsMap = React.useContext(SelectItemsContext)
+
+  // Auto-render SelectItem elements from the items map when no children provided
+  const resolvedChildren = children ?? (itemsMap
+    ? Object.entries(itemsMap).map(([value, label]) => (
+        <SelectItem key={value} value={value}>{label}</SelectItem>
+      ))
+    : null)
+
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Positioner
@@ -87,7 +136,7 @@ function SelectContent({
           {...props}
         >
           <SelectScrollUpButton />
-          <SelectPrimitive.List>{children}</SelectPrimitive.List>
+          <SelectPrimitive.List>{resolvedChildren}</SelectPrimitive.List>
           <SelectScrollDownButton />
         </SelectPrimitive.Popup>
       </SelectPrimitive.Positioner>

@@ -14,9 +14,15 @@ export type AcceptanceMethod = 'checkbox' | 'signature' | 'both'
 
 export type PaymentMethod = 'pix' | 'credit_card' | 'debit_card' | 'cash' | 'transfer'
 
-export type FinancialStatus = 'pending' | 'partial' | 'paid' | 'overdue' | 'cancelled'
+export type FinancialStatus = 'pending' | 'partial' | 'paid' | 'overdue' | 'cancelled' | 'renegotiated'
 
-export type InstallmentStatus = 'pending' | 'paid' | 'overdue'
+export type ExpenseStatus = 'pending' | 'paid' | 'cancelled'
+
+export type CashMovementType = 'inflow' | 'outflow'
+
+export type FineType = 'percentage' | 'fixed'
+
+export type PixKeyType = 'cpf' | 'cnpj' | 'email' | 'phone' | 'random'
 
 export type DiagramViewType = 'front' | 'left_profile' | 'right_profile'
 

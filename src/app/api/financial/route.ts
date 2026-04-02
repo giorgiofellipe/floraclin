@@ -19,6 +19,9 @@ export async function GET(request: Request) {
     const filters = {
       patientId: searchParams.get('patientId') ?? undefined,
       status: searchParams.get('status') ?? undefined,
+      isOverdue: searchParams.get('isOverdue') === 'true' ? true : undefined,
+      isPartial: searchParams.get('isPartial') === 'true' ? true : undefined,
+      paymentMethod: searchParams.get('paymentMethod') ?? undefined,
       dateFrom: searchParams.get('dateFrom') ?? undefined,
       dateTo: searchParams.get('dateTo') ?? undefined,
       page: searchParams.get('page') ? Number(searchParams.get('page')) : undefined,

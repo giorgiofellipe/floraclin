@@ -79,7 +79,7 @@ export function ConsentTemplateList({ templates, embedded = false }: ConsentTemp
             onClick={() => setCreateOpen(true)}
           >
             <PlusIcon className="mr-1.5 size-4" />
-            Novo Termo
+            Novo
           </Button>
         )}
       </div>
@@ -99,20 +99,20 @@ export function ConsentTemplateList({ templates, embedded = false }: ConsentTemp
             <h4 className="text-[10px] font-medium uppercase tracking-[0.15em] text-mid">
               {CONSENT_TYPE_LABELS[type] || type}
             </h4>
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Título</TableHead>
-                  <TableHead>Versão</TableHead>
-                  <TableHead>Status</TableHead>
-                  {!embedded && <TableHead>Atualizado em</TableHead>}
-                  {!embedded && <TableHead className="text-right">Ações</TableHead>}
+                  <TableHead className="w-auto">Título</TableHead>
+                  <TableHead className="w-24">Versão</TableHead>
+                  <TableHead className="w-24">Status</TableHead>
+                  {!embedded && <TableHead className="w-40">Atualizado em</TableHead>}
+                  {!embedded && <TableHead className="w-20 text-right">Ações</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {typeTemplates.map((template) => (
                   <TableRow key={template.id}>
-                    <TableCell className="font-medium">{template.title}</TableCell>
+                    <TableCell className="font-medium truncate">{template.title}</TableCell>
                     <TableCell>
                       <Badge variant="outline">v{template.version}</Badge>
                     </TableCell>
@@ -151,7 +151,7 @@ export function ConsentTemplateList({ templates, embedded = false }: ConsentTemp
 
       {/* Create dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Novo Termo de Consentimento</DialogTitle>
           </DialogHeader>
@@ -163,7 +163,7 @@ export function ConsentTemplateList({ templates, embedded = false }: ConsentTemp
 
       {/* Edit dialog */}
       <Dialog open={!!editingTemplate} onOpenChange={(open) => !open && setEditingTemplate(null)}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Editar Termo (cria nova versão)</DialogTitle>
           </DialogHeader>

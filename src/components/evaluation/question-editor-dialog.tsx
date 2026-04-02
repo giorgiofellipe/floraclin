@@ -16,7 +16,6 @@ import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -167,21 +166,11 @@ export function QuestionEditorDialog({
             <Label className="uppercase tracking-wider text-xs text-mid">
               Tipo
             </Label>
-            <Select value={type} onValueChange={(v) => setType(v as EvaluationQuestionType)}>
+            <Select items={QUESTION_TYPE_LABELS} value={type} onValueChange={(v) => setType(v as EvaluationQuestionType)}>
               <SelectTrigger className="w-full">
-                <SelectValue>
-                  {(value: string) => QUESTION_TYPE_LABELS[value as EvaluationQuestionType] ?? value}
-                </SelectValue>
+                <SelectValue />
               </SelectTrigger>
-              <SelectContent>
-                {(Object.entries(QUESTION_TYPE_LABELS) as [EvaluationQuestionType, string][]).map(
-                  ([value, displayLabel]) => (
-                    <SelectItem key={value} value={value}>
-                      {displayLabel}
-                    </SelectItem>
-                  )
-                )}
-              </SelectContent>
+              <SelectContent />
             </Select>
           </div>
 

@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  test-db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: floraclin_test
+    ports:
+      - '5433:5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U test -d floraclin_test']
+      interval: 5s
+      timeout: 5s
+      retries: 5

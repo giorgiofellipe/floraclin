@@ -14,7 +14,6 @@ import {
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -182,26 +181,15 @@ export function TeamList({ members, currentUserId, embedded = false }: TeamListP
                       </span>
                     ) : (
                       <Select
+                        items={{ practitioner: ROLE_LABELS.practitioner, receptionist: ROLE_LABELS.receptionist, financial: ROLE_LABELS.financial }}
                         value={member.role}
                         onValueChange={(value) => value && handleRoleChange(member.userId, value)}
                         disabled={isPending}
                       >
                         <SelectTrigger className="w-[140px] h-7">
-                          <SelectValue>
-                            {(value: string) => ROLE_LABELS[value as Role] || value}
-                          </SelectValue>
+                          <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="practitioner">
-                            {ROLE_LABELS.practitioner}
-                          </SelectItem>
-                          <SelectItem value="receptionist">
-                            {ROLE_LABELS.receptionist}
-                          </SelectItem>
-                          <SelectItem value="financial">
-                            {ROLE_LABELS.financial}
-                          </SelectItem>
-                        </SelectContent>
+                        <SelectContent />
                       </Select>
                     )}
                   </TableCell>

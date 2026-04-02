@@ -19,7 +19,9 @@ export async function GET(request: Request) {
       return NextResponse.json(latest)
     }
 
-    return NextResponse.json(templates)
+    // Flatten the grouped Record<string, Template[]> into a flat array
+    const flat = Object.values(templates).flat()
+    return NextResponse.json(flat)
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

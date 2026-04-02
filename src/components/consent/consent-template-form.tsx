@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,7 +11,6 @@ import { Badge } from '@/components/ui/badge'
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -20,14 +19,14 @@ import { DEFAULT_CONSENT_TEMPLATES } from '@/validations/consent'
 import { CONTRACT_PLACEHOLDERS } from '@/lib/contract-interpolation'
 import type { ConsentType } from '@/types'
 
-const CONSENT_TYPE_OPTIONS: { value: ConsentType; label: string }[] = [
-  { value: 'general', label: 'Consentimento Geral' },
-  { value: 'botox', label: 'Toxina Botulínica' },
-  { value: 'filler', label: 'Preenchedor / Ácido Hialurônico' },
-  { value: 'biostimulator', label: 'Bioestimulador' },
-  { value: 'custom', label: 'Personalizado' },
-  { value: 'service_contract', label: 'Contrato de Serviço' },
-]
+const CONSENT_TYPE_ITEMS: Record<string, string> = {
+  general: 'Consentimento Geral',
+  botox: 'Toxina Botulínica',
+  filler: 'Preenchedor / Ácido Hialurônico',
+  biostimulator: 'Bioestimulador',
+  custom: 'Personalizado',
+  service_contract: 'Contrato de Serviço',
+}
 
 interface ExistingTemplate {
   id: string
@@ -58,15 +57,16 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
   const [content, setContent] = useState(template?.content ?? '')
 
   // When type changes, suggest default content (only for new templates)
-  useEffect(() => {
-    if (!isEditing && selectedType !== 'custom') {
-      const defaultTemplate = DEFAULT_CONSENT_TEMPLATES[selectedType as keyof typeof DEFAULT_CONSENT_TEMPLATES]
-      if (defaultTemplate && !content) {
+  const handleTypeChange = (newType: ConsentType) => {
+    setSelectedType(newType)
+    if (!isEditing && newType !== 'custom') {
+      const defaultTemplate = DEFAULT_CONSENT_TEMPLATES[newType as keyof typeof DEFAULT_CONSENT_TEMPLATES]
+      if (defaultTemplate) {
         setTitle(defaultTemplate.title)
         setContent(defaultTemplate.content)
       }
     }
-  }, [selectedType, isEditing, content])
+  }
 
 
   const handleLoadDefault = () => {
@@ -122,21 +122,14 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
               <div className="space-y-2">
                 <Label htmlFor="type">Tipo</Label>
                 <Select
+                  items={CONSENT_TYPE_ITEMS}
                   value={selectedType}
-                  onValueChange={(val) => setSelectedType(val as ConsentType)}
+                  onValueChange={(val) => handleTypeChange(val as ConsentType)}
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Selecione o tipo">
-                      {(value: string) => CONSENT_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value}
-                    </SelectValue>
+                    <SelectValue placeholder="Selecione o tipo" />
                   </SelectTrigger>
-                  <SelectContent>
-                    {CONSENT_TYPE_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
+                  <SelectContent />
                 </Select>
                 <input type="hidden" name="type" value={selectedType} />
               </div>
@@ -234,7 +227,7 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
       </Card>
 
       {/* Preview */}
-      <Card className="border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+      <Card className="border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)] flex flex-col">
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="font-semibold text-[#2A2A2A]">Pré-visualização</CardTitle>
@@ -245,9 +238,9 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
             )}
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 flex flex-col">
           {content ? (
-            <ScrollArea className="h-96 rounded-[3px] border border-[#E8ECEF] bg-white p-5">
+            <ScrollArea className="flex-1 min-h-96 rounded-[3px] border border-[#E8ECEF] bg-white p-5">
               <div className="space-y-3">
                 <h3 className="text-base font-semibold text-charcoal">{title || 'Sem título'}</h3>
                 <div className="whitespace-pre-wrap text-sm leading-relaxed text-charcoal">
@@ -256,7 +249,7 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
               </div>
             </ScrollArea>
           ) : (
-            <div className="flex h-96 items-center justify-center rounded-[3px] border border-dashed border-sage/20 bg-white text-sm text-mid">
+            <div className="flex flex-1 min-h-96 items-center justify-center rounded-[3px] border border-dashed border-sage/20 bg-white text-sm text-mid">
               O conteúdo do termo aparecerá aqui
             </div>
           )}

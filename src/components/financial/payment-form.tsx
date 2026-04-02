@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+
 import {
   Dialog,
   DialogContent,
@@ -11,14 +12,20 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { MaskedInput } from '@/components/ui/masked-input'
+import { DatePicker } from '@/components/ui/date-picker'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCreateFinancialEntry } from '@/hooks/mutations/use-financial-mutations'
+import { useFinancialSettings } from '@/hooks/queries/use-financial-settings'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { addDays } from 'date-fns'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
+
+const INSTALLMENT_COUNT_ITEMS: Record<string, string> = Object.fromEntries(
+  Array.from({ length: 12 }, (_, i) => [String(i + 1), `${i + 1}x`])
+)
 
 interface Patient {
   id: string
@@ -36,11 +43,23 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
   const [patientId, setPatientId] = useState('')
   const [totalAmount, setTotalAmount] = useState('')
   const [installmentCount, setInstallmentCount] = useState('1')
+  const [customDueDates, setCustomDueDates] = useState<Record<number, string>>({})
   const [patientSearch, setPatientSearch] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]> | null>(null)
   const createFinancialEntry = useCreateFinancialEntry()
   const isPending = createFinancialEntry.isPending
+  const { data: settingsResponse } = useFinancialSettings()
+  const settings = settingsResponse?.settings
+
+  // Pre-fill defaults from financial settings
+  useEffect(() => {
+    if (settings) {
+      if (settings.defaultInstallmentCount) {
+        setInstallmentCount(String(settings.defaultInstallmentCount))
+      }
+    }
+  }, [settings])
 
   const parsedAmount = totalAmount ? parseCurrency(totalAmount) : 0
   const parsedCount = parseInt(installmentCount, 10) || 1
@@ -54,16 +73,23 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
 
     return Array.from({ length: parsedCount }, (_, i) => {
       const amount = i === 0 ? installmentAmount + remainder : installmentAmount
+      const defaultDate = addDays(today, i * 30)
+      const defaultDateStr = defaultDate.toISOString().split('T')[0]
       return {
         number: i + 1,
         amount,
-        dueDate: addDays(today, i * 30),
+        dueDate: customDueDates[i] ?? defaultDateStr,
       }
     })
-  }, [parsedAmount, parsedCount])
+  }, [parsedAmount, parsedCount, customDueDates])
 
   const filteredPatients = patients.filter((p) =>
     p.fullName.toLowerCase().includes(patientSearch.toLowerCase())
+  )
+
+  const patientItems = useMemo(
+    () => Object.fromEntries(patients.map((p) => [p.id, p.fullName])),
+    [patients],
   )
 
   function handleAmountChange(value: string) {
@@ -86,11 +112,13 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
           setFieldErrors(null)
           const formData = new FormData(e.currentTarget)
           try {
+            const dueDates = installmentPreview.map((inst) => inst.dueDate)
             await createFinancialEntry.mutateAsync({
               patientId,
               description: (formData.get('description') as string) || '',
               totalAmount: parsedAmount,
               installmentCount: parsedCount,
+              customDueDates: dueDates,
               notes: (formData.get('notes') as string) || undefined,
             })
             onSuccess()
@@ -102,19 +130,11 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
           {/* Patient select */}
           <div className="space-y-2">
             <Label htmlFor="patientSelect" className="uppercase tracking-wider text-xs font-medium text-mid">Paciente</Label>
-            <Select value={patientId} onValueChange={(v) => setPatientId(v ?? '')}>
+            <Select items={patientItems} value={patientId} onValueChange={(v) => setPatientId(v ?? '')}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecione o paciente">
-                  {(value: string) => patients.find((p) => p.id === value)?.fullName ?? value}
-                </SelectValue>
+                <SelectValue placeholder="Selecione o paciente" />
               </SelectTrigger>
-              <SelectContent>
-                {patients.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.fullName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
+              <SelectContent />
             </Select>
             {fieldErrors?.patientId && (
               <p className="text-sm text-destructive">{fieldErrors.patientId[0]}</p>
@@ -123,7 +143,7 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
 
           {/* Description */}
           <div className="space-y-2">
-            <Label htmlFor="description" className="uppercase tracking-wider text-xs font-medium text-mid">Descricao</Label>
+            <Label htmlFor="description" className="uppercase tracking-wider text-xs font-medium text-mid">Descrição</Label>
             <Input
               id="description"
               name="description"
@@ -161,17 +181,11 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
           {/* Installment count */}
           <div className="space-y-2">
             <Label htmlFor="installmentCountSelect" className="uppercase tracking-wider text-xs font-medium text-mid">Parcelas</Label>
-            <Select value={installmentCount} onValueChange={(v) => setInstallmentCount(v ?? '1')}>
+            <Select items={INSTALLMENT_COUNT_ITEMS} value={installmentCount} onValueChange={(v) => { setInstallmentCount(v ?? '1'); setCustomDueDates({}) }}>
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
-                {Array.from({ length: 12 }, (_, i) => (
-                  <SelectItem key={i + 1} value={String(i + 1)}>
-                    {i + 1}x
-                  </SelectItem>
-                ))}
-              </SelectContent>
+              <SelectContent />
             </Select>
             {fieldErrors?.installmentCount && (
               <p className="text-sm text-destructive">{fieldErrors.installmentCount[0]}</p>
@@ -181,17 +195,27 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
           {/* Installment preview */}
           {installmentPreview.length > 0 && parsedAmount > 0 && (
             <div className="rounded-[3px] border border-[#E8ECEF] bg-white p-4 space-y-3">
-              <p className="text-[10px] uppercase tracking-[0.15em] font-medium text-[#7A7A7A]">Previa das parcelas</p>
+              <p className="text-[10px] uppercase tracking-[0.15em] font-medium text-[#7A7A7A]">Parcelas e vencimentos</p>
               <div className="space-y-2">
                 {installmentPreview.map((inst) => (
                   <div
                     key={inst.number}
-                    className="flex items-center justify-between text-sm"
+                    className="flex items-center gap-3 text-sm"
                   >
-                    <span className="text-mid">
-                      {inst.number}a parcela -- {formatDate(inst.dueDate)}
+                    <span className="text-mid w-20 shrink-0">
+                      {inst.number}a parcela
                     </span>
-                    <span className="font-medium text-charcoal tabular-nums">
+                    <DatePicker
+                      value={inst.dueDate}
+                      onChange={(v) => {
+                        setCustomDueDates((prev) => ({
+                          ...prev,
+                          [inst.number - 1]: v,
+                        }))
+                      }}
+                      className="w-[150px]"
+                    />
+                    <span className="font-medium text-charcoal tabular-nums ml-auto">
                       {formatCurrency(inst.amount)}
                     </span>
                   </div>

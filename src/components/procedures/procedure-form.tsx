@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { DatePicker } from '@/components/ui/date-picker'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -29,7 +30,6 @@ import { Badge } from '@/components/ui/badge'
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -105,6 +105,10 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   cash: 'Dinheiro',
   transfer: 'Transferência',
 }
+
+const INSTALLMENT_COUNT_ITEMS: Record<string, string> = Object.fromEntries(
+  Array.from({ length: 12 }, (_, i) => [String(i + 1), `${i + 1}x${i === 0 ? ' (à vista)' : ''}`])
+)
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -885,7 +889,12 @@ export function ProcedureForm({
 
   useEffect(() => {
     const current = wizardOverrides?.triggerSave ?? 0
-    if (current === 0 || current === prevTriggerSaveRef.current) return
+    if (current === 0) {
+      // Reset ref so the next TRIGGER_SAVE (which increments from 0) is not skipped
+      prevTriggerSaveRef.current = 0
+      return
+    }
+    if (current === prevTriggerSaveRef.current) return
     prevTriggerSaveRef.current = current
     async function doSave() {
       if (isSubmitting || isReadOnly) {
@@ -897,7 +906,13 @@ export function ProcedureForm({
         return
       }
 
-      if (!procedureTypeId) {
+      // Use refs to avoid stale closures (effect only depends on triggerSave)
+      const currentProcedureTypeId = procedureTypeIdRef.current
+      const currentAdditionalTypeIds = additionalTypeIdsRef.current
+      const currentDiagramPoints = diagramPointsRef.current
+      const currentFinancialPlan = financialPlanRef.current
+
+      if (!currentProcedureTypeId) {
         wizardOverrides?.onSaveComplete?.({
           success: false,
           error: 'Selecione pelo menos um tipo de procedimento',
@@ -924,11 +939,11 @@ export function ProcedureForm({
 
       try {
         const diagramsPayload =
-          diagramPoints.length > 0
+          currentDiagramPoints.length > 0
             ? [
                 {
                   viewType: 'front' as DiagramViewType,
-                  points: diagramPoints.map((p) => ({
+                  points: currentDiagramPoints.map((p) => ({
                     x: p.x,
                     y: p.y,
                     productName: p.productName,
@@ -943,19 +958,19 @@ export function ProcedureForm({
               ]
             : undefined
 
-        const financialPlanPayload = isPlanningMode && financialPlan.totalAmount
+        const financialPlanPayload = isPlanningMode && currentFinancialPlan.totalAmount
           ? {
-              totalAmount: parseCurrency(financialPlan.totalAmount),
-              installmentCount: financialPlan.installmentCount,
-              paymentMethod: financialPlan.paymentMethod || undefined,
-              notes: financialPlan.notes || undefined,
+              totalAmount: parseCurrency(currentFinancialPlan.totalAmount),
+              installmentCount: currentFinancialPlan.installmentCount,
+              paymentMethod: currentFinancialPlan.paymentMethod || undefined,
+              notes: currentFinancialPlan.notes || undefined,
             }
           : undefined
 
         const payload = {
           patientId,
-          procedureTypeId,
-          additionalTypeIds: additionalTypeIds.length > 0 ? additionalTypeIds : undefined,
+          procedureTypeId: currentProcedureTypeId,
+          additionalTypeIds: currentAdditionalTypeIds.length > 0 ? currentAdditionalTypeIds : undefined,
           technique: isPlanningMode ? undefined : (technique || undefined),
           clinicalResponse: isPlanningMode ? undefined : (clinicalResponse || undefined),
           adverseEffects: isPlanningMode ? undefined : (adverseEffects || undefined),
@@ -978,17 +993,18 @@ export function ProcedureForm({
           const createdId = (result.data as { id: string } | undefined)?.id ?? procedure?.id
 
           // Save evaluation responses if we have templates with answers
+          const currentEvalResponses = evaluationResponsesRef.current
           if (createdId && evalTemplates && evalTemplates.length > 0) {
             const responsePromises = evalTemplates
               .filter((t) => {
-                const resp = evaluationResponses[t.id]
+                const resp = currentEvalResponses[t.id]
                 return resp && Object.keys(resp).length > 0
               })
               .map((t) =>
                 saveEvalResponse.mutateAsync({
                   procedureRecordId: createdId,
                   templateId: t.id,
-                  responses: evaluationResponses[t.id] as EvaluationResponses,
+                  responses: currentEvalResponses[t.id] as EvaluationResponses,
                 })
               )
 
@@ -1013,11 +1029,12 @@ export function ProcedureForm({
             procedureId: createdId,
           })
         } else {
-          setSubmitError(result.error ?? 'Erro ao salvar procedimento')
+          const errorMsg = (result as Record<string, string>)?.error ?? 'Erro ao salvar procedimento'
+          setSubmitError(errorMsg)
           wizardOverrides?.onSaveComplete?.({
             success: false,
-            error: result.error ?? 'Erro ao salvar procedimento',
-            errorType: result.error?.includes('campo') ? 'validation' : 'server',
+            error: errorMsg,
+            errorType: errorMsg.includes('campo') ? 'validation' : 'server',
           })
         }
       } catch {
@@ -1450,6 +1467,7 @@ export function ProcedureForm({
                   Parcelas
                 </Label>
                 <Select
+                  items={INSTALLMENT_COUNT_ITEMS}
                   value={String(financialPlan.installmentCount)}
                   onValueChange={(value) =>
                     setFinancialPlan((prev) => ({
@@ -1462,13 +1480,7 @@ export function ProcedureForm({
                   <SelectTrigger className="border-sage/20 focus:border-sage/40">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
-                      <SelectItem key={n} value={String(n)}>
-                        {n}x {n === 1 ? '(à vista)' : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
+                  <SelectContent />
                 </Select>
               </div>
             </div>
@@ -1479,6 +1491,7 @@ export function ProcedureForm({
                 Forma de pagamento
               </Label>
               <Select
+                items={PAYMENT_METHOD_LABELS}
                 value={financialPlan.paymentMethod}
                 onValueChange={(value) =>
                   setFinancialPlan((prev) => ({
@@ -1489,17 +1502,9 @@ export function ProcedureForm({
                 disabled={isReadOnly}
               >
                 <SelectTrigger className="max-w-sm border-sage/20 focus:border-sage/40">
-                  <SelectValue placeholder="Selecione...">
-                    {(value: string) => PAYMENT_METHOD_LABELS[value] ?? value}
-                  </SelectValue>
+                  <SelectValue placeholder="Selecione..." />
                 </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
+                <SelectContent />
               </Select>
             </div>
 
@@ -1625,14 +1630,13 @@ export function ProcedureForm({
                         <Label className="uppercase tracking-wider text-xs text-mid">
                           Validade
                         </Label>
-                        <Input
-                          type="date"
+                        <DatePicker
                           value={app.expirationDate ?? ''}
-                          onChange={(e) =>
+                          onChange={(v) =>
                             handleProductAppChange(
                               index,
                               'expirationDate',
-                              e.target.value
+                              v
                             )
                           }
                           disabled={isReadOnly}
@@ -1772,13 +1776,11 @@ export function ProcedureForm({
               <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
                 Data do retorno
               </Label>
-              <Input
-                type="date"
+              <DatePicker
                 value={followUpDate}
-                onChange={(e) => setFollowUpDate(e.target.value)}
+                onChange={(v) => setFollowUpDate(v)}
                 disabled={isReadOnly}
-                className="mt-1.5 max-w-xs border-sage/20 focus:border-sage/40"
-                min={format(new Date(), 'yyyy-MM-dd')}
+                className="mt-1.5 max-w-xs"
               />
             </div>
 

@@ -7,6 +7,7 @@ import { queryKeys } from './query-keys'
 export function usePatients(search = '', page = 1) {
   return useQuery({
     queryKey: queryKeys.patients.list(search, page),
+    placeholderData: (prev) => prev,
     queryFn: async () => {
       const params = new URLSearchParams()
       if (search) params.set('search', search)

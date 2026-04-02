@@ -9,8 +9,8 @@ import {
 } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
-import { APPOINTMENT_STATUS_COLORS } from '@/lib/constants'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
+import { AppointmentCard } from './appointment-card'
 
 const START_HOUR = 7
 const END_HOUR = 20
@@ -21,12 +21,85 @@ interface WeekViewProps {
   date: Date
   appointments: AppointmentWithDetails[]
   onSlotClick?: (date: string, time: string) => void
-  onAppointmentClick?: (appointment: AppointmentWithDetails) => void
+  onAppointmentClick?: (appointment: AppointmentWithDetails, event?: React.MouseEvent) => void
 }
 
 function timeToMinutes(time: string): number {
   const [h, m] = time.split(':').map(Number)
   return h * 60 + m
+}
+
+interface LayoutSlot {
+  appointment: AppointmentWithDetails
+  top: number
+  height: number
+  column: number
+  totalColumns: number
+}
+
+function computeOverlapLayout(appointments: AppointmentWithDetails[]): LayoutSlot[] {
+  if (appointments.length === 0) return []
+
+  const sorted = [...appointments].sort((a, b) => {
+    const aStart = timeToMinutes(a.startTime)
+    const bStart = timeToMinutes(b.startTime)
+    if (aStart !== bStart) return aStart - bStart
+    return timeToMinutes(b.endTime) - timeToMinutes(a.endTime)
+  })
+
+  const clusters: AppointmentWithDetails[][] = []
+  let currentCluster: AppointmentWithDetails[] = []
+  let clusterEnd = 0
+
+  for (const appt of sorted) {
+    const start = timeToMinutes(appt.startTime)
+    const end = timeToMinutes(appt.endTime)
+
+    if (currentCluster.length === 0 || start < clusterEnd) {
+      currentCluster.push(appt)
+      clusterEnd = Math.max(clusterEnd, end)
+    } else {
+      clusters.push(currentCluster)
+      currentCluster = [appt]
+      clusterEnd = end
+    }
+  }
+  if (currentCluster.length > 0) clusters.push(currentCluster)
+
+  const result: LayoutSlot[] = []
+
+  for (const cluster of clusters) {
+    const columns: number[][] = []
+
+    for (const appt of cluster) {
+      const startMin = timeToMinutes(appt.startTime)
+      const endMin = timeToMinutes(appt.endTime)
+      const gridStartMin = START_HOUR * 60
+
+      const top = ((startMin - gridStartMin) / 30) * SLOT_HEIGHT_PX
+      const height = Math.max(((endMin - startMin) / 30) * SLOT_HEIGHT_PX, SLOT_HEIGHT_PX / 2)
+
+      let col = 0
+      while (col < columns.length) {
+        const lastEnd = columns[col][columns[col].length - 1]
+        if (startMin >= lastEnd) break
+        col++
+      }
+      if (col >= columns.length) columns.push([])
+      columns[col].push(endMin)
+
+      result.push({ appointment: appt, top, height, column: col, totalColumns: 0 })
+    }
+
+    const totalCols = columns.length
+    for (const slot of result) {
+      if (cluster.includes(slot.appointment)) {
+        slot.totalColumns = totalCols
+      }
+    }
+  }
+
+  return result
 }
 
 export function WeekView({ date, appointments, onSlotClick, onAppointmentClick }: WeekViewProps) {
@@ -90,6 +163,7 @@ export function WeekView({ date, appointments, onSlotClick, onAppointmentClick }
           const dateStr = format(day, 'yyyy-MM-dd')
           const dayAppointments = appointments.filter((a) => a.date === dateStr)
           const isDayToday = isSameDay(day, today)
+          const layoutSlots = computeOverlapLayout(dayAppointments)
 
           return (
             <div
@@ -132,44 +206,27 @@ export function WeekView({ date, appointments, onSlotClick, onAppointmentClick }
                 </div>
               )}
 
-              {/* Appointments */}
-              {dayAppointments.map((appt) => {
-                const startMin = timeToMinutes(appt.startTime)
-                const endMin = timeToMinutes(appt.endTime)
-                const gridStartMin = START_HOUR * 60
-                const top = ((startMin - gridStartMin) / 30) * SLOT_HEIGHT_PX
-                const height = Math.max(
-                  ((endMin - startMin) / 30) * SLOT_HEIGHT_PX,
-                  SLOT_HEIGHT_PX / 2
-                )
-                const statusColor =
-                  APPOINTMENT_STATUS_COLORS[appt.status] ?? 'bg-[#F0F7F1] text-sage'
-                const displayName = appt.patientName ?? appt.bookingName ?? 'Sem paciente'
-                const statusBorder =
-                  appt.status === 'scheduled' ? 'border-l-sage' :
-                  appt.status === 'confirmed' ? 'border-l-mint' :
-                  appt.status === 'in_progress' ? 'border-l-amber' :
-                  appt.status === 'completed' ? 'border-l-mid' :
-                  appt.status === 'cancelled' ? 'border-l-red-500' :
-                  'border-l-amber-dark'
-
+              {/* Appointments — split horizontally when overlapping */}
+              {layoutSlots.map(({ appointment: appt, top, height, column, totalColumns }) => {
+                const widthPercent = 100 / totalColumns
+                const leftPercent = column * widthPercent
                 return (
-                  <button
+                  <div
                     key={appt.id}
-                    type="button"
-                    className={cn(
-                      'absolute inset-x-0.5 z-20 overflow-hidden rounded-[3px] border-l-[3px] px-1.5 py-0.5 text-left text-[10px] leading-tight transition-colors duration-150',
-                      statusColor,
-                      statusBorder
-                    )}
-                    style={{ top, height }}
-                    onClick={() => onAppointmentClick?.(appt)}
-                    title={`${appt.startTime.slice(0, 5)} - ${displayName}`}
+                    className="absolute z-20"
+                    style={{
+                      top,
+                      height,
+                      left: `calc(${leftPercent}% + 1px)`,
+                      width: `calc(${widthPercent}% - 2px)`,
+                    }}
                   >
-                    <span className="font-semibold">{appt.startTime.slice(0, 5)}</span>
-                    <br />
-                    <span className="truncate">{displayName}</span>
-                  </button>
+                    <AppointmentCard
+                      appointment={appt}
+                      compact
+                      onClick={onAppointmentClick}
+                    />
+                  </div>
                 )
               })}
             </div>
