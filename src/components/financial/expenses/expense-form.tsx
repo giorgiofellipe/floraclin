@@ -90,7 +90,8 @@ export function ExpenseForm({ open, onClose, onSuccess }: ExpenseFormProps) {
   const parsedCount = Math.max(1, Math.min(24, parseInt(installmentCountRaw, 10) || 1))
 
   // When installment count changes, reset custom due dates array
-  const handleInstallmentCountChange = (value: string) => {
+  const handleInstallmentCountChange = (value: string | null) => {
+    if (!value) return
     setValue('installmentCount', value)
     const count = Math.max(1, Math.min(24, parseInt(value, 10) || 1))
     const today = new Date()

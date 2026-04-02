@@ -140,7 +140,7 @@ export function CalendarView({
 
   // Hide cancelled appointments from the calendar
   const appointments = React.useMemo(
-    () => allAppointments.filter((a) => a.status !== 'cancelled'),
+    () => allAppointments.filter((a: AppointmentWithDetails) => a.status !== 'cancelled'),
     [allAppointments]
   )
 

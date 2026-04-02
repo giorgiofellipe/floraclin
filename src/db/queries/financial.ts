@@ -528,9 +528,9 @@ export async function reversePayment(
       entityType: 'payment_record',
       entityId: paymentRecordId,
       changes: {
-        action: 'reversal',
-        amount: pr.amount,
-        reason: reason ?? null,
+        action: { old: 'active', new: 'reversed' },
+        amount: { old: pr.amount, new: '0' },
+        reason: { old: null, new: reason ?? null },
       },
     }, tx)
 
@@ -847,9 +847,12 @@ export async function bulkCancelEntries(
           changes: {
             status: { old: entries.find((e) => e.id === entryId)?.status ?? 'pending', new: 'cancelled' },
             reason: { old: null, new: data.reason },
-            revertedOriginals: renegLinks.length > 0
-              ? renegLinks.map((l) => l.originalEntryId)
-              : undefined,
+            revertedOriginals: {
+              old: null,
+              new: renegLinks.length > 0
+                ? renegLinks.map((l) => l.originalEntryId)
+                : null,
+            },
           },
         },
         tx

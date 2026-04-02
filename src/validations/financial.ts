@@ -58,7 +58,7 @@ export const payInstallmentSchema = z.object({
 
 export const financialFilterSchema = z.object({
   patientId: z.string().uuid().optional(),
-  status: z.enum(financialStatuses as [string, ...string[]]).optional(),
+  status: z.enum(financialStatuses as unknown as [string, ...string[]]).optional(),
   isOverdue: z.boolean().optional(),
   isPartial: z.boolean().optional(),
   paymentMethod: z.enum(paymentMethods as [string, ...string[]]).optional(),
