@@ -341,7 +341,7 @@ export function AuditLogViewer() {
                       {log.entityId ? log.entityId.slice(0, 8) + '...' : '-'}
                     </TableCell>
                   </TableRow>
-                  {expandedRow === log.id && log.changes && (
+                  {expandedRow === log.id && !!log.changes && (
                     <TableRow key={`${log.id}-detail`}>
                       <TableCell colSpan={6} className="bg-[#F4F6F8] p-4">
                         <JsonDiffViewer changes={log.changes} />
