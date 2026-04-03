@@ -47,10 +47,10 @@ function SidebarLogo() {
   return (
     <div className="flex-shrink-0 px-5 pt-6 pb-4">
       <div className="flex items-center gap-2">
-        <LogoSymbol className="size-6 text-mint" />
+        <LogoSymbol className="size-6 text-sage" />
         <h1 className="font-display text-xl font-semibold leading-none tracking-wide">
-          <span className="text-cream">Flora</span>
-          <span className="text-mint">Clin</span>
+          <span className="text-forest">Flora</span>
+          <span className="text-sage">Clin</span>
         </h1>
       </div>
     </div>
@@ -61,7 +61,7 @@ function SidebarLogo() {
 
 function SectionLabel({ label }: { label: string }) {
   return (
-    <p className="px-5 pb-1.5 pt-4 text-[10px] uppercase tracking-[0.15em] text-white/30">
+    <p className="px-5 pb-1.5 pt-4 text-[10px] uppercase tracking-[0.15em] text-mid">
       {label}
     </p>
   )
@@ -88,12 +88,12 @@ function NavItem({
     <>
       {/* Active left border */}
       {isActive && (
-        <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-mint" />
+        <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-sage" />
       )}
       <Icon
         className={cn(
           'size-[18px] transition-colors duration-150',
-          isActive ? 'text-mint' : 'text-white/45'
+          isActive ? 'text-sage' : 'text-mid'
         )}
       />
       <span>{label}</span>
@@ -103,7 +103,7 @@ function NavItem({
   if (disabled) {
     return (
       <span
-        className="relative flex items-center gap-3 rounded-md px-3 py-2 text-[13px] font-medium text-white/25 cursor-not-allowed"
+        className="relative flex items-center gap-3 rounded-md px-3 py-2 text-[13px] font-medium text-mid/50 cursor-not-allowed"
       >
         {content}
       </span>
@@ -118,8 +118,8 @@ function NavItem({
       className={cn(
         'relative flex items-center gap-3 rounded-md px-3 py-2 text-[13px] font-medium transition-all duration-150',
         isActive
-          ? 'bg-[rgba(143,180,154,0.15)] text-white'
-          : 'text-white/45 hover:bg-[rgba(255,255,255,0.08)] hover:text-white/70'
+          ? 'bg-sage/10 text-forest'
+          : 'text-mid hover:bg-sage/5 hover:text-charcoal'
       )}
     >
       {content}
@@ -159,7 +159,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       {/* Separator */}
-      <div className="mx-2 my-3 h-px bg-white/10" />
+      <div className="mx-2 my-3 h-px bg-sage/15" />
 
       <div className="space-y-0.5">
         {bottomItems.map((item) => (
@@ -181,7 +181,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
 export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantId }: SidebarProps) {
   return (
     <aside
-      className="hidden md:flex md:w-[200px] md:flex-col md:fixed md:inset-y-0 bg-forest overflow-hidden"
+      className="hidden md:flex md:w-[200px] md:flex-col md:fixed md:inset-y-0 bg-white border-r border-[#E8ECEF] overflow-hidden"
       data-testid="sidebar"
     >
       <div className="relative flex flex-1 flex-col min-h-0">
@@ -205,7 +205,7 @@ export function MobileSidebarContent({
   activeTenantId?: string
 }) {
   return (
-    <div className="relative flex h-full flex-1 flex-col min-h-0 bg-forest overflow-hidden">
+    <div className="relative flex h-full flex-1 flex-col min-h-0 bg-white overflow-hidden">
       <SidebarLogo />
       <SidebarNav onNavigate={onNavigate} />
     </div>
