@@ -109,11 +109,13 @@ export async function createUserWithMembership(data: {
 }) {
   const admin = createAdminClient()
 
-  // Get or create Supabase Auth user
-  const { data: listData } = await admin.auth.admin.listUsers()
-  const existingAuthUser = listData?.users?.find(
-    (u) => u.email?.toLowerCase() === data.email.toLowerCase()
-  )
+  // Check our DB first to find existing user (avoids fetching all Supabase users)
+  const [existingDbUser] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, data.email.toLowerCase()))
+    .limit(1)
+  const existingAuthUser = existingDbUser ?? null
 
   let authUserId: string
 
@@ -172,12 +174,20 @@ export async function createUserWithMembership(data: {
 
 export async function updateUserAdmin(
   userId: string,
+  adminUserId: string,
   data: {
     fullName?: string
     phone?: string
     isPlatformAdmin?: boolean
   }
 ) {
+  // Get current state for audit
+  const [currentUser] = await db
+    .select({ isPlatformAdmin: users.isPlatformAdmin })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1)
+
   const updateData: Record<string, unknown> = { updatedAt: new Date() }
 
   if (data.fullName !== undefined) updateData.fullName = data.fullName
@@ -190,6 +200,21 @@ export async function updateUserAdmin(
     .set(updateData)
     .where(eq(users.id, userId))
     .returning()
+
+  // Audit log for isPlatformAdmin changes
+  if (data.isPlatformAdmin !== undefined && currentUser?.isPlatformAdmin !== data.isPlatformAdmin) {
+    const { createAuditLog } = await import('@/lib/audit')
+    await createAuditLog({
+      tenantId: 'platform',
+      userId: adminUserId,
+      action: 'update',
+      entityType: 'user',
+      entityId: userId,
+      changes: {
+        isPlatformAdmin: { old: currentUser?.isPlatformAdmin, new: data.isPlatformAdmin },
+      },
+    })
+  }
 
   return user ?? null
 }
@@ -267,13 +292,10 @@ export async function removeUserMembership(
 export async function resetUserPassword(email: string) {
   const admin = createAdminClient()
 
-  const { error } = await admin.auth.admin.generateLink({
-    type: 'recovery',
-    email,
-  })
+  const { error } = await admin.auth.resetPasswordForEmail(email)
 
   if (error) {
-    throw new Error(`Falha ao gerar link de recuperação: ${error.message}`)
+    throw new Error(`Falha ao enviar e-mail de recuperação: ${error.message}`)
   }
 
   return { success: true }

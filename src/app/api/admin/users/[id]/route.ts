@@ -8,7 +8,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requirePlatformAdmin()
+    const ctx = await requirePlatformAdmin()
     const { id } = await params
     const body = await request.json()
     const parsed = updateAdminUserSchema.safeParse(body)
@@ -19,7 +19,7 @@ export async function PUT(
       )
     }
 
-    const user = await updateUserAdmin(id, parsed.data)
+    const user = await updateUserAdmin(id, ctx.userId, parsed.data)
     if (!user) {
       return NextResponse.json({ error: 'Usuario nao encontrado' }, { status: 404 })
     }
