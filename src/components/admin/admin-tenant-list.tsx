@@ -37,10 +37,10 @@ interface Tenant {
 }
 
 const ROLE_LABELS: Record<string, string> = {
-  admin: 'Admin',
-  doctor: 'Médico',
-  receptionist: 'Recepcionista',
   owner: 'Proprietário',
+  practitioner: 'Profissional',
+  receptionist: 'Recepcionista',
+  financial: 'Financeiro',
 }
 
 export function AdminTenantList() {

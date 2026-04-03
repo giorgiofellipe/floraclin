@@ -137,6 +137,8 @@ export function Header({ userName, userEmail, clinicName, tenants, activeTenantI
             userName={userName}
             tenants={tenants}
             activeTenantId={activeTenantId}
+            isPlatformAdmin={isPlatformAdmin}
+            impersonatingTenantName={impersonatingTenantName}
           />
         </SheetContent>
       </Sheet>

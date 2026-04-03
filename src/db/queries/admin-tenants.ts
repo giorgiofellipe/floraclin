@@ -8,11 +8,13 @@ import type { PaginatedResult } from '@/types'
 // ─── Types ──────────────────────────────────────────────────────────
 
 export type TenantListItem = typeof tenants.$inferSelect & {
+  isActive: boolean
   userCount: number
   patientCount: number
 }
 
 export type TenantDetail = typeof tenants.$inferSelect & {
+  isActive: boolean
   userCount: number
   patientCount: number
   financialEntryCount: number
@@ -89,7 +91,7 @@ export async function listAllTenants(
   const total = countResult[0]?.count ?? 0
 
   return {
-    data: data as TenantListItem[],
+    data: data.map((t) => ({ ...t, isActive: !t.deletedAt })) as TenantListItem[],
     total,
     page,
     limit,
@@ -255,6 +257,7 @@ export async function getTenantDetail(
 
   return {
     ...tenant,
+    isActive: !tenant.deletedAt,
     userCount: members.length,
     patientCount: patientCountResult[0]?.count ?? 0,
     financialEntryCount: financialCountResult[0]?.count ?? 0,

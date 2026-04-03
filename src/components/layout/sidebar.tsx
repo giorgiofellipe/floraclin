@@ -147,11 +147,12 @@ function TenantSwitcher() {
       setResults([])
       return
     }
+    let ignore = false
     const timer = setTimeout(async () => {
       const res = await fetch(
         `/api/admin/tenants?search=${encodeURIComponent(search)}&limit=5`
       )
-      if (res.ok) {
+      if (res.ok && !ignore) {
         const data = await res.json()
         setResults(
           (data.data ?? []).map((t: { id: string; name: string }) => ({
@@ -161,7 +162,7 @@ function TenantSwitcher() {
         )
       }
     }, 300)
-    return () => clearTimeout(timer)
+    return () => { ignore = true; clearTimeout(timer) }
   }, [search])
 
   return (
@@ -211,9 +212,11 @@ const adminItems = [
 function SidebarNav({
   onNavigate,
   isPlatformAdmin,
+  impersonatingTenantName,
 }: {
   onNavigate?: () => void
   isPlatformAdmin?: boolean
+  impersonatingTenantName?: string
 }) {
   const pathname = usePathname()
 
@@ -274,6 +277,25 @@ function SidebarNav({
             ))}
           </div>
 
+          {impersonatingTenantName && (
+            <div className="mx-3 mt-2 flex items-center justify-between rounded-md bg-sage/10 px-2.5 py-1.5">
+              <div className="flex items-center gap-1.5">
+                <span className="size-2 rounded-full bg-emerald-400" />
+                <span className="text-xs font-medium text-forest truncate">{impersonatingTenantName}</span>
+              </div>
+              <button
+                type="button"
+                className="text-xs text-mid hover:text-charcoal"
+                onClick={async () => {
+                  await fetch('/api/admin/impersonate/clear', { method: 'POST' })
+                  window.location.reload()
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
           <TenantSwitcher />
         </>
       )}
@@ -291,7 +313,7 @@ export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantI
     >
       <div className="relative flex flex-1 flex-col min-h-0">
         <SidebarLogo />
-        <SidebarNav isPlatformAdmin={isPlatformAdmin} />
+        <SidebarNav isPlatformAdmin={isPlatformAdmin} impersonatingTenantName={impersonatingTenantName} />
       </div>
     </aside>
   )
@@ -302,6 +324,7 @@ export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantI
 export function MobileSidebarContent({
   onNavigate,
   isPlatformAdmin,
+  impersonatingTenantName,
 }: {
   onNavigate?: () => void
   clinicName?: string
@@ -315,7 +338,7 @@ export function MobileSidebarContent({
   return (
     <div className="relative flex h-full flex-1 flex-col min-h-0 bg-white overflow-hidden">
       <SidebarLogo />
-      <SidebarNav onNavigate={onNavigate} isPlatformAdmin={isPlatformAdmin} />
+      <SidebarNav onNavigate={onNavigate} isPlatformAdmin={isPlatformAdmin} impersonatingTenantName={impersonatingTenantName} />
     </div>
   )
 }
