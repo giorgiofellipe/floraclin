@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -11,7 +12,10 @@ import {
   Banknote,
   Settings,
   TrendingUp,
+  Building2,
+  UsersRound,
 } from 'lucide-react'
+import { useImpersonate } from '@/hooks/mutations/use-impersonation'
 
 export interface TenantOption {
   tenantId: string
@@ -24,6 +28,8 @@ interface SidebarProps {
   userRole?: string
   tenants?: TenantOption[]
   activeTenantId?: string
+  isPlatformAdmin?: boolean
+  impersonatingTenantName?: string
 }
 
 const principalItems = [
@@ -127,9 +133,88 @@ function NavItem({
   )
 }
 
+// ─── Tenant Switcher (Admin Impersonation) ────────────────────────
+
+function TenantSwitcher() {
+  const [search, setSearch] = useState('')
+  const [results, setResults] = useState<Array<{ id: string; name: string }>>([])
+  const [showDropdown, setShowDropdown] = useState(false)
+  const impersonate = useImpersonate()
+
+  // Debounced search
+  useEffect(() => {
+    if (search.length < 2) {
+      setResults([])
+      return
+    }
+    const timer = setTimeout(async () => {
+      const res = await fetch(
+        `/api/admin/tenants?search=${encodeURIComponent(search)}&limit=5`
+      )
+      if (res.ok) {
+        const data = await res.json()
+        setResults(
+          (data.data ?? []).map((t: { id: string; name: string }) => ({
+            id: t.id,
+            name: t.name,
+          }))
+        )
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  return (
+    <div className="relative px-3 mt-2">
+      <input
+        type="text"
+        placeholder="Trocar clínica..."
+        value={search}
+        onChange={(e) => {
+          setSearch(e.target.value)
+          setShowDropdown(true)
+        }}
+        onFocus={() => setShowDropdown(true)}
+        onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+        className="w-full rounded-md border border-sage/20 bg-transparent px-2.5 py-1.5 text-xs text-charcoal placeholder:text-mid/50 outline-none focus:border-sage/40"
+      />
+      {showDropdown && results.length > 0 && (
+        <div className="absolute left-3 right-3 top-full z-50 mt-1 rounded-md border bg-white shadow-md">
+          {results.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className="flex w-full items-center px-2.5 py-1.5 text-xs text-charcoal hover:bg-sage/5"
+              onMouseDown={(e) => {
+                e.preventDefault()
+                impersonate.mutate({ tenantId: t.id })
+              }}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Admin Nav Items ──────────────────────────────────────────────
+
+const adminItems = [
+  { href: '/admin/clinicas', label: 'Clínicas', icon: Building2 },
+  { href: '/admin/usuarios', label: 'Usuários', icon: UsersRound },
+]
+
 // ─── Navigation ────────────────────────────────────────────────────
 
-function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
+function SidebarNav({
+  onNavigate,
+  isPlatformAdmin,
+}: {
+  onNavigate?: () => void
+  isPlatformAdmin?: boolean
+}) {
   const pathname = usePathname()
 
   return (
@@ -172,13 +257,33 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           />
         ))}
       </div>
+
+      {isPlatformAdmin && (
+        <>
+          <div className="mx-2 my-3 h-px bg-sage/15" />
+
+          <SectionLabel label="Plataforma" />
+          <div className="space-y-0.5">
+            {adminItems.map((item) => (
+              <NavItem
+                key={item.href}
+                {...item}
+                isActive={pathname.startsWith(item.href)}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </div>
+
+          <TenantSwitcher />
+        </>
+      )}
     </nav>
   )
 }
 
 // ─── Desktop Sidebar ───────────────────────────────────────────────
 
-export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantId }: SidebarProps) {
+export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantId, isPlatformAdmin, impersonatingTenantName }: SidebarProps) {
   return (
     <aside
       className="hidden md:flex md:w-[200px] md:flex-col md:fixed md:inset-y-0 bg-white border-r border-[#E8ECEF] overflow-hidden"
@@ -186,7 +291,7 @@ export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantI
     >
       <div className="relative flex flex-1 flex-col min-h-0">
         <SidebarLogo />
-        <SidebarNav />
+        <SidebarNav isPlatformAdmin={isPlatformAdmin} />
       </div>
     </aside>
   )
@@ -196,6 +301,7 @@ export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantI
 
 export function MobileSidebarContent({
   onNavigate,
+  isPlatformAdmin,
 }: {
   onNavigate?: () => void
   clinicName?: string
@@ -203,11 +309,13 @@ export function MobileSidebarContent({
   userRole?: string
   tenants?: TenantOption[]
   activeTenantId?: string
+  isPlatformAdmin?: boolean
+  impersonatingTenantName?: string
 }) {
   return (
     <div className="relative flex h-full flex-1 flex-col min-h-0 bg-white overflow-hidden">
       <SidebarLogo />
-      <SidebarNav onNavigate={onNavigate} />
+      <SidebarNav onNavigate={onNavigate} isPlatformAdmin={isPlatformAdmin} />
     </div>
   )
 }
