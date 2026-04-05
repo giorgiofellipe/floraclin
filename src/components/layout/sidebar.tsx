@@ -137,7 +137,7 @@ function NavItem({
 
 // ─── Tenant Switcher (Admin Impersonation) ────────────────────────
 
-function TenantSwitcher({ impersonatingTenantName }: { impersonatingTenantName?: string }) {
+function TenantSwitcher({ currentTenantName, impersonatingTenantName }: { currentTenantName: string; impersonatingTenantName?: string }) {
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -185,7 +185,7 @@ function TenantSwitcher({ impersonatingTenantName }: { impersonatingTenantName?:
             'w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-all duration-200',
             impersonatingTenantName
               ? 'bg-gradient-to-r from-emerald-50 to-sage/10 border border-emerald-200/60'
-              : 'border border-dashed border-sage/25 hover:border-sage/40 hover:bg-sage/5'
+              : 'border border-sage/15 hover:border-sage/30 hover:bg-sage/5'
           )}
         >
           {pendingAction === 'clearing' ? (
@@ -218,8 +218,9 @@ function TenantSwitcher({ impersonatingTenantName }: { impersonatingTenantName?:
             </>
           ) : (
             <>
-              <SearchIcon className="h-3 w-3 text-mid/50 shrink-0" />
-              <span className="text-[11px] text-mid/50">Trocar clínica...</span>
+              <Building2 className="h-3 w-3 text-mid shrink-0" />
+              <span className="flex-1 text-[11px] font-medium text-charcoal truncate">{currentTenantName}</span>
+              <span className="text-[10px] text-mid/50 shrink-0">trocar</span>
             </>
           )}
         </button>
@@ -375,7 +376,7 @@ export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantI
         <SidebarNav isPlatformAdmin={isPlatformAdmin} impersonatingTenantName={impersonatingTenantName} />
         {isPlatformAdmin && (
           <div className="shrink-0 border-t border-[#E8ECEF] pb-3 pt-1 relative overflow-visible">
-            <TenantSwitcher impersonatingTenantName={impersonatingTenantName} />
+            <TenantSwitcher currentTenantName={clinicName} impersonatingTenantName={impersonatingTenantName} />
           </div>
         )}
       </div>
@@ -387,6 +388,7 @@ export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantI
 
 export function MobileSidebarContent({
   onNavigate,
+  clinicName = 'FloraClin',
   isPlatformAdmin,
   impersonatingTenantName,
 }: {
@@ -405,7 +407,7 @@ export function MobileSidebarContent({
       <SidebarNav onNavigate={onNavigate} isPlatformAdmin={isPlatformAdmin} impersonatingTenantName={impersonatingTenantName} />
       {isPlatformAdmin && (
         <div className="shrink-0 border-t border-[#E8ECEF] pb-3 pt-1">
-          <TenantSwitcher impersonatingTenantName={impersonatingTenantName} />
+          <TenantSwitcher currentTenantName={clinicName} impersonatingTenantName={impersonatingTenantName} />
         </div>
       )}
     </div>
