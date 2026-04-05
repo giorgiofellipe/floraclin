@@ -36,13 +36,15 @@ test.describe('Onboarding', () => {
     await loginTestUser(page)
     skipIfNotOnboarding(page)
 
-    // All 3 step labels visible
-    await expect(page.locator('text=Clínica')).toBeVisible({ timeout: 10000 })
-    await expect(page.locator('text=Procedimentos')).toBeVisible()
-    await expect(page.locator('text=Equipe')).toBeVisible()
+    // Welcome header visible
+    await expect(page.locator('text=Bem-vindo ao')).toBeVisible({ timeout: 10000 })
 
     // Step 1 content visible
     await expect(page.locator('text=Dados da Clínica')).toBeVisible()
+
+    // Next button visible, no Previous button on step 1
+    await expect(page.getByTestId('onboarding-next')).toBeVisible()
+    await expect(page.getByTestId('onboarding-prev')).not.toBeVisible()
 
     // Next button visible, no Previous button on step 1
     await expect(page.getByTestId('onboarding-next')).toBeVisible()

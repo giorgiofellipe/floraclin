@@ -3,8 +3,8 @@ import { readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
 
 const TEST_DB_URL = process.env.TEST_DATABASE_URL ?? 'postgresql://test:test@localhost:5433/floraclin_test'
-const TEST_USER_ID = process.env.TEST_USER_ID ?? 'e2e-test-user-0000-0000-000000000001'
-const TEST_TENANT_ID = 'e2e-tenant-0000-0000-000000000001'
+const TEST_USER_ID = process.env.TEST_USER_ID ?? '00000000-0000-4000-a000-000000000001'
+const TEST_TENANT_ID = '00000000-0000-4000-a000-000000000002'
 
 // Safety: refuse to connect to anything that looks like Supabase
 if (TEST_DB_URL.includes('supabase.co') || TEST_DB_URL.includes('supabase.com')) {
@@ -96,9 +96,10 @@ export async function seedTestDatabase() {
 
   try {
     // Test user (no Supabase auth needed — auth bypass uses TEST_USER_ID)
+    // Test user — NOT a platform admin (so onboarding redirect works)
     await sql`
       INSERT INTO floraclin.users (id, email, full_name, is_platform_admin)
-      VALUES (${TEST_USER_ID}, 'test@floraclin.test', 'Usuário E2E', true)
+      VALUES (${TEST_USER_ID}, 'test@floraclin.test', 'Usuário E2E', false)
       ON CONFLICT (id) DO NOTHING
     `
 

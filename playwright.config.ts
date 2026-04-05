@@ -27,7 +27,7 @@ export default defineConfig({
   timeout: 60000,
   globalSetup: './e2e/global-setup.ts',
   use: {
-    baseURL: process.env.BASE_URL ?? 'http://localhost:3000',
+    baseURL: process.env.BASE_URL ?? 'http://localhost:3100',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     // Send test user ID header on every request for auth bypass
@@ -41,10 +41,21 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: {
-    command: 'dotenv -e .env.test -- pnpm dev',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120000,
-  },
+  // In CI, start the dev server automatically.
+  // Locally, start it manually with test env vars:
+  //   source .env.test && pnpm dev
+  webServer: process.env.CI
+    ? {
+        command: 'pnpm dev',
+        url: 'http://localhost:3000',
+        timeout: 120000,
+        env: {
+          DATABASE_URL: process.env.DATABASE_URL!,
+          TEST_AUTH_BYPASS_ENABLED: 'true',
+          TEST_USER_ID: process.env.TEST_USER_ID!,
+          NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        },
+      }
+    : undefined,
 })
