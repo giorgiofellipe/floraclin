@@ -18,7 +18,7 @@
     "test:db:down": "docker compose -f docker-compose.test.yml down -v",
     "test:db:reset": "pnpm test:db:down && pnpm test:db:up",
     "test:dev": "pnpm exec dotenv -e .env.test -o -- next dev --turbopack",
-    "test:e2e": "pnpm test:db:up && pnpm test:dev & sleep 5 && pnpm exec dotenv -e .env.test -o -- playwright test; EXIT=$?; lsof -ti:3100 | xargs kill -9 2>/dev/null; exit $EXIT",
+    "test:e2e": "pnpm test:db:up && pnpm test:dev & sleep 5 && pnpm exec dotenv -e .env.test -o -- playwright test; EXIT=$?; lsof -ti:3100 | xargs kill -9 2>/dev/null; pnpm test:db:down; exit $EXIT",
     "test:e2e:ui": "pnpm exec dotenv -e .env.test -o -- playwright test --ui"
   },
   "dependencies": {
