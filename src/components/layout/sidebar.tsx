@@ -232,6 +232,10 @@ function TenantSwitcher({ currentTenantName, impersonatingTenantName }: { curren
             ref={inputRef}
             type="text"
             placeholder="Trocar clínica..."
+            spellCheck={false}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onBlur={() => setTimeout(() => { setIsOpen(false); setSearch(''); setDebouncedSearch('') }, 200)}
