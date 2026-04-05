@@ -32,7 +32,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     // Send test user ID header on every request for auth bypass
     extraHTTPHeaders: {
-      'x-test-user-id': process.env.TEST_USER_ID ?? 'e2e-test-user-0000-0000-000000000001',
+      'x-test-user-id': process.env.TEST_USER_ID ?? '00000000-0000-4000-a000-000000000001',
     },
   },
   projects: [

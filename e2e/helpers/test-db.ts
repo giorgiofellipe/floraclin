@@ -20,16 +20,13 @@ export function getTestDb() {
 
 /**
  * Run all migrations against the test database.
- * Creates the floraclin schema and all tables.
  */
 export async function setupTestDatabase() {
   const sql = getTestDb()
 
   try {
-    // Create schema if not exists
     await sql`CREATE SCHEMA IF NOT EXISTS floraclin`
 
-    // Run migrations in order
     const migrationsDir = join(process.cwd(), 'src/db/migrations')
     const files = readdirSync(migrationsDir)
       .filter((f) => f.endsWith('.sql') && !f.startsWith('.'))
@@ -55,6 +52,13 @@ export async function setupTestDatabase() {
       }
     }
 
+    // Add reversed_at columns if not exist (manual migration)
+    try {
+      await sql`ALTER TABLE floraclin.payment_records ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ`
+      await sql`ALTER TABLE floraclin.payment_records ADD COLUMN IF NOT EXISTS reversed_by UUID REFERENCES floraclin.users(id)`
+      await sql`ALTER TABLE floraclin.payment_records ADD COLUMN IF NOT EXISTS reversal_reason TEXT`
+    } catch { /* ignore */ }
+
     console.log(`✓ Applied ${files.length} migrations`)
   } finally {
     await sql.end()
@@ -63,7 +67,6 @@ export async function setupTestDatabase() {
 
 /**
  * Truncate all tables in the floraclin schema.
- * Preserves schema structure but removes all data.
  */
 export async function resetTestDatabase() {
   const sql = getTestDb()
@@ -85,46 +88,125 @@ export async function resetTestDatabase() {
 }
 
 /**
- * Seed the test database with a test tenant, user, and membership.
- * This creates the minimal data needed for e2e tests to run.
+ * Seed the test database with all data needed for e2e tests.
  *
- * Auth is bypassed via TEST_AUTH_BYPASS_ENABLED — no real Supabase user needed.
- * The TEST_USER_ID env var is used as the user's UUID.
+ * Creates:
+ * - Test user (owner, not platform admin)
+ * - Test tenant with onboarding completed
+ * - User membership
+ * - 2 patients
+ * - 2 procedure types
+ * - Financial settings
+ * - 3 expense categories
  */
 export async function seedTestDatabase() {
   const sql = getTestDb()
 
   try {
-    // Test user (no Supabase auth needed — auth bypass uses TEST_USER_ID)
-    // Test user — NOT a platform admin (so onboarding redirect works)
+    // ── User ─────────────────────────────────────────────────────
     await sql`
       INSERT INTO floraclin.users (id, email, full_name, is_platform_admin)
       VALUES (${TEST_USER_ID}, 'test@floraclin.test', 'Usuário E2E', false)
       ON CONFLICT (id) DO NOTHING
     `
 
-    // Tenant with onboarding NOT completed (for onboarding tests)
+    // ── Tenant (onboarding completed) ────────────────────────────
     await sql`
       INSERT INTO floraclin.tenants (id, name, slug, settings)
-      VALUES (${TEST_TENANT_ID}, 'Clínica E2E', 'clinica-e2e', '{}'::jsonb)
+      VALUES (
+        ${TEST_TENANT_ID},
+        'Clínica E2E',
+        'clinica-e2e',
+        '{"onboarding_completed": true}'::jsonb
+      )
       ON CONFLICT (id) DO NOTHING
     `
 
-    // Membership: test user is owner of test tenant
+    // ── Membership ───────────────────────────────────────────────
     await sql`
       INSERT INTO floraclin.tenant_users (tenant_id, user_id, role, is_active)
       VALUES (${TEST_TENANT_ID}, ${TEST_USER_ID}, 'owner', true)
       ON CONFLICT DO NOTHING
     `
 
-    console.log('✓ Database seeded (user + tenant + membership)')
+    // ── Patients ─────────────────────────────────────────────────
+    await sql`
+      INSERT INTO floraclin.patients (id, tenant_id, full_name, phone, cpf, responsible_user_id)
+      VALUES
+        ('00000000-0000-4000-a000-000000000010', ${TEST_TENANT_ID}, 'Maria Silva', '11999990001', '123.456.789-00', ${TEST_USER_ID}),
+        ('00000000-0000-4000-a000-000000000011', ${TEST_TENANT_ID}, 'João Santos', '11999990002', '987.654.321-00', ${TEST_USER_ID})
+      ON CONFLICT (id) DO NOTHING
+    `
+
+    // ── Procedure types ──────────────────────────────────────────
+    await sql`
+      INSERT INTO floraclin.procedure_types (id, tenant_id, name, category, estimated_duration_min, is_active)
+      VALUES
+        ('00000000-0000-4000-a000-000000000020', ${TEST_TENANT_ID}, 'Botox', 'botox', 30, true),
+        ('00000000-0000-4000-a000-000000000021', ${TEST_TENANT_ID}, 'Preenchimento', 'filler', 60, true)
+      ON CONFLICT (id) DO NOTHING
+    `
+
+    // ── Financial settings ───────────────────────────────────────
+    await sql`
+      INSERT INTO floraclin.financial_settings (id, tenant_id, fine_type, fine_value, monthly_interest_percent, grace_period_days)
+      VALUES (
+        '00000000-0000-4000-a000-000000000030',
+        ${TEST_TENANT_ID},
+        'percentage', '2.00', '1.00', 0
+      )
+      ON CONFLICT (id) DO NOTHING
+    `
+
+    // ── Expense categories ───────────────────────────────────────
+    await sql`
+      INSERT INTO floraclin.expense_categories (id, tenant_id, name, icon, sort_order)
+      VALUES
+        ('00000000-0000-4000-a000-000000000040', ${TEST_TENANT_ID}, 'Aluguel', 'building', 1),
+        ('00000000-0000-4000-a000-000000000041', ${TEST_TENANT_ID}, 'Material', 'package', 2),
+        ('00000000-0000-4000-a000-000000000042', ${TEST_TENANT_ID}, 'Outros', 'more-horizontal', 3)
+      ON CONFLICT (id) DO NOTHING
+    `
+
+    console.log('✓ Database seeded (user, tenant, patients, procedures, financial settings, expense categories)')
   } finally {
     await sql.end()
   }
 }
 
 /**
- * Full setup: reset + migrate + seed. Call before running e2e tests.
+ * Seed for onboarding tests — tenant with onboarding NOT completed.
+ */
+export async function seedForOnboarding() {
+  const sql = getTestDb()
+
+  try {
+    await sql`
+      INSERT INTO floraclin.users (id, email, full_name, is_platform_admin)
+      VALUES (${TEST_USER_ID}, 'test@floraclin.test', 'Usuário E2E', false)
+      ON CONFLICT (id) DO UPDATE SET is_platform_admin = false
+    `
+
+    await sql`
+      INSERT INTO floraclin.tenants (id, name, slug, settings)
+      VALUES (${TEST_TENANT_ID}, 'Clínica E2E', 'clinica-e2e', '{}'::jsonb)
+      ON CONFLICT (id) DO UPDATE SET settings = '{}'::jsonb
+    `
+
+    await sql`
+      INSERT INTO floraclin.tenant_users (tenant_id, user_id, role, is_active)
+      VALUES (${TEST_TENANT_ID}, ${TEST_USER_ID}, 'owner', true)
+      ON CONFLICT DO NOTHING
+    `
+
+    console.log('✓ Database seeded for onboarding (incomplete)')
+  } finally {
+    await sql.end()
+  }
+}
+
+/**
+ * Full setup: migrate + reset + seed. Call before running e2e tests.
  */
 export async function prepareTestDatabase() {
   await setupTestDatabase()

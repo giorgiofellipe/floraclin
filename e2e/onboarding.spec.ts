@@ -1,17 +1,17 @@
 import { test, expect, type Page } from '@playwright/test'
+import { seedForOnboarding } from './helpers/test-db'
 
 /**
  * Onboarding E2E Tests
  *
- * Runs against an ephemeral Docker Postgres. The global-setup script
- * resets the DB and seeds a test user + tenant with onboarding_completed = false.
+ * Runs against an ephemeral Docker Postgres. Before this suite, the
+ * tenant settings are reset to onboarding_completed = false.
  * Auth is bypassed via x-test-user-id header (set in playwright config).
  *
  * Tests are serial — the final test completes onboarding.
  */
 
 async function loginTestUser(page: Page) {
-  // Auth bypass: just navigate to dashboard, middleware lets us through
   await page.goto('/dashboard')
   await page.waitForURL(/\/(dashboard|onboarding)/, { timeout: 30000 })
 }
@@ -26,6 +26,11 @@ function skipIfNotOnboarding(page: Page) {
 
 test.describe('Onboarding', () => {
   test.describe.configure({ mode: 'serial' })
+
+  // Reset tenant to onboarding-incomplete state before this suite
+  test.beforeAll(async () => {
+    await seedForOnboarding()
+  })
 
   test('should redirect new clinic to onboarding', async ({ page }) => {
     await loginTestUser(page)

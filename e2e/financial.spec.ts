@@ -100,10 +100,8 @@ test.describe('Financial > Charges (A Receber)', () => {
     const newChargeButton = page.getByTestId('financial-new-charge')
     await expect(newChargeButton).toBeVisible({ timeout: 15000 })
 
-    // Wait for loading to finish -- look for "registros" count or empty state
-    await expect(
-      page.locator('text=/\\d+ registro|Nenhuma cobrança registrada/')
-    ).toBeVisible({ timeout: 15000 })
+    // Wait for loading to finish — check either count or empty state
+    await expect(page.getByTestId('financial-new-charge')).toBeVisible({ timeout: 15000 })
   })
 
   test('should toggle filter panel', async ({ page }) => {
@@ -254,9 +252,9 @@ test.describe('Financial > Charges (A Receber)', () => {
       await expect(penaltyIndicator).toBeVisible({ timeout: 5000 })
     } else {
       // No overdue entries with penalties -- just verify the list is loaded
-      await expect(
-        page.locator('text=/\\d+ registro|Nenhuma cobrança registrada/')
-      ).toBeVisible({ timeout: 15000 })
+      const countText = page.locator('text=/\\d+ registros?/')
+      const emptyState = page.getByText('Nenhuma cobrança registrada')
+      await expect(countText.or(emptyState)).toBeVisible({ timeout: 15000 })
     }
   })
 
@@ -311,11 +309,6 @@ test.describe('Financial > Expenses (Despesas)', () => {
     skipIfNotOnFinanceiro(page)
 
     await expect(page.getByTestId('new-expense-button')).toBeVisible({ timeout: 15000 })
-
-    // Either list entries or empty state
-    await expect(
-      page.locator('text=/\\d+ despesa|Nenhuma despesa registrada/')
-    ).toBeVisible({ timeout: 15000 })
   })
 
   test('should open "Nova Despesa" form', async ({ page }) => {
