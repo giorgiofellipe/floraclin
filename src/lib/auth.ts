@@ -9,11 +9,24 @@ import type { AuthContext, Role } from '@/types'
 const TENANT_COOKIE = 'floraclin_tenant_id'
 
 export async function getAuthContext(): Promise<AuthContext> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // Test auth bypass: use TEST_USER_ID env var instead of Supabase auth
+  // Double guard: env var AND not production
+  const testUserId =
+    process.env.TEST_AUTH_BYPASS_ENABLED === 'true' && process.env.NODE_ENV !== 'production'
+      ? process.env.TEST_USER_ID
+      : null
 
-  if (!user) {
-    redirect('/login')
+  let userId: string
+
+  if (testUserId) {
+    userId = testUserId
+  } else {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      redirect('/login')
+    }
+    userId = user.id
   }
 
   // Get ALL tenants for this user
@@ -29,7 +42,7 @@ export async function getAuthContext(): Promise<AuthContext> {
     .innerJoin(users, eq(users.id, tenantUsers.userId))
     .where(
       and(
-        eq(tenantUsers.userId, user.id),
+        eq(tenantUsers.userId, userId),
         eq(tenantUsers.isActive, true)
       )
     )
@@ -58,8 +71,8 @@ export async function getAuthContext(): Promise<AuthContext> {
       activeMembership = {
         tenantId: tenant.id,
         role: 'owner',
-        fullName: memberships[0]?.fullName ?? user.email ?? '',
-        email: memberships[0]?.email ?? user.email ?? '',
+        fullName: memberships[0]?.fullName ?? '',
+        email: memberships[0]?.email ?? '',
         isPlatformAdmin: true,
       }
     }
@@ -72,7 +85,7 @@ export async function getAuthContext(): Promise<AuthContext> {
   }
 
   return {
-    userId: user.id,
+    userId,
     tenantId: activeMembership.tenantId,
     role: activeMembership.role as Role,
     email: activeMembership.email,

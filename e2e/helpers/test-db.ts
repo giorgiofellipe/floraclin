@@ -3,6 +3,8 @@ import { readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
 
 const TEST_DB_URL = process.env.TEST_DATABASE_URL ?? 'postgresql://test:test@localhost:5433/floraclin_test'
+const TEST_USER_ID = process.env.TEST_USER_ID ?? 'e2e-test-user-0000-0000-000000000001'
+const TEST_TENANT_ID = 'e2e-tenant-0000-0000-000000000001'
 
 // Safety: refuse to connect to anything that looks like Supabase
 if (TEST_DB_URL.includes('supabase.co') || TEST_DB_URL.includes('supabase.com')) {
@@ -36,7 +38,6 @@ export async function setupTestDatabase() {
     for (const file of files) {
       const filePath = join(migrationsDir, file)
       const migration = readFileSync(filePath, 'utf-8')
-      // Split by statement-breakpoint and execute each
       const statements = migration
         .split('--> statement-breakpoint')
         .map((s) => s.trim())
@@ -46,7 +47,6 @@ export async function setupTestDatabase() {
         try {
           await sql.unsafe(stmt)
         } catch (err) {
-          // Ignore "already exists" errors during re-runs
           const msg = err instanceof Error ? err.message : ''
           if (!msg.includes('already exists') && !msg.includes('duplicate key')) {
             console.error(`Migration error in ${file}:`, msg)
@@ -55,7 +55,7 @@ export async function setupTestDatabase() {
       }
     }
 
-    console.log(`Applied ${files.length} migrations`)
+    console.log(`✓ Applied ${files.length} migrations`)
   } finally {
     await sql.end()
   }
@@ -78,36 +78,55 @@ export async function resetTestDatabase() {
       const tableNames = tables.map((t) => `floraclin.${t.tablename}`).join(', ')
       await sql.unsafe(`TRUNCATE TABLE ${tableNames} RESTART IDENTITY CASCADE`)
     }
+    console.log('✓ Database reset')
   } finally {
     await sql.end()
   }
 }
 
 /**
- * Seed the test database with essential data for e2e tests.
+ * Seed the test database with a test tenant, user, and membership.
+ * This creates the minimal data needed for e2e tests to run.
+ *
+ * Auth is bypassed via TEST_AUTH_BYPASS_ENABLED — no real Supabase user needed.
+ * The TEST_USER_ID env var is used as the user's UUID.
  */
 export async function seedTestDatabase() {
   const sql = getTestDb()
 
   try {
-    // Create test tenant
+    // Test user (no Supabase auth needed — auth bypass uses TEST_USER_ID)
     await sql`
-      INSERT INTO floraclin.tenants (id, name, slug, settings)
-      VALUES (
-        'e2e-tenant-0000-0000-000000000001',
-        'Clínica E2E',
-        'clinica-e2e',
-        '{"onboarding_completed": true}'::jsonb
-      )
+      INSERT INTO floraclin.users (id, email, full_name, is_platform_admin)
+      VALUES (${TEST_USER_ID}, 'test@floraclin.test', 'Usuário E2E', true)
       ON CONFLICT (id) DO NOTHING
     `
 
-    // Create test user in Supabase auth (this needs to be done via Supabase API)
-    // For e2e, we use the existing admin user from the real Supabase project
-    // The test DB is only for data isolation, auth still goes through Supabase
+    // Tenant with onboarding NOT completed (for onboarding tests)
+    await sql`
+      INSERT INTO floraclin.tenants (id, name, slug, settings)
+      VALUES (${TEST_TENANT_ID}, 'Clínica E2E', 'clinica-e2e', '{}'::jsonb)
+      ON CONFLICT (id) DO NOTHING
+    `
 
-    console.log('Test database seeded')
+    // Membership: test user is owner of test tenant
+    await sql`
+      INSERT INTO floraclin.tenant_users (tenant_id, user_id, role, is_active)
+      VALUES (${TEST_TENANT_ID}, ${TEST_USER_ID}, 'owner', true)
+      ON CONFLICT DO NOTHING
+    `
+
+    console.log('✓ Database seeded (user + tenant + membership)')
   } finally {
     await sql.end()
   }
+}
+
+/**
+ * Full setup: reset + migrate + seed. Call before running e2e tests.
+ */
+export async function prepareTestDatabase() {
+  await setupTestDatabase()
+  await resetTestDatabase()
+  await seedTestDatabase()
 }

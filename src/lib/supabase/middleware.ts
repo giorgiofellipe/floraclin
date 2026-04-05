@@ -1,9 +1,36 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+// Test auth bypass: when TEST_AUTH_BYPASS_ENABLED is set and the request
+// includes x-test-user-id header, skip Supabase auth entirely.
+// This is used by e2e tests running against a local Docker Postgres.
+// Double guard: env var AND not production — prevents accidental bypass in prod
+const TEST_AUTH_BYPASS =
+  process.env.TEST_AUTH_BYPASS_ENABLED === 'true' &&
+  process.env.NODE_ENV !== 'production'
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
+  // ── Test auth bypass ────────────────────────────────────────────
+  if (TEST_AUTH_BYPASS) {
+    const testUserId = request.headers.get('x-test-user-id')
+    if (testUserId) {
+      // Simulate authenticated user — skip Supabase entirely
+      const isAuthRoute = request.nextUrl.pathname.startsWith('/login') ||
+        request.nextUrl.pathname.startsWith('/reset-password')
+
+      if (isAuthRoute) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/dashboard'
+        return NextResponse.redirect(url)
+      }
+
+      return supabaseResponse
+    }
+  }
+
+  // ── Normal Supabase auth ────────────────────────────────────────
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

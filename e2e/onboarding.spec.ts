@@ -3,28 +3,16 @@ import { test, expect, type Page } from '@playwright/test'
 /**
  * Onboarding E2E Tests
  *
- * These tests assume an ephemeral Docker Postgres database that is reset
- * before each test run. The test user/tenant is seeded fresh with
- * onboarding_completed = false.
+ * Runs against an ephemeral Docker Postgres. The global-setup script
+ * resets the DB and seeds a test user + tenant with onboarding_completed = false.
+ * Auth is bypassed via x-test-user-id header (set in playwright config).
  *
- * Prerequisites (handled by test:db:up + seed):
- * - A tenant with settings: {} (onboarding not completed)
- * - A user with credentials that can log in
- * - Auth bypass middleware enabled (TEST_AUTH_BYPASS_ENABLED=true)
- *
- * These tests are sequential — the final test completes onboarding,
- * so running them out of order will cause skips.
+ * Tests are serial — the final test completes onboarding.
  */
 
-const TEST_EMAIL = process.env.TEST_USER_EMAIL ?? 'test@floraclin.test'
-const TEST_PASSWORD = process.env.TEST_USER_PASSWORD ?? 'Test@123'
-
 async function loginTestUser(page: Page) {
-  await page.goto('/login')
-  await page.getByTestId('login-email').waitFor({ state: 'visible', timeout: 10000 })
-  await page.getByTestId('login-email').fill(TEST_EMAIL)
-  await page.getByTestId('login-password').fill(TEST_PASSWORD)
-  await page.getByTestId('login-submit').click()
+  // Auth bypass: just navigate to dashboard, middleware lets us through
+  await page.goto('/dashboard')
   await page.waitForURL(/\/(dashboard|onboarding)/, { timeout: 30000 })
 }
 
