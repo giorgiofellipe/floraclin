@@ -4,6 +4,14 @@ import { join } from 'path'
 
 const TEST_DB_URL = process.env.TEST_DATABASE_URL ?? 'postgresql://test:test@localhost:5433/floraclin_test'
 
+// Safety: refuse to connect to anything that looks like Supabase
+if (TEST_DB_URL.includes('supabase.co') || TEST_DB_URL.includes('supabase.com')) {
+  throw new Error(
+    '🚫 REFUSING to connect to Supabase for e2e tests. ' +
+    'Use a local Docker Postgres: pnpm test:db:up'
+  )
+}
+
 export function getTestDb() {
   return postgres(TEST_DB_URL, { prepare: false, max: 3, connect_timeout: 10 })
 }
