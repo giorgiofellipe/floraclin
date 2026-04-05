@@ -145,25 +145,34 @@ export async function POST(request: Request) {
         }
       }
 
-      // 4. Seed default products
-      for (const product of DEFAULT_PRODUCTS) {
-        await createProduct(auth.tenantId, {
-          name: product.name,
-          category: product.category,
-          activeIngredient: product.activeIngredient,
-          defaultUnit: product.defaultUnit,
-        })
+      // 4. Seed default products (idempotent — skip if any exist)
+      const { listProducts } = await import('@/db/queries/products')
+      const existingProducts = await listProducts(auth.tenantId)
+      if (existingProducts.length === 0) {
+        for (const product of DEFAULT_PRODUCTS) {
+          await createProduct(auth.tenantId, {
+            name: product.name,
+            category: product.category,
+            activeIngredient: product.activeIngredient,
+            defaultUnit: product.defaultUnit,
+          })
+        }
       }
 
-      // 5. Create default consent templates (4 types + service contract)
-      const consentTypes = ['general', 'botox', 'filler', 'biostimulator', 'service_contract'] as const
-      for (const type of consentTypes) {
-        const template = DEFAULT_CONSENT_TEMPLATES[type]
-        await createConsentTemplate(auth.tenantId, {
-          type,
-          title: template.title,
-          content: template.content,
-        })
+      // 5. Create default consent templates (idempotent — skip if any exist)
+      const { listConsentTemplates } = await import('@/db/queries/consent')
+      const existingTemplates = await listConsentTemplates(auth.tenantId)
+      const hasTemplates = Object.values(existingTemplates).some((arr) => Array.isArray(arr) && arr.length > 0)
+      if (!hasTemplates) {
+        const consentTypes = ['general', 'botox', 'filler', 'biostimulator', 'service_contract'] as const
+        for (const type of consentTypes) {
+          const template = DEFAULT_CONSENT_TEMPLATES[type]
+          await createConsentTemplate(auth.tenantId, {
+            type,
+            title: template.title,
+            content: template.content,
+          })
+        }
       }
 
       // 6. Mark onboarding as completed

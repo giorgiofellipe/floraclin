@@ -115,28 +115,19 @@ export async function createTenantWithOwner(data: {
       .replace(/[^a-z0-9-]/g, '')
 
   return withTransaction(async (tx) => {
-    // 1. Get or create user in Supabase Auth
+    // 1. Get or create user — check local DB first, invite via Supabase if new
     const admin = createAdminClient()
 
-    // Filter by email to avoid fetching all users
-    const { data: listData } = await admin.auth.admin.listUsers({
-      page: 1,
-      perPage: 1,
-    })
-    // listUsers doesn't support email filter directly — check our DB first
     const [existingDbUser] = await tx
       .select({ id: users.id })
       .from(users)
       .where(eq(users.email, data.ownerEmail.toLowerCase()))
       .limit(1)
-    const existingAuthUser = existingDbUser
-      ? listData?.users?.find((u) => u.id === existingDbUser.id)
-      : null
 
     let authUserId: string
 
-    if (existingAuthUser) {
-      authUserId = existingAuthUser.id
+    if (existingDbUser) {
+      authUserId = existingDbUser.id
     } else {
       const { data: invited, error } =
         await admin.auth.admin.inviteUserByEmail(data.ownerEmail)
