@@ -144,43 +144,59 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
 
         {/* Stepper */}
         <div className="mb-10 animate-fade-in-up-delay-1">
-          <div className="flex items-center justify-center">
+          <div className="relative flex items-start justify-center">
+            {/* Connector lines (absolute, behind circles) */}
+            {STEPS.map((_, index) => {
+              if (index === 0) return null
+              return (
+                <div
+                  key={`line-${index}`}
+                  className="absolute top-6 -translate-y-1/2"
+                  style={{
+                    left: `calc(${((index - 0.5) / STEPS.length) * 100}% - 24px)`,
+                    width: `calc(${(1 / STEPS.length) * 100}%)`,
+                  }}
+                >
+                  <div
+                    className={`h-[2px] w-full transition-all duration-500 ${
+                      index <= currentStep ? 'bg-sage' : 'bg-blush/40'
+                    }`}
+                  />
+                </div>
+              )
+            })}
+
+            {/* Step circles + labels */}
             {STEPS.map((step, index) => {
               const isCompleted = index < currentStep
               const isCurrent = index === currentStep
               return (
-                <div key={step.label} className="flex items-center">
-                  {index > 0 && (
-                    <div
-                      className={`h-[2px] w-12 sm:w-24 transition-all duration-500 ${
-                        isCompleted ? 'bg-sage' : 'bg-blush/40'
-                      }`}
-                    />
-                  )}
-                  <div className="flex flex-col items-center gap-2">
-                    <div
-                      className={`flex h-12 w-12 items-center justify-center rounded-full transition-all duration-500 ${
-                        isCompleted
-                          ? 'bg-sage text-cream shadow-md shadow-sage/20'
-                          : isCurrent
-                            ? 'bg-forest text-cream shadow-lg shadow-forest/20'
-                            : 'bg-petal text-mid border border-blush/40'
-                      }`}
-                    >
-                      {isCompleted ? (
-                        <CheckIcon className="h-5 w-5" />
-                      ) : (
-                        <span className="text-sm font-semibold">{index + 1}</span>
-                      )}
-                    </div>
-                    <span
-                      className={`text-xs font-medium tracking-wide transition-colors duration-300 ${
-                        isCurrent ? 'text-forest' : isCompleted ? 'text-sage' : 'text-mid/50'
-                      }`}
-                    >
-                      {step.label}
-                    </span>
+                <div
+                  key={step.label}
+                  className="relative z-10 flex flex-1 flex-col items-center gap-2"
+                >
+                  <div
+                    className={`flex h-12 w-12 items-center justify-center rounded-full transition-all duration-500 ${
+                      isCompleted
+                        ? 'bg-sage text-cream shadow-md shadow-sage/20'
+                        : isCurrent
+                          ? 'bg-forest text-cream shadow-lg shadow-forest/20'
+                          : 'bg-petal text-mid border border-blush/40'
+                    }`}
+                  >
+                    {isCompleted ? (
+                      <CheckIcon className="h-5 w-5" />
+                    ) : (
+                      <span className="text-sm font-semibold">{index + 1}</span>
+                    )}
                   </div>
+                  <span
+                    className={`text-xs font-medium tracking-wide transition-colors duration-300 ${
+                      isCurrent ? 'text-forest' : isCompleted ? 'text-sage' : 'text-mid/50'
+                    }`}
+                  >
+                    {step.label}
+                  </span>
                 </div>
               )
             })}
@@ -346,6 +362,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
                 onClick={handlePrev}
                 disabled={isPending}
                 className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
+                data-testid="onboarding-prev"
               >
                 Anterior
               </Button>
@@ -360,6 +377,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
                 onClick={handleComplete}
                 disabled={isPending}
                 className="text-mid hover:text-sage transition-colors duration-200"
+                data-testid="onboarding-skip"
               >
                 {invitesSent > 0 ? 'Continuar sem mais convites' : 'Pular por enquanto'}
               </Button>
@@ -370,6 +388,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
                 type="button"
                 onClick={handleNext}
                 className="bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium transition-all duration-300 shadow-sm hover:shadow-md px-8"
+                data-testid="onboarding-next"
               >
                 Próximo
               </Button>
@@ -378,11 +397,12 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
                 type="button"
                 onClick={handleComplete}
                 disabled={isPending}
+                data-testid="onboarding-complete"
                 className={`bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium transition-all duration-300 shadow-md hover:shadow-lg px-8 ${
                   !isPending ? 'animate-subtle-pulse' : ''
                 }`}
               >
-                {isPending ? 'Finalizando...' : 'Comecar a usar'}
+                {isPending ? 'Finalizando...' : 'Começar a usar'}
               </Button>
             )}
           </div>
