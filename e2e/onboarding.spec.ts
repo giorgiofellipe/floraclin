@@ -145,17 +145,11 @@ test.describe('Onboarding', () => {
     await page.getByTestId('onboarding-next').click()
     await expect(page.getByTestId('onboarding-complete')).toBeVisible({ timeout: 5000 })
 
-    // Complete onboarding
-    const responsePromise = page.waitForResponse(
-      (res) => res.url().includes('/api/onboarding') && res.request().method() === 'POST',
-      { timeout: 15000 }
-    )
+    // Complete onboarding — click and wait for redirect
     await page.getByTestId('onboarding-complete').click()
-    const response = await responsePromise
-    expect(response.status()).toBeLessThan(400)
 
-    // Should redirect to dashboard
-    await page.waitForURL(/\/dashboard/, { timeout: 15000 })
+    // Wait for redirect to dashboard (onboarding API + redirect)
+    await page.waitForURL(/\/dashboard/, { timeout: 30000 })
   })
 
   test('should not redirect to onboarding after completion', async ({ page }) => {

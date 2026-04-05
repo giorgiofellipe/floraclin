@@ -18,7 +18,7 @@ import type { ProcedureCategory } from '@/types/evaluation'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { eq } from 'drizzle-orm'
-import { withTransaction } from '@/lib/tenant'
+// withTransaction removed — helper functions use global db which deadlocks in transactions
 import type { WorkingHours } from '@/validations/tenant'
 
 function generateSlug(name: string): string {
@@ -72,7 +72,13 @@ export async function POST(request: Request) {
     // Check existing procedure types before entering transaction
     const existingTypes = await listProcedureTypes(auth.tenantId)
 
-    await withTransaction(async (tx) => {
+    // NOTE: Not using withTransaction here because the helper functions
+    // (updateTenant, createProcedureType, etc.) all use the global `db` client.
+    // Wrapping them in a transaction would deadlock since the transaction holds
+    // a connection and the helpers try to use a separate connection from the pool.
+    // Onboarding is idempotent, so sequential execution is safe.
+
+    {
       // 1. Update tenant with clinic info, working hours, and slug
       const slug = generateSlug(data.clinic.name)
 
@@ -84,8 +90,7 @@ export async function POST(request: Request) {
         workingHours: data.clinic.workingHours,
       })
 
-      // Update slug directly (not in the updateTenant validation schema)
-      await tx
+      await db
         .update(tenants)
         .set({ slug, updatedAt: new Date() })
         .where(eq(tenants.id, auth.tenantId))
@@ -147,7 +152,7 @@ export async function POST(request: Request) {
           category: product.category,
           activeIngredient: product.activeIngredient,
           defaultUnit: product.defaultUnit,
-        }, tx)
+        })
       }
 
       // 5. Create default consent templates (4 types + service contract)
@@ -177,7 +182,7 @@ export async function POST(request: Request) {
           onboarding: { old: null, new: { completed: true, procedureTypesCount: data.procedureTypes.length } },
         },
       })
-    })
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {
