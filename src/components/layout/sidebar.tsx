@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -14,8 +14,10 @@ import {
   TrendingUp,
   Building2,
   UsersRound,
+  SearchIcon,
 } from 'lucide-react'
 import { useImpersonate } from '@/hooks/mutations/use-impersonation'
+import { useAdminTenants } from '@/hooks/queries/use-admin-tenants'
 
 export interface TenantOption {
   tenantId: string
@@ -135,65 +137,143 @@ function NavItem({
 
 // ─── Tenant Switcher (Admin Impersonation) ────────────────────────
 
-function TenantSwitcher() {
+function TenantSwitcher({ impersonatingTenantName }: { impersonatingTenantName?: string }) {
+  const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
-  const [results, setResults] = useState<Array<{ id: string; name: string }>>([])
-  const [showDropdown, setShowDropdown] = useState(false)
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [pendingAction, setPendingAction] = useState<string | null>(null) // 'switching:Name' or 'clearing'
   const impersonate = useImpersonate()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
-  // Debounced search
+  // Debounce search input
   useEffect(() => {
-    if (search.length < 2) {
-      setResults([])
-      return
-    }
-    let ignore = false
-    const timer = setTimeout(async () => {
-      const res = await fetch(
-        `/api/admin/tenants?search=${encodeURIComponent(search)}&limit=5`
-      )
-      if (res.ok && !ignore) {
-        const data = await res.json()
-        setResults(
-          (data.data ?? []).map((t: { id: string; name: string }) => ({
-            id: t.id,
-            name: t.name,
-          }))
-        )
-      }
-    }, 300)
-    return () => { ignore = true; clearTimeout(timer) }
+    const timer = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(timer)
   }, [search])
 
+  // React Query — cached, deduped, shows stale data while refetching
+  const { data, isFetching } = useAdminTenants(debouncedSearch, 1)
+  const results: Array<{ id: string; name: string }> = isOpen
+    ? (data?.data ?? []).map((t: { id: string; name: string }) => ({ id: t.id, name: t.name }))
+    : []
+  const isLoading = isFetching && results.length === 0
+  const showDropdown = isOpen && (isLoading || results.length > 0 || (search.length >= 2 && results.length === 0))
+
+  // no positioning hooks needed — dropdown uses CSS-only positioning
+
+  const handleClear = async () => {
+    setPendingAction('clearing')
+    await fetch('/api/admin/impersonate/clear', { method: 'POST' })
+    window.location.reload()
+  }
+
+  const handleSwitch = (tenant: { id: string; name: string }) => {
+    setIsOpen(false)
+    setPendingAction(`switching:${tenant.name}`)
+    impersonate.mutate({ tenantId: tenant.id })
+  }
+
   return (
-    <div className="relative px-3 mt-2">
-      <input
-        type="text"
-        placeholder="Trocar clínica..."
-        value={search}
-        onChange={(e) => {
-          setSearch(e.target.value)
-          setShowDropdown(true)
-        }}
-        onFocus={() => setShowDropdown(true)}
-        onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-        className="w-full rounded-md border border-sage/20 bg-transparent px-2.5 py-1.5 text-xs text-charcoal placeholder:text-mid/50 outline-none focus:border-sage/40"
-      />
-      {showDropdown && results.length > 0 && (
-        <div className="absolute left-3 right-3 top-full z-50 mt-1 rounded-md border bg-white shadow-md">
-          {results.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className="flex w-full items-center px-2.5 py-1.5 text-xs text-charcoal hover:bg-sage/5"
-              onMouseDown={(e) => {
-                e.preventDefault()
-                impersonate.mutate({ tenantId: t.id })
-              }}
-            >
-              {t.name}
-            </button>
-          ))}
+    <div className="px-3 mt-2 relative" ref={containerRef}>
+      {!isOpen ? (
+        /* Collapsed — button showing current state */
+        <button
+          type="button"
+          onClick={() => { setIsOpen(true); setTimeout(() => inputRef.current?.focus(), 50) }}
+          className={cn(
+            'w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-all duration-200',
+            impersonatingTenantName
+              ? 'bg-gradient-to-r from-emerald-50 to-sage/10 border border-emerald-200/60'
+              : 'border border-dashed border-sage/25 hover:border-sage/40 hover:bg-sage/5'
+          )}
+        >
+          {pendingAction === 'clearing' ? (
+            <>
+              <span className="size-2 animate-pulse rounded-full bg-sage/50 shrink-0" />
+              <span className="flex-1 text-[11px] text-mid/50">Saindo...</span>
+            </>
+          ) : pendingAction?.startsWith('switching:') ? (
+            <>
+              <span className="relative flex h-2 w-2 shrink-0">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+              </span>
+              <span className="flex-1 text-[11px] font-medium text-forest truncate">{pendingAction.replace('switching:', '')}</span>
+              <span className="size-2 animate-pulse rounded-full bg-sage/50 shrink-0" />
+            </>
+          ) : impersonatingTenantName ? (
+            <>
+              <span className="relative flex h-2 w-2 shrink-0">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+              </span>
+              <span className="flex-1 text-[11px] font-medium text-forest truncate">{impersonatingTenantName}</span>
+              <span
+                className="text-[10px] text-mid/70 hover:text-red-500 transition-colors shrink-0"
+                onClick={(e) => { e.stopPropagation(); handleClear() }}
+              >
+                sair
+              </span>
+            </>
+          ) : (
+            <>
+              <SearchIcon className="h-3 w-3 text-mid/50 shrink-0" />
+              <span className="text-[11px] text-mid/50">Trocar clínica...</span>
+            </>
+          )}
+        </button>
+      ) : (
+        /* Expanded — search input */
+        <div className="flex items-center gap-2 rounded-lg border border-sage/30 bg-white px-2.5 py-2">
+          <SearchIcon className="h-3 w-3 text-mid/50 shrink-0" />
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder="Trocar clínica..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onBlur={() => setTimeout(() => { setIsOpen(false); setSearch(''); setDebouncedSearch('') }, 200)}
+            onKeyDown={(e) => { if (e.key === 'Escape') { setIsOpen(false); setSearch(''); setDebouncedSearch('') } }}
+            className="flex-1 bg-transparent text-[11px] text-charcoal placeholder:text-mid/40 outline-none"
+          />
+          {isLoading && (
+            <span className="size-2 animate-pulse rounded-full bg-sage/50 shrink-0" />
+          )}
+        </div>
+      )}
+
+      {/* Fixed dropdown — opens upward */}
+      {showDropdown && (
+        <div className="absolute bottom-full left-0 right-0 mb-1 z-50 rounded-lg border border-sage/20 bg-white shadow-lg overflow-hidden" style={{ maxHeight: 240 }}>
+          {isLoading && results.length === 0 ? (
+            <div className="flex items-center justify-center gap-1.5 px-2.5 py-3">
+              <span className="size-1.5 animate-pulse rounded-full bg-sage/50" />
+              <span className="text-[10px] text-mid/50">Carregando...</span>
+            </div>
+          ) : results.length > 0 ? (
+            <div className="overflow-y-auto" style={{ maxHeight: 232 }}>
+              {results.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className="flex w-full items-center gap-2 px-2.5 py-2 text-[11px] text-charcoal hover:bg-sage/8 transition-colors border-b border-sage/5 last:border-b-0"
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    handleSwitch(t)
+                  }}
+                  disabled={impersonate.isPending}
+                >
+                  <Building2 className="h-3 w-3 text-mid/40 shrink-0" />
+                  <span className="truncate">{t.name}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="px-2.5 py-3 text-[10px] text-mid/50 text-center">
+              Nenhuma clínica encontrada
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -276,27 +356,6 @@ function SidebarNav({
               />
             ))}
           </div>
-
-          {impersonatingTenantName && (
-            <div className="mx-3 mt-2 flex items-center justify-between rounded-md bg-sage/10 px-2.5 py-1.5">
-              <div className="flex items-center gap-1.5">
-                <span className="size-2 rounded-full bg-emerald-400" />
-                <span className="text-xs font-medium text-forest truncate">{impersonatingTenantName}</span>
-              </div>
-              <button
-                type="button"
-                className="text-xs text-mid hover:text-charcoal"
-                onClick={async () => {
-                  await fetch('/api/admin/impersonate/clear', { method: 'POST' })
-                  window.location.reload()
-                }}
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
-          <TenantSwitcher />
         </>
       )}
     </nav>
@@ -308,12 +367,17 @@ function SidebarNav({
 export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantId, isPlatformAdmin, impersonatingTenantName }: SidebarProps) {
   return (
     <aside
-      className="hidden md:flex md:w-[200px] md:flex-col md:fixed md:inset-y-0 bg-white border-r border-[#E8ECEF] overflow-hidden"
+      className="hidden md:flex md:w-[200px] md:flex-col md:fixed md:inset-y-0 bg-white border-r border-[#E8ECEF]"
       data-testid="sidebar"
     >
       <div className="relative flex flex-1 flex-col min-h-0">
         <SidebarLogo />
         <SidebarNav isPlatformAdmin={isPlatformAdmin} impersonatingTenantName={impersonatingTenantName} />
+        {isPlatformAdmin && (
+          <div className="shrink-0 border-t border-[#E8ECEF] pb-3 pt-1 relative overflow-visible">
+            <TenantSwitcher impersonatingTenantName={impersonatingTenantName} />
+          </div>
+        )}
       </div>
     </aside>
   )
@@ -339,6 +403,11 @@ export function MobileSidebarContent({
     <div className="relative flex h-full flex-1 flex-col min-h-0 bg-white overflow-hidden">
       <SidebarLogo />
       <SidebarNav onNavigate={onNavigate} isPlatformAdmin={isPlatformAdmin} impersonatingTenantName={impersonatingTenantName} />
+      {isPlatformAdmin && (
+        <div className="shrink-0 border-t border-[#E8ECEF] pb-3 pt-1">
+          <TenantSwitcher impersonatingTenantName={impersonatingTenantName} />
+        </div>
+      )}
     </div>
   )
 }
