@@ -129,12 +129,30 @@ export async function createTenantWithOwner(data: {
     if (existingDbUser) {
       authUserId = existingDbUser.id
     } else {
+      // Try to invite — if already in Supabase Auth, look them up
       const { data: invited, error } =
         await admin.auth.admin.inviteUserByEmail(data.ownerEmail)
-      if (error || !invited.user) {
-        throw new Error(`Falha ao convidar usuário: ${error?.message ?? 'unknown'}`)
+      if (error) {
+        if (error.message?.includes('already been registered')) {
+          // User exists in Supabase Auth but not in our users table
+          // List users and find by email (paginated search)
+          const { data: listData } = await admin.auth.admin.listUsers({ perPage: 50 })
+          const match = listData?.users?.find(
+            (u) => u.email?.toLowerCase() === data.ownerEmail.toLowerCase()
+          )
+          if (match) {
+            authUserId = match.id
+          } else {
+            throw new Error('Usuário já existe mas não foi possível encontrá-lo. Tente novamente.')
+          }
+        } else {
+          throw new Error(`Falha ao convidar usuário: ${error.message}`)
+        }
+      } else if (!invited.user) {
+        throw new Error('Falha ao convidar usuário: resposta inválida')
+      } else {
+        authUserId = invited.user.id
       }
-      authUserId = invited.user.id
     }
 
     // 2. Upsert user row

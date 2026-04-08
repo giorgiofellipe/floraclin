@@ -124,10 +124,26 @@ export async function createUserWithMembership(data: {
   } else {
     const { data: invited, error } =
       await admin.auth.admin.inviteUserByEmail(data.email)
-    if (error || !invited.user) {
-      throw new Error(`Falha ao convidar usuário: ${error?.message ?? 'unknown'}`)
+    if (error) {
+      if (error.message?.includes('already been registered')) {
+        // User exists in Supabase Auth but not in our users table
+        const { data: listData } = await admin.auth.admin.listUsers({ perPage: 50 })
+        const match = listData?.users?.find(
+          (u) => u.email?.toLowerCase() === data.email.toLowerCase()
+        )
+        if (match) {
+          authUserId = match.id
+        } else {
+          throw new Error('Usuário já existe mas não foi possível encontrá-lo. Tente novamente.')
+        }
+      } else {
+        throw new Error(`Falha ao convidar usuário: ${error.message}`)
+      }
+    } else if (!invited.user) {
+      throw new Error('Falha ao convidar usuário: resposta inválida')
+    } else {
+      authUserId = invited.user.id
     }
-    authUserId = invited.user.id
   }
 
   // Upsert user row
