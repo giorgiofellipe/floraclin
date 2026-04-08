@@ -308,8 +308,10 @@ export async function removeUserMembership(
 export async function resetUserPassword(email: string) {
   const admin = createAdminClient()
 
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+    ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
   const { error } = await admin.auth.resetPasswordForEmail(email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/reset-password`,
+    redirectTo: `${appUrl}/reset-password`,
   })
 
   if (error) {
