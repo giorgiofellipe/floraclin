@@ -27,10 +27,10 @@ export default function ResetPasswordPage() {
       {/* Form section */}
       <div className="animate-fade-in-up-delay-1">
         <h2 className="text-2xl font-medium text-charcoal tracking-tight text-center lg:text-left">
-          Redefinir Senha
+          Recuperar acesso
         </h2>
         <p className="text-mid text-sm mt-1 mb-8 text-center lg:text-left">
-          Informe seu e-mail para receber o link de recuperação
+          Informe seu e-mail para receber um link mágico de acesso
         </p>
 
         {state?.success ? (
@@ -49,10 +49,10 @@ export default function ResetPasswordPage() {
                 </svg>
               </div>
               <p className="text-sm text-sage text-center font-medium">
-                E-mail de recuperação enviado!
+                Link mágico enviado!
               </p>
               <p className="text-sm text-mid text-center mt-1">
-                Verifique sua caixa de entrada.
+                Verifique sua caixa de entrada e clique no link para acessar sua conta.
               </p>
             </div>
             <div className="text-center">
@@ -90,7 +90,7 @@ export default function ResetPasswordPage() {
                 className="w-full h-11 bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium rounded-lg transition-all duration-300 shadow-sm hover:shadow-md"
                 disabled={isPending}
               >
-                {isPending ? 'Enviando...' : 'Enviar link de recuperação'}
+                {isPending ? 'Enviando...' : 'Enviar link mágico'}
               </Button>
             </div>
             <div className="text-center pt-2">
