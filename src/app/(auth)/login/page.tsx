@@ -47,8 +47,22 @@ export default function LoginPage() {
           Acesse sua conta
         </p>
 
+        {/* Google OAuth — first */}
+        <form action={loginWithGoogle}>
+          <Button type="submit" variant="outline" className="w-full h-11 border-sage/20 rounded-lg">
+            <GoogleIcon /> Entrar com Google
+          </Button>
+        </form>
+
+        {/* Separator */}
+        <div className="relative my-6">
+          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-sage/15" /></div>
+          <div className="relative flex justify-center text-xs"><span className="bg-cream px-2 text-mid">ou entre com e-mail</span></div>
+        </div>
+
+        {/* Email + password form */}
         <form action={formAction} className="space-y-5">
-          <div className="space-y-1.5 animate-fade-in-up-delay-1">
+          <div className="space-y-1.5">
             <Label htmlFor="email" className="uppercase tracking-wider text-xs text-mid">
               E-mail
             </Label>
@@ -62,7 +76,7 @@ export default function LoginPage() {
               placeholder="seu@email.com"
             />
           </div>
-          <div className="space-y-1.5 animate-fade-in-up-delay-2">
+          <div className="space-y-1.5">
             <Label htmlFor="password" className="uppercase tracking-wider text-xs text-mid">
               Senha
             </Label>
@@ -81,7 +95,7 @@ export default function LoginPage() {
               <p className="text-sm text-red-700" data-testid="login-error">{state.error.general[0]}</p>
             </div>
           )}
-          <div className="animate-fade-in-up-delay-3 pt-1">
+          <div className="pt-1">
             <Button
               type="submit"
               className="w-full h-11 bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium rounded-lg transition-all duration-300 shadow-sm hover:shadow-md"
@@ -98,30 +112,6 @@ export default function LoginPage() {
             >
               Esqueci minha senha
             </Link>
-          </div>
-        </form>
-
-        {/* Separator */}
-        <div className="relative my-4">
-          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-sage/15" /></div>
-          <div className="relative flex justify-center text-xs"><span className="bg-white px-2 text-mid">ou continue com</span></div>
-        </div>
-
-        {/* Google OAuth */}
-        <form action={loginWithGoogle}>
-          <Button type="submit" variant="outline" className="w-full border-sage/20">
-            <GoogleIcon /> Entrar com Google
-          </Button>
-        </form>
-
-        {/* Magic link */}
-        <form action={loginWithMagicLink}>
-          <div className="mt-4 space-y-2">
-            <Label>Entrar com link mágico</Label>
-            <div className="flex gap-2">
-              <Input name="magicLinkEmail" type="email" placeholder="seu@email.com" />
-              <Button type="submit" variant="outline">Enviar link</Button>
-            </div>
           </div>
         </form>
       </div>
