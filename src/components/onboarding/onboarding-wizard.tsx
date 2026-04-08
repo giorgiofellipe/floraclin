@@ -10,7 +10,8 @@ import { ProcedureTypeForm } from '@/components/settings/procedure-type-form'
 import { InviteUserForm } from '@/components/settings/invite-user-form'
 import { DEFAULT_PROCEDURE_TYPES, DEFAULT_WORKING_HOURS } from '@/lib/constants'
 import { toast } from 'sonner'
-import { CheckIcon, Building2Icon, SyringeIcon, UsersIcon } from 'lucide-react'
+import { CheckIcon, Building2Icon, SyringeIcon, UsersIcon, LogOutIcon } from 'lucide-react'
+import { logout } from '@/actions/auth'
 import type { WorkingHours } from '@/validations/tenant'
 
 interface ProcedureTypeItem {
@@ -140,6 +141,14 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
           <p className="mt-3 text-mid text-base">
             Configure sua clínica em poucos passos
           </p>
+          <button
+            type="button"
+            onClick={() => logout()}
+            className="mt-3 inline-flex items-center gap-1 text-xs text-mid/50 hover:text-mid transition-colors"
+          >
+            <LogOutIcon className="h-3 w-3" />
+            Sair
+          </button>
         </div>
 
         {/* Stepper */}
