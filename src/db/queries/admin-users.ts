@@ -308,7 +308,9 @@ export async function removeUserMembership(
 export async function resetUserPassword(email: string) {
   const admin = createAdminClient()
 
-  const { error } = await admin.auth.resetPasswordForEmail(email)
+  const { error } = await admin.auth.resetPasswordForEmail(email, {
+    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/reset-password`,
+  })
 
   if (error) {
     throw new Error(`Falha ao enviar e-mail de recuperação: ${error.message}`)
