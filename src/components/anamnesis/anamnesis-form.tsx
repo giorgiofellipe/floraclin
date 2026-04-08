@@ -338,22 +338,18 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
         clearTimeout(debounceTimerRef.current)
         debounceTimerRef.current = null
       }
-      // Force an immediate save and wait for it
-      const data = getValues()
+      // Use handleSubmit to capture ALL form fields (including any that
+      // might be missed by getValues alone, e.g. controlled fields still
+      // mid-update). On validation failure, still attempt to save raw values.
       try {
-        const result = await upsertAnamnesis.mutateAsync({
-          patientId,
-          formData: data as Record<string, unknown>,
-          expectedUpdatedAt: expectedUpdatedAtRef.current,
-        })
-        if (result?.updatedAt) {
-          expectedUpdatedAtRef.current = new Date(result.updatedAt).toISOString()
-          setLastSaved(new Date(result.updatedAt))
-          setLastSavedBy(null)
+        await handleSubmit(async () => {
+          await saveForm()
           wizardOverrides?.onSaveComplete?.({ success: true })
-        } else {
+        }, async () => {
+          // Validation failed — save anyway with current values
+          await saveForm()
           wizardOverrides?.onSaveComplete?.({ success: true })
-        }
+        })()
       } catch {
         wizardOverrides?.onSaveComplete?.({
           success: false,
@@ -401,12 +397,19 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
       {!wizardOverrides?.hideTitle && (
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold text-[#2A2A2A]">Anamnese</h2>
-          {isPending && (
-            <div className="flex items-center gap-1.5 text-xs text-sage">
-              <Loader2 className="size-3 animate-spin" />
-              Salvando...
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {isPending && (
+              <div className="flex items-center gap-1.5 text-xs text-sage">
+                <Loader2 className="size-3 animate-spin" />
+                Salvando...
+              </div>
+            )}
+            {lastSaved && !isPending && (
+              <span className="text-xs text-mid/60">
+                Salvo {formatDateTime(lastSaved)}
+              </span>
+            )}
+          </div>
         </div>
       )}
 
@@ -1074,15 +1077,38 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
             </div>
           </AnamnesisSection>
         </Accordion>
-      </form>
 
-      {/* ── Footer: last saved info ── */}
-      {lastSaved && (
-        <div className="text-xs text-mid pt-3 border-t border-petal">
-          Última atualização: {formatDateTime(lastSaved)}
-          {lastSavedBy && <> por {lastSavedBy}</>}
+        {/* ── Footer: save button + last saved info ── */}
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-petal">
+          <div className="flex items-center gap-2">
+            {isPending ? (
+              <div className="flex items-center gap-1.5 text-sm text-sage">
+                <Loader2 className="size-3.5 animate-spin" />
+                Salvando...
+              </div>
+            ) : lastSaved ? (
+              <span className="text-sm text-mid">
+                Última atualização: {formatDateTime(lastSaved)}
+                {lastSavedBy && <> por {lastSavedBy}</>}
+              </span>
+            ) : null}
+          </div>
+          <Button
+            type="submit"
+            disabled={isPending}
+            className="bg-forest text-cream hover:bg-sage transition-colors"
+          >
+            {isPending ? (
+              <>
+                <Loader2 className="size-4 animate-spin mr-1.5" />
+                Salvando...
+              </>
+            ) : (
+              'Salvar'
+            )}
+          </Button>
         </div>
-      )}
+      </form>
     </div>
   )
 }

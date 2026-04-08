@@ -233,7 +233,7 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
         id: e.id,
         description: e.description,
         patientName: e.patientName,
-        remainingPrincipal: Number(e.remainingPrincipal ?? 0) || (Number(e.totalAmount) - Number(e.totalAmountPaid ?? 0)),
+        remainingPrincipal: Number(e.remainingPrincipal ?? 0) || (Number(e.totalAmount ?? 0) - Number(e.totalAmountPaid ?? 0)),
         fineAmount: Number(e.totalFineAmount ?? 0),
         interestAmount: Number(e.totalInterestAmount ?? 0),
       })),
@@ -501,7 +501,7 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
                       'text-sm font-semibold tabular-nums',
                       entry.isOverdue ? 'text-red-700' : 'text-charcoal'
                     )}>
-                      {formatCurrency(Number(entry.totalAmount))}
+                      {formatCurrency(Number(entry.totalAmount ?? 0))}
                     </span>
                     <div className="flex items-center justify-end gap-1 mt-0.5">
                       <span className={cn(

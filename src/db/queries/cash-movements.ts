@@ -11,7 +11,7 @@ import {
   users,
   tenantUsers,
 } from '@/db/schema'
-import { eq, and, sql, gte, lte, count, sum, desc, asc } from 'drizzle-orm'
+import { eq, and, sql, count, sum, desc, asc } from 'drizzle-orm'
 import type { LedgerFilterInput } from '@/validations/financial'
 
 export async function listCashMovements(
@@ -20,8 +20,8 @@ export async function listCashMovements(
 ) {
   const conditions = [
     eq(cashMovements.tenantId, tenantId),
-    gte(cashMovements.movementDate, new Date(filters.dateFrom)),
-    lte(cashMovements.movementDate, new Date(filters.dateTo)),
+    sql`${cashMovements.movementDate} >= ${filters.dateFrom}::timestamp`,
+    sql`${cashMovements.movementDate} <= ${filters.dateTo}::timestamp`,
   ]
 
   if (filters.type && filters.type !== 'all') {
@@ -95,8 +95,8 @@ export async function getLedgerSummary(
 ) {
   const conditions = [
     eq(cashMovements.tenantId, tenantId),
-    gte(cashMovements.movementDate, new Date(filters.dateFrom)),
-    lte(cashMovements.movementDate, new Date(filters.dateTo)),
+    sql`${cashMovements.movementDate} >= ${filters.dateFrom}::timestamp`,
+    sql`${cashMovements.movementDate} <= ${filters.dateTo}::timestamp`,
   ]
 
   if (filters.type && filters.type !== 'all') {
@@ -287,8 +287,8 @@ export async function exportLedgerCSV(
 ) {
   const conditions = [
     eq(cashMovements.tenantId, tenantId),
-    gte(cashMovements.movementDate, new Date(filters.dateFrom)),
-    lte(cashMovements.movementDate, new Date(filters.dateTo)),
+    sql`${cashMovements.movementDate} >= ${filters.dateFrom}::timestamp`,
+    sql`${cashMovements.movementDate} <= ${filters.dateTo}::timestamp`,
   ]
 
   if (filters.type && filters.type !== 'all') {

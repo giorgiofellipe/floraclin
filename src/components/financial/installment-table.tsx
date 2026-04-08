@@ -224,7 +224,7 @@ export function InstallmentTable({
                   'text-sm font-semibold tabular-nums shrink-0',
                   isPendingOrOverdue && penaltyTotal > 0 ? 'text-amber-700' : 'text-charcoal'
                 )}>
-                  {formatCurrency(Number(inst.amount))}
+                  {formatCurrency(Number(inst.amount ?? 0))}
                 </span>
 
                 {/* Actions */}
@@ -283,7 +283,7 @@ export function InstallmentTable({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-baseline gap-2">
                           <span className="text-xs font-medium text-charcoal tabular-nums">
-                            {formatCurrency(Number(pr.amount))}
+                            {formatCurrency(Number(pr.amount ?? 0))}
                           </span>
                           <span className="text-[10px] text-mid">
                             {formatDateTime(pr.paidAt)}
@@ -295,16 +295,16 @@ export function InstallmentTable({
                         {/* Allocation breakdown */}
                         <div className="flex items-center gap-2 mt-0.5">
                           <span className="text-[10px] text-emerald-700 tabular-nums">
-                            Principal {formatCurrency(Number(pr.principalCovered))}
+                            Principal {formatCurrency(Number(pr.principalCovered ?? 0))}
                           </span>
-                          {Number(pr.interestCovered) > 0 && (
+                          {Number(pr.interestCovered ?? 0) > 0 && (
                             <span className="text-[10px] text-amber-700 tabular-nums">
-                              Juros {formatCurrency(Number(pr.interestCovered))}
+                              Juros {formatCurrency(Number(pr.interestCovered ?? 0))}
                             </span>
                           )}
-                          {Number(pr.fineCovered) > 0 && (
+                          {Number(pr.fineCovered ?? 0) > 0 && (
                             <span className="text-[10px] text-amber-700 tabular-nums">
-                              Multa {formatCurrency(Number(pr.fineCovered))}
+                              Multa {formatCurrency(Number(pr.fineCovered ?? 0))}
                             </span>
                           )}
                         </div>

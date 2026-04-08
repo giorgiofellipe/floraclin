@@ -269,6 +269,11 @@ export function AppointmentForm({
               patientId = result.data.id
             }
 
+            // Use bookingName as fallback display name for inline-created patients
+            const bookingName = showNewPatient && newPatientName.trim()
+              ? newPatientName.trim()
+              : undefined
+
             const data: Record<string, unknown> = {
               patientId,
               practitionerId,
@@ -276,6 +281,7 @@ export function AppointmentForm({
               date,
               startTime,
               endTime,
+              bookingName,
               notes: formData.get('notes') as string || undefined,
             }
 

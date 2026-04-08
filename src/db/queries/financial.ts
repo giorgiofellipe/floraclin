@@ -13,7 +13,7 @@ import {
   expenses,
   expenseInstallments,
 } from '@/db/schema'
-import { eq, and, isNull, sql, gte, lte, count, sum, desc, inArray, or } from 'drizzle-orm'
+import { eq, and, isNull, sql, count, sum, desc, inArray, or } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { createAuditLog } from '@/lib/audit'
 import {
@@ -264,8 +264,8 @@ export async function recordPayment(
         interestAmount,
       }
 
-      const totalDue = (installmentAmount - currentAmountPaid) + fineAmount + interestAmount
-      if (data.amount > totalDue + 0.01) {
+      const totalDue = Math.round(((installmentAmount - currentAmountPaid) + fineAmount + interestAmount) * 100) / 100
+      if (data.amount > totalDue + 0.02) {
         throw new Error('Valor do pagamento excede o total devido')
       }
 
@@ -886,11 +886,11 @@ export async function listFinancialEntries(
   }
 
   if (filters.dateFrom) {
-    conditions.push(gte(financialEntries.createdAt, new Date(filters.dateFrom)))
+    conditions.push(sql`${financialEntries.createdAt} >= ${filters.dateFrom}::timestamp`)
   }
 
   if (filters.dateTo) {
-    conditions.push(lte(financialEntries.createdAt, new Date(filters.dateTo)))
+    conditions.push(sql`${financialEntries.createdAt} <= ${filters.dateTo}::timestamp`)
   }
 
   // Payment method filter: entries that have at least one installment with this method
@@ -1183,8 +1183,8 @@ export async function getRevenueOverview(
   const entryConditions = [
     eq(financialEntries.tenantId, tenantId),
     isNull(financialEntries.deletedAt),
-    gte(financialEntries.createdAt, new Date(dateFrom)),
-    lte(financialEntries.createdAt, new Date(dateTo)),
+    sql`${financialEntries.createdAt} >= ${dateFrom}::timestamp`,
+    sql`${financialEntries.createdAt} <= ${dateTo}::timestamp`,
   ]
 
   // Summary: total received, pending, overdue
@@ -1212,8 +1212,8 @@ export async function getRevenueOverview(
         eq(installments.status, 'paid'),
         eq(financialEntries.tenantId, tenantId),
         isNull(financialEntries.deletedAt),
-        gte(installments.paidAt, new Date(dateFrom)),
-        lte(installments.paidAt, new Date(dateTo))
+        sql`${installments.paidAt} >= ${dateFrom}::timestamp`,
+        sql`${installments.paidAt} <= ${dateTo}::timestamp`
       )
     )
     .groupBy(sql`TO_CHAR(${installments.paidAt}, 'YYYY-MM')`)
@@ -1245,8 +1245,8 @@ export async function getRevenueOverview(
         eq(installments.status, 'paid'),
         eq(financialEntries.tenantId, tenantId),
         isNull(financialEntries.deletedAt),
-        gte(installments.paidAt, new Date(dateFrom)),
-        lte(installments.paidAt, new Date(dateTo))
+        sql`${installments.paidAt} >= ${dateFrom}::timestamp`,
+        sql`${installments.paidAt} <= ${dateTo}::timestamp`
       )
     )
     .groupBy(installments.paymentMethod)
@@ -1263,8 +1263,8 @@ export async function getRevenueOverview(
       and(
         eq(expenses.tenantId, tenantId),
         isNull(expenses.deletedAt),
-        gte(expenses.createdAt, new Date(dateFrom)),
-        lte(expenses.createdAt, new Date(dateTo))
+        sql`${expenses.createdAt} >= ${dateFrom}::timestamp`,
+        sql`${expenses.createdAt} <= ${dateTo}::timestamp`
       )
     )
 

@@ -47,6 +47,9 @@ interface AppointmentCardProps {
 export function AppointmentCard({ appointment, compact = false, showPractitioner = false, onClick }: AppointmentCardProps) {
   const statusColor = APPOINTMENT_STATUS_COLORS[appointment.status] ?? 'bg-[#F0F7F1] text-sage'
   const displayName = appointment.patientName ?? appointment.bookingName ?? 'Sem paciente'
+  const displayText = appointment.procedureTypeName
+    ? `${displayName} · ${appointment.procedureTypeName}`
+    : displayName
   const timeStr = `${appointment.startTime.slice(0, 5)} - ${appointment.endTime.slice(0, 5)}`
   const practitionerBorder = getPractitionerColor(appointment.practitionerId)
 
@@ -56,7 +59,7 @@ export function AppointmentCard({ appointment, compact = false, showPractitioner
         type="button"
         data-testid={`appointment-card-${appointment.id}`}
         onClick={(e) => onClick?.(appointment, e)}
-        title={`${timeStr} · ${displayName} · ${appointment.practitionerName}`}
+        title={`${timeStr} · ${displayText} · ${appointment.practitionerName}`}
         className={cn(
           'w-full h-full rounded-[3px] border-l-[3px] px-1.5 py-0.5 text-left text-[10px] leading-tight transition-colors duration-150 overflow-hidden',
           statusColor,
@@ -64,7 +67,7 @@ export function AppointmentCard({ appointment, compact = false, showPractitioner
         )}
       >
         <span className="font-semibold">{appointment.startTime.slice(0, 5)}</span>{' '}
-        <span className="truncate">{displayName}</span>
+        <span className="truncate">{displayText}</span>
       </button>
     )
   }
