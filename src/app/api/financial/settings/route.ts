@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireRole } from '@/lib/auth'
+import { getAuthContext, requireRole } from '@/lib/auth'
 import {
   getFinancialSettings,
   updateFinancialSettings,
@@ -9,7 +9,7 @@ import { updateFinancialSettingsSchema } from '@/validations/financial-settings'
 
 export async function GET() {
   try {
-    const ctx = await requireRole('owner', 'financial')
+    const ctx = await getAuthContext()
 
     const [settings, categories] = await Promise.all([
       getFinancialSettings(ctx.tenantId),

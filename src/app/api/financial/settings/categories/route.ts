@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireRole } from '@/lib/auth'
+import { getAuthContext, requireRole } from '@/lib/auth'
 import {
   getExpenseCategories,
   createExpenseCategory,
@@ -8,7 +8,7 @@ import { expenseCategorySchema } from '@/validations/expenses'
 
 export async function GET() {
   try {
-    const ctx = await requireRole('owner', 'financial')
+    const ctx = await getAuthContext()
 
     const categories = await getExpenseCategories(ctx.tenantId)
 
