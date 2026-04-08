@@ -53,9 +53,11 @@ interface PatientFormProps {
   patient?: Patient | null
   /** When true, renders the form inline (no Sheet wrapper) */
   inline?: boolean
+  /** Pre-fill data for new patient (from booking link) */
+  prefill?: { fullName?: string; phone?: string }
 }
 
-export function PatientForm({ open, onOpenChange, patient, inline }: PatientFormProps) {
+export function PatientForm({ open, onOpenChange, patient, inline, prefill }: PatientFormProps) {
   const router = useRouter()
   const [serverError, setServerError] = useState<string | null>(null)
   const [addressOpen, setAddressOpen] = useState(false)
@@ -68,8 +70,8 @@ export function PatientForm({ open, onOpenChange, patient, inline }: PatientForm
   const address = patient?.address as Record<string, string> | null | undefined
 
   const patientDefaults = useMemo<CreatePatientInput>(() => ({
-    fullName: patient?.fullName ?? '',
-    phone: patient?.phone ?? '',
+    fullName: patient?.fullName ?? prefill?.fullName ?? '',
+    phone: patient?.phone ?? prefill?.phone ?? '',
     cpf: patient?.cpf ?? '',
     birthDate: patient?.birthDate ?? '',
     gender: patient?.gender ?? '',

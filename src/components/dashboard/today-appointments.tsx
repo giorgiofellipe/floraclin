@@ -68,7 +68,7 @@ export function TodayAppointments({ appointments }: TodayAppointmentsProps) {
               STATUS_BORDER_COLORS[appt.status] ?? 'border-l-[#D0D0D0]'
             const href = appt.patientId
               ? `/pacientes/${appt.patientId}`
-              : '#'
+              : `/pacientes?novo=1&nome=${encodeURIComponent(appt.bookingName ?? '')}&telefone=${encodeURIComponent(appt.bookingPhone ?? '')}`
 
             const timeStr = appt.startTime.slice(0, 5).replace(':', 'h')
 

@@ -41,8 +41,14 @@ export function PatientList({ result, search: initialSearch = '', isFetching = f
   const searchParams = useSearchParams()
   const deletePatientMutation = useDeletePatient()
   const [searchValue, setSearchValue] = useState(initialSearch)
-  const [formOpen, setFormOpen] = useState(false)
+  const novoParam = searchParams.get('novo')
+  const nomeParam = searchParams.get('nome')
+  const telefoneParam = searchParams.get('telefone')
+  const [formOpen, setFormOpen] = useState(novoParam === '1')
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null)
+  const [prefillData] = useState(
+    novoParam === '1' ? { fullName: nomeParam ?? '', phone: telefoneParam ?? '' } : null
+  )
   const [deletePatient, setDeletePatient] = useState<Patient | null>(null)
   const isPending = deletePatientMutation.isPending
 
@@ -255,6 +261,7 @@ export function PatientList({ result, search: initialSearch = '', isFetching = f
           if (!open) setEditingPatient(null)
         }}
         patient={editingPatient}
+        prefill={prefillData ?? undefined}
       />
 
       {/* Delete confirmation dialog */}

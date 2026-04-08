@@ -26,6 +26,7 @@ export interface TodayAppointment {
   patientId: string | null
   patientName: string | null
   bookingName: string | null
+  bookingPhone: string | null
   procedureTypeName: string | null
   startTime: string
   endTime: string
@@ -80,6 +81,7 @@ export async function getTodayAppointments(
       patientId: appointments.patientId,
       patientName: patients.fullName,
       bookingName: appointments.bookingName,
+      bookingPhone: appointments.bookingPhone,
       procedureTypeName: procedureTypes.name,
       startTime: appointments.startTime,
       endTime: appointments.endTime,
