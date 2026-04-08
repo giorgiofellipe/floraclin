@@ -2,7 +2,7 @@ import { db } from '@/db/client'
 import { tenants, users, tenantUsers, patients, financialEntries } from '@/db/schema'
 import { eq, and, ilike, or, sql, desc, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { sendInviteEmail } from '@/lib/email'
 import type { PaginatedResult } from '@/types'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -114,62 +114,41 @@ export async function createTenantWithOwner(data: {
       .replace(/\s+/g, '-')
       .replace(/[^a-z0-9-]/g, '')
 
-  return withTransaction(async (tx) => {
-    // 1. Get or create user — check local DB first, invite via Supabase if new
-    const admin = createAdminClient()
+  const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/login`
 
+  return withTransaction(async (tx) => {
+    // 1. Check if user already exists in our DB
     const [existingDbUser] = await tx
       .select({ id: users.id })
       .from(users)
       .where(eq(users.email, data.ownerEmail.toLowerCase()))
       .limit(1)
 
-    let authUserId: string
+    let userId: string
 
     if (existingDbUser) {
-      authUserId = existingDbUser.id
+      userId = existingDbUser.id
     } else {
-      // Try to invite — if already in Supabase Auth, look them up
-      const { data: invited, error } =
-        await admin.auth.admin.inviteUserByEmail(data.ownerEmail)
-      if (error) {
-        if (error.message?.includes('already been registered')) {
-          // User exists in Supabase Auth but not in our users table
-          // List users and find by email (paginated search)
-          const { data: listData } = await admin.auth.admin.listUsers({ perPage: 50 })
-          const match = listData?.users?.find(
-            (u) => u.email?.toLowerCase() === data.ownerEmail.toLowerCase()
-          )
-          if (match) {
-            authUserId = match.id
-          } else {
-            throw new Error('Usuário já existe mas não foi possível encontrá-lo. Tente novamente.')
-          }
-        } else {
-          throw new Error(`Falha ao convidar usuário: ${error.message}`)
-        }
-      } else if (!invited.user) {
-        throw new Error('Falha ao convidar usuário: resposta inválida')
-      } else {
-        authUserId = invited.user.id
-      }
+      // New user — generate UUID and insert directly (no password; they'll use magic link)
+      userId = crypto.randomUUID()
+
+      await tx.insert(users).values({
+        id: userId,
+        fullName: data.ownerName,
+        email: data.ownerEmail.toLowerCase(),
+      })
     }
 
-    // 2. Upsert user row
-    await tx
-      .insert(users)
-      .values({
-        id: authUserId,
-        fullName: data.ownerName,
-        email: data.ownerEmail,
-      })
-      .onConflictDoUpdate({
-        target: users.id,
-        set: {
+    // 2. Update user name if they already existed
+    if (existingDbUser) {
+      await tx
+        .update(users)
+        .set({
           fullName: data.ownerName,
           updatedAt: new Date(),
-        },
-      })
+        })
+        .where(eq(users.id, userId))
+    }
 
     // 3. Insert tenant
     const [tenant] = await tx
@@ -183,9 +162,14 @@ export async function createTenantWithOwner(data: {
     // 4. Insert tenant_users (owner)
     await tx.insert(tenantUsers).values({
       tenantId: tenant.id,
-      userId: authUserId,
+      userId,
       role: 'owner',
       isActive: true,
+    })
+
+    // 5. Send invite email (outside transaction is fine — fire-and-forget)
+    sendInviteEmail(data.ownerEmail, loginUrl, data.name).catch(() => {
+      // Email delivery failure should not break tenant creation
     })
 
     return tenant
