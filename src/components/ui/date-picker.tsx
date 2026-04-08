@@ -82,10 +82,13 @@ function DatePicker({
 
   const [viewMonth, setViewMonth] = React.useState<Date>(selected ?? new Date())
 
-  // Sync viewMonth when value changes externally
+  // Sync viewMonth when value changes externally (depend on string, not Date object)
   React.useEffect(() => {
-    if (selected) setViewMonth(selected)
-  }, [selected])
+    if (value) {
+      const d = parseDate(value)
+      if (d) setViewMonth(d)
+    }
+  }, [value])
 
   const yearItems = React.useMemo(() => {
     const items: Record<string, string> = {}
