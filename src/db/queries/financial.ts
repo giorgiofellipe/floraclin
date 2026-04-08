@@ -974,27 +974,28 @@ export async function listFinancialEntries(
           SELECT SUM(
             CASE
               WHEN i.status = 'pending' AND i.due_date < CURRENT_DATE
-                AND i.fine_amount::numeric = 0 AND i.applied_fine_value IS NOT NULL
-              THEN i.amount::numeric * i.applied_fine_value::numeric / 100
+                AND i.fine_amount::numeric = 0
+              THEN i.amount::numeric * COALESCE(i.applied_fine_value, fs.fine_value, 2)::numeric / 100
               ELSE i.fine_amount::numeric
             END
           )
           FROM floraclin.installments i
+          LEFT JOIN floraclin.financial_settings fs ON fs.tenant_id = ${financialEntries.tenantId}
           WHERE i.financial_entry_id = ${financialEntries.id}
         ), 0)`,
         totalInterestAmount: sql<number>`COALESCE((
           SELECT SUM(
             CASE
               WHEN i.status = 'pending' AND i.due_date < CURRENT_DATE
-                AND i.applied_interest_rate IS NOT NULL
               THEN (i.amount::numeric - i.amount_paid::numeric)
-                * i.applied_interest_rate::numeric / 100
+                * COALESCE(i.applied_interest_rate, fs.monthly_interest_percent, 1)::numeric / 100
                 * GREATEST(0, (CURRENT_DATE - i.due_date::date))
                 / 30
               ELSE i.interest_amount::numeric
             END
           )
           FROM floraclin.installments i
+          LEFT JOIN floraclin.financial_settings fs ON fs.tenant_id = ${financialEntries.tenantId}
           WHERE i.financial_entry_id = ${financialEntries.id}
         ), 0)`,
         totalAmountPaid: sql<number>`COALESCE((
@@ -1128,9 +1129,14 @@ export async function getFinancialEntry(tenantId: string, entryId: string) {
     const storedFine = Number(inst.fineAmount ?? 0)
 
     // Calculate current interest and fine on the fly for pending installments
+    // Use tenant settings as fallback when penalty rates haven't been snapshotted yet
+    const effectiveInterestRate = Number(inst.appliedInterestRate ?? settings?.monthlyInterestPercent ?? 0)
+    const effectiveFineValue = Number(inst.appliedFineValue ?? settings?.fineValue ?? 0)
+    const effectiveFineType = inst.appliedFineType ?? settings?.fineType ?? 'percentage'
+
     let currentInterest = Number(inst.interestAmount ?? 0)
     let currentFine = storedFine
-    if (inst.status === 'pending' && inst.appliedInterestRate != null) {
+    if (inst.status === 'pending' && effectiveInterestRate > 0) {
       const daysOverdue = getDaysOverdue(
         inst.lastFineInterestCalcAt
           ? new Date(inst.lastFineInterestCalcAt).toISOString()
@@ -1141,14 +1147,14 @@ export async function getFinancialEntry(tenantId: string, entryId: string) {
         currentInterest = calculateInterest(
           amount - amountPaid,
           daysOverdue,
-          Number(inst.appliedInterestRate)
+          effectiveInterestRate
         )
         // Compute fine for display if not yet stored (applied on first payment)
-        if (storedFine === 0 && inst.appliedFineValue != null) {
+        if (storedFine === 0 && effectiveFineValue > 0) {
           currentFine = calculateFine(
             amount,
-            inst.appliedFineType ?? 'percentage',
-            Number(inst.appliedFineValue)
+            effectiveFineType,
+            effectiveFineValue
           )
         }
       }
