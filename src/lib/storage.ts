@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createStorageClient } from '@/lib/supabase/storage-client'
 
 const BUCKET_NAME = 'floraclin'
 
@@ -10,7 +10,7 @@ export async function uploadFile(
   path: string,
   file: File
 ): Promise<{ path: string; error: string | null }> {
-  const supabase = await createClient()
+  const supabase = createStorageClient()
 
   const { data, error } = await supabase.storage
     .from(BUCKET_NAME)
@@ -27,7 +27,7 @@ export async function uploadFile(
 }
 
 export async function getSignedUrl(path: string, expiresIn = 900): Promise<string | null> {
-  const supabase = await createClient()
+  const supabase = createStorageClient()
 
   const { data, error } = await supabase.storage
     .from(BUCKET_NAME)
@@ -38,6 +38,6 @@ export async function getSignedUrl(path: string, expiresIn = 900): Promise<strin
 }
 
 export async function deleteFile(path: string): Promise<void> {
-  const supabase = await createClient()
+  const supabase = createStorageClient()
   await supabase.storage.from(BUCKET_NAME).remove([path])
 }
