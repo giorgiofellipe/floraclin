@@ -989,7 +989,7 @@ export async function listFinancialEntries(
                 AND i.applied_interest_rate IS NOT NULL
               THEN (i.amount::numeric - i.amount_paid::numeric)
                 * i.applied_interest_rate::numeric / 100
-                * GREATEST(0, EXTRACT(DAY FROM (CURRENT_DATE - i.due_date::date)))
+                * GREATEST(0, (CURRENT_DATE - i.due_date::date))
                 / 30
               ELSE i.interest_amount::numeric
             END
