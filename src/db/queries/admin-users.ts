@@ -1,7 +1,8 @@
+import crypto from 'crypto'
 import { db } from '@/db/client'
-import { tenants, users, tenantUsers } from '@/db/schema'
+import { tenants, users, tenantUsers, verificationTokens } from '@/db/schema'
 import { eq, and, ilike, or, sql, desc, count } from 'drizzle-orm'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { sendInviteEmail, sendPasswordResetEmail } from '@/lib/email'
 import type { PaginatedResult } from '@/types'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -107,70 +108,52 @@ export async function createUserWithMembership(data: {
   tenantId: string
   role: string
 }) {
-  const admin = createAdminClient()
+  const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/login`
 
-  // Check our DB first to find existing user (avoids fetching all Supabase users)
+  // Check if user already exists in our DB
   const [existingDbUser] = await db
     .select({ id: users.id })
     .from(users)
     .where(eq(users.email, data.email.toLowerCase()))
     .limit(1)
-  const existingAuthUser = existingDbUser ?? null
 
-  let authUserId: string
+  let userId: string
 
-  if (existingAuthUser) {
-    authUserId = existingAuthUser.id
+  if (existingDbUser) {
+    userId = existingDbUser.id
   } else {
-    const { data: invited, error } =
-      await admin.auth.admin.inviteUserByEmail(data.email)
-    if (error) {
-      if (error.message?.includes('already been registered')) {
-        // User exists in Supabase Auth but not in our users table
-        const { data: listData } = await admin.auth.admin.listUsers({ perPage: 50 })
-        const match = listData?.users?.find(
-          (u) => u.email?.toLowerCase() === data.email.toLowerCase()
-        )
-        if (match) {
-          authUserId = match.id
-        } else {
-          throw new Error('Usuário já existe mas não foi possível encontrá-lo. Tente novamente.')
-        }
-      } else {
-        throw new Error(`Falha ao convidar usuário: ${error.message}`)
-      }
-    } else if (!invited.user) {
-      throw new Error('Falha ao convidar usuário: resposta inválida')
-    } else {
-      authUserId = invited.user.id
-    }
-  }
+    // New user — generate UUID and insert directly (no password; they'll use magic link)
+    userId = crypto.randomUUID()
 
-  // Upsert user row
-  const [user] = await db
-    .insert(users)
-    .values({
-      id: authUserId,
+    await db.insert(users).values({
+      id: userId,
       fullName: data.fullName,
-      email: data.email,
+      email: data.email.toLowerCase(),
       phone: data.phone ?? null,
     })
-    .onConflictDoUpdate({
-      target: users.id,
-      set: {
+
+    // Send invite email
+    await sendInviteEmail(data.email, loginUrl)
+  }
+
+  // Upsert user row (update name/phone if user already existed)
+  if (existingDbUser) {
+    await db
+      .update(users)
+      .set({
         fullName: data.fullName,
         phone: data.phone ?? null,
         updatedAt: new Date(),
-      },
-    })
-    .returning()
+      })
+      .where(eq(users.id, userId))
+  }
 
   // Insert tenant_users (reactivate if already exists but inactive)
   await db
     .insert(tenantUsers)
     .values({
       tenantId: data.tenantId,
-      userId: authUserId,
+      userId,
       role: data.role,
       isActive: true,
     })
@@ -182,6 +165,12 @@ export async function createUserWithMembership(data: {
         updatedAt: new Date(),
       },
     })
+
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1)
 
   return user
 }
@@ -306,17 +295,32 @@ export async function removeUserMembership(
 // ─── Reset user password ────────────────────────────────────────────
 
 export async function resetUserPassword(email: string) {
-  const admin = createAdminClient()
+  const normalizedEmail = email.toLowerCase()
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL
-    ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
-  const { error } = await admin.auth.resetPasswordForEmail(email, {
-    redirectTo: `${appUrl}/reset-password`,
+  // Generate token — store hash, send raw
+  const rawToken = crypto.randomBytes(32).toString('hex')
+  const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex')
+  const expires = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+
+  // Delete any existing tokens for this email
+  await db
+    .delete(verificationTokens)
+    .where(eq(verificationTokens.identifier, normalizedEmail))
+
+  // Insert hashed token
+  await db.insert(verificationTokens).values({
+    identifier: normalizedEmail,
+    token: hashedToken,
+    expires,
   })
 
-  if (error) {
-    throw new Error(`Falha ao enviar e-mail de recuperação: ${error.message}`)
-  }
+  // Send email with the raw token
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL
+    ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
+  const resetUrl = `${appUrl}/reset-password?token=${rawToken}&email=${encodeURIComponent(normalizedEmail)}`
+
+  await sendPasswordResetEmail(normalizedEmail, resetUrl)
 
   return { success: true }
 }

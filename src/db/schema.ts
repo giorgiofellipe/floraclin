@@ -26,6 +26,8 @@ export const users = floraclinSchema.table('users', {
   fullName: varchar('full_name', { length: 255 }).notNull(),
   phone: varchar('phone', { length: 20 }),
   avatarUrl: text('avatar_url'),
+  passwordHash: text('password_hash'),
+  emailVerified: timestamp('email_verified', { withTimezone: true }),
   isPlatformAdmin: boolean('is_platform_admin').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -539,6 +541,39 @@ export const auditLogs = floraclinSchema.table('audit_logs', {
   index('idx_audit_logs_tenant').on(table.tenantId, table.createdAt),
   index('idx_audit_logs_entity').on(table.entityType, table.entityId),
 ])
+
+// ─── AUTH.js ────────────────────────────────────────────────────────
+
+// Note: sessions table is unused at runtime (JWT strategy handles session state),
+// but DrizzleAdapter requires it in its config. Keep the definition for the adapter.
+export const sessions = floraclinSchema.table('sessions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  sessionToken: varchar('session_token', { length: 255 }).notNull().unique(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  expires: timestamp('expires', { withTimezone: true }).notNull(),
+})
+
+export const accounts = floraclinSchema.table('accounts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  type: varchar('type', { length: 255 }).notNull(),
+  provider: varchar('provider', { length: 255 }).notNull(),
+  providerAccountId: varchar('provider_account_id', { length: 255 }).notNull(),
+  accessToken: text('access_token'),
+  refreshToken: text('refresh_token'),
+  tokenType: varchar('token_type', { length: 255 }),
+  scope: varchar('scope', { length: 255 }),
+  idToken: text('id_token'),
+  expiresAt: integer('expires_at'),
+}, (table) => [
+  index('idx_accounts_provider_account').on(table.provider, table.providerAccountId),
+])
+
+export const verificationTokens = floraclinSchema.table('verification_tokens', {
+  identifier: varchar('identifier', { length: 255 }).notNull(),
+  token: varchar('token', { length: 255 }).notNull().unique(),
+  expires: timestamp('expires', { withTimezone: true }).notNull(),
+})
 
 // ─── RELATIONS ───────────────────────────────────────────────────────
 

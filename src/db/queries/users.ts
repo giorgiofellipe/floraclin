@@ -1,8 +1,8 @@
 import { db } from '@/db/client'
-import { users, tenantUsers } from '@/db/schema'
+import { users, tenantUsers, tenants } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { sendInviteEmail } from '@/lib/email'
 import type { InviteUserInput } from '@/validations/user'
 import type { Role } from '@/types'
 
@@ -52,27 +52,18 @@ export async function inviteUser(
   tenantId: string,
   data: InviteUserInput
 ): Promise<{ success: boolean; error?: string }> {
-  const adminClient = createAdminClient()
+  try {
+    // Step 1: Look up existing user by email
+    const [existingUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, data.email))
+      .limit(1)
 
-  // Step 1: Invite user via Supabase Auth (creates auth user + sends invite email)
-  const { data: authData, error: authError } = await adminClient.auth.admin.inviteUserByEmail(
-    data.email,
-    {
-      data: {
-        full_name: data.fullName,
-      },
-    }
-  )
+    let userId: string
 
-  if (authError) {
-    // If user already exists in auth, try to get the existing user
-    if (authError.message?.includes('already been registered') || authError.message?.includes('already exists')) {
-      const { data: existingUsers } = await adminClient.auth.admin.listUsers()
-      const existingUser = existingUsers?.users?.find(u => u.email === data.email)
-
-      if (!existingUser) {
-        return { success: false, error: `Erro ao convidar usuário: ${authError.message}` }
-      }
+    if (existingUser) {
+      userId = existingUser.id
 
       // Check if already a member of this tenant
       const [existingMembership] = await db
@@ -81,7 +72,7 @@ export async function inviteUser(
         .where(
           and(
             eq(tenantUsers.tenantId, tenantId),
-            eq(tenantUsers.userId, existingUser.id)
+            eq(tenantUsers.userId, userId)
           )
         )
         .limit(1)
@@ -93,84 +84,51 @@ export async function inviteUser(
             .update(tenantUsers)
             .set({ isActive: true, role: data.role, updatedAt: new Date() })
             .where(eq(tenantUsers.id, existingMembership.id))
-          return { success: true }
+        } else {
+          return { success: false, error: 'Usuário já é membro desta clínica' }
         }
-        return { success: false, error: 'Usuário já é membro desta clínica' }
-      }
-
-      // User exists in auth but not in this tenant — add them
-      try {
-        await withTransaction(async (tx) => {
-          // Ensure users record exists
-          const [existingDbUser] = await tx
-            .select()
-            .from(users)
-            .where(eq(users.id, existingUser.id))
-            .limit(1)
-
-          if (!existingDbUser) {
-            await tx.insert(users).values({
-              id: existingUser.id,
-              email: data.email,
-              fullName: data.fullName,
-            })
-          }
-
-          await tx.insert(tenantUsers).values({
-            tenantId,
-            userId: existingUser.id,
-            role: data.role,
-          })
+      } else {
+        // Existing user, new tenant membership
+        await db.insert(tenantUsers).values({
+          tenantId,
+          userId,
+          role: data.role,
         })
-        return { success: true }
-      } catch (dbError) {
-        console.error('Failed to add existing user to tenant after auth lookup:', dbError)
-        return { success: false, error: 'Erro ao vincular usuário à clínica' }
       }
+    } else {
+      // Step 2: New user — generate ID and create records in a transaction
+      userId = crypto.randomUUID()
+
+      await withTransaction(async (tx) => {
+        await tx.insert(users).values({
+          id: userId,
+          email: data.email,
+          fullName: data.fullName,
+        })
+
+        await tx.insert(tenantUsers).values({
+          tenantId,
+          userId,
+          role: data.role,
+        })
+      })
     }
 
-    return { success: false, error: `Erro ao convidar usuário: ${authError.message}` }
+    // Step 3: Get clinic name and send invite email
+    const [tenant] = await db
+      .select({ name: tenants.name })
+      .from(tenants)
+      .where(eq(tenants.id, tenantId))
+      .limit(1)
+
+    const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.floraclin.com.br'}/login`
+    await sendInviteEmail(data.email, loginUrl, tenant?.name)
+
+    return { success: true }
+  } catch (error) {
+    console.error('Failed to invite user:', error)
+    return { success: false, error: 'Erro ao convidar usuário' }
   }
-
-  if (!authData.user) {
-    return { success: false, error: 'Erro inesperado ao criar usuário' }
-  }
-
-  // Step 2: Create DB records in transaction
-  try {
-    await withTransaction(async (tx) => {
-      // Create users record
-      await tx.insert(users).values({
-        id: authData.user.id,
-        email: data.email,
-        fullName: data.fullName,
-      })
-
-      // Create tenant_users record
-      await tx.insert(tenantUsers).values({
-        tenantId,
-        userId: authData.user.id,
-        role: data.role,
-      })
-    })
-  } catch (dbError) {
-    // Auth user was created but DB insert failed — log the error
-    // Auth user can be re-linked on retry
-    console.error(
-      'CRITICAL: Auth user created but DB insert failed. Auth user ID:',
-      authData.user.id,
-      'Email:',
-      data.email,
-      'Error:',
-      dbError
-    )
-    return {
-      success: false,
-      error: 'Usuário criado no sistema de autenticação, mas houve erro ao vincular à clínica. Tente novamente.',
-    }
-  }
-
-  return { success: true }
 }
 
 export async function updateUserRole(

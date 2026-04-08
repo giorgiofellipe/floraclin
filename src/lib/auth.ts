@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
-import { createClient } from '@/lib/supabase/server'
+import { auth } from '@/lib/auth-config'
 import { db } from '@/db/client'
 import { tenantUsers, users, tenants } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
@@ -9,7 +9,7 @@ import type { AuthContext, Role } from '@/types'
 const TENANT_COOKIE = 'floraclin_tenant_id'
 
 export async function getAuthContext(): Promise<AuthContext> {
-  // Test auth bypass: use TEST_USER_ID env var instead of Supabase auth
+  // Test auth bypass: use TEST_USER_ID env var instead of Auth.js session
   // Double guard: env var AND not production
   const testUserId =
     process.env.TEST_AUTH_BYPASS_ENABLED === 'true' && process.env.NODE_ENV !== 'production'
@@ -21,9 +21,9 @@ export async function getAuthContext(): Promise<AuthContext> {
   if (testUserId) {
     userId = testUserId
   } else {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
+    const session = await auth()
+    const user = session?.user
+    if (!user?.id) {
       redirect('/login')
     }
     userId = user.id
