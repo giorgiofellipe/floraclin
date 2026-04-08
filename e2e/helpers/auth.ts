@@ -1,33 +1,35 @@
 import type { Page } from '@playwright/test'
 
-export async function loginAsAdmin(page: Page) {
-  await page.goto('/login')
-  await page.getByTestId('login-email').waitFor({ state: 'visible', timeout: 10000 })
-  await page.getByTestId('login-email').fill('admin@floraclin.com.br')
-  await page.getByTestId('login-password').fill('Admin@123')
-  await page.getByTestId('login-submit').click()
-
-  // After login, the app may redirect to /dashboard or /onboarding
-  // (depending on whether the tenant has completed onboarding).
-  // Accept either destination as a successful login.
+/**
+ * Navigate to the app as the test user.
+ *
+ * In test mode (TEST_AUTH_BYPASS_ENABLED=true), the middleware bypasses
+ * Supabase auth using the x-test-user-id header (set via playwright
+ * config's extraHTTPHeaders). No actual login form submission needed —
+ * just navigate to /dashboard and the middleware lets us through.
+ *
+ * The app will redirect to /onboarding if the test tenant hasn't
+ * completed onboarding, or /dashboard if it has.
+ */
+export async function loginAsTestUser(page: Page) {
+  await page.goto('/dashboard')
   await page.waitForURL(/\/(dashboard|onboarding)/, { timeout: 30000 })
-
-  // If we landed on onboarding, that's fine — login succeeded.
-  // Tests that need the dashboard should navigate explicitly.
 }
 
 /**
- * Login and ensure we end up on /dashboard.
- * If onboarding hasn't been completed, navigate to /dashboard directly
- * (the redirect loop is handled by accepting the final URL).
+ * Navigate to dashboard. If redirected to onboarding, that's fine —
+ * means the test tenant hasn't completed onboarding yet.
  */
 export async function loginAndGoToDashboard(page: Page) {
-  await loginAsAdmin(page)
+  await loginAsTestUser(page)
 
-  // If redirected to onboarding, try navigating to dashboard anyway
   if (page.url().includes('/onboarding')) {
+    // Tenant hasn't completed onboarding — tests that need dashboard
+    // should handle this by completing onboarding first or skipping
     await page.goto('/dashboard')
-    // May redirect back to /onboarding — accept either
     await page.waitForURL(/\/(dashboard|onboarding)/, { timeout: 10000 })
   }
 }
+
+// Legacy alias
+export const loginAsAdmin = loginAsTestUser

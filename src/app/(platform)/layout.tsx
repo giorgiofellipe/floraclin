@@ -19,8 +19,9 @@ export default async function PlatformLayout({ children }: { children: React.Rea
   ])
 
   // Enforce onboarding completion before accessing platform
+  // Skip redirect for platform admins — they can access any tenant regardless of onboarding status
   const settings = (tenant?.settings as Record<string, unknown>) ?? {}
-  if (!settings.onboarding_completed) {
+  if (!settings.onboarding_completed && !auth.isPlatformAdmin) {
     redirect('/onboarding')
   }
 
@@ -30,6 +31,15 @@ export default async function PlatformLayout({ children }: { children: React.Rea
     tenantName: t.tenantName,
   }))
 
+  // Detect impersonation: admin's active tenant differs from their own first membership
+  let impersonatingTenantName: string | undefined
+  if (auth.isPlatformAdmin && userTenants.length > 0) {
+    const ownTenantIds = userTenants.map((t) => t.tenantId)
+    if (!ownTenantIds.includes(auth.tenantId)) {
+      impersonatingTenantName = tenant?.name ?? undefined
+    }
+  }
+
   return (
     <div className="min-h-screen bg-[#F4F6F8]">
       <Sidebar
@@ -38,6 +48,8 @@ export default async function PlatformLayout({ children }: { children: React.Rea
         userRole="HOF"
         tenants={tenantOptions}
         activeTenantId={auth.tenantId}
+        isPlatformAdmin={auth.isPlatformAdmin}
+        impersonatingTenantName={impersonatingTenantName}
       />
       <div className="md:pl-[200px]">
         <Header
@@ -46,6 +58,8 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           clinicName={tenant?.name ?? 'FloraClin'}
           tenants={tenantOptions}
           activeTenantId={auth.tenantId}
+          isPlatformAdmin={auth.isPlatformAdmin}
+          impersonatingTenantName={impersonatingTenantName}
         />
         <main className="p-6">{children}</main>
       </div>

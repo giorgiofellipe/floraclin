@@ -36,6 +36,7 @@ export interface AuthContext {
   role: Role
   email: string
   fullName: string
+  isPlatformAdmin: boolean
 }
 
 export interface PaginationParams {

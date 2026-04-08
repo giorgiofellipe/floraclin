@@ -38,6 +38,12 @@ function getPageTitle(pathname: string): { title: string; subtitle?: string } {
   if (pathname === '/configuracoes') {
     return { title: 'Configura\u00e7\u00f5es' }
   }
+  if (pathname === '/admin/clinicas') {
+    return { title: 'Cl\u00ednicas' }
+  }
+  if (pathname === '/admin/usuarios') {
+    return { title: 'Usu\u00e1rios' }
+  }
   return { title: '' }
 }
 
@@ -47,9 +53,11 @@ interface HeaderProps {
   clinicName?: string
   tenants?: TenantOption[]
   activeTenantId?: string
+  isPlatformAdmin?: boolean
+  impersonatingTenantName?: string
 }
 
-export function Header({ userName, userEmail, clinicName, tenants, activeTenantId }: HeaderProps) {
+export function Header({ userName, userEmail, clinicName, tenants, activeTenantId, isPlatformAdmin, impersonatingTenantName }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const pathname = usePathname()
   const { title, subtitle } = getPageTitle(pathname)
@@ -61,6 +69,23 @@ export function Header({ userName, userEmail, clinicName, tenants, activeTenantI
 
   return (
     <>
+      {impersonatingTenantName && (
+        <div className="flex items-center justify-between px-4 py-1.5 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs">
+          <span>
+            Visualizando como <strong>{impersonatingTenantName}</strong>
+          </span>
+          <button
+            type="button"
+            className="rounded px-2 py-0.5 text-xs font-medium hover:bg-amber-100 transition-colors"
+            onClick={async () => {
+              await fetch('/api/admin/impersonate/clear', { method: 'POST' })
+              window.location.reload()
+            }}
+          >
+            Encerrar
+          </button>
+        </div>
+      )}
       <header
         className="sticky top-0 z-10 flex h-[52px] items-center justify-between border-b border-[#E8ECEF] bg-white px-4 md:px-6"
         data-testid="header"
@@ -112,6 +137,8 @@ export function Header({ userName, userEmail, clinicName, tenants, activeTenantI
             userName={userName}
             tenants={tenants}
             activeTenantId={activeTenantId}
+            isPlatformAdmin={isPlatformAdmin}
+            impersonatingTenantName={impersonatingTenantName}
           />
         </SheetContent>
       </Sheet>

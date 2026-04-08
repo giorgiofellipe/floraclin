@@ -75,4 +75,16 @@ export const queryKeys = {
     all: ['audit'] as const,
     logs: (filters?: Record<string, unknown>) => ['audit', 'logs', filters] as const,
   },
+  admin: {
+    tenants: {
+      all: ['admin', 'tenants'] as const,
+      list: (search: string, page: number) => ['admin', 'tenants', 'list', search, page] as const,
+      detail: (id: string) => ['admin', 'tenants', 'detail', id] as const,
+    },
+    users: {
+      all: ['admin', 'users'] as const,
+      list: (search: string, page: number) => ['admin', 'users', 'list', search, page] as const,
+      detail: (id: string) => ['admin', 'users', 'detail', id] as const,
+    },
+  },
 } as const

@@ -9,11 +9,24 @@ import type { AuthContext, Role } from '@/types'
 const TENANT_COOKIE = 'floraclin_tenant_id'
 
 export async function getAuthContext(): Promise<AuthContext> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // Test auth bypass: use TEST_USER_ID env var instead of Supabase auth
+  // Double guard: env var AND not production
+  const testUserId =
+    process.env.TEST_AUTH_BYPASS_ENABLED === 'true' && process.env.NODE_ENV !== 'production'
+      ? process.env.TEST_USER_ID
+      : null
 
-  if (!user) {
-    redirect('/login')
+  let userId: string
+
+  if (testUserId) {
+    userId = testUserId
+  } else {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      redirect('/login')
+    }
+    userId = user.id
   }
 
   // Get ALL tenants for this user
@@ -23,33 +36,61 @@ export async function getAuthContext(): Promise<AuthContext> {
       role: tenantUsers.role,
       fullName: users.fullName,
       email: users.email,
+      isPlatformAdmin: users.isPlatformAdmin,
     })
     .from(tenantUsers)
     .innerJoin(users, eq(users.id, tenantUsers.userId))
     .where(
       and(
-        eq(tenantUsers.userId, user.id),
+        eq(tenantUsers.userId, userId),
         eq(tenantUsers.isActive, true)
       )
     )
 
-  if (memberships.length === 0) {
+  const isPlatformAdmin = !!memberships[0]?.isPlatformAdmin
+
+  if (memberships.length === 0 && !isPlatformAdmin) {
     redirect('/login')
   }
 
-  // Resolve active tenant: cookie → first membership
+  // Resolve active tenant: cookie → first membership (or any tenant for platform admins)
   const cookieStore = await cookies()
   const selectedTenantId = cookieStore.get(TENANT_COOKIE)?.value
 
-  const activeMembership = memberships.find(m => m.tenantId === selectedTenantId)
-    ?? memberships[0]
+  let activeMembership = memberships.find(m => m.tenantId === selectedTenantId)
+
+  if (!activeMembership && isPlatformAdmin && selectedTenantId) {
+    // Platform admin can access any tenant — verify it exists
+    const [tenant] = await db
+      .select({ id: tenants.id })
+      .from(tenants)
+      .where(eq(tenants.id, selectedTenantId))
+      .limit(1)
+
+    if (tenant) {
+      activeMembership = {
+        tenantId: tenant.id,
+        role: 'owner',
+        fullName: memberships[0]?.fullName ?? '',
+        email: memberships[0]?.email ?? '',
+        isPlatformAdmin: true,
+      }
+    }
+  }
+
+  activeMembership = activeMembership ?? memberships[0]
+
+  if (!activeMembership) {
+    redirect('/login')
+  }
 
   return {
-    userId: user.id,
+    userId,
     tenantId: activeMembership.tenantId,
     role: activeMembership.role as Role,
     email: activeMembership.email,
     fullName: activeMembership.fullName,
+    isPlatformAdmin,
   }
 }
 
@@ -90,5 +131,13 @@ export async function requireRole(...allowedRoles: Role[]): Promise<AuthContext>
     throw new Error('Forbidden: insufficient permissions')
   }
 
+  return context
+}
+
+export async function requirePlatformAdmin(): Promise<AuthContext> {
+  const context = await getAuthContext()
+  if (!context.isPlatformAdmin) {
+    throw new Error('Forbidden: not platform admin')
+  }
   return context
 }
