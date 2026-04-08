@@ -7,7 +7,7 @@ function getResend() {
   }
   return _resend
 }
-const FROM = process.env.EMAIL_FROM ?? 'FloraClin <noreply@floraclin.com.br>'
+const FROM = process.env.EMAIL_FROM ?? 'FloraClin <contato@floraclin.com.br>'
 
 export async function sendMagicLinkEmail(email: string, url: string) {
   await getResend().emails.send({
