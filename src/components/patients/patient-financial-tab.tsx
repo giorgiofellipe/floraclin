@@ -104,10 +104,10 @@ export function PatientFinancialTab({ patientId, patientName }: PatientFinancial
     let totalPaid = 0
 
     for (const entry of entries) {
-      const amount = Number(entry.totalAmount)
-      const fineAmt = entry.totalFineAmount ?? 0
-      const interestAmt = entry.totalInterestAmount ?? 0
-      const amountPaid = entry.totalAmountPaid ?? 0
+      const amount = Number(entry.totalAmount ?? 0)
+      const fineAmt = Number(entry.totalFineAmount ?? 0)
+      const interestAmt = Number(entry.totalInterestAmount ?? 0)
+      const amountPaid = Number(entry.totalAmountPaid ?? 0)
 
       if (entry.status === 'paid') {
         totalPaid += amount + fineAmt + interestAmt
@@ -236,7 +236,7 @@ export function PatientFinancialTab({ patientId, patientName }: PatientFinancial
                         )}
                       </div>
                     </TableCell>
-                    <TableCell>{formatCurrency(Number(entry.totalAmount))}</TableCell>
+                    <TableCell>{formatCurrency(Number(entry.totalAmount ?? 0))}</TableCell>
                     <TableCell>
                       {entry.paidInstallments}/{entry.installmentCount}
                     </TableCell>
