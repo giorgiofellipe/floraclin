@@ -12,7 +12,7 @@ interface LedgerSummary {
 }
 
 export function LedgerSummaryCards({ summary }: { summary: LedgerSummary }) {
-  const netIsPositive = summary.netResult >= 0
+  const netIsPositive = Number(summary.netResult ?? 0) >= 0
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -25,7 +25,7 @@ export function LedgerSummaryCards({ summary }: { summary: LedgerSummary }) {
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold text-[#4A6B52] tabular-nums tracking-tight">
-            {formatCurrency(summary.totalInflows)}
+            {formatCurrency(Number(summary.totalInflows ?? 0))}
           </div>
         </CardContent>
       </Card>
@@ -39,7 +39,7 @@ export function LedgerSummaryCards({ summary }: { summary: LedgerSummary }) {
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold text-red-600 tabular-nums tracking-tight">
-            {formatCurrency(summary.totalOutflows)}
+            {formatCurrency(Number(summary.totalOutflows ?? 0))}
           </div>
         </CardContent>
       </Card>
@@ -53,7 +53,7 @@ export function LedgerSummaryCards({ summary }: { summary: LedgerSummary }) {
         </CardHeader>
         <CardContent>
           <div className={`text-2xl font-bold tabular-nums tracking-tight ${netIsPositive ? 'text-[#1C2B1E]' : 'text-red-600'}`}>
-            {formatCurrency(summary.netResult)}
+            {formatCurrency(Number(summary.netResult ?? 0))}
           </div>
         </CardContent>
       </Card>
@@ -67,7 +67,7 @@ export function LedgerSummaryCards({ summary }: { summary: LedgerSummary }) {
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold text-amber-600 tabular-nums tracking-tight">
-            {formatCurrency(summary.overdueReceivables)}
+            {formatCurrency(Number(summary.overdueReceivables ?? 0))}
           </div>
         </CardContent>
       </Card>

@@ -547,9 +547,10 @@ export async function bulkPayInstallments(
 ) {
   return withTransaction(async (tx) => {
     // Lock all target installments
+    const installmentIdArray = `{${data.installmentIds.join(',')}}`
     const lockResult = await tx.execute(
       sql`SELECT id FROM floraclin.installments
-          WHERE id = ANY(${data.installmentIds}::uuid[])
+          WHERE id = ANY(${installmentIdArray}::uuid[])
           AND tenant_id = ${tenantId}
           AND status NOT IN ('paid', 'cancelled')
           FOR UPDATE`
@@ -970,12 +971,29 @@ export async function listFinancialEntries(
           )
         )`,
         totalFineAmount: sql<number>`COALESCE((
-          SELECT SUM(i.fine_amount::numeric)
+          SELECT SUM(
+            CASE
+              WHEN i.status = 'pending' AND i.due_date < CURRENT_DATE
+                AND i.fine_amount::numeric = 0 AND i.applied_fine_value IS NOT NULL
+              THEN i.amount::numeric * i.applied_fine_value::numeric / 100
+              ELSE i.fine_amount::numeric
+            END
+          )
           FROM floraclin.installments i
           WHERE i.financial_entry_id = ${financialEntries.id}
         ), 0)`,
         totalInterestAmount: sql<number>`COALESCE((
-          SELECT SUM(i.interest_amount::numeric)
+          SELECT SUM(
+            CASE
+              WHEN i.status = 'pending' AND i.due_date < CURRENT_DATE
+                AND i.applied_interest_rate IS NOT NULL
+              THEN (i.amount::numeric - i.amount_paid::numeric)
+                * i.applied_interest_rate::numeric / 100
+                * GREATEST(0, EXTRACT(DAY FROM (CURRENT_DATE - i.due_date::date)))
+                / 30
+              ELSE i.interest_amount::numeric
+            END
+          )
           FROM floraclin.installments i
           WHERE i.financial_entry_id = ${financialEntries.id}
         ), 0)`,

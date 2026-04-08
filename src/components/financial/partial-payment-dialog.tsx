@@ -66,7 +66,8 @@ export function PartialPaymentDialog({
     return allocatePayment(state, parsedAmount)
   }, [parsedAmount, installment])
 
-  const isOverpayment = parsedAmount > totalDue
+  // Allow small tolerance for rounding differences between client and server
+  const isOverpayment = parsedAmount > totalDue + 0.02
 
   async function handleConfirm() {
     if (parsedAmount <= 0 || isOverpayment) return

@@ -260,6 +260,16 @@ export function AppointmentForm({
           let patientId = selectedPatientId || null
 
           try {
+            // Validate patient is selected or being created
+            if (!selectedPatientId && !showNewPatient) {
+              setError('Selecione um paciente ou crie um novo')
+              return
+            }
+            if (showNewPatient && (!newPatientName.trim() || !newPatientPhone.trim())) {
+              setError('Preencha nome e telefone do novo paciente')
+              return
+            }
+
             // Create patient inline if in new-patient mode
             if (showNewPatient && newPatientName.trim() && newPatientPhone.trim()) {
               const result = await createPatient.mutateAsync({
