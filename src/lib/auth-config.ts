@@ -55,6 +55,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      allowDangerousEmailAccountLinking: true, // Safe: signIn callback verifies email_verified
     }),
     Resend({
       apiKey: process.env.RESEND_API_KEY,
