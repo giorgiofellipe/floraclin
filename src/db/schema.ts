@@ -544,6 +544,8 @@ export const auditLogs = floraclinSchema.table('audit_logs', {
 
 // ─── AUTH.js ────────────────────────────────────────────────────────
 
+// Note: sessions table is unused at runtime (JWT strategy handles session state),
+// but DrizzleAdapter requires it in its config. Keep the definition for the adapter.
 export const sessions = floraclinSchema.table('sessions', {
   id: uuid('id').primaryKey().defaultRandom(),
   sessionToken: varchar('session_token', { length: 255 }).notNull().unique(),

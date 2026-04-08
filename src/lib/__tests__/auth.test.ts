@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import '@/tests/mocks/db'
 
-const { mockGetUser } = vi.hoisted(() => ({
-  mockGetUser: vi.fn(),
+const { mockAuth } = vi.hoisted(() => ({
+  mockAuth: vi.fn(),
 }))
 
 // Mock next/navigation
@@ -20,13 +20,9 @@ vi.mock('next/headers', () => ({
   }),
 }))
 
-// Mock Supabase server client
-vi.mock('@/lib/supabase/server', () => ({
-  createClient: vi.fn().mockResolvedValue({
-    auth: {
-      getUser: mockGetUser,
-    },
-  }),
+// Mock auth() from auth-config
+vi.mock('@/lib/auth-config', () => ({
+  auth: mockAuth,
 }))
 
 import { db } from '@/db/client'
@@ -51,8 +47,8 @@ describe('auth', () => {
 
   describe('requireRole', () => {
     it('throws for unauthorized roles', async () => {
-      mockGetUser.mockResolvedValue({
-        data: { user: { id: 'user-1' } },
+      mockAuth.mockResolvedValue({
+        user: { id: 'user-1' },
       })
 
       setupDbMemberships([
@@ -68,8 +64,8 @@ describe('auth', () => {
     })
 
     it('passes for authorized roles', async () => {
-      mockGetUser.mockResolvedValue({
-        data: { user: { id: 'user-1' } },
+      mockAuth.mockResolvedValue({
+        user: { id: 'user-1' },
       })
 
       setupDbMemberships([
@@ -88,16 +84,16 @@ describe('auth', () => {
     })
 
     it('redirects to /login when user is not authenticated', async () => {
-      mockGetUser.mockResolvedValue({
-        data: { user: null },
+      mockAuth.mockResolvedValue({
+        user: null,
       })
 
       await expect(requireRole('owner')).rejects.toThrow('REDIRECT:/login')
     })
 
     it('allows multiple roles and uses the first matching membership', async () => {
-      mockGetUser.mockResolvedValue({
-        data: { user: { id: 'user-2' } },
+      mockAuth.mockResolvedValue({
+        user: { id: 'user-2' },
       })
 
       setupDbMemberships([

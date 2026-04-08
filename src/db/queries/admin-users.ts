@@ -1,5 +1,6 @@
+import crypto from 'crypto'
 import { db } from '@/db/client'
-import { tenants, users, tenantUsers } from '@/db/schema'
+import { tenants, users, tenantUsers, verificationTokens } from '@/db/schema'
 import { eq, and, ilike, or, sql, desc, count } from 'drizzle-orm'
 import { sendInviteEmail, sendPasswordResetEmail } from '@/lib/email'
 import type { PaginatedResult } from '@/types'
@@ -294,9 +295,32 @@ export async function removeUserMembership(
 // ─── Reset user password ────────────────────────────────────────────
 
 export async function resetUserPassword(email: string) {
-  const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/login`
+  const normalizedEmail = email.toLowerCase()
 
-  await sendPasswordResetEmail(email, resetUrl)
+  // Generate token — store hash, send raw
+  const rawToken = crypto.randomBytes(32).toString('hex')
+  const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex')
+  const expires = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+
+  // Delete any existing tokens for this email
+  await db
+    .delete(verificationTokens)
+    .where(eq(verificationTokens.identifier, normalizedEmail))
+
+  // Insert hashed token
+  await db.insert(verificationTokens).values({
+    identifier: normalizedEmail,
+    token: hashedToken,
+    expires,
+  })
+
+  // Send email with the raw token
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL
+    ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
+  const resetUrl = `${appUrl}/reset-password?token=${rawToken}&email=${encodeURIComponent(normalizedEmail)}`
+
+  await sendPasswordResetEmail(normalizedEmail, resetUrl)
 
   return { success: true }
 }

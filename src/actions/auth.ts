@@ -72,7 +72,16 @@ export async function loginWithGoogle() {
 export async function loginWithMagicLink(formData: FormData) {
   const email = formData.get('magicLinkEmail') as string
   if (!email) return
-  await signIn('resend', { email, redirectTo: '/dashboard' })
+
+  try {
+    await signIn('resend', { email, redirectTo: '/dashboard' })
+  } catch (error) {
+    if (error instanceof AuthError) {
+      console.error('Magic link error:', error.message)
+      return
+    }
+    throw error // Re-throw non-auth errors (like redirect)
+  }
 }
 
 export async function switchTenantAction(tenantId: string) {
