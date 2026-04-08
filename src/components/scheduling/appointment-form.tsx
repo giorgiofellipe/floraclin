@@ -260,16 +260,6 @@ export function AppointmentForm({
           let patientId = selectedPatientId || null
 
           try {
-            // Validate patient is selected or being created
-            if (!selectedPatientId && !showNewPatient) {
-              setError('Selecione um paciente ou crie um novo')
-              return
-            }
-            if (showNewPatient && (!newPatientName.trim() || !newPatientPhone.trim())) {
-              setError('Preencha nome e telefone do novo paciente')
-              return
-            }
-
             // Create patient inline if in new-patient mode
             if (showNewPatient && newPatientName.trim() && newPatientPhone.trim()) {
               const result = await createPatient.mutateAsync({
@@ -279,10 +269,12 @@ export function AppointmentForm({
               patientId = result.data.id
             }
 
-            // Use bookingName as fallback display name for inline-created patients
+            // Use bookingName for display: inline patient name, or typed search text when no patient selected
             const bookingName = showNewPatient && newPatientName.trim()
               ? newPatientName.trim()
-              : undefined
+              : !patientId && patientSearch.trim()
+                ? patientSearch.trim()
+                : selectedPatientName || undefined
 
             const data: Record<string, unknown> = {
               patientId,
