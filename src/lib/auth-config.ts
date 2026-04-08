@@ -55,7 +55,6 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      allowDangerousEmailAccountLinking: true,
     }),
     Resend({
       apiKey: process.env.RESEND_API_KEY,
@@ -63,6 +62,13 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
+    async signIn({ account, profile }) {
+      // For Google OAuth, only allow sign-in if Google has verified the email
+      if (account?.provider === 'google' && !(profile as any)?.email_verified) {
+        return false
+      }
+      return true
+    },
     async jwt({ token, user }) {
       // On initial sign-in, persist the user id into the JWT
       if (user) {

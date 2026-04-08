@@ -8,7 +8,7 @@ import { z } from 'zod'
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().optional(),
-  newPassword: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres'),
+  newPassword: z.string().min(8, 'Senha deve ter pelo menos 8 caracteres'),
 })
 
 export async function PUT(request: Request) {
@@ -47,7 +47,7 @@ export async function PUT(request: Request) {
     }
     // If no password set (magic link/OAuth user), allow setting without current password
 
-    const hash = await bcrypt.hash(parsed.data.newPassword, 10)
+    const hash = await bcrypt.hash(parsed.data.newPassword, 12)
     await db
       .update(users)
       .set({ passwordHash: hash, updatedAt: new Date() })

@@ -25,8 +25,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true })
     }
 
-    // Generate token
-    const token = crypto.randomBytes(32).toString('hex')
+    // Generate token — store hash, send raw
+    const rawToken = crypto.randomBytes(32).toString('hex')
+    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex')
     const expires = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
 
     // Delete any existing tokens for this email
@@ -34,17 +35,17 @@ export async function POST(request: Request) {
       .delete(verificationTokens)
       .where(eq(verificationTokens.identifier, email.toLowerCase()))
 
-    // Insert new token
+    // Insert hashed token
     await db.insert(verificationTokens).values({
       identifier: email.toLowerCase(),
-      token,
+      token: hashedToken,
       expires,
     })
 
-    // Send email
+    // Send email with the raw token
     const appUrl = process.env.NEXT_PUBLIC_APP_URL
       ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
-    const resetUrl = `${appUrl}/reset-password?token=${token}&email=${encodeURIComponent(email.toLowerCase())}`
+    const resetUrl = `${appUrl}/reset-password?token=${rawToken}&email=${encodeURIComponent(email.toLowerCase())}`
 
     await sendPasswordResetEmail(email, resetUrl)
 

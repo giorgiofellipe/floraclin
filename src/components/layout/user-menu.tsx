@@ -124,8 +124,8 @@ function ProfileDialog({
       toast.error('As senhas não conferem')
       return
     }
-    if (newPassword.length < 6) {
-      toast.error('A senha deve ter pelo menos 6 caracteres')
+    if (newPassword.length < 8) {
+      toast.error('A senha deve ter pelo menos 8 caracteres')
       return
     }
     setSavingPassword(true)
@@ -213,7 +213,7 @@ function ProfileDialog({
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Mínimo 6 caracteres"
+                placeholder="Mínimo 8 caracteres"
               />
             </div>
             <div className="space-y-2">

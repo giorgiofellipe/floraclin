@@ -1,5 +1,14 @@
 import { Resend } from 'resend'
 
+/** Escape user-supplied strings before embedding in HTML email templates */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 let _resend: Resend | null = null
 function getResend() {
   if (!_resend) {
@@ -35,15 +44,16 @@ export async function sendMagicLinkEmail(email: string, url: string) {
 }
 
 export async function sendInviteEmail(email: string, url: string, clinicName?: string) {
+  const safeName = escapeHtml(clinicName ?? 'FloraClin')
   await getResend().emails.send({
     from: FROM,
     to: email,
-    subject: `Convite para ${clinicName ?? 'FloraClin'}`,
+    subject: `Convite para ${safeName}`,
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
         <h2 style="color: #1C2B1E; margin-bottom: 24px;">FloraClin</h2>
         <p style="color: #2A2A2A; font-size: 16px; line-height: 1.5;">
-          Você foi convidado(a) para a clínica <strong>${clinicName ?? 'FloraClin'}</strong>.
+          Você foi convidado(a) para a clínica <strong>${safeName}</strong>.
         </p>
         <p style="color: #2A2A2A; font-size: 16px; line-height: 1.5;">
           Clique no botão abaixo para criar sua conta e acessar o sistema:
