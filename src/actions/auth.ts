@@ -65,6 +65,16 @@ export async function logout() {
   await signOut({ redirectTo: '/login' })
 }
 
+export async function loginWithGoogle() {
+  await signIn('google', { redirectTo: '/dashboard' })
+}
+
+export async function loginWithMagicLink(formData: FormData) {
+  const email = formData.get('magicLinkEmail') as string
+  if (!email) return
+  await signIn('resend', { email, redirectTo: '/dashboard' })
+}
+
 export async function switchTenantAction(tenantId: string) {
   const { setActiveTenant } = await import('@/lib/auth')
   await setActiveTenant(tenantId)

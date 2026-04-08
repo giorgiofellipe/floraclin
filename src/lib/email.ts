@@ -1,10 +1,16 @@
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+let _resend: Resend | null = null
+function getResend() {
+  if (!_resend) {
+    _resend = new Resend(process.env.RESEND_API_KEY)
+  }
+  return _resend
+}
 const FROM = process.env.EMAIL_FROM ?? 'FloraClin <noreply@floraclin.com.br>'
 
 export async function sendMagicLinkEmail(email: string, url: string) {
-  await resend.emails.send({
+  await getResend().emails.send({
     from: FROM,
     to: email,
     subject: 'Seu link de acesso — FloraClin',
@@ -29,7 +35,7 @@ export async function sendMagicLinkEmail(email: string, url: string) {
 }
 
 export async function sendInviteEmail(email: string, url: string, clinicName?: string) {
-  await resend.emails.send({
+  await getResend().emails.send({
     from: FROM,
     to: email,
     subject: `Convite para ${clinicName ?? 'FloraClin'}`,
@@ -54,7 +60,7 @@ export async function sendInviteEmail(email: string, url: string, clinicName?: s
 }
 
 export async function sendPasswordResetEmail(email: string, url: string) {
-  await resend.emails.send({
+  await getResend().emails.send({
     from: FROM,
     to: email,
     subject: 'Redefinir senha — FloraClin',

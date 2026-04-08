@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
-import { login, type LoginState } from '@/actions/auth'
+import { login, loginWithGoogle, loginWithMagicLink, type LoginState } from '@/actions/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -108,23 +108,14 @@ export default function LoginPage() {
         </div>
 
         {/* Google OAuth */}
-        <form action={async () => {
-          'use server'
-          const { signIn } = await import('@/lib/auth-config')
-          await signIn('google', { redirectTo: '/dashboard' })
-        }}>
+        <form action={loginWithGoogle}>
           <Button type="submit" variant="outline" className="w-full border-sage/20">
             <GoogleIcon /> Entrar com Google
           </Button>
         </form>
 
         {/* Magic link */}
-        <form action={async (formData: FormData) => {
-          'use server'
-          const { signIn } = await import('@/lib/auth-config')
-          const email = formData.get('magicLinkEmail') as string
-          await signIn('resend', { email, redirectTo: '/dashboard' })
-        }}>
+        <form action={loginWithMagicLink}>
           <div className="mt-4 space-y-2">
             <Label>Entrar com link mágico</Label>
             <div className="flex gap-2">
