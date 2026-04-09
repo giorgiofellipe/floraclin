@@ -42,6 +42,8 @@ interface AnamnesisFormProps {
   }
   updatedByName?: string
   wizardOverrides?: WizardOverrides
+  publicMode?: boolean
+  onPublicSubmit?: (data: Record<string, unknown>) => Promise<void>
 }
 
 // ─── Constants ──────────────────────────────────────────────────────
@@ -217,9 +219,10 @@ function SelectField({
 
 // ─── Main Component ─────────────────────────────────────────────────
 
-export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOverrides }: AnamnesisFormProps) {
+export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOverrides, publicMode, onPublicSubmit }: AnamnesisFormProps) {
   const upsertAnamnesis = useUpsertAnamnesis()
-  const isPending = upsertAnamnesis.isPending
+  const [isPublicSubmitting, setIsPublicSubmitting] = useState(false)
+  const isPending = publicMode ? isPublicSubmitting : upsertAnamnesis.isPending
   const [lastSaved, setLastSaved] = useState<Date | null>(
     initialData?.updatedAt ? new Date(initialData.updatedAt) : null
   )
@@ -312,8 +315,9 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
     }, 1000)
   }, [saveForm])
 
-  // Watch all form fields and auto-save on change
+  // Watch all form fields and auto-save on change (disabled in public mode)
   useEffect(() => {
+    if (publicMode) return
     const subscription = watch(() => {
       debouncedSave()
     })
@@ -323,12 +327,13 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
         clearTimeout(debounceTimerRef.current)
       }
     }
-  }, [watch, debouncedSave])
+  }, [watch, debouncedSave, publicMode])
 
-  // ─── Wizard triggerSave: flush debounce and await save ─────────
+  // ─── Wizard triggerSave: flush debounce and await save (disabled in public mode) ──
   const prevTriggerSaveRef = useRef(wizardOverrides?.triggerSave ?? 0)
-  
+
   useEffect(() => {
+    if (publicMode) return
     const current = wizardOverrides?.triggerSave ?? 0
     if (current === 0 || current === prevTriggerSaveRef.current) return
     prevTriggerSaveRef.current = current
@@ -397,23 +402,33 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
       {!wizardOverrides?.hideTitle && (
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold text-[#2A2A2A]">Anamnese</h2>
-          <div className="flex items-center gap-3">
-            {isPending && (
-              <div className="flex items-center gap-1.5 text-xs text-sage">
-                <Loader2 className="size-3 animate-spin" />
-                Salvando...
-              </div>
-            )}
-            {lastSaved && !isPending && (
-              <span className="text-xs text-mid/60">
-                Salvo {formatDateTime(lastSaved)}
-              </span>
-            )}
-          </div>
+          {!publicMode && (
+            <div className="flex items-center gap-3">
+              {isPending && (
+                <div className="flex items-center gap-1.5 text-xs text-sage">
+                  <Loader2 className="size-3 animate-spin" />
+                  Salvando...
+                </div>
+              )}
+              {lastSaved && !isPending && (
+                <span className="text-xs text-mid/60">
+                  Salvo {formatDateTime(lastSaved)}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
 
-      <form onSubmit={handleSubmit(saveForm)}>
+      <form onSubmit={handleSubmit(publicMode ? async () => {
+        if (!onPublicSubmit) return
+        setIsPublicSubmitting(true)
+        try {
+          await onPublicSubmit(getValues() as unknown as Record<string, unknown>)
+        } finally {
+          setIsPublicSubmitting(false)
+        }
+      } : saveForm)}>
         <Accordion defaultValue={['complaint']}>
           {/* ── Queixa principal e objetivos ── */}
           <AnamnesisSection
@@ -1053,61 +1068,82 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
           </AnamnesisSection>
 
           {/* ── Avaliação facial ── */}
-          <AnamnesisSection
-            value="facialEvaluation"
-            title="Avaliação facial"
-            isComplete={isFacialEvalComplete}
-          >
-            <div className="space-y-2">
-              <Controller
-                control={control}
-                name="facialEvaluationNotes"
-                render={({ field }) => (
-                  <Textarea
-                    placeholder="Observações da avaliação facial..."
-                    rows={4}
-                    className="min-h-[100px] resize-none border-sage/20 focus:border-sage/40"
-                    {...field}
-                  />
-                )}
-              />
-              <p className="text-xs text-mid/60">
-                Fotos podem ser adicionadas na aba de Fotos do paciente.
-              </p>
-            </div>
-          </AnamnesisSection>
+          {!publicMode && (
+            <AnamnesisSection
+              value="facialEvaluation"
+              title="Avaliação facial"
+              isComplete={isFacialEvalComplete}
+            >
+              <div className="space-y-2">
+                <Controller
+                  control={control}
+                  name="facialEvaluationNotes"
+                  render={({ field }) => (
+                    <Textarea
+                      placeholder="Observações da avaliação facial..."
+                      rows={4}
+                      className="min-h-[100px] resize-none border-sage/20 focus:border-sage/40"
+                      {...field}
+                    />
+                  )}
+                />
+                <p className="text-xs text-mid/60">
+                  Fotos podem ser adicionadas na aba de Fotos do paciente.
+                </p>
+              </div>
+            </AnamnesisSection>
+          )}
         </Accordion>
 
         {/* ── Footer: save button + last saved info ── */}
-        <div className="flex items-center justify-between pt-4 mt-4 border-t border-petal">
-          <div className="flex items-center gap-2">
-            {isPending ? (
-              <div className="flex items-center gap-1.5 text-sm text-sage">
-                <Loader2 className="size-3.5 animate-spin" />
-                Salvando...
-              </div>
-            ) : lastSaved ? (
-              <span className="text-sm text-mid">
-                Última atualização: {formatDateTime(lastSaved)}
-                {lastSavedBy && <> por {lastSavedBy}</>}
-              </span>
-            ) : null}
+        {publicMode ? (
+          <div className="flex justify-center pt-6 mt-4 border-t border-petal">
+            <Button
+              type="submit"
+              disabled={isPending}
+              className="bg-forest text-cream hover:bg-sage transition-colors px-8 py-2.5 text-base"
+            >
+              {isPending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin mr-1.5" />
+                  Enviando...
+                </>
+              ) : (
+                'Enviar'
+              )}
+            </Button>
           </div>
-          <Button
-            type="submit"
-            disabled={isPending}
-            className="bg-forest text-cream hover:bg-sage transition-colors"
-          >
-            {isPending ? (
-              <>
-                <Loader2 className="size-4 animate-spin mr-1.5" />
-                Salvando...
-              </>
-            ) : (
-              'Salvar'
-            )}
-          </Button>
-        </div>
+        ) : (
+          <div className="flex items-center justify-between pt-4 mt-4 border-t border-petal">
+            <div className="flex items-center gap-2">
+              {isPending ? (
+                <div className="flex items-center gap-1.5 text-sm text-sage">
+                  <Loader2 className="size-3.5 animate-spin" />
+                  Salvando...
+                </div>
+              ) : lastSaved ? (
+                <span className="text-sm text-mid">
+                  Última atualização: {formatDateTime(lastSaved)}
+                  {lastSavedBy && <> por {lastSavedBy}</>}
+                </span>
+              ) : null}
+            </div>
+            <Button
+              type="submit"
+              disabled={isPending}
+              className="bg-forest text-cream hover:bg-sage transition-colors"
+            >
+              {isPending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin mr-1.5" />
+                  Salvando...
+                </>
+              ) : (
+                'Salvar'
+              )}
+            </Button>
+          </div>
+        )}
       </form>
     </div>
   )

@@ -34,6 +34,7 @@ import { PatientPhotosTab } from './patient-photos-tab'
 import { PatientConsentTab } from './patient-consent-tab'
 import { PatientFinancialTab } from './patient-financial-tab'
 import { PatientTimelineTab } from './patient-timeline-tab'
+import { SendAnamnesisDialog } from './send-anamnesis-dialog'
 import type { Patient } from '@/db/queries/patients'
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -236,6 +237,12 @@ export function PatientDetailContent({
                   />
                   <TooltipContent side="bottom"><p>Nova Cobranca</p></TooltipContent>
                 </Tooltip>
+
+                <SendAnamnesisDialog
+                  patientId={patient.id}
+                  patientName={patient.fullName}
+                  patientPhone={patient.phone}
+                />
               </TooltipProvider>
 
               <Link
