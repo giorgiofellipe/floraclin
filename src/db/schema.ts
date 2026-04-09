@@ -102,6 +102,19 @@ export const anamneses = floraclinSchema.table('anamneses', {
   index('idx_anamneses_patient').on(table.tenantId, table.patientId),
 ])
 
+export const anamnesisTokens = floraclinSchema.table('anamnesis_tokens', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  token: uuid('token').notNull().unique().defaultRandom(),
+  patientId: uuid('patient_id').notNull().references(() => patients.id),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdBy: uuid('created_by').notNull().references(() => users.id),
+}, (table) => [
+  index('idx_anamnesis_tokens_token').on(table.token),
+])
+
 // ─── PRODUCTS CATALOG ───────────────────────────────────────────────
 
 export const products = floraclinSchema.table('products', {

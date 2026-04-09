@@ -17,6 +17,7 @@ export default auth((req) => {
   // Public routes — always allow
   if (
     pathname.startsWith('/c/') ||
+    pathname.startsWith('/a/') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/favicon') ||
