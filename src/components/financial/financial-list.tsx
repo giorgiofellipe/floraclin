@@ -94,7 +94,7 @@ const PAYMENT_METHOD_FILTER_ITEMS: Record<string, string> = {
   ...PAYMENT_METHOD_ITEMS,
 }
 
-export function FinancialList({ patients }: { patients: Patient[] }) {
+export function FinancialList({ patients, defaultPatientId }: { patients: Patient[]; defaultPatientId?: string }) {
   const queryClient = useQueryClient()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -102,7 +102,7 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
   const statusFilter = searchParams.get('status') ?? ''
   const isOverdueFilter = searchParams.get('isOverdue') === 'true'
   const isPartialFilter = searchParams.get('isPartial') === 'true'
-  const patientFilter = searchParams.get('patientId') ?? ''
+  const patientFilter = defaultPatientId ?? searchParams.get('patientId') ?? ''
   const dateFromFilter = searchParams.get('dateFrom') ?? ''
   const dateToFilter = searchParams.get('dateTo') ?? ''
   const paymentMethodFilter = searchParams.get('paymentMethod') ?? ''
@@ -301,12 +301,14 @@ export function FinancialList({ patients }: { patients: Patient[] }) {
               <SelectContent />
             </Select>
 
-            <Select items={patientFilterItems} value={patientFilter || 'all'} onValueChange={(v) => updateParam('patientId', !v || v === 'all' ? '' : v)}>
-              <SelectTrigger className="w-[180px] border-sage/20 h-8 text-sm">
-                <SelectValue placeholder="Paciente" />
-              </SelectTrigger>
-              <SelectContent />
-            </Select>
+            {!defaultPatientId && (
+              <Select items={patientFilterItems} value={patientFilter || 'all'} onValueChange={(v) => updateParam('patientId', !v || v === 'all' ? '' : v)}>
+                <SelectTrigger className="w-[180px] border-sage/20 h-8 text-sm">
+                  <SelectValue placeholder="Paciente" />
+                </SelectTrigger>
+                <SelectContent />
+              </Select>
+            )}
 
             <Select items={PAYMENT_METHOD_FILTER_ITEMS} value={paymentMethodFilter || 'all'} onValueChange={(v) => updateParam('paymentMethod', !v || v === 'all' ? '' : v)}>
               <SelectTrigger className="w-[150px] border-sage/20 h-8 text-sm">
