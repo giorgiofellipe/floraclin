@@ -34,7 +34,7 @@ import { PatientPhotosTab } from './patient-photos-tab'
 import { PatientConsentTab } from './patient-consent-tab'
 import { PatientFinancialTab } from './patient-financial-tab'
 import { PatientTimelineTab } from './patient-timeline-tab'
-import { SendAnamnesisDialog } from './send-anamnesis-dialog'
+// SendAnamnesisDialog moved to PatientAnamnesisTab
 import type { Patient } from '@/db/queries/patients'
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -238,11 +238,6 @@ export function PatientDetailContent({
                   <TooltipContent side="bottom"><p>Nova Cobranca</p></TooltipContent>
                 </Tooltip>
 
-                <SendAnamnesisDialog
-                  patientId={patient.id}
-                  patientName={patient.fullName}
-                  patientPhone={patient.phone}
-                />
               </TooltipProvider>
 
               <Link
@@ -267,7 +262,7 @@ export function PatientDetailContent({
       <div className="min-h-[400px]">
         <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-6">
           {tab === 'dados' && <PatientDataTab patient={patient} />}
-          {tab === 'anamnese' && <PatientAnamnesisTab patientId={patient.id} />}
+          {tab === 'anamnese' && <PatientAnamnesisTab patientId={patient.id} patientName={patient.fullName} patientPhone={patient.phone} />}
           {tab === 'procedimentos' && (
             <PatientProceduresTab patientId={patient.id} />
           )}

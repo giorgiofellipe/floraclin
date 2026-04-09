@@ -3,14 +3,17 @@
 import { useMemo } from 'react'
 import { Loader2 } from 'lucide-react'
 import { AnamnesisForm } from '@/components/anamnesis/anamnesis-form'
+import { SendAnamnesisDialog } from '@/components/patients/send-anamnesis-dialog'
 import { useAnamnesis } from '@/hooks/queries/use-anamnesis'
 import type { AnamnesisFormData } from '@/validations/anamnesis'
 
 interface PatientAnamnesisTabProps {
   patientId: string
+  patientName?: string
+  patientPhone?: string | null
 }
 
-export function PatientAnamnesisTab({ patientId }: PatientAnamnesisTabProps) {
+export function PatientAnamnesisTab({ patientId, patientName, patientPhone }: PatientAnamnesisTabProps) {
   const { data: rawData, isLoading } = useAnamnesis(patientId)
 
   const initialData = useMemo(() => {
@@ -50,6 +53,20 @@ export function PatientAnamnesisTab({ patientId }: PatientAnamnesisTabProps) {
 
   return (
     <div className="max-w-3xl">
+      {/* Send anamnesis link to patient */}
+      {patientName && (
+        <div className="mb-4 flex items-center justify-between">
+          <p className="text-xs text-mid">
+            Envie o link para o paciente preencher a anamnese pelo celular.
+          </p>
+          <SendAnamnesisDialog
+            patientId={patientId}
+            patientName={patientName}
+            patientPhone={patientPhone ?? undefined}
+          />
+        </div>
+      )}
+
       <AnamnesisForm
         patientId={patientId}
         initialData={initialData}
