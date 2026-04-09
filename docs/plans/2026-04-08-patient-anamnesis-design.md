@@ -29,8 +29,8 @@ New table `anamnesis_tokens` in `floraclinSchema`:
 ## API Routes
 
 - `POST /api/patients/{id}/anamnesis-link` — auth required. Generates token, returns URL.
-- `GET /api/a/{token}` — public. Validates token (not expired, not used). Returns patient first name + anamnesis template questions.
-- `PUT /api/a/{token}` — public. Validates token, saves anamnesis responses, marks token as used.
+- `GET /api/anamnesis/token/{token}` — public. Validates token (not expired, not used). Returns patient first name + anamnesis template questions.
+- `PUT /api/anamnesis/token/{token}` — public. Validates token, saves anamnesis responses, marks token as used.
 
 ## Pages
 
