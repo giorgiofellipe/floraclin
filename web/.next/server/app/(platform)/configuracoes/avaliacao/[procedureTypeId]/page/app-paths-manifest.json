@@ -1,0 +1,3 @@
+{
+  "/(platform)/configuracoes/avaliacao/[procedureTypeId]/page": "app/(platform)/configuracoes/avaliacao/[procedureTypeId]/page.js"
+}

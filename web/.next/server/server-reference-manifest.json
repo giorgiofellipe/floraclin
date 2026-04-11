@@ -1,0 +1,108 @@
+{
+  "node": {
+    "60d801cef6d932eae44679eee104c0470f02dbbec2": {
+      "workers": {
+        "app/(auth)/login/page": {
+          "moduleId": 159006,
+          "async": false,
+          "exportedName": "login",
+          "filename": "web/src/actions/auth.ts"
+        }
+      },
+      "filename": "web/src/actions/auth.ts",
+      "exportedName": "login"
+    },
+    "00a691dc727c09066ae843067c554fd8a5ec8ad62a": {
+      "workers": {
+        "app/(auth)/login/page": {
+          "moduleId": 159006,
+          "async": false,
+          "exportedName": "loginWithGoogle",
+          "filename": "web/src/actions/auth.ts"
+        }
+      },
+      "filename": "web/src/actions/auth.ts",
+      "exportedName": "loginWithGoogle"
+    },
+    "000cd99628916f096117e4ec17faf4b5974f373eea": {
+      "workers": {
+        "app/(platform)/admin/clinicas/page": {
+          "moduleId": 768082,
+          "async": false,
+          "exportedName": "logout",
+          "filename": "web/src/actions/auth.ts"
+        },
+        "app/(platform)/admin/usuarios/page": {
+          "moduleId": 232268,
+          "async": false,
+          "exportedName": "logout",
+          "filename": "web/src/actions/auth.ts"
+        },
+        "app/(platform)/agenda/page": {
+          "moduleId": 505920,
+          "async": false,
+          "exportedName": "logout",
+          "filename": "web/src/actions/auth.ts"
+        },
+        "app/(platform)/configuracoes/avaliacao/[procedureTypeId]/page": {
+          "moduleId": 332603,
+          "async": false,
+          "exportedName": "logout",
+          "filename": "web/src/actions/auth.ts"
+        },
+        "app/(platform)/configuracoes/page": {
+          "moduleId": 712260,
+          "async": false,
+          "exportedName": "logout",
+          "filename": "web/src/actions/auth.ts"
+        },
+        "app/(platform)/dashboard/page": {
+          "moduleId": 618149,
+          "async": false,
+          "exportedName": "logout",
+          "filename": "web/src/actions/auth.ts"
+        },
+        "app/(platform)/financeiro/page": {
+          "moduleId": 963877,
+          "async": false,
+          "exportedName": "logout",
+          "filename": "web/src/actions/auth.ts"
+        },
+        "app/(platform)/pacientes/[id]/atendimento/page": {
+          "moduleId": 770473,
+          "async": false,
+          "exportedName": "logout",
+          "filename": "web/src/actions/auth.ts"
+        },
+        "app/(platform)/pacientes/[id]/page": {
+          "moduleId": 388300,
+          "async": false,
+          "exportedName": "logout",
+          "filename": "web/src/actions/auth.ts"
+        },
+        "app/(platform)/pacientes/[id]/procedimentos/[procedureId]/page": {
+          "moduleId": 195063,
+          "async": false,
+          "exportedName": "logout",
+          "filename": "web/src/actions/auth.ts"
+        },
+        "app/(platform)/pacientes/page": {
+          "moduleId": 830604,
+          "async": false,
+          "exportedName": "logout",
+          "filename": "web/src/actions/auth.ts"
+        },
+        "app/onboarding/page": {
+          "moduleId": 131072,
+          "async": false,
+          "exportedName": "logout",
+          "filename": "web/src/actions/auth.ts"
+        }
+      },
+      "filename": "web/src/actions/auth.ts",
+      "exportedName": "logout"
+    }
+  },
+  "edge": {},
+  "encryptionKey": "vE40eMfH+T+Bb2Oni+Z4FB/I9GGAntYxLNu2xbATUaM="
+}

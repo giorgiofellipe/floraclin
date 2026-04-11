@@ -1,0 +1,3 @@
+{
+  "/api/financial/payments/[id]/reverse/route": "app/api/financial/payments/[id]/reverse/route.js"
+}

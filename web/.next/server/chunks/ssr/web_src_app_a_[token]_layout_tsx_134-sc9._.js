@@ -1,0 +1,3 @@
+module.exports=[934387,a=>{"use strict";var b=a.i(270556);a.s(["default",0,function({children:a}){return(0,b.jsx)("div",{className:"min-h-screen bg-cream",children:(0,b.jsxs)("div",{className:"mx-auto max-w-2xl px-4 py-8",children:[(0,b.jsx)("div",{className:"flex justify-center mb-8",children:(0,b.jsxs)("div",{className:"flex items-center gap-2",children:[(0,b.jsx)("img",{src:"/brand/logo-sage.svg",alt:"",className:"h-8"}),(0,b.jsxs)("span",{className:"font-display text-xl font-semibold",children:[(0,b.jsx)("span",{className:"text-forest",children:"Flora"}),(0,b.jsx)("span",{className:"text-sage",children:"Clin"})]})]})}),a]})})}])},916630,a=>{a.n(a.i(934387))}];
+
+//# sourceMappingURL=web_src_app_a_%5Btoken%5D_layout_tsx_134-sc9._.js.map

@@ -1,0 +1,3 @@
+{
+  "/api/consent/templates/[id]/route": "app/api/consent/templates/[id]/route.js"
+}

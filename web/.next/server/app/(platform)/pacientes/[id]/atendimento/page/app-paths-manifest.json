@@ -1,0 +1,3 @@
+{
+  "/(platform)/pacientes/[id]/atendimento/page": "app/(platform)/pacientes/[id]/atendimento/page.js"
+}
