@@ -64,9 +64,11 @@ export function Footer() {
             {/* Social */}
             <div className="flex items-center gap-4 mt-6">
               <a
-                href="#"
+                href="https://instagram.com/floraclin"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="text-cream/50 hover:text-cream transition-colors"
-                aria-label="Instagram"
+                aria-label="@floraclin no Instagram"
               >
                 <svg
                   width="20"
@@ -81,26 +83,6 @@ export function Footer() {
                   <rect x="2" y="2" width="20" height="20" rx="5" />
                   <circle cx="12" cy="12" r="5" />
                   <circle cx="17.5" cy="6.5" r="1" fill="currentColor" />
-                </svg>
-              </a>
-              <a
-                href="#"
-                className="text-cream/50 hover:text-cream transition-colors"
-                aria-label="LinkedIn"
-              >
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z" />
-                  <rect x="2" y="9" width="4" height="12" />
-                  <circle cx="4" cy="4" r="2" />
                 </svg>
               </a>
             </div>
