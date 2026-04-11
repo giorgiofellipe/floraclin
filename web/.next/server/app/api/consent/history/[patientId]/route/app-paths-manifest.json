@@ -1,3 +1,0 @@
-{
-  "/api/consent/history/[patientId]/route": "app/api/consent/history/[patientId]/route.js"
-}
