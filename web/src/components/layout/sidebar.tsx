@@ -383,9 +383,9 @@ export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantI
             <TenantSwitcher currentTenantName={clinicName} impersonatingTenantName={impersonatingTenantName} />
           </div>
         )}
-        <div className="shrink-0 px-5 pb-3">
-          <p className="text-[9px] text-mid/30 select-none" title={`Build: ${process.env.NEXT_PUBLIC_BUILD_DATE ?? 'dev'}`}>
-            v{process.env.NEXT_PUBLIC_BUILD_DATE ?? 'dev'}
+        <div className="shrink-0 px-5 pb-4">
+          <p className="text-[10px] text-mid/40 text-center" title={`Build: ${process.env.NEXT_PUBLIC_BUILD_DATE ?? 'dev'}`}>
+            {process.env.NEXT_PUBLIC_BUILD_DATE ?? 'dev'}
           </p>
         </div>
       </div>
