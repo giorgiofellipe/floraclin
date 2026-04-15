@@ -188,7 +188,7 @@ export const procedureRecords = floraclinSchema.table('procedure_records', {
   followUpDate: date('follow_up_date'),
   nextSessionObjectives: text('next_session_objectives'),
   additionalTypeIds: jsonb('additional_type_ids').default([]),
-  status: varchar('status', { length: 20 }).notNull().default('planned'), // CHECK in migration: ('planned', 'approved', 'executed', 'cancelled')
+  status: varchar('status', { length: 20 }).notNull().default('draft'), // CHECK in migration: ('draft', 'planned', 'approved', 'executed', 'cancelled')
   plannedSnapshot: jsonb('planned_snapshot'), // frozen diagram points + quantities at approval
   approvedAt: timestamp('approved_at', { withTimezone: true }),
   cancelledAt: timestamp('cancelled_at', { withTimezone: true }),

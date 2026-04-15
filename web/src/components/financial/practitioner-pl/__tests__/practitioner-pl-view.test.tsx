@@ -72,7 +72,7 @@ describe('PractitionerPLView', () => {
     expect(collectedLabels).toHaveLength(2)
 
     // Attribution type indicators
-    const accrualLabels = screen.getAllByText('Competencia')
+    const accrualLabels = screen.getAllByText('Competência')
     const cashLabels = screen.getAllByText('Caixa')
     expect(accrualLabels).toHaveLength(2)
     expect(cashLabels).toHaveLength(2)

@@ -26,9 +26,11 @@ export function PatientDetailPageClient({ patientId }: PatientDetailPageClientPr
     notFound()
   }
 
-  // Check if there's an active (non-executed) procedure
+  // Check if there's an active (non-executed) procedure — drafts count too,
+  // since the wizard resumes them at the planning step.
   const hasActiveService = proceduresResult?.some(
-    (p: { status: string }) => p.status === 'planned' || p.status === 'approved'
+    (p: { status: string }) =>
+      p.status === 'draft' || p.status === 'planned' || p.status === 'approved'
   ) ?? false
 
   return (

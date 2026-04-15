@@ -227,13 +227,23 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
     initialData?.updatedAt ? new Date(initialData.updatedAt) : null
   )
   const [lastSavedBy, setLastSavedBy] = useState<string | null>(updatedByName ?? null)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const expectedUpdatedAtRef = useRef<string | undefined>(
     initialData?.updatedAt ? new Date(initialData.updatedAt).toISOString() : undefined
   )
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // Dirty epoch — bumped on every user edit. Save paths capture the epoch
+  // at start and only clear hasUnsavedChanges if no new edit happened during
+  // the save. Prevents a keystroke landing mid-save from being marked clean.
+  const dirtyEpochRef = useRef(0)
+
+  // Stable ref so save/propagate effects don't re-fire when wizard re-renders
+  const wizardOverridesRef = useRef(wizardOverrides)
+  wizardOverridesRef.current = wizardOverrides
+
   const form = useForm<AnamnesisFormData>({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(anamnesisSchema) as any,
     defaultValues: {
       mainComplaint: initialData?.mainComplaint ?? '',
@@ -290,6 +300,10 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
 
   const saveForm = useCallback(async () => {
     const data = getValues()
+    // Capture the dirty epoch at save start. If it's still the same when save
+    // completes, we can safely mark clean. If it bumped (user typed during
+    // the await), preserve the dirty flag.
+    const epochAtStart = dirtyEpochRef.current
     try {
       const result = await upsertAnamnesis.mutateAsync({
         patientId,
@@ -297,9 +311,14 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
         expectedUpdatedAt: expectedUpdatedAtRef.current,
       })
       if (result?.updatedAt) {
-        expectedUpdatedAtRef.current = new Date(result.updatedAt).toISOString()
-        setLastSaved(new Date(result.updatedAt))
+        const savedAt = new Date(result.updatedAt)
+        expectedUpdatedAtRef.current = savedAt.toISOString()
+        setLastSaved(savedAt)
         setLastSavedBy(null)
+        if (dirtyEpochRef.current === epochAtStart) {
+          setHasUnsavedChanges(false)
+        }
+        wizardOverridesRef.current?.onAutoSaved?.(savedAt)
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar anamnese')
@@ -319,6 +338,8 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
   useEffect(() => {
     if (publicMode) return
     const subscription = watch(() => {
+      dirtyEpochRef.current += 1
+      setHasUnsavedChanges(true)
       debouncedSave()
     })
     return () => {
@@ -329,13 +350,25 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
     }
   }, [watch, debouncedSave, publicMode])
 
+  // Propagate unsaved-changes state to the wizard save indicator
+  useEffect(() => {
+    wizardOverridesRef.current?.onDirtyChange?.(hasUnsavedChanges)
+  }, [hasUnsavedChanges])
+
   // ─── Wizard triggerSave: flush debounce and await save (disabled in public mode) ──
   const prevTriggerSaveRef = useRef(wizardOverrides?.triggerSave ?? 0)
 
   useEffect(() => {
     if (publicMode) return
     const current = wizardOverrides?.triggerSave ?? 0
-    if (current === 0 || current === prevTriggerSaveRef.current) return
+    // When the wizard resets triggerSave to 0 after SAVE_COMPLETE, reset
+    // our "seen" marker too — otherwise the next press (which also lands
+    // at 1) is skipped as a duplicate.
+    if (current === 0) {
+      prevTriggerSaveRef.current = 0
+      return
+    }
+    if (current === prevTriggerSaveRef.current) return
     prevTriggerSaveRef.current = current
     async function doSave() {
       // Flush any pending debounce timer

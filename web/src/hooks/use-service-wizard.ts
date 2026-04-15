@@ -91,11 +91,36 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
 
     case 'NEXT_STEP': {
       const nextStep = getNextStep(state.currentStep)
-      if (nextStep === state.currentStep) return state
+      if (nextStep === state.currentStep) {
+        console.log('[wizard/reducer] NEXT_STEP ignored — already at last step')
+        return state
+      }
       // Check availability before advancing
-      if (nextStep === 3 && state.selectedTypeIds.length === 0) return state
-      if (nextStep === 4 && !state.procedureId) return state
-      if (nextStep === 5 && state.procedureStatus !== 'approved') return state
+      if (nextStep === 3 && state.selectedTypeIds.length === 0) {
+        console.log('[wizard/reducer] NEXT_STEP to 3 blocked — no selected types')
+        return state
+      }
+      // Step 4 requires a fully planned procedure (drafts stay in step 3)
+      if (
+        nextStep === 4 &&
+        (state.procedureStatus !== 'planned' && state.procedureStatus !== 'approved')
+      ) {
+        console.log('[wizard/reducer] NEXT_STEP to 4 blocked', {
+          procedureStatus: state.procedureStatus,
+          reason: 'step 4 needs planned/approved status',
+        })
+        return state
+      }
+      if (nextStep === 5 && state.procedureStatus !== 'approved') {
+        console.log('[wizard/reducer] NEXT_STEP to 5 blocked — not approved', {
+          procedureStatus: state.procedureStatus,
+        })
+        return state
+      }
+      console.log('[wizard/reducer] NEXT_STEP advancing', {
+        from: state.currentStep,
+        to: nextStep,
+      })
       return {
         ...state,
         currentStep: nextStep,
@@ -196,21 +221,29 @@ function determineInitialStep(
   procedureStatus: ProcedureStatus | null,
   procedureId: string | null,
 ): WizardStep {
-  // Determine the "natural" step based on procedure status
+  // Natural step derived from procedure lifecycle state.
+  //   approved → step 5 (execution ready)
+  //   planned  → step 4 (approval ready — planning already complete)
+  //   draft    → step 3 (planning needs more info before approval)
+  //   null/other → step 1 (no procedure yet, start from anamnese)
   let naturalStep: WizardStep = 1
   if (procedureStatus === 'approved') {
     naturalStep = 5
   } else if (procedureStatus === 'planned' && procedureId) {
     naturalStep = 4
+  } else if (procedureStatus === 'draft' && procedureId) {
+    naturalStep = 3
   }
 
-  // If URL provides a step, validate it
+  // If URL provides a step, validate it against the procedure state
   if (urlStep && urlStep >= 1 && urlStep <= 5) {
     const requestedStep = urlStep as WizardStep
 
-    // Cannot go to step 4 without a procedure
-    if (requestedStep === 4 && !procedureId) return naturalStep
-    // Cannot go to step 5 without approved status
+    // Cannot go to step 4 without a planned procedure (drafts are not yet approvable)
+    if (requestedStep === 4 && procedureStatus !== 'planned' && procedureStatus !== 'approved') {
+      return naturalStep
+    }
+    // Cannot go to step 5 without an approved procedure
     if (requestedStep === 5 && procedureStatus !== 'approved') return naturalStep
 
     return requestedStep
@@ -292,15 +325,15 @@ export function useServiceWizard({
         case 3:
           return state.selectedTypeIds.length > 0
         case 4:
-          // Require procedure saved AND step 3 completed (passed validation)
-          return !!state.procedureId && !!state.stepTimestamps.planning
+          // Step 4 requires the procedure to be fully planned (not draft)
+          return state.procedureStatus === 'planned' || state.procedureStatus === 'approved'
         case 5:
-          return state.procedureStatus === 'approved'
+          return state.procedureStatus === 'approved' || state.procedureStatus === 'executed'
         default:
           return false
       }
     },
-    [state.selectedTypeIds, state.procedureId, state.procedureStatus, state.stepTimestamps.planning]
+    [state.selectedTypeIds, state.procedureStatus]
   )
 
   // ─── Step completion ────────────────────────────────────────────
@@ -313,9 +346,10 @@ export function useServiceWizard({
         case 2:
           return state.selectedTypeIds.length > 0
         case 3:
-          return !!state.procedureId
+          // Step 3 is complete only when the procedure reaches planned status
+          return state.procedureStatus === 'planned' || state.procedureStatus === 'approved' || state.procedureStatus === 'executed'
         case 4:
-          return state.procedureStatus === 'approved'
+          return state.procedureStatus === 'approved' || state.procedureStatus === 'executed'
         case 5:
           return state.procedureStatus === 'executed'
         default:
@@ -407,17 +441,24 @@ export function useServiceWizard({
     (result: StepResult) => {
       dispatch({ type: 'SAVE_COMPLETE', result })
 
-      if (result.success) {
-        if (result.procedureId && !state.procedureId) {
+      if (result.success && result.procedureId) {
+        // Use the server-assigned status. If the server didn't echo one
+        // (older code paths), default conservatively to 'draft' so the wizard
+        // doesn't auto-advance past step 3.
+        const serverStatus = (result.procedureStatus ?? 'draft') as ProcedureStatus
+        if (!state.procedureId) {
           dispatch({
             type: 'SET_PROCEDURE_ID',
             procedureId: result.procedureId,
-            status: 'planned',
+            status: serverStatus,
           })
+        } else if (serverStatus !== state.procedureStatus) {
+          // Procedure already existed — just update its status
+          dispatch({ type: 'UPDATE_PROCEDURE_STATUS', status: serverStatus })
         }
       }
     },
-    [state.procedureId]
+    [state.procedureId, state.procedureStatus]
   )
 
   const setError = useCallback(

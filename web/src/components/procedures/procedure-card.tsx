@@ -192,6 +192,11 @@ export function ProcedureCard({
 
               {/* Status-specific content */}
               <div className="mt-2">
+                {procedure.status === 'draft' && (
+                  <p className="text-xs text-mid italic">
+                    Planejamento incompleto — continue de onde parou
+                  </p>
+                )}
                 {(procedure.status === 'planned' ||
                   procedure.status === 'approved') && (
                   <>
@@ -267,6 +272,28 @@ export function ProcedureCard({
 
               {/* Action buttons */}
               <div className="mt-3 flex items-center gap-2">
+                {procedure.status === 'draft' && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs border-forest text-forest hover:bg-sage/10"
+                      onClick={handleEdit}
+                    >
+                      <Pencil className="mr-1 size-3" />
+                      Continuar Planejamento
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs border-mid/30 text-mid hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                      onClick={handleCancelClick}
+                    >
+                      <XCircle className="mr-1 size-3" />
+                      Cancelar
+                    </Button>
+                  </>
+                )}
                 {procedure.status === 'planned' && (
                   <>
                     <Button

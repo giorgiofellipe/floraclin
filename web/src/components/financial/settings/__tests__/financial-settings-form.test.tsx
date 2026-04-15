@@ -51,9 +51,9 @@ describe('FinancialSettingsForm', () => {
     render(<FinancialSettingsForm />, { wrapper: createWrapper() })
 
     expect(screen.getByText('Multa e Juros')).toBeInTheDocument()
-    expect(screen.getByText('Conta Bancaria')).toBeInTheDocument()
+    expect(screen.getByText('Conta Bancária')).toBeInTheDocument()
     expect(screen.getByText('PIX')).toBeInTheDocument()
-    expect(screen.getByText('Padroes')).toBeInTheDocument()
+    expect(screen.getByText('Padrões')).toBeInTheDocument()
   })
 
   it('renders penalty inputs', () => {
@@ -61,14 +61,14 @@ describe('FinancialSettingsForm', () => {
 
     expect(screen.getByLabelText(/Valor da Multa/)).toBeInTheDocument()
     expect(screen.getByLabelText('Juros Mensais (%)')).toBeInTheDocument()
-    expect(screen.getByLabelText('Carencia (dias)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Carência (dias)')).toBeInTheDocument()
   })
 
   it('renders bank account fields', () => {
     render(<FinancialSettingsForm />, { wrapper: createWrapper() })
 
     expect(screen.getByLabelText('Banco')).toBeInTheDocument()
-    expect(screen.getByLabelText('Agencia')).toBeInTheDocument()
+    expect(screen.getByLabelText('Agência')).toBeInTheDocument()
     expect(screen.getByLabelText('Conta')).toBeInTheDocument()
   })
 
@@ -77,8 +77,8 @@ describe('FinancialSettingsForm', () => {
 
     expect(screen.getByText('Tipo de Chave PIX')).toBeInTheDocument()
     expect(screen.getByLabelText('Chave PIX')).toBeInTheDocument()
-    expect(screen.getByLabelText('Parcelas Padrao')).toBeInTheDocument()
-    expect(screen.getByText('Metodo de Pagamento Padrao')).toBeInTheDocument()
+    expect(screen.getByLabelText('Parcelas Padrão')).toBeInTheDocument()
+    expect(screen.getByText('Método de Pagamento Padrão')).toBeInTheDocument()
   })
 
   it('renders penalty preview', () => {
@@ -90,6 +90,6 @@ describe('FinancialSettingsForm', () => {
   it('renders save button', () => {
     render(<FinancialSettingsForm />, { wrapper: createWrapper() })
 
-    expect(screen.getByText('Salvar Configuracoes')).toBeInTheDocument()
+    expect(screen.getByText('Salvar Configurações')).toBeInTheDocument()
   })
 })

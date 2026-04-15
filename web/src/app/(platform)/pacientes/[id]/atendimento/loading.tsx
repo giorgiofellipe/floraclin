@@ -81,8 +81,9 @@ export default function AtendimentoLoading() {
       <nav className="fixed bottom-0 left-0 right-0 md:left-[200px] z-30 border-t border-gray-100 bg-white shadow-[0_-1px_4px_rgba(0,0,0,0.06)]">
         <div className="mx-auto flex items-center justify-between px-6 py-3">
           <Skeleton className="h-[48px] w-24 rounded-[3px]" />
+          <Skeleton className="hidden md:block h-4 w-32 rounded-full" />
           <div className="flex items-center gap-3">
-            <Skeleton className="h-[48px] w-24 rounded-[3px]" />
+            <Skeleton className="h-[48px] w-32 rounded-[3px]" />
             <Skeleton className="h-[48px] w-32 rounded-[3px]" />
           </div>
         </div>

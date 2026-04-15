@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
+import { renderWithProviders as render } from '@/tests/test-utils'
 import { PatientList } from '../patient-list'
 import type { PaginatedResult } from '@/types'
 
@@ -91,10 +92,9 @@ describe('PatientList', () => {
   it('shows empty state when no patients', () => {
     render(<PatientList result={makeResult([]) as any} />)
 
+    expect(screen.getByText('Nenhum paciente cadastrado')).toBeInTheDocument()
     expect(
-      screen.getByText(
-        'Nenhum paciente cadastrado. Clique em "Novo Paciente" para começar.'
-      )
+      screen.getByText('Comece cadastrando seu primeiro paciente.'),
     ).toBeInTheDocument()
   })
 })

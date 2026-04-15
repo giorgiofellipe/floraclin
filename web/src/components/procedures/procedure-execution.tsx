@@ -1,66 +1,55 @@
 'use client'
 
 import * as React from 'react'
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { useForm, useFieldArray, type Resolver } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import {
   Save,
   Loader2,
-  ChevronDown,
   Package,
   FileText,
   Camera,
   Stethoscope,
   CalendarPlus,
-  PlusIcon,
-  Trash2Icon,
-  Eye,
   ArrowLeft,
-  ArrowRightLeft,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { DatePicker } from '@/components/ui/date-picker'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
-import { FaceDiagramEditor } from '@/components/face-diagram/face-diagram-editor'
-import type { DiagramPointData, CatalogProduct } from '@/components/face-diagram/types'
-import { PhotoUploader } from '@/components/photos/photo-uploader'
-import { PhotoGrid } from '@/components/photos/photo-grid'
+import type {
+  DiagramPointData,
+  CatalogProduct,
+} from '@/components/face-diagram/types'
 import { useExecuteProcedure } from '@/hooks/mutations/use-procedure-mutations'
 import type { DiagramViewType, QuantityUnit } from '@/types'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
-import type { ProductApplicationItem } from '@/validations/procedure'
+import {
+  procedureExecutionFormSchema,
+  type ProcedureExecutionFormData,
+  type ProductApplicationItem,
+} from '@/validations/procedure'
 import type { WizardOverrides } from '@/components/service-wizard/types'
+import { FormServerErrorBanner } from '@/components/forms/form-server-error-banner'
+import { ProductApplicationsSection } from './execution/product-applications-section'
+import {
+  Section,
+  DiagramSection,
+  ExecutionClinicalNotesGroup,
+  ExecutionFollowUpGroup,
+  ExecutionReadOnlyFollowUp,
+  buildInitialDiagramPoints,
+  buildInitialProductApps,
+  type PlannedSnapshotDiagram,
+} from './execution/execution-details-section'
+import { ExecutionPhotoSection } from './execution/execution-photo-section'
 
 // ─── Types ──────────────────────────────────────────────────────────
-
-interface PlannedSnapshotPoint {
-  id: string
-  x: string | number
-  y: string | number
-  productName: string
-  activeIngredient?: string | null
-  quantity: string | number
-  quantityUnit: string
-  technique?: string | null
-  depth?: string | null
-  notes?: string | null
-}
-
-interface PlannedSnapshotDiagram {
-  id: string
-  viewType: string
-  points: PlannedSnapshotPoint[]
-}
 
 interface ProcedureExecutionProps {
   patientId: string
@@ -69,166 +58,6 @@ interface ProcedureExecutionProps {
   diagrams?: DiagramWithPoints[]
   existingApplications?: ProductApplicationRecord[]
   wizardOverrides?: WizardOverrides
-}
-
-// ─── Collapsible Section ───────────────────────────────────────────
-
-function Section({
-  title,
-  icon,
-  open,
-  onToggle,
-  badge,
-  children,
-}: {
-  title: string
-  icon: React.ReactNode
-  open: boolean
-  onToggle: () => void
-  badge?: React.ReactNode
-  children: React.ReactNode
-}) {
-  return (
-    <Card className="bg-white overflow-hidden border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">
-      <CardHeader
-        className="cursor-pointer pb-3 hover:bg-[#F4F6F8] transition-colors duration-150"
-        onClick={onToggle}
-      >
-        <CardTitle className="flex items-center justify-between text-base">
-          <div className="flex items-center gap-2.5">
-            <div className="flex size-7 items-center justify-center rounded-md bg-forest/5">
-              {icon}
-            </div>
-            <span className="uppercase tracking-wider text-sm text-charcoal font-medium">
-              {title}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            {badge}
-            <ChevronDown
-              className={cn(
-                'size-4 text-mid transition-transform duration-200',
-                open && 'rotate-180'
-              )}
-            />
-          </div>
-        </CardTitle>
-      </CardHeader>
-      {open && <CardContent className="pt-0">{children}</CardContent>}
-    </Card>
-  )
-}
-
-// ─── Plan Comparison Component ──────────────────────────────────────
-
-function PlanComparison({
-  plannedSnapshot,
-  currentPoints,
-}: {
-  plannedSnapshot: PlannedSnapshotDiagram[]
-  currentPoints: DiagramPointData[]
-}) {
-  // Aggregate planned quantities by product
-  const plannedTotals = useMemo(() => {
-    const totals = new Map<string, { quantity: number; unit: string }>()
-    for (const diagram of plannedSnapshot) {
-      for (const point of diagram.points) {
-        const key = `${point.productName}|${point.quantityUnit}`
-        const existing = totals.get(key)
-        const qty = typeof point.quantity === 'string' ? parseFloat(point.quantity) : point.quantity
-        if (existing) {
-          existing.quantity += qty
-        } else {
-          totals.set(key, { quantity: qty, unit: String(point.quantityUnit) })
-        }
-      }
-    }
-    return totals
-  }, [plannedSnapshot])
-
-  // Aggregate current quantities by product
-  const currentTotals = useMemo(() => {
-    const totals = new Map<string, { quantity: number; unit: string }>()
-    for (const point of currentPoints) {
-      const key = `${point.productName}|${point.quantityUnit}`
-      const existing = totals.get(key)
-      if (existing) {
-        existing.quantity += point.quantity
-      } else {
-        totals.set(key, { quantity: point.quantity, unit: point.quantityUnit })
-      }
-    }
-    return totals
-  }, [currentPoints])
-
-  // Collect all product keys
-  const allKeys = useMemo(() => {
-    const keys = new Set<string>()
-    for (const k of plannedTotals.keys()) keys.add(k)
-    for (const k of currentTotals.keys()) keys.add(k)
-    return Array.from(keys)
-  }, [plannedTotals, currentTotals])
-
-  const diffs = allKeys.map((key) => {
-    const [productName] = key.split('|')
-    const planned = plannedTotals.get(key)
-    const current = currentTotals.get(key)
-    const unit = planned?.unit ?? current?.unit ?? ''
-    const plannedQty = planned?.quantity ?? 0
-    const currentQty = current?.quantity ?? 0
-    const changed = plannedQty !== currentQty
-
-    return { productName, unit, plannedQty, currentQty, changed }
-  })
-
-  const hasAnyChange = diffs.some((d) => d.changed)
-
-  if (!hasAnyChange) {
-    return (
-      <div className="rounded-[3px] border border-sage/20 bg-[#F0F7F1] px-4 py-3">
-        <p className="text-sm text-sage">
-          Quantidades executadas iguais ao planejado.
-        </p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-2">
-      {diffs.map((d) => (
-        <div
-          key={`${d.productName}-${d.unit}`}
-          className={cn(
-            'flex items-center justify-between rounded-[3px] border px-4 py-2.5',
-            d.changed
-              ? 'border-amber/30 bg-[#FFF4EF]'
-              : 'border-[#E8ECEF] bg-white'
-          )}
-        >
-          <span className="text-sm font-medium text-charcoal">
-            {d.productName}
-          </span>
-          <div className="flex items-center gap-2 text-sm">
-            {d.changed ? (
-              <>
-                <span className="text-mid line-through">
-                  {d.plannedQty}{d.unit}
-                </span>
-                <ArrowRightLeft className="size-3.5 text-amber" />
-                <span className="font-medium text-charcoal">
-                  {d.currentQty}{d.unit}
-                </span>
-              </>
-            ) : (
-              <span className="text-mid">
-                {d.currentQty}{d.unit}
-              </span>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
 }
 
 // ─── Main Component ─────────────────────────────────────────────────
@@ -246,100 +75,74 @@ export function ProcedureExecution({
   const isExecuted = procedure.status === 'executed'
   const isReadOnly = isExecuted
 
-  // ─── Diagram state ────────────────────────────────────────────────
-  const [diagramPoints, setDiagramPoints] = useState<DiagramPointData[]>(() => {
-    if (diagrams && diagrams.length > 0) {
-      const allPoints: DiagramPointData[] = []
-      for (const diagram of diagrams) {
-        for (const p of diagram.points) {
-          allPoints.push({
-            id: p.id,
-            x: parseFloat(p.x),
-            y: parseFloat(p.y),
-            viewType: diagram.viewType || 'front',
-            productName: p.productName,
-            activeIngredient: p.activeIngredient ?? undefined,
-            quantity: parseFloat(p.quantity),
-            quantityUnit: p.quantityUnit as QuantityUnit,
-            technique: p.technique ?? undefined,
-            depth: p.depth ?? undefined,
-            notes: p.notes ?? undefined,
-          })
-        }
-      }
-      return allPoints
-    }
-    return []
+  // ─── Form ─────────────────────────────────────────────────────────
+  const form = useForm<ProcedureExecutionFormData>({
+    resolver: zodResolver(
+      procedureExecutionFormSchema,
+    ) as unknown as Resolver<ProcedureExecutionFormData>,
+    defaultValues: {
+      technique: procedure.technique ?? '',
+      clinicalResponse: procedure.clinicalResponse ?? '',
+      adverseEffects: procedure.adverseEffects ?? '',
+      notes: procedure.notes ?? '',
+      followUpDate: procedure.followUpDate ?? '',
+      nextSessionObjectives: procedure.nextSessionObjectives ?? '',
+      diagramPoints: buildInitialDiagramPoints(diagrams) as never,
+      productApplications: buildInitialProductApps(existingApplications),
+    },
   })
 
+  const productsFieldArray = useFieldArray({
+    control: form.control,
+    name: 'productApplications',
+  })
+
+  // Watched values for render-time derivations
+  const watchedDiagramPoints = form.watch('diagramPoints') as DiagramPointData[]
+  const watchedProductApps = form.watch(
+    'productApplications'
+  ) as ProductApplicationItem[]
+
+  // ─── Catalog products + overlay ──────────────────────────────────
   const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>([])
   const [showPlannedOverlay, setShowPlannedOverlay] = useState(false)
 
-  // ─── Planned snapshot for ghost overlay ────────────────────────────
-  const plannedSnapshot = procedure.plannedSnapshot as PlannedSnapshotDiagram[] | null
+  // ─── Planned snapshot for ghost overlay ──────────────────────────
+  const plannedSnapshot =
+    procedure.plannedSnapshot as PlannedSnapshotDiagram[] | null
 
   const plannedPoints = useMemo<DiagramPointData[]>(() => {
     if (!plannedSnapshot || !Array.isArray(plannedSnapshot)) return []
     const points: DiagramPointData[] = []
     for (const diagram of plannedSnapshot) {
-      if (diagram.points) {
-        for (const p of diagram.points) {
-          points.push({
-            id: typeof p.id === 'string' ? p.id : `planned-${points.length}`,
-            x: typeof p.x === 'string' ? parseFloat(p.x) : p.x,
-            y: typeof p.y === 'string' ? parseFloat(p.y) : p.y,
-            productName: p.productName,
-            activeIngredient: p.activeIngredient ?? undefined,
-            quantity: typeof p.quantity === 'string' ? parseFloat(p.quantity) : p.quantity,
-            quantityUnit: (p.quantityUnit ?? 'U') as QuantityUnit,
-            technique: p.technique ?? undefined,
-            depth: p.depth ?? undefined,
-            notes: p.notes ?? undefined,
-          })
-        }
+      if (!diagram.points) continue
+      for (const p of diagram.points) {
+        points.push({
+          id: typeof p.id === 'string' ? p.id : `planned-${points.length}`,
+          x: typeof p.x === 'string' ? parseFloat(p.x) : p.x,
+          y: typeof p.y === 'string' ? parseFloat(p.y) : p.y,
+          productName: p.productName,
+          activeIngredient: p.activeIngredient ?? undefined,
+          quantity:
+            typeof p.quantity === 'string'
+              ? parseFloat(p.quantity)
+              : p.quantity,
+          quantityUnit: (p.quantityUnit ?? 'U') as QuantityUnit,
+          technique: p.technique ?? undefined,
+          depth: p.depth ?? undefined,
+          notes: p.notes ?? undefined,
+        })
       }
     }
     return points
   }, [plannedSnapshot])
 
-  // ─── Product applications state ──────────────────────────────────
-  const [productApps, setProductApps] = useState<ProductApplicationItem[]>(
-    () => {
-      if (existingApplications && existingApplications.length > 0) {
-        return existingApplications.map((a) => ({
-          productName: a.productName,
-          activeIngredient: a.activeIngredient ?? undefined,
-          totalQuantity: parseFloat(a.totalQuantity),
-          quantityUnit: a.quantityUnit as QuantityUnit,
-          batchNumber: a.batchNumber ?? undefined,
-          expirationDate: a.expirationDate ?? undefined,
-          labelPhotoId: a.labelPhotoId ?? undefined,
-          applicationAreas: a.applicationAreas ?? undefined,
-          notes: a.notes ?? undefined,
-        }))
-      }
-      return []
-    }
-  )
-
-  // ─── Clinical notes state ──────────────────────────────────────────
-  const [technique, setTechnique] = useState(procedure.technique ?? '')
-  const [clinicalResponse, setClinicalResponse] = useState(procedure.clinicalResponse ?? '')
-  const [adverseEffects, setAdverseEffects] = useState(procedure.adverseEffects ?? '')
-  const [notes, setNotes] = useState(procedure.notes ?? '')
-
-  // ─── Follow-up state ───────────────────────────────────────────────
-  const [followUpDate, setFollowUpDate] = useState(procedure.followUpDate ?? '')
-  const [nextSessionObjectives, setNextSessionObjectives] = useState(
-    procedure.nextSessionObjectives ?? ''
-  )
-
-  // ─── Photo state ──────────────────────────────────────────────────
+  // ─── Photo state (not RHF) ────────────────────────────────────────
   const [photoRefreshKey, setPhotoRefreshKey] = useState(0)
+  const handlePhotoRefresh = () => setPhotoRefreshKey((k) => k + 1)
 
   // ─── Submit state ──────────────────────────────────────────────────
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [submittingAction, setSubmittingAction] = useState(false)
 
   // ─── Section open state ────────────────────────────────────────────
   const [openSections, setOpenSections] = useState({
@@ -349,12 +152,9 @@ export function ProcedureExecution({
     prePhotos: true,
     postPhotos: true,
     followUp: false,
-    comparison: true,
   })
-
-  const toggleSection = (section: keyof typeof openSections) => {
+  const toggleSection = (section: keyof typeof openSections) =>
     setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }))
-  }
 
   // ─── Load catalog products ────────────────────────────────────────
   useEffect(() => {
@@ -368,7 +168,10 @@ export function ProcedureExecution({
     load()
   }, [])
 
-  // ─── Auto-populate product applications from diagram points ────────
+  // ─── Auto-populate product applications from diagram points ──────
+  // IMPORTANT: uses targeted update/append/remove instead of full replace so
+  // the user's in-progress edits (batch number, notes) aren't wiped and
+  // focus isn't lost when they add a diagram point mid-typing.
   useEffect(() => {
     if (isReadOnly) return
 
@@ -377,7 +180,7 @@ export function ProcedureExecution({
       { totalQuantity: number; activeIngredient?: string; unit: QuantityUnit }
     >()
 
-    for (const point of diagramPoints) {
+    for (const point of watchedDiagramPoints ?? []) {
       const key = `${point.productName}|${point.quantityUnit}`
       const existing = totals.get(key)
       if (existing) {
@@ -391,91 +194,80 @@ export function ProcedureExecution({
       }
     }
 
-    setProductApps((prevApps) => {
-      const newApps: ProductApplicationItem[] = []
+    const prevApps = form.getValues('productApplications') ?? []
+    const keyOf = (a: ProductApplicationItem) => `${a.productName}|${a.quantityUnit}`
+    const prevByKey = new Map(prevApps.map((a, i) => [keyOf(a), { app: a, index: i }]))
 
-      for (const [key, total] of totals) {
-        const [productName] = key.split('|')
-        // Preserve existing batch/lot entries for this product
-        const existingEntries = prevApps.filter(
-          (a) => a.productName === productName && a.quantityUnit === total.unit
-        )
-
-        if (existingEntries.length > 0) {
-          // Update the first entry's total quantity, keep all batches
-          newApps.push({
-            ...existingEntries[0],
-            totalQuantity: total.totalQuantity,
-            activeIngredient: total.activeIngredient,
-          })
-          for (let i = 1; i < existingEntries.length; i++) {
-            newApps.push(existingEntries[i])
-          }
-        } else {
-          newApps.push({
-            productName,
-            activeIngredient: total.activeIngredient,
-            totalQuantity: total.totalQuantity,
-            quantityUnit: total.unit,
-          })
-        }
+    // Update totals in-place for existing rows that still have matching points
+    for (const [key, total] of totals) {
+      const hit = prevByKey.get(key)
+      if (!hit) continue
+      // Only update if totalQuantity/activeIngredient actually drifted to avoid
+      // triggering RHF re-renders for unchanged rows
+      if (
+        hit.app.totalQuantity !== total.totalQuantity ||
+        hit.app.activeIngredient !== total.activeIngredient
+      ) {
+        productsFieldArray.update(hit.index, {
+          ...hit.app,
+          totalQuantity: total.totalQuantity,
+          activeIngredient: total.activeIngredient,
+        })
       }
+    }
 
-      return newApps
+    // Append rows for new product+unit combinations
+    for (const [key, total] of totals) {
+      if (prevByKey.has(key)) continue
+      const [productName] = key.split('|')
+      productsFieldArray.append({
+        productName,
+        activeIngredient: total.activeIngredient,
+        totalQuantity: total.totalQuantity,
+        quantityUnit: total.unit,
+      })
+    }
+
+    // Remove rows whose product+unit no longer appears in any diagram point,
+    // EXCEPT rows that have user-entered identity fields (batchNumber / notes)
+    // which we treat as user-owned and preserve.
+    const keysToRemove: number[] = []
+    prevApps.forEach((app, i) => {
+      const key = keyOf(app)
+      if (totals.has(key)) return
+      const userOwned = !!(app.batchNumber || app.notes || app.labelPhotoId)
+      if (!userOwned) keysToRemove.push(i)
     })
-  }, [diagramPoints, isReadOnly])
+    // Remove in reverse order so indices stay valid
+    for (let i = keysToRemove.length - 1; i >= 0; i--) {
+      productsFieldArray.remove(keysToRemove[i])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchedDiagramPoints, isReadOnly])
 
-  // ─── Handlers ────────────────────────────────────────────────────
-
-  const handleProductAppChange = useCallback(
-    (index: number, field: keyof ProductApplicationItem, value: string) => {
-      setProductApps((prev) => {
-        const updated = [...prev]
-        updated[index] = { ...updated[index], [field]: value }
-        return updated
+  // ─── Submit handler ───────────────────────────────────────────────
+  async function onValid(values: ProcedureExecutionFormData) {
+    if (isReadOnly) {
+      wizardOverrides?.onSaveComplete?.({
+        success: false,
+        error: 'Formulário indisponível',
+        errorType: 'precondition',
       })
-    },
-    []
-  )
-
-  const handleAddBatch = useCallback(
-    (sourceIndex: number) => {
-      setProductApps((prev) => {
-        const source = prev[sourceIndex]
-        const newEntry: ProductApplicationItem = {
-          productName: source.productName,
-          activeIngredient: source.activeIngredient,
-          totalQuantity: 0,
-          quantityUnit: source.quantityUnit,
-        }
-        const updated = [...prev]
-        updated.splice(sourceIndex + 1, 0, newEntry)
-        return updated
-      })
-    },
-    []
-  )
-
-  const handleRemoveBatch = useCallback(
-    (index: number) => {
-      setProductApps((prev) => prev.filter((_, i) => i !== index))
-    },
-    []
-  )
-
-  const handleSubmit = useCallback(async () => {
-    if (isSubmitting || isReadOnly) return
-
-    setIsSubmitting(true)
-    setSubmitError(null)
-
+      return
+    }
+    setSubmittingAction(true)
+    // Clear any stale server error from a prior failed save attempt
+    form.clearErrors('root.serverError' as never)
     try {
+      // Use RAW form state for diagram points so id/viewType survive.
+      const rawDiagramPoints = (form.getValues('diagramPoints') ??
+        []) as DiagramPointData[]
       const diagramsPayload =
-        diagramPoints.length > 0
+        rawDiagramPoints.length > 0
           ? [
               {
                 viewType: 'front' as DiagramViewType,
-                points: diagramPoints.map((p) => ({
+                points: rawDiagramPoints.map((p) => ({
                   x: p.x,
                   y: p.y,
                   productName: p.productName,
@@ -490,130 +282,98 @@ export function ProcedureExecution({
             ]
           : undefined
 
-      try {
-        await executeProcedure.mutateAsync({
-          id: procedure.id,
-          technique: technique || undefined,
-          clinicalResponse: clinicalResponse || undefined,
-          adverseEffects: adverseEffects || undefined,
-          notes: notes || undefined,
-          followUpDate: followUpDate || undefined,
-          nextSessionObjectives: nextSessionObjectives || undefined,
-          diagrams: diagramsPayload,
-          productApplications:
-            productApps.length > 0 ? productApps : undefined,
-        })
-      } catch (err) {
-        setSubmitError(err instanceof Error ? err.message : 'Erro ao registrar execução')
-        return
-      }
+      await executeProcedure.mutateAsync({
+        id: procedure.id,
+        technique: values.technique || undefined,
+        clinicalResponse: values.clinicalResponse || undefined,
+        adverseEffects: values.adverseEffects || undefined,
+        notes: values.notes || undefined,
+        followUpDate: values.followUpDate || undefined,
+        nextSessionObjectives: values.nextSessionObjectives || undefined,
+        diagrams: diagramsPayload,
+        productApplications:
+          values.productApplications.length > 0
+            ? values.productApplications
+            : undefined,
+      })
 
-      // Redirect to patient's procedures tab
+      form.reset(form.getValues())
+      wizardOverrides?.onSaveComplete?.({
+        success: true,
+        procedureId: procedure.id,
+      })
+
       if (!wizardOverrides?.hideNavigation) {
         router.push(`/pacientes/${patientId}?tab=procedimentos`)
       }
-    } catch {
-      setSubmitError('Erro inesperado ao registrar execução')
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Erro ao registrar execução'
+      form.setError('root.serverError' as never, { type: 'manual', message })
+      wizardOverrides?.onSaveComplete?.({
+        success: false,
+        error: message,
+        errorType: 'server',
+      })
     } finally {
-      setIsSubmitting(false)
+      setSubmittingAction(false)
     }
-  }, [
-    isSubmitting,
-    isReadOnly,
-    diagramPoints,
-    technique,
-    clinicalResponse,
-    adverseEffects,
-    notes,
-    followUpDate,
-    nextSessionObjectives,
-    productApps,
-    procedure.id,
-    patientId,
-    router,
-    wizardOverrides?.hideNavigation,
-  ])
+  }
 
-  // ─── Wizard triggerSave: execute and call onSaveComplete ──────────
+  const pendingValidationRef = useRef(false)
+
+  function onInvalid() {
+    pendingValidationRef.current = true
+    wizardOverrides?.onSaveComplete?.({
+      success: false,
+      error: 'Validation failed',
+      errorType: 'validation',
+    })
+  }
+
+  // ─── Wizard triggerSave wire-up ───────────────────────────────────
   const prevTriggerSaveRef = useRef(wizardOverrides?.triggerSave ?? 0)
-  
   useEffect(() => {
     const current = wizardOverrides?.triggerSave ?? 0
-    if (current === 0 || current === prevTriggerSaveRef.current) return
-    prevTriggerSaveRef.current = current
-    async function doSave() {
-      if (isSubmitting || isReadOnly) {
-        wizardOverrides?.onSaveComplete?.({
-          success: false,
-          error: 'Formulário indisponível',
-          errorType: 'precondition',
-        })
-        return
-      }
-
-      setIsSubmitting(true)
-      setSubmitError(null)
-
-      try {
-        const diagramsPayload =
-          diagramPoints.length > 0
-            ? [
-                {
-                  viewType: 'front' as DiagramViewType,
-                  points: diagramPoints.map((p) => ({
-                    x: p.x,
-                    y: p.y,
-                    productName: p.productName,
-                    activeIngredient: p.activeIngredient,
-                    quantity: p.quantity,
-                    quantityUnit: p.quantityUnit,
-                    technique: p.technique,
-                    depth: p.depth,
-                    notes: p.notes,
-                  })),
-                },
-              ]
-            : undefined
-
-        try {
-          await executeProcedure.mutateAsync({
-            id: procedure.id,
-            technique: technique || undefined,
-            clinicalResponse: clinicalResponse || undefined,
-            adverseEffects: adverseEffects || undefined,
-            notes: notes || undefined,
-            followUpDate: followUpDate || undefined,
-            nextSessionObjectives: nextSessionObjectives || undefined,
-            diagrams: diagramsPayload,
-            productApplications:
-              productApps.length > 0 ? productApps : undefined,
-          })
-          wizardOverrides?.onSaveComplete?.({
-            success: true,
-            procedureId: procedure.id,
-          })
-        } catch (execErr) {
-          setSubmitError(execErr instanceof Error ? execErr.message : 'Erro ao registrar execução')
-          wizardOverrides?.onSaveComplete?.({
-            success: false,
-            error: execErr instanceof Error ? execErr.message : 'Erro ao registrar execução',
-            errorType: 'server',
-          })
-        }
-      } catch {
-        setSubmitError('Erro inesperado ao registrar execução')
-        wizardOverrides?.onSaveComplete?.({
-          success: false,
-          error: 'Erro inesperado ao registrar execução',
-          errorType: 'server',
-        })
-      } finally {
-        setIsSubmitting(false)
-      }
+    // Reset on 0 so the next non-zero value re-fires (the wizard resets
+    // triggerSave after every SAVE_COMPLETE, so "1" comes around again).
+    if (current === 0) {
+      prevTriggerSaveRef.current = 0
+      return
     }
-    doSave()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (current === prevTriggerSaveRef.current) return
+    prevTriggerSaveRef.current = current
+    form.handleSubmit(onValid, onInvalid)()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wizardOverrides?.triggerSave])
+
+  // ─── Dirty-state propagation ─────────────────────────────────────
+  useEffect(() => {
+    wizardOverrides?.onDirtyChange?.(form.formState.isDirty)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.formState.isDirty])
+
+  // ─── Pending validation re-check ──
+  // When a submit fails, watch subsequent edits and re-run the resolver.
+  // Only when the form becomes fully valid does the wizard banner clear.
+  const wizardOverridesRef = useRef(wizardOverrides)
+  wizardOverridesRef.current = wizardOverrides
+  useEffect(() => {
+    const sub = form.watch(() => {
+      if (!pendingValidationRef.current) return
+      void form.trigger().then((isValid) => {
+        if (isValid) {
+          pendingValidationRef.current = false
+          wizardOverridesRef.current?.onUserEdit?.()
+        }
+      })
+    })
+    return () => sub.unsubscribe()
+  }, [form])
+
+  // ─── Render ──────────────────────────────────────────────────────
+  const diagramCount = watchedDiagramPoints?.length ?? 0
+  const productCount = watchedProductApps?.length ?? 0
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -624,7 +384,9 @@ export function ProcedureExecution({
             <Button
               variant="ghost"
               size="icon-sm"
-              onClick={() => router.push(`/pacientes/${patientId}?tab=procedimentos`)}
+              onClick={() =>
+                router.push(`/pacientes/${patientId}?tab=procedimentos`)
+              }
               className="text-mid hover:text-charcoal"
             >
               <ArrowLeft className="size-4" />
@@ -636,10 +398,13 @@ export function ProcedureExecution({
               <p className="mt-0.5 text-sm text-mid">
                 {procedure.procedureTypeName}
                 {procedure.approvedAt && (
-                  <> &mdash; Aprovado em{' '}
-                    {format(new Date(procedure.approvedAt), "dd 'de' MMMM 'de' yyyy", {
-                      locale: ptBR,
-                    })}
+                  <>
+                    {' '}&mdash; Aprovado em{' '}
+                    {format(
+                      new Date(procedure.approvedAt),
+                      "dd 'de' MMMM 'de' yyyy",
+                      { locale: ptBR },
+                    )}
                   </>
                 )}
               </p>
@@ -650,13 +415,18 @@ export function ProcedureExecution({
               'px-3 py-1 text-xs font-medium border-0',
               isExecuted
                 ? 'bg-[#F0F7F1] text-[#2A2A2A]'
-                : 'bg-[#F0F7F1] text-sage'
+                : 'bg-[#F0F7F1] text-sage',
             )}
           >
             {isExecuted ? 'Executado' : 'Aprovado'}
           </Badge>
         </div>
       )}
+
+      <FormServerErrorBanner
+        form={form}
+        onRetry={() => form.handleSubmit(onValid, onInvalid)()}
+      />
 
       {/* ── Diagram Editor ──────────────────────────────────────────── */}
       <Section
@@ -665,55 +435,31 @@ export function ProcedureExecution({
         open={openSections.diagram}
         onToggle={() => toggleSection('diagram')}
         badge={
-          diagramPoints.length > 0 ? (
-            <Badge variant="outline" className="text-xs border-sage/30 bg-sage/5 text-sage px-2.5 py-0.5">
-              {diagramPoints.length}{' '}
-              {diagramPoints.length === 1 ? 'ponto' : 'pontos'}
+          diagramCount > 0 ? (
+            <Badge
+              variant="outline"
+              className="text-xs border-sage/30 bg-sage/5 text-sage px-2.5 py-0.5"
+            >
+              {diagramCount} {diagramCount === 1 ? 'ponto' : 'pontos'}
             </Badge>
           ) : undefined
         }
       >
-        <div className="space-y-3">
-          {/* Planned overlay toggle + inline comparison */}
-          {plannedPoints.length > 0 && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 rounded-[3px] border border-[#E8ECEF] bg-[#F4F6F8]/50 px-4 py-2.5">
-                <Switch
-                  checked={showPlannedOverlay}
-                  onCheckedChange={setShowPlannedOverlay}
-                  id="show-planned"
-                  size="sm"
-                />
-                <Label
-                  htmlFor="show-planned"
-                  className="cursor-pointer text-sm text-mid"
-                >
-                  <Eye className="mr-1.5 inline-block size-3.5" />
-                  Ver planejamento original
-                </Label>
-              </div>
-              {showPlannedOverlay && plannedSnapshot && Array.isArray(plannedSnapshot) && (
-                <PlanComparison
-                  plannedSnapshot={plannedSnapshot}
-                  currentPoints={diagramPoints}
-                />
-              )}
-            </div>
-          )}
-
-          <FaceDiagramEditor
-            points={diagramPoints}
-            onChange={setDiagramPoints}
-            previousPoints={showPlannedOverlay ? plannedPoints : undefined}
-            readOnly={isReadOnly}
-            gender={patientGender}
-            products={catalogProducts}
-          />
-        </div>
+        <DiagramSection
+          form={form}
+          plannedPoints={plannedPoints}
+          plannedSnapshot={plannedSnapshot}
+          showPlannedOverlay={showPlannedOverlay}
+          onToggleOverlay={setShowPlannedOverlay}
+          catalogProducts={catalogProducts}
+          patientGender={patientGender}
+          isReadOnly={isReadOnly}
+          currentPoints={watchedDiagramPoints ?? []}
+        />
       </Section>
 
       {/* ── Product Details (Batch/Lot Numbers) ─────────────────────── */}
-      {productApps.length > 0 && (
+      {productCount > 0 && (
         <Section
           title="Detalhes dos Produtos"
           icon={<Package className="size-4 text-forest" />}
@@ -721,142 +467,15 @@ export function ProcedureExecution({
           onToggle={() => toggleSection('products')}
           badge={
             <Badge variant="outline" className="text-xs">
-              {productApps.length}{' '}
-              {productApps.length === 1 ? 'item' : 'itens'}
+              {productCount} {productCount === 1 ? 'item' : 'itens'}
             </Badge>
           }
         >
-          <div className="space-y-4">
-            {productApps.map((app, index) => {
-              const isFirstForProduct =
-                index === 0 ||
-                productApps[index - 1].productName !== app.productName
-              const isLastForProduct =
-                index === productApps.length - 1 ||
-                productApps[index + 1]?.productName !== app.productName
-              const entriesForProduct = productApps.filter(
-                (a) => a.productName === app.productName
-              ).length
-              const canRemove = entriesForProduct > 1
-
-              return (
-                <div key={`${app.productName}-${app.quantityUnit}-${index}`}>
-                  {isFirstForProduct && (
-                    <div className="mb-2 flex items-center justify-between">
-                      <h4 className="font-medium text-charcoal">
-                        {app.productName}
-                      </h4>
-                      <Badge
-                        variant="outline"
-                        className="text-xs border-sage/30 bg-sage/5 text-sage px-2.5 py-0.5"
-                      >
-                        {app.totalQuantity}
-                        {app.quantityUnit}
-                      </Badge>
-                    </div>
-                  )}
-
-                  <div className="rounded-[3px] border border-[#E8ECEF] bg-white p-5">
-                    {entriesForProduct > 1 && (
-                      <div className="mb-3 flex items-center justify-between">
-                        <span className="text-xs text-mid uppercase tracking-wider">
-                          Lote{' '}
-                          {
-                            productApps
-                              .slice(0, index + 1)
-                              .filter((a) => a.productName === app.productName)
-                              .length
-                          }
-                        </span>
-                        {canRemove && !isReadOnly && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => handleRemoveBatch(index)}
-                          >
-                            <Trash2Icon className="size-3.5 text-mid" />
-                          </Button>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <Label className="uppercase tracking-wider text-xs text-mid">
-                          Lote / Batch
-                        </Label>
-                        <Input
-                          value={app.batchNumber ?? ''}
-                          onChange={(e) =>
-                            handleProductAppChange(
-                              index,
-                              'batchNumber',
-                              e.target.value
-                            )
-                          }
-                          placeholder="Ex: ABC12345"
-                          disabled={isReadOnly}
-                          className="mt-1"
-                        />
-                      </div>
-                      <div>
-                        <Label className="uppercase tracking-wider text-xs text-mid">
-                          Validade
-                        </Label>
-                        <DatePicker
-                          value={app.expirationDate ?? ''}
-                          onChange={(v) =>
-                            handleProductAppChange(
-                              index,
-                              'expirationDate',
-                              v
-                            )
-                          }
-                          disabled={isReadOnly}
-                          className="mt-1"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="mt-3">
-                      <Label className="uppercase tracking-wider text-xs text-mid">
-                        Áreas de aplicação
-                      </Label>
-                      <Input
-                        value={app.applicationAreas ?? ''}
-                        onChange={(e) =>
-                          handleProductAppChange(
-                            index,
-                            'applicationAreas',
-                            e.target.value
-                          )
-                        }
-                        placeholder="Ex: Frontal, Glabela, Periorbital"
-                        disabled={isReadOnly}
-                        className="mt-1"
-                      />
-                    </div>
-                  </div>
-
-                  {isLastForProduct && !isReadOnly && (
-                    <div className="mt-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleAddBatch(index)}
-                        className="text-xs border-sage/30 text-sage hover:bg-sage/5"
-                      >
-                        <PlusIcon className="size-3.5 mr-1" />
-                        Adicionar lote
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+          <ProductApplicationsSection
+            form={form}
+            fieldArray={productsFieldArray}
+            disabled={isReadOnly}
+          />
         </Section>
       )}
 
@@ -867,63 +486,7 @@ export function ProcedureExecution({
         open={openSections.clinicalNotes}
         onToggle={() => toggleSection('clinicalNotes')}
       >
-        <div className="space-y-5">
-          <div>
-            <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Técnica utilizada
-            </Label>
-            <Textarea
-              value={technique}
-              onChange={(e) => setTechnique(e.target.value)}
-              placeholder="Descreva a técnica utilizada..."
-              disabled={isReadOnly}
-              className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
-              rows={3}
-            />
-          </div>
-
-          <div className="border-t border-petal pt-5">
-            <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Resposta clínica
-            </Label>
-            <Textarea
-              value={clinicalResponse}
-              onChange={(e) => setClinicalResponse(e.target.value)}
-              placeholder="Descreva a resposta clínica observada..."
-              disabled={isReadOnly}
-              className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
-              rows={3}
-            />
-          </div>
-
-          <div className="border-t border-petal pt-5">
-            <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Efeitos adversos
-            </Label>
-            <Textarea
-              value={adverseEffects}
-              onChange={(e) => setAdverseEffects(e.target.value)}
-              placeholder="Registre quaisquer efeitos adversos observados..."
-              disabled={isReadOnly}
-              className="mt-1.5 min-h-[60px] resize-none border-sage/20 focus:border-sage/40"
-              rows={2}
-            />
-          </div>
-
-          <div className="border-t border-petal pt-5">
-            <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-              Observações gerais
-            </Label>
-            <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Observações adicionais sobre o procedimento..."
-              disabled={isReadOnly}
-              className="mt-1.5 min-h-[60px] resize-none border-sage/20 focus:border-sage/40"
-              rows={2}
-            />
-          </div>
-        </div>
+        <ExecutionClinicalNotesGroup form={form} disabled={isReadOnly} />
       </Section>
 
       {/* ── Pre-Procedure Photos ────────────────────────────────────── */}
@@ -933,24 +496,14 @@ export function ProcedureExecution({
         open={openSections.prePhotos}
         onToggle={() => toggleSection('prePhotos')}
       >
-        <div className="space-y-4">
-          {!isReadOnly && (
-            <PhotoUploader
-              patientId={patientId}
-              procedureRecordId={procedure.id}
-              defaultStage="pre"
-              onUploadComplete={() =>
-                setPhotoRefreshKey((k) => k + 1)
-              }
-            />
-          )}
-          <PhotoGrid
-            patientId={patientId}
-            procedureRecordId={procedure.id}
-            refreshKey={photoRefreshKey}
-            timelineStage="pre"
-          />
-        </div>
+        <ExecutionPhotoSection
+          patientId={patientId}
+          procedureId={procedure.id}
+          photoRefreshKey={photoRefreshKey}
+          onRefresh={handlePhotoRefresh}
+          stage="pre"
+          disabled={isReadOnly}
+        />
       </Section>
 
       {/* ── Post-Procedure Photos ───────────────────────────────────── */}
@@ -960,24 +513,14 @@ export function ProcedureExecution({
         open={openSections.postPhotos}
         onToggle={() => toggleSection('postPhotos')}
       >
-        <div className="space-y-4">
-          {!isReadOnly && (
-            <PhotoUploader
-              patientId={patientId}
-              procedureRecordId={procedure.id}
-              defaultStage="immediate_post"
-              onUploadComplete={() =>
-                setPhotoRefreshKey((k) => k + 1)
-              }
-            />
-          )}
-          <PhotoGrid
-            patientId={patientId}
-            procedureRecordId={procedure.id}
-            refreshKey={photoRefreshKey}
-            timelineStage="immediate_post"
-          />
-        </div>
+        <ExecutionPhotoSection
+          patientId={patientId}
+          procedureId={procedure.id}
+          photoRefreshKey={photoRefreshKey}
+          onRefresh={handlePhotoRefresh}
+          stage="immediate_post"
+          disabled={isReadOnly}
+        />
       </Section>
 
       {/* ── Follow-up (optional) ──────────────────────────────────────── */}
@@ -988,107 +531,61 @@ export function ProcedureExecution({
           open={openSections.followUp}
           onToggle={() => toggleSection('followUp')}
         >
-          <div className="space-y-4">
-            <div>
-              <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-                Data de retorno
-              </Label>
-              <DatePicker
-                value={followUpDate}
-                onChange={(v) => setFollowUpDate(v)}
-                className="mt-1 max-w-xs"
-              />
-            </div>
-
-            <div className="border-t border-petal pt-5">
-              <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-                Objetivos para próxima sessão
-              </Label>
-              <Textarea
-                value={nextSessionObjectives}
-                onChange={(e) => setNextSessionObjectives(e.target.value)}
-                placeholder="Descreva os objetivos para a próxima sessão..."
-                className="mt-1.5 min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
-                rows={3}
-              />
-            </div>
-          </div>
+          <ExecutionFollowUpGroup form={form} disabled={isReadOnly} />
         </Section>
       )}
 
       {/* ── Read-only follow-up info ──────────────────────────────────── */}
-      {isReadOnly && (procedure.followUpDate || procedure.nextSessionObjectives) && (
-        <Section
-          title="Retorno e Próxima Sessão"
-          icon={<CalendarPlus className="size-4 text-forest" />}
-          open={openSections.followUp}
-          onToggle={() => toggleSection('followUp')}
-        >
-          <div className="space-y-4">
-            {procedure.followUpDate && (
-              <div>
-                <Label className="uppercase tracking-wider text-xs text-mid mb-1 block">
-                  Data de retorno
-                </Label>
-                <p className="text-sm text-charcoal">
-                  {format(new Date(procedure.followUpDate), "dd 'de' MMMM 'de' yyyy", {
-                    locale: ptBR,
-                  })}
-                </p>
-              </div>
-            )}
-            {procedure.nextSessionObjectives && (
-              <div className="border-t border-petal pt-4">
-                <Label className="uppercase tracking-wider text-xs text-mid mb-1 block">
-                  Objetivos para próxima sessão
-                </Label>
-                <p className="text-sm text-charcoal whitespace-pre-wrap">
-                  {procedure.nextSessionObjectives}
-                </p>
-              </div>
-            )}
-          </div>
-        </Section>
-      )}
+      {isReadOnly &&
+        (procedure.followUpDate || procedure.nextSessionObjectives) && (
+          <Section
+            title="Retorno e Próxima Sessão"
+            icon={<CalendarPlus className="size-4 text-forest" />}
+            open={openSections.followUp}
+            onToggle={() => toggleSection('followUp')}
+          >
+            <ExecutionReadOnlyFollowUp
+              followUpDate={procedure.followUpDate}
+              nextSessionObjectives={procedure.nextSessionObjectives}
+              formatDate={(iso) =>
+                format(new Date(iso), "dd 'de' MMMM 'de' yyyy", {
+                  locale: ptBR,
+                })
+              }
+            />
+          </Section>
+        )}
 
       {/* ── Submit ──────────────────────────────────────────────────── */}
       {!isReadOnly && !wizardOverrides?.hideSaveButton && (
-        <div className="flex flex-col gap-3">
-          {submitError && (
-            <div className="rounded-[3px] border border-red-200 bg-red-50 px-4 py-3">
-              <p className="text-sm text-red-700">{submitError}</p>
-            </div>
-          )}
-
-          <div className="flex items-center justify-end gap-3">
-            <Button
-              variant="outline"
-              onClick={() =>
-                router.push(`/pacientes/${patientId}?tab=procedimentos`)
-              }
-              disabled={isSubmitting}
-              className="border-forest text-forest hover:bg-petal"
-            >
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={isSubmitting}
-              className="bg-forest text-cream hover:bg-sage shadow-sm"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Salvando...
-                </>
-              ) : (
-                <>
-                  <Save className="size-4" />
-                  Salvar como Executado
-                </>
-              )}
-            </Button>
-          </div>
+        <div className="flex items-center justify-end gap-3">
+          <Button
+            variant="outline"
+            onClick={() =>
+              router.push(`/pacientes/${patientId}?tab=procedimentos`)
+            }
+            disabled={submittingAction}
+            className="border-forest text-forest hover:bg-petal"
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={() => form.handleSubmit(onValid, onInvalid)()}
+            disabled={submittingAction}
+            className="bg-forest text-cream hover:bg-sage shadow-sm"
+          >
+            {submittingAction ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                Salvando...
+              </>
+            ) : (
+              <>
+                <Save className="size-4" />
+                Salvar como Executado
+              </>
+            )}
+          </Button>
         </div>
       )}
     </div>

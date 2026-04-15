@@ -6,6 +6,7 @@ import { listProcedures, createProcedure } from '@/db/queries/procedures'
 import { saveFaceDiagram } from '@/db/queries/face-diagrams'
 import { saveProductApplications } from '@/db/queries/product-applications'
 import { createProcedureSchema } from '@/validations/procedure'
+import { computePlanningStatus } from '@/lib/procedure-status'
 
 export async function GET(request: Request) {
   try {
@@ -57,11 +58,14 @@ export async function POST(request: Request) {
       )
     }
 
+    const status = computePlanningStatus(body)
+
     const result = await withTransaction(async (tx) => {
       const procedure = await createProcedure(
         ctx.tenantId,
         ctx.userId,
         parsed.data,
+        status,
         tx
       )
 

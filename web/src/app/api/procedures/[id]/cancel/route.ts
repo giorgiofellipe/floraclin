@@ -30,8 +30,12 @@ export async function POST(
       return NextResponse.json({ error: 'Procedimento não encontrado' }, { status: 404 })
     }
 
-    if (procedure.status !== 'planned' && procedure.status !== 'approved') {
-      return NextResponse.json({ error: 'Apenas procedimentos planejados ou aprovados podem ser cancelados' }, { status: 400 })
+    if (
+      procedure.status !== 'draft' &&
+      procedure.status !== 'planned' &&
+      procedure.status !== 'approved'
+    ) {
+      return NextResponse.json({ error: 'Apenas procedimentos em rascunho, planejados ou aprovados podem ser cancelados' }, { status: 400 })
     }
 
     const result = await withTransaction(async (tx) => {

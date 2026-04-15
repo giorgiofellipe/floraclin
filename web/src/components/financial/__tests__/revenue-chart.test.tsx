@@ -23,7 +23,7 @@ const mockRevenueData = {
     totalReceived: 50000,
     totalPending: 15000,
     totalOverdue: 3000,
-    totalExpensesPaid: 12000,
+    totalExpenses: 12000,
   },
   monthly: [
     { month: '2026-01', total: 8000, expenses: 2000 },
@@ -64,7 +64,7 @@ describe('RevenueChart', () => {
     expect(screen.getByText('Total Recebido')).toBeInTheDocument()
     expect(screen.getByText('Total Pendente')).toBeInTheDocument()
     expect(screen.getByText('Total Atrasado')).toBeInTheDocument()
-    expect(screen.getByText('Lucro Liquido')).toBeInTheDocument()
+    expect(screen.getByText('Lucro Líquido')).toBeInTheDocument()
   })
 
   it('shows net profit card with correct calculation', () => {
@@ -87,7 +87,7 @@ describe('RevenueChart', () => {
   it('renders payment method donut chart', () => {
     render(<RevenueChart />)
 
-    expect(screen.getByText('Receita por Metodo de Pagamento')).toBeInTheDocument()
+    expect(screen.getByText('Receita por Método de Pagamento')).toBeInTheDocument()
   })
 
   it('renders chart title for revenue vs expenses', () => {
