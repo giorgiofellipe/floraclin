@@ -40,3 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 test-results/
+
+# Next.js build
+.next/
+web/.next/
+site/.next/
+
