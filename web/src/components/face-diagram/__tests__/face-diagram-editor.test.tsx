@@ -53,7 +53,7 @@ describe('FaceDiagramEditor', () => {
     expect(screen.getByTestId('face-diagram-view-right_profile')).toHaveTextContent('Direito')
   })
 
-  it('shows instruction text when no points', () => {
+  it('shows instruction text when no points and no product armed', () => {
     render(
       <FaceDiagramEditor
         points={[]}
@@ -62,8 +62,10 @@ describe('FaceDiagramEditor', () => {
       />,
     )
 
+    // With the armed-product flow, the canvas hint depends on whether a
+    // product is armed. Nothing is armed on initial render.
     expect(
-      screen.getByText('Clique para adicionar ponto de aplicação'),
+      screen.getByText('Selecione um produto acima para marcar pontos'),
     ).toBeInTheDocument()
   })
 
@@ -132,6 +134,42 @@ describe('FaceDiagramEditor', () => {
     // Should not show the "Clique para adicionar" instruction in readOnly mode with points
     expect(
       screen.queryByText('Clique para adicionar ponto de aplicação'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('arming a product via the strip changes the canvas hint', async () => {
+    const user = userEvent.setup()
+    render(
+      <FaceDiagramEditor
+        points={[]}
+        onChange={vi.fn()}
+        products={[
+          {
+            id: 'prod-1',
+            name: 'Botox Allergan',
+            category: 'botox',
+            activeIngredient: 'Onabotulinumtoxin A',
+            defaultUnit: 'U',
+            isActive: true,
+          } as never,
+        ]}
+      />,
+    )
+
+    // Before arming → hint tells the user to pick a product first
+    expect(
+      screen.getByText('Selecione um produto acima para marcar pontos'),
+    ).toBeInTheDocument()
+
+    // Open the strip popover and arm the product
+    await user.click(screen.getByTestId('armed-product-trigger'))
+    const option = await screen.findByTestId('product-autocomplete-option-prod-1')
+    await user.click(option)
+
+    // After arming → hint flips to "click to add"
+    expect(screen.getByText('Clique para adicionar ponto')).toBeInTheDocument()
+    expect(
+      screen.queryByText('Selecione um produto acima para marcar pontos'),
     ).not.toBeInTheDocument()
   })
 })

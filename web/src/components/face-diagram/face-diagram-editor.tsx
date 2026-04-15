@@ -10,6 +10,7 @@ import { FaceTemplate, VIEW_LABELS } from './face-template'
 import { DiagramPoint } from './diagram-point'
 import { DiagramSummary } from './diagram-summary'
 import { PointFormModal } from './point-form-modal'
+import { ArmedProductStrip } from './armed-product-strip'
 import type { DiagramPointData, FaceDiagramEditorProps } from './types'
 
 const VIEW_TYPES: DiagramViewType[] = ['front', 'left_profile', 'right_profile']
@@ -36,6 +37,12 @@ export function FaceDiagramEditor({
   const [editingPoint, setEditingPoint] = React.useState<
     (Partial<DiagramPointData> & { x: number; y: number }) | null
   >(null)
+  const [armedProductId, setArmedProductId] = React.useState<string | null>(null)
+
+  const armedProduct = React.useMemo(
+    () => products?.find((p) => p.id === armedProductId && p.isActive) ?? null,
+    [products, armedProductId],
+  )
 
   function handleFaceClick(e: React.MouseEvent<HTMLDivElement>) {
     if (readOnly) return
@@ -48,11 +55,26 @@ export function FaceDiagramEditor({
     const clampedX = Math.max(0, Math.min(100, x))
     const clampedY = Math.max(0, Math.min(100, y))
 
-    setEditingPoint({
+    const basePoint: Partial<DiagramPointData> & { x: number; y: number } = {
       x: Math.round(clampedX * 100) / 100,
       y: Math.round(clampedY * 100) / 100,
       viewType: activeView,
-    })
+    }
+
+    // If a product is armed, pre-fill identity fields so the modal opens
+    // straight to a focused quantity input.
+    if (armedProduct) {
+      basePoint.productName = armedProduct.name
+      basePoint.activeIngredient = armedProduct.activeIngredient ?? undefined
+      // Defensive: only pre-fill the unit if it's one of the valid enum values.
+      // Catalog products may have other strings in defaultUnit that would
+      // corrupt the pre-fill otherwise.
+      if (armedProduct.defaultUnit === 'U' || armedProduct.defaultUnit === 'mL') {
+        basePoint.quantityUnit = armedProduct.defaultUnit
+      }
+    }
+
+    setEditingPoint(basePoint)
     setModalOpen(true)
   }
 
@@ -145,17 +167,30 @@ export function FaceDiagramEditor({
         <div className="flex flex-col gap-4 md:flex-row">
           {/* Face canvas */}
           <div className="flex-1">
-            <div
-              className={cn(
-                'relative aspect-[4/5] w-full overflow-hidden rounded-lg border border-[#E8ECEF] bg-white',
-                readOnly ? 'cursor-default' : 'cursor-crosshair',
+            <div className="overflow-hidden rounded-lg border border-[#E8ECEF] bg-white">
+              {/* ─── Armed product header ────────────────────────── */}
+              {!readOnly && (
+                <div className="border-b border-[#E8ECEF] px-2 py-1.5">
+                  <ArmedProductStrip
+                    products={products ?? []}
+                    armedProductId={armedProductId}
+                    onArmedProductIdChange={setArmedProductId}
+                    className=""
+                    hideHint
+                  />
+                </div>
               )}
-              onClick={handleFaceClick}
-              data-testid="face-diagram-canvas"
-            >
-              <FaceTemplate viewType={activeView} gender={gender} />
+              <div
+                className={cn(
+                  'relative aspect-[4/5] w-full',
+                  readOnly ? 'cursor-default' : 'cursor-crosshair',
+                )}
+                onClick={handleFaceClick}
+                data-testid="face-diagram-canvas"
+              >
+                <FaceTemplate viewType={activeView} gender={gender} />
 
-              {/* Ghost points */}
+                {/* Ghost points */}
               {showPrevious &&
                 previousPoints
                   ?.filter((p) => (p.viewType || 'front') === activeView)
@@ -189,17 +224,20 @@ export function FaceDiagramEditor({
                   />
                 ))}
 
-              {/* Empty state helper */}
-              {points.filter((p) => (p.viewType || 'front') === activeView).length === 0 && !readOnly && (
-                <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-5">
-                  <span className="rounded-full bg-charcoal/70 px-3.5 py-1.5 text-[11px] text-white/90 backdrop-blur-sm shadow-lg">
-                    {(!products || products.length === 0)
-                      ? 'Configure produtos para usar o diagrama'
-                      : 'Clique para adicionar ponto de aplicação'
-                    }
-                  </span>
-                </div>
-              )}
+                {/* Empty state helper */}
+                {points.filter((p) => (p.viewType || 'front') === activeView).length === 0 && !readOnly && (
+                  <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-5">
+                    <span className="rounded-full bg-charcoal/70 px-3.5 py-1.5 text-[11px] text-white/90 backdrop-blur-sm shadow-lg">
+                      {(!products || products.length === 0)
+                        ? 'Configure produtos para usar o diagrama'
+                        : armedProduct
+                          ? 'Clique para adicionar ponto'
+                          : 'Selecione um produto acima para marcar pontos'
+                      }
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
