@@ -46,3 +46,6 @@ test-results/
 web/.next/
 site/.next/
 
+# git worktrees
+.worktrees/
+
