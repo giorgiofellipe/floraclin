@@ -21,6 +21,7 @@ import { useCreateFinancialEntry } from '@/hooks/mutations/use-financial-mutatio
 import { useFinancialSettings } from '@/hooks/queries/use-financial-settings'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { addDays } from 'date-fns'
+import { toLocalYmd } from '@/lib/dates'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 
 const INSTALLMENT_COUNT_ITEMS: Record<string, string> = Object.fromEntries(
@@ -74,7 +75,7 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
     return Array.from({ length: parsedCount }, (_, i) => {
       const amount = i === 0 ? installmentAmount + remainder : installmentAmount
       const defaultDate = addDays(today, i * 30)
-      const defaultDateStr = defaultDate.toISOString().split('T')[0]
+      const defaultDateStr = toLocalYmd(defaultDate)
       return {
         number: i + 1,
         amount,

@@ -14,6 +14,7 @@ import { MaskedInput } from '@/components/ui/masked-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { maskPhone, maskCPF, maskCEP } from '@/lib/masks'
+import { toLocalYmd } from '@/lib/dates'
 import { DatePicker } from '@/components/ui/date-picker'
 import {
   Sheet,
@@ -160,7 +161,7 @@ export function PatientForm({ open, onOpenChange, patient, inline, prefill }: Pa
               placeholder="Selecionar"
               showYearNavigation
               yearRange={{ from: 1920, to: new Date().getFullYear() }}
-              maxDate={new Date().toISOString().split('T')[0]}
+              maxDate={toLocalYmd(new Date())}
             />
           </div>
           <div className="flex flex-col gap-1.5">

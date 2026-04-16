@@ -13,6 +13,7 @@ import { addDays } from 'date-fns'
 import { verifyTenantOwnership } from './helpers'
 import type { CreateExpenseInput, ExpenseFilterInput } from '@/validations/expenses'
 import type { PaymentMethod } from '@/types'
+import { startOfBrDay, endOfBrDay, toLocalYmd } from '@/lib/dates'
 
 export async function createExpense(
   tenantId: string,
@@ -61,7 +62,7 @@ export async function createExpense(
       const dueDate =
         data.customDueDates && data.customDueDates[i]
           ? data.customDueDates[i]
-          : addDays(today, i * 30).toISOString().split('T')[0]
+          : toLocalYmd(addDays(today, i * 30))
       return {
         expenseId: expense.id,
         installmentNumber: i + 1,
@@ -103,11 +104,11 @@ export async function listExpenses(
   }
 
   if (filters.dateFrom) {
-    conditions.push(gte(expenses.createdAt, new Date(filters.dateFrom)))
+    conditions.push(gte(expenses.createdAt, startOfBrDay(filters.dateFrom)))
   }
 
   if (filters.dateTo) {
-    conditions.push(lte(expenses.createdAt, new Date(filters.dateTo)))
+    conditions.push(lte(expenses.createdAt, endOfBrDay(filters.dateTo)))
   }
 
   if (filters.paymentMethod) {

@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { DatePicker } from '@/components/ui/date-picker'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
+import { brToday } from '@/lib/dates'
 import { useExpenseDetail } from '@/hooks/queries/use-expenses'
 import {
   usePayExpenseInstallment,
@@ -57,7 +58,10 @@ interface Attachment {
 }
 
 function getInstallmentDisplayStatus(inst: Installment): string {
-  if (inst.status === 'pending' && new Date(inst.dueDate) < new Date()) return 'overdue'
+  // Compare YYYY-MM-DD strings lexically — same as chronologically, and
+  // sidesteps `new Date('2026-04-16')` parsing as UTC midnight (i.e. Apr 15
+  // 21:00 BRT) and flagging today's due date as overdue.
+  if (inst.status === 'pending' && inst.dueDate < brToday()) return 'overdue'
   return inst.status
 }
 
@@ -143,22 +147,9 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
     <div className="space-y-4">
       {/* Installment cards */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] uppercase tracking-[0.15em] text-mid font-medium">
-            Parcelas
-          </span>
-          {!isEntryCancelled && expenseData && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setEditDialogOpen(true)}
-              className="h-7 px-2 text-xs"
-            >
-              <PencilIcon className="h-3 w-3" />
-              Editar despesa
-            </Button>
-          )}
-        </div>
+        <span className="text-[10px] uppercase tracking-[0.15em] text-mid font-medium">
+          Parcelas
+        </span>
         {installments.map((inst) => {
           const displayStatus = getInstallmentDisplayStatus(inst)
           const isPaid = displayStatus === 'paid'
@@ -275,9 +266,19 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
         />
       </div>
 
-      {/* Cancel button */}
+      {/* Expense-level actions */}
       {!isEntryCancelled && (
-        <div className="flex justify-end pt-2 border-t border-sage/10">
+        <div className="flex justify-end gap-2 pt-2 border-t border-sage/10">
+          {expenseData && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEditDialogOpen(true)}
+            >
+              <PencilIcon className="h-3.5 w-3.5" />
+              Editar despesa
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"

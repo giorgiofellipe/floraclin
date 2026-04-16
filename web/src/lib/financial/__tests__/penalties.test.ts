@@ -86,6 +86,24 @@ describe('getDaysOverdue', () => {
     past.setDate(past.getDate() - 35)
     expect(getDaysOverdue(past.toISOString(), 5)).toBe(30)
   })
+
+  it('treats a bare YYYY-MM-DD dueDate as BR-local midnight (not UTC)', () => {
+    // Regression: old code did `new Date('2026-04-16')` which is UTC midnight
+    // → on a UTC host, comparing against a BR paidAt around midnight would
+    // double-count a day overdue. Anchoring to BR midnight keeps the math
+    // correct regardless of host TZ.
+    //
+    // A payment made at 23:30 BR on 2026-04-16 is 02:30Z on 2026-04-17.
+    // Due date is the same BR day → 0 days overdue.
+    const paidAt = new Date('2026-04-17T02:30:00.000Z')
+    expect(getDaysOverdue('2026-04-16', 0, paidAt)).toBe(0)
+  })
+
+  it('accepts a full ISO datetime and parses it directly', () => {
+    const dueIso = '2026-04-01T12:00:00.000Z'
+    const paidAt = new Date('2026-04-11T12:00:00.000Z')
+    expect(getDaysOverdue(dueIso, 0, paidAt)).toBe(10)
+  })
 })
 
 describe('allocatePayment (Art. 354)', () => {

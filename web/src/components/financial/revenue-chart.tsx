@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
 import { queryKeys } from '@/hooks/queries/query-keys'
 import { subMonths, format } from 'date-fns'
+import { toLocalYmd } from '@/lib/dates'
 import { DollarSignIcon, ClockIcon, AlertTriangleIcon, TrendingUpIcon, WalletIcon } from 'lucide-react'
 
 const DONUT_COLORS = [
@@ -59,8 +60,8 @@ export function RevenueChart() {
   const dateRange = useMemo(() => {
     const now = new Date()
     return {
-      dateFrom: subMonths(now, 6).toISOString().split('T')[0],
-      dateTo: now.toISOString().split('T')[0],
+      dateFrom: toLocalYmd(subMonths(now, 6)),
+      dateTo: toLocalYmd(now),
     }
   }, [])
 

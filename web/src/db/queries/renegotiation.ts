@@ -17,6 +17,7 @@ import {
 } from '@/lib/financial/penalties'
 import type { RenegotiateInput } from '@/validations/financial'
 import { addDays } from 'date-fns'
+import { toLocalYmd } from '@/lib/dates'
 
 export async function renegotiateCharges(
   tenantId: string,
@@ -231,7 +232,7 @@ export async function renegotiateCharges(
     const installmentRows = Array.from({ length: data.newInstallmentCount }, (_, i) => {
       const amount = i === 0 ? installmentAmount + remainder : installmentAmount
       const dueDate = data.customDueDates?.[i]
-        ?? addDays(now, i * 30).toISOString().split('T')[0]
+        ?? toLocalYmd(addDays(now, i * 30))
       return {
         tenantId,
         financialEntryId: newEntry.id,
