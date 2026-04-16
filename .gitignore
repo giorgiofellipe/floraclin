@@ -49,3 +49,6 @@ site/.next/
 # superpowers brainstorming companion (visual mockups, scratch state)
 .superpowers/
 
+# vitest cache
+**/.vite/
+
