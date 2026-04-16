@@ -51,6 +51,7 @@ export function AdminTenantDialog({ open, onOpenChange, tenant }: AdminTenantDia
   // Reset form when dialog opens/closes or tenant changes
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- dialog-open reset pattern; state is intentionally synced to props here
       setName(tenant?.name ?? '')
       setSlug(tenant?.slug ?? '')
       setOwnerEmail('')

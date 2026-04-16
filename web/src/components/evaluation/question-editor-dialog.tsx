@@ -66,6 +66,7 @@ export function QuestionEditorDialog({
   useEffect(() => {
     if (open) {
       if (question) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- dialog-open reset pattern; intentional prop-to-state sync
         setLabel(question.label)
         setType(question.type)
         setRequired(question.required)

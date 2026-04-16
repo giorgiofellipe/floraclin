@@ -8,6 +8,15 @@
     "build:web": "pnpm --filter @floraclin/web build",
     "build:site": "pnpm --filter @floraclin/site build",
     "test": "pnpm --filter @floraclin/web test",
-    "lint": "pnpm --filter @floraclin/web lint"
+    "lint": "pnpm --filter @floraclin/web lint",
+    "typecheck": "pnpm --filter @floraclin/web typecheck",
+    "ci:checks": "pnpm --filter @floraclin/web lint && pnpm --filter @floraclin/web typecheck && pnpm --filter @floraclin/web test:run",
+    "prepare": "simple-git-hooks"
+  },
+  "simple-git-hooks": {
+    "pre-push": "pnpm ci:checks"
+  },
+  "devDependencies": {
+    "simple-git-hooks": "^2.11.1"
   }
 }
