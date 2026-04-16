@@ -21,6 +21,7 @@ import { useRenegotiate } from '@/hooks/mutations/use-financial-mutations'
 import { formatCurrency } from '@/lib/utils'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { addDays } from 'date-fns'
+import { toLocalYmd } from '@/lib/dates'
 
 const INSTALLMENT_COUNT_ITEMS: Record<string, string> = Object.fromEntries(
   Array.from({ length: 24 }, (_, i) => [String(i + 1), `${i + 1}x`])
@@ -92,7 +93,7 @@ export function RenegotiationDialog({
 
     return Array.from({ length: parsedCount }, (_, i) => {
       const amount = i === 0 ? installmentAmount + remainder : installmentAmount
-      const defaultDate = addDays(today, i * 30).toISOString().split('T')[0]
+      const defaultDate = toLocalYmd(addDays(today, i * 30))
       return {
         number: i + 1,
         amount,

@@ -13,6 +13,14 @@ describe('formatDate', () => {
   it('formats end-of-year date', () => {
     expect(formatDate(new Date(2025, 11, 31))).toBe('31/12/2025')
   })
+
+  it('formats a bare YYYY-MM-DD as that calendar day (no UTC round-trip)', () => {
+    // Regression: `new Date('2026-04-16')` parses as UTC midnight which is
+    // 21:00 BRT on 2026-04-15 — installments previously displayed one day
+    // earlier than the stored due_date.
+    expect(formatDate('2026-04-16')).toBe('16/04/2026')
+    expect(formatDate('2026-01-01')).toBe('01/01/2026')
+  })
 })
 
 describe('formatDateTime', () => {

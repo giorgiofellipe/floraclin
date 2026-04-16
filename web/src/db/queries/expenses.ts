@@ -13,6 +13,7 @@ import { addDays } from 'date-fns'
 import { verifyTenantOwnership } from './helpers'
 import type { CreateExpenseInput, ExpenseFilterInput } from '@/validations/expenses'
 import type { PaymentMethod } from '@/types'
+import { startOfBrDay, endOfBrDay, toLocalYmd } from '@/lib/dates'
 
 export async function createExpense(
   tenantId: string,
@@ -61,7 +62,7 @@ export async function createExpense(
       const dueDate =
         data.customDueDates && data.customDueDates[i]
           ? data.customDueDates[i]
-          : addDays(today, i * 30).toISOString().split('T')[0]
+          : toLocalYmd(addDays(today, i * 30))
       return {
         expenseId: expense.id,
         installmentNumber: i + 1,
@@ -103,11 +104,11 @@ export async function listExpenses(
   }
 
   if (filters.dateFrom) {
-    conditions.push(gte(expenses.createdAt, new Date(filters.dateFrom)))
+    conditions.push(gte(expenses.createdAt, startOfBrDay(filters.dateFrom)))
   }
 
   if (filters.dateTo) {
-    conditions.push(lte(expenses.createdAt, new Date(filters.dateTo)))
+    conditions.push(lte(expenses.createdAt, endOfBrDay(filters.dateTo)))
   }
 
   if (filters.paymentMethod) {
@@ -327,6 +328,289 @@ export async function payExpenseInstallment(
     }, tx)
 
     return updated
+  })
+}
+
+export async function revertExpenseInstallmentPayment(
+  tenantId: string,
+  installmentId: string,
+  userId: string,
+  reason?: string,
+) {
+  return withTransaction(async (tx) => {
+    const lockResult = await tx.execute(
+      sql`SELECT ei.id, ei.expense_id, ei.amount, ei.status, ei.installment_number,
+                 ei.paid_at, ei.payment_method,
+                 e.status AS expense_status, e.category_id,
+                 cm.id AS movement_id
+          FROM floraclin.expense_installments ei
+          INNER JOIN floraclin.expenses e ON e.id = ei.expense_id
+          LEFT JOIN floraclin.cash_movements cm
+            ON cm.expense_installment_id = ei.id
+            AND cm.type = 'outflow'
+            AND cm.reversed_by_movement_id IS NULL
+          WHERE ei.id = ${installmentId}
+            AND e.tenant_id = ${tenantId}
+            AND e.deleted_at IS NULL
+          FOR UPDATE OF ei`,
+    )
+
+    const rows = (Array.isArray(lockResult)
+      ? lockResult
+      : (lockResult as Record<string, unknown>).rows ?? lockResult) as Record<string, unknown>[]
+    const row = rows[0]
+
+    if (!row) throw new Error('Parcela não encontrada ou não pertence a esta clínica')
+    if (String(row.expense_status) === 'cancelled') throw new Error('Despesa cancelada')
+    if (String(row.status) !== 'paid') throw new Error('Parcela não está paga')
+
+    const originalMovementId = row.movement_id ? String(row.movement_id) : null
+    const prevPaidAt = row.paid_at ? new Date(row.paid_at as string | Date) : null
+    const prevPaymentMethod = row.payment_method ? String(row.payment_method) : null
+    const installmentNumber = Number(row.installment_number)
+    const expenseId = String(row.expense_id)
+    const amount = String(row.amount)
+    const categoryId = row.category_id ? String(row.category_id) : null
+
+    const [counter] = await tx
+      .insert(cashMovements)
+      .values({
+        tenantId,
+        type: 'inflow',
+        amount,
+        description: `Estorno: Despesa parcela ${installmentNumber}${reason ? ` — ${reason}` : ''}`,
+        // null: counter movement is a ledger reversal, not a real inflow via
+        // the original channel. Avoids fictitious inflows in per-method reports.
+        paymentMethod: null,
+        movementDate: new Date(),
+        expenseInstallmentId: installmentId,
+        expenseCategoryId: categoryId,
+        recordedBy: userId,
+      })
+      .returning({ id: cashMovements.id })
+
+    if (originalMovementId && counter) {
+      await tx
+        .update(cashMovements)
+        .set({ reversedByMovementId: counter.id })
+        .where(eq(cashMovements.id, originalMovementId))
+    }
+
+    const [updated] = await tx
+      .update(expenseInstallments)
+      .set({ status: 'pending', paidAt: null, paymentMethod: null })
+      .where(eq(expenseInstallments.id, installmentId))
+      .returning()
+
+    if (String(row.expense_status) === 'paid') {
+      await tx
+        .update(expenses)
+        .set({ status: 'pending', updatedAt: new Date() })
+        .where(eq(expenses.id, expenseId))
+    }
+
+    await createAuditLog(
+      {
+        tenantId,
+        userId,
+        action: 'update',
+        entityType: 'expense_installment',
+        entityId: installmentId,
+        changes: {
+          status: { old: 'paid', new: 'pending' },
+          paidAt: { old: prevPaidAt ? prevPaidAt.toISOString() : null, new: null },
+          paymentMethod: { old: prevPaymentMethod, new: null },
+          ...(reason ? { reason: { old: null, new: reason } } : {}),
+        },
+      },
+      tx,
+    )
+
+    return updated
+  })
+}
+
+interface UpdateExpenseArgs {
+  description: string
+  categoryId: string
+  notes?: string
+  totalAmount: number
+  installmentCount: number
+  unpaidDueDates: string[]
+}
+
+export async function updateExpense(
+  tenantId: string,
+  expenseId: string,
+  userId: string,
+  input: UpdateExpenseArgs,
+) {
+  // Verify categoryId belongs to this tenant or is a system default (matches createExpense).
+  const [category] = await db
+    .select({ id: expenseCategories.id })
+    .from(expenseCategories)
+    .where(
+      and(
+        eq(expenseCategories.id, input.categoryId),
+        isNull(expenseCategories.deletedAt),
+        sql`(${expenseCategories.tenantId} = ${tenantId} OR ${expenseCategories.tenantId} IS NULL)`,
+      ),
+    )
+    .limit(1)
+
+  if (!category) {
+    throw new Error('Categoria não encontrada ou não pertence a esta clínica')
+  }
+
+  return withTransaction(async (tx) => {
+    // Lock the parent expense row to prevent concurrent cancellation mid-update.
+    const [expense] = await tx
+      .select()
+      .from(expenses)
+      .where(
+        and(
+          eq(expenses.tenantId, tenantId),
+          eq(expenses.id, expenseId),
+          isNull(expenses.deletedAt),
+        ),
+      )
+      .for('update')
+      .limit(1)
+
+    if (!expense) throw new Error('Despesa não encontrada')
+    if (expense.status === 'cancelled') throw new Error('Despesa cancelada')
+
+    // Lock + read installments in one go (prevents TOCTOU)
+    const lockedRows = await tx.execute(
+      sql`SELECT id, installment_number, amount, status
+          FROM floraclin.expense_installments
+          WHERE expense_id = ${expenseId}
+          FOR UPDATE`,
+    )
+
+    const rows = (Array.isArray(lockedRows)
+      ? lockedRows
+      : (lockedRows as Record<string, unknown>).rows ?? lockedRows) as Record<string, unknown>[]
+
+    const existingInstallments = rows.map((r) => ({
+      id: String(r.id),
+      installmentNumber: Number(r.installment_number),
+      amountCents: Math.round(Number(r.amount) * 100),
+      status: String(r.status),
+    }))
+
+    const paidInstallments = existingInstallments.filter((i) => i.status === 'paid')
+    const unpaidInstallments = existingInstallments.filter((i) => i.status !== 'paid')
+    const paidCount = paidInstallments.length
+    const sumPaidCents = paidInstallments.reduce((acc, i) => acc + i.amountCents, 0)
+
+    const newTotalCents = Math.round(input.totalAmount * 100)
+    const newCount = input.installmentCount
+    const unpaidCount = newCount - paidCount
+    const remainingCents = newTotalCents - sumPaidCents
+
+    if (newTotalCents < sumPaidCents) throw new Error('Valor menor que o já pago')
+    if (newCount < paidCount) throw new Error('Parcelas menor que as já pagas')
+    if ((remainingCents === 0) !== (unpaidCount === 0)) {
+      throw new Error('Valor e parcelas inconsistentes')
+    }
+    if (input.unpaidDueDates.length !== unpaidCount) {
+      throw new Error('Quantidade de datas não bate com as parcelas pendentes')
+    }
+
+    const scalarChanges: Record<string, { old: unknown; new: unknown }> = {}
+    if (expense.description !== input.description) {
+      scalarChanges.description = { old: expense.description, new: input.description }
+    }
+    if (expense.categoryId !== input.categoryId) {
+      scalarChanges.categoryId = { old: expense.categoryId, new: input.categoryId }
+    }
+    if ((expense.notes ?? null) !== (input.notes ?? null)) {
+      scalarChanges.notes = { old: expense.notes ?? null, new: input.notes ?? null }
+    }
+    const oldTotalCents = Math.round(Number(expense.totalAmount) * 100)
+    if (oldTotalCents !== newTotalCents) {
+      scalarChanges.totalAmount = { old: oldTotalCents / 100, new: newTotalCents / 100 }
+    }
+    if (expense.installmentCount !== newCount) {
+      scalarChanges.installmentCount = { old: expense.installmentCount, new: newCount }
+    }
+
+    await tx
+      .update(expenses)
+      .set({
+        description: input.description,
+        categoryId: input.categoryId,
+        notes: input.notes ?? null,
+        totalAmount: (newTotalCents / 100).toFixed(2),
+        installmentCount: newCount,
+        updatedAt: new Date(),
+      })
+      .where(eq(expenses.id, expenseId))
+
+    if (unpaidInstallments.length > 0) {
+      await tx
+        .delete(expenseInstallments)
+        .where(
+          and(
+            eq(expenseInstallments.expenseId, expenseId),
+            sql`${expenseInstallments.status} <> 'paid'`,
+          ),
+        )
+    }
+
+    if (unpaidCount > 0) {
+      const perSlotCents = Math.floor(remainingCents / unpaidCount)
+      const remainderCents = remainingCents - perSlotCents * unpaidCount
+      let sumCheckCents = 0
+      for (let i = 0; i < unpaidCount; i++) {
+        const amountCents = perSlotCents + (i === 0 ? remainderCents : 0)
+        sumCheckCents += amountCents
+        await tx.insert(expenseInstallments).values({
+          expenseId,
+          installmentNumber: paidCount + i + 1,
+          amount: (amountCents / 100).toFixed(2),
+          dueDate: input.unpaidDueDates[i],
+          status: 'pending',
+        })
+      }
+      // Defensive invariant: sum of regenerated installments + paid must equal new total
+      if (sumCheckCents + sumPaidCents !== newTotalCents) {
+        throw new Error('Erro interno: distribuição de parcelas inconsistente')
+      }
+    }
+
+    if (unpaidCount === 0 && paidCount > 0 && expense.status !== 'paid') {
+      await tx
+        .update(expenses)
+        .set({ status: 'paid', updatedAt: new Date() })
+        .where(eq(expenses.id, expenseId))
+    } else if (unpaidCount > 0 && expense.status === 'paid') {
+      await tx
+        .update(expenses)
+        .set({ status: 'pending', updatedAt: new Date() })
+        .where(eq(expenses.id, expenseId))
+    }
+
+    await createAuditLog(
+      {
+        tenantId,
+        userId,
+        action: 'update',
+        entityType: 'expense',
+        entityId: expenseId,
+        changes: {
+          ...scalarChanges,
+          installmentsRegenerated: {
+            old: unpaidInstallments.length,
+            new: unpaidCount,
+          },
+        },
+      },
+      tx,
+    )
+
+    return { success: true }
   })
 }
 

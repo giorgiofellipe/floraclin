@@ -18,6 +18,7 @@ import {
   addDays,
   format,
 } from 'date-fns'
+import { brToday, startOfBrDay, endOfBrDay } from '@/lib/dates'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -63,7 +64,7 @@ export async function getTodayAppointments(
   tenantId: string,
   practitionerId?: string
 ): Promise<TodayAppointment[]> {
-  const today = format(new Date(), 'yyyy-MM-dd')
+  const today = brToday()
 
   const conditions = [
     eq(appointments.tenantId, tenantId),
@@ -133,8 +134,8 @@ export async function getQuickStats(
   const proceduresConditions = [
     eq(procedureRecords.tenantId, tenantId),
     isNull(procedureRecords.deletedAt),
-    gte(procedureRecords.performedAt, new Date(monthStart)),
-    lte(procedureRecords.performedAt, new Date(monthEnd + 'T23:59:59.999Z')),
+    gte(procedureRecords.performedAt, startOfBrDay(monthStart)),
+    lte(procedureRecords.performedAt, endOfBrDay(monthEnd)),
   ]
   if (practitionerId) {
     proceduresConditions.push(
@@ -154,8 +155,8 @@ export async function getQuickStats(
     const revenueConditions = [
       eq(installments.tenantId, tenantId),
       eq(installments.status, 'paid'),
-      gte(installments.paidAt, new Date(monthStart)),
-      lte(installments.paidAt, new Date(monthEnd + 'T23:59:59.999Z')),
+      gte(installments.paidAt, startOfBrDay(monthStart)),
+      lte(installments.paidAt, endOfBrDay(monthEnd)),
     ]
 
     const revenueResult = await db
@@ -179,7 +180,7 @@ export async function getUpcomingFollowUps(
   tenantId: string,
   practitionerId?: string
 ): Promise<UpcomingFollowUp[]> {
-  const today = format(new Date(), 'yyyy-MM-dd')
+  const today = brToday()
   const twoWeeksOut = format(addDays(new Date(), 14), 'yyyy-MM-dd')
 
   const conditions = [

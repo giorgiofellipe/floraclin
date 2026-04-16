@@ -11,8 +11,9 @@ import {
   users,
   tenantUsers,
 } from '@/db/schema'
-import { eq, and, sql, count, sum, desc, asc } from 'drizzle-orm'
+import { eq, and, sql, count, sum, desc, asc, gte, lte } from 'drizzle-orm'
 import type { LedgerFilterInput } from '@/validations/financial'
+import { startOfBrDay, endOfBrDay } from '@/lib/dates'
 
 export async function listCashMovements(
   tenantId: string,
@@ -20,8 +21,8 @@ export async function listCashMovements(
 ) {
   const conditions = [
     eq(cashMovements.tenantId, tenantId),
-    sql`${cashMovements.movementDate} >= ${filters.dateFrom}::timestamp`,
-    sql`${cashMovements.movementDate} <= ${filters.dateTo}::timestamp`,
+    gte(cashMovements.movementDate, startOfBrDay(filters.dateFrom)),
+    lte(cashMovements.movementDate, endOfBrDay(filters.dateTo)),
   ]
 
   if (filters.type && filters.type !== 'all') {
@@ -95,8 +96,8 @@ export async function getLedgerSummary(
 ) {
   const conditions = [
     eq(cashMovements.tenantId, tenantId),
-    sql`${cashMovements.movementDate} >= ${filters.dateFrom}::timestamp`,
-    sql`${cashMovements.movementDate} <= ${filters.dateTo}::timestamp`,
+    gte(cashMovements.movementDate, startOfBrDay(filters.dateFrom)),
+    lte(cashMovements.movementDate, endOfBrDay(filters.dateTo)),
   ]
 
   if (filters.type && filters.type !== 'all') {
@@ -156,9 +157,10 @@ export async function getPractitionerPL(
   dateTo: string,
   practitionerId?: string
 ) {
-  // Keep as strings — raw SQL with db.execute() doesn't handle JS Date objects well
-  const dateFromTs = dateFrom
-  const dateToTs = dateTo
+  // BR-local day boundaries as unambiguous ISO UTC strings. Postgres parses
+  // `timestamptz` comparisons against these correctly regardless of session TZ.
+  const dateFromTs = startOfBrDay(dateFrom).toISOString()
+  const dateToTs = endOfBrDay(dateTo).toISOString()
 
   // Base practitioner condition
   const practitionerCondition = practitionerId
@@ -287,8 +289,8 @@ export async function exportLedgerCSV(
 ) {
   const conditions = [
     eq(cashMovements.tenantId, tenantId),
-    sql`${cashMovements.movementDate} >= ${filters.dateFrom}::timestamp`,
-    sql`${cashMovements.movementDate} <= ${filters.dateTo}::timestamp`,
+    gte(cashMovements.movementDate, startOfBrDay(filters.dateFrom)),
+    lte(cashMovements.movementDate, endOfBrDay(filters.dateTo)),
   ]
 
   if (filters.type && filters.type !== 'all') {

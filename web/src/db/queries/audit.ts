@@ -1,6 +1,7 @@
 import { db } from '@/db/client'
 import { auditLogs, users } from '@/db/schema'
 import { eq, and, sql, gte, lte, desc, count } from 'drizzle-orm'
+import { startOfBrDay, endOfBrDay } from '@/lib/dates'
 
 export interface AuditLogWithUser {
   id: string
@@ -44,14 +45,12 @@ export async function listAuditLogs(
   }
 
   if (filters.dateFrom) {
-    conditions.push(gte(auditLogs.createdAt, new Date(filters.dateFrom)))
+    conditions.push(gte(auditLogs.createdAt, startOfBrDay(filters.dateFrom)))
   }
 
   if (filters.dateTo) {
-    // Include the full end date by setting to end of day
-    const endDate = new Date(filters.dateTo)
-    endDate.setHours(23, 59, 59, 999)
-    conditions.push(lte(auditLogs.createdAt, endDate))
+    // BR-local end of day so the filter covers the full calendar day even on UTC hosts.
+    conditions.push(lte(auditLogs.createdAt, endOfBrDay(filters.dateTo)))
   }
 
   const whereClause = and(...conditions)

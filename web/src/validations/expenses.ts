@@ -40,3 +40,23 @@ export type CreateExpenseInput = z.infer<typeof createExpenseSchema>
 export type PayExpenseInstallmentInput = z.infer<typeof payExpenseInstallmentSchema>
 export type ExpenseFilterInput = z.infer<typeof expenseFilterSchema>
 export type ExpenseCategoryInput = z.infer<typeof expenseCategorySchema>
+
+// Reason max 500 chars — logged into audit, never exposed back in APIs.
+export const revertExpenseInstallmentSchema = z.object({
+  reason: z.string().trim().max(500, 'Motivo deve ter no máximo 500 caracteres').optional(),
+})
+
+export type RevertExpenseInstallmentInput = z.infer<typeof revertExpenseInstallmentSchema>
+
+export const updateExpenseSchema = z.object({
+  description: z.string().trim().min(1, 'Descrição é obrigatória').max(255),
+  categoryId: z.string().uuid('Categoria inválida'),
+  notes: z.string().trim().max(1000).optional(),
+  totalAmount: z.number().positive('Valor deve ser positivo'),
+  installmentCount: z.number().int().min(1, 'Mínimo 1 parcela').max(24, 'Máximo 24 parcelas'),
+  unpaidDueDates: z
+    .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida (esperado YYYY-MM-DD)'))
+    .max(24, 'Máximo 24 datas'),
+})
+
+export type UpdateExpenseInput = z.infer<typeof updateExpenseSchema>

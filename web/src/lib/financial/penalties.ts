@@ -1,6 +1,17 @@
+import { startOfBrDay } from '@/lib/dates'
+
 const MAX_FINE_PERCENTAGE = 2
 const MAX_INTEREST_MONTHLY = 1
 const DAYS_IN_MONTH = 30
+
+// Accepts either a bare YYYY-MM-DD (a BR calendar day — e.g. installment.dueDate)
+// or a full ISO datetime (e.g. a prior lastFineInterestCalcAt).
+// Bare YYYY-MM-DD is anchored to BR-local midnight so fine/interest day math
+// stays correct on UTC hosts.
+function parseOverdueReference(value: string): Date {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return startOfBrDay(value)
+  return new Date(value)
+}
 
 export interface InstallmentState {
   amount: number
@@ -80,7 +91,7 @@ export function getDaysOverdue(
   gracePeriodDays: number,
   asOf?: Date,
 ): number {
-  const due = new Date(dueDate)
+  const due = parseOverdueReference(dueDate)
   const ref = asOf ?? new Date()
   const diffMs = ref.getTime() - due.getTime()
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))

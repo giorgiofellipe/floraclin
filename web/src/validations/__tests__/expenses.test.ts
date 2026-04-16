@@ -4,6 +4,8 @@ import {
   payExpenseInstallmentSchema,
   expenseFilterSchema,
   expenseCategorySchema,
+  revertExpenseInstallmentSchema,
+  updateExpenseSchema,
 } from '../expenses'
 
 const UUID = '550e8400-e29b-41d4-a716-446655440000'
@@ -275,5 +277,60 @@ describe('expenseCategorySchema', () => {
   it('fails when icon exceeds 50 characters', () => {
     const result = expenseCategorySchema.safeParse({ name: 'Test', icon: 'a'.repeat(51) })
     expect(result.success).toBe(false)
+  })
+})
+
+describe('revertExpenseInstallmentSchema', () => {
+  it('accepts empty object', () => {
+    expect(revertExpenseInstallmentSchema.safeParse({}).success).toBe(true)
+  })
+
+  it('accepts reason up to 500 chars', () => {
+    expect(revertExpenseInstallmentSchema.safeParse({ reason: 'x'.repeat(500) }).success).toBe(true)
+  })
+
+  it('rejects reason over 500 chars', () => {
+    expect(revertExpenseInstallmentSchema.safeParse({ reason: 'x'.repeat(501) }).success).toBe(false)
+  })
+})
+
+describe('updateExpenseSchema', () => {
+  const base = {
+    description: 'Aluguel',
+    categoryId: UUID,
+    totalAmount: 1000,
+    installmentCount: 3,
+    unpaidDueDates: ['2026-05-01', '2026-06-01', '2026-07-01'],
+  }
+
+  it('accepts a minimal valid payload', () => {
+    expect(updateExpenseSchema.safeParse(base).success).toBe(true)
+  })
+
+  it('rejects invalid UUID', () => {
+    expect(updateExpenseSchema.safeParse({ ...base, categoryId: 'bad' }).success).toBe(false)
+  })
+
+  it('rejects installmentCount below 1 or above 24', () => {
+    expect(updateExpenseSchema.safeParse({ ...base, installmentCount: 0 }).success).toBe(false)
+    expect(updateExpenseSchema.safeParse({ ...base, installmentCount: 25 }).success).toBe(false)
+  })
+
+  it('rejects negative or zero totalAmount', () => {
+    expect(updateExpenseSchema.safeParse({ ...base, totalAmount: 0 }).success).toBe(false)
+    expect(updateExpenseSchema.safeParse({ ...base, totalAmount: -1 }).success).toBe(false)
+  })
+
+  it('accepts empty unpaidDueDates (when all installments already paid)', () => {
+    expect(updateExpenseSchema.safeParse({ ...base, unpaidDueDates: [] }).success).toBe(true)
+  })
+
+  it('rejects bad date format', () => {
+    expect(updateExpenseSchema.safeParse({ ...base, unpaidDueDates: ['not-a-date'] }).success).toBe(false)
+  })
+
+  it('defaults notes to undefined', () => {
+    const r = updateExpenseSchema.safeParse(base)
+    if (r.success) expect(r.data.notes).toBeUndefined()
   })
 })
