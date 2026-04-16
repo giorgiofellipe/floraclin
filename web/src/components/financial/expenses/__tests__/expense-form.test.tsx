@@ -86,9 +86,14 @@ describe('ExpenseForm', () => {
     expect(screen.getByRole('button', { name: 'Cancelar' })).toBeInTheDocument()
   })
 
-  it('renders custom due dates toggle', () => {
+  it('always renders per-installment date rows', () => {
     render(<ExpenseForm {...defaultProps} />, { wrapper: createWrapper() })
+    expect(screen.getByText('Datas de vencimento')).toBeInTheDocument()
+    expect(screen.getByText('1a parcela')).toBeInTheDocument()
+  })
 
-    expect(screen.getByText('Definir datas de vencimento manualmente')).toBeInTheDocument()
+  it('does not render the customDueDates toggle', () => {
+    render(<ExpenseForm {...defaultProps} />, { wrapper: createWrapper() })
+    expect(screen.queryByText('Definir datas de vencimento manualmente')).not.toBeInTheDocument()
   })
 })

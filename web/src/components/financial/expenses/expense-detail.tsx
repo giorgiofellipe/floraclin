@@ -13,14 +13,17 @@ import {
 } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { DatePicker } from '@/components/ui/date-picker'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
 import { useExpenseDetail } from '@/hooks/queries/use-expenses'
 import {
   usePayExpenseInstallment,
   useCancelExpense,
+  useRevertExpenseInstallment,
 } from '@/hooks/mutations/use-expense-mutations'
 import { ExpenseAttachmentUpload } from './expense-attachment-upload'
+import { ExpenseEditDialog } from './expense-edit-dialog'
 import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
 import {
   BanknoteIcon,
@@ -31,6 +34,8 @@ import {
   CalendarIcon,
   Loader2Icon,
   PaperclipIcon,
+  PencilIcon,
+  RotateCcwIcon,
 } from 'lucide-react'
 import type { PaymentMethod } from '@/types'
 
@@ -62,10 +67,15 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix')
   const [paidAt, setPaidAt] = useState('')
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [revertDialogOpen, setRevertDialogOpen] = useState(false)
+  const [revertTarget, setRevertTarget] = useState<Installment | null>(null)
+  const [revertReason, setRevertReason] = useState('')
 
   const { data: expenseData, isLoading } = useExpenseDetail(expenseId)
   const payInstallment = usePayExpenseInstallment()
   const cancelExpense = useCancelExpense()
+  const revertInstallment = useRevertExpenseInstallment()
 
   const installments: Installment[] = expenseData?.installments ?? []
   const attachments: Attachment[] = expenseData?.attachments ?? []
@@ -99,6 +109,27 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
     }
   }
 
+  function handleOpenRevert(inst: Installment) {
+    setRevertTarget(inst)
+    setRevertReason('')
+    setRevertDialogOpen(true)
+  }
+
+  async function handleConfirmRevert() {
+    if (!revertTarget) return
+    try {
+      await revertInstallment.mutateAsync({
+        id: revertTarget.id,
+        reason: revertReason.trim() || undefined,
+      })
+      toast.success('Pagamento desfeito')
+      setRevertDialogOpen(false)
+      setRevertTarget(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao desfazer')
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 py-6 justify-center">
@@ -112,9 +143,22 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
     <div className="space-y-4">
       {/* Installment cards */}
       <div className="space-y-2">
-        <span className="text-[10px] uppercase tracking-[0.15em] text-mid font-medium">
-          Parcelas
-        </span>
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] uppercase tracking-[0.15em] text-mid font-medium">
+            Parcelas
+          </span>
+          {!isEntryCancelled && expenseData && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEditDialogOpen(true)}
+              className="h-7 px-2 text-xs"
+            >
+              <PencilIcon className="h-3 w-3" />
+              Editar despesa
+            </Button>
+          )}
+        </div>
         {installments.map((inst) => {
           const displayStatus = getInstallmentDisplayStatus(inst)
           const isPaid = displayStatus === 'paid'
@@ -180,6 +224,23 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
               )}>
                 {formatCurrency(Number(inst.amount))}
               </span>
+
+              {/* Revert button (paid only) */}
+              {isPaid && !isEntryCancelled && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  title="Desfazer pagamento"
+                  aria-label="Desfazer pagamento"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleOpenRevert(inst)
+                  }}
+                  className="shrink-0"
+                >
+                  <RotateCcwIcon className="h-3.5 w-3.5 text-mid" />
+                </Button>
+              )}
 
               {/* Pay button */}
               {canPay && (
@@ -305,6 +366,60 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Revert confirmation dialog */}
+      <Dialog open={revertDialogOpen} onOpenChange={setRevertDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Desfazer pagamento</DialogTitle>
+            <DialogDescription>
+              Isso reverte o pagamento desta parcela e gera um lançamento de estorno.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label className="uppercase tracking-wider text-xs font-medium text-mid">
+              Motivo (opcional)
+            </Label>
+            <Textarea
+              value={revertReason}
+              onChange={(e) => setRevertReason(e.target.value)}
+              rows={2}
+              maxLength={500}
+              placeholder="Ex: registro duplicado"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRevertDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmRevert}
+              disabled={revertInstallment.isPending}
+            >
+              {revertInstallment.isPending ? <Loader2Icon className="h-4 w-4 animate-spin" /> : 'Desfazer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit dialog */}
+      {expenseData && (
+        <ExpenseEditDialog
+          open={editDialogOpen}
+          onOpenChange={setEditDialogOpen}
+          expense={{
+            id: expenseId,
+            description: expenseData.description,
+            categoryId: expenseData.categoryId,
+            notes: expenseData.notes,
+            totalAmount: expenseData.totalAmount,
+            installmentCount: expenseData.installmentCount,
+            status: expenseData.status,
+            installments,
+          }}
+        />
+      )}
     </div>
   )
 }

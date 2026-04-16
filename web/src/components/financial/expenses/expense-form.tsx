@@ -18,7 +18,6 @@ import { DatePicker } from '@/components/ui/date-picker'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 import { useCreateExpense } from '@/hooks/mutations/use-expense-mutations'
@@ -44,7 +43,6 @@ interface FormValues {
   totalAmount: string
   installmentCount: string
   notes: string
-  customDueDates: boolean
   dueDates: string[]
 }
 
@@ -79,14 +77,12 @@ export function ExpenseForm({ open, onClose, onSuccess }: ExpenseFormProps) {
       totalAmount: '',
       installmentCount: '1',
       notes: '',
-      customDueDates: false,
-      dueDates: [],
+      dueDates: [format(new Date(), 'yyyy-MM-dd')],
     },
   })
 
   const totalAmountRaw = watch('totalAmount')
   const installmentCountRaw = watch('installmentCount')
-  const customDueDates = watch('customDueDates')
   const dueDates = watch('dueDates')
 
   const parsedAmount = totalAmountRaw ? parseCurrency(totalAmountRaw) : 0
@@ -113,7 +109,7 @@ export function ExpenseForm({ open, onClose, onSuccess }: ExpenseFormProps) {
 
     return Array.from({ length: parsedCount }, (_, i) => {
       const amount = i === 0 ? installmentAmount + remainder : installmentAmount
-      const dueDate = customDueDates && dueDates[i]
+      const dueDate = dueDates[i]
         ? new Date(dueDates[i] + 'T12:00:00')
         : addDays(today, i * 30)
       return {
@@ -122,7 +118,7 @@ export function ExpenseForm({ open, onClose, onSuccess }: ExpenseFormProps) {
         dueDate,
       }
     })
-  }, [parsedAmount, parsedCount, customDueDates, dueDates])
+  }, [parsedAmount, parsedCount, dueDates])
 
   async function onSubmit(data: FormValues) {
     setError(null)
@@ -146,7 +142,7 @@ export function ExpenseForm({ open, onClose, onSuccess }: ExpenseFormProps) {
         totalAmount: amount,
         installmentCount: count,
         notes: data.notes || undefined,
-        customDueDates: data.customDueDates ? data.dueDates.slice(0, count) : undefined,
+        customDueDates: data.dueDates.slice(0, count),
       })
       onSuccess()
     } catch (err) {
@@ -265,33 +261,8 @@ export function ExpenseForm({ open, onClose, onSuccess }: ExpenseFormProps) {
             </Select>
           </div>
 
-          {/* Custom due dates toggle */}
-          <div className="flex items-center gap-3">
-            <Controller
-              name="customDueDates"
-              control={control}
-              render={({ field }) => (
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={(val) => {
-                    const checked = val === true
-                    field.onChange(checked)
-                    if (checked) {
-                      const today = new Date()
-                      const newDates = Array.from({ length: parsedCount }, (_, i) =>
-                        format(addDays(today, i * 30), 'yyyy-MM-dd')
-                      )
-                      setValue('dueDates', newDates)
-                    }
-                  }}
-                />
-              )}
-            />
-            <Label className="text-sm text-mid cursor-pointer">Definir datas de vencimento manualmente</Label>
-          </div>
-
           {/* Custom due date inputs */}
-          {customDueDates && parsedCount > 0 && (
+          {parsedCount > 0 && (
             <div className="rounded-[3px] border border-[#E8ECEF] bg-white p-4 space-y-3">
               <p className="text-[10px] uppercase tracking-[0.15em] font-medium text-[#7A7A7A]">Datas de vencimento</p>
               <div className="space-y-2">
