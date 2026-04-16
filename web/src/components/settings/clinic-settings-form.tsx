@@ -284,31 +284,33 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
         </div>
       </div>
 
-      {/* Meta Mensal */}
-      <div className="space-y-3 pt-4">
-        <h3 className="uppercase tracking-wider text-xs font-medium text-mid">Meta Financeira</h3>
-        <div className="flex flex-col gap-1.5 max-w-xs">
-          <Label className="uppercase tracking-wider text-xs text-mid">Meta mensal (R$)</Label>
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mid">R$</span>
-            <MaskedInput
-              mask={maskCurrency}
-              value={monthlyGoalDisplay}
-              onChange={(e) => {
-                const masked = maskCurrency(e.target.value)
-                setMonthlyGoalDisplay(masked)
-                const parsed = parseCurrency(masked)
-                onChange?.({ name, phone, email, address, workingHours, monthlyRevenueGoal: parsed })
-              }}
-              placeholder="0,00"
-              className="pl-10"
-            />
+      {/* Meta Mensal — hidden in onboarding (embedded), shown in settings */}
+      {!embedded && (
+        <div className="space-y-3 pt-4">
+          <h3 className="uppercase tracking-wider text-xs font-medium text-mid">Meta Financeira</h3>
+          <div className="flex flex-col gap-1.5 max-w-xs">
+            <Label className="uppercase tracking-wider text-xs text-mid">Meta mensal (R$)</Label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mid">R$</span>
+              <MaskedInput
+                mask={maskCurrency}
+                value={monthlyGoalDisplay}
+                onChange={(e) => {
+                  const masked = maskCurrency(e.target.value)
+                  setMonthlyGoalDisplay(masked)
+                  const parsed = parseCurrency(masked)
+                  onChange?.({ name, phone, email, address, workingHours, monthlyRevenueGoal: parsed })
+                }}
+                placeholder="0,00"
+                className="pl-10"
+              />
+            </div>
+            <p className="text-xs text-mid">
+              Valor exibido na barra de progresso do painel financeiro
+            </p>
           </div>
-          <p className="text-xs text-mid">
-            Valor exibido na barra de progresso do painel financeiro
-          </p>
         </div>
-      </div>
+      )}
 
       {!embedded && (
         <div className="flex justify-end pt-2">

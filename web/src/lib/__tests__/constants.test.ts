@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { DEFAULT_PRODUCTS } from '../constants'
 
 describe('DEFAULT_PRODUCTS', () => {
-  it('contains 12 curated Brazilian-market products', () => {
-    expect(DEFAULT_PRODUCTS).toHaveLength(12)
+  it('contains 15 curated Brazilian-market products', () => {
+    expect(DEFAULT_PRODUCTS).toHaveLength(15)
   })
 
   it('every product has required fields including origin', () => {

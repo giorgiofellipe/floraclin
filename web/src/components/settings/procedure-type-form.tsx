@@ -169,7 +169,7 @@ export function ProcedureTypeForm({ initialData, onSuccess, onCancel }: Procedur
           </Button>
         )}
         <Button type="submit" disabled={isPending}>
-          {isPending ? 'Salvando...' : isEditing ? 'Atualizar' : 'Criar Procedimento'}
+          {isPending ? 'Salvando...' : isEditing ? 'Atualizar' : 'Adicionar'}
         </Button>
       </div>
     </form>

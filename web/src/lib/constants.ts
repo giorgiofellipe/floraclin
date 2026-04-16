@@ -35,6 +35,7 @@ export const DEFAULT_PRODUCTS = [
   { name: 'Botox Allergan 100U', category: 'botox', activeIngredient: 'Toxina botulínica tipo A', defaultUnit: 'U', origin: 'importado' },
   { name: 'Dysport 300U', category: 'botox', activeIngredient: 'Toxina botulínica tipo A', defaultUnit: 'U', origin: 'importado' },
   { name: 'Botulift 100U', category: 'botox', activeIngredient: 'Toxina botulínica tipo A', defaultUnit: 'U', origin: 'nacional' },
+  { name: 'Xeomin 100U', category: 'botox', activeIngredient: 'Toxina botulínica tipo A', defaultUnit: 'U', origin: 'importado' },
   // Preenchedores
   { name: 'Juvederm Ultra XC', category: 'filler', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL', origin: 'importado' },
   { name: 'Juvederm Voluma XC', category: 'filler', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL', origin: 'importado' },
@@ -44,9 +45,11 @@ export const DEFAULT_PRODUCTS = [
   { name: 'Sculptra', category: 'biostimulator', activeIngredient: 'Ácido poli-L-láctico', defaultUnit: 'mL', origin: 'importado' },
   { name: 'Rennova Elleva', category: 'biostimulator', activeIngredient: 'Ácido poli-L-láctico', defaultUnit: 'mL', origin: 'nacional' },
   { name: 'Radiesse', category: 'biostimulator', activeIngredient: 'Hidroxiapatita de cálcio', defaultUnit: 'mL', origin: 'importado' },
+  { name: 'Ellansé', category: 'biostimulator', activeIngredient: 'Policaprolactona', defaultUnit: 'mL', origin: 'importado' },
   // Skinboosters
   { name: 'Restylane Skinbooster Vital', category: 'skinbooster', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL', origin: 'importado' },
   { name: 'Profhilo', category: 'skinbooster', activeIngredient: 'Ácido hialurônico híbrido', defaultUnit: 'mL', origin: 'importado' },
+  { name: 'Skinvive', category: 'skinbooster', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL', origin: 'importado' },
 ] as const
 
 export type DefaultProductOrigin = 'nacional' | 'importado'

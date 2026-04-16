@@ -12,7 +12,7 @@ describe('ProductsStep', () => {
     onRemoveCustom: vi.fn(),
   }
 
-  it('renders all 12 default products grouped by category', () => {
+  it('renders all default products grouped by category', () => {
     render(<ProductsStep {...baseProps} />)
     expect(screen.getByText('Toxina Botulínica')).toBeInTheDocument()
     expect(screen.getByText('Preenchedores')).toBeInTheDocument()
@@ -38,13 +38,6 @@ describe('ProductsStep', () => {
     expect(onSelectionChange).toHaveBeenCalledWith('Botulift 100U', true)
   })
 
-  it('shows Brazilian badge for nacional products', () => {
-    render(<ProductsStep {...baseProps} />)
-    const botuliftRow = screen.getByText('Botulift 100U').closest('[data-product-row]')
-    expect(botuliftRow).toBeTruthy()
-    expect(botuliftRow?.textContent).toContain('Nacional')
-  })
-
   it('renders custom products', () => {
     const customProducts: ProductStepItem[] = [
       { name: 'My Custom', category: 'botox', activeIngredient: '', defaultUnit: 'U', isCustom: true },
@@ -55,7 +48,7 @@ describe('ProductsStep', () => {
 
   it('opens the custom form when Adicionar produto personalizado is clicked', async () => {
     render(<ProductsStep {...baseProps} />)
-    await userEvent.click(screen.getByRole('button', { name: /Adicionar produto personalizado/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Adicionar outro produto/ }))
     expect(screen.getByPlaceholderText('Nome do produto')).toBeInTheDocument()
   })
 

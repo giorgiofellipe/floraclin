@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useMemo, useId } from 'react'
-import { PlusIcon, XIcon } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { CheckIcon, PlusIcon, XIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
+import { cn } from '@/lib/utils'
 import { DEFAULT_PRODUCTS } from '@/lib/constants'
 import { CustomProductForm, type CustomProductInput } from './custom-product-form'
 
@@ -42,7 +42,6 @@ export function ProductsStep({
   onRemoveCustom,
 }: ProductsStepProps) {
   const [showCustomForm, setShowCustomForm] = useState(false)
-  const idBase = useId()
 
   const defaultsByCategory = useMemo(() => {
     const groups: Record<string, typeof DEFAULT_PRODUCTS[number][]> = {}
@@ -77,7 +76,7 @@ export function ProductsStep({
         </div>
       )}
 
-      {categories.map((cat, catIdx) => {
+      {categories.map((cat) => {
         const defaults = defaultsByCategory[cat] ?? []
         const customs = customsByCategory[cat] ?? []
         if (defaults.length === 0 && customs.length === 0) return null
@@ -87,65 +86,62 @@ export function ProductsStep({
             <h3 className="uppercase tracking-wider text-xs font-medium text-mid">
               {CATEGORY_HEADERS[cat]}
             </h3>
-            <div className="space-y-1.5">
-              {defaults.map((p, i) => {
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4">
+              {defaults.map((p) => {
                 const checked = selectedNames.has(p.name)
-                const inputId = `${idBase}-default-${catIdx}-${i}`
                 return (
-                  <label
+                  <button
                     key={p.name}
-                    htmlFor={inputId}
+                    type="button"
+                    role="checkbox"
+                    aria-checked={checked}
+                    aria-label={p.name}
                     data-product-row
-                    className="flex items-center gap-3 rounded-lg border border-[#E8ECEF] bg-white p-3 cursor-pointer hover:bg-[#F4F6F8] transition-colors"
+                    onClick={() => onSelectionChange(p.name, !checked)}
+                    className={cn(
+                      'relative flex flex-col items-start gap-1 rounded-lg border p-3 text-left cursor-pointer transition-colors',
+                      checked
+                        ? 'border-forest bg-[#F0F7F1] ring-2 ring-forest/30'
+                        : 'border-[#E8ECEF] bg-white hover:bg-[#F4F6F8]',
+                    )}
                   >
-                    <Checkbox
-                      id={inputId}
-                      checked={checked}
-                      onCheckedChange={(v) => onSelectionChange(p.name, v === true)}
-                      aria-label={p.name}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium text-charcoal">{p.name}</span>
-                        {p.origin === 'nacional' && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-[#F0F7F1] text-forest text-[10px] px-2 py-0.5 font-medium">
-                            🇧🇷 Nacional
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-xs text-mid">{p.activeIngredient}</span>
-                    </div>
-                    <span className="text-xs text-mid tabular-nums">{p.defaultUnit}</span>
-                  </label>
+                    {checked && (
+                      <span className="absolute right-2 top-2 flex h-4 w-4 items-center justify-center rounded-full bg-forest text-white">
+                        <CheckIcon className="h-2.5 w-2.5" strokeWidth={3} />
+                      </span>
+                    )}
+                    <span className="pr-6 text-sm font-medium text-charcoal leading-tight">{p.name}</span>
+                    <span className="text-[11px] text-mid leading-tight line-clamp-1">{p.activeIngredient}</span>
+                    <span className="text-[10px] text-mid tabular-nums mt-auto pt-1">{p.defaultUnit}</span>
+                  </button>
                 )
               })}
               {customs.map((p) => (
                 <div
                   key={p.name}
                   data-product-row
-                  className="flex items-center gap-3 rounded-lg border border-forest/40 bg-[#F0F7F1] p-3"
+                  className="relative flex flex-col items-start gap-1 rounded-lg border border-forest bg-[#F0F7F1] p-3 ring-2 ring-forest/30"
                 >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-charcoal">{p.name}</span>
-                      <span className="inline-flex items-center rounded-full bg-forest text-white text-[10px] px-2 py-0.5 font-medium">
-                        Personalizado
-                      </span>
-                    </div>
-                    {p.activeIngredient && (
-                      <span className="text-xs text-mid">{p.activeIngredient}</span>
-                    )}
-                  </div>
-                  <span className="text-xs text-mid tabular-nums">{p.defaultUnit}</span>
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon-sm"
                     onClick={() => onRemoveCustom(p.name)}
                     aria-label={`Remover ${p.name}`}
+                    className="absolute right-1 top-1 h-6 w-6"
                   >
-                    <XIcon className="h-4 w-4 text-mid" />
+                    <XIcon className="h-3.5 w-3.5 text-mid" />
                   </Button>
+                  <span className="pr-6 text-sm font-medium text-charcoal leading-tight">{p.name}</span>
+                  {p.activeIngredient && (
+                    <span className="text-[11px] text-mid leading-tight line-clamp-1">{p.activeIngredient}</span>
+                  )}
+                  <div className="flex items-center gap-2 mt-auto pt-1">
+                    <span className="inline-flex items-center rounded-full bg-forest text-white text-[10px] px-1.5 py-px font-medium">
+                      Personalizado
+                    </span>
+                    <span className="text-[10px] text-mid tabular-nums">{p.defaultUnit}</span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -167,9 +163,10 @@ export function ProductsStep({
           variant="outline"
           size="sm"
           onClick={() => setShowCustomForm(true)}
+          className="border-sage/30 text-sage hover:bg-sage/5 hover:text-forest"
         >
           <PlusIcon className="h-4 w-4" />
-          Adicionar produto personalizado
+          Adicionar outro produto
         </Button>
       )}
     </div>
