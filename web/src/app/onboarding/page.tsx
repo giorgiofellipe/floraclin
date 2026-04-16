@@ -6,6 +6,7 @@ export const metadata: Metadata = {
 }
 import { getAuthContext } from '@/lib/auth'
 import { getTenant, listProcedureTypes } from '@/db/queries/tenants'
+import { listProducts } from '@/db/queries/products'
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard'
 
 export default async function OnboardingPage() {
@@ -40,10 +41,14 @@ export default async function OnboardingPage() {
     isActive: pt.isActive,
   }))
 
+  // Load existing products (in case user partially completed onboarding before)
+  const existingProducts = await listProducts(auth.tenantId)
+
   return (
     <OnboardingWizard
       tenantName={tenant.name}
       existingProcedureTypes={procedureTypesForWizard}
+      existingProducts={existingProducts}
     />
   )
 }

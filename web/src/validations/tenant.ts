@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { PROCEDURE_CATEGORIES } from '@/lib/constants'
 
-const addressSchema = z.object({
+export const addressSchema = z.object({
   street: z.string().optional(),
   number: z.string().optional(),
   complement: z.string().optional(),
@@ -17,7 +17,7 @@ const dayScheduleSchema = z.object({
   enabled: z.boolean(),
 })
 
-const workingHoursSchema = z.object({
+export const workingHoursSchema = z.object({
   mon: dayScheduleSchema,
   tue: dayScheduleSchema,
   wed: dayScheduleSchema,

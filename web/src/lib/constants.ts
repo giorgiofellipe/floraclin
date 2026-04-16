@@ -31,19 +31,28 @@ export const DEFAULT_PROCEDURE_TYPES = [
 ]
 
 export const DEFAULT_PRODUCTS = [
-  { name: 'Botox Allergan 100U', category: 'botox', activeIngredient: 'Toxina botulínica tipo A', defaultUnit: 'U' },
-  { name: 'Dysport 300U', category: 'botox', activeIngredient: 'Toxina botulínica tipo A', defaultUnit: 'U' },
-  { name: 'Xeomin 100U', category: 'botox', activeIngredient: 'Toxina botulínica tipo A', defaultUnit: 'U' },
-  { name: 'Juvederm Ultra XC', category: 'filler', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL' },
-  { name: 'Juvederm Voluma XC', category: 'filler', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL' },
-  { name: 'Restylane', category: 'filler', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL' },
-  { name: 'Restylane Lyft', category: 'filler', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL' },
-  { name: 'Radiesse', category: 'biostimulator', activeIngredient: 'Hidroxiapatita de cálcio', defaultUnit: 'mL' },
-  { name: 'Sculptra', category: 'biostimulator', activeIngredient: 'Ácido poli-L-láctico', defaultUnit: 'mL' },
-  { name: 'Ellansé', category: 'biostimulator', activeIngredient: 'Policaprolactona', defaultUnit: 'mL' },
-  { name: 'Profhilo', category: 'skinbooster', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL' },
-  { name: 'Skinvive', category: 'skinbooster', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL' },
+  // Toxinas botulínicas
+  { name: 'Botox Allergan 100U', category: 'botox', activeIngredient: 'Toxina botulínica tipo A', defaultUnit: 'U', origin: 'importado' },
+  { name: 'Dysport 300U', category: 'botox', activeIngredient: 'Toxina botulínica tipo A', defaultUnit: 'U', origin: 'importado' },
+  { name: 'Botulift 100U', category: 'botox', activeIngredient: 'Toxina botulínica tipo A', defaultUnit: 'U', origin: 'nacional' },
+  { name: 'Xeomin 100U', category: 'botox', activeIngredient: 'Toxina botulínica tipo A', defaultUnit: 'U', origin: 'importado' },
+  // Preenchedores
+  { name: 'Juvederm Ultra XC', category: 'filler', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL', origin: 'importado' },
+  { name: 'Juvederm Voluma XC', category: 'filler', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL', origin: 'importado' },
+  { name: 'Restylane Lyft', category: 'filler', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL', origin: 'importado' },
+  { name: 'Biogelis', category: 'filler', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL', origin: 'nacional' },
+  // Bioestimuladores
+  { name: 'Sculptra', category: 'biostimulator', activeIngredient: 'Ácido poli-L-láctico', defaultUnit: 'mL', origin: 'importado' },
+  { name: 'Rennova Elleva', category: 'biostimulator', activeIngredient: 'Ácido poli-L-láctico', defaultUnit: 'mL', origin: 'nacional' },
+  { name: 'Radiesse', category: 'biostimulator', activeIngredient: 'Hidroxiapatita de cálcio', defaultUnit: 'mL', origin: 'importado' },
+  { name: 'Ellansé', category: 'biostimulator', activeIngredient: 'Policaprolactona', defaultUnit: 'mL', origin: 'importado' },
+  // Skinboosters
+  { name: 'Restylane Skinbooster Vital', category: 'skinbooster', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL', origin: 'importado' },
+  { name: 'Profhilo', category: 'skinbooster', activeIngredient: 'Ácido hialurônico híbrido', defaultUnit: 'mL', origin: 'importado' },
+  { name: 'Skinvive', category: 'skinbooster', activeIngredient: 'Ácido hialurônico', defaultUnit: 'mL', origin: 'importado' },
 ] as const
+
+export type DefaultProductOrigin = 'nacional' | 'importado'
 
 export const CONSENT_TYPE_LABELS: Record<string, string> = {
   general: 'Consentimento Geral',

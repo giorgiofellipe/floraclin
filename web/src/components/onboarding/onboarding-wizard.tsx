@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useCallback } from 'react'
+import { useState, useEffect, useTransition, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -8,11 +8,36 @@ import { ClinicSettingsForm } from '@/components/settings/clinic-settings-form'
 import { ProcedureTypeList } from '@/components/settings/procedure-type-list'
 import { ProcedureTypeForm } from '@/components/settings/procedure-type-form'
 import { InviteUserForm } from '@/components/settings/invite-user-form'
-import { DEFAULT_PROCEDURE_TYPES, DEFAULT_WORKING_HOURS } from '@/lib/constants'
+import { DEFAULT_PROCEDURE_TYPES, DEFAULT_PRODUCTS, DEFAULT_WORKING_HOURS } from '@/lib/constants'
 import { toast } from 'sonner'
-import { CheckIcon, Building2Icon, SyringeIcon, UsersIcon, LogOutIcon } from 'lucide-react'
+import { CheckIcon, Building2Icon, SyringeIcon, PackageIcon, UsersIcon, LogOutIcon, PlusIcon } from 'lucide-react'
 import { logout } from '@/actions/auth'
 import type { WorkingHours } from '@/validations/tenant'
+import { ProductsStep, type ProductStepItem } from './products-step'
+import type { CustomProductInput } from './custom-product-form'
+import type { Product } from '@/db/queries/products'
+import { MaskedInput } from '@/components/ui/masked-input'
+import { maskCurrency, parseCurrency } from '@/lib/masks'
+import { cn } from '@/lib/utils'
+
+interface ProcedureOverride {
+  selected: boolean
+  durationMin: number
+  defaultPrice: string // masked currency string, e.g. "150,00"
+}
+
+const DURATION_OPTIONS = [15, 30, 45, 60, 75, 90, 120] as const
+
+const CATEGORY_LABEL: Record<string, string> = {
+  botox: 'Toxina Botulínica',
+  filler: 'Preenchedor',
+  biostimulator: 'Bioestimulador',
+  skinbooster: 'Skinbooster',
+  peel: 'Peeling',
+  laser: 'Laser',
+  microagulhamento: 'Microagulhamento',
+  outros: 'Outros',
+}
 
 interface ProcedureTypeItem {
   id: string
@@ -27,15 +52,21 @@ interface ProcedureTypeItem {
 const STEPS = [
   { label: 'Clínica', icon: Building2Icon },
   { label: 'Procedimentos', icon: SyringeIcon },
+  { label: 'Produtos', icon: PackageIcon },
   { label: 'Equipe', icon: UsersIcon },
 ]
 
 interface OnboardingWizardProps {
   tenantName: string
   existingProcedureTypes: ProcedureTypeItem[]
+  existingProducts?: Product[]
 }
 
-export function OnboardingWizard({ tenantName, existingProcedureTypes }: OnboardingWizardProps) {
+export function OnboardingWizard({
+  tenantName,
+  existingProcedureTypes,
+  existingProducts = [],
+}: OnboardingWizardProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [currentStep, setCurrentStep] = useState(0)
@@ -50,12 +81,41 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
   })
 
   // Step 2 state: procedure types (local selection before onboarding completes)
-  const [selectedDefaults, setSelectedDefaults] = useState<boolean[]>(
-    DEFAULT_PROCEDURE_TYPES.map(() => true)
+  const [procedureOverrides, setProcedureOverrides] = useState<ProcedureOverride[]>(() =>
+    DEFAULT_PROCEDURE_TYPES.map((pt) => ({
+      selected: true,
+      durationMin: pt.estimatedDurationMin,
+      defaultPrice: '',
+    })),
   )
   const [showAddProcedure, setShowAddProcedure] = useState(false)
 
-  // Step 3 state: track sent invites count
+  // Step 3 state: products — pre-select the first product of each category
+  // that matches a selected procedure type. Re-compute when procedures change,
+  // but only until the user manually touches the product selection.
+  function computeDefaultProductSelection(selectedProcedureFlags: boolean[]): Set<string> {
+    const activeCategories = new Set(
+      DEFAULT_PROCEDURE_TYPES.filter((_, i) => selectedProcedureFlags[i]).map((pt) => pt.category),
+    )
+    const seen = new Set<string>()
+    const firstPerCategory = new Set<string>()
+    for (const p of DEFAULT_PRODUCTS) {
+      if (activeCategories.has(p.category) && !seen.has(p.category)) {
+        seen.add(p.category)
+        firstPerCategory.add(p.name)
+      }
+    }
+    return firstPerCategory
+  }
+
+  const [selectedProductNames, setSelectedProductNames] = useState<Set<string>>(() =>
+    computeDefaultProductSelection(DEFAULT_PROCEDURE_TYPES.map(() => true)),
+  )
+  const [productsTouched, setProductsTouched] = useState(false)
+  const [customProducts, setCustomProducts] = useState<ProductStepItem[]>([])
+  const productsAlreadyConfigured = (existingProducts?.length ?? 0) > 0
+
+  // Step 4 state: track sent invites count
   const [invitesSent, setInvitesSent] = useState(0)
 
   const handleClinicChange = useCallback((data: Record<string, unknown>) => {
@@ -63,12 +123,62 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
   }, [])
 
   function toggleDefault(index: number) {
-    setSelectedDefaults(prev => {
-      const next = [...prev]
-      next[index] = !next[index]
+    setProcedureOverrides((prev) =>
+      prev.map((o, i) => (i === index ? { ...o, selected: !o.selected } : o)),
+    )
+  }
+
+  function setProcedureDuration(index: number, durationMin: number) {
+    setProcedureOverrides((prev) =>
+      prev.map((o, i) => (i === index ? { ...o, durationMin } : o)),
+    )
+  }
+
+  function setProcedureDefaultPrice(index: number, defaultPrice: string) {
+    setProcedureOverrides((prev) =>
+      prev.map((o, i) => (i === index ? { ...o, defaultPrice } : o)),
+    )
+  }
+
+  function handleProductSelectionChange(name: string, selected: boolean) {
+    setProductsTouched(true)
+    setSelectedProductNames((prev) => {
+      const next = new Set(prev)
+      if (selected) next.add(name)
+      else next.delete(name)
       return next
     })
   }
+
+  function handleAddCustomProduct(product: CustomProductInput) {
+    const nameLower = product.name.trim().toLowerCase()
+    const collidesWithDefault = DEFAULT_PRODUCTS.some(
+      (d) => d.name.toLowerCase() === nameLower,
+    )
+    setCustomProducts((prev) => {
+      const collidesWithCustom = prev.some((p) => p.name.toLowerCase() === nameLower)
+      if (collidesWithDefault || collidesWithCustom) {
+        toast.error(`Já existe um produto chamado "${product.name}"`)
+        return prev
+      }
+      setProductsTouched(true)
+      return [...prev, { ...product, isCustom: true }]
+    })
+  }
+
+  function handleRemoveCustomProduct(name: string) {
+    setProductsTouched(true)
+    setCustomProducts((prev) => prev.filter((p) => p.name !== name))
+  }
+
+  // Re-sync product pre-selection when procedure selection changes, but only
+  // until the user manually touches the product step.
+  useEffect(() => {
+    if (productsTouched) return
+    const flags = procedureOverrides.map((o) => o.selected)
+    setSelectedProductNames(computeDefaultProductSelection(flags))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [procedureOverrides, productsTouched])
 
   function handleNext() {
     if (currentStep === 0) {
@@ -86,13 +196,35 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
 
   function handleComplete() {
     startTransition(async () => {
-      const procedureTypes = DEFAULT_PROCEDURE_TYPES
-        .filter((_, i) => selectedDefaults[i])
-        .map(pt => ({
-          name: pt.name,
-          category: pt.category,
-          estimatedDurationMin: pt.estimatedDurationMin,
-        }))
+      const procedureTypes = DEFAULT_PROCEDURE_TYPES.flatMap((pt, i) => {
+        const override = procedureOverrides[i]
+        if (!override?.selected) return []
+        const priceNumber = override.defaultPrice ? parseCurrency(override.defaultPrice) : 0
+        return [
+          {
+            name: pt.name,
+            category: pt.category,
+            estimatedDurationMin: override.durationMin,
+            defaultPrice: priceNumber > 0 ? priceNumber.toFixed(2) : undefined,
+          },
+        ]
+      })
+
+      // Build selectedProducts — strip UI-only `origin` from defaults and `isCustom` from customs
+      const selectedProducts = [
+        ...DEFAULT_PRODUCTS.filter((p) => selectedProductNames.has(p.name)).map((p) => ({
+          name: p.name,
+          category: p.category,
+          activeIngredient: p.activeIngredient,
+          defaultUnit: p.defaultUnit,
+        })),
+        ...customProducts.map((p) => ({
+          name: p.name,
+          category: p.category,
+          activeIngredient: p.activeIngredient,
+          defaultUnit: p.defaultUnit,
+        })),
+      ]
 
       const res = await fetch('/api/onboarding', {
         method: 'POST',
@@ -106,6 +238,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
             workingHours: (clinicData.workingHours as WorkingHours) || DEFAULT_WORKING_HOURS,
           },
           procedureTypes,
+          selectedProducts,
         }),
       })
 
@@ -127,8 +260,6 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
-
-  const isLastStep = currentStep === STEPS.length - 1
 
   return (
     <div className="min-h-screen bg-[#F4F6F8]">
@@ -262,32 +393,100 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
                 Selecione os procedimentos que sua clínica oferece. Você pode adicionar mais depois.
               </p>
 
-              {/* Default procedure types as checkboxes */}
-              <div className="space-y-3 mb-8">
-                <h3 className="text-xs font-medium text-mid uppercase tracking-wider">Procedimentos Sugeridos</h3>
-                {DEFAULT_PROCEDURE_TYPES.map((pt, index) => (
-                  <label
-                    key={pt.name}
-                    className={`flex items-center gap-3 rounded-lg border p-4 cursor-pointer transition-all duration-200 ${
-                      selectedDefaults[index]
-                        ? 'border-sage/40 bg-sage/5 shadow-sm'
-                        : 'border-blush/40 hover:border-blush/60 bg-white'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedDefaults[index]}
-                      onChange={() => toggleDefault(index)}
-                      className="h-4 w-4 rounded border-mid text-sage focus:ring-sage"
-                    />
-                    <div className="flex-1">
-                      <span className="text-sm font-medium text-charcoal">{pt.name}</span>
-                      <span className="ml-2 text-xs text-mid">
-                        ({pt.estimatedDurationMin} min)
-                      </span>
-                    </div>
-                  </label>
-                ))}
+              {/* Default procedure types — card grid with inline editable duration + price */}
+              <div className="mb-8 space-y-3">
+                <h3 className="text-xs font-medium text-mid uppercase tracking-wider">
+                  Procedimentos Sugeridos
+                </h3>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {DEFAULT_PROCEDURE_TYPES.map((pt, index) => {
+                    const override = procedureOverrides[index]
+                    const selected = override?.selected ?? false
+                    return (
+                      <div
+                        key={pt.name}
+                        className={cn(
+                          'rounded-lg border p-3 transition-colors',
+                          selected
+                            ? 'border-forest bg-[#F0F7F1] ring-2 ring-forest/30'
+                            : 'border-[#E8ECEF] bg-white hover:bg-[#F4F6F8]',
+                        )}
+                      >
+                        <button
+                          type="button"
+                          role="checkbox"
+                          aria-checked={selected}
+                          aria-label={pt.name}
+                          onClick={() => toggleDefault(index)}
+                          className="relative flex w-full items-start gap-2 text-left cursor-pointer"
+                        >
+                          {selected && (
+                            <span className="absolute right-0 top-0 flex h-4 w-4 items-center justify-center rounded-full bg-forest text-white">
+                              <CheckIcon className="h-2.5 w-2.5" strokeWidth={3} />
+                            </span>
+                          )}
+                          <div className="flex-1 min-w-0 pr-6">
+                            <span className="block text-sm font-medium text-charcoal leading-tight">
+                              {pt.name}
+                            </span>
+                            <span className="block text-[11px] uppercase tracking-wider text-mid mt-0.5">
+                              {CATEGORY_LABEL[pt.category] ?? pt.category}
+                            </span>
+                          </div>
+                        </button>
+
+                        <div
+                          className={cn(
+                            'mt-3 grid grid-cols-2 gap-2 border-t pt-3 transition-opacity',
+                            selected
+                              ? 'border-sage/20 opacity-100'
+                              : 'border-[#E8ECEF] opacity-50 pointer-events-none',
+                          )}
+                          aria-hidden={!selected}
+                        >
+                          <div className="space-y-1">
+                            <span className="block text-[10px] uppercase tracking-wider text-mid">
+                              Duração
+                            </span>
+                            <select
+                              value={override.durationMin}
+                              onChange={(e) => setProcedureDuration(index, Number(e.target.value))}
+                              disabled={!selected}
+                              tabIndex={selected ? 0 : -1}
+                              className="w-full rounded-md border border-sage/30 bg-white px-2 py-1 text-sm text-charcoal focus:border-forest focus:outline-none focus:ring-1 focus:ring-forest/30 disabled:bg-[#F4F6F8]"
+                            >
+                              {DURATION_OPTIONS.map((mins) => (
+                                <option key={mins} value={mins}>
+                                  {mins} min
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <span className="block text-[10px] uppercase tracking-wider text-mid">
+                              Preço (opcional)
+                            </span>
+                            <div className="relative">
+                              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs font-medium text-charcoal">
+                                R$
+                              </span>
+                              <MaskedInput
+                                mask={maskCurrency}
+                                value={override.defaultPrice}
+                                onChange={(e) => setProcedureDefaultPrice(index, e.target.value)}
+                                disabled={!selected}
+                                tabIndex={selected ? 0 : -1}
+                                placeholder="0,00"
+                                inputMode="numeric"
+                                className="h-auto w-full rounded-md border border-sage/30 bg-white py-1 pl-8 pr-2 text-sm text-charcoal focus:border-forest focus:outline-none focus:ring-1 focus:ring-forest/30 disabled:bg-[#F4F6F8]"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
 
               {/* Existing procedure types (if any were already created via the dialog) */}
@@ -312,6 +511,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
                   onClick={() => setShowAddProcedure(prev => !prev)}
                   className="mb-3 border-sage/30 text-sage hover:bg-sage/5 hover:text-forest"
                 >
+                  <PlusIcon className="h-4 w-4" />
                   Adicionar outro procedimento
                 </Button>
                 {showAddProcedure && (
@@ -328,8 +528,20 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
             </div>
           )}
 
-          {/* Step 3: Team Invites */}
+          {/* Step 3: Products */}
           {currentStep === 2 && (
+            <ProductsStep
+              selectedNames={selectedProductNames}
+              customProducts={customProducts}
+              alreadyConfigured={productsAlreadyConfigured}
+              onSelectionChange={handleProductSelectionChange}
+              onAddCustom={handleAddCustomProduct}
+              onRemoveCustom={handleRemoveCustomProduct}
+            />
+          )}
+
+          {/* Step 4: Team Invites */}
+          {currentStep === 3 && (
             <div>
               <h2 className="text-xl font-medium text-charcoal mb-1 tracking-tight">
                 Convide sua Equipe
@@ -379,7 +591,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
           </div>
 
           <div className="flex gap-3">
-            {currentStep === 2 && (
+            {currentStep === 3 && (
               <Button
                 type="button"
                 variant="ghost"
