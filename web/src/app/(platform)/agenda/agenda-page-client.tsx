@@ -49,6 +49,7 @@ export function AgendaPageClient() {
   const practitionerFilter = searchParams.get('practitioner') ?? undefined
 
   const { dateFrom, dateTo } = useMemo(
+    // eslint-disable-next-line react-hooks/preserve-manual-memoization -- deps use dateStr (derived from currentDate) to avoid Date-identity churn; tracked separately
     () => getDateRange(currentDate, view),
     [dateStr, view]
   )

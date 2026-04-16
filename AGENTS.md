@@ -89,3 +89,41 @@ Ask: "Is this a calendar day or an instant?"
 - **Calendar day** (due date, follow-up date, appointment date, report window) → BR-anchored helper.
 - **Instant** (createdAt, paidAt, performedAt, signed_at) → raw `Date`, compared with helper-built boundaries when ranging.
 <!-- END:date-timezone-rules -->
+
+<!-- BEGIN:ci-pre-push-rules -->
+# Never push without running the checks
+
+`pnpm install` at the repo root installs a `pre-push` git hook (via `simple-git-hooks`) that runs **lint + typecheck + tests** before any push. The same three checks run in GitHub Actions on every PR and every push to `main`.
+
+## Rule
+
+**Never use `git push --no-verify` (or `-n`).** The hook exists to catch broken code before CI does.
+
+If the hook fails:
+- **Fix the actual failure.** Don't skip it, don't silence warnings, don't `--no-verify`.
+- If a check is slow enough that you routinely want to bypass it, that's a signal to fix the check — raise it, don't work around it.
+
+## Commands
+
+Run the same checks manually at any time:
+
+```bash
+pnpm ci:checks                 # lint + typecheck + test:run (same as CI / hook)
+pnpm lint                      # lint only
+pnpm typecheck                 # tsc --noEmit
+pnpm test                      # vitest (watch mode)
+pnpm --filter @floraclin/web test:run   # vitest single run
+```
+
+## If the hook doesn't fire
+
+It's registered by `pnpm install`'s `prepare` script. On a fresh clone or after pulling a branch that changed `.git/hooks/`, run:
+
+```bash
+pnpm install           # re-runs prepare → re-registers the hook
+# or
+pnpm exec simple-git-hooks   # registers without reinstalling
+```
+
+Before opening a PR, **always** run `pnpm ci:checks` locally to confirm green. The hook catches most of it, but it's wise to verify on the final commit.
+<!-- END:ci-pre-push-rules -->

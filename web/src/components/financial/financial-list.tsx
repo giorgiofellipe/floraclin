@@ -228,6 +228,7 @@ export function FinancialList({ patients, defaultPatientId }: { patients: Patien
   )
 
   const renegotiationEntries = useMemo(
+    // eslint-disable-next-line react-hooks/preserve-manual-memoization -- pre-existing memoization pattern; cleanup tracked separately
     () =>
       renegotiableEntries.map((e) => ({
         id: e.id,

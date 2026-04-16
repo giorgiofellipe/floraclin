@@ -25,6 +25,7 @@ export function SignaturePad({
   useEffect(() => {
     if (initialData && sigRef.current) {
       sigRef.current.fromDataURL(initialData)
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- setIsEmpty mirrors the imperative canvas state after load; intentional
       setIsEmpty(false)
     }
   }, [initialData])

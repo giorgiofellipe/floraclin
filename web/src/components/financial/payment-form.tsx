@@ -57,6 +57,7 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
   useEffect(() => {
     if (settings) {
       if (settings.defaultInstallmentCount) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- settings arrive async; sync to form defaults on load
         setInstallmentCount(String(settings.defaultInstallmentCount))
       }
     }

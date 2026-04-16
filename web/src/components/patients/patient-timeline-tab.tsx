@@ -69,6 +69,7 @@ export function PatientTimelineTab({ patientId }: PatientTimelineTabProps) {
   // Expand all groups by default when timeline data first loads
   useEffect(() => {
     if (timeline?.groups) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time expansion on async load; intentional
       setExpandedGroups(new Set(timeline.groups.map((g: TimelineGroup) => g.id)))
     }
   }, [timeline])

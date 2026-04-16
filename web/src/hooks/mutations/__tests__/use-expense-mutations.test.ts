@@ -13,6 +13,7 @@ global.fetch = fetchMock as unknown as typeof fetch
 
 function wrap() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  // eslint-disable-next-line react/display-name -- test-only wrapper, no display name needed
   return ({ children }: { children: ReactNode }) =>
     createElement(QueryClientProvider, { client: qc }, children)
 }

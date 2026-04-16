@@ -52,6 +52,7 @@ export function PatientConsentTab({ patientId }: PatientConsentTabProps) {
 
   useEffect(() => {
     if (!selectedTemplateId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clears derived state when selection is removed
       setSelectedTemplate(null)
       return
     }
