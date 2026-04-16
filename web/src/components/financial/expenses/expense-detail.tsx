@@ -82,7 +82,11 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   async function handleConfirmPayment() {
     if (!selectedInstallment) return
     try {
-      await payInstallment.mutateAsync({ id: selectedInstallment.id, paymentMethod, paidAt: paidAt || undefined })
+      await payInstallment.mutateAsync({
+        id: selectedInstallment.id,
+        paymentMethod,
+        paidAt: paidAt ? new Date(paidAt).toISOString() : undefined,
+      })
       setPayDialogOpen(false)
       setSelectedInstallment(null)
     } catch (err) {
