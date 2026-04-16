@@ -270,6 +270,7 @@ export function ProcedureDetailView({
           isCancelled && 'bg-gradient-to-r from-red-300 to-red-400',
           procedure.status === 'approved' && 'bg-gradient-to-r from-sage to-mint',
           procedure.status === 'planned' && 'bg-amber/50',
+          procedure.status === 'draft' && 'bg-mid/20',
         )} />
 
         {/* ─── Header ──────────────────────────────────────────── */}
@@ -292,6 +293,7 @@ export function ProcedureDetailView({
               isCancelled && 'border-red-200 bg-red-50',
               procedure.status === 'approved' && 'border-sage/20 bg-sage/5',
               procedure.status === 'planned' && 'border-amber/30 bg-amber-light/50',
+              procedure.status === 'draft' && 'border-mid/20 bg-[#F4F6F8]',
             )}>
               <p className={cn(
                 'text-[13px] font-semibold uppercase tracking-wider',
@@ -299,6 +301,7 @@ export function ProcedureDetailView({
                 isCancelled && 'text-red-600',
                 procedure.status === 'approved' && 'text-sage',
                 procedure.status === 'planned' && 'text-amber-dark',
+                procedure.status === 'draft' && 'text-mid',
               )}>
                 {statusLabel}
               </p>

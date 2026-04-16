@@ -114,14 +114,11 @@ describe('ExpenseList', () => {
     expect(screen.getByText('Pago')).toBeInTheDocument()
   })
 
-  it('renders filter controls', () => {
+  it('renders filter toggle button', () => {
     render(<ExpenseList />, { wrapper: createWrapper() })
 
-    expect(screen.getByTestId('expense-status-filter')).toBeInTheDocument()
-    expect(screen.getByTestId('expense-category-filter')).toBeInTheDocument()
-    expect(screen.getByTestId('expense-payment-method-filter')).toBeInTheDocument()
-    expect(screen.getByTestId('expense-date-from')).toBeInTheDocument()
-    expect(screen.getByTestId('expense-date-to')).toBeInTheDocument()
+    // The filter panel is collapsed by default and opened by clicking the toggle.
+    expect(screen.getByTestId('expense-filters-toggle')).toBeInTheDocument()
   })
 
   it('renders Nova Despesa button', () => {

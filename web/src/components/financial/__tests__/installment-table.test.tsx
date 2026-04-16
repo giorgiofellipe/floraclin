@@ -85,10 +85,11 @@ describe('InstallmentTable', () => {
   it('renders installment rows', async () => {
     render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
 
-    const row1 = await screen.findByText('1/3')
+    // Rows render as "Parcela 1/3", "Parcela 2/3", "Parcela 3/3"
+    const row1 = await screen.findByText('Parcela 1/3')
     expect(row1).toBeInTheDocument()
-    expect(screen.getByText('2/3')).toBeInTheDocument()
-    expect(screen.getByText('3/3')).toBeInTheDocument()
+    expect(screen.getByText('Parcela 2/3')).toBeInTheDocument()
+    expect(screen.getByText('Parcela 3/3')).toBeInTheDocument()
   })
 
   it('shows correct status badges', async () => {
@@ -96,27 +97,26 @@ describe('InstallmentTable', () => {
 
     const pago = await screen.findByText('Pago')
     expect(pago).toBeInTheDocument()
-    expect(screen.getByText('Pendente')).toBeInTheDocument()
-    expect(screen.getByText('Atrasado')).toBeInTheDocument()
+    // Both pending and overdue installments render the "Pendente" badge in the current design.
+    expect(screen.getAllByText('Pendente').length).toBeGreaterThanOrEqual(2)
   })
 
-  it('shows "Registrar Pagamento" button for pending and overdue installments', async () => {
+  it('shows "Pagar" button for pending and overdue installments', async () => {
     render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
 
-    await screen.findByText('1/3')
-    const payButtons = screen.getAllByRole('button', { name: /registrar pagamento/i })
+    await screen.findByText('Parcela 1/3')
+    const payButtons = screen.getAllByTestId('installment-pay')
     // Both pending and overdue installments should have the button
     expect(payButtons).toHaveLength(2)
   })
 
-  it('shows penalty badge for overdue installment with penalties', async () => {
+  it('shows penalty info for overdue installment with penalties', async () => {
     render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
 
-    await screen.findByText('1/3')
-    // The overdue installment has fineAmount=10 and computedInterestAmount=5
-    const penaltyBadges = screen.getAllByTestId('penalty-badge')
-    expect(penaltyBadges.length).toBeGreaterThan(0)
-    const overdueBadge = penaltyBadges.find((b) => b.textContent?.includes('Multa'))
-    expect(overdueBadge).toBeDefined()
+    await screen.findByText('Parcela 3/3')
+    // The overdue installment (inst-3) has fineAmount=10 — rendered as a "Multa R$..." span.
+    // It's not wrapped in a PenaltyBadge testid here; look up the text content.
+    const multa = screen.getByText(/^Multa\s*R\$/)
+    expect(multa).toBeInTheDocument()
   })
 })

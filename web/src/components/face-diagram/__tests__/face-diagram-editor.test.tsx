@@ -47,16 +47,25 @@ describe('FaceDiagramEditor', () => {
   it('renders all 3 view tabs (Frontal, Perfil Esquerdo, Perfil Direito)', () => {
     render(<FaceDiagramEditor points={[]} onChange={vi.fn()} />)
 
-    expect(screen.getByRole('tab', { name: 'Frontal' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Perfil Esquerdo' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Perfil Direito' })).toBeInTheDocument()
+    // View switcher uses plain buttons with short labels — not aria tabs.
+    expect(screen.getByTestId('face-diagram-view-front')).toHaveTextContent('Frontal')
+    expect(screen.getByTestId('face-diagram-view-left_profile')).toHaveTextContent('Esquerdo')
+    expect(screen.getByTestId('face-diagram-view-right_profile')).toHaveTextContent('Direito')
   })
 
-  it('shows instruction text when no points', () => {
-    render(<FaceDiagramEditor points={[]} onChange={vi.fn()} />)
+  it('shows instruction text when no points and no product armed', () => {
+    render(
+      <FaceDiagramEditor
+        points={[]}
+        onChange={vi.fn()}
+        products={[{ id: 'prod-1', name: 'Botox', unit: 'U' } as never]}
+      />,
+    )
 
+    // With the armed-product flow, the canvas hint depends on whether a
+    // product is armed. Nothing is armed on initial render.
     expect(
-      screen.getByText('Clique no rosto para adicionar um ponto')
+      screen.getByText('Selecione um produto acima para marcar pontos'),
     ).toBeInTheDocument()
   })
 
@@ -68,9 +77,9 @@ describe('FaceDiagramEditor', () => {
 
     render(<FaceDiagramEditor points={points} onChange={vi.fn()} />)
 
-    // Summary shows "Totais" heading
-    expect(screen.getByText('Totais')).toBeInTheDocument()
-    // Should show 2 pontos (may appear multiple times in summary sections)
+    // Summary shows "Produtos" heading (DiagramSummary)
+    expect(screen.getByText('Produtos')).toBeInTheDocument()
+    // Should show 2 pontos (appears in both the header count and the product group row)
     expect(screen.getAllByText('2 pontos').length).toBeGreaterThanOrEqual(1)
   })
 
@@ -100,8 +109,8 @@ describe('FaceDiagramEditor', () => {
       />
     )
 
-    // Toggle "Mostrar anterior" should be visible
-    expect(screen.getByText('Mostrar anterior')).toBeInTheDocument()
+    // Toggle "Anterior" label should be visible
+    expect(screen.getByText('Anterior')).toBeInTheDocument()
 
     // Click the toggle to show previous points
     const toggle = screen.getByRole('switch')
@@ -122,9 +131,45 @@ describe('FaceDiagramEditor', () => {
       />
     )
 
-    // Should not show the "Clique no rosto" instruction in readOnly mode with points
+    // Should not show the "Clique para adicionar" instruction in readOnly mode with points
     expect(
-      screen.queryByText('Clique no rosto para adicionar um ponto')
+      screen.queryByText('Clique para adicionar ponto de aplicação'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('arming a product via the strip changes the canvas hint', async () => {
+    const user = userEvent.setup()
+    render(
+      <FaceDiagramEditor
+        points={[]}
+        onChange={vi.fn()}
+        products={[
+          {
+            id: 'prod-1',
+            name: 'Botox Allergan',
+            category: 'botox',
+            activeIngredient: 'Onabotulinumtoxin A',
+            defaultUnit: 'U',
+            isActive: true,
+          } as never,
+        ]}
+      />,
+    )
+
+    // Before arming → hint tells the user to pick a product first
+    expect(
+      screen.getByText('Selecione um produto acima para marcar pontos'),
+    ).toBeInTheDocument()
+
+    // Open the strip popover and arm the product
+    await user.click(screen.getByTestId('armed-product-trigger'))
+    const option = await screen.findByTestId('product-autocomplete-option-prod-1')
+    await user.click(option)
+
+    // After arming → hint flips to "click to add"
+    expect(screen.getByText('Clique para adicionar ponto')).toBeInTheDocument()
+    expect(
+      screen.queryByText('Selecione um produto acima para marcar pontos'),
     ).not.toBeInTheDocument()
   })
 })

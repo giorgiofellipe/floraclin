@@ -6,6 +6,7 @@ import { getProcedure, updateProcedure } from '@/db/queries/procedures'
 import { getFaceDiagram, saveFaceDiagram } from '@/db/queries/face-diagrams'
 import { getProductApplications, saveProductApplications } from '@/db/queries/product-applications'
 import { updateProcedureSchema } from '@/validations/procedure'
+import { computePlanningStatus } from '@/lib/procedure-status'
 
 export async function GET(
   _request: Request,
@@ -65,7 +66,8 @@ export async function PUT(
     }
 
     const result = await withTransaction(async (tx) => {
-      const procedure = await updateProcedure(ctx.tenantId, id, parsed.data, tx)
+      // Update scalar fields first (status untouched at this step)
+      let procedure = await updateProcedure(ctx.tenantId, id, parsed.data, undefined, tx)
       if (!procedure) throw new Error('Procedimento não encontrado')
 
       if (body.diagrams && body.diagrams.length > 0) {
@@ -76,6 +78,20 @@ export async function PUT(
 
       if (body.productApplications !== undefined) {
         await saveProductApplications(ctx.tenantId, id, body.productApplications, tx)
+      }
+
+      // Only draft/planned procedures can transition — approved/executed/cancelled
+      // are owned by dedicated lifecycle actions.
+      if (procedure.status === 'draft' || procedure.status === 'planned') {
+        const freshDiagrams = await getFaceDiagram(ctx.tenantId, id)
+        const nextStatus = computePlanningStatus({
+          financialPlan: procedure.financialPlan as { totalAmount?: number | string | null } | null,
+          diagrams: freshDiagrams,
+        })
+        if (nextStatus !== procedure.status) {
+          const transitioned = await updateProcedure(ctx.tenantId, id, {}, nextStatus, tx)
+          if (transitioned) procedure = transitioned
+        }
       }
 
       return procedure

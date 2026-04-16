@@ -59,11 +59,30 @@ export function ProcedureTypeStep({
 
   useEffect(() => {
     const current = wizardOverrides?.triggerSave ?? 0
-    // Only fire on actual changes, skip if zero (inactive step)
-    if (current === 0 || current === prevTriggerRef.current) return
+    // When the wizard resets triggerSave to 0 (after a save completes),
+    // also reset our "seen" marker. Otherwise the next press increments
+    // back to 1 and gets treated as a duplicate, silently skipping the save.
+    if (current === 0) {
+      prevTriggerRef.current = 0
+      return
+    }
+    if (current === prevTriggerRef.current) {
+      console.log('[step2] triggerSave effect SKIPPED — same value as prev', {
+        current,
+        prev: prevTriggerRef.current,
+      })
+      return
+    }
     prevTriggerRef.current = current
 
+    console.log('[step2] triggerSave effect firing', {
+      current,
+      selectedCount: selectedTypeIdsRef.current.length,
+      selectedIds: selectedTypeIdsRef.current,
+    })
+
     if (selectedTypeIdsRef.current.length === 0) {
+      console.log('[step2] reporting validation error — no types selected')
       onSaveCompleteRef.current?.({
         success: false,
         error: 'Selecione ao menos um tipo de procedimento.',
@@ -71,6 +90,9 @@ export function ProcedureTypeStep({
       })
       return
     }
+    console.log('[step2] reporting success', {
+      onSaveCompletePresent: !!onSaveCompleteRef.current,
+    })
     onSaveCompleteRef.current?.({ success: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wizardOverrides?.triggerSave])

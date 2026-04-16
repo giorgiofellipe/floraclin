@@ -17,6 +17,7 @@ import {
   validateImageFile,
   MAX_IMAGE_WIDTH,
   ACCEPTED_IMAGE_TYPES,
+  isDngFile,
 } from '@/validations/photo'
 import type { TimelineStage } from '@/types'
 
@@ -33,9 +34,147 @@ interface PendingFile {
   id: string
   file: File
   preview: string
-  status: 'pending' | 'compressing' | 'uploading' | 'done' | 'error'
+  status: 'pending' | 'decoding' | 'compressing' | 'uploading' | 'done' | 'error'
   error?: string
   progress: number
+}
+
+// ─── DNG → JPEG extractor ──────────────────────────────────────────
+//
+// iPhone ProRAW and camera DNG files embed a full-resolution JPEG preview
+// inside the TIFF/IFD structure. libraw-wasm cannot process "linear DNG"
+// files (already-demosaiced, like ProRAW) — known open issue. Instead we
+// parse the IFD chain to locate the largest embedded JPEG and return it
+// directly. Zero WASM, zero demosaicing, and it preserves Apple's own
+// computational photography rendering.
+
+const TIFF_TAG_COMPRESSION = 0x0103
+const TIFF_TAG_STRIP_OFFSETS = 0x0111
+const TIFF_TAG_STRIP_BYTE_COUNTS = 0x0117
+const TIFF_TAG_SUB_IFDS = 0x014a
+const TIFF_TAG_JPEG_OFFSET = 0x0201
+const TIFF_TAG_JPEG_LENGTH = 0x0202
+const TIFF_COMPRESSION_JPEG_OLD = 6
+const TIFF_COMPRESSION_JPEG = 7
+const JPEG_SOI = 0xffd8
+
+function extractJpegFromDng(buf: ArrayBuffer): Uint8Array | null {
+  const view = new DataView(buf)
+  const le = view.getUint16(0, false) === 0x4949
+  const read16 = (off: number) => view.getUint16(off, le)
+  const read32 = (off: number) => view.getUint32(off, le)
+
+  const magic = read16(2)
+  if (magic !== 42 && magic !== 43) return null
+
+  let bestJpeg: { offset: number; length: number } | null = null
+  const visited = new Set<number>()
+  const ifdQueue: number[] = [read32(4)]
+
+  while (ifdQueue.length > 0) {
+    const ifdOffset = ifdQueue.pop()!
+    if (ifdOffset === 0 || ifdOffset >= buf.byteLength || visited.has(ifdOffset)) continue
+    visited.add(ifdOffset)
+
+    const entryCount = read16(ifdOffset)
+    if (entryCount > 500) continue
+
+    let compression = 0
+    let stripOffset = 0
+    let stripLength = 0
+    let jpegOffset = 0
+    let jpegLength = 0
+    const subIfdOffsets: number[] = []
+
+    for (let i = 0; i < entryCount; i++) {
+      const entryOff = ifdOffset + 2 + i * 12
+      if (entryOff + 12 > buf.byteLength) break
+      const tag = read16(entryOff)
+      const type = read16(entryOff + 2)
+      const count = read32(entryOff + 4)
+      const valueOff = entryOff + 8
+
+      const readValue = () => {
+        if (type === 3 && count === 1) return read16(valueOff)
+        if (type === 4 && count === 1) return read32(valueOff)
+        if (type === 4 && count > 1) return read32(read32(valueOff))
+        return read32(valueOff)
+      }
+
+      switch (tag) {
+        case TIFF_TAG_COMPRESSION:
+          compression = readValue()
+          break
+        case TIFF_TAG_STRIP_OFFSETS:
+          stripOffset = readValue()
+          break
+        case TIFF_TAG_STRIP_BYTE_COUNTS:
+          stripLength = readValue()
+          break
+        case TIFF_TAG_JPEG_OFFSET:
+          jpegOffset = readValue()
+          break
+        case TIFF_TAG_JPEG_LENGTH:
+          jpegLength = readValue()
+          break
+        case TIFF_TAG_SUB_IFDS:
+          if (type === 4) {
+            const ptr = count > 1 ? read32(valueOff) : valueOff
+            for (let j = 0; j < count; j++) {
+              subIfdOffsets.push(read32(count > 1 ? ptr + j * 4 : valueOff))
+            }
+          }
+          break
+      }
+    }
+
+    if (jpegOffset > 0 && jpegLength > 0 && jpegOffset + jpegLength <= buf.byteLength) {
+      if (!bestJpeg || jpegLength > bestJpeg.length) {
+        if (view.getUint16(jpegOffset, false) === JPEG_SOI) {
+          bestJpeg = { offset: jpegOffset, length: jpegLength }
+        }
+      }
+    }
+
+    if (
+      (compression === TIFF_COMPRESSION_JPEG || compression === TIFF_COMPRESSION_JPEG_OLD) &&
+      stripOffset > 0 &&
+      stripLength > 0 &&
+      stripOffset + stripLength <= buf.byteLength
+    ) {
+      if (!bestJpeg || stripLength > bestJpeg.length) {
+        if (view.getUint16(stripOffset, false) === JPEG_SOI) {
+          bestJpeg = { offset: stripOffset, length: stripLength }
+        }
+      }
+    }
+
+    for (const off of subIfdOffsets) ifdQueue.push(off)
+
+    const nextIfdOff = ifdOffset + 2 + entryCount * 12
+    if (nextIfdOff + 4 <= buf.byteLength) {
+      ifdQueue.push(read32(nextIfdOff))
+    }
+  }
+
+  if (!bestJpeg) return null
+  return new Uint8Array(buf, bestJpeg.offset, bestJpeg.length)
+}
+
+async function decodeDngToJpeg(file: File): Promise<File> {
+  const buf = await file.arrayBuffer()
+  const jpeg = extractJpegFromDng(buf)
+  if (!jpeg) {
+    throw new Error(
+      'Não foi possível extrair a imagem JPEG do arquivo DNG. ' +
+        'Verifique se o arquivo não está corrompido.',
+    )
+  }
+  const copy = new Uint8Array(jpeg.length)
+  copy.set(jpeg)
+  return new File([copy.buffer as ArrayBuffer], file.name.replace(/\.dng$/i, '.jpg'), {
+    type: 'image/jpeg',
+  })
 }
 
 // ─── Image compression utility ──────────────────────────────────────
@@ -134,34 +273,31 @@ export function PhotoUploader({
   const [isUploading, setIsUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const addFiles = useCallback((newFiles: FileList | File[]) => {
-    const pending: PendingFile[] = Array.from(newFiles)
-      .filter((f) => {
-        const error = validateImageFile(f)
-        return !error
-      })
-      .map((file) => ({
-        id: crypto.randomUUID(),
-        file,
-        preview: URL.createObjectURL(file),
-        status: 'pending' as const,
-        progress: 0,
-      }))
+  const addFiles = useCallback(async (newFiles: FileList | File[]) => {
+    const incoming = Array.from(newFiles)
+    const pending: PendingFile[] = []
 
-    // Report validation errors
-    Array.from(newFiles).forEach((f) => {
-      const error = validateImageFile(f)
+    for (const file of incoming) {
+      const error = validateImageFile(file)
       if (error) {
-        pending.push({
-          id: crypto.randomUUID(),
-          file: f,
-          preview: '',
-          status: 'error',
-          error,
-          progress: 0,
-        })
+        pending.push({ id: crypto.randomUUID(), file, preview: '', status: 'error', error, progress: 0 })
+        continue
       }
-    })
+      let preview = ''
+      if (isDngFile(file)) {
+        try {
+          const jpeg = extractJpegFromDng(await file.arrayBuffer())
+          if (jpeg) {
+            const copy = new Uint8Array(jpeg.length)
+            copy.set(jpeg)
+            preview = URL.createObjectURL(new Blob([copy.buffer as ArrayBuffer], { type: 'image/jpeg' }))
+          }
+        } catch { /* preview stays empty */ }
+      } else {
+        preview = URL.createObjectURL(file)
+      }
+      pending.push({ id: crypto.randomUUID(), file, preview, status: 'pending', progress: 0 })
+    }
 
     setFiles((prev) => [...prev, ...pending])
   }, [])
@@ -213,11 +349,21 @@ export function PhotoUploader({
 
     for (const pendingFile of pendingFiles) {
       try {
+        // DNG files must be decoded to JPEG client-side before the
+        // standard compress/resize pass (browsers can't render DNG).
+        let workingFile = pendingFile.file
+        if (isDngFile(workingFile)) {
+          setFiles((prev) =>
+            prev.map((f) => (f.id === pendingFile.id ? { ...f, status: 'decoding' as const, progress: 10 } : f))
+          )
+          workingFile = await decodeDngToJpeg(workingFile)
+        }
+
         // Compress
         setFiles((prev) =>
           prev.map((f) => (f.id === pendingFile.id ? { ...f, status: 'compressing' as const, progress: 20 } : f))
         )
-        const compressed = await compressImage(pendingFile.file)
+        const compressed = await compressImage(workingFile)
 
         // Upload
         setFiles((prev) =>
@@ -239,6 +385,13 @@ export function PhotoUploader({
           setFiles((prev) =>
             prev.map((f) => (f.id === pendingFile.id ? { ...f, status: 'done' as const, progress: 100 } : f))
           )
+          setTimeout(() => {
+            setFiles((prev) => {
+              const file = prev.find((f) => f.id === pendingFile.id)
+              if (file?.preview) URL.revokeObjectURL(file.preview)
+              return prev.filter((f) => f.id !== pendingFile.id)
+            })
+          }, 1500)
         } else {
           setFiles((prev) =>
             prev.map((f) =>
@@ -248,11 +401,21 @@ export function PhotoUploader({
             )
           )
         }
-      } catch {
+      } catch (err) {
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : 'Erro inesperado ao fazer upload'
+        console.error('[photo-uploader] upload failed', {
+          name: pendingFile.file.name,
+          type: pendingFile.file.type,
+          size: pendingFile.file.size,
+          error: err,
+        })
         setFiles((prev) =>
           prev.map((f) =>
             f.id === pendingFile.id
-              ? { ...f, status: 'error' as const, error: 'Erro inesperado ao fazer upload', progress: 0 }
+              ? { ...f, status: 'error' as const, error: message, progress: 0 }
               : f
           )
         )
@@ -264,7 +427,9 @@ export function PhotoUploader({
   }, [files, patientId, procedureRecordId, timelineStage, onUploadComplete])
 
   const pendingCount = files.filter((f) => f.status === 'pending').length
-  const accept = ACCEPTED_IMAGE_TYPES.join(',')
+  // Include the .dng extension so the native file picker surfaces DNG files
+  // even when the browser reports them with an empty or octet-stream MIME.
+  const accept = [...ACCEPTED_IMAGE_TYPES, '.dng', 'image/x-adobe-dng'].join(',')
 
   return (
     <div className="space-y-4">
@@ -323,7 +488,7 @@ export function PhotoUploader({
                   f.status === 'error' && 'border-red-300 bg-red-50/30',
                   f.status === 'done' && 'border-mint/50 bg-white',
                   f.status === 'pending' && 'border-[#E8ECEF] bg-white',
-                  (f.status === 'compressing' || f.status === 'uploading') && 'border-[#E8ECEF] bg-white'
+                  (f.status === 'decoding' || f.status === 'compressing' || f.status === 'uploading') && 'border-[#E8ECEF] bg-white'
                 )}
               >
                 <div className="aspect-square">
@@ -343,6 +508,12 @@ export function PhotoUploader({
                 {/* Status overlay */}
                 {f.status !== 'pending' && f.status !== 'done' && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50">
+                    {f.status === 'decoding' && (
+                      <>
+                        <Loader2 className="size-6 animate-spin text-white" />
+                        <span className="mt-1 text-xs text-white">Decodificando DNG...</span>
+                      </>
+                    )}
                     {f.status === 'compressing' && (
                       <>
                         <Loader2 className="size-6 animate-spin text-white" />

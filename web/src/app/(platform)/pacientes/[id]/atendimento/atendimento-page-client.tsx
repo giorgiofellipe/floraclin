@@ -20,16 +20,24 @@ interface AtendimentoPageClientProps {
 export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps) {
   const searchParams = useSearchParams()
   const step = searchParams.get('step')
+  const forceNew = searchParams.get('new') === '1'
 
   const { data: patient, isLoading: patientLoading } = usePatient(patientId)
   const { data: tenant, isLoading: tenantLoading } = useTenant()
   const { data: anamnesis, isLoading: anamnesisLoading } = useAnamnesis(patientId)
-  const { data: procedure, isLoading: procedureLoading } = useLatestNonExecutedProcedure(patientId)
+  const { data: resumedProcedure, isLoading: procedureLoading } = useLatestNonExecutedProcedure(patientId)
+
+  // When `?new=1` is present, start a fresh atendimento regardless of whether
+  // there's an ongoing draft/planned procedure for this patient. The existing
+  // procedure stays in the DB as a draft the user can resume later from the
+  // procedures tab.
+  const procedure = forceNew ? null : resumedProcedure
 
   // Load full procedure details (with diagrams and applications) if we have one
   const { data: procedureDetail, isLoading: detailLoading } = useProcedure(procedure?.id ?? '')
 
-  const isLoading = patientLoading || tenantLoading || anamnesisLoading || procedureLoading ||
+  const isLoading = patientLoading || tenantLoading || anamnesisLoading ||
+    (!forceNew && procedureLoading) ||
     (!!procedure?.id && detailLoading)
 
   if (isLoading) {

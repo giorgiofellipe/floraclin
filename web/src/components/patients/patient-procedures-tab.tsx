@@ -108,6 +108,21 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
   const [cancelReason, setCancelReason] = useState('')
   const cancelling = cancelProcedure.isPending
 
+  // Whether the patient has an ongoing (non-terminal) procedure that the
+  // user could resume instead of starting a new one.
+  const hasActiveProcedure = procedures.some(
+    (p) => p.status === 'draft' || p.status === 'planned' || p.status === 'approved',
+  )
+  const [newAtendimentoDialogOpen, setNewAtendimentoDialogOpen] = useState(false)
+  const atendimentoHref = `/pacientes/${patientId}/atendimento`
+
+  const handleNewAtendimentoClick = (e: React.MouseEvent) => {
+    if (hasActiveProcedure) {
+      e.preventDefault()
+      setNewAtendimentoDialogOpen(true)
+    }
+  }
+
   const handleCancelClick = (procedureId: string) => {
     setCancelTarget(procedureId)
     setCancelDialogOpen(true)
@@ -147,7 +162,8 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
           </span>
         </div>
         <Link
-          href={`/pacientes/${patientId}/atendimento`}
+          href={atendimentoHref}
+          onClick={handleNewAtendimentoClick}
           className="inline-flex items-center justify-center rounded-xl bg-forest px-4 py-2 text-[13px] font-medium text-cream hover:bg-sage transition-all duration-200 shadow-sm hover:shadow-md gap-1.5"
         >
           <Plus className="size-3.5" />
@@ -230,6 +246,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                     </div>
                     <span className={cn(
                       'text-[11px] font-medium uppercase tracking-wider',
+                      proc.status === 'draft' && 'text-mid',
                       proc.status === 'planned' && 'text-amber',
                       proc.status === 'approved' && 'text-sage',
                       proc.status === 'executed' && 'text-forest',
@@ -315,6 +332,16 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                     'mt-3 flex items-center gap-1.5 transition-opacity duration-200',
                     'opacity-100 sm:opacity-0 sm:group-hover:opacity-100',
                   )}>
+                    {proc.status === 'draft' && (
+                      <Button
+                        size="sm"
+                        className="h-7 text-[12px] bg-forest/10 text-forest hover:bg-forest/20 border-0 rounded-lg shadow-none"
+                        onClick={() => router.push(`/pacientes/${patientId}/atendimento?step=3`)}
+                      >
+                        <Pencil className="mr-1 size-3" />
+                        Continuar Planejamento
+                      </Button>
+                    )}
                     {proc.status === 'planned' && (
                       <>
                         <Button
@@ -428,6 +455,49 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
               className="bg-red-600 text-white hover:bg-red-700"
             >
               {cancelling ? 'Cancelando...' : 'Confirmar Cancelamento'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── New atendimento confirmation (when one is already active) ── */}
+      <Dialog open={newAtendimentoDialogOpen} onOpenChange={setNewAtendimentoDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Atendimento em andamento</DialogTitle>
+            <DialogDescription>
+              Este paciente já tem um atendimento em andamento. Você quer continuar de onde parou ou começar um novo?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col sm:flex-row sm:justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setNewAtendimentoDialogOpen(false)}
+              className="sm:order-1"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setNewAtendimentoDialogOpen(false)
+                router.push(`${atendimentoHref}?new=1`)
+              }}
+              className="sm:order-2"
+            >
+              Começar novo
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setNewAtendimentoDialogOpen(false)
+                router.push(atendimentoHref)
+              }}
+              className="bg-forest text-cream hover:bg-sage sm:order-3"
+            >
+              Continuar em andamento
             </Button>
           </DialogFooter>
         </DialogContent>

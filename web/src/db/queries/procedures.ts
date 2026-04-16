@@ -67,6 +67,7 @@ export async function createProcedure(
   tenantId: string,
   practitionerId: string,
   data: CreateProcedureInput,
+  status: 'draft' | 'planned',
   txDb: typeof db = db
 ) {
   // Verify foreign IDs belong to this tenant
@@ -94,7 +95,7 @@ export async function createProcedure(
       followUpDate: data.followUpDate ?? null,
       nextSessionObjectives: data.nextSessionObjectives ?? null,
       financialPlan: data.financialPlan ?? null,
-      status: 'planned',
+      status,
     })
     .returning()
 
@@ -105,6 +106,12 @@ export async function updateProcedure(
   tenantId: string,
   procedureId: string,
   data: Partial<UpdateProcedureInput>,
+  /**
+   * Optional draft/planned transition. Only accepts these two values — other
+   * statuses (approved, executed, cancelled) are reserved for dedicated
+   * lifecycle actions. Passing undefined leaves status untouched.
+   */
+  status: 'draft' | 'planned' | undefined,
   txDb: typeof db = db
 ) {
   const updateData: Record<string, unknown> = { updatedAt: new Date() }
@@ -115,11 +122,11 @@ export async function updateProcedure(
   if (data.notes !== undefined) updateData.notes = data.notes ?? null
   if (data.followUpDate !== undefined) updateData.followUpDate = data.followUpDate ?? null
   if (data.nextSessionObjectives !== undefined) updateData.nextSessionObjectives = data.nextSessionObjectives ?? null
-  // status is intentionally NOT settable here — use dedicated lifecycle actions
   if (data.procedureTypeId !== undefined) updateData.procedureTypeId = data.procedureTypeId
   if (data.additionalTypeIds !== undefined) updateData.additionalTypeIds = data.additionalTypeIds ?? []
   if (data.appointmentId !== undefined) updateData.appointmentId = data.appointmentId ?? null
   if (data.financialPlan !== undefined) updateData.financialPlan = data.financialPlan ?? null
+  if (status !== undefined) updateData.status = status
 
   const [updated] = await txDb
     .update(procedureRecords)
@@ -214,11 +221,12 @@ export async function listProcedures(
     )
     .orderBy(
       sql`CASE ${procedureRecords.status}
-        WHEN 'planned' THEN 1
-        WHEN 'approved' THEN 2
-        WHEN 'executed' THEN 3
-        WHEN 'cancelled' THEN 4
-        ELSE 5
+        WHEN 'draft' THEN 1
+        WHEN 'planned' THEN 2
+        WHEN 'approved' THEN 3
+        WHEN 'executed' THEN 4
+        WHEN 'cancelled' THEN 5
+        ELSE 6
       END`,
       desc(procedureRecords.performedAt)
     )
@@ -377,7 +385,7 @@ export async function cancelProcedure(
       and(
         eq(procedureRecords.id, procedureId),
         eq(procedureRecords.tenantId, tenantId),
-        inArray(procedureRecords.status, ['planned', 'approved']),
+        inArray(procedureRecords.status, ['draft', 'planned', 'approved']),
         isNull(procedureRecords.deletedAt)
       )
     )
@@ -425,7 +433,7 @@ export async function getLatestNonExecutedProcedure(
       and(
         eq(procedureRecords.tenantId, tenantId),
         eq(procedureRecords.patientId, patientId),
-        inArray(procedureRecords.status, ['planned', 'approved']),
+        inArray(procedureRecords.status, ['draft', 'planned', 'approved']),
         isNull(procedureRecords.deletedAt)
       )
     )

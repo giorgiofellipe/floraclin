@@ -5,6 +5,7 @@ import { withTransaction } from '@/lib/tenant'
 import { getProcedure, executeProcedure } from '@/db/queries/procedures'
 import { saveFaceDiagram } from '@/db/queries/face-diagrams'
 import { saveProductApplications } from '@/db/queries/product-applications'
+import { procedureExecutionWireSchema } from '@/validations/procedure'
 
 export async function POST(
   request: Request,
@@ -17,7 +18,16 @@ export async function POST(
     }
 
     const { id: procedureId } = await params
-    const body = await request.json()
+    const rawBody = await request.json()
+
+    const parsed = procedureExecutionWireSchema.safeParse(rawBody)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Payload inválido', issues: parsed.error.issues },
+        { status: 400 },
+      )
+    }
+    const body = parsed.data
 
     const procedure = await getProcedure(ctx.tenantId, procedureId)
     if (!procedure) {

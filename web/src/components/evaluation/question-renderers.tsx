@@ -21,14 +21,24 @@ interface QuestionWrapperProps {
 
 function QuestionWrapper({ question, children, hasError }: QuestionWrapperProps) {
   return (
-    <div className={cn(
-      'flex flex-col gap-2 rounded-[3px] p-2 -m-2 transition-colors',
-      hasError && 'border border-red-500/40 bg-red-50/30'
-    )}>
+    <div
+      aria-invalid={hasError || undefined}
+      className={cn(
+        'flex flex-col gap-2 rounded-[3px] p-2 -m-2 transition-colors',
+        hasError && 'border border-red-200 bg-red-50',
+      )}
+    >
       <div className="flex flex-col gap-0.5">
-        <Label className="text-sm font-medium text-charcoal">
+        <Label
+          className={cn(
+            'text-sm font-medium',
+            hasError ? 'text-red-700' : 'text-charcoal',
+          )}
+        >
           {question.label}
-          {question.required && <span className="ml-0.5 text-amber">*</span>}
+          {question.required && (
+            <span className={cn('ml-0.5', hasError ? 'text-red-600' : 'text-amber')}>*</span>
+          )}
         </Label>
         {question.helpText && (
           <p className="text-xs italic text-mid">{question.helpText}</p>
@@ -397,7 +407,7 @@ export function FaceDiagramQuestion({
       {diagramRendered ? (
         <div className="flex items-center gap-2 rounded-[3px] bg-sage/10 px-3 py-2.5">
           <span className="text-sm text-sage">
-            Diagrama facial preenchido acima
+            Preencha o diagrama facial na seção &quot;Diagrama Facial&quot; abaixo.
           </span>
         </div>
       ) : (

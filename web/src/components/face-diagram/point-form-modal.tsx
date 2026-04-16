@@ -16,11 +16,10 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useMemo } from 'react'
+import { ProductAutocomplete } from './product-autocomplete'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { DiagramPointData, CatalogProduct } from './types'
@@ -32,17 +31,6 @@ const DEPTH_ITEMS: Record<string, string> = {
   'supraperiosteal': 'Supraperiosteal',
   'subdérmico': 'Subdérmico',
   'intramuscular': 'Intramuscular',
-}
-
-const CATEGORY_LABELS: Record<string, string> = {
-  botox: 'Toxina Botulínica',
-  filler: 'Preenchimento',
-  biostimulator: 'Bioestimulador',
-  peel: 'Peeling',
-  skinbooster: 'Skinbooster',
-  laser: 'Laser',
-  microagulhamento: 'Microagulhamento',
-  outros: 'Outros',
 }
 
 interface PointFormModalProps {
@@ -74,24 +62,12 @@ export function PointFormModal({
   const [notes, setNotes] = React.useState(point.notes ?? '')
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
   const [showDetails, setShowDetails] = React.useState(false)
+  const quantityInputRef = React.useRef<HTMLInputElement>(null)
 
-  // Group products by category
-  const groupedProducts = React.useMemo(() => {
-    const groups: Record<string, CatalogProduct[]> = {}
-    for (const p of products) {
-      if (!groups[p.category]) groups[p.category] = []
-      groups[p.category].push(p)
-    }
-    return groups
-  }, [products])
-
-  const productItems = useMemo(() => {
-    const map: Record<string, string> = {}
-    for (const p of products) {
-      map[p.id] = p.name
-    }
-    return map
-  }, [products])
+  // Auto-focus the quantity input for new points that already have a
+  // pre-filled product (armed-product quick-entry flow). Editing an existing
+  // point falls back to Base UI's default focus management.
+  const shouldAutoFocusQuantity = !point.id && !!point.productName
 
   // Reset form when point changes
   React.useEffect(() => {
@@ -114,15 +90,14 @@ export function PointFormModal({
     }
   }, [point, products])
 
-  function handleProductSelect(productId: string | null) {
-    if (!productId) return
-    const product = products.find((p) => p.id === productId)
-    if (!product) return
-
-    setSelectedProductId(productId)
+  function handleProductSelect(product: CatalogProduct) {
+    setSelectedProductId(product.id)
     setProductName(product.name)
     setActiveIngredient(product.activeIngredient ?? '')
-    setQuantityUnit(product.defaultUnit as QuantityUnit)
+    // Defensive cast — only accept valid QuantityUnit values, otherwise keep the current unit
+    if (product.defaultUnit === 'U' || product.defaultUnit === 'mL') {
+      setQuantityUnit(product.defaultUnit)
+    }
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -165,7 +140,10 @@ export function PointFormModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className="sm:max-w-md"
+        initialFocus={shouldAutoFocusQuantity ? quantityInputRef : undefined}
+      >
         <DialogHeader>
           <DialogTitle>
             {isEditing ? 'Editar ponto' : 'Adicionar ponto'}
@@ -176,32 +154,16 @@ export function PointFormModal({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          {/* Product select from catalog */}
+          {/* Product autocomplete */}
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="product-select">Produto *</Label>
-            <Select
-              items={productItems}
-              value={selectedProductId}
-              onValueChange={handleProductSelect}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecione o produto" />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(groupedProducts).map(([category, prods]) => (
-                  <React.Fragment key={category}>
-                    <div className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-mid">
-                      {CATEGORY_LABELS[category] || category}
-                    </div>
-                    {prods.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </React.Fragment>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>Produto *</Label>
+            <ProductAutocomplete
+              products={products}
+              selectedProductId={selectedProductId || null}
+              onProductSelect={handleProductSelect}
+              placeholder="Selecione o produto"
+              triggerTestId="point-modal-product-autocomplete"
+            />
             {selectedProductId && activeIngredient && (
               <p className="text-xs text-mid">
                 Princípio ativo: {activeIngredient}
@@ -214,6 +176,7 @@ export function PointFormModal({
             <div className="flex flex-1 flex-col gap-1.5">
               <Label htmlFor="quantity">Quantidade *</Label>
               <Input
+                ref={quantityInputRef}
                 id="quantity"
                 type="number"
                 min="0.01"

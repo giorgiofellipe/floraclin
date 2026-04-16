@@ -78,6 +78,6 @@ describe('PenaltyPreview', () => {
       />
     )
 
-    expect(screen.getByTestId('penalty-preview')).toHaveTextContent('carencia de 5 dias')
+    expect(screen.getByTestId('penalty-preview')).toHaveTextContent('carência de 5 dias')
   })
 })

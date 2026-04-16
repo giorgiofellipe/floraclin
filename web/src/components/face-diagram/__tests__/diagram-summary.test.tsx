@@ -3,6 +3,22 @@ import { render, screen } from '@testing-library/react'
 import { DiagramSummary } from '../diagram-summary'
 import type { DiagramPointData } from '../types'
 
+// The quantity and unit are rendered in separate nested spans ("8" and "U"),
+// so the combined text ("8U") is not matchable as a single text node. This
+// helper returns a matcher that resolves true on the parent element whose
+// normalized textContent equals the expected value AND whose children don't
+// individually contain the whole string.
+function combinedText(expected: string) {
+  return (_: string, element: Element | null) => {
+    if (!element) return false
+    const normalized = (element.textContent ?? '').replace(/\s+/g, ' ').trim()
+    if (normalized !== expected) return false
+    return Array.from(element.children).every(
+      (child) => (child.textContent ?? '').replace(/\s+/g, ' ').trim() !== expected,
+    )
+  }
+}
+
 function makePoint(overrides: Partial<DiagramPointData> = {}): DiagramPointData {
   return {
     id: 'pt-1',
@@ -25,13 +41,13 @@ describe('DiagramSummary', () => {
 
     render(<DiagramSummary points={points} />)
 
-    // Total for Botox: 8U
-    expect(screen.getByText('8U')).toBeInTheDocument()
+    // Total for Botox: 8U — quantity and unit are in separate spans, so use a combined matcher
+    expect(screen.getByText(combinedText('8U'))).toBeInTheDocument()
     // "Botox" appears in both the totals group and the points list
     expect(screen.getAllByText('Botox').length).toBeGreaterThanOrEqual(1)
 
     // Total for Juvederm: 1mL (appears in both totals and points list)
-    expect(screen.getAllByText('1mL').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(combinedText('1mL')).length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('Juvederm').length).toBeGreaterThanOrEqual(1)
   })
 
@@ -53,7 +69,7 @@ describe('DiagramSummary', () => {
 
     expect(screen.getByText('0 pontos')).toBeInTheDocument()
     expect(
-      screen.getByText('Nenhum ponto adicionado. Clique no rosto para adicionar.')
+      screen.getByText('Clique no rosto para adicionar pontos de aplicação.'),
     ).toBeInTheDocument()
   })
 
@@ -65,8 +81,8 @@ describe('DiagramSummary', () => {
 
     render(<DiagramSummary points={points} />)
 
-    // 1.5 + 0.5 = 2mL
-    expect(screen.getByText('2mL')).toBeInTheDocument()
+    // 1.5 + 0.5 = 2mL — quantity and unit are in separate spans
+    expect(screen.getByText(combinedText('2mL'))).toBeInTheDocument()
     // "2 pontos" appears in both header and the Radiesse group row
     expect(screen.getAllByText('2 pontos').length).toBeGreaterThanOrEqual(1)
   })

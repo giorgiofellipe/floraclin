@@ -46,6 +46,12 @@ test-results/
 web/.next/
 site/.next/
 
+# superpowers brainstorming companion (visual mockups, scratch state)
+.superpowers/
+
+# vitest cache
+**/.vite/
+
 # git worktrees
 .worktrees/
 

@@ -95,16 +95,17 @@ describe('LedgerView', () => {
 
     // Summary cards
     expect(screen.getByText('Total Entradas')).toBeInTheDocument()
-    expect(screen.getByText('Total Saidas')).toBeInTheDocument()
-    expect(screen.getByText('Resultado Liquido')).toBeInTheDocument()
+    expect(screen.getByText('Total Saídas')).toBeInTheDocument()
+    expect(screen.getByText('Resultado Líquido')).toBeInTheDocument()
     expect(screen.getByText('A Receber Vencido')).toBeInTheDocument()
   })
 
   it('renders payment method badges', () => {
     render(<LedgerView />)
 
-    expect(screen.getByText('PIX')).toBeInTheDocument()
-    expect(screen.getByText('Cartao de Credito')).toBeInTheDocument()
+    // PIX appears in both the filter select items and the row badge — use getAllByText.
+    expect(screen.getAllByText('PIX').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('Cartão de Crédito').length).toBeGreaterThanOrEqual(1)
   })
 
   it('renders running balance for each movement', () => {

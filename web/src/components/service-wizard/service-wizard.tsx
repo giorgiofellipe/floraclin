@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -18,11 +18,12 @@ import {
 import { WizardStepper } from './wizard-stepper'
 import { WizardStep as WizardStepWrapper } from './wizard-step'
 import { ProcedureTypeStep } from './procedure-type-step'
+import { SaveStatusIndicator } from './save-status-indicator'
 import { AnamnesisForm } from '@/components/anamnesis/anamnesis-form'
 import { ProcedureForm } from '@/components/procedures/procedure-form'
 import { ProcedureApproval } from '@/components/procedures/procedure-approval'
 import { ProcedureExecution } from '@/components/procedures/procedure-execution'
-import type { StepResult } from './types'
+import type { StepResult, WizardOverrides } from './types'
 import type { ProcedureStatus } from '@/types'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
@@ -136,12 +137,34 @@ export function ServiceWizard({
     updateProcedureStatus,
     updateStepTimestamp,
     setSelectedTypeIds,
+    clearError,
   } = wizard
 
   // ─── Lift procedure data into client state (CRITICAL 1 fix) ────
   const [localProcedure, setLocalProcedure] = useState<ProcedureWithDetails | null>(procedure ?? null)
   const [localDiagrams, setLocalDiagrams] = useState<DiagramWithPoints[] | null>(diagrams ?? null)
   const [localApplications, setLocalApplications] = useState<ProductApplicationRecord[] | null>(existingApplications ?? null)
+
+  // Per-step dirty tracking + stable handlers
+  const [stepDirty, setStepDirty] = useState<Record<number, boolean>>({})
+
+  const dirtyHandlers = useMemo(
+    () => ({
+      1: (d: boolean) => setStepDirty((p) => (p[1] === d ? p : { ...p, 1: d })),
+      2: (d: boolean) => setStepDirty((p) => (p[2] === d ? p : { ...p, 2: d })),
+      3: (d: boolean) => setStepDirty((p) => (p[3] === d ? p : { ...p, 3: d })),
+      4: (d: boolean) => setStepDirty((p) => (p[4] === d ? p : { ...p, 4: d })),
+      5: (d: boolean) => setStepDirty((p) => (p[5] === d ? p : { ...p, 5: d })),
+    }),
+    [],
+  )
+
+  // Tick every 30s so "Salvo há Xmin" stays fresh
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000)
+    return () => clearInterval(id)
+  }, [])
 
   // ─── Evaluation templates + responses ─────────────────────────
   const [evalTemplates, setEvalTemplates] = useState<EvaluationTemplateForForm[]>([])
@@ -261,6 +284,10 @@ export function ServiceWizard({
   }, [state.currentStep, router, patient.id])
 
   const isExitingRef = useRef(false)
+  // `pendingAction` is lifted to React state (not a ref) so `validationMode`
+  // in getOverridesForStep can be derived safely during render. See the note
+  // on getOverridesForStep for details.
+  const [pendingAction, setPendingAction] = useState<'advance' | 'exit'>('advance')
   const confirmExit = useCallback(() => {
     isExitingRef.current = true
     setShowExitDialog(false)
@@ -300,6 +327,14 @@ export function ServiceWizard({
 
   const handleStepComplete = useCallback(
     async (result: StepResult) => {
+      console.log('[wizard] handleStepComplete received', {
+        currentStep: state.currentStep,
+        pendingAction,
+        result,
+      })
+      // Snapshot pending action and reset to default for the next save
+      const pending = pendingAction
+      setPendingAction('advance')
       onSaveComplete(result)
 
       if (result.success) {
@@ -335,17 +370,43 @@ export function ServiceWizard({
         if (state.currentStep === 4) {
           updateProcedureStatus('approved')
         }
+
+        // Exit path takes priority: if the user clicked "Salvar e sair" on
+        // any step (including step 5), route out with the partial-save toast
+        // — never show the terminal-finalize message.
+        if (pending === 'exit') {
+          isExitingRef.current = true
+          toast.success('Atendimento salvo. Retome quando quiser.')
+          router.push(`/pacientes/${patient.id}`)
+          return
+        }
+
+        // Step 5 commit path: finalize + redirect
         if (state.currentStep === 5) {
-          // Execution complete — redirect to patient detail
           toast.success('Atendimento finalizado com sucesso')
           router.push(`/pacientes/${patient.id}`)
           return
         }
+
+        // Don't auto-advance past step 3 if the server marked the procedure
+        // as draft (missing financialPlan or diagram points). Stay on step 3
+        // so the user can finish filling the required fields.
+        if (state.currentStep === 3 && result.procedureStatus === 'draft') {
+          console.log(
+            '[wizard] staying on step 3 — server returned draft status (incomplete planning)',
+          )
+          toast.info('Preencha plano financeiro e pontos do diagrama para avançar à aprovação.')
+          return
+        }
+
+        console.log('[wizard] auto-advancing to next step', {
+          from: state.currentStep,
+        })
         // Auto-advance to next step after successful save
         nextStep()
       }
     },
-    [onSaveComplete, state.currentStep, nextStep, updateProcedureStatus, updateStepTimestamp, router, patient.id]
+    [onSaveComplete, pendingAction, state.currentStep, nextStep, updateProcedureStatus, updateStepTimestamp, router, patient.id]
   )
 
   // ─── Skip/Adiar handler ────────────────────────────────────────
@@ -362,28 +423,85 @@ export function ServiceWizard({
   }, [state.currentStep, nextStep, router, patient.id])
 
   // ─── Next handler ──────────────────────────────────────────────
+  //
+  // On step 5 (Execução), "Próximo" becomes "Finalizar Atendimento" — a
+  // terminal, irreversible action. Gate it behind a confirmation dialog so
+  // the user doesn't accidentally lock the record.
+  const [showFinalizeDialog, setShowFinalizeDialog] = useState(false)
 
   const handleNext = useCallback(() => {
+    console.log('[wizard] handleNext clicked', {
+      currentStep: state.currentStep,
+      pendingAction,
+      procedureStatus: state.procedureStatus,
+      procedureId: state.procedureId,
+    })
+    if (state.currentStep === 5) {
+      setShowFinalizeDialog(true)
+      return
+    }
+    triggerSave()
+  }, [state.currentStep, triggerSave, pendingAction, state.procedureStatus, state.procedureId])
+
+  const confirmFinalize = useCallback(() => {
+    setShowFinalizeDialog(false)
+    triggerSave()
+  }, [triggerSave])
+
+  const handleSaveAndExit = useCallback(() => {
+    setPendingAction('exit')
     triggerSave()
   }, [triggerSave])
 
   // ─── Wizard overrides for each step ────────────────────────────
 
-  // Each step gets triggerSave ONLY when it's the active step.
-  // All steps are mounted simultaneously (display:none), so passing
-  // triggerSave to all of them would cause all to fire at once.
-  function getOverridesForStep(step: number): typeof baseOverridesBase & { triggerSave: number } {
-    return {
-      ...baseOverridesBase,
-      triggerSave: state.currentStep === step ? state.triggerSave : 0,
+  const anamnesisOnAutoSaved = useCallback(
+    (timestamp: Date) => updateStepTimestamp('anamnesis', timestamp),
+    [updateStepTimestamp],
+  )
+
+  // Read state.error via ref inside the user-edit handler so the callback
+  // identity stays stable (avoids re-running forms' watch subscriptions).
+  const validationErrorRef = useRef(state.error && state.errorType === 'validation')
+  validationErrorRef.current = !!state.error && state.errorType === 'validation'
+
+  const handleUserEdit = useCallback(() => {
+    if (validationErrorRef.current) {
+      clearError()
     }
-  }
+  }, [clearError])
 
   const baseOverridesBase = {
     hideSaveButton: true,
     hideNavigation: true,
     hideTitle: true,
     onSaveComplete: handleStepComplete,
+  }
+
+  // Each step gets triggerSave ONLY when it's the active step.
+  // All steps are mounted simultaneously (display:none), so passing
+  // triggerSave to all of them would cause all to fire at once.
+  //
+  // `validationMode` is derived from `pendingAction` STATE (not a ref) — reading
+  // a mutable ref during render violates React concurrency guarantees. State
+  // changes are committed before the form's triggerSave effect fires, so by
+  // the time the form reads wizardOverrides.validationMode, the correct value
+  // is visible.
+  function getOverridesForStep(step: 1 | 2 | 3 | 4 | 5): WizardOverrides {
+    const isFinalValidation = step === 3 && pendingAction === 'advance'
+    // Step 5's Salvar e sair routes through the regular update endpoint to
+    // avoid triggering the status transition from approved → executed.
+    const saveMode: 'commit' | 'partial' =
+      step === 5 && pendingAction === 'exit' ? 'partial' : 'commit'
+    return {
+      ...baseOverridesBase,
+      triggerSave: state.currentStep === step ? state.triggerSave : 0,
+      onDirtyChange: dirtyHandlers[step],
+      onAutoSaved: step === 1 ? anamnesisOnAutoSaved : undefined,
+      onUserEdit: handleUserEdit,
+      validationMode: isFinalValidation ? 'final' : 'draft',
+      saveMode,
+    }
   }
 
   // ─── Derived state ─────────────────────────────────────────────
@@ -393,6 +511,9 @@ export function ServiceWizard({
 
   // additionalTypeIds from procedure record
   const additionalTypeIds = (localProcedure?.additionalTypeIds as string[] | null) ?? []
+
+  const showSaveAndExit =
+    state.currentStep === 1 || state.currentStep === 3 || state.currentStep === 5
 
   // ─── Render ────────────────────────────────────────────────────
 
@@ -640,6 +761,21 @@ export function ServiceWizard({
             )}
           </div>
 
+          {/* Middle: save status indicator (desktop only) */}
+          <SaveStatusIndicator
+            isSaving={state.isSaving}
+            isDirty={!!stepDirty[state.currentStep]}
+            lastSavedAt={
+              state.currentStep === 1 ? (state.stepTimestamps.anamnesis ?? null)
+              : state.currentStep === 2 ? (state.stepTimestamps.procedureTypes ?? null)
+              : state.currentStep === 3 ? (state.stepTimestamps.planning ?? null)
+              : state.currentStep === 4 ? (state.stepTimestamps.approval ?? null)
+              : (state.stepTimestamps.execution ?? null)
+            }
+            errorType={state.errorType}
+            now={now}
+          />
+
           {/* Mobile: full-width stacked buttons / Desktop: inline */}
           <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center md:gap-3">
             <button
@@ -647,7 +783,7 @@ export function ServiceWizard({
               onClick={handleNext}
               disabled={state.isSaving}
               className={cn(
-                'flex w-full items-center justify-center gap-1.5 rounded-[3px] px-6 py-2.5 text-sm font-medium transition-colors min-h-[48px] md:w-auto md:order-2',
+                'flex w-full items-center justify-center gap-1.5 rounded-[3px] px-6 py-2.5 text-sm font-medium transition-colors min-h-[48px] md:w-auto md:order-3',
                 'bg-forest text-cream hover:bg-sage',
                 state.isSaving && 'opacity-50 cursor-not-allowed',
               )}
@@ -655,6 +791,20 @@ export function ServiceWizard({
               {state.isSaving ? 'Salvando...' : nextLabel}
               {state.currentStep < 5 && !state.isSaving && <ChevronRight className="h-4 w-4" />}
             </button>
+
+            {showSaveAndExit && (
+              <button
+                type="button"
+                onClick={handleSaveAndExit}
+                disabled={state.isSaving}
+                className={cn(
+                  'w-full rounded-[3px] border border-forest px-4 py-2.5 text-sm font-medium text-forest transition-colors hover:bg-petal min-h-[48px] md:w-auto md:order-2',
+                  state.isSaving && 'opacity-50 cursor-not-allowed',
+                )}
+              >
+                Salvar e sair
+              </button>
+            )}
 
             {showSkip && skipLabel && (
               <button
@@ -711,6 +861,46 @@ export function ServiceWizard({
               className="rounded-[3px] bg-forest px-4 py-2 text-sm font-medium text-cream transition-colors hover:bg-sage"
             >
               Sim, fechar
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Finalize confirmation dialog (step 5 — irreversible) ──── */}
+      <Dialog open={showFinalizeDialog} onOpenChange={setShowFinalizeDialog}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Finalizar atendimento</DialogTitle>
+            <DialogDescription>
+              Você está prestes a finalizar este atendimento. Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="text-sm text-mid">
+            Após confirmar, o registro fica bloqueado e nenhuma informação deste
+            atendimento poderá mais ser alterada.
+          </div>
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setShowFinalizeDialog(false)}
+              disabled={state.isSaving}
+              className={cn(
+                'rounded-[3px] border border-forest px-4 py-2 text-sm font-medium text-forest transition-colors hover:bg-petal',
+                state.isSaving && 'opacity-50 cursor-not-allowed',
+              )}
+            >
+              Voltar e revisar
+            </button>
+            <button
+              type="button"
+              onClick={confirmFinalize}
+              disabled={state.isSaving}
+              className={cn(
+                'rounded-[3px] bg-forest px-4 py-2 text-sm font-medium text-cream transition-colors hover:bg-sage',
+                state.isSaving && 'opacity-50 cursor-not-allowed',
+              )}
+            >
+              {state.isSaving ? 'Finalizando...' : 'Sim, finalizar'}
             </button>
           </DialogFooter>
         </DialogContent>

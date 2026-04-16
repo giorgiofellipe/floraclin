@@ -44,6 +44,12 @@ export async function POST(
       return NextResponse.json({ error: 'Procedimento não encontrado' }, { status: 404 })
     }
 
+    if (procedure.status === 'draft') {
+      return NextResponse.json(
+        { error: 'Complete o planejamento antes de aprovar (plano financeiro e pontos do diagrama)' },
+        { status: 400 },
+      )
+    }
     if (procedure.status !== 'planned') {
       return NextResponse.json({ error: 'Apenas procedimentos planejados podem ser aprovados' }, { status: 400 })
     }

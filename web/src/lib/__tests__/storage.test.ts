@@ -1,4 +1,19 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+
+// storage-client has a server-only guard that throws in jsdom (where `window` exists).
+// Mock it so importing @/lib/storage doesn't trip the guard at module load.
+vi.mock('@/lib/supabase/storage-client', () => ({
+  createStorageClient: vi.fn(() => ({
+    storage: {
+      from: () => ({
+        upload: vi.fn(),
+        createSignedUrl: vi.fn(),
+        remove: vi.fn(),
+      }),
+    },
+  })),
+}))
+
 import { getStoragePath } from '@/lib/storage'
 
 describe('getStoragePath', () => {
