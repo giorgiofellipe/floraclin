@@ -38,6 +38,11 @@ export type UpdateProcedureInput = z.infer<typeof updateProcedureSchema>
 // ─── Diagram Schemas ───────────────────────────────────────────────
 
 export const diagramPointSchema = z.object({
+  // Client-side identity fields — preserved by zod parse so React keys and
+  // view-filtering keep working after form.reset(). The wire payload builders
+  // strip these explicitly before sending to the server.
+  id: z.string().optional(),
+  viewType: z.string().optional(),
   x: z.number().min(0).max(100),
   y: z.number().min(0).max(100),
   productName: z.string().min(1, 'Nome do produto é obrigatório').max(255),

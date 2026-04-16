@@ -370,16 +370,20 @@ export function ServiceWizard({
         if (state.currentStep === 4) {
           updateProcedureStatus('approved')
         }
-        if (state.currentStep === 5) {
-          // Execution complete — redirect to patient detail
-          toast.success('Atendimento finalizado com sucesso')
+
+        // Exit path takes priority: if the user clicked "Salvar e sair" on
+        // any step (including step 5), route out with the partial-save toast
+        // — never show the terminal-finalize message.
+        if (pending === 'exit') {
+          isExitingRef.current = true
+          toast.success('Atendimento salvo. Retome quando quiser.')
           router.push(`/pacientes/${patient.id}`)
           return
         }
 
-        if (pending === 'exit') {
-          isExitingRef.current = true
-          toast.success('Atendimento salvo. Retome quando quiser.')
+        // Step 5 commit path: finalize + redirect
+        if (state.currentStep === 5) {
+          toast.success('Atendimento finalizado com sucesso')
           router.push(`/pacientes/${patient.id}`)
           return
         }
@@ -485,6 +489,10 @@ export function ServiceWizard({
   // is visible.
   function getOverridesForStep(step: 1 | 2 | 3 | 4 | 5): WizardOverrides {
     const isFinalValidation = step === 3 && pendingAction === 'advance'
+    // Step 5's Salvar e sair routes through the regular update endpoint to
+    // avoid triggering the status transition from approved → executed.
+    const saveMode: 'commit' | 'partial' =
+      step === 5 && pendingAction === 'exit' ? 'partial' : 'commit'
     return {
       ...baseOverridesBase,
       triggerSave: state.currentStep === step ? state.triggerSave : 0,
@@ -492,6 +500,7 @@ export function ServiceWizard({
       onAutoSaved: step === 1 ? anamnesisOnAutoSaved : undefined,
       onUserEdit: handleUserEdit,
       validationMode: isFinalValidation ? 'final' : 'draft',
+      saveMode,
     }
   }
 
@@ -503,7 +512,8 @@ export function ServiceWizard({
   // additionalTypeIds from procedure record
   const additionalTypeIds = (localProcedure?.additionalTypeIds as string[] | null) ?? []
 
-  const showSaveAndExit = state.currentStep === 1 || state.currentStep === 3
+  const showSaveAndExit =
+    state.currentStep === 1 || state.currentStep === 3 || state.currentStep === 5
 
   // ─── Render ────────────────────────────────────────────────────
 

@@ -28,4 +28,11 @@ export interface WizardOverrides {
   onAutoSaved?: (timestamp: Date) => void
   /** 'final' runs strict validation (e.g., step 3 → step 4). Default 'draft'. */
   validationMode?: 'draft' | 'final'
+  /**
+   * 'commit' = run the step's terminal mutation (e.g., execute → status transition).
+   * 'partial' = save current scalar/array field state without any status change.
+   * Only step 5 consumes this today (Salvar e sair routes through the regular
+   * update endpoint instead of /execute). Default 'commit'.
+   */
+  saveMode?: 'commit' | 'partial'
 }

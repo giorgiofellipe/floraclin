@@ -15,7 +15,13 @@ async function fetchJson(url: string) {
 export function useEvaluationTemplates(typeIds: string[]) {
   return useQuery({
     queryKey: queryKeys.evaluation.templates(typeIds),
-    queryFn: () => fetchJson(`/api/evaluation/templates?typeIds=${typeIds.join(',')}`),
+    queryFn: () => {
+      // API expects repeated ?typeId=... params (singular, one per id),
+      // not a single comma-joined ?typeIds=... value.
+      const params = new URLSearchParams()
+      for (const id of typeIds) params.append('typeId', id)
+      return fetchJson(`/api/evaluation/templates?${params}`)
+    },
     enabled: typeIds.length > 0,
   })
 }

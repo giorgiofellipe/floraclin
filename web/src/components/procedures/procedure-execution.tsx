@@ -24,7 +24,7 @@ import type {
   DiagramPointData,
   CatalogProduct,
 } from '@/components/face-diagram/types'
-import { useExecuteProcedure } from '@/hooks/mutations/use-procedure-mutations'
+import { useExecuteProcedure, useUpdateProcedure } from '@/hooks/mutations/use-procedure-mutations'
 import type { DiagramViewType, QuantityUnit } from '@/types'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
@@ -72,6 +72,7 @@ export function ProcedureExecution({
 }: ProcedureExecutionProps) {
   const router = useRouter()
   const executeProcedure = useExecuteProcedure()
+  const updateProcedure = useUpdateProcedure()
   const isExecuted = procedure.status === 'executed'
   const isReadOnly = isExecuted
 
@@ -282,7 +283,7 @@ export function ProcedureExecution({
             ]
           : undefined
 
-      await executeProcedure.mutateAsync({
+      const payload = {
         id: procedure.id,
         technique: values.technique || undefined,
         clinicalResponse: values.clinicalResponse || undefined,
@@ -295,7 +296,17 @@ export function ProcedureExecution({
           values.productApplications.length > 0
             ? values.productApplications
             : undefined,
-      })
+      }
+
+      // Partial save (Salvar e sair) goes through the generic update endpoint
+      // so the procedure stays in `approved` status. Commit save goes through
+      // /execute which transitions `approved → executed`.
+      const saveMode = wizardOverrides?.saveMode ?? 'commit'
+      if (saveMode === 'partial') {
+        await updateProcedure.mutateAsync(payload)
+      } else {
+        await executeProcedure.mutateAsync(payload)
+      }
 
       form.reset(form.getValues())
       wizardOverrides?.onSaveComplete?.({
@@ -445,6 +456,9 @@ export function ProcedureExecution({
           ) : undefined
         }
       >
+        <p className="mb-3 text-[12px] leading-relaxed text-mid">
+          Aqui você pode adicionar as quantidades reais aplicadas no paciente. Clique nos pontos previamente marcados para editar ou remover, ou adicione novos pontos conforme o que foi executado.
+        </p>
         <DiagramSection
           form={form}
           plannedPoints={plannedPoints}

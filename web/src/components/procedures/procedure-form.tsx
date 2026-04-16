@@ -37,7 +37,6 @@ import {
   ProcedureTypesSection,
   type ProcedureType,
 } from './planning/procedure-types-section'
-import { PlanningDetailsSection } from './planning/planning-details-section'
 import { EvaluationTemplatesSection } from './planning/evaluation-templates-section'
 import { DiagramSection } from './planning/diagram-section'
 
@@ -221,14 +220,12 @@ export function ProcedureForm({
   const isReadOnly = mode === 'view'
   const isEdit = mode === 'edit'
 
-  // Planning mode: creating new OR editing a 'draft'/'planned' procedure.
-  // Drafts are procedures that have been saved mid-planning but still need
-  // required fields filled before approval — they live in the same UI as
-  // freshly created or already-planned procedures.
-  const isPlanningMode =
-    mode === 'create' ||
-    procedure?.status === 'draft' ||
-    procedure?.status === 'planned'
+  // This form is ONLY used for the planning step of the wizard. Every call
+  // site passes planning-stage data — create, draft, planned, or view-only
+  // (when the procedure was later approved/executed). There is no other
+  // UI branch; the form always renders the evaluations + diagram + financial
+  // plan sections. Interactive disable is handled by isReadOnly below.
+  const isPlanningMode = true
 
   // ─── Form ─────────────────────────────────────────────────────────
   // We type useForm with the schema *output* type (defaults applied) so that
@@ -597,19 +594,13 @@ export function ProcedureForm({
             : undefined
 
         // Planning mode strips execution-phase fields from the payload
+        // Planning form never writes execution-phase fields — those are owned
+        // by procedure-execution.tsx. Leave them out of the payload entirely.
         const payload: Record<string, unknown> = {
           patientId,
           procedureTypeId: values.procedureTypeId,
           additionalTypeIds:
             values.additionalTypeIds.length > 0 ? values.additionalTypeIds : undefined,
-          technique: isPlanningMode ? undefined : values.technique || undefined,
-          clinicalResponse: isPlanningMode ? undefined : values.clinicalResponse || undefined,
-          adverseEffects: isPlanningMode ? undefined : values.adverseEffects || undefined,
-          notes: isPlanningMode ? undefined : values.notes || undefined,
-          followUpDate: isPlanningMode ? undefined : values.followUpDate || undefined,
-          nextSessionObjectives: isPlanningMode
-            ? undefined
-            : values.nextSessionObjectives || undefined,
           diagrams: diagramsPayload,
           financialPlan: values.financialPlan,
         }
@@ -921,15 +912,6 @@ export function ProcedureForm({
             disabled={isReadOnly}
           />
         </Section>
-      )}
-
-      {/* ── Planning details (clinical / follow-up textareas, hidden in planning mode) ── */}
-      {!isPlanningMode && (
-        <PlanningDetailsSection
-          control={form.control}
-          form={form}
-          disabled={isReadOnly}
-        />
       )}
 
       {/* ── Submit ──────────────────────────────────────── */}

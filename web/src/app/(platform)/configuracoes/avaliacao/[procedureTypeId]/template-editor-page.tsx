@@ -61,15 +61,20 @@ export function TemplateEditorPage({ procedureType, template }: TemplateEditorPa
     router.push('/configuracoes')
   }
 
+  // Escape the platform layout's p-6 entirely so the template editor's own
+  // sticky header sits at viewport top:0 and visually replaces the platform
+  // header (same approach as the atendimento wizard page).
   return (
-    <TemplateEditor
-      procedureTypeName={procedureType.name}
-      procedureTypeCategory={procedureType.category}
-      templateId={template?.id ?? null}
-      initialSections={template?.sections ?? []}
-      onSave={handleSave}
-      onResetToDefault={handleResetToDefault}
-      onBack={handleBack}
-    />
+    <div className="-m-6 flex min-h-screen flex-col bg-[#F4F6F8]">
+      <TemplateEditor
+        procedureTypeName={procedureType.name}
+        procedureTypeCategory={procedureType.category}
+        templateId={template?.id ?? null}
+        initialSections={template?.sections ?? []}
+        onSave={handleSave}
+        onResetToDefault={handleResetToDefault}
+        onBack={handleBack}
+      />
+    </div>
   )
 }

@@ -5,9 +5,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ProcedureExecution } from '../procedure-execution'
 
 const mockExecute = vi.fn(async () => ({ data: { id: 'proc-id' } }))
+const mockUpdate = vi.fn(async () => ({ data: { id: 'proc-id' } }))
 
 vi.mock('@/hooks/mutations/use-procedure-mutations', () => ({
   useExecuteProcedure: () => ({ mutateAsync: mockExecute, isPending: false }),
+  useUpdateProcedure: () => ({ mutateAsync: mockUpdate, isPending: false }),
 }))
 
 vi.mock('next/navigation', () => ({

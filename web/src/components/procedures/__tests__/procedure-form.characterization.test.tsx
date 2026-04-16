@@ -86,12 +86,14 @@ describe('ProcedureForm — characterization (planning mode)', () => {
     expect(payload).toMatchObject({
       patientId: 'patient-123',
       procedureTypeId: '550e8400-e29b-41d4-a716-446655440000',
-      technique: undefined,
-      clinicalResponse: undefined,
-      adverseEffects: undefined,
-      notes: undefined,
-      followUpDate: undefined,
-      nextSessionObjectives: undefined,
     })
+    // Execution-phase fields are owned by procedure-execution.tsx and must
+    // never appear in the planning payload.
+    expect(payload).not.toHaveProperty('technique')
+    expect(payload).not.toHaveProperty('clinicalResponse')
+    expect(payload).not.toHaveProperty('adverseEffects')
+    expect(payload).not.toHaveProperty('notes')
+    expect(payload).not.toHaveProperty('followUpDate')
+    expect(payload).not.toHaveProperty('nextSessionObjectives')
   })
 })
