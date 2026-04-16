@@ -46,3 +46,6 @@ test-results/
 web/.next/
 site/.next/
 
+# superpowers brainstorming companion (visual mockups, scratch state)
+.superpowers/
+

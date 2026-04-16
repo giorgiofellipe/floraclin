@@ -1,6 +1,8 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { PlusIcon } from 'lucide-react'
+import { CreateCategoryModal } from './create-category-modal'
 import { useForm, Controller } from 'react-hook-form'
 import {
   Dialog,
@@ -54,6 +56,7 @@ interface Category {
 
 export function ExpenseForm({ open, onClose, onSuccess }: ExpenseFormProps) {
   const [error, setError] = useState<string | null>(null)
+  const [createCategoryOpen, setCreateCategoryOpen] = useState(false)
   const createExpense = useCreateExpense()
   const { data: categoriesResponse } = useExpenseCategories()
   const categoryList: Category[] = (categoriesResponse?.data as Category[]) ?? []
@@ -164,7 +167,19 @@ export function ExpenseForm({ open, onClose, onSuccess }: ExpenseFormProps) {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" data-testid="expense-form">
           {/* Category select */}
           <div className="space-y-2">
-            <Label className="uppercase tracking-wider text-xs font-medium text-mid">Categoria</Label>
+            <div className="flex items-center justify-between">
+              <Label className="uppercase tracking-wider text-xs font-medium text-mid">Categoria</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-[#4A6B52]"
+                onClick={() => setCreateCategoryOpen(true)}
+              >
+                <PlusIcon className="h-3 w-3" />
+                Nova categoria
+              </Button>
+            </div>
             <Controller
               name="categoryId"
               control={control}
@@ -350,6 +365,13 @@ export function ExpenseForm({ open, onClose, onSuccess }: ExpenseFormProps) {
             </Button>
           </DialogFooter>
         </form>
+        <CreateCategoryModal
+          open={createCategoryOpen}
+          onOpenChange={setCreateCategoryOpen}
+          onCreated={(categoryId) => {
+            setValue('categoryId', categoryId)
+          }}
+        />
       </DialogContent>
     </Dialog>
   )

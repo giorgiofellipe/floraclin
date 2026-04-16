@@ -3,14 +3,6 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -18,7 +10,6 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-  DialogTrigger,
   DialogClose,
 } from '@/components/ui/dialog'
 import { useExpenseCategories } from '@/hooks/queries/use-financial-settings'
@@ -34,69 +25,11 @@ import {
   Trash2Icon,
   LockIcon,
   Loader2Icon,
-  HomeIcon,
-  PackageIcon,
-  UsersIcon,
-  MegaphoneIcon,
-  MonitorIcon,
-  ReceiptIcon,
-  BriefcaseIcon,
-  WrenchIcon,
-  CircleIcon,
-  WalletIcon,
-  CarIcon,
-  CoffeeIcon,
-  PhoneIcon,
-  GlobeIcon,
-  HeartIcon,
   CheckIcon,
   XIcon,
 } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
-
-const ICON_ITEMS: Record<string, string> = {
-  home: 'Casa',
-  package: 'Pacote',
-  users: 'Pessoas',
-  megaphone: 'Megafone',
-  monitor: 'Monitor',
-  receipt: 'Recibo',
-  briefcase: 'Maleta',
-  wrench: 'Ferramenta',
-  circle: 'Círculo',
-  wallet: 'Carteira',
-  car: 'Carro',
-  coffee: 'Café',
-  phone: 'Telefone',
-  globe: 'Globo',
-  heart: 'Coração',
-}
-
-const ICON_OPTIONS: { value: string; label: string; Icon: LucideIcon }[] = [
-  { value: 'home', label: 'Casa', Icon: HomeIcon },
-  { value: 'package', label: 'Pacote', Icon: PackageIcon },
-  { value: 'users', label: 'Pessoas', Icon: UsersIcon },
-  { value: 'megaphone', label: 'Megafone', Icon: MegaphoneIcon },
-  { value: 'monitor', label: 'Monitor', Icon: MonitorIcon },
-  { value: 'receipt', label: 'Recibo', Icon: ReceiptIcon },
-  { value: 'briefcase', label: 'Maleta', Icon: BriefcaseIcon },
-  { value: 'wrench', label: 'Ferramenta', Icon: WrenchIcon },
-  { value: 'circle', label: 'Círculo', Icon: CircleIcon },
-  { value: 'wallet', label: 'Carteira', Icon: WalletIcon },
-  { value: 'car', label: 'Carro', Icon: CarIcon },
-  { value: 'coffee', label: 'Café', Icon: CoffeeIcon },
-  { value: 'phone', label: 'Telefone', Icon: PhoneIcon },
-  { value: 'globe', label: 'Globo', Icon: GlobeIcon },
-  { value: 'heart', label: 'Coração', Icon: HeartIcon },
-]
-
-const ICON_MAP: Record<string, LucideIcon> = Object.fromEntries(
-  ICON_OPTIONS.map((opt) => [opt.value, opt.Icon])
-)
-
-function getCategoryIcon(iconName: string): LucideIcon {
-  return ICON_MAP[iconName] || CircleIcon
-}
+import { IconPicker } from '@/components/financial/expenses/icon-picker'
+import { getExpenseIcon } from '@/components/financial/expenses/expense-icon-options'
 
 interface ExpenseCategory {
   id: string
@@ -194,49 +127,36 @@ export function ExpenseCategoriesManager() {
       {/* Category list */}
       <div className="space-y-1">
         {(categories as ExpenseCategory[]).map((category) => {
-          const Icon = getCategoryIcon(category.icon)
+          const Icon = getExpenseIcon(category.icon)
           const isEditing = editingId === category.id
 
           if (isEditing) {
             return (
               <div
                 key={category.id}
-                className="flex items-center gap-3 p-2.5 rounded-lg bg-[#F4F6F8] border border-[#E8ECEF]"
+                className="p-3 rounded-lg bg-[#F4F6F8] border border-[#E8ECEF] space-y-3"
               >
-                <Select items={ICON_ITEMS} value={editIcon} onValueChange={(val: string | null) => { if (val) setEditIcon(val) }}>
-                  <SelectTrigger className="w-[120px]">
-                    <SelectValue placeholder="Ícone" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ICON_OPTIONS.map((opt) => {
-                      const OptIcon = opt.Icon
-                      return (
-                        <SelectItem key={opt.value} value={opt.value}>
-                          <OptIcon className="h-3.5 w-3.5 inline mr-1.5" />
-                          {opt.label}
-                        </SelectItem>
-                      )
-                    })}
-                  </SelectContent>
-                </Select>
-                <Input
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className="flex-1"
-                  autoFocus
-                />
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="ghost"
-                  onClick={handleUpdate}
-                  disabled={updateCategory.isPending}
-                >
-                  <CheckIcon className="h-4 w-4 text-[#4A6B52]" />
-                </Button>
-                <Button type="button" size="icon-sm" variant="ghost" onClick={cancelEdit}>
-                  <XIcon className="h-4 w-4 text-mid" />
-                </Button>
+                <div className="flex items-center gap-3">
+                  <Input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="flex-1"
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={handleUpdate}
+                    disabled={updateCategory.isPending}
+                  >
+                    <CheckIcon className="h-4 w-4 text-[#4A6B52]" />
+                  </Button>
+                  <Button type="button" size="icon-sm" variant="ghost" onClick={cancelEdit}>
+                    <XIcon className="h-4 w-4 text-mid" />
+                  </Button>
+                </div>
+                <IconPicker value={editIcon} onChange={setEditIcon} />
               </div>
             )
           }
@@ -279,51 +199,38 @@ export function ExpenseCategoriesManager() {
 
       {/* Add form */}
       {showAddForm ? (
-        <div className="flex items-center gap-3 p-2.5 rounded-lg bg-[#F4F6F8] border border-[#E8ECEF]">
-          <Select items={ICON_ITEMS} value={newIcon} onValueChange={(val: string | null) => { if (val) setNewIcon(val) }}>
-            <SelectTrigger className="w-[120px]">
-              <SelectValue placeholder="Ícone" />
-            </SelectTrigger>
-            <SelectContent>
-              {ICON_OPTIONS.map((opt) => {
-                const OptIcon = opt.Icon
-                return (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    <OptIcon className="h-3.5 w-3.5 inline mr-1.5" />
-                    {opt.label}
-                  </SelectItem>
-                )
-              })}
-            </SelectContent>
-          </Select>
-          <Input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="Nome da categoria"
-            className="flex-1"
-            autoFocus
-          />
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            onClick={handleAdd}
-            disabled={createCategory.isPending || !newName.trim()}
-          >
-            <CheckIcon className="h-4 w-4 text-[#4A6B52]" />
-          </Button>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            onClick={() => {
-              setShowAddForm(false)
-              setNewName('')
-              setNewIcon('circle')
-            }}
-          >
-            <XIcon className="h-4 w-4 text-mid" />
-          </Button>
+        <div className="p-3 rounded-lg bg-[#F4F6F8] border border-[#E8ECEF] space-y-3">
+          <div className="flex items-center gap-3">
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Nome da categoria"
+              className="flex-1"
+              autoFocus
+            />
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              onClick={handleAdd}
+              disabled={createCategory.isPending || !newName.trim()}
+            >
+              <CheckIcon className="h-4 w-4 text-[#4A6B52]" />
+            </Button>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              onClick={() => {
+                setShowAddForm(false)
+                setNewName('')
+                setNewIcon('circle')
+              }}
+            >
+              <XIcon className="h-4 w-4 text-mid" />
+            </Button>
+          </div>
+          <IconPicker value={newIcon} onChange={setNewIcon} />
         </div>
       ) : (
         <Button
