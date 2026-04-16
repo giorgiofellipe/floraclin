@@ -10,8 +10,7 @@ import {
 } from '@/db/queries/tenants'
 import { createConsentTemplate } from '@/db/queries/consent'
 import { DEFAULT_CONSENT_TEMPLATES } from '@/validations/consent'
-import { createProduct } from '@/db/queries/products'
-import { DEFAULT_PRODUCTS } from '@/lib/constants'
+import { createProduct, listProducts } from '@/db/queries/products'
 import { createTemplate } from '@/db/queries/evaluation-templates'
 // defaultTemplates is dynamically imported below to avoid loading 42KB on startup
 import type { ProcedureCategory } from '@/types/evaluation'
@@ -19,7 +18,7 @@ import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 // withTransaction removed — helper functions use global db which deadlocks in transactions
-import type { WorkingHours } from '@/validations/tenant'
+import { onboardingCompleteSchema } from '@/validations/onboarding'
 
 function generateSlug(name: string): string {
   return name
@@ -29,22 +28,6 @@ function generateSlug(name: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
     .substring(0, 80)
-}
-
-interface OnboardingData {
-  clinic: {
-    name: string
-    phone?: string
-    email?: string
-    address?: Record<string, string>
-    workingHours: WorkingHours
-  }
-  procedureTypes: Array<{
-    name: string
-    category: string
-    estimatedDurationMin?: number
-    defaultPrice?: string
-  }>
 }
 
 export async function GET() {
@@ -67,7 +50,15 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const auth = await requireRole('owner')
-    const data: OnboardingData = await request.json()
+    const body = await request.json()
+    const parsed = onboardingCompleteSchema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Dados de onboarding inválidos', issues: parsed.error.flatten() },
+        { status: 400 },
+      )
+    }
+    const data = parsed.data
 
     // Check existing procedure types before entering transaction
     const existingTypes = await listProcedureTypes(auth.tenantId)
@@ -145,16 +136,15 @@ export async function POST(request: Request) {
         }
       }
 
-      // 4. Seed default products (idempotent — skip if any exist)
-      const { listProducts } = await import('@/db/queries/products')
+      // 4. Seed only the products the user selected via the onboarding step.
       const existingProducts = await listProducts(auth.tenantId)
-      if (existingProducts.length === 0) {
-        for (const product of DEFAULT_PRODUCTS) {
+      if (existingProducts.length === 0 && data.selectedProducts.length > 0) {
+        for (const p of data.selectedProducts) {
           await createProduct(auth.tenantId, {
-            name: product.name,
-            category: product.category,
-            activeIngredient: product.activeIngredient,
-            defaultUnit: product.defaultUnit,
+            name: p.name,
+            category: p.category,
+            activeIngredient: p.activeIngredient || undefined,
+            defaultUnit: p.defaultUnit || 'U',
           })
         }
       }
@@ -188,7 +178,14 @@ export async function POST(request: Request) {
         entityType: 'tenant',
         entityId: auth.tenantId,
         changes: {
-          onboarding: { old: null, new: { completed: true, procedureTypesCount: data.procedureTypes.length } },
+          onboarding: {
+            old: null,
+            new: {
+              completed: true,
+              procedureTypesCount: data.procedureTypes.length,
+              productsCount: data.selectedProducts.length,
+            },
+          },
         },
       })
     }

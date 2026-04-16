@@ -8,11 +8,14 @@ import { ClinicSettingsForm } from '@/components/settings/clinic-settings-form'
 import { ProcedureTypeList } from '@/components/settings/procedure-type-list'
 import { ProcedureTypeForm } from '@/components/settings/procedure-type-form'
 import { InviteUserForm } from '@/components/settings/invite-user-form'
-import { DEFAULT_PROCEDURE_TYPES, DEFAULT_WORKING_HOURS } from '@/lib/constants'
+import { DEFAULT_PROCEDURE_TYPES, DEFAULT_PRODUCTS, DEFAULT_WORKING_HOURS } from '@/lib/constants'
 import { toast } from 'sonner'
-import { CheckIcon, Building2Icon, SyringeIcon, UsersIcon, LogOutIcon } from 'lucide-react'
+import { CheckIcon, Building2Icon, SyringeIcon, PackageIcon, UsersIcon, LogOutIcon } from 'lucide-react'
 import { logout } from '@/actions/auth'
 import type { WorkingHours } from '@/validations/tenant'
+import { ProductsStep, type ProductStepItem } from './products-step'
+import type { CustomProductInput } from './custom-product-form'
+import type { Product } from '@/db/queries/products'
 
 interface ProcedureTypeItem {
   id: string
@@ -27,15 +30,21 @@ interface ProcedureTypeItem {
 const STEPS = [
   { label: 'Clínica', icon: Building2Icon },
   { label: 'Procedimentos', icon: SyringeIcon },
+  { label: 'Produtos', icon: PackageIcon },
   { label: 'Equipe', icon: UsersIcon },
 ]
 
 interface OnboardingWizardProps {
   tenantName: string
   existingProcedureTypes: ProcedureTypeItem[]
+  existingProducts?: Product[]
 }
 
-export function OnboardingWizard({ tenantName, existingProcedureTypes }: OnboardingWizardProps) {
+export function OnboardingWizard({
+  tenantName,
+  existingProcedureTypes,
+  existingProducts = [],
+}: OnboardingWizardProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [currentStep, setCurrentStep] = useState(0)
@@ -55,7 +64,14 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
   )
   const [showAddProcedure, setShowAddProcedure] = useState(false)
 
-  // Step 3 state: track sent invites count
+  // Step 3 state: products (default selections + custom additions)
+  const [selectedProductNames, setSelectedProductNames] = useState<Set<string>>(
+    () => new Set(DEFAULT_PRODUCTS.map((p) => p.name)),
+  )
+  const [customProducts, setCustomProducts] = useState<ProductStepItem[]>([])
+  const productsAlreadyConfigured = (existingProducts?.length ?? 0) > 0
+
+  // Step 4 state: track sent invites count
   const [invitesSent, setInvitesSent] = useState(0)
 
   const handleClinicChange = useCallback((data: Record<string, unknown>) => {
@@ -68,6 +84,34 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
       next[index] = !next[index]
       return next
     })
+  }
+
+  function handleProductSelectionChange(name: string, selected: boolean) {
+    setSelectedProductNames((prev) => {
+      const next = new Set(prev)
+      if (selected) next.add(name)
+      else next.delete(name)
+      return next
+    })
+  }
+
+  function handleAddCustomProduct(product: CustomProductInput) {
+    const nameLower = product.name.trim().toLowerCase()
+    const collidesWithDefault = DEFAULT_PRODUCTS.some(
+      (d) => d.name.toLowerCase() === nameLower,
+    )
+    setCustomProducts((prev) => {
+      const collidesWithCustom = prev.some((p) => p.name.toLowerCase() === nameLower)
+      if (collidesWithDefault || collidesWithCustom) {
+        toast.error(`Já existe um produto chamado "${product.name}"`)
+        return prev
+      }
+      return [...prev, { ...product, isCustom: true }]
+    })
+  }
+
+  function handleRemoveCustomProduct(name: string) {
+    setCustomProducts((prev) => prev.filter((p) => p.name !== name))
   }
 
   function handleNext() {
@@ -94,6 +138,22 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
           estimatedDurationMin: pt.estimatedDurationMin,
         }))
 
+      // Build selectedProducts — strip UI-only `origin` from defaults and `isCustom` from customs
+      const selectedProducts = [
+        ...DEFAULT_PRODUCTS.filter((p) => selectedProductNames.has(p.name)).map((p) => ({
+          name: p.name,
+          category: p.category,
+          activeIngredient: p.activeIngredient,
+          defaultUnit: p.defaultUnit,
+        })),
+        ...customProducts.map((p) => ({
+          name: p.name,
+          category: p.category,
+          activeIngredient: p.activeIngredient,
+          defaultUnit: p.defaultUnit,
+        })),
+      ]
+
       const res = await fetch('/api/onboarding', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -106,6 +166,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
             workingHours: (clinicData.workingHours as WorkingHours) || DEFAULT_WORKING_HOURS,
           },
           procedureTypes,
+          selectedProducts,
         }),
       })
 
@@ -127,8 +188,6 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
-
-  const isLastStep = currentStep === STEPS.length - 1
 
   return (
     <div className="min-h-screen bg-[#F4F6F8]">
@@ -328,8 +387,20 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
             </div>
           )}
 
-          {/* Step 3: Team Invites */}
+          {/* Step 3: Products */}
           {currentStep === 2 && (
+            <ProductsStep
+              selectedNames={selectedProductNames}
+              customProducts={customProducts}
+              alreadyConfigured={productsAlreadyConfigured}
+              onSelectionChange={handleProductSelectionChange}
+              onAddCustom={handleAddCustomProduct}
+              onRemoveCustom={handleRemoveCustomProduct}
+            />
+          )}
+
+          {/* Step 4: Team Invites */}
+          {currentStep === 3 && (
             <div>
               <h2 className="text-xl font-medium text-charcoal mb-1 tracking-tight">
                 Convide sua Equipe
@@ -379,7 +450,7 @@ export function OnboardingWizard({ tenantName, existingProcedureTypes }: Onboard
           </div>
 
           <div className="flex gap-3">
-            {currentStep === 2 && (
+            {currentStep === 3 && (
               <Button
                 type="button"
                 variant="ghost"
