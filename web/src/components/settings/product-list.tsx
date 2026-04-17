@@ -36,17 +36,7 @@ import {
 
 import { toast } from 'sonner'
 import { PlusIcon, PencilIcon, Trash2Icon } from 'lucide-react'
-
-const CATEGORY_LABELS: Record<string, string> = {
-  botox: 'Toxina Botulínica',
-  filler: 'Preenchimento',
-  biostimulator: 'Bioestimulador',
-  peel: 'Peeling',
-  skinbooster: 'Skinbooster',
-  laser: 'Laser',
-  microagulhamento: 'Microagulhamento',
-  outros: 'Outros',
-}
+import { PROCEDURE_CATEGORY_LABELS as CATEGORY_LABELS } from '@/lib/constants'
 
 const CATEGORY_COLORS: Record<string, string> = {
   botox: 'bg-sage/10 text-sage border-sage/20',

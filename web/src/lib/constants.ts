@@ -17,8 +17,23 @@ export const PROCEDURE_CATEGORIES = [
   'skinbooster',
   'laser',
   'microagulhamento',
+  'enzima',
+  'limpeza_pele',
   'outros',
 ] as const
+
+export const PROCEDURE_CATEGORY_LABELS: Record<string, string> = {
+  botox: 'Toxina Botulínica',
+  filler: 'Preenchimento',
+  biostimulator: 'Bioestimulador',
+  peel: 'Peeling',
+  skinbooster: 'Skinbooster',
+  laser: 'Laser',
+  microagulhamento: 'Microagulhamento',
+  enzima: 'Enzima Lipolítica',
+  limpeza_pele: 'Limpeza de Pele',
+  outros: 'Outros',
+}
 
 export const FITZPATRICK_TYPES = ['I', 'II', 'III', 'IV', 'V', 'VI'] as const
 
@@ -28,6 +43,9 @@ export const DEFAULT_PROCEDURE_TYPES = [
   { name: 'Bioestimulador de Colágeno', category: 'biostimulator', estimatedDurationMin: 60 },
   { name: 'Peeling Químico', category: 'peel', estimatedDurationMin: 45 },
   { name: 'Skinbooster', category: 'skinbooster', estimatedDurationMin: 45 },
+  { name: 'Microagulhamento', category: 'microagulhamento', estimatedDurationMin: 60 },
+  { name: 'Lipo de Papada', category: 'enzima', estimatedDurationMin: 45 },
+  { name: 'Limpeza de Pele Profissional', category: 'limpeza_pele', estimatedDurationMin: 60 },
 ]
 
 export const DEFAULT_PRODUCTS = [
@@ -59,6 +77,10 @@ export const CONSENT_TYPE_LABELS: Record<string, string> = {
   botox: 'Toxina Botulínica',
   filler: 'Preenchedor / Ácido Hialurônico',
   biostimulator: 'Bioestimulador',
+  limpeza_pele: 'Limpeza de Pele',
+  enzima: 'Enzima Lipolítica',
+  skinbooster: 'Skinbooster',
+  microagulhamento: 'Microagulhamento',
   custom: 'Personalizado',
   service_contract: 'Contrato de Serviço',
 }

@@ -154,7 +154,17 @@ export async function POST(request: Request) {
       const existingTemplates = await listConsentTemplates(auth.tenantId)
       const hasTemplates = Object.values(existingTemplates).some((arr) => Array.isArray(arr) && arr.length > 0)
       if (!hasTemplates) {
-        const consentTypes = ['general', 'botox', 'filler', 'biostimulator', 'service_contract'] as const
+        const consentTypes = [
+          'general',
+          'botox',
+          'filler',
+          'biostimulator',
+          'limpeza_pele',
+          'enzima',
+          'skinbooster',
+          'microagulhamento',
+          'service_contract',
+        ] as const
         for (const type of consentTypes) {
           const template = DEFAULT_CONSENT_TEMPLATES[type]
           await createConsentTemplate(auth.tenantId, {

@@ -21,21 +21,10 @@ import {
 import { ProcedureTypeForm } from './procedure-type-form'
 import { useUpdateProcedureType, useDeleteProcedureType } from '@/hooks/mutations/use-procedure-type-mutations'
 import { formatCurrency } from '@/lib/utils'
-import { PROCEDURE_CATEGORIES } from '@/lib/constants'
+import { PROCEDURE_CATEGORIES, PROCEDURE_CATEGORY_LABELS as CATEGORY_LABELS } from '@/lib/constants'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import { PlusIcon, PencilIcon, Trash2Icon, ClipboardListIcon } from 'lucide-react'
-
-const CATEGORY_LABELS: Record<string, string> = {
-  botox: 'Toxina Botulínica',
-  filler: 'Preenchimento',
-  biostimulator: 'Bioestimulador',
-  peel: 'Peeling',
-  skinbooster: 'Skinbooster',
-  laser: 'Laser',
-  microagulhamento: 'Microagulhamento',
-  outros: 'Outros',
-}
 
 const CATEGORY_COLORS: Record<string, string> = {
   botox: 'bg-sage/10 text-sage border-sage/20',
@@ -45,6 +34,8 @@ const CATEGORY_COLORS: Record<string, string> = {
   skinbooster: 'bg-petal text-sage border-sage/20',
   laser: 'bg-gold/10 text-amber-dark border-gold/20',
   microagulhamento: 'bg-sage/10 text-forest border-sage/20',
+  enzima: 'bg-amber-light text-amber-dark border-amber-mid/20',
+  limpeza_pele: 'bg-mint/15 text-forest border-mint/25',
   outros: 'bg-petal text-mid border-blush',
 }
 
