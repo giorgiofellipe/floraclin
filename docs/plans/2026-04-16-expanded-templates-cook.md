@@ -947,6 +947,111 @@ git commit -m "feat(db): expand consent_templates.type CHECK constraint for 4 ne
 
 ---
 
+### Task 1.10: Update orphan `ConsentType` union in types/index.ts
+
+**Files:**
+- Modify: `web/src/types/index.ts`
+
+**Context:** `types/index.ts:11` has a duplicated `ConsentType = 'general' | 'botox' | 'filler' | 'biostimulator' | 'custom' | 'service_contract'` union. Grep confirms no other file in `web/src` imports this type, but we keep it consistent with the source of truth to prevent future confusion.
+
+- [ ] **Step 1: Read current line**
+
+```bash
+sed -n '9,13p' web/src/types/index.ts
+```
+
+- [ ] **Step 2: Replace line 11 with the extended union**
+
+Change:
+
+```ts
+export type ConsentType = 'general' | 'botox' | 'filler' | 'biostimulator' | 'custom' | 'service_contract'
+```
+
+To:
+
+```ts
+export type ConsentType = 'general' | 'botox' | 'filler' | 'biostimulator' | 'limpeza_pele' | 'enzima' | 'skinbooster' | 'microagulhamento' | 'custom' | 'service_contract'
+```
+
+- [ ] **Step 3: Typecheck**
+
+```bash
+pnpm --filter @floraclin/web typecheck
+```
+
+Expected: PASS.
+
+- [ ] **Step 4: Lint**
+
+```bash
+pnpm lint --filter @floraclin/web
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add web/src/types/index.ts
+git commit -m "chore(types): align ConsentType union with consent validation enum"
+```
+
+---
+
+### Task 1.11: Extend consent test iteration to exercise new types
+
+**Files:**
+- Modify: `web/src/validations/__tests__/consent.test.ts`
+
+- [ ] **Step 1: Read the current test**
+
+```bash
+sed -n '15,22p' web/src/validations/__tests__/consent.test.ts
+```
+
+Current:
+
+```ts
+it('accepts all valid types', () => {
+  for (const type of ['general', 'botox', 'filler', 'biostimulator', 'custom']) {
+    const result = consentTemplateSchema.safeParse({ ...validTemplate, type })
+    expect(result.success).toBe(true)
+  }
+})
+```
+
+- [ ] **Step 2: Replace the iteration list**
+
+```ts
+it('accepts all valid types', () => {
+  const types = ['general', 'botox', 'filler', 'biostimulator', 'limpeza_pele', 'enzima', 'skinbooster', 'microagulhamento', 'custom', 'service_contract']
+  for (const type of types) {
+    const result = consentTemplateSchema.safeParse({ ...validTemplate, type })
+    expect(result.success).toBe(true)
+  }
+})
+```
+
+Note: `service_contract` was also missing from the original iteration. Including it now.
+
+- [ ] **Step 3: Run the test**
+
+```bash
+pnpm --filter @floraclin/web test:run -- validations/__tests__/consent.test.ts
+```
+
+Expected: PASS — 10 types all accepted. (Will only pass after Task 1.6 extends `consentTypes` enum.)
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add web/src/validations/__tests__/consent.test.ts
+git commit -m "test(consent): iterate all 10 valid types including new clinical TCLEs"
+```
+
+---
+
 ## Group 2 — Integration verification
 
 Runs after Group 1 is merged. Not a parallel group — one task, one commit (if needed).
@@ -1011,7 +1116,7 @@ Expected: three hits — `onboarding/route.ts`, `api/evaluation/templates/route.
 
 **Parallelization integrity:**
 - Group 0 runs alone.
-- Group 1 has 9 tasks, each owning a different file:
+- Group 1 has 11 tasks, each owning a different file:
   - 1.1 → `bioestimulador.ts`
   - 1.2 → `skinbooster.ts`
   - 1.3 → `enzima.ts`
@@ -1021,7 +1126,11 @@ Expected: three hits — `onboarding/route.ts`, `api/evaluation/templates/route.
   - 1.7 → `lib/constants.ts`
   - 1.8 → `app/api/onboarding/route.ts`
   - 1.9 → `db/migrations/manual/0003_expand_consent_types.sql` + `db/schema.ts` (comment only)
+  - 1.10 → `types/index.ts`
+  - 1.11 → `validations/__tests__/consent.test.ts`
   - **No file overlap.** ✅
+
+**Group 1 sequencing note:** Task 1.11 (test) will fail until Task 1.6 (enum) lands. Cook should dispatch both in parallel but review/merge Task 1.6 first if possible, or merge the batch together so the test runs against the updated enum.
 
 **Type consistency:**
 - `consentTypes` array in Task 1.6 and `consentTypes` array in Task 1.8 must contain exactly the same 9 values in the same relative order (custom excluded from Task 1.8 as noted). ✅
