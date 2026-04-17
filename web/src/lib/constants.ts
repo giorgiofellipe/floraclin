@@ -59,6 +59,10 @@ export const CONSENT_TYPE_LABELS: Record<string, string> = {
   botox: 'Toxina Botulínica',
   filler: 'Preenchedor / Ácido Hialurônico',
   biostimulator: 'Bioestimulador',
+  limpeza_pele: 'Limpeza de Pele',
+  enzima: 'Enzima Lipolítica',
+  skinbooster: 'Skinbooster',
+  microagulhamento: 'Microagulhamento',
   custom: 'Personalizado',
   service_contract: 'Contrato de Serviço',
 }
