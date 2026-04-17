@@ -207,7 +207,7 @@ git commit -m "refactor: split default-evaluation-templates into folder per cate
 
 ---
 
-## Group 1 — Content rewrites (9 tasks in parallel)
+## Group 1 — Content rewrites (11 tasks in parallel)
 
 **Every task in this group touches a different file.** All 9 can be dispatched simultaneously after Group 0 completes. Each task ends with its own commit.
 
