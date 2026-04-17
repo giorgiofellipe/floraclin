@@ -6,17 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import type { CatalogProduct } from './types'
-
-const CATEGORY_LABELS: Record<string, string> = {
-  botox: 'Toxina Botulínica',
-  filler: 'Preenchimento',
-  biostimulator: 'Bioestimulador',
-  peel: 'Peeling',
-  skinbooster: 'Skinbooster',
-  laser: 'Laser',
-  microagulhamento: 'Microagulhamento',
-  outros: 'Outros',
-}
+import { PROCEDURE_CATEGORY_LABELS as CATEGORY_LABELS } from '@/lib/constants'
 
 const CATEGORY_ORDER = [
   'botox',

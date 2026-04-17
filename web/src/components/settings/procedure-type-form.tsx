@@ -15,19 +15,8 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useCreateProcedureType, useUpdateProcedureType } from '@/hooks/mutations/use-procedure-type-mutations'
-import { PROCEDURE_CATEGORIES } from '@/lib/constants'
+import { PROCEDURE_CATEGORIES, PROCEDURE_CATEGORY_LABELS as CATEGORY_LABELS } from '@/lib/constants'
 import { toast } from 'sonner'
-
-const CATEGORY_LABELS: Record<string, string> = {
-  botox: 'Toxina Botulínica',
-  filler: 'Preenchimento',
-  biostimulator: 'Bioestimulador',
-  peel: 'Peeling',
-  skinbooster: 'Skinbooster',
-  laser: 'Laser',
-  microagulhamento: 'Microagulhamento',
-  outros: 'Outros',
-}
 
 interface ProcedureTypeFormProps {
   initialData?: {

@@ -8,7 +8,7 @@ import { ClinicSettingsForm } from '@/components/settings/clinic-settings-form'
 import { ProcedureTypeList } from '@/components/settings/procedure-type-list'
 import { ProcedureTypeForm } from '@/components/settings/procedure-type-form'
 import { InviteUserForm } from '@/components/settings/invite-user-form'
-import { DEFAULT_PROCEDURE_TYPES, DEFAULT_PRODUCTS, DEFAULT_WORKING_HOURS } from '@/lib/constants'
+import { DEFAULT_PROCEDURE_TYPES, DEFAULT_PRODUCTS, DEFAULT_WORKING_HOURS, PROCEDURE_CATEGORY_LABELS as CATEGORY_LABEL } from '@/lib/constants'
 import { toast } from 'sonner'
 import { CheckIcon, Building2Icon, SyringeIcon, PackageIcon, UsersIcon, LogOutIcon, PlusIcon } from 'lucide-react'
 import { logout } from '@/actions/auth'
@@ -27,17 +27,6 @@ interface ProcedureOverride {
 }
 
 const DURATION_OPTIONS = [15, 30, 45, 60, 75, 90, 120] as const
-
-const CATEGORY_LABEL: Record<string, string> = {
-  botox: 'Toxina Botulínica',
-  filler: 'Preenchedor',
-  biostimulator: 'Bioestimulador',
-  skinbooster: 'Skinbooster',
-  peel: 'Peeling',
-  laser: 'Laser',
-  microagulhamento: 'Microagulhamento',
-  outros: 'Outros',
-}
 
 interface ProcedureTypeItem {
   id: string
