@@ -1,0 +1,173 @@
+import type { EvaluationSection } from '@/types/evaluation'
+
+export const enzimaSections: EvaluationSection[] = [
+  {
+    id: 'enz-s1',
+    title: 'Queixa Principal e Área de Tratamento',
+    order: 1,
+    questions: [
+      {
+        id: 'enz-s1-q1',
+        label: 'Área de interesse para aplicação de enzima',
+        type: 'checkbox',
+        required: true,
+        order: 1,
+        options: [
+          'Papada',
+          'Gordura localizada no rosto',
+          'SMAS / flacidez + gordura submentoniana',
+          'Região abdominal',
+          'Flancos',
+          'Culote',
+          'Costas / bananinha',
+          'Braços',
+          'Joelhos',
+        ],
+      },
+      {
+        id: 'enz-s1-q2',
+        label: 'Há quanto tempo nota este acúmulo de gordura na área?',
+        type: 'radio',
+        required: true,
+        order: 2,
+        options: [
+          'Menos de 1 ano',
+          '1 a 3 anos',
+          'Mais de 3 anos',
+          'Desde sempre',
+        ],
+      },
+      {
+        id: 'enz-s1-q3',
+        label: 'Já realizou tratamentos para redução de gordura anteriormente?',
+        type: 'checkbox_with_other',
+        required: false,
+        order: 3,
+        options: [
+          'Não',
+          'Criolipólise',
+          'Enzimas / lipase / fosfolipídios',
+          'Radiofrequência',
+          'Cirurgia (lipoaspiração)',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'enz-s2',
+    title: 'Hábitos Alimentares e Físicos',
+    order: 2,
+    questions: [
+      {
+        id: 'enz-s2-q1',
+        label: 'Pratica atividade física regularmente?',
+        type: 'radio',
+        required: true,
+        order: 1,
+        options: [
+          'Não pratica',
+          '1 a 2x por semana',
+          '3 a 4x por semana',
+          '5 ou mais vezes por semana',
+        ],
+      },
+      {
+        id: 'enz-s2-q2',
+        label: 'Como avalia sua alimentação atual?',
+        type: 'radio',
+        required: true,
+        order: 2,
+        options: [
+          'Muito ruim -- muita gordura e açúcar',
+          'Irregular -- às vezes equilibrada',
+          'Razoável',
+          'Boa -- equilibrada e saudável',
+        ],
+      },
+      {
+        id: 'enz-s2-q3',
+        label: 'Faz ou ja fez acompanhamento nutricional?',
+        type: 'radio',
+        required: false,
+        order: 3,
+        options: [
+          'Sim, atualmente',
+          'Já fiz, não faço mais',
+          'Nunca fiz',
+        ],
+      },
+      {
+        id: 'enz-s2-q4',
+        label: 'Histórico de variações de peso significativas?',
+        type: 'radio',
+        required: false,
+        order: 4,
+        options: [
+          'Não -- peso estável',
+          'Sim -- perdas e ganhos frequentes',
+          'Perda recente de peso',
+          'Ganho recente de peso',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'enz-s3',
+    title: 'Avaliação do Tecido e Pele da Área',
+    order: 3,
+    questions: [
+      {
+        id: 'enz-s3-q1',
+        label: 'A pele da área apresenta',
+        type: 'checkbox',
+        required: true,
+        order: 1,
+        options: [
+          'Firmeza adequada',
+          'Flacidez leve',
+          'Flacidez moderada a intensa',
+          'Celulite na região',
+          'Estrias',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'enz-s4',
+    title: 'Triagem de Contraindicações',
+    order: 4,
+    questions: [
+      {
+        id: 'enz-s4-q1',
+        label: 'Marque se aplicável',
+        type: 'checkbox',
+        required: true,
+        order: 1,
+        warningText: 'Avaliar individualmente. Alterações hepáticas, renais ou dislipidemia grave podem contraindicar enzimas lipolíticas.',
+        options: [
+          'Gestação ou amamentação',
+          'Doenças hepáticas ou renais',
+          'Dislipidemia grave / colesterol muito elevado',
+          'Alergia a fosfatidilcolina ou deoxicolato de sódio',
+          'Infecção ativa na área',
+          'Histórico de trombose',
+          'Nenhum dos itens acima',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'enz-s6',
+    title: 'Observações do Profissional',
+    order: 5,
+    questions: [
+      {
+        id: 'enz-s6-q1',
+        label: 'Observações',
+        type: 'text',
+        required: false,
+        order: 1,
+      },
+    ],
+  },
+]
