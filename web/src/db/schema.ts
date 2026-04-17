@@ -289,7 +289,7 @@ export const productApplications = floraclinSchema.table('product_applications',
 export const consentTemplates = floraclinSchema.table('consent_templates', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
-  type: varchar('type', { length: 30 }).notNull(), // CHECK in migration: ('general', 'botox', 'filler', 'biostimulator', 'custom', 'service_contract')
+  type: varchar('type', { length: 30 }).notNull(), // CHECK in migration: ('general', 'botox', 'filler', 'biostimulator', 'limpeza_pele', 'enzima', 'skinbooster', 'microagulhamento', 'custom', 'service_contract')
   title: varchar('title', { length: 255 }).notNull(),
   content: text('content').notNull(),
   version: integer('version').notNull().default(1),
