@@ -130,7 +130,7 @@ export const microagulhamentoSections: EvaluationSection[] = [
         order: 2,
         helpText: 'Crítico para definição de profundidade e risco de hiperpigmentação.',
         warningText:
-          '⚠ FOTOTIPOS V E VI — ATENÇÃO REDOBRADA. Em fototipos V e VI, o microagulhamento exige protocolo adaptado: agulhas de menor profundidade, menor número de passagens, intervalos mais longos e uso de ativos antipigmentares no pós-procedimento. O risco de hiperpigmentação pós-inflamatória (HPI) é significativamente mais elevado. Avaliar individualmente e obter consentimento específico.',
+          'FOTOTIPOS V E VI — ATENÇÃO REDOBRADA. Em fototipos V e VI, o microagulhamento exige protocolo adaptado: agulhas de menor profundidade, menor número de passagens, intervalos mais longos e uso de ativos antipigmentares no pós-procedimento. O risco de hiperpigmentação pós-inflamatória (HPI) é significativamente mais elevado. Avaliar individualmente e obter consentimento específico.',
         options: [
           'I — Muito clara, sempre queima',
           'II — Clara, frequentemente queima',
@@ -199,7 +199,7 @@ export const microagulhamentoSections: EvaluationSection[] = [
         required: true,
         order: 1,
         warningText:
-          '⚠ SUSPENSÃO OBRIGATÓRIA ANTES DO PROCEDIMENTO. Retinol e tretinoína: suspender mínimo 7 dias antes. Ácidos (glicólico, salicílico, mandélico, retinóico): mínimo 7 dias. Vitamina C concentrada (>15%): 3 dias. Isotretinoína oral: contraindicação absoluta durante e até 6 meses após o término do uso. Anti-inflamatórios crônicos: avaliar individualmente.',
+          'SUSPENSÃO OBRIGATÓRIA ANTES DO PROCEDIMENTO. Retinol e tretinoína: suspender mínimo 7 dias antes. Ácidos (glicólico, salicílico, mandélico, retinóico): mínimo 7 dias. Vitamina C concentrada (>15%): 3 dias. Isotretinoína oral: contraindicação absoluta durante e até 6 meses após o término do uso. Anti-inflamatórios crônicos: avaliar individualmente.',
         options: [
           'Retinol tópico',
           'Tretinoína (ácido retinoico tópico)',
@@ -439,7 +439,7 @@ export const microagulhamentoSections: EvaluationSection[] = [
         required: true,
         order: 1,
         warningText:
-          '⚠ VERIFICAR OBRIGATORIAMENTE ANTES DE INICIAR. A presença de qualquer item abaixo pode contraindicar ou exigir adaptação do protocolo. Não iniciar o procedimento sem avaliação e resolução de cada item.',
+          'VERIFICAR OBRIGATORIAMENTE ANTES DE INICIAR. A presença de qualquer item abaixo pode contraindicar ou exigir adaptação do protocolo. Não iniciar o procedimento sem avaliação e resolução de cada item.',
         options: [
           'Gestação ou amamentação',
           'Isotretinoína oral em uso ou < 6 meses após término',

@@ -293,7 +293,7 @@ export const enzimaSections: EvaluationSection[] = [
         required: true,
         order: 1,
         warningText:
-          '⚠ ATENÇÃO REDOBRADA — Enzimas lipolíticas submentonianas (fosfatidilcolina e deoxicolato de sódio) exigem avaliação criteriosa. Dislipidemia grave, doenças hepáticas e histórico de trombose são contraindicações importantes. Flacidez severa sem gordura suficiente pode gerar resultado insatisfatório.',
+          'ATENÇÃO REDOBRADA — Enzimas lipolíticas submentonianas (fosfatidilcolina e deoxicolato de sódio) exigem avaliação criteriosa. Dislipidemia grave, doenças hepáticas e histórico de trombose são contraindicações importantes. Flacidez severa sem gordura suficiente pode gerar resultado insatisfatório.',
         options: [
           'Gestação ou amamentação',
           'Dislipidemia grave não controlada',
@@ -321,7 +321,7 @@ export const enzimaSections: EvaluationSection[] = [
         required: true,
         order: 1,
         warningText:
-          '⚠ ATENÇÃO — EFEITOS INTENSOS SÃO NORMAIS E ESPERADOS. Após a aplicação da enzima lipolítica é comum: edema (inchaço) intenso por 5 a 10 dias, hematomas, ardência e endurecimento temporário da região. Esses são efeitos esperados e fazem parte do processo de lipólise.',
+          'ATENÇÃO — EFEITOS INTENSOS SÃO NORMAIS E ESPERADOS. Após a aplicação da enzima lipolítica é comum: edema (inchaço) intenso por 5 a 10 dias, hematomas, ardência e endurecimento temporário da região. Esses são efeitos esperados e fazem parte do processo de lipólise.',
         options: [
           'Sim, já sabia',
           'Explicado nesta consulta — compreendeu e aceita',

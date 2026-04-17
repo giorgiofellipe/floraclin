@@ -360,7 +360,7 @@ export const bioestimuladorSections: EvaluationSection[] = [
         required: true,
         order: 1,
         warningText:
-          '⚠ AVALIE INDIVIDUALMENTE CADA ITEM\nNódulos e granulomas são complicações possíveis com bioestimuladores, especialmente em pacientes com histórico de reação a corpos estranhos ou doenças autoimunes ativas. Avalie com atenção redobrada.',
+          'AVALIE INDIVIDUALMENTE CADA ITEM\nNódulos e granulomas são complicações possíveis com bioestimuladores, especialmente em pacientes com histórico de reação a corpos estranhos ou doenças autoimunes ativas. Avalie com atenção redobrada.',
         options: [
           'Gestação ou amamentação',
           'Alergia conhecida ao produto (PLLA, CaHA)',

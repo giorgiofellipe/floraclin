@@ -184,7 +184,7 @@ A aplicação é realizada com agulha fina ou cânula, em planos específicos da
 Cláusula 2 — OBJETIVOS, RESULTADOS ESPERADOS E NATUREZA PROGRESSIVA
 O procedimento visa: aumento da firmeza e elasticidade da pele, redução da flacidez, melhora do volume facial, suavização de rugas e linhas e rejuvenescimento global. Os resultados são graduais e progressivos — o colágeno neoformado se desenvolve ao longo de 4 a 12 semanas após cada sessão, com aperfeiçoamento contínuo por 12 a 24 meses.
 
-⚠ ATENÇÃO — RESULTADO NÃO É IMEDIATO
+ATENÇÃO — RESULTADO NÃO É IMEDIATO
 O efeito do bioestimulador não é visível logo após a aplicação. O inchaço inicial do produto se resolve em dias e o resultado estético real começa a aparecer entre 4 e 12 semanas. Não configura falha no procedimento a ausência de efeito imediato. O protocolo completo geralmente requer 2 a 3 sessões com intervalo de 4 a 8 semanas.
 
 Por constituir obrigação de meio, não há garantia de resultado específico. Fatores individuais (genética, tabagismo, exposição solar, hidratação, qualidade do sono) influenciam diretamente a resposta ao tratamento.
@@ -276,7 +276,7 @@ Riscos menos comuns que podem ocorrer:
 • Cicatrizes ou marcas persistentes em peles com tendência a queloides
 • Piora temporária da acne (erupção pós-limpeza nas primeiras 48–72h)
 
-⚠ IMPORTANTE
+IMPORTANTE
 A piora temporária das lesões acneicas nas primeiras 48 horas após a limpeza é fenômeno comum (purging), pois o procedimento estimula a migração de impurezas para a superfície. Não configura erro profissional. Em caso de reação intensa ou prolongada, o paciente deve entrar em contato imediato com o profissional.
 
 Cláusula 4 — CONTRAINDICAÇÕES E CONDIÇÕES QUE IMPEDEM O PROCEDIMENTO
@@ -339,7 +339,7 @@ O procedimento visa a redução do volume de gordura submentoniana e melhora da 
 
 Cláusula 3 — EFEITOS PÓS-PROCEDIMENTO ESPERADOS — LEIA COM ATENÇÃO
 
-⚠ ATENÇÃO — EFEITOS INTENSOS SÃO NORMAIS E ESPERADOS
+ATENÇÃO — EFEITOS INTENSOS SÃO NORMAIS E ESPERADOS
 O edema pós-aplicação de enzima lipolítica submentoniana pode ser significativo e visível por 5 a 15 dias. Hematomas extensos são comuns. O endurecimento da região é esperado. Esses efeitos são parte do processo inflamatório lipolítico e não configuram erro ou complicação. O(a) paciente deve estar ciente antes de realizar o procedimento.
 
 Efeitos esperados e transitórios:
@@ -444,7 +444,7 @@ O(a) paciente confirma que as seguintes condições foram verificadas e nenhuma 
 • Infecção ou ferida aberta na região
 • Uso de anticoagulante oral sem suspensão médica autorizada
 
-⚠ PORTADORES DE HERPES
+PORTADORES DE HERPES
 Pacientes com histórico de herpes labial ou facial recorrente devem informar o profissional. A profilaxia com antiviral oral pode ser necessária antes do procedimento para evitar reativação. Esta decisão deve ser tomada em conjunto com o médico responsável.
 
 Cláusula 5 — CUIDADOS PÓS-PROCEDIMENTO
@@ -510,7 +510,7 @@ Riscos menos comuns, porém possíveis:
 • Mília (pequenos cistos brancos) transitórios pela regeneração cutânea
 • Resultado abaixo da expectativa, especialmente em cicatrizes muito profundas ou antigas
 
-⚠ ATENÇÃO — MELASMA E MICROAGULHAMENTO
+ATENÇÃO — MELASMA E MICROAGULHAMENTO
 Pacientes com melasma devem ser informados que o microagulhamento pode provocar piora temporária do melasma se a inflamação pós-procedimento não for controlada adequadamente. O protocolo deve incluir pré-condicionamento com despigmentantes e proteção solar rigorosa. A decisão de tratar melasma com microagulhamento exige avaliação cuidadosa e expectativas realistas.
 
 Cláusula 4 — CONTRAINDICAÇÕES VERIFICADAS E CONFIRMADAS
