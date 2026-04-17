@@ -14,7 +14,8 @@ describe('consentTemplateSchema', () => {
   })
 
   it('accepts all valid types', () => {
-    for (const type of ['general', 'botox', 'filler', 'biostimulator', 'custom']) {
+    const types = ['general', 'botox', 'filler', 'biostimulator', 'limpeza_pele', 'enzima', 'skinbooster', 'microagulhamento', 'custom', 'service_contract']
+    for (const type of types) {
       const result = consentTemplateSchema.safeParse({ ...validTemplate, type })
       expect(result.success).toBe(true)
     }
