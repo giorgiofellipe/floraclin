@@ -330,7 +330,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                   {/* ─── Actions (visible on hover) ───────────────── */}
                   <div className={cn(
                     'mt-3 flex items-center gap-1.5 transition-opacity duration-200',
-                    'opacity-100 sm:opacity-0 sm:group-hover:opacity-100',
+                    'opacity-100',
                   )}>
                     {proc.status === 'draft' && (
                       <Button

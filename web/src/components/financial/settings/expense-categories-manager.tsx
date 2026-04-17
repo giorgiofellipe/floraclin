@@ -173,7 +173,7 @@ export function ExpenseCategoriesManager() {
               {category.isSystem ? (
                 <LockIcon className="h-3.5 w-3.5 text-mid" />
               ) : (
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1">
                   <Button
                     type="button"
                     size="icon-sm"

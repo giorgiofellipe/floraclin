@@ -136,7 +136,7 @@ export function PhotoGrid({
                   </div>
 
                   {/* Hover overlay with actions */}
-                  <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/0 opacity-0 transition-all group-hover:bg-black/40 group-hover:opacity-100">
+                  <div className="absolute inset-0 flex items-end justify-center gap-2 bg-gradient-to-t from-black/50 to-transparent pb-2">
                     <Button
                       variant="ghost"
                       size="icon-sm"

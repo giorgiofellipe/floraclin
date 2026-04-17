@@ -314,7 +314,7 @@ export function InstallmentTable({
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-6 px-2 text-[10px] text-red-600 hover:bg-red-50 hover:text-red-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="h-6 px-2 text-[10px] text-red-600 hover:bg-red-50 hover:text-red-700"
                         data-testid="payment-reverse"
                         onClick={() => {
                           setReverseDialogPayment(pr)
