@@ -8,7 +8,7 @@ export type ProcedureStatus = 'draft' | 'planned' | 'approved' | 'executed' | 'c
 
 export type TimelineStage = 'pre' | 'immediate_post' | '7d' | '30d' | '90d' | 'other'
 
-export type ConsentType = 'general' | 'botox' | 'filler' | 'biostimulator' | 'custom' | 'service_contract'
+export type ConsentType = 'general' | 'botox' | 'filler' | 'biostimulator' | 'limpeza_pele' | 'enzima' | 'skinbooster' | 'microagulhamento' | 'custom' | 'service_contract'
 
 export type AcceptanceMethod = 'checkbox' | 'signature' | 'both'
 
