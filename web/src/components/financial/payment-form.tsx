@@ -28,30 +28,71 @@ const INSTALLMENT_COUNT_ITEMS: Record<string, string> = Object.fromEntries(
   Array.from({ length: 12 }, (_, i) => [String(i + 1), `${i + 1}x`])
 )
 
-interface Patient {
-  id: string
-  fullName: string
-}
-
 interface PaymentFormProps {
-  patients: Patient[]
   open: boolean
   onClose: () => void
   onSuccess: () => void
+  defaultPatient?: { id: string; fullName: string }
 }
 
-export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormProps) {
-  const [patientId, setPatientId] = useState('')
+export function PaymentForm({ open, onClose, onSuccess, defaultPatient }: PaymentFormProps) {
+  const [patientId, setPatientId] = useState(defaultPatient?.id ?? '')
+  const [patientName, setPatientName] = useState(defaultPatient?.fullName ?? '')
   const [totalAmount, setTotalAmount] = useState('')
   const [installmentCount, setInstallmentCount] = useState('1')
   const [customDueDates, setCustomDueDates] = useState<Record<number, string>>({})
   const [patientSearch, setPatientSearch] = useState('')
+  const [patientOptions, setPatientOptions] = useState<{ id: string; fullName: string }[]>([])
+  const [showPatientDropdown, setShowPatientDropdown] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]> | null>(null)
   const createFinancialEntry = useCreateFinancialEntry()
   const isPending = createFinancialEntry.isPending
   const { data: settingsResponse } = useFinancialSettings()
   const settings = settingsResponse?.settings
+
+  // Reset form on open
+  useEffect(() => {
+    if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync defaults on dialog open
+      setPatientId(defaultPatient?.id ?? '')
+      setPatientName(defaultPatient?.fullName ?? '')
+      setTotalAmount('')
+      setInstallmentCount('1')
+      setCustomDueDates({})
+      setPatientSearch('')
+      setError(null)
+      setFieldErrors(null)
+    }
+  }, [open, defaultPatient?.id, defaultPatient?.fullName])
+
+  // Patient search
+  useEffect(() => {
+    if (patientSearch.length < 2 || defaultPatient?.id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale results when search is too short
+      setPatientOptions([])
+      return
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ search: patientSearch, limit: '20' })
+        const res = await fetch(`/api/patients?${params}`)
+        if (res.ok) {
+          const json = await res.json()
+          const data = json.data ?? json
+          setPatientOptions(
+            (data as { id: string; fullName: string }[]).map((p) => ({
+              id: p.id,
+              fullName: p.fullName,
+            }))
+          )
+        }
+      } catch {
+        // ignore
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [patientSearch, defaultPatient?.id])
 
   // Pre-fill defaults from financial settings
   useEffect(() => {
@@ -85,14 +126,6 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
     })
   }, [parsedAmount, parsedCount, customDueDates])
 
-  const filteredPatients = patients.filter((p) =>
-    p.fullName.toLowerCase().includes(patientSearch.toLowerCase())
-  )
-
-  const patientItems = useMemo(
-    () => Object.fromEntries(patients.map((p) => [p.id, p.fullName])),
-    [patients],
-  )
 
   function handleAmountChange(value: string) {
     setTotalAmount(maskCurrency(value))
@@ -129,15 +162,49 @@ export function PaymentForm({ patients, open, onClose, onSuccess }: PaymentFormP
           }
         }} className="space-y-5" data-testid="payment-form">
 
-          {/* Patient select */}
+          {/* Patient search */}
           <div className="space-y-2">
-            <Label htmlFor="patientSelect" className="uppercase tracking-wider text-xs font-medium text-mid">Paciente</Label>
-            <Select items={patientItems} value={patientId} onValueChange={(v) => setPatientId(v ?? '')}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecione o paciente" />
-              </SelectTrigger>
-              <SelectContent />
-            </Select>
+            <Label htmlFor="patientSearch" className="uppercase tracking-wider text-xs font-medium text-mid">Paciente</Label>
+            <div className="relative">
+              <Input
+                id="patientSearch"
+                placeholder="Buscar paciente por nome..."
+                value={patientName || patientSearch}
+                disabled={!!defaultPatient?.id}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setPatientSearch(val)
+                  setPatientId('')
+                  setPatientName('')
+                  setShowPatientDropdown(true)
+                }}
+                onFocus={() => setShowPatientDropdown(true)}
+                onBlur={() => setTimeout(() => setShowPatientDropdown(false), 200)}
+              />
+              {showPatientDropdown && patientSearch.length >= 2 && (
+                <div className="absolute top-full z-50 mt-1 w-full rounded-md border bg-popover shadow-md">
+                  {patientOptions.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        setPatientId(p.id)
+                        setPatientName(p.fullName)
+                        setPatientSearch('')
+                        setShowPatientDropdown(false)
+                      }}
+                    >
+                      {p.fullName}
+                    </button>
+                  ))}
+                  {patientOptions.length === 0 && (
+                    <p className="px-3 py-2 text-sm text-mid">Nenhum paciente encontrado</p>
+                  )}
+                </div>
+              )}
+            </div>
             {fieldErrors?.patientId && (
               <p className="text-sm text-destructive">{fieldErrors.patientId[0]}</p>
             )}

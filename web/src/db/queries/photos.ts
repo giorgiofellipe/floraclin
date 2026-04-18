@@ -1,5 +1,5 @@
 import { db } from '@/db/client'
-import { photoAssets, photoAnnotations, patients, procedureRecords } from '@/db/schema'
+import { photoAssets, photoAnnotations, patients, procedureRecords, procedureTypes } from '@/db/schema'
 import { eq, and, isNull, desc } from 'drizzle-orm'
 import { getSignedUrl, deleteFile } from '@/lib/storage'
 import type { TimelineStage } from '@/types'
@@ -19,6 +19,9 @@ export interface PhotoAssetWithUrl {
   notes: string | null
   createdAt: Date
   signedUrl: string | null
+  procedureRecordId: string | null
+  procedureTypeName: string | null
+  procedurePerformedAt: Date | null
 }
 
 export interface PhotosByStage {
@@ -45,8 +48,23 @@ export async function listPhotos(
   }
 
   const photos = await db
-    .select()
+    .select({
+      id: photoAssets.id,
+      storagePath: photoAssets.storagePath,
+      originalFilename: photoAssets.originalFilename,
+      mimeType: photoAssets.mimeType,
+      fileSizeBytes: photoAssets.fileSizeBytes,
+      timelineStage: photoAssets.timelineStage,
+      takenAt: photoAssets.takenAt,
+      notes: photoAssets.notes,
+      createdAt: photoAssets.createdAt,
+      procedureRecordId: photoAssets.procedureRecordId,
+      procedureTypeName: procedureTypes.name,
+      procedurePerformedAt: procedureRecords.performedAt,
+    })
     .from(photoAssets)
+    .leftJoin(procedureRecords, eq(photoAssets.procedureRecordId, procedureRecords.id))
+    .leftJoin(procedureTypes, eq(procedureRecords.procedureTypeId, procedureTypes.id))
     .where(and(...conditions))
     .orderBy(desc(photoAssets.createdAt))
 
@@ -63,6 +81,9 @@ export async function listPhotos(
       notes: photo.notes,
       createdAt: photo.createdAt,
       signedUrl: await getSignedUrl(photo.storagePath),
+      procedureRecordId: photo.procedureRecordId,
+      procedureTypeName: photo.procedureTypeName,
+      procedurePerformedAt: photo.procedurePerformedAt,
     }))
   )
 

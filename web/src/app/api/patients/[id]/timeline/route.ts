@@ -441,6 +441,20 @@ async function buildPatientTimeline(tenantId: string, patientId: string): Promis
       })
     }
 
+    // Orphan photos (not linked to any procedure)
+    for (const ph of photosData) {
+      if (ph.procedureRecordId) continue
+      const stageLabel = ph.timelineStage
+        ? STAGE_LABELS[ph.timelineStage] ?? ph.timelineStage
+        : 'Foto'
+      ungrouped.push({
+        id: `photo-${ph.id}`,
+        type: 'photo_uploaded',
+        date: new Date(ph.createdAt).toISOString(),
+        title: `Foto avulsa — ${stageLabel.toLowerCase()}`,
+      })
+    }
+
     // Unlinked appointments
     for (const appt of appointmentsData) {
       if (linkedAppointmentIds.has(appt.id)) continue

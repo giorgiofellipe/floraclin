@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft,
@@ -26,6 +27,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { Button } from '@/components/ui/button'
 import { PatientTabs, type PatientTabKey } from './patient-tabs'
 import { PatientDataTab } from './patient-data-tab'
 import { PatientAnamnesisTab } from './patient-anamnesis-tab'
@@ -34,7 +36,9 @@ import { PatientPhotosTab } from './patient-photos-tab'
 import { PatientConsentTab } from './patient-consent-tab'
 import { PatientFinancialTab } from './patient-financial-tab'
 import { PatientTimelineTab } from './patient-timeline-tab'
-// SendAnamnesisDialog moved to PatientAnamnesisTab
+import { PaymentForm } from '@/components/financial/payment-form'
+import { AppointmentForm } from '@/components/scheduling/appointment-form'
+import { usePractitioners, useAppointmentProcedureTypes } from '@/hooks/queries/use-appointments'
 import type { Patient } from '@/db/queries/patients'
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -96,11 +100,32 @@ export function PatientDetailContent({
   activeTab,
   hasActiveService = false,
 }: PatientDetailContentProps) {
-  const [tab, setTab] = useState<PatientTabKey>(
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  const [showPaymentForm, setShowPaymentForm] = useState(false)
+  const [showAppointmentForm, setShowAppointmentForm] = useState(false)
+  const { data: practitioners = [] } = usePractitioners()
+  const { data: procedureTypes = [] } = useAppointmentProcedureTypes()
+
+  const [tab, setTabState] = useState<PatientTabKey>(
     VALID_TABS.includes(activeTab as PatientTabKey)
       ? (activeTab as PatientTabKey)
       : 'dados'
   )
+
+  const setTab = useCallback((newTab: PatientTabKey) => {
+    setTabState(newTab)
+    const params = new URLSearchParams(searchParams.toString())
+    if (newTab === 'dados') {
+      params.delete('tab')
+    } else {
+      params.set('tab', newTab)
+    }
+    const qs = params.toString()
+    router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false })
+  }, [router, pathname, searchParams])
 
   const age = patient.birthDate ? calculateAge(patient.birthDate) : null
 
@@ -207,15 +232,14 @@ export function PatientDetailContent({
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <Link
-                        href={`/agenda?paciente=${patient.id}`}
-                        className={cn(
-                          buttonVariants({ variant: 'outline', size: 'icon-sm' }),
-                          'border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl'
-                        )}
+                      <Button
+                        variant="outline"
+                        size="icon-sm"
+                        className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
+                        onClick={() => setShowAppointmentForm(true)}
                       >
                         <CalendarPlus className="size-4" />
-                      </Link>
+                      </Button>
                     }
                   />
                   <TooltipContent side="bottom"><p>Novo Agendamento</p></TooltipContent>
@@ -224,18 +248,17 @@ export function PatientDetailContent({
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <Link
-                        href={`/pacientes/${patient.id}?tab=financeiro`}
-                        className={cn(
-                          buttonVariants({ variant: 'outline', size: 'icon-sm' }),
-                          'border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl'
-                        )}
+                      <Button
+                        variant="outline"
+                        size="icon-sm"
+                        className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
+                        onClick={() => setShowPaymentForm(true)}
                       >
                         <Receipt className="size-4" />
-                      </Link>
+                      </Button>
                     }
                   />
-                  <TooltipContent side="bottom"><p>Nova Cobranca</p></TooltipContent>
+                  <TooltipContent side="bottom"><p>Nova Cobrança</p></TooltipContent>
                 </Tooltip>
 
               </TooltipProvider>
@@ -279,6 +302,27 @@ export function PatientDetailContent({
           )}
         </div>
       </div>
+
+      <PaymentForm
+        open={showPaymentForm}
+        onClose={() => setShowPaymentForm(false)}
+        defaultPatient={patient}
+        onSuccess={() => {
+          setShowPaymentForm(false)
+          setTab('financeiro')
+        }}
+      />
+
+      <AppointmentForm
+        open={showAppointmentForm}
+        onOpenChange={setShowAppointmentForm}
+        practitioners={practitioners}
+        procedureTypes={procedureTypes}
+        defaultPatient={patient}
+        onSaved={() => {
+          setShowAppointmentForm(false)
+        }}
+      />
     </div>
   )
 }

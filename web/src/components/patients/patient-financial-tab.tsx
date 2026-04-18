@@ -81,7 +81,7 @@ export function PatientFinancialTab({ patientId, patientName }: PatientFinancial
         </div>
       </div>
 
-      <FinancialList patients={patients} defaultPatientId={patientId} />
+      <FinancialList patients={patients} defaultPatientId={patientId} defaultPatient={{ id: patientId, fullName: patientName }} />
     </div>
   )
 }

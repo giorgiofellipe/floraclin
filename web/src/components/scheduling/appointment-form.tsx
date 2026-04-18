@@ -61,6 +61,7 @@ interface AppointmentFormProps {
   defaultDate?: string
   defaultStartTime?: string
   defaultPractitionerId?: string
+  defaultPatient?: { id: string; fullName: string }
 }
 
 function generateTimeOptions(): string[] {
@@ -95,6 +96,7 @@ export function AppointmentForm({
   defaultDate,
   defaultStartTime,
   defaultPractitionerId,
+  defaultPatient,
 }: AppointmentFormProps) {
   const isEditing = !!appointment
   const createAppointment = useCreateAppointment()
@@ -110,12 +112,13 @@ export function AppointmentForm({
   const [patientSearch, setPatientSearch] = React.useState('')
   const [patientOptions, setPatientOptions] = React.useState<PatientOption[]>([])
   const [selectedPatientId, setSelectedPatientId] = React.useState<string>(
-    appointment?.patientId ?? ''
+    appointment?.patientId ?? defaultPatient?.id ?? ''
   )
   const [selectedPatientName, setSelectedPatientName] = React.useState<string>(
-    appointment?.patientName ?? ''
+    appointment?.patientName ?? defaultPatient?.fullName ?? ''
   )
   const [showPatientDropdown, setShowPatientDropdown] = React.useState(false)
+
   const [practitionerId, setPractitionerId] = React.useState(
     appointment?.practitionerId ?? defaultPractitionerId ?? practitioners[0]?.id ?? ''
   )
@@ -157,8 +160,8 @@ export function AppointmentForm({
         setStartTime(appointment.startTime.slice(0, 5))
         setEndTime(appointment.endTime.slice(0, 5))
       } else {
-        setSelectedPatientId('')
-        setSelectedPatientName('')
+        setSelectedPatientId(defaultPatient?.id ?? '')
+        setSelectedPatientName(defaultPatient?.fullName ?? '')
         setPractitionerId(defaultPractitionerId ?? practitioners[0]?.id ?? '')
         setProcedureTypeId('')
         setDate(defaultDate ?? '')
@@ -360,6 +363,7 @@ export function AppointmentForm({
                   id="patient-search"
                   placeholder="Buscar paciente por nome..."
                   value={selectedPatientName || patientSearch}
+                  disabled={!!defaultPatient?.id}
                   onChange={(e) => {
                     const val = (e.target as HTMLInputElement).value
                     setPatientSearch(val)

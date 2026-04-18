@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { PhotoComparison } from '../photo-comparison'
+import { PhotoComparisonDialog } from '../photo-comparison'
+import type { PhotoAssetWithUrl } from '@/db/queries/photos'
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
@@ -8,30 +9,44 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }))
 
-// The component calls `fetch('/api/photos?...')` directly. Stub global fetch
-// so the URL parses in jsdom (relative URLs throw ERR_INVALID_URL otherwise)
-// and the photo list loads.
-const mockPhotoListResponse = {
+const mockPhotoA: PhotoAssetWithUrl = {
+  id: 'photo-1',
+  storagePath: '/path/1',
+  originalFilename: 'foto-antes.jpg',
+  mimeType: 'image/jpeg',
+  fileSizeBytes: 1024,
+  timelineStage: 'pre',
+  takenAt: null,
+  notes: null,
+  createdAt: new Date('2026-03-15'),
+  signedUrl: null,
+  procedureRecordId: 'proc-1',
+  procedureTypeName: 'Toxina Botulínica',
+  procedurePerformedAt: new Date('2026-03-15'),
+}
+
+const mockPhotoB: PhotoAssetWithUrl = {
+  id: 'photo-2',
+  storagePath: '/path/2',
+  originalFilename: 'foto-depois.jpg',
+  mimeType: 'image/jpeg',
+  fileSizeBytes: 2048,
+  timelineStage: '30d',
+  takenAt: null,
+  notes: null,
+  createdAt: new Date('2026-04-14'),
+  signedUrl: null,
+  procedureRecordId: 'proc-1',
+  procedureTypeName: 'Toxina Botulínica',
+  procedurePerformedAt: new Date('2026-03-15'),
+}
+
+const mockComparisonUrlsResponse = {
   success: true,
-  data: [
-    {
-      stage: 'pre',
-      photos: [
-        {
-          id: 'photo-1',
-          originalFilename: 'foto-antes.jpg',
-          timelineStage: 'pre',
-          storagePath: '/path/1',
-        },
-        {
-          id: 'photo-2',
-          originalFilename: 'foto-depois.jpg',
-          timelineStage: 'immediate_post',
-          storagePath: '/path/2',
-        },
-      ],
-    },
-  ],
+  data: {
+    urlA: 'https://example.com/photo-a.jpg',
+    urlB: 'https://example.com/photo-b.jpg',
+  },
 }
 
 beforeEach(() => {
@@ -39,7 +54,7 @@ beforeEach(() => {
     'fetch',
     vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => mockPhotoListResponse,
+      json: async () => mockComparisonUrlsResponse,
     } as Response),
   )
 })
@@ -48,23 +63,33 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('PhotoComparison', () => {
-  it('renders mode selector with 3 modes', async () => {
-    render(<PhotoComparison patientId="patient-1" />)
+describe('PhotoComparisonDialog', () => {
+  it('renders mode buttons when open with both photos', async () => {
+    render(
+      <PhotoComparisonDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        photoA={mockPhotoA}
+        photoB={mockPhotoB}
+      />
+    )
 
-    // Wait for loading to finish and tabs to appear
-    const sideBySideTab = await screen.findByRole('tab', { name: 'Lado a Lado' })
-    expect(sideBySideTab).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Sobreposição' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Slider' })).toBeInTheDocument()
+    const sliderButton = await screen.findByRole('button', { name: 'Slider' })
+    expect(sliderButton).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Lado a Lado' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sobreposição' })).toBeInTheDocument()
   })
 
-  it('shows photo selectors', async () => {
-    render(<PhotoComparison patientId="patient-1" />)
+  it('does not render when closed', () => {
+    render(
+      <PhotoComparisonDialog
+        open={false}
+        onOpenChange={vi.fn()}
+        photoA={mockPhotoA}
+        photoB={mockPhotoB}
+      />
+    )
 
-    // Wait for loading to finish — both Foto A and Foto B labels render.
-    const labelA = await screen.findByText('Foto A')
-    expect(labelA).toBeInTheDocument()
-    expect(screen.getByText('Foto B')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Slider' })).not.toBeInTheDocument()
   })
 })

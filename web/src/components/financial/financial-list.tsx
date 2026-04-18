@@ -94,7 +94,7 @@ const PAYMENT_METHOD_FILTER_ITEMS: Record<string, string> = {
   ...PAYMENT_METHOD_ITEMS,
 }
 
-export function FinancialList({ patients, defaultPatientId }: { patients: Patient[]; defaultPatientId?: string }) {
+export function FinancialList({ patients, defaultPatientId, defaultPatient }: { patients: Patient[]; defaultPatientId?: string; defaultPatient?: { id: string; fullName: string } }) {
   const queryClient = useQueryClient()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -597,9 +597,9 @@ export function FinancialList({ patients, defaultPatientId }: { patients: Patien
       {/* New charge form */}
       {showPaymentForm && (
         <PaymentForm
-          patients={patients}
           open={showPaymentForm}
           onClose={() => setShowPaymentForm(false)}
+          defaultPatient={defaultPatient}
           onSuccess={() => {
             setShowPaymentForm(false)
             fetchEntries()

@@ -41,7 +41,7 @@ export function PatientTabs({ activeTab, onTabChange }: PatientTabsProps) {
               onClick={() => onTabChange(tab.key)}
               data-testid={`patient-tab-${tab.key}`}
               className={cn(
-                'group relative flex items-center gap-2 whitespace-nowrap px-5 py-3.5 text-[13px] font-medium transition-all duration-200',
+                'group relative flex cursor-pointer items-center gap-2 whitespace-nowrap px-5 py-3.5 text-[13px] font-medium transition-all duration-200',
                 isActive
                   ? 'text-forest'
                   : 'text-mid hover:text-charcoal'
