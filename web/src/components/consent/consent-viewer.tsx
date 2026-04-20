@@ -110,7 +110,7 @@ export function ConsentViewer({
 
       <CardContent className="space-y-5 pt-5">
         {/* Scrollable consent text */}
-        <ScrollArea className="h-72 rounded-[3px] border border-[#E8ECEF] bg-white p-5">
+        <ScrollArea className="h-[65vh] rounded-[3px] border border-[#E8ECEF] bg-white p-5">
           <div className="whitespace-pre-wrap text-sm leading-relaxed text-charcoal">
             {template.content}
           </div>

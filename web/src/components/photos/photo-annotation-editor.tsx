@@ -2,9 +2,13 @@
 
 import * as React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Stage, Layer, Line, Arrow, Ellipse, Text, Image as KonvaImage } from 'react-konva'
+import type Konva from 'konva'
 import {
   Pencil,
   ArrowUp,
+  Minus,
+  Circle,
   Type,
   Eraser,
   Undo2,
@@ -12,26 +16,70 @@ import {
   Save,
   X,
   Loader2,
+  MousePointer2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+import { Download } from 'lucide-react'
 import type { PhotoAssetWithUrl } from '@/db/queries/photos'
+import { timelineStageLabels } from '@/validations/photo'
+import type { TimelineStage } from '@/types'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
 interface PhotoAnnotationEditorProps {
   photo: PhotoAssetWithUrl | null
+  patientId: string
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
-type DrawingTool = 'pencil' | 'arrow' | 'text' | 'eraser'
+type DrawingTool = 'select' | 'pencil' | 'arrow' | 'line' | 'circle' | 'text' | 'eraser'
+
+interface ShapeBase {
+  id: string
+  type: string
+  color: string
+  strokeWidth: number
+}
+
+interface FreeDrawShape extends ShapeBase {
+  type: 'freedraw'
+  points: number[]
+}
+
+interface ArrowShape extends ShapeBase {
+  type: 'arrow'
+  points: [number, number, number, number]
+}
+
+interface LineShape extends ShapeBase {
+  type: 'line'
+  points: [number, number, number, number]
+}
+
+interface EllipseShape extends ShapeBase {
+  type: 'ellipse'
+  x: number
+  y: number
+  radiusX: number
+  radiusY: number
+}
+
+interface TextShape extends ShapeBase {
+  type: 'text'
+  x: number
+  y: number
+  text: string
+  fontSize: number
+}
+
+type AnnotationShape = FreeDrawShape | ArrowShape | LineShape | EllipseShape | TextShape
 
 const PRESET_COLORS = [
   { name: 'Vermelho', value: '#ef4444' },
@@ -44,461 +92,683 @@ const PRESET_COLORS = [
 
 const BRUSH_WIDTHS = [2, 4, 6, 8]
 
+const TOOLS: { key: DrawingTool; icon: typeof Pencil; label: string }[] = [
+  { key: 'select', icon: MousePointer2, label: 'Mover' },
+  { key: 'pencil', icon: Pencil, label: 'Livre' },
+  { key: 'arrow', icon: ArrowUp, label: 'Seta' },
+  { key: 'line', icon: Minus, label: 'Linha' },
+  { key: 'circle', icon: Circle, label: 'Círculo' },
+  { key: 'text', icon: Type, label: 'Texto' },
+  { key: 'eraser', icon: Eraser, label: 'Borracha' },
+]
+
+let nextId = 0
+function genId() {
+  return `shape-${Date.now()}-${nextId++}`
+}
+
 // ─── Component ──────────────────────────────────────────────────────
 
 export function PhotoAnnotationEditor({
   photo,
+  patientId,
   open,
   onOpenChange,
 }: PhotoAnnotationEditorProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const fabricCanvasRef = useRef<any>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const stageRef = useRef<Konva.Stage>(null)
   const [tool, setTool] = useState<DrawingTool>('pencil')
   const [color, setColor] = useState('#ef4444')
   const [brushWidth, setBrushWidth] = useState(4)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [undoStack, setUndoStack] = useState<string[]>([])
-  const [redoStack, setRedoStack] = useState<string[]>([])
-  const isAddingArrow = useRef(false)
-  const arrowStartPoint = useRef<{ x: number; y: number } | null>(null)
 
-  // Initialize Fabric.js canvas when dialog opens
+  // Canvas dimensions
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
+  const [imageScale, setImageScale] = useState(1)
+  const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null)
+
+  // Shapes state
+  const [shapes, setShapes] = useState<AnnotationShape[]>([])
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  // Drawing in progress
+  const isDrawing = useRef(false)
+  const drawStart = useRef<{ x: number; y: number } | null>(null)
+  const currentFreeDrawPoints = useRef<number[]>([])
+
+  // History for undo/redo
+  const [history, setHistory] = useState<AnnotationShape[][]>([[]])
+  const [historyIdx, setHistoryIdx] = useState(0)
+
+  const canUndo = historyIdx > 0
+  const canRedo = historyIdx < history.length - 1
+
+  const pushHistory = useCallback((newShapes: AnnotationShape[]) => {
+    setHistory((prev) => {
+      const trimmed = prev.slice(0, historyIdx + 1)
+      return [...trimmed, newShapes]
+    })
+    setHistoryIdx((prev) => prev + 1)
+  }, [historyIdx])
+
+  const handleUndo = useCallback(() => {
+    if (historyIdx <= 0) return
+    const newIdx = historyIdx - 1
+    setHistoryIdx(newIdx)
+    setShapes(history[newIdx])
+    setSelectedId(null)
+  }, [historyIdx, history])
+
+  const handleRedo = useCallback(() => {
+    if (historyIdx >= history.length - 1) return
+    const newIdx = historyIdx + 1
+    setHistoryIdx(newIdx)
+    setShapes(history[newIdx])
+    setSelectedId(null)
+  }, [historyIdx, history])
+
+  // Load background image when dialog opens
   useEffect(() => {
-    if (!open || !photo?.signedUrl || !canvasRef.current) return
+    if (!open || !photo) return
 
     let cancelled = false
+    setLoading(true)
+    setBgImage(null)
+    setShapes([])
+    setHistory([[]])
+    setHistoryIdx(0)
+    setSelectedId(null)
 
-    const initCanvas = async () => {
-      setLoading(true)
+    const load = async () => {
+      // Wait for dialog layout
+      await new Promise((r) => setTimeout(r, 150))
+      if (cancelled) return
 
-      // Dynamic import of Fabric.js
-      const fabric = await import('fabric')
+      // Fetch fresh signed URL
+      let imageUrl = photo.signedUrl ?? ''
+      try {
+        const res = await fetch(`/api/photos?photoIdA=${photo.id}&photoIdB=${photo.id}`)
+        const result = await res.json()
+        if (result.success && result.data?.urlA) imageUrl = result.data.urlA
+      } catch { /* fall back */ }
 
-      if (cancelled || !canvasRef.current) return
-
-      // Clean up existing canvas
-      if (fabricCanvasRef.current) {
-        fabricCanvasRef.current.dispose()
-        fabricCanvasRef.current = null
+      if (!imageUrl || cancelled) {
+        setLoading(false)
+        return
       }
 
-      const container = containerRef.current
-      if (!container) return
-
-      const containerWidth = container.clientWidth
-      const containerHeight = container.clientHeight - 60 // Leave room for toolbar
-
-      // Load background image to get dimensions
-      const img = new Image()
+      // Load image
+      const img = new window.Image()
       img.crossOrigin = 'anonymous'
       img.onload = async () => {
         if (cancelled) return
 
-        // Scale image to fit container
-        const scale = Math.min(
-          containerWidth / img.width,
-          containerHeight / img.height,
-          1
-        )
-        const canvasWidth = Math.round(img.width * scale)
-        const canvasHeight = Math.round(img.height * scale)
+        const container = containerRef.current
+        if (!container) return
 
-        canvasRef.current!.width = canvasWidth
-        canvasRef.current!.height = canvasHeight
+        const cw = container.clientWidth
+        const ch = container.clientHeight
+        if (cw === 0 || ch === 0) return
 
-        const canvas = new fabric.Canvas(canvasRef.current!, {
-          width: canvasWidth,
-          height: canvasHeight,
-          isDrawingMode: true,
+        const scale = Math.min(cw / img.width, ch / img.height, 1)
+        setImageScale(scale)
+        setStageSize({
+          width: Math.round(img.width * scale),
+          height: Math.round(img.height * scale),
         })
-
-        fabricCanvasRef.current = canvas
-
-        // Set background image
-        const bgImage = new fabric.FabricImage(img, {
-          scaleX: scale,
-          scaleY: scale,
-          selectable: false,
-          evented: false,
-        })
-        canvas.backgroundImage = bgImage
-        canvas.renderAll()
-
-        // Configure brush
-        canvas.freeDrawingBrush = new fabric.PencilBrush(canvas)
-        canvas.freeDrawingBrush.color = color
-        canvas.freeDrawingBrush.width = brushWidth
-
-        // Track changes for undo
-        canvas.on('object:added', () => {
-          if (!cancelled) {
-            const json = JSON.stringify(canvas.toJSON())
-            setUndoStack((prev) => [...prev, json])
-            setRedoStack([])
-          }
-        })
+        setBgImage(img)
 
         // Load existing annotation
         try {
-          const annotationRes = await fetch(`/api/photos/annotations/${photo.id}`)
-          const result = await annotationRes.json()
-          if (result.success && result.data?.annotationData) {
-            const annotationData = result.data.annotationData as Record<string, unknown>
-            // Load annotation objects onto canvas, keeping the background
-            await canvas.loadFromJSON(annotationData)
-            // Restore background since loadFromJSON may override it
-            canvas.backgroundImage = bgImage
-            canvas.renderAll()
+          const annotRes = await fetch(`/api/photos/annotations/${photo.id}`)
+          const result = await annotRes.json()
+          if (result.success && result.data?.annotationData?.shapes) {
+            const loaded = result.data.annotationData.shapes as AnnotationShape[]
+            setShapes(loaded)
+            setHistory([[], loaded])
+            setHistoryIdx(1)
           }
-        } catch {
-          // Annotation not found or error - continue without annotations
-        }
+        } catch { /* no existing annotation */ }
 
         setLoading(false)
       }
 
       img.onerror = () => {
-        setLoading(false)
+        // Retry without crossOrigin
+        const retry = new window.Image()
+        retry.onload = img.onload
+        retry.onerror = () => setLoading(false)
+        retry.src = imageUrl
       }
-
-      img.src = photo.signedUrl!
+      img.src = imageUrl
     }
 
-    initCanvas()
+    load()
+    return () => { cancelled = true }
+  }, [open, photo])
 
-    return () => {
-      cancelled = true
-      if (fabricCanvasRef.current) {
-        fabricCanvasRef.current.dispose()
-        fabricCanvasRef.current = null
-      }
-    }
-  }, [open, photo?.signedUrl, photo?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  // ─── Event handlers ───────────────────────────────────────────────
 
-  // Update brush settings when tool/color/width change
-  useEffect(() => {
-    const canvas = fabricCanvasRef.current
-    if (!canvas) return
+  const getPointerPos = useCallback(() => {
+    const stage = stageRef.current
+    if (!stage) return null
+    const pos = stage.getPointerPosition()
+    return pos ? { x: pos.x, y: pos.y } : null
+  }, [])
 
-    const updateBrush = async () => {
-      const fabric = await import('fabric')
+  const handleStageMouseDown = useCallback(() => {
+    const pos = getPointerPos()
+    if (!pos) return
 
-      if (tool === 'pencil') {
-        canvas.isDrawingMode = true
-        canvas.freeDrawingBrush = new fabric.PencilBrush(canvas)
-        canvas.freeDrawingBrush.color = color
-        canvas.freeDrawingBrush.width = brushWidth
-      } else if (tool === 'eraser') {
-        canvas.isDrawingMode = true
-        canvas.freeDrawingBrush = new fabric.PencilBrush(canvas)
-        canvas.freeDrawingBrush.color = '#ffffff'
-        canvas.freeDrawingBrush.width = brushWidth * 3
-      } else {
-        canvas.isDrawingMode = false
-      }
-    }
+    if (tool === 'select') return
 
-    updateBrush()
-  }, [tool, color, brushWidth])
-
-  // Handle arrow tool
-  useEffect(() => {
-    const canvas = fabricCanvasRef.current
-    if (!canvas || tool !== 'arrow') return
-
-    const handleMouseDown = (opt: any) => {
-      const pointer = canvas.getScenePoint(opt.e)
-      isAddingArrow.current = true
-      arrowStartPoint.current = { x: pointer.x, y: pointer.y }
-    }
-
-    const handleMouseUp = async (opt: any) => {
-      if (!isAddingArrow.current || !arrowStartPoint.current) return
-      isAddingArrow.current = false
-
-      const pointer = canvas.getScenePoint(opt.e)
-      const start = arrowStartPoint.current
-      arrowStartPoint.current = null
-
-      const fabric = await import('fabric')
-
-      // Create arrow line
-      const line = new fabric.Line([start.x, start.y, pointer.x, pointer.y], {
-        stroke: color,
-        strokeWidth: brushWidth,
-        selectable: true,
-      })
-
-      // Create arrowhead
-      const angle = Math.atan2(pointer.y - start.y, pointer.x - start.x)
-      const headLen = 15
-      const arrowHead = new fabric.Polygon(
-        [
-          { x: pointer.x, y: pointer.y },
-          {
-            x: pointer.x - headLen * Math.cos(angle - Math.PI / 6),
-            y: pointer.y - headLen * Math.sin(angle - Math.PI / 6),
-          },
-          {
-            x: pointer.x - headLen * Math.cos(angle + Math.PI / 6),
-            y: pointer.y - headLen * Math.sin(angle + Math.PI / 6),
-          },
-        ],
-        {
-          fill: color,
-          selectable: true,
+    if (tool === 'eraser') {
+      // Find shape under pointer and remove it
+      const stage = stageRef.current
+      if (!stage) return
+      const target = stage.getIntersection(pos)
+      if (target && target.parent !== stage.findOne('.bg-layer')) {
+        const shapeId = target.id() || target.parent?.id()
+        if (shapeId) {
+          const newShapes = shapes.filter((s) => s.id !== shapeId)
+          setShapes(newShapes)
+          pushHistory(newShapes)
         }
-      )
-
-      const group = new fabric.Group([line, arrowHead], { selectable: true })
-      canvas.add(group)
-      canvas.renderAll()
+      }
+      return
     }
 
-    canvas.on('mouse:down', handleMouseDown)
-    canvas.on('mouse:up', handleMouseUp)
-
-    return () => {
-      canvas.off('mouse:down', handleMouseDown)
-      canvas.off('mouse:up', handleMouseUp)
-    }
-  }, [tool, color, brushWidth])
-
-  // Handle text tool
-  useEffect(() => {
-    const canvas = fabricCanvasRef.current
-    if (!canvas || tool !== 'text') return
-
-    const handleMouseDown = async (opt: any) => {
-      const pointer = canvas.getScenePoint(opt.e)
-      const fabric = await import('fabric')
-
-      const text = new fabric.IText('Texto', {
-        left: pointer.x,
-        top: pointer.y,
-        fill: color,
+    if (tool === 'text') {
+      const newShape: TextShape = {
+        id: genId(),
+        type: 'text',
+        x: pos.x,
+        y: pos.y,
+        text: 'Texto',
         fontSize: brushWidth * 5,
-        fontFamily: 'sans-serif',
-        selectable: true,
-        editable: true,
+        color,
+        strokeWidth: brushWidth,
+      }
+      const newShapes = [...shapes, newShape]
+      setShapes(newShapes)
+      pushHistory(newShapes)
+      return
+    }
+
+    isDrawing.current = true
+    drawStart.current = pos
+
+    if (tool === 'pencil') {
+      currentFreeDrawPoints.current = [pos.x, pos.y]
+    }
+  }, [tool, shapes, color, brushWidth, getPointerPos, pushHistory])
+
+  const handleStageMouseMove = useCallback(() => {
+    if (!isDrawing.current) return
+    const pos = getPointerPos()
+    if (!pos) return
+
+    if (tool === 'pencil') {
+      currentFreeDrawPoints.current = [...currentFreeDrawPoints.current, pos.x, pos.y]
+      // Force re-render for live preview
+      setShapes((prev) => {
+        const existing = prev.filter((s) => s.id !== '__drawing__')
+        return [...existing, {
+          id: '__drawing__',
+          type: 'freedraw' as const,
+          points: [...currentFreeDrawPoints.current],
+          color,
+          strokeWidth: brushWidth,
+        }]
       })
+    }
+  }, [tool, color, brushWidth, getPointerPos])
 
-      canvas.add(text)
-      canvas.setActiveObject(text)
-      text.enterEditing()
-      canvas.renderAll()
+  const handleStageMouseUp = useCallback(() => {
+    if (!isDrawing.current || !drawStart.current) return
+    isDrawing.current = false
+
+    const pos = getPointerPos()
+    if (!pos) return
+
+    const start = drawStart.current
+    drawStart.current = null
+
+    if (tool === 'pencil') {
+      const points = currentFreeDrawPoints.current
+      currentFreeDrawPoints.current = []
+      if (points.length < 4) return
+      const newShape: FreeDrawShape = {
+        id: genId(),
+        type: 'freedraw',
+        points,
+        color,
+        strokeWidth: brushWidth,
+      }
+      const newShapes = [...shapes.filter((s) => s.id !== '__drawing__'), newShape]
+      setShapes(newShapes)
+      pushHistory(newShapes)
+      return
     }
 
-    canvas.on('mouse:down', handleMouseDown)
+    const dist = Math.hypot(pos.x - start.x, pos.y - start.y)
+    if (dist < 5) return
 
-    return () => {
-      canvas.off('mouse:down', handleMouseDown)
+    let newShape: AnnotationShape | null = null
+
+    if (tool === 'arrow') {
+      newShape = {
+        id: genId(),
+        type: 'arrow',
+        points: [start.x, start.y, pos.x, pos.y],
+        color,
+        strokeWidth: brushWidth,
+      }
+    } else if (tool === 'line') {
+      newShape = {
+        id: genId(),
+        type: 'line',
+        points: [start.x, start.y, pos.x, pos.y],
+        color,
+        strokeWidth: brushWidth,
+      }
+    } else if (tool === 'circle') {
+      newShape = {
+        id: genId(),
+        type: 'ellipse',
+        x: (start.x + pos.x) / 2,
+        y: (start.y + pos.y) / 2,
+        radiusX: Math.abs(pos.x - start.x) / 2,
+        radiusY: Math.abs(pos.y - start.y) / 2,
+        color,
+        strokeWidth: brushWidth,
+      }
     }
-  }, [tool, color, brushWidth])
 
-  const handleUndo = useCallback(() => {
-    const canvas = fabricCanvasRef.current
-    if (!canvas || undoStack.length === 0) return
+    if (newShape) {
+      const newShapes = [...shapes, newShape]
+      setShapes(newShapes)
+      pushHistory(newShapes)
+    }
+  }, [tool, shapes, color, brushWidth, getPointerPos, pushHistory])
 
-    const current = JSON.stringify(canvas.toJSON())
-    setRedoStack((prev) => [...prev, current])
-
-    const previous = undoStack[undoStack.length - 1]
-    setUndoStack((prev) => prev.slice(0, -1))
-
-    // Save current background before loading
-    const bg = canvas.backgroundImage
-
-    canvas.loadFromJSON(JSON.parse(previous)).then(() => {
-      canvas.backgroundImage = bg
-      canvas.renderAll()
-    })
-  }, [undoStack])
-
-  const handleRedo = useCallback(() => {
-    const canvas = fabricCanvasRef.current
-    if (!canvas || redoStack.length === 0) return
-
-    const current = JSON.stringify(canvas.toJSON())
-    setUndoStack((prev) => [...prev, current])
-
-    const next = redoStack[redoStack.length - 1]
-    setRedoStack((prev) => prev.slice(0, -1))
-
-    const bg = canvas.backgroundImage
-
-    canvas.loadFromJSON(JSON.parse(next)).then(() => {
-      canvas.backgroundImage = bg
-      canvas.renderAll()
-    })
-  }, [redoStack])
+  // ─── Save ─────────────────────────────────────────────────────────
 
   const handleSave = useCallback(async () => {
-    const canvas = fabricCanvasRef.current
-    if (!canvas || !photo) return
-
+    if (!photo) return
     setSaving(true)
     try {
-      const annotationData = canvas.toJSON() as Record<string, unknown>
-      await fetch('/api/photos/annotations', {
+      const annotationData = { shapes, version: 2 }
+      const res = await fetch('/api/photos/annotations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ photoAssetId: photo.id, annotationData }),
       })
+      if (res.ok) {
+        toast.success('Anotação salva')
+      } else {
+        toast.error('Erro ao salvar anotação')
+      }
+    } catch {
+      toast.error('Erro ao salvar anotação')
     } finally {
       setSaving(false)
     }
-  }, [photo])
+  }, [photo, shapes])
+
+  const [savingAsPhoto, setSavingAsPhoto] = useState(false)
+  const [showSaveAsDialog, setShowSaveAsDialog] = useState(false)
+  const [saveAsStage, setSaveAsStage] = useState<string>('other')
+
+  const handleSaveAsPhoto = useCallback(async () => {
+    const stage = stageRef.current
+    if (!stage || !photo) return
+
+    setSavingAsPhoto(true)
+    try {
+      // Export canvas to blob
+      const dataUrl = stage.toDataURL({ pixelRatio: 2, mimeType: 'image/png' })
+      const res = await fetch(dataUrl)
+      const blob = await res.blob()
+
+      // Upload as new photo
+      const formData = new FormData()
+      formData.append('file', blob, `anotacao-${photo.originalFilename ?? 'foto'}.png`)
+      formData.append('patientId', patientId)
+      formData.append('timelineStage', saveAsStage)
+      formData.append('notes', `Anotação sobre: ${photo.originalFilename ?? 'foto'}`)
+      if (photo.procedureRecordId) {
+        formData.append('procedureRecordId', photo.procedureRecordId)
+      }
+
+      const uploadRes = await fetch('/api/photos', { method: 'POST', body: formData })
+      if (uploadRes.ok) {
+        toast.success('Foto anotada salva como nova imagem')
+        setShowSaveAsDialog(false)
+      } else {
+        toast.error('Erro ao salvar como nova foto')
+      }
+    } catch {
+      toast.error('Erro ao salvar como nova foto')
+    } finally {
+      setSavingAsPhoto(false)
+    }
+  }, [photo, patientId, saveAsStage])
+
+  // ─── Deselect on stage click ──────────────────────────────────────
+
+  const handleStageClick = useCallback((e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    if (tool !== 'select') return
+    const clickedOnEmpty = e.target === e.target.getStage()
+    if (clickedOnEmpty) setSelectedId(null)
+  }, [tool])
+
+  // ─── Render ───────────────────────────────────────────────────────
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex h-[90vh] max-w-5xl flex-col p-0"
+        className="flex h-[90vh] w-[90vw] sm:max-w-[90vw] flex-col p-0 overflow-hidden"
         showCloseButton={false}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b px-4 py-3">
-          <DialogHeader>
-            <DialogTitle className="text-sm">
-              Anotar Foto — {photo?.originalFilename ?? 'Foto'}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSave}
-              disabled={saving}
-            >
-              {saving ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Save className="size-4" />
-              )}
-              Salvar
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => onOpenChange(false)}
-            >
-              <X className="size-4" />
-            </Button>
-          </div>
-        </div>
+        {/* Full canvas area with floating controls */}
+        <div
+          ref={containerRef}
+          className="relative flex flex-1 items-center justify-center overflow-hidden bg-[#f5f5f5]"
+        >
 
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
-          {/* Drawing tools */}
-          <div className="flex items-center gap-1 rounded-md border p-0.5">
-            <Button
-              variant={tool === 'pencil' ? 'default' : 'ghost'}
-              size="icon-xs"
-              onClick={() => setTool('pencil')}
-              title="Pincel"
-            >
-              <Pencil className="size-3.5" />
-            </Button>
-            <Button
-              variant={tool === 'arrow' ? 'default' : 'ghost'}
-              size="icon-xs"
-              onClick={() => setTool('arrow')}
-              title="Seta"
-            >
-              <ArrowUp className="size-3.5" />
-            </Button>
-            <Button
-              variant={tool === 'text' ? 'default' : 'ghost'}
-              size="icon-xs"
-              onClick={() => setTool('text')}
-              title="Texto"
-            >
-              <Type className="size-3.5" />
-            </Button>
-            <Button
-              variant={tool === 'eraser' ? 'default' : 'ghost'}
-              size="icon-xs"
-              onClick={() => setTool('eraser')}
-              title="Borracha"
-            >
-              <Eraser className="size-3.5" />
-            </Button>
-          </div>
-
-          {/* Color picker */}
-          <div className="flex items-center gap-1">
-            {PRESET_COLORS.map((c) => (
+          {/* ─── Floating: top-center tool bar ─── */}
+          <div className="absolute top-3 left-1/2 z-20 -translate-x-1/2 flex items-center gap-0.5 rounded-xl bg-white px-1.5 py-1.5 shadow-lg border border-black/8">
+            {TOOLS.map((t) => (
               <button
-                key={c.value}
+                key={t.key}
                 type="button"
+                onClick={() => {
+                  setTool(t.key)
+                  if (t.key !== 'select') setSelectedId(null)
+                }}
                 className={cn(
-                  'size-5 rounded-full border-2 transition-transform',
-                  color === c.value ? 'scale-125 border-ring' : 'border-transparent hover:scale-110'
+                  'flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 transition-colors',
+                  tool === t.key
+                    ? 'bg-[#e8e8ff] text-[#6965db]'
+                    : 'text-[#1b1b1f] hover:bg-[#f0f0f0]',
                 )}
-                style={{ backgroundColor: c.value }}
-                onClick={() => setColor(c.value)}
-                title={c.name}
-              />
-            ))}
-          </div>
-
-          {/* Brush width */}
-          <div className="flex items-center gap-1">
-            {BRUSH_WIDTHS.map((w) => (
-              <button
-                key={w}
-                type="button"
-                className={cn(
-                  'flex size-6 items-center justify-center rounded border transition-colors',
-                  brushWidth === w ? 'border-ring bg-muted' : 'border-transparent hover:bg-muted/50'
-                )}
-                onClick={() => setBrushWidth(w)}
-                title={`Espessura ${w}`}
+                title={t.label}
               >
-                <span
-                  className="rounded-full bg-foreground"
-                  style={{ width: w + 2, height: w + 2 }}
-                />
+                <t.icon className="size-[18px]" />
+                <span className="text-[10px] font-medium leading-none">{t.label}</span>
               </button>
             ))}
           </div>
 
-          {/* Undo / Redo */}
-          <div className="flex items-center gap-1">
+          {/* ─── Floating: top-right actions ─── */}
+          <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+            <div className="relative">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowSaveAsDialog(!showSaveAsDialog)}
+                disabled={savingAsPhoto}
+                className="shadow-lg gap-1.5 rounded-lg bg-white"
+              >
+                <Download className="size-4" />
+                Salvar como foto
+              </Button>
+              {showSaveAsDialog && (
+                <div className="absolute top-full right-0 mt-2 w-56 rounded-xl bg-white p-3 shadow-lg border border-black/8 space-y-3">
+                  <p className="text-[11px] font-medium text-[#868e96] uppercase tracking-wider">Estágio da foto</p>
+                  <div className="flex flex-col gap-1">
+                    {Object.entries(timelineStageLabels).map(([key, label]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setSaveAsStage(key)}
+                        className={cn(
+                          'rounded-md px-3 py-2 text-left text-sm transition-colors',
+                          saveAsStage === key
+                            ? 'bg-[#e8e8ff] text-[#6965db] font-medium'
+                            : 'hover:bg-[#f0f0f0] text-[#1b1b1f]',
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={handleSaveAsPhoto}
+                    disabled={savingAsPhoto}
+                    className="w-full bg-forest text-cream hover:bg-sage gap-1.5"
+                  >
+                    {savingAsPhoto ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+                    Salvar
+                  </Button>
+                </div>
+              )}
+            </div>
             <Button
-              variant="ghost"
-              size="icon-xs"
+              size="sm"
+              onClick={handleSave}
+              disabled={saving}
+              className="bg-forest text-cream hover:bg-sage shadow-lg gap-1.5 rounded-lg"
+            >
+              {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+              Salvar anotação
+            </Button>
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              className="flex size-9 items-center justify-center rounded-lg bg-white text-[#1b1b1f] shadow-lg border border-black/8 hover:bg-[#f0f0f0] transition-colors"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+
+          {/* ─── Floating: left sidebar (properties) ─── */}
+          <div className="absolute top-16 left-3 z-20 flex w-[180px] flex-col gap-4 rounded-xl bg-white p-3 shadow-lg border border-black/8">
+            {/* Stroke color */}
+            <div>
+              <p className="mb-2 text-[11px] font-medium text-[#868e96] uppercase tracking-wider">Cor</p>
+              <div className="flex flex-wrap gap-1.5">
+                {PRESET_COLORS.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    className={cn(
+                      'size-8 rounded-md transition-all border',
+                      color === c.value
+                        ? 'ring-2 ring-[#6965db] ring-offset-1 border-black/20'
+                        : 'border-black/10 hover:border-black/25',
+                    )}
+                    style={{ backgroundColor: c.value }}
+                    onClick={() => setColor(c.value)}
+                    title={c.name}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Stroke width */}
+            <div>
+              <p className="mb-2 text-[11px] font-medium text-[#868e96] uppercase tracking-wider">Espessura</p>
+              <div className="flex gap-1">
+                {BRUSH_WIDTHS.map((w) => (
+                  <button
+                    key={w}
+                    type="button"
+                    className={cn(
+                      'flex h-9 flex-1 items-center justify-center rounded-md border transition-colors',
+                      brushWidth === w
+                        ? 'border-[#6965db] bg-[#e8e8ff]'
+                        : 'border-black/8 hover:bg-[#f0f0f0]',
+                    )}
+                    onClick={() => setBrushWidth(w)}
+                    title={`Espessura ${w}`}
+                  >
+                    <span
+                      className="rounded-full bg-[#1b1b1f]"
+                      style={{ width: w + 1, height: w + 1 }}
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* ─── Floating: bottom-left undo/redo ─── */}
+          <div className="absolute bottom-3 left-3 z-20 flex items-center gap-0.5 rounded-xl bg-white px-1 py-1 shadow-lg border border-black/8">
+            <button
+              type="button"
               onClick={handleUndo}
-              disabled={undoStack.length === 0}
+              disabled={!canUndo}
+              className="flex size-9 items-center justify-center rounded-lg text-[#1b1b1f] transition-colors hover:bg-[#f0f0f0] disabled:opacity-30"
               title="Desfazer"
             >
-              <Undo2 className="size-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
+              <Undo2 className="size-[18px]" />
+            </button>
+            <button
+              type="button"
               onClick={handleRedo}
-              disabled={redoStack.length === 0}
+              disabled={!canRedo}
+              className="flex size-9 items-center justify-center rounded-lg text-[#1b1b1f] transition-colors hover:bg-[#f0f0f0] disabled:opacity-30"
               title="Refazer"
             >
-              <Redo2 className="size-3.5" />
-            </Button>
+              <Redo2 className="size-[18px]" />
+            </button>
           </div>
-        </div>
-
-        {/* Canvas area */}
-        <div
-          ref={containerRef}
-          className="relative flex flex-1 items-center justify-center overflow-hidden bg-muted/30"
-        >
           {loading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80">
               <Loader2 className="size-8 animate-spin text-muted-foreground" />
             </div>
           )}
-          <canvas ref={canvasRef} />
+
+          {bgImage && stageSize.width > 0 && (
+            <Stage
+              ref={stageRef}
+              width={stageSize.width}
+              height={stageSize.height}
+              onMouseDown={handleStageMouseDown}
+              onMouseMove={handleStageMouseMove}
+              onMouseUp={handleStageMouseUp}
+              onTouchStart={handleStageMouseDown}
+              onTouchMove={handleStageMouseMove}
+              onTouchEnd={handleStageMouseUp}
+              onClick={handleStageClick}
+              onTap={handleStageClick}
+              style={{ cursor: tool === 'select' ? 'default' : tool === 'eraser' ? 'not-allowed' : 'crosshair' }}
+            >
+              {/* Background image layer (non-interactive) */}
+              <Layer name="bg-layer" listening={false}>
+                <KonvaImage
+                  image={bgImage}
+                  width={stageSize.width}
+                  height={stageSize.height}
+                />
+              </Layer>
+
+              {/* Drawing layer */}
+              <Layer>
+                {shapes.map((shape) => {
+                  const isDraggable = tool === 'select'
+                  const isSelected = selectedId === shape.id
+
+                  switch (shape.type) {
+                    case 'freedraw':
+                      return (
+                        <Line
+                          key={shape.id}
+                          id={shape.id}
+                          points={shape.points}
+                          stroke={shape.color}
+                          strokeWidth={shape.strokeWidth}
+                          lineCap="round"
+                          lineJoin="round"
+                          tension={0.5}
+                          draggable={isDraggable}
+                          onClick={() => tool === 'select' && setSelectedId(shape.id)}
+                          onTap={() => tool === 'select' && setSelectedId(shape.id)}
+                          shadowBlur={isSelected ? 6 : 0}
+                          shadowColor="#3b82f6"
+                        />
+                      )
+                    case 'arrow':
+                      return (
+                        <Arrow
+                          key={shape.id}
+                          id={shape.id}
+                          points={shape.points}
+                          stroke={shape.color}
+                          strokeWidth={shape.strokeWidth}
+                          fill={shape.color}
+                          pointerLength={12}
+                          pointerWidth={10}
+                          draggable={isDraggable}
+                          onClick={() => tool === 'select' && setSelectedId(shape.id)}
+                          onTap={() => tool === 'select' && setSelectedId(shape.id)}
+                          shadowBlur={isSelected ? 6 : 0}
+                          shadowColor="#3b82f6"
+                        />
+                      )
+                    case 'line':
+                      return (
+                        <Line
+                          key={shape.id}
+                          id={shape.id}
+                          points={shape.points}
+                          stroke={shape.color}
+                          strokeWidth={shape.strokeWidth}
+                          lineCap="round"
+                          draggable={isDraggable}
+                          onClick={() => tool === 'select' && setSelectedId(shape.id)}
+                          onTap={() => tool === 'select' && setSelectedId(shape.id)}
+                          shadowBlur={isSelected ? 6 : 0}
+                          shadowColor="#3b82f6"
+                        />
+                      )
+                    case 'ellipse':
+                      return (
+                        <Ellipse
+                          key={shape.id}
+                          id={shape.id}
+                          x={shape.x}
+                          y={shape.y}
+                          radiusX={shape.radiusX}
+                          radiusY={shape.radiusY}
+                          stroke={shape.color}
+                          strokeWidth={shape.strokeWidth}
+                          fill="transparent"
+                          draggable={isDraggable}
+                          onClick={() => tool === 'select' && setSelectedId(shape.id)}
+                          onTap={() => tool === 'select' && setSelectedId(shape.id)}
+                          shadowBlur={isSelected ? 6 : 0}
+                          shadowColor="#3b82f6"
+                        />
+                      )
+                    case 'text':
+                      return (
+                        <Text
+                          key={shape.id}
+                          id={shape.id}
+                          x={shape.x}
+                          y={shape.y}
+                          text={shape.text}
+                          fontSize={shape.fontSize}
+                          fill={shape.color}
+                          draggable={isDraggable}
+                          onClick={() => tool === 'select' && setSelectedId(shape.id)}
+                          onTap={() => tool === 'select' && setSelectedId(shape.id)}
+                          shadowBlur={isSelected ? 6 : 0}
+                          shadowColor="#3b82f6"
+                        />
+                      )
+                    default:
+                      return null
+                  }
+                })}
+              </Layer>
+            </Stage>
+          )}
         </div>
       </DialogContent>
     </Dialog>

@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react'
 import { PhotoGrid } from '@/components/photos/photo-grid'
 import { PhotoUploader } from '@/components/photos/photo-uploader'
 import { PhotoComparisonDialog } from '@/components/photos/photo-comparison'
+import { PhotoAnnotationEditor } from '@/components/photos/photo-annotation-editor'
 import { Button } from '@/components/ui/button'
 import { Upload, GitCompareArrows, X } from 'lucide-react'
 import type { PhotoAssetWithUrl } from '@/db/queries/photos'
@@ -19,6 +20,7 @@ export function PatientPhotosTab({ patientId }: PatientPhotosTabProps) {
   const [selectedA, setSelectedA] = useState<PhotoAssetWithUrl | null>(null)
   const [selectedB, setSelectedB] = useState<PhotoAssetWithUrl | null>(null)
   const [showComparison, setShowComparison] = useState(false)
+  const [annotatingPhoto, setAnnotatingPhoto] = useState<PhotoAssetWithUrl | null>(null)
 
   const handlePhotoSelect = useCallback((photo: PhotoAssetWithUrl) => {
     if (selectedA?.id === photo.id) {
@@ -113,6 +115,19 @@ export function PatientPhotosTab({ patientId }: PatientPhotosTabProps) {
         selectedA={selectedA?.id ?? null}
         selectedB={selectedB?.id ?? null}
         onPhotoSelect={handlePhotoSelect}
+        onAnnotate={setAnnotatingPhoto}
+      />
+
+      <PhotoAnnotationEditor
+        photo={annotatingPhoto}
+        patientId={patientId}
+        open={!!annotatingPhoto}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAnnotatingPhoto(null)
+            setRefreshKey((k) => k + 1)
+          }
+        }}
       />
 
       <PhotoComparisonDialog

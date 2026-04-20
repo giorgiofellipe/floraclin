@@ -5,6 +5,7 @@ import { withSentryConfig } from '@sentry/nextjs'
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ['192.168.2.99'],
   env: {
     NEXT_PUBLIC_BUILD_DATE: new Date().toISOString().slice(0, 16).replace('T', ' '),
   },

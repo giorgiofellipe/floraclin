@@ -18,5 +18,6 @@
   },
   "devDependencies": {
     "simple-git-hooks": "^2.11.1"
-  }
+  },
+  "packageManager": "pnpm@10.14.0+sha1.85759954ad817d248e2fed7f789f046a24f0327d"
 }
