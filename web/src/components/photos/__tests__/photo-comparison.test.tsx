@@ -23,6 +23,7 @@ const mockPhotoA: PhotoAssetWithUrl = {
   procedureRecordId: 'proc-1',
   procedureTypeName: 'Toxina Botulínica',
   procedurePerformedAt: new Date('2026-03-15'),
+  hasAnnotation: false,
 }
 
 const mockPhotoB: PhotoAssetWithUrl = {
@@ -39,6 +40,7 @@ const mockPhotoB: PhotoAssetWithUrl = {
   procedureRecordId: 'proc-1',
   procedureTypeName: 'Toxina Botulínica',
   procedurePerformedAt: new Date('2026-03-15'),
+  hasAnnotation: false,
 }
 
 const mockComparisonUrlsResponse = {

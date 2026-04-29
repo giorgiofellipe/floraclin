@@ -280,7 +280,7 @@ export function PhotoUploader({
     for (const file of incoming) {
       const error = validateImageFile(file)
       if (error) {
-        pending.push({ id: crypto.randomUUID(), file, preview: '', status: 'error', error, progress: 0 })
+        pending.push({ id: Math.random().toString(36).slice(2) + Date.now().toString(36), file, preview: '', status: 'error', error, progress: 0 })
         continue
       }
       let preview = ''
@@ -296,7 +296,7 @@ export function PhotoUploader({
       } else {
         preview = URL.createObjectURL(file)
       }
-      pending.push({ id: crypto.randomUUID(), file, preview, status: 'pending', progress: 0 })
+      pending.push({ id: Math.random().toString(36).slice(2) + Date.now().toString(36), file, preview, status: 'pending', progress: 0 })
     }
 
     setFiles((prev) => [...prev, ...pending])

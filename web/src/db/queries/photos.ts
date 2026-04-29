@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { photoAssets, photoAnnotations, patients, procedureRecords, procedureTypes } from '@/db/schema'
-import { eq, and, isNull, desc } from 'drizzle-orm'
+import { eq, and, isNull, desc, sql } from 'drizzle-orm'
 import { getSignedUrl, deleteFile } from '@/lib/storage'
 import type { TimelineStage } from '@/types'
 import { timelineStageValues } from '@/validations/photo'
@@ -22,6 +22,7 @@ export interface PhotoAssetWithUrl {
   procedureRecordId: string | null
   procedureTypeName: string | null
   procedurePerformedAt: Date | null
+  hasAnnotation: boolean
 }
 
 export interface PhotosByStage {
@@ -61,6 +62,7 @@ export async function listPhotos(
       procedureRecordId: photoAssets.procedureRecordId,
       procedureTypeName: procedureTypes.name,
       procedurePerformedAt: procedureRecords.performedAt,
+      hasAnnotation: sql<boolean>`exists(select 1 from ${photoAnnotations} where ${photoAnnotations.photoAssetId} = ${photoAssets.id})`,
     })
     .from(photoAssets)
     .leftJoin(procedureRecords, eq(photoAssets.procedureRecordId, procedureRecords.id))
@@ -84,6 +86,7 @@ export async function listPhotos(
       procedureRecordId: photo.procedureRecordId,
       procedureTypeName: photo.procedureTypeName,
       procedurePerformedAt: photo.procedurePerformedAt,
+      hasAnnotation: !!photo.hasAnnotation,
     }))
   )
 

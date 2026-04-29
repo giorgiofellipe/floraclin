@@ -150,9 +150,11 @@ export function PhotoAnnotationEditor({
   const [stageScale, setStageScale] = useState(1)
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 })
 
-  // Pinch-to-zoom refs
+  // Pinch-to-zoom + pan refs
   const lastPinchDist = useRef<number | null>(null)
   const lastPinchCenter = useRef<{ x: number; y: number } | null>(null)
+  const isPanning = useRef(false)
+  const lastPanPos = useRef<{ x: number; y: number } | null>(null)
 
   // Drawing in progress
   const isDrawing = useRef(false)
@@ -290,7 +292,24 @@ export function PhotoAnnotationEditor({
     const pos = getPointerPos()
     if (!pos) return
 
-    if (tool === 'select') return
+    if (tool === 'select') {
+      // Start panning when zoomed in and clicking on empty space
+      if (stageScale > 1) {
+        const stage = stageRef.current
+        if (stage) {
+          const screenPos = stage.getPointerPosition()
+          if (screenPos) {
+            const target = stage.getIntersection(screenPos)
+            const clickedEmpty = !target
+            if (clickedEmpty) {
+              isPanning.current = true
+              lastPanPos.current = screenPos
+            }
+          }
+        }
+      }
+      return
+    }
 
     if (tool === 'eraser') {
       isDrawing.current = true
@@ -333,6 +352,19 @@ export function PhotoAnnotationEditor({
       setToolCursor(pos)
     }
 
+    // Handle panning with select tool
+    if (isPanning.current && lastPanPos.current) {
+      const stage = stageRef.current
+      const screenPos = stage?.getPointerPosition()
+      if (screenPos) {
+        const dx = screenPos.x - lastPanPos.current.x
+        const dy = screenPos.y - lastPanPos.current.y
+        setStagePos((prev) => ({ x: prev.x + dx, y: prev.y + dy }))
+        lastPanPos.current = screenPos
+      }
+      return
+    }
+
     if (!isDrawing.current) return
 
     // Shape preview for arrow/line/circle
@@ -359,6 +391,12 @@ export function PhotoAnnotationEditor({
   }, [tool, color, brushWidth, getPointerPos])
 
   const handleStageMouseUp = useCallback(() => {
+    if (isPanning.current) {
+      isPanning.current = false
+      lastPanPos.current = null
+      return
+    }
+
     if (!isDrawing.current || !drawStart.current) return
     isDrawing.current = false
     setShapePreview(null)
@@ -535,6 +573,7 @@ export function PhotoAnnotationEditor({
 
     // Stop drawing when pinching
     isDrawing.current = false
+    isPanning.current = true
 
     e.evt.preventDefault()
 
@@ -548,6 +587,7 @@ export function PhotoAnnotationEditor({
       return
     }
 
+    // Zoom
     const oldScale = stageScale
     const newScale = Math.max(0.5, Math.min(5, oldScale * (dist / lastPinchDist.current)))
 
@@ -561,10 +601,14 @@ export function PhotoAnnotationEditor({
       y: (pointer.y - stagePos.y) / oldScale,
     }
 
+    // Pan (track center movement)
+    const panDx = lastPinchCenter.current ? midX - lastPinchCenter.current.x : 0
+    const panDy = lastPinchCenter.current ? midY - lastPinchCenter.current.y : 0
+
     setStageScale(newScale)
     setStagePos({
-      x: pointer.x - mousePointTo.x * newScale,
-      y: pointer.y - mousePointTo.y * newScale,
+      x: pointer.x - mousePointTo.x * newScale + panDx,
+      y: pointer.y - mousePointTo.y * newScale + panDy,
     })
 
     lastPinchDist.current = dist
@@ -574,6 +618,7 @@ export function PhotoAnnotationEditor({
   const handlePinchEnd = useCallback(() => {
     lastPinchDist.current = null
     lastPinchCenter.current = null
+    isPanning.current = false
   }, [])
 
   const handleZoomIn = useCallback(() => {

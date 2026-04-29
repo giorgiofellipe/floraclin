@@ -12,6 +12,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn, formatDateTime, formatDate } from '@/lib/utils'
 import type { PhotosByStage, PhotoAssetWithUrl } from '@/db/queries/photos'
 
@@ -203,37 +204,59 @@ export function PhotoGrid({
             {formatDateTime(photo.createdAt)}
           </p>
           {!comparisonMode && (
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="size-9 text-mid hover:text-charcoal"
-                onClick={() => setSelectedPhoto(photo)}
-              >
-                <ZoomIn className="size-4" />
-              </Button>
-              {onAnnotate && (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="size-9 text-mid hover:text-charcoal"
-                  onClick={() => onAnnotate(photo)}
-                >
-                  <Pencil className="size-4" />
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="size-9 text-mid hover:text-red-600"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setDeleteTarget(photo)
-                }}
-              >
-                <Trash2 className="size-4" />
-              </Button>
-            </div>
+            <TooltipProvider delay={300}>
+              <div className="flex items-center gap-1">
+                <Tooltip>
+                  <TooltipTrigger render={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="size-9 text-mid hover:text-charcoal"
+                      onClick={() => setSelectedPhoto(photo)}
+                    >
+                      <ZoomIn className="size-4" />
+                    </Button>
+                  } />
+                  <TooltipContent side="top"><p>Ampliar</p></TooltipContent>
+                </Tooltip>
+                {onAnnotate && (
+                  <Tooltip>
+                    <TooltipTrigger render={
+                      <div className="relative">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="size-9 text-mid hover:text-charcoal"
+                          onClick={() => onAnnotate(photo)}
+                        >
+                          <Pencil className="size-4" />
+                        </Button>
+                        {photo.hasAnnotation && (
+                          <span className="absolute top-0.5 right-0.5 size-2 rounded-full bg-amber" />
+                        )}
+                      </div>
+                    } />
+                    <TooltipContent side="top"><p>Desenhar</p></TooltipContent>
+                  </Tooltip>
+                )}
+                <Tooltip>
+                  <TooltipTrigger render={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="size-9 text-mid hover:text-red-600"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setDeleteTarget(photo)
+                      }}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  } />
+                  <TooltipContent side="top"><p>Excluir</p></TooltipContent>
+                </Tooltip>
+              </div>
+            </TooltipProvider>
           )}
         </div>
       </div>
