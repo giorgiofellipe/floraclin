@@ -12,6 +12,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+import * as Sentry from '@sentry/nextjs'
 import {
   timelineStageLabels,
   validateImageFile,
@@ -187,50 +189,26 @@ async function decodeHeicToJpeg(file: File): Promise<File> {
 
 // ─── Image compression utility ──────────────────────────────────────
 
+function canvasToBlobAsync(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob(resolve, type, quality))
+}
+
 async function compressImage(file: File): Promise<File> {
   return new Promise((resolve, reject) => {
-    const img = new Image()
+    const img = new window.Image()
     const url = URL.createObjectURL(file)
 
-    img.onload = () => {
+    img.onload = async () => {
       URL.revokeObjectURL(url)
 
       let { width, height } = img
 
-      // Only resize if wider than MAX_IMAGE_WIDTH
-      if (width <= MAX_IMAGE_WIDTH) {
-        // Try to convert to WebP without resize
-        const canvas = document.createElement('canvas')
-        canvas.width = width
-        canvas.height = height
-        const ctx = canvas.getContext('2d')
-        if (!ctx) {
-          resolve(file)
-          return
-        }
-        ctx.drawImage(img, 0, 0)
-
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) {
-              resolve(file)
-              return
-            }
-            const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.webp'), {
-              type: 'image/webp',
-            })
-            resolve(compressed)
-          },
-          'image/webp',
-          0.85
-        )
-        return
+      // Resize proportionally if wider than MAX_IMAGE_WIDTH
+      if (width > MAX_IMAGE_WIDTH) {
+        const ratio = MAX_IMAGE_WIDTH / width
+        width = MAX_IMAGE_WIDTH
+        height = Math.round(height * ratio)
       }
-
-      // Resize proportionally
-      const ratio = MAX_IMAGE_WIDTH / width
-      width = MAX_IMAGE_WIDTH
-      height = Math.round(height * ratio)
 
       const canvas = document.createElement('canvas')
       canvas.width = width
@@ -242,20 +220,23 @@ async function compressImage(file: File): Promise<File> {
       }
       ctx.drawImage(img, 0, 0, width, height)
 
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            resolve(file)
-            return
-          }
-          const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.webp'), {
-            type: 'image/webp',
-          })
-          resolve(compressed)
-        },
-        'image/webp',
-        0.85
-      )
+      // Try WebP first, fall back to JPEG if browser doesn't support WebP encoding
+      let blob = await canvasToBlobAsync(canvas, 'image/webp', 0.85)
+      let ext = '.webp'
+      let mime = 'image/webp'
+
+      if (!blob) {
+        blob = await canvasToBlobAsync(canvas, 'image/jpeg', 0.85)
+        ext = '.jpg'
+        mime = 'image/jpeg'
+      }
+
+      if (!blob) {
+        resolve(file)
+        return
+      }
+
+      resolve(new File([blob], file.name.replace(/\.[^.]+$/, ext), { type: mime }))
     }
 
     img.onerror = () => {
@@ -403,6 +384,7 @@ export function PhotoUploader({
           setFiles((prev) =>
             prev.map((f) => (f.id === pendingFile.id ? { ...f, status: 'done' as const, progress: 100 } : f))
           )
+          toast.success(`Foto enviada: ${pendingFile.file.name}`)
           setTimeout(() => {
             setFiles((prev) => {
               const file = prev.find((f) => f.id === pendingFile.id)
@@ -411,29 +393,29 @@ export function PhotoUploader({
             })
           }, 1500)
         } else {
+          Sentry.captureMessage('Photo upload API error', {
+            level: 'error',
+            extra: { fileName: pendingFile.file.name, type: pendingFile.file.type, size: pendingFile.file.size, apiError: result.error },
+          })
+          toast.error('Erro ao enviar foto. Tente novamente.')
           setFiles((prev) =>
             prev.map((f) =>
               f.id === pendingFile.id
-                ? { ...f, status: 'error' as const, error: result.error, progress: 0 }
+                ? { ...f, status: 'error' as const, error: 'Erro ao enviar foto', progress: 0 }
                 : f
             )
           )
         }
       } catch (err) {
-        const message =
-          err instanceof Error && err.message
-            ? err.message
-            : 'Erro inesperado ao fazer upload'
-        console.error('[photo-uploader] upload failed', {
-          name: pendingFile.file.name,
-          type: pendingFile.file.type,
-          size: pendingFile.file.size,
-          error: err,
+        Sentry.captureException(err, {
+          extra: { fileName: pendingFile.file.name, type: pendingFile.file.type, size: pendingFile.file.size },
         })
+        console.error('[photo-uploader] upload failed', err)
+        toast.error('Erro ao enviar foto. Tente novamente.')
         setFiles((prev) =>
           prev.map((f) =>
             f.id === pendingFile.id
-              ? { ...f, status: 'error' as const, error: message, progress: 0 }
+              ? { ...f, status: 'error' as const, error: 'Erro ao enviar foto', progress: 0 }
               : f
           )
         )
