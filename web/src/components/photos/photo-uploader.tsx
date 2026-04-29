@@ -18,6 +18,7 @@ import {
   MAX_IMAGE_WIDTH,
   ACCEPTED_IMAGE_TYPES,
   isDngFile,
+  isHeicFile,
 } from '@/validations/photo'
 import type { TimelineStage } from '@/types'
 
@@ -177,6 +178,13 @@ async function decodeDngToJpeg(file: File): Promise<File> {
   })
 }
 
+async function decodeHeicToJpeg(file: File): Promise<File> {
+  const heic2any = (await import('heic2any')).default
+  const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 })
+  const result = Array.isArray(blob) ? blob[0] : blob
+  return new File([result], file.name.replace(/\.hei[cf]$/i, '.jpg'), { type: 'image/jpeg' })
+}
+
 // ─── Image compression utility ──────────────────────────────────────
 
 async function compressImage(file: File): Promise<File> {
@@ -293,6 +301,11 @@ export function PhotoUploader({
             preview = URL.createObjectURL(new Blob([copy.buffer as ArrayBuffer], { type: 'image/jpeg' }))
           }
         } catch { /* preview stays empty */ }
+      } else if (isHeicFile(file)) {
+        try {
+          const jpeg = await decodeHeicToJpeg(file)
+          preview = URL.createObjectURL(jpeg)
+        } catch { /* preview stays empty */ }
       } else {
         preview = URL.createObjectURL(file)
       }
@@ -349,14 +362,19 @@ export function PhotoUploader({
 
     for (const pendingFile of pendingFiles) {
       try {
-        // DNG files must be decoded to JPEG client-side before the
-        // standard compress/resize pass (browsers can't render DNG).
+        // DNG/HEIC files must be decoded to JPEG client-side before the
+        // standard compress/resize pass (browsers can't render them natively on all platforms).
         let workingFile = pendingFile.file
         if (isDngFile(workingFile)) {
           setFiles((prev) =>
             prev.map((f) => (f.id === pendingFile.id ? { ...f, status: 'decoding' as const, progress: 10 } : f))
           )
           workingFile = await decodeDngToJpeg(workingFile)
+        } else if (isHeicFile(workingFile)) {
+          setFiles((prev) =>
+            prev.map((f) => (f.id === pendingFile.id ? { ...f, status: 'decoding' as const, progress: 10 } : f))
+          )
+          workingFile = await decodeHeicToJpeg(workingFile)
         }
 
         // Compress

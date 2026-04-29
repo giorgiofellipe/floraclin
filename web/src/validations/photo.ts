@@ -53,9 +53,14 @@ export const MAX_IMAGE_WIDTH = 2048
 
 export function isDngFile(file: File): boolean {
   if (DNG_MIME_TYPES.has(file.type.toLowerCase())) return true
-  // Fall back to extension — some browsers report empty MIME or
-  // application/octet-stream for DNG.
   return /\.dng$/i.test(file.name)
+}
+
+const HEIC_MIME_TYPES = new Set(['image/heic', 'image/heif'])
+
+export function isHeicFile(file: File): boolean {
+  if (HEIC_MIME_TYPES.has(file.type.toLowerCase())) return true
+  return /\.heic$/i.test(file.name) || /\.heif$/i.test(file.name)
 }
 
 export function validateImageFile(file: File): string | null {
