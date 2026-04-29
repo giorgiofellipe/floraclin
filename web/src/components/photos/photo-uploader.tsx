@@ -378,7 +378,15 @@ export function PhotoUploader({
         }
 
         const res = await fetch('/api/photos', { method: 'POST', body: formData })
-        const result = await res.json()
+
+        let result: { success?: boolean; error?: string }
+        const contentType = res.headers.get('content-type') ?? ''
+        if (contentType.includes('application/json')) {
+          result = await res.json()
+        } else {
+          // Server returned non-JSON (redirect, HTML error page, etc.)
+          result = res.ok ? { success: true } : { success: false, error: `HTTP ${res.status}` }
+        }
 
         if (result.success) {
           setFiles((prev) =>
