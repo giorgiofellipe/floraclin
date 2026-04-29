@@ -668,8 +668,8 @@ export function ProcedureForm({
         // Reset to mark form clean
         form.reset(values)
 
-        // Navigation behavior preserved from legacy form
-        if (!wizardOverrides?.hideNavigation) {
+        // Navigation behavior — skip when inside the service wizard (it handles its own transitions)
+        if (!wizardOverrides?.hideNavigation && !wizardOverrides?.onSaveComplete) {
           if (isPlanningMode) {
             if (isEdit) {
               router.refresh()
