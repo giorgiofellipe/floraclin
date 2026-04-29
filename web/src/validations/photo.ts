@@ -38,7 +38,7 @@ export type UploadPhotoData = z.infer<typeof uploadPhotoSchema>
 
 // Standard image types that browsers render natively. These upload without
 // any client-side decoding — just the existing resize-and-compress path.
-export const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
+export const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'] as const
 export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024 // 10MB
 
 // DNG (Adobe Digital Negative, e.g. iPhone ProRAW, Sony/Canon/Nikon raw).
@@ -62,7 +62,7 @@ export function validateImageFile(file: File): string | null {
   const isDng = isDngFile(file)
 
   if (!isDng && !ACCEPTED_IMAGE_TYPES.includes(file.type as typeof ACCEPTED_IMAGE_TYPES[number])) {
-    return 'Tipo de arquivo não aceito. Use JPEG, PNG, WebP ou DNG.'
+    return 'Tipo de arquivo não aceito. Use JPEG, PNG, WebP, HEIC ou DNG.'
   }
 
   const sizeLimit = isDng ? MAX_RAW_FILE_SIZE_BYTES : MAX_FILE_SIZE_BYTES

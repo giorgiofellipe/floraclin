@@ -429,7 +429,7 @@ export function PhotoUploader({
   const pendingCount = files.filter((f) => f.status === 'pending').length
   // Include the .dng extension so the native file picker surfaces DNG files
   // even when the browser reports them with an empty or octet-stream MIME.
-  const accept = [...ACCEPTED_IMAGE_TYPES, '.dng', 'image/x-adobe-dng'].join(',')
+  const accept = [...ACCEPTED_IMAGE_TYPES, '.heic', '.heif', '.dng', 'image/x-adobe-dng'].join(',')
 
   return (
     <div className="space-y-4">
