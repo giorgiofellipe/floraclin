@@ -143,6 +143,9 @@ export function PhotoAnnotationEditor({
   // Tool cursor position
   const [toolCursor, setToolCursor] = useState<{ x: number; y: number } | null>(null)
 
+  // Shape preview while dragging (arrow, line, circle)
+  const [shapePreview, setShapePreview] = useState<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null)
+
   // Zoom state
   const [stageScale, setStageScale] = useState(1)
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 })
@@ -332,6 +335,11 @@ export function PhotoAnnotationEditor({
 
     if (!isDrawing.current) return
 
+    // Shape preview for arrow/line/circle
+    if ((tool === 'arrow' || tool === 'line' || tool === 'circle') && drawStart.current) {
+      setShapePreview({ start: drawStart.current, end: pos })
+    }
+
     if (tool === 'pencil' || tool === 'eraser') {
       currentFreeDrawPoints.current = [...currentFreeDrawPoints.current, pos.x, pos.y]
       const previewType = tool === 'eraser' ? 'eraser' as const : 'freedraw' as const
@@ -353,6 +361,7 @@ export function PhotoAnnotationEditor({
   const handleStageMouseUp = useCallback(() => {
     if (!isDrawing.current || !drawStart.current) return
     isDrawing.current = false
+    setShapePreview(null)
 
     const pos = getPointerPos()
     if (!pos) return
@@ -832,7 +841,7 @@ export function PhotoAnnotationEditor({
                   handleStageMouseUp()
                 }
               }}
-              onMouseLeave={handleStageMouseUp}
+              onMouseLeave={() => { handleStageMouseUp(); setShapePreview(null); setToolCursor(null) }}
               onClick={handleStageClick}
               onTap={handleStageClick}
               style={{ cursor: tool === 'select' ? 'default' : 'none' }}
@@ -959,6 +968,46 @@ export function PhotoAnnotationEditor({
                       return null
                   }
                 })}
+
+                {/* Shape preview while dragging */}
+                {shapePreview && tool === 'arrow' && (
+                  <Arrow
+                    points={[shapePreview.start.x, shapePreview.start.y, shapePreview.end.x, shapePreview.end.y]}
+                    stroke={color}
+                    strokeWidth={brushWidth}
+                    fill={color}
+                    pointerLength={12}
+                    pointerWidth={10}
+                    opacity={0.4}
+                    dash={[6, 4]}
+                    listening={false}
+                  />
+                )}
+                {shapePreview && tool === 'line' && (
+                  <Line
+                    points={[shapePreview.start.x, shapePreview.start.y, shapePreview.end.x, shapePreview.end.y]}
+                    stroke={color}
+                    strokeWidth={brushWidth}
+                    lineCap="round"
+                    opacity={0.4}
+                    dash={[6, 4]}
+                    listening={false}
+                  />
+                )}
+                {shapePreview && tool === 'circle' && (
+                  <Ellipse
+                    x={(shapePreview.start.x + shapePreview.end.x) / 2}
+                    y={(shapePreview.start.y + shapePreview.end.y) / 2}
+                    radiusX={Math.abs(shapePreview.end.x - shapePreview.start.x) / 2}
+                    radiusY={Math.abs(shapePreview.end.y - shapePreview.start.y) / 2}
+                    stroke={color}
+                    strokeWidth={brushWidth}
+                    fill="transparent"
+                    opacity={0.4}
+                    dash={[6, 4]}
+                    listening={false}
+                  />
+                )}
 
                 {/* Tool cursor indicator */}
                 {tool !== 'select' && toolCursor && (
