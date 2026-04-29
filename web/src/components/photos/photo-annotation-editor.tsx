@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Stage, Layer, Line, Arrow, Ellipse, Text, Image as KonvaImage } from 'react-konva'
+import { Stage, Layer, Line, Arrow, Ellipse, Text, Image as KonvaImage, Circle as KonvaCircle } from 'react-konva'
 import type Konva from 'konva'
 import {
   Pencil,
@@ -17,6 +17,9 @@ import {
   X,
   Loader2,
   MousePointer2,
+  ZoomIn,
+  ZoomOut,
+  Maximize,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -79,7 +82,12 @@ interface TextShape extends ShapeBase {
   fontSize: number
 }
 
-type AnnotationShape = FreeDrawShape | ArrowShape | LineShape | EllipseShape | TextShape
+interface EraserShape extends ShapeBase {
+  type: 'eraser'
+  points: number[]
+}
+
+type AnnotationShape = FreeDrawShape | ArrowShape | LineShape | EllipseShape | TextShape | EraserShape
 
 const PRESET_COLORS = [
   { name: 'Vermelho', value: '#ef4444' },
@@ -132,6 +140,17 @@ export function PhotoAnnotationEditor({
   const [shapes, setShapes] = useState<AnnotationShape[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
+  // Tool cursor position
+  const [toolCursor, setToolCursor] = useState<{ x: number; y: number } | null>(null)
+
+  // Zoom state
+  const [stageScale, setStageScale] = useState(1)
+  const [stagePos, setStagePos] = useState({ x: 0, y: 0 })
+
+  // Pinch-to-zoom refs
+  const lastPinchDist = useRef<number | null>(null)
+  const lastPinchCenter = useRef<{ x: number; y: number } | null>(null)
+
   // Drawing in progress
   const isDrawing = useRef(false)
   const drawStart = useRef<{ x: number; y: number } | null>(null)
@@ -179,6 +198,8 @@ export function PhotoAnnotationEditor({
     setHistory([[]])
     setHistoryIdx(0)
     setSelectedId(null)
+    setStageScale(1)
+    setStagePos({ x: 0, y: 0 })
 
     const load = async () => {
       // Wait for dialog layout
@@ -254,8 +275,13 @@ export function PhotoAnnotationEditor({
     const stage = stageRef.current
     if (!stage) return null
     const pos = stage.getPointerPosition()
-    return pos ? { x: pos.x, y: pos.y } : null
-  }, [])
+    if (!pos) return null
+    // Transform screen coordinates to canvas coordinates (account for zoom/pan)
+    return {
+      x: (pos.x - stagePos.x) / stageScale,
+      y: (pos.y - stagePos.y) / stageScale,
+    }
+  }, [stageScale, stagePos])
 
   const handleStageMouseDown = useCallback(() => {
     const pos = getPointerPos()
@@ -264,18 +290,9 @@ export function PhotoAnnotationEditor({
     if (tool === 'select') return
 
     if (tool === 'eraser') {
-      // Find shape under pointer and remove it
-      const stage = stageRef.current
-      if (!stage) return
-      const target = stage.getIntersection(pos)
-      if (target && target.parent !== stage.findOne('.bg-layer')) {
-        const shapeId = target.id() || target.parent?.id()
-        if (shapeId) {
-          const newShapes = shapes.filter((s) => s.id !== shapeId)
-          setShapes(newShapes)
-          pushHistory(newShapes)
-        }
-      }
+      isDrawing.current = true
+      drawStart.current = pos
+      currentFreeDrawPoints.current = [pos.x, pos.y]
       return
     }
 
@@ -305,21 +322,29 @@ export function PhotoAnnotationEditor({
   }, [tool, shapes, color, brushWidth, getPointerPos, pushHistory])
 
   const handleStageMouseMove = useCallback(() => {
-    if (!isDrawing.current) return
     const pos = getPointerPos()
     if (!pos) return
 
-    if (tool === 'pencil') {
+    // Track tool cursor
+    if (tool !== 'select') {
+      setToolCursor(pos)
+    }
+
+    if (!isDrawing.current) return
+
+    if (tool === 'pencil' || tool === 'eraser') {
       currentFreeDrawPoints.current = [...currentFreeDrawPoints.current, pos.x, pos.y]
-      // Force re-render for live preview
+      const previewType = tool === 'eraser' ? 'eraser' as const : 'freedraw' as const
+      const previewColor = tool === 'eraser' ? '#000000' : color
+      const previewWidth = tool === 'eraser' ? brushWidth * 4 : brushWidth
       setShapes((prev) => {
         const existing = prev.filter((s) => s.id !== '__drawing__')
         return [...existing, {
           id: '__drawing__',
-          type: 'freedraw' as const,
+          type: previewType,
           points: [...currentFreeDrawPoints.current],
-          color,
-          strokeWidth: brushWidth,
+          color: previewColor,
+          strokeWidth: previewWidth,
         }]
       })
     }
@@ -335,17 +360,25 @@ export function PhotoAnnotationEditor({
     const start = drawStart.current
     drawStart.current = null
 
-    if (tool === 'pencil') {
+    if (tool === 'pencil' || tool === 'eraser') {
       const points = currentFreeDrawPoints.current
       currentFreeDrawPoints.current = []
-      if (points.length < 4) return
-      const newShape: FreeDrawShape = {
-        id: genId(),
-        type: 'freedraw',
-        points,
-        color,
-        strokeWidth: brushWidth,
+      if (points.length < 4) {
+        // Short tap — create a dot at the tap point
+        if (tool === 'eraser' && points.length >= 2) {
+          const dotPoints = [points[0], points[1], points[0] + 0.5, points[1] + 0.5]
+          const newShape: EraserShape = {
+            id: genId(), type: 'eraser', points: dotPoints, color: '#000000', strokeWidth: brushWidth * 4,
+          }
+          const newShapes = [...shapes.filter((s) => s.id !== '__drawing__'), newShape]
+          setShapes(newShapes)
+          pushHistory(newShapes)
+        }
+        return
       }
+      const newShape: FreeDrawShape | EraserShape = tool === 'eraser'
+        ? { id: genId(), type: 'eraser', points, color: '#000000', strokeWidth: brushWidth * 4 }
+        : { id: genId(), type: 'freedraw', points, color, strokeWidth: brushWidth }
       const newShapes = [...shapes.filter((s) => s.id !== '__drawing__'), newShape]
       setShapes(newShapes)
       pushHistory(newShapes)
@@ -456,6 +489,97 @@ export function PhotoAnnotationEditor({
     }
   }, [photo, patientId, saveAsStage])
 
+  // ─── Zoom ─────────────────────────────────────────────────────────
+
+  const handleWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
+    e.evt.preventDefault()
+    const stage = stageRef.current
+    if (!stage) return
+
+    const scaleBy = 1.08
+    const oldScale = stage.scaleX()
+    const pointer = stage.getPointerPosition()
+    if (!pointer) return
+
+    const newScale = e.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy
+    const clampedScale = Math.max(0.5, Math.min(5, newScale))
+
+    const mousePointTo = {
+      x: (pointer.x - stage.x()) / oldScale,
+      y: (pointer.y - stage.y()) / oldScale,
+    }
+
+    setStageScale(clampedScale)
+    setStagePos({
+      x: pointer.x - mousePointTo.x * clampedScale,
+      y: pointer.y - mousePointTo.y * clampedScale,
+    })
+  }, [])
+
+  const handlePinch = useCallback((e: Konva.KonvaEventObject<TouchEvent>) => {
+    const stage = stageRef.current
+    if (!stage) return
+
+    const touch1 = e.evt.touches[0]
+    const touch2 = e.evt.touches[1]
+    if (!touch1 || !touch2) return
+
+    // Stop drawing when pinching
+    isDrawing.current = false
+
+    e.evt.preventDefault()
+
+    const dist = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY)
+    const midX = (touch1.clientX + touch2.clientX) / 2
+    const midY = (touch1.clientY + touch2.clientY) / 2
+
+    if (!lastPinchDist.current) {
+      lastPinchDist.current = dist
+      lastPinchCenter.current = { x: midX, y: midY }
+      return
+    }
+
+    const oldScale = stageScale
+    const newScale = Math.max(0.5, Math.min(5, oldScale * (dist / lastPinchDist.current)))
+
+    const stageBox = stage.container().getBoundingClientRect()
+    const pointer = {
+      x: midX - stageBox.left,
+      y: midY - stageBox.top,
+    }
+    const mousePointTo = {
+      x: (pointer.x - stagePos.x) / oldScale,
+      y: (pointer.y - stagePos.y) / oldScale,
+    }
+
+    setStageScale(newScale)
+    setStagePos({
+      x: pointer.x - mousePointTo.x * newScale,
+      y: pointer.y - mousePointTo.y * newScale,
+    })
+
+    lastPinchDist.current = dist
+    lastPinchCenter.current = { x: midX, y: midY }
+  }, [stageScale, stagePos])
+
+  const handlePinchEnd = useCallback(() => {
+    lastPinchDist.current = null
+    lastPinchCenter.current = null
+  }, [])
+
+  const handleZoomIn = useCallback(() => {
+    setStageScale((s) => Math.min(5, s * 1.3))
+  }, [])
+
+  const handleZoomOut = useCallback(() => {
+    setStageScale((s) => Math.max(0.5, s / 1.3))
+  }, [])
+
+  const handleZoomReset = useCallback(() => {
+    setStageScale(1)
+    setStagePos({ x: 0, y: 0 })
+  }, [])
+
   // ─── Deselect on stage click ──────────────────────────────────────
 
   const handleStageClick = useCallback((e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
@@ -487,6 +611,7 @@ export function PhotoAnnotationEditor({
                 onClick={() => {
                   setTool(t.key)
                   if (t.key !== 'select') setSelectedId(null)
+                  if (t.key === 'select') setToolCursor(null)
                 }}
                 className={cn(
                   'flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 transition-colors',
@@ -616,26 +741,57 @@ export function PhotoAnnotationEditor({
             </div>
           </div>
 
-          {/* ─── Floating: bottom-left undo/redo ─── */}
-          <div className="absolute bottom-3 left-3 z-20 flex items-center gap-0.5 rounded-xl bg-white px-1 py-1 shadow-lg border border-black/8">
-            <button
-              type="button"
-              onClick={handleUndo}
-              disabled={!canUndo}
-              className="flex size-9 items-center justify-center rounded-lg text-[#1b1b1f] transition-colors hover:bg-[#f0f0f0] disabled:opacity-30"
-              title="Desfazer"
-            >
-              <Undo2 className="size-[18px]" />
-            </button>
-            <button
-              type="button"
-              onClick={handleRedo}
-              disabled={!canRedo}
-              className="flex size-9 items-center justify-center rounded-lg text-[#1b1b1f] transition-colors hover:bg-[#f0f0f0] disabled:opacity-30"
-              title="Refazer"
-            >
-              <Redo2 className="size-[18px]" />
-            </button>
+          {/* ─── Floating: bottom-left undo/redo + zoom ─── */}
+          <div className="absolute bottom-3 left-3 z-20 flex items-center gap-2">
+            <div className="flex items-center gap-0.5 rounded-xl bg-white px-1 py-1 shadow-lg border border-black/8">
+              <button
+                type="button"
+                onClick={handleZoomOut}
+                className="flex size-9 items-center justify-center rounded-lg text-[#1b1b1f] transition-colors hover:bg-[#f0f0f0]"
+                title="Diminuir zoom"
+              >
+                <ZoomOut className="size-[18px]" />
+              </button>
+              <span className="text-[11px] font-medium text-[#868e96] w-10 text-center tabular-nums">
+                {Math.round(stageScale * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={handleZoomIn}
+                className="flex size-9 items-center justify-center rounded-lg text-[#1b1b1f] transition-colors hover:bg-[#f0f0f0]"
+                title="Aumentar zoom"
+              >
+                <ZoomIn className="size-[18px]" />
+              </button>
+              <button
+                type="button"
+                onClick={handleZoomReset}
+                className="flex size-9 items-center justify-center rounded-lg text-[#1b1b1f] transition-colors hover:bg-[#f0f0f0]"
+                title="Resetar zoom"
+              >
+                <Maximize className="size-[16px]" />
+              </button>
+            </div>
+            <div className="flex items-center gap-0.5 rounded-xl bg-white px-1 py-1 shadow-lg border border-black/8">
+              <button
+                type="button"
+                onClick={handleUndo}
+                disabled={!canUndo}
+                className="flex size-9 items-center justify-center rounded-lg text-[#1b1b1f] transition-colors hover:bg-[#f0f0f0] disabled:opacity-30"
+                title="Desfazer"
+              >
+                <Undo2 className="size-[18px]" />
+              </button>
+              <button
+                type="button"
+                onClick={handleRedo}
+                disabled={!canRedo}
+                className="flex size-9 items-center justify-center rounded-lg text-[#1b1b1f] transition-colors hover:bg-[#f0f0f0] disabled:opacity-30"
+                title="Refazer"
+              >
+                <Redo2 className="size-[18px]" />
+              </button>
+            </div>
           </div>
           {loading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80">
@@ -648,15 +804,38 @@ export function PhotoAnnotationEditor({
               ref={stageRef}
               width={stageSize.width}
               height={stageSize.height}
+              scaleX={stageScale}
+              scaleY={stageScale}
+              x={stagePos.x}
+              y={stagePos.y}
+              onWheel={handleWheel}
               onMouseDown={handleStageMouseDown}
               onMouseMove={handleStageMouseMove}
               onMouseUp={handleStageMouseUp}
-              onTouchStart={handleStageMouseDown}
-              onTouchMove={handleStageMouseMove}
-              onTouchEnd={handleStageMouseUp}
+              onTouchStart={(e) => {
+                if (e.evt.touches.length === 2) {
+                  handlePinch(e)
+                } else {
+                  handleStageMouseDown()
+                }
+              }}
+              onTouchMove={(e) => {
+                if (e.evt.touches.length === 2) {
+                  handlePinch(e)
+                } else {
+                  handleStageMouseMove()
+                }
+              }}
+              onTouchEnd={(e) => {
+                handlePinchEnd()
+                if (e.evt.touches.length === 0) {
+                  handleStageMouseUp()
+                }
+              }}
+              onMouseLeave={handleStageMouseUp}
               onClick={handleStageClick}
               onTap={handleStageClick}
-              style={{ cursor: tool === 'select' ? 'default' : tool === 'eraser' ? 'not-allowed' : 'crosshair' }}
+              style={{ cursor: tool === 'select' ? 'default' : 'none' }}
             >
               {/* Background image layer (non-interactive) */}
               <Layer name="bg-layer" listening={false}>
@@ -745,6 +924,20 @@ export function PhotoAnnotationEditor({
                           shadowColor="#3b82f6"
                         />
                       )
+                    case 'eraser':
+                      return (
+                        <Line
+                          key={shape.id}
+                          id={shape.id}
+                          points={shape.points}
+                          stroke="#000000"
+                          strokeWidth={shape.strokeWidth}
+                          lineCap="round"
+                          lineJoin="round"
+                          tension={0.5}
+                          globalCompositeOperation="destination-out"
+                        />
+                      )
                     case 'text':
                       return (
                         <Text
@@ -766,6 +959,20 @@ export function PhotoAnnotationEditor({
                       return null
                   }
                 })}
+
+                {/* Tool cursor indicator */}
+                {tool !== 'select' && toolCursor && (
+                  <KonvaCircle
+                    x={toolCursor.x}
+                    y={toolCursor.y}
+                    radius={tool === 'eraser' ? brushWidth * 2 : brushWidth / 2 + 1}
+                    stroke={tool === 'eraser' ? '#666' : color}
+                    strokeWidth={1}
+                    dash={tool === 'eraser' ? [3, 3] : undefined}
+                    fill={tool === 'eraser' ? undefined : `${color}33`}
+                    listening={false}
+                  />
+                )}
               </Layer>
             </Stage>
           )}
