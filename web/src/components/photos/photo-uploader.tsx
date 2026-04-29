@@ -236,7 +236,9 @@ async function compressImage(file: File): Promise<File> {
         return
       }
 
-      resolve(new File([blob], file.name.replace(/\.[^.]+$/, ext), { type: mime }))
+      const compressed = new File([blob], file.name.replace(/\.[^.]+$/, ext), { type: mime })
+      // Keep whichever is smaller — compression can sometimes increase size
+      resolve(compressed.size < file.size ? compressed : file)
     }
 
     img.onerror = () => {
@@ -368,6 +370,11 @@ export function PhotoUploader({
         setFiles((prev) =>
           prev.map((f) => (f.id === pendingFile.id ? { ...f, status: 'uploading' as const, progress: 50 } : f))
         )
+
+        // Guard against files that are still too large after compression
+        if (compressed.size > 4 * 1024 * 1024) {
+          throw new Error(`Foto muito grande após compressão (${(compressed.size / 1024 / 1024).toFixed(1)}MB). Tente uma foto menor.`)
+        }
 
         const formData = new FormData()
         formData.set('file', compressed)
