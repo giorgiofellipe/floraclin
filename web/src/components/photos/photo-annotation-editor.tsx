@@ -20,6 +20,7 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize,
+  Download,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -28,7 +29,6 @@ import {
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { Download } from 'lucide-react'
 import type { PhotoAssetWithUrl } from '@/db/queries/photos'
 import { timelineStageLabels } from '@/validations/photo'
 import type { TimelineStage } from '@/types'
@@ -164,17 +164,22 @@ export function PhotoAnnotationEditor({
   // History for undo/redo
   const [history, setHistory] = useState<AnnotationShape[][]>([[]])
   const [historyIdx, setHistoryIdx] = useState(0)
+  const historyIdxRef = useRef(0)
+
+  // Keep ref in sync with state
+  useEffect(() => { historyIdxRef.current = historyIdx }, [historyIdx])
 
   const canUndo = historyIdx > 0
   const canRedo = historyIdx < history.length - 1
 
   const pushHistory = useCallback((newShapes: AnnotationShape[]) => {
+    const currentIdx = historyIdxRef.current
     setHistory((prev) => {
-      const trimmed = prev.slice(0, historyIdx + 1)
+      const trimmed = prev.slice(0, currentIdx + 1)
       return [...trimmed, newShapes]
     })
-    setHistoryIdx((prev) => prev + 1)
-  }, [historyIdx])
+    setHistoryIdx(currentIdx + 1)
+  }, [])
 
   const handleUndo = useCallback(() => {
     if (historyIdx <= 0) return
@@ -341,7 +346,7 @@ export function PhotoAnnotationEditor({
     if (tool === 'pencil') {
       currentFreeDrawPoints.current = [pos.x, pos.y]
     }
-  }, [tool, shapes, color, brushWidth, getPointerPos, pushHistory])
+  }, [tool, shapes, color, brushWidth, getPointerPos, pushHistory, stageScale, stagePos])
 
   const handleStageMouseMove = useCallback(() => {
     const pos = getPointerPos()

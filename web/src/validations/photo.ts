@@ -80,12 +80,17 @@ export function validateImageFile(file: File): string | null {
 
 // ─── Annotation schema ──────────────────────────────────────────────
 
+const MAX_ANNOTATION_SIZE = 1024 * 1024 // 1MB max annotation payload
+
 export const saveAnnotationSchema = z.object({
   photoAssetId: z.string().uuid('ID da foto inválido'),
-  annotationData: z.record(z.string(), z.unknown()),
-}).refine(
-  (data) => Object.keys(data.annotationData).length > 0,
-  { message: 'Dados da anotação são obrigatórios', path: ['annotationData'] }
-)
+  annotationData: z.object({
+    shapes: z.array(z.record(z.string(), z.unknown())).max(500, 'Máximo de 500 formas por anotação'),
+    version: z.number().optional(),
+  }).refine(
+    (data) => JSON.stringify(data).length <= MAX_ANNOTATION_SIZE,
+    { message: 'Dados da anotação excedem o tamanho máximo (1MB)' }
+  ),
+})
 
 export type SaveAnnotationData = z.infer<typeof saveAnnotationSchema>

@@ -22,6 +22,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Nenhum arquivo enviado' }, { status: 400 })
     }
 
+    // Server-side file size guard (5MB max — client compresses to ~1-2MB typically)
+    const MAX_UPLOAD_SIZE = 5 * 1024 * 1024
+    if (file.size > MAX_UPLOAD_SIZE) {
+      return NextResponse.json({ success: false, error: 'Arquivo muito grande. Máximo 5MB.' }, { status: 413 })
+    }
+
     // Validate metadata
     const parsed = uploadPhotoSchema.safeParse({
       patientId: formData.get('patientId'),
@@ -46,7 +52,8 @@ export async function POST(request: Request) {
     // Upload to Supabase Storage
     const { error: uploadError } = await uploadFile(storagePath, file)
     if (uploadError) {
-      return NextResponse.json({ success: false, error: `Erro ao fazer upload: ${uploadError}` }, { status: 500 })
+      console.error('Supabase storage upload error:', uploadError)
+      return NextResponse.json({ success: false, error: 'Erro ao fazer upload da imagem' }, { status: 500 })
     }
 
     // Create photo asset record — if DB insert fails, clean up the uploaded file
