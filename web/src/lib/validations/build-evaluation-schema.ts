@@ -28,16 +28,28 @@ function questionSchema(type: EvaluationQuestionType, required: boolean): z.ZodT
       return z.array(z.string()).min(1, 'Selecione ao menos uma opção')
 
     case 'radio_with_other':
-      return z.object({
-        selected: z.string().min(1, 'Campo obrigatório'),
-        other: z.string().optional().default(''),
-      })
+      return z.preprocess(
+        (v) => v ?? { selected: '', other: '' },
+        z.object({
+          selected: z.string().optional().default(''),
+          other: z.string().optional().default(''),
+        }).refine(
+          (v) => (v.selected && v.selected.length > 0) || (v.other && v.other.trim().length > 0),
+          { message: 'Campo obrigatório' }
+        )
+      )
 
     case 'checkbox_with_other':
-      return z.object({
-        selected: z.array(z.string()).min(1, 'Selecione ao menos uma opção'),
-        other: z.string().optional().default(''),
-      })
+      return z.preprocess(
+        (v) => v ?? { selected: [], other: '' },
+        z.object({
+          selected: z.array(z.string()).optional().default([]),
+          other: z.string().optional().default(''),
+        }).refine(
+          (v) => (v.selected && v.selected.length > 0) || (v.other && v.other.trim().length > 0),
+          { message: 'Selecione ao menos uma opção' }
+        )
+      )
 
     case 'face_diagram':
       return z.object({
