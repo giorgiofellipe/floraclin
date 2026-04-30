@@ -101,19 +101,24 @@ export const procedurePlanningFormSchema = z.object({
 })
 export type ProcedurePlanningFormData = z.infer<typeof procedurePlanningFormSchema>
 
-export const procedurePlanningFinalSchema = procedurePlanningFormSchema.superRefine((data, ctx) => {
-  // Emit errors at the most specific path the UI renders, so FormFieldError
-  // under each sub-field can display the message inline.
-  if (!data.financialPlan) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['financialPlan', 'totalAmount'],
-      message: 'Plano financeiro obrigatório',
-    })
-  }
-  // diagramPoints is optional — non-injectable procedures (limpeza de pele, skinbooster, etc.)
-  // don't require face diagram markings
-})
+export function procedurePlanningFinalSchema(requiresDiagram: boolean) {
+  return procedurePlanningFormSchema.superRefine((data, ctx) => {
+    if (!data.financialPlan) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['financialPlan', 'totalAmount'],
+        message: 'Plano financeiro obrigatório',
+      })
+    }
+    if (requiresDiagram && data.diagramPoints.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['diagramPoints'],
+        message: 'Marque ao menos um ponto no diagrama',
+      })
+    }
+  })
+}
 
 // ─── Execution form schemas (step 5) ────────────────────────────────
 // NOTE: mirrors the real payload — no performedAt (server sets it).

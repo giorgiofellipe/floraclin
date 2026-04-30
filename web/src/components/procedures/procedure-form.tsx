@@ -444,10 +444,14 @@ export function ProcedureForm({
   useEffect(() => {
     const sub = form.watch(() => {
       if (!pendingFinalValidationRef.current) return
-      const finalSchema = procedurePlanningFinalSchema.and(
+      const templates = evalTemplatesRef.current ?? []
+      const needsDiagram = templates.some((t: { sections?: { questions?: { type: string; required: boolean }[] }[] }) =>
+        t.sections?.some((s) => s.questions?.some((q) => q.type === 'face_diagram' && q.required))
+      )
+      const finalSchema = procedurePlanningFinalSchema(needsDiagram).and(
         z.object({
           evaluationResponses: buildEvaluationResponseSchema(
-            (evalTemplatesRef.current ?? []) as never,
+            templates as never,
           ),
         }),
       )
@@ -518,7 +522,14 @@ export function ProcedureForm({
             })
             return
           }
-          const finalSchema = procedurePlanningFinalSchema.and(
+          // Check if any loaded evaluation template has a required face_diagram question
+          const requiresDiagram = (evalTemplates ?? []).some((t: { sections?: { questions?: { type: string; required: boolean }[] }[] }) =>
+            t.sections?.some((s) =>
+              s.questions?.some((q) => q.type === 'face_diagram' && q.required)
+            )
+          )
+
+          const finalSchema = procedurePlanningFinalSchema(requiresDiagram).and(
             z.object({
               evaluationResponses: buildEvaluationResponseSchema(
                 (evalTemplates ?? []) as never,

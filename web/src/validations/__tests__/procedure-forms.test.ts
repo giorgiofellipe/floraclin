@@ -24,12 +24,12 @@ describe('procedurePlanningFormSchema (draft)', () => {
 
 describe('procedurePlanningFinalSchema (strict)', () => {
   it('rejects when financialPlan is missing', () => {
-    expect(procedurePlanningFinalSchema.safeParse({ procedureTypeId: VALID_UUID }).success).toBe(false)
+    expect(procedurePlanningFinalSchema(false).safeParse({ procedureTypeId: VALID_UUID }).success).toBe(false)
   })
 
-  it('accepts when diagramPoints is empty (non-injectable procedures)', () => {
+  it('accepts when diagramPoints is empty for non-diagram procedures', () => {
     expect(
-      procedurePlanningFinalSchema.safeParse({
+      procedurePlanningFinalSchema(false).safeParse({
         procedureTypeId: VALID_UUID,
         financialPlan: { totalAmount: 100, installmentCount: 1 },
         diagramPoints: [],
@@ -37,9 +37,19 @@ describe('procedurePlanningFinalSchema (strict)', () => {
     ).toBe(true)
   })
 
-  it('accepts a complete final payload', () => {
+  it('rejects when diagramPoints is empty for diagram-required procedures', () => {
     expect(
-      procedurePlanningFinalSchema.safeParse({
+      procedurePlanningFinalSchema(true).safeParse({
+        procedureTypeId: VALID_UUID,
+        financialPlan: { totalAmount: 100, installmentCount: 1 },
+        diagramPoints: [],
+      }).success,
+    ).toBe(false)
+  })
+
+  it('accepts a complete final payload with diagram', () => {
+    expect(
+      procedurePlanningFinalSchema(true).safeParse({
         procedureTypeId: VALID_UUID,
         financialPlan: { totalAmount: 100, installmentCount: 1 },
         diagramPoints: [{ x: 50, y: 50, productName: 'Botox', quantity: 10, quantityUnit: 'U' }],
