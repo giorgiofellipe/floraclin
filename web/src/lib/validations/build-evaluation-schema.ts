@@ -52,9 +52,9 @@ function questionSchema(type: EvaluationQuestionType, required: boolean): z.ZodT
       )
 
     case 'face_diagram':
-      return z.object({
-        completed: z.literal(true, { message: 'Complete o diagrama' }),
-      })
+      // Diagram data is stored in the separate `diagramPoints` form field
+      // and validated by procedurePlanningFinalSchema — not here.
+      return z.unknown().optional()
 
     default:
       return z.unknown()

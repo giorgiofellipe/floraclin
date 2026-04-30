@@ -90,7 +90,7 @@ describe('buildEvaluationResponseSchema', () => {
     expect(schema.safeParse({ t: { q: { selected: '', other: '' } } }).success).toBe(false)
   })
 
-  it('validates face_diagram completion', () => {
+  it('accepts any value for face_diagram (validated separately via diagramPoints)', () => {
     const t = [
       {
         id: 't',
@@ -108,7 +108,8 @@ describe('buildEvaluationResponseSchema', () => {
     ]
     const schema = buildEvaluationResponseSchema(t)
     expect(schema.safeParse({ t: { q: { completed: true } } }).success).toBe(true)
-    expect(schema.safeParse({ t: { q: { completed: false } } }).success).toBe(false)
+    expect(schema.safeParse({ t: { q: undefined } }).success).toBe(true)
+    expect(schema.safeParse({ t: {} }).success).toBe(true)
   })
 
   it('returns a permissive schema for empty templates list', () => {
