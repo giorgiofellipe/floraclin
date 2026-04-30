@@ -2,7 +2,8 @@
  * Compute the planning status of a procedure based on whether it has
  * everything approval requires.
  *
- *   "planned" = financialPlan with a positive total AND at least one diagram point
+ *   "planned" = financialPlan with a positive total (diagram points optional —
+ *               non-injectable procedures like limpeza de pele don't use them)
  *   "draft"   = anything less
  *
  * Used by the wizard's "Salvar e sair" flow so that incomplete procedures reopen
@@ -23,12 +24,5 @@ export function computePlanningStatus(input: {
         : 0
   const hasFinancialPlan = !!input.financialPlan && numericTotal > 0
 
-  const hasDiagramPoints = !!(
-    input.diagrams &&
-    input.diagrams.some(
-      (d) => d && Array.isArray(d.points) && d.points.length > 0,
-    )
-  )
-
-  return hasFinancialPlan && hasDiagramPoints ? 'planned' : 'draft'
+  return hasFinancialPlan ? 'planned' : 'draft'
 }

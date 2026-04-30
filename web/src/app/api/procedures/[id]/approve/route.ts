@@ -46,7 +46,7 @@ export async function POST(
 
     if (procedure.status === 'draft') {
       return NextResponse.json(
-        { error: 'Complete o planejamento antes de aprovar (plano financeiro e pontos do diagrama)' },
+        { error: 'Complete o planejamento antes de aprovar (plano financeiro)' },
         { status: 400 },
       )
     }

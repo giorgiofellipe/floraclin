@@ -395,7 +395,7 @@ export function ServiceWizard({
           console.log(
             '[wizard] staying on step 3 — server returned draft status (incomplete planning)',
           )
-          toast.info('Preencha plano financeiro e pontos do diagrama para avançar à aprovação.')
+          toast.info('Preencha o plano financeiro para avançar à aprovação.')
           return
         }
 
