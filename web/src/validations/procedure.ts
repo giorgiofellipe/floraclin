@@ -111,9 +111,8 @@ export const procedurePlanningFinalSchema = procedurePlanningFormSchema.superRef
       message: 'Plano financeiro obrigatório',
     })
   }
-  if (data.diagramPoints.length === 0) {
-    ctx.addIssue({ code: 'custom', path: ['diagramPoints'], message: 'Marque ao menos um ponto no diagrama' })
-  }
+  // diagramPoints is optional — non-injectable procedures (limpeza de pele, skinbooster, etc.)
+  // don't require face diagram markings
 })
 
 // ─── Execution form schemas (step 5) ────────────────────────────────

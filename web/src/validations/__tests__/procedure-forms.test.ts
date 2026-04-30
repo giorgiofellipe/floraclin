@@ -27,14 +27,14 @@ describe('procedurePlanningFinalSchema (strict)', () => {
     expect(procedurePlanningFinalSchema.safeParse({ procedureTypeId: VALID_UUID }).success).toBe(false)
   })
 
-  it('rejects when diagramPoints is empty', () => {
+  it('accepts when diagramPoints is empty (non-injectable procedures)', () => {
     expect(
       procedurePlanningFinalSchema.safeParse({
         procedureTypeId: VALID_UUID,
         financialPlan: { totalAmount: 100, installmentCount: 1 },
         diagramPoints: [],
       }).success,
-    ).toBe(false)
+    ).toBe(true)
   })
 
   it('accepts a complete final payload', () => {
