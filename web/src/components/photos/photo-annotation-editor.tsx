@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Stage, Layer, Line, Arrow, Ellipse, Text, Image as KonvaImage, Circle as KonvaCircle } from 'react-konva'
+import { Stage, Layer, Line, Arrow, Ellipse, Text, Image as KonvaImage, Circle as KonvaCircle, Rect } from 'react-konva'
 import type Konva from 'konva'
 import {
   Pencil,
@@ -21,6 +21,7 @@ import {
   ZoomOut,
   Maximize,
   Download,
+  Ruler,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -32,6 +33,8 @@ import { toast } from 'sonner'
 import type { PhotoAssetWithUrl } from '@/db/queries/photos'
 import { timelineStageLabels } from '@/validations/photo'
 import type { TimelineStage } from '@/types'
+import type { RulerState } from './ruler-geometry'
+import { getRulerEndpoints, clampPointToRulerEdge } from './ruler-geometry'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -42,7 +45,7 @@ interface PhotoAnnotationEditorProps {
   onOpenChange: (open: boolean) => void
 }
 
-type DrawingTool = 'select' | 'pencil' | 'arrow' | 'line' | 'circle' | 'text' | 'eraser'
+type DrawingTool = 'select' | 'pencil' | 'arrow' | 'line' | 'circle' | 'text' | 'eraser' | 'ruler'
 
 interface ShapeBase {
   id: string
@@ -100,6 +103,17 @@ const PRESET_COLORS = [
 
 const BRUSH_WIDTHS = [2, 4, 6, 8]
 
+const RULER_WIDTH = 24
+const RULER_COLOR = 'rgba(59, 130, 246, 0.3)'
+const RULER_STROKE_COLOR = 'rgba(59, 130, 246, 0.5)'
+const RULER_HANDLE_FILL = 'rgba(59, 130, 246, 0.5)'
+const RULER_HANDLE_STROKE = 'rgba(59, 130, 246, 0.8)'
+const RULER_HANDLE_RADIUS = 10
+const RULER_DEFAULT_LENGTH = 300
+const RULER_MIN_LENGTH = 60
+const RULER_HIT_TOLERANCE = 4
+const RULER_DELETE_OFFSET = 12
+
 const TOOLS: { key: DrawingTool; icon: typeof Pencil; label: string }[] = [
   { key: 'select', icon: MousePointer2, label: 'Mover' },
   { key: 'pencil', icon: Pencil, label: 'Livre' },
@@ -107,6 +121,7 @@ const TOOLS: { key: DrawingTool; icon: typeof Pencil; label: string }[] = [
   { key: 'line', icon: Minus, label: 'Linha' },
   { key: 'circle', icon: Circle, label: 'Círculo' },
   { key: 'text', icon: Type, label: 'Texto' },
+  { key: 'ruler', icon: Ruler, label: 'Régua' },
   { key: 'eraser', icon: Eraser, label: 'Borracha' },
 ]
 
@@ -149,6 +164,9 @@ export function PhotoAnnotationEditor({
   // Zoom state
   const [stageScale, setStageScale] = useState(1)
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 })
+
+  const [rulers, setRulers] = useState<(RulerState & { cx: number; cy: number; angle: number; length: number })[]>([])
+  const rulerIdCounter = useRef(0)
 
   // Pinch-to-zoom + pan refs
   const lastPinchDist = useRef<number | null>(null)
@@ -210,6 +228,7 @@ export function PhotoAnnotationEditor({
     setSelectedId(null)
     setStageScale(1)
     setStagePos({ x: 0, y: 0 })
+    setRulers([])
 
     const load = async () => {
       // Wait for dialog layout
@@ -316,7 +335,38 @@ export function PhotoAnnotationEditor({
       return
     }
 
+    if (tool === 'ruler') {
+      const newId = `ruler-${Date.now()}-${rulerIdCounter.current++}`
+      const length = RULER_DEFAULT_LENGTH / imageScale
+      const newRuler = {
+        id: newId,
+        cx: pos.x,
+        cy: pos.y,
+        angle: 0,
+        length,
+        ...getRulerEndpoints(pos.x, pos.y, 0, length),
+      }
+      setRulers((prev) => [...prev, newRuler])
+      return
+    }
+
     if (tool === 'eraser') {
+      const hitRuler = rulers.find((r) => {
+        const dx = r.x2 - r.x1
+        const dy = r.y2 - r.y1
+        const lenSq = dx * dx + dy * dy
+        if (lenSq === 0) return false
+        const t = Math.max(0, Math.min(1, ((pos.x - r.x1) * dx + (pos.y - r.y1) * dy) / lenSq))
+        const projX = r.x1 + t * dx
+        const projY = r.y1 + t * dy
+        const dist = Math.hypot(pos.x - projX, pos.y - projY)
+        return dist <= RULER_WIDTH / 2 + RULER_HIT_TOLERANCE
+      })
+      if (hitRuler) {
+        setRulers((prev) => prev.filter((r) => r.id !== hitRuler.id))
+        return
+      }
+
       isDrawing.current = true
       drawStart.current = pos
       currentFreeDrawPoints.current = [pos.x, pos.y]
@@ -346,7 +396,7 @@ export function PhotoAnnotationEditor({
     if (tool === 'pencil') {
       currentFreeDrawPoints.current = [pos.x, pos.y]
     }
-  }, [tool, shapes, color, brushWidth, getPointerPos, pushHistory, stageScale, stagePos])
+  }, [tool, shapes, color, brushWidth, getPointerPos, pushHistory, stageScale, stagePos, imageScale, rulers])
 
   const handleStageMouseMove = useCallback(() => {
     const pos = getPointerPos()
@@ -374,11 +424,19 @@ export function PhotoAnnotationEditor({
 
     // Shape preview for arrow/line/circle
     if ((tool === 'arrow' || tool === 'line' || tool === 'circle') && drawStart.current) {
-      setShapePreview({ start: drawStart.current, end: pos })
+      const rulerStatesForPreview = rulers.map((r) => ({ id: r.id, x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2 }))
+      const clampedPreviewEnd = clampPointToRulerEdge(pos, rulerStatesForPreview, drawStart.current)
+      setShapePreview({ start: drawStart.current, end: clampedPreviewEnd })
     }
 
     if (tool === 'pencil' || tool === 'eraser') {
-      currentFreeDrawPoints.current = [...currentFreeDrawPoints.current, pos.x, pos.y]
+      const rulerStates = rulers.map((r) => ({ id: r.id, x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2 }))
+      const pts = currentFreeDrawPoints.current
+      const prevPoint = pts.length >= 2 ? { x: pts[pts.length - 2], y: pts[pts.length - 1] } : drawStart.current
+      const clampedPos = tool === 'pencil' && prevPoint
+        ? clampPointToRulerEdge(pos, rulerStates, prevPoint)
+        : pos
+      currentFreeDrawPoints.current = [...currentFreeDrawPoints.current, clampedPos.x, clampedPos.y]
       const previewType = tool === 'eraser' ? 'eraser' as const : 'freedraw' as const
       const previewColor = tool === 'eraser' ? '#000000' : color
       const previewWidth = tool === 'eraser' ? brushWidth * 4 : brushWidth
@@ -393,7 +451,7 @@ export function PhotoAnnotationEditor({
         }]
       })
     }
-  }, [tool, color, brushWidth, getPointerPos])
+  }, [tool, color, brushWidth, getPointerPos, rulers])
 
   const handleStageMouseUp = useCallback(() => {
     if (isPanning.current) {
@@ -411,6 +469,8 @@ export function PhotoAnnotationEditor({
 
     const start = drawStart.current
     drawStart.current = null
+
+    const rulerStates = rulers.map((r) => ({ id: r.id, x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2 }))
 
     if (tool === 'pencil' || tool === 'eraser') {
       const points = currentFreeDrawPoints.current
@@ -437,7 +497,11 @@ export function PhotoAnnotationEditor({
       return
     }
 
-    const dist = Math.hypot(pos.x - start.x, pos.y - start.y)
+    const clampedEnd = (tool === 'arrow' || tool === 'line' || tool === 'circle')
+      ? clampPointToRulerEdge(pos, rulerStates, start)
+      : pos
+
+    const dist = Math.hypot(clampedEnd.x - start.x, clampedEnd.y - start.y)
     if (dist < 5) return
 
     let newShape: AnnotationShape | null = null
@@ -446,7 +510,7 @@ export function PhotoAnnotationEditor({
       newShape = {
         id: genId(),
         type: 'arrow',
-        points: [start.x, start.y, pos.x, pos.y],
+        points: [start.x, start.y, clampedEnd.x, clampedEnd.y],
         color,
         strokeWidth: brushWidth,
       }
@@ -454,7 +518,7 @@ export function PhotoAnnotationEditor({
       newShape = {
         id: genId(),
         type: 'line',
-        points: [start.x, start.y, pos.x, pos.y],
+        points: [start.x, start.y, clampedEnd.x, clampedEnd.y],
         color,
         strokeWidth: brushWidth,
       }
@@ -462,10 +526,10 @@ export function PhotoAnnotationEditor({
       newShape = {
         id: genId(),
         type: 'ellipse',
-        x: (start.x + pos.x) / 2,
-        y: (start.y + pos.y) / 2,
-        radiusX: Math.abs(pos.x - start.x) / 2,
-        radiusY: Math.abs(pos.y - start.y) / 2,
+        x: (start.x + clampedEnd.x) / 2,
+        y: (start.y + clampedEnd.y) / 2,
+        radiusX: Math.abs(clampedEnd.x - start.x) / 2,
+        radiusY: Math.abs(clampedEnd.y - start.y) / 2,
         color,
         strokeWidth: brushWidth,
       }
@@ -476,7 +540,7 @@ export function PhotoAnnotationEditor({
       setShapes(newShapes)
       pushHistory(newShapes)
     }
-  }, [tool, shapes, color, brushWidth, getPointerPos, pushHistory])
+  }, [tool, shapes, color, brushWidth, getPointerPos, pushHistory, rulers])
 
   // ─── Save ─────────────────────────────────────────────────────────
 
@@ -894,7 +958,7 @@ export function PhotoAnnotationEditor({
               onMouseLeave={() => { handleStageMouseUp(); setShapePreview(null); setToolCursor(null) }}
               onClick={handleStageClick}
               onTap={handleStageClick}
-              style={{ cursor: tool === 'select' ? 'default' : 'none' }}
+              style={{ cursor: tool === 'select' || tool === 'ruler' ? 'default' : 'none' }}
             >
               {/* Background image layer (non-interactive) */}
               <Layer name="bg-layer" listening={false}>
@@ -1060,7 +1124,7 @@ export function PhotoAnnotationEditor({
                 )}
 
                 {/* Tool cursor indicator */}
-                {tool !== 'select' && toolCursor && (
+                {tool !== 'select' && tool !== 'ruler' && toolCursor && (
                   <KonvaCircle
                     x={toolCursor.x}
                     y={toolCursor.y}
@@ -1072,6 +1136,128 @@ export function PhotoAnnotationEditor({
                     listening={false}
                   />
                 )}
+              </Layer>
+
+              {/* Ruler layer — above drawing so handles stay interactive */}
+              <Layer name="ruler-layer">
+                {rulers.map((ruler) => {
+                  const halfWidth = RULER_WIDTH / 2
+
+                  return (
+                    <React.Fragment key={ruler.id}>
+                      <Rect
+                        x={ruler.cx}
+                        y={ruler.cy}
+                        width={ruler.length}
+                        height={RULER_WIDTH}
+                        offsetX={ruler.length / 2}
+                        offsetY={halfWidth}
+                        rotation={ruler.angle}
+                        fill={RULER_COLOR}
+                        stroke={RULER_STROKE_COLOR}
+                        strokeWidth={1}
+                        cornerRadius={4}
+                        draggable={tool === 'select' || tool === 'ruler'}
+                        onDragStart={(e) => { e.cancelBubble = true }}
+                        onMouseDown={(e) => { e.cancelBubble = true }}
+                        onTouchStart={(e) => { e.cancelBubble = true }}
+                        onDragMove={(e) => {
+                          const node = e.target
+                          const newCx = node.x()
+                          const newCy = node.y()
+                          setRulers((prev) =>
+                            prev.map((r) =>
+                              r.id === ruler.id
+                                ? { ...r, cx: newCx, cy: newCy, ...getRulerEndpoints(newCx, newCy, r.angle, r.length) }
+                                : r,
+                            ),
+                          )
+                        }}
+                        shadowBlur={4}
+                        shadowColor="rgba(0,0,0,0.15)"
+                        shadowOffsetY={2}
+                      />
+                      <KonvaCircle
+                        x={ruler.x1}
+                        y={ruler.y1}
+                        radius={RULER_HANDLE_RADIUS}
+                        fill={RULER_HANDLE_FILL}
+                        stroke={RULER_HANDLE_STROKE}
+                        strokeWidth={1.5}
+                        draggable={tool === 'select' || tool === 'ruler'}
+                        onDragStart={(e) => { e.cancelBubble = true }}
+                        onMouseDown={(e) => { e.cancelBubble = true }}
+                        onTouchStart={(e) => { e.cancelBubble = true }}
+                        onDragMove={(e) => {
+                          const handlePos = { x: e.target.x(), y: e.target.y() }
+                          const pivot = { x: ruler.x2, y: ruler.y2 }
+                          const dx = handlePos.x - pivot.x
+                          const dy = handlePos.y - pivot.y
+                          const newLength = Math.max(RULER_MIN_LENGTH, Math.hypot(dx, dy))
+                          const newAngle = (Math.atan2(dy, dx) * 180) / Math.PI + 180
+                          const newCx = (handlePos.x + pivot.x) / 2
+                          const newCy = (handlePos.y + pivot.y) / 2
+                          setRulers((prev) =>
+                            prev.map((r) =>
+                              r.id === ruler.id
+                                ? { ...r, cx: newCx, cy: newCy, angle: newAngle, length: newLength, ...getRulerEndpoints(newCx, newCy, newAngle, newLength) }
+                                : r,
+                            ),
+                          )
+                        }}
+                      />
+                      <KonvaCircle
+                        x={ruler.x2}
+                        y={ruler.y2}
+                        radius={RULER_HANDLE_RADIUS}
+                        fill={RULER_HANDLE_FILL}
+                        stroke={RULER_HANDLE_STROKE}
+                        strokeWidth={1.5}
+                        draggable={tool === 'select' || tool === 'ruler'}
+                        onDragStart={(e) => { e.cancelBubble = true }}
+                        onMouseDown={(e) => { e.cancelBubble = true }}
+                        onTouchStart={(e) => { e.cancelBubble = true }}
+                        onDragMove={(e) => {
+                          const handlePos = { x: e.target.x(), y: e.target.y() }
+                          const pivot = { x: ruler.x1, y: ruler.y1 }
+                          const dx = handlePos.x - pivot.x
+                          const dy = handlePos.y - pivot.y
+                          const newLength = Math.max(RULER_MIN_LENGTH, Math.hypot(dx, dy))
+                          const newAngle = (Math.atan2(dy, dx) * 180) / Math.PI
+                          const newCx = (handlePos.x + pivot.x) / 2
+                          const newCy = (handlePos.y + pivot.y) / 2
+                          setRulers((prev) =>
+                            prev.map((r) =>
+                              r.id === ruler.id
+                                ? { ...r, cx: newCx, cy: newCy, angle: newAngle, length: newLength, ...getRulerEndpoints(newCx, newCy, newAngle, newLength) }
+                                : r,
+                            ),
+                          )
+                        }}
+                      />
+                      <KonvaCircle
+                        x={ruler.cx + (RULER_WIDTH / 2 + RULER_DELETE_OFFSET) * Math.cos(((ruler.angle - 90) * Math.PI) / 180)}
+                        y={ruler.cy + (RULER_WIDTH / 2 + RULER_DELETE_OFFSET) * Math.sin(((ruler.angle - 90) * Math.PI) / 180)}
+                        radius={12}
+                        fill="#ef4444"
+                        stroke="#fff"
+                        strokeWidth={1.5}
+                        onClick={() => setRulers((prev) => prev.filter((r) => r.id !== ruler.id))}
+                        onTap={() => setRulers((prev) => prev.filter((r) => r.id !== ruler.id))}
+                        onMouseDown={(e) => { e.cancelBubble = true }}
+                        onTouchStart={(e) => { e.cancelBubble = true }}
+                      />
+                      <Text
+                        x={ruler.cx + (RULER_WIDTH / 2 + RULER_DELETE_OFFSET) * Math.cos(((ruler.angle - 90) * Math.PI) / 180) - 5}
+                        y={ruler.cy + (RULER_WIDTH / 2 + RULER_DELETE_OFFSET) * Math.sin(((ruler.angle - 90) * Math.PI) / 180) - 6}
+                        text="×"
+                        fontSize={14}
+                        fill="#fff"
+                        listening={false}
+                      />
+                    </React.Fragment>
+                  )
+                })}
               </Layer>
             </Stage>
           )}
