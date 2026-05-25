@@ -1,5 +1,5 @@
-import { pgSchema, uuid, varchar, text, boolean, timestamp, decimal, integer, date, time, jsonb, inet, uniqueIndex, index } from 'drizzle-orm/pg-core'
-import { relations } from 'drizzle-orm'
+import { pgSchema, uuid, varchar, text, boolean, timestamp, decimal, integer, date, time, jsonb, inet, uniqueIndex, index, serial } from 'drizzle-orm/pg-core'
+import { relations, sql } from 'drizzle-orm'
 
 export const floraclinSchema = pgSchema('floraclin')
 
@@ -587,6 +587,98 @@ export const verificationTokens = floraclinSchema.table('verification_tokens', {
   token: varchar('token', { length: 255 }).notNull().unique(),
   expires: timestamp('expires', { withTimezone: true }).notNull(),
 })
+
+// ─── PROSPECTS (CRM) ────────────────────────────────────────────────
+
+export const prospects = floraclinSchema.table('prospects', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  name: varchar('name', { length: 255 }),
+  phone: varchar('phone', { length: 30 }).notNull(),
+  source: varchar('source', { length: 50 }).notNull().default('whatsapp'),
+  stage: varchar('stage', { length: 20 }).notNull().default('novo'),
+  intent: varchar('intent', { length: 50 }),
+  interestedProcedure: varchar('interested_procedure', { length: 255 }),
+  sentiment: varchar('sentiment', { length: 20 }),
+  aiTags: jsonb('ai_tags').default([]),
+  lostReason: text('lost_reason'),
+  assignedUserId: uuid('assigned_user_id').references(() => users.id),
+  convertedPatientId: uuid('converted_patient_id').references(() => patients.id),
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => [
+  index('idx_prospects_tenant_stage').on(table.tenantId, table.stage),
+  uniqueIndex('uq_prospects_tenant_phone').on(table.tenantId, table.phone),
+])
+
+// ─── WHATSAPP ───────────────────────────────────────────────────────
+
+export const whatsappConversations = floraclinSchema.table('whatsapp_conversations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  phoneNumber: varchar('phone_number', { length: 30 }).notNull(),
+  profileName: varchar('profile_name', { length: 255 }),
+  prospectId: uuid('prospect_id').references(() => prospects.id),
+  patientId: uuid('patient_id').references(() => patients.id),
+  lastMessageAt: timestamp('last_message_at', { withTimezone: true }).notNull().defaultNow(),
+  lastInboundAt: timestamp('last_inbound_at', { withTimezone: true }),
+  unreadCount: integer('unread_count').notNull().default(0),
+  status: varchar('status', { length: 20 }).notNull().default('active'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('uq_whatsapp_conversations_tenant_phone').on(table.tenantId, table.phoneNumber),
+  index('idx_whatsapp_conversations_tenant_last_msg').on(table.tenantId, table.lastMessageAt),
+])
+
+export const whatsappMessages = floraclinSchema.table('whatsapp_messages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  conversationId: uuid('conversation_id').notNull().references(() => whatsappConversations.id),
+  direction: varchar('direction', { length: 10 }).notNull(),
+  metaMessageId: varchar('meta_message_id', { length: 255 }),
+  body: text('body'),
+  mediaType: varchar('media_type', { length: 20 }),
+  mediaUrl: text('media_url'),
+  mediaFilename: varchar('media_filename', { length: 500 }),
+  templateName: varchar('template_name', { length: 255 }),
+  deliveryStatus: varchar('delivery_status', { length: 20 }).notNull().default('sent'),
+  errorCode: varchar('error_code', { length: 50 }),
+  timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_whatsapp_messages_conversation_ts').on(table.conversationId, table.timestamp),
+  uniqueIndex('uq_whatsapp_messages_meta_id').on(table.metaMessageId).where(sql`meta_message_id IS NOT NULL`),
+])
+
+export const whatsappTemplates = floraclinSchema.table('whatsapp_templates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  metaTemplateId: varchar('meta_template_id', { length: 255 }).notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  language: varchar('language', { length: 10 }).notNull(),
+  category: varchar('category', { length: 50 }).notNull(),
+  status: varchar('status', { length: 20 }).notNull(),
+  components: jsonb('components').notNull(),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('uq_whatsapp_templates_tenant_name_lang').on(table.tenantId, table.name, table.language),
+])
+
+// ─── SSE EVENTS ─────────────────────────────────────────────────────
+
+export const sseEvents = floraclinSchema.table('sse_events', {
+  id: serial('id').primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  eventType: varchar('event_type', { length: 50 }).notNull(),
+  payload: jsonb('payload').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_sse_events_tenant_created').on(table.tenantId, table.createdAt),
+])
 
 // ─── RELATIONS ───────────────────────────────────────────────────────
 

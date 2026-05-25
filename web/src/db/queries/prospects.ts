@@ -1,0 +1,206 @@
+import { db } from '@/db/client'
+import { prospects, whatsappConversations } from '@/db/schema'
+import { eq, and, or, desc, ilike, isNull, sql } from 'drizzle-orm'
+import type { ProspectStage } from '@/validations/prospect'
+
+export type Prospect = typeof prospects.$inferSelect
+
+export async function createProspect(
+  tenantId: string,
+  data: { phone: string; name?: string | null; source?: string },
+): Promise<Prospect> {
+  const [prospect] = await db
+    .insert(prospects)
+    .values({
+      tenantId,
+      phone: data.phone,
+      name: data.name ?? null,
+      source: data.source ?? 'whatsapp',
+    })
+    .returning()
+
+  return prospect
+}
+
+export async function getProspect(tenantId: string, prospectId: string): Promise<Prospect | null> {
+  const [prospect] = await db
+    .select()
+    .from(prospects)
+    .where(
+      and(
+        eq(prospects.id, prospectId),
+        eq(prospects.tenantId, tenantId),
+        isNull(prospects.deletedAt),
+      ),
+    )
+    .limit(1)
+
+  return prospect ?? null
+}
+
+export async function getProspectByPhone(tenantId: string, phone: string): Promise<Prospect | null> {
+  const [prospect] = await db
+    .select()
+    .from(prospects)
+    .where(
+      and(
+        eq(prospects.tenantId, tenantId),
+        eq(prospects.phone, phone),
+        isNull(prospects.deletedAt),
+      ),
+    )
+    .limit(1)
+
+  return prospect ?? null
+}
+
+export async function listProspects(
+  tenantId: string,
+  opts: { stage?: ProspectStage; search?: string; assignedUserId?: string } = {},
+): Promise<Prospect[]> {
+  const { stage, search, assignedUserId } = opts
+
+  const baseConditions = [
+    eq(prospects.tenantId, tenantId),
+    isNull(prospects.deletedAt),
+  ]
+
+  if (stage) {
+    baseConditions.push(eq(prospects.stage, stage))
+  }
+
+  if (assignedUserId) {
+    baseConditions.push(eq(prospects.assignedUserId, assignedUserId))
+  }
+
+  const escaped = (search ?? '').trim().replace(/%/g, '\\%').replace(/_/g, '\\_')
+  const searchCondition = escaped
+    ? or(
+        ilike(prospects.name, `%${escaped}%`),
+        ilike(prospects.phone, `%${escaped}%`),
+      )
+    : undefined
+
+  const whereConditions = searchCondition
+    ? and(...baseConditions, searchCondition)
+    : and(...baseConditions)
+
+  return db
+    .select()
+    .from(prospects)
+    .where(whereConditions)
+    .orderBy(desc(prospects.createdAt))
+}
+
+export async function updateProspect(
+  tenantId: string,
+  prospectId: string,
+  data: Partial<{
+    name: string | null
+    stage: string
+    intent: string | null
+    interestedProcedure: string | null
+    sentiment: string | null
+    aiTags: unknown
+    assignedUserId: string | null
+    notes: string | null
+    lostReason: string | null
+  }>,
+): Promise<Prospect | null> {
+  const [updated] = await db
+    .update(prospects)
+    .set({ ...data, updatedAt: new Date() })
+    .where(
+      and(
+        eq(prospects.id, prospectId),
+        eq(prospects.tenantId, tenantId),
+        isNull(prospects.deletedAt),
+      ),
+    )
+    .returning()
+
+  return updated ?? null
+}
+
+export async function softDeleteProspect(tenantId: string, prospectId: string): Promise<Prospect | null> {
+  const [deleted] = await db
+    .update(prospects)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(
+      and(
+        eq(prospects.id, prospectId),
+        eq(prospects.tenantId, tenantId),
+        isNull(prospects.deletedAt),
+      ),
+    )
+    .returning()
+
+  return deleted ?? null
+}
+
+export async function convertProspect(
+  tenantId: string,
+  prospectId: string,
+  patientId: string,
+): Promise<Prospect | null> {
+  const [updated] = await db
+    .update(prospects)
+    .set({
+      convertedPatientId: patientId,
+      stage: 'convertido',
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(prospects.id, prospectId),
+        eq(prospects.tenantId, tenantId),
+      ),
+    )
+    .returning()
+
+  // Also update the conversation FK to point to the patient
+  if (updated) {
+    await db
+      .update(whatsappConversations)
+      .set({ patientId, updatedAt: new Date() })
+      .where(
+        and(
+          eq(whatsappConversations.tenantId, tenantId),
+          eq(whatsappConversations.prospectId, prospectId),
+        ),
+      )
+  }
+
+  return updated ?? null
+}
+
+export async function getProspectStats(tenantId: string): Promise<Record<string, number>> {
+  const results = await db
+    .select({
+      stage: prospects.stage,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(prospects)
+    .where(
+      and(
+        eq(prospects.tenantId, tenantId),
+        isNull(prospects.deletedAt),
+      ),
+    )
+    .groupBy(prospects.stage)
+
+  const stats: Record<string, number> = {
+    novo: 0,
+    contatado: 0,
+    qualificado: 0,
+    agendado: 0,
+    convertido: 0,
+    perdido: 0,
+  }
+
+  for (const row of results) {
+    stats[row.stage] = row.count
+  }
+
+  return stats
+}

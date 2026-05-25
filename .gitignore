@@ -54,4 +54,5 @@ site/.next/
 
 # git worktrees
 .worktrees/
+.claude/worktrees/
 

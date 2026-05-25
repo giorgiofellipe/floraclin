@@ -1,0 +1,172 @@
+import crypto from 'crypto'
+import { getTenant } from '@/db/queries/tenants'
+
+const GRAPH_API_VERSION = 'v21.0'
+const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`
+
+interface WhatsAppCredentials {
+  phoneNumberId: string
+  accessToken: string
+  businessAccountId: string
+}
+
+async function getCredentials(tenantId: string): Promise<WhatsAppCredentials> {
+  const tenant = await getTenant(tenantId)
+  if (!tenant) throw new Error('Tenant not found')
+  const settings = tenant.settings as Record<string, unknown> | null
+  if (!settings?.whatsapp_enabled) throw new Error('WhatsApp not enabled')
+  const phoneNumberId = settings.whatsapp_phone_number_id as string
+  const accessToken = settings.whatsapp_access_token as string
+  const businessAccountId = settings.whatsapp_business_account_id as string
+  if (!phoneNumberId || !accessToken) throw new Error('WhatsApp credentials missing')
+  return { phoneNumberId, accessToken, businessAccountId }
+}
+
+async function graphFetch(path: string, token: string, options?: RequestInit) {
+  const res = await fetch(`${GRAPH_API_BASE}${path}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...options?.headers,
+    },
+  })
+  const data = await res.json()
+  if (!res.ok) {
+    const errorMsg = data?.error?.message ?? 'Unknown Meta API error'
+    throw new Error(`Meta API error: ${errorMsg}`)
+  }
+  return data
+}
+
+export async function sendTextMessage(tenantId: string, to: string, body: string) {
+  const creds = await getCredentials(tenantId)
+  const data = await graphFetch(`/${creds.phoneNumberId}/messages`, creds.accessToken, {
+    method: 'POST',
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to,
+      type: 'text',
+      text: { body },
+    }),
+  })
+  return { metaMessageId: data.messages?.[0]?.id as string }
+}
+
+export async function sendTemplateMessage(
+  tenantId: string,
+  to: string,
+  templateName: string,
+  language: string,
+  params?: Record<string, string>,
+) {
+  const creds = await getCredentials(tenantId)
+  const components = params
+    ? [
+        {
+          type: 'body',
+          parameters: Object.values(params).map((v) => ({ type: 'text', text: v })),
+        },
+      ]
+    : undefined
+  const data = await graphFetch(`/${creds.phoneNumberId}/messages`, creds.accessToken, {
+    method: 'POST',
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to,
+      type: 'template',
+      template: { name: templateName, language: { code: language }, components },
+    }),
+  })
+  return { metaMessageId: data.messages?.[0]?.id as string }
+}
+
+export async function sendMediaMessage(
+  tenantId: string,
+  to: string,
+  mediaType: 'image' | 'document' | 'audio' | 'video',
+  mediaUrl: string,
+  caption?: string,
+) {
+  const creds = await getCredentials(tenantId)
+  const mediaPayload: Record<string, string> = { link: mediaUrl }
+  if (caption) mediaPayload.caption = caption
+  const data = await graphFetch(`/${creds.phoneNumberId}/messages`, creds.accessToken, {
+    method: 'POST',
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to,
+      type: mediaType,
+      [mediaType]: mediaPayload,
+    }),
+  })
+  return { metaMessageId: data.messages?.[0]?.id as string }
+}
+
+export async function getTemplates(tenantId: string) {
+  const creds = await getCredentials(tenantId)
+  const data = await graphFetch(
+    `/${creds.businessAccountId}/message_templates?limit=100`,
+    creds.accessToken,
+  )
+  return (data.data ?? []) as Array<{
+    id: string
+    name: string
+    language: string
+    category: string
+    status: string
+    components: unknown[]
+  }>
+}
+
+export async function downloadAndStoreMedia(
+  tenantId: string,
+  mediaId: string,
+  filename: string,
+): Promise<{ storedUrl: string; mimeType: string }> {
+  const creds = await getCredentials(tenantId)
+  const meta = await graphFetch(`/${mediaId}`, creds.accessToken)
+  const mediaUrl = meta.url as string
+  const res = await fetch(mediaUrl, {
+    headers: { Authorization: `Bearer ${creds.accessToken}` },
+  })
+  if (!res.ok) throw new Error('Failed to download media')
+  const buffer = Buffer.from(await res.arrayBuffer())
+  const mimeType = res.headers.get('content-type') ?? 'application/octet-stream'
+
+  const { createClient } = await import('@supabase/supabase-js')
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+  const path = `whatsapp/${tenantId}/${mediaId}/${filename}`
+  const { error } = await supabase.storage
+    .from('media')
+    .upload(path, buffer, { contentType: mimeType, upsert: true })
+  if (error) throw new Error(`Storage upload failed: ${error.message}`)
+  const { data: urlData } = supabase.storage.from('media').getPublicUrl(path)
+  return { storedUrl: urlData.publicUrl, mimeType }
+}
+
+export async function verifyCredentials(phoneNumberId: string, token: string) {
+  try {
+    const data = await graphFetch(`/${phoneNumberId}`, token)
+    return { valid: true, phoneDisplay: data.display_phone_number as string | undefined }
+  } catch (err) {
+    console.error('WhatsApp credential verification failed:', err instanceof Error ? err.message : err)
+    return { valid: false, phoneDisplay: undefined }
+  }
+}
+
+export function verifyWebhookSignature(
+  payload: string,
+  signature: string,
+  appSecret: string,
+): boolean {
+  const expectedBuf = Buffer.from(
+    `sha256=${crypto.createHmac('sha256', appSecret).update(payload).digest('hex')}`,
+  )
+  const actualBuf = Buffer.from(signature)
+  if (expectedBuf.length !== actualBuf.length) return false
+  return crypto.timingSafeEqual(expectedBuf, actualBuf)
+}

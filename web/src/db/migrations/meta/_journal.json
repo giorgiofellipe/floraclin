@@ -43,6 +43,13 @@
       "when": 1774974598057,
       "tag": "0005_slimy_the_santerians",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1779729056006,
+      "tag": "0006_tranquil_martin_li",
+      "breakpoints": true
     }
   ]
 }

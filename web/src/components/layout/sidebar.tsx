@@ -15,6 +15,8 @@ import {
   Building2,
   UsersRound,
   SearchIcon,
+  MessageCircle,
+  ContactRound,
 } from 'lucide-react'
 import { useImpersonate } from '@/hooks/mutations/use-impersonation'
 import { useAdminTenants } from '@/hooks/queries/use-admin-tenants'
@@ -32,6 +34,7 @@ interface SidebarProps {
   activeTenantId?: string
   isPlatformAdmin?: boolean
   impersonatingTenantName?: string
+  whatsappEnabled?: boolean
 }
 
 const principalItems = [
@@ -42,6 +45,11 @@ const principalItems = [
 
 const gestaoItems = [
   { href: '/financeiro', label: 'Financeiro', icon: Banknote },
+]
+
+const comunicacaoItems = [
+  { href: '/whatsapp', label: 'WhatsApp', icon: MessageCircle },
+  { href: '/crm', label: 'CRM', icon: ContactRound },
 ]
 
 const bottomItems = [
@@ -83,6 +91,7 @@ function NavItem({
   icon: Icon,
   isActive,
   disabled,
+  badge,
   onNavigate,
 }: {
   href: string
@@ -90,6 +99,7 @@ function NavItem({
   icon: React.ComponentType<{ className?: string }>
   isActive: boolean
   disabled?: boolean
+  badge?: number
   onNavigate?: () => void
 }) {
   const content = (
@@ -104,7 +114,12 @@ function NavItem({
           isActive ? 'text-sage' : 'text-mid'
         )}
       />
-      <span>{label}</span>
+      <span className="flex-1">{label}</span>
+      {badge != null && badge > 0 && (
+        <span className="ml-auto flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
     </>
   )
 
@@ -294,16 +309,48 @@ const adminItems = [
 
 // ─── Navigation ────────────────────────────────────────────────────
 
+function useWhatsAppUnreadCount(enabled: boolean) {
+  const [count, setCount] = useState(0)
+
+  useEffect(() => {
+    if (!enabled) return
+
+    let cancelled = false
+
+    async function fetchUnread() {
+      try {
+        const res = await fetch('/api/whatsapp/conversations?limit=0')
+        if (!res.ok) return
+        const data = await res.json()
+        if (!cancelled && typeof data.totalUnread === 'number') {
+          setCount(data.totalUnread)
+        }
+      } catch {
+        // silently ignore — badge is non-critical
+      }
+    }
+
+    fetchUnread()
+    const interval = setInterval(fetchUnread, 30_000) // refresh every 30s
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [enabled])
+
+  return count
+}
+
 function SidebarNav({
   onNavigate,
   isPlatformAdmin,
   impersonatingTenantName,
+  whatsappEnabled,
 }: {
   onNavigate?: () => void
   isPlatformAdmin?: boolean
   impersonatingTenantName?: string
+  whatsappEnabled?: boolean
 }) {
   const pathname = usePathname()
+  const whatsappUnread = useWhatsAppUnreadCount(!!whatsappEnabled)
 
   return (
     <nav className="flex-1 px-3 py-1 overflow-y-auto">
@@ -330,6 +377,23 @@ function SidebarNav({
           />
         ))}
       </div>
+
+      {whatsappEnabled && (
+        <>
+          <SectionLabel label="Comunicação" />
+          <div className="space-y-0.5">
+            {comunicacaoItems.map((item) => (
+              <NavItem
+                key={item.href}
+                {...item}
+                isActive={pathname.startsWith(item.href)}
+                badge={item.href === '/whatsapp' ? whatsappUnread : undefined}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Separator */}
       <div className="mx-2 my-3 h-px bg-sage/15" />
@@ -369,7 +433,7 @@ function SidebarNav({
 
 // ─── Desktop Sidebar ───────────────────────────────────────────────
 
-export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantId, isPlatformAdmin, impersonatingTenantName }: SidebarProps) {
+export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantId, isPlatformAdmin, impersonatingTenantName, whatsappEnabled }: SidebarProps) {
   return (
     <aside
       className="hidden md:flex md:w-[200px] md:flex-col md:fixed md:inset-y-0 bg-white border-r border-[#E8ECEF]"
@@ -377,7 +441,7 @@ export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantI
     >
       <div className="relative flex flex-1 flex-col min-h-0">
         <SidebarLogo />
-        <SidebarNav isPlatformAdmin={isPlatformAdmin} impersonatingTenantName={impersonatingTenantName} />
+        <SidebarNav isPlatformAdmin={isPlatformAdmin} impersonatingTenantName={impersonatingTenantName} whatsappEnabled={whatsappEnabled} />
         {isPlatformAdmin && (
           <div className="shrink-0 border-t border-[#E8ECEF] pb-3 pt-1 relative overflow-visible">
             <TenantSwitcher currentTenantName={clinicName} impersonatingTenantName={impersonatingTenantName} />
@@ -400,6 +464,7 @@ export function MobileSidebarContent({
   clinicName = 'FloraClin',
   isPlatformAdmin,
   impersonatingTenantName,
+  whatsappEnabled,
 }: {
   onNavigate?: () => void
   clinicName?: string
@@ -409,11 +474,12 @@ export function MobileSidebarContent({
   activeTenantId?: string
   isPlatformAdmin?: boolean
   impersonatingTenantName?: string
+  whatsappEnabled?: boolean
 }) {
   return (
     <div className="relative flex h-full flex-1 flex-col min-h-0 bg-white overflow-hidden">
       <SidebarLogo />
-      <SidebarNav onNavigate={onNavigate} isPlatformAdmin={isPlatformAdmin} impersonatingTenantName={impersonatingTenantName} />
+      <SidebarNav onNavigate={onNavigate} isPlatformAdmin={isPlatformAdmin} impersonatingTenantName={impersonatingTenantName} whatsappEnabled={whatsappEnabled} />
       {isPlatformAdmin && (
         <div className="shrink-0 border-t border-[#E8ECEF] pb-3 pt-1">
           <TenantSwitcher currentTenantName={clinicName} impersonatingTenantName={impersonatingTenantName} />

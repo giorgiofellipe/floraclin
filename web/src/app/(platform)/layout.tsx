@@ -50,8 +50,9 @@ export default async function PlatformLayout({ children }: { children: React.Rea
         activeTenantId={auth.tenantId}
         isPlatformAdmin={auth.isPlatformAdmin}
         impersonatingTenantName={impersonatingTenantName}
+        whatsappEnabled={!!settings.whatsapp_enabled}
       />
-      <div className="md:pl-[200px]">
+      <div className="flex min-h-screen flex-col md:pl-[200px]">
         <Header
           userName={auth.fullName}
           userEmail={auth.email}
@@ -60,8 +61,9 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           activeTenantId={auth.tenantId}
           isPlatformAdmin={auth.isPlatformAdmin}
           impersonatingTenantName={impersonatingTenantName}
+          whatsappEnabled={!!settings.whatsapp_enabled}
         />
-        <main className="p-6">{children}</main>
+        <main className="flex-1 p-6">{children}</main>
       </div>
     </div>
   )

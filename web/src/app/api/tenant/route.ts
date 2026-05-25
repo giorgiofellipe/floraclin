@@ -3,11 +3,17 @@ import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import { getTenant, updateTenant, updateTenantSettings } from '@/db/queries/tenants'
 import { updateTenantSchema, bookingSettingsSchema } from '@/validations/tenant'
+import { whatsappSettingsSchema } from '@/validations/whatsapp'
 
 export async function GET() {
   try {
     const ctx = await getAuthContext()
     const tenant = await getTenant(ctx.tenantId)
+    if (tenant?.settings) {
+      const settings = { ...(tenant.settings as Record<string, unknown>) }
+      delete settings.whatsapp_access_token
+      return NextResponse.json({ ...tenant, settings })
+    }
     return NextResponse.json(tenant)
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
@@ -26,6 +32,43 @@ export async function PUT(request: Request) {
     }
 
     const body = await request.json()
+
+    // WhatsApp settings update
+    if (body._action === 'whatsapp_settings') {
+      const parsed = whatsappSettingsSchema.safeParse(body.settings)
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Dados inválidos', fieldErrors: parsed.error.flatten().fieldErrors },
+          { status: 400 },
+        )
+      }
+
+      const settingsUpdate: Record<string, unknown> = {
+        whatsapp_enabled: parsed.data.whatsapp_enabled,
+        whatsapp_phone_number_id: parsed.data.whatsapp_phone_number_id ?? null,
+        whatsapp_business_account_id: parsed.data.whatsapp_business_account_id ?? null,
+        whatsapp_allowed_roles: parsed.data.whatsapp_allowed_roles,
+      }
+      if (parsed.data.whatsapp_access_token) {
+        settingsUpdate.whatsapp_access_token = parsed.data.whatsapp_access_token
+      }
+
+      const tenant = await updateTenantSettings(ctx.tenantId, settingsUpdate)
+      if (!tenant) {
+        return NextResponse.json({ error: 'Erro ao atualizar configurações do WhatsApp' }, { status: 500 })
+      }
+
+      await createAuditLog({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        action: 'update',
+        entityType: 'tenant',
+        entityId: ctx.tenantId,
+        changes: { whatsappSettings: { old: null, new: 'updated' } },
+      })
+
+      return NextResponse.json({ success: true })
+    }
 
     // Check if this is a booking settings update
     if (body._action === 'booking_settings') {

@@ -35,6 +35,12 @@ function getPageTitle(pathname: string): { title: string; subtitle?: string } {
   if (pathname === '/financeiro') {
     return { title: 'Financeiro' }
   }
+  if (pathname === '/whatsapp') {
+    return { title: 'WhatsApp' }
+  }
+  if (pathname === '/crm') {
+    return { title: 'CRM' }
+  }
   if (pathname === '/configuracoes') {
     return { title: 'Configura\u00e7\u00f5es' }
   }
@@ -55,9 +61,10 @@ interface HeaderProps {
   activeTenantId?: string
   isPlatformAdmin?: boolean
   impersonatingTenantName?: string
+  whatsappEnabled?: boolean
 }
 
-export function Header({ userName, userEmail, clinicName, tenants, activeTenantId, isPlatformAdmin, impersonatingTenantName }: HeaderProps) {
+export function Header({ userName, userEmail, clinicName, tenants, activeTenantId, isPlatformAdmin, impersonatingTenantName, whatsappEnabled }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const pathname = usePathname()
   const { title, subtitle } = getPageTitle(pathname)
@@ -139,6 +146,7 @@ export function Header({ userName, userEmail, clinicName, tenants, activeTenantI
             activeTenantId={activeTenantId}
             isPlatformAdmin={isPlatformAdmin}
             impersonatingTenantName={impersonatingTenantName}
+            whatsappEnabled={whatsappEnabled}
           />
         </SheetContent>
       </Sheet>

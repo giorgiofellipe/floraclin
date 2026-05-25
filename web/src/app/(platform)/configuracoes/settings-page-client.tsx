@@ -10,6 +10,7 @@ import { BookingSettings } from '@/components/settings/booking-settings'
 import { AuditLogViewer } from '@/components/audit/audit-log-viewer'
 import { FinancialSettingsForm } from '@/components/financial/settings/financial-settings-form'
 import { ExpenseCategoriesManager } from '@/components/financial/settings/expense-categories-manager'
+import { WhatsAppSettingsForm } from '@/components/settings/whatsapp-settings-form'
 import { cn } from '@/lib/utils'
 import {
   BuildingIcon,
@@ -20,6 +21,7 @@ import {
   CalendarIcon,
   ShieldCheckIcon,
   DollarSignIcon,
+  MessageCircleIcon,
 } from 'lucide-react'
 
 interface Tenant {
@@ -99,6 +101,7 @@ const TABS = [
   { key: 'termos', label: 'Contratos e Termos', icon: FileTextIcon },
   { key: 'agendamento', label: 'Agendamento', icon: CalendarIcon },
   { key: 'financeiro', label: 'Financeiro', icon: DollarSignIcon },
+  { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircleIcon },
   { key: 'auditoria', label: 'Auditoria', icon: ShieldCheckIcon },
 ] as const
 
@@ -238,6 +241,12 @@ export function SettingsPageClient({
                   <FinancialSettingsForm />
                   <ExpenseCategoriesManager />
                 </div>
+              )}
+
+              {activeTab === 'whatsapp' && (
+                <WhatsAppSettingsForm
+                  initialSettings={settings as Record<string, unknown>}
+                />
               )}
 
               {activeTab === 'auditoria' && (
