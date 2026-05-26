@@ -1,6 +1,8 @@
 import crypto from 'crypto'
 import { getTenant } from '@/db/queries/tenants'
 
+export { normalizeBrPhone } from '@/lib/phone'
+
 const GRAPH_API_VERSION = 'v21.0'
 const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`
 

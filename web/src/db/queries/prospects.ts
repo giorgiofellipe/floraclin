@@ -1,6 +1,7 @@
 import { db } from '@/db/client'
 import { prospects, prospectActivities, prospectProcedureTypes, procedureTypes, whatsappConversations, users } from '@/db/schema'
 import { eq, and, or, desc, ilike, isNull, sql, inArray } from 'drizzle-orm'
+import { normalizeBrPhone } from '@/lib/phone'
 import type { ProspectStage } from '@/validations/prospect'
 
 export type Prospect = typeof prospects.$inferSelect
@@ -13,9 +14,17 @@ export async function createProspect(
     .insert(prospects)
     .values({
       tenantId,
-      phone: data.phone,
+      phone: normalizeBrPhone(data.phone),
       name: data.name ?? null,
       source: data.source ?? 'whatsapp',
+    })
+    .onConflictDoUpdate({
+      target: [prospects.tenantId, prospects.phone] as never,
+      set: {
+        name: data.name ?? sql`${prospects.name}`,
+        deletedAt: null,
+        updatedAt: new Date(),
+      },
     })
     .returning()
 
@@ -39,13 +48,14 @@ export async function getProspect(tenantId: string, prospectId: string): Promise
 }
 
 export async function getProspectByPhone(tenantId: string, phone: string): Promise<Prospect | null> {
+  const normalized = normalizeBrPhone(phone)
   const [prospect] = await db
     .select()
     .from(prospects)
     .where(
       and(
         eq(prospects.tenantId, tenantId),
-        eq(prospects.phone, phone),
+        eq(prospects.phone, normalized),
         isNull(prospects.deletedAt),
       ),
     )

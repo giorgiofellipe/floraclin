@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/db/client'
 import { tenants, procedureTypes, whatsappMessages } from '@/db/schema'
 import { eq, and, sql } from 'drizzle-orm'
-import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage } from '@/lib/whatsapp'
+import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage, normalizeBrPhone } from '@/lib/whatsapp'
 import {
   upsertConversation,
   createMessage,
@@ -119,7 +119,7 @@ async function processInboundMessage(
   msg: WhatsAppMessage,
   contact: WhatsAppContact | undefined,
 ) {
-  const from = msg.from
+  const from = normalizeBrPhone(msg.from)
   const profileName = contact?.profile?.name
   const msgType = msg.type
   const timestamp = msg.timestamp

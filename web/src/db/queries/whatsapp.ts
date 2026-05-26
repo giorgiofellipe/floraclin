@@ -8,6 +8,7 @@ import {
   sseEvents,
 } from '@/db/schema'
 import { eq, and, or, desc, gt, lt, ilike, sql, notInArray } from 'drizzle-orm'
+import { normalizeBrPhone } from '@/lib/phone'
 import type { PaginatedResult } from '@/types'
 
 // ─── TYPE EXPORTS ──────────────────────────────────────────────────
@@ -28,13 +29,14 @@ export async function upsertConversation(
   prospectId?: string | null,
   patientId?: string | null
 ): Promise<WhatsappConversation> {
+  const normalized = normalizeBrPhone(phoneNumber)
   const [existing] = await db
     .select()
     .from(whatsappConversations)
     .where(
       and(
         eq(whatsappConversations.tenantId, tenantId),
-        eq(whatsappConversations.phoneNumber, phoneNumber)
+        eq(whatsappConversations.phoneNumber, normalized)
       )
     )
     .limit(1)
@@ -59,7 +61,7 @@ export async function upsertConversation(
     .insert(whatsappConversations)
     .values({
       tenantId,
-      phoneNumber,
+      phoneNumber: normalized,
       profileName,
       prospectId,
       patientId,
@@ -97,7 +99,7 @@ export async function getConversationByPhone(
     .where(
       and(
         eq(whatsappConversations.tenantId, tenantId),
-        eq(whatsappConversations.phoneNumber, phoneNumber)
+        eq(whatsappConversations.phoneNumber, normalizeBrPhone(phoneNumber))
       )
     )
     .limit(1)
