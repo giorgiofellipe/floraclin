@@ -210,6 +210,64 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
 
       {enabled && (
         <>
+          {/* Setup Instructions Accordion */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="uppercase tracking-wider text-xs font-medium text-mid">
+                Ajuda
+              </h3>
+              <div className="flex-1 h-px bg-blush/60" />
+            </div>
+
+            <Accordion>
+              <AccordionItem>
+                <AccordionTrigger className="text-sm font-medium text-charcoal">
+                  Como configurar o WhatsApp Business API
+                </AccordionTrigger>
+                <AccordionContent>
+                  <ol className="list-decimal list-inside space-y-2 text-sm text-mid">
+                    <li>
+                      Acesse o{' '}
+                      <a
+                        href="https://developers.facebook.com/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sage hover:underline"
+                      >
+                        Meta for Developers
+                      </a>{' '}
+                      e crie ou selecione um aplicativo do tipo Business.
+                    </li>
+                    <li>
+                      No painel do app, adicione o produto WhatsApp e siga o assistente de configuracao.
+                    </li>
+                    <li>
+                      Copie o <strong>Phone Number ID</strong> e o{' '}
+                      <strong>WhatsApp Business Account ID</strong> da secao WhatsApp {'>'} API Setup.
+                    </li>
+                    <li>
+                      Gere um <strong>Access Token permanente</strong> com as permissoes{' '}
+                      <code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">whatsapp_business_messaging</code>{' '}
+                      e{' '}
+                      <code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">whatsapp_business_management</code>.
+                    </li>
+                    <li>
+                      Na secao Webhooks, configure a <strong>Callback URL</strong> e o{' '}
+                      <strong>Verify Token</strong> listados abaixo.
+                    </li>
+                    <li>
+                      Inscreva-se nos campos <code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">messages</code>{' '}
+                      e <code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">message_template_status_update</code>.
+                    </li>
+                    <li>
+                      Cole as credenciais nos campos abaixo e clique em &ldquo;Testar conexao&rdquo; para validar.
+                    </li>
+                  </ol>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </div>
+
           {/* API Credentials */}
           <div className="space-y-4">
             <div className="flex items-center gap-2 mb-1">
@@ -410,64 +468,6 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
                 </div>
               )}
             />
-          </div>
-
-          {/* Setup Instructions Accordion */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="uppercase tracking-wider text-xs font-medium text-mid">
-                Ajuda
-              </h3>
-              <div className="flex-1 h-px bg-blush/60" />
-            </div>
-
-            <Accordion>
-              <AccordionItem>
-                <AccordionTrigger className="text-sm font-medium text-charcoal">
-                  Como configurar o WhatsApp Business API
-                </AccordionTrigger>
-                <AccordionContent>
-                  <ol className="list-decimal list-inside space-y-2 text-sm text-mid">
-                    <li>
-                      Acesse o{' '}
-                      <a
-                        href="https://developers.facebook.com/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sage hover:underline"
-                      >
-                        Meta for Developers
-                      </a>{' '}
-                      e crie ou selecione um aplicativo do tipo Business.
-                    </li>
-                    <li>
-                      No painel do app, adicione o produto WhatsApp e siga o assistente de configuracao.
-                    </li>
-                    <li>
-                      Copie o <strong>Phone Number ID</strong> e o{' '}
-                      <strong>WhatsApp Business Account ID</strong> da secao WhatsApp {'>'} API Setup.
-                    </li>
-                    <li>
-                      Gere um <strong>Access Token permanente</strong> com as permissoes{' '}
-                      <code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">whatsapp_business_messaging</code>{' '}
-                      e{' '}
-                      <code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">whatsapp_business_management</code>.
-                    </li>
-                    <li>
-                      Na secao Webhooks, configure a <strong>Callback URL</strong> e o{' '}
-                      <strong>Verify Token</strong> listados acima.
-                    </li>
-                    <li>
-                      Inscreva-se nos campos <code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">messages</code>{' '}
-                      e <code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">message_template_status_update</code>.
-                    </li>
-                    <li>
-                      Cole as credenciais nos campos acima e clique em &ldquo;Testar conexao&rdquo; para validar.
-                    </li>
-                  </ol>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
           </div>
 
           {/* Template Management */}

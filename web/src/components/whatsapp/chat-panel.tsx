@@ -52,7 +52,7 @@ function formatDateSeparator(dateStr: string): string {
   })
 }
 
-function groupMessagesByDate(messages: Message[]): { date: string; messages: Message[] }[] {
+function groupMessagesByDate(messages: Message[]): { dateKey: string; messages: Message[] }[] {
   const groups: Map<string, Message[]> = new Map()
   for (const msg of messages) {
     const dateKey = new Date(msg.createdAt).toDateString()
@@ -63,8 +63,8 @@ function groupMessagesByDate(messages: Message[]): { date: string; messages: Mes
       groups.set(dateKey, [msg])
     }
   }
-  return Array.from(groups.entries()).map(([, msgs]) => ({
-    date: msgs[0].createdAt,
+  return Array.from(groups.entries()).map(([dateKey, msgs]) => ({
+    dateKey,
     messages: msgs,
   }))
 }
@@ -80,6 +80,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
     const [sending, setSending] = useState(false)
     const [templateOpen, setTemplateOpen] = useState(false)
     const [markingRead, setMarkingRead] = useState(false)
+    const [fetchError, setFetchError] = useState<string | null>(null)
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const prevConvIdRef = useRef<string | null>(null)
     const firstQueueRef = useRef(true)
@@ -94,6 +95,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
           setLoadingMore(true)
         } else {
           setLoading(true)
+          setFetchError(null)
         }
         try {
           const params = new URLSearchParams({
@@ -103,7 +105,10 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
           const res = await fetch(
             `/api/whatsapp/conversations/${convId}/messages?${params}`
           )
-          if (!res.ok) throw new Error('Erro ao carregar mensagens')
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.error || `HTTP ${res.status}`)
+          }
           const data = await res.json()
           const fetched: Message[] = data.data ?? []
           setHasMore(fetched.length === 50)
@@ -112,8 +117,10 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
           } else {
             setMessages(fetched)
           }
-        } catch {
-          // Error silently — messages area shows empty
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Erro ao carregar mensagens'
+          console.error('Failed to fetch messages:', msg)
+          if (!append) setFetchError(msg)
         } finally {
           setLoading(false)
           setLoadingMore(false)
@@ -315,13 +322,13 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
             )}
 
             {conversation.patientId ? (
-              <Button variant="outline" size="sm" render={<Link href={`/pacientes/${conversation.patientId}`} />}>
+              <Button variant="outline" size="sm" nativeButton={false} render={<Link href={`/pacientes/${conversation.patientId}`} />}>
                 <User className="mr-1 size-3.5" />
                 Ver paciente
               </Button>
             ) : (
               conversation.prospectId && (
-                <Button variant="outline" size="sm" render={<Link href={`/pacientes/novo?phone=${encodeURIComponent(conversation.phoneNumber)}&name=${encodeURIComponent(conversation.profileName ?? '')}`} />}>
+                <Button variant="outline" size="sm" nativeButton={false} render={<Link href={`/pacientes/novo?phone=${encodeURIComponent(conversation.phoneNumber)}&name=${encodeURIComponent(conversation.profileName ?? '')}`} />}>
                   <UserPlus className="mr-1 size-3.5" />
                   Converter
                 </Button>
@@ -366,7 +373,23 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
             </div>
           )}
 
-          {!loading && messages.length === 0 && (
+          {!loading && messages.length === 0 && fetchError && (
+            <div className="flex h-full flex-col items-center justify-center gap-2">
+              <p className="rounded-lg bg-white/80 px-4 py-2 text-sm text-destructive shadow-sm">
+                {fetchError}
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="bg-white/80 text-xs"
+                onClick={() => conversation && fetchMessages(conversation.id, 1, false)}
+              >
+                Tentar novamente
+              </Button>
+            </div>
+          )}
+
+          {!loading && messages.length === 0 && !fetchError && (
             <div className="flex h-full items-center justify-center">
               <p className="rounded-lg bg-white/80 px-4 py-2 text-sm text-[#667781] shadow-sm">
                 Nenhuma mensagem ainda. Envie a primeira!
@@ -376,7 +399,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 
           {!loading &&
             messageGroups.map((group) => (
-              <div key={group.date}>
+              <div key={group.dateKey}>
                 {/* Date separator */}
                 <div className="my-3 flex justify-center">
                   <span className="rounded-lg bg-white/90 px-3 py-1 text-xs font-medium text-[#54656F] shadow-sm">
@@ -402,32 +425,31 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
             </div>
           )}
           <div className="px-4 py-3">
-            <div className="flex items-end gap-2">
+            <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
                 size="icon"
+                className="shrink-0"
                 onClick={() => setTemplateOpen(true)}
                 title="Enviar template"
               >
                 <FileText className="size-5 text-[#54656F]" />
               </Button>
 
-              <div className="flex-1">
-                <textarea
-                  className={cn(
-                    'w-full resize-none rounded-lg border-0 bg-white px-3 py-2 text-sm text-[#111B21] outline-none ring-0',
-                    'placeholder:text-[#667781]',
-                    'focus:ring-0 focus:outline-none',
-                    'min-h-[40px] max-h-[120px]'
-                  )}
-                  placeholder="Mensagem..."
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  rows={1}
-                  disabled={sending}
-                />
-              </div>
+              <textarea
+                className={cn(
+                  'flex-1 resize-none rounded-lg border-0 bg-white px-3 py-2 text-sm text-[#111B21] outline-none ring-0',
+                  'placeholder:text-[#667781]',
+                  'focus:ring-0 focus:outline-none',
+                  'min-h-[40px] max-h-[120px]'
+                )}
+                placeholder="Mensagem..."
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={handleKeyDown}
+                rows={1}
+                disabled={sending}
+              />
 
               <Button
                 size="icon"

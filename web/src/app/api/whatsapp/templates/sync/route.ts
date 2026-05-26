@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
-import { upsertTemplate } from '@/db/queries/whatsapp'
+import { upsertTemplate, markStaleTemplates } from '@/db/queries/whatsapp'
 import { getTemplates } from '@/lib/whatsapp'
 
 export async function POST() {
@@ -32,7 +32,10 @@ export async function POST() {
       synced++
     }
 
-    return NextResponse.json({ synced })
+    const metaIds = metaTemplates.map((t) => t.id)
+    const marked = await markStaleTemplates(ctx.tenantId, metaIds)
+
+    return NextResponse.json({ synced, removed: marked })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {

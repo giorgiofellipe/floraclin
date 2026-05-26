@@ -4,7 +4,7 @@ import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { getPatient } from '@/db/queries/patients'
 import { getTemplateByPurpose, upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
-import { sendTemplateMessage } from '@/lib/whatsapp'
+import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
@@ -61,16 +61,13 @@ export async function POST(
     const normalizedPhone = phone.startsWith('55') ? phone : `55${phone}`
     const firstName = patient.fullName.split(' ')[0]
 
+    const templateParams = { '1': firstName, '2': tenant!.name, '3': parsed.data.url }
     const result = await sendTemplateMessage(
       ctx.tenantId,
       normalizedPhone,
       template.name,
       template.language,
-      {
-        '1': firstName,
-        '2': tenant!.name,
-        '3': parsed.data.url,
-      },
+      templateParams,
     )
 
     const conversation = await upsertConversation(
@@ -84,7 +81,7 @@ export async function POST(
     const message = await createMessage(ctx.tenantId, conversation.id, {
       direction: 'outbound',
       metaMessageId: result.metaMessageId,
-      body: `[Anamnese] Link enviado para ${firstName}`,
+      body: resolveTemplateBody(template.components, templateParams),
       templateName: template.name,
       deliveryStatus: 'sent',
     })
@@ -98,7 +95,8 @@ export async function POST(
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('Meta API error')) {
-      return NextResponse.json({ error: 'Falha ao enviar mensagem via WhatsApp' }, { status: 502 })
+      const detail = msg.replace('Meta API error: ', '')
+      return NextResponse.json({ error: `Falha ao enviar via WhatsApp: ${detail}` }, { status: 502 })
     }
     if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

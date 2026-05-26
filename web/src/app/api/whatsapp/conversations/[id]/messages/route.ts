@@ -8,6 +8,7 @@ import {
   createMessage,
   pushSseEvent,
   getTemplateByPurpose,
+  getTemplateByName,
   getQueuedCount,
   createQueuedMessage,
   expireStaleQueuedMessages,
@@ -17,7 +18,7 @@ import {
   sendTemplateSchema,
   sendMediaSchema,
 } from '@/validations/whatsapp'
-import { sendTextMessage, sendTemplateMessage, sendMediaMessage } from '@/lib/whatsapp'
+import { sendTextMessage, sendTemplateMessage, sendMediaMessage, resolveTemplateBody } from '@/lib/whatsapp'
 import { getProspect, updateProspect } from '@/db/queries/prospects'
 
 const messageListSchema = z.object({
@@ -133,6 +134,11 @@ export async function POST(
       )
       metaMessageId = result.metaMessageId
       templateName = parsed.data.templateName
+
+      const tpl = await getTemplateByName(ctx.tenantId, parsed.data.templateName, parsed.data.language)
+      if (tpl) {
+        messageBody = resolveTemplateBody(tpl.components, parsed.data.params)
+      }
     } else if ('mediaType' in body) {
       const parsed = sendMediaSchema.safeParse(body)
       if (!parsed.success) {
@@ -208,6 +214,7 @@ export async function POST(
           await createMessage(ctx.tenantId, conversationId, {
             direction: 'outbound',
             metaMessageId: resumeMetaMessageId,
+            body: resolveTemplateBody(resumeTemplate.components, { '1': firstName }),
             templateName: resumeTemplate.name,
             deliveryStatus: 'sent',
           })
@@ -286,7 +293,8 @@ export async function POST(
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('Meta API error')) {
-      return NextResponse.json({ error: 'Falha ao enviar mensagem via WhatsApp' }, { status: 502 })
+      const detail = msg.replace('Meta API error: ', '')
+      return NextResponse.json({ error: `Falha ao enviar via WhatsApp: ${detail}` }, { status: 502 })
     }
     if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

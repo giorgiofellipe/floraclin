@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ConversationList, type Conversation, type ConversationListHandle } from '@/components/whatsapp/conversation-list'
 import { ChatPanel, type ChatPanelHandle } from '@/components/whatsapp/chat-panel'
 import { useWhatsappSse } from '@/hooks/use-whatsapp-sse'
+import { StartConversationDialog } from '@/components/whatsapp/start-conversation-dialog'
 import { MessageSquare, Settings, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { Message } from '@/components/whatsapp/message-bubble'
@@ -14,6 +15,7 @@ type ConfigStatus = 'loading' | 'configured' | 'not_configured'
 export default function WhatsAppPage() {
   const [configStatus, setConfigStatus] = useState<ConfigStatus>('loading')
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
+  const [showStartDialog, setShowStartDialog] = useState(false)
   const conversationListRef = useRef<ConversationListHandle>(null)
   const chatPanelRef = useRef<ChatPanelHandle>(null)
 
@@ -37,15 +39,16 @@ export default function WhatsAppPage() {
   // SSE event handlers
   const handleNewMessage = useCallback(
     (data: unknown) => {
-      const msg = data as Message
-      // Update the chat panel with the new message
+      const payload = data as { conversationId: string; message: Message }
+      const msg = payload.message ?? (data as Message)
       chatPanelRef.current?.addMessage(msg)
 
-      // Update the conversation list entry
-      if (msg.conversationId) {
+      const convId = payload.conversationId ?? msg.conversationId
+      if (convId) {
+        const displayBody = msg.body || (msg.templateName ? `[Template: ${msg.templateName}]` : null)
         conversationListRef.current?.addOrUpdateConversation({
-          id: msg.conversationId,
-          lastMessageBody: msg.body,
+          id: convId,
+          ...(displayBody != null ? { lastMessageBody: displayBody } : {}),
           lastMessageAt: msg.createdAt,
           ...(msg.direction === 'inbound' ? { lastInboundAt: msg.createdAt } : {}),
         } as Conversation)
@@ -55,18 +58,23 @@ export default function WhatsAppPage() {
   )
 
   const handleStatusUpdate = useCallback((data: unknown) => {
-    const update = data as { messageId: string; status: string }
-    chatPanelRef.current?.updateMessageStatus(update)
+    const payload = data as { metaMessageId?: string; messageId?: string; status: string }
+    chatPanelRef.current?.updateMessageStatus({
+      messageId: payload.metaMessageId ?? payload.messageId ?? '',
+      status: payload.status,
+    })
   }, [])
 
   const handleNewConversation = useCallback((data: unknown) => {
-    const conv = data as Conversation
+    const payload = data as { conversation?: Conversation } & Conversation
+    const conv = payload.conversation ?? payload
     conversationListRef.current?.addOrUpdateConversation(conv)
   }, [])
 
   const handleProspectUpdated = useCallback((data: unknown) => {
-    const update = data as Conversation
-    conversationListRef.current?.addOrUpdateConversation(update)
+    const update = data as Partial<Conversation> & { prospectId?: string }
+    if (!update.id && update.prospectId) return
+    conversationListRef.current?.addOrUpdateConversation(update as Conversation)
 
     // Also update local active conversation if it matches
     setActiveConversation((prev) => {
@@ -116,6 +124,26 @@ export default function WhatsAppPage() {
     configStatus === 'configured',
   )
 
+  const handleConversationStarted = useCallback(
+    (conv: { id: string; phoneNumber: string; profileName: string | null; patientId: string | null }) => {
+      const newConv: Conversation = {
+        id: conv.id,
+        phoneNumber: conv.phoneNumber,
+        profileName: conv.profileName,
+        prospectId: null,
+        patientId: conv.patientId,
+        lastMessageBody: null,
+        lastMessageAt: new Date().toISOString(),
+        lastInboundAt: null,
+        unreadCount: 0,
+        status: 'active',
+      }
+      conversationListRef.current?.addOrUpdateConversation(newConv)
+      setActiveConversation(newConv)
+    },
+    [],
+  )
+
   // Loading state
   if (configStatus === 'loading') {
     return (
@@ -141,6 +169,7 @@ export default function WhatsAppPage() {
         </p>
         <Button
           className="bg-[#25D366] hover:bg-[#1DA851] text-white"
+          nativeButton={false}
           render={<Link href="/configuracoes" />}
         >
           <Settings className="mr-2 size-4" />
@@ -159,11 +188,18 @@ export default function WhatsAppPage() {
           ref={conversationListRef}
           activeConversationId={activeConversation?.id ?? null}
           onSelectConversation={setActiveConversation}
+          onNewConversation={() => setShowStartDialog(true)}
         />
       </div>
 
       {/* Right panel -- chat */}
       <ChatPanel ref={chatPanelRef} conversation={activeConversation} />
+
+      <StartConversationDialog
+        open={showStartDialog}
+        onOpenChange={setShowStartDialog}
+        onConversationStarted={handleConversationStarted}
+      />
     </div>
   )
 }

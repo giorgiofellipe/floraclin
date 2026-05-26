@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Search, MessageSquare } from 'lucide-react'
+import { Search, MessageSquare, Plus } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 export interface Conversation {
   id: string
@@ -30,6 +31,7 @@ export interface ConversationListHandle {
 interface ConversationListProps {
   activeConversationId: string | null
   onSelectConversation: (conversation: Conversation) => void
+  onNewConversation?: () => void
 }
 
 const FILTER_TABS: { value: FilterType; label: string }[] = [
@@ -77,7 +79,7 @@ function StageBadge({ conversation }: { conversation: Conversation }) {
 }
 
 export const ConversationList = forwardRef<ConversationListHandle, ConversationListProps>(
-  function ConversationList({ activeConversationId, onSelectConversation }, ref) {
+  function ConversationList({ activeConversationId, onSelectConversation, onNewConversation }, ref) {
     const [conversations, setConversations] = useState<Conversation[]>([])
     const [filter, setFilter] = useState<FilterType>('all')
     const [search, setSearch] = useState('')
@@ -141,15 +143,27 @@ export const ConversationList = forwardRef<ConversationListHandle, ConversationL
 
     return (
       <div className="flex h-full flex-col border-r bg-white">
-        {/* Search */}
+        {/* Search + New conversation */}
         <div className="border-b p-3">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Buscar contato..."
-              className="pl-8 h-9"
-              onChange={(e) => handleSearchChange(e.target.value)}
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Buscar contato..."
+                className="pl-8 h-9"
+                onChange={(e) => handleSearchChange(e.target.value)}
+              />
+            </div>
+            {onNewConversation && (
+              <Button
+                variant="outline"
+                size="icon-sm"
+                className="shrink-0 size-9 text-[#25D366] border-[#25D366]/30 hover:bg-[#25D366]/10"
+                onClick={onNewConversation}
+              >
+                <Plus className="size-4" />
+              </Button>
+            )}
           </div>
         </div>
 

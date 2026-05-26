@@ -7,7 +7,7 @@ import {
   whatsappQueuedMessages,
   sseEvents,
 } from '@/db/schema'
-import { eq, and, or, desc, gt, lt, ilike, sql } from 'drizzle-orm'
+import { eq, and, or, desc, gt, lt, ilike, sql, notInArray } from 'drizzle-orm'
 import type { PaginatedResult } from '@/types'
 
 // ─── TYPE EXPORTS ──────────────────────────────────────────────────
@@ -140,7 +140,27 @@ export async function listConversations(
 
   const [data, countResult] = await Promise.all([
     db
-      .select()
+      .select({
+        id: whatsappConversations.id,
+        tenantId: whatsappConversations.tenantId,
+        phoneNumber: whatsappConversations.phoneNumber,
+        profileName: whatsappConversations.profileName,
+        prospectId: whatsappConversations.prospectId,
+        patientId: whatsappConversations.patientId,
+        lastMessageAt: whatsappConversations.lastMessageAt,
+        lastInboundAt: whatsappConversations.lastInboundAt,
+        unreadCount: whatsappConversations.unreadCount,
+        status: whatsappConversations.status,
+        createdAt: whatsappConversations.createdAt,
+        updatedAt: whatsappConversations.updatedAt,
+        lastMessageBody: sql<string | null>`(
+          SELECT COALESCE(m.body, '[Template: ' || m.template_name || ']')
+          FROM floraclin.whatsapp_messages m
+          WHERE m.conversation_id = ${whatsappConversations.id}
+          ORDER BY m."timestamp" DESC
+          LIMIT 1
+        )`.as('last_message_body'),
+      })
       .from(whatsappConversations)
       .where(whereConditions)
       .orderBy(desc(whatsappConversations.lastMessageAt))
@@ -337,6 +357,35 @@ export async function listMessages(
 
 // ─── TEMPLATES ─────────────────────────────────────────────────────
 
+const templateCache = new Map<string, { templates: WhatsappTemplate[]; at: number }>()
+const TEMPLATE_CACHE_TTL = 10 * 60 * 1000 // 10 min safety net
+
+function getCachedTemplates(tenantId: string): WhatsappTemplate[] | null {
+  const entry = templateCache.get(tenantId)
+  if (!entry) return null
+  if (Date.now() - entry.at > TEMPLATE_CACHE_TTL) {
+    templateCache.delete(tenantId)
+    return null
+  }
+  return entry.templates
+}
+
+async function loadTemplates(tenantId: string): Promise<WhatsappTemplate[]> {
+  const cached = getCachedTemplates(tenantId)
+  if (cached) return cached
+  const templates = await db
+    .select()
+    .from(whatsappTemplates)
+    .where(eq(whatsappTemplates.tenantId, tenantId))
+    .orderBy(whatsappTemplates.name)
+  templateCache.set(tenantId, { templates, at: Date.now() })
+  return templates
+}
+
+export function invalidateTemplateCache(tenantId: string): void {
+  templateCache.delete(tenantId)
+}
+
 export async function upsertTemplate(
   tenantId: string,
   template: {
@@ -384,6 +433,7 @@ export async function upsertTemplate(
       )
       .returning()
 
+    invalidateTemplateCache(tenantId)
     return updated
   }
 
@@ -405,51 +455,39 @@ export async function upsertTemplate(
     })
     .returning()
 
+  invalidateTemplateCache(tenantId)
   return created
 }
 
 export async function listTemplates(
-  tenantId: string
+  tenantId: string,
 ): Promise<WhatsappTemplate[]> {
-  return db
-    .select()
-    .from(whatsappTemplates)
-    .where(eq(whatsappTemplates.tenantId, tenantId))
-    .orderBy(whatsappTemplates.name)
+  return loadTemplates(tenantId)
 }
 
 export async function getTemplateById(
   tenantId: string,
   templateId: string,
 ): Promise<WhatsappTemplate | null> {
-  const [template] = await db
-    .select()
-    .from(whatsappTemplates)
-    .where(
-      and(
-        eq(whatsappTemplates.tenantId, tenantId),
-        eq(whatsappTemplates.id, templateId)
-      )
-    )
-    .limit(1)
-  return template ?? null
+  const templates = await loadTemplates(tenantId)
+  return templates.find((t) => t.id === templateId) ?? null
+}
+
+export async function getTemplateByName(
+  tenantId: string,
+  name: string,
+  language: string,
+): Promise<WhatsappTemplate | null> {
+  const templates = await loadTemplates(tenantId)
+  return templates.find((t) => t.name === name && t.language === language) ?? null
 }
 
 export async function getTemplateByPurpose(
   tenantId: string,
   purposeKey: string,
 ): Promise<WhatsappTemplate | null> {
-  const [template] = await db
-    .select()
-    .from(whatsappTemplates)
-    .where(
-      and(
-        eq(whatsappTemplates.tenantId, tenantId),
-        eq(whatsappTemplates.purposeKey, purposeKey)
-      )
-    )
-    .limit(1)
-  return template ?? null
+  const templates = await loadTemplates(tenantId)
+  return templates.find((t) => t.purposeKey === purposeKey) ?? null
 }
 
 export async function createLocalTemplate(
@@ -483,6 +521,7 @@ export async function createLocalTemplate(
       variableMapping: data.variableMapping ?? null,
     })
     .returning()
+  invalidateTemplateCache(tenantId)
   return created
 }
 
@@ -511,7 +550,29 @@ export async function updateLocalTemplate(
       )
     )
     .returning()
+  invalidateTemplateCache(tenantId)
   return updated ?? null
+}
+
+export async function markStaleTemplates(
+  tenantId: string,
+  metaTemplateIds: string[],
+): Promise<number> {
+  if (metaTemplateIds.length === 0) return 0
+  const updated = await db
+    .update(whatsappTemplates)
+    .set({ status: 'DELETED', syncedAt: new Date() })
+    .where(
+      and(
+        eq(whatsappTemplates.tenantId, tenantId),
+        notInArray(whatsappTemplates.metaTemplateId, metaTemplateIds),
+        sql`${whatsappTemplates.metaTemplateId} IS NOT NULL`,
+        sql`${whatsappTemplates.status} != 'DELETED'`
+      )
+    )
+    .returning()
+  if (updated.length > 0) invalidateTemplateCache(tenantId)
+  return updated.length
 }
 
 export async function deleteLocalTemplate(
@@ -527,6 +588,7 @@ export async function deleteLocalTemplate(
       )
     )
     .returning()
+  invalidateTemplateCache(tenantId)
   return result.length > 0
 }
 

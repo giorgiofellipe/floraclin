@@ -242,3 +242,21 @@ export function verifyWebhookSignature(
   if (expectedBuf.length !== actualBuf.length) return false
   return crypto.timingSafeEqual(expectedBuf, actualBuf)
 }
+
+export function resolveTemplateBody(
+  components: unknown,
+  params?: Record<string, string>,
+): string | null {
+  if (!Array.isArray(components)) return null
+  const bodyComp = components.find(
+    (c: Record<string, unknown>) => c.type === 'BODY',
+  ) as { text?: string } | undefined
+  if (!bodyComp?.text) return null
+  let text = bodyComp.text
+  if (params) {
+    for (const [key, value] of Object.entries(params)) {
+      text = text.replaceAll(`{{${key}}}`, value)
+    }
+  }
+  return text
+}

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
-import { listTemplates, createLocalTemplate, upsertTemplate } from '@/db/queries/whatsapp'
+import { listTemplates, createLocalTemplate, upsertTemplate, markStaleTemplates } from '@/db/queries/whatsapp'
 import { createTemplate as createMetaTemplate, getTemplates as fetchMetaTemplates } from '@/lib/whatsapp'
 import { createTemplateSchema } from '@/validations/whatsapp'
 
@@ -49,6 +49,8 @@ export async function GET() {
               rejectedReason: tpl.rejected_reason ?? null,
             })
           }
+          const metaIds = metaTemplates.map((t) => t.id)
+          await markStaleTemplates(ctx.tenantId, metaIds)
           const refreshed = await listTemplates(ctx.tenantId)
           return NextResponse.json({ data: refreshed })
         } catch (syncErr) {

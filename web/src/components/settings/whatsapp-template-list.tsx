@@ -18,6 +18,15 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog'
+import {
   RefreshCw,
   Plus,
   Pencil,
@@ -108,6 +117,7 @@ export function WhatsAppTemplateList({ onProvision }: WhatsAppTemplateListProps)
   const [statusFilter, setStatusFilter] = useState('')
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<WhatsappTemplate | null>(null)
+  const [provisionConfirmOpen, setProvisionConfirmOpen] = useState(false)
 
   // ─── Fetch templates ────────────────────────────────────────────
 
@@ -263,7 +273,7 @@ export function WhatsAppTemplateList({ onProvision }: WhatsAppTemplateListProps)
         <Button
           variant="outline"
           size="sm"
-          onClick={handleProvision}
+          onClick={() => setProvisionConfirmOpen(true)}
           disabled={provisioning}
         >
           {provisioning ? (
@@ -271,7 +281,7 @@ export function WhatsAppTemplateList({ onProvision }: WhatsAppTemplateListProps)
           ) : (
             <FileText className="size-3.5" />
           )}
-          Provisionar
+          Criar templates padrão
         </Button>
 
         <div className="flex-1" />
@@ -411,6 +421,16 @@ export function WhatsAppTemplateList({ onProvision }: WhatsAppTemplateListProps)
                           {formatDateTime(t.syncedAt)}
                         </span>
                       </div>
+
+                      {(() => {
+                        const comps = t.components as Array<Record<string, unknown>> | undefined
+                        const bodyText = comps?.find((c) => c.type === 'BODY')?.text as string | undefined
+                        return bodyText ? (
+                          <p className="text-xs text-mid/80 line-clamp-2 whitespace-pre-wrap">
+                            {bodyText}
+                          </p>
+                        ) : null
+                      })()}
                     </div>
 
                     {/* Action buttons */}
@@ -456,6 +476,32 @@ export function WhatsAppTemplateList({ onProvision }: WhatsAppTemplateListProps)
           </div>
         </TooltipProvider>
       )}
+
+      {/* Provision confirmation */}
+      <Dialog open={provisionConfirmOpen} onOpenChange={setProvisionConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Criar templates padrão</DialogTitle>
+            <DialogDescription>
+              Isso criará os templates padrão do FloraClin na sua conta Meta.
+              Templates já existentes serão ignorados.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>
+              Cancelar
+            </DialogClose>
+            <Button
+              onClick={() => {
+                setProvisionConfirmOpen(false)
+                handleProvision()
+              }}
+            >
+              Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Editor sheet */}
       <WhatsAppTemplateEditor
