@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
-import { prospects, whatsappConversations } from '@/db/schema'
-import { eq, and, or, desc, ilike, isNull, sql } from 'drizzle-orm'
+import { prospects, prospectActivities, prospectProcedureTypes, procedureTypes, whatsappConversations, users } from '@/db/schema'
+import { eq, and, or, desc, ilike, isNull, sql, inArray } from 'drizzle-orm'
 import type { ProspectStage } from '@/validations/prospect'
 
 export type Prospect = typeof prospects.$inferSelect
@@ -99,9 +99,9 @@ export async function updateProspect(
     name: string | null
     stage: string
     intent: string | null
-    interestedProcedure: string | null
     sentiment: string | null
     aiTags: unknown
+    value: string | null
     assignedUserId: string | null
     notes: string | null
     lostReason: string | null
@@ -203,4 +203,114 @@ export async function getProspectStats(tenantId: string): Promise<Record<string,
   }
 
   return stats
+}
+
+// ─── PROSPECT ↔ PROCEDURE TYPES ───────────────────────────────────
+
+export async function getProspectProcedures(
+  prospectId: string,
+): Promise<{ id: string; name: string; defaultPrice: string | null }[]> {
+  return db
+    .select({
+      id: procedureTypes.id,
+      name: procedureTypes.name,
+      defaultPrice: procedureTypes.defaultPrice,
+    })
+    .from(prospectProcedureTypes)
+    .innerJoin(procedureTypes, eq(prospectProcedureTypes.procedureTypeId, procedureTypes.id))
+    .where(eq(prospectProcedureTypes.prospectId, prospectId))
+}
+
+export async function setProspectProcedures(
+  tenantId: string,
+  prospectId: string,
+  procedureTypeIds: string[],
+) {
+  await db
+    .delete(prospectProcedureTypes)
+    .where(eq(prospectProcedureTypes.prospectId, prospectId))
+
+  if (procedureTypeIds.length > 0) {
+    await db.insert(prospectProcedureTypes).values(
+      procedureTypeIds.map((procedureTypeId) => ({
+        tenantId,
+        prospectId,
+        procedureTypeId,
+      })),
+    )
+  }
+}
+
+export async function getProspectProceduresBatch(
+  prospectIds: string[],
+): Promise<Record<string, { id: string; name: string; defaultPrice: string | null }[]>> {
+  if (prospectIds.length === 0) return {}
+
+  const rows = await db
+    .select({
+      prospectId: prospectProcedureTypes.prospectId,
+      id: procedureTypes.id,
+      name: procedureTypes.name,
+      defaultPrice: procedureTypes.defaultPrice,
+    })
+    .from(prospectProcedureTypes)
+    .innerJoin(procedureTypes, eq(prospectProcedureTypes.procedureTypeId, procedureTypes.id))
+    .where(inArray(prospectProcedureTypes.prospectId, prospectIds))
+
+  const result: Record<string, { id: string; name: string; defaultPrice: string | null }[]> = {}
+  for (const row of rows) {
+    if (!result[row.prospectId]) result[row.prospectId] = []
+    result[row.prospectId].push({ id: row.id, name: row.name, defaultPrice: row.defaultPrice })
+  }
+  return result
+}
+
+// ─── ACTIVITY LOG ──────────────────────────────────────────────────
+
+export type ProspectActivity = typeof prospectActivities.$inferSelect & {
+  performedByName?: string | null
+}
+
+export async function logProspectActivity(
+  tenantId: string,
+  prospectId: string,
+  action: string,
+  details?: Record<string, unknown> | null,
+  performedBy?: string | null,
+) {
+  await db.insert(prospectActivities).values({
+    tenantId,
+    prospectId,
+    action,
+    details: details ?? null,
+    performedBy: performedBy ?? null,
+  })
+}
+
+export async function getProspectActivities(
+  tenantId: string,
+  prospectId: string,
+): Promise<ProspectActivity[]> {
+  const rows = await db
+    .select({
+      id: prospectActivities.id,
+      tenantId: prospectActivities.tenantId,
+      prospectId: prospectActivities.prospectId,
+      action: prospectActivities.action,
+      details: prospectActivities.details,
+      performedBy: prospectActivities.performedBy,
+      createdAt: prospectActivities.createdAt,
+      performedByName: users.fullName,
+    })
+    .from(prospectActivities)
+    .leftJoin(users, eq(prospectActivities.performedBy, users.id))
+    .where(
+      and(
+        eq(prospectActivities.tenantId, tenantId),
+        eq(prospectActivities.prospectId, prospectId),
+      ),
+    )
+    .orderBy(desc(prospectActivities.createdAt))
+
+  return rows
 }

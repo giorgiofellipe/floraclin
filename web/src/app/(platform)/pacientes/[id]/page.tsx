@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import { getAuthContext } from '@/lib/auth'
 import { getPatient } from '@/db/queries/patients'
+import { getTenant } from '@/db/queries/tenants'
 import { PatientDetailPageClient } from './patient-detail-page-client'
 
 interface PatientDetailPageProps {
@@ -26,6 +27,9 @@ export default async function PatientDetailPage({
   params,
 }: PatientDetailPageProps) {
   const { id } = await params
+  const ctx = await getAuthContext()
+  const tenant = await getTenant(ctx.tenantId)
+  const settings = (tenant?.settings ?? {}) as Record<string, unknown>
 
   return (
     <Suspense
@@ -35,7 +39,10 @@ export default async function PatientDetailPage({
         </div>
       }
     >
-      <PatientDetailPageClient patientId={id} />
+      <PatientDetailPageClient
+        patientId={id}
+        whatsappApiEnabled={!!settings.whatsapp_enabled}
+      />
     </Suspense>
   )
 }

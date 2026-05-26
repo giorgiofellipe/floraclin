@@ -22,6 +22,7 @@ import type {
   ProspectStage,
   ProspectStats,
   TeamMember,
+  ProcedureTypeOption,
 } from './types'
 import { PROSPECT_STAGES, STAGE_CONFIG } from './constants'
 import { ProspectCard } from './prospect-card'
@@ -31,6 +32,7 @@ interface KanbanBoardProps {
   prospects: Prospect[]
   stats: ProspectStats
   teamMembers: TeamMember[]
+  procedureTypes: ProcedureTypeOption[]
   onStageChange: (prospectId: string, newStage: ProspectStage) => Promise<void>
   onUpdate: (id: string, data: Partial<Prospect>) => Promise<void>
   onDelete: (id: string) => Promise<void>
@@ -53,8 +55,11 @@ function KanbanColumn({
 
   return (
     <div
-      className="flex h-full w-[280px] min-w-[280px] flex-col rounded-lg bg-[#F4F6F8]"
+      className="flex h-full w-[280px] min-w-[280px] flex-col overflow-hidden rounded-xl border border-gray-100 bg-[#FAFBFC]"
     >
+      {/* Color accent bar */}
+      <div className="h-[3px] w-full" style={{ backgroundColor: config.color }} />
+
       {/* Column header */}
       <div className="flex items-center gap-2 px-3 py-2.5">
         <span
@@ -76,9 +81,8 @@ function KanbanColumn({
       <div
         ref={setNodeRef}
         className={`flex flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2 transition-colors ${
-          isOver ? 'bg-[#E8ECEF] rounded-b-lg' : ''
+          isOver ? 'brightness-95' : ''
         }`}
-        style={{ minHeight: 100 }}
       >
         <SortableContext
           items={prospectIds}
@@ -95,7 +99,7 @@ function KanbanColumn({
 
         {prospects.length === 0 && (
           <div className="flex flex-1 items-center justify-center py-8">
-            <p className="text-xs text-[#B0B0B0]">Nenhum prospect</p>
+            <p className="text-xs text-[#B0B0B0]">Nenhum lead</p>
           </div>
         )}
       </div>
@@ -107,6 +111,7 @@ export function KanbanBoard({
   prospects,
   stats,
   teamMembers,
+  procedureTypes,
   onStageChange,
   onUpdate,
   onDelete,
@@ -174,7 +179,7 @@ export function KanbanBoard({
   }
 
   return (
-    <>
+    <div className="flex h-full flex-col">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -208,6 +213,7 @@ export function KanbanBoard({
         <ProspectDetailPanel
           prospect={selectedProspect}
           teamMembers={teamMembers}
+          procedureTypes={procedureTypes}
           onClose={() => setSelectedProspect(null)}
           onUpdate={async (id, data) => {
             await onUpdate(id, data)
@@ -226,6 +232,6 @@ export function KanbanBoard({
           }}
         />
       )}
-    </>
+    </div>
   )
 }

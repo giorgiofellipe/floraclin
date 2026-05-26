@@ -35,7 +35,7 @@ interface ConversationListProps {
 const FILTER_TABS: { value: FilterType; label: string }[] = [
   { value: 'all', label: 'Todos' },
   { value: 'unread', label: 'Não lidos' },
-  { value: 'prospects', label: 'Prospects' },
+  { value: 'prospects', label: 'Leads' },
   { value: 'patients', label: 'Pacientes' },
 ]
 
@@ -55,7 +55,7 @@ function formatTimeAgo(dateStr: string | null): string {
   return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
 }
 
-function getInitials(name: string | null, phone: string): string {
+function getInitials(name: string | null, phone: string | undefined): string {
   if (name) {
     const parts = name.trim().split(/\s+/)
     if (parts.length >= 2) {
@@ -63,7 +63,7 @@ function getInitials(name: string | null, phone: string): string {
     }
     return name.slice(0, 2).toUpperCase()
   }
-  return phone.slice(-2)
+  return phone?.slice(-2) ?? '?'
 }
 
 function StageBadge({ conversation }: { conversation: Conversation }) {
@@ -71,7 +71,7 @@ function StageBadge({ conversation }: { conversation: Conversation }) {
     return <Badge className="text-[10px] h-4 px-1.5 bg-emerald-100 text-emerald-700 border-emerald-200">Paciente</Badge>
   }
   if (conversation.prospectId) {
-    return <Badge variant="secondary" className="text-[10px] h-4 px-1.5">Prospect</Badge>
+    return <Badge variant="secondary" className="text-[10px] h-4 px-1.5">Lead</Badge>
   }
   return null
 }

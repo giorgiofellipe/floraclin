@@ -4,6 +4,9 @@ import {
   sendTemplateSchema,
   whatsappSettingsSchema,
   conversationFilterSchema,
+  createTemplateSchema,
+  updateTemplateSchema,
+  updateAutomationSchema,
 } from '../whatsapp'
 
 describe('sendMessageSchema', () => {
@@ -197,5 +200,138 @@ describe('conversationFilterSchema', () => {
     if (result.success) {
       expect(result.data.search).toBe('Maria')
     }
+  })
+})
+
+describe('createTemplateSchema', () => {
+  const validPayload = {
+    name: 'appointment_reminder',
+    category: 'UTILITY' as const,
+    language: 'pt_BR',
+    components: [{ type: 'BODY', text: 'Olá, {{1}}!' }],
+  }
+
+  it('passes with valid minimal payload', () => {
+    const result = createTemplateSchema.safeParse(validPayload)
+    expect(result.success).toBe(true)
+  })
+
+  it('passes with variableMapping and purposeKey', () => {
+    const result = createTemplateSchema.safeParse({
+      ...validPayload,
+      purposeKey: 'appointment_reminder',
+      variableMapping: [{ index: 1, key: 'patient_name', label: 'Nome', example: 'Maria' }],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('defaults language to pt_BR', () => {
+    const { language, ...rest } = validPayload
+    const result = createTemplateSchema.safeParse(rest)
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.language).toBe('pt_BR')
+    }
+  })
+
+  it('fails when name is empty', () => {
+    const result = createTemplateSchema.safeParse({ ...validPayload, name: '' })
+    expect(result.success).toBe(false)
+  })
+
+  it('fails when name has uppercase letters', () => {
+    const result = createTemplateSchema.safeParse({ ...validPayload, name: 'MyTemplate' })
+    expect(result.success).toBe(false)
+  })
+
+  it('fails when name starts with a number', () => {
+    const result = createTemplateSchema.safeParse({ ...validPayload, name: '1template' })
+    expect(result.success).toBe(false)
+  })
+
+  it('fails with invalid category', () => {
+    const result = createTemplateSchema.safeParse({ ...validPayload, category: 'TRANSACTIONAL' })
+    expect(result.success).toBe(false)
+  })
+
+  it('fails with empty components array', () => {
+    const result = createTemplateSchema.safeParse({ ...validPayload, components: [] })
+    expect(result.success).toBe(false)
+  })
+
+  it('fails when variableMapping has non-positive index', () => {
+    const result = createTemplateSchema.safeParse({
+      ...validPayload,
+      variableMapping: [{ index: 0, key: 'name', label: 'Nome', example: 'Maria' }],
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('updateTemplateSchema', () => {
+  it('passes with valid components', () => {
+    const result = updateTemplateSchema.safeParse({
+      components: [{ type: 'BODY', text: 'Updated text' }],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('passes with components and variableMapping', () => {
+    const result = updateTemplateSchema.safeParse({
+      components: [{ type: 'BODY', text: '{{1}} updated' }],
+      variableMapping: [{ index: 1, key: 'name', label: 'Nome', example: 'Maria' }],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('fails with empty components', () => {
+    const result = updateTemplateSchema.safeParse({ components: [] })
+    expect(result.success).toBe(false)
+  })
+
+  it('fails without components field', () => {
+    const result = updateTemplateSchema.safeParse({})
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('updateAutomationSchema', () => {
+  it('passes with enabled only', () => {
+    const result = updateAutomationSchema.safeParse({ enabled: true })
+    expect(result.success).toBe(true)
+  })
+
+  it('passes with templateId', () => {
+    const result = updateAutomationSchema.safeParse({
+      templateId: '550e8400-e29b-41d4-a716-446655440000',
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('passes with null templateId', () => {
+    const result = updateAutomationSchema.safeParse({ templateId: null })
+    expect(result.success).toBe(true)
+  })
+
+  it('fails with non-UUID templateId', () => {
+    const result = updateAutomationSchema.safeParse({ templateId: 'not-a-uuid' })
+    expect(result.success).toBe(false)
+  })
+
+  it('passes with config object', () => {
+    const result = updateAutomationSchema.safeParse({
+      config: { hoursBeforeAppointment: 24 },
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('passes with null config', () => {
+    const result = updateAutomationSchema.safeParse({ config: null })
+    expect(result.success).toBe(true)
+  })
+
+  it('passes with empty object (all fields optional)', () => {
+    const result = updateAutomationSchema.safeParse({})
+    expect(result.success).toBe(true)
   })
 })

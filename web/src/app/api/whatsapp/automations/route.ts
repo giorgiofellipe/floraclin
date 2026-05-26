@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
-import { upsertTemplate } from '@/db/queries/whatsapp'
-import { getTemplates } from '@/lib/whatsapp'
+import { listAutomations } from '@/db/queries/whatsapp'
 
-export async function POST() {
+export async function GET() {
   try {
     const ctx = await getAuthContext()
     const tenant = await getTenant(ctx.tenantId)
@@ -16,29 +15,14 @@ export async function POST() {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const metaTemplates = await getTemplates(ctx.tenantId)
-
-    let synced = 0
-    for (const tpl of metaTemplates) {
-      await upsertTemplate(ctx.tenantId, {
-        metaTemplateId: tpl.id,
-        name: tpl.name,
-        language: tpl.language,
-        category: tpl.category,
-        status: tpl.status,
-        components: tpl.components,
-        rejectedReason: (tpl as Record<string, unknown>).rejected_reason as string | null ?? null,
-      })
-      synced++
-    }
-
-    return NextResponse.json({ synced })
+    const automations = await listAutomations(ctx.tenantId)
+    return NextResponse.json({ data: automations })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    console.error('Error syncing WhatsApp templates:', error)
+    console.error('Error listing WhatsApp automations:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

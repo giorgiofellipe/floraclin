@@ -7,6 +7,8 @@ interface WhatsappSseCallbacks {
   onStatusUpdate?: (data: unknown) => void
   onNewConversation?: (data: unknown) => void
   onProspectUpdated?: (data: unknown) => void
+  onQueueDrained?: (data: unknown) => void
+  onQueueExpired?: (data: unknown) => void
 }
 
 export function useWhatsappSse(callbacks: WhatsappSseCallbacks, enabled = true) {
@@ -34,6 +36,14 @@ export function useWhatsappSse(callbacks: WhatsappSseCallbacks, enabled = true) 
 
     es.addEventListener('prospect_updated', (e) => {
       callbacksRef.current.onProspectUpdated?.(JSON.parse(e.data))
+    })
+
+    es.addEventListener('queue_drained', (e) => {
+      callbacksRef.current.onQueueDrained?.(JSON.parse(e.data))
+    })
+
+    es.addEventListener('queue_expired', (e) => {
+      callbacksRef.current.onQueueExpired?.(JSON.parse(e.data))
     })
 
     return () => es.close()

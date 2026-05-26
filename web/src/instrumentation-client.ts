@@ -1,12 +1,16 @@
 import * as Sentry from '@sentry/nextjs'
 
-Sentry.init({
-  dsn: 'https://4adec01428adac2dfeca3023606b49b6@o4505070711799808.ingest.us.sentry.io/4511119159197696',
-  tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
-  replaysSessionSampleRate: 0,
-  replaysOnErrorSampleRate: 1.0,
-  sendDefaultPii: false,
-  debug: false,
-})
+const isProd = process.env.NODE_ENV === 'production'
 
-export const onRouterTransitionStart = Sentry.captureRouterTransitionStart
+if (isProd) {
+  Sentry.init({
+    dsn: 'https://4adec01428adac2dfeca3023606b49b6@o4505070711799808.ingest.us.sentry.io/4511119159197696',
+    tracesSampleRate: 0.1,
+    replaysSessionSampleRate: 0,
+    replaysOnErrorSampleRate: 1.0,
+    sendDefaultPii: false,
+    debug: false,
+  })
+}
+
+export const onRouterTransitionStart = isProd ? Sentry.captureRouterTransitionStart : undefined

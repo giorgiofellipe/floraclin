@@ -8,7 +8,7 @@ describe('classifyByKeywords', () => {
     const result = classifyByKeywords('Quanto custa o botox?', procedures)
     expect(result).not.toBeNull()
     expect(result?.intent).toBe('inquiry')
-    expect(result?.interestedProcedure).toBe('Botox')
+    expect(result?.interestedProcedures).toEqual(['Botox'])
   })
 
   it('detects scheduling intent', () => {
@@ -29,7 +29,7 @@ describe('classifyByKeywords', () => {
 
   it('detects procedure without intent keyword', () => {
     const result = classifyByKeywords('Vi que vocês fazem preenchimento', procedures)
-    expect(result?.interestedProcedure).toBe('Preenchimento')
+    expect(result?.interestedProcedures).toEqual(['Preenchimento'])
     expect(result?.intent).toBe('inquiry')
   })
 
@@ -46,6 +46,16 @@ describe('classifyByKeywords', () => {
   it('detects procedure with accent variations', () => {
     const result = classifyByKeywords('Qual o preço do preenchimento?', procedures)
     expect(result?.intent).toBe('inquiry')
-    expect(result?.interestedProcedure).toBe('Preenchimento')
+    expect(result?.interestedProcedures).toEqual(['Preenchimento'])
+  })
+
+  it('detects multiple procedures in the same message', () => {
+    const result = classifyByKeywords('Quero fazer botox e preenchimento', procedures)
+    expect(result?.interestedProcedures).toEqual(['Botox', 'Preenchimento'])
+  })
+
+  it('sums all matched procedures', () => {
+    const result = classifyByKeywords('Quanto custa botox, preenchimento e limpeza de pele?', procedures)
+    expect(result?.interestedProcedures).toEqual(['Botox', 'Preenchimento', 'Limpeza de Pele'])
   })
 })

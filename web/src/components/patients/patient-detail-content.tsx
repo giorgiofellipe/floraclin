@@ -93,12 +93,14 @@ interface PatientDetailContentProps {
   patient: Patient
   activeTab?: string
   hasActiveService?: boolean
+  whatsappApiEnabled?: boolean
 }
 
 export function PatientDetailContent({
   patient,
   activeTab,
   hasActiveService = false,
+  whatsappApiEnabled,
 }: PatientDetailContentProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -285,7 +287,7 @@ export function PatientDetailContent({
       <div className="min-h-[400px]">
         <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-6">
           {tab === 'dados' && <PatientDataTab patient={patient} />}
-          {tab === 'anamnese' && <PatientAnamnesisTab patientId={patient.id} patientName={patient.fullName} patientPhone={patient.phone} />}
+          {tab === 'anamnese' && <PatientAnamnesisTab patientId={patient.id} patientName={patient.fullName} patientPhone={patient.phone} whatsappApiEnabled={whatsappApiEnabled} />}
           {tab === 'procedimentos' && (
             <PatientProceduresTab patientId={patient.id} />
           )}

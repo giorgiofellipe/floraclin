@@ -1,7 +1,7 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import { Check, CheckCheck } from 'lucide-react'
+import { Check, CheckCheck, Clock } from 'lucide-react'
 
 export interface Message {
   id: string
@@ -29,7 +29,13 @@ function formatTime(dateStr: string): string {
 }
 
 function StatusIcon({ status }: { status: string }) {
-  if (status === 'queued' || status === 'sent') {
+  if (status === 'queued') {
+    return <Clock className="size-3.5 text-amber-500" />
+  }
+  if (status === 'expired') {
+    return <span className="text-[10px] text-muted-foreground">Expirada</span>
+  }
+  if (status === 'sent') {
     return <Check className="size-3.5 text-[#8696A0]" />
   }
   if (status === 'delivered') {
@@ -46,6 +52,8 @@ function StatusIcon({ status }: { status: string }) {
 
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isOutbound = message.direction === 'outbound'
+  const isQueued = message.deliveryStatus === 'queued'
+  const isExpired = message.deliveryStatus === 'expired'
   const displayText = message.body || (message.templateName ? `[Template: ${message.templateName}]` : '[Mensagem sem texto]')
 
   return (
@@ -55,7 +63,8 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           'relative max-w-[75%] rounded-lg px-3 py-1.5 text-sm shadow-sm',
           isOutbound
             ? 'bg-[#D9FDD3] text-[#111B21]'
-            : 'bg-white text-[#111B21]'
+            : 'bg-white text-[#111B21]',
+          isExpired && 'opacity-50',
         )}
       >
         {message.mediaType && message.mediaUrl && (
@@ -82,7 +91,13 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
         <span className="whitespace-pre-wrap break-words">{displayText}</span>
 
-        <span className={cn('float-right mt-1 ml-2 flex items-center gap-0.5', isOutbound ? 'text-[#667781]' : 'text-[#667781]')}>
+        {isQueued && (
+          <div className="mt-1 text-[10px] text-amber-600">
+            Na fila — aguardando resposta
+          </div>
+        )}
+
+        <span className="float-right mt-1 ml-2 flex items-center gap-0.5 text-[#667781]">
           <span className="text-[11px] leading-none">{formatTime(message.timestamp)}</span>
           {isOutbound && <StatusIcon status={message.deliveryStatus} />}
         </span>

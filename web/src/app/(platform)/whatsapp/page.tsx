@@ -77,12 +77,41 @@ export default function WhatsAppPage() {
     })
   }, [])
 
+  const handleQueueDrained = useCallback((data: unknown) => {
+    const payload = data as {
+      conversationId: string
+      messages: Array<{ id: string; metaMessageId: string; deliveryStatus: string }>
+    }
+    for (const msg of payload.messages) {
+      chatPanelRef.current?.updateMessageStatus({
+        messageId: msg.id,
+        status: 'sent',
+        metaMessageId: msg.metaMessageId,
+      })
+    }
+  }, [])
+
+  const handleQueueExpired = useCallback((data: unknown) => {
+    const payload = data as {
+      conversationId: string
+      queuedMessageIds: string[]
+    }
+    for (const id of payload.queuedMessageIds) {
+      chatPanelRef.current?.updateMessageStatus({
+        messageId: id,
+        status: 'expired',
+      })
+    }
+  }, [])
+
   useWhatsappSse(
     {
       onMessage: handleNewMessage,
       onStatusUpdate: handleStatusUpdate,
       onNewConversation: handleNewConversation,
       onProspectUpdated: handleProspectUpdated,
+      onQueueDrained: handleQueueDrained,
+      onQueueExpired: handleQueueExpired,
     },
     configStatus === 'configured',
   )

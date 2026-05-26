@@ -31,8 +31,41 @@ export const conversationFilterSchema = z.object({
   limit: z.coerce.number().int().min(0).max(50).default(20),
 })
 
+export const createTemplateSchema = z.object({
+  name: z.string().min(1, 'Nome é obrigatório').max(255).regex(/^[a-z][a-z0-9_]*$/, 'Nome deve ser snake_case (letras minúsculas, números e _)'),
+  category: z.enum(['UTILITY', 'MARKETING']),
+  language: z.string().default('pt_BR'),
+  components: z.array(z.record(z.string(), z.unknown())).min(1, 'Template deve ter ao menos um componente'),
+  purposeKey: z.string().max(100).optional(),
+  variableMapping: z.array(z.object({
+    index: z.number().int().positive(),
+    key: z.string(),
+    label: z.string(),
+    example: z.string(),
+  })).optional(),
+})
+
+export const updateTemplateSchema = z.object({
+  components: z.array(z.record(z.string(), z.unknown())).min(1),
+  variableMapping: z.array(z.object({
+    index: z.number().int().positive(),
+    key: z.string(),
+    label: z.string(),
+    example: z.string(),
+  })).optional(),
+})
+
+export const updateAutomationSchema = z.object({
+  enabled: z.boolean().optional(),
+  templateId: z.string().uuid().nullable().optional(),
+  config: z.record(z.string(), z.unknown()).nullable().optional(),
+})
+
 export type SendMessageInput = z.infer<typeof sendMessageSchema>
 export type SendTemplateInput = z.infer<typeof sendTemplateSchema>
 export type SendMediaInput = z.infer<typeof sendMediaSchema>
 export type WhatsAppSettings = z.infer<typeof whatsappSettingsSchema>
 export type ConversationFilterInput = z.infer<typeof conversationFilterSchema>
+export type CreateTemplateInput = z.infer<typeof createTemplateSchema>
+export type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>
+export type UpdateAutomationInput = z.infer<typeof updateAutomationSchema>

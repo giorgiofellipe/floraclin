@@ -9,9 +9,10 @@ import PatientDetailLoading from './loading'
 
 interface PatientDetailPageClientProps {
   patientId: string
+  whatsappApiEnabled?: boolean
 }
 
-export function PatientDetailPageClient({ patientId }: PatientDetailPageClientProps) {
+export function PatientDetailPageClient({ patientId, whatsappApiEnabled = false }: PatientDetailPageClientProps) {
   const searchParams = useSearchParams()
   const tab = searchParams.get('tab') ?? undefined
 
@@ -38,6 +39,7 @@ export function PatientDetailPageClient({ patientId }: PatientDetailPageClientPr
       patient={patient}
       activeTab={tab}
       hasActiveService={hasActiveService}
+      whatsappApiEnabled={whatsappApiEnabled}
     />
   )
 }

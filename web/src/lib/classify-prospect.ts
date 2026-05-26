@@ -1,6 +1,6 @@
 interface ClassificationResult {
   intent: 'inquiry' | 'scheduling' | 'complaint' | 'followup' | 'other'
-  interestedProcedure: string | null
+  interestedProcedures: string[]
   sentiment: 'positive' | 'neutral' | 'negative'
   extractedName: string | null
 }
@@ -26,19 +26,18 @@ export function classifyByKeywords(
     }
   }
 
-  let interestedProcedure: string | null = null
+  const matched: string[] = []
   for (const name of procedureNames) {
     if (lower.includes(name.toLowerCase())) {
-      interestedProcedure = name
-      break
+      matched.push(name)
     }
   }
 
-  if (!intent && !interestedProcedure) return null
+  if (!intent && matched.length === 0) return null
 
   return {
     intent: intent ?? 'inquiry',
-    interestedProcedure,
+    interestedProcedures: matched,
   }
 }
 
@@ -56,10 +55,11 @@ export async function classifyWithOpenAI(message: string): Promise<Classificatio
         content: `You are a classifier for a Brazilian dental/aesthetic clinic. Analyze the WhatsApp message and return JSON:
 {
   "intent": "inquiry" | "scheduling" | "complaint" | "followup" | "other",
-  "interestedProcedure": "string or null",
+  "interestedProcedures": ["procedure name", ...] or [],
   "sentiment": "positive" | "neutral" | "negative",
   "extractedName": "string or null"
 }
+The patient may mention multiple procedures. Return all that apply.
 Respond ONLY with the JSON object, no other text.`,
       },
       { role: 'user', content: message },
@@ -68,9 +68,20 @@ Respond ONLY with the JSON object, no other text.`,
 
   const text = response.choices[0]?.message?.content?.trim() ?? '{}'
   try {
-    return JSON.parse(text) as ClassificationResult
+    const parsed = JSON.parse(text)
+    // Handle legacy single-value response from the model
+    if (parsed.interestedProcedure && !parsed.interestedProcedures) {
+      parsed.interestedProcedures = [parsed.interestedProcedure]
+      delete parsed.interestedProcedure
+    }
+    return {
+      intent: parsed.intent ?? 'other',
+      interestedProcedures: Array.isArray(parsed.interestedProcedures) ? parsed.interestedProcedures : [],
+      sentiment: parsed.sentiment ?? 'neutral',
+      extractedName: parsed.extractedName ?? null,
+    }
   } catch {
-    return { intent: 'other', interestedProcedure: null, sentiment: 'neutral', extractedName: null }
+    return { intent: 'other', interestedProcedures: [], sentiment: 'neutral', extractedName: null }
   }
 }
 
@@ -82,19 +93,19 @@ export async function classifyMessage(
   if (keywordResult?.intent) {
     return {
       intent: keywordResult.intent,
-      interestedProcedure: keywordResult.interestedProcedure ?? null,
+      interestedProcedures: keywordResult.interestedProcedures ?? [],
       sentiment: 'neutral',
       extractedName: null,
     }
   }
 
   if (!process.env.OPENAI_API_KEY) {
-    return { intent: 'other', interestedProcedure: null, sentiment: 'neutral', extractedName: null }
+    return { intent: 'other', interestedProcedures: [], sentiment: 'neutral', extractedName: null }
   }
 
   try {
     return await classifyWithOpenAI(message)
   } catch {
-    return { intent: 'other', interestedProcedure: null, sentiment: 'neutral', extractedName: null }
+    return { intent: 'other', interestedProcedures: [], sentiment: 'neutral', extractedName: null }
   }
 }

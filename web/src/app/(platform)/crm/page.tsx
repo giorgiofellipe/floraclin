@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Search, Loader2, RefreshCw } from 'lucide-react'
+import { Search, Loader2, RefreshCw, Plus } from 'lucide-react'
 
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { KanbanBoard } from '@/components/crm/kanban-board'
+import { AddProspectModal } from '@/components/crm/add-prospect-modal'
 import { STAGE_CONFIG, PROSPECT_STAGES } from '@/components/crm/constants'
 import type {
   Prospect,
@@ -14,6 +15,7 @@ import type {
   ProspectStats,
   ProspectsResponse,
   TeamMember,
+  ProcedureTypeOption,
 } from '@/components/crm/types'
 
 export default function CrmPage() {
@@ -27,9 +29,11 @@ export default function CrmPage() {
     perdido: 0,
   })
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
+  const [procedureTypes, setProcedureTypes] = useState<ProcedureTypeOption[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [showAddModal, setShowAddModal] = useState(false)
 
   const fetchProspects = useCallback(async (searchQuery = '') => {
     try {
@@ -37,37 +41,26 @@ export default function CrmPage() {
       if (searchQuery) params.set('search', searchQuery)
 
       const res = await fetch(`/api/crm/prospects?${params}`)
-      if (!res.ok) throw new Error('Erro ao carregar prospects')
+      if (!res.ok) throw new Error('Erro ao carregar leads')
 
-      const data: ProspectsResponse = await res.json()
+      const data = await res.json()
       setProspects(data.data)
       setStats(data.stats)
+      if (data.members) setTeamMembers(data.members)
+      if (data.procedures) setProcedureTypes(data.procedures)
     } catch {
       // Silently handle — the board will show empty columns
-    }
-  }, [])
-
-  const fetchTeamMembers = useCallback(async () => {
-    try {
-      const res = await fetch('/api/crm/prospects?_members=true')
-      if (!res.ok) return
-      const data = await res.json()
-      if (data.members) {
-        setTeamMembers(data.members)
-      }
-    } catch {
-      // Team members are optional — proceed without them
     }
   }, [])
 
   useEffect(() => {
     const init = async () => {
       setLoading(true)
-      await Promise.all([fetchProspects(), fetchTeamMembers()])
+      await fetchProspects()
       setLoading(false)
     }
     init()
-  }, [fetchProspects, fetchTeamMembers])
+  }, [fetchProspects])
 
   // Debounced search
   useEffect(() => {
@@ -128,7 +121,7 @@ export default function CrmPage() {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
       throw new Error(
-        (err as { error?: string }).error || 'Erro ao atualizar prospect'
+        (err as { error?: string }).error || 'Erro ao atualizar lead'
       )
     }
 
@@ -144,7 +137,7 @@ export default function CrmPage() {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
       throw new Error(
-        (err as { error?: string }).error || 'Erro ao remover prospect'
+        (err as { error?: string }).error || 'Erro ao remover lead'
       )
     }
 
@@ -171,7 +164,7 @@ export default function CrmPage() {
   }
 
   return (
-    <div className="flex h-full flex-col gap-4">
+    <div className="flex flex-col gap-4" style={{ height: 'calc(100vh - 52px - 48px)' }}>
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -179,13 +172,12 @@ export default function CrmPage() {
             CRM Pipeline
           </h1>
           <p className="mt-1 text-[13px] text-[#7A7A7A]">
-            {totalProspects} prospect{totalProspects !== 1 ? 's' : ''} no
+            {totalProspects} lead{totalProspects !== 1 ? 's' : ''} no
             pipeline
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Refresh */}
           <Button
             variant="outline"
             size="sm"
@@ -198,16 +190,20 @@ export default function CrmPage() {
             Atualizar
           </Button>
 
-          {/* Search */}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#B0B0B0]" />
             <Input
-              placeholder="Buscar prospects..."
+              placeholder="Buscar leads..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-64 pl-9"
             />
           </div>
+
+          <Button size="sm" onClick={() => setShowAddModal(true)}>
+            <Plus className="mr-1 h-3.5 w-3.5" />
+            Novo Lead
+          </Button>
         </div>
       </div>
 
@@ -244,14 +240,26 @@ export default function CrmPage() {
       </div>
 
       {/* Kanban Board */}
-      <KanbanBoard
-        prospects={prospects}
-        stats={stats}
-        teamMembers={teamMembers}
-        onStageChange={handleStageChange}
-        onUpdate={handleUpdate}
-        onDelete={handleDelete}
-        onRefresh={handleRefresh}
+      <div className="min-h-0 flex-1">
+        <KanbanBoard
+          prospects={prospects}
+          stats={stats}
+          teamMembers={teamMembers}
+          procedureTypes={procedureTypes}
+          onStageChange={handleStageChange}
+          onUpdate={handleUpdate}
+          onDelete={handleDelete}
+          onRefresh={handleRefresh}
+        />
+      </div>
+
+      <AddProspectModal
+        open={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onCreated={() => {
+          setShowAddModal(false)
+          fetchProspects(search)
+        }}
       />
     </div>
   )

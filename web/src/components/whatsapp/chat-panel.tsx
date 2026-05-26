@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { MessageBubble, type Message } from './message-bubble'
 import { TemplatePicker } from './template-picker'
 import type { Conversation } from './conversation-list'
+import { toast } from 'sonner'
 import {
   Send,
   FileText,
@@ -22,7 +23,7 @@ import {
 
 export interface ChatPanelHandle {
   addMessage: (msg: Message) => void
-  updateMessageStatus: (data: { messageId: string; status: string }) => void
+  updateMessageStatus: (data: { messageId: string; status: string; metaMessageId?: string }) => void
 }
 
 interface ChatPanelProps {
@@ -81,6 +82,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
     const [markingRead, setMarkingRead] = useState(false)
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const prevConvIdRef = useRef<string | null>(null)
+    const firstQueueRef = useRef(true)
 
     const scrollToBottom = useCallback(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -130,6 +132,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
         prevConvIdRef.current = conversation.id
         setPage(1)
         setInputText('')
+        firstQueueRef.current = true
         fetchMessages(conversation.id, 1, false)
       }
     }, [conversation, fetchMessages])
@@ -154,9 +157,13 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
     )
 
     const updateMessageStatus = useCallback(
-      (data: { messageId: string; status: string }) => {
+      (data: { messageId: string; status: string; metaMessageId?: string }) => {
         setMessages((prev) =>
-          prev.map((m) => (m.id === data.messageId ? { ...m, deliveryStatus: data.status } : m))
+          prev.map((m) =>
+            m.id === data.messageId
+              ? { ...m, deliveryStatus: data.status, ...(data.metaMessageId ? { metaMessageId: data.metaMessageId } : {}) }
+              : m
+          )
         )
       },
       []
@@ -179,20 +186,32 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
             body: JSON.stringify({ body: inputText.trim() }),
           }
         )
-        if (!res.ok) throw new Error('Erro ao enviar mensagem')
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: 'Erro ao enviar mensagem' }))
+          toast.error(err.error || 'Erro ao enviar mensagem')
+          return
+        }
         const data = await res.json()
         const newMsg: Message = data.data ?? data
         setMessages((prev) => [...prev, newMsg])
         setInputText('')
         setTimeout(() => scrollToBottom(), 100)
+
+        if (data.queued && data.resumeSent && firstQueueRef.current) {
+          firstQueueRef.current = false
+          toast.info(
+            'Janela expirada — enviamos um pedido de retomada ao paciente. Sua mensagem será enviada quando ele responder.',
+            { duration: 6000 },
+          )
+        }
       } catch {
-        // Could show toast error
+        toast.error('Erro ao enviar mensagem')
       } finally {
         setSending(false)
       }
     }
 
-    const handleSendTemplate = async (templateName: string, language: string) => {
+    const handleSendTemplate = async (templateName: string, language: string, params?: Record<string, string>) => {
       if (!conversation || sending) return
       setSending(true)
       try {
@@ -201,7 +220,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ templateName, language }),
+            body: JSON.stringify({ templateName, language, params }),
           }
         )
         if (!res.ok) throw new Error('Erro ao enviar template')
@@ -376,8 +395,13 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
         </div>
 
         {/* Input area */}
-        <div className="border-t bg-[#F0F2F5] px-4 py-3">
-          {windowOpen ? (
+        <div className="border-t bg-[#F0F2F5]">
+          {!windowOpen && (
+            <div className="bg-amber-50 px-4 py-2 text-xs text-amber-700 border-b border-amber-100">
+              Janela de 24h expirada — mensagens serão enfileiradas
+            </div>
+          )}
+          <div className="px-4 py-3">
             <div className="flex items-end gap-2">
               <Button
                 variant="ghost"
@@ -418,22 +442,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                 )}
               </Button>
             </div>
-          ) : (
-            <div className="flex items-center gap-3">
-              <div className="flex-1 rounded-lg bg-white/80 px-4 py-2.5">
-                <p className="text-sm text-[#667781]">
-                  Janela de 24h expirada &mdash; use um template para iniciar conversa.
-                </p>
-              </div>
-              <Button
-                onClick={() => setTemplateOpen(true)}
-                className="bg-[#25D366] hover:bg-[#1DA851] text-white shrink-0"
-              >
-                <FileText className="mr-1 size-4" />
-                Template
-              </Button>
-            </div>
-          )}
+          </div>
         </div>
 
         {/* Template picker modal */}

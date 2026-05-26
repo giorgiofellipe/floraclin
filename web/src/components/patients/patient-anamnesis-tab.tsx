@@ -11,9 +11,10 @@ interface PatientAnamnesisTabProps {
   patientId: string
   patientName?: string
   patientPhone?: string | null
+  whatsappApiEnabled?: boolean
 }
 
-export function PatientAnamnesisTab({ patientId, patientName, patientPhone }: PatientAnamnesisTabProps) {
+export function PatientAnamnesisTab({ patientId, patientName, patientPhone, whatsappApiEnabled }: PatientAnamnesisTabProps) {
   const { data: rawData, isLoading } = useAnamnesis(patientId)
 
   const initialData = useMemo(() => {
@@ -52,7 +53,7 @@ export function PatientAnamnesisTab({ patientId, patientName, patientPhone }: Pa
   }
 
   return (
-    <div className="max-w-3xl">
+    <div className="w-full">
       {/* Send anamnesis link to patient */}
       {patientName && (
         <div className="mb-4 flex items-center justify-between">
@@ -63,6 +64,7 @@ export function PatientAnamnesisTab({ patientId, patientName, patientPhone }: Pa
             patientId={patientId}
             patientName={patientName}
             patientPhone={patientPhone ?? undefined}
+            whatsappApiEnabled={whatsappApiEnabled}
           />
         </div>
       )}

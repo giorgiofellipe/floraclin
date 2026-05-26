@@ -106,7 +106,7 @@ export function ConvertProspectModal({
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error(
-          (err as { error?: string }).error || 'Erro ao converter prospect'
+          (err as { error?: string }).error || 'Erro ao converter lead'
         )
       }
 
@@ -130,7 +130,7 @@ export function ConvertProspectModal({
         <DialogHeader>
           <DialogTitle>Converter para Paciente</DialogTitle>
           <DialogDescription>
-            Vincule este prospect a um paciente existente ou crie um novo.
+            Vincule este lead a um paciente existente ou crie um novo.
           </DialogDescription>
         </DialogHeader>
 

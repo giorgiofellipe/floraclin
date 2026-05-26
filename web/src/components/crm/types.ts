@@ -18,8 +18,9 @@ export interface Prospect {
   source: string | null
   stage: ProspectStage
   intent: ProspectIntent | null
-  interestedProcedure: string | null
+  interestedProcedures: { id: string; name: string; defaultPrice: string | null }[]
   sentiment: ProspectSentiment | null
+  value: string | null
   notes: string | null
   assignedUserId: string | null
   assignedUserName: string | null
@@ -47,4 +48,10 @@ export interface ProspectsResponse {
 export interface TeamMember {
   id: string
   fullName: string
+}
+
+export interface ProcedureTypeOption {
+  id: string
+  name: string
+  defaultPrice: string | null
 }

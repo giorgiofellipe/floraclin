@@ -3,9 +3,11 @@ import {
   whatsappConversations,
   whatsappMessages,
   whatsappTemplates,
+  whatsappAutomations,
+  whatsappQueuedMessages,
   sseEvents,
 } from '@/db/schema'
-import { eq, and, or, desc, gt, ilike, sql } from 'drizzle-orm'
+import { eq, and, or, desc, gt, lt, ilike, sql } from 'drizzle-orm'
 import type { PaginatedResult } from '@/types'
 
 // ─── TYPE EXPORTS ──────────────────────────────────────────────────
@@ -14,6 +16,8 @@ export type WhatsappConversation = typeof whatsappConversations.$inferSelect
 export type WhatsappMessage = typeof whatsappMessages.$inferSelect
 export type WhatsappTemplate = typeof whatsappTemplates.$inferSelect
 export type SseEvent = typeof sseEvents.$inferSelect
+export type WhatsappAutomation = typeof whatsappAutomations.$inferSelect
+export type WhatsappQueuedMessage = typeof whatsappQueuedMessages.$inferSelect
 
 // ─── CONVERSATIONS ─────────────────────────────────────────────────
 
@@ -336,12 +340,17 @@ export async function listMessages(
 export async function upsertTemplate(
   tenantId: string,
   template: {
-    metaTemplateId: string
+    metaTemplateId?: string | null
     name: string
     language: string
     category: string
     status: string
     components: unknown
+    purposeKey?: string | null
+    rejectedReason?: string | null
+    blueprintSlug?: string | null
+    submittedAt?: Date | null
+    variableMapping?: unknown | null
   }
 ): Promise<WhatsappTemplate> {
   const [existing] = await db
@@ -360,13 +369,19 @@ export async function upsertTemplate(
     const [updated] = await db
       .update(whatsappTemplates)
       .set({
-        metaTemplateId: template.metaTemplateId,
+        metaTemplateId: template.metaTemplateId ?? existing.metaTemplateId,
         category: template.category,
         status: template.status,
         components: template.components,
+        rejectedReason: template.rejectedReason ?? null,
         syncedAt: new Date(),
       })
-      .where(eq(whatsappTemplates.id, existing.id))
+      .where(
+        and(
+          eq(whatsappTemplates.id, existing.id),
+          eq(whatsappTemplates.tenantId, tenantId),
+        )
+      )
       .returning()
 
     return updated
@@ -374,7 +389,20 @@ export async function upsertTemplate(
 
   const [created] = await db
     .insert(whatsappTemplates)
-    .values({ tenantId, ...template })
+    .values({
+      tenantId,
+      metaTemplateId: template.metaTemplateId ?? null,
+      name: template.name,
+      language: template.language,
+      category: template.category,
+      status: template.status,
+      components: template.components,
+      purposeKey: template.purposeKey ?? null,
+      rejectedReason: template.rejectedReason ?? null,
+      blueprintSlug: template.blueprintSlug ?? null,
+      submittedAt: template.submittedAt ?? null,
+      variableMapping: template.variableMapping ?? null,
+    })
     .returning()
 
   return created
@@ -388,6 +416,195 @@ export async function listTemplates(
     .from(whatsappTemplates)
     .where(eq(whatsappTemplates.tenantId, tenantId))
     .orderBy(whatsappTemplates.name)
+}
+
+export async function getTemplateById(
+  tenantId: string,
+  templateId: string,
+): Promise<WhatsappTemplate | null> {
+  const [template] = await db
+    .select()
+    .from(whatsappTemplates)
+    .where(
+      and(
+        eq(whatsappTemplates.tenantId, tenantId),
+        eq(whatsappTemplates.id, templateId)
+      )
+    )
+    .limit(1)
+  return template ?? null
+}
+
+export async function getTemplateByPurpose(
+  tenantId: string,
+  purposeKey: string,
+): Promise<WhatsappTemplate | null> {
+  const [template] = await db
+    .select()
+    .from(whatsappTemplates)
+    .where(
+      and(
+        eq(whatsappTemplates.tenantId, tenantId),
+        eq(whatsappTemplates.purposeKey, purposeKey)
+      )
+    )
+    .limit(1)
+  return template ?? null
+}
+
+export async function createLocalTemplate(
+  tenantId: string,
+  data: {
+    metaTemplateId?: string | null
+    name: string
+    language: string
+    category: string
+    status: string
+    components: unknown
+    purposeKey?: string | null
+    blueprintSlug?: string | null
+    submittedAt?: Date | null
+    variableMapping?: unknown | null
+  },
+): Promise<WhatsappTemplate> {
+  const [created] = await db
+    .insert(whatsappTemplates)
+    .values({
+      tenantId,
+      metaTemplateId: data.metaTemplateId ?? null,
+      name: data.name,
+      language: data.language,
+      category: data.category,
+      status: data.status,
+      components: data.components,
+      purposeKey: data.purposeKey ?? null,
+      blueprintSlug: data.blueprintSlug ?? null,
+      submittedAt: data.submittedAt ?? null,
+      variableMapping: data.variableMapping ?? null,
+    })
+    .returning()
+  return created
+}
+
+export async function updateLocalTemplate(
+  tenantId: string,
+  templateId: string,
+  data: Partial<{
+    metaTemplateId: string | null
+    status: string
+    components: unknown
+    rejectedReason: string | null
+    purposeKey: string | null
+    blueprintSlug: string | null
+    submittedAt: Date | null
+    variableMapping: unknown | null
+    syncedAt: Date
+  }>,
+): Promise<WhatsappTemplate | null> {
+  const [updated] = await db
+    .update(whatsappTemplates)
+    .set(data)
+    .where(
+      and(
+        eq(whatsappTemplates.tenantId, tenantId),
+        eq(whatsappTemplates.id, templateId)
+      )
+    )
+    .returning()
+  return updated ?? null
+}
+
+export async function deleteLocalTemplate(
+  tenantId: string,
+  templateId: string,
+): Promise<boolean> {
+  const result = await db
+    .delete(whatsappTemplates)
+    .where(
+      and(
+        eq(whatsappTemplates.tenantId, tenantId),
+        eq(whatsappTemplates.id, templateId)
+      )
+    )
+    .returning()
+  return result.length > 0
+}
+
+// ─── AUTOMATIONS ──────────────────────────────────────────────────
+
+export async function listAutomations(
+  tenantId: string,
+): Promise<WhatsappAutomation[]> {
+  return db
+    .select()
+    .from(whatsappAutomations)
+    .where(eq(whatsappAutomations.tenantId, tenantId))
+    .orderBy(whatsappAutomations.trigger)
+}
+
+export async function upsertAutomation(
+  tenantId: string,
+  trigger: string,
+  data: {
+    enabled?: boolean
+    templateId?: string | null
+    config?: unknown | null
+  },
+): Promise<WhatsappAutomation> {
+  const [existing] = await db
+    .select()
+    .from(whatsappAutomations)
+    .where(
+      and(
+        eq(whatsappAutomations.tenantId, tenantId),
+        eq(whatsappAutomations.trigger, trigger)
+      )
+    )
+    .limit(1)
+
+  if (existing) {
+    const [updated] = await db
+      .update(whatsappAutomations)
+      .set({
+        ...(data.enabled !== undefined ? { enabled: data.enabled } : {}),
+        ...(data.templateId !== undefined ? { templateId: data.templateId } : {}),
+        ...(data.config !== undefined ? { config: data.config } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(whatsappAutomations.id, existing.id))
+      .returning()
+    return updated
+  }
+
+  const [created] = await db
+    .insert(whatsappAutomations)
+    .values({
+      tenantId,
+      trigger,
+      enabled: data.enabled ?? false,
+      templateId: data.templateId ?? null,
+      config: data.config ?? null,
+    })
+    .returning()
+  return created
+}
+
+export async function getAutomationUsingTemplate(
+  tenantId: string,
+  templateId: string,
+): Promise<WhatsappAutomation | null> {
+  const [automation] = await db
+    .select()
+    .from(whatsappAutomations)
+    .where(
+      and(
+        eq(whatsappAutomations.tenantId, tenantId),
+        eq(whatsappAutomations.templateId, templateId),
+        eq(whatsappAutomations.enabled, true)
+      )
+    )
+    .limit(1)
+  return automation ?? null
 }
 
 // ─── SSE EVENTS ────────────────────────────────────────────────────
@@ -440,4 +657,108 @@ export async function getUnreadCount(tenantId: string): Promise<number> {
     .where(eq(whatsappConversations.tenantId, tenantId))
 
   return result?.total ?? 0
+}
+
+// ─── QUEUED MESSAGES ──────────────────────────────────────────────
+
+export async function createQueuedMessage(
+  tenantId: string,
+  conversationId: string,
+  data: {
+    body?: string | null
+    mediaType?: string | null
+    mediaUrl?: string | null
+    resumeMetaMessageId?: string | null
+  },
+): Promise<WhatsappQueuedMessage> {
+  const [msg] = await db
+    .insert(whatsappQueuedMessages)
+    .values({
+      tenantId,
+      conversationId,
+      body: data.body ?? null,
+      mediaType: data.mediaType ?? null,
+      mediaUrl: data.mediaUrl ?? null,
+      resumeMetaMessageId: data.resumeMetaMessageId ?? null,
+    })
+    .returning()
+  return msg
+}
+
+export async function getQueuedMessages(
+  tenantId: string,
+  conversationId: string,
+): Promise<WhatsappQueuedMessage[]> {
+  return db
+    .select()
+    .from(whatsappQueuedMessages)
+    .where(
+      and(
+        eq(whatsappQueuedMessages.tenantId, tenantId),
+        eq(whatsappQueuedMessages.conversationId, conversationId),
+        eq(whatsappQueuedMessages.status, 'queued'),
+      ),
+    )
+    .orderBy(whatsappQueuedMessages.createdAt)
+}
+
+export async function getQueuedCount(
+  tenantId: string,
+  conversationId: string,
+): Promise<number> {
+  const [result] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(whatsappQueuedMessages)
+    .where(
+      and(
+        eq(whatsappQueuedMessages.tenantId, tenantId),
+        eq(whatsappQueuedMessages.conversationId, conversationId),
+        eq(whatsappQueuedMessages.status, 'queued'),
+      ),
+    )
+  return result?.count ?? 0
+}
+
+export async function updateQueuedMessageStatus(
+  tenantId: string,
+  id: string,
+  status: 'sent' | 'expired',
+): Promise<WhatsappQueuedMessage | null> {
+  const extra = status === 'sent'
+    ? { sentAt: new Date() }
+    : { expiredAt: new Date() }
+
+  const [updated] = await db
+    .update(whatsappQueuedMessages)
+    .set({ status, ...extra })
+    .where(
+      and(
+        eq(whatsappQueuedMessages.tenantId, tenantId),
+        eq(whatsappQueuedMessages.id, id),
+      ),
+    )
+    .returning()
+  return updated ?? null
+}
+
+export async function expireStaleQueuedMessages(
+  tenantId: string,
+  conversationId: string,
+): Promise<string[]> {
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+
+  const expired = await db
+    .update(whatsappQueuedMessages)
+    .set({ status: 'expired', expiredAt: new Date() })
+    .where(
+      and(
+        eq(whatsappQueuedMessages.tenantId, tenantId),
+        eq(whatsappQueuedMessages.conversationId, conversationId),
+        eq(whatsappQueuedMessages.status, 'queued'),
+        lt(whatsappQueuedMessages.createdAt, twentyFourHoursAgo),
+      ),
+    )
+    .returning()
+
+  return expired.map((m) => m.id)
 }

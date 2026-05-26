@@ -20,18 +20,18 @@ const nextConfig: NextConfig = {
   },
 }
 
-export default withSentryConfig(withNextIntl(nextConfig), {
-  org: 'bullcode',
-  project: 'floraclin',
-  // Auth token from env — needed only for source map uploads at build time.
-  // Set SENTRY_AUTH_TOKEN in CI. Local dev skips upload when absent.
-  authToken: process.env.SENTRY_AUTH_TOKEN,
-  silent: !process.env.CI,
-  widenClientFileUpload: true,
-  disableLogger: true,
-  sourcemaps: {
-    disable: !process.env.SENTRY_AUTH_TOKEN,
-  },
-  // Route browser requests through a rewrite to bypass ad-blockers.
-  tunnelRoute: '/monitoring',
-})
+const baseConfig = withNextIntl(nextConfig)
+
+export default process.env.NODE_ENV === 'production'
+  ? withSentryConfig(baseConfig, {
+      org: 'bullcode',
+      project: 'floraclin',
+      authToken: process.env.SENTRY_AUTH_TOKEN,
+      silent: !process.env.CI,
+      widenClientFileUpload: true,
+      sourcemaps: {
+        disable: !process.env.SENTRY_AUTH_TOKEN,
+      },
+      tunnelRoute: '/monitoring',
+    })
+  : baseConfig

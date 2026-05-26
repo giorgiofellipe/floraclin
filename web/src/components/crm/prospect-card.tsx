@@ -8,6 +8,7 @@ import { ptBR } from 'date-fns/locale'
 
 import type { Prospect } from './types'
 import { INTENT_CONFIG } from './constants'
+import { formatCurrency } from '@/lib/utils'
 
 interface ProspectCardProps {
   prospect: Prospect
@@ -111,20 +112,27 @@ export function ProspectCard({ prospect, onClick }: ProspectCardProps) {
             {intentConfig.label}
           </span>
         )}
-        {prospect.interestedProcedure && (
+        {prospect.interestedProcedures?.length > 0 && (
           <span className="truncate text-[11px] text-[#7A7A7A]">
-            {prospect.interestedProcedure}
+            {prospect.interestedProcedures.map((p) => p.name).join(', ')}
           </span>
         )}
       </div>
 
-      {/* Footer: time since */}
-      {timeSince && (
-        <div className="mt-2 flex items-center gap-1 text-[10px] text-[#B0B0B0]">
-          <Clock className="h-2.5 w-2.5" />
-          <span>{timeSince}</span>
-        </div>
-      )}
+      {/* Footer: value + time since */}
+      <div className="mt-2 flex items-center justify-between text-[10px] text-[#B0B0B0]">
+        {prospect.value ? (
+          <span className="font-medium text-[#2E7D32]">
+            {formatCurrency(parseFloat(prospect.value))}
+          </span>
+        ) : <span />}
+        {timeSince && (
+          <span className="flex items-center gap-1">
+            <Clock className="h-2.5 w-2.5" />
+            {timeSince}
+          </span>
+        )}
+      </div>
     </div>
   )
 }

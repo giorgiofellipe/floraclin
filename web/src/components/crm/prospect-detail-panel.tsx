@@ -9,21 +9,49 @@ import {
   Loader2,
   Save,
   Phone,
+  Clock,
+  ArrowRight,
+  Bot,
+  UserPlus,
+  Trash2,
+  StickyNote,
+  User,
 } from 'lucide-react'
 import Link from 'next/link'
+import { formatDistanceToNow } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { formatDate } from '@/lib/utils'
-import type { Prospect, ProspectStage, TeamMember } from './types'
+import { MaskedInput } from '@/components/ui/masked-input'
+import { maskCurrency, parseCurrency } from '@/lib/masks'
+import { formatCurrency } from '@/lib/utils'
+import type { Prospect, ProspectStage, TeamMember, ProcedureTypeOption } from './types'
 import { STAGE_CONFIG, PROSPECT_STAGES, INTENT_CONFIG, SENTIMENT_CONFIG } from './constants'
 import { ConvertProspectModal } from './convert-prospect-modal'
+
+interface Activity {
+  id: string
+  action: string
+  details: Record<string, unknown> | null
+  performedByName?: string | null
+  createdAt: string
+}
+
+const SOURCE_LABELS: Record<string, string> = {
+  whatsapp: 'WhatsApp',
+  manual: 'Manual',
+  instagram: 'Instagram',
+  indicacao: 'Indicação',
+  outro: 'Outro',
+}
 
 interface ProspectDetailPanelProps {
   prospect: Prospect | null
   teamMembers: TeamMember[]
+  procedureTypes: ProcedureTypeOption[]
   onClose: () => void
   onUpdate: (id: string, data: Partial<Prospect>) => Promise<void>
   onDelete: (id: string) => Promise<void>
@@ -33,6 +61,7 @@ interface ProspectDetailPanelProps {
 export function ProspectDetailPanel({
   prospect,
   teamMembers,
+  procedureTypes,
   onClose,
   onUpdate,
   onDelete,
@@ -41,20 +70,32 @@ export function ProspectDetailPanel({
   const [notes, setNotes] = useState('')
   const [stage, setStage] = useState<ProspectStage>('novo')
   const [assignedUserId, setAssignedUserId] = useState<string | null>(null)
+  const [value, setValue] = useState('')
+  const [selectedProcedureIds, setSelectedProcedureIds] = useState<string[]>([])
   const [lostReason, setLostReason] = useState('')
   const [showLostInput, setShowLostInput] = useState(false)
   const [saving, setSaving] = useState(false)
   const [convertModalOpen, setConvertModalOpen] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const [activities, setActivities] = useState<Activity[]>([])
 
   useEffect(() => {
     if (prospect) {
       setNotes(prospect.notes || '')
       setStage(prospect.stage)
       setAssignedUserId(prospect.assignedUserId)
+      setValue(prospect.value ? maskCurrency((parseFloat(prospect.value) * 100).toFixed(0)) : '')
+      setSelectedProcedureIds(prospect.interestedProcedures?.map((p) => p.id) ?? [])
       setLostReason(prospect.lostReason || '')
       setShowLostInput(false)
       setDirty(false)
+
+      fetch(`/api/crm/prospects/${prospect.id}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.activities) setActivities(data.activities)
+        })
+        .catch(() => {})
     }
   }, [prospect])
 
@@ -62,16 +103,19 @@ export function ProspectDetailPanel({
     if (!prospect || !dirty) return
     setSaving(true)
     try {
+      const parsedValue = value ? parseCurrency(value).toFixed(2) : null
       await onUpdate(prospect.id, {
         notes,
         stage,
         assignedUserId,
-      })
+        value: parsedValue,
+        procedureTypeIds: selectedProcedureIds,
+      } as Partial<Prospect> & { procedureTypeIds?: string[] })
       setDirty(false)
     } finally {
       setSaving(false)
     }
-  }, [prospect, dirty, notes, stage, assignedUserId, onUpdate])
+  }, [prospect, dirty, notes, stage, assignedUserId, value, selectedProcedureIds, onUpdate])
 
   const handleMarkLost = async () => {
     if (!prospect) return
@@ -115,7 +159,7 @@ export function ProspectDetailPanel({
         {/* Header */}
         <div className="flex items-center justify-between border-b px-4 py-3">
           <h2 className="text-base font-medium text-[#2A2A2A]">
-            Detalhes do Prospect
+            Detalhes do Lead
           </h2>
           <button
             type="button"
@@ -144,7 +188,7 @@ export function ProspectDetailPanel({
             <div>
               <Label className="text-xs text-[#7A7A7A]">Origem</Label>
               <p className="mt-0.5 text-sm text-[#2A2A2A]">
-                {prospect.source}
+                {SOURCE_LABELS[prospect.source] ?? prospect.source}
               </p>
             </div>
           )}
@@ -197,17 +241,58 @@ export function ProspectDetailPanel({
             )}
           </div>
 
-          {/* Interested procedure */}
-          {prospect.interestedProcedure && (
+          {/* Interested procedures */}
+          {procedureTypes.length > 0 && (
             <div>
               <Label className="text-xs text-[#7A7A7A]">
-                Procedimento de interesse
+                Procedimentos de interesse
               </Label>
-              <p className="mt-0.5 text-sm text-[#2A2A2A]">
-                {prospect.interestedProcedure}
-              </p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {procedureTypes.map((pt) => {
+                  const selected = selectedProcedureIds.includes(pt.id)
+                  return (
+                    <button
+                      key={pt.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedProcedureIds((prev) =>
+                          selected
+                            ? prev.filter((id) => id !== pt.id)
+                            : [...prev, pt.id],
+                        )
+                        setDirty(true)
+                      }}
+                      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                        selected
+                          ? 'border-forest bg-forest/10 text-forest'
+                          : 'border-gray-200 text-[#7A7A7A] hover:border-gray-300'
+                      }`}
+                    >
+                      {pt.name}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           )}
+
+          {/* Value */}
+          <div>
+            <Label className="text-xs text-[#7A7A7A]">Valor estimado</Label>
+            <div className="relative mt-1">
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#7A7A7A]">R$</span>
+              <MaskedInput
+                mask={maskCurrency}
+                value={value}
+                onChange={(e) => {
+                  setValue(e.target.value)
+                  setDirty(true)
+                }}
+                placeholder="0,00"
+                className="pl-9"
+              />
+            </div>
+          </div>
 
           {/* Assign dropdown */}
           <div>
@@ -244,13 +329,17 @@ export function ProspectDetailPanel({
             />
           </div>
 
-          {/* Date info */}
-          <div className="text-xs text-[#B0B0B0]">
-            <p>Criado em {formatDate(prospect.createdAt)}</p>
-            {prospect.updatedAt !== prospect.createdAt && (
-              <p>Atualizado em {formatDate(prospect.updatedAt)}</p>
-            )}
-          </div>
+          {/* Timeline */}
+          {activities.length > 0 && (
+            <div>
+              <Label className="text-xs text-[#7A7A7A]">Histórico</Label>
+              <div className="mt-2 space-y-0">
+                {activities.map((activity, idx) => (
+                  <ActivityItem key={activity.id} activity={activity} isLast={idx === activities.length - 1} />
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Lost reason input */}
           {showLostInput && (
@@ -355,5 +444,88 @@ export function ProspectDetailPanel({
         onConverted={onConverted}
       />
     </>
+  )
+}
+
+const ACTION_CONFIG: Record<string, { label: string; icon: typeof Clock; color: string }> = {
+  created: { label: 'Lead criado', icon: UserPlus, color: '#25D366' },
+  stage_changed: { label: 'Etapa alterada', icon: ArrowRight, color: '#42A5F5' },
+  assigned: { label: 'Responsável alterado', icon: User, color: '#AB47BC' },
+  note_updated: { label: 'Notas atualizadas', icon: StickyNote, color: '#FFA726' },
+  lost: { label: 'Marcado como perdido', icon: XCircle, color: '#EF5350' },
+  converted: { label: 'Convertido em paciente', icon: UserCheck, color: '#66BB6A' },
+  deleted: { label: 'Lead removido', icon: Trash2, color: '#EF5350' },
+  ai_classified: { label: 'Classificado por IA', icon: Bot, color: '#7C4DFF' },
+}
+
+function ActivityItem({ activity, isLast }: { activity: Activity; isLast: boolean }) {
+  const config = ACTION_CONFIG[activity.action] ?? {
+    label: activity.action,
+    icon: Clock,
+    color: '#7A7A7A',
+  }
+  const Icon = config.icon
+  const details = activity.details as Record<string, unknown> | null
+
+  let description = ''
+  if (activity.action === 'stage_changed' && details) {
+    const from = details.from as string
+    const to = details.to as string
+    const fromLabel = STAGE_CONFIG[from as ProspectStage]?.label ?? from
+    const toLabel = STAGE_CONFIG[to as ProspectStage]?.label ?? to
+    description = `${fromLabel} → ${toLabel}`
+  } else if (activity.action === 'lost' && details?.reason) {
+    description = details.reason as string
+  } else if (activity.action === 'ai_classified' && details) {
+    const parts: string[] = []
+    if (details.intent) {
+      const intentCfg = INTENT_CONFIG[details.intent as keyof typeof INTENT_CONFIG]
+      parts.push(intentCfg?.label ?? (details.intent as string))
+    }
+    const rawProcs = details.interestedProcedures ?? (details.interestedProcedure ? [details.interestedProcedure] : [])
+    const procs = (Array.isArray(rawProcs) ? rawProcs : []) as string[]
+    if (procs.length > 0) parts.push(procs.join(', '))
+    description = parts.join(' · ')
+  } else if (activity.action === 'created' && details?.source) {
+    const source = details.source as string
+    const sourceLabels: Record<string, string> = {
+      whatsapp: 'WhatsApp',
+      manual: 'Manual',
+      instagram: 'Instagram',
+      indicacao: 'Indicação',
+    }
+    description = `via ${sourceLabels[source] ?? source}`
+  }
+
+  const timeAgo = formatDistanceToNow(new Date(activity.createdAt), {
+    locale: ptBR,
+    addSuffix: true,
+  })
+
+  return (
+    <div className="flex gap-3">
+      {/* Vertical line + icon */}
+      <div className="flex flex-col items-center">
+        <div
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+          style={{ backgroundColor: config.color + '1A' }}
+        >
+          <Icon className="h-3 w-3" style={{ color: config.color }} />
+        </div>
+        {!isLast && <div className="w-px flex-1 bg-gray-200" />}
+      </div>
+
+      {/* Content */}
+      <div className="pb-4">
+        <p className="text-sm font-medium text-[#2A2A2A]">{config.label}</p>
+        {description && (
+          <p className="text-xs text-[#7A7A7A]">{description}</p>
+        )}
+        <p className="mt-0.5 text-[10px] text-[#B0B0B0]">
+          {timeAgo}
+          {activity.performedByName && ` · ${activity.performedByName}`}
+        </p>
+      </div>
+    </div>
   )
 }

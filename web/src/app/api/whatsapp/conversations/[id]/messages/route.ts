@@ -7,6 +7,10 @@ import {
   listMessages,
   createMessage,
   pushSseEvent,
+  getTemplateByPurpose,
+  getQueuedCount,
+  createQueuedMessage,
+  expireStaleQueuedMessages,
 } from '@/db/queries/whatsapp'
 import {
   sendMessageSchema,
@@ -40,6 +44,12 @@ async function checkWhatsAppAccess() {
   }
 
   return { ctx }
+}
+
+function isWindowOpen(lastInboundAt: Date | null): boolean {
+  if (!lastInboundAt) return false
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+  return lastInboundAt > twentyFourHoursAgo
 }
 
 export async function GET(
@@ -131,6 +141,12 @@ export async function POST(
           { status: 400 },
         )
       }
+      if (!isWindowOpen(conversation.lastInboundAt)) {
+        return NextResponse.json(
+          { error: 'Janela de 24h expirada — envie um template primeiro para reabrir a conversa.' },
+          { status: 400 },
+        )
+      }
       const result = await sendMediaMessage(
         ctx.tenantId,
         conversation.phoneNumber,
@@ -150,6 +166,87 @@ export async function POST(
           { status: 400 },
         )
       }
+
+      if (!isWindowOpen(conversation.lastInboundAt)) {
+        const expiredIds = await expireStaleQueuedMessages(ctx.tenantId, conversationId)
+        if (expiredIds.length > 0) {
+          await pushSseEvent(ctx.tenantId, 'queue_expired', {
+            conversationId,
+            queuedMessageIds: expiredIds,
+          })
+        }
+
+        const queueCount = await getQueuedCount(ctx.tenantId, conversationId)
+
+        if (queueCount >= 20) {
+          return NextResponse.json(
+            { error: 'Limite de mensagens na fila atingido (máx. 20). Aguarde a resposta do paciente.' },
+            { status: 429 },
+          )
+        }
+
+        let resumeMetaMessageId: string | null = null
+        if (queueCount === 0) {
+          const resumeTemplate = await getTemplateByPurpose(ctx.tenantId, 'resume_conversation')
+          if (!resumeTemplate || resumeTemplate.status !== 'APPROVED') {
+            return NextResponse.json(
+              { error: 'Template resume_conversation não disponível. Use um template manualmente.' },
+              { status: 400 },
+            )
+          }
+
+          const firstName = conversation.profileName?.split(' ')[0] ?? 'paciente'
+          const resumeResult = await sendTemplateMessage(
+            ctx.tenantId,
+            conversation.phoneNumber,
+            resumeTemplate.name,
+            resumeTemplate.language,
+            { '1': firstName },
+          )
+          resumeMetaMessageId = resumeResult.metaMessageId
+
+          await createMessage(ctx.tenantId, conversationId, {
+            direction: 'outbound',
+            metaMessageId: resumeMetaMessageId,
+            templateName: resumeTemplate.name,
+            deliveryStatus: 'sent',
+          })
+        }
+
+        const queued = await createQueuedMessage(ctx.tenantId, conversationId, {
+          body: parsed.data.body,
+          resumeMetaMessageId,
+        })
+
+        const queuedMessage = {
+          id: queued.id,
+          conversationId,
+          direction: 'outbound' as const,
+          body: parsed.data.body,
+          deliveryStatus: 'queued',
+          createdAt: queued.createdAt,
+          timestamp: queued.createdAt,
+          metaMessageId: null,
+          mediaType: null,
+          mediaUrl: null,
+          mediaFilename: null,
+          templateName: null,
+          errorCode: null,
+        }
+
+        await pushSseEvent(ctx.tenantId, 'new_message', {
+          conversationId,
+          message: queuedMessage,
+        })
+
+        return NextResponse.json({
+          success: true,
+          data: queuedMessage,
+          queued: true,
+          resumeSent: queueCount === 0,
+        }, { status: 201 })
+      }
+
       const result = await sendTextMessage(
         ctx.tenantId,
         conversation.phoneNumber,
@@ -189,7 +286,7 @@ export async function POST(
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('Meta API error')) {
-      return NextResponse.json({ error: msg }, { status: 502 })
+      return NextResponse.json({ error: 'Falha ao enviar mensagem via WhatsApp' }, { status: 502 })
     }
     if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

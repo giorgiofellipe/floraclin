@@ -598,9 +598,9 @@ export const prospects = floraclinSchema.table('prospects', {
   source: varchar('source', { length: 50 }).notNull().default('whatsapp'),
   stage: varchar('stage', { length: 20 }).notNull().default('novo'),
   intent: varchar('intent', { length: 50 }),
-  interestedProcedure: varchar('interested_procedure', { length: 255 }),
   sentiment: varchar('sentiment', { length: 20 }),
   aiTags: jsonb('ai_tags').default([]),
+  value: decimal('value', { precision: 10, scale: 2 }),
   lostReason: text('lost_reason'),
   assignedUserId: uuid('assigned_user_id').references(() => users.id),
   convertedPatientId: uuid('converted_patient_id').references(() => patients.id),
@@ -611,6 +611,29 @@ export const prospects = floraclinSchema.table('prospects', {
 }, (table) => [
   index('idx_prospects_tenant_stage').on(table.tenantId, table.stage),
   uniqueIndex('uq_prospects_tenant_phone').on(table.tenantId, table.phone),
+])
+
+export const prospectActivities = floraclinSchema.table('prospect_activities', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  prospectId: uuid('prospect_id').notNull().references(() => prospects.id),
+  action: varchar('action', { length: 50 }).notNull(),
+  details: jsonb('details'),
+  performedBy: uuid('performed_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_prospect_activities_prospect').on(table.prospectId, table.createdAt),
+])
+
+export const prospectProcedureTypes = floraclinSchema.table('prospect_procedure_types', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  prospectId: uuid('prospect_id').notNull().references(() => prospects.id),
+  procedureTypeId: uuid('procedure_type_id').notNull().references(() => procedureTypes.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('uq_prospect_procedure_type').on(table.prospectId, table.procedureTypeId),
+  index('idx_prospect_procedure_types_prospect').on(table.prospectId),
 ])
 
 // ─── WHATSAPP ───────────────────────────────────────────────────────
@@ -656,16 +679,52 @@ export const whatsappMessages = floraclinSchema.table('whatsapp_messages', {
 export const whatsappTemplates = floraclinSchema.table('whatsapp_templates', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
-  metaTemplateId: varchar('meta_template_id', { length: 255 }).notNull(),
+  metaTemplateId: varchar('meta_template_id', { length: 255 }),
   name: varchar('name', { length: 255 }).notNull(),
   language: varchar('language', { length: 10 }).notNull(),
   category: varchar('category', { length: 50 }).notNull(),
   status: varchar('status', { length: 20 }).notNull(),
   components: jsonb('components').notNull(),
+  purposeKey: varchar('purpose_key', { length: 100 }),
+  rejectedReason: text('rejected_reason'),
+  blueprintSlug: varchar('blueprint_slug', { length: 100 }),
+  submittedAt: timestamp('submitted_at', { withTimezone: true }),
+  variableMapping: jsonb('variable_mapping'),
   syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex('uq_whatsapp_templates_tenant_name_lang').on(table.tenantId, table.name, table.language),
+  uniqueIndex('uq_whatsapp_templates_tenant_purpose').on(table.tenantId, table.purposeKey).where(sql`purpose_key IS NOT NULL`),
+])
+
+export const whatsappAutomations = floraclinSchema.table('whatsapp_automations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  trigger: varchar('trigger', { length: 50 }).notNull(),
+  enabled: boolean('enabled').notNull().default(false),
+  templateId: uuid('template_id').references(() => whatsappTemplates.id, { onDelete: 'set null' }),
+  config: jsonb('config'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('uq_whatsapp_automations_tenant_trigger').on(table.tenantId, table.trigger),
+])
+
+export const whatsappQueuedMessages = floraclinSchema.table('whatsapp_queued_messages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  conversationId: uuid('conversation_id').notNull().references(() => whatsappConversations.id),
+  body: text('body'),
+  mediaType: varchar('media_type', { length: 20 }),
+  mediaUrl: text('media_url'),
+  status: varchar('status', { length: 20 }).notNull().default('queued'),
+  resumeMetaMessageId: varchar('resume_meta_message_id', { length: 255 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  expiredAt: timestamp('expired_at', { withTimezone: true }),
+}, (table) => [
+  index('idx_whatsapp_queued_messages_conv_status').on(table.conversationId, table.status),
+  index('idx_whatsapp_queued_messages_tenant_created').on(table.tenantId, table.createdAt),
 ])
 
 // ─── SSE EVENTS ─────────────────────────────────────────────────────

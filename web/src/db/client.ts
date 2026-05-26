@@ -11,12 +11,14 @@ const globalForDb = globalThis as unknown as {
   pgClient: ReturnType<typeof postgres> | undefined
 }
 
+const isDev = process.env.NODE_ENV !== 'production'
+
 const client = globalForDb.pgClient ?? postgres(connectionString, {
   prepare: false,
-  max: 5,
+  max: isDev ? 10 : 5,
   idle_timeout: 20,
   connect_timeout: 10,
-  max_lifetime: 60 * 5, // recycle connections every 5 min to avoid stale sockets
+  max_lifetime: 60 * 5,
 })
 
 if (process.env.NODE_ENV !== 'production') {

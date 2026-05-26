@@ -26,6 +26,8 @@ import {
   EyeOffIcon,
   WifiIcon,
 } from 'lucide-react'
+import { WhatsAppTemplateList } from './whatsapp-template-list'
+import { WhatsAppAutomations } from './whatsapp-automations'
 
 // ─── Schema ──────────────────────────────────────────────────────────
 
@@ -467,6 +469,18 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
               </AccordionItem>
             </Accordion>
           </div>
+
+          {/* Template Management */}
+          <WhatsAppTemplateList
+            onProvision={async () => {
+              const res = await fetch('/api/whatsapp/templates/provision', { method: 'POST' })
+              const data = await res.json()
+              if (!res.ok) throw new Error(data.error || 'Erro ao provisionar templates')
+            }}
+          />
+
+          {/* Automations */}
+          <WhatsAppAutomations />
         </>
       )}
 

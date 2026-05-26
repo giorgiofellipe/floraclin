@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/db/client'
 import { tenants, procedureTypes, whatsappMessages } from '@/db/schema'
 import { eq, and, sql } from 'drizzle-orm'
-import { verifyWebhookSignature, downloadAndStoreMedia } from '@/lib/whatsapp'
+import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage } from '@/lib/whatsapp'
 import {
   upsertConversation,
   createMessage,
@@ -10,11 +10,16 @@ import {
   updateMessageStatus,
   pushSseEvent,
   getMessageByMetaId,
+  getQueuedMessages,
+  updateQueuedMessageStatus,
+  expireStaleQueuedMessages,
 } from '@/db/queries/whatsapp'
 import {
   createProspect,
   getProspectByPhone,
   updateProspect,
+  logProspectActivity,
+  setProspectProcedures,
 } from '@/db/queries/prospects'
 import { classifyMessage } from '@/lib/classify-prospect'
 
@@ -136,6 +141,7 @@ async function processInboundMessage(
       name: profileName,
       source: 'whatsapp',
     })
+    await logProspectActivity(tenantId, prospect.id, 'created', { source: 'whatsapp', auto: true })
   }
 
   // Upsert conversation
@@ -207,6 +213,11 @@ async function processInboundMessage(
       console.error('Classification failed:', err),
     )
   }
+
+  // Drain any queued messages now that the window is open
+  drainQueuedMessages(tenantId, conversation.id, from).catch((err) =>
+    console.error('Queue drain failed:', err),
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -217,22 +228,46 @@ async function classifyAndUpdateProspect(
   prospectId: string,
   messageBody: string,
 ) {
-  // Fetch procedure names for keyword matching
+  // Fetch procedure names, IDs, and prices for keyword matching and auto-value
   const procedures = await db
-    .select({ name: procedureTypes.name })
+    .select({ id: procedureTypes.id, name: procedureTypes.name, defaultPrice: procedureTypes.defaultPrice })
     .from(procedureTypes)
     .where(eq(procedureTypes.tenantId, tenantId))
 
   const procedureNames = procedures.map((p) => p.name)
   const classification = await classifyMessage(messageBody, procedureNames)
 
+  // Match classified procedure names to actual procedure type IDs
+  const matchedProcedures = classification.interestedProcedures
+    .map((procName) => procedures.find((p) => p.name.toLowerCase() === procName.toLowerCase()))
+    .filter((p): p is typeof procedures[number] => !!p)
+
+  // Auto-set value by summing matched procedures' default prices
+  let autoValue: string | undefined
+  if (matchedProcedures.length > 0) {
+    const total = matchedProcedures.reduce(
+      (sum, p) => sum + (p.defaultPrice ? parseFloat(p.defaultPrice) : 0),
+      0,
+    )
+    if (total > 0) autoValue = total.toFixed(2)
+
+    await setProspectProcedures(tenantId, prospectId, matchedProcedures.map((p) => p.id))
+  }
+
   await updateProspect(tenantId, prospectId, {
     intent: classification.intent,
-    interestedProcedure: classification.interestedProcedure,
     sentiment: classification.sentiment,
+    ...(autoValue ? { value: autoValue } : {}),
     ...(classification.extractedName
       ? { name: classification.extractedName }
       : {}),
+  })
+
+  await logProspectActivity(tenantId, prospectId, 'ai_classified', {
+    intent: classification.intent,
+    sentiment: classification.sentiment,
+    interestedProcedures: matchedProcedures.map((p) => p.name),
+    ...(autoValue ? { autoValue } : {}),
   })
 
   // Push SSE event for prospect update
@@ -259,6 +294,63 @@ async function updateMessageMedia(
         eq(whatsappMessages.metaMessageId, metaMessageId),
       ),
     )
+}
+
+// ---------------------------------------------------------------------------
+// Drain queued messages when window opens
+// ---------------------------------------------------------------------------
+async function drainQueuedMessages(
+  tenantId: string,
+  conversationId: string,
+  phoneNumber: string,
+) {
+  const expiredIds = await expireStaleQueuedMessages(tenantId, conversationId)
+  if (expiredIds.length > 0) {
+    await pushSseEvent(tenantId, 'queue_expired', {
+      conversationId,
+      queuedMessageIds: expiredIds,
+    })
+  }
+
+  const queued = await getQueuedMessages(tenantId, conversationId)
+  if (queued.length === 0) return
+
+  const drainedMessages: Array<{ id: string; metaMessageId: string; deliveryStatus: string }> = []
+
+  for (const qm of queued) {
+    try {
+      if (!qm.body) {
+        await updateQueuedMessageStatus(tenantId, qm.id, 'expired')
+        continue
+      }
+
+      const result = await sendTextMessage(tenantId, phoneNumber, qm.body)
+
+      await createMessage(tenantId, conversationId, {
+        direction: 'outbound',
+        metaMessageId: result.metaMessageId,
+        body: qm.body,
+        deliveryStatus: 'sent',
+      })
+
+      await updateQueuedMessageStatus(tenantId, qm.id, 'sent')
+
+      drainedMessages.push({
+        id: qm.id,
+        metaMessageId: result.metaMessageId,
+        deliveryStatus: 'sent',
+      })
+    } catch (err) {
+      console.error(`Failed to drain queued message ${qm.id}:`, err)
+    }
+  }
+
+  if (drainedMessages.length > 0) {
+    await pushSseEvent(tenantId, 'queue_drained', {
+      conversationId,
+      messages: drainedMessages,
+    })
+  }
 }
 
 // ---------------------------------------------------------------------------

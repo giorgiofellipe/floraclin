@@ -106,7 +106,7 @@ export async function sendMediaMessage(
 export async function getTemplates(tenantId: string) {
   const creds = await getCredentials(tenantId)
   const data = await graphFetch(
-    `/${creds.businessAccountId}/message_templates?limit=100`,
+    `/${creds.businessAccountId}/message_templates?fields=name,language,category,status,components,rejected_reason&limit=100`,
     creds.accessToken,
   )
   return (data.data ?? []) as Array<{
@@ -116,7 +116,79 @@ export async function getTemplates(tenantId: string) {
     category: string
     status: string
     components: unknown[]
+    rejected_reason?: string | null
   }>
+}
+
+export async function createTemplate(
+  tenantId: string,
+  template: {
+    name: string
+    category: string
+    language: string
+    components: unknown[]
+  },
+) {
+  const creds = await getCredentials(tenantId)
+  const data = await graphFetch(
+    `/${creds.businessAccountId}/message_templates`,
+    creds.accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        name: template.name,
+        category: template.category,
+        language: template.language,
+        components: template.components,
+      }),
+    },
+  )
+  return data as { id: string; status: string; category: string }
+}
+
+export async function editTemplate(
+  tenantId: string,
+  metaTemplateId: string,
+  components: unknown[],
+) {
+  const creds = await getCredentials(tenantId)
+  const data = await graphFetch(`/${metaTemplateId}`, creds.accessToken, {
+    method: 'POST',
+    body: JSON.stringify({ components }),
+  })
+  return data as { success: boolean }
+}
+
+export async function deleteTemplate(
+  tenantId: string,
+  templateName: string,
+) {
+  const creds = await getCredentials(tenantId)
+  const data = await graphFetch(
+    `/${creds.businessAccountId}/message_templates?name=${encodeURIComponent(templateName)}`,
+    creds.accessToken,
+    { method: 'DELETE' },
+  )
+  return data as { success: boolean }
+}
+
+export async function getTemplate(
+  tenantId: string,
+  metaTemplateId: string,
+) {
+  const creds = await getCredentials(tenantId)
+  const data = await graphFetch(
+    `/${metaTemplateId}?fields=name,status,category,components,rejected_reason`,
+    creds.accessToken,
+  )
+  return data as {
+    id: string
+    name: string
+    status: string
+    category: string
+    components: unknown[]
+    rejected_reason?: string
+  }
 }
 
 export async function downloadAndStoreMedia(

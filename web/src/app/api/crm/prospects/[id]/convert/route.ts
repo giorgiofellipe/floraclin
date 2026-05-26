@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
-import { getProspect, convertProspect } from '@/db/queries/prospects'
+import { getProspect, convertProspect, logProspectActivity } from '@/db/queries/prospects'
 import { createPatient, getPatient } from '@/db/queries/patients'
 import { pushSseEvent } from '@/db/queries/whatsapp'
 import { convertProspectSchema } from '@/validations/prospect'
@@ -30,11 +30,11 @@ export async function POST(
     // Verify prospect exists
     const existing = await getProspect(ctx.tenantId, id)
     if (!existing) {
-      return NextResponse.json({ error: 'Prospect não encontrado' }, { status: 404 })
+      return NextResponse.json({ error: 'Lead não encontrado' }, { status: 404 })
     }
 
     if (existing.stage === 'convertido') {
-      return NextResponse.json({ error: 'Prospect já foi convertido' }, { status: 400 })
+      return NextResponse.json({ error: 'Lead já foi convertido' }, { status: 400 })
     }
 
     const body = await request.json()
@@ -71,8 +71,10 @@ export async function POST(
     // Convert prospect: sets stage to 'convertido' and updates conversation FK
     const prospect = await convertProspect(ctx.tenantId, id, patientId)
     if (!prospect) {
-      return NextResponse.json({ error: 'Erro ao converter prospect' }, { status: 500 })
+      return NextResponse.json({ error: 'Erro ao converter lead' }, { status: 500 })
     }
+
+    await logProspectActivity(ctx.tenantId, id, 'converted', { patientId }, ctx.userId)
 
     await pushSseEvent(ctx.tenantId, 'prospect_updated', {
       prospectId: id,
