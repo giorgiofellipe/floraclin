@@ -16,7 +16,7 @@ import {
   expireStaleQueuedMessages,
 } from '@/db/queries/whatsapp'
 import {
-  createProspect,
+  createNewProspect,
   getProspectByPhone,
   updateProspect,
   logProspectActivity,
@@ -132,17 +132,23 @@ async function processInboundMessage(
   const existingMsg = await getMessageByMetaId(tenantId, metaMessageId)
   if (existingMsg) return
 
-  // Upsert prospect
+  // Upsert prospect — create a new lead if old one is in a terminal stage
   let prospect = await getProspectByPhone(tenantId, from)
-  const isNewProspect = !prospect
+  let isNewProspect = !prospect
 
-  if (!prospect) {
-    prospect = await createProspect(tenantId, {
+  if (!prospect || prospect.stage === 'convertido' || prospect.stage === 'perdido') {
+    const previousProspectId = prospect?.id
+    prospect = await createNewProspect(tenantId, {
       phone: from,
       name: profileName,
       source: 'whatsapp',
     })
-    await logProspectActivity(tenantId, prospect.id, 'created', { source: 'whatsapp', auto: true })
+    isNewProspect = true
+    await logProspectActivity(tenantId, prospect.id, 'created', {
+      source: 'whatsapp',
+      auto: true,
+      ...(previousProspectId ? { previousProspectId } : {}),
+    })
   }
 
   // Upsert conversation

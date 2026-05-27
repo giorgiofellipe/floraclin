@@ -12,6 +12,21 @@ const KEYWORD_PATTERNS: { patterns: RegExp; intent: ClassificationResult['intent
   { patterns: /retorno|voltar|revis[ãa]o|p[óo]s/i, intent: 'followup' },
 ]
 
+const PROCEDURE_SYNONYMS: Record<string, string[]> = {
+  botox: ['toxina botulínica', 'toxina botulinica', 'neuromodulador', 'dysport', 'xeomin'],
+  preenchimento: ['ácido hialurônico', 'acido hialuronico', 'preenchedor', 'preenchimento labial', 'volumização', 'volumizacao'],
+  'limpeza de pele': ['limpeza facial', 'limpeza profunda', 'higienização facial', 'higienizacao facial', 'extração de cravos', 'extracao de cravos'],
+  'harmonização': ['harmonização facial', 'harmonização orofacial', 'harmonizacao', 'harmô', 'harmo', 'hof'],
+  peeling: ['peeling químico', 'peeling quimico', 'esfoliação', 'esfoliacao', 'microdermoabrasão', 'microdermoabrasao'],
+  bioestimulador: ['bioestimulador de colágeno', 'bioestimulador de colageno', 'estimulador de colágeno', 'estimulador de colageno', 'colágeno injetável', 'colageno injetavel'],
+  fios: ['fios de pdo', 'fios de sustentação', 'fios de sustentacao', 'lifting sem cirurgia'],
+  microagulhamento: ['microneedling', 'dermaroller', 'dermapen'],
+  skinbooster: ['skin booster', 'hidratação injetável', 'hidratacao injetavel', 'biorevitalização', 'biorevitalizacao'],
+  laser: ['laser fracionado', 'luz pulsada', 'fotorrejuvenescimento'],
+  sculptra: ['ácido poli-l-láctico', 'acido poli-l-lactico', 'plla'],
+  'rinomodelação': ['rinomodelacao', 'rinoplastia sem cirurgia', 'preenchimento nasal'],
+}
+
 export function classifyByKeywords(
   messages: string[],
   procedureNames: string[],
@@ -28,8 +43,17 @@ export function classifyByKeywords(
 
   const matched: string[] = []
   for (const name of procedureNames) {
-    if (combined.includes(name.trim().toLowerCase())) {
+    const nameLower = name.trim().toLowerCase()
+    if (combined.includes(nameLower)) {
       matched.push(name)
+      continue
+    }
+    for (const [keyword, synonyms] of Object.entries(PROCEDURE_SYNONYMS)) {
+      if (!nameLower.includes(keyword)) continue
+      if (synonyms.some((syn) => combined.includes(syn.toLowerCase()))) {
+        matched.push(name)
+        break
+      }
     }
   }
 
@@ -51,6 +75,10 @@ export async function classifyWithOpenAI(messages: string[], procedureNames: str
 
   const procedureList = procedureNames.map((n) => n.trim()).join(', ')
 
+  const synonymHints = Object.entries(PROCEDURE_SYNONYMS)
+    .map(([key, syns]) => `${key}: ${syns.join(', ')}`)
+    .join('\n')
+
   const response = await client.chat.completions.create({
     model: 'gpt-4o-mini',
     temperature: 0,
@@ -67,6 +95,12 @@ export async function classifyWithOpenAI(messages: string[], procedureNames: str
 }
 Available procedures at this clinic: ${procedureList}.
 Use these EXACT procedure names in interestedProcedures. The patient may mention multiple procedures. Return all that apply.
+
+Common synonyms (map these to the matching procedure above):
+${synonymHints}
+
+IMPORTANT: Patients often misspell procedure names in WhatsApp (e.g., "botok", "prenchimneto", "armonização", "pelling"). Always correct spelling mistakes and map to the closest matching procedure.
+
 Respond ONLY with the JSON object, no other text.`,
       },
       { role: 'user', content: conversationText },

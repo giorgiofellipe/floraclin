@@ -181,6 +181,15 @@ export function ProspectDetailPanel({
               <Phone className="h-3.5 w-3.5" />
               {prospect.phone}
             </div>
+            {prospect.whatsappConversationId && (
+              <Link
+                href={`/whatsapp?conversa=${prospect.whatsappConversationId}`}
+                className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-[#25D366] hover:underline"
+              >
+                <MessageCircle className="h-3.5 w-3.5" />
+                Ver conversa no WhatsApp
+              </Link>
+            )}
           </div>
 
           {/* Source */}
@@ -216,7 +225,7 @@ export function ProspectDetailPanel({
           <div className="flex gap-4">
             {intentConfig && (
               <div>
-                <Label className="text-xs text-[#7A7A7A]">Intencao</Label>
+                <Label className="text-xs text-[#7A7A7A]">Intenção</Label>
                 <span
                   className="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
                   style={{
@@ -296,7 +305,7 @@ export function ProspectDetailPanel({
 
           {/* Assign dropdown */}
           <div>
-            <Label className="text-xs text-[#7A7A7A]">Responsavel</Label>
+            <Label className="text-xs text-[#7A7A7A]">Responsável</Label>
             <select
               value={assignedUserId || ''}
               onChange={(e) => {
@@ -305,7 +314,7 @@ export function ProspectDetailPanel({
               }}
               className="mt-1 block w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-forest focus:ring-1 focus:ring-forest"
             >
-              <option value="">Nao atribuido</option>
+              <option value="">Não atribuído</option>
               {teamMembers.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.fullName}
@@ -323,7 +332,7 @@ export function ProspectDetailPanel({
                 setNotes(e.target.value)
                 setDirty(true)
               }}
-              placeholder="Adicione observacoes..."
+              placeholder="Adicione observações..."
               className="mt-1"
               rows={4}
             />

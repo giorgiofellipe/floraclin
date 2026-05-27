@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { ConversationList, type Conversation, type ConversationListHandle } from '@/components/whatsapp/conversation-list'
 import { ChatPanel, type ChatPanelHandle } from '@/components/whatsapp/chat-panel'
 import { useWhatsappSse } from '@/hooks/use-whatsapp-sse'
@@ -13,12 +14,14 @@ import type { Message } from '@/components/whatsapp/message-bubble'
 type ConfigStatus = 'loading' | 'configured' | 'not_configured'
 
 export default function WhatsAppPage() {
+  const searchParams = useSearchParams()
   const [configStatus, setConfigStatus] = useState<ConfigStatus>('loading')
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
   const [showStartDialog, setShowStartDialog] = useState(false)
   const [conversationsLoaded, setConversationsLoaded] = useState(false)
   const conversationListRef = useRef<ConversationListHandle>(null)
   const chatPanelRef = useRef<ChatPanelHandle>(null)
+  const deepLinkHandledRef = useRef(false)
 
   // Check if WhatsApp is configured by attempting to load conversations
   useEffect(() => {
@@ -36,6 +39,20 @@ export default function WhatsAppPage() {
     }
     checkConfig()
   }, [])
+
+  // Deep-link: auto-select conversation from ?conversa= param
+  useEffect(() => {
+    const convId = searchParams.get('conversa')
+    if (!convId || deepLinkHandledRef.current || !conversationsLoaded) return
+    deepLinkHandledRef.current = true
+
+    fetch(`/api/whatsapp/conversations/${convId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((conv: Conversation | null) => {
+        if (conv) setActiveConversation({ ...conv, unreadCount: 0 })
+      })
+      .catch(() => {})
+  }, [searchParams, conversationsLoaded])
 
   const activeConvIdRef = useRef<string | null>(null)
   useEffect(() => {

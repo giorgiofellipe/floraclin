@@ -75,4 +75,35 @@ describe('classifyByKeywords', () => {
     const result = classifyByKeywords(['Tenho interesse em fazer botox'], procsWithSpaces)
     expect(result?.interestedProcedures).toEqual(['Botox '])
   })
+
+  it('matches synonym "ácido hialurônico" to Preenchimento', () => {
+    const result = classifyByKeywords(['Quero aplicar ácido hialurônico'], procedures)
+    expect(result?.interestedProcedures).toEqual(['Preenchimento'])
+  })
+
+  it('matches synonym "toxina botulínica" to Botox', () => {
+    const result = classifyByKeywords(['Quanto custa a toxina botulínica?'], procedures)
+    expect(result?.interestedProcedures).toEqual(['Botox'])
+  })
+
+  it('matches synonym without accents', () => {
+    const result = classifyByKeywords(['Quero acido hialuronico'], procedures)
+    expect(result?.interestedProcedures).toEqual(['Preenchimento'])
+  })
+
+  it('matches synonym "dysport" to Botox', () => {
+    const result = classifyByKeywords(['Vocês aplicam dysport?'], procedures)
+    expect(result?.interestedProcedures).toEqual(['Botox'])
+  })
+
+  it('matches synonym "limpeza facial" to Limpeza de Pele', () => {
+    const result = classifyByKeywords(['Quero agendar uma limpeza facial'], procedures)
+    expect(result?.interestedProcedures).toEqual(['Limpeza de Pele'])
+  })
+
+  it('matches synonyms for procedures not in the default list', () => {
+    const procsWithHarmo = ['Harmonização Facial']
+    const result = classifyByKeywords(['Quanto custa a harmô?'], procsWithHarmo)
+    expect(result?.interestedProcedures).toEqual(['Harmonização Facial'])
+  })
 })

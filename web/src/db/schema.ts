@@ -610,7 +610,7 @@ export const prospects = floraclinSchema.table('prospects', {
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
 }, (table) => [
   index('idx_prospects_tenant_stage').on(table.tenantId, table.stage),
-  uniqueIndex('uq_prospects_tenant_phone').on(table.tenantId, table.phone),
+  uniqueIndex('uq_prospects_tenant_phone').on(table.tenantId, table.phone).where(sql`stage NOT IN ('convertido', 'perdido')`),
 ])
 
 export const prospectActivities = floraclinSchema.table('prospect_activities', {

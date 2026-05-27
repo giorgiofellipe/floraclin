@@ -31,6 +31,23 @@ export async function createProspect(
   return prospect
 }
 
+export async function createNewProspect(
+  tenantId: string,
+  data: { phone: string; name?: string | null; source?: string },
+): Promise<Prospect> {
+  const [prospect] = await db
+    .insert(prospects)
+    .values({
+      tenantId,
+      phone: normalizeBrPhone(data.phone),
+      name: data.name ?? null,
+      source: data.source ?? 'whatsapp',
+    })
+    .returning()
+
+  return prospect
+}
+
 export async function getProspect(tenantId: string, prospectId: string): Promise<Prospect | null> {
   const [prospect] = await db
     .select()
@@ -49,7 +66,7 @@ export async function getProspect(tenantId: string, prospectId: string): Promise
 
 export async function getProspectByPhone(tenantId: string, phone: string): Promise<Prospect | null> {
   const normalized = normalizeBrPhone(phone)
-  const [prospect] = await db
+  const rows = await db
     .select()
     .from(prospects)
     .where(
@@ -59,9 +76,10 @@ export async function getProspectByPhone(tenantId: string, phone: string): Promi
         isNull(prospects.deletedAt),
       ),
     )
-    .limit(1)
+    .orderBy(desc(prospects.createdAt))
 
-  return prospect ?? null
+  if (rows.length === 0) return null
+  return rows.find((p) => p.stage !== 'convertido' && p.stage !== 'perdido') ?? rows[0]
 }
 
 export async function listProspects(

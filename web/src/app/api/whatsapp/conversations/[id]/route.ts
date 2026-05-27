@@ -7,6 +7,39 @@ import { db } from '@/db/client'
 import { whatsappConversations } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
 
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const ctx = await getAuthContext()
+    const { id } = await params
+
+    const tenant = await getTenant(ctx.tenantId)
+    if (!tenant) {
+      return NextResponse.json({ error: 'Tenant não encontrado' }, { status: 404 })
+    }
+
+    const settings = (tenant.settings ?? {}) as Record<string, unknown>
+    if (!settings.whatsapp_enabled) {
+      return NextResponse.json({ error: 'WhatsApp não habilitado' }, { status: 403 })
+    }
+
+    const conversation = await getConversation(ctx.tenantId, id)
+    if (!conversation) {
+      return NextResponse.json({ error: 'Conversa não encontrada' }, { status: 404 })
+    }
+
+    return NextResponse.json(conversation)
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    console.error('API error:', error)
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+  }
+}
+
 const conversationActionSchema = z.object({
   action: z.enum(['mark_read', 'archive']),
 })
