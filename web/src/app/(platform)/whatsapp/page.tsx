@@ -16,6 +16,7 @@ export default function WhatsAppPage() {
   const [configStatus, setConfigStatus] = useState<ConfigStatus>('loading')
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
   const [showStartDialog, setShowStartDialog] = useState(false)
+  const [conversationsLoaded, setConversationsLoaded] = useState(false)
   const conversationListRef = useRef<ConversationListHandle>(null)
   const chatPanelRef = useRef<ChatPanelHandle>(null)
 
@@ -36,6 +37,27 @@ export default function WhatsAppPage() {
     checkConfig()
   }, [])
 
+  const activeConvIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    activeConvIdRef.current = activeConversation?.id ?? null
+  }, [activeConversation])
+
+  // Auto-mark-read when opening a conversation with unread messages
+  const handleSelectConversation = useCallback(
+    (conv: Conversation) => {
+      setActiveConversation({ ...conv, unreadCount: 0 })
+      if (conv.unreadCount > 0) {
+        conversationListRef.current?.resetUnread(conv.id)
+        fetch(`/api/whatsapp/conversations/${conv.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'mark_read' }),
+        }).catch(() => {})
+      }
+    },
+    [],
+  )
+
   // SSE event handlers
   const handleNewMessage = useCallback(
     (data: unknown) => {
@@ -45,24 +67,39 @@ export default function WhatsAppPage() {
 
       const convId = payload.conversationId ?? msg.conversationId
       if (convId) {
-        const displayBody = msg.body || (msg.templateName ? `[Template: ${msg.templateName}]` : null)
-        conversationListRef.current?.addOrUpdateConversation({
+        const mediaLabels: Record<string, string> = { image: 'Imagem', video: 'Video', audio: 'Audio', sticker: 'Sticker' }
+        const displayBody = msg.body
+          || (msg.templateName ? `[Template: ${msg.templateName}]` : null)
+          || (msg.mediaType ? (mediaLabels[msg.mediaType] ?? msg.mediaFilename ?? msg.mediaType) : null)
+        conversationListRef.current?.updateConversation({
           id: convId,
           ...(displayBody != null ? { lastMessageBody: displayBody } : {}),
+          lastMessageDirection: msg.direction,
+          lastMessageStatus: msg.deliveryStatus,
           lastMessageAt: msg.createdAt,
           ...(msg.direction === 'inbound' ? { lastInboundAt: msg.createdAt } : {}),
-        } as Conversation)
+        })
+
+        if (msg.direction === 'inbound' && convId !== activeConvIdRef.current) {
+          conversationListRef.current?.incrementUnread(convId)
+        }
       }
     },
     []
   )
 
   const handleStatusUpdate = useCallback((data: unknown) => {
-    const payload = data as { metaMessageId?: string; messageId?: string; status: string }
+    const payload = data as { metaMessageId?: string; messageId?: string; status: string; conversationId?: string }
     chatPanelRef.current?.updateMessageStatus({
       messageId: payload.metaMessageId ?? payload.messageId ?? '',
       status: payload.status,
     })
+    if (payload.conversationId) {
+      conversationListRef.current?.updateConversation({
+        id: payload.conversationId,
+        lastMessageStatus: payload.status,
+      })
+    }
   }, [])
 
   const handleNewConversation = useCallback((data: unknown) => {
@@ -121,7 +158,7 @@ export default function WhatsAppPage() {
       onQueueDrained: handleQueueDrained,
       onQueueExpired: handleQueueExpired,
     },
-    configStatus === 'configured',
+    configStatus === 'configured' && conversationsLoaded,
   )
 
   const handleConversationStarted = useCallback(
@@ -133,6 +170,8 @@ export default function WhatsAppPage() {
         prospectId: null,
         patientId: conv.patientId,
         lastMessageBody: null,
+        lastMessageDirection: null,
+        lastMessageStatus: null,
         lastMessageAt: new Date().toISOString(),
         lastInboundAt: null,
         unreadCount: 0,
@@ -187,13 +226,21 @@ export default function WhatsAppPage() {
         <ConversationList
           ref={conversationListRef}
           activeConversationId={activeConversation?.id ?? null}
-          onSelectConversation={setActiveConversation}
+          onSelectConversation={handleSelectConversation}
           onNewConversation={() => setShowStartDialog(true)}
+          onInitialLoadComplete={() => setConversationsLoaded(true)}
         />
       </div>
 
       {/* Right panel -- chat */}
-      <ChatPanel ref={chatPanelRef} conversation={activeConversation} />
+      <ChatPanel
+        ref={chatPanelRef}
+        conversation={activeConversation}
+        onMarkRead={(convId) => {
+          conversationListRef.current?.resetUnread(convId)
+          setActiveConversation((prev) => (prev?.id === convId ? { ...prev, unreadCount: 0 } : prev))
+        }}
+      />
 
       <StartConversationDialog
         open={showStartDialog}

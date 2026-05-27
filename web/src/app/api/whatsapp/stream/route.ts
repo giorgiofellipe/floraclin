@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
-import { pollSseEvents, cleanupSseEvents } from '@/db/queries/whatsapp'
+import { pollSseEvents, cleanupSseEvents, getLatestSseEventId } from '@/db/queries/whatsapp'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +18,7 @@ export async function GET() {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  let lastEventId = 0
+  let lastEventId = await getLatestSseEventId(ctx.tenantId)
   const encoder = new TextEncoder()
   let interval: ReturnType<typeof setInterval> | null = null
 

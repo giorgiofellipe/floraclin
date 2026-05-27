@@ -7,7 +7,7 @@ import {
   whatsappQueuedMessages,
   sseEvents,
 } from '@/db/schema'
-import { eq, and, or, desc, gt, lt, ilike, sql, notInArray } from 'drizzle-orm'
+import { eq, and, or, desc, gt, lt, ilike, sql, notInArray, inArray } from 'drizzle-orm'
 import { normalizeBrPhone } from '@/lib/phone'
 import type { PaginatedResult } from '@/types'
 
@@ -140,7 +140,7 @@ export async function listConversations(
 
   const whereConditions = and(...conditions)
 
-  const [data, countResult] = await Promise.all([
+  const [conversations, countResult] = await Promise.all([
     db
       .select({
         id: whatsappConversations.id,
@@ -155,13 +155,6 @@ export async function listConversations(
         status: whatsappConversations.status,
         createdAt: whatsappConversations.createdAt,
         updatedAt: whatsappConversations.updatedAt,
-        lastMessageBody: sql<string | null>`(
-          SELECT COALESCE(m.body, '[Template: ' || m.template_name || ']')
-          FROM floraclin.whatsapp_messages m
-          WHERE m.conversation_id = ${whatsappConversations.id}
-          ORDER BY m."timestamp" DESC
-          LIMIT 1
-        )`.as('last_message_body'),
       })
       .from(whatsappConversations)
       .where(whereConditions)
@@ -175,6 +168,42 @@ export async function listConversations(
   ])
 
   const total = countResult[0]?.count ?? 0
+  const convIds = conversations.map((c) => c.id)
+
+  const lastMsgMap = new Map<string, { body: string; direction: string; deliveryStatus: string }>()
+  if (convIds.length > 0) {
+    const lastMsgs = await db
+      .selectDistinctOn([whatsappMessages.conversationId], {
+        conversationId: whatsappMessages.conversationId,
+        body: whatsappMessages.body,
+        templateName: whatsappMessages.templateName,
+        mediaType: whatsappMessages.mediaType,
+        mediaFilename: whatsappMessages.mediaFilename,
+        direction: whatsappMessages.direction,
+        deliveryStatus: whatsappMessages.deliveryStatus,
+      })
+      .from(whatsappMessages)
+      .where(inArray(whatsappMessages.conversationId, convIds))
+      .orderBy(whatsappMessages.conversationId, desc(whatsappMessages.timestamp))
+
+    for (const m of lastMsgs) {
+      const mediaLabels: Record<string, string> = { image: 'Imagem', video: 'Video', audio: 'Audio', sticker: 'Sticker' }
+      const display = m.body
+        || (m.templateName ? `[Template: ${m.templateName}]` : null)
+        || (m.mediaType ? (mediaLabels[m.mediaType] ?? m.mediaFilename ?? m.mediaType) : null)
+      if (display) lastMsgMap.set(m.conversationId, { body: display, direction: m.direction, deliveryStatus: m.deliveryStatus })
+    }
+  }
+
+  const data = conversations.map((c) => {
+    const lastMsg = lastMsgMap.get(c.id)
+    return {
+      ...c,
+      lastMessageBody: lastMsg?.body ?? null,
+      lastMessageDirection: lastMsg?.direction ?? null,
+      lastMessageStatus: lastMsg?.deliveryStatus ?? null,
+    }
+  })
 
   return {
     data,
@@ -277,6 +306,26 @@ export async function createMessage(
     .returning()
 
   return msg
+}
+
+export async function getRecentInboundBodies(
+  conversationId: string,
+  limit = 5,
+): Promise<string[]> {
+  const rows = await db
+    .select({ body: whatsappMessages.body })
+    .from(whatsappMessages)
+    .where(
+      and(
+        eq(whatsappMessages.conversationId, conversationId),
+        eq(whatsappMessages.direction, 'inbound'),
+        sql`${whatsappMessages.body} IS NOT NULL AND ${whatsappMessages.body} <> ''`,
+      ),
+    )
+    .orderBy(desc(whatsappMessages.timestamp))
+    .limit(limit)
+
+  return rows.map((r) => r.body!).reverse()
 }
 
 export async function getMessageByMetaId(
@@ -701,6 +750,14 @@ export async function pollSseEvents(
     )
     .orderBy(sseEvents.id)
     .limit(100)
+}
+
+export async function getLatestSseEventId(tenantId: string): Promise<number> {
+  const [row] = await db
+    .select({ maxId: sql<number>`COALESCE(MAX(${sseEvents.id}), 0)::int` })
+    .from(sseEvents)
+    .where(eq(sseEvents.tenantId, tenantId))
+  return row?.maxId ?? 0
 }
 
 export async function cleanupSseEvents(): Promise<void> {

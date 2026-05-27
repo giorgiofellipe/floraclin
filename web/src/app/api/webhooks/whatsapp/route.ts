@@ -10,6 +10,7 @@ import {
   updateMessageStatus,
   pushSseEvent,
   getMessageByMetaId,
+  getRecentInboundBodies,
   getQueuedMessages,
   updateQueuedMessageStatus,
   expireStaleQueuedMessages,
@@ -17,6 +18,7 @@ import {
 import {
   createProspect,
   getProspectByPhone,
+  getProspectProcedures,
   updateProspect,
   logProspectActivity,
   setProspectProcedures,
@@ -207,11 +209,15 @@ async function processInboundMessage(
     })
   }
 
-  // Fire-and-forget: AI classification for new prospects
-  if (isNewProspect && body) {
-    classifyAndUpdateProspect(tenantId, prospect.id, body).catch((err) =>
-      console.error('Classification failed:', err),
-    )
+  // Fire-and-forget: reclassify until intent + procedures are identified
+  const needsClassification = !prospect.intent || prospect.intent === 'other'
+  if (needsClassification) {
+    const existingProcs = isNewProspect ? [] : await getProspectProcedures(prospect.id)
+    if (existingProcs.length === 0) {
+      classifyAndUpdateProspect(tenantId, prospect.id, conversation.id).catch((err) =>
+        console.error('Classification failed:', err),
+      )
+    }
   }
 
   // Drain any queued messages now that the window is open
@@ -226,16 +232,20 @@ async function processInboundMessage(
 async function classifyAndUpdateProspect(
   tenantId: string,
   prospectId: string,
-  messageBody: string,
+  conversationId: string,
 ) {
-  // Fetch procedure names, IDs, and prices for keyword matching and auto-value
-  const procedures = await db
-    .select({ id: procedureTypes.id, name: procedureTypes.name, defaultPrice: procedureTypes.defaultPrice })
-    .from(procedureTypes)
-    .where(eq(procedureTypes.tenantId, tenantId))
+  const [procedures, recentMessages] = await Promise.all([
+    db
+      .select({ id: procedureTypes.id, name: procedureTypes.name, defaultPrice: procedureTypes.defaultPrice })
+      .from(procedureTypes)
+      .where(eq(procedureTypes.tenantId, tenantId)),
+    getRecentInboundBodies(conversationId),
+  ])
+
+  if (recentMessages.length === 0) return
 
   const procedureNames = procedures.map((p) => p.name)
-  const classification = await classifyMessage(messageBody, procedureNames)
+  const classification = await classifyMessage(recentMessages, procedureNames)
 
   // Match classified procedure names to actual procedure type IDs
   const matchedProcedures = classification.interestedProcedures

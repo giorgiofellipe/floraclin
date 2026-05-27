@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Search, MessageSquare, Plus } from 'lucide-react'
+import { Search, MessageSquare, Plus, Check, CheckCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export interface Conversation {
@@ -16,6 +16,8 @@ export interface Conversation {
   prospectId: string | null
   patientId: string | null
   lastMessageBody: string | null
+  lastMessageDirection: string | null
+  lastMessageStatus: string | null
   lastMessageAt: string | null
   lastInboundAt: string | null
   unreadCount: number
@@ -26,12 +28,16 @@ type FilterType = 'all' | 'unread' | 'prospects' | 'patients'
 
 export interface ConversationListHandle {
   addOrUpdateConversation: (conv: Conversation) => void
+  updateConversation: (conv: Partial<Conversation> & { id: string }) => void
+  incrementUnread: (convId: string) => void
+  resetUnread: (convId: string) => void
 }
 
 interface ConversationListProps {
   activeConversationId: string | null
   onSelectConversation: (conversation: Conversation) => void
   onNewConversation?: () => void
+  onInitialLoadComplete?: () => void
 }
 
 const FILTER_TABS: { value: FilterType; label: string }[] = [
@@ -79,13 +85,16 @@ function StageBadge({ conversation }: { conversation: Conversation }) {
 }
 
 export const ConversationList = forwardRef<ConversationListHandle, ConversationListProps>(
-  function ConversationList({ activeConversationId, onSelectConversation, onNewConversation }, ref) {
+  function ConversationList({ activeConversationId, onSelectConversation, onNewConversation, onInitialLoadComplete }, ref) {
     const [conversations, setConversations] = useState<Conversation[]>([])
     const [filter, setFilter] = useState<FilterType>('all')
     const [search, setSearch] = useState('')
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const initialLoadDoneRef = useRef(false)
+    const onInitialLoadCompleteRef = useRef(onInitialLoadComplete)
+    onInitialLoadCompleteRef.current = onInitialLoadComplete
 
     const fetchConversations = useCallback(async (f: FilterType, s: string) => {
       setLoading(true)
@@ -103,6 +112,10 @@ export const ConversationList = forwardRef<ConversationListHandle, ConversationL
         }
         const data = await res.json()
         setConversations(data.data ?? [])
+        if (!initialLoadDoneRef.current) {
+          initialLoadDoneRef.current = true
+          onInitialLoadCompleteRef.current?.()
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro desconhecido')
       } finally {
@@ -122,6 +135,7 @@ export const ConversationList = forwardRef<ConversationListHandle, ConversationL
     }
 
     const addOrUpdateConversation = useCallback((conv: Conversation) => {
+      if (!initialLoadDoneRef.current) return
       setConversations((prev) => {
         const idx = prev.findIndex((c) => c.id === conv.id)
         if (idx >= 0) {
@@ -135,7 +149,37 @@ export const ConversationList = forwardRef<ConversationListHandle, ConversationL
       })
     }, [])
 
-    useImperativeHandle(ref, () => ({ addOrUpdateConversation }), [addOrUpdateConversation])
+    const updateConversation = useCallback((conv: Partial<Conversation> & { id: string }) => {
+      if (!initialLoadDoneRef.current) return
+      setConversations((prev) => {
+        const idx = prev.findIndex((c) => c.id === conv.id)
+        if (idx < 0) return prev
+        const existing = prev[idx]
+        if (conv.lastMessageAt && existing.lastMessageAt && conv.lastMessageAt < existing.lastMessageAt) {
+          return prev
+        }
+        const updated = [...prev]
+        updated[idx] = { ...existing, ...conv }
+        return updated.sort((a, b) =>
+          (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? '')
+        )
+      })
+    }, [])
+
+    const incrementUnread = useCallback((convId: string) => {
+      if (!initialLoadDoneRef.current) return
+      setConversations((prev) =>
+        prev.map((c) => (c.id === convId ? { ...c, unreadCount: c.unreadCount + 1 } : c)),
+      )
+    }, [])
+
+    const resetUnread = useCallback((convId: string) => {
+      setConversations((prev) =>
+        prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0 } : c)),
+      )
+    }, [])
+
+    useImperativeHandle(ref, () => ({ addOrUpdateConversation, updateConversation, incrementUnread, resetUnread }), [addOrUpdateConversation, updateConversation, incrementUnread, resetUnread])
 
     if (error === 'not_configured') {
       return null
@@ -243,8 +287,19 @@ export const ConversationList = forwardRef<ConversationListHandle, ConversationL
                   </div>
 
                   <div className="mt-0.5 flex items-center justify-between gap-2">
-                    <p className="truncate text-xs text-[#667781]">
-                      {conv.lastMessageBody || 'Sem mensagens'}
+                    <p className="flex items-center gap-1 truncate text-xs text-[#667781]">
+                      {conv.lastMessageDirection === 'outbound' && (
+                        <span className="shrink-0">
+                          {conv.lastMessageStatus === 'read' ? (
+                            <CheckCheck className="size-3.5 text-[#53BDEB]" />
+                          ) : conv.lastMessageStatus === 'delivered' ? (
+                            <CheckCheck className="size-3.5 text-[#8696A0]" />
+                          ) : (
+                            <Check className="size-3.5 text-[#8696A0]" />
+                          )}
+                        </span>
+                      )}
+                      <span className="truncate">{conv.lastMessageBody || 'Sem mensagens'}</span>
                     </p>
                     <div className="flex shrink-0 items-center gap-1">
                       {conv.unreadCount > 0 && (

@@ -28,6 +28,7 @@ export interface ChatPanelHandle {
 
 interface ChatPanelProps {
   conversation: Conversation | null
+  onMarkRead?: (convId: string) => void
 }
 
 function isWindowOpen(lastInboundAt: string | null): boolean {
@@ -70,7 +71,7 @@ function groupMessagesByDate(messages: Message[]): { dateKey: string; messages: 
 }
 
 export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
-  function ChatPanel({ conversation }, ref) {
+  function ChatPanel({ conversation, onMarkRead }, ref) {
     const [messages, setMessages] = useState<Message[]>([])
     const [loading, setLoading] = useState(false)
     const [loadingMore, setLoadingMore] = useState(false)
@@ -247,11 +248,14 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
       if (!conversation || markingRead) return
       setMarkingRead(true)
       try {
-        await fetch(`/api/whatsapp/conversations/${conversation.id}`, {
+        const res = await fetch(`/api/whatsapp/conversations/${conversation.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'mark_read' }),
         })
+        if (res.ok) {
+          onMarkRead?.(conversation.id)
+        }
       } catch {
         // Silently fail
       } finally {
@@ -328,7 +332,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
               </Button>
             ) : (
               conversation.prospectId && (
-                <Button variant="outline" size="sm" nativeButton={false} render={<Link href={`/pacientes/novo?phone=${encodeURIComponent(conversation.phoneNumber)}&name=${encodeURIComponent(conversation.profileName ?? '')}`} />}>
+                <Button variant="outline" size="sm" nativeButton={false} render={<Link href={`/pacientes?novo=1&telefone=${encodeURIComponent(conversation.phoneNumber)}&nome=${encodeURIComponent(conversation.profileName ?? '')}`} />}>
                   <UserPlus className="mr-1 size-3.5" />
                   Converter
                 </Button>

@@ -13,14 +13,14 @@ const KEYWORD_PATTERNS: { patterns: RegExp; intent: ClassificationResult['intent
 ]
 
 export function classifyByKeywords(
-  message: string,
+  messages: string[],
   procedureNames: string[],
 ): Partial<ClassificationResult> | null {
-  const lower = message.toLowerCase()
+  const combined = messages.join(' ').toLowerCase()
 
   let intent: ClassificationResult['intent'] | null = null
   for (const { patterns, intent: matchIntent } of KEYWORD_PATTERNS) {
-    if (patterns.test(lower)) {
+    if (patterns.test(combined)) {
       intent = matchIntent
       break
     }
@@ -28,7 +28,7 @@ export function classifyByKeywords(
 
   const matched: string[] = []
   for (const name of procedureNames) {
-    if (lower.includes(name.toLowerCase())) {
+    if (combined.includes(name.toLowerCase())) {
       matched.push(name)
     }
   }
@@ -41,9 +41,13 @@ export function classifyByKeywords(
   }
 }
 
-export async function classifyWithOpenAI(message: string): Promise<ClassificationResult> {
+export async function classifyWithOpenAI(messages: string[]): Promise<ClassificationResult> {
   const OpenAI = (await import('openai')).default
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+
+  const conversationText = messages.length === 1
+    ? messages[0]
+    : messages.map((m, i) => `[${i + 1}] ${m}`).join('\n')
 
   const response = await client.chat.completions.create({
     model: 'gpt-4o-mini',
@@ -52,7 +56,7 @@ export async function classifyWithOpenAI(message: string): Promise<Classificatio
     messages: [
       {
         role: 'system',
-        content: `You are a classifier for a Brazilian dental/aesthetic clinic. Analyze the WhatsApp message and return JSON:
+        content: `You are a classifier for a Brazilian dental/aesthetic clinic. Analyze the patient's WhatsApp messages and return JSON:
 {
   "intent": "inquiry" | "scheduling" | "complaint" | "followup" | "other",
   "interestedProcedures": ["procedure name", ...] or [],
@@ -62,7 +66,7 @@ export async function classifyWithOpenAI(message: string): Promise<Classificatio
 The patient may mention multiple procedures. Return all that apply.
 Respond ONLY with the JSON object, no other text.`,
       },
-      { role: 'user', content: message },
+      { role: 'user', content: conversationText },
     ],
   })
 
@@ -86,10 +90,14 @@ Respond ONLY with the JSON object, no other text.`,
 }
 
 export async function classifyMessage(
-  message: string,
+  messages: string[],
   procedureNames: string[],
 ): Promise<ClassificationResult> {
-  const keywordResult = classifyByKeywords(message, procedureNames)
+  if (messages.length === 0) {
+    return { intent: 'other', interestedProcedures: [], sentiment: 'neutral', extractedName: null }
+  }
+
+  const keywordResult = classifyByKeywords(messages, procedureNames)
   if (keywordResult?.intent) {
     return {
       intent: keywordResult.intent,
@@ -104,7 +112,7 @@ export async function classifyMessage(
   }
 
   try {
-    return await classifyWithOpenAI(message)
+    return await classifyWithOpenAI(messages)
   } catch {
     return { intent: 'other', interestedProcedures: [], sentiment: 'neutral', extractedName: null }
   }
