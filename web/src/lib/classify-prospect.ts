@@ -28,7 +28,7 @@ export function classifyByKeywords(
 
   const matched: string[] = []
   for (const name of procedureNames) {
-    if (combined.includes(name.toLowerCase())) {
+    if (combined.includes(name.trim().toLowerCase())) {
       matched.push(name)
     }
   }
@@ -41,13 +41,15 @@ export function classifyByKeywords(
   }
 }
 
-export async function classifyWithOpenAI(messages: string[]): Promise<ClassificationResult> {
+export async function classifyWithOpenAI(messages: string[], procedureNames: string[]): Promise<ClassificationResult> {
   const OpenAI = (await import('openai')).default
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
   const conversationText = messages.length === 1
     ? messages[0]
     : messages.map((m, i) => `[${i + 1}] ${m}`).join('\n')
+
+  const procedureList = procedureNames.map((n) => n.trim()).join(', ')
 
   const response = await client.chat.completions.create({
     model: 'gpt-4o-mini',
@@ -63,7 +65,8 @@ export async function classifyWithOpenAI(messages: string[]): Promise<Classifica
   "sentiment": "positive" | "neutral" | "negative",
   "extractedName": "string or null"
 }
-The patient may mention multiple procedures. Return all that apply.
+Available procedures at this clinic: ${procedureList}.
+Use these EXACT procedure names in interestedProcedures. The patient may mention multiple procedures. Return all that apply.
 Respond ONLY with the JSON object, no other text.`,
       },
       { role: 'user', content: conversationText },
@@ -112,7 +115,7 @@ export async function classifyMessage(
   }
 
   try {
-    return await classifyWithOpenAI(messages)
+    return await classifyWithOpenAI(messages, procedureNames)
   } catch {
     return { intent: 'other', interestedProcedures: [], sentiment: 'neutral', extractedName: null }
   }

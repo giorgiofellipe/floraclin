@@ -69,4 +69,10 @@ describe('classifyByKeywords', () => {
     const result = classifyByKeywords(['Oi', 'Tudo bem?'], procedures)
     expect(result).toBeNull()
   })
+
+  it('matches procedures with trailing spaces in names', () => {
+    const procsWithSpaces = ['Botox ', 'Preenchimento ', 'Limpeza de Pele']
+    const result = classifyByKeywords(['Tenho interesse em fazer botox'], procsWithSpaces)
+    expect(result?.interestedProcedures).toEqual(['Botox '])
+  })
 })
