@@ -18,7 +18,6 @@ import {
 import {
   createProspect,
   getProspectByPhone,
-  getProspectProcedures,
   updateProspect,
   logProspectActivity,
   setProspectProcedures,
@@ -209,15 +208,11 @@ async function processInboundMessage(
     })
   }
 
-  // Fire-and-forget: reclassify until intent + procedures are identified
-  const needsClassification = !prospect.intent || prospect.intent === 'other'
-  if (needsClassification) {
-    const existingProcs = isNewProspect ? [] : await getProspectProcedures(prospect.id)
-    if (existingProcs.length === 0) {
-      classifyAndUpdateProspect(tenantId, prospect.id, conversation.id).catch((err) =>
-        console.error('Classification failed:', err),
-      )
-    }
+  // Fire-and-forget: keep reclassifying while the lead is still in "novo" stage
+  if (prospect.stage === 'novo') {
+    classifyAndUpdateProspect(tenantId, prospect.id, conversation.id).catch((err) =>
+      console.error('Classification failed:', err),
+    )
   }
 
   // Drain any queued messages now that the window is open
