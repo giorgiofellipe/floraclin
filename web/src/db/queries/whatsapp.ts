@@ -7,7 +7,7 @@ import {
   whatsappQueuedMessages,
   sseEvents,
 } from '@/db/schema'
-import { eq, and, or, desc, gt, lt, ilike, sql, notInArray, inArray } from 'drizzle-orm'
+import { eq, and, or, desc, gt, gte, lt, ilike, sql, notInArray, inArray } from 'drizzle-orm'
 import { normalizeBrPhone } from '@/lib/phone'
 import type { PaginatedResult } from '@/types'
 
@@ -311,17 +311,21 @@ export async function createMessage(
 export async function getRecentInboundBodies(
   conversationId: string,
   limit = 5,
+  after?: Date,
 ): Promise<string[]> {
+  const conditions = [
+    eq(whatsappMessages.conversationId, conversationId),
+    eq(whatsappMessages.direction, 'inbound'),
+    sql`${whatsappMessages.body} IS NOT NULL AND ${whatsappMessages.body} <> ''`,
+  ]
+  if (after) {
+    conditions.push(gte(whatsappMessages.timestamp, after))
+  }
+
   const rows = await db
     .select({ body: whatsappMessages.body })
     .from(whatsappMessages)
-    .where(
-      and(
-        eq(whatsappMessages.conversationId, conversationId),
-        eq(whatsappMessages.direction, 'inbound'),
-        sql`${whatsappMessages.body} IS NOT NULL AND ${whatsappMessages.body} <> ''`,
-      ),
-    )
+    .where(and(...conditions))
     .orderBy(desc(whatsappMessages.timestamp))
     .limit(limit)
 

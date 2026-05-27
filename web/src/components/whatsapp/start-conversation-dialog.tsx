@@ -157,13 +157,32 @@ export function StartConversationDialog({
   }
 
   function handleSelectTemplate(template: Template) {
-    if (template.variableMapping && template.variableMapping.length > 0) {
-      setSelectedTemplate(template)
-      setVariableValues({})
-      setStep('variables')
-    } else {
+    const mapping = template.variableMapping
+    if (!mapping || mapping.length === 0) {
       sendConversation(template.name, template.language)
+      return
     }
+
+    const autoFilled: Record<number, string> = {}
+    for (const v of mapping) {
+      if (v.key === 'patient_name' && selectedPatient?.fullName) {
+        autoFilled[v.index] = selectedPatient.fullName
+      }
+    }
+
+    const allFilled = mapping.every((v) => !!autoFilled[v.index])
+    if (allFilled) {
+      const params: Record<string, string> = {}
+      for (const v of mapping) {
+        params[String(v.index)] = autoFilled[v.index]
+      }
+      sendConversation(template.name, template.language, params)
+      return
+    }
+
+    setSelectedTemplate(template)
+    setVariableValues(autoFilled)
+    setStep('variables')
   }
 
   function handleSendWithVariables() {
@@ -219,6 +238,7 @@ export function StartConversationDialog({
   // Step: variables
   if (step === 'variables' && selectedTemplate) {
     const mapping = selectedTemplate.variableMapping ?? []
+    const unfilledCount = mapping.filter((v) => !variableValues[v.index]).length
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-md">
@@ -230,25 +250,32 @@ export function StartConversationDialog({
               Preencher variáveis
             </DialogTitle>
             <DialogDescription>
-              Preencha os campos para personalizar a mensagem.
+              {unfilledCount > 0
+                ? `${unfilledCount === 1 ? '1 campo precisa' : `${unfilledCount} campos precisam`} ser preenchido${unfilledCount > 1 ? 's' : ''} manualmente.`
+                : 'Campos preenchidos automaticamente. Confirme e envie.'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">
-            {mapping.map((v) => (
-              <div key={v.index} className="space-y-1">
-                <Label className="text-xs text-mid">
-                  {`{{${v.index}}}`} — {v.label}
-                </Label>
-                <Input
-                  placeholder={v.example}
-                  value={variableValues[v.index] ?? ''}
-                  onChange={(e) =>
-                    setVariableValues((prev) => ({ ...prev, [v.index]: e.target.value }))
-                  }
-                />
-              </div>
-            ))}
+            {mapping.map((v) => {
+              const filled = !!variableValues[v.index]
+              return (
+                <div key={v.index} className="space-y-1">
+                  <Label className="text-xs text-mid flex items-center gap-1.5">
+                    {`{{${v.index}}}`} — {v.label}
+                    {filled && <span className="text-[10px] text-[#25D366]">✓ auto</span>}
+                  </Label>
+                  <Input
+                    placeholder={v.example}
+                    value={variableValues[v.index] ?? ''}
+                    onChange={(e) =>
+                      setVariableValues((prev) => ({ ...prev, [v.index]: e.target.value }))
+                    }
+                    className={!filled ? 'border-amber-300 focus:border-amber-400 focus:ring-amber-400' : ''}
+                  />
+                </div>
+              )
+            })}
           </div>
 
           <div className="mt-2 rounded-lg bg-muted/30 p-3">

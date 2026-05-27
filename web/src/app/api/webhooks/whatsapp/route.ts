@@ -167,6 +167,12 @@ async function processInboundMessage(
 
   if (msgType === 'text') {
     body = msg.text?.body ?? null
+  } else if (msgType === 'interactive') {
+    const interactive = msg.interactive as { button_reply?: { title: string }; list_reply?: { title: string; description?: string } } | undefined
+    body = interactive?.button_reply?.title ?? interactive?.list_reply?.title ?? null
+  } else if (msgType === 'button') {
+    const button = msg.button as { text: string } | undefined
+    body = button?.text ?? null
   } else if (['image', 'video', 'audio', 'document'].includes(msgType)) {
     const media = msg[msgType] as WhatsAppMediaPayload | undefined
     if (media) {
@@ -216,7 +222,7 @@ async function processInboundMessage(
 
   // Fire-and-forget: keep reclassifying while the lead is still in "novo" stage
   if (prospect.stage === 'novo') {
-    classifyAndUpdateProspect(tenantId, prospect.id, conversation.id).catch((err) =>
+    classifyAndUpdateProspect(tenantId, prospect.id, conversation.id, new Date(prospect.createdAt)).catch((err) =>
       console.error('Classification failed:', err),
     )
   }
@@ -234,13 +240,14 @@ async function classifyAndUpdateProspect(
   tenantId: string,
   prospectId: string,
   conversationId: string,
+  prospectCreatedAt: Date,
 ) {
   const [procedures, recentMessages] = await Promise.all([
     db
       .select({ id: procedureTypes.id, name: procedureTypes.name, defaultPrice: procedureTypes.defaultPrice })
       .from(procedureTypes)
       .where(eq(procedureTypes.tenantId, tenantId)),
-    getRecentInboundBodies(conversationId),
+    getRecentInboundBodies(conversationId, 5, prospectCreatedAt),
   ])
 
   if (recentMessages.length === 0) return

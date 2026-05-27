@@ -477,6 +477,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
           onOpenChange={setTemplateOpen}
           onSelectTemplate={handleSendTemplate}
           sending={sending}
+          contactName={conversation?.profileName}
         />
       </div>
     )
