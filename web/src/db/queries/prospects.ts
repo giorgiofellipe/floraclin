@@ -48,10 +48,14 @@ export async function createNewProspect(
   return prospect
 }
 
-export async function getProspect(tenantId: string, prospectId: string): Promise<Prospect | null> {
-  const [prospect] = await db
-    .select()
+export async function getProspect(tenantId: string, prospectId: string): Promise<(Prospect & { whatsappConversationId: string | null }) | null> {
+  const [row] = await db
+    .select({
+      prospect: prospects,
+      whatsappConversationId: whatsappConversations.id,
+    })
     .from(prospects)
+    .leftJoin(whatsappConversations, eq(whatsappConversations.prospectId, prospects.id))
     .where(
       and(
         eq(prospects.id, prospectId),
@@ -61,7 +65,8 @@ export async function getProspect(tenantId: string, prospectId: string): Promise
     )
     .limit(1)
 
-  return prospect ?? null
+  if (!row) return null
+  return { ...row.prospect, whatsappConversationId: row.whatsappConversationId }
 }
 
 export async function getProspectByPhone(tenantId: string, phone: string): Promise<Prospect | null> {
@@ -85,7 +90,7 @@ export async function getProspectByPhone(tenantId: string, phone: string): Promi
 export async function listProspects(
   tenantId: string,
   opts: { stage?: ProspectStage; search?: string; assignedUserId?: string } = {},
-): Promise<Prospect[]> {
+): Promise<(Prospect & { whatsappConversationId: string | null })[]> {
   const { stage, search, assignedUserId } = opts
 
   const baseConditions = [
@@ -113,11 +118,17 @@ export async function listProspects(
     ? and(...baseConditions, searchCondition)
     : and(...baseConditions)
 
-  return db
-    .select()
+  const rows = await db
+    .select({
+      prospect: prospects,
+      whatsappConversationId: whatsappConversations.id,
+    })
     .from(prospects)
+    .leftJoin(whatsappConversations, eq(whatsappConversations.prospectId, prospects.id))
     .where(whereConditions)
     .orderBy(desc(prospects.createdAt))
+
+  return rows.map((r) => ({ ...r.prospect, whatsappConversationId: r.whatsappConversationId }))
 }
 
 export async function updateProspect(
