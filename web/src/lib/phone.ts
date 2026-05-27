@@ -12,3 +12,21 @@ export function normalizeBrPhone(phone: string): string {
   }
   return digits
 }
+
+export function formatBrPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '')
+  const local = digits.startsWith('55') ? digits.slice(2) : digits
+
+  if (local.length === 11) {
+    return `(${local.slice(0, 2)}) ${local.slice(2, 7)}-${local.slice(7)}`
+  }
+  if (local.length === 10) {
+    return `(${local.slice(0, 2)}) ${local.slice(2, 6)}-${local.slice(6)}`
+  }
+  return phone
+}
+
+export function stripCountryCode(phone: string): string {
+  const digits = phone.replace(/\D/g, '')
+  return digits.startsWith('55') ? digits.slice(2) : digits
+}

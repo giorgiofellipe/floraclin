@@ -75,6 +75,25 @@ export async function getPatient(tenantId: string, patientId: string): Promise<P
   return patient ?? null
 }
 
+export async function getPatientByPhone(tenantId: string, phone: string): Promise<Patient | null> {
+  const digits = phone.replace(/\D/g, '')
+  const local = digits.startsWith('55') ? digits.slice(2) : digits
+
+  const [patient] = await db
+    .select()
+    .from(patients)
+    .where(
+      and(
+        eq(patients.tenantId, tenantId),
+        isNull(patients.deletedAt),
+        sql`regexp_replace(${patients.phone}, '\\D', '', 'g') = ${local}`,
+      ),
+    )
+    .limit(1)
+
+  return patient ?? null
+}
+
 export async function createPatient(
   tenantId: string,
   data: CreatePatientInput,

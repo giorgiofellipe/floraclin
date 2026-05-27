@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { MessageBubble, type Message } from './message-bubble'
 import { TemplatePicker } from './template-picker'
 import type { Conversation } from './conversation-list'
+import { formatBrPhone, stripCountryCode } from '@/lib/phone'
 import { toast } from 'sonner'
 import {
   Send,
@@ -308,7 +309,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
             </Avatar>
             <div>
               <h3 className="text-sm font-medium text-[#111B21]">{displayName}</h3>
-              <p className="text-xs text-[#667781]">{conversation.phoneNumber}</p>
+              <p className="text-xs text-[#667781]">{formatBrPhone(conversation.phoneNumber)}</p>
             </div>
           </div>
 
@@ -332,7 +333,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
               </Button>
             ) : (
               conversation.prospectId && (
-                <Button variant="outline" size="sm" nativeButton={false} render={<Link href={`/pacientes?novo=1&telefone=${encodeURIComponent(conversation.phoneNumber)}&nome=${encodeURIComponent(conversation.profileName ?? '')}`} />}>
+                <Button variant="outline" size="sm" nativeButton={false} render={<Link href={`/pacientes?novo=1&telefone=${encodeURIComponent(formatBrPhone(conversation.phoneNumber))}&nome=${encodeURIComponent(conversation.profileName ?? '')}`} />}>
                   <UserPlus className="mr-1 size-3.5" />
                   Converter
                 </Button>

@@ -22,6 +22,7 @@ import {
   logProspectActivity,
   setProspectProcedures,
 } from '@/db/queries/prospects'
+import { getPatientByPhone } from '@/db/queries/patients'
 import { classifyMessage } from '@/lib/classify-prospect'
 
 export const dynamic = 'force-dynamic'
@@ -151,12 +152,16 @@ async function processInboundMessage(
     })
   }
 
+  // Match to existing patient by phone
+  const patient = await getPatientByPhone(tenantId, from)
+
   // Upsert conversation
   const conversation = await upsertConversation(
     tenantId,
     from,
     profileName,
     prospect.id,
+    patient?.id ?? null,
   )
 
   // Extract message body and media info

@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Search, MessageSquare, Plus, Check, CheckCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { formatBrPhone } from '@/lib/phone'
 
 export interface Conversation {
   id: string
@@ -279,7 +280,7 @@ export const ConversationList = forwardRef<ConversationListHandle, ConversationL
                 <div className="flex-1 overflow-hidden">
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate text-sm font-medium text-[#111B21]">
-                      {conv.profileName || conv.phoneNumber}
+                      {conv.profileName || formatBrPhone(conv.phoneNumber)}
                     </span>
                     <span className="shrink-0 text-[11px] text-[#667781]">
                       {formatTimeAgo(conv.lastMessageAt)}
