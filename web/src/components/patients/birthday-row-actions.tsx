@@ -196,7 +196,11 @@ export function BirthdayRowActions({
         size={btnSize}
         disabled={toggleGreeting.isPending}
         onClick={handleToggle}
-        title={greeted ? 'Desmarcar como parabenizado' : 'Marcar como parabenizado'}
+        title={
+          greeted
+            ? 'Desmarcar como parabenizado'
+            : 'Marcar como parabenizado (sem enviar mensagem)'
+        }
       >
         <Check
           className={cn(
@@ -205,7 +209,7 @@ export function BirthdayRowActions({
           )}
         />
         {size === 'default' && (
-          <span>{greeted ? 'Parabenizado' : 'Parabenizar'}</span>
+          <span>{greeted ? 'Parabenizado' : 'Já parabenizei'}</span>
         )}
       </Button>
     </div>
