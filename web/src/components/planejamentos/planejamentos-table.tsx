@@ -172,6 +172,7 @@ export function PlanejamentosTable({
                         variant="ghost"
                         size="icon-sm"
                         title="Enviar WhatsApp"
+                        nativeButton={false}
                         render={
                           <a
                             href={buildWhatsappHref(row.patientPhone)}
