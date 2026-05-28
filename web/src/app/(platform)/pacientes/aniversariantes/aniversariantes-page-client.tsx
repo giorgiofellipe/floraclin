@@ -205,6 +205,7 @@ export function AniversariantesPageClient() {
                     <div className="flex justify-end">
                       <BirthdayRowActions
                         patientId={item.id}
+                        patientFullName={item.fullName}
                         patientPhone={item.phone}
                         greetedAt={item.greetedAt}
                         year={currentYear}

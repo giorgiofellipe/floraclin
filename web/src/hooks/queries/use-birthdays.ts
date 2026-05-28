@@ -34,6 +34,83 @@ export function useBirthdays(args: { from: string; to: string; enabled?: boolean
   })
 }
 
+export interface BirthdayTemplate {
+  name: string
+  language: string
+  status: string // PENDING | APPROVED | REJECTED | …
+  variableMapping: Array<{ index: number; key: string; label: string }> | null
+}
+
+/**
+ * Looks up the tenant's birthday-greeting template (the one with
+ * `purposeKey = 'birthday_greeting'`). Used by the Aniversariantes screen to
+ * enable the "Enviar mensagem" action only when an approved template exists
+ * and WhatsApp is configured for the tenant.
+ *
+ * Returns `null` (not throws) when:
+ *  - WhatsApp is disabled for this tenant (`/api/whatsapp/templates` → 403)
+ *  - No template with that purposeKey exists yet
+ */
+export function useBirthdayTemplate() {
+  return useQuery<BirthdayTemplate | null>({
+    queryKey: ['whatsapp-birthday-template'],
+    staleTime: 60_000,
+    queryFn: async () => {
+      const res = await fetch('/api/whatsapp/templates')
+      if (res.status === 403) return null // WhatsApp disabled
+      if (!res.ok) return null
+      const json = await res.json()
+      const templates = (json.data ?? json) as Array<{
+        name: string
+        language: string
+        status: string
+        purposeKey: string | null
+        variableMapping: BirthdayTemplate['variableMapping']
+      }>
+      const found = templates.find((t) => t.purposeKey === 'birthday_greeting')
+      if (!found) return null
+      return {
+        name: found.name,
+        language: found.language,
+        status: found.status,
+        variableMapping: found.variableMapping ?? null,
+      }
+    },
+  })
+}
+
+/**
+ * Sends the birthday-greeting WhatsApp template to a patient. On success the
+ * caller is responsible for invalidating the birthdays list — typically by
+ * pairing this with `useToggleGreeting` to auto-mark the patient as greeted.
+ */
+export function useSendBirthdayMessage() {
+  return useMutation({
+    mutationFn: async (args: {
+      patientId: string
+      templateName: string
+      language: string
+      params: Record<string, string>
+    }) => {
+      const res = await fetch('/api/whatsapp/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patientId: args.patientId,
+          templateName: args.templateName,
+          language: args.language,
+          params: args.params,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Erro ao enviar mensagem')
+      }
+      return res.json()
+    },
+  })
+}
+
 /**
  * Toggle the "greeted this year" flag for a patient.
  * `greeted: true` → POST (record greeting). `greeted: false` → DELETE (clear it).
