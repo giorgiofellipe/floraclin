@@ -13,13 +13,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   AVAILABLE_DOCUMENT_PLACEHOLDERS,
 } from '@/lib/templates/placeholders'
@@ -115,21 +115,24 @@ export function DocumentTemplateForm({
   const isPending = create.isPending || update.isPending
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full max-w-[800px] overflow-y-auto sm:max-w-[800px]">
-        <form onSubmit={handleSubmit}>
-          <SheetHeader>
-            <SheetTitle>{template ? 'Editar modelo' : 'Novo modelo'}</SheetTitle>
-            <SheetDescription>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex h-[90vh] w-[95vw] max-w-5xl flex-col gap-0 p-0 sm:max-w-5xl">
+        <form
+          onSubmit={handleSubmit}
+          className="flex h-full min-h-0 flex-col"
+        >
+          <DialogHeader className="border-b border-[#E8ECEF] px-6 py-4">
+            <DialogTitle>{template ? 'Editar modelo' : 'Novo modelo'}</DialogTitle>
+            <DialogDescription>
               Modelos pré-preenchem o corpo ao emitir um documento. Use marcadores como
               <code className="mx-1 font-mono text-xs">{'{{patient.name}}'}</code> para
               dados que serão substituídos automaticamente.
-            </SheetDescription>
-          </SheetHeader>
+            </DialogDescription>
+          </DialogHeader>
 
-          <div className="grid gap-4 p-4 md:grid-cols-[1fr_220px]">
-            <div className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-[160px_1fr]">
+          <div className="grid min-h-0 flex-1 gap-4 overflow-hidden p-6 md:grid-cols-[1fr_240px]">
+            <div className="flex min-h-0 flex-col gap-4">
+              <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
                 <div className="space-y-1">
                   <Label>Tipo</Label>
                   <Select
@@ -158,16 +161,15 @@ export function DocumentTemplateForm({
                 </div>
               </div>
 
-              <div className="space-y-1">
+              <div className="flex min-h-0 flex-1 flex-col space-y-1">
                 <Label htmlFor="tpl-body">Corpo</Label>
                 <Textarea
                   id="tpl-body"
                   ref={bodyRef}
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
-                  rows={18}
                   placeholder="Conteúdo do modelo..."
-                  className="font-serif"
+                  className="flex-1 resize-none font-serif text-base leading-relaxed"
                 />
               </div>
 
@@ -181,7 +183,7 @@ export function DocumentTemplateForm({
               </label>
             </div>
 
-            <aside className="space-y-2">
+            <aside className="flex min-h-0 flex-col space-y-2 overflow-y-auto pr-1">
               <Label className="text-xs uppercase tracking-wider text-mid">
                 Marcadores
               </Label>
@@ -202,16 +204,16 @@ export function DocumentTemplateForm({
             </aside>
           </div>
 
-          <SheetFooter className="flex-row justify-end gap-2 border-t border-[#E8ECEF] p-4">
+          <DialogFooter className="flex-row justify-end gap-2 border-t border-[#E8ECEF] p-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
             <Button type="submit" disabled={isPending}>
               {isPending ? 'Salvando...' : 'Salvar'}
             </Button>
-          </SheetFooter>
+          </DialogFooter>
         </form>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   )
 }
