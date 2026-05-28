@@ -177,7 +177,7 @@ function ProfileDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-2">
+        <div className="space-y-6 py-2 max-h-[calc(100vh-10rem)] overflow-y-auto">
           {/* Profile info */}
           <div className="space-y-3">
             <div className="space-y-2">

@@ -18,6 +18,7 @@ interface DayViewProps {
   calendarBlocks?: CalendarBlockRow[]
   onSlotClick?: (date: string, time: string) => void
   onAppointmentClick?: (appointment: AppointmentWithDetails, event?: React.MouseEvent) => void
+  onBlockClick?: (block: CalendarBlockRow, event: React.MouseEvent) => void
 }
 
 function timeToMinutes(time: string): number {
@@ -114,7 +115,7 @@ function computeOverlapLayout(appointments: AppointmentWithDetails[]): LayoutSlo
   return result
 }
 
-export function DayView({ date, appointments, calendarBlocks = [], onSlotClick, onAppointmentClick }: DayViewProps) {
+export function DayView({ date, appointments, calendarBlocks = [], onSlotClick, onAppointmentClick, onBlockClick }: DayViewProps) {
   const dateStr = format(date, 'yyyy-MM-dd')
   const dayAppointments = appointments.filter((a) => a.date === dateStr)
 
@@ -213,11 +214,15 @@ export function DayView({ date, appointments, calendarBlocks = [], onSlotClick, 
           {blockSlots.map(({ block, top, height }) => (
             <div
               key={block.id}
-              className="absolute left-0 right-0 z-10 mx-1 rounded border border-dashed border-gray-300 bg-gray-100/60 px-2 py-1 pointer-events-none"
+              className="absolute left-0 right-0 z-10 mx-1 rounded border border-dashed border-gray-300 bg-gray-100/60 px-2 py-1 cursor-pointer hover:bg-gray-200/60 transition-colors"
               style={{ top, height }}
+              onClick={(e) => { e.stopPropagation(); onBlockClick?.(block, e) }}
             >
               <span className="text-[11px] font-medium text-gray-500 truncate block">
                 Indisponível
+              </span>
+              <span className="text-[10px] text-gray-400 truncate block">
+                {block.practitionerName}
               </span>
             </div>
           ))}
@@ -240,7 +245,6 @@ export function DayView({ date, appointments, calendarBlocks = [], onSlotClick, 
                 <AppointmentCard
                   appointment={appt}
                   onClick={onAppointmentClick}
-                  showPractitioner={totalColumns > 1}
                 />
               </div>
             )

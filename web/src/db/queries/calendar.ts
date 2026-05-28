@@ -1,5 +1,5 @@
 import { db } from '@/db/client'
-import { calendarConnections, calendarBlocks, appointments } from '@/db/schema'
+import { calendarConnections, calendarBlocks, appointments, users } from '@/db/schema'
 import { eq, and, isNull, gte, lte, ne, sql } from 'drizzle-orm'
 
 // ─── Calendar Connection Queries ────────────────────────────────────
@@ -264,6 +264,7 @@ export interface CalendarBlockRow {
   id: string
   tenantId: string
   practitionerId: string
+  practitionerName: string
   connectionId: string
   googleEventId: string
   title: string | null
@@ -296,6 +297,7 @@ export async function listBlocksForDateRange(
       id: calendarBlocks.id,
       tenantId: calendarBlocks.tenantId,
       practitionerId: calendarBlocks.practitionerId,
+      practitionerName: users.fullName,
       connectionId: calendarBlocks.connectionId,
       googleEventId: calendarBlocks.googleEventId,
       title: calendarBlocks.title,
@@ -306,6 +308,7 @@ export async function listBlocksForDateRange(
       status: calendarBlocks.status,
     })
     .from(calendarBlocks)
+    .innerJoin(users, eq(calendarBlocks.practitionerId, users.id))
     .where(and(...conditions))
     .orderBy(calendarBlocks.date, calendarBlocks.startTime)
 }
@@ -371,6 +374,23 @@ export async function deleteCalendarBlock(
         eq(calendarBlocks.googleEventId, googleEventId)
       )
     )
+}
+
+export async function deleteBlockById(
+  tenantId: string,
+  blockId: string
+) {
+  const [result] = await db
+    .delete(calendarBlocks)
+    .where(
+      and(
+        eq(calendarBlocks.id, blockId),
+        eq(calendarBlocks.tenantId, tenantId)
+      )
+    )
+    .returning()
+
+  return result ?? null
 }
 
 export async function deleteBlocksByConnection(connectionId: string) {

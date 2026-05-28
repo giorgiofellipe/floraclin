@@ -1,6 +1,6 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from './query-keys'
 import type { CalendarBlockRow } from '@/db/queries/calendar'
 
@@ -32,6 +32,22 @@ export function useCalendarConnections() {
       if (!res.ok) return []
       const json = await res.json()
       return json.data ?? []
+    },
+  })
+}
+
+export function useDeleteCalendarBlock() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (blockId: string) => {
+      const res = await fetch(`/api/calendar/blocks/${blockId}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Erro ao remover bloqueio')
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.calendar.all })
     },
   })
 }

@@ -24,6 +24,7 @@ interface WeekViewProps {
   calendarBlocks?: CalendarBlockRow[]
   onSlotClick?: (date: string, time: string) => void
   onAppointmentClick?: (appointment: AppointmentWithDetails, event?: React.MouseEvent) => void
+  onBlockClick?: (block: CalendarBlockRow, event: React.MouseEvent) => void
 }
 
 function timeToMinutes(time: string): number {
@@ -104,7 +105,7 @@ function computeOverlapLayout(appointments: AppointmentWithDetails[]): LayoutSlo
   return result
 }
 
-export function WeekView({ date, appointments, calendarBlocks = [], onSlotClick, onAppointmentClick }: WeekViewProps) {
+export function WeekView({ date, appointments, calendarBlocks = [], onSlotClick, onAppointmentClick, onBlockClick }: WeekViewProps) {
   const weekStart = startOfWeek(date, { weekStartsOn: 1 }) // Monday
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
   const today = new Date()
@@ -229,11 +230,15 @@ export function WeekView({ date, appointments, calendarBlocks = [], onSlotClick,
                 return (
                   <div
                     key={block.id}
-                    className="absolute left-0 right-0 z-10 mx-0.5 rounded border border-dashed border-gray-300 bg-gray-100/60 px-1 py-0.5 pointer-events-none"
+                    className="absolute left-0 right-0 z-10 mx-0.5 rounded border border-dashed border-gray-300 bg-gray-100/60 px-1 py-0.5 cursor-pointer hover:bg-gray-200/60 transition-colors"
                     style={{ top, height }}
+                    onClick={(e) => { e.stopPropagation(); onBlockClick?.(block, e) }}
                   >
                     <span className="text-[10px] font-medium text-gray-500 truncate block">
                       Indisponível
+                    </span>
+                    <span className="text-[9px] text-gray-400 truncate block">
+                      {block.practitionerName}
                     </span>
                   </div>
                 )
