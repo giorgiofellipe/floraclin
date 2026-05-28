@@ -102,15 +102,16 @@ export function ImageCropper({
   onSave,
   onCancel,
 }: ImageCropperProps) {
-  // State is initialized from props once. Re-mount the component (via a
-  // `key={src}` or conditional rendering at the dialog boundary) when you
-  // need to reset for a different image — avoids cascading renders from a
-  // setState-in-effect pattern.
-  const initialCrop: PercentCrop = currentCrop
-    ? cropBoxToPercentCrop(currentCrop)
-    : defaultPercentCrop()
-  const [crop, setCrop] = useState<Crop>(initialCrop)
-  const [zoomPercent, setZoomPercent] = useState(() => cropToZoomPercent(initialCrop))
+  // Always start with the crop rectangle spanning the full image, even if a
+  // saved crop already exists on the photo. That way the user begins from a
+  // clean canvas and can either drag in or use the zoom slider; the
+  // "Remover recorte" button still acknowledges the saved state. State is
+  // initialized once — re-mount the component (via a `key={src}` or
+  // conditional rendering at the dialog boundary) to reset for a different
+  // image, which avoids cascading renders from a setState-in-effect pattern.
+  void currentCrop // used below for the Remover-recorte affordance only
+  const [crop, setCrop] = useState<Crop>(() => defaultPercentCrop())
+  const [zoomPercent, setZoomPercent] = useState(0)
   const [imageLoaded, setImageLoaded] = useState(false)
   const naturalSize = useRef<{ width: number; height: number } | null>(null)
 
