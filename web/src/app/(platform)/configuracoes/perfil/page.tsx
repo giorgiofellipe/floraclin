@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 
 export default async function PerfilPage() {
   // Ensures auth and redirects to /login when unauthenticated.
-  await getAuthContext()
+  const ctx = await getAuthContext()
 
-  return <PerfilPageClient />
+  return <PerfilPageClient userRole={ctx.role} />
 }

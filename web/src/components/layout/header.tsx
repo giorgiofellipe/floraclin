@@ -132,7 +132,7 @@ export function Header({ userName, userEmail, userId, userRole, clinicName, tena
             {/* Amber notification dot */}
             <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-amber" />
           </Button>
-          <UserMenu userName={userName} userEmail={userEmail} userId={userId} userRole={userRole} />
+          <UserMenu userName={userName} userEmail={userEmail} />
         </div>
       </header>
 
