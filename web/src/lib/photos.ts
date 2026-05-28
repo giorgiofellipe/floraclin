@@ -5,35 +5,42 @@ export interface CroppedDisplayStyle {
    * Style for an inner wrapper that takes the **crop's** aspect ratio and
    * fits inside whatever host the consumer provides.
    *
-   * Why these specific properties:
-   *  - `aspectRatio` shapes the wrapper to match the crop.
-   *  - `width: 100%` gives the wrapper a concrete starting size (without it,
-   *    the inner image's percentage-based width/height creates a chicken-
-   *    and-egg with no resolvable dimensions, and the browser falls back to
-   *    the image's natural pixel size — overflowing the host).
-   *  - `maxHeight: 100%` lets the host clamp letterboxing when the crop is
-   *    taller than the host; modern browsers re-derive the wrapper width
-   *    via aspect-ratio after the clamp.
+   * The wrapper uses the classic `padding-bottom: % of width` trick to set
+   * its own height from its width — this is robust under both `max-width`
+   * and `max-height` constraints, unlike the CSS `aspect-ratio` property
+   * which silently breaks when one dimension is explicit and the other gets
+   * clamped (the browser can't re-derive the explicit one).
+   *
+   * Caller passes a `maxHeight` CSS string (e.g. `'70vh'`) and the wrapper
+   * computes `max-width: calc(maxHeight * cropAspect)` so the wrapper never
+   * exceeds the requested height — that's the "fit-to-modal" guarantee.
+   * If `maxHeight` is omitted the wrapper only respects the host's own
+   * width constraint (useful when the host already has a fixed shape).
+   *
+   * The `<img>` is absolutely positioned inside, so the wrapper's own
+   * height comes solely from `padding-bottom`.
    */
   wrapperStyle: {
-    aspectRatio: string
+    position: 'relative'
     width: '100%'
-    maxHeight: '100%'
+    maxWidth: string
+    paddingBottom: string
+    overflow: 'hidden'
   }
   /**
    * Style for the `<img>` element that lives inside the wrapper.
    *
-   * The image is sized by `width: 1/crop.width * 100%` of the wrapper. Height
-   * is left as `auto` so the browser preserves the image's natural aspect
-   * ratio — setting an explicit height (e.g. `scaleY * 100%`) forces the
-   * browser to stretch the image to the wrapper's aspect, which is the bug
-   * the user kept hitting ("changes the aspect ratio, displays the img way
-   * bigger").
-   *
-   * The translate then shifts the natural-aspect image so the crop's top-
-   * left pixel aligns with the wrapper's top-left.
+   * The image is absolutely positioned at the wrapper's top-left, sized by
+   * `width: 1/crop.width * 100%` of the wrapper, with `height: auto` so the
+   * browser preserves natural aspect. The translate then shifts the
+   * natural-aspect image so the crop's top-left pixel aligns with the
+   * wrapper's top-left. Setting an explicit height would stretch the image
+   * to the wrapper's shape (the bug the user kept hitting).
    */
   imageStyle: {
+    position: 'absolute'
+    top: 0
+    left: 0
     width: string
     height: 'auto'
     transform: string
@@ -75,17 +82,43 @@ export const CROP_HOST_CLASS = 'flex items-center justify-center overflow-hidden
  *    `-crop.x * 100%` of the image (NOT scaled by `1/crop.width` — the
  *    percentage already accounts for the rendered image size).
  */
-export function applyCrop(crop: CropBox | null, sourceAspect: number): CroppedDisplayStyle | null {
+export interface ApplyCropOptions {
+  /**
+   * CSS length capping the wrapper's height (e.g. `'70vh'`). The wrapper's
+   * `max-width` is internally set to `calc(maxHeight * cropAspect)` so the
+   * letterboxed wrapper never exceeds the requested height even at very
+   * wide hosts. Omit when the host already constrains height directly.
+   */
+  maxHeight?: string
+}
+
+export function applyCrop(
+  crop: CropBox | null,
+  sourceAspect: number,
+  opts: ApplyCropOptions = {},
+): CroppedDisplayStyle | null {
   if (!crop) return null
   const cropAspect = (crop.width / crop.height) * sourceAspect
   const scaleX = 1 / crop.width
+  const maxWidth = opts.maxHeight
+    ? `calc(${opts.maxHeight} * ${cropAspect})`
+    : '100%'
   return {
     wrapperStyle: {
-      aspectRatio: `${cropAspect}`,
+      position: 'relative',
       width: '100%',
-      maxHeight: '100%',
+      maxWidth,
+      // padding-bottom is a % of the wrapper's WIDTH, so this gives
+      // height = width / cropAspect — exactly the aspect ratio we want,
+      // without relying on the CSS aspect-ratio property (which breaks
+      // when width is explicit and max-height clamps).
+      paddingBottom: `${100 / cropAspect}%`,
+      overflow: 'hidden',
     },
     imageStyle: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
       width: `${scaleX * 100}%`,
       height: 'auto',
       transform: `translate(${-crop.x * 100}%, ${-crop.y * 100}%)`,
@@ -95,11 +128,16 @@ export function applyCrop(crop: CropBox | null, sourceAspect: number): CroppedDi
 
 export interface CroppedCoverStyle {
   /**
-   * Style for the wrapper. Sized to be AT LEAST the host's dimensions in
-   * both directions (object-cover semantics) so the crop fills the host
-   * uniformly. Combined with `overflow: hidden` on the host the overflow
-   * is clipped cleanly. The wrapper is absolutely positioned and centered
-   * so the clip is symmetric.
+   * Style for the wrapper. Sized to AT LEAST the host's dimensions in both
+   * directions (object-cover semantics) so the crop fills the host
+   * uniformly. The wrapper is absolutely positioned and centered so the
+   * clip from `overflow: hidden` on the host is symmetric.
+   *
+   * Uses CSS `aspect-ratio` (not padding-bottom) because here BOTH bounds
+   * are MIN constraints — neither width nor height is explicit, so modern
+   * browsers can resolve aspect-ratio + min-width + min-height without the
+   * "explicit-width-pins-the-clamp" problem the letterbox variant has to
+   * dodge.
    */
   wrapperStyle: {
     position: 'absolute'
@@ -110,8 +148,11 @@ export interface CroppedCoverStyle {
     minWidth: '100%'
     minHeight: '100%'
   }
-  /** Same image style as `applyCrop` — `width = 1/crop.width`, natural height. */
+  /** Same image style as `applyCrop` — absolute, `width = 1/crop.width`, natural height. */
   imageStyle: {
+    position: 'absolute'
+    top: 0
+    left: 0
     width: string
     height: 'auto'
     transform: string
@@ -123,10 +164,6 @@ export interface CroppedCoverStyle {
  * shape (e.g., a grid card with `aspect-[3/4]`) and you want the crop to
  * fill it without letterbox bars. The host must be `relative` and have
  * `overflow: hidden`.
- *
- * Wrapper picks the larger of `min-width: 100%` / `min-height: 100%` so the
- * crop never has empty bands inside the host; the image inside is sized the
- * same way as `applyCrop`, so the crop region exactly fills the wrapper.
  */
 export function applyCropCover(crop: CropBox | null, sourceAspect: number): CroppedCoverStyle | null {
   if (!crop) return null
@@ -143,6 +180,9 @@ export function applyCropCover(crop: CropBox | null, sourceAspect: number): Crop
       minHeight: '100%',
     },
     imageStyle: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
       width: `${scaleX * 100}%`,
       height: 'auto',
       transform: `translate(${-crop.x * 100}%, ${-crop.y * 100}%)`,

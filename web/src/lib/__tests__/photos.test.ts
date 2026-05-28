@@ -6,9 +6,25 @@ describe('applyCrop', () => {
     expect(applyCrop(null, 1)).toBeNull()
   })
 
-  it('computes container aspect from crop and source', () => {
+  it('uses padding-bottom to set wrapper height from width at the crop aspect', () => {
+    // cropAspect = (0.5 / 0.5) * 1.5 = 1.5 → padding-bottom = 100/1.5 ≈ 66.67%
     const style = applyCrop({ x: 0, y: 0, width: 0.5, height: 0.5 }, 1.5)
-    expect(style?.wrapperStyle.aspectRatio).toBe('1.5')
+    expect(style?.wrapperStyle.paddingBottom).toBe(`${100 / 1.5}%`)
+  })
+
+  it('caps max-width via maxHeight option so the wrapper never exceeds the viewport height', () => {
+    // With cropAspect = 1.5 and maxHeight = 70vh, max-width = calc(70vh * 1.5)
+    const style = applyCrop(
+      { x: 0, y: 0, width: 0.5, height: 0.5 },
+      1.5,
+      { maxHeight: '70vh' },
+    )
+    expect(style?.wrapperStyle.maxWidth).toBe('calc(70vh * 1.5)')
+  })
+
+  it('leaves max-width at 100% when no maxHeight is requested', () => {
+    const style = applyCrop({ x: 0, y: 0, width: 0.5, height: 0.5 }, 1)
+    expect(style?.wrapperStyle.maxWidth).toBe('100%')
   })
 
   it('sets only width on the image (height auto so the natural aspect is preserved)', () => {
@@ -24,12 +40,5 @@ describe('applyCrop', () => {
     // at natural fraction crop.x lies at crop.x * imageWidth from the
     // image's left edge, so the shift is -crop.x * 100%.
     expect(style?.imageStyle.transform).toBe('translate(-25%, -50%)')
-  })
-
-  it('handles non-square source aspect ratios', () => {
-    // Tall portrait source (aspect = 0.5), centered square crop of full width
-    const style = applyCrop({ x: 0, y: 0.25, width: 1, height: 0.5 }, 0.5)
-    // cropAspect = (1 / 0.5) * 0.5 = 1.0
-    expect(style?.wrapperStyle.aspectRatio).toBe('1')
   })
 })
