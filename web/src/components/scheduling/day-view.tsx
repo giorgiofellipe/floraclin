@@ -5,6 +5,7 @@ import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { AppointmentCard } from '@/components/scheduling/appointment-card'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
+import type { CalendarBlockRow } from '@/db/queries/calendar'
 
 const START_HOUR = 7
 const END_HOUR = 20
@@ -14,6 +15,7 @@ const HOURS = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_
 interface DayViewProps {
   date: Date
   appointments: AppointmentWithDetails[]
+  calendarBlocks?: CalendarBlockRow[]
   onSlotClick?: (date: string, time: string) => void
   onAppointmentClick?: (appointment: AppointmentWithDetails, event?: React.MouseEvent) => void
 }
@@ -112,7 +114,7 @@ function computeOverlapLayout(appointments: AppointmentWithDetails[]): LayoutSlo
   return result
 }
 
-export function DayView({ date, appointments, onSlotClick, onAppointmentClick }: DayViewProps) {
+export function DayView({ date, appointments, calendarBlocks = [], onSlotClick, onAppointmentClick }: DayViewProps) {
   const dateStr = format(date, 'yyyy-MM-dd')
   const dayAppointments = appointments.filter((a) => a.date === dateStr)
 
@@ -120,6 +122,25 @@ export function DayView({ date, appointments, onSlotClick, onAppointmentClick }:
     () => computeOverlapLayout(dayAppointments),
     [dayAppointments]
   )
+
+  const dayBlocks = calendarBlocks.filter((b) => b.date === dateStr)
+
+  const blockSlots = React.useMemo(() => {
+    return dayBlocks.map((block) => {
+      if (block.allDay) {
+        const top = 0
+        const height = (END_HOUR - START_HOUR + 1) * 2 * SLOT_HEIGHT_PX
+        return { block, top, height }
+      }
+      if (!block.startTime || !block.endTime) return null
+      const startMin = timeToMinutes(block.startTime)
+      const endMin = timeToMinutes(block.endTime)
+      const gridStartMin = START_HOUR * 60
+      const top = ((startMin - gridStartMin) / 30) * SLOT_HEIGHT_PX
+      const height = Math.max(((endMin - startMin) / 30) * SLOT_HEIGHT_PX, SLOT_HEIGHT_PX / 2)
+      return { block, top, height }
+    }).filter(Boolean) as { block: CalendarBlockRow; top: number; height: number }[]
+  }, [dayBlocks])
 
   // Current time indicator
   const now = new Date()
@@ -185,6 +206,19 @@ export function DayView({ date, appointments, onSlotClick, onAppointmentClick }:
               </div>
             </div>
           )}
+
+          {/* Calendar blocks */}
+          {blockSlots.map(({ block, top, height }) => (
+            <div
+              key={block.id}
+              className="absolute left-0 right-0 z-10 mx-1 rounded border border-dashed border-gray-300 bg-gray-100/60 px-2 py-1 pointer-events-none"
+              style={{ top, height }}
+            >
+              <span className="text-[11px] font-medium text-gray-500 truncate block">
+                Indisponível
+              </span>
+            </div>
+          ))}
 
           {/* Appointments — split horizontally when overlapping */}
           {layoutSlots.map(({ appointment: appt, top, height, column, totalColumns }) => {

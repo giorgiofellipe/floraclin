@@ -10,6 +10,7 @@ import {
 import { ptBR } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
+import type { CalendarBlockRow } from '@/db/queries/calendar'
 import { AppointmentCard } from './appointment-card'
 
 const START_HOUR = 7
@@ -20,6 +21,7 @@ const HOURS = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_
 interface WeekViewProps {
   date: Date
   appointments: AppointmentWithDetails[]
+  calendarBlocks?: CalendarBlockRow[]
   onSlotClick?: (date: string, time: string) => void
   onAppointmentClick?: (appointment: AppointmentWithDetails, event?: React.MouseEvent) => void
 }
@@ -102,7 +104,7 @@ function computeOverlapLayout(appointments: AppointmentWithDetails[]): LayoutSlo
   return result
 }
 
-export function WeekView({ date, appointments, onSlotClick, onAppointmentClick }: WeekViewProps) {
+export function WeekView({ date, appointments, calendarBlocks = [], onSlotClick, onAppointmentClick }: WeekViewProps) {
   const weekStart = startOfWeek(date, { weekStartsOn: 1 }) // Monday
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
   const today = new Date()
@@ -205,6 +207,35 @@ export function WeekView({ date, appointments, onSlotClick, onAppointmentClick }
                   </div>
                 </div>
               )}
+
+              {/* Calendar blocks */}
+              {calendarBlocks.filter((b) => b.date === dateStr).map((block) => {
+                let top: number
+                let height: number
+                if (block.allDay) {
+                  top = 0
+                  height = (END_HOUR - START_HOUR + 1) * 2 * SLOT_HEIGHT_PX
+                } else if (block.startTime && block.endTime) {
+                  const startMin = timeToMinutes(block.startTime)
+                  const endMin = timeToMinutes(block.endTime)
+                  const gridStartMin = START_HOUR * 60
+                  top = ((startMin - gridStartMin) / 30) * SLOT_HEIGHT_PX
+                  height = Math.max(((endMin - startMin) / 30) * SLOT_HEIGHT_PX, SLOT_HEIGHT_PX / 2)
+                } else {
+                  return null
+                }
+                return (
+                  <div
+                    key={block.id}
+                    className="absolute left-0 right-0 z-10 mx-0.5 rounded border border-dashed border-gray-300 bg-gray-100/60 px-1 py-0.5 pointer-events-none"
+                    style={{ top, height }}
+                  >
+                    <span className="text-[10px] font-medium text-gray-500 truncate block">
+                      Indisponível
+                    </span>
+                  </div>
+                )
+              })}
 
               {/* Appointments — split horizontally when overlapping */}
               {layoutSlots.map(({ appointment: appt, top, height, column, totalColumns }) => {

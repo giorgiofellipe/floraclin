@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
+import { syncAppointmentToGoogle } from '@/lib/google-calendar-sync'
 import {
   listAppointments,
   createAppointment,
@@ -89,6 +90,10 @@ export async function POST(request: Request) {
       action: 'create',
       entityType: 'appointment',
       entityId: appointment.id,
+    })
+
+    syncAppointmentToGoogle(ctx.tenantId, appointment.id).catch((err) => {
+      console.error('Google Calendar push sync failed:', err)
     })
 
     return NextResponse.json({ success: true, data: appointment })

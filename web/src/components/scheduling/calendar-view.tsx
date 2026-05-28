@@ -41,6 +41,7 @@ import { useUpdateAppointmentStatus } from '@/hooks/mutations/use-appointment-mu
 import { toast } from 'sonner'
 import { useAppointments } from '@/hooks/queries/use-appointments'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
+import type { CalendarBlockRow } from '@/db/queries/calendar'
 
 type ViewType = 'day' | 'week' | 'month'
 
@@ -62,6 +63,7 @@ interface CalendarViewProps {
   practitioners: Practitioner[]
   procedureTypes: ProcedureType[]
   initialAppointments: AppointmentWithDetails[]
+  calendarBlocks?: CalendarBlockRow[]
 }
 
 function getDateRange(date: Date, view: ViewType) {
@@ -100,6 +102,7 @@ export function CalendarView({
   practitioners,
   procedureTypes,
   initialAppointments,
+  calendarBlocks = [],
 }: CalendarViewProps) {
   const router = useRouter()
   const cancelAppointment = useUpdateAppointmentStatus()
@@ -379,6 +382,7 @@ export function CalendarView({
           <DayView
             date={currentDate}
             appointments={appointments}
+            calendarBlocks={calendarBlocks}
             onSlotClick={handleSlotClick}
             onAppointmentClick={handleAppointmentClick}
           />
@@ -388,6 +392,7 @@ export function CalendarView({
           <WeekView
             date={currentDate}
             appointments={appointments}
+            calendarBlocks={calendarBlocks}
             onSlotClick={handleSlotClick}
             onAppointmentClick={handleAppointmentClick}
           />

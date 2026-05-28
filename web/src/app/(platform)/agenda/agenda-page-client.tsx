@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns'
 import { useAppointments, usePractitioners, useAppointmentProcedureTypes } from '@/hooks/queries/use-appointments'
+import { useCalendarBlocks } from '@/hooks/queries/use-calendar'
 import { CalendarView } from '@/components/scheduling/calendar-view'
 import ScheduleLoading from './loading'
 
@@ -62,6 +63,12 @@ export function AgendaPageClient() {
   const { data: practitioners, isLoading: practitionersLoading } = usePractitioners()
   const { data: procTypes, isLoading: procTypesLoading } = useAppointmentProcedureTypes()
 
+  const { data: calendarBlocks } = useCalendarBlocks(
+    practitionerFilter,
+    dateFrom,
+    dateTo
+  )
+
   if (appointmentsLoading || practitionersLoading || procTypesLoading) {
     return <ScheduleLoading />
   }
@@ -75,6 +82,7 @@ export function AgendaPageClient() {
         practitioners={practitioners ?? []}
         procedureTypes={procTypes ?? []}
         initialAppointments={appointments ?? []}
+        calendarBlocks={calendarBlocks ?? []}
       />
     </div>
   )
