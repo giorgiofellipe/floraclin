@@ -19,20 +19,20 @@ import { Button } from '@/components/ui/button'
  * by matching the procedure's `patientPackageLineId` against the cached list.
  *
  * `patientPackageId` / `patientPackageLineId` are projected through the
- * procedure read query by the Group 1 backend. We access them via a tolerant
- * cast so this wiring layer doesn't depend on whether the projection lands
- * before or after this commit — if either field is missing, the banner is
- * simply not rendered (graceful no-op).
+ * procedure read query (see `getProcedure` in `db/queries/procedures.ts`).
  */
 function PackageBadgeBanner({
   patientId,
   procedure,
 }: {
   patientId: string
-  procedure: Record<string, unknown>
+  procedure: {
+    patientPackageId?: string | null
+    patientPackageLineId?: string | null
+  }
 }) {
-  const patientPackageId = procedure.patientPackageId as string | null | undefined
-  const patientPackageLineId = procedure.patientPackageLineId as string | null | undefined
+  const patientPackageId = procedure.patientPackageId ?? null
+  const patientPackageLineId = procedure.patientPackageLineId ?? null
   const { data: packages } = usePatientPackages(patientPackageId ? patientId : '')
 
   if (!patientPackageId || !patientPackageLineId) return null
@@ -85,7 +85,12 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
   if (isNewProcedure) {
     return (
       <div className="min-h-screen p-6">
-        <ProcedureForm patientId={patientId} patientGender={patient.gender} mode="create" />
+        <ProcedureForm
+          patientId={patientId}
+          patientName={patient.fullName}
+          patientGender={patient.gender}
+          mode="create"
+        />
       </div>
     )
   }
@@ -144,10 +149,7 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
   if (procedure.status === 'executed' || procedure.status === 'cancelled') {
     return (
       <div className="min-h-screen p-6">
-        <PackageBadgeBanner
-          patientId={patientId}
-          procedure={procedure as unknown as Record<string, unknown>}
-        />
+        <PackageBadgeBanner patientId={patientId} procedure={procedure} />
         {procedure.status === 'executed' && (
           <div className="mx-auto mb-3 flex max-w-3xl items-center justify-end">
             <Link href={`/procedimentos/${procedure.id}/imprimir`}>
@@ -174,10 +176,7 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
   if (procedure.status === 'approved') {
     return (
       <div className="min-h-screen p-6">
-        <PackageBadgeBanner
-          patientId={patientId}
-          procedure={procedure as unknown as Record<string, unknown>}
-        />
+        <PackageBadgeBanner patientId={patientId} procedure={procedure} />
         <ProcedureDetailView
           patientId={patientId}
           patientName={patient.fullName}
@@ -193,12 +192,10 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
   // Default: planned procedure form (edit)
   return (
     <div className="min-h-screen p-6">
-      <PackageBadgeBanner
-        patientId={patientId}
-        procedure={procedure as unknown as Record<string, unknown>}
-      />
+      <PackageBadgeBanner patientId={patientId} procedure={procedure} />
       <ProcedureForm
         patientId={patientId}
+        patientName={patient.fullName}
         patientGender={patient.gender}
         procedure={procedure}
         diagrams={diagrams}

@@ -7,6 +7,7 @@ import { ArrowRight, ClipboardList, MessageCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { brToday, parseBrDate } from '@/lib/dates'
+import { formatCurrency } from '@/lib/utils'
 import { useOpenPlanejamentos, type OpenPlanejamento } from '@/hooks/queries/use-planejamentos'
 
 function buildWhatsappHref(phone: string): string {
@@ -89,6 +90,11 @@ export function OpenPlanejamentosCard() {
                       </p>
                     </Link>
                     <div className="flex shrink-0 items-center gap-2">
+                      {row.totalAmount && (
+                        <span className="hidden text-xs tabular-nums text-mid sm:inline">
+                          {formatCurrency(Number(row.totalAmount))}
+                        </span>
+                      )}
                       <span
                         className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${badgeColor}`}
                       >

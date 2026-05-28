@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { birthdayMonthDayPairs, todayMonthDay, currentBrYear } from '../birthdays'
+import {
+  birthdayMonthDayPairs,
+  todayMonthDay,
+  currentBrYear,
+  yearFromYmd,
+} from '../birthdays'
 import { brToday } from '../dates'
 
 describe('birthdayMonthDayPairs', () => {
@@ -24,12 +29,20 @@ describe('birthdayMonthDayPairs', () => {
     expect(pairs).toContainEqual({ month: 2, day: 2 })
   })
 
-  it('includes Feb 29 when range covers Feb 28 in a non-leap year', () => {
-    // 2026 is not a leap year — current year used by the helper comes from brToday(),
-    // which is 2026 in this test context.
+  it('includes Feb 29 when range covers Feb 28 in a non-leap year (derived from FROM)', () => {
+    // 2027 is not a leap year — the helper now derives leap context from the
+    // FROM year, not from today, so this is independent of host clock.
     const pairs = birthdayMonthDayPairs({ from: '2027-02-27', to: '2027-02-28' })
     expect(pairs).toContainEqual({ month: 2, day: 28 })
     expect(pairs).toContainEqual({ month: 2, day: 29 })
+  })
+
+  it('does NOT append Feb 29 when the FROM year IS a leap year', () => {
+    // 2028 is a leap year. Range covers Feb 28 only; Feb 29 should not be
+    // appended because the year naturally contains the date already.
+    const pairs = birthdayMonthDayPairs({ from: '2028-02-27', to: '2028-02-28' })
+    expect(pairs).toContainEqual({ month: 2, day: 28 })
+    expect(pairs).not.toContainEqual({ month: 2, day: 29 })
   })
 
   it('does not double-add Feb 29 when range already includes it (leap-year input)', () => {
@@ -66,5 +79,24 @@ describe('currentBrYear', () => {
   it('returns the year portion of brToday()', () => {
     const today = brToday()
     expect(currentBrYear()).toBe(parseInt(today.slice(0, 4), 10))
+  })
+})
+
+describe('yearFromYmd', () => {
+  it('extracts the year for a current-year date', () => {
+    expect(yearFromYmd('2026-05-27')).toBe(2026)
+  })
+
+  it('extracts the year for a future-window date', () => {
+    expect(yearFromYmd('2030-01-15')).toBe(2030)
+  })
+
+  it('extracts the year for a past-window date', () => {
+    expect(yearFromYmd('2024-12-31')).toBe(2024)
+  })
+
+  it('throws on a malformed input', () => {
+    expect(() => yearFromYmd('not-a-date')).toThrow()
+    expect(() => yearFromYmd('26-05-27')).toThrow()
   })
 })

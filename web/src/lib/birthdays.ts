@@ -16,9 +16,9 @@ import { brToday, parseBrDate } from '@/lib/dates'
  * Year-wrap is implicit: ranges that span December → January work because we
  * iterate day-by-day in BR-local time, then take month/day off each cursor.
  *
- * Leap-year fallback: if the range includes Feb 28 and the current BR year
- * is not a leap year, we also emit Feb 29 so that patients born on Feb 29 are
- * surfaced on Feb 28 in non-leap years.
+ * Leap-year fallback: if the range includes Feb 28 and the occasion year
+ * (derived from `from`) is not a leap year, we also emit Feb 29 so that
+ * patients born on Feb 29 are surfaced on Feb 28 in non-leap years.
  */
 export function birthdayMonthDayPairs(args: {
   from: string
@@ -37,9 +37,12 @@ export function birthdayMonthDayPairs(args: {
     steps += 1
   }
 
-  const currentYear = parseInt(brToday().slice(0, 4), 10)
+  // Derive leap-year context from the FROM date, not today. A user browsing
+  // a Feb 2028 window from a 2026 host should see leap-day fallback resolved
+  // against 2028, not 2026.
+  const fromYear = yearFromYmd(args.from)
   const isLeap =
-    (currentYear % 4 === 0 && currentYear % 100 !== 0) || currentYear % 400 === 0
+    (fromYear % 4 === 0 && fromYear % 100 !== 0) || fromYear % 400 === 0
   if (
     !isLeap &&
     pairs.some((p) => p.month === 2 && p.day === 28) &&
@@ -49,6 +52,18 @@ export function birthdayMonthDayPairs(args: {
   }
 
   return pairs
+}
+
+/**
+ * Extracts the year portion (`YYYY`) from a `YYYY-MM-DD` string. Throws if
+ * the input does not start with four digits.
+ */
+export function yearFromYmd(ymd: string): number {
+  const slice = ymd.slice(0, 4)
+  if (!/^\d{4}$/.test(slice)) {
+    throw new Error(`yearFromYmd expected YYYY-MM-DD, got: ${ymd}`)
+  }
+  return parseInt(slice, 10)
 }
 
 /**

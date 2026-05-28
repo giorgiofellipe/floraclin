@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useCallback, useState, useRef } from 'react'
+import { useCallback, useMemo, useState, useRef } from 'react'
 import { Upload, X, ImageIcon, Loader2, Crop as CropIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -255,6 +255,39 @@ async function compressImage(file: File): Promise<File> {
 
     img.src = url
   })
+}
+
+// ─── File preview thumbnail ─────────────────────────────────────────
+//
+// Extracted so we can memoize `cropStyle` per-row via `useMemo` (hooks can't
+// be called inside the parent's `.map()` IIFE). Renders the preview image
+// with optional client-side crop applied via CSS.
+function FilePreviewImage({
+  src,
+  alt,
+  cropBox,
+  sourceAspect,
+  onLoad,
+}: {
+  src: string
+  alt: string
+  cropBox?: CropBox
+  sourceAspect?: number
+  onLoad: (e: React.SyntheticEvent<HTMLImageElement>) => void
+}) {
+  const cropStyle = useMemo(
+    () => (cropBox && sourceAspect ? applyCrop(cropBox, sourceAspect) : null),
+    [cropBox, sourceAspect]
+  )
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className="block h-full w-full object-cover"
+      style={cropStyle?.imageStyle}
+      onLoad={onLoad}
+    />
+  )
 }
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -556,22 +589,13 @@ export function PhotoUploader({
               >
                 <div className="aspect-square overflow-hidden">
                   {f.preview ? (
-                    (() => {
-                      // If a crop is set, scale/translate the underlying image so
-                      // the cropped region fills the fixed-aspect tile.
-                      const cropStyle = f.cropBox && f.sourceAspect
-                        ? applyCrop(f.cropBox, f.sourceAspect)
-                        : null
-                      return (
-                        <img
-                          src={f.preview}
-                          alt={f.file.name}
-                          className="block h-full w-full object-cover"
-                          style={cropStyle?.imageStyle}
-                          onLoad={(e) => handlePreviewLoaded(f.id, e)}
-                        />
-                      )
-                    })()
+                    <FilePreviewImage
+                      src={f.preview}
+                      alt={f.file.name}
+                      cropBox={f.cropBox}
+                      sourceAspect={f.sourceAspect}
+                      onLoad={(e) => handlePreviewLoaded(f.id, e)}
+                    />
                   ) : (
                     <div className="flex h-full items-center justify-center">
                       <ImageIcon className="size-8 text-muted-foreground" />

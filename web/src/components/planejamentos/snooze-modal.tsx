@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { addDays } from 'date-fns'
 import { toast } from 'sonner'
@@ -56,7 +56,7 @@ export function SnoozeModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, currentSnoozedUntil])
 
-  const isPastOrToday = (() => {
+  const isPastOrToday = useMemo(() => {
     if (!until) return false
     try {
       const picked = parseBrDate(until, '12:00:00')
@@ -65,7 +65,7 @@ export function SnoozeModal({
     } catch {
       return true
     }
-  })()
+  }, [until])
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()

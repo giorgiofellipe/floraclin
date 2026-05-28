@@ -39,6 +39,8 @@ export interface ProcedureWithDetails {
   cancellationReason: string | null
   additionalTypeIds: unknown
   financialPlan: unknown
+  patientPackageId: string | null
+  patientPackageLineId: string | null
   createdAt: Date
   updatedAt: Date
   procedureTypeName: string
@@ -169,6 +171,8 @@ export async function getProcedure(
       cancellationReason: procedureRecords.cancellationReason,
       additionalTypeIds: procedureRecords.additionalTypeIds,
       financialPlan: procedureRecords.financialPlan,
+      patientPackageId: procedureRecords.patientPackageId,
+      patientPackageLineId: procedureRecords.patientPackageLineId,
       createdAt: procedureRecords.createdAt,
       updatedAt: procedureRecords.updatedAt,
       procedureTypeName: procedureTypes.name,
@@ -420,6 +424,8 @@ export async function getLatestNonExecutedProcedure(
       cancellationReason: procedureRecords.cancellationReason,
       additionalTypeIds: procedureRecords.additionalTypeIds,
       financialPlan: procedureRecords.financialPlan,
+      patientPackageId: procedureRecords.patientPackageId,
+      patientPackageLineId: procedureRecords.patientPackageLineId,
       createdAt: procedureRecords.createdAt,
       updatedAt: procedureRecords.updatedAt,
       procedureTypeName: procedureTypes.name,

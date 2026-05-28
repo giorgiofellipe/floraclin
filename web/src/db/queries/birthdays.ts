@@ -24,7 +24,7 @@ export interface BirthdayRow {
 export async function getBirthdaysInRange(args: {
   tenantId: string
   monthDayPairs: Array<{ month: number; day: number }>
-  currentYear: number
+  occasionYear: number
 }): Promise<BirthdayRow[]> {
   if (args.monthDayPairs.length === 0) return []
 
@@ -46,7 +46,7 @@ export async function getBirthdaysInRange(args: {
       patientGreetings,
       and(
         eq(patientGreetings.patientId, patients.id),
-        eq(patientGreetings.occasionYear, args.currentYear)
+        eq(patientGreetings.occasionYear, args.occasionYear)
       )
     )
     .leftJoin(users, eq(users.id, patientGreetings.greetedBy))
@@ -64,7 +64,7 @@ export async function getBirthdaysInRange(args: {
     fullName: r.fullName,
     birthDate: r.birthDate!,
     phone: r.phone,
-    ageTurning: args.currentYear - parseInt(r.birthDate!.slice(0, 4), 10),
+    ageTurning: args.occasionYear - parseInt(r.birthDate!.slice(0, 4), 10),
     greetedAt: r.greetedAt,
     greetedByName: r.greetedByName,
   }))

@@ -77,6 +77,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 interface ProcedureFormProps {
   patientId: string
+  patientName?: string
   patientGender?: string | null
   procedure?: ProcedureWithDetails | null
   diagrams?: DiagramWithPoints[]
@@ -209,6 +210,7 @@ function deriveInitialFinancialPlan(
 
 export function ProcedureForm({
   patientId,
+  patientName,
   patientGender,
   procedure,
   diagrams: existingDiagrams,
@@ -1004,13 +1006,14 @@ export function ProcedureForm({
             open={followupModalOpen}
             onClose={() => setFollowupModalOpen(false)}
             procedureRecordId={procedure!.id}
-            patientName={procedure?.procedureTypeName}
+            patientName={patientName}
             procedureTypeName={procedure?.procedureTypeName}
           />
           <SnoozeModal
             open={snoozeModalOpen}
             onClose={() => setSnoozeModalOpen(false)}
             procedureRecordId={procedure!.id}
+            patientName={patientName}
             procedureTypeName={procedure?.procedureTypeName}
           />
         </>
