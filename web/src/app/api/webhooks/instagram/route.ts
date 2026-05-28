@@ -71,6 +71,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
+  // Defense-in-depth: Meta documents IG webhooks with object='instagram'. If
+  // our app ever subscribes to multiple objects under one App, ignore any
+  // payload that isn't an IG webhook to avoid processing the wrong shape.
+  if (body.object && body.object !== 'instagram') {
+    console.warn(
+      `Instagram webhook: ignoring payload with object=${body.object}`,
+    )
+    return NextResponse.json({ success: true }, { status: 200 })
+  }
+
   const entries = body.entry ?? []
   if (entries.length > MAX_ENTRIES_PER_PAYLOAD) {
     console.warn(
@@ -81,7 +91,7 @@ export async function POST(request: NextRequest) {
 
   // If any per-event DB write fails (recoverable), surface a 500 so Meta
   // retries. Dedup via metaMessageId makes retry safe.
-  let recoverable_failure = false
+  let recoverableFailure = false
 
   for (const entry of entries) {
     const igBusinessAccountId = entry.id
@@ -143,12 +153,12 @@ export async function POST(request: NextRequest) {
         // / parse errors happen at the top of the handler and never reach
         // here, so anything raised inside per-event processing is a real
         // failure worth retrying.
-        recoverable_failure = true
+        recoverableFailure = true
       }
     }
   }
 
-  if (recoverable_failure) {
+  if (recoverableFailure) {
     return NextResponse.json(
       { error: 'recoverable_failure' },
       { status: 500 },
@@ -198,7 +208,7 @@ async function processMessageEvent(tenantId: string, event: IgMessagingEvent) {
       const cdnUrl = storyMediaUrl
       downloadAndStoreMedia(tenantId, cdnUrl, storyFilename)
         .then(async (storedUrl) => {
-          await updateMessageStoryMedia(metaMessageId, storedUrl)
+          await updateMessageStoryMedia(tenantId, metaMessageId, storedUrl)
         })
         .catch((err: unknown) =>
           console.error('IG story media download failed:', err),
@@ -223,7 +233,7 @@ async function processMessageEvent(tenantId: string, event: IgMessagingEvent) {
         // and rely on a follow-up update once download completes.
         downloadAndStoreMedia(tenantId, cdnUrl, mediaFilename)
           .then(async (storedUrl) => {
-            await updateMessageMedia(metaMessageId, storedUrl)
+            await updateMessageMedia(tenantId, metaMessageId, storedUrl)
           })
           .catch((err: unknown) =>
             console.error('IG media download failed:', err),
@@ -453,16 +463,28 @@ async function processReadOrDeliveryEvent(
 // ---------------------------------------------------------------------------
 // Media URL update after async download completes
 // ---------------------------------------------------------------------------
-async function updateMessageMedia(metaMessageId: string, storedUrl: string) {
+async function updateMessageMedia(
+  tenantId: string,
+  metaMessageId: string,
+  storedUrl: string,
+) {
   // Direct DB update — B2's queries module does not expose a generic
   // field-update helper for messages; we use a raw drizzle update here.
+  // tenantId in the WHERE matches the defense-in-depth pattern used by
+  // every other message query in this codebase.
   await db
     .update(instagramMessages)
     .set({ mediaUrl: storedUrl })
-    .where(eq(instagramMessages.metaMessageId, metaMessageId))
+    .where(
+      and(
+        eq(instagramMessages.tenantId, tenantId),
+        eq(instagramMessages.metaMessageId, metaMessageId),
+      ),
+    )
 }
 
 async function updateMessageStoryMedia(
+  tenantId: string,
   metaMessageId: string,
   storedUrl: string,
 ) {
@@ -471,6 +493,7 @@ async function updateMessageStoryMedia(
     .set({ storyMediaUrl: storedUrl })
     .where(
       and(
+        eq(instagramMessages.tenantId, tenantId),
         eq(instagramMessages.metaMessageId, metaMessageId),
         eq(instagramMessages.messageType, 'story_reply'),
       ),

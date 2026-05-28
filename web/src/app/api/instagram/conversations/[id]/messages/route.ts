@@ -7,14 +7,13 @@ import {
   listMessages,
   createMessage,
   pushSseEvent,
-  getProspectByIgsid,
 } from '@/db/queries/instagram'
 import { sendInstagramMessageSchema } from '@/validations/instagram'
 import { sendTextMessage, sendMediaMessage } from '@/lib/instagram'
 import { db } from '@/db/client'
 import { instagramConversations } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
-import { updateProspect } from '@/db/queries/prospects'
+import { getProspect, updateProspect } from '@/db/queries/prospects'
 
 const messageListSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -214,7 +213,7 @@ export async function POST(
     })
 
     if (conversation.prospectId) {
-      const prospect = await getProspectByIgsid(ctx.tenantId, conversation.igsid)
+      const prospect = await getProspect(ctx.tenantId, conversation.prospectId)
       if (prospect?.stage === 'novo') {
         await updateProspect(ctx.tenantId, prospect.id, { stage: 'contatado' })
         await pushSseEvent(ctx.tenantId, 'prospect_updated', {
