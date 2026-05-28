@@ -2,7 +2,8 @@
 
 import * as React from 'react'
 import { useCallback, useEffect, useState } from 'react'
-import { Trash2, ZoomIn, Pencil, Loader2 } from 'lucide-react'
+import { Trash2, ZoomIn, Pencil, Loader2, Crop as CropIcon } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -15,6 +16,10 @@ import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn, formatDateTime, formatDate } from '@/lib/utils'
 import type { PhotosByStage, PhotoAssetWithUrl } from '@/db/queries/photos'
+import type { CropBox } from '@/validations/photo'
+import { applyCrop } from '@/lib/photos'
+import { ImageCropperDialog } from './image-cropper'
+import { useUpdatePhotoCrop } from '@/hooks/queries/use-photo-crop'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -48,6 +53,51 @@ export function PhotoGrid({
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoAssetWithUrl | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<PhotoAssetWithUrl | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  // Crop state. `listPhotos` does not yet expose cropBox/cropAspect on the
+  // PhotoAssetWithUrl shape, so we keep a session-local override map keyed by
+  // photo id — populated when the user saves a crop via the cropper dialog
+  // (and via the PATCH response's `data` field). Per-photo natural aspect is
+  // measured lazily from the rendered <img>'s naturalWidth/naturalHeight.
+  const [cropTarget, setCropTarget] = useState<PhotoAssetWithUrl | null>(null)
+  const [cropOverrides, setCropOverrides] = useState<
+    Record<string, { cropBox: CropBox | null; sourceAspect: number }>
+  >({})
+  const [photoAspects, setPhotoAspects] = useState<Record<string, number>>({})
+
+  const updateCrop = useUpdatePhotoCrop()
+
+  const handleImageLoaded = useCallback(
+    (photoId: string, e: React.SyntheticEvent<HTMLImageElement>) => {
+      const img = e.currentTarget
+      if (img.naturalHeight <= 0) return
+      const aspect = img.naturalWidth / img.naturalHeight
+      setPhotoAspects((prev) => (prev[photoId] ? prev : { ...prev, [photoId]: aspect }))
+    },
+    [],
+  )
+
+  const handleSaveCrop = useCallback(
+    async (photo: PhotoAssetWithUrl, box: CropBox | null) => {
+      const sourceAspect = photoAspects[photo.id] ?? 1
+      try {
+        await updateCrop.mutateAsync({
+          photoId: photo.id,
+          cropBox: box,
+          cropAspect: box ? sourceAspect : null,
+        })
+        setCropOverrides((prev) => ({
+          ...prev,
+          [photo.id]: { cropBox: box, sourceAspect },
+        }))
+        setCropTarget(null)
+        toast.success(box ? 'Recorte salvo.' : 'Recorte removido.')
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Falha ao salvar recorte.')
+      }
+    },
+    [photoAspects, updateCrop],
+  )
 
   const loadPhotos = useCallback(async () => {
     setLoading(true)

@@ -1,7 +1,14 @@
+import * as React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PhotoComparisonDialog } from '../photo-comparison'
 import type { PhotoAssetWithUrl } from '@/db/queries/photos'
+
+function renderWithQueryClient(ui: React.ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
+}
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
@@ -67,7 +74,7 @@ afterEach(() => {
 
 describe('PhotoComparisonDialog', () => {
   it('renders mode buttons when open with both photos', async () => {
-    render(
+    renderWithQueryClient(
       <PhotoComparisonDialog
         open={true}
         onOpenChange={vi.fn()}
@@ -83,7 +90,7 @@ describe('PhotoComparisonDialog', () => {
   })
 
   it('does not render when closed', () => {
-    render(
+    renderWithQueryClient(
       <PhotoComparisonDialog
         open={false}
         onOpenChange={vi.fn()}

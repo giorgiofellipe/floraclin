@@ -2,7 +2,8 @@
 
 import * as React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, X } from 'lucide-react'
+import { Loader2, X, Crop as CropIcon } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -11,7 +12,11 @@ import {
 import { cn, formatDate } from '@/lib/utils'
 import type { PhotoAssetWithUrl } from '@/db/queries/photos'
 import { timelineStageLabels } from '@/validations/photo'
+import type { CropBox } from '@/validations/photo'
 import type { TimelineStage } from '@/types'
+import { applyCrop } from '@/lib/photos'
+import { ImageCropperDialog } from './image-cropper'
+import { useUpdatePhotoCrop } from '@/hooks/queries/use-photo-crop'
 
 type ComparisonMode = 'slider' | 'side-by-side' | 'overlay'
 
@@ -47,6 +52,17 @@ export function PhotoComparisonDialog({
   const [sliderPosition, setSliderPosition] = useState(50)
   const sliderContainerRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
+
+  // Crop state — `listPhotos` does not expose cropBox/cropAspect today, so we
+  // keep session-local overrides per side. Aspects are measured on image load
+  // and consumed by `applyCrop` plus the cropper modal.
+  const [cropTarget, setCropTarget] = useState<'A' | 'B' | null>(null)
+  const [cropOverrides, setCropOverrides] = useState<
+    Record<string, { cropBox: CropBox | null; sourceAspect: number }>
+  >({})
+  const [aspects, setAspects] = useState<Record<string, number>>({})
+
+  const updateCrop = useUpdatePhotoCrop()
 
   useEffect(() => {
     if (!open || !photoA || !photoB) {
@@ -102,8 +118,60 @@ export function PhotoComparisonDialog({
     }
   }, [])
 
+  const handleImageLoaded = useCallback(
+    (photoId: string) => (e: React.SyntheticEvent<HTMLImageElement>) => {
+      const img = e.currentTarget
+      if (img.naturalHeight <= 0) return
+      const aspect = img.naturalWidth / img.naturalHeight
+      setAspects((prev) => (prev[photoId] ? prev : { ...prev, [photoId]: aspect }))
+    },
+    [],
+  )
+
+  const handleSaveCrop = useCallback(
+    async (photo: PhotoAssetWithUrl, box: CropBox | null) => {
+      const sourceAspect = aspects[photo.id] ?? 1
+      try {
+        await updateCrop.mutateAsync({
+          photoId: photo.id,
+          cropBox: box,
+          cropAspect: box ? sourceAspect : null,
+        })
+        setCropOverrides((prev) => ({
+          ...prev,
+          [photo.id]: { cropBox: box, sourceAspect },
+        }))
+        setCropTarget(null)
+        toast.success(box ? 'Recorte salvo.' : 'Recorte removido.')
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Falha ao salvar recorte.')
+      }
+    },
+    [aspects, updateCrop],
+  )
+
   const labelA = photoA ? getPhotoLabel(photoA) : ''
   const labelB = photoB ? getPhotoLabel(photoB) : ''
+
+  // Per-side crop style helpers.
+  function styleFor(photo: PhotoAssetWithUrl | null) {
+    if (!photo) return null
+    const ov = cropOverrides[photo.id]
+    const aspect = ov?.sourceAspect ?? aspects[photo.id]
+    return ov?.cropBox && aspect ? applyCrop(ov.cropBox, aspect) : null
+  }
+
+  const styleA = styleFor(photoA)
+  const styleB = styleFor(photoB)
+
+  const cropTargetPhoto = cropTarget === 'A' ? photoA : cropTarget === 'B' ? photoB : null
+  const cropTargetUrl = cropTarget === 'A' ? urlA : cropTarget === 'B' ? urlB : null
+  const cropTargetAspect = cropTargetPhoto
+    ? (cropOverrides[cropTargetPhoto.id]?.sourceAspect ?? aspects[cropTargetPhoto.id] ?? 1)
+    : 1
+  const cropTargetCurrent = cropTargetPhoto
+    ? (cropOverrides[cropTargetPhoto.id]?.cropBox ?? null)
+    : null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -127,14 +195,39 @@ export function PhotoComparisonDialog({
               </button>
             ))}
           </div>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-white/60 hover:text-white hover:bg-white/10"
-            onClick={() => onOpenChange(false)}
-          >
-            <X className="size-5" />
-          </Button>
+          <div className="flex items-center gap-1">
+            {/* Per-side crop triggers */}
+            {photoA && urlA && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-white/70 hover:text-white hover:bg-white/10 text-xs"
+                onClick={() => setCropTarget('A')}
+              >
+                <CropIcon className="size-3.5" />
+                Recortar A
+              </Button>
+            )}
+            {photoB && urlB && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-white/70 hover:text-white hover:bg-white/10 text-xs"
+                onClick={() => setCropTarget('B')}
+              >
+                <CropIcon className="size-3.5" />
+                Recortar B
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-white/60 hover:text-white hover:bg-white/10"
+              onClick={() => onOpenChange(false)}
+            >
+              <X className="size-5" />
+            </Button>
+          </div>
         </div>
 
         {/* Content area */}
@@ -154,22 +247,52 @@ export function PhotoComparisonDialog({
                   ref={sliderContainerRef}
                   className="relative max-h-[70vh] cursor-col-resize select-none overflow-hidden rounded-lg"
                 >
-                  <img
-                    src={urlB}
-                    alt="Foto B"
-                    className="h-auto max-h-[70vh] w-full object-contain"
-                    draggable={false}
-                  />
+                  {/* Right side: photo B. */}
+                  {styleB ? (
+                    <div className="relative w-full overflow-hidden" style={styleB.containerStyle}>
+                      <img
+                        src={urlB}
+                        alt="Foto B"
+                        className="block"
+                        style={styleB.imageStyle}
+                        draggable={false}
+                        onLoad={photoB ? handleImageLoaded(photoB.id) : undefined}
+                      />
+                    </div>
+                  ) : (
+                    <img
+                      src={urlB}
+                      alt="Foto B"
+                      className="h-auto max-h-[70vh] w-full object-contain"
+                      draggable={false}
+                      onLoad={photoB ? handleImageLoaded(photoB.id) : undefined}
+                    />
+                  )}
+                  {/* Left side: photo A clipped to slider position. */}
                   <div
                     className="absolute inset-0"
                     style={{ clipPath: `polygon(0 0, ${sliderPosition}% 0, ${sliderPosition}% 100%, 0 100%)` }}
                   >
-                    <img
-                      src={urlA}
-                      alt="Foto A"
-                      className="h-full w-full object-contain"
-                      draggable={false}
-                    />
+                    {styleA ? (
+                      <div className="relative h-full w-full overflow-hidden" style={styleA.containerStyle}>
+                        <img
+                          src={urlA}
+                          alt="Foto A"
+                          className="block"
+                          style={styleA.imageStyle}
+                          draggable={false}
+                          onLoad={photoA ? handleImageLoaded(photoA.id) : undefined}
+                        />
+                      </div>
+                    ) : (
+                      <img
+                        src={urlA}
+                        alt="Foto A"
+                        className="h-full w-full object-contain"
+                        draggable={false}
+                        onLoad={photoA ? handleImageLoaded(photoA.id) : undefined}
+                      />
+                    )}
                   </div>
                   <div
                     className="absolute top-0 bottom-0 z-10 w-0.5 bg-white shadow-[0_0_8px_rgba(0,0,0,0.4)]"
@@ -194,13 +317,47 @@ export function PhotoComparisonDialog({
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <div className="overflow-hidden rounded-lg">
-                      <img src={urlA} alt="Foto A" className="h-auto max-h-[70vh] w-full object-contain" />
+                      {styleA ? (
+                        <div className="relative w-full overflow-hidden" style={styleA.containerStyle}>
+                          <img
+                            src={urlA}
+                            alt="Foto A"
+                            className="block"
+                            style={styleA.imageStyle}
+                            onLoad={photoA ? handleImageLoaded(photoA.id) : undefined}
+                          />
+                        </div>
+                      ) : (
+                        <img
+                          src={urlA}
+                          alt="Foto A"
+                          className="h-auto max-h-[70vh] w-full object-contain"
+                          onLoad={photoA ? handleImageLoaded(photoA.id) : undefined}
+                        />
+                      )}
                     </div>
                     <p className="text-center text-[11px] text-white/60">{labelA}</p>
                   </div>
                   <div className="space-y-2">
                     <div className="overflow-hidden rounded-lg">
-                      <img src={urlB} alt="Foto B" className="h-auto max-h-[70vh] w-full object-contain" />
+                      {styleB ? (
+                        <div className="relative w-full overflow-hidden" style={styleB.containerStyle}>
+                          <img
+                            src={urlB}
+                            alt="Foto B"
+                            className="block"
+                            style={styleB.imageStyle}
+                            onLoad={photoB ? handleImageLoaded(photoB.id) : undefined}
+                          />
+                        </div>
+                      ) : (
+                        <img
+                          src={urlB}
+                          alt="Foto B"
+                          className="h-auto max-h-[70vh] w-full object-contain"
+                          onLoad={photoB ? handleImageLoaded(photoB.id) : undefined}
+                        />
+                      )}
                     </div>
                     <p className="text-center text-[11px] text-white/60">{labelB}</p>
                   </div>
@@ -222,13 +379,46 @@ export function PhotoComparisonDialog({
                     <span className="text-xs text-white/50 tabular-nums w-8">{opacity}%</span>
                   </div>
                   <div className="relative overflow-hidden rounded-lg">
-                    <img src={urlA} alt="Foto A" className="h-auto max-h-[70vh] w-full object-contain" />
-                    <img
-                      src={urlB}
-                      alt="Foto B"
-                      className="absolute inset-0 h-full w-full object-contain"
-                      style={{ opacity: opacity / 100 }}
-                    />
+                    {styleA ? (
+                      <div className="relative w-full overflow-hidden" style={styleA.containerStyle}>
+                        <img
+                          src={urlA}
+                          alt="Foto A"
+                          className="block"
+                          style={styleA.imageStyle}
+                          onLoad={photoA ? handleImageLoaded(photoA.id) : undefined}
+                        />
+                      </div>
+                    ) : (
+                      <img
+                        src={urlA}
+                        alt="Foto A"
+                        className="h-auto max-h-[70vh] w-full object-contain"
+                        onLoad={photoA ? handleImageLoaded(photoA.id) : undefined}
+                      />
+                    )}
+                    {styleB ? (
+                      <div
+                        className="absolute inset-0 overflow-hidden"
+                        style={{ ...styleB.containerStyle, opacity: opacity / 100 }}
+                      >
+                        <img
+                          src={urlB}
+                          alt="Foto B"
+                          className="block"
+                          style={styleB.imageStyle}
+                          onLoad={photoB ? handleImageLoaded(photoB.id) : undefined}
+                        />
+                      </div>
+                    ) : (
+                      <img
+                        src={urlB}
+                        alt="Foto B"
+                        className="absolute inset-0 h-full w-full object-contain"
+                        style={{ opacity: opacity / 100 }}
+                        onLoad={photoB ? handleImageLoaded(photoB.id) : undefined}
+                      />
+                    )}
                   </div>
                   <div className="flex justify-between">
                     <p className="text-[11px] text-white/60">{labelA}</p>
@@ -239,6 +429,21 @@ export function PhotoComparisonDialog({
             </>
           )}
         </div>
+
+        {/* Crop dialog (per-side) */}
+        {cropTargetPhoto && cropTargetUrl && (
+          <ImageCropperDialog
+            open={true}
+            onOpenChange={(o) => {
+              if (!o) setCropTarget(null)
+            }}
+            src={cropTargetUrl}
+            currentCrop={cropTargetCurrent}
+            sourceAspect={cropTargetAspect}
+            onSave={(box) => handleSaveCrop(cropTargetPhoto, box)}
+            onCancel={() => setCropTarget(null)}
+          />
+        )}
       </DialogContent>
     </Dialog>
   )

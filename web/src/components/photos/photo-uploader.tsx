@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useCallback, useState, useRef } from 'react'
-import { Upload, X, ImageIcon, Loader2 } from 'lucide-react'
+import { Upload, X, ImageIcon, Loader2, Crop as CropIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
@@ -21,8 +21,11 @@ import {
   ACCEPTED_IMAGE_TYPES,
   isDngFile,
   isHeicFile,
+  type CropBox,
 } from '@/validations/photo'
 import type { TimelineStage } from '@/types'
+import { applyCrop } from '@/lib/photos'
+import { ImageCropperDialog } from './image-cropper'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -40,6 +43,10 @@ interface PendingFile {
   status: 'pending' | 'decoding' | 'compressing' | 'uploading' | 'done' | 'error'
   error?: string
   progress: number
+  /** Source aspect (width / height) of the decoded preview. */
+  sourceAspect?: number
+  /** Optional non-destructive crop attached client-side, sent on upload. */
+  cropBox?: CropBox
 }
 
 // ─── DNG → JPEG extractor ──────────────────────────────────────────
@@ -264,6 +271,40 @@ export function PhotoUploader({
   const [isUploading, setIsUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Crop-dialog state: the pending file currently being cropped.
+  const [cropTargetId, setCropTargetId] = useState<string | null>(null)
+
+  const openCropper = useCallback((id: string) => {
+    setCropTargetId(id)
+  }, [])
+
+  const closeCropper = useCallback(() => {
+    setCropTargetId(null)
+  }, [])
+
+  const handleCropSave = useCallback((id: string, box: CropBox | null) => {
+    setFiles((prev) =>
+      prev.map((f) =>
+        f.id === id
+          ? { ...f, cropBox: box ?? undefined }
+          : f,
+      ),
+    )
+    setCropTargetId(null)
+  }, [])
+
+  const handlePreviewLoaded = useCallback(
+    (id: string, e: React.SyntheticEvent<HTMLImageElement>) => {
+      const img = e.currentTarget
+      const aspect = img.naturalHeight > 0 ? img.naturalWidth / img.naturalHeight : undefined
+      if (!aspect) return
+      setFiles((prev) =>
+        prev.map((f) => (f.id === id && f.sourceAspect == null ? { ...f, sourceAspect: aspect } : f)),
+      )
+    },
+    [],
+  )
+
   const addFiles = useCallback(async (newFiles: FileList | File[]) => {
     const incoming = Array.from(newFiles)
     const pending: PendingFile[] = []
@@ -382,6 +423,13 @@ export function PhotoUploader({
         formData.set('timelineStage', timelineStage)
         if (procedureRecordId) {
           formData.set('procedureRecordId', procedureRecordId)
+        }
+        // Attach non-destructive crop (rendered server-side via applyCrop).
+        // cropAspect = sourceAspect captured when the cropper modal closed; we
+        // re-derive it here from the cached aspect on the pending file.
+        if (pendingFile.cropBox && pendingFile.sourceAspect) {
+          formData.set('cropBox', JSON.stringify(pendingFile.cropBox))
+          formData.set('cropAspect', String(pendingFile.sourceAspect))
         }
 
         const res = await fetch('/api/photos', { method: 'POST', body: formData })
@@ -506,13 +554,24 @@ export function PhotoUploader({
                   (f.status === 'decoding' || f.status === 'compressing' || f.status === 'uploading') && 'border-[#E8ECEF] bg-white'
                 )}
               >
-                <div className="aspect-square">
+                <div className="aspect-square overflow-hidden">
                   {f.preview ? (
-                    <img
-                      src={f.preview}
-                      alt={f.file.name}
-                      className="h-full w-full object-cover"
-                    />
+                    (() => {
+                      // If a crop is set, scale/translate the underlying image so
+                      // the cropped region fills the fixed-aspect tile.
+                      const cropStyle = f.cropBox && f.sourceAspect
+                        ? applyCrop(f.cropBox, f.sourceAspect)
+                        : null
+                      return (
+                        <img
+                          src={f.preview}
+                          alt={f.file.name}
+                          className="block h-full w-full object-cover"
+                          style={cropStyle?.imageStyle}
+                          onLoad={(e) => handlePreviewLoaded(f.id, e)}
+                        />
+                      )
+                    })()
                   ) : (
                     <div className="flex h-full items-center justify-center">
                       <ImageIcon className="size-8 text-muted-foreground" />
@@ -558,18 +617,41 @@ export function PhotoUploader({
                   </div>
                 )}
 
-                {/* Remove button */}
+                {/* Crop + remove buttons (only while file is queued or errored) */}
                 {(f.status === 'pending' || f.status === 'error') && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      removeFile(f.id)
-                    }}
-                    className="absolute top-1 right-1 rounded-full bg-black/50 p-0.5 text-white hover:bg-black/70"
-                  >
-                    <X className="size-3.5" />
-                  </button>
+                  <div className="absolute top-1 right-1 flex items-center gap-1">
+                    {f.status === 'pending' && f.preview && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openCropper(f.id)
+                        }}
+                        className="rounded-full bg-black/50 p-1 text-white hover:bg-black/70"
+                        title="Recortar"
+                      >
+                        <CropIcon className="size-3.5" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        removeFile(f.id)
+                      }}
+                      className="rounded-full bg-black/50 p-1 text-white hover:bg-black/70"
+                      title="Remover"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Crop indicator */}
+                {f.cropBox && (f.status === 'pending' || f.status === 'done') && (
+                  <div className="absolute bottom-9 left-1 rounded-full bg-sage/90 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                    Recortada
+                  </div>
                 )}
 
                 {/* File name */}
@@ -603,6 +685,25 @@ export function PhotoUploader({
           )}
         </div>
       )}
+
+      {/* Crop dialog for the currently-selected pending file. */}
+      {(() => {
+        const target = cropTargetId ? files.find((f) => f.id === cropTargetId) : null
+        if (!target || !target.preview) return null
+        return (
+          <ImageCropperDialog
+            open={true}
+            onOpenChange={(open) => {
+              if (!open) closeCropper()
+            }}
+            src={target.preview}
+            currentCrop={target.cropBox ?? null}
+            sourceAspect={target.sourceAspect ?? 1}
+            onSave={(box) => handleCropSave(target.id, box)}
+            onCancel={closeCropper}
+          />
+        )
+      })()}
     </div>
   )
 }
