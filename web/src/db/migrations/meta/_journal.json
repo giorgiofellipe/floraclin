@@ -78,6 +78,13 @@
       "when": 1780200000000,
       "tag": "0010_whatsapp_queued_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1779936359367,
+      "tag": "0011_clinic_feature_pack",
+      "breakpoints": true
     }
   ]
 }
