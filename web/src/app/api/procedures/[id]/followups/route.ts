@@ -1,8 +1,67 @@
 import { NextResponse } from 'next/server'
+import { and, desc, eq } from 'drizzle-orm'
 import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import { recordFollowup } from '@/lib/followups'
 import { recordFollowupSchema } from '@/validations/followup'
+import { db } from '@/db/client'
+import { procedureFollowups, procedureRecords, users } from '@/db/schema'
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const ctx = await getAuthContext()
+    const { id: procedureRecordId } = await params
+
+    // Ensure caller's tenant owns this procedure record before exposing followups.
+    const [owner] = await db
+      .select({ id: procedureRecords.id })
+      .from(procedureRecords)
+      .where(
+        and(
+          eq(procedureRecords.id, procedureRecordId),
+          eq(procedureRecords.tenantId, ctx.tenantId),
+        ),
+      )
+      .limit(1)
+
+    if (!owner) {
+      return NextResponse.json({ error: 'Procedimento não encontrado' }, { status: 404 })
+    }
+
+    const rows = await db
+      .select({
+        id: procedureFollowups.id,
+        contactedAt: procedureFollowups.contactedAt,
+        contactedById: procedureFollowups.contactedBy,
+        contactedByName: users.fullName,
+        channel: procedureFollowups.channel,
+        outcome: procedureFollowups.outcome,
+        notes: procedureFollowups.notes,
+      })
+      .from(procedureFollowups)
+      .innerJoin(users, eq(procedureFollowups.contactedBy, users.id))
+      .where(
+        and(
+          eq(procedureFollowups.procedureRecordId, procedureRecordId),
+          eq(procedureFollowups.tenantId, ctx.tenantId),
+        ),
+      )
+      .orderBy(desc(procedureFollowups.contactedAt))
+
+    return NextResponse.json({ data: rows })
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('Forbidden'))
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect'))
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    console.error('API error:', error)
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+  }
+}
 
 export async function POST(
   request: Request,

@@ -1,13 +1,59 @@
 'use client'
 
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { Printer, Package as PackageIcon } from 'lucide-react'
 import { usePatient } from '@/hooks/queries/use-patients'
 import { useProcedure } from '@/hooks/queries/use-procedures'
 import { useTenant } from '@/hooks/queries/use-tenant'
+import { usePatientPackages } from '@/hooks/queries/use-packages'
 import { ProcedureForm } from '@/components/procedures/procedure-form'
 import { ProcedureExecution } from '@/components/procedures/procedure-execution'
 import { ProcedureApproval } from '@/components/procedures/procedure-approval'
 import { ProcedureDetailView } from '@/components/procedures/procedure-detail-view'
+import { Button } from '@/components/ui/button'
+
+/**
+ * Renders a small banner above the procedure body when this procedure is tied
+ * to a sold patient package. Looks up package + line via `usePatientPackages`
+ * by matching the procedure's `patientPackageLineId` against the cached list.
+ *
+ * `patientPackageId` / `patientPackageLineId` are projected through the
+ * procedure read query by the Group 1 backend. We access them via a tolerant
+ * cast so this wiring layer doesn't depend on whether the projection lands
+ * before or after this commit — if either field is missing, the banner is
+ * simply not rendered (graceful no-op).
+ */
+function PackageBadgeBanner({
+  patientId,
+  procedure,
+}: {
+  patientId: string
+  procedure: Record<string, unknown>
+}) {
+  const patientPackageId = procedure.patientPackageId as string | null | undefined
+  const patientPackageLineId = procedure.patientPackageLineId as string | null | undefined
+  const { data: packages } = usePatientPackages(patientPackageId ? patientId : '')
+
+  if (!patientPackageId || !patientPackageLineId) return null
+
+  const pkg = (packages ?? []).find((p) => p.id === patientPackageId)
+  const line = pkg?.lines.find((l) => l.id === patientPackageLineId)
+  if (!pkg || !line) return null
+
+  const ordinal = Math.min(line.consumedCount, line.sessionsTotal)
+  return (
+    <div className="mx-auto mb-4 flex max-w-4xl items-center gap-2 rounded-md border border-sage/20 bg-sage/5 px-3 py-1.5 text-[12px] text-sage">
+      <PackageIcon className="size-3.5" />
+      <span>
+        Pacote: <span className="font-medium">{pkg.name}</span> · sessão{' '}
+        <span className="tabular-nums">
+          {ordinal}/{line.sessionsTotal}
+        </span>
+      </span>
+    </div>
+  )
+}
 
 interface ProcedurePageClientProps {
   patientId: string
@@ -98,6 +144,20 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
   if (procedure.status === 'executed' || procedure.status === 'cancelled') {
     return (
       <div className="min-h-screen p-6">
+        <PackageBadgeBanner
+          patientId={patientId}
+          procedure={procedure as unknown as Record<string, unknown>}
+        />
+        {procedure.status === 'executed' && (
+          <div className="mx-auto mb-3 flex max-w-3xl items-center justify-end">
+            <Link href={`/procedimentos/${procedure.id}/imprimir`}>
+              <Button variant="outline" size="sm">
+                <Printer className="size-3.5 mr-1.5" />
+                Imprimir
+              </Button>
+            </Link>
+          </div>
+        )}
         <ProcedureDetailView
           patientId={patientId}
           patientName={patient.fullName}
@@ -114,6 +174,10 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
   if (procedure.status === 'approved') {
     return (
       <div className="min-h-screen p-6">
+        <PackageBadgeBanner
+          patientId={patientId}
+          procedure={procedure as unknown as Record<string, unknown>}
+        />
         <ProcedureDetailView
           patientId={patientId}
           patientName={patient.fullName}
@@ -129,6 +193,10 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
   // Default: planned procedure form (edit)
   return (
     <div className="min-h-screen p-6">
+      <PackageBadgeBanner
+        patientId={patientId}
+        procedure={procedure as unknown as Record<string, unknown>}
+      />
       <ProcedureForm
         patientId={patientId}
         patientGender={patient.gender}

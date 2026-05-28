@@ -11,6 +11,9 @@ import {
   DollarSign,
   Loader2,
   Save,
+  Headphones,
+  MessageSquarePlus,
+  PauseCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -39,6 +42,13 @@ import {
 } from './planning/procedure-types-section'
 import { EvaluationTemplatesSection } from './planning/evaluation-templates-section'
 import { DiagramSection } from './planning/diagram-section'
+import {
+  FollowupTimeline,
+  type FollowupEntry,
+} from '@/components/planejamentos/followup-timeline'
+import { FollowupModal } from '@/components/planejamentos/followup-modal'
+import { SnoozeModal } from '@/components/planejamentos/snooze-modal'
+import { useFollowupsForProcedure } from '@/hooks/queries/use-planejamentos'
 
 // ─── Re-exported types (preserved API for other modules) ──────────
 
@@ -775,6 +785,24 @@ export function ProcedureForm({
   const financialPlan = form.watch('financialPlan')
   const diagramPoints = form.watch('diagramPoints') ?? []
 
+  // ─── Followup section (planned procedures only) ───────────────
+  const showFollowupSection = procedure?.status === 'planned' && !!procedure?.id
+  const followupsQuery = useFollowupsForProcedure(
+    showFollowupSection ? procedure!.id : '',
+  )
+  const followupEntries: FollowupEntry[] = (followupsQuery.data?.data ?? []).map(
+    (row) => ({
+      id: row.id,
+      contactedAt: row.contactedAt,
+      contactedByName: row.contactedByName,
+      channel: row.channel,
+      outcome: row.outcome,
+      notes: row.notes,
+    }),
+  )
+  const [followupModalOpen, setFollowupModalOpen] = useState(false)
+  const [snoozeModalOpen, setSnoozeModalOpen] = useState(false)
+
   // ─── Render ─────────────────────────────────────────────────
   return (
     <div className="mx-auto max-w-4xl space-y-5 pb-24">
@@ -923,6 +951,69 @@ export function ProcedureForm({
             disabled={isReadOnly}
           />
         </Section>
+      )}
+
+      {/* ── Acompanhamento (planned procedures) ──────────────── */}
+      {showFollowupSection && (
+        <Card className="bg-white overflow-hidden border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between text-base">
+              <div className="flex items-center gap-2.5">
+                <div className="flex size-7 items-center justify-center rounded-md bg-forest/5">
+                  <Headphones className="size-4 text-forest" />
+                </div>
+                <span className="uppercase tracking-wider text-sm text-charcoal font-medium">
+                  Acompanhamento
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setFollowupModalOpen(true)}
+                >
+                  <MessageSquarePlus className="size-3.5" />
+                  Registrar contato
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSnoozeModalOpen(true)}
+                >
+                  <PauseCircle className="size-3.5" />
+                  Adiar
+                </Button>
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 pb-5">
+            <FollowupTimeline
+              followups={followupEntries}
+              loading={followupsQuery.isLoading}
+              emptyState="Nenhum contato registrado ainda. Use os botões acima para registrar um follow-up ou adiar o próximo contato."
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {showFollowupSection && (
+        <>
+          <FollowupModal
+            open={followupModalOpen}
+            onClose={() => setFollowupModalOpen(false)}
+            procedureRecordId={procedure!.id}
+            patientName={procedure?.procedureTypeName}
+            procedureTypeName={procedure?.procedureTypeName}
+          />
+          <SnoozeModal
+            open={snoozeModalOpen}
+            onClose={() => setSnoozeModalOpen(false)}
+            procedureRecordId={procedure!.id}
+            procedureTypeName={procedure?.procedureTypeName}
+          />
+        </>
       )}
 
       {/* ── Submit ──────────────────────────────────────── */}

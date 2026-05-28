@@ -8,6 +8,8 @@ import { QuickStats } from '@/components/dashboard/quick-stats'
 import { TodayAppointments } from '@/components/dashboard/today-appointments'
 import { FinancialSummary } from '@/components/dashboard/financial-summary'
 import { RecentActivity } from '@/components/dashboard/recent-activity'
+import { UpcomingBirthdaysCard } from '@/components/dashboard/upcoming-birthdays-card'
+import { OpenPlanejamentosCard } from '@/components/dashboard/open-planejamentos-card'
 import DashboardLoading from './loading'
 
 function getGreeting(): string {
@@ -86,6 +88,12 @@ export function DashboardPageClient() {
           stats={data.quickStats}
           monthlyGoal={((tenant?.settings as Record<string, unknown>)?.monthly_revenue_goal as number) || 0}
         />
+      </div>
+
+      {/* Aniversariantes + Planejamentos Abertos */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <UpcomingBirthdaysCard />
+        <OpenPlanejamentosCard />
       </div>
 
       {/* Recent Activity */}

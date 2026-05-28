@@ -16,6 +16,9 @@ import {
   MapPin,
   Banknote,
   Printer,
+  Headphones,
+  MessageSquarePlus,
+  PauseCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { FaceDiagramEditor } from '@/components/face-diagram/face-diagram-editor'
@@ -29,6 +32,13 @@ import type { ProductApplicationRecord } from '@/db/queries/product-applications
 import type { DiagramPointData } from '@/components/face-diagram/types'
 import type { PaymentMethod } from '@/types'
 import type { EvaluationSection, EvaluationResponses, EvaluationQuestion } from '@/types/evaluation'
+import {
+  FollowupTimeline,
+  type FollowupEntry,
+} from '@/components/planejamentos/followup-timeline'
+import { FollowupModal } from '@/components/planejamentos/followup-modal'
+import { SnoozeModal } from '@/components/planejamentos/snooze-modal'
+import { useFollowupsForProcedure } from '@/hooks/queries/use-planejamentos'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -198,6 +208,22 @@ export function ProcedureDetailView({
 
   const isCancelled = procedure.status === 'cancelled'
   const isExecuted = procedure.status === 'executed'
+  const isApproved = procedure.status === 'approved'
+
+  // ─── Followup section (approved procedures only) ──────────────
+  const followupsQuery = useFollowupsForProcedure(isApproved ? procedure.id : '')
+  const followupEntries: FollowupEntry[] = (followupsQuery.data?.data ?? []).map(
+    (row) => ({
+      id: row.id,
+      contactedAt: row.contactedAt,
+      contactedByName: row.contactedByName,
+      channel: row.channel,
+      outcome: row.outcome,
+      notes: row.notes,
+    }),
+  )
+  const [followupModalOpen, setFollowupModalOpen] = useState(false)
+  const [snoozeModalOpen, setSnoozeModalOpen] = useState(false)
 
   // ─── Evaluation responses ─────────────────────────────────────────
   interface EvalResponseRecord {
@@ -558,8 +584,64 @@ export function ProcedureDetailView({
               </dl>
             </div>
           )}
+
+          {/* Acompanhamento — approved (open) procedures only */}
+          {isApproved && (
+            <div data-print-hide>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <Headphones className="size-4 text-sage" />
+                  <h3 className="text-[11px] uppercase tracking-[0.18em] font-medium text-mid">
+                    Acompanhamento
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFollowupModalOpen(true)}
+                  >
+                    <MessageSquarePlus className="size-3.5 mr-1.5" />
+                    Registrar contato
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSnoozeModalOpen(true)}
+                  >
+                    <PauseCircle className="size-3.5 mr-1.5" />
+                    Adiar
+                  </Button>
+                </div>
+              </div>
+              <FollowupTimeline
+                followups={followupEntries}
+                loading={followupsQuery.isLoading}
+                emptyState="Nenhum contato registrado ainda."
+              />
+            </div>
+          )}
         </div>
       </div>
+
+      {isApproved && (
+        <>
+          <FollowupModal
+            open={followupModalOpen}
+            onClose={() => setFollowupModalOpen(false)}
+            procedureRecordId={procedure.id}
+            patientName={patientName}
+            procedureTypeName={procedure.procedureTypeName}
+          />
+          <SnoozeModal
+            open={snoozeModalOpen}
+            onClose={() => setSnoozeModalOpen(false)}
+            procedureRecordId={procedure.id}
+            patientName={patientName}
+            procedureTypeName={procedure.procedureTypeName}
+          />
+        </>
+      )}
     </div>
   )
 }

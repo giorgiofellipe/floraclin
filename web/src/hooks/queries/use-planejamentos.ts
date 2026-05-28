@@ -67,6 +67,34 @@ export function useOpenPlanejamentos(filters: OpenPlanejamentosFilters = {}) {
   })
 }
 
+/**
+ * Row shape returned by GET /api/procedures/:id/followups.
+ * Matches what `<FollowupTimeline>` expects, modulo the date being an ISO string.
+ */
+export interface ProcedureFollowupRow {
+  id: string
+  contactedAt: string
+  contactedById: string
+  contactedByName: string | null
+  channel: FollowupChannel
+  outcome: FollowupOutcome
+  notes: string | null
+}
+
+const followupsForProcedureKey = (procedureRecordId: string) =>
+  ['planejamentos', 'followups', procedureRecordId] as const
+
+export function useFollowupsForProcedure(procedureRecordId: string) {
+  return useQuery<{ data: ProcedureFollowupRow[] }>({
+    queryKey: followupsForProcedureKey(procedureRecordId),
+    enabled: !!procedureRecordId,
+    queryFn: () =>
+      fetchJson<{ data: ProcedureFollowupRow[] }>(
+        `/api/procedures/${procedureRecordId}/followups`,
+      ),
+  })
+}
+
 export interface RecordFollowupInput {
   procedureRecordId: string
   channel: FollowupChannel

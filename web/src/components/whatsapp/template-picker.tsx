@@ -34,12 +34,26 @@ interface Template {
   variableMapping: VariableMapping[] | null
 }
 
+/**
+ * Optional filter keyed off a template's `purposeKey`. When set, the picker
+ * will only show templates whose purposeKey matches the listed allowlist for
+ * that kind. Useful for context-specific entry points (e.g., the birthday
+ * row action should only surface birthday-greeting templates).
+ */
+export type TemplatePickerKind = 'birthday'
+
+const PURPOSE_KEYS_BY_KIND: Record<TemplatePickerKind, string[]> = {
+  birthday: ['birthday_greeting'],
+}
+
 interface TemplatePickerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSelectTemplate: (templateName: string, language: string, params?: Record<string, string>) => void
   sending?: boolean
   contactName?: string | null
+  /** Optional filter — only show templates whose purposeKey matches the given kind. */
+  kind?: TemplatePickerKind
 }
 
 const AUTO_FILL_KEYS: Record<string, (ctx: { contactName?: string | null }) => string | undefined> = {
@@ -52,6 +66,7 @@ export function TemplatePicker({
   onSelectTemplate,
   sending,
   contactName,
+  kind,
 }: TemplatePickerProps) {
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(false)
@@ -141,12 +156,19 @@ export function TemplatePicker({
     setSelectedTemplate(null)
   }
 
-  const filtered = templates.filter((t) => {
-    const q = search.toLowerCase()
-    if (!q) return true
-    const purposeLabel = t.purposeKey ? (PURPOSE_LABELS[t.purposeKey] ?? '') : ''
-    return t.name.toLowerCase().includes(q) || purposeLabel.toLowerCase().includes(q)
-  })
+  const allowedPurposeKeys = kind ? PURPOSE_KEYS_BY_KIND[kind] : null
+
+  const filtered = templates
+    .filter((t) => {
+      if (!allowedPurposeKeys) return true
+      return t.purposeKey ? allowedPurposeKeys.includes(t.purposeKey) : false
+    })
+    .filter((t) => {
+      const q = search.toLowerCase()
+      if (!q) return true
+      const purposeLabel = t.purposeKey ? (PURPOSE_LABELS[t.purposeKey] ?? '') : ''
+      return t.name.toLowerCase().includes(q) || purposeLabel.toLowerCase().includes(q)
+    })
 
   const utilityTemplates = filtered.filter((t) => t.category === 'UTILITY')
   const marketingTemplates = filtered.filter((t) => t.category === 'MARKETING')
