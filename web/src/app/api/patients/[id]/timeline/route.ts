@@ -13,6 +13,8 @@ import {
   financialEntries,
   patients,
   anamneses,
+  patientPackages,
+  clinicalDocuments,
 } from '@/db/schema'
 import { eq, and, isNull, inArray } from 'drizzle-orm'
 import type { TimelineEntry, TimelineGroup, PatientTimeline } from '@/types/timeline'
@@ -83,6 +85,8 @@ async function buildPatientTimeline(tenantId: string, patientId: string): Promis
       appointmentsData,
       financialData,
       paymentsData,
+      packagesData,
+      documentsData,
     ] = await Promise.all([
       // Patient record
       db
@@ -243,6 +247,47 @@ async function buildPatientTimeline(tenantId: string, patientId: string): Promis
             eq(installments.tenantId, tenantId),
             eq(financialEntries.patientId, patientId),
             eq(installments.status, 'paid')
+          )
+        ),
+
+      // Patient packages (sold sessions bundle)
+      db
+        .select({
+          id: patientPackages.id,
+          name: patientPackages.name,
+          totalAmount: patientPackages.totalAmount,
+          purchasedAt: patientPackages.purchasedAt,
+          createdAt: patientPackages.createdAt,
+          status: patientPackages.status,
+          cancelledAt: patientPackages.cancelledAt,
+          soldByName: users.fullName,
+        })
+        .from(patientPackages)
+        .leftJoin(users, eq(users.id, patientPackages.soldBy))
+        .where(
+          and(
+            eq(patientPackages.tenantId, tenantId),
+            eq(patientPackages.patientId, patientId)
+          )
+        ),
+
+      // Clinical documents (receitas / atestados emitidos)
+      db
+        .select({
+          id: clinicalDocuments.id,
+          kind: clinicalDocuments.kind,
+          title: clinicalDocuments.title,
+          issuedAt: clinicalDocuments.issuedAt,
+          deliveredVia: clinicalDocuments.deliveredVia,
+          whatsappMessageId: clinicalDocuments.whatsappMessageId,
+          practitionerName: users.fullName,
+        })
+        .from(clinicalDocuments)
+        .leftJoin(users, eq(users.id, clinicalDocuments.practitionerId))
+        .where(
+          and(
+            eq(clinicalDocuments.tenantId, tenantId),
+            eq(clinicalDocuments.patientId, patientId)
           )
         ),
     ])
@@ -465,6 +510,57 @@ async function buildPatientTimeline(tenantId: string, patientId: string): Promis
         title: `Consulta agendada as ${appt.startTime.slice(0, 5)}`,
         meta: `${STATUS_LABELS[appt.status] ?? appt.status} - ${appt.practitionerName}`,
       })
+    }
+
+    // Packages sold + cancelled. A package is a sales event that lives outside
+    // the per-procedure groups — its consumed sessions appear as separate
+    // procedure groups elsewhere on the timeline.
+    for (const pkg of packagesData) {
+      const seller = pkg.soldByName ? ` por ${pkg.soldByName}` : ''
+      ungrouped.push({
+        id: `package-sold-${pkg.id}`,
+        type: 'package_sold',
+        date: new Date(pkg.createdAt).toISOString(),
+        title: `Pacote vendido${seller}`,
+        meta: pkg.name,
+        description: `R$ ${Number(pkg.totalAmount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+      })
+      if (pkg.status === 'cancelled' && pkg.cancelledAt) {
+        ungrouped.push({
+          id: `package-cancelled-${pkg.id}`,
+          type: 'package_cancelled',
+          date: new Date(pkg.cancelledAt).toISOString(),
+          title: 'Pacote cancelado',
+          meta: pkg.name,
+        })
+      }
+    }
+
+    // Clinical documents (receitas / atestados). Each issuance is one event;
+    // if also sent via WhatsApp, surface a second entry so the patient's
+    // history shows whether the document reached them.
+    for (const docu of documentsData) {
+      const kindLabel = docu.kind === 'receita' ? 'Receita' : 'Atestado'
+      const issuedBy = docu.practitionerName ? ` por ${docu.practitionerName}` : ''
+      ungrouped.push({
+        id: `doc-issued-${docu.id}`,
+        type: 'document_issued',
+        date: new Date(docu.issuedAt).toISOString(),
+        title: `${kindLabel} emitido${issuedBy}`,
+        meta: docu.title,
+      })
+      if (docu.whatsappMessageId) {
+        ungrouped.push({
+          id: `doc-sent-wa-${docu.id}`,
+          type: 'document_sent_whatsapp',
+          // The send-whatsapp route doesn't currently persist a separate
+          // sent_at timestamp, so anchor the event to issuedAt + 1s so it
+          // sorts immediately after the issuance.
+          date: new Date(new Date(docu.issuedAt).getTime() + 1000).toISOString(),
+          title: `${kindLabel} enviado por WhatsApp`,
+          meta: docu.title,
+        })
+      }
     }
 
     // Sort ungrouped by date desc
