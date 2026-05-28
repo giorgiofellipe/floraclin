@@ -56,31 +56,15 @@ export async function issueClinicalDocument(
   })
 }
 
-export type DeliveryChannel = 'whatsapp' | 'print' | 'download'
-export type DeliveredVia = 'pending' | DeliveryChannel | 'multiple'
-
 /**
- * Computes the next deliveredVia value when a delivery event happens.
+ * `clinical_documents.delivered_via` was originally a multi-channel state
+ * machine (pending → whatsapp/print/download → multiple). Print and download
+ * aren't real "delivered to patient" events — the user often opens the
+ * preview to inspect it — so the column is now effectively two-state:
+ * `'pending'` until the document is sent via WhatsApp, then `'whatsapp'`.
  *
- *  - 'pending' + any channel → that channel
- *  - 'multiple' + any → 'multiple'
- *  - current === incoming channel → unchanged
- *  - otherwise (different channel already recorded) → 'multiple'
+ * The CHECK constraint still accepts the legacy values for backward
+ * compatibility (any historical row written by an older deploy stays valid),
+ * but new writes only ever use `'pending'` or `'whatsapp'`.
  */
-export function nextDeliveredViaAfterChannel(
-  current: string,
-  channel: DeliveryChannel,
-): DeliveredVia {
-  if (current === 'pending') return channel
-  if (current === 'multiple') return 'multiple'
-  if (current === channel) return channel
-  // current is a different channel → mixed
-  return 'multiple'
-}
-
-/**
- * Convenience wrapper preserved for callers that only emit WhatsApp deliveries.
- */
-export function nextDeliveredViaAfterWhatsapp(current: string): DeliveredVia {
-  return nextDeliveredViaAfterChannel(current, 'whatsapp')
-}
+export type DeliveredVia = 'pending' | 'whatsapp'

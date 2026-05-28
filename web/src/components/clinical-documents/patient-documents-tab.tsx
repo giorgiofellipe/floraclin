@@ -27,27 +27,22 @@ const KIND_LABEL: Record<string, string> = {
   atestado: 'Atestado',
 }
 
-const DELIVERY_BADGE: Record<string, { label: string; className: string }> = {
-  pending: {
-    label: 'Não entregue',
+/**
+ * Two-state delivery badge. Print and download aren't real "delivered to
+ * patient" events (the user might preview without sending), so the only
+ * meaningful signal is whether the document was sent via WhatsApp.
+ */
+function deliveryBadge(d: PatientDocumentRow): { label: string; className: string } {
+  if (d.whatsappMessageId) {
+    return {
+      label: 'Enviado por WhatsApp',
+      className: 'bg-[#F0F7F1] text-sage border-sage/20',
+    }
+  }
+  return {
+    label: 'Não enviado',
     className: 'bg-[#F4F6F8] text-mid border-[#E8ECEF]',
-  },
-  download: {
-    label: 'Baixado',
-    className: 'bg-[#F4F6F8] text-mid border-[#E8ECEF]',
-  },
-  print: {
-    label: 'Impresso',
-    className: 'bg-[#F4F6F8] text-mid border-[#E8ECEF]',
-  },
-  whatsapp: {
-    label: 'WhatsApp',
-    className: 'bg-[#F0F7F1] text-sage border-sage/20',
-  },
-  multiple: {
-    label: 'Múltiplos canais',
-    className: 'bg-blush/40 text-charcoal border-blush',
-  },
+  }
 }
 
 interface PatientDocumentsTabProps {
@@ -93,20 +88,17 @@ export function PatientDocumentsTab({ patient }: PatientDocumentsTabProps) {
       ) : (
         <ul className="space-y-2">
           {docs.map((d) => {
-            const badge = DELIVERY_BADGE[d.deliveredVia] ?? {
-              label: d.deliveredVia,
-              className: 'bg-[#F4F6F8] text-mid border-[#E8ECEF]',
-            }
+            const badge = deliveryBadge(d)
             const kindLabel = KIND_LABEL[d.kind] ?? d.kind
             return (
               <li
                 key={d.id}
-                className="rounded-[3px] border border-[#E8ECEF] bg-white p-3"
+                className="rounded-[3px] border border-[#E8ECEF] bg-white p-3 transition-colors hover:border-sage/30 hover:bg-petal/20"
               >
                 <button
                   type="button"
                   onClick={() => setOpenedDoc(d)}
-                  className="flex w-full items-start justify-between gap-3 text-left"
+                  className="flex w-full cursor-pointer items-start justify-between gap-3 text-left"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">

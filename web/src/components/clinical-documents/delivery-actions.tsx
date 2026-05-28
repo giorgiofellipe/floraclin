@@ -13,10 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Download, MessageCircle, Printer, Loader2 } from 'lucide-react'
-import {
-  useMarkDocumentDelivery,
-  useSendDocumentWhatsapp,
-} from '@/hooks/queries/use-clinical-documents'
+import { useSendDocumentWhatsapp } from '@/hooks/queries/use-clinical-documents'
 
 export interface DeliveryActionsProps {
   documentId: string
@@ -31,8 +28,10 @@ export interface DeliveryActionsProps {
  *  - Baixar PDF: streams the server-rendered PDF
  *  - Enviar via WhatsApp: confirm dialog → POST /send-whatsapp
  *
- * The print URL is `/documentos/[id]/imprimir` (under the (platform) group,
- * NOT a public /c/ route — PHI is never reachable via UUID alone).
+ * The print URL is `/documentos/[id]/imprimir` (under the (print) route group,
+ * authenticated — PHI is never reachable via UUID alone). Only the WhatsApp
+ * send is recorded as a "delivery" — opening the print preview or
+ * downloading a PDF doesn't mean the document reached the patient.
  */
 export function DeliveryActions({
   documentId,
@@ -41,30 +40,16 @@ export function DeliveryActions({
   className,
 }: DeliveryActionsProps) {
   const sendWhatsapp = useSendDocumentWhatsapp()
-  const markDelivery = useMarkDocumentDelivery()
   const [confirmOpen, setConfirmOpen] = React.useState(false)
 
   const printUrl = `/documentos/${documentId}/imprimir`
   const pdfUrl = `/api/clinical-documents/${documentId}/pdf`
 
-  // Record the delivery event server-side BEFORE opening the URL so the state
-  // machine reflects actual user intent. If the PATCH fails (network blip,
-  // auth), we still open the URL — losing the audit record is preferable to
-  // blocking the user from accessing their document.
-  async function markAndOpen(channel: 'print' | 'download', open: () => void) {
-    try {
-      await markDelivery.mutateAsync({ id: documentId, channel, patientId })
-    } catch (err) {
-      console.error('Failed to record delivery event:', err)
-    }
-    open()
-  }
-
-  function openPrint() {
+  function handlePrint() {
     window.open(printUrl, '_blank', 'noopener')
   }
 
-  function openDownload() {
+  function handleDownload() {
     const a = document.createElement('a')
     a.href = pdfUrl
     a.target = '_blank'
@@ -72,14 +57,6 @@ export function DeliveryActions({
     document.body.appendChild(a)
     a.click()
     a.remove()
-  }
-
-  function handlePrint() {
-    void markAndOpen('print', openPrint)
-  }
-
-  function handleDownload() {
-    void markAndOpen('download', openDownload)
   }
 
   async function handleSendWhatsapp() {

@@ -1,57 +1,25 @@
-import { describe, it, expect } from 'vitest'
-import {
-  nextDeliveredViaAfterChannel,
-  nextDeliveredViaAfterWhatsapp,
-} from '../clinical-documents'
+import { describe, it, expect, expectTypeOf } from 'vitest'
+import type { DeliveredVia } from '../clinical-documents'
 
-describe('nextDeliveredViaAfterWhatsapp', () => {
-  it('promotes "pending" (initial issuance state) to "whatsapp"', () => {
-    expect(nextDeliveredViaAfterWhatsapp('pending')).toBe('whatsapp')
+// `delivered_via` is now a two-state column: `'pending'` until the document
+// is sent via WhatsApp, then `'whatsapp'`. The original multi-channel state
+// machine (print/download/multiple) was removed — preview/download aren't
+// real "delivered to patient" events.
+describe('DeliveredVia', () => {
+  it('is exactly the two-state union', () => {
+    expectTypeOf<DeliveredVia>().toEqualTypeOf<'pending' | 'whatsapp'>()
   })
 
-  it('keeps "whatsapp" as "whatsapp" when re-sent', () => {
-    expect(nextDeliveredViaAfterWhatsapp('whatsapp')).toBe('whatsapp')
-  })
-
-  it('promotes "download" to "multiple" (user downloaded, then sent)', () => {
-    expect(nextDeliveredViaAfterWhatsapp('download')).toBe('multiple')
-  })
-
-  it('promotes "print" to "multiple"', () => {
-    expect(nextDeliveredViaAfterWhatsapp('print')).toBe('multiple')
-  })
-
-  it('keeps "multiple" as "multiple"', () => {
-    expect(nextDeliveredViaAfterWhatsapp('multiple')).toBe('multiple')
-  })
-
-  it('treats unknown previous value as mixed (safety)', () => {
-    expect(nextDeliveredViaAfterWhatsapp('something-else')).toBe('multiple')
-  })
-})
-
-describe('nextDeliveredViaAfterChannel', () => {
-  it('promotes "pending" to the incoming channel', () => {
-    expect(nextDeliveredViaAfterChannel('pending', 'print')).toBe('print')
-    expect(nextDeliveredViaAfterChannel('pending', 'download')).toBe('download')
-    expect(nextDeliveredViaAfterChannel('pending', 'whatsapp')).toBe('whatsapp')
-  })
-
-  it('keeps current value when the same channel is repeated', () => {
-    expect(nextDeliveredViaAfterChannel('print', 'print')).toBe('print')
-    expect(nextDeliveredViaAfterChannel('download', 'download')).toBe('download')
-  })
-
-  it('promotes to "multiple" when a different channel is added', () => {
-    expect(nextDeliveredViaAfterChannel('print', 'download')).toBe('multiple')
-    expect(nextDeliveredViaAfterChannel('download', 'print')).toBe('multiple')
-    expect(nextDeliveredViaAfterChannel('whatsapp', 'print')).toBe('multiple')
-    expect(nextDeliveredViaAfterChannel('whatsapp', 'download')).toBe('multiple')
-  })
-
-  it('keeps "multiple" as "multiple" regardless of channel', () => {
-    expect(nextDeliveredViaAfterChannel('multiple', 'print')).toBe('multiple')
-    expect(nextDeliveredViaAfterChannel('multiple', 'download')).toBe('multiple')
-    expect(nextDeliveredViaAfterChannel('multiple', 'whatsapp')).toBe('multiple')
+  it('does not include the legacy print/download/multiple variants', () => {
+    // @ts-expect-error — 'print' is no longer a valid DeliveredVia
+    const _print: DeliveredVia = 'print'
+    // @ts-expect-error — 'download' is no longer a valid DeliveredVia
+    const _download: DeliveredVia = 'download'
+    // @ts-expect-error — 'multiple' is no longer a valid DeliveredVia
+    const _multiple: DeliveredVia = 'multiple'
+    void _print
+    void _download
+    void _multiple
+    expect(true).toBe(true)
   })
 })

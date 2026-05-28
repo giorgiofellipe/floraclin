@@ -10,7 +10,6 @@ import { PrintDocument } from '@/components/clinical-documents/print-document'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
 import { uploadPdfBuffer } from '@/lib/storage'
 import { sendMediaMessage } from '@/lib/whatsapp'
-import { nextDeliveredViaAfterWhatsapp } from '@/lib/clinical-documents'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -80,10 +79,9 @@ export async function POST(
       whatsappFilename,
     )
 
-    // 4. Persist delivery status
-    const nextStatus = nextDeliveredViaAfterWhatsapp(doc.deliveredVia)
+    // 4. Persist delivery status — only WhatsApp sends count as "delivered".
     await updateDeliveryStatus(ctx.tenantId, id, {
-      deliveredVia: nextStatus,
+      deliveredVia: 'whatsapp',
       whatsappMessageId: sendResult.metaMessageId ?? null,
       storagePath,
     })
@@ -98,7 +96,7 @@ export async function POST(
         delivery: {
           old: { deliveredVia: doc.deliveredVia },
           new: {
-            deliveredVia: nextStatus,
+            deliveredVia: 'whatsapp',
             whatsappMessageId: sendResult.metaMessageId ?? null,
           },
         },
@@ -107,7 +105,7 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      data: { deliveredVia: nextStatus, whatsappMessageId: sendResult.metaMessageId ?? null },
+      data: { deliveredVia: 'whatsapp', whatsappMessageId: sendResult.metaMessageId ?? null },
     })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
