@@ -8,7 +8,7 @@ describe('applyCrop', () => {
 
   it('computes container aspect from crop and source', () => {
     const style = applyCrop({ x: 0, y: 0, width: 0.5, height: 0.5 }, 1.5)
-    expect(style?.containerStyle.aspectRatio).toBe('1.5')
+    expect(style?.wrapperStyle.aspectRatio).toBe('1.5')
   })
 
   it('scales image to fill container', () => {
@@ -36,6 +36,6 @@ describe('applyCrop', () => {
     // Tall portrait source (aspect = 0.5), centered square crop of full width
     const style = applyCrop({ x: 0, y: 0.25, width: 1, height: 0.5 }, 0.5)
     // cropAspect = (1 / 0.5) * 0.5 = 1.0
-    expect(style?.containerStyle.aspectRatio).toBe('1')
+    expect(style?.wrapperStyle.aspectRatio).toBe('1')
   })
 })

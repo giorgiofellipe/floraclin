@@ -14,7 +14,7 @@ import type { PhotoAssetWithUrl } from '@/db/queries/photos'
 import { timelineStageLabels } from '@/validations/photo'
 import type { CropBox } from '@/validations/photo'
 import type { TimelineStage } from '@/types'
-import { applyCrop } from '@/lib/photos'
+import { applyCrop, CROP_HOST_CLASS } from '@/lib/photos'
 import { ImageCropperDialog } from './image-cropper'
 import { useUpdatePhotoCrop } from '@/hooks/queries/use-photo-crop'
 
@@ -258,11 +258,11 @@ export function PhotoComparisonDialog({
               {mode === 'slider' && (
                 <div
                   ref={sliderContainerRef}
-                  className="relative max-h-[70vh] cursor-col-resize select-none overflow-hidden rounded-lg"
+                  className={`relative max-h-[70vh] cursor-col-resize select-none rounded-lg ${CROP_HOST_CLASS}`}
                 >
                   {/* Right side: photo B. */}
                   {styleB ? (
-                    <div className="relative w-full overflow-hidden" style={styleB.containerStyle}>
+                    <div className="relative w-full overflow-hidden" style={styleB.wrapperStyle}>
                       <img
                         src={urlB}
                         alt="Foto B"
@@ -293,7 +293,7 @@ export function PhotoComparisonDialog({
                     style={{ clipPath: `polygon(0 0, ${sliderPosition}% 0, ${sliderPosition}% 100%, 0 100%)` }}
                   >
                     {styleA ? (
-                      <div className="relative w-full overflow-hidden" style={styleA.containerStyle}>
+                      <div className="relative w-full overflow-hidden" style={styleA.wrapperStyle}>
                         <img
                           src={urlA}
                           alt="Foto A"
@@ -337,7 +337,7 @@ export function PhotoComparisonDialog({
                   <div className="space-y-2">
                     <div className="overflow-hidden rounded-lg">
                       {styleA ? (
-                        <div className="relative w-full overflow-hidden" style={styleA.containerStyle}>
+                        <div className="relative w-full overflow-hidden" style={styleA.wrapperStyle}>
                           <img
                             src={urlA}
                             alt="Foto A"
@@ -360,7 +360,7 @@ export function PhotoComparisonDialog({
                   <div className="space-y-2">
                     <div className="overflow-hidden rounded-lg">
                       {styleB ? (
-                        <div className="relative w-full overflow-hidden" style={styleB.containerStyle}>
+                        <div className="relative w-full overflow-hidden" style={styleB.wrapperStyle}>
                           <img
                             src={urlB}
                             alt="Foto B"
@@ -399,7 +399,7 @@ export function PhotoComparisonDialog({
                   </div>
                   <div className="relative overflow-hidden rounded-lg">
                     {styleA ? (
-                      <div className="relative w-full overflow-hidden" style={styleA.containerStyle}>
+                      <div className="relative w-full overflow-hidden" style={styleA.wrapperStyle}>
                         <img
                           src={urlA}
                           alt="Foto A"
@@ -424,7 +424,7 @@ export function PhotoComparisonDialog({
                       // the same shape as photo A's.
                       <div
                         className="absolute top-0 left-0 w-full overflow-hidden"
-                        style={{ ...styleB.containerStyle, opacity: opacity / 100 }}
+                        style={{ ...styleB.wrapperStyle, opacity: opacity / 100 }}
                       >
                         <img
                           src={urlB}

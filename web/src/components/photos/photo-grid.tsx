@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn, formatDateTime, formatDate } from '@/lib/utils'
 import type { PhotosByStage, PhotoAssetWithUrl } from '@/db/queries/photos'
 import type { CropBox } from '@/validations/photo'
-import { applyCrop } from '@/lib/photos'
+import { applyCrop, CROP_HOST_CLASS } from '@/lib/photos'
 import { ImageCropperDialog } from './image-cropper'
 import { useUpdatePhotoCrop } from '@/hooks/queries/use-photo-crop'
 
@@ -241,15 +241,15 @@ export function PhotoGrid({
         )}
         onClick={comparisonMode && onPhotoSelect ? () => onPhotoSelect(photo) : undefined}
       >
-        <div className="relative aspect-[3/4]">
+        <div className={`relative aspect-[3/4] ${CROP_HOST_CLASS}`}>
           {photo.signedUrl ? (
             cropStyle ? (
-              // Cropped: container takes the crop's aspect ratio; the <img>
-              // overflows and is translated so the crop region fills it.
-              <div
-                className="relative h-full w-full overflow-hidden"
-                style={cropStyle.containerStyle}
-              >
+              // The wrapper sizes itself to the crop's aspect (letterboxed
+              // inside the card via max-w/max-h: 100%); the <img> renders the
+              // crop region so it fills the wrapper. CRITICAL: do NOT add
+              // `h-full w-full` or `inset-0` here — that overrides the
+              // wrapper's aspect-ratio rule and distorts the image.
+              <div className="relative overflow-hidden" style={cropStyle.wrapperStyle}>
                 <img
                   src={photo.signedUrl}
                   alt={photo.originalFilename ?? 'Foto'}
