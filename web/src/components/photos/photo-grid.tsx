@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn, formatDateTime, formatDate } from '@/lib/utils'
 import type { PhotosByStage, PhotoAssetWithUrl } from '@/db/queries/photos'
 import type { CropBox } from '@/validations/photo'
-import { applyCrop, CROP_HOST_CLASS } from '@/lib/photos'
+import { applyCropCover } from '@/lib/photos'
 import { ImageCropperDialog } from './image-cropper'
 import { useUpdatePhotoCrop } from '@/hooks/queries/use-photo-crop'
 
@@ -227,7 +227,7 @@ export function PhotoGrid({
       override?.sourceAspect ?? photo.cropAspect ?? photoAspects[photo.id]
     const cropStyle =
       effectiveCropBox && effectiveAspect
-        ? applyCrop(effectiveCropBox, effectiveAspect)
+        ? applyCropCover(effectiveCropBox, effectiveAspect)
         : null
 
     return (
@@ -241,15 +241,15 @@ export function PhotoGrid({
         )}
         onClick={comparisonMode && onPhotoSelect ? () => onPhotoSelect(photo) : undefined}
       >
-        <div className={`relative aspect-[3/4] ${CROP_HOST_CLASS}`}>
+        <div className="relative aspect-[3/4] overflow-hidden">
           {photo.signedUrl ? (
             cropStyle ? (
-              // The wrapper sizes itself to the crop's aspect (letterboxed
-              // inside the card via max-w/max-h: 100%); the <img> renders the
-              // crop region so it fills the wrapper. CRITICAL: do NOT add
-              // `h-full w-full` or `inset-0` here — that overrides the
-              // wrapper's aspect-ratio rule and distorts the image.
-              <div className="relative overflow-hidden" style={cropStyle.wrapperStyle}>
+              // Object-cover variant: the wrapper is absolutely positioned
+              // and sized to at LEAST the card's dimensions so the crop
+              // fills the card uniformly (overflow clipped). Do not set
+              // h-full w-full here — that would override the wrapper's
+              // aspect-ratio rule.
+              <div className="overflow-hidden" style={cropStyle.wrapperStyle}>
                 <img
                   src={photo.signedUrl}
                   alt={photo.originalFilename ?? 'Foto'}

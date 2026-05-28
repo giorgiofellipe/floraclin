@@ -92,3 +92,60 @@ export function applyCrop(crop: CropBox | null, sourceAspect: number): CroppedDi
     },
   }
 }
+
+export interface CroppedCoverStyle {
+  /**
+   * Style for the wrapper. Sized to be AT LEAST the host's dimensions in
+   * both directions (object-cover semantics) so the crop fills the host
+   * uniformly. Combined with `overflow: hidden` on the host the overflow
+   * is clipped cleanly. The wrapper is absolutely positioned and centered
+   * so the clip is symmetric.
+   */
+  wrapperStyle: {
+    position: 'absolute'
+    top: '50%'
+    left: '50%'
+    transform: 'translate(-50%, -50%)'
+    aspectRatio: string
+    minWidth: '100%'
+    minHeight: '100%'
+  }
+  /** Same image style as `applyCrop` — `width = 1/crop.width`, natural height. */
+  imageStyle: {
+    width: string
+    height: 'auto'
+    transform: string
+  }
+}
+
+/**
+ * Object-cover variant of `applyCrop`. Use this when the host has a fixed
+ * shape (e.g., a grid card with `aspect-[3/4]`) and you want the crop to
+ * fill it without letterbox bars. The host must be `relative` and have
+ * `overflow: hidden`.
+ *
+ * Wrapper picks the larger of `min-width: 100%` / `min-height: 100%` so the
+ * crop never has empty bands inside the host; the image inside is sized the
+ * same way as `applyCrop`, so the crop region exactly fills the wrapper.
+ */
+export function applyCropCover(crop: CropBox | null, sourceAspect: number): CroppedCoverStyle | null {
+  if (!crop) return null
+  const cropAspect = (crop.width / crop.height) * sourceAspect
+  const scaleX = 1 / crop.width
+  return {
+    wrapperStyle: {
+      position: 'absolute',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      aspectRatio: `${cropAspect}`,
+      minWidth: '100%',
+      minHeight: '100%',
+    },
+    imageStyle: {
+      width: `${scaleX * 100}%`,
+      height: 'auto',
+      transform: `translate(${-crop.x * 100}%, ${-crop.y * 100}%)`,
+    },
+  }
+}

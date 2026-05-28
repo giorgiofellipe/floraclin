@@ -172,6 +172,16 @@ export function PhotoComparisonDialog({
   const styleA = styleFor(photoA)
   const styleB = styleFor(photoB)
 
+  // Cap the cropped wrapper at the same viewport height the un-cropped
+  // image uses (`max-h-[70vh]`). applyCrop's wrapperStyle ships
+  // `maxHeight: '100%'`, which only resolves when the host has a concrete
+  // height; the comparison modes use intrinsic-sized containers, so 100%
+  // becomes a no-op there and the wrapper grows past the modal. Use a
+  // viewport unit explicitly to escape the chain.
+  const CMP_WRAPPER_MAX_H = '70vh'
+  const cmpWrapperStyle = (s: ReturnType<typeof styleFor>) =>
+    s ? { ...s.wrapperStyle, maxHeight: CMP_WRAPPER_MAX_H } : undefined
+
   const cropTargetPhoto = cropTarget === 'A' ? photoA : cropTarget === 'B' ? photoB : null
   const cropTargetUrl = cropTarget === 'A' ? urlA : cropTarget === 'B' ? urlB : null
   const cropTargetAspect = cropTargetPhoto
@@ -262,7 +272,7 @@ export function PhotoComparisonDialog({
                 >
                   {/* Right side: photo B. */}
                   {styleB ? (
-                    <div className="relative w-full overflow-hidden" style={styleB.wrapperStyle}>
+                    <div className="relative w-full overflow-hidden" style={cmpWrapperStyle(styleB)}>
                       <img
                         src={urlB}
                         alt="Foto B"
@@ -293,7 +303,7 @@ export function PhotoComparisonDialog({
                     style={{ clipPath: `polygon(0 0, ${sliderPosition}% 0, ${sliderPosition}% 100%, 0 100%)` }}
                   >
                     {styleA ? (
-                      <div className="relative w-full overflow-hidden" style={styleA.wrapperStyle}>
+                      <div className="relative w-full overflow-hidden" style={cmpWrapperStyle(styleA)}>
                         <img
                           src={urlA}
                           alt="Foto A"
@@ -337,7 +347,7 @@ export function PhotoComparisonDialog({
                   <div className="space-y-2">
                     <div className="overflow-hidden rounded-lg">
                       {styleA ? (
-                        <div className="relative w-full overflow-hidden" style={styleA.wrapperStyle}>
+                        <div className="relative w-full overflow-hidden" style={cmpWrapperStyle(styleA)}>
                           <img
                             src={urlA}
                             alt="Foto A"
@@ -360,7 +370,7 @@ export function PhotoComparisonDialog({
                   <div className="space-y-2">
                     <div className="overflow-hidden rounded-lg">
                       {styleB ? (
-                        <div className="relative w-full overflow-hidden" style={styleB.wrapperStyle}>
+                        <div className="relative w-full overflow-hidden" style={cmpWrapperStyle(styleB)}>
                           <img
                             src={urlB}
                             alt="Foto B"
@@ -399,7 +409,7 @@ export function PhotoComparisonDialog({
                   </div>
                   <div className="relative overflow-hidden rounded-lg">
                     {styleA ? (
-                      <div className="relative w-full overflow-hidden" style={styleA.wrapperStyle}>
+                      <div className="relative w-full overflow-hidden" style={cmpWrapperStyle(styleA)}>
                         <img
                           src={urlA}
                           alt="Foto A"
@@ -424,7 +434,7 @@ export function PhotoComparisonDialog({
                       // the same shape as photo A's.
                       <div
                         className="absolute top-0 left-0 w-full overflow-hidden"
-                        style={{ ...styleB.wrapperStyle, opacity: opacity / 100 }}
+                        style={{ ...cmpWrapperStyle(styleB), opacity: opacity / 100 }}
                       >
                         <img
                           src={urlB}
