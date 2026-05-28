@@ -98,6 +98,15 @@ export async function POST(
       if (msg === 'Procedure not found') {
         return NextResponse.json({ error: 'Procedimento não encontrado' }, { status: 404 })
       }
+      if (msg === 'Procedure cannot be cancelled from current status') {
+        return NextResponse.json(
+          {
+            error:
+              'Este planejamento não pode ser cancelado pelo registro de contato (status atual não permite).',
+          },
+          { status: 409 },
+        )
+      }
       throw err
     }
 
@@ -125,6 +134,24 @@ export async function POST(
           : {}),
       },
     })
+
+    // When the followup cancelled the procedure, emit a second audit entry
+    // against the procedure_record itself so the procedure's audit trail
+    // shows the cancellation event — not just a followup row. Matches the
+    // shape used by the dedicated /cancel route.
+    if (result.cancelledProcedure) {
+      await createAuditLog({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        action: 'update',
+        entityType: 'procedure_record',
+        entityId: procedureRecordId,
+        changes: {
+          status: { old: result.previousStatus, new: 'cancelled' },
+          cancellationReason: { old: null, new: 'patient_declined' },
+        },
+      })
+    }
 
     return NextResponse.json({ success: true, data: result })
   } catch (error) {

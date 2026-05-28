@@ -74,6 +74,19 @@ export function FollowupModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // 'desistiu' is destructive — it cancels the planejamento (and any linked
+    // financial entries for approved procedures). Require explicit confirmation
+    // before submitting so an accidental click doesn't wipe billing.
+    if (outcome === 'desistiu') {
+      const confirmed =
+        typeof window !== 'undefined' &&
+        window.confirm(
+          'Marcar "desistiu" irá CANCELAR este planejamento e cancelar lançamentos financeiros vinculados (se houver). Deseja continuar?',
+        )
+      if (!confirmed) return
+    }
+
     try {
       const res = await recordFollowup.mutateAsync({
         procedureRecordId,
@@ -160,7 +173,9 @@ export function FollowupModal({
             </div>
             {outcome === 'desistiu' && (
               <p className="text-xs text-amber-mid">
-                O planejamento será automaticamente cancelado ao registrar este contato.
+                Marcar &quot;desistiu&quot; irá cancelar este planejamento e seus
+                lançamentos financeiros vinculados (se aprovado). Você precisará
+                confirmar antes de salvar.
               </p>
             )}
           </fieldset>
