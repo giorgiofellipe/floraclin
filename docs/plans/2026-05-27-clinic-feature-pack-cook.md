@@ -4,7 +4,9 @@
 
 **Goal:** Ship the six client-requested features from `docs/superpowers/specs/2026-05-27-clinic-feature-pack-design.md` — birthday reminder, photo cropping, procedure packages, professional signature, prescriptions/atestados, and open planejamentos follow-up.
 
-**Architecture:** Single Drizzle migration adds all new tables/columns up front (Group 0). Topic backends and reusable components land in parallel (Group 1). Topic UIs and the document-system full stack land in parallel (Group 2). Cross-cutting wiring (dashboard widgets, patient-detail tabs, configurações menu, WhatsApp template kinds) lands serially at the end (Group 3) to avoid file-ownership conflicts.
+**Architecture:** Single Drizzle migration AND all new npm dependencies land up front (Group 0). Topic backends, the shared `ClinicHeader`, and the `getSignatureBlock` foundation land in parallel (Group 1). Topic UIs and the documents stack (consolidated into one big task to avoid file conflicts) land in parallel (Group 2). Cross-cutting wiring (dashboard widgets, patient-detail tabs, configurações menu, WhatsApp template kinds, procedure-page followup section) lands serially at the end (Group 3).
+
+**Security:** Print pages for clinical documents and procedure records are session-authenticated, under `/(platform)/...` — NOT public `/c/` URLs. PHI must never be reachable via UUID alone.
 
 **Tech Stack:** Next.js 15 (App Router), TypeScript, Drizzle ORM, PostgreSQL (`floraclin` schema), React Query, Tailwind, shadcn/ui, Vitest, `react-image-crop` (new), `@sparticuz/chromium-min` + `puppeteer-core` (new).
 
@@ -21,17 +23,20 @@
 
 ---
 
-# Group 0 — Schema and migration (sequential, 1 task)
+# Group 0 — Schema, migration, and new dependencies (sequential, 1 task)
 
-This whole group is one task because every later task reads `schema.ts` and the generated migration file. Splitting would force merge conflicts.
+This whole group is one task because every later task reads `schema.ts`, the generated migration file, and the workspace's `package.json` / lockfile. Splitting would force merge conflicts.
 
-## Task 0: All DB schema changes + migration
+**Pre-existing migration metadata drift to know about:** `web/src/db/migrations/meta/_journal.json` currently tracks through migration index 10 (`0010_whatsapp_queued_messages`), but the filesystem also contains `0011_prospect_allow_multiple_per_phone.sql` with no matching snapshot or journal entry. Drizzle may treat this inconsistently. Do NOT try to "fix" `_journal.json` by hand — let `drizzle-kit generate` produce whatever artifacts it produces and commit those exact files.
+
+## Task 0: All DB schema changes + migration + new npm dependencies
 
 **Files:**
 - Modify: `web/src/db/schema.ts`
-- Create: `web/src/db/migrations/0012_clinic_feature_pack.sql` (filename will be drizzle-generated — accept whatever drizzle picks; only the number must be 0012)
-- Create: `web/src/db/migrations/meta/0012_snapshot.json` (drizzle-generated)
-- Modify: `web/src/db/migrations/meta/_journal.json` (drizzle-generated)
+- Create: whichever migration file `drizzle-kit generate --name clinic_feature_pack` produces (accept Drizzle's numbering)
+- Create: matching snapshot under `web/src/db/migrations/meta/`
+- Modify: `web/src/db/migrations/meta/_journal.json` (Drizzle updates it)
+- Modify: `web/package.json` + `pnpm-lock.yaml` (new deps: `react-image-crop`, `@sparticuz/chromium-min`, `puppeteer-core`)
 
 - [ ] **Step 1: Add new tables to schema.ts**
 
@@ -207,7 +212,17 @@ index('idx_procedure_records_followup_status').on(table.tenantId, table.status, 
 pnpm --filter @floraclin/web exec drizzle-kit generate --name clinic_feature_pack
 ```
 
-Expected: produces `0012_clinic_feature_pack.sql` and `0012_snapshot.json`, updates `_journal.json`.
+Accept whatever filename and number Drizzle produces. Commit the produced SQL + the produced snapshot + the modified `_journal.json` exactly as written. Do not rename or renumber.
+
+- [ ] **Step 3.5: Install new npm dependencies**
+
+These are used by Group 2 tasks. Installing here avoids two parallel agents racing on `package.json` / `pnpm-lock.yaml`.
+
+```bash
+pnpm --filter @floraclin/web add react-image-crop @sparticuz/chromium-min puppeteer-core
+```
+
+Verify the install succeeded by running `pnpm --filter @floraclin/web typecheck` — Drizzle/types should still compile. (TS errors at this point would indicate a version-mismatch issue; address before continuing.)
 
 - [ ] **Step 4: Augment generated SQL with CHECK constraints and the expression index**
 
@@ -280,23 +295,27 @@ Expected: passes. Any "Property does not exist" error means schema additions and
 - [ ] **Step 7: Commit**
 
 ```bash
-git add web/src/db/schema.ts web/src/db/migrations/0012_clinic_feature_pack.sql web/src/db/migrations/meta/
-git commit -m "feat(db): add clinic feature pack schema (birthdays, packages, signature, documents, followups)"
+git add web/src/db/schema.ts web/src/db/migrations/ web/package.json pnpm-lock.yaml
+git commit -m "feat(db): add clinic feature pack schema, migration, and new deps"
 ```
 
 ---
 
-# Group 1 — Backend foundations (6 parallel tasks)
+# Group 1 — Backend foundations (8 parallel tasks)
+
+Tasks: 1A, 1B, 1D, 1F, 1H, 1J, 1K, 1L. All file-disjoint. All depend only on Group 0 (schema + new deps).
 
 All Group 1 tasks depend on Group 0 (schema must exist). They are file-disjoint from each other.
 
-## Task 1A: Professional signature server + profile API
+## Task 1A: Professional signature server + profile API (GET + PUT)
 
 **Files:**
 - Create: `web/src/lib/professional.ts`
 - Create: `web/src/lib/__tests__/professional.test.ts`
-- Modify: `web/src/app/api/profile/route.ts` (add signature/registry to update payload)
-- Modify: `web/src/validations/` — add a new file `web/src/validations/professional.ts`
+- Modify: `web/src/app/api/profile/route.ts` (add `GET`; extend existing `PUT` to accept signature/registry)
+- Create: `web/src/validations/professional.ts`
+
+**Context:** the existing route at `web/src/app/api/profile/route.ts` is `PUT`-only and accepts `{ fullName, phone }`. There is NO `GET /api/profile` and NO `useProfile()` hook today. Tasks 2A, 2H, and 3 will need the GET path — add it here.
 
 - [ ] **Step 1: Define the signature block type and helper**
 
@@ -360,9 +379,30 @@ export const professionalProfileSchema = z.object({
 })
 ```
 
-- [ ] **Step 3: Extend `app/api/profile/route.ts` PATCH to accept these fields**
+- [ ] **Step 3: Extend `app/api/profile/route.ts` PUT and add GET**
 
-Read the existing PATCH handler. Merge `professionalProfileSchema` into the body validator. When `signatureData` is updated, also set `signatureUpdatedAt = new Date()`. Permission: a user can only update their own row (this is already the case — the route uses the session userId).
+The existing handler is `PUT` (not PATCH). Merge `professionalProfileSchema` into the body validator. When `signatureData` is updated, also set `signatureUpdatedAt = new Date()`. Permission: a user can only update their own row (already the case via `ctx.userId`).
+
+Also add a `GET` handler returning the current user's profile fields needed by other tasks:
+
+```ts
+export async function GET() {
+  const ctx = await getAuthContext()
+  const [user] = await db.select({
+    id: users.id, fullName: users.fullName, email: users.email, phone: users.phone,
+    signatureData: users.signatureData,
+    signatureUpdatedAt: users.signatureUpdatedAt,
+    professionalTitle: users.professionalTitle,
+    registryType: users.registryType,
+    registryNumber: users.registryNumber,
+    registryState: users.registryState,
+  }).from(users).where(eq(users.id, ctx.userId)).limit(1)
+  if (!user) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  return NextResponse.json({ data: user })
+}
+```
+
+The response shape `{ data: { ... } }` matches the rest of the API.
 
 - [ ] **Step 4: Tests in `__tests__/professional.test.ts`**
 
@@ -554,22 +594,26 @@ export async function getBirthdaysInRange(args: {
     fullName: r.fullName!,
     birthDate: r.birthDate!,
     phone: r.phone!,
-    ageTurning: args.currentYear - new Date(r.birthDate! + 'T12:00:00').getFullYear(),
+    ageTurning: args.currentYear - parseInt(r.birthDate!.slice(0, 4), 10),
     greetedByName: null, // populated in a join enrichment if needed
   }))
 }
 ```
 
+(`birthDate` is a Postgres `DATE` returned as a `YYYY-MM-DD` string; slicing the year is host-TZ-safe. Never `new Date(birthDate)` then `.getFullYear()` — that's a UTC parse on a calendar day.)
+
 - [ ] **Step 2: Range builders in `lib/birthdays.ts`**
 
+Use `@/lib/dates` helpers per `AGENTS.md`. Never bare `new Date(yyyymmdd)` or `parseISO + 'T12:00:00'` string concatenation — go through `parseBrDate`.
+
 ```ts
-import { brToday } from '@/lib/dates'
-import { addDays, parseISO } from 'date-fns'
+import { brToday, parseBrDate } from '@/lib/dates'
+import { addDays } from 'date-fns'
 
 export function birthdayMonthDayPairs(args: { from: string; to: string }): Array<{ month: number; day: number }> {
   const pairs: Array<{ month: number; day: number }> = []
-  let cursor = parseISO(args.from + 'T12:00:00')
-  const end = parseISO(args.to + 'T12:00:00')
+  let cursor = parseBrDate(args.from, '12:00:00')
+  const end = parseBrDate(args.to, '12:00:00')
   while (cursor.getTime() <= end.getTime()) {
     pairs.push({ month: cursor.getMonth() + 1, day: cursor.getDate() })
     cursor = addDays(cursor, 1)
@@ -584,7 +628,7 @@ export function birthdayMonthDayPairs(args: { from: string; to: string }): Array
 }
 
 export function todayMonthDay(): { month: number; day: number } {
-  const today = brToday()
+  const today = brToday() // 'YYYY-MM-DD' BR-anchored
   return {
     month: parseInt(today.slice(5, 7), 10),
     day: parseInt(today.slice(8, 10), 10),
@@ -829,12 +873,14 @@ export const sellPackageSchema = z.object({
 
 - [ ] **Step 2: Sale logic in `lib/packages.ts`**
 
+Reuse the existing `createFinancialEntry(tenantId, data, txDb)` helper from `web/src/db/queries/financial.ts:37` for the financial side of the sale — it already handles transactional creation of `financial_entries` + `installments`, due-date computation, and tenant verification. Do NOT hand-build installments.
+
 ```ts
 import { db } from '@/db/client'
-import { patientPackages, patientPackageLines, financialEntries, installments } from '@/db/schema'
-import { sql } from 'drizzle-orm'
+import { patientPackages, patientPackageLines } from '@/db/schema'
 import { brToday, parseBrDate, toLocalYmd } from '@/lib/dates'
-import { addMonths, addDays } from 'date-fns'
+import { addMonths } from 'date-fns'
+import { createFinancialEntry } from '@/db/queries/financial'
 
 export async function sellPackage(args: {
   tenantId: string
@@ -842,38 +888,22 @@ export async function sellPackage(args: {
   input: SellPackageInput // from validation
 }): Promise<{ packageId: string; financialEntryId: string }> {
   return db.transaction(async (tx) => {
-    // 1. Create financial entry
-    const [entry] = await tx.insert(financialEntries).values({
-      tenantId: args.tenantId,
+    // 1. Create financial entry + installments via existing helper
+    const entry = await createFinancialEntry(args.tenantId, {
       patientId: args.input.patientId,
       description: args.input.name,
-      totalAmount: String(args.input.totalAmount),
+      totalAmount: args.input.totalAmount,
       installmentCount: args.input.installmentCount,
-      status: 'pending',
+      paymentMethod: args.input.paymentMethod,
       createdBy: args.soldBy,
-    }).returning()
+    }, tx)
 
-    // 2. Create installments (mirror the existing financial entry creation pattern)
-    const baseDate = parseBrDate(brToday(), '12:00:00')
-    const per = args.input.totalAmount / args.input.installmentCount
-    for (let i = 0; i < args.input.installmentCount; i++) {
-      await tx.insert(installments).values({
-        tenantId: args.tenantId,
-        financialEntryId: entry.id,
-        installmentNumber: i + 1,
-        amount: String(per.toFixed(2)),
-        dueDate: toLocalYmd(addMonths(baseDate, i)),
-        status: 'pending',
-        paymentMethod: args.input.paymentMethod,
-      })
-    }
-
-    // 3. Compute expiresAt
+    // 2. Compute expiresAt — BR-anchored, never bare new Date(ymd)
     const expiresAt = args.input.validityMonths
       ? toLocalYmd(addMonths(parseBrDate(brToday(), '12:00:00'), args.input.validityMonths))
       : null
 
-    // 4. Create patient_packages row
+    // 3. Create patient_packages row
     const [pkg] = await tx.insert(patientPackages).values({
       tenantId: args.tenantId,
       patientId: args.input.patientId,
@@ -887,7 +917,7 @@ export async function sellPackage(args: {
       soldBy: args.soldBy,
     }).returning()
 
-    // 5. Create patient_package_lines
+    // 4. Create patient_package_lines
     for (let i = 0; i < args.input.lines.length; i++) {
       const line = args.input.lines[i]
       await tx.insert(patientPackageLines).values({
@@ -904,43 +934,64 @@ export async function sellPackage(args: {
 }
 ```
 
-- [ ] **Step 3: Session starter — `startPackageSession`**
+> **Implementer note:** verify the actual shape of `CreateFinancialEntryInput` against `web/src/db/queries/financial.ts` before writing. Adjust field names if needed; the principle is "reuse the helper, don't reimplement it."
+
+- [ ] **Step 3: Session starter — `startPackageSession` (race-safe)**
+
+The check-then-insert pattern is race-prone: two staff members clicking "Iniciar próxima sessão" on the last available slot can both see remaining sessions and both create drafts, oversubscribing the package line.
+
+Two mitigations applied together:
+1. **Row lock the package line inside the transaction** (`SELECT … FOR UPDATE`).
+2. **Count all non-cancelled records as consumed** (drafts and planned/approved hold the slot until they're cancelled), not just `executed`. This matches user mental model: starting a session "reserves" it.
 
 ```ts
+import { sql, and, eq } from 'drizzle-orm'
+
 export async function startPackageSession(args: {
   tenantId: string
   practitionerId: string
   patientPackageId: string
   patientPackageLineId: string
+  allowExpiredOverride?: boolean
 }): Promise<{ procedureRecordId: string }> {
   return db.transaction(async (tx) => {
-    // Verify package + line exist, belong to tenant, package is active (or expired with explicit override flag — not handled here)
-    const [pkg] = await tx.select().from(patientPackages).where(eq(patientPackages.id, args.patientPackageId))
+    // 1. Lock the line row to serialize concurrent starts
+    const [line] = await tx.execute<{
+      id: string; patient_package_id: string; procedure_type_id: string; sessions_total: number
+    }>(sql`
+      SELECT id, patient_package_id, procedure_type_id, sessions_total
+      FROM floraclin.patient_package_lines
+      WHERE id = ${args.patientPackageLineId}
+      FOR UPDATE
+    `).then((r) => r.rows ?? r)
+
+    if (!line) throw new Error('Line not found')
+
+    const [pkg] = await tx.select().from(patientPackages)
+      .where(eq(patientPackages.id, line.patient_package_id))
     if (!pkg || pkg.tenantId !== args.tenantId) throw new Error('Package not found')
     if (pkg.status === 'cancelled') throw new Error('Package is cancelled')
+    if (pkg.status === 'expired' && !args.allowExpiredOverride) throw new Error('Package is expired')
 
-    const [line] = await tx.select().from(patientPackageLines).where(eq(patientPackageLines.id, args.patientPackageLineId))
-    if (!line || line.patientPackageId !== pkg.id) throw new Error('Line not found')
-
-    // Check sessions remaining
-    const consumedRows = await tx.select({ count: sql<number>`count(*)::int` })
+    // 2. Count all non-cancelled records on this line (drafts + planned + approved + executed)
+    const [{ count }] = await tx.select({ count: sql<number>`count(*)::int` })
       .from(procedureRecords)
       .where(and(
-        eq(procedureRecords.patientPackageLineId, line.id),
-        eq(procedureRecords.status, 'executed'),
+        eq(procedureRecords.patientPackageLineId, args.patientPackageLineId),
+        sql`${procedureRecords.status} != 'cancelled'`,
       ))
-    if ((consumedRows[0]?.count ?? 0) >= line.sessionsTotal) {
-      throw new Error('Line fully consumed')
+    if (count >= line.sessions_total) {
+      throw new Error('Line fully consumed (including in-progress sessions)')
     }
 
-    // Create draft procedure record
+    // 3. Create draft procedure record — still inside the lock
     const [record] = await tx.insert(procedureRecords).values({
       tenantId: args.tenantId,
       patientId: pkg.patientId,
       practitionerId: args.practitionerId,
-      procedureTypeId: line.procedureTypeId,
+      procedureTypeId: line.procedure_type_id,
       patientPackageId: pkg.id,
-      patientPackageLineId: line.id,
+      patientPackageLineId: args.patientPackageLineId,
       status: 'draft',
     }).returning()
 
@@ -948,6 +999,10 @@ export async function startPackageSession(args: {
   })
 }
 ```
+
+> **Lifecycle note:** the created `draft` enters the normal procedure lifecycle. `procedure-page-client.tsx` (`web/src/app/(platform)/pacientes/[id]/procedimentos/[procedureId]/procedure-page-client.tsx`) routes drafts to `ProcedureForm` (planning), then approval, then execution. Package sessions follow this same path; the only difference is the pre-filled `procedureTypeId` and the `patientPackageId`/`patientPackageLineId` tags. Whether package sessions should skip the per-session contract approval (since the patient signed at sale time) is deferred to a follow-up — for MVP, each session goes through the standard approval flow.
+>
+> **Cancel/expire interlock:** `cancelPackage` and the lazy-expire writeback should also lock the package row (`FOR UPDATE`) before mutating to avoid status flips racing with new session starts.
 
 - [ ] **Step 4: Auto-complete + auto-expire hook**
 
@@ -1148,7 +1203,216 @@ git commit -m "feat(followups): open planejamentos list, followup recording, and
 
 ---
 
-# Group 2 — Topic UIs + Topic 5 full stack (9 parallel tasks)
+## Task 1K: Shared print primitives (ClinicHeader)
+
+**Files:**
+- Create: `web/src/components/print/clinic-header.tsx`
+- Create: `web/src/components/print/print-stylesheet.tsx`
+
+Several Group 2 tasks need to render a clinic header and the same A4 print stylesheet (document print page, procedure record print page, document preview). Creating these once here avoids three Group-2 tasks racing for the same file.
+
+- [ ] **Step 1: ClinicHeader**
+
+Reads from a `tenant` row passed in (no internal data fetch). The caller is responsible for providing tenant info.
+
+```tsx
+import * as React from 'react'
+
+interface Address {
+  street?: string
+  number?: string
+  complement?: string
+  neighborhood?: string
+  city?: string
+  state?: string
+  zip?: string
+}
+
+export interface ClinicHeaderProps {
+  tenant: {
+    name: string
+    phone: string | null
+    email: string | null
+    logoUrl: string | null
+    address: Address | null
+  }
+  className?: string
+}
+
+function formatAddress(a: Address | null): string {
+  if (!a) return ''
+  const parts = [
+    [a.street, a.number, a.complement].filter(Boolean).join(', '),
+    [a.neighborhood, a.city, a.state].filter(Boolean).join(' · '),
+    a.zip,
+  ].filter(Boolean)
+  return parts.join(' — ')
+}
+
+export function ClinicHeader({ tenant, className }: ClinicHeaderProps) {
+  return (
+    <header className={`flex items-center gap-4 border-b border-gray-300 pb-4 ${className ?? ''}`}>
+      {tenant.logoUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={tenant.logoUrl} alt={tenant.name} className="h-16 w-16 object-contain" />
+      )}
+      <div className="flex-1">
+        <div className="text-lg font-semibold">{tenant.name}</div>
+        {tenant.address && <div className="text-xs text-gray-700">{formatAddress(tenant.address)}</div>}
+        <div className="text-xs text-gray-700">
+          {[tenant.phone, tenant.email].filter(Boolean).join(' · ')}
+        </div>
+      </div>
+    </header>
+  )
+}
+```
+
+- [ ] **Step 2: PrintStylesheet**
+
+```tsx
+'use client'
+import * as React from 'react'
+
+export function PrintStylesheet() {
+  return (
+    <style jsx global>{`
+      @media print {
+        body { background: white; }
+        @page { size: A4; margin: 20mm; }
+        nav, aside, .no-print { display: none !important; }
+      }
+      .print-document { font-family: 'Times New Roman', Times, serif; line-height: 1.6; }
+    `}</style>
+  )
+}
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git commit -m "feat(print): shared ClinicHeader and print stylesheet"
+```
+
+---
+
+## Task 1L: Shared placeholder/template renderer
+
+**Files:**
+- Create: `web/src/lib/templates/placeholders.ts`
+- Create: `web/src/lib/templates/__tests__/placeholders.test.ts`
+
+The existing `resolveTemplateBody` in `web/src/lib/whatsapp.ts:248` already implements a placeholder system for WhatsApp templates. Extract a generic version here that BOTH the WhatsApp send path and the new clinical-documents path will consume. This satisfies the spec's "Reuse the existing template renderer" requirement and prevents drift.
+
+- [ ] **Step 1: Generic renderer**
+
+```ts
+// web/src/lib/templates/placeholders.ts
+export interface PlaceholderDescriptor {
+  token: string // e.g. "{{patient.name}}"
+  description: string // human-readable label in pt-BR
+}
+
+export function renderPlaceholders(body: string, values: Record<string, string>): string {
+  let out = body
+  for (const [token, value] of Object.entries(values)) {
+    out = out.split(token).join(value ?? '')
+  }
+  return out
+}
+```
+
+The escape-friendly `split().join()` avoids regex special-char issues that `replaceAll` would have on tokens containing `$`.
+
+- [ ] **Step 2: Document context builder**
+
+```ts
+export interface DocumentContextInput {
+  patient: { fullName: string; cpf: string | null; birthDate: string | null }
+  practitioner: { displayName: string; registryLine: string }
+  tenant: { name: string; address: { city?: string; state?: string } | null }
+  date: Date
+}
+
+const LONG_DATE = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })
+
+export function buildDocumentPlaceholders(ctx: DocumentContextInput): Record<string, string> {
+  const city = ctx.tenant.address?.city ?? '' // empty if not set — never split a string
+  const dateLong = LONG_DATE.format(ctx.date)
+  return {
+    '{{patient.name}}': ctx.patient.fullName,
+    '{{patient.cpf}}': ctx.patient.cpf ?? '',
+    '{{patient.birthDate}}': ctx.patient.birthDate ?? '',
+    '{{date}}': ctx.date.toLocaleDateString('pt-BR'),
+    '{{date.long}}': city ? `${city}, ${dateLong}` : dateLong,
+    '{{practitioner.name}}': ctx.practitioner.displayName,
+    '{{practitioner.registry}}': ctx.practitioner.registryLine,
+    '{{tenant.name}}': ctx.tenant.name,
+  }
+}
+
+export const AVAILABLE_DOCUMENT_PLACEHOLDERS: PlaceholderDescriptor[] = [
+  { token: '{{patient.name}}', description: 'Nome do paciente' },
+  { token: '{{patient.cpf}}', description: 'CPF' },
+  { token: '{{patient.birthDate}}', description: 'Data de nascimento' },
+  { token: '{{date}}', description: 'Data atual (DD/MM/AAAA)' },
+  { token: '{{date.long}}', description: 'Data por extenso (com cidade)' },
+  { token: '{{practitioner.name}}', description: 'Nome do profissional' },
+  { token: '{{practitioner.registry}}', description: 'Registro profissional (ex: CRM-SP 12345)' },
+  { token: '{{tenant.name}}', description: 'Nome da clínica' },
+]
+```
+
+City is pulled from `tenant.address.city` (structured JSONB), not from string-splitting the tenant name. If the address is missing the city, the long-date format omits the city prefix — never invent one.
+
+- [ ] **Step 3: Optional follow-up — converge WhatsApp template renderer**
+
+Inside `lib/whatsapp.ts`, replace the inline placeholder substitution with `renderPlaceholders(body, whatsappPlaceholders)`. Keep behavior identical (run the existing WhatsApp tests to verify).
+
+This step is optional for MVP — if it touches too many existing tests, defer to a follow-up commit. Document the deferral in the commit message.
+
+- [ ] **Step 4: Tests**
+
+```ts
+import { describe, it, expect } from 'vitest'
+import { renderPlaceholders, buildDocumentPlaceholders } from '../placeholders'
+
+describe('renderPlaceholders', () => {
+  it('replaces tokens', () => {
+    expect(renderPlaceholders('Hello {{n}}', { '{{n}}': 'world' })).toBe('Hello world')
+  })
+  it('handles tokens containing regex special chars', () => {
+    expect(renderPlaceholders('a${{x}}b', { '{{x}}': 'Y' })).toBe('a$Yb')
+  })
+  it('replaces all occurrences', () => {
+    expect(renderPlaceholders('{{n}}-{{n}}', { '{{n}}': 'a' })).toBe('a-a')
+  })
+})
+
+describe('buildDocumentPlaceholders', () => {
+  it('omits city in date.long when address has no city', () => {
+    const map = buildDocumentPlaceholders({
+      patient: { fullName: 'X', cpf: null, birthDate: null },
+      practitioner: { displayName: 'Y', registryLine: 'CRM-SP 1' },
+      tenant: { name: 'Z', address: null },
+      date: new Date('2026-05-27T15:00:00Z'),
+    })
+    expect(map['{{date.long}}']).not.toContain(',')
+  })
+})
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git commit -m "feat(templates): shared placeholder renderer for documents and WhatsApp"
+```
+
+---
+
+# Group 2 — Topic UIs + Documents full stack (7 parallel tasks)
+
+Tasks: 2A, 2B, 2C, 2D, 2E, 2F, 2J. All file-disjoint. All depend on Group 1 (specifically: Task 2A and 2F depend on 1A's profile API; 2F and 2J depend on 1K's ClinicHeader; 2F depends on 1L's placeholder renderer).
 
 All Group 2 tasks depend on Group 1 being merged. Tasks within Group 2 are file-disjoint.
 
@@ -1252,16 +1516,14 @@ git commit -m "feat(birthdays): dashboard widget and aniversariantes page"
 - Create: `web/src/components/photos/image-cropper.tsx`
 - Create: `web/src/hooks/queries/use-photo-crop.ts`
 - Modify: `web/src/components/photos/photo-uploader.tsx`
-- Modify: `web/src/components/patients/patient-photos-tab.tsx`
+- Modify: `web/src/components/photos/photo-grid.tsx` (the per-photo card lives here — it renders the action buttons consumed by `patient-photos-tab.tsx` and `execution-photo-section.tsx`)
 - Modify: `web/src/components/photos/photo-comparison.tsx`
-- Modify: `web/src/components/procedures/execution/execution-photo-section.tsx`
-- Add dependency: `react-image-crop` via `pnpm --filter @floraclin/web add react-image-crop`
+- Modify: `web/src/components/patients/patient-photos-tab.tsx` (only if a prop or action handler needs threading through)
+- Modify: `web/src/components/procedures/execution/execution-photo-section.tsx` (only if a prop or action handler needs threading through)
 
-- [ ] **Step 1: Install `react-image-crop`**
+Note: `react-image-crop` is already installed in Task 0; this task only imports it.
 
-```bash
-pnpm --filter @floraclin/web add react-image-crop
-```
+- [ ] **Step 1: Skipped — dep installed in Task 0**
 
 - [ ] **Step 2: ImageCropper component**
 
@@ -1305,17 +1567,17 @@ export function useUpdatePhotoCrop() {
 
 After a file is queued, add a "Recortar" button on the preview. Opens `<ImageCropper>` in a modal. On save, attach `cropBox` and `cropAspect` to the upload request. (POST /api/photos already extended in Task 1F.)
 
-- [ ] **Step 5: Integrate into patient-photos-tab.tsx**
+- [ ] **Step 5: Integrate into photo-grid.tsx**
 
-Add a "Recortar" overflow action on each photo card. Opens cropper modal with existing src + currentCrop. On save, call `useUpdatePhotoCrop`. On view, render the photo via `applyCrop` helper (from Task 1F).
+The actual per-photo card lives here. Add a "Recortar" action button (next to the existing actions). Opens cropper modal with existing src + currentCrop. On save, call `useUpdatePhotoCrop`. On view, render the photo via `applyCrop` helper (from Task 1F). Both `patient-photos-tab.tsx` and `execution-photo-section.tsx` compose `PhotoGrid` — they inherit the new action automatically.
 
 - [ ] **Step 6: Integrate into photo-comparison.tsx**
 
 Add a "Recortar" button on each side. Same modal flow.
 
-- [ ] **Step 7: Update execution-photo-section.tsx similarly**
+- [ ] **Step 7: Minor prop threading**
 
-Same pattern as `patient-photos-tab.tsx`.
+If `patient-photos-tab.tsx` or `execution-photo-section.tsx` need to pass a callback or refetch handler down to `PhotoGrid` for cache invalidation, add that here. Many cases will not need any change.
 
 - [ ] **Step 8: Commit**
 
@@ -1417,70 +1679,48 @@ git commit -m "feat(planejamentos): dashboard widget, page, followup modal, and 
 
 ---
 
-## Task 2F: Clinical documents backend
+## Task 2F: Clinical documents — full stack (one owner)
+
+Originally split across 2F/2G/2H/2I (backend, templates page, issuance UI, print page). The documents stack is deeply intertwined — backend `professionalSnapshot` shape, preview component, print page React tree, and PDF rendering all share types and rendering logic. Splitting created file-ownership conflicts and a hidden inter-task dependency chain. Consolidating into one task with a single owner removes those entirely.
 
 **Files:**
-- Create: `web/src/lib/clinical-documents.ts` (template rendering, snapshot creation, send-whatsapp orchestration)
+Backend:
+- Create: `web/src/lib/clinical-documents.ts` (snapshot creation, send-whatsapp orchestration)
 - Create: `web/src/lib/__tests__/clinical-documents.test.ts`
-- Create: `web/src/lib/pdf.ts` (HTML→PDF via headless Chromium)
+- Create: `web/src/lib/pdf.ts` (React tree → PDF via headless Chromium; **NO internal HTTP loop**)
 - Create: `web/src/db/queries/clinical-documents.ts`
 - Create: `web/src/validations/clinical-document.ts`
 - Create: `web/src/app/api/document-templates/route.ts` (GET, POST)
 - Create: `web/src/app/api/document-templates/[id]/route.ts` (PATCH, DELETE)
 - Create: `web/src/app/api/clinical-documents/route.ts` (POST — issue)
-- Create: `web/src/app/api/clinical-documents/[id]/pdf/route.ts` (GET — stream PDF)
+- Create: `web/src/app/api/clinical-documents/[id]/pdf/route.ts` (GET — stream PDF, **authenticated**)
 - Create: `web/src/app/api/clinical-documents/[id]/send-whatsapp/route.ts` (POST)
 - Create: `web/src/app/api/patients/[id]/documents/route.ts` (GET — history)
-- Add dependencies: `@sparticuz/chromium-min`, `puppeteer-core` via `pnpm --filter @floraclin/web add`
 
-- [ ] **Step 1: Install PDF deps**
+Templates settings UI:
+- Create: `web/src/app/(platform)/configuracoes/documentos/page.tsx`
+- Create: `web/src/app/(platform)/configuracoes/documentos/documentos-page-client.tsx`
+- Create: `web/src/components/settings/document-template-form.tsx`
+- Create: `web/src/components/settings/document-template-list.tsx`
 
-```bash
-pnpm --filter @floraclin/web add @sparticuz/chromium-min puppeteer-core
-```
+Issuance + delivery UI:
+- Create: `web/src/components/clinical-documents/issue-document-dialog.tsx`
+- Create: `web/src/components/clinical-documents/document-preview.tsx`
+- Create: `web/src/components/clinical-documents/patient-documents-tab.tsx`
+- Create: `web/src/components/clinical-documents/delivery-actions.tsx`
+- Create: `web/src/components/clinical-documents/print-document.tsx` (shared between authenticated print page and PDF rendering)
+- Create: `web/src/hooks/queries/use-clinical-documents.ts`
+- Create: `web/src/hooks/queries/use-document-templates.ts`
 
-- [ ] **Step 2: Generic placeholder renderer**
+Authenticated print page (NOT public):
+- Create: `web/src/app/(platform)/documentos/[id]/imprimir/page.tsx`
+- Create: `web/src/app/(platform)/documentos/[id]/imprimir/print-document-page-client.tsx`
 
-```ts
-// web/src/lib/clinical-documents.ts
-export interface DocumentRenderContext {
-  patient: { name: string; cpf: string | null; birthDate: string | null }
-  practitioner: { name: string; registry: string }
-  tenant: { name: string }
-  date: Date
-}
+Dependencies (`@sparticuz/chromium-min`, `puppeteer-core`) already installed in Task 0.
 
-const FORMATTERS = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })
+- [ ] **Step 1: Use shared placeholder renderer**
 
-export function renderDocumentBody(body: string, ctx: DocumentRenderContext): string {
-  const dateShort = ctx.date.toLocaleDateString('pt-BR')
-  const dateLong = FORMATTERS.format(ctx.date)
-  const map: Record<string, string> = {
-    '{{patient.name}}': ctx.patient.name,
-    '{{patient.cpf}}': ctx.patient.cpf ?? '',
-    '{{patient.birthDate}}': ctx.patient.birthDate ?? '',
-    '{{date}}': dateShort,
-    '{{date.long}}': `${ctx.tenant.name.split(' - ').pop() || 'São Paulo'}, ${dateLong}`, // simplification — city from tenant
-    '{{practitioner.name}}': ctx.practitioner.name,
-    '{{practitioner.registry}}': ctx.practitioner.registry,
-    '{{tenant.name}}': ctx.tenant.name,
-  }
-  let out = body
-  for (const [k, v] of Object.entries(map)) out = out.replaceAll(k, v)
-  return out
-}
-
-export const AVAILABLE_PLACEHOLDERS: Array<{ token: string; description: string }> = [
-  { token: '{{patient.name}}', description: 'Nome do paciente' },
-  { token: '{{patient.cpf}}', description: 'CPF' },
-  { token: '{{patient.birthDate}}', description: 'Data de nascimento' },
-  { token: '{{date}}', description: 'Data atual (DD/MM/AAAA)' },
-  { token: '{{date.long}}', description: 'Data por extenso' },
-  { token: '{{practitioner.name}}', description: 'Nome do profissional' },
-  { token: '{{practitioner.registry}}', description: 'Registro profissional (ex: CRM-SP 12345)' },
-  { token: '{{tenant.name}}', description: 'Nome da clínica' },
-]
-```
+Import `renderPlaceholders`, `buildDocumentPlaceholders`, and `AVAILABLE_DOCUMENT_PLACEHOLDERS` from `@/lib/templates/placeholders` (created in Task 1L). Do NOT create a second placeholder system here.
 
 - [ ] **Step 3: Issue function**
 
@@ -1518,48 +1758,76 @@ export async function issueClinicalDocument(args: {
 }
 ```
 
-- [ ] **Step 4: PDF generation in `lib/pdf.ts`**
+- [ ] **Step 4: PDF generation in `lib/pdf.ts` — server-side render, no HTTP loop**
+
+The previous draft fetched the print page via HTTP from the PDF route. That couples backend to the public route, leaks cookies through the loop, and adds latency. Instead, render the React tree to HTML server-side using `react-dom/server`.
 
 ```ts
 import puppeteer from 'puppeteer-core'
 import chromium from '@sparticuz/chromium-min'
+import { renderToStaticMarkup } from 'react-dom/server'
+import type { ReactElement } from 'react'
 
-const CHROMIUM_URL = 'https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar' // pin to current latest
+// Pin to whatever the installed @sparticuz/chromium-min recommends.
+// Implementer: check node_modules/@sparticuz/chromium-min/README.md for the version-matched URL.
+const CHROMIUM_PACK_URL = process.env.CHROMIUM_PACK_URL
+  ?? 'https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar'
 
-export async function renderHtmlToPdf(html: string): Promise<Buffer> {
+export async function renderReactToPdf(tree: ReactElement, baseStyles: string): Promise<Buffer> {
+  const bodyMarkup = renderToStaticMarkup(tree)
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>${baseStyles}</style></head><body>${bodyMarkup}</body></html>`
   const browser = await puppeteer.launch({
     args: chromium.args,
-    executablePath: await chromium.executablePath(CHROMIUM_URL),
+    executablePath: await chromium.executablePath(CHROMIUM_PACK_URL),
     headless: true,
   })
   try {
     const page = await browser.newPage()
-    await page.setContent(html, { waitUntil: 'networkidle0' })
-    const pdf = await page.pdf({ format: 'A4', printBackground: true, margin: { top: '20mm', bottom: '20mm', left: '20mm', right: '20mm' } })
+    await page.setContent(html, { waitUntil: 'load' })
+    const pdf = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '20mm', bottom: '20mm', left: '20mm', right: '20mm' },
+    })
     return Buffer.from(pdf)
   } finally {
     await browser.close()
   }
 }
+
+export const PRINT_BASE_CSS = `
+  body { font-family: 'Times New Roman', Times, serif; line-height: 1.6; color: black; }
+  header { display: flex; align-items: center; gap: 1rem; border-bottom: 1px solid #999; padding-bottom: 1rem; }
+  header img { height: 64px; width: 64px; object-fit: contain; }
+  h1 { font-size: 18px; margin: 1.5rem 0 0.5rem 0; }
+  .body { white-space: pre-wrap; margin-top: 1rem; }
+  .footer { margin-top: 4rem; text-align: center; }
+  .footer img { height: 96px; max-width: 280px; object-fit: contain; }
+  .footer .line { border-top: 1px solid black; margin: 0.25rem auto 0 auto; width: 280px; }
+  .footer .name { margin-top: 0.5rem; font-weight: 500; }
+  .footer .registry { font-size: 12px; color: #555; }
+`
 ```
 
-> **Implementer note:** verify the chromium pack URL against the current `@sparticuz/chromium-min` README — pin to the matching major. This is the most likely deployment failure point; test against the real Vercel build pipeline early.
+> **Implementer note:** the chromium pack version is the single most likely deployment failure point. Run a smoke render after install (`node -e "require('@sparticuz/chromium-min').executablePath('<URL>').then(p => console.log(p))"`) to confirm. Allow override via `CHROMIUM_PACK_URL` env var for production tuning.
 
-- [ ] **Step 5: PDF route**
+- [ ] **Step 5: PDF route — authenticated**
 
 ```ts
 // app/api/clinical-documents/[id]/pdf/route.ts
+import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
+import { getAuthContext } from '@/lib/auth'
+import { getClinicalDocumentWithContext } from '@/db/queries/clinical-documents'
+import { PrintDocument } from '@/components/clinical-documents/print-document'
+
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const auth = await getAuthContext()
   const { id } = await ctx.params
-  const session = await requireTenant()
-  const doc = await getClinicalDocument(session.tenantId, id) // implemented in db/queries/clinical-documents.ts
+  const doc = await getClinicalDocumentWithContext(auth.tenantId, id)
   if (!doc) return new NextResponse('Not found', { status: 404 })
 
-  // Render the print page to HTML via fetch to /imprimir URL (created in Task 2I)
-  const url = new URL(`/c/${session.tenantSlug}/documentos/${id}/imprimir`, req.url)
-  const html = await fetch(url, { headers: { cookie: req.headers.get('cookie') ?? '' } }).then((r) => r.text())
-
-  const pdf = await renderHtmlToPdf(html)
+  // Render the print component to a PDF buffer directly — no internal HTTP fetch.
+  const pdf = await renderReactToPdf(<PrintDocument doc={doc} tenant={doc.tenant} />, PRINT_BASE_CSS)
   return new NextResponse(pdf, {
     headers: {
       'Content-Type': 'application/pdf',
@@ -1569,192 +1837,181 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 }
 ```
 
-- [ ] **Step 6: send-whatsapp route**
+`PrintDocument` is a shared component that uses `<ClinicHeader>` (from Task 1K) and `<ProfessionalSignatureBlock>` (from Task 1B). The same component renders the authenticated print page (`/documentos/[id]/imprimir`).
 
-Renders PDF, uploads to storage (use existing storage helper in `lib/storage.ts`), sends as a document message via the existing WhatsApp send pipeline. Update doc with `whatsappMessageId` and `deliveredVia`.
+- [ ] **Step 5b: Authenticated print page** at `app/(platform)/documentos/[id]/imprimir/page.tsx`
 
-- [ ] **Step 7: Tests**
-
-Unit tests for `renderDocumentBody` (table-driven). The PDF route is integration territory — leave deep tests for Phase 4.
-
-- [ ] **Step 8: Commit**
-
-```bash
-git commit -m "feat(documents): backend, PDF rendering, and WhatsApp delivery"
-```
-
----
-
-## Task 2G: Document templates settings page
-
-**Files:**
-- Create: `web/src/app/(platform)/configuracoes/documentos/page.tsx`
-- Create: `web/src/app/(platform)/configuracoes/documentos/documentos-page-client.tsx`
-- Create: `web/src/components/settings/document-template-form.tsx`
-- Create: `web/src/components/settings/document-template-list.tsx`
-- Create: `web/src/hooks/queries/use-document-templates.ts`
-
-- [ ] **Step 1: Hooks**
-
-`useDocumentTemplates(kind)`, `useCreateDocumentTemplate`, `useUpdateDocumentTemplate`, `useArchiveDocumentTemplate`.
-
-- [ ] **Step 2: Page UI**
-
-Tabs: Receitas | Atestados. Within each tab, a list and a "Novo modelo" button. Form is a Sheet/Dialog with name + body textarea + a sidebar listing `AVAILABLE_PLACEHOLDERS` (each clickable to insert at cursor). Mirror the existing WhatsApp template management screen (`grep -rln "template" web/src/components/settings/`).
-
-- [ ] **Step 3: Commit**
-
-```bash
-git commit -m "feat(documents): templates settings page for receitas and atestados"
-```
-
----
-
-## Task 2H: Document issuance UI + history tab component
-
-**Files:**
-- Create: `web/src/components/clinical-documents/issue-document-dialog.tsx`
-- Create: `web/src/components/clinical-documents/document-preview.tsx`
-- Create: `web/src/components/clinical-documents/patient-documents-tab.tsx`
-- Create: `web/src/components/clinical-documents/delivery-actions.tsx`
-- Create: `web/src/hooks/queries/use-clinical-documents.ts`
-
-- [ ] **Step 1: Hooks**
-
-`usePatientClinicalDocuments(patientId)`, `useIssueClinicalDocument`, `useSendDocumentWhatsapp`, `useDownloadDocumentPdf`.
-
-- [ ] **Step 2: IssueDocumentDialog**
-
-Wizard:
-- Step 1: Kind selector (Receita / Atestado).
-- Step 2: Template picker (optional) + title input + body textarea. Body field shows the resolved preview on the right (`<DocumentPreview>`).
-- Step 3 (after submit): `<DeliveryActions documentId={id}>` — Imprimir, Baixar PDF, Enviar WhatsApp.
-
-Guard at the start: if practitioner lacks signature/registry (call `useProfile()` to check), block with a CTA pointing to `/configuracoes/perfil`.
-
-- [ ] **Step 3: DocumentPreview**
-
-Renders `<ClinicHeader>` (create if not present — read clinic info from `useTenant`), patient info, body, date, `<ProfessionalSignatureBlock>`. Same component used by the print page.
-
-- [ ] **Step 4: DeliveryActions**
-
-Three buttons. Print opens new window to `/c/[slug]/documentos/[id]/imprimir`. PDF download triggers a hidden anchor with the API URL. WhatsApp action shows a confirmation, then `useSendDocumentWhatsapp`.
-
-- [ ] **Step 5: PatientDocumentsTab**
-
-List of issued docs sorted desc by `issuedAt`. Each row: title, kind chip, date, delivered-via badge. Row click opens `<DocumentPreview>` in a modal with `<DeliveryActions>` reused.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git commit -m "feat(documents): issuance wizard, preview, delivery actions, and history tab"
-```
-
----
-
-## Task 2I: Print page route + ClinicHeader
-
-**Files:**
-- Create: `web/src/app/c/[tenantSlug]/documentos/[id]/imprimir/page.tsx`
-- Create: `web/src/app/c/[tenantSlug]/documentos/[id]/imprimir/print-document-client.tsx`
-- Create: `web/src/components/clinical-documents/clinic-header.tsx`
-
-- [ ] **Step 1: Print page (server component)**
+This is an internal staff-only route — sits under `(platform)` so existing session middleware applies. The same `<PrintDocument>` component renders here for browser printing. NEVER use a public `/c/...` URL for clinical documents.
 
 ```tsx
-import { getClinicalDocument } from '@/db/queries/clinical-documents'
-import { getTenantBySlug } from '@/db/queries/tenants'
-import { notFound } from 'next/navigation'
-import { PrintDocumentClient } from './print-document-client'
-
-export default async function PrintDocumentPage({
-  params,
-}: { params: Promise<{ tenantSlug: string; id: string }> }) {
-  const { tenantSlug, id } = await params
-  const tenant = await getTenantBySlug(tenantSlug)
-  if (!tenant) notFound()
-  const doc = await getClinicalDocument(tenant.id, id)
+export default async function PrintDocumentPage({ params }: { params: Promise<{ id: string }> }) {
+  const auth = await getAuthContext()
+  const { id } = await params
+  const doc = await getClinicalDocumentWithContext(auth.tenantId, id)
   if (!doc) notFound()
-  return <PrintDocumentClient tenant={tenant} doc={doc} />
+  return (
+    <>
+      <PrintStylesheet />
+      <PrintDocument doc={doc} tenant={doc.tenant} />
+    </>
+  )
 }
 ```
 
-- [ ] **Step 2: Print client component**
+- [ ] **Step 6: send-whatsapp route**
 
-Renders `<ClinicHeader>`, patient line, `body`, date, `<ProfessionalSignatureBlock signatureDataUrl={doc.professionalSnapshot.signatureDataUrl} displayName={doc.professionalSnapshot.name} registryLine={doc.professionalSnapshot.registryLine} />`.
+```ts
+// app/api/clinical-documents/[id]/send-whatsapp/route.ts
+import { sendMediaMessage } from '@/lib/whatsapp'
+import { uploadPdfBuffer } from '@/lib/storage' // see Storage note below
+import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
+import { PrintDocument } from '@/components/clinical-documents/print-document'
 
-Print stylesheet:
-```tsx
-<style jsx global>{`
-  @media print {
-    body { background: white; }
-    @page { size: A4; margin: 20mm; }
-  }
-  body { font-family: 'Times New Roman', Times, serif; }
-`}</style>
+export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const auth = await getAuthContext()
+  const { id } = await ctx.params
+  const doc = await getClinicalDocumentWithContext(auth.tenantId, id)
+  if (!doc) return new NextResponse('Not found', { status: 404 })
+
+  const pdfBuffer = await renderReactToPdf(<PrintDocument doc={doc} tenant={doc.tenant} />, PRINT_BASE_CSS)
+  const { url, storagePath } = await uploadPdfBuffer({
+    tenantId: auth.tenantId,
+    patientId: doc.patientId,
+    fileName: `${doc.kind}-${id}.pdf`,
+    buffer: pdfBuffer,
+    visibility: 'signed', // long-lived signed URL — Meta needs to fetch it
+  })
+
+  const result = await sendMediaMessage({
+    tenantId: auth.tenantId,
+    to: doc.patientPhone,
+    mediaUrl: url,
+    mediaType: 'document',
+    filename: `${doc.title}.pdf`,
+  })
+
+  await db.update(clinicalDocuments).set({
+    deliveredVia: doc.deliveredVia === 'download' ? 'whatsapp' : 'multiple',
+    whatsappMessageId: result.messageId,
+    storagePath,
+    updatedAt: new Date(),
+  }).where(eq(clinicalDocuments.id, id))
+
+  return NextResponse.json({ ok: true })
+}
 ```
 
-- [ ] **Step 3: ClinicHeader**
+> **Storage note:** the existing `web/src/lib/storage.ts` is browser-File-based (signed URL pattern for client uploads). The PDF send path needs a **server-side Buffer upload** that produces a **fetchable URL Meta can reach**. Two options:
+> 1. Extend `lib/storage.ts` with `uploadPdfBuffer({ buffer, ... })` that uses the Supabase service-role client server-side to upload to a `clinical-documents/` bucket path, then creates a long-lived signed URL (24h+).
+> 2. If a `service_role` storage path doesn't exist yet, create `web/src/lib/storage-server.ts` with the service-role client and keep the buffer-upload helper there.
+>
+> Whichever you choose, the URL must be reachable by Meta for at least the duration of message delivery. The implementer should verify the existing storage bucket name and policies before writing this code (grep `STORAGE_BUCKET` / `supabaseAdmin` in `web/src/lib/`).
 
-Renders tenant logo + name + address + phone from `tenant` row.
+- [ ] **Step 7: Templates settings page**
 
-- [ ] **Step 4: Auth model**
+Build `app/(platform)/configuracoes/documentos/` with tabs Receitas | Atestados. Within each tab: list + "Novo modelo" button. Form (a Sheet/Dialog) with name + body textarea + a sidebar listing `AVAILABLE_DOCUMENT_PLACEHOLDERS` (from Task 1L), each clickable to insert at cursor. Mirror the existing WhatsApp template management UI (check `web/src/components/settings/` for the pattern).
 
-Print pages are tenant-scoped (URL contains slug) and **public** (no session cookie needed) — but the `id` is a UUID effectively unguessable. This matches the use-pattern (the practitioner needs to print without logging in on the device). If the user wants stricter auth, gate with a short-lived signed token (out of scope for MVP).
+- [ ] **Step 8: Issuance wizard**
 
-- [ ] **Step 5: Commit**
+`<IssueDocumentDialog>` opened from the patient profile via the "Novo documento" button (added in Group 3).
+
+Steps:
+1. Kind selector (Receita / Atestado).
+2. Template picker (optional) + title input + body textarea. Body field shows the resolved preview on the right via `<DocumentPreview>`.
+3. After submit (POST `/api/clinical-documents`): renders `<DeliveryActions documentId={id} />` — three buttons (Imprimir, Baixar PDF, Enviar WhatsApp).
+
+Guard at the start of step 1: if the practitioner lacks signature/registry, block with a CTA pointing to `/configuracoes/perfil`. Use the new `useProfile()` hook (call `GET /api/profile`).
+
+```ts
+// inside use-clinical-documents.ts
+export function useProfile() {
+  return useQuery({
+    queryKey: ['profile'],
+    queryFn: async () => {
+      const res = await fetch('/api/profile')
+      if (!res.ok) throw new Error('Failed')
+      return (await res.json()).data as ProfileResponse
+    },
+  })
+}
+```
+
+- [ ] **Step 9: DocumentPreview component**
+
+Same structure as `<PrintDocument>` but used on-screen during the wizard. Both share the layout React tree — extract it into `<print-document.tsx>` and reuse from preview + print page + PDF render.
+
+- [ ] **Step 10: DeliveryActions component**
+
+Three buttons. **Imprimir** opens new tab to `/documentos/[id]/imprimir` (the authenticated route, NOT public). **Baixar PDF** triggers a hidden anchor at `/api/clinical-documents/[id]/pdf`. **Enviar WhatsApp** confirms, then POSTs to `/api/clinical-documents/[id]/send-whatsapp`.
+
+- [ ] **Step 11: PatientDocumentsTab component**
+
+List of issued docs sorted desc by `issuedAt`. Row click opens `<DocumentPreview>` in a modal with `<DeliveryActions>` reused for re-print/re-send.
+
+> **Note:** the actual mounting of `<PatientDocumentsTab>` as a tab on the patient detail page happens in Group 3 (alongside `patient-tabs.tsx`).
+
+- [ ] **Step 12: Tests**
+
+Unit tests for the issue path (mock DB), placeholder integration. PDF route is integration territory — Phase 4 fills deeper coverage.
+
+- [ ] **Step 13: Commit**
 
 ```bash
-git commit -m "feat(documents): public print page with clinic header"
+git commit -m "feat(documents): backend, authenticated print page, PDF rendering, templates, issuance wizard, and history"
 ```
 
 ---
 
-## Task 2J: Procedure record printable view
+## Task 2J: Procedure record printable view (authenticated)
 
 **Files:**
-- Create: `web/src/app/c/[tenantSlug]/procedimentos/[id]/imprimir/page.tsx`
-- Create: `web/src/app/c/[tenantSlug]/procedimentos/[id]/imprimir/print-procedure-client.tsx`
+- Create: `web/src/app/(platform)/procedimentos/[id]/imprimir/page.tsx`
+- Create: `web/src/app/(platform)/procedimentos/[id]/imprimir/print-procedure-page-client.tsx`
 - Create: `web/src/components/procedures/print-procedure-content.tsx`
 
-Spec Topic 4 lists this as a consumer of `<ProfessionalSignatureBlock>`. Same model as Task 2I's print page, applied to executed procedure records.
+Spec Topic 4 lists this as a consumer of `<ProfessionalSignatureBlock>`. Authenticated print page (under `(platform)`) — NOT a public `/c/` URL.
 
 - [ ] **Step 1: Print page (server component)**
 
 ```tsx
+import { getAuthContext } from '@/lib/auth'
+import { getTenantById } from '@/db/queries/tenants'
 import { getProcedureRecordWithDetails } from '@/db/queries/procedures'
-import { getTenantBySlug } from '@/db/queries/tenants'
 import { getSignatureBlock } from '@/lib/professional'
+import { ClinicHeader } from '@/components/print/clinic-header'
+import { PrintStylesheet } from '@/components/print/print-stylesheet'
+import { PrintProcedureContent } from '@/components/procedures/print-procedure-content'
 import { notFound } from 'next/navigation'
-import { PrintProcedureClient } from './print-procedure-client'
 
-export default async function PrintProcedurePage({
-  params,
-}: { params: Promise<{ tenantSlug: string; id: string }> }) {
-  const { tenantSlug, id } = await params
-  const tenant = await getTenantBySlug(tenantSlug)
-  if (!tenant) notFound()
-  const procedure = await getProcedureRecordWithDetails(tenant.id, id)
+export default async function PrintProcedurePage({ params }: { params: Promise<{ id: string }> }) {
+  const auth = await getAuthContext()
+  const { id } = await params
+  const tenant = await getTenantById(auth.tenantId)
+  const procedure = await getProcedureRecordWithDetails(auth.tenantId, id)
   if (!procedure || procedure.status !== 'executed') notFound()
   const signature = await getSignatureBlock(procedure.practitionerId)
-  return <PrintProcedureClient tenant={tenant} procedure={procedure} signature={signature} />
+  return (
+    <>
+      <PrintStylesheet />
+      <div className="print-document">
+        <ClinicHeader tenant={tenant} />
+        <PrintProcedureContent procedure={procedure} signature={signature} />
+      </div>
+    </>
+  )
 }
 ```
 
 - [ ] **Step 2: PrintProcedureContent component**
 
-Renders `<ClinicHeader>` (reused from Task 2I), patient info, procedure type + performed date, technique, clinical response, product applications table (drawn from existing `productApplications` query), and `<ProfessionalSignatureBlock>` at the bottom (only if `signature != null`; otherwise show italic "Sem assinatura registrada").
+Renders patient info, procedure type + performed date, technique, clinical response, product applications table (drawn from the existing `product_applications` query — check `web/src/db/queries/`), and `<ProfessionalSignatureBlock>` at the bottom only if `signature != null`. Otherwise renders italic "Sem assinatura registrada".
 
-Use the same `@media print` stylesheet pattern as Task 2I.
-
-- [ ] **Step 3: "Imprimir" button**
-
-In Task 3 (wiring) we'll add the button to the executed procedure record page. Do **not** add it here — Task 3 owns `procedure-page-client.tsx`.
+- [ ] **Step 3: "Imprimir" button** — added in Task 3 (wiring). Do not modify `procedure-page-client.tsx` here.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git commit -m "feat(procedures): printable view for executed procedure records"
+git commit -m "feat(procedures): authenticated printable view for executed procedure records"
 ```
 
 ---
@@ -1767,22 +2024,46 @@ This group depends on Group 2. Modifies a handful of files that several Group 2 
 
 **Files modified:**
 - `web/src/app/(platform)/dashboard/dashboard-page-client.tsx` (add `<UpcomingBirthdaysCard>` and `<OpenPlanejamentosCard>`)
-- `web/src/components/patients/patient-detail-content.tsx` (add Pacotes and Documentos tabs)
+- `web/src/components/patients/patient-tabs.tsx` (add `pacotes` and `documentos` to the `TABS` array and `PatientTabKey` union)
+- `web/src/components/patients/patient-detail-content.tsx` (extend `VALID_TABS` and the render switch to include `pacotes` and `documentos`)
 - `web/src/app/(platform)/configuracoes/settings-page-client.tsx` (add Pacotes and Documentos menu items; ensure Perfil exists)
 - `web/src/components/patients/patient-header.tsx` or wherever the patient action bar lives (add "Vender pacote" and "Novo documento" buttons)
 - `web/src/components/whatsapp/template-picker.tsx` (add `birthday` kind support — small change to the kind filter)
-- `web/src/components/procedures/procedure-page-client.tsx` (mount `<FollowupTimeline>` in an "Acompanhamento" section for planned/approved procedures; add a "Pacote X · sessão Y/N" badge when `patientPackageId` is set; add "Imprimir" button on executed records)
-- `web/src/components/procedures/approval/service-contract-section.tsx` (use saved practitioner signature when present, fall back to live signing)
+- `web/src/app/(platform)/pacientes/[id]/procedimentos/[procedureId]/procedure-page-client.tsx` (add "Imprimir" button when `procedure.status === 'executed'`; add "Pacote X · sessão Y/N" badge when `patientPackageId` is set)
+- `web/src/components/procedures/procedure-form.tsx` (mount `<FollowupTimeline>` / followup actions for `status='planned'` records — this is the child component that actually renders for planned status, per `procedure-page-client.tsx:129`)
+- `web/src/components/procedures/procedure-detail-view.tsx` (mount `<FollowupTimeline>` for `status='approved'` records — per `procedure-page-client.tsx:113`)
 
 - [ ] **Step 1: Dashboard wiring**
 
 Open `dashboard-page-client.tsx`. After the existing `<TodayAppointments>` / `<FinancialSummary>` grid, add `<UpcomingBirthdaysCard />` and `<OpenPlanejamentosCard />` (one row, two columns matching the existing layout).
 
-- [ ] **Step 2: Patient detail tabs**
+- [ ] **Step 2: Patient detail tabs (two files)**
 
-Find the tabs registration in `patient-detail-content.tsx`. Add:
-- `pacotes` → `<PatientPackagesTab patientId={patient.id} />` (from Task 2D)
-- `documentos` → `<PatientDocumentsTab patientId={patient.id} />` (from Task 2H)
+Add the new tabs in BOTH places. `patient-tabs.tsx` declares the tab buttons and the `PatientTabKey` union; `patient-detail-content.tsx` declares `VALID_TABS` (which gates `?tab=` query params) and the render switch.
+
+```ts
+// web/src/components/patients/patient-tabs.tsx
+export type PatientTabKey = '...existing tabs...' | 'pacotes' | 'documentos'
+
+const TABS: Array<{ key: PatientTabKey; label: string }> = [
+  // ...existing entries...
+  { key: 'pacotes', label: 'Pacotes' },
+  { key: 'documentos', label: 'Documentos' },
+]
+```
+
+```ts
+// web/src/components/patients/patient-detail-content.tsx
+const VALID_TABS: PatientTabKey[] = [
+  // ...existing...
+  'pacotes',
+  'documentos',
+]
+
+// in the render switch:
+{activeTab === 'pacotes' && <PatientPackagesTab patientId={patient.id} />}
+{activeTab === 'documentos' && <PatientDocumentsTab patientId={patient.id} />}
+```
 
 - [ ] **Step 3: Patient header actions**
 
@@ -1801,22 +2082,21 @@ In `settings-page-client.tsx`, append menu items:
 
 Add `birthday` to the kind enum used by the picker. Add a built-in seed template entry (e.g., "Feliz aniversário 🎂 padrão") so tenants have something to start from. Check `web/src/lib/whatsapp-blueprints.ts` for the seed pattern.
 
-- [ ] **Step 6: Procedure page followup section + package badge + print button**
+- [ ] **Step 6: Procedure page wiring (three files)**
 
-In `procedure-page-client.tsx`:
-1. When `procedure.status IN ('planned', 'approved')`, render a new "Acompanhamento" section with `<FollowupTimeline>` (from Task 2E) and the same action buttons (record followup, snooze).
-2. When `procedure.patientPackageId` is set, render a small badge: `Pacote: <name> · sessão <consumed+1>/<total>`. Fetch package info via `usePatientPackages`.
-3. When `procedure.status === 'executed'`, add an "Imprimir" button that opens `/c/[tenantSlug]/procedimentos/[id]/imprimir` (from Task 2J).
+The routing page `procedure-page-client.tsx` branches by status to different child components. Don't try to render the followup section there — render it in the child that actually shows for `planned`/`approved`. Reference: `web/src/app/(platform)/pacientes/[id]/procedimentos/[procedureId]/procedure-page-client.tsx:55-139`.
 
-- [ ] **Step 7: Service-contract signature reuse**
+1. In **`procedure-page-client.tsx`** itself:
+   - When `procedure.status === 'executed'`, add an "Imprimir" button next to the existing actions; opens `/procedimentos/[id]/imprimir` (the authenticated route from Task 2J).
+   - When `procedure.patientPackageId` is set (any status), render a small badge: `Pacote: <name> · sessão <consumedOrdinal>/<total>`. Fetch via `usePatientPackages(patientId)`.
 
-In `service-contract-section.tsx`, change the practitioner signature flow:
-1. On mount, query `useProfile()` for the current user's signature.
-2. If `signatureData` is set, render `<ProfessionalSignatureBlock>` (preview) instead of asking the practitioner to sign live.
-3. Add a small "Assinar agora" link to fall back to the live `<SignaturePad>` when the user wants to override.
-4. On submit, send either the saved signature or the live one to the existing consent acceptance endpoint.
+2. In **`procedure-form.tsx`** (rendered for `status='planned'` and `status='draft'`): add an "Acompanhamento" panel below the form with `<FollowupTimeline procedureRecordId={id}>` and the two action buttons (record followup, snooze). Use the existing modals from Task 2E (`FollowupModal`, `SnoozeModal`).
 
-- [ ] **Step 8: Smoke tests**
+3. In **`procedure-detail-view.tsx`** (rendered for `status='approved'`): mount the same `<FollowupTimeline>` + action buttons in an "Acompanhamento" section. Identical wiring to #2.
+
+> The previous draft of this plan also proposed using the saved practitioner signature inside `service-contract-section.tsx`. That step was **removed** after review — the existing `service-contract-section.tsx` captures the **patient's** acceptance signature, not the practitioner's. Replacing it would corrupt the legal audit trail. If a practitioner signature block is needed on the printable contract, add it as a separate visible block in a follow-up — do NOT touch the patient signature flow.
+
+- [ ] **Step 7: Smoke tests**
 
 ```bash
 pnpm --filter @floraclin/web typecheck
@@ -1826,10 +2106,10 @@ pnpm --filter @floraclin/web test:run
 
 All must pass.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git commit -m "feat(clinic-pack): wire dashboard widgets, patient tabs, settings menu, and signature reuse"
+git commit -m "feat(clinic-pack): wire dashboard widgets, patient tabs, settings menu, followup sections"
 ```
 
 ---
