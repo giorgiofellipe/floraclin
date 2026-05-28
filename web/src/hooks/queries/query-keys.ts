@@ -75,6 +75,12 @@ export const queryKeys = {
     all: ['audit'] as const,
     logs: (filters?: Record<string, unknown>) => ['audit', 'logs', filters] as const,
   },
+  calendar: {
+    all: ['calendar'] as const,
+    connections: ['calendar', 'connections'] as const,
+    blocks: (practitionerId: string | undefined, dateFrom: string, dateTo: string) =>
+      ['calendar', 'blocks', practitionerId, dateFrom, dateTo] as const,
+  },
   admin: {
     tenants: {
       all: ['admin', 'tenants'] as const,

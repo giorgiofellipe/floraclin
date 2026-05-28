@@ -23,13 +23,17 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { LogOut, UserIcon, Loader2Icon } from 'lucide-react'
 import { toast } from 'sonner'
+import { CalendarConnectionCard } from '@/components/settings/calendar-connection-card'
+import { useCalendarConnections } from '@/hooks/queries/use-calendar'
 
 interface UserMenuProps {
   userName: string
   userEmail: string
+  userId?: string
+  userRole?: string
 }
 
-export function UserMenu({ userName, userEmail }: UserMenuProps) {
+export function UserMenu({ userName, userEmail, userId, userRole }: UserMenuProps) {
   const [profileOpen, setProfileOpen] = useState(false)
 
   const initials = userName
@@ -75,6 +79,8 @@ export function UserMenu({ userName, userEmail }: UserMenuProps) {
         onOpenChange={setProfileOpen}
         userName={userName}
         userEmail={userEmail}
+        userId={userId}
+        userRole={userRole}
       />
     </>
   )
@@ -85,12 +91,20 @@ function ProfileDialog({
   onOpenChange,
   userName,
   userEmail,
+  userId,
+  userRole,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   userName: string
   userEmail: string
+  userId?: string
+  userRole?: string
 }) {
+  const showCalendar = userRole === 'owner' || userRole === 'practitioner'
+  const { data: connections } = useCalendarConnections()
+  const myConnection = connections?.find((c: { userId: string | null }) => c.userId === userId) ?? null
+
   const [fullName, setFullName] = useState(userName)
   const [phone, setPhone] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
@@ -234,6 +248,22 @@ function ProfileDialog({
               {savingPassword ? <Loader2Icon className="h-4 w-4 animate-spin" /> : 'Atualizar Senha'}
             </Button>
           </div>
+
+          {showCalendar && (
+            <>
+              <div className="h-px bg-sage/15" />
+              <div className="space-y-3">
+                <p className="text-xs font-medium uppercase tracking-wider text-mid">
+                  Google Calendar
+                </p>
+                <CalendarConnectionCard
+                  type="practitioner"
+                  connection={myConnection}
+                  helperText="Sincronize seus agendamentos com o Google Calendar."
+                />
+              </div>
+            </>
+          )}
         </div>
       </DialogContent>
     </Dialog>

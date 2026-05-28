@@ -30,6 +30,8 @@ export type QuantityUnit = 'U' | 'mL'
 
 export type AuditAction = 'create' | 'update' | 'delete' | 'login' | 'logout' | 'consent_accepted' | 'impersonation_start' | 'impersonation_end'
 
+export type CalendarBlockStatus = 'confirmed' | 'tentative' | 'cancelled'
+
 export interface AuthContext {
   userId: string
   tenantId: string

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
+import { syncAppointmentToGoogle } from '@/lib/google-calendar-sync'
 import {
   getAppointmentById,
   updateAppointment,
@@ -79,6 +80,10 @@ export async function PUT(
       entityId: appointmentId,
     })
 
+    syncAppointmentToGoogle(ctx.tenantId, appointmentId).catch((err) => {
+      console.error('Google Calendar push sync failed:', err)
+    })
+
     return NextResponse.json({ success: true, data: appointment })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
@@ -117,6 +122,10 @@ export async function DELETE(
       action: 'delete',
       entityType: 'appointment',
       entityId: id,
+    })
+
+    syncAppointmentToGoogle(ctx.tenantId, id).catch((err) => {
+      console.error('Google Calendar push sync failed:', err)
     })
 
     return NextResponse.json({ success: true })

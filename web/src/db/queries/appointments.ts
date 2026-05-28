@@ -1,5 +1,5 @@
 import { db } from '@/db/client'
-import { appointments, patients, procedureTypes, users, tenants } from '@/db/schema'
+import { appointments, patients, procedureTypes, users, tenants, calendarBlocks } from '@/db/schema'
 import { eq, and, isNull, gte, lte, sql, or, ne } from 'drizzle-orm'
 import type { AppointmentStatus, AppointmentSource } from '@/types'
 import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
@@ -315,7 +315,7 @@ export async function getAvailableSlots(
   const workingHours = (tenant[0]?.workingHours as WorkingHours | null) ?? (DEFAULT_WORKING_HOURS as unknown as WorkingHours)
 
   // Determine the day of week for the given date
-  const dateObj = new Date(date + 'T12:00:00') // noon to avoid timezone issues
+  const dateObj = new Date(`${date}T12:00:00-03:00`)
   const dayKey = DAY_MAP[dateObj.getDay()]
   const dayHours = dayKey ? workingHours[dayKey] : undefined
 
@@ -342,6 +342,22 @@ export async function getAvailableSlots(
     )
     .orderBy(appointments.startTime)
 
+  const blocks = await db
+    .select({
+      startTime: calendarBlocks.startTime,
+      endTime: calendarBlocks.endTime,
+      allDay: calendarBlocks.allDay,
+    })
+    .from(calendarBlocks)
+    .where(
+      and(
+        eq(calendarBlocks.tenantId, tenantId),
+        eq(calendarBlocks.practitionerId, practitionerId),
+        eq(calendarBlocks.date, date),
+        ne(calendarBlocks.status, 'cancelled')
+      )
+    )
+
   // Generate all possible slots within working hours
   const slots: TimeSlot[] = []
   const [startH, startM] = dayHours.start.split(':').map(Number)
@@ -354,12 +370,17 @@ export async function getAvailableSlots(
     const slotEndMin = m + durationMin
     const slotEnd = `${String(Math.floor(slotEndMin / 60)).padStart(2, '0')}:${String(slotEndMin % 60).padStart(2, '0')}`
 
-    // Check if this slot conflicts with any existing appointment
-    const hasConflict = existing.some((appt) => {
+    const hasAppointmentConflict = existing.some((appt) => {
       return appt.startTime < slotEnd && appt.endTime > slotStart
     })
 
-    if (!hasConflict) {
+    const hasBlockConflict = blocks.some((block) => {
+      if (block.allDay) return true
+      if (!block.startTime || !block.endTime) return false
+      return block.startTime < slotEnd && block.endTime > slotStart
+    })
+
+    if (!hasAppointmentConflict && !hasBlockConflict) {
       slots.push({ start: slotStart, end: slotEnd })
     }
   }
