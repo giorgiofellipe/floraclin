@@ -1,4 +1,11 @@
-import { renderToStaticMarkup } from 'react-dom/server'
+// This module renders the print tree to static HTML before handing it to
+// headless Chromium. `react-dom/server` is loaded dynamically inside the
+// render call so Turbopack's static "you're shipping renderToString" warning
+// (and the App Router's general aversion to top-level react-dom/server
+// imports) don't fire. `server-only` is the belt-and-suspenders: any client
+// component that transitively imports this file throws at build time
+// instead of silently bundling Chromium + react-dom/server into the browser.
+import 'server-only'
 import type { ReactElement } from 'react'
 
 // @sparticuz/chromium-min 149.0.0 → matching pack tar URL.
@@ -54,16 +61,19 @@ export async function renderReactToPdf(
   tree: ReactElement,
   baseStyles: string = PRINT_BASE_CSS,
 ): Promise<Buffer> {
-  const bodyMarkup = renderToStaticMarkup(tree)
-  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>${baseStyles}</style></head><body>${bodyMarkup}</body></html>`
-
-  // Dynamic imports keep these heavy deps out of the cold-start critical path
-  // for routes that never render PDFs.
-  const [{ default: puppeteer }, chromiumModule] = await Promise.all([
+  // Dynamic imports keep these heavy deps (and react-dom/server) out of the
+  // cold-start critical path for routes that never render PDFs, and prevent
+  // Next/Turbopack from flagging this file as risky for client bundles.
+  const [reactDomServer, { default: puppeteer }, chromiumModule] = await Promise.all([
+    import('react-dom/server'),
     import('puppeteer-core'),
     import('@sparticuz/chromium-min'),
   ])
+  const renderToStaticMarkup = reactDomServer.renderToStaticMarkup
   const chromium = chromiumModule.default
+
+  const bodyMarkup = renderToStaticMarkup(tree)
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>${baseStyles}</style></head><body>${bodyMarkup}</body></html>`
 
   const browser = await puppeteer.launch({
     args: chromium.args,
