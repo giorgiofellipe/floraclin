@@ -17,6 +17,35 @@ function getChromiumPackUrl(): string {
   return process.env.CHROMIUM_PACK_URL || DEFAULT_CHROMIUM_PACK_URL
 }
 
+/**
+ * Returns a system Chrome/Chromium binary path for local development. The
+ * sparticuz pack is a Linux x86_64 ELF binary — on macOS / Windows it
+ * fails to spawn with `errno -8 (ENOEXEC)`. In dev, prefer:
+ *
+ *   1. `PUPPETEER_EXECUTABLE_PATH` — explicit override, wins everywhere
+ *   2. macOS: the default Google Chrome install
+ *   3. Linux: a system `google-chrome` / `chromium` (resolved via PATH at
+ *      spawn time; returning undefined lets puppeteer fall back to its
+ *      own search)
+ *
+ * On Vercel / Lambda we keep using the sparticuz pack — those runtimes
+ * are linux x86_64.
+ */
+function getLocalChromePath(): string | undefined {
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH
+  }
+  if (process.platform === 'darwin') {
+    return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  }
+  if (process.platform === 'win32') {
+    return 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+  }
+  return undefined
+}
+
+const USE_SPARTICUZ = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined
+
 export const PRINT_BASE_CSS = `
   * { box-sizing: border-box; }
   body {
@@ -64,22 +93,38 @@ export async function renderReactToPdf(
   // Dynamic imports keep these heavy deps (and react-dom/server) out of the
   // cold-start critical path for routes that never render PDFs, and prevent
   // Next/Turbopack from flagging this file as risky for client bundles.
-  const [reactDomServer, { default: puppeteer }, chromiumModule] = await Promise.all([
+  // On dev / non-Vercel hosts we don't need @sparticuz/chromium-min at all —
+  // skip importing it so a missing pack URL doesn't break local runs.
+  const importPromises: Array<Promise<unknown>> = [
     import('react-dom/server'),
     import('puppeteer-core'),
-    import('@sparticuz/chromium-min'),
-  ])
+  ]
+  if (USE_SPARTICUZ) importPromises.push(import('@sparticuz/chromium-min'))
+  const [reactDomServer, puppeteerMod, chromiumMod] = (await Promise.all(importPromises)) as [
+    typeof import('react-dom/server'),
+    typeof import('puppeteer-core'),
+    typeof import('@sparticuz/chromium-min') | undefined,
+  ]
   const renderToStaticMarkup = reactDomServer.renderToStaticMarkup
-  const chromium = chromiumModule.default
+  const puppeteer = puppeteerMod.default
 
   const bodyMarkup = renderToStaticMarkup(tree)
   const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>${baseStyles}</style></head><body>${bodyMarkup}</body></html>`
 
-  const browser = await puppeteer.launch({
-    args: chromium.args,
-    executablePath: await chromium.executablePath(getChromiumPackUrl()),
-    headless: true,
-  })
+  // Decide which Chromium to launch with. Lambda/Vercel get the sparticuz
+  // pack (Linux x86_64 binary downloaded once). Local dev gets the system
+  // Chrome via PUPPETEER_EXECUTABLE_PATH or a platform-known path.
+  const launchOptions: Parameters<typeof puppeteer.launch>[0] = USE_SPARTICUZ
+    ? {
+        args: chromiumMod!.default.args,
+        executablePath: await chromiumMod!.default.executablePath(getChromiumPackUrl()),
+        headless: true,
+      }
+    : {
+        executablePath: getLocalChromePath(),
+        headless: true,
+      }
+  const browser = await puppeteer.launch(launchOptions)
 
   try {
     const page = await browser.newPage()
