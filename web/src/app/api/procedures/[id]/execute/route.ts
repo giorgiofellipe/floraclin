@@ -6,6 +6,7 @@ import { getProcedure, executeProcedure } from '@/db/queries/procedures'
 import { saveFaceDiagram } from '@/db/queries/face-diagrams'
 import { saveProductApplications } from '@/db/queries/product-applications'
 import { procedureExecutionWireSchema } from '@/validations/procedure'
+import { maybeCompletePackageForProcedure } from '@/lib/packages'
 
 export async function POST(
   request: Request,
@@ -75,6 +76,8 @@ export async function POST(
       entityId: procedureId,
       changes: { status: { old: 'approved', new: 'executed' } },
     })
+
+    await maybeCompletePackageForProcedure(ctx.tenantId, procedureId)
 
     return NextResponse.json({ success: true, data: result })
   } catch (error) {
