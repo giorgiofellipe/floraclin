@@ -3,7 +3,7 @@ import { photoAssets, photoAnnotations, patients, procedureRecords, procedureTyp
 import { eq, and, isNull, desc, sql } from 'drizzle-orm'
 import { getSignedUrl, deleteFile } from '@/lib/storage'
 import type { TimelineStage } from '@/types'
-import { timelineStageValues } from '@/validations/photo'
+import { timelineStageValues, type CropBox } from '@/validations/photo'
 import { verifyTenantOwnership } from './helpers'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -23,6 +23,14 @@ export interface PhotoAssetWithUrl {
   procedureTypeName: string | null
   procedurePerformedAt: Date | null
   hasAnnotation: boolean
+  // Non-destructive crop. `cropBox` is normalized coordinates (0..1), and
+  // `cropAspect` is the natural width/height of the underlying image at the
+  // time the crop was saved — required by `applyCrop` to compute display
+  // styles without a fresh image-load measurement. Both are `null` for
+  // un-cropped photos. Stored as `jsonb` and `decimal` in Postgres; the
+  // numeric value is converted to `number` here so consumers don't have to.
+  cropBox: CropBox | null
+  cropAspect: number | null
 }
 
 export interface PhotosByStage {
@@ -62,6 +70,8 @@ export async function listPhotos(
       procedureRecordId: photoAssets.procedureRecordId,
       procedureTypeName: procedureTypes.name,
       procedurePerformedAt: procedureRecords.performedAt,
+      cropBox: photoAssets.cropBox,
+      cropAspect: photoAssets.cropAspect,
       hasAnnotation: sql<boolean>`exists(select 1 from ${photoAnnotations} where ${photoAnnotations.photoAssetId} = ${photoAssets.id})`,
     })
     .from(photoAssets)
@@ -72,22 +82,34 @@ export async function listPhotos(
 
   // Generate signed URLs for all photos
   const photosWithUrls: PhotoAssetWithUrl[] = await Promise.all(
-    photos.map(async (photo) => ({
-      id: photo.id,
-      storagePath: photo.storagePath,
-      originalFilename: photo.originalFilename,
-      mimeType: photo.mimeType,
-      fileSizeBytes: photo.fileSizeBytes,
-      timelineStage: photo.timelineStage,
-      takenAt: photo.takenAt,
-      notes: photo.notes,
-      createdAt: photo.createdAt,
-      signedUrl: await getSignedUrl(photo.storagePath),
-      procedureRecordId: photo.procedureRecordId,
-      procedureTypeName: photo.procedureTypeName,
-      procedurePerformedAt: photo.procedurePerformedAt,
-      hasAnnotation: !!photo.hasAnnotation,
-    }))
+    photos.map(async (photo) => {
+      // `cropAspect` is a Postgres `decimal` — drizzle returns it as a string
+      // to preserve precision. Parse to number for client consumption (the
+      // value comes back to the server via PATCH as a number too).
+      const cropAspectNum =
+        photo.cropAspect == null ? null : Number(photo.cropAspect)
+      return {
+        id: photo.id,
+        storagePath: photo.storagePath,
+        originalFilename: photo.originalFilename,
+        mimeType: photo.mimeType,
+        fileSizeBytes: photo.fileSizeBytes,
+        timelineStage: photo.timelineStage,
+        takenAt: photo.takenAt,
+        notes: photo.notes,
+        createdAt: photo.createdAt,
+        signedUrl: await getSignedUrl(photo.storagePath),
+        procedureRecordId: photo.procedureRecordId,
+        procedureTypeName: photo.procedureTypeName,
+        procedurePerformedAt: photo.procedurePerformedAt,
+        cropBox: (photo.cropBox as CropBox | null) ?? null,
+        cropAspect:
+          cropAspectNum != null && Number.isFinite(cropAspectNum)
+            ? cropAspectNum
+            : null,
+        hasAnnotation: !!photo.hasAnnotation,
+      }
+    })
   )
 
   // Group by timeline stage

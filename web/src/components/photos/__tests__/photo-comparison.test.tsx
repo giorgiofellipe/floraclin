@@ -31,6 +31,8 @@ const mockPhotoA: PhotoAssetWithUrl = {
   procedureTypeName: 'Toxina Botulínica',
   procedurePerformedAt: new Date('2026-03-15'),
   hasAnnotation: false,
+  cropBox: null,
+  cropAspect: null,
 }
 
 const mockPhotoB: PhotoAssetWithUrl = {
@@ -48,6 +50,8 @@ const mockPhotoB: PhotoAssetWithUrl = {
   procedureTypeName: 'Toxina Botulínica',
   procedurePerformedAt: new Date('2026-03-15'),
   hasAnnotation: false,
+  cropBox: null,
+  cropAspect: null,
 }
 
 const mockComparisonUrlsResponse = {

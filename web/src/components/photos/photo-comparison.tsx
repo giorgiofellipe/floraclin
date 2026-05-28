@@ -53,9 +53,11 @@ export function PhotoComparisonDialog({
   const sliderContainerRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
 
-  // Crop state — `listPhotos` does not expose cropBox/cropAspect today, so we
-  // keep session-local overrides per side. Aspects are measured on image load
-  // and consumed by `applyCrop` plus the cropper modal.
+  // Crop state — persisted `cropBox`/`cropAspect` come in on each photo prop;
+  // we layer session-local overrides on top so saves render immediately. The
+  // measured-aspect map is a fallback for old rows that don't have a
+  // `cropAspect` yet (e.g. a freshly-uploaded photo about to be cropped for
+  // the first time).
   const [cropTarget, setCropTarget] = useState<'A' | 'B' | null>(null)
   const [cropOverrides, setCropOverrides] = useState<
     Record<string, { cropBox: CropBox | null; sourceAspect: number }>
@@ -130,7 +132,10 @@ export function PhotoComparisonDialog({
 
   const handleSaveCrop = useCallback(
     async (photo: PhotoAssetWithUrl, box: CropBox | null) => {
-      const sourceAspect = aspects[photo.id] ?? 1
+      // Prefer the persisted aspect over a freshly measured one — it's the
+      // value used when the crop coordinates were first chosen, so it's the
+      // right scale to feed back into `applyCrop`.
+      const sourceAspect = photo.cropAspect ?? aspects[photo.id] ?? 1
       try {
         await updateCrop.mutateAsync({
           photoId: photo.id,
@@ -153,12 +158,15 @@ export function PhotoComparisonDialog({
   const labelA = photoA ? getPhotoLabel(photoA) : ''
   const labelB = photoB ? getPhotoLabel(photoB) : ''
 
-  // Per-side crop style helpers.
+  // Per-side crop style helpers — effective crop = optimistic override ??
+  // persisted on the photo ?? none. Aspect prefers override/persisted, falls
+  // back to the on-load measurement for old photos missing `cropAspect`.
   function styleFor(photo: PhotoAssetWithUrl | null) {
     if (!photo) return null
     const ov = cropOverrides[photo.id]
-    const aspect = ov?.sourceAspect ?? aspects[photo.id]
-    return ov?.cropBox && aspect ? applyCrop(ov.cropBox, aspect) : null
+    const box = ov ? ov.cropBox : photo.cropBox
+    const aspect = ov?.sourceAspect ?? photo.cropAspect ?? aspects[photo.id]
+    return box && aspect ? applyCrop(box, aspect) : null
   }
 
   const styleA = styleFor(photoA)
@@ -167,10 +175,15 @@ export function PhotoComparisonDialog({
   const cropTargetPhoto = cropTarget === 'A' ? photoA : cropTarget === 'B' ? photoB : null
   const cropTargetUrl = cropTarget === 'A' ? urlA : cropTarget === 'B' ? urlB : null
   const cropTargetAspect = cropTargetPhoto
-    ? (cropOverrides[cropTargetPhoto.id]?.sourceAspect ?? aspects[cropTargetPhoto.id] ?? 1)
+    ? (cropOverrides[cropTargetPhoto.id]?.sourceAspect ??
+        cropTargetPhoto.cropAspect ??
+        aspects[cropTargetPhoto.id] ??
+        1)
     : 1
   const cropTargetCurrent = cropTargetPhoto
-    ? (cropOverrides[cropTargetPhoto.id]?.cropBox ?? null)
+    ? (cropOverrides[cropTargetPhoto.id]?.cropBox ??
+        cropTargetPhoto.cropBox ??
+        null)
     : null
 
   return (
