@@ -68,12 +68,16 @@ export async function POST(
     })
 
     // 3. Send via WhatsApp
+    // Use a sanitized filename so the patient sees a clean ".pdf" attachment
+    // name in WhatsApp instead of the raw storage path.
+    const whatsappFilename = `${slugifyForFile(doc.title)}.pdf`
     const sendResult = await sendMediaMessage(
       ctx.tenantId,
       doc.patient.phone,
       'document',
       url,
       doc.title,
+      whatsappFilename,
     )
 
     // 4. Persist delivery status

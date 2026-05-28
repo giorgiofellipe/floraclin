@@ -12,10 +12,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { FileText, Plus } from 'lucide-react'
-import { usePatientDocuments, type PatientDocumentRow } from '@/hooks/queries/use-clinical-documents'
+import {
+  useClinicalDocument,
+  usePatientDocuments,
+  type PatientDocumentRow,
+} from '@/hooks/queries/use-clinical-documents'
 import { formatDateTime } from '@/lib/utils'
 import { IssueDocumentDialog } from './issue-document-dialog'
 import { DeliveryActions } from './delivery-actions'
+import { DocumentPreview } from './document-preview'
 
 const KIND_LABEL: Record<string, string> = {
   receita: 'Receita',
@@ -23,6 +28,10 @@ const KIND_LABEL: Record<string, string> = {
 }
 
 const DELIVERY_BADGE: Record<string, { label: string; className: string }> = {
+  pending: {
+    label: 'Não entregue',
+    className: 'bg-[#F4F6F8] text-mid border-[#E8ECEF]',
+  },
   download: {
     label: 'Baixado',
     className: 'bg-[#F4F6F8] text-mid border-[#E8ECEF]',
@@ -131,7 +140,7 @@ export function PatientDocumentsTab({ patient }: PatientDocumentsTabProps) {
       />
 
       <Dialog open={!!openedDoc} onOpenChange={(o) => !o && setOpenedDoc(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{openedDoc?.title}</DialogTitle>
             <DialogDescription>
@@ -140,20 +149,99 @@ export function PatientDocumentsTab({ patient }: PatientDocumentsTabProps) {
             </DialogDescription>
           </DialogHeader>
           {openedDoc && (
-            <div className="space-y-4">
-              <p className="text-sm text-mid">
-                Use as ações abaixo para reabrir, baixar ou reenviar este documento.
-                O conteúdo completo está disponível na visualização de impressão.
-              </p>
-              <DeliveryActions
-                documentId={openedDoc.id}
-                patientId={patient.id}
-                patientHasPhone={Boolean(patient.phone)}
-              />
-            </div>
+            <HistoryPreview
+              documentId={openedDoc.id}
+              fallback={openedDoc}
+              patientHasPhone={Boolean(patient.phone)}
+            />
           )}
         </DialogContent>
       </Dialog>
     </div>
   )
 }
+
+interface HistoryPreviewProps {
+  documentId: string
+  fallback: PatientDocumentRow
+  patientHasPhone: boolean
+}
+
+/**
+ * Loads the full document (body + patient + tenant context + signature snapshot)
+ * and renders the same `<DocumentPreview>` used in the issuance wizard. The
+ * snapshot from the row at issue time is the source of truth — we never re-fetch
+ * the practitioner's current signature here.
+ */
+function HistoryPreview({ documentId, fallback, patientHasPhone }: HistoryPreviewProps) {
+  const { data: doc, isLoading, error } = useClinicalDocument(documentId)
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3 py-2">
+        <Skeleton className="h-8 w-2/3" />
+        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-10 w-1/2" />
+      </div>
+    )
+  }
+
+  if (error || !doc) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-mid">
+          Não foi possível carregar o conteúdo completo. Use as ações abaixo
+          para reabrir, baixar ou reenviar.
+        </p>
+        <DeliveryActions
+          documentId={documentId}
+          patientId={fallback.id}
+          patientHasPhone={patientHasPhone}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <DocumentPreview
+        kind={doc.kind}
+        title={doc.title}
+        body={doc.body}
+        patient={{
+          fullName: doc.patient.fullName,
+          cpf: doc.patient.cpf,
+          birthDate: doc.patient.birthDate,
+        }}
+        practitioner={{
+          displayName: doc.professionalSnapshot.name,
+          registryLine: doc.professionalSnapshot.registryLine,
+          signatureDataUrl: doc.professionalSnapshot.signatureDataUrl,
+        }}
+        tenant={{
+          name: doc.tenant.name,
+          phone: doc.tenant.phone,
+          email: doc.tenant.email,
+          logoUrl: doc.tenant.logoUrl,
+          address: (doc.tenant.address as DocumentPreviewTenantAddress) ?? null,
+        }}
+        date={new Date(doc.issuedAt)}
+      />
+      <DeliveryActions
+        documentId={doc.id}
+        patientId={doc.patientId}
+        patientHasPhone={patientHasPhone}
+      />
+    </div>
+  )
+}
+
+type DocumentPreviewTenantAddress = {
+  street?: string
+  number?: string
+  complement?: string
+  neighborhood?: string
+  city?: string
+  state?: string
+  zip?: string
+} | null

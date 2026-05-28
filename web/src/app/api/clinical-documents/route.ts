@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import { getPatient } from '@/db/queries/patients'
+import { getClinicalDocumentTemplate } from '@/db/queries/clinical-documents'
 import {
   issueClinicalDocument,
   SignatureRequiredError,
@@ -28,6 +29,29 @@ export async function POST(request: Request) {
     const patient = await getPatient(ctx.tenantId, parsed.data.patientId)
     if (!patient) {
       return NextResponse.json({ error: 'Paciente não encontrado' }, { status: 404 })
+    }
+
+    // Tenant guard on template (if provided). Without this check, a malicious
+    // client could pass a templateId from another clinic — FK alone won't stop
+    // that, only tenant scoping does. We also enforce kind match so a 'receita'
+    // template can't be referenced by an 'atestado' document.
+    if (parsed.data.templateId) {
+      const template = await getClinicalDocumentTemplate(
+        ctx.tenantId,
+        parsed.data.templateId,
+      )
+      if (!template) {
+        return NextResponse.json(
+          { error: 'Modelo não encontrado' },
+          { status: 404 },
+        )
+      }
+      if (template.kind !== parsed.data.kind) {
+        return NextResponse.json(
+          { error: 'Modelo não corresponde ao tipo do documento' },
+          { status: 400 },
+        )
+      }
     }
 
     const doc = await issueClinicalDocument({

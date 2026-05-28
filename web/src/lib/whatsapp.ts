@@ -89,10 +89,14 @@ export async function sendMediaMessage(
   mediaType: 'image' | 'document' | 'audio' | 'video',
   mediaUrl: string,
   caption?: string,
+  filename?: string,
 ) {
   const creds = await getCredentials(tenantId)
   const mediaPayload: Record<string, string> = { link: mediaUrl }
   if (caption) mediaPayload.caption = caption
+  // `filename` is only honored by Meta for document attachments — controls the
+  // name the patient sees in the WhatsApp UI, including the `.pdf` extension.
+  if (filename && mediaType === 'document') mediaPayload.filename = filename
   const data = await graphFetch(`/${creds.phoneNumberId}/messages`, creds.accessToken, {
     method: 'POST',
     body: JSON.stringify({

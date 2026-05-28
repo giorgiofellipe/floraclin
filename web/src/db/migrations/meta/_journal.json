@@ -85,6 +85,13 @@
       "when": 1779936359367,
       "tag": "0012_clinic_feature_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1780300000000,
+      "tag": "0013_clinic_document_delivery_state",
+      "breakpoints": true
     }
   ]
 }

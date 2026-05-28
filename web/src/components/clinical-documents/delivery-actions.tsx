@@ -13,7 +13,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Download, MessageCircle, Printer, Loader2 } from 'lucide-react'
-import { useSendDocumentWhatsapp } from '@/hooks/queries/use-clinical-documents'
+import {
+  useMarkDocumentDelivery,
+  useSendDocumentWhatsapp,
+} from '@/hooks/queries/use-clinical-documents'
 
 export interface DeliveryActionsProps {
   documentId: string
@@ -38,18 +41,30 @@ export function DeliveryActions({
   className,
 }: DeliveryActionsProps) {
   const sendWhatsapp = useSendDocumentWhatsapp()
+  const markDelivery = useMarkDocumentDelivery()
   const [confirmOpen, setConfirmOpen] = React.useState(false)
 
   const printUrl = `/documentos/${documentId}/imprimir`
   const pdfUrl = `/api/clinical-documents/${documentId}/pdf`
 
-  function handlePrint() {
+  // Record the delivery event server-side BEFORE opening the URL so the state
+  // machine reflects actual user intent. If the PATCH fails (network blip,
+  // auth), we still open the URL — losing the audit record is preferable to
+  // blocking the user from accessing their document.
+  async function markAndOpen(channel: 'print' | 'download', open: () => void) {
+    try {
+      await markDelivery.mutateAsync({ id: documentId, channel, patientId })
+    } catch (err) {
+      console.error('Failed to record delivery event:', err)
+    }
+    open()
+  }
+
+  function openPrint() {
     window.open(printUrl, '_blank', 'noopener')
   }
 
-  function handleDownload() {
-    // Force a same-tab navigation to the PDF route; the browser will treat the
-    // application/pdf response as a download/inline view depending on user prefs.
+  function openDownload() {
     const a = document.createElement('a')
     a.href = pdfUrl
     a.target = '_blank'
@@ -57,6 +72,14 @@ export function DeliveryActions({
     document.body.appendChild(a)
     a.click()
     a.remove()
+  }
+
+  function handlePrint() {
+    void markAndOpen('print', openPrint)
+  }
+
+  function handleDownload() {
+    void markAndOpen('download', openDownload)
   }
 
   async function handleSendWhatsapp() {

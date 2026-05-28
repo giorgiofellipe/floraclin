@@ -283,7 +283,7 @@ export async function insertClinicalDocument(args: {
       body: args.body,
       templateId: args.templateId,
       professionalSnapshot: args.professionalSnapshot,
-      deliveredVia: 'download',
+      deliveredVia: 'pending',
     })
     .returning()
   return row

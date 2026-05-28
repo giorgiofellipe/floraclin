@@ -56,17 +56,31 @@ export async function issueClinicalDocument(
   })
 }
 
+export type DeliveryChannel = 'whatsapp' | 'print' | 'download'
+export type DeliveredVia = 'pending' | DeliveryChannel | 'multiple'
+
 /**
- * Computes the next deliveredVia value when WhatsApp delivery succeeds.
- *  - 'download' → 'whatsapp'
- *  - 'print' → 'multiple'
- *  - 'whatsapp' → 'whatsapp' (already there)
- *  - 'multiple' → 'multiple'
+ * Computes the next deliveredVia value when a delivery event happens.
+ *
+ *  - 'pending' + any channel → that channel
+ *  - 'multiple' + any → 'multiple'
+ *  - current === incoming channel → unchanged
+ *  - otherwise (different channel already recorded) → 'multiple'
  */
-export function nextDeliveredViaAfterWhatsapp(current: string): string {
-  if (current === 'whatsapp') return 'whatsapp'
+export function nextDeliveredViaAfterChannel(
+  current: string,
+  channel: DeliveryChannel,
+): DeliveredVia {
+  if (current === 'pending') return channel
   if (current === 'multiple') return 'multiple'
-  if (current === 'download') return 'whatsapp'
-  // print or any other prior value → mixed
+  if (current === channel) return channel
+  // current is a different channel → mixed
   return 'multiple'
+}
+
+/**
+ * Convenience wrapper preserved for callers that only emit WhatsApp deliveries.
+ */
+export function nextDeliveredViaAfterWhatsapp(current: string): DeliveredVia {
+  return nextDeliveredViaAfterChannel(current, 'whatsapp')
 }
