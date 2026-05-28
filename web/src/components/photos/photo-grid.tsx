@@ -2,8 +2,7 @@
 
 import * as React from 'react'
 import { useCallback, useEffect, useState } from 'react'
-import { Trash2, ZoomIn, Pencil, Loader2, Crop as CropIcon } from 'lucide-react'
-import { toast } from 'sonner'
+import { Trash2, ZoomIn, Pencil, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -16,10 +15,6 @@ import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn, formatDateTime, formatDate } from '@/lib/utils'
 import type { PhotosByStage, PhotoAssetWithUrl } from '@/db/queries/photos'
-import type { CropBox } from '@/validations/photo'
-import { applyCropCover } from '@/lib/photos'
-import { ImageCropperDialog } from './image-cropper'
-import { useUpdatePhotoCrop } from '@/hooks/queries/use-photo-crop'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -54,30 +49,6 @@ export function PhotoGrid({
   const [deleteTarget, setDeleteTarget] = useState<PhotoAssetWithUrl | null>(null)
   const [deleting, setDeleting] = useState(false)
 
-  // Crop state. `listPhotos` returns the persisted `cropBox`/`cropAspect`
-  // directly on each photo, but we layer a session-local override map keyed
-  // by photo id on top of it so saves render immediately without waiting for
-  // the photos query to refetch. Per-photo natural aspect is measured lazily
-  // from the rendered <img>'s naturalWidth/naturalHeight as a fallback for
-  // old rows that don't have `cropAspect` yet.
-  const [cropTarget, setCropTarget] = useState<PhotoAssetWithUrl | null>(null)
-  const [cropOverrides, setCropOverrides] = useState<
-    Record<string, { cropBox: CropBox | null; sourceAspect: number }>
-  >({})
-  const [photoAspects, setPhotoAspects] = useState<Record<string, number>>({})
-
-  const updateCrop = useUpdatePhotoCrop()
-
-  const handleImageLoaded = useCallback(
-    (photoId: string, e: React.SyntheticEvent<HTMLImageElement>) => {
-      const img = e.currentTarget
-      if (img.naturalHeight <= 0) return
-      const aspect = img.naturalWidth / img.naturalHeight
-      setPhotoAspects((prev) => (prev[photoId] ? prev : { ...prev, [photoId]: aspect }))
-    },
-    [],
-  )
-
   const loadPhotos = useCallback(async () => {
     setLoading(true)
     try {
@@ -92,37 +63,6 @@ export function PhotoGrid({
       setLoading(false)
     }
   }, [patientId, procedureRecordId])
-
-  const handleSaveCrop = useCallback(
-    async (photo: PhotoAssetWithUrl, box: CropBox | null) => {
-      // Prefer the persisted aspect on the photo (set the first time the user
-      // saved a crop) over a fresh measurement, since the measurement only
-      // runs after the image has loaded inside the grid.
-      const sourceAspect =
-        photo.cropAspect ?? photoAspects[photo.id] ?? 1
-      try {
-        await updateCrop.mutateAsync({
-          photoId: photo.id,
-          cropBox: box,
-          cropAspect: box ? sourceAspect : null,
-        })
-        setCropOverrides((prev) => ({
-          ...prev,
-          [photo.id]: { cropBox: box, sourceAspect },
-        }))
-        setCropTarget(null)
-        toast.success(box ? 'Recorte salvo.' : 'Recorte removido.')
-        // The photos query isn't wired through React Query here, so the
-        // hook's invalidate is a no-op for this view — refetch by hand so
-        // subsequent reads see the persisted state and the override map can
-        // age out naturally.
-        await loadPhotos()
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Falha ao salvar recorte.')
-      }
-    },
-    [loadPhotos, photoAspects, updateCrop],
-  )
 
   useEffect(() => {
     loadPhotos()
@@ -220,16 +160,6 @@ export function PhotoGrid({
     const isB = comparisonMode && selectedB === photo.id
     const isSelected = isA || isB
 
-    // Effective crop = optimistic override ?? persisted ?? null.
-    const override = cropOverrides[photo.id]
-    const effectiveCropBox = override ? override.cropBox : photo.cropBox
-    const effectiveAspect =
-      override?.sourceAspect ?? photo.cropAspect ?? photoAspects[photo.id]
-    const cropStyle =
-      effectiveCropBox && effectiveAspect
-        ? applyCropCover(effectiveCropBox, effectiveAspect)
-        : null
-
     return (
       <div
         key={photo.id}
@@ -241,33 +171,14 @@ export function PhotoGrid({
         )}
         onClick={comparisonMode && onPhotoSelect ? () => onPhotoSelect(photo) : undefined}
       >
-        <div className="relative aspect-[3/4] overflow-hidden">
+        <div className="relative aspect-[3/4]">
           {photo.signedUrl ? (
-            cropStyle ? (
-              // Object-cover variant: the wrapper is absolutely positioned
-              // and sized to at LEAST the card's dimensions so the crop
-              // fills the card uniformly (overflow clipped). Do not set
-              // h-full w-full here — that would override the wrapper's
-              // aspect-ratio rule.
-              <div className="overflow-hidden" style={cropStyle.wrapperStyle}>
-                <img
-                  src={photo.signedUrl}
-                  alt={photo.originalFilename ?? 'Foto'}
-                  className="block"
-                  style={cropStyle.imageStyle}
-                  loading="lazy"
-                  onLoad={(e) => handleImageLoaded(photo.id, e)}
-                />
-              </div>
-            ) : (
-              <img
-                src={photo.signedUrl}
-                alt={photo.originalFilename ?? 'Foto'}
-                className="h-full w-full object-cover"
-                loading="lazy"
-                onLoad={(e) => handleImageLoaded(photo.id, e)}
-              />
-            )
+            <img
+              src={photo.signedUrl}
+              alt={photo.originalFilename ?? 'Foto'}
+              className="h-full w-full object-cover"
+              loading="lazy"
+            />
           ) : (
             <div className="flex h-full items-center justify-center text-mid/60 text-xs">
               Erro ao carregar
@@ -308,21 +219,6 @@ export function PhotoGrid({
                   } />
                   <TooltipContent side="top"><p>Ampliar</p></TooltipContent>
                 </Tooltip>
-                {photo.signedUrl && (
-                  <Tooltip>
-                    <TooltipTrigger render={
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="size-9 text-mid hover:text-charcoal"
-                        onClick={() => setCropTarget(photo)}
-                      >
-                        <CropIcon className="size-4" />
-                      </Button>
-                    } />
-                    <TooltipContent side="top"><p>Recortar</p></TooltipContent>
-                  </Tooltip>
-                )}
                 {onAnnotate && (
                   <Tooltip>
                     <TooltipTrigger render={
@@ -491,28 +387,6 @@ export function PhotoGrid({
           )}
         </DialogContent>
       </Dialog>
-
-      {/* Crop dialog — opens when "Recortar" is clicked on a card. */}
-      {cropTarget && cropTarget.signedUrl && (
-        <ImageCropperDialog
-          open={true}
-          onOpenChange={(o) => {
-            if (!o) setCropTarget(null)
-          }}
-          src={cropTarget.signedUrl}
-          currentCrop={
-            cropOverrides[cropTarget.id]?.cropBox ?? cropTarget.cropBox ?? null
-          }
-          sourceAspect={
-            cropOverrides[cropTarget.id]?.sourceAspect ??
-            cropTarget.cropAspect ??
-            photoAspects[cropTarget.id] ??
-            1
-          }
-          onSave={(box) => handleSaveCrop(cropTarget, box)}
-          onCancel={() => setCropTarget(null)}
-        />
-      )}
 
       {/* Delete confirmation dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>

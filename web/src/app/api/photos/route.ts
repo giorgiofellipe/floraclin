@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { and, eq } from 'drizzle-orm'
 import { requireRole } from '@/lib/auth'
 import { getStoragePath, uploadFile } from '@/lib/storage'
 import { createAuditLog } from '@/lib/audit'
@@ -8,12 +7,9 @@ import {
   createPhotoAsset,
   getComparisonUrls as getComparisonUrlsQuery,
 } from '@/db/queries/photos'
-import { db } from '@/db/client'
-import { photoAssets } from '@/db/schema'
 import { deleteFile } from '@/lib/storage'
 import {
   uploadPhotoSchema,
-  cropBoxSchema,
   ACCEPTED_IMAGE_TYPES,
   isDngFile,
 } from '@/validations/photo'
@@ -64,32 +60,6 @@ export async function POST(request: Request) {
 
     const { patientId, procedureRecordId, timelineStage, notes } = parsed.data
 
-    // Optional crop fields — front end sends cropBox and cropAspect together
-    // (it has the loaded image dimensions, so the server does not need sharp).
-    let cropBox: import('@/validations/photo').CropBox | undefined
-    let cropAspect: number | undefined
-    const rawCropBox = formData.get('cropBox')
-    const rawCropAspect = formData.get('cropAspect')
-    if (rawCropBox) {
-      try {
-        const parsedCrop = cropBoxSchema.safeParse(JSON.parse(String(rawCropBox)))
-        if (!parsedCrop.success) {
-          return NextResponse.json({ success: false, error: 'cropBox inválido' }, { status: 400 })
-        }
-        cropBox = parsedCrop.data
-      } catch {
-        return NextResponse.json({ success: false, error: 'cropBox inválido' }, { status: 400 })
-      }
-      if (rawCropAspect == null) {
-        return NextResponse.json({ success: false, error: 'cropAspect obrigatório quando cropBox é enviado' }, { status: 400 })
-      }
-      const aspectNum = Number(rawCropAspect)
-      if (!Number.isFinite(aspectNum) || aspectNum <= 0) {
-        return NextResponse.json({ success: false, error: 'cropAspect inválido' }, { status: 400 })
-      }
-      cropAspect = aspectNum
-    }
-
     // Generate unique filename and storage path
     const fileId = crypto.randomUUID()
     const extension = file.type === 'image/webp' ? 'webp' : file.type === 'image/png' ? 'png' : 'jpg'
@@ -117,22 +87,6 @@ export async function POST(request: Request) {
         uploadedBy: context.userId,
         notes,
       })
-
-      // Persist the optional crop fields, if provided. Done as a follow-up update
-      // so we keep the existing createPhotoAsset signature untouched.
-      if (cropBox && cropAspect != null) {
-        const [updated] = await db
-          .update(photoAssets)
-          .set({ cropBox, cropAspect: cropAspect.toString() })
-          .where(
-            and(
-              eq(photoAssets.tenantId, context.tenantId),
-              eq(photoAssets.id, photoAsset.id),
-            ),
-          )
-          .returning()
-        if (updated) photoAsset = updated
-      }
     } catch (dbError) {
       try {
         await deleteFile(storagePath)

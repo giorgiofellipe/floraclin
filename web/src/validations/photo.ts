@@ -94,13 +94,3 @@ export const saveAnnotationSchema = z.object({
 })
 
 export type SaveAnnotationData = z.infer<typeof saveAnnotationSchema>
-
-// ─── Crop box schema ────────────────────────────────────────────────
-
-export const cropBoxSchema = z.object({
-  x: z.number().min(0).max(1),
-  y: z.number().min(0).max(1),
-  width: z.number().min(0.05).max(1),
-  height: z.number().min(0.05).max(1),
-})
-export type CropBox = z.infer<typeof cropBoxSchema>

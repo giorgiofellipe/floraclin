@@ -1,14 +1,7 @@
-import * as React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PhotoComparisonDialog } from '../photo-comparison'
 import type { PhotoAssetWithUrl } from '@/db/queries/photos'
-
-function renderWithQueryClient(ui: React.ReactElement) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
-}
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
@@ -31,8 +24,6 @@ const mockPhotoA: PhotoAssetWithUrl = {
   procedureTypeName: 'Toxina Botulínica',
   procedurePerformedAt: new Date('2026-03-15'),
   hasAnnotation: false,
-  cropBox: null,
-  cropAspect: null,
 }
 
 const mockPhotoB: PhotoAssetWithUrl = {
@@ -50,8 +41,6 @@ const mockPhotoB: PhotoAssetWithUrl = {
   procedureTypeName: 'Toxina Botulínica',
   procedurePerformedAt: new Date('2026-03-15'),
   hasAnnotation: false,
-  cropBox: null,
-  cropAspect: null,
 }
 
 const mockComparisonUrlsResponse = {
@@ -78,7 +67,7 @@ afterEach(() => {
 
 describe('PhotoComparisonDialog', () => {
   it('renders mode buttons when open with both photos', async () => {
-    renderWithQueryClient(
+    render(
       <PhotoComparisonDialog
         open={true}
         onOpenChange={vi.fn()}
@@ -94,7 +83,7 @@ describe('PhotoComparisonDialog', () => {
   })
 
   it('does not render when closed', () => {
-    renderWithQueryClient(
+    render(
       <PhotoComparisonDialog
         open={false}
         onOpenChange={vi.fn()}
