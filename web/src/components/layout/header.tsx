@@ -56,6 +56,8 @@ function getPageTitle(pathname: string): { title: string; subtitle?: string } {
 interface HeaderProps {
   userName: string
   userEmail: string
+  userId?: string
+  userRole?: string
   clinicName?: string
   tenants?: TenantOption[]
   activeTenantId?: string
@@ -64,7 +66,7 @@ interface HeaderProps {
   whatsappEnabled?: boolean
 }
 
-export function Header({ userName, userEmail, clinicName, tenants, activeTenantId, isPlatformAdmin, impersonatingTenantName, whatsappEnabled }: HeaderProps) {
+export function Header({ userName, userEmail, userId, userRole, clinicName, tenants, activeTenantId, isPlatformAdmin, impersonatingTenantName, whatsappEnabled }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const pathname = usePathname()
   const { title, subtitle } = getPageTitle(pathname)
@@ -130,7 +132,7 @@ export function Header({ userName, userEmail, clinicName, tenants, activeTenantI
             {/* Amber notification dot */}
             <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-amber" />
           </Button>
-          <UserMenu userName={userName} userEmail={userEmail} />
+          <UserMenu userName={userName} userEmail={userEmail} userId={userId} userRole={userRole} />
         </div>
       </header>
 

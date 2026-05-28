@@ -171,6 +171,8 @@ export const appointments = floraclinSchema.table('appointments', {
   bookingPhone: varchar('booking_phone', { length: 20 }),
   bookingEmail: varchar('booking_email', { length: 255 }),
   notes: text('notes'),
+  googleEventId: varchar('google_event_id', { length: 255 }),
+  clinicGoogleEventId: varchar('clinic_google_event_id', { length: 255 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -741,6 +743,48 @@ export const whatsappQueuedMessages = floraclinSchema.table('whatsapp_queued_mes
   index('idx_whatsapp_queued_messages_tenant_created').on(table.tenantId, table.createdAt),
 ])
 
+// ─── CALENDAR SYNC ──────────────────────────────────────────────────
+
+export const calendarConnections = floraclinSchema.table('calendar_connections', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  userId: uuid('user_id').references(() => users.id),
+  provider: varchar('provider', { length: 20 }).notNull().default('google'),
+  accessToken: text('access_token').notNull(),
+  refreshToken: text('refresh_token').notNull(),
+  tokenExpiresAt: timestamp('token_expires_at', { withTimezone: true }).notNull(),
+  calendarId: varchar('calendar_id', { length: 255 }).notNull().default('primary'),
+  syncToken: text('sync_token'),
+  channelId: varchar('channel_id', { length: 255 }),
+  channelResourceId: varchar('channel_resource_id', { length: 255 }),
+  channelExpiry: timestamp('channel_expiry', { withTimezone: true }),
+  feedToken: varchar('feed_token', { length: 64 }).notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_calendar_connections_tenant').on(table.tenantId),
+  index('idx_calendar_connections_channel').on(table.channelId),
+])
+
+export const calendarBlocks = floraclinSchema.table('calendar_blocks', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  practitionerId: uuid('practitioner_id').notNull().references(() => users.id),
+  connectionId: uuid('connection_id').notNull().references(() => calendarConnections.id, { onDelete: 'cascade' }),
+  googleEventId: varchar('google_event_id', { length: 255 }).notNull(),
+  title: varchar('title', { length: 255 }),
+  date: date('date').notNull(),
+  startTime: time('start_time'),
+  endTime: time('end_time'),
+  allDay: boolean('all_day').notNull().default(false),
+  status: varchar('status', { length: 20 }).notNull().default('confirmed'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_calendar_blocks_practitioner_date').on(table.tenantId, table.practitionerId, table.date),
+])
+
 // ─── SSE EVENTS ─────────────────────────────────────────────────────
 
 export const sseEvents = floraclinSchema.table('sse_events', {
@@ -1056,4 +1100,16 @@ export const evaluationResponsesRelations = relations(evaluationResponses, ({ on
 
 export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
   user: one(users, { fields: [auditLogs.userId], references: [users.id] }),
+}))
+
+export const calendarConnectionsRelations = relations(calendarConnections, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [calendarConnections.tenantId], references: [tenants.id] }),
+  user: one(users, { fields: [calendarConnections.userId], references: [users.id] }),
+  calendarBlocks: many(calendarBlocks),
+}))
+
+export const calendarBlocksRelations = relations(calendarBlocks, ({ one }) => ({
+  tenant: one(tenants, { fields: [calendarBlocks.tenantId], references: [tenants.id] }),
+  practitioner: one(users, { fields: [calendarBlocks.practitionerId], references: [users.id] }),
+  connection: one(calendarConnections, { fields: [calendarBlocks.connectionId], references: [calendarConnections.id] }),
 }))

@@ -38,9 +38,11 @@ import {
   DialogClose,
 } from '@/components/ui/dialog'
 import { useUpdateAppointmentStatus } from '@/hooks/mutations/use-appointment-mutations'
+import { useDeleteCalendarBlock } from '@/hooks/queries/use-calendar'
 import { toast } from 'sonner'
 import { useAppointments } from '@/hooks/queries/use-appointments'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
+import type { CalendarBlockRow } from '@/db/queries/calendar'
 
 type ViewType = 'day' | 'week' | 'month'
 
@@ -62,6 +64,7 @@ interface CalendarViewProps {
   practitioners: Practitioner[]
   procedureTypes: ProcedureType[]
   initialAppointments: AppointmentWithDetails[]
+  calendarBlocks?: CalendarBlockRow[]
 }
 
 function getDateRange(date: Date, view: ViewType) {
@@ -100,9 +103,11 @@ export function CalendarView({
   practitioners,
   procedureTypes,
   initialAppointments,
+  calendarBlocks = [],
 }: CalendarViewProps) {
   const router = useRouter()
   const cancelAppointment = useUpdateAppointmentStatus()
+  const deleteBlock = useDeleteCalendarBlock()
 
   const [currentDate, setCurrentDate] = React.useState(new Date(initialDate + 'T12:00:00'))
   const [view, setView] = React.useState<ViewType>(initialView)
@@ -121,6 +126,14 @@ export function CalendarView({
     y: number
   } | null>(null)
   const contextMenuRef = React.useRef<HTMLDivElement>(null)
+
+  // Block context menu state
+  const [blockMenu, setBlockMenu] = React.useState<{
+    block: CalendarBlockRow
+    x: number
+    y: number
+  } | null>(null)
+  const blockMenuRef = React.useRef<HTMLDivElement>(null)
 
   const practitionerFilterItems = React.useMemo(
     () => ({ all: 'Todos', ...Object.fromEntries(practitioners.map((p) => [p.id, p.fullName])) }),
@@ -212,6 +225,26 @@ export function CalendarView({
     }
   }, [])
 
+  const handleBlockClick = React.useCallback((block: CalendarBlockRow, event: React.MouseEvent) => {
+    setContextMenu(null)
+    setBlockMenu({
+      block,
+      x: event.clientX,
+      y: event.clientY,
+    })
+  }, [])
+
+  const handleBlockDelete = React.useCallback(async () => {
+    if (!blockMenu) return
+    try {
+      await deleteBlock.mutateAsync(blockMenu.block.id)
+      toast.success('Bloqueio removido')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao remover')
+    }
+    setBlockMenu(null)
+  }, [blockMenu, deleteBlock])
+
   const handleContextEdit = React.useCallback(() => {
     if (!contextMenu) return
     setEditingAppointment(contextMenu.appointment)
@@ -256,17 +289,20 @@ export function CalendarView({
     setAppointmentToCancel(null)
   }, [appointmentToCancel, cancelAppointment])
 
-  // Dismiss context menu on outside click
+  // Dismiss context menus on outside click
   React.useEffect(() => {
-    if (!contextMenu) return
+    if (!contextMenu && !blockMenu) return
     const dismiss = (e: MouseEvent) => {
-      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+      if (contextMenu && contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
         setContextMenu(null)
+      }
+      if (blockMenu && blockMenuRef.current && !blockMenuRef.current.contains(e.target as Node)) {
+        setBlockMenu(null)
       }
     }
     document.addEventListener('mousedown', dismiss)
     return () => document.removeEventListener('mousedown', dismiss)
-  }, [contextMenu])
+  }, [contextMenu, blockMenu])
 
   const handleDayClick = (dateStr: string) => {
     const newDate = new Date(dateStr + 'T12:00:00')
@@ -379,8 +415,10 @@ export function CalendarView({
           <DayView
             date={currentDate}
             appointments={appointments}
+            calendarBlocks={calendarBlocks}
             onSlotClick={handleSlotClick}
             onAppointmentClick={handleAppointmentClick}
+            onBlockClick={handleBlockClick}
           />
         )}
 
@@ -388,8 +426,10 @@ export function CalendarView({
           <WeekView
             date={currentDate}
             appointments={appointments}
+            calendarBlocks={calendarBlocks}
             onSlotClick={handleSlotClick}
             onAppointmentClick={handleAppointmentClick}
+            onBlockClick={handleBlockClick}
           />
         )}
 
@@ -451,6 +491,38 @@ export function CalendarView({
           >
             <CalendarPlusIcon className="h-3.5 w-3.5" />
             Novo agendamento neste horário
+          </button>
+        </div>
+      )}
+
+      {/* Block context menu */}
+      {blockMenu && (
+        <div
+          ref={blockMenuRef}
+          className="fixed z-50 min-w-[200px] rounded-lg border border-[#E8ECEF] bg-white py-1 shadow-lg"
+          style={{
+            left: Math.min(blockMenu.x, window.innerWidth - 220),
+            top: Math.min(blockMenu.y, window.innerHeight - 100),
+          }}
+        >
+          <div className="px-3 py-1.5 border-b border-[#E8ECEF]">
+            <p className="text-xs font-medium text-[#2A2A2A] truncate">
+              Indisponível
+            </p>
+            <p className="text-[11px] text-mid">
+              {blockMenu.block.allDay
+                ? 'Dia inteiro'
+                : `${blockMenu.block.startTime?.slice(0, 5)} - ${blockMenu.block.endTime?.slice(0, 5)}`}
+              {' · '}{blockMenu.block.practitionerName}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+            onClick={handleBlockDelete}
+          >
+            <XCircleIcon className="h-3.5 w-3.5" />
+            Remover bloqueio
           </button>
         </div>
       )}

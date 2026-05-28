@@ -1,0 +1,100 @@
+import { NextResponse } from 'next/server'
+import { getAuthContext } from '@/lib/auth'
+import {
+  updateConnection,
+  deleteConnection,
+  deleteBlocksByConnection,
+  clearAppointmentGoogleEventIds,
+  getConnectionByUserId,
+  listConnections,
+} from '@/db/queries/calendar'
+import { stopWebhookChannel, revokeToken } from '@/lib/google-calendar'
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const ctx = await getAuthContext()
+    const { id } = await params
+
+    if (!['owner', 'practitioner'].includes(ctx.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    if (ctx.role === 'practitioner') {
+      const own = await getConnectionByUserId(ctx.tenantId, ctx.userId)
+      if (!own || own.id !== id) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    }
+
+    const body = await request.json()
+    const { enabled } = body
+
+    if (typeof enabled !== 'boolean') {
+      return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
+    }
+
+    const result = await updateConnection(id, ctx.tenantId, { enabled })
+    if (!result) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+
+    const { accessToken: _a, refreshToken: _r, syncToken: _s, ...safe } = result
+    return NextResponse.json({ success: true, data: safe })
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    console.error('API error:', error)
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+  }
+}
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const ctx = await getAuthContext()
+    const { id } = await params
+
+    if (!['owner', 'practitioner'].includes(ctx.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const connection = ctx.role === 'practitioner'
+      ? await getConnectionByUserId(ctx.tenantId, ctx.userId)
+      : (await listConnections(ctx.tenantId)).find(c => c.id === id) ?? null
+
+    if (!connection || connection.id !== id) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+
+    if (connection.channelId && connection.channelResourceId) {
+      await stopWebhookChannel(connection.id, connection.channelId, connection.channelResourceId).catch((err) => {
+        console.error('Failed to stop webhook channel:', err)
+      })
+    }
+
+    await deleteBlocksByConnection(connection.id)
+    await clearAppointmentGoogleEventIds(ctx.tenantId, connection.userId)
+
+    const deleted = await deleteConnection(id, ctx.tenantId)
+
+    if (deleted) {
+      revokeToken(deleted.accessToken).catch((err) => {
+        console.error('Failed to revoke token:', err)
+      })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    console.error('API error:', error)
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+  }
+}

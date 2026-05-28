@@ -8,10 +8,12 @@ import { ProductList } from '@/components/settings/product-list'
 import { TeamList } from '@/components/settings/team-list'
 import { ConsentTemplateList } from '@/components/settings/consent-template-list'
 import { BookingSettings } from '@/components/settings/booking-settings'
+import { CalendarConnectionCard } from '@/components/settings/calendar-connection-card'
 import { AuditLogViewer } from '@/components/audit/audit-log-viewer'
 import { FinancialSettingsForm } from '@/components/financial/settings/financial-settings-form'
 import { ExpenseCategoriesManager } from '@/components/financial/settings/expense-categories-manager'
 import { WhatsAppSettingsForm } from '@/components/settings/whatsapp-settings-form'
+import { useCalendarConnections } from '@/hooks/queries/use-calendar'
 import { cn } from '@/lib/utils'
 import {
   BuildingIcon,
@@ -135,6 +137,8 @@ export function SettingsPageClient({
   const settings = (tenant.settings || {}) as Record<string, unknown>
   const publicBookingEnabled = (settings.online_booking_enabled as boolean) ?? false
   const [activeTab, setActiveTab] = useState<TabKey>('clinica')
+  const { data: calendarConnections } = useCalendarConnections()
+  const clinicConnection = calendarConnections?.find((c: { userId: string | null }) => c.userId === null) ?? null
 
   const activeTabConfig = TABS.find((t) => t.key === activeTab)!
 
@@ -280,10 +284,28 @@ export function SettingsPageClient({
               )}
 
               {activeTab === 'agendamento' && (
-                <BookingSettings
-                  slug={tenant.slug}
-                  publicBookingEnabled={publicBookingEnabled}
-                />
+                <div className="space-y-8">
+                  <BookingSettings
+                    slug={tenant.slug}
+                    publicBookingEnabled={publicBookingEnabled}
+                  />
+
+                  <div className="h-px bg-[#E8ECEF]" />
+
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-sm font-medium text-charcoal">Calendário da clínica</h3>
+                      <p className="text-xs text-mid mt-1">
+                        Todos os agendamentos de todos os profissionais serão sincronizados para este calendário.
+                      </p>
+                    </div>
+                    <CalendarConnectionCard
+                      type="clinic"
+                      connection={clinicConnection}
+                      helperText="Conecte o Google Calendar da clínica para sincronizar todos os agendamentos."
+                    />
+                  </div>
+                </div>
               )}
 
               {activeTab === 'financeiro' && (

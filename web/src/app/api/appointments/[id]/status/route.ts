@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
+import { syncAppointmentToGoogle } from '@/lib/google-calendar-sync'
 import { updateAppointmentStatus } from '@/db/queries/appointments'
 import { updateStatusSchema } from '@/validations/appointment'
 import type { AppointmentStatus } from '@/types'
@@ -42,6 +43,10 @@ export async function PUT(
       entityType: 'appointment',
       entityId: id,
       changes: { status: { old: '', new: body.status } },
+    })
+
+    syncAppointmentToGoogle(ctx.tenantId, id).catch((err) => {
+      console.error('Google Calendar push sync failed:', err)
     })
 
     return NextResponse.json({ success: true, data: appointment })

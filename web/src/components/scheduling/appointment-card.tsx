@@ -40,11 +40,10 @@ function getPractitionerColor(practitionerId: string): string {
 interface AppointmentCardProps {
   appointment: AppointmentWithDetails
   compact?: boolean
-  showPractitioner?: boolean
   onClick?: (appointment: AppointmentWithDetails, event?: React.MouseEvent) => void
 }
 
-export function AppointmentCard({ appointment, compact = false, showPractitioner = false, onClick }: AppointmentCardProps) {
+export function AppointmentCard({ appointment, compact = false, onClick }: AppointmentCardProps) {
   const statusColor = APPOINTMENT_STATUS_COLORS[appointment.status] ?? 'bg-[#F0F7F1] text-sage'
   const displayName = appointment.patientName ?? appointment.bookingName ?? 'Sem paciente'
   const displayText = appointment.procedureTypeName
@@ -68,6 +67,7 @@ export function AppointmentCard({ appointment, compact = false, showPractitioner
       >
         <span className="font-semibold">{appointment.startTime.slice(0, 5)}</span>{' '}
         <span className="truncate">{displayText}</span>
+        <span className="block truncate text-[9px] text-[#7A7A7A]">{appointment.practitionerName}</span>
       </button>
     )
   }
@@ -86,13 +86,11 @@ export function AppointmentCard({ appointment, compact = false, showPractitioner
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13px] font-medium text-[#2A2A2A]">{displayName}</p>
           <p className="text-[11px] text-[#7A7A7A]">{timeStr}</p>
-          {showPractitioner && (
-            <p className="truncate text-[11px] font-medium text-[#4A6B52]">
-              {appointment.practitionerName}
-            </p>
-          )}
-          {!showPractitioner && appointment.procedureTypeName && (
-            <p className="mt-0.5 truncate text-[11px] text-[#7A7A7A]">
+          <p className="truncate text-[11px] font-medium text-[#4A6B52]">
+            {appointment.practitionerName}
+          </p>
+          {appointment.procedureTypeName && (
+            <p className="truncate text-[11px] text-[#7A7A7A]">
               {appointment.procedureTypeName}
             </p>
           )}
