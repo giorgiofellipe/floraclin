@@ -6,10 +6,10 @@ describe('applyCrop', () => {
     expect(applyCrop(null, 1)).toBeNull()
   })
 
-  it('uses padding-bottom to set wrapper height from width at the crop aspect', () => {
-    // cropAspect = (0.5 / 0.5) * 1.5 = 1.5 → padding-bottom = 100/1.5 ≈ 66.67%
+  it('shapes the wrapper via aspect-ratio at the crop aspect', () => {
+    // cropAspect = (0.5 / 0.5) * 1.5 = 1.5
     const style = applyCrop({ x: 0, y: 0, width: 0.5, height: 0.5 }, 1.5)
-    expect(style?.wrapperStyle.paddingBottom).toBe(`${100 / 1.5}%`)
+    expect(style?.wrapperStyle.aspectRatio).toBe('1.5')
   })
 
   it('caps max-width via maxHeight option so the wrapper never exceeds the viewport height', () => {
@@ -20,11 +20,13 @@ describe('applyCrop', () => {
       { maxHeight: '70vh' },
     )
     expect(style?.wrapperStyle.maxWidth).toBe('calc(70vh * 1.5)')
+    expect(style?.wrapperStyle.maxHeight).toBe('70vh')
   })
 
   it('leaves max-width at 100% when no maxHeight is requested', () => {
     const style = applyCrop({ x: 0, y: 0, width: 0.5, height: 0.5 }, 1)
     expect(style?.wrapperStyle.maxWidth).toBe('100%')
+    expect(style?.wrapperStyle.maxHeight).toBe('100%')
   })
 
   it('sets only width on the image (height auto so the natural aspect is preserved)', () => {

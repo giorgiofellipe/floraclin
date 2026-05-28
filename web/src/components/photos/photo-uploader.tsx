@@ -282,14 +282,8 @@ function FilePreviewImage({
   if (cropStyle) {
     return (
       <div className={`relative h-full w-full ${CROP_HOST_CLASS}`}>
-        <div className="relative overflow-hidden" style={cropStyle.wrapperStyle}>
-          <img
-            src={src}
-            alt={alt}
-            className="block"
-            style={cropStyle.imageStyle}
-            onLoad={onLoad}
-          />
+        <div style={cropStyle.wrapperStyle}>
+          <img src={src} alt={alt} style={cropStyle.imageStyle} onLoad={onLoad} />
         </div>
       </div>
     )

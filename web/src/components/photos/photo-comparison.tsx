@@ -263,13 +263,16 @@ export function PhotoComparisonDialog({
                   ref={sliderContainerRef}
                   className={`relative max-h-[70vh] cursor-col-resize select-none rounded-lg ${CROP_HOST_CLASS}`}
                 >
-                  {/* Right side: photo B. */}
+                  {/* Right side: photo B. The wrapper relies entirely on
+                      its inline wrapperStyle for sizing (width: 100% from
+                      applyCrop, capped by max-width). Adding `w-full` or
+                      `overflow-hidden` here was redundant and could conflict
+                      with the wrapperStyle's own positioning. */}
                   {styleB ? (
-                    <div className="relative w-full overflow-hidden" style={styleB.wrapperStyle}>
+                    <div style={styleB.wrapperStyle}>
                       <img
                         src={urlB}
                         alt="Foto B"
-                        className="block"
                         style={styleB.imageStyle}
                         draggable={false}
                         onLoad={photoB ? handleImageLoaded(photoB.id) : undefined}
@@ -284,23 +287,23 @@ export function PhotoComparisonDialog({
                       onLoad={photoB ? handleImageLoaded(photoB.id) : undefined}
                     />
                   )}
-                  {/* Left side: photo A clipped to slider position.
-                      Mirrors photo B's wrapper sizing (w-full + aspectRatio
-                      from styleA.containerStyle) so both render at the same
-                      dimensions and the slider compares matching regions.
-                      Setting h-full here would force the wrapper to fill the
-                      slider container, overriding aspectRatio and making the
-                      crop image render way over-zoomed. */}
+                  {/* Left side: photo A clipped to slider position. The
+                      overlay is a flex centerer so photo A's wrapper lands
+                      at the EXACT same centered position as photo B's
+                      wrapper inside the slot — without that, photo A's
+                      wrapper (now max-width-capped to keep height ≤ 70vh)
+                      would sit at the absolute parent's top-left while
+                      photo B sits in the slot's middle, and the slider
+                      would compare misaligned content. */}
                   <div
-                    className="absolute top-0 left-0 right-0 bottom-0"
+                    className={`absolute top-0 left-0 right-0 bottom-0 ${CROP_HOST_CLASS}`}
                     style={{ clipPath: `polygon(0 0, ${sliderPosition}% 0, ${sliderPosition}% 100%, 0 100%)` }}
                   >
                     {styleA ? (
-                      <div className="relative w-full overflow-hidden" style={styleA.wrapperStyle}>
+                      <div style={styleA.wrapperStyle}>
                         <img
                           src={urlA}
                           alt="Foto A"
-                          className="block"
                           style={styleA.imageStyle}
                           draggable={false}
                           onLoad={photoA ? handleImageLoaded(photoA.id) : undefined}
@@ -340,7 +343,7 @@ export function PhotoComparisonDialog({
                   <div className="space-y-2">
                     <div className="overflow-hidden rounded-lg">
                       {styleA ? (
-                        <div className="relative w-full overflow-hidden" style={styleA.wrapperStyle}>
+                        <div style={styleA.wrapperStyle}>
                           <img
                             src={urlA}
                             alt="Foto A"
@@ -363,7 +366,7 @@ export function PhotoComparisonDialog({
                   <div className="space-y-2">
                     <div className="overflow-hidden rounded-lg">
                       {styleB ? (
-                        <div className="relative w-full overflow-hidden" style={styleB.wrapperStyle}>
+                        <div style={styleB.wrapperStyle}>
                           <img
                             src={urlB}
                             alt="Foto B"
@@ -402,7 +405,7 @@ export function PhotoComparisonDialog({
                   </div>
                   <div className="relative overflow-hidden rounded-lg">
                     {styleA ? (
-                      <div className="relative w-full overflow-hidden" style={styleA.wrapperStyle}>
+                      <div style={styleA.wrapperStyle}>
                         <img
                           src={urlA}
                           alt="Foto A"
