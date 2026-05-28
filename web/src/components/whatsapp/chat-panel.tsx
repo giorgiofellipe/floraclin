@@ -25,6 +25,7 @@ import {
 export interface ChatPanelHandle {
   addMessage: (msg: Message) => void
   updateMessageStatus: (data: { messageId: string; status: string; metaMessageId?: string }) => void
+  removeMessages: (ids: string[]) => void
 }
 
 interface ChatPanelProps {
@@ -178,9 +179,15 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
       []
     )
 
-    useImperativeHandle(ref, () => ({ addMessage, updateMessageStatus }), [
+    const removeMessages = useCallback((ids: string[]) => {
+      const idSet = new Set(ids)
+      setMessages((prev) => prev.filter((m) => !idSet.has(m.id)))
+    }, [])
+
+    useImperativeHandle(ref, () => ({ addMessage, updateMessageStatus, removeMessages }), [
       addMessage,
       updateMessageStatus,
+      removeMessages,
     ])
 
     const handleSendText = async () => {

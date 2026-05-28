@@ -142,15 +142,9 @@ export default function WhatsAppPage() {
   const handleQueueDrained = useCallback((data: unknown) => {
     const payload = data as {
       conversationId: string
-      messages: Array<{ id: string; metaMessageId: string; deliveryStatus: string }>
+      queuedMessageIds: string[]
     }
-    for (const msg of payload.messages) {
-      chatPanelRef.current?.updateMessageStatus({
-        messageId: msg.id,
-        status: 'sent',
-        metaMessageId: msg.metaMessageId,
-      })
-    }
+    chatPanelRef.current?.removeMessages(payload.queuedMessageIds)
   }, [])
 
   const handleQueueExpired = useCallback((data: unknown) => {

@@ -342,18 +342,19 @@ async function drainQueuedMessages(
   const queued = await getQueuedMessages(tenantId, conversationId)
   if (queued.length === 0) return
 
-  const drainedMessages: Array<{ id: string; metaMessageId: string; deliveryStatus: string }> = []
+  const drainedQueueIds: string[] = []
 
   for (const qm of queued) {
     try {
       if (!qm.body) {
         await updateQueuedMessageStatus(tenantId, qm.id, 'expired')
+        drainedQueueIds.push(qm.id)
         continue
       }
 
       const result = await sendTextMessage(tenantId, phoneNumber, qm.body)
 
-      await createMessage(tenantId, conversationId, {
+      const sentMessage = await createMessage(tenantId, conversationId, {
         direction: 'outbound',
         metaMessageId: result.metaMessageId,
         body: qm.body,
@@ -361,21 +362,21 @@ async function drainQueuedMessages(
       })
 
       await updateQueuedMessageStatus(tenantId, qm.id, 'sent')
+      drainedQueueIds.push(qm.id)
 
-      drainedMessages.push({
-        id: qm.id,
-        metaMessageId: result.metaMessageId,
-        deliveryStatus: 'sent',
+      await pushSseEvent(tenantId, 'new_message', {
+        conversationId,
+        message: sentMessage,
       })
     } catch (err) {
       console.error(`Failed to drain queued message ${qm.id}:`, err)
     }
   }
 
-  if (drainedMessages.length > 0) {
+  if (drainedQueueIds.length > 0) {
     await pushSseEvent(tenantId, 'queue_drained', {
       conversationId,
-      messages: drainedMessages,
+      queuedMessageIds: drainedQueueIds,
     })
   }
 }

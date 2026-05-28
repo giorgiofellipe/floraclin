@@ -211,12 +211,17 @@ export async function POST(
           )
           resumeMetaMessageId = resumeResult.metaMessageId
 
-          await createMessage(ctx.tenantId, conversationId, {
+          const resumeMessage = await createMessage(ctx.tenantId, conversationId, {
             direction: 'outbound',
             metaMessageId: resumeMetaMessageId,
             body: resolveTemplateBody(resumeTemplate.components, { '1': firstName }),
             templateName: resumeTemplate.name,
             deliveryStatus: 'sent',
+          })
+
+          await pushSseEvent(ctx.tenantId, 'new_message', {
+            conversationId,
+            message: resumeMessage,
           })
         }
 

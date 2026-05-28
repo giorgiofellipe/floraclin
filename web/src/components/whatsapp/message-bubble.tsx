@@ -97,8 +97,8 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           </div>
         )}
 
-        <span className="float-right mt-1 ml-2 flex items-center gap-0.5 text-[#667781]">
-          <span className="text-[11px] leading-none">{formatTime(message.timestamp)}</span>
+        <span className="float-right mt-1.5 ml-2 flex items-end gap-0.5 text-[#667781]">
+          <span className="text-[11px] leading-tight">{formatTime(message.timestamp)}</span>
           {isOutbound && <StatusIcon status={message.deliveryStatus} />}
         </span>
       </div>
