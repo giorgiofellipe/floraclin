@@ -70,7 +70,10 @@ export function PrintDocument({ doc, tenant }: PrintDocumentProps) {
     : null
 
   return (
-    <div className="print-document mx-auto max-w-[820px] bg-white p-8 text-black">
+    <div
+      data-print-area
+      className="print-document mx-auto max-w-[820px] bg-white p-8 text-black"
+    >
       <ClinicHeader
         tenant={{
           name: tenantForHeader.name,

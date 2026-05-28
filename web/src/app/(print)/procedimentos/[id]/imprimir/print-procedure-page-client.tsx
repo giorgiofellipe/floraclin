@@ -52,7 +52,10 @@ export function PrintProcedurePageClient({
           </Button>
         </div>
 
-        <div className="print-document rounded-md bg-white p-8 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+        <div
+          data-print-area
+          className="print-document rounded-md bg-white p-8 shadow-[0_1px_4px_rgba(0,0,0,0.06)]"
+        >
           <ClinicHeader tenant={tenant} />
           <PrintProcedureContent
             procedure={procedure}
