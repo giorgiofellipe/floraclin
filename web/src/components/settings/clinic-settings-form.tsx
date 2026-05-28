@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card } from '@/components/ui/card'
 import { useUpdateTenant } from '@/hooks/mutations/use-tenant-mutations'
+import { ClinicLogoUploader } from './clinic-logo-uploader'
 import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
 import { toast } from 'sonner'
 import type { WorkingHours } from '@/validations/tenant'
@@ -33,6 +34,7 @@ interface ClinicSettingsFormProps {
     address?: Record<string, string> | null
     workingHours?: WorkingHours | null
     settings?: Record<string, unknown> | null
+    logoUrl?: string | null
   }
   /** When embedded in onboarding wizard, hides the save button and exposes data via onChange */
   embedded?: boolean
@@ -114,6 +116,18 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
+      {/* Logo — owner-only, lives outside the embedded onboarding wizard
+          (which doesn't have a tenantId yet to upload against) */}
+      {!embedded && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="uppercase tracking-wider text-xs font-medium text-mid">Logo</h3>
+            <div className="flex-1 h-px bg-blush/60" />
+          </div>
+          <ClinicLogoUploader initialLogoUrl={initialData.logoUrl ?? null} />
+        </div>
+      )}
+
       {/* Clinic Info */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 mb-1">

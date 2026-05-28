@@ -40,6 +40,7 @@ interface Tenant {
   address: unknown
   workingHours: unknown
   settings: unknown
+  logoUrl: string | null
 }
 
 interface ProcedureType {
@@ -263,6 +264,7 @@ export function SettingsPageClient({
                     address: tenant.address as Record<string, string> | null,
                     workingHours: tenant.workingHours as import('@/validations/tenant').WorkingHours | null,
                     settings: tenant.settings as Record<string, unknown> | null,
+                    logoUrl: (tenant.logoUrl as string | null) ?? null,
                   }}
                 />
               )}
