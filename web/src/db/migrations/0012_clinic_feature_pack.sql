@@ -98,69 +98,18 @@ CREATE TABLE "floraclin"."procedure_followups" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "floraclin"."prospect_activities" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"tenant_id" uuid NOT NULL,
-	"prospect_id" uuid NOT NULL,
-	"action" varchar(50) NOT NULL,
-	"details" jsonb,
-	"performed_by" uuid,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "floraclin"."prospect_procedure_types" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"tenant_id" uuid NOT NULL,
-	"prospect_id" uuid NOT NULL,
-	"procedure_type_id" uuid NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "floraclin"."whatsapp_automations" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"tenant_id" uuid NOT NULL,
-	"trigger" varchar(50) NOT NULL,
-	"enabled" boolean DEFAULT false NOT NULL,
-	"template_id" uuid,
-	"config" jsonb,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "floraclin"."whatsapp_queued_messages" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"tenant_id" uuid NOT NULL,
-	"conversation_id" uuid NOT NULL,
-	"body" text,
-	"media_type" varchar(20),
-	"media_url" text,
-	"status" varchar(20) DEFAULT 'queued' NOT NULL,
-	"resume_meta_message_id" varchar(255),
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"sent_at" timestamp with time zone,
-	"expired_at" timestamp with time zone
-);
---> statement-breakpoint
-DROP INDEX "floraclin"."uq_prospects_tenant_phone";--> statement-breakpoint
-ALTER TABLE "floraclin"."whatsapp_templates" ALTER COLUMN "meta_template_id" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "floraclin"."photo_assets" ADD COLUMN "crop_box" jsonb;--> statement-breakpoint
 ALTER TABLE "floraclin"."photo_assets" ADD COLUMN "crop_aspect" numeric(10, 4);--> statement-breakpoint
 ALTER TABLE "floraclin"."procedure_records" ADD COLUMN "patient_package_id" uuid;--> statement-breakpoint
 ALTER TABLE "floraclin"."procedure_records" ADD COLUMN "patient_package_line_id" uuid;--> statement-breakpoint
 ALTER TABLE "floraclin"."procedure_records" ADD COLUMN "followup_snoozed_until" date;--> statement-breakpoint
 ALTER TABLE "floraclin"."procedure_records" ADD COLUMN "last_contacted_at" timestamp with time zone;--> statement-breakpoint
-ALTER TABLE "floraclin"."prospects" ADD COLUMN "value" numeric(10, 2);--> statement-breakpoint
 ALTER TABLE "floraclin"."users" ADD COLUMN "signature_data" text;--> statement-breakpoint
 ALTER TABLE "floraclin"."users" ADD COLUMN "signature_updated_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "floraclin"."users" ADD COLUMN "professional_title" varchar(100);--> statement-breakpoint
 ALTER TABLE "floraclin"."users" ADD COLUMN "registry_type" varchar(10);--> statement-breakpoint
 ALTER TABLE "floraclin"."users" ADD COLUMN "registry_number" varchar(20);--> statement-breakpoint
 ALTER TABLE "floraclin"."users" ADD COLUMN "registry_state" varchar(2);--> statement-breakpoint
-ALTER TABLE "floraclin"."whatsapp_templates" ADD COLUMN "purpose_key" varchar(100);--> statement-breakpoint
-ALTER TABLE "floraclin"."whatsapp_templates" ADD COLUMN "rejected_reason" text;--> statement-breakpoint
-ALTER TABLE "floraclin"."whatsapp_templates" ADD COLUMN "blueprint_slug" varchar(100);--> statement-breakpoint
-ALTER TABLE "floraclin"."whatsapp_templates" ADD COLUMN "submitted_at" timestamp with time zone;--> statement-breakpoint
-ALTER TABLE "floraclin"."whatsapp_templates" ADD COLUMN "variable_mapping" jsonb;--> statement-breakpoint
 ALTER TABLE "floraclin"."clinical_document_templates" ADD CONSTRAINT "clinical_document_templates_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "floraclin"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "floraclin"."clinical_document_templates" ADD CONSTRAINT "clinical_document_templates_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "floraclin"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "floraclin"."clinical_documents" ADD CONSTRAINT "clinical_documents_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "floraclin"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -183,16 +132,6 @@ ALTER TABLE "floraclin"."patient_packages" ADD CONSTRAINT "patient_packages_sold
 ALTER TABLE "floraclin"."procedure_followups" ADD CONSTRAINT "procedure_followups_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "floraclin"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "floraclin"."procedure_followups" ADD CONSTRAINT "procedure_followups_procedure_record_id_procedure_records_id_fk" FOREIGN KEY ("procedure_record_id") REFERENCES "floraclin"."procedure_records"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "floraclin"."procedure_followups" ADD CONSTRAINT "procedure_followups_contacted_by_users_id_fk" FOREIGN KEY ("contacted_by") REFERENCES "floraclin"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "floraclin"."prospect_activities" ADD CONSTRAINT "prospect_activities_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "floraclin"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "floraclin"."prospect_activities" ADD CONSTRAINT "prospect_activities_prospect_id_prospects_id_fk" FOREIGN KEY ("prospect_id") REFERENCES "floraclin"."prospects"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "floraclin"."prospect_activities" ADD CONSTRAINT "prospect_activities_performed_by_users_id_fk" FOREIGN KEY ("performed_by") REFERENCES "floraclin"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "floraclin"."prospect_procedure_types" ADD CONSTRAINT "prospect_procedure_types_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "floraclin"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "floraclin"."prospect_procedure_types" ADD CONSTRAINT "prospect_procedure_types_prospect_id_prospects_id_fk" FOREIGN KEY ("prospect_id") REFERENCES "floraclin"."prospects"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "floraclin"."prospect_procedure_types" ADD CONSTRAINT "prospect_procedure_types_procedure_type_id_procedure_types_id_fk" FOREIGN KEY ("procedure_type_id") REFERENCES "floraclin"."procedure_types"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "floraclin"."whatsapp_automations" ADD CONSTRAINT "whatsapp_automations_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "floraclin"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "floraclin"."whatsapp_automations" ADD CONSTRAINT "whatsapp_automations_template_id_whatsapp_templates_id_fk" FOREIGN KEY ("template_id") REFERENCES "floraclin"."whatsapp_templates"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "floraclin"."whatsapp_queued_messages" ADD CONSTRAINT "whatsapp_queued_messages_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "floraclin"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "floraclin"."whatsapp_queued_messages" ADD CONSTRAINT "whatsapp_queued_messages_conversation_id_whatsapp_conversations_id_fk" FOREIGN KEY ("conversation_id") REFERENCES "floraclin"."whatsapp_conversations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "idx_clinical_document_templates_tenant_kind" ON "floraclin"."clinical_document_templates" USING btree ("tenant_id","kind");--> statement-breakpoint
 CREATE INDEX "idx_clinical_documents_tenant_patient_issued" ON "floraclin"."clinical_documents" USING btree ("tenant_id","patient_id","issued_at");--> statement-breakpoint
 CREATE INDEX "idx_package_template_lines_template" ON "floraclin"."package_template_lines" USING btree ("template_id");--> statement-breakpoint
@@ -203,19 +142,10 @@ CREATE INDEX "idx_patient_package_lines_package" ON "floraclin"."patient_package
 CREATE INDEX "idx_patient_packages_tenant_patient" ON "floraclin"."patient_packages" USING btree ("tenant_id","patient_id");--> statement-breakpoint
 CREATE INDEX "idx_patient_packages_status" ON "floraclin"."patient_packages" USING btree ("tenant_id","status");--> statement-breakpoint
 CREATE INDEX "idx_procedure_followups_record_contacted" ON "floraclin"."procedure_followups" USING btree ("procedure_record_id","contacted_at");--> statement-breakpoint
-CREATE INDEX "idx_prospect_activities_prospect" ON "floraclin"."prospect_activities" USING btree ("prospect_id","created_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "uq_prospect_procedure_type" ON "floraclin"."prospect_procedure_types" USING btree ("prospect_id","procedure_type_id");--> statement-breakpoint
-CREATE INDEX "idx_prospect_procedure_types_prospect" ON "floraclin"."prospect_procedure_types" USING btree ("prospect_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "uq_whatsapp_automations_tenant_trigger" ON "floraclin"."whatsapp_automations" USING btree ("tenant_id","trigger");--> statement-breakpoint
-CREATE INDEX "idx_whatsapp_queued_messages_conv_status" ON "floraclin"."whatsapp_queued_messages" USING btree ("conversation_id","status");--> statement-breakpoint
-CREATE INDEX "idx_whatsapp_queued_messages_tenant_created" ON "floraclin"."whatsapp_queued_messages" USING btree ("tenant_id","created_at");--> statement-breakpoint
 ALTER TABLE "floraclin"."procedure_records" ADD CONSTRAINT "procedure_records_patient_package_id_patient_packages_id_fk" FOREIGN KEY ("patient_package_id") REFERENCES "floraclin"."patient_packages"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "floraclin"."procedure_records" ADD CONSTRAINT "procedure_records_patient_package_line_id_patient_package_lines_id_fk" FOREIGN KEY ("patient_package_line_id") REFERENCES "floraclin"."patient_package_lines"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "idx_procedure_records_package_line" ON "floraclin"."procedure_records" USING btree ("patient_package_line_id");--> statement-breakpoint
 CREATE INDEX "idx_procedure_records_followup_status" ON "floraclin"."procedure_records" USING btree ("tenant_id","status","followup_snoozed_until");--> statement-breakpoint
-CREATE UNIQUE INDEX "uq_whatsapp_templates_tenant_purpose" ON "floraclin"."whatsapp_templates" USING btree ("tenant_id","purpose_key") WHERE purpose_key IS NOT NULL;--> statement-breakpoint
-CREATE UNIQUE INDEX "uq_prospects_tenant_phone" ON "floraclin"."prospects" USING btree ("tenant_id","phone") WHERE stage NOT IN ('convertido', 'perdido');--> statement-breakpoint
-ALTER TABLE "floraclin"."prospects" DROP COLUMN "interested_procedure";--> statement-breakpoint
 
 -- CHECK constraints
 ALTER TABLE "floraclin"."patient_packages"
