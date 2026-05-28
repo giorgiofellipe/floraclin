@@ -144,6 +144,36 @@ export async function getPackageTemplate(
   return { ...template, lines }
 }
 
+/**
+ * Verify that every procedure_type id in the supplied list belongs to the
+ * given tenant (and is not soft-deleted). Throws when any id is missing.
+ *
+ * Used by createPackageTemplate / updatePackageTemplate to refuse
+ * cross-tenant FKs that bypass the per-table tenant scope on writes.
+ */
+async function assertProcedureTypesBelongToTenant(
+  tenantId: string,
+  procedureTypeIds: string[],
+): Promise<void> {
+  const unique = Array.from(new Set(procedureTypeIds))
+  if (unique.length === 0) return
+  const verified = await db
+    .select({ id: procedureTypes.id })
+    .from(procedureTypes)
+    .where(
+      and(
+        inArray(procedureTypes.id, unique),
+        eq(procedureTypes.tenantId, tenantId),
+        isNull(procedureTypes.deletedAt),
+      ),
+    )
+  if (verified.length !== unique.length) {
+    throw new Error(
+      'Procedimento inválido ou pertence a outro estabelecimento',
+    )
+  }
+}
+
 export async function createPackageTemplate(
   tenantId: string,
   data: {
@@ -154,6 +184,13 @@ export async function createPackageTemplate(
     lines: Array<{ procedureTypeId: string; sessionsCount: number; sortOrder?: number }>
   },
 ): Promise<PackageTemplate> {
+  // Cross-tenant FK validation up-front so a single bad line doesn't leave
+  // a half-written template behind if the unique constraint is missed.
+  await assertProcedureTypesBelongToTenant(
+    tenantId,
+    data.lines.map((l) => l.procedureTypeId),
+  )
+
   return db.transaction(async (tx) => {
     const [template] = await tx
       .insert(packageTemplates)
@@ -207,6 +244,14 @@ export async function updatePackageTemplate(
     lines?: Array<{ procedureTypeId: string; sessionsCount: number; sortOrder?: number }>
   },
 ): Promise<PackageTemplate | null> {
+  // Cross-tenant FK validation before opening the transaction, same as create.
+  if (data.lines !== undefined) {
+    await assertProcedureTypesBelongToTenant(
+      tenantId,
+      data.lines.map((l) => l.procedureTypeId),
+    )
+  }
+
   return db.transaction(async (tx) => {
     const updateData: Record<string, unknown> = { updatedAt: new Date() }
     if (data.name !== undefined) updateData.name = data.name

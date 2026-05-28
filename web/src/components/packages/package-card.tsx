@@ -68,6 +68,10 @@ export function PackageCard({ patientId, pkg }: PackageCardProps) {
 
   const [cancelOpen, setCancelOpen] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
+  // Confirm dialog state for starting a session on an expired package.
+  // We hold the target line id while the dialog is open so confirming
+  // re-uses the same start path as the regular "Iniciar próxima sessão".
+  const [expiredConfirmLineId, setExpiredConfirmLineId] = useState<string | null>(null)
 
   const isActive = pkg.status === 'active'
 
@@ -85,6 +89,13 @@ export function PackageCard({ patientId, pkg }: PackageCardProps) {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao iniciar sessão')
     }
+  }
+
+  async function handleConfirmExpiredStart() {
+    if (!expiredConfirmLineId) return
+    const lineId = expiredConfirmLineId
+    setExpiredConfirmLineId(null)
+    await handleStartSession(lineId, true)
   }
 
   async function handleCancel() {
@@ -214,7 +225,7 @@ export function PackageCard({ patientId, pkg }: PackageCardProps) {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => handleStartSession(line.id, true)}
+                    onClick={() => setExpiredConfirmLineId(line.id)}
                     disabled={startSession.isPending}
                   >
                     <AlertTriangleIcon data-icon="inline-start" />
@@ -242,6 +253,41 @@ export function PackageCard({ patientId, pkg }: PackageCardProps) {
           )
         })}
       </div>
+
+      {/* Expired-start confirm dialog. Mirrors the cancel dialog pattern so
+          we don't need a separate AlertDialog primitive. */}
+      <Dialog
+        open={expiredConfirmLineId !== null}
+        onOpenChange={(open) => {
+          if (!open) setExpiredConfirmLineId(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Pacote vencido</DialogTitle>
+            <DialogDescription>
+              {pkg.expiresAt
+                ? `Pacote vencido em ${formatBrDate(pkg.expiresAt)}. Iniciar mesmo assim?`
+                : 'Pacote vencido. Iniciar mesmo assim?'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setExpiredConfirmLineId(null)}
+              disabled={startSession.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleConfirmExpiredStart}
+              disabled={startSession.isPending}
+            >
+              {startSession.isPending ? 'Iniciando...' : 'Iniciar mesmo assim'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Cancel dialog */}
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>

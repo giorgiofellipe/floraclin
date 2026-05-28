@@ -1,10 +1,12 @@
 import { db } from '@/db/client'
 import {
+  packageTemplates,
   patientPackages,
   patientPackageLines,
   procedureRecords,
+  procedureTypes,
 } from '@/db/schema'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { addMonths } from 'date-fns'
 import { brToday, parseBrDate, toLocalYmd } from '@/lib/dates'
 import { withTransaction } from '@/lib/tenant'
@@ -46,8 +48,58 @@ export async function sellPackage(args: {
   soldBy: string
   input: SellPackageInput
 }): Promise<{ packageId: string; financialEntryId: string }> {
+  // 1. Cross-tenant FK validation — refuse to touch IDs that belong to other
+  //    tenants. Done up-front (outside the transaction) so we fail fast and
+  //    don't leak partial financial-entry side-effects on bad input.
+  const requestedTypeIds = Array.from(
+    new Set(args.input.lines.map((l) => l.procedureTypeId)),
+  )
+  if (requestedTypeIds.length === 0) {
+    throw new Error('Pacote precisa de pelo menos uma linha')
+  }
+
+  const verifiedTypes = await db
+    .select({ id: procedureTypes.id, name: procedureTypes.name })
+    .from(procedureTypes)
+    .where(
+      and(
+        inArray(procedureTypes.id, requestedTypeIds),
+        eq(procedureTypes.tenantId, args.tenantId),
+        isNull(procedureTypes.deletedAt),
+      ),
+    )
+
+  if (verifiedTypes.length !== requestedTypeIds.length) {
+    throw new Error(
+      'Procedimento inválido ou pertence a outro estabelecimento',
+    )
+  }
+
+  const typeNameById = new Map<string, string>(
+    verifiedTypes.map((t) => [t.id, t.name]),
+  )
+
+  if (args.input.templateId != null) {
+    const [template] = await db
+      .select({ id: packageTemplates.id })
+      .from(packageTemplates)
+      .where(
+        and(
+          eq(packageTemplates.id, args.input.templateId),
+          eq(packageTemplates.tenantId, args.tenantId),
+          isNull(packageTemplates.deletedAt),
+        ),
+      )
+      .limit(1)
+    if (!template) {
+      throw new Error(
+        'Modelo de pacote inválido ou pertence a outro estabelecimento',
+      )
+    }
+  }
+
   return withTransaction(async (tx) => {
-    // 1. Create financial entry + installments via the existing helper.
+    // 2. Create financial entry + installments via the existing helper.
     const entry = await createFinancialEntry(
       args.tenantId,
       args.soldBy,
@@ -60,10 +112,10 @@ export async function sellPackage(args: {
       tx,
     )
 
-    // 2. Compute expires_at (BR-anchored, no bare `new Date(ymd)`).
+    // 3. Compute expires_at (BR-anchored, no bare `new Date(ymd)`).
     const expiresAt = computePackageExpiresAt(args.input.validityMonths)
 
-    // 3. Create patient_packages row.
+    // 4. Create patient_packages row.
     const [pkg] = await tx
       .insert(patientPackages)
       .values({
@@ -80,13 +132,22 @@ export async function sellPackage(args: {
       })
       .returning()
 
-    // 4. Create patient_package_lines (one row per line, preserving order).
+    // 5. Create patient_package_lines (one row per line, preserving order).
+    //    procedureTypeName is derived server-side from the verified lookup —
+    //    we never trust the client-supplied name on this hot path.
     for (let i = 0; i < args.input.lines.length; i++) {
       const line = args.input.lines[i]
+      const verifiedName = typeNameById.get(line.procedureTypeId)
+      if (!verifiedName) {
+        // Defensive: should be unreachable because of the up-front check.
+        throw new Error(
+          'Procedimento inválido ou pertence a outro estabelecimento',
+        )
+      }
       await tx.insert(patientPackageLines).values({
         patientPackageId: pkg.id,
         procedureTypeId: line.procedureTypeId,
-        procedureTypeName: line.procedureTypeName,
+        procedureTypeName: verifiedName,
         sessionsTotal: line.sessionsTotal,
         sortOrder: i,
       })
@@ -99,12 +160,19 @@ export async function sellPackage(args: {
 /**
  * Start the next session for a package line. Race-safe:
  *
- *  1. Locks the package_line row with `SELECT … FOR UPDATE` so concurrent
- *     starts can't both see free capacity.
- *  2. Counts every non-cancelled procedure record on the line — drafts,
+ *  1. Locks the parent `patient_packages` row with `SELECT … FOR UPDATE`
+ *     FIRST so it can interlock with `cancelPackage` (which also locks the
+ *     package row first). Keeping the lock order consistent across both
+ *     functions avoids ABBA deadlocks.
+ *  2. Then locks the `patient_package_lines` row so concurrent starts on
+ *     the same line can't both see free capacity.
+ *  3. Counts every non-cancelled procedure record on the line — drafts,
  *     planned, approved, executed — as consumed. Starting a session
  *     "reserves" the slot; the slot only frees up if the procedure is later
  *     cancelled.
+ *
+ * Both lock queries scope by `tenant_id` to prevent cross-tenant lookups
+ * via a forged path param. A 0-row lock result is treated as "not found".
  *
  * The resulting `draft` procedure record enters the normal procedure
  * lifecycle (planning → approval → execution).
@@ -117,12 +185,46 @@ export async function startPackageSession(args: {
   allowExpiredOverride?: boolean
 }): Promise<{ procedureRecordId: string }> {
   return withTransaction(async (tx) => {
-    // 1. Lock the line row to serialize concurrent starts.
-    const lockResult = await tx.execute(sql`
-      SELECT id, patient_package_id, procedure_type_id, procedure_type_name, sessions_total
-      FROM floraclin.patient_package_lines
-      WHERE id = ${args.patientPackageLineId}
+    // 1. Lock the parent package row first (consistent order with cancelPackage).
+    //    Scoped by tenant — a row returned here is guaranteed to be ours.
+    const pkgLockResult = await tx.execute(sql`
+      SELECT id, tenant_id, patient_id, status, expires_at
+      FROM floraclin.patient_packages
+      WHERE id = ${args.patientPackageId}
+        AND tenant_id = ${args.tenantId}
       FOR UPDATE
+    `)
+    const pkgRows = (Array.isArray(pkgLockResult)
+      ? pkgLockResult
+      : (pkgLockResult as { rows?: Record<string, unknown>[] }).rows ?? pkgLockResult) as Record<string, unknown>[]
+    const pkgRow = pkgRows[0]
+    if (!pkgRow) throw new Error('Pacote não encontrado')
+
+    const pkg = {
+      id: String(pkgRow.id),
+      patientId: String(pkgRow.patient_id),
+      status: String(pkgRow.status),
+      expiresAt: pkgRow.expires_at == null ? null : String(pkgRow.expires_at),
+    }
+
+    if (pkg.status === 'cancelled') throw new Error('Pacote cancelado')
+    if (pkg.status === 'completed') throw new Error('Pacote já concluído')
+    if (pkg.status === 'expired' && !args.allowExpiredOverride) {
+      throw new Error('Pacote expirado')
+    }
+    if (pkg.expiresAt && pkg.expiresAt < brToday() && !args.allowExpiredOverride) {
+      throw new Error('Pacote expirado')
+    }
+
+    // 2. Now lock the line row. Scope by tenant via the parent package join
+    //    so a forged line_id from another tenant can never acquire the lock.
+    const lockResult = await tx.execute(sql`
+      SELECT ppl.id, ppl.patient_package_id, ppl.procedure_type_id, ppl.procedure_type_name, ppl.sessions_total
+      FROM floraclin.patient_package_lines ppl
+      INNER JOIN floraclin.patient_packages pp ON pp.id = ppl.patient_package_id
+      WHERE ppl.id = ${args.patientPackageLineId}
+        AND pp.tenant_id = ${args.tenantId}
+      FOR UPDATE OF ppl
     `)
     const rows = (Array.isArray(lockResult)
       ? lockResult
@@ -139,24 +241,6 @@ export async function startPackageSession(args: {
 
     if (line.patientPackageId !== args.patientPackageId) {
       throw new Error('Linha não pertence ao pacote informado')
-    }
-
-    // 2. Verify the parent package, tenant ownership, and status.
-    const [pkg] = await tx
-      .select()
-      .from(patientPackages)
-      .where(eq(patientPackages.id, line.patientPackageId))
-      .limit(1)
-    if (!pkg || pkg.tenantId !== args.tenantId) {
-      throw new Error('Pacote não encontrado')
-    }
-    if (pkg.status === 'cancelled') throw new Error('Pacote cancelado')
-    if (pkg.status === 'completed') throw new Error('Pacote já concluído')
-    if (pkg.status === 'expired' && !args.allowExpiredOverride) {
-      throw new Error('Pacote expirado')
-    }
-    if (pkg.expiresAt && pkg.expiresAt < brToday() && !args.allowExpiredOverride) {
-      throw new Error('Pacote expirado')
     }
 
     // 3. Count consumed slots: every non-cancelled record reserves a slot.
@@ -194,12 +278,16 @@ export async function startPackageSession(args: {
 
 /**
  * Cancel a patient package. Acquires `FOR UPDATE` on the package row so the
- * cancel can't race with a session-start (which locks the *line* row inside
- * the same transaction — we lock the package row here to interlock with
- * future status changes consistently).
+ * cancel can't race with a session-start. `startPackageSession` locks the
+ * same package row first (consistent lock order) and then the line row —
+ * cancel only needs the package row, so we never invert that order.
  *
- * Only `active` packages can be cancelled; cancelling a completed or already
- * cancelled package is a no-op (returns false).
+ * Lock scopes by `tenant_id` to refuse cross-tenant lookups. A 0-row lock
+ * result is reported as "Pacote não encontrado" (matches what the API layer
+ * would have returned anyway).
+ *
+ * Only `active` or `expired` packages can be cancelled; cancelling a
+ * completed or already-cancelled package is a no-op (returns false).
  */
 export async function cancelPackage(args: {
   tenantId: string
@@ -208,9 +296,10 @@ export async function cancelPackage(args: {
 }): Promise<boolean> {
   return withTransaction(async (tx) => {
     const lockResult = await tx.execute(sql`
-      SELECT id, tenant_id, status
+      SELECT id, status
       FROM floraclin.patient_packages
       WHERE id = ${args.patientPackageId}
+        AND tenant_id = ${args.tenantId}
       FOR UPDATE
     `)
     const rows = (Array.isArray(lockResult)
@@ -218,7 +307,6 @@ export async function cancelPackage(args: {
       : (lockResult as { rows?: Record<string, unknown>[] }).rows ?? lockResult) as Record<string, unknown>[]
     const row = rows[0]
     if (!row) throw new Error('Pacote não encontrado')
-    if (String(row.tenant_id) !== args.tenantId) throw new Error('Pacote não encontrado')
 
     const status = String(row.status)
     if (status !== 'active' && status !== 'expired') return false
