@@ -191,17 +191,20 @@ export function ImageCropper({
         <style jsx global>{`
           /* react-image-crop sizes itself from the image's intrinsic
              dimensions, so left alone the natural pixel size leaks out and
-             breaks our fixed-height slot. Cap the image to the slot's box
-             but leave ReactCrop's own layout (display, positioning) alone —
-             overriding those breaks the crop selection alignment. */
+             overflows the modal. 'max-height: 100%' doesn't work here
+             because .ReactCrop's wrapper has no concrete height (it sizes
+             to content), so 100% resolves against the image's own size —
+             a no-op constraint. Use viewport units to bypass the chain:
+             the cropper dialog is h-[92vh] and the slider/footer take
+             ~22vh, leaving ~70vh for the image. Anchoring at 70vh lets
+             the image scale down even on very tall photos. */
           .image-cropper-slot .ReactCrop {
             max-width: 100%;
-            max-height: 100%;
           }
           .image-cropper-slot .ReactCrop img {
             display: block;
             max-width: 100%;
-            max-height: 100%;
+            max-height: 70vh;
             width: auto;
             height: auto;
           }
