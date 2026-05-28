@@ -14,13 +14,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Loader2, AlertCircle } from 'lucide-react'
 import {
   useDocumentTemplates,
@@ -179,17 +179,16 @@ export function IssueDocumentDialog({
     : { name: '', phone: null, email: null, logoUrl: null, address: null }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="w-full max-w-[1000px] overflow-y-auto sm:max-w-[1000px]"
-      >
-        <SheetHeader>
-          <SheetTitle>Novo documento clínico</SheetTitle>
-          <SheetDescription>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex h-[90vh] w-[95vw] max-w-6xl flex-col gap-0 p-0 sm:max-w-6xl">
+        <DialogHeader className="border-b border-[#E8ECEF] px-6 py-4">
+          <DialogTitle>Novo documento clínico</DialogTitle>
+          <DialogDescription>
             Emitir receita ou atestado para {patient.fullName}.
-          </SheetDescription>
-        </SheetHeader>
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
 
         {profileLoading ? (
           <div className="flex h-64 items-center justify-center">
@@ -341,23 +340,25 @@ export function IssueDocumentDialog({
           </div>
         )}
 
+        </div>
+
         {profileReady && step === 'compose' && (
-          <SheetFooter className="flex-row justify-end gap-2 border-t border-[#E8ECEF] p-4">
+          <DialogFooter className="flex-row justify-end gap-2 border-t border-[#E8ECEF] p-4">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
             <Button onClick={handleIssue} disabled={issueMutation.isPending}>
               {issueMutation.isPending ? 'Emitindo...' : 'Emitir documento'}
             </Button>
-          </SheetFooter>
+          </DialogFooter>
         )}
 
         {step === 'delivery' && (
-          <SheetFooter className="flex-row justify-end gap-2 border-t border-[#E8ECEF] p-4">
+          <DialogFooter className="flex-row justify-end gap-2 border-t border-[#E8ECEF] p-4">
             <Button onClick={() => onOpenChange(false)}>Concluir</Button>
-          </SheetFooter>
+          </DialogFooter>
         )}
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   )
 }
