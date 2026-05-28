@@ -4,19 +4,19 @@ import { getTenant } from '@/db/queries/tenants'
 import { listProspects, getProspectStats, createProspect, logProspectActivity, getProspectProceduresBatch } from '@/db/queries/prospects'
 import { prospectFilterSchema, createProspectSchema } from '@/validations/prospect'
 import { db } from '@/db/client'
-import { tenantUsers, users, procedureTypes } from '@/db/schema'
-import { eq, and, isNull } from 'drizzle-orm'
+import { tenantUsers, users, procedureTypes, instagramConversations } from '@/db/schema'
+import { eq, and, isNull, inArray } from 'drizzle-orm'
 import type { Role } from '@/types'
 
 export async function GET(request: Request) {
   try {
     const ctx = await getAuthContext()
 
-    // Check WhatsApp is enabled and user's role is allowed
+    // Check WhatsApp or Instagram is enabled and user's role is allowed
     const tenant = await getTenant(ctx.tenantId)
     const settings = (tenant?.settings ?? {}) as Record<string, unknown>
-    if (!settings.whatsapp_enabled) {
-      return NextResponse.json({ error: 'WhatsApp não está habilitado' }, { status: 403 })
+    if (!settings.whatsapp_enabled && !settings.instagram_enabled) {
+      return NextResponse.json({ error: 'CRM requer WhatsApp ou Instagram habilitado' }, { status: 403 })
     }
     const allowedRoles = (settings.whatsapp_allowed_roles as string[] | undefined) ?? ['owner']
     if (!allowedRoles.includes(ctx.role as Role) && ctx.role !== 'owner') {
@@ -68,10 +68,34 @@ export async function GET(request: Request) {
         .orderBy(procedureTypes.name),
     ])
 
-    const proceduresMap = await getProspectProceduresBatch(prospects.map((p) => p.id))
+    const prospectIds = prospects.map((p) => p.id)
+    const [proceduresMap, igConversations] = await Promise.all([
+      getProspectProceduresBatch(prospectIds),
+      prospectIds.length === 0
+        ? Promise.resolve([] as { id: string; prospectId: string | null }[])
+        : db
+            .select({
+              id: instagramConversations.id,
+              prospectId: instagramConversations.prospectId,
+            })
+            .from(instagramConversations)
+            .where(
+              and(
+                eq(instagramConversations.tenantId, ctx.tenantId),
+                inArray(instagramConversations.prospectId, prospectIds),
+              ),
+            ),
+    ])
+
+    const igConversationMap = new Map<string, string>()
+    for (const row of igConversations) {
+      if (row.prospectId) igConversationMap.set(row.prospectId, row.id)
+    }
+
     const enriched = prospects.map((p) => ({
       ...p,
       interestedProcedures: proceduresMap[p.id] ?? [],
+      instagramConversationId: igConversationMap.get(p.id) ?? null,
     }))
 
     return NextResponse.json({ data: enriched, stats, members, procedures })
@@ -90,8 +114,8 @@ export async function POST(request: Request) {
 
     const tenant = await getTenant(ctx.tenantId)
     const settings = (tenant?.settings ?? {}) as Record<string, unknown>
-    if (!settings.whatsapp_enabled) {
-      return NextResponse.json({ error: 'WhatsApp não está habilitado' }, { status: 403 })
+    if (!settings.whatsapp_enabled && !settings.instagram_enabled) {
+      return NextResponse.json({ error: 'CRM requer WhatsApp ou Instagram habilitado' }, { status: 403 })
     }
     const allowedRoles = (settings.whatsapp_allowed_roles as string[] | undefined) ?? ['owner']
     if (!allowedRoles.includes(ctx.role as Role) && ctx.role !== 'owner') {

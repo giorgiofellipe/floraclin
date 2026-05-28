@@ -7,6 +7,9 @@ import {
   deletePatient,
 } from '@/db/queries/patients'
 import { updatePatientSchema } from '@/validations/patient'
+import { db } from '@/db/client'
+import { instagramConversations } from '@/db/schema'
+import { eq, and } from 'drizzle-orm'
 
 export async function GET(
   _request: Request,
@@ -19,7 +22,22 @@ export async function GET(
     if (!patient) {
       return NextResponse.json({ error: 'Paciente não encontrado' }, { status: 404 })
     }
-    return NextResponse.json(patient)
+
+    const [igConversation] = await db
+      .select({ id: instagramConversations.id })
+      .from(instagramConversations)
+      .where(
+        and(
+          eq(instagramConversations.tenantId, ctx.tenantId),
+          eq(instagramConversations.patientId, id),
+        ),
+      )
+      .limit(1)
+
+    return NextResponse.json({
+      ...patient,
+      instagramConversationId: igConversation?.id ?? null,
+    })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

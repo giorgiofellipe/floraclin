@@ -4,6 +4,7 @@ import { createAuditLog } from '@/lib/audit'
 import { getTenant, updateTenant, updateTenantSettings } from '@/db/queries/tenants'
 import { updateTenantSchema, bookingSettingsSchema } from '@/validations/tenant'
 import { whatsappSettingsSchema } from '@/validations/whatsapp'
+import { instagramSettingsSchema } from '@/validations/instagram'
 
 export async function GET() {
   try {
@@ -12,6 +13,7 @@ export async function GET() {
     if (tenant?.settings) {
       const settings = { ...(tenant.settings as Record<string, unknown>) }
       delete settings.whatsapp_access_token
+      delete settings.instagram_page_access_token
       return NextResponse.json({ ...tenant, settings })
     }
     return NextResponse.json(tenant)
@@ -65,6 +67,43 @@ export async function PUT(request: Request) {
         entityType: 'tenant',
         entityId: ctx.tenantId,
         changes: { whatsappSettings: { old: null, new: 'updated' } },
+      })
+
+      return NextResponse.json({ success: true })
+    }
+
+    // Instagram settings update
+    if (body._action === 'instagram_settings') {
+      const parsed = instagramSettingsSchema.safeParse(body.settings)
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Dados inválidos', fieldErrors: parsed.error.flatten().fieldErrors },
+          { status: 400 },
+        )
+      }
+
+      const settingsUpdate: Record<string, unknown> = {
+        instagram_enabled: parsed.data.instagram_enabled,
+        instagram_allowed_roles: parsed.data.instagram_allowed_roles,
+        instagram_page_id: parsed.data.instagram_page_id ?? null,
+        instagram_business_account_id: parsed.data.instagram_business_account_id ?? null,
+      }
+      if (parsed.data.instagram_page_access_token) {
+        settingsUpdate.instagram_page_access_token = parsed.data.instagram_page_access_token
+      }
+
+      const tenant = await updateTenantSettings(ctx.tenantId, settingsUpdate)
+      if (!tenant) {
+        return NextResponse.json({ error: 'Erro ao atualizar configurações do Instagram' }, { status: 500 })
+      }
+
+      await createAuditLog({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        action: 'update',
+        entityType: 'tenant',
+        entityId: ctx.tenantId,
+        changes: { instagramSettings: { old: null, new: 'updated' } },
       })
 
       return NextResponse.json({ success: true })

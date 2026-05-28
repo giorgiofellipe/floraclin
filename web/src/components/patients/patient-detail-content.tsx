@@ -15,6 +15,7 @@ import {
   Cake,
   MessageSquarePlus,
   ExternalLink,
+  Camera,
 } from 'lucide-react'
 import { buttonVariants } from '@/components/ui/button'
 import { cn, maskCPF } from '@/lib/utils'
@@ -93,7 +94,7 @@ const VALID_TABS: PatientTabKey[] = [
 // ─── Component ──────────────────────────────────────────────────────
 
 interface PatientDetailContentProps {
-  patient: Patient
+  patient: Patient & { instagramConversationId?: string | null }
   activeTab?: string
   hasActiveService?: boolean
   whatsappApiEnabled?: boolean
@@ -226,6 +227,15 @@ export function PatientDetailContent({
                           <ExternalLink className="size-3.5 text-[#25D366]" />
                           Abrir no WhatsApp Web
                         </a>
+                        {patient.instagramConversationId && (
+                          <Link
+                            href={`/instagram?conversa=${patient.instagramConversationId}`}
+                            className="flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-[#F4F6F8] transition-colors"
+                          >
+                            <Camera className="size-3.5 text-[#E1306C]" />
+                            Abrir no Instagram
+                          </Link>
+                        )}
                       </div>
                     </PopoverContent>
                   </Popover>

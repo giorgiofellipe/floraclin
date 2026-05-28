@@ -62,9 +62,10 @@ interface HeaderProps {
   isPlatformAdmin?: boolean
   impersonatingTenantName?: string
   whatsappEnabled?: boolean
+  instagramEnabled?: boolean
 }
 
-export function Header({ userName, userEmail, clinicName, tenants, activeTenantId, isPlatformAdmin, impersonatingTenantName, whatsappEnabled }: HeaderProps) {
+export function Header({ userName, userEmail, clinicName, tenants, activeTenantId, isPlatformAdmin, impersonatingTenantName, whatsappEnabled, instagramEnabled }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const pathname = usePathname()
   const { title, subtitle } = getPageTitle(pathname)
@@ -147,6 +148,7 @@ export function Header({ userName, userEmail, clinicName, tenants, activeTenantI
             isPlatformAdmin={isPlatformAdmin}
             impersonatingTenantName={impersonatingTenantName}
             whatsappEnabled={whatsappEnabled}
+            instagramEnabled={instagramEnabled}
           />
         </SheetContent>
       </Sheet>

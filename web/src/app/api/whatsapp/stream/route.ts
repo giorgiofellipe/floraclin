@@ -18,7 +18,7 @@ export async function GET() {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  let lastEventId = await getLatestSseEventId(ctx.tenantId)
+  let lastEventId = await getLatestSseEventId(ctx.tenantId, 'whatsapp')
   const encoder = new TextEncoder()
   let interval: ReturnType<typeof setInterval> | null = null
 
@@ -30,7 +30,7 @@ export async function GET() {
 
       const poll = async () => {
         try {
-          const events = await pollSseEvents(ctx.tenantId, lastEventId)
+          const events = await pollSseEvents(ctx.tenantId, lastEventId, 'whatsapp')
           for (const event of events) {
             send(event.eventType, event.payload)
             if (event.id > lastEventId) lastEventId = event.id

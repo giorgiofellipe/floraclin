@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   X,
   MessageCircle,
+  Camera,
   UserCheck,
   XCircle,
   Loader2,
@@ -133,6 +134,13 @@ export function ProspectDetailPanel({
 
   if (!prospect) return null
 
+  // Phone is nullable for Instagram-sourced prospects; fall back to @handle
+  // or a generic placeholder so we never render `null` / empty string.
+  const prospectWithIg = prospect as Prospect & { igHandle?: string | null }
+  const contactDisplay: string =
+    prospectWithIg.phone ??
+    (prospectWithIg.igHandle ? `@${prospectWithIg.igHandle}` : 'Sem contato')
+
   const intentConfig = prospect.intent
     ? INTENT_CONFIG[prospect.intent]
     : undefined
@@ -179,7 +187,7 @@ export function ProspectDetailPanel({
             </h3>
             <div className="flex items-center gap-1.5 text-sm text-[#7A7A7A]">
               <Phone className="h-3.5 w-3.5" />
-              {prospect.phone}
+              {contactDisplay}
             </div>
             {prospect.whatsappConversationId && (
               <Link
@@ -188,6 +196,15 @@ export function ProspectDetailPanel({
               >
                 <MessageCircle className="h-3.5 w-3.5" />
                 Ver conversa no WhatsApp
+              </Link>
+            )}
+            {prospect.instagramConversationId && (
+              <Link
+                href={`/instagram?conversa=${prospect.instagramConversationId}`}
+                className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-[#E1306C] hover:underline"
+              >
+                <Camera className="h-3.5 w-3.5" />
+                Ver conversa no Instagram
               </Link>
             )}
           </div>
@@ -414,6 +431,16 @@ export function ProspectDetailPanel({
               }>
                 <MessageCircle className="mr-1 h-3.5 w-3.5" />
                 Ver conversa
+              </Button>
+            )}
+            {prospect.instagramConversationId && (
+              <Button variant="outline" size="sm" render={
+                <Link
+                  href={`/instagram?conversa=${prospect.instagramConversationId}`}
+                />
+              }>
+                <Camera className="mr-1 h-3.5 w-3.5" />
+                Ver no Instagram
               </Button>
             )}
 

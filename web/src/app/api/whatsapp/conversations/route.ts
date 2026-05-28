@@ -123,7 +123,7 @@ export async function POST(request: Request) {
     await pushSseEvent(ctx.tenantId, 'new_message', {
       conversationId: conversation.id,
       message,
-    })
+    }, 'whatsapp')
 
     return NextResponse.json({ success: true, data: { conversation, message } }, { status: 201 })
   } catch (error) {

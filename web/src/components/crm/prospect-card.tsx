@@ -37,7 +37,13 @@ export function ProspectCard({ prospect, onClick }: ProspectCardProps) {
     ? INTENT_CONFIG[prospect.intent]
     : undefined
 
-  const displayName = prospect.name || prospect.phone
+  // Phone may be null for Instagram-sourced prospects; fall back to the
+  // IG handle (if available) or a generic placeholder.
+  const prospectWithIg = prospect as Prospect & { igHandle?: string | null }
+  const contactFallback =
+    prospectWithIg.phone ??
+    (prospectWithIg.igHandle ? `@${prospectWithIg.igHandle}` : 'Sem contato')
+  const displayName = prospect.name || contactFallback
 
   const timeSince = prospect.createdAt
     ? formatDistanceToNow(new Date(prospect.createdAt), {

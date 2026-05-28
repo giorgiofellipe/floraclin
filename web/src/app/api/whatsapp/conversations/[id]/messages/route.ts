@@ -179,7 +179,7 @@ export async function POST(
           await pushSseEvent(ctx.tenantId, 'queue_expired', {
             conversationId,
             queuedMessageIds: expiredIds,
-          })
+          }, 'whatsapp')
         }
 
         const queueCount = await getQueuedCount(ctx.tenantId, conversationId)
@@ -222,7 +222,7 @@ export async function POST(
           await pushSseEvent(ctx.tenantId, 'new_message', {
             conversationId,
             message: resumeMessage,
-          })
+          }, 'whatsapp')
         }
 
         const queued = await createQueuedMessage(ctx.tenantId, conversationId, {
@@ -249,7 +249,7 @@ export async function POST(
         await pushSseEvent(ctx.tenantId, 'new_message', {
           conversationId,
           message: queuedMessage,
-        })
+        }, 'whatsapp')
 
         return NextResponse.json({
           success: true,
@@ -281,7 +281,7 @@ export async function POST(
     await pushSseEvent(ctx.tenantId, 'new_message', {
       conversationId,
       message,
-    })
+    }, 'whatsapp')
 
     if (conversation.prospectId) {
       const prospect = await getProspect(ctx.tenantId, conversation.prospectId)
@@ -290,7 +290,7 @@ export async function POST(
         await pushSseEvent(ctx.tenantId, 'prospect_updated', {
           prospectId: prospect.id,
           stage: 'contatado',
-        })
+        }, 'whatsapp')
       }
     }
 

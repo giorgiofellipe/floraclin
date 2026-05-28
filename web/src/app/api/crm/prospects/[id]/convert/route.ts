@@ -14,11 +14,11 @@ export async function POST(
   try {
     const ctx = await getAuthContext()
 
-    // Check WhatsApp is enabled and user's role is allowed
+    // Check WhatsApp or Instagram is enabled and user's role is allowed
     const tenant = await getTenant(ctx.tenantId)
     const settings = (tenant?.settings ?? {}) as Record<string, unknown>
-    if (!settings.whatsapp_enabled) {
-      return NextResponse.json({ error: 'WhatsApp não está habilitado' }, { status: 403 })
+    if (!settings.whatsapp_enabled && !settings.instagram_enabled) {
+      return NextResponse.json({ error: 'CRM requer WhatsApp ou Instagram habilitado' }, { status: 403 })
     }
     const allowedRoles = (settings.whatsapp_allowed_roles as string[] | undefined) ?? ['owner']
     if (!allowedRoles.includes(ctx.role as Role) && ctx.role !== 'owner') {
@@ -80,7 +80,7 @@ export async function POST(
       prospectId: id,
       patientId,
       stage: 'convertido',
-    })
+    }, 'whatsapp')
 
     return NextResponse.json({ data: prospect })
   } catch (error) {

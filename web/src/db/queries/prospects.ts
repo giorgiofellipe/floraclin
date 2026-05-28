@@ -1,5 +1,5 @@
 import { db } from '@/db/client'
-import { prospects, prospectActivities, prospectProcedureTypes, procedureTypes, whatsappConversations, users } from '@/db/schema'
+import { prospects, prospectActivities, prospectProcedureTypes, procedureTypes, whatsappConversations, instagramConversations, users } from '@/db/schema'
 import { eq, and, or, desc, ilike, isNull, sql, inArray } from 'drizzle-orm'
 import { normalizeBrPhone } from '@/lib/phone'
 import type { ProspectStage } from '@/validations/prospect'
@@ -33,19 +33,66 @@ export async function createProspect(
 
 export async function createNewProspect(
   tenantId: string,
-  data: { phone: string; name?: string | null; source?: string },
+  data: {
+    phone?: string | null
+    name?: string | null
+    source?: string
+    igsid?: string | null
+    igHandle?: string | null
+  },
 ): Promise<Prospect> {
-  const [prospect] = await db
+  const normalizedPhone = data.phone ? normalizeBrPhone(data.phone) : null
+  const igsid = data.igsid ?? null
+
+  // Concurrent webhooks can race against partial unique indexes
+  // (uq_prospects_tenant_phone, uq_prospects_tenant_igsid_active).
+  // onConflictDoNothing makes the insert idempotent; if we lost the race,
+  // fall back to the SELECT that the racing writer just produced.
+  const [inserted] = await db
     .insert(prospects)
     .values({
       tenantId,
-      phone: normalizeBrPhone(data.phone),
+      phone: normalizedPhone,
       name: data.name ?? null,
       source: data.source ?? 'whatsapp',
+      igsid,
+      igHandle: data.igHandle ?? null,
     })
+    .onConflictDoNothing()
     .returning()
 
-  return prospect
+  if (inserted) return inserted
+
+  // Lost the race — locate the active row that won.
+  const baseConditions = [
+    eq(prospects.tenantId, tenantId),
+    isNull(prospects.deletedAt),
+    sql`${prospects.stage} NOT IN ('convertido', 'perdido')`,
+  ]
+
+  let existing: Prospect | undefined
+  if (igsid) {
+    const rows = await db
+      .select()
+      .from(prospects)
+      .where(and(...baseConditions, eq(prospects.igsid, igsid)))
+      .orderBy(desc(prospects.createdAt))
+      .limit(1)
+    existing = rows[0]
+  } else if (normalizedPhone) {
+    const rows = await db
+      .select()
+      .from(prospects)
+      .where(and(...baseConditions, eq(prospects.phone, normalizedPhone)))
+      .orderBy(desc(prospects.createdAt))
+      .limit(1)
+    existing = rows[0]
+  }
+
+  if (!existing) {
+    throw new Error('Failed to create prospect and no existing row found')
+  }
+  return existing
 }
 
 export async function getProspect(tenantId: string, prospectId: string): Promise<(Prospect & { whatsappConversationId: string | null }) | null> {
@@ -197,17 +244,28 @@ export async function convertProspect(
     )
     .returning()
 
-  // Also update the conversation FK to point to the patient
+  // Also update the conversation FKs (both channels) to point to the patient.
   if (updated) {
-    await db
-      .update(whatsappConversations)
-      .set({ patientId, updatedAt: new Date() })
-      .where(
-        and(
-          eq(whatsappConversations.tenantId, tenantId),
-          eq(whatsappConversations.prospectId, prospectId),
+    await Promise.all([
+      db
+        .update(whatsappConversations)
+        .set({ patientId, updatedAt: new Date() })
+        .where(
+          and(
+            eq(whatsappConversations.tenantId, tenantId),
+            eq(whatsappConversations.prospectId, prospectId),
+          ),
         ),
-      )
+      db
+        .update(instagramConversations)
+        .set({ patientId, updatedAt: new Date() })
+        .where(
+          and(
+            eq(instagramConversations.tenantId, tenantId),
+            eq(instagramConversations.prospectId, prospectId),
+          ),
+        ),
+    ])
   }
 
   return updated ?? null

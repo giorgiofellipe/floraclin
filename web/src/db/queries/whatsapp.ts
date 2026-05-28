@@ -726,14 +726,17 @@ export async function getAutomationUsingTemplate(
 
 // ─── SSE EVENTS ────────────────────────────────────────────────────
 
+export type SseChannel = 'whatsapp' | 'instagram'
+
 export async function pushSseEvent(
   tenantId: string,
   eventType: string,
-  payload: unknown
+  payload: unknown,
+  channel: SseChannel
 ): Promise<SseEvent> {
   const [event] = await db
     .insert(sseEvents)
-    .values({ tenantId, eventType, payload })
+    .values({ tenantId, eventType, payload, channel })
     .returning()
 
   return event
@@ -741,7 +744,8 @@ export async function pushSseEvent(
 
 export async function pollSseEvents(
   tenantId: string,
-  sinceId: number
+  sinceId: number,
+  channel: SseChannel
 ): Promise<SseEvent[]> {
   return db
     .select()
@@ -749,6 +753,7 @@ export async function pollSseEvents(
     .where(
       and(
         eq(sseEvents.tenantId, tenantId),
+        eq(sseEvents.channel, channel),
         gt(sseEvents.id, sinceId)
       )
     )
@@ -756,11 +761,19 @@ export async function pollSseEvents(
     .limit(100)
 }
 
-export async function getLatestSseEventId(tenantId: string): Promise<number> {
+export async function getLatestSseEventId(
+  tenantId: string,
+  channel: SseChannel
+): Promise<number> {
   const [row] = await db
     .select({ maxId: sql<number>`COALESCE(MAX(${sseEvents.id}), 0)::int` })
     .from(sseEvents)
-    .where(eq(sseEvents.tenantId, tenantId))
+    .where(
+      and(
+        eq(sseEvents.tenantId, tenantId),
+        eq(sseEvents.channel, channel)
+      )
+    )
   return row?.maxId ?? 0
 }
 

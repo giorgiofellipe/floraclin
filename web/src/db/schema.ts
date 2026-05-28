@@ -594,13 +594,15 @@ export const prospects = floraclinSchema.table('prospects', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   name: varchar('name', { length: 255 }),
-  phone: varchar('phone', { length: 30 }).notNull(),
+  phone: varchar('phone', { length: 30 }),
   source: varchar('source', { length: 50 }).notNull().default('whatsapp'),
   stage: varchar('stage', { length: 20 }).notNull().default('novo'),
   intent: varchar('intent', { length: 50 }),
   sentiment: varchar('sentiment', { length: 20 }),
   aiTags: jsonb('ai_tags').default([]),
   value: decimal('value', { precision: 10, scale: 2 }),
+  igsid: varchar('igsid', { length: 64 }),
+  igHandle: varchar('ig_handle', { length: 255 }),
   lostReason: text('lost_reason'),
   assignedUserId: uuid('assigned_user_id').references(() => users.id),
   convertedPatientId: uuid('converted_patient_id').references(() => patients.id),
@@ -611,6 +613,8 @@ export const prospects = floraclinSchema.table('prospects', {
 }, (table) => [
   index('idx_prospects_tenant_stage').on(table.tenantId, table.stage),
   uniqueIndex('uq_prospects_tenant_phone').on(table.tenantId, table.phone).where(sql`stage NOT IN ('convertido', 'perdido')`),
+  index('idx_prospects_tenant_igsid').on(table.tenantId, table.igsid).where(sql`igsid IS NOT NULL`),
+  uniqueIndex('uq_prospects_tenant_igsid_active').on(table.tenantId, table.igsid).where(sql`igsid IS NOT NULL AND stage NOT IN ('convertido', 'perdido')`),
 ])
 
 export const prospectActivities = floraclinSchema.table('prospect_activities', {
@@ -727,6 +731,74 @@ export const whatsappQueuedMessages = floraclinSchema.table('whatsapp_queued_mes
   index('idx_whatsapp_queued_messages_tenant_created').on(table.tenantId, table.createdAt),
 ])
 
+// ─── INSTAGRAM ──────────────────────────────────────────────────────
+
+export const instagramConversations = floraclinSchema.table('instagram_conversations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  igsid: varchar('igsid', { length: 64 }).notNull(),
+  igHandle: varchar('ig_handle', { length: 255 }),
+  igProfileName: varchar('ig_profile_name', { length: 255 }),
+  igProfilePictureUrl: text('ig_profile_picture_url'),
+  prospectId: uuid('prospect_id').references(() => prospects.id),
+  patientId: uuid('patient_id').references(() => patients.id),
+  lastMessageAt: timestamp('last_message_at', { withTimezone: true }).notNull().defaultNow(),
+  lastInboundAt: timestamp('last_inbound_at', { withTimezone: true }),
+  unreadCount: integer('unread_count').notNull().default(0),
+  status: varchar('status', { length: 20 }).notNull().default('active'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('uq_instagram_conversations_tenant_igsid').on(table.tenantId, table.igsid),
+  index('idx_instagram_conversations_tenant_last_msg').on(table.tenantId, table.lastMessageAt),
+  index('idx_instagram_conversations_prospect').on(table.prospectId),
+  index('idx_instagram_conversations_patient').on(table.patientId),
+])
+
+export const instagramMessages = floraclinSchema.table('instagram_messages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  conversationId: uuid('conversation_id').notNull().references(() => instagramConversations.id),
+  direction: varchar('direction', { length: 10 }).notNull(),
+  messageType: varchar('message_type', { length: 30 }).notNull().default('text'),
+  metaMessageId: varchar('meta_message_id', { length: 255 }),
+  body: text('body'),
+  mediaType: varchar('media_type', { length: 20 }),
+  mediaUrl: text('media_url'),
+  mediaFilename: varchar('media_filename', { length: 500 }),
+  storyMediaUrl: text('story_media_url'),
+  storyId: varchar('story_id', { length: 255 }),
+  reactionEmoji: varchar('reaction_emoji', { length: 16 }),
+  reactsToMessageId: uuid('reacts_to_message_id'),
+  deliveryStatus: varchar('delivery_status', { length: 20 }).notNull().default('sent'),
+  messageTag: varchar('message_tag', { length: 30 }),
+  errorCode: varchar('error_code', { length: 50 }),
+  timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_instagram_messages_conversation_ts').on(table.conversationId, table.timestamp),
+  uniqueIndex('uq_instagram_messages_meta_id').on(table.metaMessageId).where(sql`meta_message_id IS NOT NULL`),
+  // Prevents duplicate reaction rows on webhook retry — the (conversation,
+  // target message, direction) triple is unique per reaction event we record.
+  uniqueIndex('uq_instagram_messages_reaction')
+    .on(table.conversationId, table.reactsToMessageId, table.direction)
+    .where(sql`message_type = 'reaction'`),
+])
+
+export const instagramSavedReplies = floraclinSchema.table('instagram_saved_replies', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  name: varchar('name', { length: 255 }).notNull(),
+  body: text('body').notNull(),
+  variableKeys: text('variable_keys').array().notNull().default(sql`'{}'::text[]`),
+  purposeKey: varchar('purpose_key', { length: 100 }),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('uq_instagram_saved_replies_tenant_name').on(table.tenantId, table.name).where(sql`archived_at IS NULL`),
+])
+
 // ─── SSE EVENTS ─────────────────────────────────────────────────────
 
 export const sseEvents = floraclinSchema.table('sse_events', {
@@ -734,6 +806,7 @@ export const sseEvents = floraclinSchema.table('sse_events', {
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   eventType: varchar('event_type', { length: 50 }).notNull(),
   payload: jsonb('payload').notNull(),
+  channel: varchar('channel', { length: 20 }).notNull().default('whatsapp'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('idx_sse_events_tenant_created').on(table.tenantId, table.createdAt),

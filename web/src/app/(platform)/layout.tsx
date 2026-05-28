@@ -51,6 +51,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
         isPlatformAdmin={auth.isPlatformAdmin}
         impersonatingTenantName={impersonatingTenantName}
         whatsappEnabled={!!settings.whatsapp_enabled}
+        instagramEnabled={!!settings.instagram_enabled}
       />
       <div className="flex min-h-screen flex-col md:pl-[200px]">
         <Header
@@ -62,6 +63,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           isPlatformAdmin={auth.isPlatformAdmin}
           impersonatingTenantName={impersonatingTenantName}
           whatsappEnabled={!!settings.whatsapp_enabled}
+          instagramEnabled={!!settings.instagram_enabled}
         />
         <main className="flex-1 p-6">{children}</main>
       </div>

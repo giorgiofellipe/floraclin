@@ -4,6 +4,9 @@ import { getTenant } from '@/db/queries/tenants'
 import { getProspect, updateProspect, softDeleteProspect, logProspectActivity, getProspectActivities, getProspectProcedures, setProspectProcedures } from '@/db/queries/prospects'
 import { pushSseEvent } from '@/db/queries/whatsapp'
 import { updateProspectSchema } from '@/validations/prospect'
+import { db } from '@/db/client'
+import { instagramConversations } from '@/db/schema'
+import { eq, and } from 'drizzle-orm'
 import type { Role } from '@/types'
 
 async function requireWhatsappAccess() {
@@ -11,8 +14,8 @@ async function requireWhatsappAccess() {
 
   const tenant = await getTenant(ctx.tenantId)
   const settings = (tenant?.settings ?? {}) as Record<string, unknown>
-  if (!settings.whatsapp_enabled) {
-    return { ctx: null, error: NextResponse.json({ error: 'WhatsApp não está habilitado' }, { status: 403 }) }
+  if (!settings.whatsapp_enabled && !settings.instagram_enabled) {
+    return { ctx: null, error: NextResponse.json({ error: 'CRM requer WhatsApp ou Instagram habilitado' }, { status: 403 }) }
   }
   const allowedRoles = (settings.whatsapp_allowed_roles as string[] | undefined) ?? ['owner']
   if (!allowedRoles.includes(ctx.role as Role) && ctx.role !== 'owner') {
@@ -36,12 +39,29 @@ export async function GET(
       return NextResponse.json({ error: 'Lead não encontrado' }, { status: 404 })
     }
 
-    const [activities, interestedProcedures] = await Promise.all([
+    const [activities, interestedProcedures, igConversation] = await Promise.all([
       getProspectActivities(ctx.tenantId, id),
       getProspectProcedures(id),
+      db
+        .select({ id: instagramConversations.id })
+        .from(instagramConversations)
+        .where(
+          and(
+            eq(instagramConversations.tenantId, ctx.tenantId),
+            eq(instagramConversations.prospectId, id),
+          ),
+        )
+        .limit(1),
     ])
 
-    return NextResponse.json({ data: { ...prospect, interestedProcedures }, activities })
+    return NextResponse.json({
+      data: {
+        ...prospect,
+        interestedProcedures,
+        instagramConversationId: igConversation[0]?.id ?? null,
+      },
+      activities,
+    })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -105,7 +125,7 @@ export async function PATCH(
       }, ctx.userId)
     }
 
-    await pushSseEvent(ctx.tenantId, 'prospect_updated', { prospectId: id, ...parsed.data })
+    await pushSseEvent(ctx.tenantId, 'prospect_updated', { prospectId: id, ...parsed.data }, 'whatsapp')
 
     return NextResponse.json({ data: prospect })
   } catch (error) {
@@ -132,7 +152,7 @@ export async function DELETE(
     }
 
     await logProspectActivity(ctx.tenantId, id, 'deleted', null, ctx.userId)
-    await pushSseEvent(ctx.tenantId, 'prospect_updated', { prospectId: id, deleted: true })
+    await pushSseEvent(ctx.tenantId, 'prospect_updated', { prospectId: id, deleted: true }, 'whatsapp')
 
     return NextResponse.json({ success: true })
   } catch (error) {

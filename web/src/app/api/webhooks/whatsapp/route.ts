@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/db/client'
-import { tenants, procedureTypes, whatsappMessages } from '@/db/schema'
+import { tenants, whatsappMessages } from '@/db/schema'
 import { eq, and, sql } from 'drizzle-orm'
-import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage, normalizeBrPhone } from '@/lib/whatsapp'
+import { verifyWebhookSignature } from '@/lib/meta-webhook'
+import { downloadAndStoreMedia, sendTextMessage, normalizeBrPhone } from '@/lib/whatsapp'
 import {
   upsertConversation,
   createMessage,
@@ -18,12 +19,11 @@ import {
 import {
   createNewProspect,
   getProspectByPhone,
-  updateProspect,
   logProspectActivity,
-  setProspectProcedures,
 } from '@/db/queries/prospects'
 import { getPatientByPhone } from '@/db/queries/patients'
-import { classifyMessage } from '@/lib/classify-prospect'
+import { findOrCreateProspect } from '@/lib/messaging/find-or-create-prospect'
+import { classifyProspectFromInbound } from '@/lib/messaging/classify-prospect-from-inbound'
 
 export const dynamic = 'force-dynamic'
 
@@ -134,17 +134,24 @@ async function processInboundMessage(
   if (existingMsg) return
 
   // Upsert prospect — create a new lead if old one is in a terminal stage
-  let prospect = await getProspectByPhone(tenantId, from)
-  let isNewProspect = !prospect
+  const existingBeforeCreate = await getProspectByPhone(tenantId, from)
+  const previousProspectId =
+    existingBeforeCreate &&
+    (existingBeforeCreate.stage === 'convertido' || existingBeforeCreate.stage === 'perdido')
+      ? existingBeforeCreate.id
+      : undefined
 
-  if (!prospect || prospect.stage === 'convertido' || prospect.stage === 'perdido') {
-    const previousProspectId = prospect?.id
-    prospect = await createNewProspect(tenantId, {
-      phone: from,
-      name: profileName,
-      source: 'whatsapp',
-    })
-    isNewProspect = true
+  const { prospect, created: isNewProspect } = await findOrCreateProspect({
+    lookup: async () => existingBeforeCreate,
+    createNew: () =>
+      createNewProspect(tenantId, {
+        phone: from,
+        name: profileName,
+        source: 'whatsapp',
+      }),
+  })
+
+  if (isNewProspect) {
     await logProspectActivity(tenantId, prospect.id, 'created', {
       source: 'whatsapp',
       auto: true,
@@ -216,13 +223,13 @@ async function processInboundMessage(
   await pushSseEvent(tenantId, 'new_message', {
     conversationId: conversation.id,
     message,
-  })
+  }, 'whatsapp')
 
   if (isNewProspect) {
     await pushSseEvent(tenantId, 'new_conversation', {
       conversation,
       prospect,
-    })
+    }, 'whatsapp')
   }
 
   // Fire-and-forget: keep reclassifying while the lead is still in "novo" stage
@@ -231,77 +238,29 @@ async function processInboundMessage(
     // between WhatsApp msg timestamp and DB NOW(). Only matters for new prospects;
     // for existing ones the createdAt is old enough that 60s is irrelevant.
     const classifyAfter = new Date(new Date(prospect.createdAt).getTime() - 60_000)
-    classifyAndUpdateProspect(tenantId, prospect.id, conversation.id, classifyAfter).catch((err) =>
-      console.error('Classification failed:', err),
-    )
+    void (async () => {
+      try {
+        const recentInboundBodies = await getRecentInboundBodies(
+          conversation.id,
+          5,
+          classifyAfter,
+        )
+        await classifyProspectFromInbound({
+          tenantId,
+          prospectId: prospect.id,
+          prospectStage: prospect.stage,
+          recentInboundBodies,
+        })
+      } catch (err) {
+        console.error('Classification failed:', err)
+      }
+    })()
   }
 
   // Drain any queued messages now that the window is open
   drainQueuedMessages(tenantId, conversation.id, from).catch((err) =>
     console.error('Queue drain failed:', err),
   )
-}
-
-// ---------------------------------------------------------------------------
-// AI prospect classification (fire-and-forget)
-// ---------------------------------------------------------------------------
-async function classifyAndUpdateProspect(
-  tenantId: string,
-  prospectId: string,
-  conversationId: string,
-  prospectCreatedAt: Date,
-) {
-  const [procedures, recentMessages] = await Promise.all([
-    db
-      .select({ id: procedureTypes.id, name: procedureTypes.name, defaultPrice: procedureTypes.defaultPrice })
-      .from(procedureTypes)
-      .where(eq(procedureTypes.tenantId, tenantId)),
-    getRecentInboundBodies(conversationId, 5, prospectCreatedAt),
-  ])
-
-  if (recentMessages.length === 0) return
-
-  const procedureNames = procedures.map((p) => p.name)
-  const classification = await classifyMessage(recentMessages, procedureNames)
-
-  // Match classified procedure names to actual procedure type IDs
-  const matchedProcedures = classification.interestedProcedures
-    .map((procName) => procedures.find((p) => p.name.toLowerCase() === procName.toLowerCase()))
-    .filter((p): p is typeof procedures[number] => !!p)
-
-  // Auto-set value by summing matched procedures' default prices
-  let autoValue: string | undefined
-  if (matchedProcedures.length > 0) {
-    const total = matchedProcedures.reduce(
-      (sum, p) => sum + (p.defaultPrice ? parseFloat(p.defaultPrice) : 0),
-      0,
-    )
-    if (total > 0) autoValue = total.toFixed(2)
-
-    await setProspectProcedures(tenantId, prospectId, matchedProcedures.map((p) => p.id))
-  }
-
-  await updateProspect(tenantId, prospectId, {
-    intent: classification.intent,
-    sentiment: classification.sentiment,
-    ...(autoValue ? { value: autoValue } : {}),
-    ...(classification.extractedName
-      ? { name: classification.extractedName }
-      : {}),
-  })
-
-  await logProspectActivity(tenantId, prospectId, 'ai_classified', {
-    intent: classification.intent,
-    sentiment: classification.sentiment,
-    interestedProcedures: matchedProcedures.map((p) => p.name),
-    ...(autoValue ? { autoValue } : {}),
-  })
-
-  // Push SSE event for prospect update
-  await pushSseEvent(tenantId, 'prospect_updated', {
-    prospectId,
-    ...classification,
-  })
 }
 
 // ---------------------------------------------------------------------------
@@ -336,7 +295,7 @@ async function drainQueuedMessages(
     await pushSseEvent(tenantId, 'queue_expired', {
       conversationId,
       queuedMessageIds: expiredIds,
-    })
+    }, 'whatsapp')
   }
 
   const queued = await getQueuedMessages(tenantId, conversationId)
@@ -367,7 +326,7 @@ async function drainQueuedMessages(
       await pushSseEvent(tenantId, 'new_message', {
         conversationId,
         message: sentMessage,
-      })
+      }, 'whatsapp')
     } catch (err) {
       console.error(`Failed to drain queued message ${qm.id}:`, err)
     }
@@ -377,7 +336,7 @@ async function drainQueuedMessages(
     await pushSseEvent(tenantId, 'queue_drained', {
       conversationId,
       queuedMessageIds: drainedQueueIds,
-    })
+    }, 'whatsapp')
   }
 }
 
@@ -418,7 +377,7 @@ async function processStatusUpdate(
       metaMessageId,
       status: mappedStatus,
       conversationId: updated.conversationId,
-    })
+    }, 'whatsapp')
   }
 }
 

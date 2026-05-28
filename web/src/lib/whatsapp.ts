@@ -1,7 +1,7 @@
-import crypto from 'crypto'
 import { getTenant } from '@/db/queries/tenants'
 
 export { normalizeBrPhone } from '@/lib/phone'
+export { verifyWebhookSignature } from './meta-webhook'
 
 const GRAPH_API_VERSION = 'v21.0'
 const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`
@@ -230,19 +230,6 @@ export async function verifyCredentials(phoneNumberId: string, token: string) {
     console.error('WhatsApp credential verification failed:', err instanceof Error ? err.message : err)
     return { valid: false, phoneDisplay: undefined }
   }
-}
-
-export function verifyWebhookSignature(
-  payload: string,
-  signature: string,
-  appSecret: string,
-): boolean {
-  const expectedBuf = Buffer.from(
-    `sha256=${crypto.createHmac('sha256', appSecret).update(payload).digest('hex')}`,
-  )
-  const actualBuf = Buffer.from(signature)
-  if (expectedBuf.length !== actualBuf.length) return false
-  return crypto.timingSafeEqual(expectedBuf, actualBuf)
 }
 
 export function resolveTemplateBody(
