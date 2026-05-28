@@ -281,13 +281,19 @@ export function PhotoComparisonDialog({
                       onLoad={photoB ? handleImageLoaded(photoB.id) : undefined}
                     />
                   )}
-                  {/* Left side: photo A clipped to slider position. */}
+                  {/* Left side: photo A clipped to slider position.
+                      Mirrors photo B's wrapper sizing (w-full + aspectRatio
+                      from styleA.containerStyle) so both render at the same
+                      dimensions and the slider compares matching regions.
+                      Setting h-full here would force the wrapper to fill the
+                      slider container, overriding aspectRatio and making the
+                      crop image render way over-zoomed. */}
                   <div
-                    className="absolute inset-0"
+                    className="absolute top-0 left-0 right-0 bottom-0"
                     style={{ clipPath: `polygon(0 0, ${sliderPosition}% 0, ${sliderPosition}% 100%, 0 100%)` }}
                   >
                     {styleA ? (
-                      <div className="relative h-full w-full overflow-hidden" style={styleA.containerStyle}>
+                      <div className="relative w-full overflow-hidden" style={styleA.containerStyle}>
                         <img
                           src={urlA}
                           alt="Foto A"
@@ -301,7 +307,7 @@ export function PhotoComparisonDialog({
                       <img
                         src={urlA}
                         alt="Foto A"
-                        className="h-full w-full object-contain"
+                        className="h-auto max-h-[70vh] w-full object-contain"
                         draggable={false}
                         onLoad={photoA ? handleImageLoaded(photoA.id) : undefined}
                       />
@@ -411,8 +417,13 @@ export function PhotoComparisonDialog({
                       />
                     )}
                     {styleB ? (
+                      // Overlay photo B at the same size as photo A. `inset-0`
+                      // would force the wrapper to fill the parent and ignore
+                      // aspectRatio (same trap as the slider mode); pin to
+                      // top-left + w-full + aspectRatio so the wrapper stays
+                      // the same shape as photo A's.
                       <div
-                        className="absolute inset-0 overflow-hidden"
+                        className="absolute top-0 left-0 w-full overflow-hidden"
                         style={{ ...styleB.containerStyle, opacity: opacity / 100 }}
                       >
                         <img
