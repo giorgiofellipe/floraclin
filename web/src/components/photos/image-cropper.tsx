@@ -112,31 +112,37 @@ export function ImageCropper({
   }, [onSave])
 
   return (
-    <div className="space-y-3">
-      <div className="flex max-h-[65vh] items-center justify-center overflow-auto rounded-[3px] bg-[#1C2B1E]/95 p-2">
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[3px] bg-[#1C2B1E]/95 p-2">
         <ReactCrop
           crop={crop}
           aspect={sourceAspect}
           onChange={(_pixelCrop, percentageCrop) => setCrop(percentageCrop)}
           keepSelection
-          className="max-w-full"
+          // ReactCrop wraps the image in its own divs; this keeps the wrapper
+          // chain bounded so the inner <img> can do object-contain math.
+          className="max-h-full max-w-full"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={src}
             alt="Recortar"
             onLoad={handleImageLoad}
-            className="block max-h-[60vh] w-auto max-w-full"
+            // `max-h-full max-w-full` + the flex parent above gives the
+            // image the entire crop area; the image scales to whichever
+            // dimension is the tighter constraint without overflow.
+            className="block max-h-full max-w-full object-contain"
+            style={{ height: 'auto', width: 'auto' }}
             draggable={false}
           />
         </ReactCrop>
+        {!imageLoaded && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-xs text-cream/70">
+            <Loader2 className="size-3 animate-spin" />
+            Carregando imagem...
+          </div>
+        )}
       </div>
-      {!imageLoaded && (
-        <div className="flex items-center justify-center gap-2 text-xs text-mid">
-          <Loader2 className="size-3 animate-spin" />
-          Carregando imagem...
-        </div>
-      )}
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancelar
@@ -180,13 +186,17 @@ export function ImageCropperDialog({
 }: ImageCropperDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl max-h-[92vh] overflow-y-auto">
+      <DialogContent className="flex h-[92vh] w-[95vw] max-w-5xl flex-col gap-3 sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        {/* `key={src}` forces a fresh mount when switching images so the inner
-            crop state is re-initialized from the new `currentCrop` prop. */}
-        <ImageCropper key={cropperProps.src} {...cropperProps} />
+        {/* Fill the remaining dialog height; the inner cropper's image grows
+            to whichever dimension is the tighter constraint, no scroll.
+            `key={src}` forces a fresh mount when switching images so the
+            inner crop state is re-initialized from the new `currentCrop`. */}
+        <div className="flex min-h-0 flex-1 flex-col">
+          <ImageCropper key={cropperProps.src} {...cropperProps} />
+        </div>
       </DialogContent>
     </Dialog>
   )
