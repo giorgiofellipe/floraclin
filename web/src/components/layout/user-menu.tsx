@@ -29,10 +29,11 @@ import { useCalendarConnections } from '@/hooks/queries/use-calendar'
 interface UserMenuProps {
   userName: string
   userEmail: string
+  userId?: string
   userRole?: string
 }
 
-export function UserMenu({ userName, userEmail, userRole }: UserMenuProps) {
+export function UserMenu({ userName, userEmail, userId, userRole }: UserMenuProps) {
   const [profileOpen, setProfileOpen] = useState(false)
 
   const initials = userName
@@ -78,6 +79,7 @@ export function UserMenu({ userName, userEmail, userRole }: UserMenuProps) {
         onOpenChange={setProfileOpen}
         userName={userName}
         userEmail={userEmail}
+        userId={userId}
         userRole={userRole}
       />
     </>
@@ -89,17 +91,19 @@ function ProfileDialog({
   onOpenChange,
   userName,
   userEmail,
+  userId,
   userRole,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   userName: string
   userEmail: string
+  userId?: string
   userRole?: string
 }) {
   const showCalendar = userRole === 'owner' || userRole === 'practitioner'
   const { data: connections } = useCalendarConnections()
-  const myConnection = connections?.find((c: { userId: string | null }) => c.userId !== null) ?? null
+  const myConnection = connections?.find((c: { userId: string | null }) => c.userId === userId) ?? null
 
   const [fullName, setFullName] = useState(userName)
   const [phone, setPhone] = useState('')

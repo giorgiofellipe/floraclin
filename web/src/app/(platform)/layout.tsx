@@ -56,6 +56,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
         <Header
           userName={auth.fullName}
           userEmail={auth.email}
+          userId={auth.userId}
           userRole={auth.role}
           clinicName={tenant?.name ?? 'FloraClin'}
           tenants={tenantOptions}

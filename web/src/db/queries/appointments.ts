@@ -315,7 +315,7 @@ export async function getAvailableSlots(
   const workingHours = (tenant[0]?.workingHours as WorkingHours | null) ?? (DEFAULT_WORKING_HOURS as unknown as WorkingHours)
 
   // Determine the day of week for the given date
-  const dateObj = new Date(date + 'T12:00:00') // noon to avoid timezone issues
+  const dateObj = new Date(`${date}T12:00:00-03:00`)
   const dayKey = DAY_MAP[dateObj.getDay()]
   const dayHours = dayKey ? workingHours[dayKey] : undefined
 

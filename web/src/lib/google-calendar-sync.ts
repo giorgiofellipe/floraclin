@@ -76,11 +76,11 @@ export function buildEventBody(appt: AppointmentForSync) {
     summary,
     description: 'Agendamento FloraClin',
     start: {
-      dateTime: `${appt.date}T${appt.startTime}:00`,
+      dateTime: `${appt.date}T${appt.startTime}`,
       timeZone: BR_TZ,
     },
     end: {
-      dateTime: `${appt.date}T${appt.endTime}:00`,
+      dateTime: `${appt.date}T${appt.endTime}`,
       timeZone: BR_TZ,
     },
     status: googleStatus,

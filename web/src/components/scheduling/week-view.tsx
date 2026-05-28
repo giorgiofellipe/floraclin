@@ -216,9 +216,11 @@ export function WeekView({ date, appointments, calendarBlocks = [], onSlotClick,
                   top = 0
                   height = (END_HOUR - START_HOUR + 1) * 2 * SLOT_HEIGHT_PX
                 } else if (block.startTime && block.endTime) {
-                  const startMin = timeToMinutes(block.startTime)
-                  const endMin = timeToMinutes(block.endTime)
                   const gridStartMin = START_HOUR * 60
+                  const gridEndMin = (END_HOUR + 1) * 60
+                  const startMin = Math.max(timeToMinutes(block.startTime), gridStartMin)
+                  const endMin = Math.min(timeToMinutes(block.endTime), gridEndMin)
+                  if (startMin >= endMin) return null
                   top = ((startMin - gridStartMin) / 30) * SLOT_HEIGHT_PX
                   height = Math.max(((endMin - startMin) / 30) * SLOT_HEIGHT_PX, SLOT_HEIGHT_PX / 2)
                 } else {

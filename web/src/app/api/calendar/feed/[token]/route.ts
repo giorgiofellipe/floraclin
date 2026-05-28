@@ -12,7 +12,7 @@ export async function GET(
     const feedToken = token.replace(/\.ics$/, '')
 
     const connection = await getConnectionByFeedToken(feedToken)
-    if (!connection) {
+    if (!connection || !connection.enabled) {
       return new NextResponse('Not Found', { status: 404 })
     }
 

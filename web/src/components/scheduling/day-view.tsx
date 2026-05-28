@@ -133,9 +133,11 @@ export function DayView({ date, appointments, calendarBlocks = [], onSlotClick, 
         return { block, top, height }
       }
       if (!block.startTime || !block.endTime) return null
-      const startMin = timeToMinutes(block.startTime)
-      const endMin = timeToMinutes(block.endTime)
       const gridStartMin = START_HOUR * 60
+      const gridEndMin = (END_HOUR + 1) * 60
+      const startMin = Math.max(timeToMinutes(block.startTime), gridStartMin)
+      const endMin = Math.min(timeToMinutes(block.endTime), gridEndMin)
+      if (startMin >= endMin) return null
       const top = ((startMin - gridStartMin) / 30) * SLOT_HEIGHT_PX
       const height = Math.max(((endMin - startMin) / 30) * SLOT_HEIGHT_PX, SLOT_HEIGHT_PX / 2)
       return { block, top, height }

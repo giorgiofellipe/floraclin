@@ -67,8 +67,8 @@ export async function generateICalFeed(
       id: `${row.id}@floraclin.com.br`,
       summary,
       description: 'Agendamento FloraClin',
-      start: parseBrDate(row.date, `${row.startTime}:00`),
-      end: parseBrDate(row.date, `${row.endTime}:00`),
+      start: parseBrDate(row.date, row.startTime),
+      end: parseBrDate(row.date, row.endTime),
       timezone: BR_TZ,
       status: icalStatus,
     })
