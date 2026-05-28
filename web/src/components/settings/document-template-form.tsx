@@ -204,7 +204,7 @@ export function DocumentTemplateForm({
             </aside>
           </div>
 
-          <DialogFooter className="flex-row justify-end gap-2 border-t border-[#E8ECEF] p-4">
+          <DialogFooter className="m-0 flex-row justify-end gap-2 rounded-b-xl border-t border-[#E8ECEF] bg-muted/50 p-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
