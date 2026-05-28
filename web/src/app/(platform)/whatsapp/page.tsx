@@ -18,6 +18,7 @@ export default function WhatsAppPage() {
   const [configStatus, setConfigStatus] = useState<ConfigStatus>('loading')
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
   const [showStartDialog, setShowStartDialog] = useState(false)
+  const [startDialogPhone, setStartDialogPhone] = useState<string | null>(null)
   const [conversationsLoaded, setConversationsLoaded] = useState(false)
   const conversationListRef = useRef<ConversationListHandle>(null)
   const chatPanelRef = useRef<ChatPanelHandle>(null)
@@ -40,18 +41,54 @@ export default function WhatsAppPage() {
     checkConfig()
   }, [])
 
-  // Deep-link: auto-select conversation from ?conversa= param
+  // Deep-link: auto-select conversation from ?conversa= or ?phone= param.
+  // ?phone=<number> looks up an existing conversation by phone; if none exists,
+  // opens the start-conversation dialog with the phone pre-searched so the
+  // user can pick the matching patient (or auto-select if exactly one matches).
   useEffect(() => {
-    const convId = searchParams.get('conversa')
-    if (!convId || deepLinkHandledRef.current || !conversationsLoaded) return
-    deepLinkHandledRef.current = true
+    if (deepLinkHandledRef.current || !conversationsLoaded) return
 
-    fetch(`/api/whatsapp/conversations/${convId}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((conv: Conversation | null) => {
-        if (conv) setActiveConversation({ ...conv, unreadCount: 0 })
-      })
-      .catch(() => {})
+    const convId = searchParams.get('conversa')
+    const phoneParam = searchParams.get('phone')
+
+    if (convId) {
+      deepLinkHandledRef.current = true
+      fetch(`/api/whatsapp/conversations/${convId}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((conv: Conversation | null) => {
+          if (conv) setActiveConversation({ ...conv, unreadCount: 0 })
+        })
+        .catch(() => {})
+      return
+    }
+
+    if (phoneParam) {
+      deepLinkHandledRef.current = true
+      ;(async () => {
+        try {
+          const res = await fetch(`/api/whatsapp/conversations?search=${encodeURIComponent(phoneParam)}&limit=20`)
+          if (res.ok) {
+            const data = await res.json()
+            // listConversations searches by phoneNumber ILIKE, so we may get
+            // partial matches — narrow to an exact-suffix match on digits.
+            const phoneDigits = phoneParam.replace(/\D/g, '')
+            const match = (data.data ?? []).find((c: Conversation) => {
+              const convDigits = c.phoneNumber.replace(/\D/g, '')
+              return convDigits === phoneDigits || convDigits.endsWith(phoneDigits)
+            })
+            if (match) {
+              setActiveConversation({ ...match, unreadCount: 0 })
+              return
+            }
+          }
+        } catch {
+          // fall through to opening the start dialog
+        }
+        // No existing conversation — open the start dialog pre-searched.
+        setStartDialogPhone(phoneParam)
+        setShowStartDialog(true)
+      })()
+    }
   }, [searchParams, conversationsLoaded])
 
   const activeConvIdRef = useRef<string | null>(null)
@@ -255,8 +292,12 @@ export default function WhatsAppPage() {
 
       <StartConversationDialog
         open={showStartDialog}
-        onOpenChange={setShowStartDialog}
+        onOpenChange={(open) => {
+          setShowStartDialog(open)
+          if (!open) setStartDialogPhone(null)
+        }}
         onConversationStarted={handleConversationStarted}
+        preselectedPhone={startDialogPhone}
       />
     </div>
   )

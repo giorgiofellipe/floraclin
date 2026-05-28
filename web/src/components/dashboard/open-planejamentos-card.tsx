@@ -79,7 +79,7 @@ export function OpenPlanejamentosCard() {
                 <li key={row.id}>
                   <div className="group flex items-start justify-between gap-3 rounded-lg border border-transparent p-3 transition-all duration-200 hover:border-sage/15 hover:bg-petal/30 hover:shadow-sm">
                     <Link
-                      href={`/pacientes/${row.patientId}/procedimentos/${row.id}`}
+                      href={`/pacientes/${row.patientId}/atendimento`}
                       className="min-w-0 flex-1"
                     >
                       <p className="truncate font-medium text-charcoal">

@@ -139,7 +139,7 @@ export function PlanejamentosTable({
                 <TableRow key={row.id}>
                   <TableCell>
                     <Link
-                      href={`/pacientes/${row.patientId}/procedimentos/${row.id}`}
+                      href={`/pacientes/${row.patientId}/atendimento`}
                       className="block max-w-[220px] truncate font-medium text-charcoal hover:text-forest"
                     >
                       {row.patientName}

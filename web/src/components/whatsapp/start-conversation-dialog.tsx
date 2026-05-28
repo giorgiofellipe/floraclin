@@ -48,6 +48,12 @@ interface StartConversationDialogProps {
   onOpenChange: (open: boolean) => void
   onConversationStarted: (conversation: { id: string; phoneNumber: string; profileName: string | null; patientId: string | null }) => void
   preselectedPatient?: Patient | null
+  /**
+   * Phone number to pre-search the patient list with. If exactly one patient
+   * matches, they're auto-selected. Otherwise the search input is pre-filled
+   * so the user can pick. Ignored when `preselectedPatient` is provided.
+   */
+  preselectedPhone?: string | null
 }
 
 export function StartConversationDialog({
@@ -55,6 +61,7 @@ export function StartConversationDialog({
   onOpenChange,
   onConversationStarted,
   preselectedPatient,
+  preselectedPhone,
 }: StartConversationDialogProps) {
   const [step, setStep] = useState<Step>('patient')
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null)
@@ -79,17 +86,43 @@ export function StartConversationDialog({
         setSelectedPatient(preselectedPatient)
         setStep('template')
         fetchTemplates()
+        setPatientSearch('')
       } else {
         setStep('patient')
         setSelectedPatient(null)
+        // Pre-search by phone if provided. If exactly one patient matches
+        // they're auto-selected below; otherwise the user picks.
+        const initialSearch = preselectedPhone ?? ''
+        setPatientSearch(initialSearch)
+        if (initialSearch.length >= 2) {
+          ;(async () => {
+            setLoadingPatients(true)
+            try {
+              const res = await fetch(`/api/patients?search=${encodeURIComponent(initialSearch)}&limit=10`)
+              if (!res.ok) throw new Error()
+              const data = await res.json()
+              const matches = (data.data ?? []).filter((p: Patient) => p.phone)
+              setPatients(matches)
+              if (matches.length === 1) {
+                setSelectedPatient(matches[0])
+                setStep('template')
+                fetchTemplates()
+              }
+            } catch {
+              setPatients([])
+            } finally {
+              setLoadingPatients(false)
+            }
+          })()
+        } else {
+          setPatients([])
+        }
       }
       setSelectedTemplate(null)
       setVariableValues({})
-      setPatientSearch('')
       setTemplateSearch('')
-      setPatients([])
     }
-  }, [open, preselectedPatient])
+  }, [open, preselectedPatient, preselectedPhone])
 
   const fetchPatients = useCallback(async (query: string) => {
     if (!query || query.length < 2) {
