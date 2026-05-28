@@ -189,28 +189,21 @@ export function ImageCropper({
           </div>
         )}
         <style jsx global>{`
-          /* react-image-crop's own DOM doesn't set a max size on the wrapper
-             or the inner image, so the natural pixel dimensions leak out and
-             break our fixed-height container. Constrain the whole tree. */
+          /* react-image-crop sizes itself from the image's intrinsic
+             dimensions, so left alone the natural pixel size leaks out and
+             breaks our fixed-height slot. Cap the image to the slot's box
+             but leave ReactCrop's own layout (display, positioning) alone —
+             overriding those breaks the crop selection alignment. */
           .image-cropper-slot .ReactCrop {
-            display: flex !important;
-            max-width: 100% !important;
-            max-height: 100% !important;
-          }
-          .image-cropper-slot .ReactCrop__child-wrapper {
-            display: flex !important;
-            max-width: 100% !important;
-            max-height: 100% !important;
-            align-items: center;
-            justify-content: center;
+            max-width: 100%;
+            max-height: 100%;
           }
           .image-cropper-slot .ReactCrop img {
-            display: block !important;
-            max-width: 100% !important;
-            max-height: 100% !important;
-            width: auto !important;
-            height: auto !important;
-            object-fit: contain;
+            display: block;
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
           }
         `}</style>
       </div>

@@ -3,26 +3,39 @@ import type { CropBox } from '@/validations/photo'
 export interface CroppedDisplayStyle {
   /**
    * Style for an inner wrapper that takes the **crop's** aspect ratio and
-   * fits inside whatever host the consumer provides (letterbox via
-   * `max-width: 100%` + `max-height: 100%`). The host should center this
-   * wrapper — see `CROP_HOST_CLASS` below for a ready-made class string.
+   * fits inside whatever host the consumer provides.
+   *
+   * Why these specific properties:
+   *  - `aspectRatio` shapes the wrapper to match the crop.
+   *  - `width: 100%` gives the wrapper a concrete starting size (without it,
+   *    the inner image's percentage-based width/height creates a chicken-
+   *    and-egg with no resolvable dimensions, and the browser falls back to
+   *    the image's natural pixel size — overflowing the host).
+   *  - `maxHeight: 100%` lets the host clamp letterboxing when the crop is
+   *    taller than the host; modern browsers re-derive the wrapper width
+   *    via aspect-ratio after the clamp.
    */
   wrapperStyle: {
     aspectRatio: string
-    maxWidth: '100%'
+    width: '100%'
     maxHeight: '100%'
   }
   /**
-   * Style for the `<img>` element that lives inside the wrapper. Renders the
-   * image at `1/crop.width` × `1/crop.height` of the wrapper (so the crop
-   * region's pixels span it) and translates so the crop's top-left aligns
-   * with the wrapper's top-left.
+   * Style for the `<img>` element that lives inside the wrapper.
+   *
+   * The image is sized by `width: 1/crop.width * 100%` of the wrapper. Height
+   * is left as `auto` so the browser preserves the image's natural aspect
+   * ratio — setting an explicit height (e.g. `scaleY * 100%`) forces the
+   * browser to stretch the image to the wrapper's aspect, which is the bug
+   * the user kept hitting ("changes the aspect ratio, displays the img way
+   * bigger").
+   *
+   * The translate then shifts the natural-aspect image so the crop's top-
+   * left pixel aligns with the wrapper's top-left.
    */
   imageStyle: {
     width: string
-    height: string
-    objectFit: 'cover'
-    objectPosition: 'top left'
+    height: 'auto'
     transform: string
   }
 }
@@ -66,18 +79,15 @@ export function applyCrop(crop: CropBox | null, sourceAspect: number): CroppedDi
   if (!crop) return null
   const cropAspect = (crop.width / crop.height) * sourceAspect
   const scaleX = 1 / crop.width
-  const scaleY = 1 / crop.height
   return {
     wrapperStyle: {
       aspectRatio: `${cropAspect}`,
-      maxWidth: '100%',
+      width: '100%',
       maxHeight: '100%',
     },
     imageStyle: {
       width: `${scaleX * 100}%`,
-      height: `${scaleY * 100}%`,
-      objectFit: 'cover',
-      objectPosition: 'top left',
+      height: 'auto',
       transform: `translate(${-crop.x * 100}%, ${-crop.y * 100}%)`,
     },
   }
