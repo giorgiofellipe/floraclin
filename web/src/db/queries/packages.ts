@@ -37,12 +37,19 @@ export interface PackageTemplate {
   lines: PackageTemplateLine[]
 }
 
+export interface PatientPackageRecordSessionSummary {
+  sessionOrdinal: number
+  performedAt: string
+  executedByName: string
+}
+
 export interface PatientPackageRecordWithConsumption {
   procedureRecordId: string
   procedureTypeId: string
   procedureTypeName: string
   sessionsTotal: number
   sessionsExecuted: number
+  sessions: PatientPackageRecordSessionSummary[]
 }
 
 export interface PatientPackageWithConsumption {
@@ -388,6 +395,21 @@ export async function getPatientPackagesWithConsumption(
         SELECT COUNT(*)::int FROM floraclin.procedure_sessions ps
         WHERE ps.procedure_record_id = ${procedureRecords.id}
       )`,
+      // Per-session summary used by the shared <SessionsTimeline>: ordinal,
+      // date, and executor name. `[]` when none executed yet. JSON-encoded
+      // server-side so we don't fan out N+1 queries from the client.
+      sessions: sql<PatientPackageRecordSessionSummary[]>`(
+        SELECT COALESCE(json_agg(
+          json_build_object(
+            'sessionOrdinal', ps.session_ordinal,
+            'performedAt', ps.performed_at,
+            'executedByName', u.full_name
+          ) ORDER BY ps.session_ordinal
+        ), '[]'::json)
+        FROM floraclin.procedure_sessions ps
+        INNER JOIN floraclin.users u ON u.id = ps.executed_by
+        WHERE ps.procedure_record_id = ${procedureRecords.id}
+      )`,
       createdAt: procedureRecords.createdAt,
     })
     .from(procedureRecords)
@@ -411,6 +433,7 @@ export async function getPatientPackagesWithConsumption(
       procedureTypeName: r.procedureTypeName,
       sessionsTotal: r.sessionsTotal,
       sessionsExecuted: Number(r.sessionsExecuted ?? 0),
+      sessions: (r.sessions ?? []) as PatientPackageRecordSessionSummary[],
     })
     recordsByPackage.set(r.patientPackageId, arr)
   }
@@ -454,6 +477,18 @@ export async function getPatientPackage(
         SELECT COUNT(*)::int FROM floraclin.procedure_sessions ps
         WHERE ps.procedure_record_id = ${procedureRecords.id}
       )`,
+      sessions: sql<PatientPackageRecordSessionSummary[]>`(
+        SELECT COALESCE(json_agg(
+          json_build_object(
+            'sessionOrdinal', ps.session_ordinal,
+            'performedAt', ps.performed_at,
+            'executedByName', u.full_name
+          ) ORDER BY ps.session_ordinal
+        ), '[]'::json)
+        FROM floraclin.procedure_sessions ps
+        INNER JOIN floraclin.users u ON u.id = ps.executed_by
+        WHERE ps.procedure_record_id = ${procedureRecords.id}
+      )`,
     })
     .from(procedureRecords)
     .innerJoin(procedureTypes, eq(procedureRecords.procedureTypeId, procedureTypes.id))
@@ -474,6 +509,7 @@ export async function getPatientPackage(
       procedureTypeName: r.procedureTypeName,
       sessionsTotal: r.sessionsTotal,
       sessionsExecuted: Number(r.sessionsExecuted ?? 0),
+      sessions: (r.sessions ?? []) as PatientPackageRecordSessionSummary[],
     })),
   }
 }

@@ -65,6 +65,12 @@ export interface ProcedureWithDetails {
   practitionerName: string
 }
 
+export interface ProcedureSessionSummary {
+  sessionOrdinal: number
+  performedAt: string
+  executedByName: string
+}
+
 export interface ProcedureListItem {
   id: string
   performedAt: Date | null
@@ -77,7 +83,9 @@ export interface ProcedureListItem {
   cancellationReason: string | null
   sessionsTotal: number
   encounterId: string | null
+  patientPackageId: string | null
   sessionsExecuted: number
+  sessions: ProcedureSessionSummary[]
   procedureTypeName: string
   procedureTypeCategory: string
   practitionerName: string
@@ -88,6 +96,22 @@ export interface ProcedureListItem {
 // to repeat the schema-qualified table name.
 const sessionsExecutedSubquery = sql<number>`(
   SELECT COUNT(*)::int FROM floraclin.procedure_sessions ps
+  WHERE ps.procedure_record_id = ${procedureRecords.id}
+)`
+
+// Per-session summary aggregated for list rendering: ordinal, performedAt,
+// executedByName. `[]` when no sessions executed yet. Ordered by ordinal
+// ascending so the client can render the timeline left-to-right.
+const sessionsSummarySubquery = sql<ProcedureSessionSummary[]>`(
+  SELECT COALESCE(json_agg(
+    json_build_object(
+      'sessionOrdinal', ps.session_ordinal,
+      'performedAt', ps.performed_at,
+      'executedByName', u.full_name
+    ) ORDER BY ps.session_ordinal
+  ), '[]'::json)
+  FROM floraclin.procedure_sessions ps
+  INNER JOIN floraclin.users u ON u.id = ps.executed_by
   WHERE ps.procedure_record_id = ${procedureRecords.id}
 )`
 
@@ -259,7 +283,9 @@ export async function listProcedures(
       cancellationReason: procedureRecords.cancellationReason,
       sessionsTotal: procedureRecords.sessionsTotal,
       encounterId: procedureRecords.encounterId,
+      patientPackageId: procedureRecords.patientPackageId,
       sessionsExecuted: sessionsExecutedSubquery,
+      sessions: sessionsSummarySubquery,
       procedureTypeName: procedureTypes.name,
       procedureTypeCategory: procedureTypes.category,
       practitionerName: users.fullName,

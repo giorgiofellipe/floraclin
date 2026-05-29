@@ -89,7 +89,8 @@ export const PROCEDURE_STATUS_COLORS: Record<string, string> = {
   draft: 'bg-[#F4F6F8] text-[#7A7A7A]',
   planned: 'bg-[#FFF4EF] text-[#D4845A]',
   approved: 'bg-[#F0F7F1] text-[#4A6B52]',
-  executed: 'bg-[#F0F7F1] text-[#2A2A2A]',
+  in_progress: 'bg-[#F0F7F1] text-[#4A6B52]',
+  completed: 'bg-[#F0F7F1] text-[#2A2A2A]',
   cancelled: 'bg-[#F4F6F8] text-[#7A7A7A]',
 }
 
@@ -97,7 +98,8 @@ export const PROCEDURE_STATUS_LABELS: Record<string, string> = {
   draft: 'Rascunho',
   planned: 'Planejado',
   approved: 'Aprovado',
-  executed: 'Executado',
+  in_progress: 'Em andamento',
+  completed: 'Concluído',
   cancelled: 'Cancelado',
 }
 

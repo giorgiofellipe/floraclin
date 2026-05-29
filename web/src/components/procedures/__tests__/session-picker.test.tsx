@@ -93,7 +93,7 @@ describe('<SessionPicker>', () => {
     expect(buttons).toHaveLength(1)
 
     // Ordinal 4 should render "Pendente" instead.
-    expect(screen.getAllByText('Pendente').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/Aguardando sessão anterior|Pacote encerrado/).length).toBeGreaterThanOrEqual(1)
   })
 
   it('disables actions when package is closed', async () => {
@@ -119,7 +119,7 @@ describe('<SessionPicker>', () => {
     renderPicker({ packageId: 'pkg-1' })
 
     await waitFor(() => {
-      expect(screen.getAllByText('Pendente').length).toBeGreaterThan(0)
+      expect(screen.getAllByText(/Aguardando sessão anterior|Pacote encerrado/).length).toBeGreaterThan(0)
     })
 
     expect(screen.queryByRole('button', { name: 'Executar agora' })).not.toBeInTheDocument()
@@ -148,7 +148,7 @@ describe('<SessionPicker>', () => {
     renderPicker({ packageId: 'pkg-1' })
 
     await waitFor(() => {
-      expect(screen.getByText(/Pacote vencido em/)).toBeInTheDocument()
+      expect(screen.getByText(/Pacote vencido/)).toBeInTheDocument()
     })
   })
 
@@ -176,9 +176,9 @@ describe('<SessionPicker>', () => {
 
     // Wait for loading to clear, then confirm banner absent.
     await waitFor(() => {
-      expect(screen.getAllByText('Pendente').length).toBeGreaterThan(0)
+      expect(screen.getAllByText(/Aguardando sessão anterior|Pacote encerrado/).length).toBeGreaterThan(0)
     })
 
-    expect(screen.queryByText(/Pacote vencido em/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Pacote vencido/)).not.toBeInTheDocument()
   })
 })

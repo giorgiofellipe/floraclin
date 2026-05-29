@@ -11,9 +11,6 @@ import {
   DollarSign,
   Loader2,
   Save,
-  Headphones,
-  MessageSquarePlus,
-  PauseCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -37,20 +34,14 @@ import type { WizardOverrides } from '@/components/service-wizard/types'
 import type { EvaluationSection, EvaluationResponses } from '@/types/evaluation'
 import type { EncounterCart } from '@/validations/encounter-cart'
 import { FinancialPlanField } from './planning/financial-plan-field'
+import { WizardCart } from '@/components/service-wizard/wizard-cart'
+import { computeCartTotal } from '@/validations/encounter-cart'
 import {
   ProcedureTypesSection,
   type ProcedureType,
 } from './planning/procedure-types-section'
 import { EvaluationTemplatesSection } from './planning/evaluation-templates-section'
 import { DiagramSection } from './planning/diagram-section'
-import {
-  FollowupTimeline,
-  type FollowupEntry,
-} from '@/components/planejamentos/followup-timeline'
-import { FollowupModal } from '@/components/planejamentos/followup-modal'
-import { SnoozeModal } from '@/components/planejamentos/snooze-modal'
-import { useFollowupsForProcedure } from '@/hooks/queries/use-planejamentos'
-
 // ─── Re-exported types (preserved API for other modules) ──────────
 
 export interface EvaluationTemplateForForm {
@@ -98,6 +89,12 @@ interface ProcedureFormProps {
   cart?: EncounterCart
   /** Draft procedure_records ids, one per cart line, same order. */
   draftRecordIds?: string[]
+  /**
+   * Cart edit handler. When supplied, the Orçamento section mounts an
+   * editable cart (line items + sessions count + total override). Owned
+   * by the wizard so changes flow back into wizard state.
+   */
+  onCartChange?: (next: EncounterCart) => void
 }
 
 // ─── Collapsible Section ───────────────────────────────────────────
@@ -233,6 +230,7 @@ export function ProcedureForm({
   loadingEvaluationTemplates = false,
   cart,
   draftRecordIds,
+  onCartChange,
 }: ProcedureFormProps) {
   // F4 multi-line: when a cart with >1 line is provided we currently render
   // only the first line's planning UI (with a clear info banner). Full
@@ -241,8 +239,7 @@ export function ProcedureForm({
   // line of the cart. The form's schema, mutation hooks and evaluation save
   // path are tightly coupled to a single procedure_records row; extracting an
   // inner `<ProcedureLinePanel>` requires refactoring those hooks first.
-  const multiLineCart = !!cart && cart.lines.length > 1
-  const firstCartLine = cart?.lines[0]
+  void cart // referenced via the Orçamento section's WizardCart mount below
   void draftRecordIds // accepted for forward-compat; used once tabs land
   // _existingApplications is accepted for API back-compat (procedure-page-client passes it)
   void _existingApplications
@@ -396,6 +393,28 @@ export function ProcedureForm({
   //   3. If no total is set yet (new procedure), populate once as a convenience.
   const procedureTypeId = form.watch('procedureTypeId')
   const additionalTypeIds = form.watch('additionalTypeIds')
+
+  // Sync cart total into the financial plan's totalAmount. In cart mode the
+  // cart owns the value; the form input is hidden but the field still feeds
+  // installment math and the finalize endpoint. We replace the whole
+  // financialPlan object (not just the totalAmount nested field) so we never
+  // produce a partial object that fails zod validation downstream.
+  const cartTotal = cart && cart.lines.length > 0 ? computeCartTotal(cart) : null
+  useEffect(() => {
+    if (cartTotal === null) return
+    const current = form.getValues('financialPlan')
+    if (current && current.totalAmount === cartTotal) return
+    form.setValue(
+      'financialPlan',
+      {
+        totalAmount: cartTotal,
+        installmentCount: current?.installmentCount ?? 1,
+        paymentMethod: current?.paymentMethod,
+        notes: current?.notes ?? '',
+      },
+      { shouldDirty: true },
+    )
+  }, [cartTotal, form])
 
   // Seed the "previous types key" ref with the types that were already
   // associated with the procedure at load time. That way, the effect's
@@ -809,25 +828,7 @@ export function ProcedureForm({
   const financialPlan = form.watch('financialPlan')
   const diagramPoints = form.watch('diagramPoints') ?? []
 
-  // ─── Followup section (planned procedures only) ───────────────
-  const showFollowupSection = procedure?.status === 'planned' && !!procedure?.id
-  const followupsQuery = useFollowupsForProcedure(
-    showFollowupSection ? procedure!.id : '',
-  )
-  const followupEntries: FollowupEntry[] = (followupsQuery.data?.data ?? []).map(
-    (row) => ({
-      id: row.id,
-      contactedAt: row.contactedAt,
-      contactedByName: row.contactedByName,
-      channel: row.channel,
-      outcome: row.outcome,
-      notes: row.notes,
-    }),
-  )
-  const [followupModalOpen, setFollowupModalOpen] = useState(false)
-  const [snoozeModalOpen, setSnoozeModalOpen] = useState(false)
-
-  // ─── Render ─────────────────────────────────────────────────
+// ─── Render ─────────────────────────────────────────────────
   return (
     <div className="mx-auto max-w-4xl space-y-5 pb-24">
       {/* ── Header ───────────────────────────────────────────── */}
@@ -876,32 +877,7 @@ export function ProcedureForm({
         onRetry={() => void form.handleSubmit(onValid, onInvalid)()}
       />
 
-      {/* ── F4 multi-line ship-stop banner ─────────────────────
-           When the atendimento cart has >1 line we render only the
-           first line's planning UI for now (see TODO above). Show an
-           explicit notice so the operator (and the wizard orchestrator)
-           know what's happening. */}
-      {multiLineCart && firstCartLine && (
-        <div className="rounded-md border border-amber/40 bg-[#FFF7EF] px-4 py-3 text-sm text-amber-dark">
-          <p className="font-medium">
-            Planejamento de múltiplas linhas em breve.
-          </p>
-          <p className="mt-1 text-amber-dark/90">
-            Você está planejando apenas a primeira:{' '}
-            <span className="font-medium">{firstCartLine.procedureTypeName}</span>
-            {cart && cart.lines.length > 1 && (
-              <>
-                {' '}
-                ({cart.lines.length - 1}{' '}
-                {cart.lines.length - 1 === 1 ? 'outra linha' : 'outras linhas'}{' '}
-                aguardando).
-              </>
-            )}
-          </p>
-        </div>
-      )}
-
-      {/* ── Procedure Type Multi-Select ──────────────────── */}
+{/* ── Procedure Type Multi-Select ──────────────────── */}
       {!wizardOverrides?.hideProcedureTypes && (
         <ProcedureTypesSection
           control={form.control}
@@ -994,79 +970,41 @@ export function ProcedureForm({
             ) : undefined
           }
         >
+          {cart && cart.lines.length > 0 && onCartChange && (
+            <div className="mb-4">
+              <WizardCart
+                cart={cart}
+                onChange={onCartChange}
+                onRemoveLine={(typeId) =>
+                  onCartChange({
+                    ...cart,
+                    lines: cart.lines.filter((l) => l.procedureTypeId !== typeId),
+                  })
+                }
+                onClearTemplate={() =>
+                  onCartChange({
+                    ...cart,
+                    templateId: null,
+                    templateName: null,
+                    templateDefaultPrice: null,
+                    templateValidityMonths: null,
+                    lines: cart.lines.filter((l) => l.sourceTemplateLineId === null),
+                  })
+                }
+                readOnly={isReadOnly}
+              />
+            </div>
+          )}
           <FinancialPlanField
             control={form.control}
             form={form}
             disabled={isReadOnly}
+            hideTotalAmount={!!cart && cart.lines.length > 0}
           />
         </Section>
       )}
 
-      {/* ── Acompanhamento (planned procedures) ──────────────── */}
-      {showFollowupSection && (
-        <Card className="bg-white overflow-hidden border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center justify-between text-base">
-              <div className="flex items-center gap-2.5">
-                <div className="flex size-7 items-center justify-center rounded-md bg-forest/5">
-                  <Headphones className="size-4 text-forest" />
-                </div>
-                <span className="uppercase tracking-wider text-sm text-charcoal font-medium">
-                  Acompanhamento
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setFollowupModalOpen(true)}
-                >
-                  <MessageSquarePlus className="size-3.5" />
-                  Registrar contato
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSnoozeModalOpen(true)}
-                >
-                  <PauseCircle className="size-3.5" />
-                  Adiar
-                </Button>
-              </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0 pb-5">
-            <FollowupTimeline
-              followups={followupEntries}
-              loading={followupsQuery.isLoading}
-              emptyState="Nenhum contato registrado ainda. Use os botões acima para registrar um follow-up ou adiar o próximo contato."
-            />
-          </CardContent>
-        </Card>
-      )}
-
-      {showFollowupSection && (
-        <>
-          <FollowupModal
-            open={followupModalOpen}
-            onClose={() => setFollowupModalOpen(false)}
-            procedureRecordId={procedure!.id}
-            patientName={patientName}
-            procedureTypeName={procedure?.procedureTypeName}
-          />
-          <SnoozeModal
-            open={snoozeModalOpen}
-            onClose={() => setSnoozeModalOpen(false)}
-            procedureRecordId={procedure!.id}
-            patientName={patientName}
-            procedureTypeName={procedure?.procedureTypeName}
-          />
-        </>
-      )}
-
-      {/* ── Submit ──────────────────────────────────────── */}
+{/* ── Submit ──────────────────────────────────────── */}
       {!isReadOnly && !wizardOverrides?.hideSaveButton && (
         <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-sage/10 bg-white/95 py-4 backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.05)] md:sticky md:left-auto md:right-auto">
           <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 md:px-0">

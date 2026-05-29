@@ -15,7 +15,6 @@ import {
   Package,
   MapPin,
   Banknote,
-  Printer,
   Headphones,
   MessageSquarePlus,
   PauseCircle,
@@ -275,7 +274,11 @@ export function ProcedureDetailView({
 
   return (
     <div className="mx-auto max-w-3xl">
-      {/* Navigation */}
+      {/* Navigation. The "Imprimir" entry lives on the wrapper
+          (procedure-page-client), which routes to the dedicated print page
+          at /procedimentos/[id]/imprimir — that route has proper print
+          styling (data-print-area + non-print chrome hidden) and replaces
+          the previous window.print() shortcut here. */}
       <div className="flex items-center justify-between mb-6" data-print-hide>
         <button
           onClick={() => router.push(`/pacientes/${patientId}?tab=procedimentos`)}
@@ -284,15 +287,6 @@ export function ProcedureDetailView({
           <ArrowLeft className="size-3.5" />
           Voltar
         </button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => window.print()}
-          className="text-mid hover:text-charcoal text-[12px] h-8"
-        >
-          <Printer className="size-3.5 mr-1.5" />
-          Imprimir
-        </Button>
       </div>
 
       {/* ─── Document ─────────────────────────────────────────────── */}

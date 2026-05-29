@@ -54,6 +54,7 @@ interface TemplateApi {
 export function ProcedureTypeStep({
   cart,
   onCartChange,
+  selectedTypeIds: initialSelectedTypeIds,
   wizardOverrides,
   readOnly,
 }: ProcedureTypeStepProps) {
@@ -79,6 +80,39 @@ export function ProcedureTypeStep({
     }
     load()
   }, [])
+
+  // ─── Hydrate cart on resume ───────────────────────────────────────
+  // When the wizard is resumed (e.g. user navigates back to step 2 after
+  // step 3), the legacy `selectedTypeIds` is seeded from the existing
+  // procedure but the cart starts empty. Once procedure types are
+  // loaded, backfill cart lines so the selection is visible AND
+  // downstream steps see the cart they expect.
+  const hydratedRef = useRef(false)
+  useEffect(() => {
+    if (hydratedRef.current) return
+    if (procedureTypes.length === 0) return
+    if (cart.lines.length > 0) {
+      // Cart already has entries — skip hydration (and remember so we
+      // don't re-fire if the user later clears it).
+      hydratedRef.current = true
+      return
+    }
+    const seedIds = initialSelectedTypeIds ?? []
+    if (seedIds.length === 0) return
+    const lines: CartLine[] = seedIds
+      .map((id) => procedureTypes.find((t) => t.id === id))
+      .filter((t): t is ProcedureType => !!t)
+      .map((t) => ({
+        procedureTypeId: t.id,
+        procedureTypeName: t.name,
+        sessions: 1,
+        defaultPrice: Number(t.defaultPrice ?? 0),
+        sourceTemplateLineId: null,
+      }))
+    if (lines.length === 0) return
+    hydratedRef.current = true
+    onCartChange({ ...cart, lines })
+  }, [procedureTypes, cart, initialSelectedTypeIds, onCartChange])
 
   // ─── Handle wizard triggerSave ─────────────────────────────────────
   const selectedTypeIdsRef = useRef(selectedTypeIds)
@@ -381,7 +415,7 @@ export function ProcedureTypeStep({
           onRemoveLine={handleRemoveLine}
           onClearTemplate={handleClearTemplate}
           readOnly
-          previewHint="Pré-visualização. Você poderá ajustar valores e número de sessões na etapa de Aprovação."
+          previewHint="Pré-visualização. Você poderá ajustar valores e número de sessões na etapa de Planejamento."
         />
       )}
     </div>

@@ -109,9 +109,15 @@ export async function finalizeEncounter(
   input: FinalizeEncounterInput,
   outerTx?: typeof db,
 ): Promise<FinalizeEncounterResult> {
-  if (input.draftRecordIds.length !== input.cart.lines.length) {
+  // The wizard's step 3 today creates ONE draft procedure_record even when
+  // the cart has multiple lines (the F4 multi-line punt). We materialize the
+  // remaining records inside the finalize transaction so the cart's full
+  // intent is preserved without forcing the caller to pre-create them. The
+  // reverse case — more drafts than cart lines — is still a bug we surface
+  // loudly because dropping drafts on the floor loses planning data.
+  if (input.draftRecordIds.length > input.cart.lines.length) {
     throw new Error(
-      `draftRecordIds length (${input.draftRecordIds.length}) does not match cart.lines length (${input.cart.lines.length})`,
+      `draftRecordIds length (${input.draftRecordIds.length}) exceeds cart.lines length (${input.cart.lines.length}) — refusing to drop drafts`,
     )
   }
 
@@ -220,27 +226,55 @@ export async function finalizeEncounter(
     //    line carries a distinct `sessionsTotal`. `plannedSnapshot` is
     //    intentionally absent from the SET — Patch P1 mandates we preserve
     //    whatever the wizard wrote during step 2/3.
+    //
+    //    For cart lines beyond the supplied drafts (F4-followup gap), we
+    //    materialize fresh `approved` procedure_records here. They inherit
+    //    practitioner + patient from input, with no `plannedSnapshot` (the
+    //    clinician can fill planning per-session at execute time).
     const now = new Date()
-    for (let i = 0; i < input.draftRecordIds.length; i++) {
-      const recordId = input.draftRecordIds[i]
+    const finalRecordIds: string[] = [...input.draftRecordIds]
+    for (let i = 0; i < input.cart.lines.length; i++) {
       const line = input.cart.lines[i]
-      await tx
-        .update(procedureRecords)
-        .set({
-          status: 'approved',
-          approvedAt: now,
-          encounterId,
-          patientPackageId,
-          sessionsTotal: line.sessions,
-          financialPlan: input.financialPlan,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(procedureRecords.id, recordId),
-            eq(procedureRecords.tenantId, input.tenantId),
-          ),
-        )
+      const existingId = input.draftRecordIds[i] ?? null
+      if (existingId) {
+        await tx
+          .update(procedureRecords)
+          .set({
+            status: 'approved',
+            approvedAt: now,
+            encounterId,
+            patientPackageId,
+            sessionsTotal: line.sessions,
+            financialPlan: input.financialPlan,
+            procedureTypeId: line.procedureTypeId,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(procedureRecords.id, existingId),
+              eq(procedureRecords.tenantId, input.tenantId),
+            ),
+          )
+      } else {
+        const [created] = await tx
+          .insert(procedureRecords)
+          .values({
+            tenantId: input.tenantId,
+            patientId: input.patientId,
+            practitionerId: input.practitionerId,
+            procedureTypeId: line.procedureTypeId,
+            status: 'approved',
+            approvedAt: now,
+            encounterId,
+            patientPackageId,
+            sessionsTotal: line.sessions,
+            financialPlan: input.financialPlan,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning({ id: procedureRecords.id })
+        finalRecordIds.push(created.id)
+      }
     }
 
     // Back-fill the financial_entries.procedure_record_id pointer with the
@@ -257,8 +291,8 @@ export async function finalizeEncounter(
         AND tenant_id = ${input.tenantId}
     `)
 
-    // 6. Consent acceptances — one per (draftRecordId × consent).
-    for (const recordId of input.draftRecordIds) {
+    // 6. Consent acceptances — one per (final record id × consent).
+    for (const recordId of finalRecordIds) {
       for (const consent of input.consents) {
         await tx.insert(consentAcceptances).values({
           tenantId: input.tenantId,
@@ -284,7 +318,7 @@ export async function finalizeEncounter(
         entityId: encounterId,
         changes: {
           patientPackageId: { old: null, new: patientPackageId },
-          procedureRecords: { old: [], new: input.draftRecordIds },
+          procedureRecords: { old: [], new: finalRecordIds },
           financialEntryId: { old: null, new: feEntry.id },
         },
       },
@@ -294,7 +328,7 @@ export async function finalizeEncounter(
     return {
       encounterId,
       patientPackageId,
-      procedureRecordIds: [...input.draftRecordIds],
+      procedureRecordIds: finalRecordIds,
       financialEntryId: feEntry.id,
     }
   }

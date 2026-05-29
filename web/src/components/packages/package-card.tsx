@@ -37,6 +37,7 @@ import {
 } from '@/hooks/queries/use-packages'
 import { closeReasonLabels, type CloseReason } from '@/validations/encerrar-pacote'
 import { ClosePackageDialog } from '@/components/packages/close-package-dialog'
+import { SessionsTimeline } from '@/components/procedures/sessions-timeline'
 
 interface PackageCardProps {
   patientId: string
@@ -217,7 +218,6 @@ export function PackageCard({ patientId, pkg }: PackageCardProps) {
           const total = record.sessionsTotal
           const executed = record.sessionsExecuted
           const remaining = Math.max(0, total - executed)
-          const pct = total > 0 ? Math.min(100, (executed / total) * 100) : 0
           const allExecuted = executed >= total
           const canExecuteNext =
             executed < total &&
@@ -253,17 +253,16 @@ export function PackageCard({ patientId, pkg }: PackageCardProps) {
                 )}
               </div>
 
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#E8ECEF]">
-                <div
-                  className={cn(
-                    'h-full rounded-full transition-all',
-                    allExecuted ? 'bg-forest' : 'bg-sage',
-                  )}
-                  style={{ width: `${pct}%` }}
+              <div className="mt-3">
+                <SessionsTimeline
+                  sessionsTotal={total}
+                  sessionsExecuted={executed}
+                  sessions={record.sessions ?? []}
+                  procedureDetailHref={`/pacientes/${patientId}/procedimentos/${record.procedureRecordId}`}
                 />
               </div>
 
-              <p className="mt-1.5 text-[11px] text-mid">
+              <p className="mt-2 text-[11px] text-mid">
                 {remaining > 0
                   ? `${remaining} ${remaining === 1 ? 'sessão restante' : 'sessões restantes'}`
                   : 'Todas as sessões executadas'}

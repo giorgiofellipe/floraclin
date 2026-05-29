@@ -291,7 +291,7 @@ describe('finalizeEncounter', () => {
     resetTx()
   })
 
-  it('rejects when draftRecordIds length does not match cart.lines', async () => {
+  it('rejects when draftRecordIds exceeds cart.lines (would drop drafts)', async () => {
     await expect(
       finalizeEncounter({
         tenantId,
@@ -299,12 +299,15 @@ describe('finalizeEncounter', () => {
         encounterId,
         patientId,
         practitionerId,
-        cart: adhocCart,
-        draftRecordIds: [], // mismatch
+        cart: adhocCart, // 1 line
+        draftRecordIds: [
+          '00000000-0000-0000-0000-000000000aa1',
+          '00000000-0000-0000-0000-000000000aa2',
+        ], // 2 drafts — exceeds the cart's single line
         financialPlan: { totalAmount: '800.00', installmentCount: 1, paymentMethod: 'pix' },
         consents: [],
       }),
-    ).rejects.toThrow(/draftRecordIds length/)
+    ).rejects.toThrow(/draftRecordIds length .* exceeds cart\.lines/)
   })
 
   it('creates a package row when any line is multi-session', async () => {

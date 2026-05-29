@@ -2,9 +2,13 @@
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Trash2 } from 'lucide-react'
+import { Minus, Plus, Trash2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { type EncounterCart, computeCartTotal } from '@/validations/encounter-cart'
 import { formatCurrency } from '@/lib/utils'
+// Session count constraints — used by the +/- stepper and the bare input.
+const MIN_SESSIONS = 1
+const MAX_SESSIONS = 50
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 
 interface WizardCartProps {
@@ -45,7 +49,7 @@ export function WizardCart({
       .reduce((sum, l) => sum + l.defaultPrice * l.sessions, 0)
 
   return (
-    <Card className="border-primary/20">
+    <Card className="ring-0 border border-primary/20">
       <CardContent className="p-4 space-y-3">
         {previewHint && (
           <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -71,7 +75,12 @@ export function WizardCart({
         {cart.lines.length > 0 && (
           <div className="flex items-center gap-2 px-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             <span className="flex-1">Procedimento</span>
-            <span className="w-20 text-center">Sessões</span>
+            {/* Stepper column is wider than the bare input was so the
+                -/+ buttons + tabular value sit comfortably under the
+                "Sessões" header. */}
+            <span className={cn(readOnly ? 'w-12' : 'w-24', 'text-center')}>
+              Sessões
+            </span>
             <span className="w-24 text-right">Valor</span>
             {!readOnly && <span className="w-9 shrink-0" aria-hidden />}
           </div>
@@ -79,33 +88,40 @@ export function WizardCart({
 
         <ul className="space-y-2">
           {cart.lines.map((line) => {
+            const isTemplateLine = line.sourceTemplateLineId !== null
             const lineTotal = line.defaultPrice * line.sessions
             return (
               <li key={line.procedureTypeId} className="flex items-center gap-2">
                 <span className="flex-1 text-sm">{line.procedureTypeName}</span>
                 {readOnly ? (
-                  <span className="w-20 text-center text-sm tabular-nums">{line.sessions}</span>
+                  <span className="w-12 text-center text-sm tabular-nums">{line.sessions}</span>
                 ) : (
-                  <Input
-                    type="number"
-                    min={1}
-                    max={50}
+                  // Sessions are editable on every line — including
+                  // template-driven ones — so the clinician can customize
+                  // the package contents for this specific atendimento (e.g.
+                  // sell a 4-session Skinbooster instead of the template's
+                  // default 3). The trash icon stays locked on template
+                  // lines so the line itself can't be removed.
+                  <SessionsStepper
                     value={line.sessions}
-                    disabled={line.sourceTemplateLineId !== null}
-                    className="w-20"
-                    onChange={(e) => {
-                      const sessions = Math.max(1, Number(e.target.value) || 1)
+                    onChange={(sessions) =>
                       onChange({
                         ...cart,
                         lines: cart.lines.map((l) =>
-                          l.procedureTypeId === line.procedureTypeId ? { ...l, sessions } : l,
+                          l.procedureTypeId === line.procedureTypeId
+                            ? { ...l, sessions }
+                            : l,
                         ),
                       })
-                    }}
+                    }
                   />
                 )}
                 <span className="w-24 text-right text-sm tabular-nums">
-                  {formatCurrency(lineTotal)}
+                  {isTemplateLine ? (
+                    <span className="text-[11px] uppercase tracking-wider text-sage">incluído</span>
+                  ) : (
+                    formatCurrency(lineTotal)
+                  )}
                 </span>
                 {!readOnly && (
                   <div className="flex w-9 shrink-0 items-center justify-center">
@@ -152,5 +168,66 @@ export function WizardCart({
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+// ── Sessions stepper ─────────────────────────────────────────────────
+// Compact -/+ control flanking the session count. Clamps to
+// [MIN_SESSIONS, MAX_SESSIONS]. Input is narrow (12ch) because session
+// counts are 1-2 digits in practice; the native spinner buttons are
+// hidden via the spin-button removal classes (the explicit -/+ buttons
+// take their place and are accessible on touch devices too).
+function SessionsStepper({
+  value,
+  onChange,
+}: {
+  value: number
+  onChange: (next: number) => void
+}) {
+  const clamp = (n: number) => Math.min(MAX_SESSIONS, Math.max(MIN_SESSIONS, n))
+  const canDec = value > MIN_SESSIONS
+  const canInc = value < MAX_SESSIONS
+  return (
+    <div className="inline-flex w-24 items-center overflow-hidden rounded-md border border-input bg-background">
+      <button
+        type="button"
+        onClick={() => onChange(clamp(value - 1))}
+        disabled={!canDec}
+        aria-label="Diminuir sessões"
+        className={cn(
+          'flex h-8 w-7 shrink-0 items-center justify-center text-mid transition-colors',
+          'hover:bg-cream/40 hover:text-charcoal',
+          'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-mid',
+        )}
+      >
+        <Minus className="size-3.5" />
+      </button>
+      <input
+        type="number"
+        min={MIN_SESSIONS}
+        max={MAX_SESSIONS}
+        value={value}
+        onChange={(e) => onChange(clamp(Number(e.target.value) || MIN_SESSIONS))}
+        className={cn(
+          'h-8 w-10 border-0 bg-transparent text-center text-sm tabular-nums outline-none',
+          // Hide native spinner controls in favor of the explicit buttons.
+          '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
+        )}
+        aria-label="Número de sessões"
+      />
+      <button
+        type="button"
+        onClick={() => onChange(clamp(value + 1))}
+        disabled={!canInc}
+        aria-label="Aumentar sessões"
+        className={cn(
+          'flex h-8 w-7 shrink-0 items-center justify-center text-mid transition-colors',
+          'hover:bg-cream/40 hover:text-charcoal',
+          'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-mid',
+        )}
+      >
+        <Plus className="size-3.5" />
+      </button>
+    </div>
   )
 }

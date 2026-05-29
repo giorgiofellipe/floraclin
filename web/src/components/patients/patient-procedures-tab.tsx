@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { usePatientPackages } from '@/hooks/queries/use-packages'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -30,11 +31,18 @@ import {
 import { cn, formatDateTime } from '@/lib/utils'
 import { PROCEDURE_STATUS_LABELS } from '@/lib/constants'
 import { useProcedures } from '@/hooks/queries/use-procedures'
+import { SessionsTimeline } from '@/components/procedures/sessions-timeline'
 import { useCancelProcedure } from '@/hooks/mutations/use-procedure-mutations'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
 // ─── Types ──────────────────────────────────────────────────────────
+
+interface SessionSummary {
+  sessionOrdinal: number
+  performedAt: string
+  executedByName: string
+}
 
 interface ProcedureRecord {
   id: string
@@ -49,33 +57,41 @@ interface ProcedureRecord {
   approvedAt: Date | string | null
   cancelledAt: Date | string | null
   cancellationReason: string | null
+  encounterId: string | null
+  patientPackageId: string | null
+  sessionsTotal: number
+  sessionsExecuted: number
+  sessions: SessionSummary[]
 }
 
 interface PatientProceduresTabProps {
   patientId: string
 }
 
-// ─── Status config ──────────────────────────────────────────────────
+// ─── Status visual config ──────────────────────────────────────────
+//
+// Each status gets a color-token suffix used to compose dot, label, and
+// background. We avoid switch-cases scattered through the JSX by keeping
+// these as small helpers consumed by <StatusPill /> and the card-tint
+// classes below.
+type StatusKey = 'draft' | 'planned' | 'approved' | 'in_progress' | 'completed' | 'cancelled'
 
-const STATUS_DOT: Record<string, string> = {
-  planned: 'bg-amber border-amber-light',
-  approved: 'bg-sage border-sage/30',
-  executed: 'bg-forest border-forest/30',
-  cancelled: 'bg-mid/40 border-mid/20',
+const STATUS_DOT_BG: Record<string, string> = {
+  draft: 'bg-mid/40',
+  planned: 'bg-amber',
+  approved: 'bg-sage',
+  in_progress: 'bg-forest/70',
+  completed: 'bg-forest',
+  cancelled: 'bg-mid/30',
 }
 
-const STATUS_LINE: Record<string, string> = {
-  planned: 'bg-amber/20',
-  approved: 'bg-sage/20',
-  executed: 'bg-forest/20',
-  cancelled: 'bg-mid/10',
-}
-
-const STATUS_ACCENT: Record<string, string> = {
-  planned: 'border-l-amber',
-  approved: 'border-l-sage',
-  executed: 'border-l-forest',
-  cancelled: 'border-l-mid/30',
+const STATUS_LABEL_COLOR: Record<string, string> = {
+  draft: 'text-mid',
+  planned: 'text-amber',
+  approved: 'text-sage',
+  in_progress: 'text-forest',
+  completed: 'text-forest',
+  cancelled: 'text-mid/60',
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -101,7 +117,56 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
   const router = useRouter()
   const { data: proceduresResult, isLoading } = useProcedures(patientId)
   const procedures = (proceduresResult ?? []) as unknown as ProcedureRecord[]
+  const { data: packages } = usePatientPackages(patientId)
   const cancelProcedure = useCancelProcedure()
+
+  // ─── Group by encounter ─────────────────────────────────────────────
+  //
+  // The atendimento (encounter) is the unit of work — a patient visit. A
+  // single encounter can contain multiple procedure_records (one per cart
+  // line) all sharing the same encounter_id. We collapse them so the user
+  // sees ONE row per atendimento instead of N. For records without a
+  // shared encounter (single-procedure atendimentos), each row is its own
+  // group of size 1 — visually identical to today.
+  const encounters = useMemo(() => {
+    const byEncounter = new Map<string, ProcedureRecord[]>()
+    for (const p of procedures) {
+      // Records that have no encounter id (legacy or partially-migrated
+      // data) are surfaced as singletons keyed by their own id.
+      const key = p.encounterId ?? `record:${p.id}`
+      const group = byEncounter.get(key) ?? []
+      group.push(p)
+      byEncounter.set(key, group)
+    }
+
+    // Build a representative row per encounter, preserving sort order from
+    // the original list (which is already ordered by date desc).
+    const seen = new Set<string>()
+    const groups: Array<{
+      key: string
+      primary: ProcedureRecord
+      lines: ProcedureRecord[]
+      packageName: string | null
+      isBundle: boolean
+    }> = []
+    for (const p of procedures) {
+      const key = p.encounterId ?? `record:${p.id}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      const lines = byEncounter.get(key) ?? [p]
+      // The "primary" record is the first one in the group. For bundles
+      // (a patient_package or >1 line), the bundle's labels supersede the
+      // primary's per-line labels.
+      const primary = lines[0]
+      const isBundle = lines.length > 1 || !!primary.patientPackageId
+      const pkg = primary.patientPackageId
+        ? (packages ?? []).find((p) => p.id === primary.patientPackageId)
+        : null
+      const packageName = pkg?.name ?? null
+      groups.push({ key, primary, lines, packageName, isBundle })
+    }
+    return groups
+  }, [procedures, packages])
 
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<string | null>(null)
@@ -158,7 +223,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
             Histórico
           </span>
           <span className="text-[12px] text-mid/50">
-            {procedures.length} {procedures.length === 1 ? 'registro' : 'registros'}
+            {encounters.length} {encounters.length === 1 ? 'atendimento' : 'atendimentos'}
           </span>
         </div>
         <Link
@@ -197,14 +262,12 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
           </Link>
         </div>
       ) : (
-        /* ─── Timeline ────────────────────────────────────────────── */
+        /* ─── Encounter feed ──────────────────────────────────────── */
         <div className="relative">
-          {procedures.map((proc, i) => {
-            const isLast = i === procedures.length - 1
-            const statusLabel = PROCEDURE_STATUS_LABELS[proc.status] ?? proc.status
-            const dotColor = STATUS_DOT[proc.status] ?? STATUS_DOT.planned
-            const lineColor = STATUS_LINE[proc.status] ?? STATUS_LINE.planned
-            const accentColor = STATUS_ACCENT[proc.status] ?? STATUS_ACCENT.planned
+          {encounters.map((enc, idx) => {
+            const isLast = idx === encounters.length - 1
+            const proc = enc.primary
+            const isCancelled = proc.status === 'cancelled'
 
             const financialPlan = proc.financialPlan as {
               totalAmount?: number
@@ -212,202 +275,265 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
             } | null
 
             const basePath = `/pacientes/${patientId}/procedimentos/${proc.id}`
+            const procedureLabel = enc.packageName
+              ? enc.packageName
+              : enc.lines.length > 1
+                ? `Atendimento — ${enc.lines.length} procedimentos`
+                : proc.procedureTypeName
+
+            const sessionsDone = enc.lines.reduce((s, l) => s + l.sessionsExecuted, 0)
+            const sessionsTotal = enc.lines.reduce((s, l) => s + l.sessionsTotal, 0)
+            const sessionsMissing = sessionsTotal - sessionsDone
+            const hasSessionStrip =
+              enc.lines.length > 1 || enc.lines.some((l) => l.sessionsTotal > 1)
+
+            const date = new Date(proc.performedAt)
+            const spineDot = STATUS_DOT_BG[proc.status] ?? 'bg-mid/30'
 
             return (
-              <div key={proc.id} className="group relative flex gap-5">
-                {/* ─── Timeline spine ─────────────────────────────── */}
-                <div className="flex flex-col items-center pt-1">
-                  {/* Dot */}
-                  <div className={cn(
-                    'relative z-10 size-3 rounded-full border-2 shrink-0 transition-transform duration-200 group-hover:scale-125',
-                    dotColor,
-                  )} />
-                  {/* Connecting line */}
+              <div key={enc.key} className="relative flex gap-5">
+                {/* ── Timeline spine (status-tinted dot + connecting line) ── */}
+                <div className="flex flex-col items-center pt-5">
+                  <span
+                    className={cn(
+                      'relative z-10 size-2.5 shrink-0 rounded-full ring-2 ring-white',
+                      spineDot,
+                      isCancelled && 'opacity-60',
+                    )}
+                    aria-hidden
+                  />
                   {!isLast && (
-                    <div className={cn('w-px flex-1 mt-1', lineColor)} />
+                    <span className="mt-1 w-px flex-1 bg-sage/15" aria-hidden />
                   )}
                 </div>
 
-                {/* ─── Card ───────────────────────────────────────── */}
-                <div className={cn(
-                  'flex-1 mb-5 rounded-[3px] border-l-[3px] bg-[#FAFBFC] px-5 py-4 transition-all duration-200',
-                  'group-hover:bg-white group-hover:shadow-[0_2px_12px_rgba(0,0,0,0.06)]',
-                  accentColor,
-                )}>
-                  {/* Top row: date + status */}
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-[15px] font-semibold text-charcoal leading-none">
-                        {formatShortDate(proc.performedAt)}
-                      </span>
-                      <span className="text-[11px] text-mid/50">
-                        {formatYear(proc.performedAt)}
-                      </span>
-                    </div>
-                    <span className={cn(
-                      'text-[11px] font-medium uppercase tracking-wider',
-                      proc.status === 'draft' && 'text-mid',
-                      proc.status === 'planned' && 'text-amber',
-                      proc.status === 'approved' && 'text-sage',
-                      (proc.status === 'in_progress' || proc.status === 'completed') && 'text-forest',
-                      proc.status === 'cancelled' && 'text-mid/50',
-                    )}>
-                      {statusLabel}
+                {/* ── Card ── */}
+                <article
+                  className={cn(
+                    'group relative mb-4 flex-1 rounded-[3px] border bg-white px-5 py-4 transition-colors duration-200',
+                    'border-sage/15 hover:border-sage/30',
+                    isCancelled && 'opacity-65',
+                  )}
+                >
+                {/* ── Top meta row: date anchor (left) + financial (right) ── */}
+                <header className="flex items-baseline justify-between gap-3">
+                  <div className="flex items-baseline gap-2 leading-none">
+                    <span className="font-heading text-[18px] font-medium text-charcoal tabular-nums">
+                      {format(date, 'dd', { locale: ptBR })}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-[0.18em] text-mid">
+                      {format(date, "MMM ''yy", { locale: ptBR })}
                     </span>
                   </div>
 
-                  {/* Procedure name */}
-                  <h3 className="text-[14px] font-medium text-charcoal">
-                    {proc.procedureTypeName}
-                  </h3>
-
-                  {/* Practitioner */}
-                  <p className="text-[12px] text-mid mt-0.5">
-                    {proc.practitionerName}
-                  </p>
-
-                  {/* Financial (planned/approved) */}
                   {(proc.status === 'planned' || proc.status === 'approved') &&
                     financialPlan?.totalAmount && (
-                      <div className="mt-3 inline-flex items-baseline gap-1.5 rounded-lg bg-white/80 border border-[#E8ECEF] px-3 py-1.5">
-                        <span className="text-[14px] font-semibold text-charcoal tabular-nums">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-[13px] font-medium text-charcoal tabular-nums">
                           {formatCurrency(financialPlan.totalAmount)}
                         </span>
                         {financialPlan.installmentCount &&
                           financialPlan.installmentCount > 1 && (
-                            <span className="text-[11px] text-mid">
-                              {financialPlan.installmentCount}x
+                            <span className="text-[10px] uppercase tracking-wider text-mid tabular-nums">
+                              {financialPlan.installmentCount}×
                             </span>
                           )}
                       </div>
                     )}
+                </header>
 
-                  {/* Approved date */}
-                  {proc.status === 'approved' && proc.approvedAt && (
-                    <p className="mt-2 text-[12px] text-sage">
-                      Aprovado em{' '}
-                      {format(new Date(proc.approvedAt), "dd 'de' MMMM", { locale: ptBR })}
-                    </p>
-                  )}
+                {/* ── Title row: heading | hairline connector | status pill ── */}
+                <div className="mt-3 flex items-center gap-3">
+                  <h3
+                    className={cn(
+                      'shrink-0 font-heading text-[15px] leading-snug text-charcoal',
+                      isCancelled && 'line-through decoration-mid/40 decoration-1',
+                    )}
+                  >
+                    {procedureLabel}
+                  </h3>
+                  <span className="h-px flex-1 bg-sage/15" aria-hidden />
+                  <StatusPill status={proc.status} />
+                </div>
+                {enc.lines.length > 1 && !enc.packageName && (
+                  <p className="mt-0.5 text-[11px] text-mid">
+                    {enc.lines.length} procedimentos
+                  </p>
+                )}
 
-                  {/* Executed details */}
-                  {(proc.status === 'in_progress' || proc.status === 'completed') && (proc.technique || proc.clinicalResponse) && (
-                    <div className="mt-3 space-y-1 border-t border-[#E8ECEF] pt-3">
+                {/* ── Sessions timeline ── */}
+                {hasSessionStrip && (
+                  <ul className="mt-4 space-y-4 border-t border-dashed border-sage/15 pt-3">
+                    {enc.lines.map((l) => (
+                      <li key={l.id} className="space-y-1.5">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="truncate text-[12px] text-charcoal">
+                            {l.procedureTypeName}
+                          </span>
+                          <span className="shrink-0 text-[10px] uppercase tracking-wider text-mid tabular-nums">
+                            <span className="text-charcoal">
+                              {l.sessionsExecuted}
+                            </span>
+                            <span className="text-mid/60">/{l.sessionsTotal}</span>
+                          </span>
+                        </div>
+                        <SessionsTimeline
+                          sessionsTotal={l.sessionsTotal}
+                          sessionsExecuted={l.sessionsExecuted}
+                          sessions={(l.sessions ?? []).map((s) => ({
+                            sessionOrdinal: s.sessionOrdinal,
+                            performedAt: s.performedAt,
+                            executedByName: s.executedByName,
+                          }))}
+                          procedureDetailHref={`/pacientes/${patientId}/procedimentos/${l.id}`}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {/* ── Status-specific detail bands ── */}
+                {proc.status === 'approved' && proc.approvedAt && (
+                  <p className="mt-3 text-[11px] uppercase tracking-wider text-sage">
+                    Aprovado em{' '}
+                    {format(new Date(proc.approvedAt), "dd 'de' MMMM", { locale: ptBR })}
+                  </p>
+                )}
+
+                {(proc.status === 'in_progress' || proc.status === 'completed') &&
+                  (proc.technique || proc.clinicalResponse) && (
+                    <div className="mt-3 space-y-1 border-t border-dashed border-sage/15 pt-3">
                       {proc.technique && (
                         <p className="text-[13px]">
-                          <span className="text-mid">Técnica</span>{' '}
+                          <span className="text-[10px] uppercase tracking-wider text-mid">
+                            Técnica{' '}
+                          </span>
                           <span className="text-charcoal">{proc.technique}</span>
                         </p>
                       )}
                       {proc.clinicalResponse && (
                         <p className="text-[13px]">
-                          <span className="text-mid">Resposta</span>{' '}
+                          <span className="text-[10px] uppercase tracking-wider text-mid">
+                            Resposta{' '}
+                          </span>
                           <span className="text-charcoal">{proc.clinicalResponse}</span>
                         </p>
                       )}
                       {proc.notes && (
-                        <p className="text-[12px] text-mid italic mt-1">{proc.notes}</p>
+                        <p className="mt-1 text-[12px] italic text-mid">{proc.notes}</p>
                       )}
                     </div>
                   )}
 
-                  {/* Cancelled details */}
-                  {proc.status === 'cancelled' && (
-                    <div className="mt-3 space-y-0.5 border-t border-[#E8ECEF] pt-3">
-                      {proc.cancellationReason && (
-                        <p className="text-[12px] text-mid">
-                          {proc.cancellationReason}
-                        </p>
-                      )}
-                      {proc.cancelledAt && (
-                        <p className="text-[11px] text-mid/50">
-                          {format(new Date(proc.cancelledAt), "dd/MM/yyyy", { locale: ptBR })}
-                        </p>
-                      )}
-                    </div>
-                  )}
+                {proc.status === 'cancelled' && (proc.cancellationReason || proc.cancelledAt) && (
+                  <div className="mt-3 space-y-0.5 border-t border-dashed border-sage/15 pt-3">
+                    {proc.cancellationReason && (
+                      <p className="text-[12px] text-mid">{proc.cancellationReason}</p>
+                    )}
+                    {proc.cancelledAt && (
+                      <p className="text-[11px] text-mid/50 tabular-nums">
+                        {format(new Date(proc.cancelledAt), 'dd/MM/yyyy', { locale: ptBR })}
+                      </p>
+                    )}
+                  </div>
+                )}
 
-                  {/* ─── Actions (visible on hover) ───────────────── */}
-                  <div className={cn(
-                    'mt-3 flex items-center gap-1.5 transition-opacity duration-200',
-                    'opacity-100',
-                  )}>
-                    {proc.status === 'draft' && (
+                {/* ── Footer: practitioner + summary + hover-actions ── */}
+                <footer className="mt-4 flex items-center justify-between border-t border-sage/10 pt-3">
+                  <PractitionerChip name={proc.practitionerName} />
+                  <div className="flex items-center gap-4">
+                    {sessionsTotal > 1 && (
+                      <span className="text-[11px] uppercase tracking-wider text-mid tabular-nums">
+                        <span className="text-charcoal">{sessionsDone}</span>
+                        <span className="text-mid/60"> / {sessionsTotal} sessões</span>
+                        {sessionsMissing > 0 && (
+                          <span className="ml-1.5 text-mid/70">· {sessionsMissing} pendente{sessionsMissing === 1 ? '' : 's'}</span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                </footer>
+
+                {/* ── Actions (always visible — tablets don't hover) ── */}
+                <div className="mt-3 flex items-center gap-1.5">
+                  {proc.status === 'draft' && (
+                    <Button
+                      size="sm"
+                      className="h-7 rounded-[3px] border-0 bg-forest/10 text-[11px] uppercase tracking-wider text-forest shadow-none hover:bg-forest/20"
+                      onClick={() => router.push(`/pacientes/${patientId}/atendimento?step=3`)}
+                    >
+                      <Pencil className="mr-1 size-3" />
+                      Continuar
+                    </Button>
+                  )}
+                  {proc.status === 'planned' && (
+                    <>
                       <Button
                         size="sm"
-                        className="h-7 text-[12px] bg-forest/10 text-forest hover:bg-forest/20 border-0 rounded-lg shadow-none"
-                        onClick={() => router.push(`/pacientes/${patientId}/atendimento?step=3`)}
+                        className="h-7 rounded-[3px] border-0 bg-sage/10 text-[11px] uppercase tracking-wider text-sage shadow-none hover:bg-sage/20"
+                        onClick={() => router.push(`/pacientes/${patientId}/atendimento?step=4`)}
                       >
-                        <Pencil className="mr-1 size-3" />
-                        Continuar Planejamento
+                        <CheckCircle2 className="mr-1 size-3" />
+                        Aprovar
                       </Button>
-                    )}
-                    {proc.status === 'planned' && (
-                      <>
-                        <Button
-                          size="sm"
-                          className="h-7 text-[12px] bg-sage/10 text-sage hover:bg-sage/20 border-0 rounded-lg shadow-none"
-                          onClick={() => router.push(`/pacientes/${patientId}/atendimento?step=4`)}
-                        >
-                          <CheckCircle2 className="mr-1 size-3" />
-                          Aprovar
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 text-[12px] text-mid hover:text-charcoal hover:bg-[#F4F6F8] rounded-lg"
-                          onClick={() => router.push(`/pacientes/${patientId}/atendimento?step=3`)}
-                        >
-                          <Pencil className="mr-1 size-3" />
-                          Editar
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 text-[12px] text-mid hover:text-red-600 hover:bg-red-50 rounded-lg"
-                          onClick={() => handleCancelClick(proc.id)}
-                        >
-                          <XCircle className="mr-1 size-3" />
-                          Cancelar
-                        </Button>
-                      </>
-                    )}
-
-                    {proc.status === 'approved' && (
-                      <>
-                        <Button
-                          size="sm"
-                          className="h-7 text-[12px] bg-forest/10 text-forest hover:bg-forest/20 border-0 rounded-lg shadow-none"
-                          onClick={() => router.push(`/pacientes/${patientId}/atendimento?step=5`)}
-                        >
-                          <Play className="mr-1 size-3" />
-                          Registrar Execução
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 text-[12px] text-mid hover:text-red-600 hover:bg-red-50 rounded-lg"
-                          onClick={() => handleCancelClick(proc.id)}
-                        >
-                          <XCircle className="mr-1 size-3" />
-                          Cancelar
-                        </Button>
-                      </>
-                    )}
-
-                    {(proc.status === 'in_progress' || proc.status === 'completed' || proc.status === 'cancelled') && (
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 text-[12px] text-mid hover:text-charcoal hover:bg-[#F4F6F8] rounded-lg"
-                        onClick={() => router.push(basePath)}
+                        className="h-7 rounded-[3px] text-[11px] uppercase tracking-wider text-mid hover:bg-cream/40 hover:text-charcoal"
+                        onClick={() => router.push(`/pacientes/${patientId}/atendimento?step=3`)}
                       >
-                        <Eye className="mr-1 size-3" />
-                        Ver Detalhes
+                        <Pencil className="mr-1 size-3" />
+                        Editar
                       </Button>
-                    )}
-                  </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 rounded-[3px] text-[11px] uppercase tracking-wider text-mid hover:bg-red-50 hover:text-red-600"
+                        onClick={() => handleCancelClick(proc.id)}
+                      >
+                        <XCircle className="mr-1 size-3" />
+                        Cancelar
+                      </Button>
+                    </>
+                  )}
+
+                  {proc.status === 'approved' && (
+                    <>
+                      <Button
+                        size="sm"
+                        className="h-7 rounded-[3px] border-0 bg-forest/10 text-[11px] uppercase tracking-wider text-forest shadow-none hover:bg-forest/20"
+                        onClick={() => router.push(`/pacientes/${patientId}/atendimento?step=5`)}
+                      >
+                        <Play className="mr-1 size-3" />
+                        Registrar execução
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 rounded-[3px] text-[11px] uppercase tracking-wider text-mid hover:bg-red-50 hover:text-red-600"
+                        onClick={() => handleCancelClick(proc.id)}
+                      >
+                        <XCircle className="mr-1 size-3" />
+                        Cancelar
+                      </Button>
+                    </>
+                  )}
+
+                  {(proc.status === 'in_progress' ||
+                    proc.status === 'completed' ||
+                    proc.status === 'cancelled') && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 rounded-[3px] text-[11px] uppercase tracking-wider text-mid hover:bg-cream/40 hover:text-charcoal"
+                      onClick={() => router.push(basePath)}
+                    >
+                      <Eye className="mr-1 size-3" />
+                      Ver detalhes
+                    </Button>
+                  )}
                 </div>
+                </article>
               </div>
             )
           })}
@@ -505,3 +631,53 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
     </div>
   )
 }
+
+// ── Status pill ────────────────────────────────────────────────────
+// Compact eyebrow showing the procedure's status with a leading dot and
+// status-tinted label. The dot color tracks STATUS_DOT_BG; the label
+// color tracks STATUS_LABEL_COLOR. Visually replaces the bare uppercase
+// text the old row used in the top-right corner.
+function StatusPill({ status }: { status: string }) {
+  const label = PROCEDURE_STATUS_LABELS[status] ?? status
+  const dot = STATUS_DOT_BG[status] ?? 'bg-mid/30'
+  const color = STATUS_LABEL_COLOR[status] ?? 'text-mid'
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.16em]',
+        color,
+      )}
+    >
+      <span className={cn('size-1.5 shrink-0 rounded-full', dot)} aria-hidden />
+      {label}
+    </span>
+  )
+}
+
+// ── Practitioner chip ──────────────────────────────────────────────
+// Initials avatar (max 2 chars) plus the practitioner's name. Sized to
+// align with the footer's tabular session-count counterpart on the
+// right. Initials read from the full name's first two whitespace-split
+// tokens — handles "Dra. Ana Oliveira" → "AO".
+function PractitionerChip({ name }: { name: string }) {
+  const initials = (() => {
+    const parts = name
+      .split(/\s+/)
+      .filter((p) => p && !/^(Dra?|Sra?|Sr|Dr)\.?$/i.test(p))
+    const first = parts[0]?.[0] ?? ''
+    const second = parts[parts.length - 1]?.[0] ?? ''
+    return (first + (parts.length > 1 ? second : '')).toUpperCase()
+  })()
+  return (
+    <span className="inline-flex items-center gap-2 text-[12px] text-mid">
+      <span
+        className="flex size-6 items-center justify-center rounded-full bg-sage/15 text-[10px] font-medium tabular-nums text-forest"
+        aria-hidden
+      >
+        {initials}
+      </span>
+      {name}
+    </span>
+  )
+}
+

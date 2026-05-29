@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
@@ -121,11 +122,18 @@ export function ServiceWizard({
     return ids
   })()
 
+  // Derive initial encounterId from the loaded procedure (resume path). For a
+  // fresh start the step 2 → 3 advance mints one. Without this, resuming a
+  // mid-flow atendimento would leave state.encounterId null and step 4's
+  // finalize would error with "Atendimento sem identificador".
+  const initialEncounterId = (procedure as unknown as { encounterId?: string | null } | null | undefined)?.encounterId ?? null
+
   const wizard = useServiceWizard({
     patientId: patient.id,
     initialStep,
     procedureId,
     procedureStatus,
+    encounterId: initialEncounterId,
     selectedTypeIds: initialSelectedTypeIds,
     stepTimestamps,
   })
@@ -573,8 +581,44 @@ export function ServiceWizard({
   //
   // On step 5 (Execução), "Próximo" becomes "Finalizar Atendimento" — a
   // terminal, irreversible action. Gate it behind a confirmation dialog so
-  // the user doesn't accidentally lock the record.
+  // the user doesn't accidentally lock the record. Additionally, block the
+  // action entirely while any executable session is still pending.
   const [showFinalizeDialog, setShowFinalizeDialog] = useState(false)
+
+  // Subscribe to the encounter view (shared cache with SessionPicker — no
+  // extra fetch) so we can tell whether any session is still pending.
+  type EncounterPickerSlice = {
+    records: Array<{ id: string; sessionsTotal: number; sessions: Array<{ id: string }> }>
+    package: { status: string; closedAt: string | null } | null
+  }
+  const { data: encounterView } = useQuery<EncounterPickerSlice>({
+    queryKey: ['encounter-view', state.encounterId],
+    queryFn: async () => {
+      const res = await fetch(`/api/encounters/${state.encounterId}`)
+      const json = await res.json()
+      const view = json?.data ?? json
+      return view as EncounterPickerSlice
+    },
+    enabled: !!state.encounterId && state.currentStep === 5,
+  })
+
+  const pendingSessionsRemaining = useMemo(() => {
+    if (!encounterView) return 0
+    const isPkgTerminal = Boolean(
+      encounterView.package &&
+        (encounterView.package.status === 'completed' ||
+          encounterView.package.closedAt),
+    )
+    // A closed/cancelled package means the user intentionally stopped — no
+    // pending sessions remain from the wizard's perspective.
+    if (isPkgTerminal) return 0
+    return encounterView.records.reduce(
+      (sum, r) => sum + Math.max(0, r.sessionsTotal - r.sessions.length),
+      0,
+    )
+  }, [encounterView])
+
+  const isFinalizeBlocked = state.currentStep === 5 && pendingSessionsRemaining > 0
 
   const handleNext = useCallback(() => {
     console.log('[wizard] handleNext clicked', {
@@ -602,9 +646,18 @@ export function ServiceWizard({
   ])
 
   const confirmFinalize = useCallback(() => {
+    // Step 5 has nothing left to save — sessions persist independently
+    // through POST /api/procedures/[id]/sessions as the clinician executes
+    // each one. "Finalizar atendimento" here is purely a navigation gate:
+    // close the wizard and route the user back to the patient. The old
+    // single-shot execution form used `triggerSave()` to flush state at
+    // this point, but the new picker/orchestrator doesn't observe the
+    // trigger — calling it would leave state.isSaving stuck at true.
     setShowFinalizeDialog(false)
-    triggerSave()
-  }, [triggerSave])
+    isExitingRef.current = true
+    toast.success('Atendimento finalizado com sucesso')
+    router.push(`/pacientes/${patient.id}`)
+  }, [router, patient.id])
 
   const handleSaveAndExit = useCallback(() => {
     setPendingAction('exit')
@@ -817,6 +870,15 @@ export function ServiceWizard({
                 diagrams={localDiagrams ?? undefined}
                 existingApplications={localApplications ?? undefined}
                 initialTypeIds={state.selectedTypeIds}
+                cart={state.cart.lines.length > 0 ? state.cart : undefined}
+                draftRecordIds={
+                  state.procedureRecordIds.length > 0
+                    ? state.procedureRecordIds
+                    : state.procedureId
+                      ? [state.procedureId]
+                      : undefined
+                }
+                onCartChange={setCart}
                 mode={
                   isReadOnlyAfterApproval
                     ? 'view'
@@ -859,7 +921,6 @@ export function ServiceWizard({
                         : undefined
                   }
                   encounterId={state.encounterId}
-                  onCartChange={setCart}
                   wizardOverrides={getOverridesForStep(4)}
                 />
               ) : (
@@ -884,25 +945,27 @@ export function ServiceWizard({
                   state.procedureStatus === 'in_progress' ||
                   state.procedureStatus === 'completed') &&
                 localProcedure ? (
-                  <ProcedureExecution
-                    encounterId={state.encounterId}
-                    procedureRecordIds={
-                      state.procedureRecordIds.length > 0
-                        ? state.procedureRecordIds
-                        : state.procedureId
-                          ? [state.procedureId]
-                          : []
-                    }
-                    packageId={null}
-                    patientId={patient.id}
-                    patientGender={patient.gender}
-                    procedure={localProcedure}
-                    diagrams={localDiagrams ?? undefined}
-                    existingApplications={localApplications ?? undefined}
-                    deepLinkProcedureId={deepLinkProcedureId ?? null}
-                    autoStartNext={autoStartNext ?? false}
-                    wizardOverrides={getOverridesForStep(5)}
-                  />
+                  <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+                    <ProcedureExecution
+                      encounterId={state.encounterId}
+                      procedureRecordIds={
+                        state.procedureRecordIds.length > 0
+                          ? state.procedureRecordIds
+                          : state.procedureId
+                            ? [state.procedureId]
+                            : []
+                      }
+                      packageId={null}
+                      patientId={patient.id}
+                      patientGender={patient.gender}
+                      procedure={localProcedure}
+                      diagrams={localDiagrams ?? undefined}
+                      existingApplications={localApplications ?? undefined}
+                      deepLinkProcedureId={deepLinkProcedureId ?? null}
+                      autoStartNext={autoStartNext ?? false}
+                      wizardOverrides={getOverridesForStep(5)}
+                    />
+                  </div>
                 ) : (
                   <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
                     <p className="text-mid">
@@ -970,11 +1033,17 @@ export function ServiceWizard({
             <button
               type="button"
               onClick={handleNext}
-              disabled={state.isSaving || isFinalizing}
+              disabled={state.isSaving || isFinalizing || isFinalizeBlocked}
+              title={
+                isFinalizeBlocked
+                  ? `${pendingSessionsRemaining} ${pendingSessionsRemaining === 1 ? 'sessão pendente' : 'sessões pendentes'} — execute ou encerre o pacote antes de finalizar.`
+                  : undefined
+              }
               className={cn(
                 'flex w-full items-center justify-center gap-1.5 rounded-[3px] px-6 py-2.5 text-sm font-medium transition-colors min-h-[48px] md:w-auto md:order-3',
                 'bg-forest text-cream hover:bg-sage',
-                (state.isSaving || isFinalizing) && 'opacity-50 cursor-not-allowed',
+                (state.isSaving || isFinalizing || isFinalizeBlocked) &&
+                  'opacity-50 cursor-not-allowed hover:bg-forest',
               )}
             >
               {isFinalizing
@@ -986,6 +1055,13 @@ export function ServiceWizard({
                 <ChevronRight className="h-4 w-4" />
               )}
             </button>
+            {isFinalizeBlocked && (
+              <p className="text-[11px] text-mid md:order-2 md:max-w-[260px] md:text-right">
+                {pendingSessionsRemaining === 1
+                  ? '1 sessão pendente. Execute ou encerre o pacote antes de finalizar.'
+                  : `${pendingSessionsRemaining} sessões pendentes. Execute todas ou encerre o pacote antes de finalizar.`}
+              </p>
+            )}
 
             {showSaveAndExit && (
               <button

@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { notFound, useSearchParams } from 'next/navigation'
 import { usePatient } from '@/hooks/queries/use-patients'
 import { useAnamnesis } from '@/hooks/queries/use-anamnesis'
@@ -62,7 +63,24 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
     (hasDeepLink && deepLinkLoading) ||
     (!!procedure?.id && !hasDeepLink && detailLoading)
 
-  if (isLoading) {
+  // Once the wizard has mounted with its initial data, we MUST NOT unmount it
+  // on later background refetches (e.g. after step 3 creates a procedure and
+  // invalidates `useLatestNonExecutedProcedure`). Unmounting wipes wizard
+  // state — cart, encounterId, currentStep — and re-initializes from props,
+  // which is how users would land back on step 1 after clicking Next at step
+  // 3. Track first successful render with state so the gate fires once;
+  // a ref would be read during render and trip the react-hooks/refs rule.
+  const [hasMounted, setHasMounted] = useState(false)
+  useEffect(() => {
+    // Intentional one-shot cascade: render once with loading=true, then on
+    // the next tick flip hasMounted=true so subsequent loading states no
+    // longer gate the wizard. The react-hooks rule warns about this, but
+    // the cascade is exactly the desired behavior here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!isLoading && !hasMounted) setHasMounted(true)
+  }, [isLoading, hasMounted])
+
+  if (isLoading && !hasMounted) {
     return <AtendimentoLoading />
   }
 

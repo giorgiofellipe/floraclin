@@ -32,9 +32,16 @@ interface Props {
   control: Control<ProcedurePlanningFormData>
   form: UseFormReturn<ProcedurePlanningFormData>
   disabled?: boolean
+  /**
+   * Hide the "Valor total" input. Used when the encounter cart owns the
+   * total above and this field just collects installment / payment /
+   * notes — avoids showing two totals in the same Orçamento section.
+   * The form value still holds `totalAmount`; only the input is removed.
+   */
+  hideTotalAmount?: boolean
 }
 
-export function FinancialPlanField({ control, form, disabled }: Props) {
+export function FinancialPlanField({ control, form, disabled, hideTotalAmount }: Props) {
   return (
     <Controller
       control={control}
@@ -64,39 +71,41 @@ export function FinancialPlanField({ control, form, disabled }: Props) {
               Defina o valor e condições de pagamento. A entrada financeira será criada somente após a aprovação.
             </p>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <Label
-                  className={cn(
-                    'uppercase tracking-wider text-xs mb-2 block',
-                    totalAmountHasError ? 'text-red-600' : 'text-mid',
-                  )}
-                >
-                  Valor total
-                </Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mid">
-                    R$
-                  </span>
-                  <MaskedInput
-                    mask={maskCurrency}
-                    value={maskedTotal}
-                    onChange={(e) =>
-                      update({ totalAmount: parseCurrency(e.target.value) })
-                    }
-                    placeholder="0,00"
-                    disabled={disabled}
-                    aria-invalid={totalAmountHasError || undefined}
+            <div className={cn('grid gap-4', !hideTotalAmount && 'sm:grid-cols-2')}>
+              {!hideTotalAmount && (
+                <div>
+                  <Label
                     className={cn(
-                      'pl-10',
-                      totalAmountHasError
-                        ? 'border-red-200 bg-red-50 focus:border-red-400'
-                        : 'border-sage/20 focus:border-sage/40',
+                      'uppercase tracking-wider text-xs mb-2 block',
+                      totalAmountHasError ? 'text-red-600' : 'text-mid',
                     )}
-                  />
+                  >
+                    Valor total
+                  </Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mid">
+                      R$
+                    </span>
+                    <MaskedInput
+                      mask={maskCurrency}
+                      value={maskedTotal}
+                      onChange={(e) =>
+                        update({ totalAmount: parseCurrency(e.target.value) })
+                      }
+                      placeholder="0,00"
+                      disabled={disabled}
+                      aria-invalid={totalAmountHasError || undefined}
+                      className={cn(
+                        'pl-10',
+                        totalAmountHasError
+                          ? 'border-red-200 bg-red-50 focus:border-red-400'
+                          : 'border-sage/20 focus:border-sage/40',
+                      )}
+                    />
+                  </div>
+                  <FormFieldError form={form} name="financialPlan.totalAmount" />
                 </div>
-                <FormFieldError form={form} name="financialPlan.totalAmount" />
-              </div>
+              )}
 
               <div>
                 <Label

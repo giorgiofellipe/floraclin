@@ -10,7 +10,7 @@
  */
 
 import { NextResponse } from 'next/server'
-import { and, asc, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, ne } from 'drizzle-orm'
 import { z } from 'zod'
 import { requireRole } from '@/lib/auth'
 import { db } from '@/db/client'
@@ -56,8 +56,18 @@ export async function GET(
         and(
           eq(procedureRecords.tenantId, ctx.tenantId),
           eq(procedureRecords.encounterId, encounterId),
+          // Cancelled lines don't belong in the active picker — no future
+          // sessions to execute. Soft-deleted rows are hidden too.
+          ne(procedureRecords.status, 'cancelled'),
+          isNull(procedureRecords.deletedAt),
         ),
       )
+      // Stable order — same on every fetch. Without ORDER BY the rows
+      // come back in heap order, which shifts after any UPDATE on the
+      // table (e.g., status/performedAt writes when a session is saved).
+      // (createdAt, id) gives a deterministic order even when finalize
+      // assigns the same `now()` to every line in a single transaction.
+      .orderBy(asc(procedureRecords.createdAt), asc(procedureRecords.id))
 
     if (records.length === 0) {
       return NextResponse.json(

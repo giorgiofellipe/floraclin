@@ -784,22 +784,34 @@ function CartApprovalSummary({
             />
           ) : (
             <div className="space-y-1.5">
-              {cart.lines.map((line, idx) => (
-                <div
-                  key={`${line.procedureTypeId}-${idx}`}
-                  className="flex items-center justify-between rounded-[3px] border border-[#E8ECEF] px-3 py-2"
-                >
-                  <div>
-                    <p className="text-sm text-charcoal">{line.procedureTypeName}</p>
-                    <p className="text-xs text-mid">
-                      {line.sessions} {line.sessions === 1 ? 'sessão' : 'sessões'}
-                    </p>
+              {cart.lines.map((line, idx) => {
+                // Template-driven lines carry no per-line price — the
+                // package's defaultPrice covers the whole bundle. Render
+                // them as "incluído" instead of a misleading R$ 0,00.
+                const isTemplateLine = line.sourceTemplateLineId !== null
+                return (
+                  <div
+                    key={`${line.procedureTypeId}-${idx}`}
+                    className="flex items-center justify-between rounded-[3px] border border-[#E8ECEF] px-3 py-2"
+                  >
+                    <div>
+                      <p className="text-sm text-charcoal">{line.procedureTypeName}</p>
+                      <p className="text-xs text-mid">
+                        {line.sessions} {line.sessions === 1 ? 'sessão' : 'sessões'}
+                      </p>
+                    </div>
+                    {isTemplateLine ? (
+                      <span className="text-xs uppercase tracking-wider text-sage">
+                        Incluído no pacote
+                      </span>
+                    ) : (
+                      <span className="text-sm font-medium text-forest">
+                        {formatCurrency(line.defaultPrice * line.sessions)}
+                      </span>
+                    )}
                   </div>
-                  <span className="text-sm font-medium text-forest">
-                    {formatCurrency(line.defaultPrice * line.sessions)}
-                  </span>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
