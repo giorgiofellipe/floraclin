@@ -2,8 +2,17 @@
 -- 1. Add new columns/tables.
 -- 2. Backfill procedure_sessions from executed procedure_records.
 -- 3. Backfill procedure_records.sessionsTotal and atendimentoId.
--- 4. Drop patient_package_lines.
--- 5. Replace 'executed' with 'completed' in procedure_records.status CHECK.
+-- 4. (formerly drop step — renumbered) Materialize sold-but-unused package
+--    lines into approved procedure_records so step-5 picker can see them.
+-- 5. Drop patient_package_lines + its FK.
+-- 6. Replace 'executed' with 'completed' in procedure_records.status CHECK.
+--
+-- DATA SAFETY: every row in patient_package_lines is preserved via the
+-- step-4 materialization. After this migration runs, no clinical
+-- information about sold packages is lost. The sort_order and
+-- procedure_type_name snapshot columns are intentionally dropped —
+-- procedure_type_name is re-derived live from procedure_types.name; order
+-- now follows procedure_records.created_at.
 
 -- ── 1. Schema additions ────────────────────────────────────────────────
 
@@ -166,7 +175,51 @@ UPDATE "floraclin"."procedure_records"
 SET "atendimento_id" = gen_random_uuid()
 WHERE "atendimento_id" IS NULL;--> statement-breakpoint
 
--- ── 5. Drop patient_package_lines + related FK ────────────────────────
+-- ── 5. Materialize procedure_records for sold-but-unused package lines ──
+--
+-- Pre-redesign, `sellPackage` created `patient_package_lines` rows but did
+-- NOT create `procedure_records` upfront — records were created lazily by
+-- `startPackageSession` on first execution. So a package that was sold,
+-- consented to, and paid for, but where no session has been executed yet,
+-- has lines but ZERO procedure_records.
+--
+-- Without this step, dropping `patient_package_lines` would erase what
+-- those packages were sold to deliver: the new step-5 picker would see an
+-- empty atendimento for the package, and clinicians would have no record
+-- of the agreed sessions.
+--
+-- This INSERT materializes one `approved` procedure_records row per orphan
+-- line, anchored to the same `patient_packages.id` as the atendimento
+-- grouping. The package's purchase date stamps `approved_at` / timestamps.
+-- Idempotent via the NOT EXISTS guard.
+
+INSERT INTO "floraclin"."procedure_records" (
+  "id", "tenant_id", "patient_id", "practitioner_id", "procedure_type_id",
+  "status", "approved_at", "sessions_total", "atendimento_id",
+  "patient_package_id", "created_at", "updated_at"
+)
+SELECT
+  gen_random_uuid(),
+  pp."tenant_id",
+  pp."patient_id",
+  pp."sold_by",
+  ppl."procedure_type_id",
+  'approved',
+  pp."created_at",
+  ppl."sessions_total",
+  pp."id",       -- atendimento groups by package id (matches step 4 backfill)
+  pp."id",
+  pp."created_at",
+  pp."created_at"
+FROM "floraclin"."patient_package_lines" ppl
+INNER JOIN "floraclin"."patient_packages" pp
+  ON ppl."patient_package_id" = pp."id"
+WHERE NOT EXISTS (
+  SELECT 1 FROM "floraclin"."procedure_records" pr
+  WHERE pr."patient_package_line_id" = ppl."id"
+);--> statement-breakpoint
+
+-- ── 6. Drop patient_package_lines + related FK ────────────────────────
 
 ALTER TABLE "floraclin"."procedure_records"
   DROP CONSTRAINT IF EXISTS "procedure_records_patient_package_line_id_patient_package_lines_id_fk";--> statement-breakpoint
@@ -178,7 +231,7 @@ ALTER TABLE "floraclin"."procedure_records"
 
 DROP TABLE IF EXISTS "floraclin"."patient_package_lines";--> statement-breakpoint
 
--- ── 6. Remove 'executed' from procedure_records.status CHECK ──────────
+-- ── 7. Remove 'executed' from procedure_records.status CHECK ──────────
 
 ALTER TABLE "floraclin"."procedure_records"
   DROP CONSTRAINT IF EXISTS "procedure_records_status_check";--> statement-breakpoint
