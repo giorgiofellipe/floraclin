@@ -46,7 +46,37 @@
 | `web/src/db/schema.ts` | Add `patientEvolutions` and `patientEvolutionRevisions` tables. |
 | `web/src/db/migrations/meta/_journal.json` | Append `0016` entry. |
 | `web/src/components/patients/patient-tabs.tsx` | Add `evolucoes` tab; introduce `requiredRoles?: Role[]` field; filter tab strip by role. |
-| `web/src/components/patients/patient-detail-content.tsx` | Mount `<PatientEvolutionsTab>` when `tab === 'evolucoes'`. |
+| `web/src/components/patients/patient-detail-content.tsx` | Mount `<PatientEvolutionsTab>`; add `'evolucoes'` to `VALID_TABS`; accept `role: Role` prop and forward to `PatientTabs`. |
+| `web/src/app/(platform)/pacientes/[id]/page.tsx` | Read `ctx.role` from `getAuthContext()`; pass `role` to `<PatientDetailPageClient>`. |
+| `web/src/app/(platform)/pacientes/[id]/patient-detail-page-client.tsx` | Accept `role` prop; forward to `<PatientDetailContent>`. |
+
+---
+
+## Review-Driven Amendments (binding — override sections below where in conflict)
+
+These amendments encode the accepted findings from Phase 2 adversarial review. Implementers MUST honor them; where a task body below contradicts an amendment, the amendment wins.
+
+**RA-1. Cross-patient note enforcement.** Every note-scoped query and service function — `getNoteLockedForUpdate`, `listRevisions`, `editNote`, `softDeleteNote` — MUST accept `patientId` and scope on `tenant_id = ? AND patient_id = ? AND id = ?`. Routes `D2`, `D3` MUST pass `params.id` (the route patient ID) into the service layer. If the note doesn't belong to the route patient, return `404` (not 403/500).
+
+**RA-2. Single feed source.** Extract `getPatientEvolutionFeed(tenantId, patientId): Promise<EvolutionFeedEntry[]>` in `web/src/db/queries/patient-evolutions.ts`. Both the `GET /api/patients/[id]/evolutions` route (`D1`) and the print page (`I1`) MUST call this function — no duplicated merge/sort logic.
+
+**RA-3. Legacy session-id fallback.** In the session→feed mapping inside `getPatientEvolutionFeed`, when a session has zero rows in `product_applications` / `face_diagrams` filtered by `procedure_session_id`, fall back to record-scoped rows (`procedure_record_id = session.procedure_record_id AND procedure_session_id IS NULL`). Mirror the existing pattern in `web/src/db/queries/face-diagrams.ts` and `web/src/db/queries/product-applications.ts`.
+
+**RA-4. Role source.** There is no client-side `useAuth()` hook (`useProfile()` does not carry `role`). Source `role` from the server page: `web/src/app/(platform)/pacientes/[id]/page.tsx` reads `ctx.role` via `getAuthContext()` and passes it through `<PatientDetailPageClient role={ctx.role} />` → `<PatientDetailContent role={role} />` → `<PatientTabs role={role} />`. Do not invent client hooks.
+
+**RA-5. VALID_TABS and invalid-tab fallback.** `VALID_TABS` in `patient-detail-content.tsx` MUST include `'evolucoes'`. When initializing `tab` state, if `activeTab === 'evolucoes'` but `role ∉ {'owner','practitioner'}`, fall back to `'dados'` so we never render an invalid hidden tab.
+
+**RA-6. Input validation maps to 400, not 500.** All POST/PATCH/DELETE routes (`D1`, `D2`) MUST use `schema.safeParse(...)`; on failure return `NextResponse.json({ error: 'Validation failed', issues: parsed.error.flatten() }, { status: 400 })`. Only generic exceptions hit the 500 path.
+
+**RA-7. Response shape — no envelopes.** Follow existing convention (see `/api/profile`, `/api/patients/...`): `GET` returns the resource (`{ entries: [...] }` for feed) directly. `POST` returns the created note (`{ note: {...} }`). `PATCH` returns the updated note. `DELETE` returns `204`. Do NOT wrap with `{ success, data }`.
+
+**RA-8. Stable feed ordering.** Sort by `occurredAt DESC, id DESC`. Do NOT use `createdAt` as tiebreaker (session entries don't carry a comparable `createdAt`). `id` is monotone-ish UUID and stable across refetches.
+
+**RA-9. Revisions are the edit audit; do not double-log to `audit_logs`.** Service `editNote` writes a row to `patient_evolution_revisions` and NOTHING to `audit_logs`. `softDeleteNote` writes to `audit_logs` (because deletion has a stated reason; there's no revisions row for deletes).
+
+**RA-10. CASCADE invariant — documented.** `patient_evolution_revisions.evolution_id` keeps `ON DELETE CASCADE`. We never hard-delete soft-deleted notes today; if a maintenance job is added later, revisions go with the parent. Add a one-line schema comment to that effect.
+
+**RA-11. Integration test fixtures.** Task `J1` MUST seed a real tenant, user, and patient using existing test seed helpers (look at `web/src/db/queries/__tests__/*.test.ts` for the pattern), OR drop the integration test and rely on `J2` (service-layer mocked) + `J3` (component). Do not insert evolutions referencing dangling FK UUIDs.
 
 ---
 
