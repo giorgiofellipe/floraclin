@@ -188,7 +188,7 @@ export const procedureRecords = floraclinSchema.table('procedure_records', {
   practitionerId: uuid('practitioner_id').notNull().references(() => users.id),
   procedureTypeId: uuid('procedure_type_id').notNull().references(() => procedureTypes.id),
   appointmentId: uuid('appointment_id').references(() => appointments.id),
-  performedAt: timestamp('performed_at', { withTimezone: true }).notNull().defaultNow(),
+  performedAt: timestamp('performed_at', { withTimezone: true }),
   technique: text('technique'),
   clinicalResponse: text('clinical_response'),
   adverseEffects: text('adverse_effects'),
@@ -196,14 +196,15 @@ export const procedureRecords = floraclinSchema.table('procedure_records', {
   followUpDate: date('follow_up_date'),
   nextSessionObjectives: text('next_session_objectives'),
   additionalTypeIds: jsonb('additional_type_ids').default([]),
-  status: varchar('status', { length: 20 }).notNull().default('draft'), // CHECK in migration: ('draft', 'planned', 'approved', 'executed', 'cancelled')
-  plannedSnapshot: jsonb('planned_snapshot'), // frozen diagram points + quantities at approval
+  status: varchar('status', { length: 20 }).notNull().default('draft'),
+  plannedSnapshot: jsonb('planned_snapshot'),
   approvedAt: timestamp('approved_at', { withTimezone: true }),
   cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
   cancellationReason: text('cancellation_reason'),
-  financialPlan: jsonb('financial_plan'), // {totalAmount, installmentCount, paymentMethod, notes}
+  financialPlan: jsonb('financial_plan'),
   patientPackageId: uuid('patient_package_id').references((): AnyPgColumn => patientPackages.id),
-  patientPackageLineId: uuid('patient_package_line_id').references((): AnyPgColumn => patientPackageLines.id),
+  sessionsTotal: integer('sessions_total').notNull().default(1),
+  atendimentoId: uuid('atendimento_id'),
   followupSnoozedUntil: date('followup_snoozed_until'),
   lastContactedAt: timestamp('last_contacted_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -212,8 +213,30 @@ export const procedureRecords = floraclinSchema.table('procedure_records', {
 }, (table) => [
   index('idx_procedure_records_patient').on(table.tenantId, table.patientId),
   index('idx_procedure_records_practitioner').on(table.tenantId, table.practitionerId),
-  index('idx_procedure_records_package_line').on(table.patientPackageLineId),
+  index('idx_procedure_records_atendimento').on(table.atendimentoId),
   index('idx_procedure_records_followup_status').on(table.tenantId, table.status, table.followupSnoozedUntil),
+])
+
+// ─── PROCEDURE SESSIONS ─────────────────────────────────────────────
+
+export const procedureSessions = floraclinSchema.table('procedure_sessions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  procedureRecordId: uuid('procedure_record_id').notNull().references((): AnyPgColumn => procedureRecords.id, { onDelete: 'cascade' }),
+  sessionOrdinal: integer('session_ordinal').notNull(),
+  performedAt: timestamp('performed_at', { withTimezone: true }).notNull(),
+  executedBy: uuid('executed_by').notNull().references(() => users.id),
+  technique: text('technique'),
+  clinicalResponse: text('clinical_response'),
+  adverseEffects: text('adverse_effects'),
+  notes: text('notes'),
+  followUpDate: date('follow_up_date'),
+  nextSessionObjectives: text('next_session_objectives'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('uq_procedure_sessions_record_ordinal').on(table.procedureRecordId, table.sessionOrdinal),
+  index('idx_procedure_sessions_tenant_performed').on(table.tenantId, table.performedAt),
 ])
 
 // ─── FACE DIAGRAM ────────────────────────────────────────────────────
@@ -222,11 +245,12 @@ export const faceDiagrams = floraclinSchema.table('face_diagrams', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   procedureRecordId: uuid('procedure_record_id').notNull().references(() => procedureRecords.id),
+  procedureSessionId: uuid('procedure_session_id').references((): AnyPgColumn => procedureSessions.id),
   viewType: varchar('view_type', { length: 20 }).notNull().default('front'), // CHECK in migration
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  uniqueIndex('uq_face_diagrams_record_view').on(table.procedureRecordId, table.viewType),
+  uniqueIndex('uq_face_diagrams_session_view').on(table.procedureSessionId, table.viewType).where(sql`procedure_session_id IS NOT NULL`),
 ])
 
 export const diagramPoints = floraclinSchema.table('diagram_points', {
@@ -255,6 +279,7 @@ export const photoAssets = floraclinSchema.table('photo_assets', {
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   patientId: uuid('patient_id').notNull().references(() => patients.id),
   procedureRecordId: uuid('procedure_record_id').references(() => procedureRecords.id),
+  procedureSessionId: uuid('procedure_session_id').references((): AnyPgColumn => procedureSessions.id),
   storagePath: text('storage_path').notNull(),
   originalFilename: varchar('original_filename', { length: 255 }),
   mimeType: varchar('mime_type', { length: 50 }),
@@ -287,6 +312,7 @@ export const productApplications = floraclinSchema.table('product_applications',
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   procedureRecordId: uuid('procedure_record_id').notNull().references(() => procedureRecords.id),
+  procedureSessionId: uuid('procedure_session_id').references((): AnyPgColumn => procedureSessions.id),
   productName: varchar('product_name', { length: 255 }).notNull(),
   activeIngredient: varchar('active_ingredient', { length: 255 }),
   totalQuantity: decimal('total_quantity', { precision: 8, scale: 2 }).notNull(),
@@ -850,6 +876,9 @@ export const patientPackages = floraclinSchema.table('patient_packages', {
   status: varchar('status', { length: 20 }).notNull().default('active'),
   cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
   cancelReason: text('cancel_reason'),
+  closedAt: timestamp('closed_at', { withTimezone: true }),
+  closedReason: varchar('closed_reason', { length: 50 }),
+  closeNote: text('close_note'),
   financialEntryId: uuid('financial_entry_id').notNull().references(() => financialEntries.id),
   soldBy: uuid('sold_by').notNull().references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -857,17 +886,6 @@ export const patientPackages = floraclinSchema.table('patient_packages', {
 }, (table) => [
   index('idx_patient_packages_tenant_patient').on(table.tenantId, table.patientId),
   index('idx_patient_packages_status').on(table.tenantId, table.status),
-])
-
-export const patientPackageLines = floraclinSchema.table('patient_package_lines', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  patientPackageId: uuid('patient_package_id').notNull().references(() => patientPackages.id, { onDelete: 'cascade' }),
-  procedureTypeId: uuid('procedure_type_id').notNull().references(() => procedureTypes.id),
-  procedureTypeName: varchar('procedure_type_name', { length: 255 }).notNull(),
-  sessionsTotal: integer('sessions_total').notNull(),
-  sortOrder: integer('sort_order').notNull().default(0),
-}, (table) => [
-  index('idx_patient_package_lines_package').on(table.patientPackageId),
 ])
 
 // ─── CLINICAL DOCUMENTS ──────────────────────────────────────────────
