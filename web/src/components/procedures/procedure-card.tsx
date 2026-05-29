@@ -72,6 +72,11 @@ export function ProcedureCard({
   const categoryCode =
     CATEGORY_ICONS[procedure.procedureTypeCategory.toLowerCase()] ?? 'PR'
 
+  // Treatment-delivered state: any session executed (in_progress) OR fully done (completed)
+  const hasTreated =
+    procedure.status === 'in_progress' || procedure.status === 'completed'
+  const isCompleted = procedure.status === 'completed'
+
   const basePath = `/pacientes/${patientId}/procedimentos/${procedure.id}`
 
   // ─── Handlers ──────────────────────────────────────────────────
@@ -127,7 +132,8 @@ export function ProcedureCard({
   const borderColorByStatus: Record<string, string> = {
     planned: 'border-l-amber',
     approved: 'border-l-sage',
-    executed: 'border-l-forest',
+    in_progress: 'border-l-forest',
+    completed: 'border-l-forest',
     cancelled: 'border-l-mid/30',
   }
 
@@ -163,11 +169,13 @@ export function ProcedureCard({
                   <div className="mt-1 flex items-center gap-2 text-xs text-mid">
                     <span className="flex items-center gap-1">
                       <Calendar className="size-3" />
-                      {format(
-                        new Date(procedure.performedAt),
-                        "dd/MM/yyyy",
-                        { locale: ptBR }
-                      )}
+                      {procedure.performedAt
+                        ? format(
+                            new Date(procedure.performedAt),
+                            "dd/MM/yyyy",
+                            { locale: ptBR }
+                          )
+                        : '—'}
                     </span>
                     <span className="text-sage/30">|</span>
                     <span className="flex items-center gap-1">
@@ -231,21 +239,23 @@ export function ProcedureCard({
                   </>
                 )}
 
-                {procedure.status === 'executed' && (
+                {hasTreated && (
                   <>
                     {procedure.technique && (
                       <p className="text-xs text-mid/80 italic truncate">
                         {procedure.technique}
                       </p>
                     )}
-                    <p className="text-xs text-mid mt-0.5">
-                      Executado em{' '}
-                      {format(
-                        new Date(procedure.performedAt),
-                        "dd/MM/yyyy 'as' HH:mm",
-                        { locale: ptBR }
-                      )}
-                    </p>
+                    {procedure.performedAt && (
+                      <p className="text-xs text-mid mt-0.5">
+                        {isCompleted ? 'Concluído em ' : 'Executado em '}
+                        {format(
+                          new Date(procedure.performedAt),
+                          "dd/MM/yyyy 'as' HH:mm",
+                          { locale: ptBR }
+                        )}
+                      </p>
+                    )}
                   </>
                 )}
 
@@ -349,8 +359,7 @@ export function ProcedureCard({
                   </>
                 )}
 
-                {(procedure.status === 'executed' ||
-                  procedure.status === 'cancelled') && (
+                {(hasTreated || procedure.status === 'cancelled') && (
                   <Button
                     size="sm"
                     variant="outline"

@@ -4,16 +4,32 @@ import { useReducer, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ProcedureStatus } from '@/types'
 import type { StepResult } from '@/components/service-wizard/types'
+import type { EncounterCart } from '@/validations/encounter-cart'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
 export type WizardStep = 1 | 2 | 3 | 4 | 5
 
+const EMPTY_CART: EncounterCart = {
+  templateId: null,
+  templateName: null,
+  templateDefaultPrice: null,
+  templateValidityMonths: null,
+  lines: [],
+  totalOverride: null,
+}
+
 export interface WizardState {
   currentStep: WizardStep
+  // Legacy single-procedure id — kept during transition (first draft record id)
   procedureId: string | null
+  // After finalization, the full set of record ids returned by the API
+  procedureRecordIds: string[]
+  encounterId: string | null
   procedureStatus: ProcedureStatus | null
+  // Mirror of cart.lines.map(l => l.procedureTypeId) for legacy callsites
   selectedTypeIds: string[]
+  cart: EncounterCart
   stepTimestamps: {
     anamnesis: Date | null
     procedureTypes: Date | null
@@ -33,6 +49,9 @@ type WizardAction =
   | { type: 'PREV_STEP' }
   | { type: 'SET_PROCEDURE_ID'; procedureId: string; status: ProcedureStatus }
   | { type: 'SET_SELECTED_TYPES'; typeIds: string[] }
+  | { type: 'SET_CART'; cart: EncounterCart }
+  | { type: 'SET_ENCOUNTER_ID'; encounterId: string }
+  | { type: 'SET_PROCEDURE_RECORD_IDS'; procedureRecordIds: string[] }
   | { type: 'SET_ERROR'; error: string; errorType: 'validation' | 'precondition' | 'server' }
   | { type: 'CLEAR_ERROR' }
   | { type: 'TRIGGER_SAVE' }
@@ -96,23 +115,31 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
         return state
       }
       // Check availability before advancing
-      if (nextStep === 3 && state.selectedTypeIds.length === 0) {
-        console.log('[wizard/reducer] NEXT_STEP to 3 blocked — no selected types')
+      if (nextStep === 3 && state.cart.lines.length === 0 && state.selectedTypeIds.length === 0) {
+        console.log('[wizard/reducer] NEXT_STEP to 3 blocked — empty cart and no selected types')
         return state
       }
       // Step 4 requires a fully planned procedure (drafts stay in step 3)
       if (
         nextStep === 4 &&
-        (state.procedureStatus !== 'planned' && state.procedureStatus !== 'approved')
+        state.procedureStatus !== 'planned' &&
+        state.procedureStatus !== 'approved' &&
+        state.procedureStatus !== 'in_progress' &&
+        state.procedureStatus !== 'completed'
       ) {
         console.log('[wizard/reducer] NEXT_STEP to 4 blocked', {
           procedureStatus: state.procedureStatus,
-          reason: 'step 4 needs planned/approved status',
+          reason: 'step 4 needs planned/approved/in_progress/completed status',
         })
         return state
       }
-      if (nextStep === 5 && state.procedureStatus !== 'approved') {
-        console.log('[wizard/reducer] NEXT_STEP to 5 blocked — not approved', {
+      if (
+        nextStep === 5 &&
+        state.procedureStatus !== 'approved' &&
+        state.procedureStatus !== 'in_progress' &&
+        state.procedureStatus !== 'completed'
+      ) {
+        console.log('[wizard/reducer] NEXT_STEP to 5 blocked — not approved/in_progress/completed', {
           procedureStatus: state.procedureStatus,
         })
         return state
@@ -141,6 +168,25 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
       return {
         ...state,
         selectedTypeIds: action.typeIds,
+      }
+
+    case 'SET_CART':
+      return {
+        ...state,
+        cart: action.cart,
+        selectedTypeIds: action.cart.lines.map((l) => l.procedureTypeId),
+      }
+
+    case 'SET_ENCOUNTER_ID':
+      return {
+        ...state,
+        encounterId: action.encounterId,
+      }
+
+    case 'SET_PROCEDURE_RECORD_IDS':
+      return {
+        ...state,
+        procedureRecordIds: action.procedureRecordIds,
       }
 
     case 'SET_PROCEDURE_ID':
@@ -227,7 +273,11 @@ function determineInitialStep(
   //   draft    → step 3 (planning needs more info before approval)
   //   null/other → step 1 (no procedure yet, start from anamnese)
   let naturalStep: WizardStep = 1
-  if (procedureStatus === 'approved') {
+  if (
+    procedureStatus === 'approved' ||
+    procedureStatus === 'in_progress' ||
+    procedureStatus === 'completed'
+  ) {
     naturalStep = 5
   } else if (procedureStatus === 'planned' && procedureId) {
     naturalStep = 4
@@ -240,11 +290,24 @@ function determineInitialStep(
     const requestedStep = urlStep as WizardStep
 
     // Cannot go to step 4 without a planned procedure (drafts are not yet approvable)
-    if (requestedStep === 4 && procedureStatus !== 'planned' && procedureStatus !== 'approved') {
+    if (
+      requestedStep === 4 &&
+      procedureStatus !== 'planned' &&
+      procedureStatus !== 'approved' &&
+      procedureStatus !== 'in_progress' &&
+      procedureStatus !== 'completed'
+    ) {
       return naturalStep
     }
-    // Cannot go to step 5 without an approved procedure
-    if (requestedStep === 5 && procedureStatus !== 'approved') return naturalStep
+    // Cannot go to step 5 without an approved/in_progress/completed procedure
+    if (
+      requestedStep === 5 &&
+      procedureStatus !== 'approved' &&
+      procedureStatus !== 'in_progress' &&
+      procedureStatus !== 'completed'
+    ) {
+      return naturalStep
+    }
 
     return requestedStep
   }
@@ -258,8 +321,11 @@ interface UseServiceWizardOptions {
   patientId: string
   initialStep?: number
   procedureId?: string | null
+  procedureRecordIds?: string[]
+  encounterId?: string | null
   procedureStatus?: ProcedureStatus | null
   selectedTypeIds?: string[]
+  cart?: EncounterCart
   stepTimestamps?: {
     anamnesis: Date | null
     procedureTypes: Date | null
@@ -273,8 +339,11 @@ export function useServiceWizard({
   patientId,
   initialStep,
   procedureId: initialProcedureId,
+  procedureRecordIds: initialProcedureRecordIds,
+  encounterId: initialEncounterId,
   procedureStatus: initialProcedureStatus,
   selectedTypeIds: initialSelectedTypeIds,
+  cart: initialCart,
   stepTimestamps: initialTimestamps,
 }: UseServiceWizardOptions) {
   const router = useRouter()
@@ -288,8 +357,13 @@ export function useServiceWizard({
   const [state, dispatch] = useReducer(wizardReducer, {
     currentStep: startStep,
     procedureId: initialProcedureId ?? null,
+    procedureRecordIds: initialProcedureRecordIds ?? [],
+    encounterId: initialEncounterId ?? null,
     procedureStatus: initialProcedureStatus ?? null,
-    selectedTypeIds: initialSelectedTypeIds ?? [],
+    selectedTypeIds:
+      initialSelectedTypeIds ??
+      (initialCart ? initialCart.lines.map((l) => l.procedureTypeId) : []),
+    cart: initialCart ?? EMPTY_CART,
     stepTimestamps: initialTimestamps ?? {
       anamnesis: null,
       procedureTypes: null,
@@ -323,17 +397,27 @@ export function useServiceWizard({
         case 2:
           return true
         case 3:
-          return state.selectedTypeIds.length > 0
+          // Cart is the source of truth; selectedTypeIds kept as legacy fallback
+          return state.cart.lines.length > 0 || state.selectedTypeIds.length > 0
         case 4:
           // Step 4 requires the procedure to be fully planned (not draft)
-          return state.procedureStatus === 'planned' || state.procedureStatus === 'approved'
+          return (
+            state.procedureStatus === 'planned' ||
+            state.procedureStatus === 'approved' ||
+            state.procedureStatus === 'in_progress' ||
+            state.procedureStatus === 'completed'
+          )
         case 5:
-          return state.procedureStatus === 'approved' || state.procedureStatus === 'executed'
+          return (
+            state.procedureStatus === 'approved' ||
+            state.procedureStatus === 'in_progress' ||
+            state.procedureStatus === 'completed'
+          )
         default:
           return false
       }
     },
-    [state.selectedTypeIds, state.procedureStatus]
+    [state.cart.lines.length, state.selectedTypeIds, state.procedureStatus]
   )
 
   // ─── Step completion ────────────────────────────────────────────
@@ -344,19 +428,34 @@ export function useServiceWizard({
         case 1:
           return !!state.stepTimestamps.anamnesis
         case 2:
-          return state.selectedTypeIds.length > 0
+          return state.cart.lines.length > 0 || state.selectedTypeIds.length > 0
         case 3:
-          // Step 3 is complete only when the procedure reaches planned status
-          return state.procedureStatus === 'planned' || state.procedureStatus === 'approved' || state.procedureStatus === 'executed'
+          // Step 3 is complete only when the procedure reaches planned (or later)
+          return (
+            state.procedureStatus === 'planned' ||
+            state.procedureStatus === 'approved' ||
+            state.procedureStatus === 'in_progress' ||
+            state.procedureStatus === 'completed'
+          )
         case 4:
-          return state.procedureStatus === 'approved' || state.procedureStatus === 'executed'
+          return (
+            state.procedureStatus === 'approved' ||
+            state.procedureStatus === 'in_progress' ||
+            state.procedureStatus === 'completed'
+          )
         case 5:
-          return state.procedureStatus === 'executed'
+          return state.procedureStatus === 'completed'
         default:
           return false
       }
     },
-    [state.stepTimestamps.anamnesis, state.selectedTypeIds, state.procedureId, state.procedureStatus]
+    [
+      state.stepTimestamps.anamnesis,
+      state.cart.lines.length,
+      state.selectedTypeIds,
+      state.procedureId,
+      state.procedureStatus,
+    ]
   )
 
   // ─── Skip logic ─────────────────────────────────────────────────
@@ -386,7 +485,11 @@ export function useServiceWizard({
   const isStepReadOnly = useCallback(
     (step: WizardStep): boolean => {
       if (step === 1 || step === 2 || step === 3) {
-        return state.procedureStatus === 'approved'
+        return (
+          state.procedureStatus === 'approved' ||
+          state.procedureStatus === 'in_progress' ||
+          state.procedureStatus === 'completed'
+        )
       }
       return false
     },
@@ -494,6 +597,18 @@ export function useServiceWizard({
     dispatch({ type: 'SET_SELECTED_TYPES', typeIds })
   }, [])
 
+  const setCart = useCallback((cart: EncounterCart) => {
+    dispatch({ type: 'SET_CART', cart })
+  }, [])
+
+  const setEncounterId = useCallback((encounterId: string) => {
+    dispatch({ type: 'SET_ENCOUNTER_ID', encounterId })
+  }, [])
+
+  const setProcedureRecordIds = useCallback((procedureRecordIds: string[]) => {
+    dispatch({ type: 'SET_PROCEDURE_RECORD_IDS', procedureRecordIds })
+  }, [])
+
   return {
     state,
     goToStep,
@@ -513,6 +628,9 @@ export function useServiceWizard({
     updateProcedureStatus,
     updateStepTimestamp,
     setSelectedTypeIds,
+    setCart,
+    setEncounterId,
+    setProcedureRecordIds,
     patientId,
   }
 }

@@ -60,12 +60,14 @@ export async function POST(request: Request) {
 
     const status = computePlanningStatus(body)
 
+    const { patientId, ...createData } = parsed.data
+
     const result = await withTransaction(async (tx) => {
       const procedure = await createProcedure(
         ctx.tenantId,
+        patientId,
         ctx.userId,
-        parsed.data,
-        status,
+        { ...createData, status },
         tx
       )
 

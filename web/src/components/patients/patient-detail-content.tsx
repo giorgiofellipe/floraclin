@@ -38,9 +38,13 @@ import { PatientPhotosTab } from './patient-photos-tab'
 import { PatientConsentTab } from './patient-consent-tab'
 import { PatientFinancialTab } from './patient-financial-tab'
 import { PatientTimelineTab } from './patient-timeline-tab'
+import { PatientPackagesTab } from '@/components/packages/patient-packages-tab'
+import { PatientDocumentsTab } from '@/components/clinical-documents/patient-documents-tab'
+import { IssueDocumentDialog } from '@/components/clinical-documents/issue-document-dialog'
 import { StartConversationDialog } from '@/components/whatsapp/start-conversation-dialog'
 import { PaymentForm } from '@/components/financial/payment-form'
 import { AppointmentForm } from '@/components/scheduling/appointment-form'
+import { Package, FileText } from 'lucide-react'
 import { usePractitioners, useAppointmentProcedureTypes } from '@/hooks/queries/use-appointments'
 import type { Patient } from '@/db/queries/patients'
 
@@ -84,6 +88,8 @@ const VALID_TABS: PatientTabKey[] = [
   'dados',
   'anamnese',
   'procedimentos',
+  'pacotes',
+  'documentos',
   'fotos',
   'termos',
   'financeiro',
@@ -112,6 +118,7 @@ export function PatientDetailContent({
   const [showPaymentForm, setShowPaymentForm] = useState(false)
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
   const [showStartConversation, setShowStartConversation] = useState(false)
+  const [showIssueDocument, setShowIssueDocument] = useState(false)
   const { data: practitioners = [] } = usePractitioners()
   const { data: procedureTypes = [] } = useAppointmentProcedureTypes()
 
@@ -282,6 +289,39 @@ export function PatientDetailContent({
                   <TooltipContent side="bottom"><p>Nova Cobrança</p></TooltipContent>
                 </Tooltip>
 
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Link href={`/pacientes/${patient.id}/atendimento?new=1`}>
+                        <Button
+                          variant="outline"
+                          size="icon-sm"
+                          className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
+                        >
+                          <Package className="size-4" />
+                        </Button>
+                      </Link>
+                    }
+                  />
+                  <TooltipContent side="bottom"><p>Novo Atendimento</p></TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="outline"
+                        size="icon-sm"
+                        className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
+                        onClick={() => setShowIssueDocument(true)}
+                      >
+                        <FileText className="size-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent side="bottom"><p>Novo Documento</p></TooltipContent>
+                </Tooltip>
+
               </TooltipProvider>
 
               <Link
@@ -309,6 +349,20 @@ export function PatientDetailContent({
           {tab === 'anamnese' && <PatientAnamnesisTab patientId={patient.id} patientName={patient.fullName} patientPhone={patient.phone} whatsappApiEnabled={whatsappApiEnabled} />}
           {tab === 'procedimentos' && (
             <PatientProceduresTab patientId={patient.id} />
+          )}
+          {tab === 'pacotes' && (
+            <PatientPackagesTab patientId={patient.id} patientName={patient.fullName} />
+          )}
+          {tab === 'documentos' && (
+            <PatientDocumentsTab
+              patient={{
+                id: patient.id,
+                fullName: patient.fullName,
+                cpf: patient.cpf,
+                birthDate: patient.birthDate,
+                phone: patient.phone,
+              }}
+            />
           )}
           {tab === 'fotos' && <PatientPhotosTab patientId={patient.id} />}
           {tab === 'termos' && <PatientConsentTab patientId={patient.id} />}
@@ -355,6 +409,18 @@ export function PatientDetailContent({
           }}
         />
       )}
+
+      <IssueDocumentDialog
+        open={showIssueDocument}
+        onOpenChange={setShowIssueDocument}
+        patient={{
+          id: patient.id,
+          fullName: patient.fullName,
+          cpf: patient.cpf,
+          birthDate: patient.birthDate,
+          phone: patient.phone,
+        }}
+      />
     </div>
   )
 }

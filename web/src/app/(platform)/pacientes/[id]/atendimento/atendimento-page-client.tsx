@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { notFound, useSearchParams } from 'next/navigation'
 import { usePatient } from '@/hooks/queries/use-patients'
 import { useAnamnesis } from '@/hooks/queries/use-anamnesis'
@@ -21,34 +22,75 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
   const searchParams = useSearchParams()
   const step = searchParams.get('step')
   const forceNew = searchParams.get('new') === '1'
+  // Deep-link from session-picker (Task J1): `?procedure=<recordId>&action=executeNext`
+  // mounts the wizard at step 5 and auto-starts the next-session flow for the
+  // referenced procedure record.
+  const deepLinkProcedureId = searchParams.get('procedure')
+  const deepLinkAction = searchParams.get('action')
+  const autoStartNext = deepLinkAction === 'executeNext'
+  const hasDeepLink = !!deepLinkProcedureId && autoStartNext
 
   const { data: patient, isLoading: patientLoading } = usePatient(patientId)
   const { data: tenant, isLoading: tenantLoading } = useTenant()
   const { data: anamnesis, isLoading: anamnesisLoading } = useAnamnesis(patientId)
   const { data: resumedProcedure, isLoading: procedureLoading } = useLatestNonExecutedProcedure(patientId)
 
+  // When the page is opened via the executeNext deep link we need to look up
+  // the referenced procedure record to derive its `encounterId` and hydrate
+  // the wizard's step 5 with the right context.
+  const { data: deepLinkRecord, isLoading: deepLinkLoading } = useProcedure(deepLinkProcedureId ?? '')
+
   // When `?new=1` is present, start a fresh atendimento regardless of whether
   // there's an ongoing draft/planned procedure for this patient. The existing
   // procedure stays in the DB as a draft the user can resume later from the
   // procedures tab.
-  const procedure = forceNew ? null : resumedProcedure
+  // Deep link wins over the latest-non-executed query so the wizard mounts
+  // with the deep-linked record as its primary procedure context.
+  const procedure = hasDeepLink
+    ? (deepLinkRecord ?? null)
+    : forceNew
+      ? null
+      : resumedProcedure
 
   // Load full procedure details (with diagrams and applications) if we have one
-  const { data: procedureDetail, isLoading: detailLoading } = useProcedure(procedure?.id ?? '')
+  const procedureDetailQueryId = hasDeepLink
+    ? '' // deep-link branch already used `useProcedure` above; avoid a second fetch
+    : (procedure?.id ?? '')
+  const { data: procedureDetail, isLoading: detailLoading } = useProcedure(procedureDetailQueryId)
 
   const isLoading = patientLoading || tenantLoading || anamnesisLoading ||
-    (!forceNew && procedureLoading) ||
-    (!!procedure?.id && detailLoading)
+    (!forceNew && !hasDeepLink && procedureLoading) ||
+    (hasDeepLink && deepLinkLoading) ||
+    (!!procedure?.id && !hasDeepLink && detailLoading)
 
-  if (isLoading) {
+  // Once the wizard has mounted with its initial data, we MUST NOT unmount it
+  // on later background refetches (e.g. after step 3 creates a procedure and
+  // invalidates `useLatestNonExecutedProcedure`). Unmounting wipes wizard
+  // state — cart, encounterId, currentStep — and re-initializes from props,
+  // which is how users would land back on step 1 after clicking Next at step
+  // 3. Track first successful render with state so the gate fires once;
+  // a ref would be read during render and trip the react-hooks/refs rule.
+  const [hasMounted, setHasMounted] = useState(false)
+  useEffect(() => {
+    // Intentional one-shot cascade: render once with loading=true, then on
+    // the next tick flip hasMounted=true so subsequent loading states no
+    // longer gate the wizard. The react-hooks rule warns about this, but
+    // the cascade is exactly the desired behavior here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!isLoading && !hasMounted) setHasMounted(true)
+  }, [isLoading, hasMounted])
+
+  if (isLoading && !hasMounted) {
     return <AtendimentoLoading />
   }
 
   if (!patient) notFound()
   if (!tenant) notFound()
 
-  // Extract diagrams and applications from full procedure detail
-  const fullDetail = procedureDetail as (ProcedureWithDetails & {
+  // Extract diagrams and applications from full procedure detail. When we are
+  // in deep-link mode the deep-link query already returned the full detail; in
+  // the regular flow we use the separate `useProcedure(procedure.id)` query.
+  const fullDetail = (hasDeepLink ? deepLinkRecord : procedureDetail) as (ProcedureWithDetails & {
     diagrams?: DiagramWithPoints[]
     productApplications?: ProductApplicationRecord[]
   }) | undefined
@@ -63,7 +105,7 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
       : null,
     planning: procedure?.updatedAt ? new Date(procedure.updatedAt) : null,
     approval: procedure?.approvedAt ? new Date(procedure.approvedAt) : null,
-    execution: procedure?.performedAt && procedure.status === 'executed'
+    execution: procedure?.performedAt && procedure.status === 'completed'
       ? new Date(procedure.performedAt)
       : null,
   }
@@ -93,7 +135,13 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
       }
     : null
 
-  const initialStep = step ? parseInt(step, 10) : undefined
+  const stepParam = step ? parseInt(step, 10) : undefined
+  // Deep-link `?procedure=...&action=executeNext` forces step 5 (execution).
+  const initialStep = hasDeepLink
+    ? 5
+    : stepParam && stepParam >= 1 && stepParam <= 5
+      ? stepParam
+      : undefined
 
   return (
     <ServiceWizard
@@ -109,7 +157,7 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
         id: tenant.id,
         name: tenant.name,
       }}
-      initialStep={initialStep && initialStep >= 1 && initialStep <= 5 ? initialStep : undefined}
+      initialStep={initialStep}
       procedureId={procedure?.id ?? null}
       procedureStatus={(procedure?.status as ProcedureStatus) ?? null}
       procedure={procedure ?? null}
@@ -117,6 +165,8 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
       existingApplications={applications}
       anamnesis={anamnesisData}
       stepTimestamps={stepTimestamps}
+      deepLinkProcedureId={hasDeepLink ? deepLinkProcedureId : null}
+      autoStartNext={hasDeepLink ? autoStartNext : false}
     />
   )
 }

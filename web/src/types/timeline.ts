@@ -13,6 +13,10 @@ export interface TimelineEntry {
     | 'payment_received'
     | 'photo_uploaded'
     | 'appointment'
+    | 'package_sold'
+    | 'package_cancelled'
+    | 'document_issued'
+    | 'document_sent_whatsapp'
   date: string
   title: string
   description?: string

@@ -4,7 +4,7 @@ export interface StepResult {
   success: boolean
   procedureId?: string
   /** Server-assigned status after save — lets the wizard advance correctly for draft vs planned. */
-  procedureStatus?: 'draft' | 'planned' | 'approved' | 'executed' | 'cancelled'
+  procedureStatus?: 'draft' | 'planned' | 'approved' | 'in_progress' | 'completed' | 'cancelled'
   error?: string
   errorType?: 'validation' | 'precondition' | 'server'
 }

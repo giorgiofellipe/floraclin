@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 // ─── Procedure Schemas ─────────────────────────────────────────────
 
-export const procedureStatusSchema = z.enum(['draft', 'planned', 'approved', 'executed', 'cancelled'])
+export const procedureStatusSchema = z.enum(['draft', 'planned', 'approved', 'in_progress', 'completed', 'cancelled'])
 
 export const financialPlanSchema = z.object({
   totalAmount: z.number().positive('Valor total deve ser maior que zero'),

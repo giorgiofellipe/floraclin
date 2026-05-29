@@ -32,14 +32,16 @@ import type { ProductApplicationRecord } from '@/db/queries/product-applications
 import type { CatalogProduct, DiagramPointData } from '@/components/face-diagram/types'
 import type { WizardOverrides } from '@/components/service-wizard/types'
 import type { EvaluationSection, EvaluationResponses } from '@/types/evaluation'
+import type { EncounterCart } from '@/validations/encounter-cart'
 import { FinancialPlanField } from './planning/financial-plan-field'
+import { WizardCart } from '@/components/service-wizard/wizard-cart'
+import { computeCartTotal } from '@/validations/encounter-cart'
 import {
   ProcedureTypesSection,
   type ProcedureType,
 } from './planning/procedure-types-section'
 import { EvaluationTemplatesSection } from './planning/evaluation-templates-section'
 import { DiagramSection } from './planning/diagram-section'
-
 // ─── Re-exported types (preserved API for other modules) ──────────
 
 export interface EvaluationTemplateForForm {
@@ -67,6 +69,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 interface ProcedureFormProps {
   patientId: string
+  patientName?: string
   patientGender?: string | null
   procedure?: ProcedureWithDetails | null
   diagrams?: DiagramWithPoints[]
@@ -77,6 +80,21 @@ interface ProcedureFormProps {
   evaluationTemplates?: EvaluationTemplateForForm[]
   existingEvaluationResponses?: ExistingEvaluationResponse[]
   loadingEvaluationTemplates?: boolean
+  /**
+   * Multi-line atendimento cart (F4). When provided with >1 line,
+   * the form renders an info banner indicating only the first line
+   * is currently planned. Full multi-line tabs are tracked in
+   * F4-followup.
+   */
+  cart?: EncounterCart
+  /** Draft procedure_records ids, one per cart line, same order. */
+  draftRecordIds?: string[]
+  /**
+   * Cart edit handler. When supplied, the Orçamento section mounts an
+   * editable cart (line items + sessions count + total override). Owned
+   * by the wizard so changes flow back into wizard state.
+   */
+  onCartChange?: (next: EncounterCart) => void
 }
 
 // ─── Collapsible Section ───────────────────────────────────────────
@@ -199,6 +217,7 @@ function deriveInitialFinancialPlan(
 
 export function ProcedureForm({
   patientId,
+  patientName,
   patientGender,
   procedure,
   diagrams: existingDiagrams,
@@ -209,7 +228,19 @@ export function ProcedureForm({
   evaluationTemplates: evalTemplates,
   existingEvaluationResponses,
   loadingEvaluationTemplates = false,
+  cart,
+  draftRecordIds,
+  onCartChange,
 }: ProcedureFormProps) {
+  // F4 multi-line: when a cart with >1 line is provided we currently render
+  // only the first line's planning UI (with a clear info banner). Full
+  // per-line tabs are tracked in F4-followup.
+  // TODO(F4-followup): full multi-line tabs — currently renders only the first
+  // line of the cart. The form's schema, mutation hooks and evaluation save
+  // path are tightly coupled to a single procedure_records row; extracting an
+  // inner `<ProcedureLinePanel>` requires refactoring those hooks first.
+  void cart // referenced via the Orçamento section's WizardCart mount below
+  void draftRecordIds // accepted for forward-compat; used once tabs land
   // _existingApplications is accepted for API back-compat (procedure-page-client passes it)
   void _existingApplications
 
@@ -362,6 +393,28 @@ export function ProcedureForm({
   //   3. If no total is set yet (new procedure), populate once as a convenience.
   const procedureTypeId = form.watch('procedureTypeId')
   const additionalTypeIds = form.watch('additionalTypeIds')
+
+  // Sync cart total into the financial plan's totalAmount. In cart mode the
+  // cart owns the value; the form input is hidden but the field still feeds
+  // installment math and the finalize endpoint. We replace the whole
+  // financialPlan object (not just the totalAmount nested field) so we never
+  // produce a partial object that fails zod validation downstream.
+  const cartTotal = cart && cart.lines.length > 0 ? computeCartTotal(cart) : null
+  useEffect(() => {
+    if (cartTotal === null) return
+    const current = form.getValues('financialPlan')
+    if (current && current.totalAmount === cartTotal) return
+    form.setValue(
+      'financialPlan',
+      {
+        totalAmount: cartTotal,
+        installmentCount: current?.installmentCount ?? 1,
+        paymentMethod: current?.paymentMethod,
+        notes: current?.notes ?? '',
+      },
+      { shouldDirty: true },
+    )
+  }, [cartTotal, form])
 
   // Seed the "previous types key" ref with the types that were already
   // associated with the procedure at load time. That way, the effect's
@@ -629,7 +682,7 @@ export function ProcedureForm({
           result = await createProcedureMutation.mutateAsync(payload)
         }
 
-        const createdProc = result?.data as { id: string; status?: 'draft' | 'planned' | 'approved' | 'executed' | 'cancelled' } | undefined
+        const createdProc = result?.data as { id: string; status?: 'draft' | 'planned' | 'approved' | 'in_progress' | 'completed' | 'cancelled' } | undefined
         const createdId = createdProc?.id ?? procedure?.id
         const serverStatus = createdProc?.status
 
@@ -775,7 +828,7 @@ export function ProcedureForm({
   const financialPlan = form.watch('financialPlan')
   const diagramPoints = form.watch('diagramPoints') ?? []
 
-  // ─── Render ─────────────────────────────────────────────────
+// ─── Render ─────────────────────────────────────────────────
   return (
     <div className="mx-auto max-w-4xl space-y-5 pb-24">
       {/* ── Header ───────────────────────────────────────────── */}
@@ -824,7 +877,7 @@ export function ProcedureForm({
         onRetry={() => void form.handleSubmit(onValid, onInvalid)()}
       />
 
-      {/* ── Procedure Type Multi-Select ──────────────────── */}
+{/* ── Procedure Type Multi-Select ──────────────────── */}
       {!wizardOverrides?.hideProcedureTypes && (
         <ProcedureTypesSection
           control={form.control}
@@ -917,15 +970,41 @@ export function ProcedureForm({
             ) : undefined
           }
         >
+          {cart && cart.lines.length > 0 && onCartChange && (
+            <div className="mb-4">
+              <WizardCart
+                cart={cart}
+                onChange={onCartChange}
+                onRemoveLine={(typeId) =>
+                  onCartChange({
+                    ...cart,
+                    lines: cart.lines.filter((l) => l.procedureTypeId !== typeId),
+                  })
+                }
+                onClearTemplate={() =>
+                  onCartChange({
+                    ...cart,
+                    templateId: null,
+                    templateName: null,
+                    templateDefaultPrice: null,
+                    templateValidityMonths: null,
+                    lines: cart.lines.filter((l) => l.sourceTemplateLineId === null),
+                  })
+                }
+                readOnly={isReadOnly}
+              />
+            </div>
+          )}
           <FinancialPlanField
             control={form.control}
             form={form}
             disabled={isReadOnly}
+            hideTotalAmount={!!cart && cart.lines.length > 0}
           />
         </Section>
       )}
 
-      {/* ── Submit ──────────────────────────────────────── */}
+{/* ── Submit ──────────────────────────────────────── */}
       {!isReadOnly && !wizardOverrides?.hideSaveButton && (
         <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-sage/10 bg-white/95 py-4 backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.05)] md:sticky md:left-auto md:right-auto">
           <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 md:px-0">

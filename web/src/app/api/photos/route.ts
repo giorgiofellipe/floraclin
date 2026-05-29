@@ -8,7 +8,11 @@ import {
   getComparisonUrls as getComparisonUrlsQuery,
 } from '@/db/queries/photos'
 import { deleteFile } from '@/lib/storage'
-import { uploadPhotoSchema } from '@/validations/photo'
+import {
+  uploadPhotoSchema,
+  ACCEPTED_IMAGE_TYPES,
+  isDngFile,
+} from '@/validations/photo'
 
 // ─── Upload Photo ───────────────────────────────────────────────────
 
@@ -28,10 +32,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Arquivo muito grande. Máximo 5MB.' }, { status: 413 })
     }
 
+    // Server-side MIME validation — defense in depth. The client already runs
+    // `validateImageFile`, but the API must not trust browser-supplied types
+    // (e.g., curl with a forged `Content-Type: text/html` would otherwise let a
+    // malicious file land in storage and later be served with the spoofed
+    // content type). DNG is rejected here because the server can't decode it —
+    // the client must convert to JPEG via libraw-wasm before upload.
+    if (isDngFile(file)) {
+      return NextResponse.json({ success: false, error: 'Formato DNG deve ser convertido para JPEG no navegador antes do upload' }, { status: 415 })
+    }
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type as typeof ACCEPTED_IMAGE_TYPES[number])) {
+      return NextResponse.json({ success: false, error: 'Tipo de arquivo não suportado' }, { status: 415 })
+    }
+
     // Validate metadata
     const parsed = uploadPhotoSchema.safeParse({
       patientId: formData.get('patientId'),
       procedureRecordId: formData.get('procedureRecordId') || undefined,
+      procedureSessionId: formData.get('procedureSessionId') || undefined,
       timelineStage: formData.get('timelineStage'),
       notes: formData.get('notes') || undefined,
     })
@@ -62,6 +80,7 @@ export async function POST(request: Request) {
       photoAsset = await createPhotoAsset(context.tenantId, {
         patientId,
         procedureRecordId,
+        procedureSessionId: parsed.data.procedureSessionId ?? null,
         storagePath,
         originalFilename: file.name,
         mimeType: file.type,

@@ -15,7 +15,9 @@ import {
   Package,
   MapPin,
   Banknote,
-  Printer,
+  Headphones,
+  MessageSquarePlus,
+  PauseCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { FaceDiagramEditor } from '@/components/face-diagram/face-diagram-editor'
@@ -29,6 +31,13 @@ import type { ProductApplicationRecord } from '@/db/queries/product-applications
 import type { DiagramPointData } from '@/components/face-diagram/types'
 import type { PaymentMethod } from '@/types'
 import type { EvaluationSection, EvaluationResponses, EvaluationQuestion } from '@/types/evaluation'
+import {
+  FollowupTimeline,
+  type FollowupEntry,
+} from '@/components/planejamentos/followup-timeline'
+import { FollowupModal } from '@/components/planejamentos/followup-modal'
+import { SnoozeModal } from '@/components/planejamentos/snooze-modal'
+import { useFollowupsForProcedure } from '@/hooks/queries/use-planejamentos'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -122,6 +131,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function LifecycleBar({ procedure }: { procedure: ProcedureWithDetails }) {
   const isCancelled = procedure.status === 'cancelled'
+  const hasTreated =
+    procedure.status === 'in_progress' || procedure.status === 'completed'
+  const isCompleted = procedure.status === 'completed'
+
+  const finalLabel = isCancelled
+    ? 'Cancelado'
+    : isCompleted
+      ? 'Concluído'
+      : 'Executado'
 
   const steps = [
     {
@@ -137,9 +155,9 @@ function LifecycleBar({ procedure }: { procedure: ProcedureWithDetails }) {
       color: 'bg-sage',
     },
     {
-      label: isCancelled ? 'Cancelado' : 'Executado',
-      date: isCancelled ? procedure.cancelledAt : (procedure.status === 'executed' ? procedure.performedAt : null),
-      reached: procedure.status === 'executed' || isCancelled,
+      label: finalLabel,
+      date: isCancelled ? procedure.cancelledAt : (hasTreated ? procedure.performedAt : null),
+      reached: hasTreated || isCancelled,
       color: isCancelled ? 'bg-red-400' : 'bg-forest',
     },
   ]
@@ -197,7 +215,28 @@ export function ProcedureDetailView({
   const diagramPoints = useMemo(() => diagramsToPoints(diagrams), [diagrams])
 
   const isCancelled = procedure.status === 'cancelled'
-  const isExecuted = procedure.status === 'executed'
+  // Treatment delivered: any session executed (in_progress) OR fully done (completed).
+  // Used for "shows treated state" UI (status stamp, accent bar). Per spec semantics,
+  // the spec's 'completed' = final session executed, but visually treated UI should
+  // light up as soon as treatment delivery begins (in_progress).
+  const isExecuted =
+    procedure.status === 'in_progress' || procedure.status === 'completed'
+  const isApproved = procedure.status === 'approved'
+
+  // ─── Followup section (approved procedures only) ──────────────
+  const followupsQuery = useFollowupsForProcedure(isApproved ? procedure.id : '')
+  const followupEntries: FollowupEntry[] = (followupsQuery.data?.data ?? []).map(
+    (row) => ({
+      id: row.id,
+      contactedAt: row.contactedAt,
+      contactedByName: row.contactedByName,
+      channel: row.channel,
+      outcome: row.outcome,
+      notes: row.notes,
+    }),
+  )
+  const [followupModalOpen, setFollowupModalOpen] = useState(false)
+  const [snoozeModalOpen, setSnoozeModalOpen] = useState(false)
 
   // ─── Evaluation responses ─────────────────────────────────────────
   interface EvalResponseRecord {
@@ -235,7 +274,11 @@ export function ProcedureDetailView({
 
   return (
     <div className="mx-auto max-w-3xl">
-      {/* Navigation */}
+      {/* Navigation. The "Imprimir" entry lives on the wrapper
+          (procedure-page-client), which routes to the dedicated print page
+          at /procedimentos/[id]/imprimir — that route has proper print
+          styling (data-print-area + non-print chrome hidden) and replaces
+          the previous window.print() shortcut here. */}
       <div className="flex items-center justify-between mb-6" data-print-hide>
         <button
           onClick={() => router.push(`/pacientes/${patientId}?tab=procedimentos`)}
@@ -244,15 +287,6 @@ export function ProcedureDetailView({
           <ArrowLeft className="size-3.5" />
           Voltar
         </button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => window.print()}
-          className="text-mid hover:text-charcoal text-[12px] h-8"
-        >
-          <Printer className="size-3.5 mr-1.5" />
-          Imprimir
-        </Button>
       </div>
 
       {/* ─── Document ─────────────────────────────────────────────── */}
@@ -306,7 +340,7 @@ export function ProcedureDetailView({
                 {statusLabel}
               </p>
               <p className="text-[11px] text-mid mt-0.5">
-                {formatLongDate(procedure.performedAt)}
+                {procedure.performedAt ? formatLongDate(procedure.performedAt) : '—'}
               </p>
             </div>
           </div>
@@ -558,8 +592,64 @@ export function ProcedureDetailView({
               </dl>
             </div>
           )}
+
+          {/* Acompanhamento — approved (open) procedures only */}
+          {isApproved && (
+            <div data-print-hide>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <Headphones className="size-4 text-sage" />
+                  <h3 className="text-[11px] uppercase tracking-[0.18em] font-medium text-mid">
+                    Acompanhamento
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFollowupModalOpen(true)}
+                  >
+                    <MessageSquarePlus className="size-3.5 mr-1.5" />
+                    Registrar contato
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSnoozeModalOpen(true)}
+                  >
+                    <PauseCircle className="size-3.5 mr-1.5" />
+                    Adiar
+                  </Button>
+                </div>
+              </div>
+              <FollowupTimeline
+                followups={followupEntries}
+                loading={followupsQuery.isLoading}
+                emptyState="Nenhum contato registrado ainda."
+              />
+            </div>
+          )}
         </div>
       </div>
+
+      {isApproved && (
+        <>
+          <FollowupModal
+            open={followupModalOpen}
+            onClose={() => setFollowupModalOpen(false)}
+            procedureRecordId={procedure.id}
+            patientName={patientName}
+            procedureTypeName={procedure.procedureTypeName}
+          />
+          <SnoozeModal
+            open={snoozeModalOpen}
+            onClose={() => setSnoozeModalOpen(false)}
+            procedureRecordId={procedure.id}
+            patientName={patientName}
+            procedureTypeName={procedure.procedureTypeName}
+          />
+        </>
+      )}
     </div>
   )
 }

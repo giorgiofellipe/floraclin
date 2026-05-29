@@ -4,7 +4,7 @@ export type AppointmentStatus = 'scheduled' | 'confirmed' | 'in_progress' | 'com
 
 export type AppointmentSource = 'internal' | 'online_booking'
 
-export type ProcedureStatus = 'draft' | 'planned' | 'approved' | 'executed' | 'cancelled'
+export type ProcedureStatus = 'draft' | 'planned' | 'approved' | 'in_progress' | 'completed' | 'cancelled'
 
 export type TimelineStage = 'pre' | 'immediate_post' | '7d' | '30d' | '90d' | 'other'
 

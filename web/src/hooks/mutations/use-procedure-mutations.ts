@@ -39,30 +39,6 @@ export function useUpdateProcedure() {
   })
 }
 
-export function useApproveProcedure() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (id: string) => mutateJson(`/api/procedures/${id}/approve`, 'POST'),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.procedures.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
-    },
-  })
-}
-
-export function useExecuteProcedure() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
-      mutateJson(`/api/procedures/${id}/execute`, 'POST', data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.procedures.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
-    },
-  })
-}
-
 export function useCancelProcedure() {
   const queryClient = useQueryClient()
   return useMutation({

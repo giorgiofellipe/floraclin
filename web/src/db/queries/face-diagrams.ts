@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
-import { faceDiagrams, diagramPoints } from '@/db/schema'
-import { eq, and, desc, ne } from 'drizzle-orm'
+import { faceDiagrams, diagramPoints, procedureSessions } from '@/db/schema'
+import { eq, and, desc, ne, isNull } from 'drizzle-orm'
 import type { DiagramViewType } from '@/types'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -27,9 +27,18 @@ export interface DiagramPointRecord {
 
 // ─── Queries ────────────────────────────────────────────────────────
 
-export async function saveFaceDiagram(
+/**
+ * Upsert a face diagram for a specific procedure session and replace its points.
+ *
+ * Writes are session-scoped: lookup is by `(procedureSessionId, viewType)` per the
+ * `uq_face_diagrams_session_view` partial unique constraint (where
+ * `procedure_session_id IS NOT NULL`). The `procedureRecordId` is still stored on
+ * the row so reads can aggregate per-record.
+ */
+export async function saveFaceDiagramForSession(
   tenantId: string,
   procedureRecordId: string,
+  procedureSessionId: string,
   viewType: DiagramViewType,
   points: Array<{
     x: number
@@ -44,14 +53,14 @@ export async function saveFaceDiagram(
   }>,
   txDb: typeof db = db
 ) {
-  // Upsert diagram: find existing or create
+  // Upsert diagram: find existing by (session, viewType) per uq_face_diagrams_session_view
   const existing = await txDb
     .select()
     .from(faceDiagrams)
     .where(
       and(
         eq(faceDiagrams.tenantId, tenantId),
-        eq(faceDiagrams.procedureRecordId, procedureRecordId),
+        eq(faceDiagrams.procedureSessionId, procedureSessionId),
         eq(faceDiagrams.viewType, viewType)
       )
     )
@@ -78,6 +87,7 @@ export async function saveFaceDiagram(
       .values({
         tenantId,
         procedureRecordId,
+        procedureSessionId,
         viewType,
       })
       .returning()
@@ -106,6 +116,185 @@ export async function saveFaceDiagram(
   }
 
   return diagramId
+}
+
+/**
+ * Planning-time write: upsert keyed by (procedureRecordId, viewType, procedureSessionId IS NULL).
+ * Inserts a face_diagrams row with procedureSessionId=NULL so the planner's
+ * diagram persists on the draft `procedure_records` before the wizard reaches
+ * step 5. At session execution time, `saveFaceDiagramForSession` creates a
+ * separate row scoped to the new session.
+ */
+export async function saveFaceDiagram(
+  tenantId: string,
+  procedureRecordId: string,
+  viewType: DiagramViewType,
+  points: Array<{
+    x: number
+    y: number
+    productName: string
+    activeIngredient?: string
+    quantity: number
+    quantityUnit: string
+    technique?: string
+    depth?: string
+    notes?: string
+  }>,
+  txDb: typeof db = db
+) {
+  const existing = await txDb
+    .select()
+    .from(faceDiagrams)
+    .where(
+      and(
+        eq(faceDiagrams.tenantId, tenantId),
+        eq(faceDiagrams.procedureRecordId, procedureRecordId),
+        eq(faceDiagrams.viewType, viewType),
+        isNull(faceDiagrams.procedureSessionId)
+      )
+    )
+    .limit(1)
+
+  let diagramId: string
+  if (existing.length > 0) {
+    diagramId = existing[0].id
+    await txDb
+      .update(faceDiagrams)
+      .set({ updatedAt: new Date() })
+      .where(eq(faceDiagrams.id, diagramId))
+    await txDb
+      .delete(diagramPoints)
+      .where(eq(diagramPoints.faceDiagramId, diagramId))
+  } else {
+    const [diagram] = await txDb
+      .insert(faceDiagrams)
+      .values({ tenantId, procedureRecordId, viewType })
+      .returning()
+    diagramId = diagram.id
+  }
+
+  if (points.length > 0) {
+    await txDb.insert(diagramPoints).values(
+      points.map((point, index) => ({
+        tenantId,
+        faceDiagramId: diagramId,
+        x: point.x.toFixed(2),
+        y: point.y.toFixed(2),
+        productName: point.productName,
+        activeIngredient: point.activeIngredient ?? null,
+        quantity: point.quantity.toFixed(2),
+        quantityUnit: point.quantityUnit,
+        technique: point.technique ?? null,
+        depth: point.depth ?? null,
+        notes: point.notes ?? null,
+        sortOrder: index,
+      }))
+    )
+  }
+  return diagramId
+}
+
+/**
+ * List all diagrams (with their points) for a specific procedure session.
+ * Tenant-scoped to prevent cross-tenant disclosure if a future caller is
+ * fed an untrusted `procedureSessionId` (current caller pre-filters, but
+ * the defense-in-depth filter blocks any drift).
+ */
+export async function listDiagramsForSession(
+  tenantId: string,
+  procedureSessionId: string,
+  txDb: typeof db = db
+): Promise<DiagramWithPoints[]> {
+  const diagrams = await txDb
+    .select()
+    .from(faceDiagrams)
+    .where(
+      and(
+        eq(faceDiagrams.tenantId, tenantId),
+        eq(faceDiagrams.procedureSessionId, procedureSessionId),
+      ),
+    )
+
+  const result: DiagramWithPoints[] = []
+
+  for (const diagram of diagrams) {
+    const points = await txDb
+      .select()
+      .from(diagramPoints)
+      .where(eq(diagramPoints.faceDiagramId, diagram.id))
+      .orderBy(diagramPoints.sortOrder)
+
+    result.push({
+      id: diagram.id,
+      viewType: diagram.viewType,
+      points,
+    })
+  }
+
+  return result
+}
+
+/**
+ * List diagrams for a procedure record, returning the LAST session's diagrams
+ * (ordered by session ordinal DESC). Used by the step-5 picker to seed the
+ * editor with the most recent session's points as a starting point.
+ *
+ * Falls back to legacy record-scoped diagrams (rows where procedureSessionId
+ * IS NULL) if no session-scoped diagrams exist for the record.
+ */
+export async function listDiagramsForRecord(
+  tenantId: string,
+  procedureRecordId: string,
+  txDb: typeof db = db
+): Promise<DiagramWithPoints[]> {
+  // Find the most recent session (highest ordinal) for this record that has
+  // any diagrams attached.
+  const latestSession = await txDb
+    .select({ id: procedureSessions.id })
+    .from(procedureSessions)
+    .innerJoin(faceDiagrams, eq(faceDiagrams.procedureSessionId, procedureSessions.id))
+    .where(
+      and(
+        eq(procedureSessions.tenantId, tenantId),
+        eq(procedureSessions.procedureRecordId, procedureRecordId),
+      ),
+    )
+    .orderBy(desc(procedureSessions.sessionOrdinal))
+    .limit(1)
+
+  if (latestSession.length > 0) {
+    return listDiagramsForSession(tenantId, latestSession[0].id, txDb)
+  }
+
+  // Legacy fallback: record-scoped rows (procedureSessionId IS NULL) written
+  // before B6. New writes are session-scoped, but reads still need to surface
+  // pre-migration data.
+  const legacy = await txDb
+    .select()
+    .from(faceDiagrams)
+    .where(
+      and(
+        eq(faceDiagrams.tenantId, tenantId),
+        eq(faceDiagrams.procedureRecordId, procedureRecordId),
+      ),
+    )
+
+  const result: DiagramWithPoints[] = []
+  for (const diagram of legacy) {
+    const points = await txDb
+      .select()
+      .from(diagramPoints)
+      .where(eq(diagramPoints.faceDiagramId, diagram.id))
+      .orderBy(diagramPoints.sortOrder)
+
+    result.push({
+      id: diagram.id,
+      viewType: diagram.viewType,
+      points,
+    })
+  }
+
+  return result
 }
 
 export async function getFaceDiagram(

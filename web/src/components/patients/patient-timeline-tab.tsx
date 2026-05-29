@@ -17,6 +17,9 @@ import {
   Calendar,
   ChevronDown,
   ChevronRight,
+  Package as PackageIcon,
+  FileText,
+  MessageCircle,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { formatDateTime, formatDate } from '@/lib/utils'
@@ -47,6 +50,10 @@ const TYPE_CONFIG: Record<
   patient_created: { icon: UserPlus, color: 'bg-[#F4F6F8] text-charcoal' },
   anamnesis_updated: { icon: ClipboardEdit, color: 'bg-[#F4F6F8] text-charcoal' },
   appointment: { icon: Calendar, color: 'bg-[#F0F7F1] text-sage' },
+  package_sold: { icon: PackageIcon, color: 'bg-blush/40 text-charcoal' },
+  package_cancelled: { icon: PackageIcon, color: 'bg-[#F4F6F8] text-mid' },
+  document_issued: { icon: FileText, color: 'bg-[#F0F7F1] text-sage' },
+  document_sent_whatsapp: { icon: MessageCircle, color: 'bg-[#F0F7F1] text-sage' },
 }
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {

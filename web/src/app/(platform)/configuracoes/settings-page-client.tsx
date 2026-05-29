@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { ClinicSettingsForm } from '@/components/settings/clinic-settings-form'
 import { ProcedureTypeList } from '@/components/settings/procedure-type-list'
 import { ProductList } from '@/components/settings/product-list'
@@ -24,6 +25,10 @@ import {
   ShieldCheckIcon,
   DollarSignIcon,
   MessageCircleIcon,
+  Package2Icon,
+  ClipboardSignatureIcon,
+  UserCogIcon,
+  ChevronRightIcon,
 } from 'lucide-react'
 
 interface Tenant {
@@ -35,6 +40,7 @@ interface Tenant {
   address: unknown
   workingHours: unknown
   settings: unknown
+  logoUrl: string | null
 }
 
 interface ProcedureType {
@@ -107,6 +113,17 @@ const TABS = [
   { key: 'auditoria', label: 'Auditoria', icon: ShieldCheckIcon },
 ] as const
 
+// Items that route to dedicated configuration pages (not inline tabs).
+const LINK_ITEMS = [
+  { href: '/configuracoes/pacotes', label: 'Pacotes', icon: Package2Icon },
+  {
+    href: '/configuracoes/documentos',
+    label: 'Documentos',
+    icon: ClipboardSignatureIcon,
+  },
+  { href: '/configuracoes/perfil', label: 'Perfil', icon: UserCogIcon },
+] as const
+
 type TabKey = (typeof TABS)[number]['key']
 
 export function SettingsPageClient({
@@ -158,6 +175,19 @@ export function SettingsPageClient({
               </button>
             )
           })}
+          {LINK_ITEMS.map((item) => {
+            const Icon = item.icon
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-[3px] text-sm font-medium text-mid hover:text-charcoal whitespace-nowrap"
+              >
+                <Icon className="h-4 w-4" />
+                {item.label}
+              </Link>
+            )
+          })}
         </div>
       </div>
 
@@ -184,6 +214,27 @@ export function SettingsPageClient({
                   <Icon className={cn('h-4 w-4', isActive ? 'text-sage' : 'text-mid')} />
                   {tab.label}
                 </button>
+              )
+            })}
+
+            {LINK_ITEMS.length > 0 && (
+              <div className="pt-2 mt-2 border-t border-[#E8ECEF]" />
+            )}
+
+            {LINK_ITEMS.map((item) => {
+              const Icon = item.icon
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="flex items-center justify-between w-full px-3 py-2.5 rounded-[3px] text-sm font-medium text-mid hover:bg-[#F4F6F8] hover:text-charcoal transition-colors"
+                >
+                  <span className="flex items-center gap-3">
+                    <Icon className="h-4 w-4 text-mid" />
+                    {item.label}
+                  </span>
+                  <ChevronRightIcon className="h-3.5 w-3.5 text-mid/40" />
+                </Link>
               )
             })}
           </div>
@@ -213,6 +264,7 @@ export function SettingsPageClient({
                     address: tenant.address as Record<string, string> | null,
                     workingHours: tenant.workingHours as import('@/validations/tenant').WorkingHours | null,
                     settings: tenant.settings as Record<string, unknown> | null,
+                    logoUrl: (tenant.logoUrl as string | null) ?? null,
                   }}
                 />
               )}

@@ -9,12 +9,16 @@ import {
   FileCheck,
   Banknote,
   Clock,
+  Package,
+  FileText,
 } from 'lucide-react'
 
 const TABS = [
   { key: 'dados', label: 'Dados', icon: User },
   { key: 'anamnese', label: 'Anamnese', icon: ClipboardList },
   { key: 'procedimentos', label: 'Atendimentos', icon: Syringe },
+  { key: 'pacotes', label: 'Pacotes', icon: Package },
+  { key: 'documentos', label: 'Documentos', icon: FileText },
   { key: 'fotos', label: 'Fotos', icon: Camera },
   { key: 'termos', label: 'Termos', icon: FileCheck },
   { key: 'financeiro', label: 'Financeiro', icon: Banknote },
