@@ -11,7 +11,10 @@ import {
 
 const tenantId = '00000000-0000-0000-0000-000000000001'
 
-describe('procedure-sessions queries', () => {
+const RUN_INTEGRATION = Boolean(process.env.DATABASE_URL_TEST || process.env.RUN_DB_TESTS)
+const describeIntegration = RUN_INTEGRATION ? describe : describe.skip
+
+describeIntegration('procedure-sessions queries (integration — requires test DB)', () => {
   beforeEach(async () => {
     await db.delete(procedureSessions)
   })
