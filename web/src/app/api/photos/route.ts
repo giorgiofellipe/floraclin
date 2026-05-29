@@ -49,6 +49,7 @@ export async function POST(request: Request) {
     const parsed = uploadPhotoSchema.safeParse({
       patientId: formData.get('patientId'),
       procedureRecordId: formData.get('procedureRecordId') || undefined,
+      procedureSessionId: formData.get('procedureSessionId') || undefined,
       timelineStage: formData.get('timelineStage'),
       notes: formData.get('notes') || undefined,
     })
@@ -79,6 +80,7 @@ export async function POST(request: Request) {
       photoAsset = await createPhotoAsset(context.tenantId, {
         patientId,
         procedureRecordId,
+        procedureSessionId: parsed.data.procedureSessionId ?? null,
         storagePath,
         originalFilename: file.name,
         mimeType: file.type,

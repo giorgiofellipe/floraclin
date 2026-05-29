@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
+import { eq, sql } from 'drizzle-orm'
+import { z } from 'zod'
 import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
+import { db } from '@/db/client'
+import { tenants } from '@/db/schema'
 import { getTenant, updateTenant, updateTenantSettings } from '@/db/queries/tenants'
 import { updateTenantSchema, bookingSettingsSchema } from '@/validations/tenant'
 import { whatsappSettingsSchema } from '@/validations/whatsapp'
@@ -65,6 +69,37 @@ export async function PUT(request: Request) {
         entityType: 'tenant',
         entityId: ctx.tenantId,
         changes: { whatsappSettings: { old: null, new: 'updated' } },
+      })
+
+      return NextResponse.json({ success: true })
+    }
+
+    // Clinic settings update (e.g., defaultPackageValidityMonths)
+    if (body._action === 'clinic_settings') {
+      const parsed = z.object({
+        defaultPackageValidityMonths: z.number().int().min(1).max(120).nullable(),
+      }).safeParse(body.settings)
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Dados inválidos', fieldErrors: parsed.error.flatten().fieldErrors },
+          { status: 400 },
+        )
+      }
+
+      await db.update(tenants)
+        .set({
+          settings: sql`COALESCE(${tenants.settings}, '{}'::jsonb) || ${JSON.stringify(parsed.data)}::jsonb`,
+          updatedAt: new Date(),
+        })
+        .where(eq(tenants.id, ctx.tenantId))
+
+      await createAuditLog({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        action: 'update',
+        entityType: 'tenant',
+        entityId: ctx.tenantId,
+        changes: { clinicSettings: { old: null, new: 'updated' } },
       })
 
       return NextResponse.json({ success: true })

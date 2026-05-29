@@ -26,6 +26,7 @@ export const timelineStageLabels: Record<TimelineStage, string> = {
 export const uploadPhotoSchema = z.object({
   patientId: z.string().uuid('ID do paciente inválido'),
   procedureRecordId: z.string().uuid('ID do procedimento inválido').optional(),
+  procedureSessionId: z.string().uuid().optional(),
   timelineStage: z.enum(timelineStageValues, {
     error: 'Estágio da timeline é obrigatório',
   }),
