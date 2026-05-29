@@ -219,7 +219,10 @@ export function PackageCard({ patientId, pkg }: PackageCardProps) {
           const remaining = Math.max(0, total - executed)
           const pct = total > 0 ? Math.min(100, (executed / total) * 100) : 0
           const allExecuted = executed >= total
-          const canExecuteNext = executed < total && pkg.status === 'active'
+          const canExecuteNext =
+            executed < total &&
+            (pkg.status === 'active' || pkg.status === 'expired') &&
+            !pkg.closedAt
 
           return (
             <div key={record.procedureRecordId} className="px-5 py-4">

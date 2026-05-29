@@ -70,6 +70,13 @@ interface ServiceWizardProps {
     approval: Date | null
     execution: Date | null
   }
+  /**
+   * Deep-link from "Executar próxima sessão" on the package card: when set,
+   * `<ProcedureExecution>` mounts directly in execute mode for this record so
+   * the user lands on the session form, not the picker.
+   */
+  deepLinkProcedureId?: string | null
+  autoStartNext?: boolean
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -99,6 +106,8 @@ export function ServiceWizard({
   anamnesis,
   anamnesisUpdatedByName,
   stepTimestamps,
+  deepLinkProcedureId,
+  autoStartNext,
 }: ServiceWizardProps) {
   const router = useRouter()
 
@@ -880,6 +889,8 @@ export function ServiceWizard({
                     procedure={localProcedure}
                     diagrams={localDiagrams ?? undefined}
                     existingApplications={localApplications ?? undefined}
+                    deepLinkProcedureId={deepLinkProcedureId ?? null}
+                    autoStartNext={autoStartNext ?? false}
                     wizardOverrides={getOverridesForStep(5)}
                   />
                 ) : (

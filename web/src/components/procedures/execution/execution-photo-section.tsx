@@ -8,6 +8,12 @@ interface Props {
   procedureId: string
   photoRefreshKey: number
   onRefresh: () => void
+  /**
+   * Bubbles each successful upload's photo asset id up so the parent form can
+   * include them in the session-create payload (server-side reassigns them to
+   * the freshly created `procedure_session_id`).
+   */
+  onPhotoUploaded?: (assetId: string) => void
   stage: 'pre' | 'immediate_post'
   disabled?: boolean
 }
@@ -17,6 +23,7 @@ export function ExecutionPhotoSection({
   procedureId,
   photoRefreshKey,
   onRefresh,
+  onPhotoUploaded,
   stage,
   disabled,
 }: Props) {
@@ -28,6 +35,7 @@ export function ExecutionPhotoSection({
           procedureRecordId={procedureId}
           defaultStage={stage}
           onUploadComplete={onRefresh}
+          onUploaded={onPhotoUploaded}
         />
       )}
       <PhotoGrid

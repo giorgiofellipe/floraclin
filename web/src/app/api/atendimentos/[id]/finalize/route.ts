@@ -8,11 +8,18 @@
  * any side data (face diagrams, products, plannedSnapshot) the wizard has
  * already persisted.
  *
- * The `[id]` segment is a UUID. C1 (`finalizeAtendimento`) currently
- * generates its own atendimentoId inside the transaction, so the URL param is
- * validated (must be a UUID) but the canonical id returned to the caller is
- * the one C1 emits. Future work may push the URL-supplied id through if we
- * want client-side idempotency keying.
+ * The `[id]` segment is a UUID. It is the canonical atendimento id: the
+ * wizard mints it client-side and uses it in the redirect to step 5
+ * (`/atendimentos/{id}`); we pass it through to C1 so the persisted rows
+ * (procedure_records.atendimentoId, audit log entityId) carry the same UUID
+ * the URL uses. Without this, the picker fetch for `/api/atendimentos/{id}`
+ * after finalization would 404.
+ *
+ * Security: `practitionerId` is NEVER taken from the request body. We use
+ * `ctx.userId` (the authenticated caller) — a tenant owner that finalizes IS
+ * the practitioner of record. Trusting the client here would let a tenant A
+ * owner attribute sales (`patient_packages.soldBy`) to any user UUID
+ * (including users in tenant B), corrupting reports.
  */
 
 import { NextResponse } from 'next/server'
@@ -29,7 +36,6 @@ const requestSchema = z.object({
   cart: atendimentoCartSchema,
   draftRecordIds: z.array(z.string().uuid()).min(1),
   patientId: z.string().uuid(),
-  practitionerId: z.string().uuid(),
   financialPlan: z.object({
     totalAmount: z.string(),
     installmentCount: z.number().int().min(1),
@@ -55,8 +61,8 @@ export async function POST(
     const ctx = await requireRole('owner', 'practitioner')
     const { id: atendimentoIdFromUrl } = await params
 
-    // Validate the URL param is a UUID (defense in depth). We don't pass it
-    // through to C1 today — see file header.
+    // Validate the URL param is a UUID — this becomes the canonical
+    // atendimentoId we pass to C1 (see file header).
     const urlIdParsed = z.string().uuid().safeParse(atendimentoIdFromUrl)
     if (!urlIdParsed.success) {
       return NextResponse.json(
@@ -64,6 +70,7 @@ export async function POST(
         { status: 400 },
       )
     }
+    const atendimentoId = urlIdParsed.data
 
     const body = requestSchema.parse(await request.json())
 
@@ -77,8 +84,9 @@ export async function POST(
     const result = await finalizeAtendimento({
       tenantId: ctx.tenantId,
       userId: ctx.userId,
+      atendimentoId,
       patientId: body.patientId,
-      practitionerId: body.practitionerId,
+      practitionerId: ctx.userId,
       cart: body.cart,
       draftRecordIds: body.draftRecordIds,
       financialPlan: body.financialPlan,

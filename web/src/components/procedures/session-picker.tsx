@@ -1,10 +1,11 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { ClosePackageDialog } from '@/components/packages/close-package-dialog'
 import { brToday } from '@/lib/dates'
 import { cn, formatDate } from '@/lib/utils'
 
@@ -21,6 +22,18 @@ interface AtendimentoViewSession {
   sessionOrdinal: number
   performedAt: string
   executedByName: string
+  // Optional richer payload from /api/atendimentos/[id] — the picker doesn't
+  // surface these directly, but typing them keeps the cached query payload
+  // shape honest for downstream consumers (the orchestrator reads diagrams +
+  // productApplications for prefill, and the read-only view renders them).
+  technique?: string | null
+  clinicalResponse?: string | null
+  adverseEffects?: string | null
+  notes?: string | null
+  followUpDate?: string | null
+  nextSessionObjectives?: string | null
+  diagrams?: unknown
+  productApplications?: unknown
 }
 
 interface AtendimentoViewRecord {
@@ -79,14 +92,29 @@ export function SessionPicker({
     return ymd < brToday() ? ymd : null
   }, [data?.package?.expiresAt])
 
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false)
+
   if (isLoading || !data) return <div>Carregando…</div>
 
   const isPackageClosed = Boolean(
     data.package && (data.package.status === 'completed' || data.package.closedAt),
   )
+  const canCloseFromPicker = Boolean(data.package?.id) && !isPackageClosed
 
   return (
     <div className="space-y-6">
+      {canCloseFromPicker && (
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setCloseDialogOpen(true)}
+          >
+            Encerrar pacote
+          </Button>
+        </div>
+      )}
       {expiredAt && !isPackageClosed && (
         <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           Pacote vencido em {formatDate(expiredAt)}. Você pode continuar executando as sessões
@@ -147,6 +175,13 @@ export function SessionPicker({
           </ol>
         </section>
       ))}
+      {data.package?.id && (
+        <ClosePackageDialog
+          open={closeDialogOpen}
+          onOpenChange={setCloseDialogOpen}
+          packageId={data.package.id}
+        />
+      )}
     </div>
   )
 }

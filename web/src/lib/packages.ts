@@ -89,6 +89,16 @@ export async function cancelPackage(args: {
  * (patient lost expiry / desistance / other) and flips status to a closed
  * terminal state. The financial side-effects (refund vs. retain installments)
  * are driven by the existing financial flows, not by this helper.
+ *
+ * Runs inside a transaction because `closePackageQuery` takes a row-level
+ * `FOR UPDATE` lock; outside a tx that lock is released immediately and
+ * the race protection disappears. Propagates `BusinessError('not_found')`
+ * or `BusinessError('package_not_active')` from the query — the audit
+ * log only fires on a successful close, so a missing/terminal package
+ * cannot pollute the audit trail.
+ *
+ * Accepts an optional `tx` so callers (currently none) that already own a
+ * transaction can compose without nesting.
  */
 export async function closePackage(
   args: {
@@ -98,28 +108,37 @@ export async function closePackage(
     closedReason: CloseReason
     closeNote: string | null
   },
-  tx: typeof db = db,
-): Promise<void> {
-  await closePackageQuery(
-    args.tenantId,
-    args.packageId,
-    {
-      closedReason: args.closedReason,
-      closeNote: args.closeNote,
-    },
-    tx,
-  )
-  await createAuditLog(
-    {
-      tenantId: args.tenantId,
-      userId: args.userId,
-      action: 'update',
-      entityType: 'patient_package',
-      entityId: args.packageId,
-      changes: { closedReason: { old: null, new: args.closedReason } },
-    },
-    tx,
-  )
+  tx?: typeof db,
+): Promise<{ id: string; closedAt: Date; closedReason: string }> {
+  const run = async (innerTx: typeof db) => {
+    const updated = await closePackageQuery(
+      args.tenantId,
+      args.packageId,
+      {
+        closedReason: args.closedReason,
+        closeNote: args.closeNote,
+      },
+      innerTx,
+    )
+    // Audit log fires only after a successful close. If
+    // `closePackageQuery` throws (not found / not active), this is
+    // skipped and the audit trail stays clean.
+    await createAuditLog(
+      {
+        tenantId: args.tenantId,
+        userId: args.userId,
+        action: 'update',
+        entityType: 'patient_package',
+        entityId: args.packageId,
+        changes: { closedReason: { old: null, new: args.closedReason } },
+      },
+      innerTx,
+    )
+    return updated
+  }
+
+  if (tx) return run(tx)
+  return withTransaction(run)
 }
 
 /**

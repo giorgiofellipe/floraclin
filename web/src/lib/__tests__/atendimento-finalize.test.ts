@@ -224,6 +224,7 @@ const tenantId = '00000000-0000-0000-0000-000000000001'
 const patientId = '00000000-0000-0000-0000-000000000002'
 const practitionerId = '00000000-0000-0000-0000-000000000003'
 const userId = practitionerId
+const atendimentoId = '00000000-0000-0000-0000-0000000000a1'
 
 const adhocCart = {
   templateId: null,
@@ -295,6 +296,7 @@ describe('finalizeAtendimento', () => {
       finalizeAtendimento({
         tenantId,
         userId,
+        atendimentoId,
         patientId,
         practitionerId,
         cart: adhocCart,
@@ -314,6 +316,7 @@ describe('finalizeAtendimento', () => {
     const result = await finalizeAtendimento({
       tenantId,
       userId,
+      atendimentoId,
       patientId,
       practitionerId,
       cart: bundleCart,
@@ -325,6 +328,9 @@ describe('finalizeAtendimento', () => {
     expect(result.patientPackageId).not.toBeNull()
     expect(result.procedureRecordIds).toEqual([draftId])
     expect(result.financialEntryId).toBe('fe-id-generated')
+    // The returned atendimentoId is exactly what the caller supplied — the
+    // wizard's URL UUID survives through to persistence (FIX A).
+    expect(result.atendimentoId).toBe(atendimentoId)
 
     // A patient_packages insert happened.
     const pkgInsert = txState.insertCalls.find((c) => c.table === 'patientPackages')
@@ -343,6 +349,7 @@ describe('finalizeAtendimento', () => {
     const result = await finalizeAtendimento({
       tenantId,
       userId,
+      atendimentoId,
       patientId,
       practitionerId,
       cart: adhocCart,
@@ -366,6 +373,7 @@ describe('finalizeAtendimento', () => {
     await finalizeAtendimento({
       tenantId,
       userId,
+      atendimentoId,
       patientId,
       practitionerId,
       cart: adhocCart,
@@ -391,6 +399,7 @@ describe('finalizeAtendimento', () => {
       finalizeAtendimento({
         tenantId,
         userId,
+        atendimentoId,
         patientId,
         practitionerId,
         cart: adhocCart,
@@ -418,6 +427,7 @@ describe('finalizeAtendimento', () => {
       finalizeAtendimento({
         tenantId,
         userId,
+        atendimentoId,
         patientId,
         practitionerId,
         cart: adhocCart,
@@ -437,6 +447,7 @@ describe('finalizeAtendimento', () => {
     await finalizeAtendimento({
       tenantId,
       userId,
+      atendimentoId,
       patientId,
       practitionerId,
       cart: adhocCart,
@@ -470,6 +481,7 @@ describe('finalizeAtendimento', () => {
     await finalizeAtendimento({
       tenantId,
       userId,
+      atendimentoId,
       patientId,
       practitionerId,
       cart: adhocCart,
@@ -485,8 +497,9 @@ describe('finalizeAtendimento', () => {
     expect(u.set.approvedAt).toBeInstanceOf(Date)
     expect(u.set.sessionsTotal).toBe(1)
     expect(u.set.financialPlan).toMatchObject({ totalAmount: '800.00' })
-    // The atendimentoId must be set on the record.
-    expect(typeof u.set.atendimentoId).toBe('string')
+    // The atendimentoId set on the record matches what the caller passed
+    // (FIX A: the wizard's URL UUID, not an internally-generated one).
+    expect(u.set.atendimentoId).toBe(atendimentoId)
 
     // CRITICAL (Patch P1): plannedSnapshot must NOT be in the SET payload.
     // The wizard wrote it during step 2/3 and we preserve whatever's there.
@@ -513,6 +526,7 @@ describe('finalizeAtendimento', () => {
     const result = await finalizeAtendimento({
       tenantId,
       userId,
+      atendimentoId,
       patientId,
       practitionerId,
       cart: multiLineCart,
@@ -550,6 +564,7 @@ describe('finalizeAtendimento', () => {
     await finalizeAtendimento({
       tenantId,
       userId,
+      atendimentoId,
       patientId,
       practitionerId,
       cart: multiLineCart,
@@ -579,5 +594,55 @@ describe('finalizeAtendimento', () => {
     for (const c of consentInserts) {
       expect(draftIds).toContain(c.values.procedureRecordId)
     }
+  })
+
+  // FIX A: the caller now owns the atendimentoId — passing the same id twice
+  // is a no-op at the signature level. The unit test harness doesn't enforce
+  // DB-level uniqueness; this guards against a future refactor that might
+  // sneak back an internal `crypto.randomUUID()` (which would silently make
+  // the id different on each call and break the wizard → step 5 handoff).
+  it('accepts the same atendimentoId on repeat calls without throwing (signature-level)', async () => {
+    const draftIdA = '00000000-0000-0000-0000-00000000d030'
+    const draftIdB = '00000000-0000-0000-0000-00000000d031'
+    // Order matches the tx.execute call sequence per invocation:
+    //   (1) FOR UPDATE lock → rows of the locked draft
+    //   (2) UPDATE financial_entries back-fill → no rows
+    // and the same pair for the second call.
+    txState.executeResponses.push({
+      rows: [{ id: draftIdA, tenant_id: tenantId, patient_id: patientId, status: 'draft', planned_snapshot: null }],
+    })
+    txState.executeResponses.push({ rows: [] })
+    txState.executeResponses.push({
+      rows: [{ id: draftIdB, tenant_id: tenantId, patient_id: patientId, status: 'draft', planned_snapshot: null }],
+    })
+    txState.executeResponses.push({ rows: [] })
+
+    const sharedId = '00000000-0000-0000-0000-0000000000a2'
+
+    const first = await finalizeAtendimento({
+      tenantId,
+      userId,
+      atendimentoId: sharedId,
+      patientId,
+      practitionerId,
+      cart: adhocCart,
+      draftRecordIds: [draftIdA],
+      financialPlan: { totalAmount: '800.00', installmentCount: 1, paymentMethod: 'pix' },
+      consents: [],
+    })
+    const second = await finalizeAtendimento({
+      tenantId,
+      userId,
+      atendimentoId: sharedId,
+      patientId,
+      practitionerId,
+      cart: adhocCart,
+      draftRecordIds: [draftIdB],
+      financialPlan: { totalAmount: '800.00', installmentCount: 1, paymentMethod: 'pix' },
+      consents: [],
+    })
+
+    expect(first.atendimentoId).toBe(sharedId)
+    expect(second.atendimentoId).toBe(sharedId)
   })
 })

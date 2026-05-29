@@ -9,6 +9,7 @@ import {
 } from '@/db/schema'
 import { and, eq, isNull, sql, inArray, asc, desc } from 'drizzle-orm'
 import { brToday } from '@/lib/dates'
+import { BusinessError } from '@/lib/errors'
 import type { CloseReason } from '@/validations/encerrar-pacote'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -481,16 +482,59 @@ export async function getPatientPackage(
  * Close a patient package: set status='completed', record the close metadata,
  * and persist the operator-provided note only when reason is 'other'.
  *
+ * Locks the package row with `FOR UPDATE` before mutating to prevent two
+ * races:
+ *
+ *   1. Concurrent execution (e.g. `executeSession` on a procedure record):
+ *      `executeSession` locks `procedure_records` then `patient_packages`,
+ *      so taking the same `patient_packages` lock here serializes both
+ *      flows on the package row.
+ *   2. Terminal-state laundering: re-stamping `closedAt`/`closedReason` on
+ *      a row that's already `cancelled`/`completed` muddies the audit
+ *      trail. The status check inside the lock refuses anything that is
+ *      not currently `active`.
+ *
+ * Throws `BusinessError('not_found')` when the row is missing or belongs
+ * to another tenant, and `BusinessError('package_not_active')` when the
+ * row exists but isn't in the `active` state.
+ *
  * Accepts an optional `tx` so it can be composed inside the action helper's
- * transaction alongside an audit log write.
+ * transaction alongside an audit log write. The lock is only meaningful
+ * inside a transaction, so callers that hand a non-tx `db` get the same
+ * checks but no row-level serialization guarantee.
  */
 export async function closePackageQuery(
   tenantId: string,
   packageId: string,
   args: { closedReason: CloseReason; closeNote: string | null },
   tx: typeof db = db,
-): Promise<void> {
-  await tx
+): Promise<{ id: string; closedAt: Date; closedReason: string }> {
+  const [locked] = await tx
+    .select({
+      id: patientPackages.id,
+      status: patientPackages.status,
+    })
+    .from(patientPackages)
+    .where(
+      and(
+        eq(patientPackages.tenantId, tenantId),
+        eq(patientPackages.id, packageId),
+      ),
+    )
+    .for('update')
+    .limit(1)
+
+  if (!locked) {
+    throw new BusinessError('not_found', 'Pacote não encontrado')
+  }
+  if (locked.status !== 'active') {
+    throw new BusinessError(
+      'package_not_active',
+      `Pacote já está em estado ${locked.status}`,
+    )
+  }
+
+  const [updated] = await tx
     .update(patientPackages)
     .set({
       status: 'completed',
@@ -505,4 +549,23 @@ export async function closePackageQuery(
         eq(patientPackages.id, packageId),
       ),
     )
+    .returning({
+      id: patientPackages.id,
+      closedAt: patientPackages.closedAt,
+      closedReason: patientPackages.closedReason,
+    })
+
+  // Defensive: the FOR UPDATE lock guarantees the row was here a moment
+  // ago, but if a sibling transaction managed to delete it between the
+  // lock release and the UPDATE (shouldn't happen — same tx), surface a
+  // not_found rather than dereference undefined.
+  if (!updated) {
+    throw new BusinessError('not_found', 'Pacote não encontrado')
+  }
+
+  return {
+    id: updated.id,
+    closedAt: updated.closedAt!,
+    closedReason: updated.closedReason!,
+  }
 }

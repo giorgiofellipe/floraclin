@@ -21,6 +21,8 @@ import {
   procedureTypes,
   users,
 } from '@/db/schema'
+import { listDiagramsForSession } from '@/db/queries/face-diagrams'
+import { listProductApplicationsForSession } from '@/db/queries/product-applications'
 
 export async function GET(
   _request: Request,
@@ -65,13 +67,19 @@ export async function GET(
     }
 
     const recordIds = records.map((r) => r.id)
-    const sessions = await db
+    const sessionRows = await db
       .select({
         id: procedureSessions.id,
         procedureRecordId: procedureSessions.procedureRecordId,
         sessionOrdinal: procedureSessions.sessionOrdinal,
         performedAt: procedureSessions.performedAt,
         executedByName: users.fullName,
+        technique: procedureSessions.technique,
+        clinicalResponse: procedureSessions.clinicalResponse,
+        adverseEffects: procedureSessions.adverseEffects,
+        notes: procedureSessions.notes,
+        followUpDate: procedureSessions.followUpDate,
+        nextSessionObjectives: procedureSessions.nextSessionObjectives,
       })
       .from(procedureSessions)
       .innerJoin(users, eq(procedureSessions.executedBy, users.id))
@@ -82,6 +90,19 @@ export async function GET(
         ),
       )
       .orderBy(asc(procedureSessions.sessionOrdinal))
+
+    // Eager-load per-session diagrams + product applications so the picker can
+    // show a useful read-only view and the orchestrator can prefill the next
+    // session from the most recently executed session's data.
+    const sessions = await Promise.all(
+      sessionRows.map(async (s) => {
+        const [diagrams, productApplications] = await Promise.all([
+          listDiagramsForSession(s.id),
+          listProductApplicationsForSession(ctx.tenantId, s.id),
+        ])
+        return { ...s, diagrams, productApplications }
+      }),
+    )
 
     const packageId = records.find((r) => r.patientPackageId)?.patientPackageId
     let pkg: {

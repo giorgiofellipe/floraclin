@@ -30,6 +30,13 @@ interface PhotoUploaderProps {
   patientId: string
   procedureRecordId?: string
   onUploadComplete?: () => void
+  /**
+   * Fires once per successful upload with the newly created photo asset's id.
+   * Lets callers (e.g. session-execution-form) track which photos were just
+   * uploaded so they can be attributed server-side. Additive/optional; non-
+   * execution callers can ignore it.
+   */
+  onUploaded?: (assetId: string) => void
   defaultStage?: TimelineStage
 }
 
@@ -256,6 +263,7 @@ export function PhotoUploader({
   patientId,
   procedureRecordId,
   onUploadComplete,
+  onUploaded,
   defaultStage,
 }: PhotoUploaderProps) {
   const [files, setFiles] = useState<PendingFile[]>([])
@@ -386,7 +394,7 @@ export function PhotoUploader({
 
         const res = await fetch('/api/photos', { method: 'POST', body: formData })
 
-        let result: { success?: boolean; error?: string }
+        let result: { success?: boolean; error?: string; data?: { id?: string } }
         const contentType = res.headers.get('content-type') ?? ''
         if (contentType.includes('application/json')) {
           result = await res.json()
@@ -399,6 +407,9 @@ export function PhotoUploader({
           setFiles((prev) =>
             prev.map((f) => (f.id === pendingFile.id ? { ...f, status: 'done' as const, progress: 100 } : f))
           )
+          if (result.data?.id) {
+            onUploaded?.(result.data.id)
+          }
           toast.success(`Foto enviada: ${pendingFile.file.name}`)
           setTimeout(() => {
             setFiles((prev) => {
@@ -439,7 +450,7 @@ export function PhotoUploader({
 
     setIsUploading(false)
     onUploadComplete?.()
-  }, [files, patientId, procedureRecordId, timelineStage, onUploadComplete])
+  }, [files, patientId, procedureRecordId, timelineStage, onUploadComplete, onUploaded])
 
   const pendingCount = files.filter((f) => f.status === 'pending').length
   // Include the .dng extension so the native file picker surfaces DNG files

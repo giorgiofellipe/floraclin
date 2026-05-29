@@ -147,13 +147,8 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
       existingApplications={applications}
       anamnesis={anamnesisData}
       stepTimestamps={stepTimestamps}
-      // TODO(J1 → G3): `<ServiceWizard />` does not yet expose
-      // `deepLinkProcedureId` / `autoStartNext` props — Task G3 will plumb them
-      // through to `<ProcedureExecution />` so the execution step can auto-open
-      // the "Executar próxima sessão" flow for the deep-linked record. For now
-      // we forward the search params (read above) into the wizard via the URL
-      // and rely on `initialStep={5}` + `procedureId` to mount the right
-      // execution context. See `?procedure=` + `?action=executeNext` in the URL.
+      deepLinkProcedureId={hasDeepLink ? deepLinkProcedureId : null}
+      autoStartNext={hasDeepLink ? autoStartNext : false}
     />
   )
 }

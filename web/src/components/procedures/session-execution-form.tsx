@@ -13,7 +13,7 @@
  */
 
 import * as React from 'react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useForm, useFieldArray, Controller, type Resolver, type UseFormReturn } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -243,17 +243,19 @@ export function SessionExecutionForm({
   }, [])
 
   // ─── Photo state ──────────────────────────────────────────────────
-  // The patient's pre/post photo flow uploads photos via PhotoUploader, which
-  // associates them with the procedureRecordId server-side. We track the IDs
-  // we want to attach to the session via PhotoGrid's render (and via a local
-  // counter to trigger a refresh after upload). For the wire payload we send
-  // a (possibly empty) array; server-side, sessions auto-link any photos
-  // uploaded against this procedure record. The explicit list lets future UI
-  // limit which photos are attached to the session — for now we leave it
-  // empty by default and let the server-side link handle attribution.
+  // The pre/post photo flow uploads photos via PhotoUploader, which associates
+  // them with the procedureRecordId server-side. We collect each upload's
+  // returned asset id via `onPhotoUploaded` so that the wire payload's
+  // `photoAssetIds` array is populated — the server then reassigns those
+  // assets to the newly created `procedure_session_id` for per-session
+  // attribution. Without this, the server-side reassignment is a no-op and
+  // every photo stays bound only to the procedure record.
   const [photoRefreshKey, setPhotoRefreshKey] = useState(0)
-  const [photoAssetIds] = useState<string[]>([])
+  const [photoAssetIds, setPhotoAssetIds] = useState<string[]>([])
   const handlePhotoRefresh = () => setPhotoRefreshKey((k) => k + 1)
+  const handlePhotoUploaded = useCallback((assetId: string) => {
+    setPhotoAssetIds((prev) => (prev.includes(assetId) ? prev : [...prev, assetId]))
+  }, [])
 
   // ─── Auto-populate product applications from diagram points ──────
   // Mirrors the behaviour in procedure-execution.tsx: any time the diagram
@@ -593,6 +595,7 @@ export function SessionExecutionForm({
           procedureId={procedureRecordId}
           photoRefreshKey={photoRefreshKey}
           onRefresh={handlePhotoRefresh}
+          onPhotoUploaded={handlePhotoUploaded}
           stage="pre"
           disabled={false}
         />
@@ -610,6 +613,7 @@ export function SessionExecutionForm({
           procedureId={procedureRecordId}
           photoRefreshKey={photoRefreshKey}
           onRefresh={handlePhotoRefresh}
+          onPhotoUploaded={handlePhotoUploaded}
           stage="immediate_post"
           disabled={false}
         />

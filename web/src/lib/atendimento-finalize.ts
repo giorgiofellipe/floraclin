@@ -52,7 +52,21 @@ import { createAuditLog } from '@/lib/audit'
 export interface FinalizeAtendimentoInput {
   tenantId: string
   userId: string
+  /**
+   * Caller-supplied atendimento id. The route extracts this from the URL path
+   * param so the wizard's client-minted UUID survives through to persistence
+   * — otherwise the client would navigate to step 5 / `/atendimentos/{id}`
+   * with an id the server never used, producing 404s in the picker.
+   */
+  atendimentoId: string
   patientId: string
+  /**
+   * Practitioner of record. The route passes `ctx.userId` (the authenticated
+   * caller) — the field is kept distinct from `userId` for future delegation
+   * (e.g. an owner finalizing on behalf of an associate). It MUST NOT be
+   * sourced from request bodies: doing so lets a tenant attribute sales to
+   * arbitrary user UUIDs, including from other tenants.
+   */
   practitionerId: string
   cart: AtendimentoCart
   /** One draft record id per cart line, in the same order as `cart.lines`. */
@@ -102,7 +116,7 @@ export async function finalizeAtendimento(
   }
 
   const run = async (tx: typeof db): Promise<FinalizeAtendimentoResult> => {
-    const atendimentoId = crypto.randomUUID()
+    const atendimentoId = input.atendimentoId
     const isBundle = isBundleCart(input.cart)
     const total = computeCartTotal(input.cart)
 

@@ -118,6 +118,15 @@ const { txState, TABLE_TOKENS } = vi.hoisted(() => {
     updateCalls: UpdateCall[]
     // captured audit-log insertions
     auditCalls: Array<Record<string, unknown>>
+    // patientPackages FOR UPDATE lock results — closePackageQuery does
+    // `select().from(patientPackages).where().for('update').limit(1)`.
+    // Each entry is the row that lock should return, or null for not-found.
+    patientPackageLockRows: Array<{ id: string; status: string } | null>
+    // patientPackages UPDATE ... RETURNING rows — closePackageQuery now
+    // returns the updated row. Each entry is yielded in order.
+    patientPackageReturningRows: Array<
+      { id: string; closedAt: Date; closedReason: string } | undefined
+    >
   }
   const txState: TxState = {
     executeResponses: [],
@@ -126,6 +135,8 @@ const { txState, TABLE_TOKENS } = vi.hoisted(() => {
     sessionCountsByRecord: {},
     updateCalls: [],
     auditCalls: [],
+    patientPackageLockRows: [],
+    patientPackageReturningRows: [],
   }
   const TABLE_TOKENS = {
     patientPackages: { __table: 'patientPackages' },
@@ -147,6 +158,8 @@ function resetTx() {
   txState.sessionCountsByRecord = {}
   txState.updateCalls = []
   txState.auditCalls = []
+  txState.patientPackageLockRows = []
+  txState.patientPackageReturningRows = []
 }
 
 // `makeTx` lives in vi.hoisted so the mock factories below can reach it.
@@ -162,6 +175,10 @@ const { makeTx } = vi.hoisted(() => {
         sessionCountsByRecord: Record<string, number>
         updateCalls: Array<{ table: string; values: Record<string, unknown> }>
         auditCalls: Array<Record<string, unknown>>
+        patientPackageLockRows: Array<{ id: string; status: string } | null>
+        patientPackageReturningRows: Array<
+          { id: string; closedAt: Date; closedReason: string } | undefined
+        >
         __nextCountRecordIdQueue?: string[]
       }
       const g = globalThis as Record<string, unknown>
@@ -181,8 +198,32 @@ const { makeTx } = vi.hoisted(() => {
         select: (proj?: Record<string, unknown>) => ({
           from: (table: unknown) => {
             const tag = tagOf(table)
+            // patientPackages SELECT ... FOR UPDATE LIMIT 1 — used by
+            // closePackageQuery. Returns from the lock-rows queue.
+            const pkgRows = () => {
+              const row = ST.patientPackageLockRows.shift()
+              if (!row) return Promise.resolve([])
+              return Promise.resolve([row])
+            }
+            // The query chain is .where(...).for('update').limit(1)
+            // but maybeCompletePackage / other consumers may just .where(...).
             return {
               where: () => {
+                if (tag === 'patientPackages') {
+                  // Build a chainable object so callers can append
+                  // .for('update').limit(1) OR await directly.
+                  const chain = {
+                    for: (_mode: string) => ({
+                      limit: (_n: number) => pkgRows(),
+                    }),
+                    limit: (_n: number) => pkgRows(),
+                    then: (
+                      onFulfilled: (v: unknown) => unknown,
+                      onRejected?: (e: unknown) => unknown,
+                    ) => pkgRows().then(onFulfilled, onRejected),
+                  }
+                  return chain
+                }
                 // procedureRecords: list of {id, sessionsTotal}.
                 if (tag === 'procedureRecords') {
                   return Promise.resolve(ST.procedureRecordRows)
@@ -219,7 +260,24 @@ const { makeTx } = vi.hoisted(() => {
                 table: tagOf(table) ?? 'unknown',
                 values: vals,
               })
-              return Promise.resolve(undefined)
+              // closePackageQuery chains `.returning({...})` after the
+              // UPDATE. Expose a thenable + .returning() so both shapes
+              // work without forcing every caller to opt in.
+              const returningRows = () => {
+                if (tagOf(table) === 'patientPackages') {
+                  const row = ST.patientPackageReturningRows.shift()
+                  return Promise.resolve(row ? [row] : [])
+                }
+                return Promise.resolve([])
+              }
+              const chain = {
+                returning: (_proj?: Record<string, unknown>) => returningRows(),
+                then: (
+                  onFulfilled: (v: unknown) => unknown,
+                  onRejected?: (e: unknown) => unknown,
+                ) => Promise.resolve(undefined).then(onFulfilled, onRejected),
+              }
+              return chain
             },
           }),
         }),
@@ -441,9 +499,34 @@ describe('maybeCompletePackage — sessions-driven completion', () => {
   })
 })
 
+// Seed the lock + returning queues so closePackageQuery's chained
+// SELECT ... FOR UPDATE and UPDATE ... RETURNING both resolve to a row.
+// Pass `status` to drive the active/cancelled/etc branch; pass `null` to
+// simulate a missing row (not-found).
+function seedClose(
+  packageId: string,
+  status: 'active' | 'cancelled' | 'completed' | 'expired' | null,
+): void {
+  if (status === null) {
+    txState.patientPackageLockRows.push(null)
+    return
+  }
+  txState.patientPackageLockRows.push({ id: packageId, status })
+  // Only successful (active) closes ever reach the UPDATE; pre-seed the
+  // returning row so the persisted-row read succeeds.
+  if (status === 'active') {
+    txState.patientPackageReturningRows.push({
+      id: packageId,
+      closedAt: new Date('2026-05-28T12:00:00Z'),
+      closedReason: 'patient_lost_expiry',
+    })
+  }
+}
+
 describe('closePackage — close metadata + audit', () => {
   it('flips status to completed with closedReason="patient_lost_expiry" and NULL closeNote', async () => {
     const { closePackage } = await importModule()
+    seedClose('pkg-1', 'active')
 
     await closePackage({
       tenantId: 'tenant-A',
@@ -478,6 +561,7 @@ describe('closePackage — close metadata + audit', () => {
 
   it('persists closeNote when closedReason="other"', async () => {
     const { closePackage } = await importModule()
+    seedClose('pkg-2', 'active')
     const note = 'Patient transferred to a different clinic.'
 
     await closePackage({
@@ -502,5 +586,85 @@ describe('closePackage — close metadata + audit', () => {
     expect(txState.auditCalls[0]).toMatchObject({
       changes: { closedReason: { old: null, new: 'other' } },
     })
+  })
+
+  it('throws BusinessError("not_found") when the package does not exist', async () => {
+    const { closePackage } = await importModule()
+    // Lock returns no row → not-found path.
+    seedClose('pkg-missing', null)
+
+    let caught: unknown
+    try {
+      await closePackage({
+        tenantId: 'tenant-A',
+        userId: 'user-1',
+        packageId: 'pkg-missing',
+        closedReason: 'patient_lost_expiry',
+        closeNote: null,
+      })
+    } catch (err) {
+      caught = err
+    }
+
+    expect(caught).toBeDefined()
+    expect((caught as Error).name).toBe('BusinessError')
+    expect((caught as { code: string }).code).toBe('not_found')
+    // No UPDATE on patientPackages — we bailed before the write.
+    expect(
+      txState.updateCalls.filter((u) => u.table === 'patientPackages'),
+    ).toHaveLength(0)
+    // Audit log must NOT fire when the close failed.
+    expect(txState.auditCalls).toHaveLength(0)
+  })
+
+  it('throws BusinessError("package_not_active") on a cancelled package', async () => {
+    const { closePackage } = await importModule()
+    // Lock returns a row whose status is terminal → reject before write.
+    seedClose('pkg-cancelled', 'cancelled')
+
+    let caught: unknown
+    try {
+      await closePackage({
+        tenantId: 'tenant-A',
+        userId: 'user-1',
+        packageId: 'pkg-cancelled',
+        closedReason: 'patient_lost_expiry',
+        closeNote: null,
+      })
+    } catch (err) {
+      caught = err
+    }
+
+    expect(caught).toBeDefined()
+    expect((caught as Error).name).toBe('BusinessError')
+    expect((caught as { code: string }).code).toBe('package_not_active')
+    // No status mutation: a terminal package cannot be re-stamped.
+    expect(
+      txState.updateCalls.filter((u) => u.table === 'patientPackages'),
+    ).toHaveLength(0)
+    // Audit log pollution would mask refund disputes — must stay empty.
+    expect(txState.auditCalls).toHaveLength(0)
+  })
+
+  it('returns the persisted row when the close succeeds on an active package', async () => {
+    const { closePackage } = await importModule()
+    seedClose('pkg-1', 'active')
+
+    const result = await closePackage({
+      tenantId: 'tenant-A',
+      userId: 'user-1',
+      packageId: 'pkg-1',
+      closedReason: 'patient_lost_expiry',
+      closeNote: null,
+    })
+
+    // Persisted-row shape from the UPDATE ... RETURNING projection.
+    expect(result).toMatchObject({
+      id: 'pkg-1',
+      closedReason: 'patient_lost_expiry',
+    })
+    expect(result.closedAt).toBeInstanceOf(Date)
+    // Audit log fires exactly once on success.
+    expect(txState.auditCalls).toHaveLength(1)
   })
 })
