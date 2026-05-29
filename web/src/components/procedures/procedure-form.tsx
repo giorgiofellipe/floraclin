@@ -35,6 +35,7 @@ import type { ProductApplicationRecord } from '@/db/queries/product-applications
 import type { CatalogProduct, DiagramPointData } from '@/components/face-diagram/types'
 import type { WizardOverrides } from '@/components/service-wizard/types'
 import type { EvaluationSection, EvaluationResponses } from '@/types/evaluation'
+import type { AtendimentoCart } from '@/validations/atendimento-cart'
 import { FinancialPlanField } from './planning/financial-plan-field'
 import {
   ProcedureTypesSection,
@@ -88,6 +89,15 @@ interface ProcedureFormProps {
   evaluationTemplates?: EvaluationTemplateForForm[]
   existingEvaluationResponses?: ExistingEvaluationResponse[]
   loadingEvaluationTemplates?: boolean
+  /**
+   * Multi-line atendimento cart (F4). When provided with >1 line,
+   * the form renders an info banner indicating only the first line
+   * is currently planned. Full multi-line tabs are tracked in
+   * F4-followup.
+   */
+  cart?: AtendimentoCart
+  /** Draft procedure_records ids, one per cart line, same order. */
+  draftRecordIds?: string[]
 }
 
 // ─── Collapsible Section ───────────────────────────────────────────
@@ -221,7 +231,19 @@ export function ProcedureForm({
   evaluationTemplates: evalTemplates,
   existingEvaluationResponses,
   loadingEvaluationTemplates = false,
+  cart,
+  draftRecordIds,
 }: ProcedureFormProps) {
+  // F4 multi-line: when a cart with >1 line is provided we currently render
+  // only the first line's planning UI (with a clear info banner). Full
+  // per-line tabs are tracked in F4-followup.
+  // TODO(F4-followup): full multi-line tabs — currently renders only the first
+  // line of the cart. The form's schema, mutation hooks and evaluation save
+  // path are tightly coupled to a single procedure_records row; extracting an
+  // inner `<ProcedureLinePanel>` requires refactoring those hooks first.
+  const multiLineCart = !!cart && cart.lines.length > 1
+  const firstCartLine = cart?.lines[0]
+  void draftRecordIds // accepted for forward-compat; used once tabs land
   // _existingApplications is accepted for API back-compat (procedure-page-client passes it)
   void _existingApplications
 
@@ -641,7 +663,7 @@ export function ProcedureForm({
           result = await createProcedureMutation.mutateAsync(payload)
         }
 
-        const createdProc = result?.data as { id: string; status?: 'draft' | 'planned' | 'approved' | 'executed' | 'cancelled' } | undefined
+        const createdProc = result?.data as { id: string; status?: 'draft' | 'planned' | 'approved' | 'in_progress' | 'completed' | 'cancelled' } | undefined
         const createdId = createdProc?.id ?? procedure?.id
         const serverStatus = createdProc?.status
 
@@ -853,6 +875,31 @@ export function ProcedureForm({
         form={form}
         onRetry={() => void form.handleSubmit(onValid, onInvalid)()}
       />
+
+      {/* ── F4 multi-line ship-stop banner ─────────────────────
+           When the atendimento cart has >1 line we render only the
+           first line's planning UI for now (see TODO above). Show an
+           explicit notice so the operator (and the wizard orchestrator)
+           know what's happening. */}
+      {multiLineCart && firstCartLine && (
+        <div className="rounded-md border border-amber/40 bg-[#FFF7EF] px-4 py-3 text-sm text-amber-dark">
+          <p className="font-medium">
+            Planejamento de múltiplas linhas em breve.
+          </p>
+          <p className="mt-1 text-amber-dark/90">
+            Você está planejando apenas a primeira:{' '}
+            <span className="font-medium">{firstCartLine.procedureTypeName}</span>
+            {cart && cart.lines.length > 1 && (
+              <>
+                {' '}
+                ({cart.lines.length - 1}{' '}
+                {cart.lines.length - 1 === 1 ? 'outra linha' : 'outras linhas'}{' '}
+                aguardando).
+              </>
+            )}
+          </p>
+        </div>
+      )}
 
       {/* ── Procedure Type Multi-Select ──────────────────── */}
       {!wizardOverrides?.hideProcedureTypes && (

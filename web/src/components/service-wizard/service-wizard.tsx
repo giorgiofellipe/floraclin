@@ -137,6 +137,9 @@ export function ServiceWizard({
     updateProcedureStatus,
     updateStepTimestamp,
     setSelectedTypeIds,
+    setCart,
+    setAtendimentoId,
+    setProcedureRecordIds,
     clearError,
   } = wizard
 
@@ -351,6 +354,12 @@ export function ServiceWizard({
           updateStepTimestamp(timestampKey, new Date())
         }
 
+        // Leaving step 2 for the first time → mint the atendimento id that
+        // will key the finalize POST at step 4 and the execution at step 5.
+        if (state.currentStep === 2 && pending === 'advance' && !state.atendimentoId) {
+          setAtendimentoId(crypto.randomUUID())
+        }
+
         // After step 3 creates/updates a procedure, fetch fresh data client-side
         if (state.currentStep === 3 && result.procedureId) {
           try {
@@ -366,7 +375,9 @@ export function ServiceWizard({
           }
         }
 
-        // Update procedure status if the step changed it
+        // Step 4 approval is now driven by the wizard's own finalize POST
+        // (see handleApprove). The legacy useApproveProcedure path is no
+        // longer triggered here.
         if (state.currentStep === 4) {
           updateProcedureStatus('approved')
         }
@@ -406,7 +417,18 @@ export function ServiceWizard({
         nextStep()
       }
     },
-    [onSaveComplete, pendingAction, state.currentStep, nextStep, updateProcedureStatus, updateStepTimestamp, router, patient.id]
+    [
+      onSaveComplete,
+      pendingAction,
+      state.currentStep,
+      state.atendimentoId,
+      nextStep,
+      updateProcedureStatus,
+      updateStepTimestamp,
+      setAtendimentoId,
+      router,
+      patient.id,
+    ]
   )
 
   // ─── Skip/Adiar handler ────────────────────────────────────────
@@ -421,6 +443,122 @@ export function ServiceWizard({
     // Regular skip — advance to next step
     nextStep()
   }, [state.currentStep, nextStep, router, patient.id])
+
+  // ─── Step 4 approval → finalize atendimento ─────────────────────
+  //
+  // The wizard now owns the approval POST. It calls the new finalize endpoint
+  // (`POST /api/atendimentos/{atendimentoId}/finalize`) with the cart + draft
+  // record ids that the planning step produced. On success, we adopt the
+  // returned procedureRecordIds and advance to step 5.
+  const [isFinalizing, setIsFinalizing] = useState(false)
+
+  const handleApprove = useCallback(async () => {
+    if (isFinalizing) return
+    if (!state.atendimentoId) {
+      toast.error('Atendimento sem identificador. Recarregue a página.')
+      return
+    }
+    if (!localProcedure) {
+      toast.error('Carregando dados do procedimento — aguarde um instante.')
+      return
+    }
+
+    const draftRecordIds = (
+      state.procedureRecordIds.length > 0
+        ? state.procedureRecordIds
+        : [state.procedureId]
+    ).filter((id): id is string => !!id)
+
+    if (draftRecordIds.length === 0) {
+      toast.error('Nenhum procedimento de rascunho encontrado para finalizar.')
+      return
+    }
+
+    const financialPlanRaw = (localProcedure as unknown as {
+      financialPlan?: {
+        totalAmount?: number | string
+        installmentCount?: number
+        paymentMethod?: string
+        notes?: string
+      } | null
+    }).financialPlan
+
+    if (!financialPlanRaw) {
+      toast.error('Plano financeiro ausente. Volte ao planejamento.')
+      return
+    }
+
+    const practitionerId =
+      (localProcedure as unknown as { practitionerId?: string }).practitionerId
+    if (!practitionerId) {
+      toast.error('Profissional do procedimento não identificado.')
+      return
+    }
+
+    setIsFinalizing(true)
+    try {
+      const res = await fetch(
+        `/api/atendimentos/${state.atendimentoId}/finalize`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cart: state.cart,
+            draftRecordIds,
+            patientId: patient.id,
+            practitionerId,
+            financialPlan: {
+              totalAmount: String(financialPlanRaw.totalAmount ?? ''),
+              installmentCount: Number(financialPlanRaw.installmentCount ?? 1),
+              paymentMethod: String(financialPlanRaw.paymentMethod ?? ''),
+              notes: financialPlanRaw.notes,
+            },
+            // Consents are signed in-line on the approval screen via the
+            // legacy /api/consent/accept endpoint. The finalize endpoint
+            // accepts an empty consents array — additional consents may be
+            // wired here once the approval UI is fully unified.
+            consents: [],
+          }),
+        },
+      )
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || `Erro ao finalizar (HTTP ${res.status})`)
+      }
+      const payload = await res.json()
+      const recordIds: string[] = Array.isArray(payload?.data?.procedureRecordIds)
+        ? payload.data.procedureRecordIds
+        : Array.isArray(payload?.procedureRecordIds)
+          ? payload.procedureRecordIds
+          : []
+
+      if (recordIds.length > 0) {
+        setProcedureRecordIds(recordIds)
+      }
+      updateProcedureStatus('approved')
+      updateStepTimestamp('approval', new Date())
+      toast.success('Procedimento aprovado.')
+      nextStep()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro ao aprovar procedimento'
+      toast.error(msg)
+    } finally {
+      setIsFinalizing(false)
+    }
+  }, [
+    isFinalizing,
+    state.atendimentoId,
+    state.cart,
+    state.procedureId,
+    state.procedureRecordIds,
+    localProcedure,
+    patient.id,
+    setProcedureRecordIds,
+    updateProcedureStatus,
+    updateStepTimestamp,
+    nextStep,
+  ])
 
   // ─── Next handler ──────────────────────────────────────────────
   //
@@ -440,8 +578,19 @@ export function ServiceWizard({
       setShowFinalizeDialog(true)
       return
     }
+    if (state.currentStep === 4) {
+      void handleApprove()
+      return
+    }
     triggerSave()
-  }, [state.currentStep, triggerSave, pendingAction, state.procedureStatus, state.procedureId])
+  }, [
+    state.currentStep,
+    triggerSave,
+    pendingAction,
+    state.procedureStatus,
+    state.procedureId,
+    handleApprove,
+  ])
 
   const confirmFinalize = useCallback(() => {
     setShowFinalizeDialog(false)
@@ -507,7 +656,9 @@ export function ServiceWizard({
   // ─── Derived state ─────────────────────────────────────────────
 
   const isReadOnlyAfterApproval =
-    state.procedureStatus === 'approved' || state.procedureStatus === 'executed'
+    state.procedureStatus === 'approved' ||
+    state.procedureStatus === 'in_progress' ||
+    state.procedureStatus === 'completed'
 
   // additionalTypeIds from procedure record
   const additionalTypeIds = (localProcedure?.additionalTypeIds as string[] | null) ?? []
@@ -633,6 +784,8 @@ export function ServiceWizard({
               )}
               <div className={isReadOnlyAfterApproval ? 'pointer-events-none opacity-75' : undefined}>
                 <ProcedureTypeStep
+                  cart={state.cart}
+                  onCartChange={setCart}
                   selectedTypeIds={state.selectedTypeIds}
                   onSelectedTypeIdsChange={setSelectedTypeIds}
                   wizardOverrides={getOverridesForStep(2)}
@@ -706,21 +859,42 @@ export function ServiceWizard({
               title="Execução"
               timestamp={state.stepTimestamps.execution}
             >
-              {state.procedureId && state.procedureStatus === 'approved' && localProcedure ? (
-                <ProcedureExecution
-                  patientId={patient.id}
-                  patientGender={patient.gender}
-                  procedure={localProcedure}
-                  diagrams={localDiagrams ?? undefined}
-                  existingApplications={localApplications ?? undefined}
-                  wizardOverrides={getOverridesForStep(5)}
-                />
-              ) : (
-                <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-                  <p className="text-mid">
-                    Aprove o procedimento para acessar a execução.
-                  </p>
-                </div>
+              {state.currentStep === 5 && state.atendimentoId && (
+                state.procedureId &&
+                (state.procedureStatus === 'approved' ||
+                  state.procedureStatus === 'in_progress' ||
+                  state.procedureStatus === 'completed') &&
+                localProcedure ? (
+                  // TODO(G3): update ProcedureExecution props to accept
+                  // `atendimentoId`, `procedureRecordIds`, and `packageId`.
+                  // Today the component still takes `procedure` + relations,
+                  // so we pass those plus the new ids via a non-typed spread
+                  // so wiring lands without breaking the type contract.
+                  <ProcedureExecution
+                    patientId={patient.id}
+                    patientGender={patient.gender}
+                    procedure={localProcedure}
+                    diagrams={localDiagrams ?? undefined}
+                    existingApplications={localApplications ?? undefined}
+                    wizardOverrides={getOverridesForStep(5)}
+                    {...({
+                      atendimentoId: state.atendimentoId,
+                      procedureRecordIds:
+                        state.procedureRecordIds.length > 0
+                          ? state.procedureRecordIds
+                          : state.procedureId
+                            ? [state.procedureId]
+                            : [],
+                      packageId: null,
+                    } as Record<string, unknown>)}
+                  />
+                ) : (
+                  <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+                    <p className="text-mid">
+                      Aprove o procedimento para acessar a execução.
+                    </p>
+                  </div>
+                )
               )}
             </WizardStepWrapper>
           </div>
@@ -781,15 +955,21 @@ export function ServiceWizard({
             <button
               type="button"
               onClick={handleNext}
-              disabled={state.isSaving}
+              disabled={state.isSaving || isFinalizing}
               className={cn(
                 'flex w-full items-center justify-center gap-1.5 rounded-[3px] px-6 py-2.5 text-sm font-medium transition-colors min-h-[48px] md:w-auto md:order-3',
                 'bg-forest text-cream hover:bg-sage',
-                state.isSaving && 'opacity-50 cursor-not-allowed',
+                (state.isSaving || isFinalizing) && 'opacity-50 cursor-not-allowed',
               )}
             >
-              {state.isSaving ? 'Salvando...' : nextLabel}
-              {state.currentStep < 5 && !state.isSaving && <ChevronRight className="h-4 w-4" />}
+              {isFinalizing
+                ? 'Aprovando...'
+                : state.isSaving
+                  ? 'Salvando...'
+                  : nextLabel}
+              {state.currentStep < 5 && !state.isSaving && !isFinalizing && (
+                <ChevronRight className="h-4 w-4" />
+              )}
             </button>
 
             {showSaveAndExit && (

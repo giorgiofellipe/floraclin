@@ -10,15 +10,18 @@ import {
   ArrowLeft,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { useApproveProcedure } from '@/hooks/mutations/use-procedure-mutations'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAcceptConsent } from '@/hooks/mutations/use-consent-mutations'
 import {
   interpolateContract,
   buildContractData,
 } from '@/lib/contract-interpolation'
-import { cn } from '@/lib/utils'
+import { cn, formatCurrency } from '@/lib/utils'
 import { CONSENT_TYPE_LABELS } from '@/lib/constants'
+import {
+  type AtendimentoCart,
+  computeCartTotal,
+} from '@/validations/atendimento-cart'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { DiagramPointData } from '@/components/face-diagram/types'
@@ -27,6 +30,7 @@ import type { WizardOverrides } from '@/components/service-wizard/types'
 import { ApprovalSummaryCard } from './approval/approval-summary-card'
 import { ConsentStatusList } from './approval/consent-status-list'
 import { ServiceContractSection } from './approval/service-contract-section'
+import { ClipboardCheck } from 'lucide-react'
 
 const CATEGORY_TO_CONSENT: Record<string, string> = {
   toxina_botulinica: 'botox',
@@ -78,11 +82,26 @@ interface FinancialPlan {
 }
 
 interface ProcedureApprovalProps {
-  procedure: ProcedureWithDetails
-  diagrams: DiagramWithPoints[]
+  // Legacy single-procedure props (still supported during transition).
+  procedure?: ProcedureWithDetails
+  diagrams?: DiagramWithPoints[]
+  additionalTypeIds?: string[]
+  // Multi-line cart props (F5).
+  cart?: AtendimentoCart
+  /** One per cart line, same order. Required when `cart` is supplied. */
+  draftRecordIds?: string[]
+  /** The wizard-generated atendimento id used in the finalize URL. */
+  atendimentoId?: string | null
+  practitionerId?: string
+  /** Notified once the finalize call succeeds (cart-mode primary callback). */
+  onApproved?: (result: {
+    procedureRecordIds: string[]
+    patientPackageId: string | null
+    atendimentoId: string
+  }) => void
+  // Shared props.
   patient: PatientData
   tenant: TenantData
-  additionalTypeIds: string[]
   wizardOverrides?: WizardOverrides
 }
 
@@ -119,11 +138,48 @@ export function ProcedureApproval({
   patient,
   tenant,
   additionalTypeIds,
+  cart,
+  draftRecordIds,
+  atendimentoId,
+  practitionerId,
+  onApproved,
   wizardOverrides,
 }: ProcedureApprovalProps) {
   const router = useRouter()
-  const approveProcedure = useApproveProcedure()
   const acceptConsent = useAcceptConsent()
+
+  // ── Mode discrimination ───────────────────────────────────────────
+  // Cart mode: F5 multi-line flow. We POST to /finalize with cart + drafts.
+  // Legacy mode: single procedure record. The legacy `/api/procedures/[id]/approve`
+  // route was deleted by D1, so we synthesize a one-line cart and ALSO route
+  // through /finalize. This keeps a working legacy entry point until callers
+  // migrate to passing `cart` directly.
+  const isCartMode = !!cart && !!draftRecordIds && draftRecordIds.length > 0
+
+  if (!isCartMode && !procedure) {
+    throw new Error(
+      'ProcedureApproval requires either `cart` + `draftRecordIds` (cart mode) or `procedure` (legacy mode).',
+    )
+  }
+
+  // The "primary" draft record id — the one consent acceptances are recorded
+  // against during inline signing (ConsentViewer / contract). In cart mode
+  // this is the first draftRecordId; in legacy mode it's `procedure.id`.
+  const primaryRecordId = isCartMode
+    ? (draftRecordIds as string[])[0]
+    : (procedure as ProcedureWithDetails).id
+
+  // Stable atendimentoId for the finalize URL. The server generates its own
+  // canonical id inside the transaction; the URL id is only validated as UUID.
+  // For legacy approvals (which never had an atendimentoId) we mint one here.
+  const finalizeAtendimentoIdRef = useRef<string>(
+    atendimentoId ?? (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : ''),
+  )
+  useEffect(() => {
+    if (atendimentoId && finalizeAtendimentoIdRef.current !== atendimentoId) {
+      finalizeAtendimentoIdRef.current = atendimentoId
+    }
+  }, [atendimentoId])
 
   const [procedureTypes, setProcedureTypes] = useState<ProcedureType[]>([])
   const [consentStatuses, setConsentStatuses] = useState<ConsentStatus[]>([])
@@ -149,15 +205,42 @@ export function ProcedureApproval({
   const markDirty = useCallback(() => setHasUnsavedChanges(true), [])
   const markClean = useCallback(() => setHasUnsavedChanges(false), [])
 
-  const financialPlan = procedure.financialPlan as FinancialPlan | null
-  const diagramPoints = useMemo(() => diagramsToPoints(diagrams), [diagrams])
+  // Financial plan source: cart mode derives from cart total; legacy mode reads
+  // from procedure.financialPlan. Both are surfaced via the `financialPlan`
+  // memo for the summary card + contract interpolation.
+  const legacyFinancialPlan = (procedure?.financialPlan ?? null) as FinancialPlan | null
+  const cartTotal = useMemo(() => (cart ? computeCartTotal(cart) : 0), [cart])
+
+  const financialPlan: FinancialPlan | null = useMemo(() => {
+    if (isCartMode && cart) {
+      // Default the cart-driven plan to a single instalment until the planner
+      // owns this state. The planner UI lives below and could be wired here in
+      // a follow-up — F5 keeps the surface narrow.
+      return {
+        totalAmount: cartTotal,
+        installmentCount: legacyFinancialPlan?.installmentCount ?? 1,
+        paymentMethod: legacyFinancialPlan?.paymentMethod,
+        notes: legacyFinancialPlan?.notes,
+      }
+    }
+    return legacyFinancialPlan
+  }, [isCartMode, cart, cartTotal, legacyFinancialPlan])
+
+  const diagramPoints = useMemo(() => diagramsToPoints(diagrams ?? []), [diagrams])
   const productTotals = useMemo(() => computeProductTotals(diagramPoints), [diagramPoints])
 
+  // Procedure-type ids to load consent requirements for. In cart mode this is
+  // the union of all cart-line procedureTypeIds; in legacy mode it's the
+  // primary type + additionalTypeIds.
   const allTypeIds = useMemo(() => {
-    const ids = [procedure.procedureTypeId]
+    if (isCartMode && cart) {
+      const ids = cart.lines.map((l) => l.procedureTypeId)
+      return Array.from(new Set(ids))
+    }
+    const ids = procedure ? [procedure.procedureTypeId] : []
     if (additionalTypeIds?.length) ids.push(...additionalTypeIds)
     return ids
-  }, [procedure.procedureTypeId, additionalTypeIds])
+  }, [isCartMode, cart, procedure, additionalTypeIds])
 
   const selectedTypes = useMemo(
     () => procedureTypes.filter((t) => allTypeIds.includes(t.id)),
@@ -194,7 +277,9 @@ export function ProcedureApproval({
       const [consentResults, contractTplRes, contractHistRes] = await Promise.all([
         Promise.all(
           requiredTypes.map(async (type) => {
-            const checkRes = await fetch(`/api/consent/history/${patient.id}?procedureId=${procedure.id}&type=${type}`)
+            const checkRes = await fetch(
+              `/api/consent/history/${patient.id}?procedureId=${primaryRecordId}&type=${type}`,
+            )
             const result = checkRes.ok ? await checkRes.json() : { data: null }
             return {
               type,
@@ -205,7 +290,9 @@ export function ProcedureApproval({
           }),
         ),
         fetch('/api/consent/templates?type=service_contract&active=true').catch(() => null),
-        fetch(`/api/consent/history/${patient.id}?procedureId=${procedure.id}&type=service_contract`).catch(() => null),
+        fetch(
+          `/api/consent/history/${patient.id}?procedureId=${primaryRecordId}&type=service_contract`,
+        ).catch(() => null),
       ])
 
       setConsentStatuses(consentResults)
@@ -214,12 +301,20 @@ export function ProcedureApproval({
       if (contractTpl) {
         setContractTemplate(contractTpl as unknown as ConsentTemplate)
         if (financialPlan) {
+          // Procedure list for the contract: prefer cart lines (with sessions)
+          // when in cart mode; fall back to selected types in legacy mode.
+          const procedureItems = isCartMode && cart
+            ? cart.lines.map((l) => ({ name: `${l.procedureTypeName} (${l.sessions}× sessões)` }))
+            : selected.map((t) => ({ name: t.name }))
+
+          const practitionerName = procedure?.practitionerName ?? ''
+
           const contractData = buildContractData(
-            selected.map((t) => ({ name: t.name })),
+            procedureItems,
             productTotals.map((p) => ({ name: p.name, quantity: p.quantity, unit: p.unit })),
             financialPlan,
             { fullName: patient.fullName, cpf: patient.cpf },
-            procedure.practitionerName,
+            practitionerName,
             tenant.name,
           )
           setContractText(interpolateContract(contractTpl.content, contractData))
@@ -234,7 +329,7 @@ export function ProcedureApproval({
     }
 
     initAll()
-  }, [allTypeIds, patient, procedure, tenant.name, financialPlan, productTotals])
+  }, [allTypeIds, patient, primaryRecordId, tenant.name, financialPlan, productTotals, isCartMode, cart, procedure])
 
   // Propagate unsaved-changes state to the wizard.
   useEffect(() => {
@@ -245,13 +340,15 @@ export function ProcedureApproval({
   const refreshConsentStatuses = useCallback(async () => {
     const updated = await Promise.all(
       consentStatuses.map(async (s) => {
-        const checkRes = await fetch(`/api/consent/history/${patient.id}?procedureId=${procedure.id}&type=${s.type}`)
+        const checkRes = await fetch(
+          `/api/consent/history/${patient.id}?procedureId=${primaryRecordId}&type=${s.type}`,
+        )
         const result = checkRes.ok ? await checkRes.json() : { data: null }
         return { ...s, signed: !!result.data, loading: false }
       })
     )
     setConsentStatuses(updated)
-  }, [consentStatuses, patient.id, procedure.id])
+  }, [consentStatuses, patient.id, primaryRecordId])
 
   const handleOpenConsent = useCallback(async (type: string) => {
     setActiveConsentType(type)
@@ -294,7 +391,7 @@ export function ProcedureApproval({
       await acceptConsent.mutateAsync({
         patientId: patient.id,
         consentTemplateId: contractTemplate.id,
-        procedureRecordId: procedure.id,
+        procedureRecordId: primaryRecordId,
         acceptanceMethod: 'both',
         signatureData: contractSignature,
         renderedContent: contractText,
@@ -306,8 +403,11 @@ export function ProcedureApproval({
     } finally {
       setContractSigning(false)
     }
-  }, [contractTemplate, contractChecked, contractSignature, patient.id, procedure.id, contractText, acceptConsent, markClean])
+  }, [contractTemplate, contractChecked, contractSignature, patient.id, primaryRecordId, contractText, acceptConsent, markClean])
 
+  // ── Approve action ────────────────────────────────────────────────
+  // Always POST to /api/atendimentos/{id}/finalize. In legacy mode we
+  // synthesize a one-line cart from `procedure`.
   const runApprove = useCallback(async (origin: 'button' | 'wizard') => {
     if (isApproving) return
     if (!canApprove) {
@@ -323,14 +423,111 @@ export function ProcedureApproval({
 
     setIsApproving(true)
     setApproveError(null)
+
     try {
-      await approveProcedure.mutateAsync(procedure.id)
+      // Build the finalize payload — synthesize a cart for legacy mode.
+      let finalizeCart: AtendimentoCart
+      let finalizeDraftIds: string[]
+
+      if (isCartMode && cart && draftRecordIds) {
+        finalizeCart = cart
+        finalizeDraftIds = draftRecordIds
+      } else if (procedure) {
+        const legacyTotal = Number(legacyFinancialPlan?.totalAmount ?? 0)
+        finalizeCart = {
+          templateId: null,
+          templateName: null,
+          templateDefaultPrice: null,
+          templateValidityMonths: null,
+          lines: [
+            {
+              procedureTypeId: procedure.procedureTypeId,
+              procedureTypeName: procedure.procedureTypeName,
+              sessions: 1,
+              defaultPrice: legacyTotal,
+              sourceTemplateLineId: null,
+            },
+          ],
+          totalOverride: null,
+        }
+        finalizeDraftIds = [procedure.id]
+      } else {
+        throw new Error('No cart or procedure available to finalize')
+      }
+
+      const totalAmount =
+        financialPlan?.totalAmount ?? computeCartTotal(finalizeCart)
+
+      const payload = {
+        cart: finalizeCart,
+        draftRecordIds: finalizeDraftIds,
+        patientId: patient.id,
+        practitionerId: practitionerId ?? procedure?.practitionerId ?? '',
+        financialPlan: {
+          totalAmount: String(totalAmount),
+          installmentCount: financialPlan?.installmentCount ?? 1,
+          paymentMethod: financialPlan?.paymentMethod ?? 'pix',
+          notes: financialPlan?.notes,
+        },
+        // Per-type consents and the service contract are recorded inline via
+        // `acceptConsent` against the primary draft record. The finalize
+        // endpoint's consent insert loop receives an empty array — no extra
+        // rows are produced. If/when we surface per-line consent capture in
+        // this UI, populate this array with the collected signatures.
+        consents: [] as Array<{
+          consentTemplateId: string
+          signatureData: string
+          contentSnapshot: string
+          contentHash: string
+          acceptanceMethod: string
+        }>,
+      }
+
+      const url = `/api/atendimentos/${finalizeAtendimentoIdRef.current}/finalize`
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const json = (await res.json()) as
+        | {
+            success: true
+            data: {
+              atendimentoId: string
+              patientPackageId: string | null
+              procedureRecordIds: string[]
+              financialEntryId: string
+            }
+          }
+        | { success: false; error: string }
+
+      if (!res.ok || !json.success) {
+        const msg =
+          (!json.success && json.error) || 'Erro ao finalizar atendimento'
+        throw new Error(msg)
+      }
+
       setApproved(true)
       markClean()
+
+      onApproved?.({
+        procedureRecordIds: json.data.procedureRecordIds,
+        patientPackageId: json.data.patientPackageId,
+        atendimentoId: json.data.atendimentoId,
+      })
+
       if (origin === 'wizard') {
-        wizardOverrides?.onSaveComplete?.({ success: true, procedureId: procedure.id })
+        wizardOverrides?.onSaveComplete?.({
+          success: true,
+          procedureId: json.data.procedureRecordIds[0] ?? primaryRecordId,
+          procedureStatus: 'approved',
+        })
       } else if (!wizardOverrides?.hideNavigation) {
-        setTimeout(() => router.push(`/pacientes/${patient.id}?tab=procedimentos`), 1500)
+        setTimeout(
+          () => router.push(`/pacientes/${patient.id}?tab=procedimentos`),
+          1500,
+        )
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao aprovar procedimento'
@@ -341,11 +538,27 @@ export function ProcedureApproval({
     } finally {
       setIsApproving(false)
     }
-  }, [canApprove, isApproving, procedure.id, patient.id, router, wizardOverrides, approveProcedure, markClean])
+  }, [
+    canApprove,
+    isApproving,
+    isCartMode,
+    cart,
+    draftRecordIds,
+    procedure,
+    legacyFinancialPlan,
+    financialPlan,
+    patient.id,
+    practitionerId,
+    primaryRecordId,
+    router,
+    wizardOverrides,
+    onApproved,
+    markClean,
+  ])
 
   const handleApprove = useCallback(() => { void runApprove('button') }, [runApprove])
 
-  // Wizard triggerSave: call approveProcedureAction.
+  // Wizard triggerSave: call runApprove via the wizard origin.
   const prevTriggerSaveRef = useRef(wizardOverrides?.triggerSave ?? 0)
   useEffect(() => {
     const current = wizardOverrides?.triggerSave ?? 0
@@ -401,14 +614,22 @@ export function ProcedureApproval({
         </>
       )}
 
-      <ApprovalSummaryCard
-        procedure={procedure}
-        selectedTypes={selectedTypes}
-        diagramPoints={diagramPoints}
-        productTotals={productTotals}
-        financialPlan={financialPlan}
-        patientGender={patient.gender}
-      />
+      {/* Summary: cart mode renders a multi-line bundle summary; legacy
+          mode falls back to the existing single-procedure summary card. */}
+      {isCartMode && cart ? (
+        <CartApprovalSummary cart={cart} financialPlan={financialPlan} />
+      ) : (
+        procedure && (
+          <ApprovalSummaryCard
+            procedure={procedure}
+            selectedTypes={selectedTypes}
+            diagramPoints={diagramPoints}
+            productTotals={productTotals}
+            financialPlan={financialPlan}
+            patientGender={patient.gender}
+          />
+        )
+      )}
 
       <ConsentStatusList
         consentStatuses={consentStatuses}
@@ -417,7 +638,7 @@ export function ProcedureApproval({
         activeConsentTemplate={activeConsentTemplate}
         loadingConsentTemplate={loadingConsentTemplate}
         patientId={patient.id}
-        procedureId={procedure.id}
+        procedureId={primaryRecordId}
         onOpenConsent={handleOpenConsent}
         onConsentAccepted={handleConsentAccepted}
       />
@@ -480,6 +701,100 @@ export function ProcedureApproval({
         </Card>
       )}
     </div>
+  )
+}
+
+// ── Cart-mode summary card ──────────────────────────────────────────
+// Inline so we don't touch any other file (F5 scope). Mirrors the look of
+// ApprovalSummaryCard but enumerates cart lines + bundle total.
+function CartApprovalSummary({
+  cart,
+  financialPlan,
+}: {
+  cart: AtendimentoCart
+  financialPlan: FinancialPlan | null
+}) {
+  const total = useMemo(() => computeCartTotal(cart), [cart])
+  const isBundle = cart.templateId !== null || cart.lines.some((l) => l.sessions > 1)
+
+  return (
+    <Card className="border-0 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2.5 text-base">
+          <div className="flex size-7 items-center justify-center rounded-md bg-forest/5">
+            <ClipboardCheck className="size-4 text-forest" />
+          </div>
+          <span className="uppercase tracking-wider text-sm text-charcoal font-medium">
+            {isBundle ? 'Resumo do Pacote' : 'Resumo do Atendimento'}
+          </span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-5 pt-0">
+        {cart.templateName && (
+          <div>
+            <p className="text-xs uppercase tracking-wider text-mid mb-1">Pacote</p>
+            <p className="text-sm font-medium text-charcoal">{cart.templateName}</p>
+            {cart.templateValidityMonths !== null && (
+              <p className="text-xs text-mid mt-0.5">
+                Validade: {cart.templateValidityMonths} {cart.templateValidityMonths === 1 ? 'mês' : 'meses'}
+              </p>
+            )}
+          </div>
+        )}
+
+        <div>
+          <p className="text-xs uppercase tracking-wider text-mid mb-2">
+            Procedimentos ({cart.lines.length})
+          </p>
+          <div className="space-y-1.5">
+            {cart.lines.map((line, idx) => (
+              <div
+                key={`${line.procedureTypeId}-${idx}`}
+                className="flex items-center justify-between rounded-[3px] border border-[#E8ECEF] px-3 py-2"
+              >
+                <div>
+                  <p className="text-sm text-charcoal">{line.procedureTypeName}</p>
+                  <p className="text-xs text-mid">
+                    {line.sessions} {line.sessions === 1 ? 'sessão' : 'sessões'}
+                  </p>
+                </div>
+                <span className="text-sm font-medium text-forest">
+                  {formatCurrency(line.defaultPrice * line.sessions)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="text-xs uppercase tracking-wider text-mid mb-2">Resumo Financeiro</p>
+          <div className="rounded-[3px] border border-[#E8ECEF] p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-mid">
+                {cart.totalOverride !== null ? 'Valor combinado' : 'Valor total'}
+              </span>
+              <span className="text-sm font-semibold text-charcoal">
+                {formatCurrency(total)}
+              </span>
+            </div>
+            {financialPlan && financialPlan.installmentCount > 1 && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-mid">Parcelas</span>
+                <span className="text-sm text-charcoal">
+                  {financialPlan.installmentCount}x de{' '}
+                  {formatCurrency(total / financialPlan.installmentCount)}
+                </span>
+              </div>
+            )}
+            {financialPlan?.notes && (
+              <div className="pt-1 border-t border-[#E8ECEF]">
+                <span className="text-xs text-mid">{financialPlan.notes}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
