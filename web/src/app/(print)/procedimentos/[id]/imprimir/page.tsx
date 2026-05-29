@@ -21,7 +21,7 @@ export default async function PrintProcedurePage({ params }: PrintProcedurePageP
   const auth = await getAuthContext()
 
   const procedure = await getProcedure(auth.tenantId, id)
-  if (!procedure || procedure.status !== 'executed') {
+  if (!procedure || procedure.status !== 'completed' || !procedure.performedAt) {
     notFound()
   }
 

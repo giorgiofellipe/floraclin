@@ -63,7 +63,7 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
       : null,
     planning: procedure?.updatedAt ? new Date(procedure.updatedAt) : null,
     approval: procedure?.approvedAt ? new Date(procedure.approvedAt) : null,
-    execution: procedure?.performedAt && procedure.status === 'executed'
+    execution: procedure?.performedAt && procedure.status === 'completed'
       ? new Date(procedure.performedAt)
       : null,
   }

@@ -132,6 +132,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function LifecycleBar({ procedure }: { procedure: ProcedureWithDetails }) {
   const isCancelled = procedure.status === 'cancelled'
+  const hasTreated =
+    procedure.status === 'in_progress' || procedure.status === 'completed'
+  const isCompleted = procedure.status === 'completed'
+
+  const finalLabel = isCancelled
+    ? 'Cancelado'
+    : isCompleted
+      ? 'Concluído'
+      : 'Executado'
 
   const steps = [
     {
@@ -147,9 +156,9 @@ function LifecycleBar({ procedure }: { procedure: ProcedureWithDetails }) {
       color: 'bg-sage',
     },
     {
-      label: isCancelled ? 'Cancelado' : 'Executado',
-      date: isCancelled ? procedure.cancelledAt : (procedure.status === 'executed' ? procedure.performedAt : null),
-      reached: procedure.status === 'executed' || isCancelled,
+      label: finalLabel,
+      date: isCancelled ? procedure.cancelledAt : (hasTreated ? procedure.performedAt : null),
+      reached: hasTreated || isCancelled,
       color: isCancelled ? 'bg-red-400' : 'bg-forest',
     },
   ]
@@ -207,7 +216,12 @@ export function ProcedureDetailView({
   const diagramPoints = useMemo(() => diagramsToPoints(diagrams), [diagrams])
 
   const isCancelled = procedure.status === 'cancelled'
-  const isExecuted = procedure.status === 'executed'
+  // Treatment delivered: any session executed (in_progress) OR fully done (completed).
+  // Used for "shows treated state" UI (status stamp, accent bar). Per spec semantics,
+  // the spec's 'completed' = final session executed, but visually treated UI should
+  // light up as soon as treatment delivery begins (in_progress).
+  const isExecuted =
+    procedure.status === 'in_progress' || procedure.status === 'completed'
   const isApproved = procedure.status === 'approved'
 
   // ─── Followup section (approved procedures only) ──────────────
@@ -332,7 +346,7 @@ export function ProcedureDetailView({
                 {statusLabel}
               </p>
               <p className="text-[11px] text-mid mt-0.5">
-                {formatLongDate(procedure.performedAt)}
+                {procedure.performedAt ? formatLongDate(procedure.performedAt) : '—'}
               </p>
             </div>
           </div>

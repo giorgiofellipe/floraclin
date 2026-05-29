@@ -249,7 +249,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                       proc.status === 'draft' && 'text-mid',
                       proc.status === 'planned' && 'text-amber',
                       proc.status === 'approved' && 'text-sage',
-                      proc.status === 'executed' && 'text-forest',
+                      (proc.status === 'in_progress' || proc.status === 'completed') && 'text-forest',
                       proc.status === 'cancelled' && 'text-mid/50',
                     )}>
                       {statusLabel}
@@ -291,7 +291,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                   )}
 
                   {/* Executed details */}
-                  {proc.status === 'executed' && (proc.technique || proc.clinicalResponse) && (
+                  {(proc.status === 'in_progress' || proc.status === 'completed') && (proc.technique || proc.clinicalResponse) && (
                     <div className="mt-3 space-y-1 border-t border-[#E8ECEF] pt-3">
                       {proc.technique && (
                         <p className="text-[13px]">
@@ -395,7 +395,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                       </>
                     )}
 
-                    {(proc.status === 'executed' || proc.status === 'cancelled') && (
+                    {(proc.status === 'in_progress' || proc.status === 'completed' || proc.status === 'cancelled') && (
                       <Button
                         size="sm"
                         variant="ghost"

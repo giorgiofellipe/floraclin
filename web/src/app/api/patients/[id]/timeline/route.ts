@@ -394,7 +394,7 @@ async function buildPatientTimeline(tenantId: string, patientId: string): Promis
       }
 
       // plan_executed
-      if (proc.status === 'executed' && proc.performedAt) {
+      if ((proc.status === 'in_progress' || proc.status === 'completed') && proc.performedAt) {
         entries.push({
           id: `plan-exec-${proc.id}`,
           type: 'plan_executed',

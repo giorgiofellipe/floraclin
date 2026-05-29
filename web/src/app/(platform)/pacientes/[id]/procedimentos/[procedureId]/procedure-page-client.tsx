@@ -146,11 +146,11 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
   }
 
   // Read-only detail view for executed or cancelled procedures
-  if (procedure.status === 'executed' || procedure.status === 'cancelled') {
+  if (procedure.status === 'completed' || procedure.status === 'cancelled') {
     return (
       <div className="min-h-screen p-6">
         <PackageBadgeBanner patientId={patientId} procedure={procedure} />
-        {procedure.status === 'executed' && (
+        {procedure.status === 'completed' && (
           <div className="mx-auto mb-3 flex max-w-3xl items-center justify-end">
             <Link href={`/procedimentos/${procedure.id}/imprimir`}>
               <Button variant="outline" size="sm">
