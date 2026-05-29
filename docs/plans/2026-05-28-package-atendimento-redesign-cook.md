@@ -3334,6 +3334,244 @@ git commit -m "tests: wizard-cart + atendimento-cart helpers"
 
 ---
 
+---
+
+## Adversarial Review Patches (Phase 2 fixes)
+
+The plan was reviewed by Skeptic, Architect, and Minimalist reviewers. Findings accepted into the plan:
+
+### Patch P1 — Finalize-in-place, not delete-and-recreate
+
+**Affects: Task C1, Task D1, Task F4**
+
+The "cancel the draft record + create fresh records" approach in D1/C1 orphans the per-line planning data (`plannedSnapshot`, draft diagrams, draft products) that F4 had already persisted to draft `procedure_records`.
+
+**New approach for C1 (`finalizeAtendimento`):** the wizard owns a stable set of draft `procedure_records` (one per cart line) all the way through step 3. Approval **finalizes those existing draft rows** rather than recreating them. Diagrams, products, and planned snapshots stay linked to the same record IDs across approval.
+
+**Revised `finalizeAtendimento` signature:**
+
+```ts
+export interface FinalizeAtendimentoInput {
+  tenantId: string
+  userId: string
+  patientId: string
+  practitionerId: string
+  cart: AtendimentoCart
+  draftRecordIds: string[]   // one per cart line, same order
+  financialPlan: { totalAmount: string; installmentCount: number; paymentMethod: string; notes?: string }
+  consents: Array<{...}>
+  tenantDefaultValidityMonths?: number | null
+}
+```
+
+**Revised behavior (inside the transaction):**
+
+1. `SELECT ... FOR UPDATE` every draft record. Verify each one is in `'draft'` or `'planned'` and belongs to the tenant + patient.
+2. Determine `isBundle`. If yes, insert one `patient_packages` row.
+3. Call `createFinancialEntry(...)` from `@/db/queries/financial` — the existing helper that creates the entry **and its installments**. Do NOT inline a raw `financialEntries` insert.
+4. For each draft record, `UPDATE procedure_records SET status='approved', approvedAt=now(), patientPackageId=?, atendimentoId=?, sessionsTotal=line.sessions, financialPlan=?`. The `plannedSnapshot` and existing side data stay attached.
+5. Insert one `consent_acceptances` per draft record (consents passed in body).
+6. Audit log.
+
+Update Task D1 to pass `draftRecordIds: string[]` instead of `[id]`. The HTTP route becomes `POST /api/atendimentos/[atendimentoId]/finalize` and accepts `{ cart, draftRecordIds, financialPlan, consents }`. Drop the old `/api/procedures/[id]/approve` route since the wizard now owns multiple drafts; if a single-line legacy path still exists, keep a thin wrapper for one cycle.
+
+**Update Task F4 (procedure-form):** When the user advances from step 2 to step 3, the wizard creates one draft `procedure_records` per cart line via `POST /api/procedures` (existing endpoint), persists the per-line planning into each, then stores the array of draft IDs in wizard state. F4 already supports this; just make it explicit.
+
+**New file ownership:** Create `web/src/app/api/atendimentos/[id]/finalize/route.ts` (new); modify the `atendimentos/[id]/route.ts` GET handler from Task J1 to live alongside it.
+
+### Patch P2 — Concurrency + business gates inside `executeSession`
+
+**Affects: Task C2**
+
+The current C2 sketch (`MAX(sessionOrdinal)+1` then insert) is unsafe under concurrency and doesn't enforce business invariants. Replace the body of `executeSession` with the following transaction shape:
+
+```ts
+const run = async (tx: typeof db) => {
+  // 1. Lock the parent record
+  const [record] = await tx
+    .select({
+      id: procedureRecords.id,
+      tenantId: procedureRecords.tenantId,
+      status: procedureRecords.status,
+      sessionsTotal: procedureRecords.sessionsTotal,
+      patientPackageId: procedureRecords.patientPackageId,
+      deletedAt: procedureRecords.deletedAt,
+    })
+    .from(procedureRecords)
+    .where(and(
+      eq(procedureRecords.id, input.procedureRecordId),
+      eq(procedureRecords.tenantId, input.tenantId),
+    ))
+    .for('update')
+    .limit(1)
+  if (!record || record.deletedAt) throw new BusinessError('not_found')
+  if (record.status === 'completed' || record.status === 'cancelled') {
+    throw new BusinessError('record_already_terminal')
+  }
+
+  // 2. Check package terminal state (if linked)
+  if (record.patientPackageId) {
+    const [pkg] = await tx
+      .select({ status: patientPackages.status, closedAt: patientPackages.closedAt })
+      .from(patientPackages)
+      .where(eq(patientPackages.id, record.patientPackageId))
+      .for('update')
+      .limit(1)
+    if (!pkg) throw new BusinessError('package_missing')
+    if (pkg.status === 'cancelled' || pkg.status === 'completed' || pkg.closedAt) {
+      throw new BusinessError('package_terminal')
+    }
+  }
+
+  // 3. Count existing sessions and check ordinal
+  const sessionsDone = await countSessionsForRecord(input.procedureRecordId, tx)
+  if (sessionsDone >= record.sessionsTotal) {
+    throw new BusinessError('all_sessions_executed')
+  }
+
+  // 4. Insert session at ordinal sessionsDone + 1
+  const session = await createSession({
+    ...input,
+    expectedOrdinal: sessionsDone + 1,  // createSession asserts MAX+1 === expectedOrdinal
+  }, tx)
+
+  // 5. Side data writes...
+  // 6. Update statuses...
+  // 7. Audit log...
+}
+```
+
+`createSession` (Task B1) takes an `expectedOrdinal` and asserts `MAX(sessionOrdinal) + 1 === expectedOrdinal` post-lock; the unique constraint on `(procedure_record_id, session_ordinal)` is the safety net but should never fire under correct locking.
+
+**API route (Task D2):** catch `BusinessError` and map to `409 Conflict` with a stable `code` so the UI can react (e.g., refetch picker state).
+
+Add a `web/src/lib/errors.ts` if no `BusinessError` class exists yet; otherwise reuse.
+
+### Patch P3 — Face diagram unique constraint
+
+**Affects: Task A1 (migration), Task B6**
+
+The existing unique `(procedure_record_id, view_type)` constraint blocks per-session diagrams. Migration must drop it and replace with a session-scoped constraint.
+
+Add to Task A1 migration SQL, after the `procedureSessions` table creation:
+
+```sql
+-- Replace the record-scoped diagram uniqueness with session-scoped uniqueness.
+DROP INDEX IF EXISTS "floraclin"."uq_face_diagrams_record_view";--> statement-breakpoint
+
+CREATE UNIQUE INDEX IF NOT EXISTS "uq_face_diagrams_session_view"
+  ON "floraclin"."face_diagrams" ("procedure_session_id", "view_type")
+  WHERE "procedure_session_id" IS NOT NULL;--> statement-breakpoint
+-- Partial index — historical rows backfilled in step 2 of the migration already
+-- have procedure_session_id set, but the WHERE clause protects us if any future
+-- code path inserts a session-less diagram.
+```
+
+Update Task A2 schema.ts: replace `uniqueIndex('uq_face_diagrams_record_view').on(table.procedureRecordId, table.viewType)` with `uniqueIndex('uq_face_diagrams_session_view').on(table.procedureSessionId, table.viewType).where(sql\`procedure_session_id IS NOT NULL\`)`.
+
+Update Task B6: remove the "we do not change the SQL constraint" disclaimer. The session-scoped upsert in `saveFaceDiagramForSession` now matches the constraint.
+
+### Patch P4 — Make migration genuinely idempotent
+
+**Affects: Task A1 step 1**
+
+Every `ADD CONSTRAINT` must be preceded by `DROP CONSTRAINT IF EXISTS` of the same name. Same for indexes (already `IF NOT EXISTS`). Patch the migration as follows wherever a named constraint is added:
+
+```sql
+ALTER TABLE "floraclin"."patient_packages"
+  DROP CONSTRAINT IF EXISTS "patient_packages_closed_reason_check";--> statement-breakpoint
+
+ALTER TABLE "floraclin"."patient_packages"
+  ADD CONSTRAINT "patient_packages_closed_reason_check"
+  CHECK ("closed_reason" IS NULL OR "closed_reason" IN ('patient_lost_expiry', 'patient_stopped_treatment', 'other'));--> statement-breakpoint
+```
+
+Apply the same `DROP ... IF EXISTS` + `ADD ...` pattern to:
+- `procedure_records_status_check` (already done in original draft — keep)
+- `patient_packages_closed_reason_check` (add the drop)
+
+Verify rerun safety: add a Task A1 step "Apply the migration twice against a scratch DB and assert no error on second run."
+
+### Patch P5 — BR-anchored package expiry
+
+**Affects: Task C1**
+
+The original `toLocalYmd(addMonths(new Date(), validityMonths))` is host-TZ sensitive. Replace with:
+
+```ts
+import { parseBrDate, brToday, toBrYmd } from '@/lib/dates'
+// ...
+const today = parseBrDate(brToday(), '12:00:00')  // anchor at noon BR to avoid DST shifts
+const expiresAt = validityMonths !== null
+  ? toBrYmd(addMonths(today, validityMonths))
+  : null
+```
+
+Add a test (in `web/src/lib/__tests__/atendimento-finalize.test.ts`): set `process.env.TZ = 'UTC'`, freeze the system clock to a BR-late-night moment (e.g., `2026-05-28T02:30:00Z`, which is `2026-05-27 23:30:00 BR`), and assert that selling a 6-month package produces `expiresAt = '2026-11-27'` (BR day plus 6 months), not `'2026-11-28'`.
+
+### Patch P6 — Photo upload lifecycle: post-submit reassignment
+
+**Affects: Task D4, Task G2, Task C2**
+
+Photos are uploaded during step-5 form filling, before the session is created. The new flow:
+
+1. **During form filling:** photos uploaded via `POST /api/photos` carry only `patientId` + `procedureRecordId`. `procedureSessionId` is left null. The uploader returns the photo IDs.
+2. **On `Salvar sessão`:** the form passes `photoAssetIds: string[]` to `POST /api/procedures/[id]/sessions`.
+3. **Inside `executeSession`:** after the `procedure_sessions` row is created, run an `UPDATE photo_assets SET procedure_session_id = ? WHERE id IN (?) AND tenant_id = ? AND procedure_record_id = ? AND procedure_session_id IS NULL`. The combined predicate prevents reassigning photos from other sessions.
+
+Add this UPDATE to the C2 service body.
+
+Task D4 stays correct: the photos route accepts an optional `procedureSessionId` for cases where the caller already has one (e.g., editing a saved session's photos later). The default upload path leaves it null.
+
+### Patch P7 — Resolve spec contradiction: `procedure_records.status` on package close
+
+**Affects: spec interpretation, Task B4 `maybeCompletePackage`, Group H**
+
+The spec contains both statements:
+- "`completed` → final session executed OR closed early via `patient_packages.closedReason`"
+- "For every linked `procedure_records` still in `approved` or `in_progress`, leave `status` as-is but the picker no longer shows 'Executar agora'."
+
+The plan resolves this in favor of the second statement: **lines keep their own status when a package is closed early.** The picker (G1) and execution service (C2) both gate on `patient_packages.status` separately.
+
+- `maybeCompletePackage` (Task B4) continues to require every record to have `sessionsExecuted >= sessionsTotal` before flipping the package to `completed`. Early closure does NOT come through this helper — it comes through `closePackage`, which sets `closedAt` and flips `patient_packages.status` directly.
+- `procedure_records.status` transitions remain: `approved → in_progress` after first session, `in_progress → completed` after final session, `approved → completed` for single-session lines after their one session.
+
+Update the status-transition table at the spec level — but since we're not editing the spec, leave a `## Note` block in this plan documenting the resolution and reference it from the package-card / picker / queries tasks. (Future spec maintenance can be a follow-up.)
+
+### Patch P8 — Tests for the high-risk paths
+
+**Affects: Group L**
+
+Add the following test scenarios:
+
+- **L8 (new):** `web/src/db/migrations/__tests__/0015-rerun.test.ts` — boot a scratch DB, apply migration, apply again; expect no SQL errors.
+- **L9 (new):** `web/src/lib/__tests__/atendimento-finalize.test.ts` extension — multi-line cart: assert that `plannedSnapshot` set on each draft record survives finalization, side-table rows (`product_applications`, `face_diagrams`) stay linked.
+- **L10 (new):** `web/src/app/api/procedures/[id]/sessions/__tests__/route.test.ts` — given a closed package, POST returns 409 with `code: 'package_terminal'`.
+- **L11 (new):** `web/src/lib/__tests__/session-execute.concurrency.test.ts` — fire two concurrent `executeSession` calls for the same record; assert one succeeds at ordinal N, the other rejects with `BusinessError`.
+
+Each test is a small parallel task in Group L.
+
+### Patch P9 — Minor simplifications accepted from Minimalist lens
+
+**Affects: Task B5, Task B6, Task B7, Task G3**
+
+- B5 / B7: drop the legacy `saveProductApplications(tenantId, procedureRecordId, ...)` and `createPhotoAsset` without-session compat layer. Rename to `*ForSession` and update the (sole) callers (`session-execute.ts` for B5; `photo-uploader.tsx` for B7 — the upload route just leaves session id null at upload time, sets it later via the reassignment in P6).
+- B6: same — session-scoped only. `listDiagramsForRecord` stays for the read-side (picker shows previous session's diagram as a starting point), but the WRITE path is session-only.
+- G3: only one read API. Drop `GET /api/procedure-sessions/[id]`; the `GET /api/atendimentos/[id]` already returns sessions with all fields. The read-only viewer in G3 takes a session object passed in via props from the picker (which got it from the atendimento view query).
+
+### Patches rejected (with reason)
+
+- **Skeptic #7 (rollout-safety / expand-contract):** rejected. This is a single-tenant clinic-internal app deploying single-instance; no rolling deploys. A single migration is fine. User has previously stated dev DB data may break.
+- **Architect #5 (no `atendimentos` table):** rejected. YAGNI. `atendimentoId` as a grouping UUID on `procedure_records` is sufficient for the current scope; introducing an aggregate root adds tables and ownership churn without a current consumer.
+- **Minimalist #2 (cart state model too large):** rejected. The cart is the canonical input to multi-line atendimento and step 4 finalize; without it, every step has to recompute its own state. Not over-engineered.
+- **Minimalist #4 (tenant config for validity):** rejected. The spec explicitly asks for the `default_package_validity_months` tenant setting. Keep.
+- **Minimalist #7 (Group M too wide):** rejected. The `executed → completed | in_progress` rename is forced by the `CHECK` constraint widening in A1. Bridging would create a dual-vocabulary period that's harder to reason about.
+- **Minimalist #8 (Group L too wide):** rejected. The tests cover the new seams and the high-risk paths called out by Skeptic and Architect. They are not premature.
+- **Minimalist #9 (E1/E2 split premature):** rejected. Separate files let parallel agents own them and read more cleanly.
+- **Minimalist #10 (B1 standalone module):** rejected. Multiple call sites (C2, atendimento view query, tests) consume it.
+
+---
+
 ## Self-Review Notes
 
 - **Spec coverage:** Every spec section maps to at least one task. Core model change → A1, A2, B1, B2, C1, C2. Wizard changes → F1, F2, F3, F4, F5, G1, G2, G3. Encerrar pacote → A3, D3, H1, H5, L4. Expiry warning → H1, G1. Removals → H2, H6, D2, K1, K2. Migration → A1.
