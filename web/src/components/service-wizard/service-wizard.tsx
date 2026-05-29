@@ -850,6 +850,16 @@ export function ServiceWizard({
                   }}
                   tenant={tenant}
                   additionalTypeIds={additionalTypeIds}
+                  cart={state.cart.lines.length > 0 ? state.cart : undefined}
+                  draftRecordIds={
+                    state.procedureRecordIds.length > 0
+                      ? state.procedureRecordIds
+                      : state.procedureId
+                        ? [state.procedureId]
+                        : undefined
+                  }
+                  atendimentoId={state.atendimentoId}
+                  onCartChange={setCart}
                   wizardOverrides={getOverridesForStep(4)}
                 />
               ) : (

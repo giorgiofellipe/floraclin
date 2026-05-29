@@ -374,12 +374,16 @@ export function ProcedureTypeStep({
         </CardContent>
       </Card>
 
-      <WizardCart
-        cart={cart}
-        onChange={onCartChange}
-        onRemoveLine={handleRemoveLine}
-        onClearTemplate={handleClearTemplate}
-      />
+      {cart.lines.length > 0 && (
+        <WizardCart
+          cart={cart}
+          onChange={onCartChange}
+          onRemoveLine={handleRemoveLine}
+          onClearTemplate={handleClearTemplate}
+          readOnly
+          previewHint="Pré-visualização. Você poderá ajustar valores e número de sessões na etapa de Aprovação."
+        />
+      )}
     </div>
   )
 }

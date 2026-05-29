@@ -28,6 +28,7 @@ import type { DiagramPointData } from '@/components/face-diagram/types'
 import type { PaymentMethod } from '@/types'
 import type { WizardOverrides } from '@/components/service-wizard/types'
 import { ApprovalSummaryCard } from './approval/approval-summary-card'
+import { WizardCart } from '@/components/service-wizard/wizard-cart'
 import { ConsentStatusList } from './approval/consent-status-list'
 import { ServiceContractSection } from './approval/service-contract-section'
 import { ClipboardCheck } from 'lucide-react'
@@ -99,6 +100,12 @@ interface ProcedureApprovalProps {
     patientPackageId: string | null
     atendimentoId: string
   }) => void
+  /**
+   * Cart-mode editing handler. Step 4 owns final adjustments to sessions
+   * count and total override (step 2 renders a read-only preview). When
+   * supplied, the summary card mounts the editable WizardCart.
+   */
+  onCartChange?: (next: AtendimentoCart) => void
   // Shared props.
   patient: PatientData
   tenant: TenantData
@@ -143,6 +150,7 @@ export function ProcedureApproval({
   atendimentoId,
   practitionerId,
   onApproved,
+  onCartChange,
   wizardOverrides,
 }: ProcedureApprovalProps) {
   const router = useRouter()
@@ -617,7 +625,11 @@ export function ProcedureApproval({
       {/* Summary: cart mode renders a multi-line bundle summary; legacy
           mode falls back to the existing single-procedure summary card. */}
       {isCartMode && cart ? (
-        <CartApprovalSummary cart={cart} financialPlan={financialPlan} />
+        <CartApprovalSummary
+          cart={cart}
+          financialPlan={financialPlan}
+          onCartChange={onCartChange}
+        />
       ) : (
         procedure && (
           <ApprovalSummaryCard
@@ -710,12 +722,15 @@ export function ProcedureApproval({
 function CartApprovalSummary({
   cart,
   financialPlan,
+  onCartChange,
 }: {
   cart: AtendimentoCart
   financialPlan: FinancialPlan | null
+  onCartChange?: (next: AtendimentoCart) => void
 }) {
   const total = useMemo(() => computeCartTotal(cart), [cart])
   const isBundle = cart.templateId !== null || cart.lines.some((l) => l.sessions > 1)
+  const editable = !!onCartChange
 
   return (
     <Card className="border-0 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">
@@ -746,24 +761,47 @@ function CartApprovalSummary({
           <p className="text-xs uppercase tracking-wider text-mid mb-2">
             Procedimentos ({cart.lines.length})
           </p>
-          <div className="space-y-1.5">
-            {cart.lines.map((line, idx) => (
-              <div
-                key={`${line.procedureTypeId}-${idx}`}
-                className="flex items-center justify-between rounded-[3px] border border-[#E8ECEF] px-3 py-2"
-              >
-                <div>
-                  <p className="text-sm text-charcoal">{line.procedureTypeName}</p>
-                  <p className="text-xs text-mid">
-                    {line.sessions} {line.sessions === 1 ? 'sessão' : 'sessões'}
-                  </p>
+          {editable ? (
+            <WizardCart
+              cart={cart}
+              onChange={onCartChange!}
+              onRemoveLine={(typeId) =>
+                onCartChange!({
+                  ...cart,
+                  lines: cart.lines.filter((l) => l.procedureTypeId !== typeId),
+                })
+              }
+              onClearTemplate={() =>
+                onCartChange!({
+                  ...cart,
+                  templateId: null,
+                  templateName: null,
+                  templateDefaultPrice: null,
+                  templateValidityMonths: null,
+                  lines: cart.lines.filter((l) => l.sourceTemplateLineId === null),
+                })
+              }
+            />
+          ) : (
+            <div className="space-y-1.5">
+              {cart.lines.map((line, idx) => (
+                <div
+                  key={`${line.procedureTypeId}-${idx}`}
+                  className="flex items-center justify-between rounded-[3px] border border-[#E8ECEF] px-3 py-2"
+                >
+                  <div>
+                    <p className="text-sm text-charcoal">{line.procedureTypeName}</p>
+                    <p className="text-xs text-mid">
+                      {line.sessions} {line.sessions === 1 ? 'sessão' : 'sessões'}
+                    </p>
+                  </div>
+                  <span className="text-sm font-medium text-forest">
+                    {formatCurrency(line.defaultPrice * line.sessions)}
+                  </span>
                 </div>
-                <span className="text-sm font-medium text-forest">
-                  {formatCurrency(line.defaultPrice * line.sessions)}
-                </span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div>
