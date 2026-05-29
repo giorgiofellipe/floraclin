@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   AlertTriangleIcon,
@@ -28,12 +29,14 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { cn, formatCurrency } from '@/lib/utils'
+import { cn, formatCurrency, formatDate } from '@/lib/utils'
+import { brToday } from '@/lib/dates'
 import {
   useCancelPackage,
-  useStartPackageSession,
   type PatientPackageWithConsumption,
 } from '@/hooks/queries/use-packages'
+import { closeReasonLabels, type CloseReason } from '@/validations/encerrar-pacote'
+import { ClosePackageDialog } from '@/components/packages/close-package-dialog'
 
 interface PackageCardProps {
   patientId: string
@@ -61,42 +64,39 @@ function formatBrDate(ymd: string): string {
   return `${d}/${m}/${y}`
 }
 
+/**
+ * Fetch the current auth context (incl. role) from `/api/auth/me`. Mirrors the
+ * pattern in `use-tenant.ts` — a thin react-query wrapper around the server
+ * endpoint. Inlined here because the only caller of PackageCard
+ * (patient-packages-tab.tsx) does not currently pass role as a prop, and H1's
+ * scope only allows touching this file.
+ */
+function useCurrentAuth() {
+  return useQuery<{ role?: string }>({
+    queryKey: ['auth', 'me'],
+    queryFn: async () => {
+      const res = await fetch('/api/auth/me')
+      if (!res.ok) throw new Error('Erro ao carregar usuário')
+      return res.json()
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
 export function PackageCard({ patientId, pkg }: PackageCardProps) {
-  const router = useRouter()
-  const startSession = useStartPackageSession(patientId)
   const cancelPackage = useCancelPackage(patientId)
+  const { data: auth } = useCurrentAuth()
+  const isOwner = auth?.role === 'owner'
 
   const [cancelOpen, setCancelOpen] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
-  // Confirm dialog state for starting a session on an expired package.
-  // We hold the target line id while the dialog is open so confirming
-  // re-uses the same start path as the regular "Iniciar próxima sessão".
-  const [expiredConfirmLineId, setExpiredConfirmLineId] = useState<string | null>(null)
+  const [closeOpen, setCloseOpen] = useState(false)
 
   const isActive = pkg.status === 'active'
-
-  async function handleStartSession(lineId: string, allowExpiredOverride = false) {
-    try {
-      const result = await startSession.mutateAsync({
-        patientPackageId: pkg.id,
-        patientPackageLineId: lineId,
-        allowExpiredOverride,
-      })
-      toast.success('Sessão iniciada')
-      router.push(
-        `/pacientes/${patientId}/procedimentos/${result.data.procedureRecordId}`,
-      )
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao iniciar sessão')
-    }
-  }
-
-  async function handleConfirmExpiredStart() {
-    if (!expiredConfirmLineId) return
-    const lineId = expiredConfirmLineId
-    setExpiredConfirmLineId(null)
-    await handleStartSession(lineId, true)
-  }
+  const today = brToday()
+  const isExpiredByDate =
+    pkg.status === 'expired' ||
+    (pkg.expiresAt !== null && pkg.expiresAt < today)
 
   async function handleCancel() {
     if (!cancelReason.trim()) {
@@ -160,6 +160,12 @@ export function PackageCard({ patientId, pkg }: PackageCardProps) {
               <MoreVerticalIcon />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {isOwner && (
+                <DropdownMenuItem onClick={() => setCloseOpen(true)}>
+                  <CheckCircle2Icon className="text-forest" />
+                  Encerrar pacote
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => setCancelOpen(true)}>
                 <XCircleIcon className="text-destructive" />
                 Cancelar pacote
@@ -169,6 +175,34 @@ export function PackageCard({ patientId, pkg }: PackageCardProps) {
         )}
       </div>
 
+      {/* Expiry warning banner */}
+      {isExpiredByDate && pkg.expiresAt && (
+        <div className="border-b border-[#E8ECEF] bg-amber-light/40 px-5 py-2">
+          <p className="flex items-center gap-1.5 text-[12px] text-amber-700">
+            <AlertTriangleIcon className="size-3.5 shrink-0" />
+            Pacote vencido em {formatDate(pkg.expiresAt)} — sessões ainda podem
+            ser realizadas até o encerramento.
+          </p>
+        </div>
+      )}
+
+      {/* Closed-package summary */}
+      {pkg.closedAt && (
+        <div className="border-b border-[#E8ECEF] bg-[#FAFBFC] px-5 py-2 text-[12px] text-mid">
+          <p>
+            Pacote encerrado em {formatDate(pkg.closedAt)}
+            {pkg.closedReason && (
+              <>
+                {' '}— {closeReasonLabels[pkg.closedReason as CloseReason] ?? pkg.closedReason}
+              </>
+            )}
+          </p>
+          {pkg.closeNote && (
+            <p className="mt-0.5 text-mid/80">{pkg.closeNote}</p>
+          )}
+        </div>
+      )}
+
       {/* Cancellation reason (when cancelled) */}
       {pkg.status === 'cancelled' && pkg.cancelReason && (
         <div className="border-b border-[#E8ECEF] bg-[#FAFBFC] px-5 py-2 text-[12px] text-mid">
@@ -177,60 +211,42 @@ export function PackageCard({ patientId, pkg }: PackageCardProps) {
         </div>
       )}
 
-      {/* Lines */}
+      {/* Records */}
       <div className="divide-y divide-[#E8ECEF]">
-        {pkg.lines.map((line) => {
-          const consumed = line.consumedCount
-          const total = line.sessionsTotal
-          const executed = line.executedCount
-          const remaining = Math.max(0, total - consumed)
-          const pct = total > 0 ? Math.min(100, (consumed / total) * 100) : 0
-          const allConsumed = consumed >= total
+        {pkg.records.map((record) => {
+          const total = record.sessionsTotal
+          const executed = record.sessionsExecuted
+          const remaining = Math.max(0, total - executed)
+          const pct = total > 0 ? Math.min(100, (executed / total) * 100) : 0
           const allExecuted = executed >= total
+          const canExecuteNext = executed < total && pkg.status === 'active'
 
           return (
-            <div key={line.id} className="px-5 py-4">
+            <div key={record.procedureRecordId} className="px-5 py-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[14px] font-medium text-charcoal">
-                      {line.procedureTypeName}
+                      {record.procedureTypeName}
                     </span>
                     {allExecuted && (
                       <CheckCircle2Icon className="size-3.5 text-forest" />
                     )}
                   </div>
                   <p className="mt-0.5 text-[12px] text-mid tabular-nums">
-                    {executed}/{total} sessões executadas
-                    {consumed > executed && (
-                      <span className="ml-1 text-mid/70">
-                        ({consumed - executed} em andamento)
-                      </span>
-                    )}
+                    {record.procedureTypeName} · {executed}/{total}
                   </p>
                 </div>
 
-                {isActive && !allConsumed && (
-                  <Button
-                    size="sm"
-                    onClick={() => handleStartSession(line.id)}
-                    disabled={startSession.isPending}
+                {canExecuteNext && (
+                  <Link
+                    href={`/pacientes/${patientId}/atendimento?procedure=${record.procedureRecordId}&action=executeNext`}
                   >
-                    <PlayIcon data-icon="inline-start" />
-                    Iniciar próxima sessão
-                  </Button>
-                )}
-
-                {pkg.status === 'expired' && !allConsumed && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setExpiredConfirmLineId(line.id)}
-                    disabled={startSession.isPending}
-                  >
-                    <AlertTriangleIcon data-icon="inline-start" />
-                    Iniciar (expirado)
-                  </Button>
+                    <Button size="sm">
+                      <PlayIcon data-icon="inline-start" />
+                      Executar próxima sessão
+                    </Button>
+                  </Link>
                 )}
               </div>
 
@@ -247,47 +263,19 @@ export function PackageCard({ patientId, pkg }: PackageCardProps) {
               <p className="mt-1.5 text-[11px] text-mid">
                 {remaining > 0
                   ? `${remaining} ${remaining === 1 ? 'sessão restante' : 'sessões restantes'}`
-                  : 'Todas as sessões consumidas'}
+                  : 'Todas as sessões executadas'}
               </p>
             </div>
           )
         })}
       </div>
 
-      {/* Expired-start confirm dialog. Mirrors the cancel dialog pattern so
-          we don't need a separate AlertDialog primitive. */}
-      <Dialog
-        open={expiredConfirmLineId !== null}
-        onOpenChange={(open) => {
-          if (!open) setExpiredConfirmLineId(null)
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Pacote vencido</DialogTitle>
-            <DialogDescription>
-              {pkg.expiresAt
-                ? `Pacote vencido em ${formatBrDate(pkg.expiresAt)}. Iniciar mesmo assim?`
-                : 'Pacote vencido. Iniciar mesmo assim?'}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setExpiredConfirmLineId(null)}
-              disabled={startSession.isPending}
-            >
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleConfirmExpiredStart}
-              disabled={startSession.isPending}
-            >
-              {startSession.isPending ? 'Iniciando...' : 'Iniciar mesmo assim'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Close dialog (H5) */}
+      <ClosePackageDialog
+        open={closeOpen}
+        onOpenChange={setCloseOpen}
+        packageId={pkg.id}
+      />
 
       {/* Cancel dialog */}
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>

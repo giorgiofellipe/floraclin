@@ -13,42 +13,36 @@ import { ProcedureApproval } from '@/components/procedures/procedure-approval'
 import { ProcedureDetailView } from '@/components/procedures/procedure-detail-view'
 import { Button } from '@/components/ui/button'
 
-/**
- * Renders a small banner above the procedure body when this procedure is tied
- * to a sold patient package. Looks up package + line via `usePatientPackages`
- * by matching the procedure's `patientPackageLineId` against the cached list.
- *
- * `patientPackageId` / `patientPackageLineId` are projected through the
- * procedure read query (see `getProcedure` in `db/queries/procedures.ts`).
- */
-function PackageBadgeBanner({
+function SessionProgressBanner({
   patientId,
   procedure,
 }: {
   patientId: string
   procedure: {
     patientPackageId?: string | null
-    patientPackageLineId?: string | null
+    sessionsTotal?: number
+    sessionsExecuted?: number
   }
 }) {
   const patientPackageId = procedure.patientPackageId ?? null
-  const patientPackageLineId = procedure.patientPackageLineId ?? null
   const { data: packages } = usePatientPackages(patientPackageId ? patientId : '')
+  const sessionsTotal = procedure.sessionsTotal ?? 1
+  const sessionsExecuted = procedure.sessionsExecuted ?? 0
 
-  if (!patientPackageId || !patientPackageLineId) return null
+  const pkg = patientPackageId
+    ? (packages ?? []).find((p) => p.id === patientPackageId)
+    : null
 
-  const pkg = (packages ?? []).find((p) => p.id === patientPackageId)
-  const line = pkg?.lines.find((l) => l.id === patientPackageLineId)
-  if (!pkg || !line) return null
+  if (!pkg && sessionsTotal <= 1) return null
 
-  const ordinal = Math.min(line.consumedCount, line.sessionsTotal)
   return (
     <div className="mx-auto mb-4 flex max-w-4xl items-center gap-2 rounded-md border border-sage/20 bg-sage/5 px-3 py-1.5 text-[12px] text-sage">
       <PackageIcon className="size-3.5" />
       <span>
-        Pacote: <span className="font-medium">{pkg.name}</span> · sessão{' '}
+        {pkg && <><span className="font-medium">{pkg.name}</span> · </>}
+        sessões:{' '}
         <span className="tabular-nums">
-          {ordinal}/{line.sessionsTotal}
+          {sessionsExecuted}/{sessionsTotal}
         </span>
       </span>
     </div>
@@ -135,11 +129,16 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
     return (
       <div className="min-h-screen p-6">
         <ProcedureExecution
+          atendimentoId={procedure.atendimentoId ?? procedure.id}
+          procedureRecordIds={[procedure.id]}
+          packageId={procedure.patientPackageId ?? null}
           patientId={patientId}
           patientGender={patient.gender}
           procedure={procedure}
           diagrams={diagrams}
           existingApplications={applications}
+          deepLinkProcedureId={procedure.id}
+          autoStartNext
         />
       </div>
     )
@@ -149,7 +148,7 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
   if (procedure.status === 'completed' || procedure.status === 'cancelled') {
     return (
       <div className="min-h-screen p-6">
-        <PackageBadgeBanner patientId={patientId} procedure={procedure} />
+        <SessionProgressBanner patientId={patientId} procedure={procedure} />
         {procedure.status === 'completed' && (
           <div className="mx-auto mb-3 flex max-w-3xl items-center justify-end">
             <Link href={`/procedimentos/${procedure.id}/imprimir`}>
@@ -176,7 +175,7 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
   if (procedure.status === 'approved') {
     return (
       <div className="min-h-screen p-6">
-        <PackageBadgeBanner patientId={patientId} procedure={procedure} />
+        <SessionProgressBanner patientId={patientId} procedure={procedure} />
         <ProcedureDetailView
           patientId={patientId}
           patientName={patient.fullName}
@@ -192,7 +191,7 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
   // Default: planned procedure form (edit)
   return (
     <div className="min-h-screen p-6">
-      <PackageBadgeBanner patientId={patientId} procedure={procedure} />
+      <SessionProgressBanner patientId={patientId} procedure={procedure} />
       <ProcedureForm
         patientId={patientId}
         patientName={patient.fullName}

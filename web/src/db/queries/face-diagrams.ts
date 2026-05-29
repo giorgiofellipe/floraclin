@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { faceDiagrams, diagramPoints, procedureSessions } from '@/db/schema'
-import { eq, and, desc, ne } from 'drizzle-orm'
+import { eq, and, desc, ne, isNull } from 'drizzle-orm'
 import type { DiagramViewType } from '@/types'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -115,6 +115,82 @@ export async function saveFaceDiagramForSession(
     )
   }
 
+  return diagramId
+}
+
+/**
+ * Planning-time write: upsert keyed by (procedureRecordId, viewType, procedureSessionId IS NULL).
+ * Inserts a face_diagrams row with procedureSessionId=NULL so the planner's
+ * diagram persists on the draft `procedure_records` before the wizard reaches
+ * step 5. At session execution time, `saveFaceDiagramForSession` creates a
+ * separate row scoped to the new session.
+ */
+export async function saveFaceDiagram(
+  tenantId: string,
+  procedureRecordId: string,
+  viewType: DiagramViewType,
+  points: Array<{
+    x: number
+    y: number
+    productName: string
+    activeIngredient?: string
+    quantity: number
+    quantityUnit: string
+    technique?: string
+    depth?: string
+    notes?: string
+  }>,
+  txDb: typeof db = db
+) {
+  const existing = await txDb
+    .select()
+    .from(faceDiagrams)
+    .where(
+      and(
+        eq(faceDiagrams.tenantId, tenantId),
+        eq(faceDiagrams.procedureRecordId, procedureRecordId),
+        eq(faceDiagrams.viewType, viewType),
+        isNull(faceDiagrams.procedureSessionId)
+      )
+    )
+    .limit(1)
+
+  let diagramId: string
+  if (existing.length > 0) {
+    diagramId = existing[0].id
+    await txDb
+      .update(faceDiagrams)
+      .set({ updatedAt: new Date() })
+      .where(eq(faceDiagrams.id, diagramId))
+    await txDb
+      .delete(diagramPoints)
+      .where(eq(diagramPoints.faceDiagramId, diagramId))
+  } else {
+    const [diagram] = await txDb
+      .insert(faceDiagrams)
+      .values({ tenantId, procedureRecordId, viewType })
+      .returning()
+    diagramId = diagram.id
+  }
+
+  if (points.length > 0) {
+    await txDb.insert(diagramPoints).values(
+      points.map((point, index) => ({
+        tenantId,
+        faceDiagramId: diagramId,
+        x: point.x.toFixed(2),
+        y: point.y.toFixed(2),
+        productName: point.productName,
+        activeIngredient: point.activeIngredient ?? null,
+        quantity: point.quantity.toFixed(2),
+        quantityUnit: point.quantityUnit,
+        technique: point.technique ?? null,
+        depth: point.depth ?? null,
+        notes: point.notes ?? null,
+        sortOrder: index,
+      }))
+    )
+  }
   return diagramId
 }
 

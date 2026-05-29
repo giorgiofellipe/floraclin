@@ -8,17 +8,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // order without standing up a real Postgres.
 //
 // What the harness lets us prove:
-//   1. startPackageSession locks the parent `patient_packages` row
-//      BEFORE the `patient_package_lines` row (consistent order with
-//      cancelPackage, prevents ABBA deadlocks).
-//   2. Both raw-SQL lock fragments include `AND tenant_id = ...` so a
+//   1. cancelPackage's FOR UPDATE lock scopes by tenant_id so a
 //      cross-tenant id can never acquire a lock.
-//   3. sellPackage refuses any procedureTypeId that doesn't belong to
-//      the caller's tenant, and derives `procedureTypeName` from the
-//      verified server-side lookup (ignores the client-supplied name).
-//   4. createPackageTemplate / updatePackageTemplate would catch a
-//      cross-tenant procedureTypeId — covered indirectly via the same
-//      helper plus a small standalone case in db/queries/packages tests.
+//   2. maybeCompletePackage flips the package to 'completed' only when
+//      EVERY record on the package has at least `sessionsTotal` rows
+//      in `procedure_sessions`. A short record short-circuits.
+//   3. closePackage with `patient_lost_expiry` writes
+//      `status='completed' / closedAt / closedReason` and a NULL
+//      closeNote; with `other` + a note both fields are persisted.
 
 import { computePackageExpiresAt, shouldCompletePackage } from '../packages'
 
@@ -101,66 +98,59 @@ describe('shouldCompletePackage', () => {
 // vi.mock factories are hoisted to the top of the file, so anything they
 // reference must be declared via vi.hoisted so it exists at hoist time.
 
-const { txState, TABLE_TOKENS, lookups } = vi.hoisted(() => {
+const { txState, TABLE_TOKENS } = vi.hoisted(() => {
   interface ExecuteCall {
     fragment: string
     params: unknown[]
   }
+  interface UpdateCall {
+    table: string
+    values: Record<string, unknown>
+  }
   interface TxState {
     executeResponses: Array<{ rows: Array<Record<string, unknown>> }>
     executeCalls: ExecuteCall[]
-    countRows: Array<{ count: number }>
-    selectRows: Array<Record<string, unknown>>
-    insertedProcedures: Array<Record<string, unknown>>
-    insertedPackages: Array<Record<string, unknown>>
-    insertedLines: Array<Record<string, unknown>>
+    // procedureRecords select: list of { id, sessionsTotal }
+    procedureRecordRows: Array<{ id: string; sessionsTotal: number }>
+    // procedureSessions COUNT(*) keyed by procedureRecordId
+    sessionCountsByRecord: Record<string, number>
+    // captured update().set() calls, keyed by table tag
+    updateCalls: UpdateCall[]
+    // captured audit-log insertions
+    auditCalls: Array<Record<string, unknown>>
   }
   const txState: TxState = {
     executeResponses: [],
     executeCalls: [],
-    countRows: [{ count: 0 }],
-    selectRows: [],
-    insertedProcedures: [],
-    insertedPackages: [],
-    insertedLines: [],
+    procedureRecordRows: [],
+    sessionCountsByRecord: {},
+    updateCalls: [],
+    auditCalls: [],
   }
   const TABLE_TOKENS = {
     patientPackages: { __table: 'patientPackages' },
-    patientPackageLines: { __table: 'patientPackageLines' },
     procedureRecords: { __table: 'procedureRecords' },
-    procedureTypes: { __table: 'procedureTypes' },
-    packageTemplates: { __table: 'packageTemplates' },
+    procedureSessions: { __table: 'procedureSessions' },
+    auditLogs: { __table: 'auditLogs' },
   } as const
-  const lookups = {
-    procedureTypes: [] as Array<{ id: string; name: string }>,
-    packageTemplates: [] as Array<{ id: string }>,
-  }
   // Stash on globalThis so mock factories (which run at hoist time) can
   // reach the same shared state without recreating it per factory.
   ;(globalThis as Record<string, unknown>).__pkg_test_tokens = TABLE_TOKENS
   ;(globalThis as Record<string, unknown>).__pkg_test_txState = txState
-  ;(globalThis as Record<string, unknown>).__pkg_test_lookups = lookups
-  return { txState, TABLE_TOKENS, lookups }
+  return { txState, TABLE_TOKENS }
 })
 
 function resetTx() {
   txState.executeResponses = []
   txState.executeCalls = []
-  txState.countRows = [{ count: 0 }]
-  txState.selectRows = []
-  txState.insertedProcedures = []
-  txState.insertedPackages = []
-  txState.insertedLines = []
-  lookups.procedureTypes = []
-  lookups.packageTemplates = []
+  txState.procedureRecordRows = []
+  txState.sessionCountsByRecord = {}
+  txState.updateCalls = []
+  txState.auditCalls = []
 }
 
 // `makeTx` lives in vi.hoisted so the mock factories below can reach it.
 const { makeTx } = vi.hoisted(() => {
-  // Re-declare token tokens in the same closure so makeTx can identity-match.
-  // We use the same shape as TABLE_TOKENS above; identity is preserved
-  // because both are constructed inside the same hoisted block at startup.
-  // (See later: we read the same lookups/txState objects through closure.)
   return {
     makeTx: () => {
       // Late-bind references to the outer hoisted block via globalThis so
@@ -168,11 +158,11 @@ const { makeTx } = vi.hoisted(() => {
       type SharedTxState = {
         executeResponses: Array<{ rows: Array<Record<string, unknown>> }>
         executeCalls: Array<{ fragment: string; params: unknown[] }>
-        countRows: Array<{ count: number }>
-        selectRows: Array<Record<string, unknown>>
-        insertedProcedures: Array<Record<string, unknown>>
-        insertedPackages: Array<Record<string, unknown>>
-        insertedLines: Array<Record<string, unknown>>
+        procedureRecordRows: Array<{ id: string; sessionsTotal: number }>
+        sessionCountsByRecord: Record<string, number>
+        updateCalls: Array<{ table: string; values: Record<string, unknown> }>
+        auditCalls: Array<Record<string, unknown>>
+        __nextCountRecordIdQueue?: string[]
       }
       const g = globalThis as Record<string, unknown>
       const ST = g.__pkg_test_txState as SharedTxState
@@ -188,46 +178,59 @@ const { makeTx } = vi.hoisted(() => {
           const response = ST.executeResponses.shift() ?? { rows: [] }
           return Promise.resolve(response)
         },
-        select: (_proj?: unknown) => ({
-          from: (table: unknown) => ({
+        select: (proj?: Record<string, unknown>) => ({
+          from: (table: unknown) => {
+            const tag = tagOf(table)
+            return {
+              where: () => {
+                // procedureRecords: list of {id, sessionsTotal}.
+                if (tag === 'procedureRecords') {
+                  return Promise.resolve(ST.procedureRecordRows)
+                }
+                // procedureSessions COUNT(*) — the maybeCompletePackage
+                // call projects `{ n: sql<number>... }` and reads via
+                // `[{ n }] = await ...`. We need to discriminate the
+                // record id from the captured where clause; the harness
+                // can't see `eq(procedureSessions.procedureRecordId, r.id)`
+                // because the operator mock is opaque. We fall back to a
+                // queue: emit counts in `procedureRecordRows` order.
+                if (tag === 'procedureSessions') {
+                  const keys = Object.keys(proj ?? {})
+                  if (keys.includes('n')) {
+                    // Pull the next record id off the front; we rely on
+                    // maybeCompletePackage iterating in array order.
+                    const recordId = ST.__nextCountRecordIdQueue?.shift?.()
+                    const n =
+                      recordId !== undefined
+                        ? ST.sessionCountsByRecord[recordId] ?? 0
+                        : 0
+                    return Promise.resolve([{ n }])
+                  }
+                }
+                return Promise.resolve([])
+              },
+            }
+          },
+        }),
+        update: (table: unknown) => ({
+          set: (vals: Record<string, unknown>) => ({
             where: () => {
-              // Return an actual Promise that also exposes .limit(), so callers
-              // that await it directly (the consumed-slot count) and callers
-              // that chain .limit() both work.
-              const data =
-                tagOf(table) === 'procedureRecords' ? ST.countRows : ST.selectRows
-              const p: Promise<unknown[]> & {
-                limit?: (n: number) => Promise<unknown[]>
-              } = Promise.resolve(data)
-              p.limit = () => Promise.resolve(data)
-              return p
+              ST.updateCalls.push({
+                table: tagOf(table) ?? 'unknown',
+                values: vals,
+              })
+              return Promise.resolve(undefined)
             },
           }),
         }),
         insert: (table: unknown) => ({
           values: (vals: Record<string, unknown>) => {
             const tag = tagOf(table)
-            if (tag === 'procedureRecords') {
-              return {
-                returning: () => {
-                  ST.insertedProcedures.push(vals)
-                  return Promise.resolve([{ id: 'proc-1' }])
-                },
-              }
-            }
-            if (tag === 'patientPackages') {
-              return {
-                returning: () => {
-                  ST.insertedPackages.push(vals)
-                  return Promise.resolve([{ id: 'pkg-1', patientId: vals.patientId }])
-                },
-              }
-            }
-            if (tag === 'patientPackageLines') {
-              ST.insertedLines.push(vals)
+            if (tag === 'auditLogs') {
+              ST.auditCalls.push(vals)
               return Promise.resolve(undefined)
             }
-            return { returning: () => Promise.resolve([]) }
+            return Promise.resolve(undefined)
           },
         }),
       }
@@ -235,37 +238,29 @@ const { makeTx } = vi.hoisted(() => {
   }
 })
 
-vi.mock('@/db/client', () => ({
-  db: {
-    transaction: async (fn: (tx: ReturnType<typeof makeTx>) => Promise<unknown>) => {
-      return fn(makeTx())
+// The mocked db.transaction passes makeTx() to the body. The COUNT(*)
+// queue lives on the shared txState (see the procedureSessions handler in
+// makeTx). We pre-fill it via `seedRecords` in the order
+// `maybeCompletePackage` iterates records.
+//
+// We also expose the same handlers on `db` itself so callers that pass
+// `db` (or its default) as the `tx` parameter — e.g. `maybeCompletePackage`
+// and `closePackage` invoked without an explicit tx — route through the
+// same harness.
+vi.mock('@/db/client', () => {
+  const dbProxy = new Proxy({}, {
+    get: (_target, prop) => {
+      const tx = makeTx() as unknown as Record<string, unknown>
+      if (prop === 'transaction') {
+        return async (
+          fn: (innerTx: ReturnType<typeof makeTx>) => Promise<unknown>,
+        ) => fn(makeTx())
+      }
+      return tx[prop as string]
     },
-    select: (_proj?: unknown) => ({
-      from: (table: unknown) => ({
-        where: () => {
-          const g = globalThis as Record<string, unknown>
-          const LK = g.__pkg_test_lookups as {
-            procedureTypes: Array<{ id: string; name: string }>
-            packageTemplates: Array<{ id: string }>
-          }
-          // Identity-compare via __table tag: the schema mock spreads the
-          // token into a new object, so `table === TT.procedureTypes` would
-          // be false. The __table tag survives the spread.
-          const tag = (table as { __table?: string }).__table
-          if (tag === 'procedureTypes') {
-            return Promise.resolve(LK.procedureTypes)
-          }
-          if (tag === 'packageTemplates') {
-            return {
-              limit: () => Promise.resolve(LK.packageTemplates),
-            }
-          }
-          return Promise.resolve([])
-        },
-      }),
-    }),
-  },
-}))
+  })
+  return { db: dbProxy }
+})
 
 vi.mock('@/lib/tenant', () => ({
   withTransaction: async (fn: (tx: ReturnType<typeof makeTx>) => Promise<unknown>) =>
@@ -279,10 +274,9 @@ vi.mock('@/db/queries/financial', () => ({
 vi.mock('@/db/schema', () => {
   const TT = (globalThis as Record<string, unknown>).__pkg_test_tokens as {
     patientPackages: { __table: string }
-    patientPackageLines: { __table: string }
     procedureRecords: { __table: string }
-    procedureTypes: { __table: string }
-    packageTemplates: { __table: string }
+    procedureSessions: { __table: string }
+    auditLogs: { __table: string }
   }
   return {
     patientPackages: {
@@ -292,33 +286,31 @@ vi.mock('@/db/schema', () => {
       status: 'status',
       expiresAt: 'expires_at',
       patientId: 'patient_id',
-    },
-    patientPackageLines: {
-      ...TT.patientPackageLines,
-      id: 'id',
-      patientPackageId: 'patient_package_id',
+      closedAt: 'closed_at',
+      closedReason: 'closed_reason',
+      closeNote: 'close_note',
+      updatedAt: 'updated_at',
     },
     procedureRecords: {
       ...TT.procedureRecords,
       id: 'id',
       tenantId: 'tenant_id',
       status: 'status',
-      patientPackageLineId: 'patient_package_line_id',
+      sessionsTotal: 'sessions_total',
       patientPackageId: 'patient_package_id',
       deletedAt: 'deleted_at',
     },
-    procedureTypes: {
-      ...TT.procedureTypes,
+    procedureSessions: {
+      ...TT.procedureSessions,
       id: 'id',
       tenantId: 'tenant_id',
-      name: 'name',
-      deletedAt: 'deleted_at',
+      procedureRecordId: 'procedure_record_id',
     },
-    packageTemplates: {
-      ...TT.packageTemplates,
+    auditLogs: {
+      ...TT.auditLogs,
       id: 'id',
       tenantId: 'tenant_id',
-      deletedAt: 'deleted_at',
+      userId: 'user_id',
     },
   }
 })
@@ -343,6 +335,22 @@ vi.mock('drizzle-orm', () => ({
   ),
 }))
 
+// Helper: register record ids whose COUNT(*) calls will be served by the
+// queue. `maybeCompletePackage` reads records first, then loops one
+// COUNT(*) per record. We seed the queue right before each test runs.
+function seedRecords(rows: Array<{ id: string; sessionsTotal: number; sessionsExecuted: number }>) {
+  txState.procedureRecordRows = rows.map((r) => ({
+    id: r.id,
+    sessionsTotal: r.sessionsTotal,
+  }))
+  txState.sessionCountsByRecord = Object.fromEntries(
+    rows.map((r) => [r.id, r.sessionsExecuted]),
+  )
+  // Pre-populate the queue used by procedureSessions COUNT(*) reads.
+  ;(txState as unknown as { __nextCountRecordIdQueue: string[] }).__nextCountRecordIdQueue =
+    rows.map((r) => r.id)
+}
+
 // Re-import after mocks are in place. Top-level imports above (used by the
 // pure-function tests) are not affected — they reference the already-loaded
 // helpers, not the live mocked side.
@@ -350,124 +358,6 @@ const importModule = async () => await import('../packages')
 
 beforeEach(() => {
   resetTx()
-})
-
-describe('startPackageSession — lock order + tenant scope', () => {
-  it('locks the package row BEFORE the line row', async () => {
-    const { startPackageSession } = await importModule()
-
-    // Queue: first execute call returns the package row, second returns the line row.
-    txState.executeResponses.push({
-      rows: [
-        {
-          id: 'pkg-1',
-          tenant_id: 'tenant-A',
-          patient_id: 'pat-1',
-          status: 'active',
-          expires_at: null,
-        },
-      ],
-    })
-    txState.executeResponses.push({
-      rows: [
-        {
-          id: 'line-1',
-          patient_package_id: 'pkg-1',
-          procedure_type_id: 'pt-1',
-          procedure_type_name: 'Botox',
-          sessions_total: 4,
-        },
-      ],
-    })
-    txState.countRows = [{ count: 0 }]
-
-    await startPackageSession({
-      tenantId: 'tenant-A',
-      practitionerId: 'user-1',
-      patientPackageId: 'pkg-1',
-      patientPackageLineId: 'line-1',
-    })
-
-    expect(txState.executeCalls).toHaveLength(2)
-    // First call must touch patient_packages, second must touch patient_package_lines.
-    expect(txState.executeCalls[0].fragment).toContain('patient_packages')
-    expect(txState.executeCalls[0].fragment).not.toContain('patient_package_lines')
-    expect(txState.executeCalls[1].fragment).toContain('patient_package_lines')
-    // Both must declare FOR UPDATE.
-    expect(txState.executeCalls[0].fragment).toContain('FOR UPDATE')
-    expect(txState.executeCalls[1].fragment).toContain('FOR UPDATE')
-  })
-
-  it('scopes the package lock by tenant_id', async () => {
-    const { startPackageSession } = await importModule()
-
-    txState.executeResponses.push({ rows: [] }) // package lock — empty
-    await expect(
-      startPackageSession({
-        tenantId: 'tenant-A',
-        practitionerId: 'user-1',
-        patientPackageId: 'pkg-1',
-        patientPackageLineId: 'line-1',
-      }),
-    ).rejects.toThrow('Pacote não encontrado')
-
-    // The package lock fragment must mention tenant_id (the AND tenant_id clause).
-    expect(txState.executeCalls[0].fragment).toContain('tenant_id')
-    // We never proceeded to the line lock since the package lookup returned nothing.
-    expect(txState.executeCalls).toHaveLength(1)
-  })
-
-  it('scopes the line lock by tenant_id', async () => {
-    const { startPackageSession } = await importModule()
-
-    txState.executeResponses.push({
-      rows: [
-        {
-          id: 'pkg-1',
-          tenant_id: 'tenant-A',
-          patient_id: 'pat-1',
-          status: 'active',
-          expires_at: null,
-        },
-      ],
-    })
-    txState.executeResponses.push({ rows: [] }) // line lock — empty (cross-tenant)
-
-    await expect(
-      startPackageSession({
-        tenantId: 'tenant-A',
-        practitionerId: 'user-1',
-        patientPackageId: 'pkg-1',
-        patientPackageLineId: 'line-1',
-      }),
-    ).rejects.toThrow('Linha do pacote não encontrada')
-
-    expect(txState.executeCalls[1].fragment).toContain('tenant_id')
-  })
-
-  it('rejects when an expired package has no override', async () => {
-    const { startPackageSession } = await importModule()
-    txState.executeResponses.push({
-      rows: [
-        {
-          id: 'pkg-1',
-          tenant_id: 'tenant-A',
-          patient_id: 'pat-1',
-          status: 'expired',
-          expires_at: '2020-01-01',
-        },
-      ],
-    })
-
-    await expect(
-      startPackageSession({
-        tenantId: 'tenant-A',
-        practitionerId: 'user-1',
-        patientPackageId: 'pkg-1',
-        patientPackageLineId: 'line-1',
-      }),
-    ).rejects.toThrow('Pacote expirado')
-  })
 })
 
 describe('cancelPackage — tenant scope on FOR UPDATE', () => {
@@ -489,109 +379,128 @@ describe('cancelPackage — tenant scope on FOR UPDATE', () => {
   })
 })
 
-describe('sellPackage — cross-tenant FK validation + server-derived names', () => {
-  it('rejects when a procedureTypeId does not belong to the tenant', async () => {
-    const { sellPackage } = await importModule()
-    // Lookup returns 1 row but we asked about 2 — set membership mismatch.
-    lookups.procedureTypes = [{ id: 'pt-1', name: 'Botox' }]
+describe('maybeCompletePackage — sessions-driven completion', () => {
+  it('does NOT flip when a record has fewer sessions than sessionsTotal', async () => {
+    const { maybeCompletePackage } = await importModule()
+    seedRecords([
+      { id: 'rec-1', sessionsTotal: 4, sessionsExecuted: 4 },
+      // This record is short — should short-circuit the whole package.
+      { id: 'rec-2', sessionsTotal: 4, sessionsExecuted: 3 },
+    ])
 
-    await expect(
-      sellPackage({
-        tenantId: 'tenant-A',
-        soldBy: 'user-1',
-        input: {
-          patientId: 'pat-1',
-          templateId: null,
-          name: 'Pacote Test',
-          totalAmount: 100,
-          validityMonths: null,
-          installmentCount: 1,
-          paymentMethod: 'pix',
-          lines: [
-            {
-              procedureTypeId: 'pt-1',
-              procedureTypeName: 'Botox',
-              sessionsTotal: 2,
-            },
-            {
-              procedureTypeId: 'pt-2-other-tenant',
-              procedureTypeName: 'Forged',
-              sessionsTotal: 2,
-            },
-          ],
-        },
-      }),
-    ).rejects.toThrow(/outro estabelecimento|inválido/)
+    const flipped = await maybeCompletePackage('tenant-A', 'pkg-1')
 
-    // No package row was ever inserted.
-    expect(txState.insertedPackages).toHaveLength(0)
+    expect(flipped).toBe(false)
+    // No patientPackages update fired because short-circuit returned early.
+    expect(
+      txState.updateCalls.filter((u) => u.table === 'patientPackages'),
+    ).toHaveLength(0)
   })
 
-  it('rejects when templateId belongs to a different tenant', async () => {
-    const { sellPackage } = await importModule()
-    lookups.procedureTypes = [{ id: 'pt-1', name: 'Botox' }]
-    lookups.packageTemplates = [] // template lookup miss
+  it('flips status to completed only when EVERY record meets its quota', async () => {
+    const { maybeCompletePackage } = await importModule()
+    seedRecords([
+      { id: 'rec-1', sessionsTotal: 4, sessionsExecuted: 4 },
+      { id: 'rec-2', sessionsTotal: 2, sessionsExecuted: 2 },
+    ])
 
-    await expect(
-      sellPackage({
-        tenantId: 'tenant-A',
-        soldBy: 'user-1',
-        input: {
-          patientId: 'pat-1',
-          templateId: 'tpl-from-other-tenant',
-          name: 'Pacote Test',
-          totalAmount: 100,
-          validityMonths: null,
-          installmentCount: 1,
-          paymentMethod: 'pix',
-          lines: [
-            {
-              procedureTypeId: 'pt-1',
-              procedureTypeName: 'Botox',
-              sessionsTotal: 2,
-            },
-          ],
-        },
-      }),
-    ).rejects.toThrow(/Modelo.*outro estabelecimento|inválido/)
+    const flipped = await maybeCompletePackage('tenant-A', 'pkg-1')
 
-    expect(txState.insertedPackages).toHaveLength(0)
+    expect(flipped).toBe(true)
+    const pkgUpdates = txState.updateCalls.filter(
+      (u) => u.table === 'patientPackages',
+    )
+    expect(pkgUpdates).toHaveLength(1)
+    expect(pkgUpdates[0].values).toMatchObject({ status: 'completed' })
   })
 
-  it('derives procedureTypeName from the verified server-side lookup, ignoring client input', async () => {
-    const { sellPackage } = await importModule()
-    lookups.procedureTypes = [{ id: 'pt-1', name: 'Toxina Botulínica (canônico)' }]
-    lookups.packageTemplates = []
+  it('returns false when the package has no procedure records yet', async () => {
+    const { maybeCompletePackage } = await importModule()
+    seedRecords([])
 
-    await sellPackage({
+    const flipped = await maybeCompletePackage('tenant-A', 'pkg-empty')
+
+    expect(flipped).toBe(false)
+    expect(
+      txState.updateCalls.filter((u) => u.table === 'patientPackages'),
+    ).toHaveLength(0)
+  })
+
+  it('flips when sessions exceed total (drift safety: >= sessionsTotal counts as met)', async () => {
+    const { maybeCompletePackage } = await importModule()
+    seedRecords([
+      { id: 'rec-1', sessionsTotal: 1, sessionsExecuted: 2 },
+    ])
+
+    const flipped = await maybeCompletePackage('tenant-A', 'pkg-1')
+
+    expect(flipped).toBe(true)
+    expect(
+      txState.updateCalls.filter((u) => u.table === 'patientPackages'),
+    ).toHaveLength(1)
+  })
+})
+
+describe('closePackage — close metadata + audit', () => {
+  it('flips status to completed with closedReason="patient_lost_expiry" and NULL closeNote', async () => {
+    const { closePackage } = await importModule()
+
+    await closePackage({
       tenantId: 'tenant-A',
-      soldBy: 'user-1',
-      input: {
-        patientId: 'pat-1',
-        templateId: null,
-        name: 'Pacote Test',
-        totalAmount: 100,
-        validityMonths: null,
-        installmentCount: 1,
-        paymentMethod: 'pix',
-        lines: [
-          {
-            procedureTypeId: 'pt-1',
-            // Client-supplied name — should be ignored in favor of the
-            // server-verified canonical name.
-            procedureTypeName: '<script>alert(1)</script>',
-            sessionsTotal: 2,
-          },
-        ],
-      },
+      userId: 'user-1',
+      packageId: 'pkg-1',
+      closedReason: 'patient_lost_expiry',
+      closeNote: 'ignored when reason != other',
     })
 
-    expect(txState.insertedLines).toHaveLength(1)
-    expect(txState.insertedLines[0].procedureTypeName).toBe(
-      'Toxina Botulínica (canônico)',
+    const pkgUpdates = txState.updateCalls.filter(
+      (u) => u.table === 'patientPackages',
     )
-    expect(txState.insertedLines[0].procedureTypeName).not.toBe(
-      '<script>alert(1)</script>',
+    expect(pkgUpdates).toHaveLength(1)
+    expect(pkgUpdates[0].values).toMatchObject({
+      status: 'completed',
+      closedReason: 'patient_lost_expiry',
+      closeNote: null,
+    })
+    // closedAt should be a Date instance, set inside the call.
+    expect(pkgUpdates[0].values.closedAt).toBeInstanceOf(Date)
+    // Audit log was emitted with the close-reason change.
+    expect(txState.auditCalls).toHaveLength(1)
+    expect(txState.auditCalls[0]).toMatchObject({
+      tenantId: 'tenant-A',
+      userId: 'user-1',
+      action: 'update',
+      entityType: 'patient_package',
+      entityId: 'pkg-1',
+      changes: { closedReason: { old: null, new: 'patient_lost_expiry' } },
+    })
+  })
+
+  it('persists closeNote when closedReason="other"', async () => {
+    const { closePackage } = await importModule()
+    const note = 'Patient transferred to a different clinic.'
+
+    await closePackage({
+      tenantId: 'tenant-A',
+      userId: 'user-1',
+      packageId: 'pkg-2',
+      closedReason: 'other',
+      closeNote: note,
+    })
+
+    const pkgUpdates = txState.updateCalls.filter(
+      (u) => u.table === 'patientPackages',
     )
+    expect(pkgUpdates).toHaveLength(1)
+    expect(pkgUpdates[0].values).toMatchObject({
+      status: 'completed',
+      closedReason: 'other',
+      closeNote: note,
+    })
+    expect(pkgUpdates[0].values.closedAt).toBeInstanceOf(Date)
+    expect(txState.auditCalls).toHaveLength(1)
+    expect(txState.auditCalls[0]).toMatchObject({
+      changes: { closedReason: { old: null, new: 'other' } },
+    })
   })
 })

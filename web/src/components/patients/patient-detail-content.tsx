@@ -40,7 +40,6 @@ import { PatientFinancialTab } from './patient-financial-tab'
 import { PatientTimelineTab } from './patient-timeline-tab'
 import { PatientPackagesTab } from '@/components/packages/patient-packages-tab'
 import { PatientDocumentsTab } from '@/components/clinical-documents/patient-documents-tab'
-import { SellPackageDialog } from '@/components/packages/sell-package-dialog'
 import { IssueDocumentDialog } from '@/components/clinical-documents/issue-document-dialog'
 import { StartConversationDialog } from '@/components/whatsapp/start-conversation-dialog'
 import { PaymentForm } from '@/components/financial/payment-form'
@@ -119,7 +118,6 @@ export function PatientDetailContent({
   const [showPaymentForm, setShowPaymentForm] = useState(false)
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
   const [showStartConversation, setShowStartConversation] = useState(false)
-  const [showSellPackage, setShowSellPackage] = useState(false)
   const [showIssueDocument, setShowIssueDocument] = useState(false)
   const { data: practitioners = [] } = usePractitioners()
   const { data: procedureTypes = [] } = useAppointmentProcedureTypes()
@@ -294,17 +292,18 @@ export function PatientDetailContent({
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <Button
-                        variant="outline"
-                        size="icon-sm"
-                        className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
-                        onClick={() => setShowSellPackage(true)}
-                      >
-                        <Package className="size-4" />
-                      </Button>
+                      <Link href={`/pacientes/${patient.id}/atendimento?new=1`}>
+                        <Button
+                          variant="outline"
+                          size="icon-sm"
+                          className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
+                        >
+                          <Package className="size-4" />
+                        </Button>
+                      </Link>
                     }
                   />
-                  <TooltipContent side="bottom"><p>Vender Pacote</p></TooltipContent>
+                  <TooltipContent side="bottom"><p>Novo Atendimento</p></TooltipContent>
                 </Tooltip>
 
                 <Tooltip>
@@ -410,13 +409,6 @@ export function PatientDetailContent({
           }}
         />
       )}
-
-      <SellPackageDialog
-        open={showSellPackage}
-        onOpenChange={setShowSellPackage}
-        patientId={patient.id}
-        patientName={patient.fullName}
-      />
 
       <IssueDocumentDialog
         open={showIssueDocument}

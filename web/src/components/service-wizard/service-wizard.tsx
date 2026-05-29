@@ -865,28 +865,22 @@ export function ServiceWizard({
                   state.procedureStatus === 'in_progress' ||
                   state.procedureStatus === 'completed') &&
                 localProcedure ? (
-                  // TODO(G3): update ProcedureExecution props to accept
-                  // `atendimentoId`, `procedureRecordIds`, and `packageId`.
-                  // Today the component still takes `procedure` + relations,
-                  // so we pass those plus the new ids via a non-typed spread
-                  // so wiring lands without breaking the type contract.
                   <ProcedureExecution
+                    atendimentoId={state.atendimentoId}
+                    procedureRecordIds={
+                      state.procedureRecordIds.length > 0
+                        ? state.procedureRecordIds
+                        : state.procedureId
+                          ? [state.procedureId]
+                          : []
+                    }
+                    packageId={null}
                     patientId={patient.id}
                     patientGender={patient.gender}
                     procedure={localProcedure}
                     diagrams={localDiagrams ?? undefined}
                     existingApplications={localApplications ?? undefined}
                     wizardOverrides={getOverridesForStep(5)}
-                    {...({
-                      atendimentoId: state.atendimentoId,
-                      procedureRecordIds:
-                        state.procedureRecordIds.length > 0
-                          ? state.procedureRecordIds
-                          : state.procedureId
-                            ? [state.procedureId]
-                            : [],
-                      packageId: null,
-                    } as Record<string, unknown>)}
                   />
                 ) : (
                   <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">

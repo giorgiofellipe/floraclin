@@ -2,75 +2,20 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
+import type {
+  PackageTemplate as DbPackageTemplate,
+  PackageTemplateLine as DbPackageTemplateLine,
+  PatientPackageRecordWithConsumption as DbPatientPackageRecordWithConsumption,
+  PatientPackageWithConsumption as DbPatientPackageWithConsumption,
+} from '@/db/queries/packages'
+import type { ClosePackageFormValues } from '@/validations/encerrar-pacote'
+
 // ─── Types ──────────────────────────────────────────────────────────
 
-export interface PackageTemplateLine {
-  id: string
-  templateId: string
-  procedureTypeId: string
-  procedureTypeName: string
-  sessionsCount: number
-  sortOrder: number
-}
-
-export interface PackageTemplate {
-  id: string
-  tenantId: string
-  name: string
-  description: string | null
-  defaultPrice: string | null
-  validityMonths: number | null
-  isActive: boolean
-  createdAt: string | Date
-  updatedAt: string | Date
-  deletedAt: string | Date | null
-  lines: PackageTemplateLine[]
-}
-
-export interface PatientPackageLineWithConsumption {
-  id: string
-  patientPackageId: string
-  procedureTypeId: string
-  procedureTypeName: string
-  sessionsTotal: number
-  sortOrder: number
-  consumedCount: number
-  executedCount: number
-}
-
-export interface PatientPackageWithConsumption {
-  id: string
-  tenantId: string
-  patientId: string
-  templateId: string | null
-  name: string
-  totalAmount: string
-  purchasedAt: string
-  expiresAt: string | null
-  status: string
-  cancelledAt: string | Date | null
-  cancelReason: string | null
-  financialEntryId: string
-  soldBy: string
-  createdAt: string | Date
-  updatedAt: string | Date
-  lines: PatientPackageLineWithConsumption[]
-}
-
-export interface SellPackagePayload {
-  patientId: string
-  templateId: string | null
-  name: string
-  totalAmount: number
-  validityMonths?: number | null
-  lines: Array<{
-    procedureTypeId: string
-    procedureTypeName: string
-    sessionsTotal: number
-  }>
-  paymentMethod: 'pix' | 'credit_card' | 'debit_card' | 'cash' | 'transfer'
-  installmentCount: number
-}
+export type PackageTemplateLine = DbPackageTemplateLine
+export type PackageTemplate = DbPackageTemplate
+export type PatientPackageRecordWithConsumption = DbPatientPackageRecordWithConsumption
+export type PatientPackageWithConsumption = DbPatientPackageWithConsumption
 
 export interface PackageTemplatePayload {
   name: string
@@ -177,20 +122,6 @@ export function useDeletePackageTemplate() {
   })
 }
 
-export function useSellPackage() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (data: SellPackagePayload) =>
-      mutateJson('/api/patient-packages', 'POST', data),
-    onSuccess: (_data, variables) => {
-      qc.invalidateQueries({
-        queryKey: packageQueryKeys.patientPackages(variables.patientId),
-      })
-      qc.invalidateQueries({ queryKey: ['financial'] })
-    },
-  })
-}
-
 export function useCancelPackage(patientId?: string) {
   const qc = useQueryClient()
   return useMutation({
@@ -208,34 +139,20 @@ export function useCancelPackage(patientId?: string) {
   })
 }
 
-export function useStartPackageSession(patientId?: string) {
+export function useClosePackage() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({
-      patientPackageId,
-      patientPackageLineId,
-      allowExpiredOverride,
-    }: {
-      patientPackageId: string
-      patientPackageLineId: string
-      allowExpiredOverride?: boolean
-    }) => {
-      const res = await mutateJson(
-        `/api/patient-packages/${patientPackageId}/lines/${patientPackageLineId}/start-session`,
-        'POST',
-        allowExpiredOverride ? { allowExpiredOverride: true } : {},
-      )
-      return res as { success: true; data: { procedureRecordId: string } }
+    mutationFn: async ({ packageId, body }: { packageId: string; body: ClosePackageFormValues }) => {
+      const res = await fetch(`/api/patient-packages/${packageId}/close`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error('Falha ao encerrar pacote')
+      return res.json()
     },
     onSuccess: () => {
-      if (patientId) {
-        qc.invalidateQueries({
-          queryKey: packageQueryKeys.patientPackages(patientId),
-        })
-      } else {
-        qc.invalidateQueries({ queryKey: packageQueryKeys.all })
-      }
-      qc.invalidateQueries({ queryKey: ['procedures'] })
+      qc.invalidateQueries({ queryKey: ['patient-packages'] })
     },
   })
 }

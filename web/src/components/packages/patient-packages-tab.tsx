@@ -1,10 +1,10 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import { ChevronDownIcon, ChevronRightIcon, Loader2, PackageIcon, PlusIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { PackageCard } from './package-card'
-import { SellPackageDialog } from './sell-package-dialog'
 import { usePatientPackages } from '@/hooks/queries/use-packages'
 
 interface PatientPackagesTabProps {
@@ -14,10 +14,8 @@ interface PatientPackagesTabProps {
 
 export function PatientPackagesTab({
   patientId,
-  patientName,
 }: PatientPackagesTabProps) {
   const { data, isLoading } = usePatientPackages(patientId)
-  const [sellOpen, setSellOpen] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
 
   const { activePackages, historyPackages } = useMemo(() => {
@@ -52,10 +50,12 @@ export function PatientPackagesTab({
             {historyPackages.length > 0 && ` · ${historyPackages.length} no histórico`}
           </span>
         </div>
-        <Button size="sm" onClick={() => setSellOpen(true)}>
-          <PlusIcon data-icon="inline-start" />
-          Vender pacote
-        </Button>
+        <Link href={`/pacientes/${patientId}/atendimento?new=1`}>
+          <Button size="sm">
+            <PlusIcon data-icon="inline-start" />
+            Novo atendimento
+          </Button>
+        </Link>
       </div>
 
       {activePackages.length === 0 && historyPackages.length === 0 ? (
@@ -75,15 +75,12 @@ export function PatientPackagesTab({
           <p className="mt-1 text-[13px] text-mid">
             Venda um pacote para este paciente.
           </p>
-          <Button
-            size="sm"
-            variant="outline"
-            className="mt-4"
-            onClick={() => setSellOpen(true)}
-          >
-            <PlusIcon data-icon="inline-start" />
-            Vender pacote
-          </Button>
+          <Link href={`/pacientes/${patientId}/atendimento?new=1`}>
+            <Button size="sm" variant="outline" className="mt-4">
+              <PlusIcon data-icon="inline-start" />
+              Novo atendimento
+            </Button>
+          </Link>
         </div>
       ) : (
         <div className="space-y-6">
@@ -130,12 +127,6 @@ export function PatientPackagesTab({
         </div>
       )}
 
-      <SellPackageDialog
-        open={sellOpen}
-        onOpenChange={setSellOpen}
-        patientId={patientId}
-        patientName={patientName}
-      />
     </div>
   )
 }

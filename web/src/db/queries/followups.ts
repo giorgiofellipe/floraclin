@@ -18,7 +18,7 @@ export interface OpenPlanejamentoRow {
   practitionerId: string
   practitionerName: string
   status: string
-  performedAt: Date
+  performedAt: Date | null
   followUpDate: string | null
   totalAmount: string | null
   createdAt: Date

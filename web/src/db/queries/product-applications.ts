@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { productApplications } from '@/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, isNull } from 'drizzle-orm'
 import type { ProductApplicationItem } from '@/validations/procedure'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -68,6 +68,47 @@ export async function saveProductApplicationsForSession(
     .returning()
 
   return inserted
+}
+
+/**
+ * Planning-time write: replace product applications for a procedure record
+ * BEFORE any session exists. Rows are inserted with `procedureSessionId = null`
+ * so step-5 session writes still own per-session rows.
+ */
+export async function saveProductApplications(
+  tenantId: string,
+  procedureRecordId: string,
+  applications: ProductApplicationItem[],
+  txDb: typeof db = db
+) {
+  await txDb
+    .delete(productApplications)
+    .where(
+      and(
+        eq(productApplications.tenantId, tenantId),
+        eq(productApplications.procedureRecordId, procedureRecordId),
+        isNull(productApplications.procedureSessionId)
+      )
+    )
+  if (applications.length === 0) return []
+  return txDb
+    .insert(productApplications)
+    .values(
+      applications.map((app) => ({
+        tenantId,
+        procedureRecordId,
+        productName: app.productName,
+        activeIngredient: app.activeIngredient ?? null,
+        totalQuantity: app.totalQuantity.toFixed(2),
+        quantityUnit: app.quantityUnit,
+        batchNumber: app.batchNumber ?? null,
+        expirationDate: app.expirationDate ?? null,
+        labelPhotoId: app.labelPhotoId ?? null,
+        applicationAreas: app.applicationAreas ?? null,
+        notes: app.notes ?? null,
+      }))
+    )
+    .returning()
 }
 
 /**
