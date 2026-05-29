@@ -20,31 +20,40 @@ export interface ProductApplicationRecord {
 
 // ─── Queries ────────────────────────────────────────────────────────
 
-export async function saveProductApplications(
+/**
+ * Persist product applications for a single procedure session.
+ *
+ * Per-session granularity: deletes only the rows belonging to
+ * `procedureSessionId` before inserting the supplied applications. Rows from
+ * sibling sessions on the same procedure record are left untouched.
+ */
+export async function saveProductApplicationsForSession(
   tenantId: string,
   procedureRecordId: string,
+  procedureSessionId: string,
   applications: ProductApplicationItem[],
   txDb: typeof db = db
 ) {
-  // Delete existing applications for this procedure
+  // Delete existing applications for THIS session only
   await txDb
     .delete(productApplications)
     .where(
       and(
         eq(productApplications.tenantId, tenantId),
-        eq(productApplications.procedureRecordId, procedureRecordId)
+        eq(productApplications.procedureSessionId, procedureSessionId)
       )
     )
 
   if (applications.length === 0) return []
 
-  // Insert new applications
+  // Insert new applications, anchored to both the record and the session
   const inserted = await txDb
     .insert(productApplications)
     .values(
       applications.map((app) => ({
         tenantId,
         procedureRecordId,
+        procedureSessionId,
         productName: app.productName,
         activeIngredient: app.activeIngredient ?? null,
         totalQuantity: app.totalQuantity.toFixed(2),
@@ -61,6 +70,12 @@ export async function saveProductApplications(
   return inserted
 }
 
+/**
+ * Read all product applications for a procedure record (across every session).
+ *
+ * Used for read-side aggregation — e.g. printed procedure summaries that need
+ * the full history regardless of which session applied each product.
+ */
 export async function getProductApplications(
   tenantId: string,
   procedureRecordId: string
@@ -83,6 +98,40 @@ export async function getProductApplications(
       and(
         eq(productApplications.tenantId, tenantId),
         eq(productApplications.procedureRecordId, procedureRecordId)
+      )
+    )
+    .orderBy(productApplications.productName)
+}
+
+/**
+ * Read product applications for a single procedure session.
+ *
+ * Used by session-scoped views (e.g. the in-session execution screen) where
+ * we only want what was applied during a specific visit.
+ */
+export async function listProductApplicationsForSession(
+  tenantId: string,
+  procedureSessionId: string,
+  txDb: typeof db = db
+): Promise<ProductApplicationRecord[]> {
+  return txDb
+    .select({
+      id: productApplications.id,
+      productName: productApplications.productName,
+      activeIngredient: productApplications.activeIngredient,
+      totalQuantity: productApplications.totalQuantity,
+      quantityUnit: productApplications.quantityUnit,
+      batchNumber: productApplications.batchNumber,
+      expirationDate: productApplications.expirationDate,
+      labelPhotoId: productApplications.labelPhotoId,
+      applicationAreas: productApplications.applicationAreas,
+      notes: productApplications.notes,
+    })
+    .from(productApplications)
+    .where(
+      and(
+        eq(productApplications.tenantId, tenantId),
+        eq(productApplications.procedureSessionId, procedureSessionId)
       )
     )
     .orderBy(productApplications.productName)

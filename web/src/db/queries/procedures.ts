@@ -18,6 +18,21 @@ import { verifyTenantOwnership, verifyUserBelongsToTenant } from './helpers'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
+/**
+ * Lifecycle states a `procedure_records.status` row may hold.
+ *
+ * `executed` was removed in the package + atendimento redesign — the
+ * single-row terminal state was split into `in_progress` (one or more sessions
+ * recorded, more remaining) and `completed` (all sessions recorded).
+ */
+export type ProcedureRecordStatus =
+  | 'draft'
+  | 'planned'
+  | 'approved'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled'
+
 export interface ProcedureWithDetails {
   id: string
   tenantId: string
@@ -25,7 +40,7 @@ export interface ProcedureWithDetails {
   practitionerId: string
   procedureTypeId: string
   appointmentId: string | null
-  performedAt: Date
+  performedAt: Date | null
   technique: string | null
   clinicalResponse: string | null
   adverseEffects: string | null
@@ -40,7 +55,9 @@ export interface ProcedureWithDetails {
   additionalTypeIds: unknown
   financialPlan: unknown
   patientPackageId: string | null
-  patientPackageLineId: string | null
+  sessionsTotal: number
+  atendimentoId: string | null
+  sessionsExecuted: number
   createdAt: Date
   updatedAt: Date
   procedureTypeName: string
@@ -50,7 +67,7 @@ export interface ProcedureWithDetails {
 
 export interface ProcedureListItem {
   id: string
-  performedAt: Date
+  performedAt: Date | null
   status: string
   technique: string | null
   notes: string | null
@@ -58,34 +75,60 @@ export interface ProcedureListItem {
   approvedAt: Date | null
   cancelledAt: Date | null
   cancellationReason: string | null
+  sessionsTotal: number
+  atendimentoId: string | null
+  sessionsExecuted: number
   procedureTypeName: string
   procedureTypeCategory: string
   practitionerName: string
 }
 
+// `procedure_sessions` count subquery — used by every projection that surfaces
+// a `sessionsExecuted` field. Inlined as a SQL fragment so callers don't have
+// to repeat the schema-qualified table name.
+const sessionsExecutedSubquery = sql<number>`(
+  SELECT COUNT(*)::int FROM floraclin.procedure_sessions ps
+  WHERE ps.procedure_record_id = ${procedureRecords.id}
+)`
+
 // ─── Queries ────────────────────────────────────────────────────────
 
 export async function createProcedure(
   tenantId: string,
+  patientId: string,
   practitionerId: string,
-  data: CreateProcedureInput,
-  status: 'draft' | 'planned',
-  txDb: typeof db = db
+  data: {
+    procedureTypeId: string
+    additionalTypeIds?: string[]
+    appointmentId?: string | null
+    technique?: string | null
+    clinicalResponse?: string | null
+    adverseEffects?: string | null
+    notes?: string | null
+    followUpDate?: string | null
+    nextSessionObjectives?: string | null
+    financialPlan?: unknown
+    patientPackageId?: string | null
+    sessionsTotal?: number
+    atendimentoId?: string | null
+    status?: 'draft' | 'planned' | 'approved'
+  },
+  tx: typeof db = db
 ) {
   // Verify foreign IDs belong to this tenant
   await Promise.all([
-    verifyTenantOwnership(tenantId, patients, data.patientId, 'Patient'),
+    verifyTenantOwnership(tenantId, patients, patientId, 'Patient'),
     verifyTenantOwnership(tenantId, procedureTypes, data.procedureTypeId, 'Procedure type'),
     ...(data.appointmentId
       ? [verifyTenantOwnership(tenantId, appointments, data.appointmentId, 'Appointment')]
       : []),
   ])
 
-  const [record] = await txDb
+  const [record] = await tx
     .insert(procedureRecords)
     .values({
       tenantId,
-      patientId: data.patientId,
+      patientId,
       practitionerId,
       procedureTypeId: data.procedureTypeId,
       additionalTypeIds: data.additionalTypeIds ?? [],
@@ -97,7 +140,10 @@ export async function createProcedure(
       followUpDate: data.followUpDate ?? null,
       nextSessionObjectives: data.nextSessionObjectives ?? null,
       financialPlan: data.financialPlan ?? null,
-      status,
+      patientPackageId: data.patientPackageId ?? null,
+      sessionsTotal: data.sessionsTotal ?? 1,
+      atendimentoId: data.atendimentoId ?? null,
+      status: data.status ?? 'draft',
     })
     .returning()
 
@@ -110,8 +156,8 @@ export async function updateProcedure(
   data: Partial<UpdateProcedureInput>,
   /**
    * Optional draft/planned transition. Only accepts these two values — other
-   * statuses (approved, executed, cancelled) are reserved for dedicated
-   * lifecycle actions. Passing undefined leaves status untouched.
+   * statuses (approved, in_progress, completed, cancelled) are reserved for
+   * dedicated lifecycle actions. Passing undefined leaves status untouched.
    */
   status: 'draft' | 'planned' | undefined,
   txDb: typeof db = db
@@ -172,7 +218,9 @@ export async function getProcedure(
       additionalTypeIds: procedureRecords.additionalTypeIds,
       financialPlan: procedureRecords.financialPlan,
       patientPackageId: procedureRecords.patientPackageId,
-      patientPackageLineId: procedureRecords.patientPackageLineId,
+      sessionsTotal: procedureRecords.sessionsTotal,
+      atendimentoId: procedureRecords.atendimentoId,
+      sessionsExecuted: sessionsExecutedSubquery,
       createdAt: procedureRecords.createdAt,
       updatedAt: procedureRecords.updatedAt,
       procedureTypeName: procedureTypes.name,
@@ -209,6 +257,9 @@ export async function listProcedures(
       approvedAt: procedureRecords.approvedAt,
       cancelledAt: procedureRecords.cancelledAt,
       cancellationReason: procedureRecords.cancellationReason,
+      sessionsTotal: procedureRecords.sessionsTotal,
+      atendimentoId: procedureRecords.atendimentoId,
+      sessionsExecuted: sessionsExecutedSubquery,
       procedureTypeName: procedureTypes.name,
       procedureTypeCategory: procedureTypes.category,
       practitionerName: users.fullName,
@@ -228,9 +279,10 @@ export async function listProcedures(
         WHEN 'draft' THEN 1
         WHEN 'planned' THEN 2
         WHEN 'approved' THEN 3
-        WHEN 'executed' THEN 4
-        WHEN 'cancelled' THEN 5
-        ELSE 6
+        WHEN 'in_progress' THEN 4
+        WHEN 'completed' THEN 5
+        WHEN 'cancelled' THEN 6
+        ELSE 7
       END`,
       desc(procedureRecords.performedAt)
     )
@@ -332,45 +384,6 @@ export async function approveProcedure(
   return updated
 }
 
-export async function executeProcedure(
-  tenantId: string,
-  procedureId: string,
-  data: {
-    technique?: string | null
-    clinicalResponse?: string | null
-    adverseEffects?: string | null
-    notes?: string | null
-    followUpDate?: string | null
-    nextSessionObjectives?: string | null
-  },
-  txDb: typeof db = db
-) {
-  const [updated] = await txDb
-    .update(procedureRecords)
-    .set({
-      status: 'executed',
-      performedAt: new Date(),
-      technique: data.technique ?? null,
-      clinicalResponse: data.clinicalResponse ?? null,
-      adverseEffects: data.adverseEffects ?? null,
-      notes: data.notes ?? null,
-      followUpDate: data.followUpDate ?? null,
-      nextSessionObjectives: data.nextSessionObjectives ?? null,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(procedureRecords.id, procedureId),
-        eq(procedureRecords.tenantId, tenantId),
-        eq(procedureRecords.status, 'approved'),
-        isNull(procedureRecords.deletedAt)
-      )
-    )
-    .returning()
-
-  return updated
-}
-
 export async function cancelProcedure(
   tenantId: string,
   procedureId: string,
@@ -398,7 +411,7 @@ export async function cancelProcedure(
   return updated
 }
 
-export async function getLatestNonExecutedProcedure(
+export async function getLatestOpenProcedure(
   tenantId: string,
   patientId: string
 ): Promise<ProcedureWithDetails | null> {
@@ -425,7 +438,9 @@ export async function getLatestNonExecutedProcedure(
       additionalTypeIds: procedureRecords.additionalTypeIds,
       financialPlan: procedureRecords.financialPlan,
       patientPackageId: procedureRecords.patientPackageId,
-      patientPackageLineId: procedureRecords.patientPackageLineId,
+      sessionsTotal: procedureRecords.sessionsTotal,
+      atendimentoId: procedureRecords.atendimentoId,
+      sessionsExecuted: sessionsExecutedSubquery,
       createdAt: procedureRecords.createdAt,
       updatedAt: procedureRecords.updatedAt,
       procedureTypeName: procedureTypes.name,
@@ -439,7 +454,7 @@ export async function getLatestNonExecutedProcedure(
       and(
         eq(procedureRecords.tenantId, tenantId),
         eq(procedureRecords.patientId, patientId),
-        inArray(procedureRecords.status, ['draft', 'planned', 'approved']),
+        inArray(procedureRecords.status, ['draft', 'planned', 'approved', 'in_progress']),
         isNull(procedureRecords.deletedAt)
       )
     )
@@ -448,3 +463,6 @@ export async function getLatestNonExecutedProcedure(
 
   return record ?? null
 }
+
+/** @deprecated Use getLatestOpenProcedure */
+export const getLatestNonExecutedProcedure = getLatestOpenProcedure

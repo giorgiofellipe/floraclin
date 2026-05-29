@@ -3,12 +3,13 @@ import {
   packageTemplates,
   packageTemplateLines,
   patientPackages,
-  patientPackageLines,
   procedureRecords,
+  procedureSessions,
   procedureTypes,
 } from '@/db/schema'
 import { and, eq, isNull, sql, inArray, asc, desc } from 'drizzle-orm'
 import { brToday } from '@/lib/dates'
+import type { CloseReason } from '@/validations/encerrar-pacote'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -35,15 +36,12 @@ export interface PackageTemplate {
   lines: PackageTemplateLine[]
 }
 
-export interface PatientPackageLineWithConsumption {
-  id: string
-  patientPackageId: string
+export interface PatientPackageRecordWithConsumption {
+  procedureRecordId: string
   procedureTypeId: string
   procedureTypeName: string
   sessionsTotal: number
-  sortOrder: number
-  consumedCount: number
-  executedCount: number
+  sessionsExecuted: number
 }
 
 export interface PatientPackageWithConsumption {
@@ -58,11 +56,14 @@ export interface PatientPackageWithConsumption {
   status: string
   cancelledAt: Date | null
   cancelReason: string | null
+  closedAt: Date | null
+  closedReason: string | null
+  closeNote: string | null
   financialEntryId: string
   soldBy: string
   createdAt: Date
   updatedAt: Date
-  lines: PatientPackageLineWithConsumption[]
+  records: PatientPackageRecordWithConsumption[]
 }
 
 // ─── PACKAGE TEMPLATES ──────────────────────────────────────────────
@@ -330,13 +331,14 @@ export async function deletePackageTemplate(
 // ─── PATIENT PACKAGES ───────────────────────────────────────────────
 
 /**
- * Fetch a patient's packages plus per-line consumption counts in two batched
+ * Fetch a patient's packages plus per-record consumption counts in two batched
  * queries (avoids N+1). Lazily writes back `status = 'expired'` for any active
  * package whose `expires_at` is past today (BR calendar day).
  *
- * "consumed" = non-cancelled procedure records (drafts + planned + approved +
- * executed); "executed" = only records actually completed. The session-start
- * race-safety helper uses `consumed`, so the card must show the same notion.
+ * Consumption is now derived from `procedure_sessions`: each procedure record
+ * inside a package has `sessionsTotal` declared up-front, and `sessionsExecuted`
+ * is the live count of session rows belonging to it. Drafts/planned/approved
+ * records contribute zero sessions until at least one is actually executed.
  */
 export async function getPatientPackagesWithConsumption(
   tenantId: string,
@@ -373,62 +375,43 @@ export async function getPatientPackagesWithConsumption(
 
   const packageIds = packages.map((p) => p.id)
 
-  // 3. Fetch lines for all packages
-  const lines = await db
-    .select()
-    .from(patientPackageLines)
-    .where(inArray(patientPackageLines.patientPackageId, packageIds))
-    .orderBy(asc(patientPackageLines.sortOrder))
-
-  if (lines.length === 0) {
-    return packages.map((p) => ({ ...p, lines: [] }))
-  }
-
-  const lineIds = lines.map((l) => l.id)
-
-  // 4. Aggregate counts per line in a single query: consumed (non-cancelled)
-  //    and executed.
-  const counts = await db
+  // 3. Fetch procedure records for all packages, with session-count subquery.
+  const records = await db
     .select({
-      lineId: procedureRecords.patientPackageLineId,
-      consumedCount: sql<number>`count(*) FILTER (WHERE ${procedureRecords.status} != 'cancelled')::int`,
-      executedCount: sql<number>`count(*) FILTER (WHERE ${procedureRecords.status} = 'executed')::int`,
+      id: procedureRecords.id,
+      patientPackageId: procedureRecords.patientPackageId,
+      procedureTypeId: procedureRecords.procedureTypeId,
+      procedureTypeName: procedureTypes.name,
+      sessionsTotal: procedureRecords.sessionsTotal,
+      sessionsExecuted: sql<number>`(
+        SELECT COUNT(*)::int FROM floraclin.procedure_sessions ps
+        WHERE ps.procedure_record_id = ${procedureRecords.id}
+      )`,
+      createdAt: procedureRecords.createdAt,
     })
     .from(procedureRecords)
+    .innerJoin(procedureTypes, eq(procedureRecords.procedureTypeId, procedureTypes.id))
     .where(
       and(
         eq(procedureRecords.tenantId, tenantId),
-        inArray(procedureRecords.patientPackageLineId, lineIds),
+        inArray(procedureRecords.patientPackageId, packageIds),
         isNull(procedureRecords.deletedAt),
       ),
     )
-    .groupBy(procedureRecords.patientPackageLineId)
+    .orderBy(asc(procedureRecords.createdAt))
 
-  const countsByLine = new Map<string, { consumedCount: number; executedCount: number }>()
-  for (const c of counts) {
-    if (c.lineId) {
-      countsByLine.set(c.lineId, {
-        consumedCount: Number(c.consumedCount ?? 0),
-        executedCount: Number(c.executedCount ?? 0),
-      })
-    }
-  }
-
-  const linesByPackage = new Map<string, PatientPackageLineWithConsumption[]>()
-  for (const line of lines) {
-    const counts = countsByLine.get(line.id) ?? { consumedCount: 0, executedCount: 0 }
-    const arr = linesByPackage.get(line.patientPackageId) ?? []
+  const recordsByPackage = new Map<string, PatientPackageRecordWithConsumption[]>()
+  for (const r of records) {
+    if (!r.patientPackageId) continue
+    const arr = recordsByPackage.get(r.patientPackageId) ?? []
     arr.push({
-      id: line.id,
-      patientPackageId: line.patientPackageId,
-      procedureTypeId: line.procedureTypeId,
-      procedureTypeName: line.procedureTypeName,
-      sessionsTotal: line.sessionsTotal,
-      sortOrder: line.sortOrder,
-      consumedCount: counts.consumedCount,
-      executedCount: counts.executedCount,
+      procedureRecordId: r.id,
+      procedureTypeId: r.procedureTypeId,
+      procedureTypeName: r.procedureTypeName,
+      sessionsTotal: r.sessionsTotal,
+      sessionsExecuted: Number(r.sessionsExecuted ?? 0),
     })
-    linesByPackage.set(line.patientPackageId, arr)
+    recordsByPackage.set(r.patientPackageId, arr)
   }
 
   return packages.map((p) => {
@@ -438,7 +421,7 @@ export async function getPatientPackagesWithConsumption(
     return {
       ...p,
       status: isExpiredNow ? 'expired' : p.status,
-      lines: linesByPackage.get(p.id) ?? [],
+      records: recordsByPackage.get(p.id) ?? [],
     }
   })
 }
@@ -460,6 +443,66 @@ export async function getPatientPackage(
 
   if (!pkg) return null
 
-  const results = await getPatientPackagesWithConsumption(tenantId, pkg.patientId)
-  return results.find((p) => p.id === id) ?? null
+  const records = await db
+    .select({
+      id: procedureRecords.id,
+      procedureTypeId: procedureRecords.procedureTypeId,
+      procedureTypeName: procedureTypes.name,
+      sessionsTotal: procedureRecords.sessionsTotal,
+      sessionsExecuted: sql<number>`(
+        SELECT COUNT(*)::int FROM floraclin.procedure_sessions ps
+        WHERE ps.procedure_record_id = ${procedureRecords.id}
+      )`,
+    })
+    .from(procedureRecords)
+    .innerJoin(procedureTypes, eq(procedureRecords.procedureTypeId, procedureTypes.id))
+    .where(
+      and(
+        eq(procedureRecords.tenantId, tenantId),
+        eq(procedureRecords.patientPackageId, id),
+        isNull(procedureRecords.deletedAt),
+      ),
+    )
+    .orderBy(asc(procedureRecords.createdAt))
+
+  return {
+    ...pkg,
+    records: records.map((r) => ({
+      procedureRecordId: r.id,
+      procedureTypeId: r.procedureTypeId,
+      procedureTypeName: r.procedureTypeName,
+      sessionsTotal: r.sessionsTotal,
+      sessionsExecuted: Number(r.sessionsExecuted ?? 0),
+    })),
+  }
+}
+
+/**
+ * Close a patient package: set status='completed', record the close metadata,
+ * and persist the operator-provided note only when reason is 'other'.
+ *
+ * Accepts an optional `tx` so it can be composed inside the action helper's
+ * transaction alongside an audit log write.
+ */
+export async function closePackageQuery(
+  tenantId: string,
+  packageId: string,
+  args: { closedReason: CloseReason; closeNote: string | null },
+  tx: typeof db = db,
+): Promise<void> {
+  await tx
+    .update(patientPackages)
+    .set({
+      status: 'completed',
+      closedAt: new Date(),
+      closedReason: args.closedReason,
+      closeNote: args.closedReason === 'other' ? args.closeNote : null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(patientPackages.tenantId, tenantId),
+        eq(patientPackages.id, packageId),
+      ),
+    )
 }

@@ -1,5 +1,5 @@
 import { db } from '@/db/client'
-import { faceDiagrams, diagramPoints } from '@/db/schema'
+import { faceDiagrams, diagramPoints, procedureSessions } from '@/db/schema'
 import { eq, and, desc, ne } from 'drizzle-orm'
 import type { DiagramViewType } from '@/types'
 
@@ -27,9 +27,18 @@ export interface DiagramPointRecord {
 
 // ─── Queries ────────────────────────────────────────────────────────
 
-export async function saveFaceDiagram(
+/**
+ * Upsert a face diagram for a specific procedure session and replace its points.
+ *
+ * Writes are session-scoped: lookup is by `(procedureSessionId, viewType)` per the
+ * `uq_face_diagrams_session_view` partial unique constraint (where
+ * `procedure_session_id IS NOT NULL`). The `procedureRecordId` is still stored on
+ * the row so reads can aggregate per-record.
+ */
+export async function saveFaceDiagramForSession(
   tenantId: string,
   procedureRecordId: string,
+  procedureSessionId: string,
   viewType: DiagramViewType,
   points: Array<{
     x: number
@@ -44,14 +53,14 @@ export async function saveFaceDiagram(
   }>,
   txDb: typeof db = db
 ) {
-  // Upsert diagram: find existing or create
+  // Upsert diagram: find existing by (session, viewType) per uq_face_diagrams_session_view
   const existing = await txDb
     .select()
     .from(faceDiagrams)
     .where(
       and(
         eq(faceDiagrams.tenantId, tenantId),
-        eq(faceDiagrams.procedureRecordId, procedureRecordId),
+        eq(faceDiagrams.procedureSessionId, procedureSessionId),
         eq(faceDiagrams.viewType, viewType)
       )
     )
@@ -78,6 +87,7 @@ export async function saveFaceDiagram(
       .values({
         tenantId,
         procedureRecordId,
+        procedureSessionId,
         viewType,
       })
       .returning()
@@ -106,6 +116,89 @@ export async function saveFaceDiagram(
   }
 
   return diagramId
+}
+
+/**
+ * List all diagrams (with their points) for a specific procedure session.
+ */
+export async function listDiagramsForSession(
+  procedureSessionId: string,
+  txDb: typeof db = db
+): Promise<DiagramWithPoints[]> {
+  const diagrams = await txDb
+    .select()
+    .from(faceDiagrams)
+    .where(eq(faceDiagrams.procedureSessionId, procedureSessionId))
+
+  const result: DiagramWithPoints[] = []
+
+  for (const diagram of diagrams) {
+    const points = await txDb
+      .select()
+      .from(diagramPoints)
+      .where(eq(diagramPoints.faceDiagramId, diagram.id))
+      .orderBy(diagramPoints.sortOrder)
+
+    result.push({
+      id: diagram.id,
+      viewType: diagram.viewType,
+      points,
+    })
+  }
+
+  return result
+}
+
+/**
+ * List diagrams for a procedure record, returning the LAST session's diagrams
+ * (ordered by session ordinal DESC). Used by the step-5 picker to seed the
+ * editor with the most recent session's points as a starting point.
+ *
+ * Falls back to legacy record-scoped diagrams (rows where procedureSessionId
+ * IS NULL) if no session-scoped diagrams exist for the record.
+ */
+export async function listDiagramsForRecord(
+  procedureRecordId: string,
+  txDb: typeof db = db
+): Promise<DiagramWithPoints[]> {
+  // Find the most recent session (highest ordinal) for this record that has
+  // any diagrams attached.
+  const latestSession = await txDb
+    .select({ id: procedureSessions.id })
+    .from(procedureSessions)
+    .innerJoin(faceDiagrams, eq(faceDiagrams.procedureSessionId, procedureSessions.id))
+    .where(eq(procedureSessions.procedureRecordId, procedureRecordId))
+    .orderBy(desc(procedureSessions.sessionOrdinal))
+    .limit(1)
+
+  if (latestSession.length > 0) {
+    return listDiagramsForSession(latestSession[0].id, txDb)
+  }
+
+  // Legacy fallback: record-scoped rows (procedureSessionId IS NULL) written
+  // before B6. New writes are session-scoped, but reads still need to surface
+  // pre-migration data.
+  const legacy = await txDb
+    .select()
+    .from(faceDiagrams)
+    .where(eq(faceDiagrams.procedureRecordId, procedureRecordId))
+
+  const result: DiagramWithPoints[] = []
+  for (const diagram of legacy) {
+    const points = await txDb
+      .select()
+      .from(diagramPoints)
+      .where(eq(diagramPoints.faceDiagramId, diagram.id))
+      .orderBy(diagramPoints.sortOrder)
+
+    result.push({
+      id: diagram.id,
+      viewType: diagram.viewType,
+      points,
+    })
+  }
+
+  return result
 }
 
 export async function getFaceDiagram(

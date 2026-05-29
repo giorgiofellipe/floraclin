@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { photoAssets, photoAnnotations, patients, procedureRecords, procedureTypes } from '@/db/schema'
-import { eq, and, isNull, desc, sql } from 'drizzle-orm'
+import { eq, and, isNull, desc, sql, inArray } from 'drizzle-orm'
 import { getSignedUrl, deleteFile } from '@/lib/storage'
 import type { TimelineStage } from '@/types'
 import { timelineStageValues } from '@/validations/photo'
@@ -128,6 +128,7 @@ export async function createPhotoAsset(
   data: {
     patientId: string
     procedureRecordId?: string
+    procedureSessionId?: string | null
     storagePath: string
     originalFilename?: string
     mimeType?: string
@@ -151,6 +152,7 @@ export async function createPhotoAsset(
       tenantId,
       patientId: data.patientId,
       procedureRecordId: data.procedureRecordId,
+      procedureSessionId: data.procedureSessionId ?? null,
       storagePath: data.storagePath,
       originalFilename: data.originalFilename,
       mimeType: data.mimeType,
@@ -163,6 +165,51 @@ export async function createPhotoAsset(
     .returning()
 
   return inserted
+}
+
+export async function assignPhotosToSession(
+  tenantId: string,
+  procedureRecordId: string,
+  procedureSessionId: string,
+  photoAssetIds: string[],
+  tx: typeof db = db,
+) {
+  if (photoAssetIds.length === 0) return []
+
+  const updated = await tx
+    .update(photoAssets)
+    .set({
+      procedureSessionId,
+    })
+    .where(
+      and(
+        eq(photoAssets.tenantId, tenantId),
+        eq(photoAssets.procedureRecordId, procedureRecordId),
+        inArray(photoAssets.id, photoAssetIds),
+        isNull(photoAssets.procedureSessionId),
+      )
+    )
+    .returning()
+
+  return updated
+}
+
+export async function listPhotosForSession(
+  tenantId: string,
+  procedureSessionId: string,
+  tx: typeof db = db,
+) {
+  return await tx
+    .select()
+    .from(photoAssets)
+    .where(
+      and(
+        eq(photoAssets.tenantId, tenantId),
+        eq(photoAssets.procedureSessionId, procedureSessionId),
+        isNull(photoAssets.deletedAt),
+      )
+    )
+    .orderBy(desc(photoAssets.createdAt))
 }
 
 export async function deletePhotoAsset(tenantId: string, photoId: string) {
