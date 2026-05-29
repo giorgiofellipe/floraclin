@@ -1,18 +1,18 @@
 /**
- * POST /api/atendimentos/[id]/finalize
+ * POST /api/encounters/[id]/finalize
  *
- * Patch P1 of the package + atendimento redesign: the wizard owns multiple
+ * Patch P1 of the package + encounter redesign: the wizard owns multiple
  * `draft` `procedure_records` (one per cart line) and submits them as a unit.
  * Finalize-in-place semantics — we update the existing draft rows to
  * `approved` instead of cancelling them and re-creating, which would orphan
  * any side data (face diagrams, products, plannedSnapshot) the wizard has
  * already persisted.
  *
- * The `[id]` segment is a UUID. It is the canonical atendimento id: the
+ * The `[id]` segment is a UUID. It is the canonical encounter id: the
  * wizard mints it client-side and uses it in the redirect to step 5
- * (`/atendimentos/{id}`); we pass it through to C1 so the persisted rows
- * (procedure_records.atendimentoId, audit log entityId) carry the same UUID
- * the URL uses. Without this, the picker fetch for `/api/atendimentos/{id}`
+ * (`/encounters/{id}`); we pass it through to C1 so the persisted rows
+ * (procedure_records.encounterId, audit log entityId) carry the same UUID
+ * the URL uses. Without this, the picker fetch for `/api/encounters/{id}`
  * after finalization would 404.
  *
  * Security: `practitionerId` is NEVER taken from the request body. We use
@@ -26,14 +26,14 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { requireRole } from '@/lib/auth'
-import { finalizeAtendimento } from '@/lib/atendimento-finalize'
-import { atendimentoCartSchema } from '@/validations/atendimento-cart'
+import { finalizeEncounter } from '@/lib/encounter-finalize'
+import { encounterCartSchema } from '@/validations/encounter-cart'
 import { getDefaultPackageValidityMonths } from '@/lib/tenant-settings'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 
 const requestSchema = z.object({
-  cart: atendimentoCartSchema,
+  cart: encounterCartSchema,
   draftRecordIds: z.array(z.string().uuid()).min(1),
   patientId: z.string().uuid(),
   financialPlan: z.object({
@@ -59,18 +59,18 @@ export async function POST(
 ) {
   try {
     const ctx = await requireRole('owner', 'practitioner')
-    const { id: atendimentoIdFromUrl } = await params
+    const { id: encounterIdFromUrl } = await params
 
     // Validate the URL param is a UUID — this becomes the canonical
-    // atendimentoId we pass to C1 (see file header).
-    const urlIdParsed = z.string().uuid().safeParse(atendimentoIdFromUrl)
+    // encounterId we pass to C1 (see file header).
+    const urlIdParsed = z.string().uuid().safeParse(encounterIdFromUrl)
     if (!urlIdParsed.success) {
       return NextResponse.json(
-        { success: false, error: 'atendimentoId inválido na URL' },
+        { success: false, error: 'encounterId inválido na URL' },
         { status: 400 },
       )
     }
-    const atendimentoId = urlIdParsed.data
+    const encounterId = urlIdParsed.data
 
     const body = requestSchema.parse(await request.json())
 
@@ -81,10 +81,10 @@ export async function POST(
       .limit(1)
     const defaultValidity = getDefaultPackageValidityMonths(tenant?.settings)
 
-    const result = await finalizeAtendimento({
+    const result = await finalizeEncounter({
       tenantId: ctx.tenantId,
       userId: ctx.userId,
-      atendimentoId,
+      encounterId,
       patientId: body.patientId,
       practitionerId: ctx.userId,
       cart: body.cart,

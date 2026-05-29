@@ -3,13 +3,13 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Trash2 } from 'lucide-react'
-import { type AtendimentoCart, computeCartTotal } from '@/validations/atendimento-cart'
+import { type EncounterCart, computeCartTotal } from '@/validations/encounter-cart'
 import { formatCurrency } from '@/lib/utils'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 
 interface WizardCartProps {
-  cart: AtendimentoCart
-  onChange: (next: AtendimentoCart) => void
+  cart: EncounterCart
+  onChange: (next: EncounterCart) => void
   onRemoveLine: (procedureTypeId: string) => void
   onClearTemplate: () => void
   /**
@@ -33,6 +33,16 @@ export function WizardCart({
   previewHint,
 }: WizardCartProps) {
   const total = computeCartTotal(cart)
+  // Natural sum = what the total WOULD be without an override. Used to decide
+  // whether the user typed back the natural value (in which case we clear the
+  // override) or a different one (in which case we keep it). `total` itself
+  // already equals `totalOverride` when one is set, so it can't be the
+  // comparison source.
+  const naturalTotal =
+    (cart.templateDefaultPrice ?? 0) +
+    cart.lines
+      .filter((l) => l.sourceTemplateLineId === null)
+      .reduce((sum, l) => sum + l.defaultPrice * l.sessions, 0)
 
   return (
     <Card className="border-primary/20">
@@ -129,7 +139,13 @@ export function WizardCart({
               className="w-32 text-right tabular-nums"
               onChange={(e) => {
                 const parsed = parseCurrency(e.target.value)
-                onChange({ ...cart, totalOverride: parsed === total ? null : parsed })
+                // ±half-cent tolerance so float drift on per-line × sessions
+                // doesn't stamp a spurious override when the user types back
+                // the natural value.
+                onChange({
+                  ...cart,
+                  totalOverride: Math.abs(parsed - naturalTotal) < 0.005 ? null : parsed,
+                })
               }}
             />
           )}

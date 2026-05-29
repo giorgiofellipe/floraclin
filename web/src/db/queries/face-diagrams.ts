@@ -196,15 +196,24 @@ export async function saveFaceDiagram(
 
 /**
  * List all diagrams (with their points) for a specific procedure session.
+ * Tenant-scoped to prevent cross-tenant disclosure if a future caller is
+ * fed an untrusted `procedureSessionId` (current caller pre-filters, but
+ * the defense-in-depth filter blocks any drift).
  */
 export async function listDiagramsForSession(
+  tenantId: string,
   procedureSessionId: string,
   txDb: typeof db = db
 ): Promise<DiagramWithPoints[]> {
   const diagrams = await txDb
     .select()
     .from(faceDiagrams)
-    .where(eq(faceDiagrams.procedureSessionId, procedureSessionId))
+    .where(
+      and(
+        eq(faceDiagrams.tenantId, tenantId),
+        eq(faceDiagrams.procedureSessionId, procedureSessionId),
+      ),
+    )
 
   const result: DiagramWithPoints[] = []
 
@@ -234,6 +243,7 @@ export async function listDiagramsForSession(
  * IS NULL) if no session-scoped diagrams exist for the record.
  */
 export async function listDiagramsForRecord(
+  tenantId: string,
   procedureRecordId: string,
   txDb: typeof db = db
 ): Promise<DiagramWithPoints[]> {
@@ -243,12 +253,17 @@ export async function listDiagramsForRecord(
     .select({ id: procedureSessions.id })
     .from(procedureSessions)
     .innerJoin(faceDiagrams, eq(faceDiagrams.procedureSessionId, procedureSessions.id))
-    .where(eq(procedureSessions.procedureRecordId, procedureRecordId))
+    .where(
+      and(
+        eq(procedureSessions.tenantId, tenantId),
+        eq(procedureSessions.procedureRecordId, procedureRecordId),
+      ),
+    )
     .orderBy(desc(procedureSessions.sessionOrdinal))
     .limit(1)
 
   if (latestSession.length > 0) {
-    return listDiagramsForSession(latestSession[0].id, txDb)
+    return listDiagramsForSession(tenantId, latestSession[0].id, txDb)
   }
 
   // Legacy fallback: record-scoped rows (procedureSessionId IS NULL) written
@@ -257,7 +272,12 @@ export async function listDiagramsForRecord(
   const legacy = await txDb
     .select()
     .from(faceDiagrams)
-    .where(eq(faceDiagrams.procedureRecordId, procedureRecordId))
+    .where(
+      and(
+        eq(faceDiagrams.tenantId, tenantId),
+        eq(faceDiagrams.procedureRecordId, procedureRecordId),
+      ),
+    )
 
   const result: DiagramWithPoints[] = []
   for (const diagram of legacy) {

@@ -10,19 +10,19 @@ import { brToday } from '@/lib/dates'
 import { cn, formatDate } from '@/lib/utils'
 
 interface SessionPickerProps {
-  atendimentoId: string
+  encounterId: string
   procedureRecordIds: string[]
   packageId: string | null
   onPickPending: (recordId: string, ordinal: number) => void
   onPickExecuted: (sessionId: string) => void
 }
 
-interface AtendimentoViewSession {
+interface EncounterViewSession {
   id: string
   sessionOrdinal: number
   performedAt: string
   executedByName: string
-  // Optional richer payload from /api/atendimentos/[id] — the picker doesn't
+  // Optional richer payload from /api/encounters/[id] — the picker doesn't
   // surface these directly, but typing them keeps the cached query payload
   // shape honest for downstream consumers (the orchestrator reads diagrams +
   // productApplications for prefill, and the read-only view renders them).
@@ -36,14 +36,14 @@ interface AtendimentoViewSession {
   productApplications?: unknown
 }
 
-interface AtendimentoViewRecord {
+interface EncounterViewRecord {
   id: string
   procedureTypeName: string
   sessionsTotal: number
-  sessions: AtendimentoViewSession[]
+  sessions: EncounterViewSession[]
 }
 
-interface AtendimentoViewPackage {
+interface EncounterViewPackage {
   id: string
   name: string
   expiresAt: string | null
@@ -52,34 +52,34 @@ interface AtendimentoViewPackage {
   closedReason: string | null
 }
 
-interface AtendimentoView {
-  records: AtendimentoViewRecord[]
-  package: AtendimentoViewPackage | null
+interface EncounterView {
+  records: EncounterViewRecord[]
+  package: EncounterViewPackage | null
 }
 
-interface AtendimentoViewResponse {
+interface EncounterViewResponse {
   success?: boolean
-  data?: AtendimentoView
+  data?: EncounterView
 }
 
 export function SessionPicker({
-  atendimentoId,
+  encounterId,
   packageId: _packageId,
   onPickPending,
   onPickExecuted,
 }: SessionPickerProps) {
-  const { data, isLoading } = useQuery<AtendimentoView>({
-    queryKey: ['atendimento-view', atendimentoId],
+  const { data, isLoading } = useQuery<EncounterView>({
+    queryKey: ['encounter-view', encounterId],
     queryFn: async () => {
-      const res = await fetch(`/api/atendimentos/${atendimentoId}`)
-      const json: AtendimentoViewResponse | AtendimentoView = await res.json()
+      const res = await fetch(`/api/encounters/${encounterId}`)
+      const json: EncounterViewResponse | EncounterView = await res.json()
       // Defensive: accept either { success, data: {...} } or the bare view object.
       const view =
         json && typeof json === 'object' && 'data' in json && json.data
-          ? (json as AtendimentoViewResponse).data
-          : (json as AtendimentoView)
+          ? (json as EncounterViewResponse).data
+          : (json as EncounterView)
       if (!view || !Array.isArray(view.records)) {
-        throw new Error('Atendimento view: unexpected response shape')
+        throw new Error('Encounter view: unexpected response shape')
       }
       return view
     },

@@ -204,7 +204,7 @@ export const procedureRecords = floraclinSchema.table('procedure_records', {
   financialPlan: jsonb('financial_plan'),
   patientPackageId: uuid('patient_package_id').references((): AnyPgColumn => patientPackages.id),
   sessionsTotal: integer('sessions_total').notNull().default(1),
-  atendimentoId: uuid('atendimento_id'),
+  encounterId: uuid('encounter_id'),
   followupSnoozedUntil: date('followup_snoozed_until'),
   lastContactedAt: timestamp('last_contacted_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -213,7 +213,7 @@ export const procedureRecords = floraclinSchema.table('procedure_records', {
 }, (table) => [
   index('idx_procedure_records_patient').on(table.tenantId, table.patientId),
   index('idx_procedure_records_practitioner').on(table.tenantId, table.practitionerId),
-  index('idx_procedure_records_atendimento').on(table.atendimentoId),
+  index('idx_procedure_records_encounter').on(table.encounterId),
   index('idx_procedure_records_followup_status').on(table.tenantId, table.status, table.followupSnoozedUntil),
 ])
 

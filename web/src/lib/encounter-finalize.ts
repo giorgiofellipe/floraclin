@@ -1,8 +1,8 @@
 /**
- * finalizeAtendimento — converts a wizard-managed set of draft
- * `procedure_records` into an approved atendimento, optionally creating a
- * `patient_packages` row, a `financial_entries` row (with installments), and
- * one `consent_acceptances` row per draft × consent.
+ * finalizeEncounter — converts a wizard-managed set of draft
+ * `procedure_records` into an approved encounter (atendimento), optionally
+ * creating a `patient_packages` row, a `financial_entries` row (with
+ * installments), and one `consent_acceptances` row per draft × consent.
  *
  * Design notes (see docs/plans/2026-05-28-package-atendimento-redesign-cook.md):
  *
@@ -13,7 +13,7 @@
  *     ordered `draftRecordIds` array (same order as `cart.lines`); each draft
  *     is locked `FOR UPDATE` inside the tx, asserted to be `draft` | `planned`
  *     for the same tenant + patient, then UPDATEd to `approved` with
- *     `patientPackageId`, `atendimentoId`, `sessionsTotal`, `financialPlan`
+ *     `patientPackageId`, `encounterId`, `sessionsTotal`, `financialPlan`
  *     set. `plannedSnapshot` is intentionally left untouched.
  *
  *   - Patch P1: Financial side uses `createFinancialEntry(...)` from
@@ -43,22 +43,22 @@ import {
   autoPackageName,
   computeCartTotal,
   isBundleCart,
-  type AtendimentoCart,
-} from '@/validations/atendimento-cart'
+  type EncounterCart,
+} from '@/validations/encounter-cart'
 import { brToday, parseBrDate, toBrYmd } from '@/lib/dates'
 import { addMonths } from 'date-fns'
 import { createAuditLog } from '@/lib/audit'
 
-export interface FinalizeAtendimentoInput {
+export interface FinalizeEncounterInput {
   tenantId: string
   userId: string
   /**
-   * Caller-supplied atendimento id. The route extracts this from the URL path
+   * Caller-supplied encounter id. The route extracts this from the URL path
    * param so the wizard's client-minted UUID survives through to persistence
-   * — otherwise the client would navigate to step 5 / `/atendimentos/{id}`
+   * — otherwise the client would navigate to step 5 / `/encounters/{id}`
    * with an id the server never used, producing 404s in the picker.
    */
-  atendimentoId: string
+  encounterId: string
   patientId: string
   /**
    * Practitioner of record. The route passes `ctx.userId` (the authenticated
@@ -68,7 +68,7 @@ export interface FinalizeAtendimentoInput {
    * arbitrary user UUIDs, including from other tenants.
    */
   practitionerId: string
-  cart: AtendimentoCart
+  cart: EncounterCart
   /** One draft record id per cart line, in the same order as `cart.lines`. */
   draftRecordIds: string[]
   financialPlan: {
@@ -87,8 +87,8 @@ export interface FinalizeAtendimentoInput {
   tenantDefaultValidityMonths?: number | null
 }
 
-export interface FinalizeAtendimentoResult {
-  atendimentoId: string
+export interface FinalizeEncounterResult {
+  encounterId: string
   patientPackageId: string | null
   procedureRecordIds: string[]
   financialEntryId: string
@@ -105,18 +105,18 @@ function computeExpiresAt(validityMonths: number | null): string | null {
   return toBrYmd(addMonths(anchor, validityMonths))
 }
 
-export async function finalizeAtendimento(
-  input: FinalizeAtendimentoInput,
+export async function finalizeEncounter(
+  input: FinalizeEncounterInput,
   outerTx?: typeof db,
-): Promise<FinalizeAtendimentoResult> {
+): Promise<FinalizeEncounterResult> {
   if (input.draftRecordIds.length !== input.cart.lines.length) {
     throw new Error(
       `draftRecordIds length (${input.draftRecordIds.length}) does not match cart.lines length (${input.cart.lines.length})`,
     )
   }
 
-  const run = async (tx: typeof db): Promise<FinalizeAtendimentoResult> => {
-    const atendimentoId = input.atendimentoId
+  const run = async (tx: typeof db): Promise<FinalizeEncounterResult> => {
+    const encounterId = input.encounterId
     const isBundle = isBundleCart(input.cart)
     const total = computeCartTotal(input.cart)
 
@@ -229,7 +229,7 @@ export async function finalizeAtendimento(
         .set({
           status: 'approved',
           approvedAt: now,
-          atendimentoId,
+          encounterId,
           patientPackageId,
           sessionsTotal: line.sessions,
           financialPlan: input.financialPlan,
@@ -281,7 +281,7 @@ export async function finalizeAtendimento(
         userId: input.userId,
         action: 'create',
         entityType: 'atendimento',
-        entityId: atendimentoId,
+        entityId: encounterId,
         changes: {
           patientPackageId: { old: null, new: patientPackageId },
           procedureRecords: { old: [], new: input.draftRecordIds },
@@ -292,7 +292,7 @@ export async function finalizeAtendimento(
     )
 
     return {
-      atendimentoId,
+      encounterId,
       patientPackageId,
       procedureRecordIds: [...input.draftRecordIds],
       financialEntryId: feEntry.id,

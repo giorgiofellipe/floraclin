@@ -35,7 +35,7 @@ import type { ProductApplicationRecord } from '@/db/queries/product-applications
 import type { CatalogProduct, DiagramPointData } from '@/components/face-diagram/types'
 import type { WizardOverrides } from '@/components/service-wizard/types'
 import type { EvaluationSection, EvaluationResponses } from '@/types/evaluation'
-import type { AtendimentoCart } from '@/validations/atendimento-cart'
+import type { EncounterCart } from '@/validations/encounter-cart'
 import { FinancialPlanField } from './planning/financial-plan-field'
 import {
   ProcedureTypesSection,
@@ -95,7 +95,7 @@ interface ProcedureFormProps {
    * is currently planned. Full multi-line tabs are tracked in
    * F4-followup.
    */
-  cart?: AtendimentoCart
+  cart?: EncounterCart
   /** Draft procedure_records ids, one per cart line, same order. */
   draftRecordIds?: string[]
 }

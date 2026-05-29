@@ -508,7 +508,7 @@ export async function closePackageQuery(
   packageId: string,
   args: { closedReason: CloseReason; closeNote: string | null },
   tx: typeof db = db,
-): Promise<{ id: string; closedAt: Date; closedReason: string }> {
+): Promise<{ id: string; closedAt: Date | null; closedReason: string | null }> {
   const [locked] = await tx
     .select({
       id: patientPackages.id,
@@ -563,9 +563,12 @@ export async function closePackageQuery(
     throw new BusinessError('not_found', 'Pacote não encontrado')
   }
 
+  // The UPDATE above always sets both columns; the return type stays nullable
+  // to match the schema so the call site doesn't grow a non-null assertion
+  // either. Callers that depend on non-null values can assert at the boundary.
   return {
     id: updated.id,
-    closedAt: updated.closedAt!,
-    closedReason: updated.closedReason!,
+    closedAt: updated.closedAt,
+    closedReason: updated.closedReason,
   }
 }

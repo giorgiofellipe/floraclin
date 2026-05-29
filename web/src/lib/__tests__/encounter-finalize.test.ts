@@ -1,5 +1,5 @@
 /**
- * Tests for `finalizeAtendimento` (Task C1).
+ * Tests for `finalizeEncounter` (Task C1).
  *
  * Two layers:
  *
@@ -20,7 +20,7 @@
  */
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { __test__ } from '../atendimento-finalize'
+import { __test__ } from '../encounter-finalize'
 
 // ─── Pure helper: computeExpiresAt (Patch P5) ────────────────────────
 
@@ -216,7 +216,7 @@ vi.mock('@/db/client', () => {
 })
 
 // Import AFTER mocks are set up.
-const { finalizeAtendimento } = await import('../atendimento-finalize')
+const { finalizeEncounter } = await import('../encounter-finalize')
 
 // ─── Fixtures ────────────────────────────────────────────────────────
 
@@ -224,7 +224,7 @@ const tenantId = '00000000-0000-0000-0000-000000000001'
 const patientId = '00000000-0000-0000-0000-000000000002'
 const practitionerId = '00000000-0000-0000-0000-000000000003'
 const userId = practitionerId
-const atendimentoId = '00000000-0000-0000-0000-0000000000a1'
+const encounterId = '00000000-0000-0000-0000-0000000000a1'
 
 const adhocCart = {
   templateId: null,
@@ -286,17 +286,17 @@ const multiLineCart = {
 
 // ─── Service-level behaviour ─────────────────────────────────────────
 
-describe('finalizeAtendimento', () => {
+describe('finalizeEncounter', () => {
   beforeEach(() => {
     resetTx()
   })
 
   it('rejects when draftRecordIds length does not match cart.lines', async () => {
     await expect(
-      finalizeAtendimento({
+      finalizeEncounter({
         tenantId,
         userId,
-        atendimentoId,
+        encounterId,
         patientId,
         practitionerId,
         cart: adhocCart,
@@ -313,10 +313,10 @@ describe('finalizeAtendimento', () => {
       rows: [{ id: draftId, tenant_id: tenantId, patient_id: patientId, status: 'draft', planned_snapshot: { foo: 1 } }],
     })
 
-    const result = await finalizeAtendimento({
+    const result = await finalizeEncounter({
       tenantId,
       userId,
-      atendimentoId,
+      encounterId,
       patientId,
       practitionerId,
       cart: bundleCart,
@@ -328,9 +328,9 @@ describe('finalizeAtendimento', () => {
     expect(result.patientPackageId).not.toBeNull()
     expect(result.procedureRecordIds).toEqual([draftId])
     expect(result.financialEntryId).toBe('fe-id-generated')
-    // The returned atendimentoId is exactly what the caller supplied — the
+    // The returned encounterId is exactly what the caller supplied — the
     // wizard's URL UUID survives through to persistence (FIX A).
-    expect(result.atendimentoId).toBe(atendimentoId)
+    expect(result.encounterId).toBe(encounterId)
 
     // A patient_packages insert happened.
     const pkgInsert = txState.insertCalls.find((c) => c.table === 'patientPackages')
@@ -346,10 +346,10 @@ describe('finalizeAtendimento', () => {
       rows: [{ id: draftId, tenant_id: tenantId, patient_id: patientId, status: 'draft', planned_snapshot: null }],
     })
 
-    const result = await finalizeAtendimento({
+    const result = await finalizeEncounter({
       tenantId,
       userId,
-      atendimentoId,
+      encounterId,
       patientId,
       practitionerId,
       cart: adhocCart,
@@ -370,10 +370,10 @@ describe('finalizeAtendimento', () => {
       rows: [{ id: draftId, tenant_id: tenantId, patient_id: patientId, status: 'planned', planned_snapshot: null }],
     })
 
-    await finalizeAtendimento({
+    await finalizeEncounter({
       tenantId,
       userId,
-      atendimentoId,
+      encounterId,
       patientId,
       practitionerId,
       cart: adhocCart,
@@ -396,10 +396,10 @@ describe('finalizeAtendimento', () => {
     txState.executeResponses.push({ rows: [] })
 
     await expect(
-      finalizeAtendimento({
+      finalizeEncounter({
         tenantId,
         userId,
-        atendimentoId,
+        encounterId,
         patientId,
         practitionerId,
         cart: adhocCart,
@@ -424,10 +424,10 @@ describe('finalizeAtendimento', () => {
     })
 
     await expect(
-      finalizeAtendimento({
+      finalizeEncounter({
         tenantId,
         userId,
-        atendimentoId,
+        encounterId,
         patientId,
         practitionerId,
         cart: adhocCart,
@@ -444,10 +444,10 @@ describe('finalizeAtendimento', () => {
       rows: [{ id: draftId, tenant_id: tenantId, patient_id: patientId, status: 'draft', planned_snapshot: null }],
     })
 
-    await finalizeAtendimento({
+    await finalizeEncounter({
       tenantId,
       userId,
-      atendimentoId,
+      encounterId,
       patientId,
       practitionerId,
       cart: adhocCart,
@@ -478,10 +478,10 @@ describe('finalizeAtendimento', () => {
       rows: [{ id: draftId, tenant_id: tenantId, patient_id: patientId, status: 'draft', planned_snapshot: { from: 'wizard' } }],
     })
 
-    await finalizeAtendimento({
+    await finalizeEncounter({
       tenantId,
       userId,
-      atendimentoId,
+      encounterId,
       patientId,
       practitionerId,
       cart: adhocCart,
@@ -497,9 +497,9 @@ describe('finalizeAtendimento', () => {
     expect(u.set.approvedAt).toBeInstanceOf(Date)
     expect(u.set.sessionsTotal).toBe(1)
     expect(u.set.financialPlan).toMatchObject({ totalAmount: '800.00' })
-    // The atendimentoId set on the record matches what the caller passed
+    // The encounterId set on the record matches what the caller passed
     // (FIX A: the wizard's URL UUID, not an internally-generated one).
-    expect(u.set.atendimentoId).toBe(atendimentoId)
+    expect(u.set.encounterId).toBe(encounterId)
 
     // CRITICAL (Patch P1): plannedSnapshot must NOT be in the SET payload.
     // The wizard wrote it during step 2/3 and we preserve whatever's there.
@@ -523,10 +523,10 @@ describe('finalizeAtendimento', () => {
       ],
     })
 
-    const result = await finalizeAtendimento({
+    const result = await finalizeEncounter({
       tenantId,
       userId,
-      atendimentoId,
+      encounterId,
       patientId,
       practitionerId,
       cart: multiLineCart,
@@ -561,10 +561,10 @@ describe('finalizeAtendimento', () => {
       ],
     })
 
-    await finalizeAtendimento({
+    await finalizeEncounter({
       tenantId,
       userId,
-      atendimentoId,
+      encounterId,
       patientId,
       practitionerId,
       cart: multiLineCart,
@@ -596,12 +596,12 @@ describe('finalizeAtendimento', () => {
     }
   })
 
-  // FIX A: the caller now owns the atendimentoId — passing the same id twice
+  // FIX A: the caller now owns the encounterId — passing the same id twice
   // is a no-op at the signature level. The unit test harness doesn't enforce
   // DB-level uniqueness; this guards against a future refactor that might
   // sneak back an internal `crypto.randomUUID()` (which would silently make
   // the id different on each call and break the wizard → step 5 handoff).
-  it('accepts the same atendimentoId on repeat calls without throwing (signature-level)', async () => {
+  it('accepts the same encounterId on repeat calls without throwing (signature-level)', async () => {
     const draftIdA = '00000000-0000-0000-0000-00000000d030'
     const draftIdB = '00000000-0000-0000-0000-00000000d031'
     // Order matches the tx.execute call sequence per invocation:
@@ -619,10 +619,10 @@ describe('finalizeAtendimento', () => {
 
     const sharedId = '00000000-0000-0000-0000-0000000000a2'
 
-    const first = await finalizeAtendimento({
+    const first = await finalizeEncounter({
       tenantId,
       userId,
-      atendimentoId: sharedId,
+      encounterId: sharedId,
       patientId,
       practitionerId,
       cart: adhocCart,
@@ -630,10 +630,10 @@ describe('finalizeAtendimento', () => {
       financialPlan: { totalAmount: '800.00', installmentCount: 1, paymentMethod: 'pix' },
       consents: [],
     })
-    const second = await finalizeAtendimento({
+    const second = await finalizeEncounter({
       tenantId,
       userId,
-      atendimentoId: sharedId,
+      encounterId: sharedId,
       patientId,
       practitionerId,
       cart: adhocCart,
@@ -642,7 +642,7 @@ describe('finalizeAtendimento', () => {
       consents: [],
     })
 
-    expect(first.atendimentoId).toBe(sharedId)
-    expect(second.atendimentoId).toBe(sharedId)
+    expect(first.encounterId).toBe(sharedId)
+    expect(second.encounterId).toBe(sharedId)
   })
 })

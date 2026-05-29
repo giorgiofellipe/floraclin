@@ -1,12 +1,12 @@
 /**
- * GET /api/atendimentos/[id]
+ * GET /api/encounters/[id]
  *
- * Task J1: returns every `procedure_record` linked to the given atendimento
+ * Task J1: returns every `procedure_record` linked to the given encounter
  * together with their executed `procedure_sessions` (sorted by ordinal) and,
  * when applicable, the parent `patient_packages` row.
  *
  * Tenant-scoped via `requireRole('owner', 'practitioner')`. Responds 404 when
- * no records exist for the supplied atendimento id.
+ * no records exist for the supplied encounter id.
  */
 
 import { NextResponse } from 'next/server'
@@ -30,12 +30,12 @@ export async function GET(
 ) {
   try {
     const ctx = await requireRole('owner', 'practitioner')
-    const { id: atendimentoId } = await params
+    const { id: encounterId } = await params
 
-    const idParsed = z.string().uuid().safeParse(atendimentoId)
+    const idParsed = z.string().uuid().safeParse(encounterId)
     if (!idParsed.success) {
       return NextResponse.json(
-        { success: false, error: 'atendimentoId inválido na URL' },
+        { success: false, error: 'encounterId inválido na URL' },
         { status: 400 },
       )
     }
@@ -55,7 +55,7 @@ export async function GET(
       .where(
         and(
           eq(procedureRecords.tenantId, ctx.tenantId),
-          eq(procedureRecords.atendimentoId, atendimentoId),
+          eq(procedureRecords.encounterId, encounterId),
         ),
       )
 
@@ -97,7 +97,7 @@ export async function GET(
     const sessions = await Promise.all(
       sessionRows.map(async (s) => {
         const [diagrams, productApplications] = await Promise.all([
-          listDiagramsForSession(s.id),
+          listDiagramsForSession(ctx.tenantId, s.id),
           listProductApplicationsForSession(ctx.tenantId, s.id),
         ])
         return { ...s, diagrams, productApplications }
@@ -156,7 +156,7 @@ export async function GET(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
     }
-    console.error('GET /api/atendimentos/[id] error:', error)
+    console.error('GET /api/encounters/[id] error:', error)
     return NextResponse.json(
       { success: false, error: 'Erro ao carregar atendimento' },
       { status: 500 },

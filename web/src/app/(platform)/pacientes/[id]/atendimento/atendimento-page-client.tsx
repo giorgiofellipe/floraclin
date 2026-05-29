@@ -35,7 +35,7 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
   const { data: resumedProcedure, isLoading: procedureLoading } = useLatestNonExecutedProcedure(patientId)
 
   // When the page is opened via the executeNext deep link we need to look up
-  // the referenced procedure record to derive its `atendimentoId` and hydrate
+  // the referenced procedure record to derive its `encounterId` and hydrate
   // the wizard's step 5 with the right context.
   const { data: deepLinkRecord, isLoading: deepLinkLoading } = useProcedure(deepLinkProcedureId ?? '')
 

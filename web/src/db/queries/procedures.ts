@@ -56,7 +56,7 @@ export interface ProcedureWithDetails {
   financialPlan: unknown
   patientPackageId: string | null
   sessionsTotal: number
-  atendimentoId: string | null
+  encounterId: string | null
   sessionsExecuted: number
   createdAt: Date
   updatedAt: Date
@@ -76,7 +76,7 @@ export interface ProcedureListItem {
   cancelledAt: Date | null
   cancellationReason: string | null
   sessionsTotal: number
-  atendimentoId: string | null
+  encounterId: string | null
   sessionsExecuted: number
   procedureTypeName: string
   procedureTypeCategory: string
@@ -110,7 +110,7 @@ export async function createProcedure(
     financialPlan?: unknown
     patientPackageId?: string | null
     sessionsTotal?: number
-    atendimentoId?: string | null
+    encounterId?: string | null
     status?: 'draft' | 'planned' | 'approved'
   },
   tx: typeof db = db
@@ -142,7 +142,7 @@ export async function createProcedure(
       financialPlan: data.financialPlan ?? null,
       patientPackageId: data.patientPackageId ?? null,
       sessionsTotal: data.sessionsTotal ?? 1,
-      atendimentoId: data.atendimentoId ?? null,
+      encounterId: data.encounterId ?? null,
       status: data.status ?? 'draft',
     })
     .returning()
@@ -219,7 +219,7 @@ export async function getProcedure(
       financialPlan: procedureRecords.financialPlan,
       patientPackageId: procedureRecords.patientPackageId,
       sessionsTotal: procedureRecords.sessionsTotal,
-      atendimentoId: procedureRecords.atendimentoId,
+      encounterId: procedureRecords.encounterId,
       sessionsExecuted: sessionsExecutedSubquery,
       createdAt: procedureRecords.createdAt,
       updatedAt: procedureRecords.updatedAt,
@@ -258,7 +258,7 @@ export async function listProcedures(
       cancelledAt: procedureRecords.cancelledAt,
       cancellationReason: procedureRecords.cancellationReason,
       sessionsTotal: procedureRecords.sessionsTotal,
-      atendimentoId: procedureRecords.atendimentoId,
+      encounterId: procedureRecords.encounterId,
       sessionsExecuted: sessionsExecutedSubquery,
       procedureTypeName: procedureTypes.name,
       procedureTypeCategory: procedureTypes.category,
@@ -439,7 +439,7 @@ export async function getLatestOpenProcedure(
       financialPlan: procedureRecords.financialPlan,
       patientPackageId: procedureRecords.patientPackageId,
       sessionsTotal: procedureRecords.sessionsTotal,
-      atendimentoId: procedureRecords.atendimentoId,
+      encounterId: procedureRecords.encounterId,
       sessionsExecuted: sessionsExecutedSubquery,
       createdAt: procedureRecords.createdAt,
       updatedAt: procedureRecords.updatedAt,

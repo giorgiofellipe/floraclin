@@ -147,7 +147,7 @@ export function ServiceWizard({
     updateStepTimestamp,
     setSelectedTypeIds,
     setCart,
-    setAtendimentoId,
+    setEncounterId,
     setProcedureRecordIds,
     clearError,
   } = wizard
@@ -363,10 +363,10 @@ export function ServiceWizard({
           updateStepTimestamp(timestampKey, new Date())
         }
 
-        // Leaving step 2 for the first time → mint the atendimento id that
+        // Leaving step 2 for the first time → mint the encounter id that
         // will key the finalize POST at step 4 and the execution at step 5.
-        if (state.currentStep === 2 && pending === 'advance' && !state.atendimentoId) {
-          setAtendimentoId(crypto.randomUUID())
+        if (state.currentStep === 2 && pending === 'advance' && !state.encounterId) {
+          setEncounterId(crypto.randomUUID())
         }
 
         // After step 3 creates/updates a procedure, fetch fresh data client-side
@@ -430,11 +430,11 @@ export function ServiceWizard({
       onSaveComplete,
       pendingAction,
       state.currentStep,
-      state.atendimentoId,
+      state.encounterId,
       nextStep,
       updateProcedureStatus,
       updateStepTimestamp,
-      setAtendimentoId,
+      setEncounterId,
       router,
       patient.id,
     ]
@@ -453,17 +453,17 @@ export function ServiceWizard({
     nextStep()
   }, [state.currentStep, nextStep, router, patient.id])
 
-  // ─── Step 4 approval → finalize atendimento ─────────────────────
+  // ─── Step 4 approval → finalize encounter ───────────────────────
   //
   // The wizard now owns the approval POST. It calls the new finalize endpoint
-  // (`POST /api/atendimentos/{atendimentoId}/finalize`) with the cart + draft
+  // (`POST /api/encounters/{encounterId}/finalize`) with the cart + draft
   // record ids that the planning step produced. On success, we adopt the
   // returned procedureRecordIds and advance to step 5.
   const [isFinalizing, setIsFinalizing] = useState(false)
 
   const handleApprove = useCallback(async () => {
     if (isFinalizing) return
-    if (!state.atendimentoId) {
+    if (!state.encounterId) {
       toast.error('Atendimento sem identificador. Recarregue a página.')
       return
     }
@@ -507,7 +507,7 @@ export function ServiceWizard({
     setIsFinalizing(true)
     try {
       const res = await fetch(
-        `/api/atendimentos/${state.atendimentoId}/finalize`,
+        `/api/encounters/${state.encounterId}/finalize`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -557,7 +557,7 @@ export function ServiceWizard({
     }
   }, [
     isFinalizing,
-    state.atendimentoId,
+    state.encounterId,
     state.cart,
     state.procedureId,
     state.procedureRecordIds,
@@ -858,7 +858,7 @@ export function ServiceWizard({
                         ? [state.procedureId]
                         : undefined
                   }
-                  atendimentoId={state.atendimentoId}
+                  encounterId={state.encounterId}
                   onCartChange={setCart}
                   wizardOverrides={getOverridesForStep(4)}
                 />
@@ -878,14 +878,14 @@ export function ServiceWizard({
               title="Execução"
               timestamp={state.stepTimestamps.execution}
             >
-              {state.currentStep === 5 && state.atendimentoId && (
+              {state.currentStep === 5 && state.encounterId && (
                 state.procedureId &&
                 (state.procedureStatus === 'approved' ||
                   state.procedureStatus === 'in_progress' ||
                   state.procedureStatus === 'completed') &&
                 localProcedure ? (
                   <ProcedureExecution
-                    atendimentoId={state.atendimentoId}
+                    encounterId={state.encounterId}
                     procedureRecordIds={
                       state.procedureRecordIds.length > 0
                         ? state.procedureRecordIds

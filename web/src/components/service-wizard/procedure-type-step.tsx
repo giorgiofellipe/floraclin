@@ -5,7 +5,7 @@ import { Loader2, Stethoscope } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import type { WizardOverrides } from './types'
-import type { AtendimentoCart, CartLine } from '@/validations/atendimento-cart'
+import type { EncounterCart, CartLine } from '@/validations/encounter-cart'
 import { TemplateChooser } from './template-chooser'
 import { WizardCart } from './wizard-cart'
 
@@ -20,8 +20,8 @@ interface ProcedureType {
 }
 
 interface ProcedureTypeStepProps {
-  cart: AtendimentoCart
-  onCartChange: (next: AtendimentoCart) => void
+  cart: EncounterCart
+  onCartChange: (next: EncounterCart) => void
   /** Legacy multi-select API — preserved so the wizard can keep its derived
    *  selectedTypeIds state in sync until F2 migrates the wizard to cart. */
   selectedTypeIds?: string[]

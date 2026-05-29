@@ -102,14 +102,14 @@ export async function getSessionByOrdinal(
   return row ?? null
 }
 
-export async function listSessionsForAtendimento(
-  atendimentoId: string,
+export async function listSessionsForEncounter(
+  encounterId: string,
   tx: typeof db = db,
 ): Promise<ProcedureSessionRow[]> {
   const recordIds = await tx
     .select({ id: procedureRecords.id })
     .from(procedureRecords)
-    .where(eq(procedureRecords.atendimentoId, atendimentoId))
+    .where(eq(procedureRecords.encounterId, encounterId))
   if (recordIds.length === 0) return []
   return tx
     .select()

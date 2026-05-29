@@ -19,9 +19,9 @@ import {
 import { cn, formatCurrency } from '@/lib/utils'
 import { CONSENT_TYPE_LABELS } from '@/lib/constants'
 import {
-  type AtendimentoCart,
+  type EncounterCart,
   computeCartTotal,
-} from '@/validations/atendimento-cart'
+} from '@/validations/encounter-cart'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { DiagramPointData } from '@/components/face-diagram/types'
@@ -88,24 +88,24 @@ interface ProcedureApprovalProps {
   diagrams?: DiagramWithPoints[]
   additionalTypeIds?: string[]
   // Multi-line cart props (F5).
-  cart?: AtendimentoCart
+  cart?: EncounterCart
   /** One per cart line, same order. Required when `cart` is supplied. */
   draftRecordIds?: string[]
-  /** The wizard-generated atendimento id used in the finalize URL. */
-  atendimentoId?: string | null
+  /** The wizard-generated encounter id used in the finalize URL. */
+  encounterId?: string | null
   practitionerId?: string
   /** Notified once the finalize call succeeds (cart-mode primary callback). */
   onApproved?: (result: {
     procedureRecordIds: string[]
     patientPackageId: string | null
-    atendimentoId: string
+    encounterId: string
   }) => void
   /**
    * Cart-mode editing handler. Step 4 owns final adjustments to sessions
    * count and total override (step 2 renders a read-only preview). When
    * supplied, the summary card mounts the editable WizardCart.
    */
-  onCartChange?: (next: AtendimentoCart) => void
+  onCartChange?: (next: EncounterCart) => void
   // Shared props.
   patient: PatientData
   tenant: TenantData
@@ -147,7 +147,7 @@ export function ProcedureApproval({
   additionalTypeIds,
   cart,
   draftRecordIds,
-  atendimentoId,
+  encounterId,
   practitionerId,
   onApproved,
   onCartChange,
@@ -177,17 +177,17 @@ export function ProcedureApproval({
     ? (draftRecordIds as string[])[0]
     : (procedure as ProcedureWithDetails).id
 
-  // Stable atendimentoId for the finalize URL. The server generates its own
+  // Stable encounterId for the finalize URL. The server generates its own
   // canonical id inside the transaction; the URL id is only validated as UUID.
-  // For legacy approvals (which never had an atendimentoId) we mint one here.
-  const finalizeAtendimentoIdRef = useRef<string>(
-    atendimentoId ?? (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : ''),
+  // For legacy approvals (which never had an encounterId) we mint one here.
+  const finalizeEncounterIdRef = useRef<string>(
+    encounterId ?? (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : ''),
   )
   useEffect(() => {
-    if (atendimentoId && finalizeAtendimentoIdRef.current !== atendimentoId) {
-      finalizeAtendimentoIdRef.current = atendimentoId
+    if (encounterId && finalizeEncounterIdRef.current !== encounterId) {
+      finalizeEncounterIdRef.current = encounterId
     }
-  }, [atendimentoId])
+  }, [encounterId])
 
   const [procedureTypes, setProcedureTypes] = useState<ProcedureType[]>([])
   const [consentStatuses, setConsentStatuses] = useState<ConsentStatus[]>([])
@@ -414,7 +414,7 @@ export function ProcedureApproval({
   }, [contractTemplate, contractChecked, contractSignature, patient.id, primaryRecordId, contractText, acceptConsent, markClean])
 
   // ── Approve action ────────────────────────────────────────────────
-  // Always POST to /api/atendimentos/{id}/finalize. In legacy mode we
+  // Always POST to /api/encounters/{id}/finalize. In legacy mode we
   // synthesize a one-line cart from `procedure`.
   const runApprove = useCallback(async (origin: 'button' | 'wizard') => {
     if (isApproving) return
@@ -434,7 +434,7 @@ export function ProcedureApproval({
 
     try {
       // Build the finalize payload — synthesize a cart for legacy mode.
-      let finalizeCart: AtendimentoCart
+      let finalizeCart: EncounterCart
       let finalizeDraftIds: string[]
 
       if (isCartMode && cart && draftRecordIds) {
@@ -491,7 +491,7 @@ export function ProcedureApproval({
         }>,
       }
 
-      const url = `/api/atendimentos/${finalizeAtendimentoIdRef.current}/finalize`
+      const url = `/api/encounters/${finalizeEncounterIdRef.current}/finalize`
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -502,7 +502,7 @@ export function ProcedureApproval({
         | {
             success: true
             data: {
-              atendimentoId: string
+              encounterId: string
               patientPackageId: string | null
               procedureRecordIds: string[]
               financialEntryId: string
@@ -522,7 +522,7 @@ export function ProcedureApproval({
       onApproved?.({
         procedureRecordIds: json.data.procedureRecordIds,
         patientPackageId: json.data.patientPackageId,
-        atendimentoId: json.data.atendimentoId,
+        encounterId: json.data.encounterId,
       })
 
       if (origin === 'wizard') {
@@ -724,9 +724,9 @@ function CartApprovalSummary({
   financialPlan,
   onCartChange,
 }: {
-  cart: AtendimentoCart
+  cart: EncounterCart
   financialPlan: FinancialPlan | null
-  onCartChange?: (next: AtendimentoCart) => void
+  onCartChange?: (next: EncounterCart) => void
 }) {
   const total = useMemo(() => computeCartTotal(cart), [cart])
   const isBundle = cart.templateId !== null || cart.lines.some((l) => l.sessions > 1)

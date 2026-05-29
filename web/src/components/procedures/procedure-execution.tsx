@@ -12,7 +12,7 @@ import { SessionExecutionForm } from './session-execution-form'
 // ─── Props ──────────────────────────────────────────────────────────
 
 export interface ProcedureExecutionProps {
-  atendimentoId: string
+  encounterId: string
   procedureRecordIds: string[]
   patientId: string
   patientGender?: string | null
@@ -37,7 +37,7 @@ type Mode =
 
 // ─── Read-only view ─────────────────────────────────────────────────
 
-interface AtendimentoViewDiagramPoint {
+interface EncounterViewDiagramPoint {
   id?: string
   x: string | number
   y: string | number
@@ -51,13 +51,13 @@ interface AtendimentoViewDiagramPoint {
   sortOrder?: number
 }
 
-interface AtendimentoViewDiagram {
+interface EncounterViewDiagram {
   id?: string
   viewType: string
-  points: AtendimentoViewDiagramPoint[]
+  points: EncounterViewDiagramPoint[]
 }
 
-interface AtendimentoViewProductApplication {
+interface EncounterViewProductApplication {
   id?: string
   productName: string
   activeIngredient?: string | null
@@ -69,7 +69,7 @@ interface AtendimentoViewProductApplication {
   notes?: string | null
 }
 
-interface AtendimentoViewSession {
+interface EncounterViewSession {
   id: string
   sessionOrdinal: number
   performedAt: string
@@ -80,55 +80,55 @@ interface AtendimentoViewSession {
   notes?: string | null
   followUpDate?: string | null
   nextSessionObjectives?: string | null
-  diagrams?: AtendimentoViewDiagram[]
-  productApplications?: AtendimentoViewProductApplication[]
+  diagrams?: EncounterViewDiagram[]
+  productApplications?: EncounterViewProductApplication[]
 }
 
-interface AtendimentoViewRecord {
+interface EncounterViewRecord {
   id: string
   procedureTypeName: string
-  sessions: AtendimentoViewSession[]
+  sessions: EncounterViewSession[]
 }
 
-interface AtendimentoView {
-  records: AtendimentoViewRecord[]
+interface EncounterView {
+  records: EncounterViewRecord[]
 }
 
-interface AtendimentoViewResponse {
+interface EncounterViewResponse {
   success?: boolean
-  data?: AtendimentoView
+  data?: EncounterView
 }
 
-async function fetchAtendimentoView(atendimentoId: string): Promise<AtendimentoView> {
-  const res = await fetch(`/api/atendimentos/${atendimentoId}`)
-  const json: AtendimentoViewResponse | AtendimentoView = await res.json()
+async function fetchEncounterView(encounterId: string): Promise<EncounterView> {
+  const res = await fetch(`/api/encounters/${encounterId}`)
+  const json: EncounterViewResponse | EncounterView = await res.json()
   const view =
     json && typeof json === 'object' && 'data' in json && json.data
-      ? (json as AtendimentoViewResponse).data
-      : (json as AtendimentoView)
+      ? (json as EncounterViewResponse).data
+      : (json as EncounterView)
   if (!view || !Array.isArray(view.records)) {
-    throw new Error('Atendimento view: unexpected response shape')
+    throw new Error('Encounter view: unexpected response shape')
   }
   return view
 }
 
 function SessionReadOnly({
   sessionId,
-  atendimentoId,
+  encounterId,
   onBack,
 }: {
   sessionId: string
-  atendimentoId: string
+  encounterId: string
   onBack: () => void
 }) {
-  const { data } = useQuery<AtendimentoView>({
-    queryKey: ['atendimento-view', atendimentoId],
-    queryFn: () => fetchAtendimentoView(atendimentoId),
+  const { data } = useQuery<EncounterView>({
+    queryKey: ['encounter-view', encounterId],
+    queryFn: () => fetchEncounterView(encounterId),
   })
 
   if (!data) return <div>Carregando…</div>
 
-  let session: AtendimentoViewSession | null = null
+  let session: EncounterViewSession | null = null
   let recordName: string | null = null
   for (const r of data.records) {
     const found = r.sessions.find((s) => s.id === sessionId)
@@ -233,7 +233,7 @@ function SessionReadOnly({
 // ─── Orchestrator ───────────────────────────────────────────────────
 
 export function ProcedureExecution({
-  atendimentoId,
+  encounterId,
   procedureRecordIds: _procedureRecordIds,
   patientId,
   patientGender,
@@ -250,18 +250,18 @@ export function ProcedureExecution({
     return { kind: 'picker' }
   })
 
-  // Ensure the atendimento view is in the React Query cache before we mount
+  // Ensure the encounter view is in the React Query cache before we mount
   // the form in execute mode — the deep-link entry path renders the form
   // immediately, before the picker has had a chance to populate the cache.
   // For non-deep-link paths the picker's `useQuery` will populate this same
   // key, so we de-dupe automatically.
-  const { data: atendimentoView } = useQuery<AtendimentoView>({
-    queryKey: ['atendimento-view', atendimentoId],
-    queryFn: () => fetchAtendimentoView(atendimentoId),
+  const { data: encounterView } = useQuery<EncounterView>({
+    queryKey: ['encounter-view', encounterId],
+    queryFn: () => fetchEncounterView(encounterId),
   })
 
   const invalidate = () =>
-    qc.invalidateQueries({ queryKey: ['atendimento-view', atendimentoId] })
+    qc.invalidateQueries({ queryKey: ['encounter-view', encounterId] })
 
   if (mode.kind === 'execute') {
     // Derive prefill from the highest-ordinal already-executed session of the
@@ -270,17 +270,17 @@ export function ProcedureExecution({
     // prefill — the spec only requires prefill from a previous session.
     let prefill:
       | {
-          diagrams: AtendimentoViewDiagram[]
-          productApplications: AtendimentoViewProductApplication[]
+          diagrams: EncounterViewDiagram[]
+          productApplications: EncounterViewProductApplication[]
         }
       | null = null
 
-    if (atendimentoView) {
-      const rec = atendimentoView.records.find((r) => r.id === mode.recordId)
+    if (encounterView) {
+      const rec = encounterView.records.find((r) => r.id === mode.recordId)
       if (rec && rec.sessions.length > 0) {
         const lastExecuted = rec.sessions.reduce(
           (acc, s) => (s.sessionOrdinal > (acc?.sessionOrdinal ?? -1) ? s : acc),
-          null as AtendimentoViewSession | null,
+          null as EncounterViewSession | null,
         )
         if (lastExecuted) {
           prefill = {
@@ -293,7 +293,7 @@ export function ProcedureExecution({
 
     // While the view query is still pending on the deep-link path, hold off
     // mounting the form so prefill can land in the initial defaultValues.
-    if (!atendimentoView) {
+    if (!encounterView) {
       return <div>Carregando…</div>
     }
 
@@ -316,7 +316,7 @@ export function ProcedureExecution({
     return (
       <SessionReadOnly
         sessionId={mode.sessionId}
-        atendimentoId={atendimentoId}
+        encounterId={encounterId}
         onBack={() => setMode({ kind: 'picker' })}
       />
     )
@@ -324,7 +324,7 @@ export function ProcedureExecution({
 
   return (
     <SessionPicker
-      atendimentoId={atendimentoId}
+      encounterId={encounterId}
       procedureRecordIds={_procedureRecordIds}
       packageId={packageId}
       onPickPending={(recordId, ordinal) =>

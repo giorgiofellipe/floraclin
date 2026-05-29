@@ -4,13 +4,13 @@ import { useReducer, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ProcedureStatus } from '@/types'
 import type { StepResult } from '@/components/service-wizard/types'
-import type { AtendimentoCart } from '@/validations/atendimento-cart'
+import type { EncounterCart } from '@/validations/encounter-cart'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
 export type WizardStep = 1 | 2 | 3 | 4 | 5
 
-const EMPTY_CART: AtendimentoCart = {
+const EMPTY_CART: EncounterCart = {
   templateId: null,
   templateName: null,
   templateDefaultPrice: null,
@@ -25,11 +25,11 @@ export interface WizardState {
   procedureId: string | null
   // After finalization, the full set of record ids returned by the API
   procedureRecordIds: string[]
-  atendimentoId: string | null
+  encounterId: string | null
   procedureStatus: ProcedureStatus | null
   // Mirror of cart.lines.map(l => l.procedureTypeId) for legacy callsites
   selectedTypeIds: string[]
-  cart: AtendimentoCart
+  cart: EncounterCart
   stepTimestamps: {
     anamnesis: Date | null
     procedureTypes: Date | null
@@ -49,8 +49,8 @@ type WizardAction =
   | { type: 'PREV_STEP' }
   | { type: 'SET_PROCEDURE_ID'; procedureId: string; status: ProcedureStatus }
   | { type: 'SET_SELECTED_TYPES'; typeIds: string[] }
-  | { type: 'SET_CART'; cart: AtendimentoCart }
-  | { type: 'SET_ATENDIMENTO_ID'; atendimentoId: string }
+  | { type: 'SET_CART'; cart: EncounterCart }
+  | { type: 'SET_ENCOUNTER_ID'; encounterId: string }
   | { type: 'SET_PROCEDURE_RECORD_IDS'; procedureRecordIds: string[] }
   | { type: 'SET_ERROR'; error: string; errorType: 'validation' | 'precondition' | 'server' }
   | { type: 'CLEAR_ERROR' }
@@ -177,10 +177,10 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
         selectedTypeIds: action.cart.lines.map((l) => l.procedureTypeId),
       }
 
-    case 'SET_ATENDIMENTO_ID':
+    case 'SET_ENCOUNTER_ID':
       return {
         ...state,
-        atendimentoId: action.atendimentoId,
+        encounterId: action.encounterId,
       }
 
     case 'SET_PROCEDURE_RECORD_IDS':
@@ -322,10 +322,10 @@ interface UseServiceWizardOptions {
   initialStep?: number
   procedureId?: string | null
   procedureRecordIds?: string[]
-  atendimentoId?: string | null
+  encounterId?: string | null
   procedureStatus?: ProcedureStatus | null
   selectedTypeIds?: string[]
-  cart?: AtendimentoCart
+  cart?: EncounterCart
   stepTimestamps?: {
     anamnesis: Date | null
     procedureTypes: Date | null
@@ -340,7 +340,7 @@ export function useServiceWizard({
   initialStep,
   procedureId: initialProcedureId,
   procedureRecordIds: initialProcedureRecordIds,
-  atendimentoId: initialAtendimentoId,
+  encounterId: initialEncounterId,
   procedureStatus: initialProcedureStatus,
   selectedTypeIds: initialSelectedTypeIds,
   cart: initialCart,
@@ -358,7 +358,7 @@ export function useServiceWizard({
     currentStep: startStep,
     procedureId: initialProcedureId ?? null,
     procedureRecordIds: initialProcedureRecordIds ?? [],
-    atendimentoId: initialAtendimentoId ?? null,
+    encounterId: initialEncounterId ?? null,
     procedureStatus: initialProcedureStatus ?? null,
     selectedTypeIds:
       initialSelectedTypeIds ??
@@ -597,12 +597,12 @@ export function useServiceWizard({
     dispatch({ type: 'SET_SELECTED_TYPES', typeIds })
   }, [])
 
-  const setCart = useCallback((cart: AtendimentoCart) => {
+  const setCart = useCallback((cart: EncounterCart) => {
     dispatch({ type: 'SET_CART', cart })
   }, [])
 
-  const setAtendimentoId = useCallback((atendimentoId: string) => {
-    dispatch({ type: 'SET_ATENDIMENTO_ID', atendimentoId })
+  const setEncounterId = useCallback((encounterId: string) => {
+    dispatch({ type: 'SET_ENCOUNTER_ID', encounterId })
   }, [])
 
   const setProcedureRecordIds = useCallback((procedureRecordIds: string[]) => {
@@ -629,7 +629,7 @@ export function useServiceWizard({
     updateStepTimestamp,
     setSelectedTypeIds,
     setCart,
-    setAtendimentoId,
+    setEncounterId,
     setProcedureRecordIds,
     patientId,
   }

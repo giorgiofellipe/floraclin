@@ -129,7 +129,7 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
     return (
       <div className="min-h-screen p-6">
         <ProcedureExecution
-          atendimentoId={procedure.atendimentoId ?? procedure.id}
+          encounterId={procedure.encounterId ?? procedure.id}
           procedureRecordIds={[procedure.id]}
           packageId={procedure.patientPackageId ?? null}
           patientId={patientId}

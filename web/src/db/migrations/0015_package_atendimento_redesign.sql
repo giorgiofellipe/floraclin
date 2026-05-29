@@ -1,7 +1,7 @@
--- 0015: Package + atendimento redesign.
+-- 0015: Package + atendimento (encounter) redesign.
 -- 1. Add new columns/tables.
 -- 2. Backfill procedure_sessions from executed procedure_records.
--- 3. Backfill procedure_records.sessionsTotal and atendimentoId.
+-- 3. Backfill procedure_records.sessionsTotal and encounterId.
 -- 4. (formerly drop step — renumbered) Materialize sold-but-unused package
 --    lines into approved procedure_records so step-5 picker can see them.
 -- 5. Drop patient_package_lines + its FK.
@@ -19,7 +19,7 @@
 -- procedure_records: new columns + widened status CHECK
 ALTER TABLE "floraclin"."procedure_records"
   ADD COLUMN IF NOT EXISTS "sessions_total" integer NOT NULL DEFAULT 1,
-  ADD COLUMN IF NOT EXISTS "atendimento_id" uuid;--> statement-breakpoint
+  ADD COLUMN IF NOT EXISTS "encounter_id" uuid;--> statement-breakpoint
 
 ALTER TABLE "floraclin"."procedure_records"
   DROP CONSTRAINT IF EXISTS "procedure_records_status_check";--> statement-breakpoint
@@ -32,8 +32,8 @@ ALTER TABLE "floraclin"."procedure_records"
 ALTER TABLE "floraclin"."procedure_records"
   ALTER COLUMN "performed_at" DROP NOT NULL;--> statement-breakpoint
 
-CREATE INDEX IF NOT EXISTS "idx_procedure_records_atendimento"
-  ON "floraclin"."procedure_records" ("atendimento_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_procedure_records_encounter"
+  ON "floraclin"."procedure_records" ("encounter_id");--> statement-breakpoint
 
 -- patient_packages: new close columns
 ALTER TABLE "floraclin"."patient_packages"
@@ -162,18 +162,18 @@ FROM "floraclin"."patient_package_lines" ppl
 WHERE pr."patient_package_line_id" = ppl."id"
   AND pr."patient_package_line_id" IS NOT NULL;--> statement-breakpoint
 
--- ── 4. Backfill atendimento_id ────────────────────────────────────────
+-- ── 4. Backfill encounter_id ──────────────────────────────────────────
 
--- Procedures that belonged to a package share that package id as atendimentoId
+-- Procedures that belonged to a package share that package id as encounterId
 UPDATE "floraclin"."procedure_records"
-SET "atendimento_id" = "patient_package_id"
-WHERE "atendimento_id" IS NULL
+SET "encounter_id" = "patient_package_id"
+WHERE "encounter_id" IS NULL
   AND "patient_package_id" IS NOT NULL;--> statement-breakpoint
 
--- Every remaining procedure becomes its own atendimento
+-- Every remaining procedure becomes its own encounter
 UPDATE "floraclin"."procedure_records"
-SET "atendimento_id" = gen_random_uuid()
-WHERE "atendimento_id" IS NULL;--> statement-breakpoint
+SET "encounter_id" = gen_random_uuid()
+WHERE "encounter_id" IS NULL;--> statement-breakpoint
 
 -- ── 5. Materialize procedure_records for sold-but-unused package lines ──
 --
@@ -189,13 +189,13 @@ WHERE "atendimento_id" IS NULL;--> statement-breakpoint
 -- of the agreed sessions.
 --
 -- This INSERT materializes one `approved` procedure_records row per orphan
--- line, anchored to the same `patient_packages.id` as the atendimento
+-- line, anchored to the same `patient_packages.id` as the encounter
 -- grouping. The package's purchase date stamps `approved_at` / timestamps.
 -- Idempotent via the NOT EXISTS guard.
 
 INSERT INTO "floraclin"."procedure_records" (
   "id", "tenant_id", "patient_id", "practitioner_id", "procedure_type_id",
-  "status", "approved_at", "sessions_total", "atendimento_id",
+  "status", "approved_at", "sessions_total", "encounter_id",
   "patient_package_id", "created_at", "updated_at"
 )
 SELECT
@@ -207,7 +207,7 @@ SELECT
   'approved',
   pp."created_at",
   ppl."sessions_total",
-  pp."id",       -- atendimento groups by package id (matches step 4 backfill)
+  pp."id",       -- encounter groups by package id (matches step 4 backfill)
   pp."id",
   pp."created_at",
   pp."created_at"

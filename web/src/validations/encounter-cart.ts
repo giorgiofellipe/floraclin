@@ -8,7 +8,7 @@ export const cartLineSchema = z.object({
   sourceTemplateLineId: z.string().uuid().nullable(),
 })
 
-export const atendimentoCartSchema = z.object({
+export const encounterCartSchema = z.object({
   templateId: z.string().uuid().nullable(),
   templateName: z.string().nullable(),
   templateDefaultPrice: z.number().nonnegative().nullable(),
@@ -20,14 +20,14 @@ export const atendimentoCartSchema = z.object({
   { message: 'Linhas ad-hoc não podem repetir o mesmo procedimento.' }
 )
 
-export type AtendimentoCart = z.infer<typeof atendimentoCartSchema>
+export type EncounterCart = z.infer<typeof encounterCartSchema>
 export type CartLine = z.infer<typeof cartLineSchema>
 
-export function isBundleCart(cart: AtendimentoCart): boolean {
+export function isBundleCart(cart: EncounterCart): boolean {
   return cart.templateId !== null || cart.lines.some((l) => l.sessions > 1)
 }
 
-export function computeCartTotal(cart: AtendimentoCart): number {
+export function computeCartTotal(cart: EncounterCart): number {
   if (cart.totalOverride !== null) return cart.totalOverride
   const adhocSubtotal = cart.lines
     .filter((l) => l.sourceTemplateLineId === null)
@@ -36,7 +36,7 @@ export function computeCartTotal(cart: AtendimentoCart): number {
   return adhocSubtotal + templateSubtotal
 }
 
-export function autoPackageName(cart: AtendimentoCart): string {
+export function autoPackageName(cart: EncounterCart): string {
   if (cart.templateId !== null && cart.templateName) return cart.templateName
   if (cart.lines.length === 1) {
     const l = cart.lines[0]

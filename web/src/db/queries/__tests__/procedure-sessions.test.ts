@@ -5,7 +5,7 @@ import {
   countSessionsForRecord,
   createSession,
   getSessionByOrdinal,
-  listSessionsForAtendimento,
+  listSessionsForEncounter,
   listSessionsForRecord,
 } from '../procedure-sessions'
 
@@ -79,8 +79,8 @@ describeIntegration('procedure-sessions queries (integration — requires test D
     expect(missing).toBeNull()
   })
 
-  it('listSessionsForAtendimento returns [] when no records exist', async () => {
-    const result = await listSessionsForAtendimento(
+  it('listSessionsForEncounter returns [] when no records exist', async () => {
+    const result = await listSessionsForEncounter(
       '00000000-0000-0000-0000-00000000ffff',
     )
     expect(result).toEqual([])

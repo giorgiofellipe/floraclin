@@ -3,10 +3,10 @@ import {
   isBundleCart,
   computeCartTotal,
   autoPackageName,
-  atendimentoCartSchema,
-  type AtendimentoCart,
+  encounterCartSchema,
+  type EncounterCart,
   type CartLine,
-} from '../atendimento-cart'
+} from '../encounter-cart'
 
 const PROC_A = '11111111-1111-4111-8111-111111111111'
 const PROC_B = '22222222-2222-4222-8222-222222222222'
@@ -22,7 +22,7 @@ const adhocLine = (overrides?: Partial<CartLine>): CartLine => ({
   ...overrides,
 })
 
-const emptyCart = (overrides?: Partial<AtendimentoCart>): AtendimentoCart => ({
+const emptyCart = (overrides?: Partial<EncounterCart>): EncounterCart => ({
   templateId: null,
   templateName: null,
   templateDefaultPrice: null,
@@ -144,28 +144,28 @@ describe('computeCartTotal', () => {
   })
 })
 
-describe('atendimentoCartSchema', () => {
+describe('encounterCartSchema', () => {
   it('accepts a valid single ad-hoc cart', () => {
     const cart = emptyCart({ lines: [adhocLine()] })
-    const result = atendimentoCartSchema.safeParse(cart)
+    const result = encounterCartSchema.safeParse(cart)
     expect(result.success).toBe(true)
   })
 
   it('rejects empty lines array', () => {
     const cart = emptyCart({ lines: [] })
-    const result = atendimentoCartSchema.safeParse(cart)
+    const result = encounterCartSchema.safeParse(cart)
     expect(result.success).toBe(false)
   })
 
   it('rejects sessions < 1', () => {
     const cart = emptyCart({ lines: [adhocLine({ sessions: 0 })] })
-    const result = atendimentoCartSchema.safeParse(cart)
+    const result = encounterCartSchema.safeParse(cart)
     expect(result.success).toBe(false)
   })
 
   it('rejects sessions > 50', () => {
     const cart = emptyCart({ lines: [adhocLine({ sessions: 51 })] })
-    const result = atendimentoCartSchema.safeParse(cart)
+    const result = encounterCartSchema.safeParse(cart)
     expect(result.success).toBe(false)
   })
 
@@ -176,7 +176,7 @@ describe('atendimentoCartSchema', () => {
         adhocLine({ procedureTypeId: PROC_A, procedureTypeName: 'Botox 2' }),
       ],
     })
-    const result = atendimentoCartSchema.safeParse(cart)
+    const result = encounterCartSchema.safeParse(cart)
     expect(result.success).toBe(false)
   })
 
@@ -191,7 +191,7 @@ describe('atendimentoCartSchema', () => {
         adhocLine({ procedureTypeId: PROC_A, procedureTypeName: 'Botox extra', sourceTemplateLineId: null }),
       ],
     })
-    const result = atendimentoCartSchema.safeParse(cart)
+    const result = encounterCartSchema.safeParse(cart)
     expect(result.success).toBe(true)
   })
 })

@@ -109,7 +109,7 @@ export async function closePackage(
     closeNote: string | null
   },
   tx?: typeof db,
-): Promise<{ id: string; closedAt: Date; closedReason: string }> {
+): Promise<{ id: string; closedAt: Date | null; closedReason: string | null }> {
   const run = async (innerTx: typeof db) => {
     const updated = await closePackageQuery(
       args.tenantId,

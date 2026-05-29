@@ -8,7 +8,7 @@ beforeEach(() => {
   global.fetch = vi.fn() as unknown as typeof fetch
 })
 
-type AtendimentoView = {
+type EncounterView = {
   records: Array<{
     id: string
     procedureTypeName: string
@@ -30,7 +30,7 @@ type AtendimentoView = {
   } | null
 }
 
-const mockAtendimentoView = (view: AtendimentoView) => {
+const mockEncounterView = (view: EncounterView) => {
   ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
     new Response(JSON.stringify({ success: true, data: view }), {
       status: 200,
@@ -44,7 +44,7 @@ const renderPicker = (overrides: Partial<React.ComponentProps<typeof SessionPick
   return render(
     <QueryClientProvider client={qc}>
       <SessionPicker
-        atendimentoId="atend-1"
+        encounterId="atend-1"
         procedureRecordIds={['rec-1']}
         packageId={null}
         onPickPending={vi.fn()}
@@ -57,7 +57,7 @@ const renderPicker = (overrides: Partial<React.ComponentProps<typeof SessionPick
 
 describe('<SessionPicker>', () => {
   it('shows "Executar agora" only on the lowest pending ordinal per line', async () => {
-    mockAtendimentoView({
+    mockEncounterView({
       records: [
         {
           id: 'rec-1',
@@ -97,7 +97,7 @@ describe('<SessionPicker>', () => {
   })
 
   it('disables actions when package is closed', async () => {
-    mockAtendimentoView({
+    mockEncounterView({
       records: [
         {
           id: 'rec-1',
@@ -126,7 +126,7 @@ describe('<SessionPicker>', () => {
   })
 
   it('shows expiry banner when expiresAt is in the past and not closed', async () => {
-    mockAtendimentoView({
+    mockEncounterView({
       records: [
         {
           id: 'rec-1',
@@ -153,7 +153,7 @@ describe('<SessionPicker>', () => {
   })
 
   it('hides expiry banner when the package has been closed', async () => {
-    mockAtendimentoView({
+    mockEncounterView({
       records: [
         {
           id: 'rec-1',
