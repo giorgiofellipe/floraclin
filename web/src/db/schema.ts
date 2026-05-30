@@ -960,6 +960,41 @@ export const procedureFollowups = floraclinSchema.table('procedure_followups', {
   index('idx_procedure_followups_record_contacted').on(table.procedureRecordId, table.contactedAt),
 ])
 
+// ─── PATIENT EVOLUTIONS ─────────────────────────────────────────────
+// Free-text patient-level notes for the Evoluções tab. Soft-deletable.
+// `patient_evolution_revisions.evolution_id` keeps ON DELETE CASCADE: we
+// never hard-delete soft-deleted notes today, but if a maintenance job is
+// added later, revisions go with the parent automatically.
+
+export const patientEvolutions = floraclinSchema.table('patient_evolutions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  patientId: uuid('patient_id').notNull().references(() => patients.id),
+  body: text('body').notNull(),
+  authorId: uuid('author_id').notNull().references(() => users.id),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: uuid('deleted_by').references(() => users.id),
+  deleteReason: text('delete_reason'),
+}, (table) => [
+  index('idx_patient_evolutions_feed').on(table.tenantId, table.patientId, table.occurredAt),
+  index('idx_patient_evolutions_author').on(table.tenantId, table.authorId),
+])
+
+export const patientEvolutionRevisions = floraclinSchema.table('patient_evolution_revisions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  evolutionId: uuid('evolution_id').notNull().references(() => patientEvolutions.id, { onDelete: 'cascade' }),
+  body: text('body').notNull(),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+  editedBy: uuid('edited_by').notNull().references(() => users.id),
+  editedAt: timestamp('edited_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_patient_evolution_revisions_evolution').on(table.evolutionId, table.editedAt),
+])
+
 // ─── RELATIONS ───────────────────────────────────────────────────────
 
 export const productsRelations = relations(products, ({ one }) => ({

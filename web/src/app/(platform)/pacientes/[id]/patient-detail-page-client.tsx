@@ -6,13 +6,15 @@ import { usePatient } from '@/hooks/queries/use-patients'
 import { useProcedures } from '@/hooks/queries/use-procedures'
 import { PatientDetailContent } from '@/components/patients/patient-detail-content'
 import PatientDetailLoading from './loading'
+import type { Role } from '@/types'
 
 interface PatientDetailPageClientProps {
   patientId: string
   whatsappApiEnabled?: boolean
+  role: Role
 }
 
-export function PatientDetailPageClient({ patientId, whatsappApiEnabled = false }: PatientDetailPageClientProps) {
+export function PatientDetailPageClient({ patientId, whatsappApiEnabled = false, role }: PatientDetailPageClientProps) {
   const searchParams = useSearchParams()
   const tab = searchParams.get('tab') ?? undefined
 
@@ -40,6 +42,7 @@ export function PatientDetailPageClient({ patientId, whatsappApiEnabled = false 
       activeTab={tab}
       hasActiveService={hasActiveService}
       whatsappApiEnabled={whatsappApiEnabled}
+      role={role}
     />
   )
 }

@@ -42,6 +42,7 @@ export default async function PatientDetailPage({
       <PatientDetailPageClient
         patientId={id}
         whatsappApiEnabled={!!settings.whatsapp_enabled}
+        role={ctx.role}
       />
     </Suspense>
   )

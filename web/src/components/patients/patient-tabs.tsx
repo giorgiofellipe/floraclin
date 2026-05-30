@@ -11,11 +11,21 @@ import {
   Clock,
   Package,
   FileText,
+  BookOpen,
 } from 'lucide-react'
+import type { Role } from '@/types'
 
-const TABS = [
+interface TabConfig {
+  key: string
+  label: string
+  icon: typeof User
+  requiredRoles?: Role[]
+}
+
+const TABS: readonly TabConfig[] = [
   { key: 'dados', label: 'Dados', icon: User },
   { key: 'anamnese', label: 'Anamnese', icon: ClipboardList },
+  { key: 'evolucoes', label: 'Evoluções', icon: BookOpen, requiredRoles: ['owner', 'practitioner'] },
   { key: 'procedimentos', label: 'Atendimentos', icon: Syringe },
   { key: 'pacotes', label: 'Pacotes', icon: Package },
   { key: 'documentos', label: 'Documentos', icon: FileText },
@@ -30,13 +40,19 @@ export type PatientTabKey = (typeof TABS)[number]['key']
 interface PatientTabsProps {
   activeTab: PatientTabKey
   onTabChange: (tab: PatientTabKey) => void
+  /** Caller-supplied role used to filter visible tabs. */
+  role?: Role
 }
 
-export function PatientTabs({ activeTab, onTabChange }: PatientTabsProps) {
+export function PatientTabs({ activeTab, onTabChange, role }: PatientTabsProps) {
+  const visibleTabs = TABS.filter(
+    (t) => !t.requiredRoles || (role !== undefined && t.requiredRoles.includes(role)),
+  )
+
   return (
     <div className="bg-white rounded-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
       <nav className="flex overflow-x-auto" aria-label="Abas do paciente">
-        {TABS.map((tab) => {
+        {visibleTabs.map((tab) => {
           const Icon = tab.icon
           const isActive = activeTab === tab.key
           return (
