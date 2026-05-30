@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -10,6 +10,7 @@ import { SignaturePad } from './signature-pad'
 import { useAcceptConsent } from '@/hooks/mutations/use-consent-mutations'
 import type { AcceptanceMethod } from '@/types'
 import { CONSENT_TYPE_LABELS } from '@/lib/constants'
+import { collectDeviceFingerprint, type DeviceFingerprint, type Geolocation } from '@/lib/signature-evidence'
 
 interface ConsentTemplate {
   id: string
@@ -22,6 +23,7 @@ interface ConsentTemplate {
 interface ConsentViewerProps {
   template: ConsentTemplate
   patientId: string
+  patientCpf?: string | null
   procedureRecordId?: string
   requireSignature?: boolean
   onAccepted?: () => void
@@ -30,6 +32,7 @@ interface ConsentViewerProps {
 export function ConsentViewer({
   template,
   patientId,
+  patientCpf,
   procedureRecordId,
   requireSignature = false,
   onAccepted,
@@ -38,6 +41,19 @@ export function ConsentViewer({
   const [signatureData, setSignatureData] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [accepted, setAccepted] = useState(false)
+  const [deviceFingerprint] = useState<DeviceFingerprint>(() => collectDeviceFingerprint())
+  const [geolocation, setGeolocation] = useState<Geolocation | undefined>(undefined)
+
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setGeolocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => {},
+        { timeout: 5000 },
+      )
+    }
+  }, [])
+
   const acceptConsent = useAcceptConsent()
   const isSubmitting = acceptConsent.isPending
 
@@ -67,13 +83,16 @@ export function ConsentViewer({
         procedureRecordId,
         acceptanceMethod: signatureData ? (checked ? 'both' : 'signature') : 'checkbox',
         signatureData: signatureData ?? undefined,
+        signerCpf: patientCpf ?? undefined,
+        deviceFingerprint,
+        geolocation,
       })
       setAccepted(true)
       onAccepted?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro inesperado ao registrar aceite')
     }
-  }, [canSubmit, isSubmitting, patientId, template.id, procedureRecordId, signatureData, checked, onAccepted, acceptConsent])
+  }, [canSubmit, isSubmitting, patientId, patientCpf, template.id, procedureRecordId, signatureData, checked, onAccepted, acceptConsent, deviceFingerprint, geolocation])
 
   if (accepted) {
     return (

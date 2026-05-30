@@ -271,6 +271,7 @@ export async function insertClinicalDocument(args: {
   body: string
   templateId: string | null
   professionalSnapshot: ProfessionalSnapshot
+  verificationCode?: string | null
 }): Promise<ClinicalDocument> {
   const [row] = await db
     .insert(clinicalDocuments)
@@ -283,6 +284,7 @@ export async function insertClinicalDocument(args: {
       body: args.body,
       templateId: args.templateId,
       professionalSnapshot: args.professionalSnapshot,
+      verificationCode: args.verificationCode ?? null,
       deliveredVia: 'pending',
     })
     .returning()

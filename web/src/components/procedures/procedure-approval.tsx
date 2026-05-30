@@ -650,6 +650,7 @@ export function ProcedureApproval({
         activeConsentTemplate={activeConsentTemplate}
         loadingConsentTemplate={loadingConsentTemplate}
         patientId={patient.id}
+        patientCpf={patient.cpf}
         procedureId={primaryRecordId}
         onOpenConsent={handleOpenConsent}
         onConsentAccepted={handleConsentAccepted}
