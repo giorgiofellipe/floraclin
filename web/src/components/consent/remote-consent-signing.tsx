@@ -28,12 +28,10 @@ export function RemoteConsentSigning({ token, firstName, templates }: RemoteCons
   const [signatureData, setSignatureData] = useState<string | null>(null)
   const [status, setStatus] = useState<Status>('idle')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [deviceFingerprint, setDeviceFingerprint] = useState<DeviceFingerprint | null>(null)
+  const [deviceFingerprint] = useState<DeviceFingerprint>(() => collectDeviceFingerprint())
   const [geolocation, setGeolocation] = useState<Geolocation | undefined>(undefined)
 
   useEffect(() => {
-    setDeviceFingerprint(collectDeviceFingerprint())
-
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setGeolocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
@@ -44,7 +42,7 @@ export function RemoteConsentSigning({ token, firstName, templates }: RemoteCons
   }, [])
 
   const handleSubmit = useCallback(async () => {
-    if (!signatureData || !deviceFingerprint) return
+    if (!signatureData) return
 
     setStatus('submitting')
     setErrorMessage(null)
@@ -132,7 +130,7 @@ export function RemoteConsentSigning({ token, firstName, templates }: RemoteCons
 
           <Button
             onClick={handleSubmit}
-            disabled={!signatureData || !deviceFingerprint || status === 'submitting'}
+            disabled={!signatureData || status === 'submitting'}
             className="w-full bg-forest text-cream hover:bg-sage shadow-md hover:shadow-lg transition-all duration-200"
             size="lg"
           >

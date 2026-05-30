@@ -143,7 +143,16 @@ export async function acceptConsent(
       : []),
   ])
 
-  const template = await getConsentTemplateById(tenantId, data.consentTemplateId)
+  const [template] = await target
+    .select()
+    .from(consentTemplates)
+    .where(
+      and(
+        eq(consentTemplates.id, data.consentTemplateId),
+        eq(consentTemplates.tenantId, tenantId)
+      )
+    )
+    .limit(1)
   if (!template) {
     throw new Error('Termo não encontrado')
   }

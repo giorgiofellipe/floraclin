@@ -27,7 +27,10 @@ export async function POST(request: Request) {
     }
 
     const tenant = await getTenant(ctx.tenantId)
-    const settings = (tenant?.settings ?? {}) as Record<string, unknown>
+    if (!tenant) {
+      return NextResponse.json({ error: 'Clínica não encontrada' }, { status: 404 })
+    }
+    const settings = (tenant.settings ?? {}) as Record<string, unknown>
     if (!settings.whatsapp_enabled) {
       return NextResponse.json({ error: 'WhatsApp não habilitado' }, { status: 403 })
     }
@@ -80,7 +83,7 @@ export async function POST(request: Request) {
     const normalizedPhone = phone.startsWith('55') ? phone : `55${phone}`
     const firstName = patient.fullName.split(' ')[0]
 
-    const templateParams = { '1': firstName, '2': tenant!.name, '3': signingUrl }
+    const templateParams = { '1': firstName, '2': tenant.name, '3': signingUrl }
     const result = await sendTemplateMessage(
       ctx.tenantId,
       normalizedPhone,

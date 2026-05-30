@@ -35,6 +35,11 @@ export async function POST(request: Request) {
     const templateMap = new Map(templates.map((t) => [t.id, t]))
 
     await withTransaction(async (tx) => {
+      const used = await markSigningTokenUsed(parsed.data.token, tx)
+      if (!used) {
+        throw new Error('TOKEN_ALREADY_USED')
+      }
+
       for (const sig of parsed.data.signatures) {
         const template = templateMap.get(sig.consentTemplateId)
         if (!template) continue
@@ -58,8 +63,6 @@ export async function POST(request: Request) {
           tx,
         )
 
-        // Use createdBy (the practitioner who sent the link) as userId —
-        // patientId is NOT in the users table and would violate the FK.
         await createAuditLog({
           tenantId: tokenData.tenantId,
           userId: tokenData.createdBy,
@@ -74,11 +77,6 @@ export async function POST(request: Request) {
           ipAddress,
           userAgent,
         }, tx)
-      }
-
-      const used = await markSigningTokenUsed(parsed.data.token, tx)
-      if (!used) {
-        throw new Error('TOKEN_ALREADY_USED')
       }
     })
 

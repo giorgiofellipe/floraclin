@@ -647,7 +647,7 @@ export type DeviceFingerprintInput = z.infer<typeof deviceFingerprintSchema>
 export const sendSigningLinkSchema = z.object({
   patientId: z.string().uuid(),
   procedureRecordId: z.string().uuid(),
-  consentTypes: z.array(z.string().min(1)).min(1, 'Pelo menos um tipo de termo é obrigatório'),
+  consentTypes: z.array(z.enum(consentTypes)).min(1, 'Pelo menos um tipo de termo é obrigatório'),
 })
 
 export type SendSigningLinkInput = z.infer<typeof sendSigningLinkSchema>

@@ -3,6 +3,8 @@ import { db } from '@/db/client'
 import { consentSigningTokens, patients, consentTemplates } from '@/db/schema'
 import { eq, and, isNull, sql, inArray } from 'drizzle-orm'
 
+const SIGNING_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
+
 export async function createSigningToken(
   tenantId: string,
   patientId: string,
@@ -11,7 +13,7 @@ export async function createSigningToken(
   createdBy: string,
 ) {
   const token = crypto.randomBytes(32).toString('hex')
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+  const expiresAt = new Date(Date.now() + SIGNING_TOKEN_TTL_MS)
 
   const [row] = await db
     .insert(consentSigningTokens)

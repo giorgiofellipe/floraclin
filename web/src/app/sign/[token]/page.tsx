@@ -1,8 +1,20 @@
 import { getValidSigningToken, getTemplatesForToken } from '@/db/queries/consent-signing-tokens'
 import { RemoteConsentSigning } from '@/components/consent/remote-consent-signing'
 
+const TOKEN_PATTERN = /^[0-9a-f]{64}$/
+
 export default async function SignPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
+
+  if (!TOKEN_PATTERN.test(token)) {
+    return (
+      <div className="text-center py-16">
+        <h2 className="text-xl font-medium text-charcoal">Link inválido</h2>
+        <p className="text-mid mt-2">O link informado não é válido.</p>
+      </div>
+    )
+  }
+
   const tokenData = await getValidSigningToken(token)
 
   if (!tokenData) {
