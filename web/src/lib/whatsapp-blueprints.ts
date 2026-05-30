@@ -48,6 +48,7 @@ export const PURPOSE_LABELS: Record<string, string> = {
   birthday_greeting: 'Aniversário',
   reactivation: 'Reativação',
   resume_conversation: 'Retomar conversa',
+  consent_signing_link: 'Assinatura de termos',
 }
 
 function makeBody(text: string, variables: TemplateVariable[]): Record<string, unknown>[] {
@@ -339,6 +340,27 @@ export const TEMPLATE_BLUEPRINTS: TemplateBlueprint[] = [
         ],
       },
     ],
+  },
+  {
+    slug: 'consent_signing_link',
+    purposeKey: 'consent_signing_link',
+    name: 'consent_signing_link',
+    category: 'UTILITY',
+    language: 'pt_BR',
+    description: 'Link para assinatura remota de termos de consentimento',
+    variables: [
+      { index: 1, key: 'patient_name', label: 'Nome do paciente', example: 'Maria Silva' },
+      { index: 2, key: 'clinic_name', label: 'Nome da clínica', example: 'Clínica Flora' },
+      { index: 3, key: 'link', label: 'Link de assinatura', example: 'https://app.floraclin.com/sign/abc123' },
+    ],
+    components: makeBody(
+      'Olá {{1}}, a clínica {{2}} enviou os termos do seu procedimento para assinatura. Acesse o link para revisar e assinar: {{3}}',
+      [
+        { index: 1, key: 'patient_name', label: 'Nome do paciente', example: 'Maria Silva' },
+        { index: 2, key: 'clinic_name', label: 'Nome da clínica', example: 'Clínica Flora' },
+        { index: 3, key: 'link', label: 'Link de assinatura', example: 'https://app.floraclin.com/sign/abc123' },
+      ],
+    ),
   },
 ]
 

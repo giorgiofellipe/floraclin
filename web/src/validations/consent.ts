@@ -36,7 +36,18 @@ export const consentAcceptanceSchema = z.object({
   acceptanceMethod: z.enum(acceptanceMethods, {
     message: 'Método de aceite é obrigatório',
   }),
-  signatureData: z.string().optional(),
+  signatureData: z.string().max(500_000).optional(),
+  renderedContent: z.string().max(100_000).optional(),
+  signerCpf: z.string().max(20).optional(),
+  deviceFingerprint: z.object({
+    screen: z.string(),
+    timezone: z.string(),
+    language: z.string(),
+  }).optional(),
+  geolocation: z.object({
+    lat: z.number(),
+    lng: z.number(),
+  }).optional(),
 }).refine(
   (data) => {
     if (data.acceptanceMethod === 'signature' || data.acceptanceMethod === 'both') {
@@ -599,3 +610,44 @@ Este contrato é regido pelas leis brasileiras. Eventuais disputas serão resolv
 Data: {{data}}`,
   },
 } as const
+
+export const CONSENT_SIGNING_TEMPLATE_PURPOSE = 'consent_signing_link' as const
+
+export const deviceFingerprintSchema = z.object({
+  screen: z.string(),
+  timezone: z.string(),
+  language: z.string(),
+})
+
+const geolocationSchema = z.object({
+  lat: z.number(),
+  lng: z.number(),
+})
+
+export const remoteConsentSignatureSchema = z.object({
+  token: z.string().length(64).regex(/^[0-9a-f]+$/),
+  signatures: z
+    .array(
+      z.object({
+        consentTemplateId: z.string().uuid(),
+        signatureData: z
+          .string()
+          .max(500_000)
+          .refine((s) => s.startsWith('data:image/'), 'Assinatura inválida'),
+        deviceFingerprint: deviceFingerprintSchema,
+        geolocation: geolocationSchema.optional(),
+      }),
+    )
+    .min(1, 'Pelo menos uma assinatura é obrigatória'),
+})
+
+export type RemoteConsentSignatureInput = z.infer<typeof remoteConsentSignatureSchema>
+export type DeviceFingerprintInput = z.infer<typeof deviceFingerprintSchema>
+
+export const sendSigningLinkSchema = z.object({
+  patientId: z.string().uuid(),
+  procedureRecordId: z.string().uuid(),
+  consentTypes: z.array(z.string().min(1)).min(1, 'Pelo menos um tipo de termo é obrigatório'),
+})
+
+export type SendSigningLinkInput = z.infer<typeof sendSigningLinkSchema>

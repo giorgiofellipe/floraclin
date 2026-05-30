@@ -6,7 +6,7 @@
 // component that transitively imports this file throws at build time
 // instead of silently bundling Chromium + react-dom/server into the browser.
 import 'server-only'
-import type { ReactElement } from 'react'
+import React, { type ReactElement } from 'react'
 
 // @sparticuz/chromium-min 149.0.0 → matching pack tar URL.
 // Override via process.env.CHROMIUM_PACK_URL in production (e.g. S3).
@@ -77,6 +77,14 @@ export const PRINT_BASE_CSS = `
   .footer .line { border-top: 1px solid black; margin: 0.25rem auto 0 auto; width: 280px; }
   .footer .name { margin-top: 0.5rem; font-weight: 500; font-size: 14px; }
   .footer .registry { font-size: 12px; color: #555; }
+  .verification-footer {
+    margin-top: 2rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #ddd;
+    text-align: center;
+    font-size: 10px;
+    color: #888;
+  }
 `
 
 /**
@@ -138,4 +146,13 @@ export async function renderReactToPdf(
   } finally {
     await browser.close()
   }
+}
+
+export function VerificationFooter({ code }: { code: string }): ReactElement {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  return React.createElement(
+    'div',
+    { className: 'verification-footer' },
+    `Documento assinado eletronicamente · Verifique: ${appUrl}/verify/${code}`,
+  )
 }

@@ -18,6 +18,8 @@ export default auth((req) => {
   if (
     pathname.startsWith('/c/') ||
     pathname.startsWith('/a/') ||
+    pathname.startsWith('/sign/') ||
+    pathname.startsWith('/verify/') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/favicon') ||

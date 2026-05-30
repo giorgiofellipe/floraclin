@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { consentTemplateSchema, consentAcceptanceSchema } from '../consent'
+import { consentTemplateSchema, consentAcceptanceSchema, deviceFingerprintSchema, remoteConsentSignatureSchema, CONSENT_SIGNING_TEMPLATE_PURPOSE } from '../consent'
 
 describe('consentTemplateSchema', () => {
   const validTemplate = {
@@ -125,5 +125,69 @@ describe('consentAcceptanceSchema', () => {
       procedureRecordId: '550e8400-e29b-41d4-a716-446655440002',
     })
     expect(result.success).toBe(true)
+  })
+})
+
+describe('deviceFingerprintSchema', () => {
+  it('passes with valid fingerprint', () => {
+    const result = deviceFingerprintSchema.safeParse({
+      screen: '1920x1080',
+      timezone: 'America/Sao_Paulo',
+      language: 'pt-BR',
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('fails when screen is missing', () => {
+    const result = deviceFingerprintSchema.safeParse({
+      timezone: 'America/Sao_Paulo',
+      language: 'pt-BR',
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('remoteConsentSignatureSchema', () => {
+  const valid = {
+    token: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+    signatures: [
+      {
+        consentTemplateId: '550e8400-e29b-41d4-a716-446655440001',
+        signatureData: 'data:image/png;base64,abc',
+        deviceFingerprint: { screen: '1920x1080', timezone: 'America/Sao_Paulo', language: 'pt-BR' },
+      },
+    ],
+  }
+
+  it('passes with valid data', () => {
+    const result = remoteConsentSignatureSchema.safeParse(valid)
+    expect(result.success).toBe(true)
+  })
+
+  it('passes with optional geolocation', () => {
+    const result = remoteConsentSignatureSchema.safeParse({
+      ...valid,
+      signatures: [{ ...valid.signatures[0], geolocation: { lat: -23.55, lng: -46.63 } }],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('fails with empty signatures array', () => {
+    const result = remoteConsentSignatureSchema.safeParse({ ...valid, signatures: [] })
+    expect(result.success).toBe(false)
+  })
+
+  it('fails with invalid signature data', () => {
+    const result = remoteConsentSignatureSchema.safeParse({
+      ...valid,
+      signatures: [{ ...valid.signatures[0], signatureData: 'not-a-data-uri' }],
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('CONSENT_SIGNING_TEMPLATE_PURPOSE', () => {
+  it('is defined as consent_signing_link', () => {
+    expect(CONSENT_SIGNING_TEMPLATE_PURPOSE).toBe('consent_signing_link')
   })
 })

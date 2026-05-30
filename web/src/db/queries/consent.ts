@@ -4,15 +4,7 @@ import { eq, and, desc } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import type { ConsentTemplateInput, ConsentAcceptanceInput } from '@/validations/consent'
 import { verifyTenantOwnership } from './helpers'
-
-// SHA-256 hash using Web Crypto API
-async function hashContent(content: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(content)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
-}
+import { sha256, buildEvidencePackage, type DeviceFingerprint, type Geolocation } from '@/lib/signature-evidence'
 
 export async function listConsentTemplates(tenantId: string) {
   const templates = await db
@@ -132,9 +124,18 @@ export async function updateConsentTemplate(
 export async function acceptConsent(
   tenantId: string,
   data: ConsentAcceptanceInput,
-  meta: { ipAddress?: string; userAgent?: string; renderedContent?: string }
+  meta: {
+    ipAddress?: string
+    userAgent?: string
+    renderedContent?: string
+    signerCpf?: string
+    deviceFingerprint?: DeviceFingerprint
+    geolocation?: Geolocation
+  },
+  tx?: typeof db,
 ) {
-  // Verify foreign IDs belong to this tenant
+  const target = tx ?? db
+
   await Promise.all([
     verifyTenantOwnership(tenantId, patients, data.patientId, 'Patient'),
     ...(data.procedureRecordId
@@ -142,22 +143,35 @@ export async function acceptConsent(
       : []),
   ])
 
-  // Load the template to get the content for snapshot and hash
   const template = await getConsentTemplateById(tenantId, data.consentTemplateId)
   if (!template) {
     throw new Error('Termo não encontrado')
   }
 
-  // For service contracts, use the rendered (interpolated) text the patient actually read
-  // instead of the raw template with placeholders
   const snapshotContent = (template.type === 'service_contract' && meta.renderedContent)
     ? meta.renderedContent
     : template.content
 
-  // Hash the actual content the patient saw
-  const contentHash = await hashContent(snapshotContent)
+  const contentHash = await sha256(snapshotContent)
 
-  const [acceptance] = await db
+  let signatureEvidence: unknown = null
+  let verificationCode: string | null = null
+
+  if (data.signatureData && meta.signerCpf && meta.deviceFingerprint) {
+    const evidenceResult = await buildEvidencePackage({
+      contentText: snapshotContent,
+      signatureData: data.signatureData,
+      signerCpf: meta.signerCpf,
+      ipAddress: meta.ipAddress ?? 'unknown',
+      userAgent: meta.userAgent ?? 'unknown',
+      deviceFingerprint: meta.deviceFingerprint,
+      geolocation: meta.geolocation,
+    })
+    signatureEvidence = evidenceResult.evidence
+    verificationCode = evidenceResult.verificationCode
+  }
+
+  const [acceptance] = await target
     .insert(consentAcceptances)
     .values({
       tenantId,
@@ -171,6 +185,8 @@ export async function acceptConsent(
       acceptedAt: new Date(),
       ipAddress: meta.ipAddress ?? null,
       userAgent: meta.userAgent ?? null,
+      signatureEvidence,
+      verificationCode,
     })
     .returning()
 
@@ -248,4 +264,25 @@ export async function getAllTemplateVersions(tenantId: string, type: string) {
       )
     )
     .orderBy(desc(consentTemplates.version))
+}
+
+export async function findByVerificationCode(code: string) {
+  const [row] = await db
+    .select({
+      id: consentAcceptances.id,
+      contentSnapshot: consentAcceptances.contentSnapshot,
+      signatureData: consentAcceptances.signatureData,
+      signatureEvidence: consentAcceptances.signatureEvidence,
+      verificationCode: consentAcceptances.verificationCode,
+      acceptedAt: consentAcceptances.acceptedAt,
+      acceptanceMethod: consentAcceptances.acceptanceMethod,
+      templateTitle: consentTemplates.title,
+      templateType: consentTemplates.type,
+    })
+    .from(consentAcceptances)
+    .innerJoin(consentTemplates, eq(consentAcceptances.consentTemplateId, consentTemplates.id))
+    .where(eq(consentAcceptances.verificationCode, code))
+    .limit(1)
+
+  return row ?? null
 }

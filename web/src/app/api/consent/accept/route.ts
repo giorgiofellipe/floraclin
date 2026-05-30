@@ -30,8 +30,11 @@ export async function POST(request: Request) {
       const result = await acceptConsent(ctx.tenantId, parsed.data, {
         ipAddress,
         userAgent,
-        renderedContent: body.renderedContent,
-      })
+        renderedContent: parsed.data.renderedContent,
+        signerCpf: parsed.data.signerCpf,
+        deviceFingerprint: parsed.data.deviceFingerprint,
+        geolocation: parsed.data.geolocation,
+      }, tx)
 
       await createAuditLog({
         tenantId: ctx.tenantId,
@@ -40,9 +43,9 @@ export async function POST(request: Request) {
         entityType: 'consent_acceptance',
         entityId: result.id,
         changes: {
-          patientId: { old: null, new: body.patientId },
-          consentTemplateId: { old: null, new: body.consentTemplateId },
-          method: { old: null, new: body.acceptanceMethod },
+          patientId: { old: null, new: parsed.data.patientId },
+          consentTemplateId: { old: null, new: parsed.data.consentTemplateId },
+          method: { old: null, new: parsed.data.acceptanceMethod },
         },
       }, tx)
 

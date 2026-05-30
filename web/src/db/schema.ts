@@ -355,9 +355,27 @@ export const consentAcceptances = floraclinSchema.table('consent_acceptances', {
   acceptedAt: timestamp('accepted_at', { withTimezone: true }).notNull().defaultNow(),
   ipAddress: inet('ip_address'),
   userAgent: text('user_agent'),
+  signatureEvidence: jsonb('signature_evidence'),
+  verificationCode: varchar('verification_code', { length: 16 }).unique(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('idx_consent_acceptances_patient').on(table.tenantId, table.patientId),
+])
+
+export const consentSigningTokens = floraclinSchema.table('consent_signing_tokens', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  token: varchar('token', { length: 64 }).notNull().unique(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  patientId: uuid('patient_id').notNull().references(() => patients.id),
+  procedureRecordId: uuid('procedure_record_id').notNull().references(() => procedureRecords.id),
+  consentTemplateIds: uuid('consent_template_ids').array().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdBy: uuid('created_by').notNull().references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_consent_signing_tokens_token').on(table.token),
+  index('idx_consent_signing_tokens_tenant').on(table.tenantId),
 ])
 
 // ─── FINANCIAL ───────────────────────────────────────────────────────
@@ -919,6 +937,7 @@ export const clinicalDocuments = floraclinSchema.table('clinical_documents', {
   deliveredVia: varchar('delivered_via', { length: 20 }).notNull(),
   whatsappMessageId: text('whatsapp_message_id'),
   storagePath: text('storage_path'),
+  verificationCode: varchar('verification_code', { length: 16 }).unique(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

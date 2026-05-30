@@ -1,4 +1,5 @@
 import { getSignatureBlock } from '@/lib/professional'
+import { sha256, deriveVerificationCode } from '@/lib/signature-evidence'
 import {
   insertClinicalDocument,
   type ClinicalDocument,
@@ -44,6 +45,9 @@ export async function issueClinicalDocument(
     signatureDataUrl: sig.signatureDataUrl,
   }
 
+  const bodyHash = await sha256(args.body)
+  const verificationCode = deriveVerificationCode(bodyHash)
+
   return insertClinicalDocument({
     tenantId: args.tenantId,
     patientId: args.patientId,
@@ -53,6 +57,7 @@ export async function issueClinicalDocument(
     body: args.body,
     templateId: args.templateId ?? null,
     professionalSnapshot: snapshot,
+    verificationCode,
   })
 }
 
