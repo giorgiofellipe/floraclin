@@ -156,6 +156,7 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
       tenant={{
         id: tenant.id,
         name: tenant.name,
+        whatsappApiEnabled: !!(tenant.settings as Record<string, unknown> | null)?.whatsapp_enabled,
       }}
       initialStep={initialStep}
       procedureId={procedure?.id ?? null}

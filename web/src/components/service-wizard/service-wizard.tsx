@@ -21,6 +21,7 @@ import { WizardStep as WizardStepWrapper } from './wizard-step'
 import { ProcedureTypeStep } from './procedure-type-step'
 import { SaveStatusIndicator } from './save-status-indicator'
 import { AnamnesisForm } from '@/components/anamnesis/anamnesis-form'
+import { SendAnamnesisDialog } from '@/components/patients/send-anamnesis-dialog'
 import { ProcedureForm } from '@/components/procedures/procedure-form'
 import { ProcedureApproval } from '@/components/procedures/procedure-approval'
 import { ProcedureExecution } from '@/components/procedures/procedure-execution'
@@ -47,6 +48,7 @@ interface PatientInfo {
 interface TenantInfo {
   id: string
   name: string
+  whatsappApiEnabled?: boolean
 }
 
 interface ServiceWizardProps {
@@ -471,9 +473,10 @@ export function ServiceWizard({
 
   const handleApprove = useCallback(async () => {
     if (isFinalizing) return
-    if (!state.encounterId) {
-      toast.error('Atendimento sem identificador. Recarregue a página.')
-      return
+    let encId = state.encounterId
+    if (!encId) {
+      encId = crypto.randomUUID()
+      setEncounterId(encId)
     }
     if (!localProcedure) {
       toast.error('Carregando dados do procedimento — aguarde um instante.')
@@ -515,7 +518,7 @@ export function ServiceWizard({
     setIsFinalizing(true)
     try {
       const res = await fetch(
-        `/api/encounters/${state.encounterId}/finalize`,
+        `/api/encounters/${encId}/finalize`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -571,6 +574,7 @@ export function ServiceWizard({
     state.procedureRecordIds,
     localProcedure,
     patient.id,
+    setEncounterId,
     setProcedureRecordIds,
     updateProcedureStatus,
     updateStepTimestamp,
@@ -820,6 +824,19 @@ export function ServiceWizard({
                   </p>
                 </div>
               )}
+              {!isReadOnlyAfterApproval && patient.phone && (
+                <div className="mb-4 flex items-center justify-between">
+                  <p className="text-xs text-mid">
+                    Envie o link para o paciente preencher a anamnese pelo celular.
+                  </p>
+                  <SendAnamnesisDialog
+                    patientId={patient.id}
+                    patientName={patient.fullName}
+                    patientPhone={patient.phone}
+                    whatsappApiEnabled={tenant.whatsappApiEnabled}
+                  />
+                </div>
+              )}
               <div className={isReadOnlyAfterApproval ? 'pointer-events-none opacity-75' : undefined}>
                 <AnamnesisForm
                   patientId={patient.id}
@@ -909,6 +926,7 @@ export function ServiceWizard({
                     fullName: patient.fullName,
                     cpf: patient.cpf,
                     gender: patient.gender,
+                    phone: patient.phone,
                   }}
                   tenant={tenant}
                   additionalTypeIds={additionalTypeIds}

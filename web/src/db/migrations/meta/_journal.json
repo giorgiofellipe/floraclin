@@ -113,6 +113,13 @@
       "when": 1780800000000,
       "tag": "0017_patient_evolutions",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1780900000000,
+      "tag": "0018_signing_token_rendered_contents",
+      "breakpoints": true
     }
   ]
 }

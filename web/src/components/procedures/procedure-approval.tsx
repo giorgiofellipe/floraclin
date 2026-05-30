@@ -8,6 +8,7 @@ import {
   Loader2,
   ShieldCheck,
   ArrowLeft,
+  RefreshCw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -31,6 +32,7 @@ import { ApprovalSummaryCard } from './approval/approval-summary-card'
 import { WizardCart } from '@/components/service-wizard/wizard-cart'
 import { ConsentStatusList } from './approval/consent-status-list'
 import { ServiceContractSection } from './approval/service-contract-section'
+import { SendConsentSigningLink } from './approval/send-consent-signing-link'
 import { ClipboardCheck } from 'lucide-react'
 
 const CATEGORY_TO_CONSENT: Record<string, string> = {
@@ -68,11 +70,13 @@ interface PatientData {
   fullName: string
   cpf?: string | null
   gender?: string | null
+  phone?: string | null
 }
 
 interface TenantData {
   id: string
   name: string
+  whatsappApiEnabled?: boolean
 }
 
 interface FinancialPlan {
@@ -262,6 +266,19 @@ export function ProcedureApproval({
 
   const canApprove = allConsentsSigned && contractSigned
 
+  const allUnsignedTypes = useMemo(() => {
+    const unsigned = consentStatuses
+      .filter((c) => !c.signed && !c.loading)
+      .map((c) => c.type)
+    if (!contractSigned && contractTemplate) unsigned.push('service_contract')
+    return unsigned
+  }, [consentStatuses, contractSigned, contractTemplate])
+
+  const signingRenderedContents = useMemo(() => {
+    if (!contractText || contractSigned) return undefined
+    return { service_contract: contractText }
+  }, [contractText, contractSigned])
+
   // Single initialization: load all data at once.
   const initRef = useRef(false)
 
@@ -345,18 +362,42 @@ export function ProcedureApproval({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasUnsavedChanges])
 
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
   const refreshConsentStatuses = useCallback(async () => {
-    const updated = await Promise.all(
-      consentStatuses.map(async (s) => {
-        const checkRes = await fetch(
-          `/api/consent/history/${patient.id}?procedureId=${primaryRecordId}&type=${s.type}`,
-        )
-        const result = checkRes.ok ? await checkRes.json() : { data: null }
-        return { ...s, signed: !!result.data, loading: false }
-      })
-    )
+    const [updated, contractHistRes] = await Promise.all([
+      Promise.all(
+        consentStatuses.map(async (s) => {
+          const checkRes = await fetch(
+            `/api/consent/history/${patient.id}?procedureId=${primaryRecordId}&type=${s.type}`,
+          )
+          const result = checkRes.ok ? await checkRes.json() : { data: null }
+          return { ...s, signed: !!result.data, loading: false }
+        }),
+      ),
+      fetch(
+        `/api/consent/history/${patient.id}?procedureId=${primaryRecordId}&type=service_contract`,
+      ).catch(() => null),
+    ])
     setConsentStatuses(updated)
+    const contractHist = contractHistRes?.ok
+      ? await contractHistRes.json()
+      : { data: null }
+    if (contractHist.data) setContractSigned(true)
   }, [consentStatuses, patient.id, primaryRecordId])
+
+  const handleManualRefresh = useCallback(async () => {
+    setIsRefreshing(true)
+    await refreshConsentStatuses()
+    setIsRefreshing(false)
+  }, [refreshConsentStatuses])
+
+  // Poll every 15s while there are unsigned items
+  useEffect(() => {
+    if (allUnsignedTypes.length === 0) return
+    const id = setInterval(() => { refreshConsentStatuses() }, 15_000)
+    return () => clearInterval(id)
+  }, [allUnsignedTypes.length, refreshConsentStatuses])
 
   const handleOpenConsent = useCallback(async (type: string) => {
     setActiveConsentType(type)
@@ -641,6 +682,30 @@ export function ProcedureApproval({
             patientGender={patient.gender}
           />
         )
+      )}
+
+      {allUnsignedTypes.length > 0 && (
+        <div className="flex items-center justify-center gap-3">
+          <SendConsentSigningLink
+            patientId={patient.id}
+            patientName={patient.fullName}
+            patientPhone={patient.phone}
+            procedureRecordId={primaryRecordId}
+            consentTypes={allUnsignedTypes}
+            renderedContents={signingRenderedContents}
+            whatsappApiEnabled={tenant.whatsappApiEnabled}
+          />
+          <button
+            type="button"
+            onClick={handleManualRefresh}
+            disabled={isRefreshing}
+            className="flex items-center gap-1.5 rounded-[3px] border border-sage/20 px-3 py-2.5 text-xs font-medium text-mid transition-colors hover:bg-sage/5 hover:text-charcoal disabled:opacity-50"
+            title="Verificar assinaturas"
+          >
+            <RefreshCw className={cn('size-3.5', isRefreshing && 'animate-spin')} />
+            Atualizar
+          </button>
+        </div>
       )}
 
       <ConsentStatusList

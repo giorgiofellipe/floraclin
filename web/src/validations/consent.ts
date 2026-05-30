@@ -648,6 +648,7 @@ export const sendSigningLinkSchema = z.object({
   patientId: z.string().uuid(),
   procedureRecordId: z.string().uuid(),
   consentTypes: z.array(z.enum(consentTypes)).min(1, 'Pelo menos um tipo de termo é obrigatório'),
+  renderedContents: z.record(z.string(), z.string()).optional(),
 })
 
 export type SendSigningLinkInput = z.infer<typeof sendSigningLinkSchema>

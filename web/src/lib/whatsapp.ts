@@ -20,7 +20,8 @@ async function getCredentials(tenantId: string): Promise<WhatsAppCredentials> {
   const phoneNumberId = settings.whatsapp_phone_number_id as string
   const accessToken = settings.whatsapp_access_token as string
   const businessAccountId = settings.whatsapp_business_account_id as string
-  if (!phoneNumberId || !accessToken) throw new Error('WhatsApp credentials missing')
+  if (!phoneNumberId || !accessToken || !businessAccountId)
+    throw new Error('WhatsApp credentials missing (phoneNumberId, accessToken, or businessAccountId)')
   return { phoneNumberId, accessToken, businessAccountId }
 }
 
@@ -35,8 +36,16 @@ async function graphFetch(path: string, token: string, options?: RequestInit) {
   })
   const data = await res.json()
   if (!res.ok) {
-    const errorMsg = data?.error?.message ?? 'Unknown Meta API error'
-    throw new Error(`Meta API error: ${errorMsg}`)
+    const err = data?.error
+    const details = [
+      err?.message,
+      err?.error_user_msg,
+      err?.error_subcode && `subcode=${err.error_subcode}`,
+      err?.code && `code=${err.code}`,
+    ]
+      .filter(Boolean)
+      .join(' | ')
+    throw new Error(`Meta API error: ${details || 'Unknown error'}`)
   }
   return data
 }

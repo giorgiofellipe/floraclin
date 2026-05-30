@@ -113,10 +113,12 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
             fullName: patient.fullName,
             cpf: patient.cpf,
             gender: patient.gender,
+            phone: patient.phone,
           }}
           tenant={{
             id: tenant.id,
             name: tenant.name,
+            whatsappApiEnabled: !!(tenant.settings as Record<string, unknown> | null)?.whatsapp_enabled,
           }}
           additionalTypeIds={additionalTypeIds}
         />

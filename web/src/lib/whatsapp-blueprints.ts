@@ -354,7 +354,7 @@ export const TEMPLATE_BLUEPRINTS: TemplateBlueprint[] = [
       { index: 3, key: 'link', label: 'Link de assinatura', example: 'https://app.floraclin.com/sign/abc123' },
     ],
     components: makeBody(
-      'Olá {{1}}, a clínica {{2}} enviou os termos do seu procedimento para assinatura. Acesse o link para revisar e assinar: {{3}}',
+      'Olá {{1}}, a clínica {{2}} enviou os termos do seu procedimento para assinatura. Acesse o link para revisar e assinar:\n\n{{3}}\n\nEste link é válido por 24 horas.',
       [
         { index: 1, key: 'patient_name', label: 'Nome do paciente', example: 'Maria Silva' },
         { index: 2, key: 'clinic_name', label: 'Nome da clínica', example: 'Clínica Flora' },

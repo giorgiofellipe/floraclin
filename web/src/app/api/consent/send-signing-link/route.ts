@@ -2,11 +2,9 @@ import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { getPatient } from '@/db/queries/patients'
-import { getTemplateByPurpose, upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
-import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
 import { createSigningToken } from '@/db/queries/consent-signing-tokens'
 import { getActiveConsentForType } from '@/db/queries/consent'
-import { sendSigningLinkSchema, CONSENT_SIGNING_TEMPLATE_PURPOSE } from '@/validations/consent'
+import { sendSigningLinkSchema } from '@/validations/consent'
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
@@ -30,29 +28,35 @@ export async function POST(request: Request) {
     if (!tenant) {
       return NextResponse.json({ error: 'Clínica não encontrada' }, { status: 404 })
     }
-    const settings = (tenant.settings ?? {}) as Record<string, unknown>
-    if (!settings.whatsapp_enabled) {
-      return NextResponse.json({ error: 'WhatsApp não habilitado' }, { status: 403 })
-    }
 
     const patient = await getPatient(ctx.tenantId, parsed.data.patientId)
     if (!patient) {
       return NextResponse.json({ error: 'Paciente não encontrado' }, { status: 404 })
     }
-    if (!patient.phone) {
-      return NextResponse.json({ error: 'Paciente sem telefone cadastrado' }, { status: 400 })
-    }
 
     // Resolve consent types to active template IDs server-side
     const templateResults = await Promise.all(
-      parsed.data.consentTypes.map((type) => getActiveConsentForType(ctx.tenantId, type)),
+      parsed.data.consentTypes.map(async (type) => {
+        const tpl = await getActiveConsentForType(ctx.tenantId, type)
+        return tpl ? { type, id: tpl.id } : null
+      }),
     )
-    const consentTemplateIds = templateResults
-      .filter((t): t is NonNullable<typeof t> => t !== null)
-      .map((t) => t.id)
+    const resolved = templateResults.filter((t): t is NonNullable<typeof t> => t !== null)
+    const consentTemplateIds = resolved.map((t) => t.id)
 
     if (consentTemplateIds.length === 0) {
       return NextResponse.json({ error: 'Nenhum modelo de termo encontrado para os tipos solicitados' }, { status: 400 })
+    }
+
+    // Map rendered contents from type keys to template ID keys
+    let renderedContents: Record<string, string> | undefined
+    if (parsed.data.renderedContents) {
+      renderedContents = {}
+      for (const r of resolved) {
+        const content = parsed.data.renderedContents[r.type]
+        if (content) renderedContents[r.id] = content
+      }
+      if (Object.keys(renderedContents).length === 0) renderedContents = undefined
     }
 
     const signingToken = await createSigningToken(
@@ -61,67 +65,17 @@ export async function POST(request: Request) {
       parsed.data.procedureRecordId,
       consentTemplateIds,
       ctx.userId,
+      renderedContents,
     )
 
-    const signingUrl = `${appUrl}/sign/${signingToken.token}`
-
-    const template = await getTemplateByPurpose(ctx.tenantId, CONSENT_SIGNING_TEMPLATE_PURPOSE)
-    if (!template) {
-      return NextResponse.json(
-        { error: 'Template de assinatura de consentimento não cadastrado. Cadastre um template com finalidade "consent_signing_link".' },
-        { status: 400 },
-      )
-    }
-    if (template.status !== 'APPROVED') {
-      return NextResponse.json(
-        { error: 'Template de assinatura aguardando aprovação da Meta.' },
-        { status: 400 },
-      )
-    }
-
-    const phone = patient.phone.replace(/\D/g, '')
-    const normalizedPhone = phone.startsWith('55') ? phone : `55${phone}`
-    const firstName = patient.fullName.split(' ')[0]
-
-    const templateParams = { '1': firstName, '2': tenant.name, '3': signingUrl }
-    const result = await sendTemplateMessage(
-      ctx.tenantId,
-      normalizedPhone,
-      template.name,
-      template.language,
-      templateParams,
-    )
-
-    const conversation = await upsertConversation(
-      ctx.tenantId,
-      normalizedPhone,
-      patient.fullName,
-      undefined,
-      parsed.data.patientId,
-    )
-
-    const message = await createMessage(ctx.tenantId, conversation.id, {
-      direction: 'outbound',
-      metaMessageId: result.metaMessageId,
-      body: resolveTemplateBody(template.components, templateParams),
-      templateName: template.name,
-      deliveryStatus: 'sent',
-    })
-
-    await pushSseEvent(ctx.tenantId, 'new_message', {
-      conversationId: conversation.id,
-      message,
-    })
+    const url = `${appUrl}/sign/${signingToken.token}`
 
     return NextResponse.json({
-      success: true,
-      data: { token: signingToken.token, expiresAt: signingToken.expiresAt },
+      url,
+      expiresAt: signingToken.expiresAt,
     })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Meta API error')) {
-      return NextResponse.json({ error: `Falha ao enviar via WhatsApp: ${msg.replace('Meta API error: ', '')}` }, { status: 502 })
-    }
     if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

@@ -1,8 +1,6 @@
 'use client'
 
-import * as React from 'react'
-import { CheckCircle2, Loader2, Send, ShieldCheck } from 'lucide-react'
-import { useSendSigningLink } from '@/hooks/mutations/use-consent-signing-mutations'
+import { CheckCircle2, Loader2, ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -49,21 +47,6 @@ export function ConsentStatusList({
   onOpenConsent,
   onConsentAccepted,
 }: ConsentStatusListProps) {
-  const sendSigningLink = useSendSigningLink()
-
-  const unsignedConsentTypes = consentStatuses
-    .filter((c) => !c.signed && !c.loading)
-    .map((c) => c.type)
-
-  const handleSendWhatsApp = React.useCallback(() => {
-    if (unsignedConsentTypes.length === 0) return
-    sendSigningLink.mutate({
-      patientId,
-      procedureRecordId: procedureId,
-      consentTypes: unsignedConsentTypes,
-    })
-  }, [patientId, procedureId, unsignedConsentTypes, sendSigningLink])
-
   return (
     <Card className="border-0 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">
       <CardHeader className="pb-3">
@@ -79,30 +62,8 @@ export function ConsentStatusList({
               Todos assinados
             </Badge>
           )}
-          {!allConsentsSigned && unsignedConsentTypes.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSendWhatsApp}
-              disabled={sendSigningLink.isPending}
-              className="ml-auto border-forest/30 text-forest hover:bg-petal text-xs gap-1.5"
-            >
-              <Send className="size-3.5" />
-              {sendSigningLink.isPending ? 'Enviando...' : 'Enviar via WhatsApp'}
-            </Button>
-          )}
         </CardTitle>
       </CardHeader>
-      {sendSigningLink.isSuccess && (
-        <div className="px-6 pb-2">
-          <p className="text-xs text-sage">Link enviado via WhatsApp</p>
-        </div>
-      )}
-      {sendSigningLink.isError && (
-        <div className="px-6 pb-2">
-          <p className="text-xs text-red-600">{sendSigningLink.error.message}</p>
-        </div>
-      )}
       <CardContent className="space-y-3 pt-0">
         {consentStatuses.length === 0 && (
           <div className="flex items-center gap-2 py-4">

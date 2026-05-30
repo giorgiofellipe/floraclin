@@ -11,7 +11,7 @@
 import { db } from '../../client'
 import { tenants, whatsappTemplates } from '../../schema'
 import { eq } from 'drizzle-orm'
-import { createTemplate as createMetaTemplate } from '../../../lib/whatsapp'
+import { createTemplate as createMetaTemplate, getTemplates as getMetaTemplates } from '../../../lib/whatsapp'
 import { TEMPLATE_BLUEPRINTS, generateTemplateName } from '../../../lib/whatsapp-blueprints'
 
 const BLUEPRINT = TEMPLATE_BLUEPRINTS.find((b) => b.slug === 'consent_signing_link')!
@@ -51,12 +51,25 @@ async function main() {
     const templateName = `${prefix}_${BLUEPRINT.name}`
 
     try {
-      const metaResult = await createMetaTemplate(tenant.id, {
-        name: templateName,
-        category: BLUEPRINT.category,
-        language: BLUEPRINT.language,
-        components: BLUEPRINT.components,
-      })
+      // Check if template already exists on Meta (prior failed attempt may have created it)
+      const existingMeta = await getMetaTemplates(tenant.id)
+      const alreadyOnMeta = existingMeta.find(
+        (t: { name: string }) => t.name === templateName,
+      ) as { id: string; name: string; status: string } | undefined
+
+      let metaResult: { id: string; status: string; category?: string }
+
+      if (alreadyOnMeta) {
+        console.log(`  [${tenant.name}] template "${templateName}" already exists on Meta (status: ${alreadyOnMeta.status}) — syncing locally`)
+        metaResult = { id: alreadyOnMeta.id, status: alreadyOnMeta.status }
+      } else {
+        metaResult = await createMetaTemplate(tenant.id, {
+          name: templateName,
+          category: BLUEPRINT.category,
+          language: BLUEPRINT.language,
+          components: BLUEPRINT.components,
+        })
+      }
 
       await db.insert(whatsappTemplates).values({
         tenantId: tenant.id,

@@ -31,6 +31,7 @@ export default async function SignPage({ params }: { params: Promise<{ token: st
     tokenData.consentTemplateIds as string[],
   )
 
+  const rendered = (tokenData.renderedContents ?? {}) as Record<string, string>
   const firstName = tokenData.patientName?.split(' ')[0] ?? 'Paciente'
 
   return (
@@ -41,7 +42,7 @@ export default async function SignPage({ params }: { params: Promise<{ token: st
         id: t.id,
         type: t.type,
         title: t.title,
-        content: t.content,
+        content: rendered[t.id] ?? t.content,
         version: t.version,
       }))}
     />

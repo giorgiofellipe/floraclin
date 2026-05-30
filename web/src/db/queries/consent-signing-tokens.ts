@@ -11,6 +11,7 @@ export async function createSigningToken(
   procedureRecordId: string,
   consentTemplateIds: string[],
   createdBy: string,
+  renderedContents?: Record<string, string>,
 ) {
   const token = crypto.randomBytes(32).toString('hex')
   const expiresAt = new Date(Date.now() + SIGNING_TOKEN_TTL_MS)
@@ -23,6 +24,7 @@ export async function createSigningToken(
       patientId,
       procedureRecordId,
       consentTemplateIds,
+      renderedContents: renderedContents ?? null,
       expiresAt,
       createdBy,
     })
@@ -40,6 +42,7 @@ export async function getValidSigningToken(token: string) {
       patientId: consentSigningTokens.patientId,
       procedureRecordId: consentSigningTokens.procedureRecordId,
       consentTemplateIds: consentSigningTokens.consentTemplateIds,
+      renderedContents: consentSigningTokens.renderedContents,
       expiresAt: consentSigningTokens.expiresAt,
       createdBy: consentSigningTokens.createdBy,
       patientName: patients.fullName,
