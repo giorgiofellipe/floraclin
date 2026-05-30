@@ -38,6 +38,7 @@ import { PatientPhotosTab } from './patient-photos-tab'
 import { PatientConsentTab } from './patient-consent-tab'
 import { PatientFinancialTab } from './patient-financial-tab'
 import { PatientTimelineTab } from './patient-timeline-tab'
+import { PatientEvolutionsTab } from './patient-evolutions-tab'
 import { PatientPackagesTab } from '@/components/packages/patient-packages-tab'
 import { PatientDocumentsTab } from '@/components/clinical-documents/patient-documents-tab'
 import { IssueDocumentDialog } from '@/components/clinical-documents/issue-document-dialog'
@@ -47,6 +48,7 @@ import { AppointmentForm } from '@/components/scheduling/appointment-form'
 import { Package, FileText } from 'lucide-react'
 import { usePractitioners, useAppointmentProcedureTypes } from '@/hooks/queries/use-appointments'
 import type { Patient } from '@/db/queries/patients'
+import type { Role } from '@/types'
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -87,6 +89,7 @@ const GENDER_LABELS: Record<string, string> = {
 const VALID_TABS: PatientTabKey[] = [
   'dados',
   'anamnese',
+  'evolucoes',
   'procedimentos',
   'pacotes',
   'documentos',
@@ -103,6 +106,7 @@ interface PatientDetailContentProps {
   activeTab?: string
   hasActiveService?: boolean
   whatsappApiEnabled?: boolean
+  role: Role
 }
 
 export function PatientDetailContent({
@@ -110,6 +114,7 @@ export function PatientDetailContent({
   activeTab,
   hasActiveService = false,
   whatsappApiEnabled,
+  role,
 }: PatientDetailContentProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -122,11 +127,17 @@ export function PatientDetailContent({
   const { data: practitioners = [] } = usePractitioners()
   const { data: procedureTypes = [] } = useAppointmentProcedureTypes()
 
-  const [tab, setTabState] = useState<PatientTabKey>(
-    VALID_TABS.includes(activeTab as PatientTabKey)
+  const [tab, setTabState] = useState<PatientTabKey>(() => {
+    const candidate: PatientTabKey = VALID_TABS.includes(activeTab as PatientTabKey)
       ? (activeTab as PatientTabKey)
       : 'dados'
-  )
+    // RA-5: if the URL asks for 'evolucoes' but the viewer can't see it,
+    // fall back to 'dados' so we never render an invalid hidden tab.
+    if (candidate === 'evolucoes' && role !== 'owner' && role !== 'practitioner') {
+      return 'dados'
+    }
+    return candidate
+  })
 
   const setTab = useCallback((newTab: PatientTabKey) => {
     setTabState(newTab)
@@ -340,13 +351,19 @@ export function PatientDetailContent({
       </div>
 
       {/* Tab navigation */}
-      <PatientTabs activeTab={tab} onTabChange={setTab} />
+      <PatientTabs activeTab={tab} onTabChange={setTab} role={role} />
 
       {/* Tab content */}
       <div className="min-h-[400px]">
         <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-6">
           {tab === 'dados' && <PatientDataTab patient={patient} />}
           {tab === 'anamnese' && <PatientAnamnesisTab patientId={patient.id} patientName={patient.fullName} patientPhone={patient.phone} whatsappApiEnabled={whatsappApiEnabled} />}
+          {tab === 'evolucoes' && (
+            <PatientEvolutionsTab
+              patientId={patient.id}
+              canEdit={role === 'owner' || role === 'practitioner'}
+            />
+          )}
           {tab === 'procedimentos' && (
             <PatientProceduresTab patientId={patient.id} />
           )}
