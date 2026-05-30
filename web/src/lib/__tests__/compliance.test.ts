@@ -7,8 +7,8 @@ describe('assertNotProtectedTable', () => {
     'procedure_records',
     'evaluation_responses',
     'clinical_documents',
-    'anamnesis_responses',
-    'photos',
+    'anamneses',
+    'photo_assets',
   ] as const)('throws for protected table %s', (table) => {
     expect(() => assertNotProtectedTable(table)).toThrowError(
       /prohibited.*Lei 13\.787/,

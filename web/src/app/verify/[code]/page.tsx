@@ -1,7 +1,9 @@
 import { findByVerificationCode } from '@/db/queries/consent'
 import { verifyEvidencePackage, type SignatureEvidence } from '@/lib/signature-evidence'
-import { format } from 'date-fns'
+import { formatInTimeZone } from 'date-fns-tz'
 import { ptBR } from 'date-fns/locale'
+
+const VERIFICATION_CODE_PATTERN = /^FLC-[0-9A-F]{12}$/
 
 const TYPE_LABELS: Record<string, string> = {
   general: 'Termo de Consentimento',
@@ -18,6 +20,18 @@ const TYPE_LABELS: Record<string, string> = {
 
 export default async function VerifyPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
+
+  if (!VERIFICATION_CODE_PATTERN.test(code)) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 p-8 text-center">
+        <h2 className="text-lg font-medium text-red-800">Código inválido</h2>
+        <p className="mt-2 text-sm text-red-600">
+          O formato do código de verificação não é válido.
+        </p>
+      </div>
+    )
+  }
+
   const acceptance = await findByVerificationCode(code)
 
   if (!acceptance) {
@@ -82,11 +96,7 @@ export default async function VerifyPage({ params }: { params: Promise<{ code: s
           </div>
           <div>
             <span className="text-mid">Data da assinatura</span>
-            <p className="font-medium text-charcoal">{format(acceptance.acceptedAt, "d 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}</p>
-          </div>
-          <div>
-            <span className="text-mid">CPF do signatário</span>
-            <p className="font-medium text-charcoal">{evidence?.signerCpf ?? '—'}</p>
+            <p className="font-medium text-charcoal">{formatInTimeZone(acceptance.acceptedAt, 'America/Sao_Paulo', "d 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}</p>
           </div>
           <div>
             <span className="text-mid">Método</span>

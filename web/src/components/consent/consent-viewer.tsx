@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { SignaturePad } from './signature-pad'
 import { useAcceptConsent } from '@/hooks/mutations/use-consent-mutations'
-import type { AcceptanceMethod } from '@/types'
 import { CONSENT_TYPE_LABELS } from '@/lib/constants'
 import { collectDeviceFingerprint, type DeviceFingerprint, type Geolocation } from '@/lib/signature-evidence'
 
@@ -56,18 +55,6 @@ export function ConsentViewer({
 
   const acceptConsent = useAcceptConsent()
   const isSubmitting = acceptConsent.isPending
-
-  const acceptanceMethod: AcceptanceMethod = requireSignature
-    ? signatureData && checked
-      ? 'both'
-      : signatureData
-        ? 'signature'
-        : 'checkbox'
-    : checked
-      ? signatureData
-        ? 'both'
-        : 'checkbox'
-      : 'checkbox'
 
   const canSubmit = checked && (!requireSignature || !!signatureData)
 

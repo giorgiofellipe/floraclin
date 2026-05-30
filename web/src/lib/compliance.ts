@@ -3,8 +3,8 @@ const PROTECTED_TABLES = [
   'procedure_records',
   'evaluation_responses',
   'clinical_documents',
-  'anamnesis_responses',
-  'photos',
+  'anamneses',
+  'photo_assets',
 ] as const
 
 export function assertNotProtectedTable(tableName: string): void {
