@@ -51,7 +51,7 @@ const POSES: readonly Pose[] = [
 const FACE_SIZE_MIN = 0.40
 const FACE_SIZE_MAX = 0.70
 const CENTER_TOLERANCE = 0.10
-const PITCH_TOLERANCE = 15
+const PITCH_TOLERANCE = 22
 
 interface AlignmentStatus {
   aligned: boolean
@@ -88,9 +88,9 @@ function checkAlignment(
   // Check pitch
   if (Math.abs(rotation.pitch) > PITCH_TOLERANCE) {
     if (rotation.pitch > 0) {
-      hints.push('Abaixe o queixo')
-    } else {
       hints.push('Levante o queixo')
+    } else {
+      hints.push('Abaixe o queixo')
     }
   }
 
@@ -185,11 +185,12 @@ export function CapturePoseGuide({
   const [detection, setDetection] = useState<FaceDetectionResult | null>(null)
   const [isCapturing, setIsCapturing] = useState(false)
   const [isMirrored, setIsMirrored] = useState(false)
-  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment')
   const [hasMultipleCameras, setHasMultipleCameras] = useState(false)
+  const [cameraIndex, setCameraIndex] = useState(0)
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const cameraDevicesRef = useRef<MediaDeviceInfo[]>([])
   const rafIdRef = useRef<number | null>(null)
   const lastDetectionTimeRef = useRef(0)
 
@@ -213,25 +214,27 @@ export function CapturePoseGuide({
         return
       }
 
-      let stream: MediaStream
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode, width: { ideal: 1920 } },
-        })
-      } catch {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1920 } },
-        })
+      if (cameraDevicesRef.current.length === 0) {
+        const tempStream = await navigator.mediaDevices.getUserMedia({ video: true })
+        tempStream.getTracks().forEach((t) => t.stop())
+        const devices = await navigator.mediaDevices.enumerateDevices()
+        cameraDevicesRef.current = devices.filter((d) => d.kind === 'videoinput')
+        setHasMultipleCameras(cameraDevicesRef.current.length > 1)
       }
 
+      const targetDevice = cameraDevicesRef.current[cameraIndex]
+      const constraints: MediaStreamConstraints = {
+        video: targetDevice
+          ? { deviceId: { exact: targetDevice.deviceId }, width: { ideal: 1920 } }
+          : { width: { ideal: 1920 } },
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
       streamRef.current = stream
 
       const track = stream.getVideoTracks()[0]
       const facing = track?.getSettings().facingMode
       setIsMirrored(facing !== 'environment')
-
-      const devices = await navigator.mediaDevices.enumerateDevices()
-      setHasMultipleCameras(devices.filter((d) => d.kind === 'videoinput').length > 1)
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream
@@ -243,7 +246,7 @@ export function CapturePoseGuide({
       console.error('[capture-pose-guide] Camera error:', err)
       setCameraError('Não foi possível acessar a câmera. Verifique as permissões.')
     }
-  }, [facingMode])
+  }, [cameraIndex])
 
   const stopCamera = useCallback(() => {
     if (rafIdRef.current !== null) {
@@ -324,15 +327,14 @@ export function CapturePoseGuide({
     if (!video || !detection || isCapturing) return
 
     setIsCapturing(true)
+    video.pause()
 
     try {
-      // 1. Capture frame
       const blob = await captureFrameToBlob(video)
       if (!blob) {
         throw new Error('Falha ao capturar frame da câmera')
       }
 
-      // 2. Upload as photo
       const file = new File([blob], `captura-${selectedPose}-${Date.now()}.jpg`, {
         type: 'image/jpeg',
       })
@@ -363,7 +365,6 @@ export function CapturePoseGuide({
 
       const photoId = uploadResult.data.id
 
-      // 3. Save crop + landmarks via PATCH
       const crop = computeAutoCrop(detection, '3:4')
       const cropBox = {
         x: crop.x,
@@ -389,6 +390,9 @@ export function CapturePoseGuide({
       toast.error('Erro ao capturar foto. Tente novamente.')
     } finally {
       setIsCapturing(false)
+      if (videoRef.current) {
+        videoRef.current.play().catch(() => {})
+      }
     }
   }, [detection, isCapturing, patientId, selectedPose, onCaptured])
 
@@ -438,6 +442,16 @@ export function CapturePoseGuide({
             style={isMirrored ? { transform: 'scaleX(-1)' } : undefined}
           />
 
+          {/* Upload overlay — video is paused underneath */}
+          {isCapturing && (
+            <div className="absolute inset-0 z-20 flex items-end justify-center pb-6">
+              <div className="flex items-center gap-2 rounded-full bg-black/60 px-4 py-2 backdrop-blur-sm">
+                <Loader2 className="size-4 animate-spin text-white" />
+                <span className="text-sm font-medium text-white">Enviando foto...</span>
+              </div>
+            </div>
+          )}
+
           {/* Camera error */}
           {cameraError && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 p-6 text-center">
@@ -477,9 +491,9 @@ export function CapturePoseGuide({
                 {/* Face oval */}
                 <ellipse
                   cx={150 + offsetX}
-                  cy={185}
-                  rx={65}
-                  ry={88}
+                  cy={190}
+                  rx={82}
+                  ry={110}
                   fill="none"
                   stroke={guideColor}
                   strokeWidth={2}
@@ -488,9 +502,9 @@ export function CapturePoseGuide({
                 />
                 {/* Eye-level line */}
                 <line
-                  x1={150 + offsetX - 55}
+                  x1={150 + offsetX - 70}
                   y1={165}
-                  x2={150 + offsetX + 55}
+                  x2={150 + offsetX + 70}
                   y2={165}
                   stroke={guideColor}
                   strokeWidth={1}
@@ -500,9 +514,9 @@ export function CapturePoseGuide({
                 {/* Center vertical line */}
                 <line
                   x1={150 + offsetX}
-                  y1={95}
+                  y1={78}
                   x2={150 + offsetX}
-                  y2={275}
+                  y2={302}
                   stroke={guideColor}
                   strokeWidth={1}
                   strokeDasharray="4 3"
@@ -549,7 +563,7 @@ export function CapturePoseGuide({
           {hasMultipleCameras && cameraReady && (
             <button
               type="button"
-              onClick={() => setFacingMode((m) => m === 'user' ? 'environment' : 'user')}
+              onClick={() => setCameraIndex((i) => (i + 1) % cameraDevicesRef.current.length)}
               disabled={isCapturing}
               className="absolute bottom-3 right-3 flex size-10 items-center justify-center rounded-full bg-black/40 text-white/70 backdrop-blur-sm transition-colors hover:bg-black/60 hover:text-white disabled:opacity-50"
             >

@@ -46,13 +46,12 @@ export function PhotoGrid({
   onPhotoSelect,
 }: PhotoGridProps) {
   const [photosByStage, setPhotosByStage] = useState<PhotosByStage[]>([])
-  const [loading, setLoading] = useState(true)
+  const [initialLoad, setInitialLoad] = useState(true)
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoAssetWithUrl | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<PhotoAssetWithUrl | null>(null)
   const [deleting, setDeleting] = useState(false)
 
   const loadPhotos = useCallback(async () => {
-    setLoading(true)
     try {
       const params = new URLSearchParams({ patientId })
       if (procedureRecordId) params.set('procedureRecordId', procedureRecordId)
@@ -62,7 +61,7 @@ export function PhotoGrid({
         setPhotosByStage(result.data)
       }
     } finally {
-      setLoading(false)
+      setInitialLoad(false)
     }
   }, [patientId, procedureRecordId])
 
@@ -73,13 +72,23 @@ export function PhotoGrid({
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return
     setDeleting(true)
+
+    setPhotosByStage((prev) =>
+      prev.map((stage) => ({
+        ...stage,
+        photos: stage.photos.filter((p) => p.id !== deleteTarget.id),
+      }))
+    )
+    setDeleteTarget(null)
+
     try {
       const res = await fetch(`/api/photos/${deleteTarget.id}`, { method: 'DELETE' })
       const result = await res.json()
-      if (result.success) {
-        setDeleteTarget(null)
+      if (!result.success) {
         await loadPhotos()
       }
+    } catch {
+      await loadPhotos()
     } finally {
       setDeleting(false)
     }
@@ -137,7 +146,7 @@ export function PhotoGrid({
     other: 'Outro',
   }
 
-  if (loading) {
+  if (initialLoad) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="size-6 animate-spin text-sage" />
