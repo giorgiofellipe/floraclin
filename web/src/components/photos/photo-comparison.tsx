@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import { cn, formatDate } from '@/lib/utils'
 import { computeAlignmentTransform, alignmentTransformToCssMatrix } from '@/lib/face-alignment'
+import { autoDetectAndSaveCrop } from '@/lib/auto-crop'
 import type { PhotoCropData } from '@/validations/photo-crop'
 import type { PhotoAssetWithUrl } from '@/db/queries/photos'
 import { timelineStageLabels } from '@/validations/photo'
@@ -52,6 +53,12 @@ export function PhotoComparisonDialog({
   const [cropBoxB, setCropBoxB] = useState<PhotoCropData | null>(null)
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
   const [imgNaturalSize, setImgNaturalSize] = useState<{ w: number; h: number } | null>(null)
+  const [autoDetecting, setAutoDetecting] = useState(false)
+  const autoDetectAttempted = useRef(new Set<string>())
+  const cropBoxARef = useRef(cropBoxA)
+  const cropBoxBRef = useRef(cropBoxB)
+  cropBoxARef.current = cropBoxA
+  cropBoxBRef.current = cropBoxB
   const containerRef = useRef<HTMLDivElement>(null)
   const sliderContainerRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
@@ -63,6 +70,7 @@ export function PhotoComparisonDialog({
       setCropBoxA(null)
       setCropBoxB(null)
       setSliderPosition(50)
+      autoDetectAttempted.current.clear()
       return
     }
 
@@ -84,6 +92,37 @@ export function PhotoComparisonDialog({
     }
     loadUrls()
   }, [open, photoA, photoB])
+
+  useEffect(() => {
+    if (!urlA || !urlB) return
+
+    type DetectTask = { url: string; id: string; setter: (c: PhotoCropData) => void }
+    const tasks: DetectTask[] = []
+
+    if (!cropBoxARef.current && photoA && !autoDetectAttempted.current.has(photoA.id)) {
+      autoDetectAttempted.current.add(photoA.id)
+      tasks.push({ url: urlA, id: photoA.id, setter: setCropBoxA })
+    }
+    if (!cropBoxBRef.current && photoB && !autoDetectAttempted.current.has(photoB.id)) {
+      autoDetectAttempted.current.add(photoB.id)
+      tasks.push({ url: urlB, id: photoB.id, setter: setCropBoxB })
+    }
+
+    if (tasks.length === 0) return
+
+    let cancelled = false
+    setAutoDetecting(true)
+
+    Promise.all(
+      tasks.map(({ url, id, setter }) =>
+        autoDetectAndSaveCrop(url, id)
+          .then((crop) => { if (!cancelled && crop) setter(crop) })
+          .catch(() => {}),
+      ),
+    ).then(() => { if (!cancelled) setAutoDetecting(false) })
+
+    return () => { cancelled = true }
+  }, [urlA, urlB, photoA, photoB])
 
   useEffect(() => {
     const refUrl = cropBoxA ? urlA : cropBoxB ? urlB : null
@@ -259,9 +298,12 @@ export function PhotoComparisonDialog({
 
         {/* Content area */}
         <div className="px-4 pb-4">
-          {loadingUrls ? (
-            <div className="flex items-center justify-center py-24">
+          {loadingUrls || autoDetecting ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-24">
               <Loader2 className="size-6 animate-spin text-white/40" />
+              {autoDetecting && (
+                <span className="text-xs text-white/40">Detectando rosto...</span>
+              )}
             </div>
           ) : !urlA || !urlB ? (
             <div className="flex items-center justify-center py-24">

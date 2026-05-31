@@ -14,6 +14,7 @@ import {
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import * as Sentry from '@sentry/nextjs'
+import { autoDetectAndSaveCrop } from '@/lib/auto-crop'
 import {
   timelineStageLabels,
   validateImageFile,
@@ -409,6 +410,10 @@ export function PhotoUploader({
           )
           if (result.data?.id) {
             onUploaded?.(result.data.id)
+            const blobUrl = URL.createObjectURL(compressed)
+            autoDetectAndSaveCrop(blobUrl, result.data.id)
+              .catch(() => {})
+              .finally(() => URL.revokeObjectURL(blobUrl))
           }
           toast.success(`Foto enviada: ${pendingFile.file.name}`)
           setTimeout(() => {

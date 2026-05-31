@@ -25,12 +25,13 @@ const ASPECT_RATIOS: Record<string, number> = {
   '1:1': 1,
 }
 
-const EYE_LINE_RATIO = 0.30
-const FACE_PADDING = 0.35
+const EYE_LINE_RATIO = 0.42
+const FACE_PADDING = 0.45
 
 export function computeAutoCrop(
   detection: FaceDetectionResult,
   aspect: '3:4' | '4:3' | '1:1' | 'free',
+  imageDimensions?: { width: number; height: number },
 ): CropGeometry {
   const { boundingBox, landmarks } = detection
   const eyeCenterY = (landmarks.leftEye.y + landmarks.rightEye.y) / 2
@@ -46,12 +47,15 @@ export function computeAutoCrop(
     cropH = paddedH
     cropW = boundingBox.width * (1 + FACE_PADDING * 2)
   } else {
-    const ratio = ASPECT_RATIOS[aspect]
+    const targetPixelRatio = ASPECT_RATIOS[aspect]
     cropH = paddedH
-    cropW = cropH * ratio
+    if (imageDimensions) {
+      cropW = targetPixelRatio * cropH * imageDimensions.height / imageDimensions.width
+    } else {
+      cropW = cropH * targetPixelRatio
+    }
   }
 
-  // Clamp dimensions first, then position
   cropW = Math.min(cropW, 1)
   cropH = Math.min(cropH, 1)
 
