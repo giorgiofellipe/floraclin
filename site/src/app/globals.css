@@ -198,3 +198,20 @@ details[open] .faq-content {
 details .faq-content > div {
   overflow: hidden;
 }
+
+/* Feature showcase timer bar */
+@keyframes showcase-timer-fill {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+
+.showcase-timer-bar {
+  animation: showcase-timer-fill linear 1 forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .showcase-timer-bar {
+    animation: none;
+    width: 100%;
+  }
+}

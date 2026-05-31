@@ -10,7 +10,7 @@
     "test": "pnpm --filter @floraclin/web test",
     "lint": "pnpm --filter @floraclin/web lint",
     "typecheck": "pnpm --filter @floraclin/web typecheck",
-    "ci:checks": "pnpm --filter @floraclin/web lint && pnpm --filter @floraclin/web typecheck && pnpm --filter @floraclin/web test:run",
+    "ci:checks": "pnpm --filter @floraclin/web lint && pnpm --filter @floraclin/web typecheck && pnpm --filter @floraclin/web test:run && pnpm --filter @floraclin/site test:run",
     "prepare": "simple-git-hooks"
   },
   "simple-git-hooks": {
