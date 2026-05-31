@@ -25,7 +25,7 @@ export const photoCropSchema = z.object({
 export type PhotoCropData = z.infer<typeof photoCropSchema>
 
 export const saveCropSchema = z.object({
-  cropBox: photoCropSchema,
+  cropBox: photoCropSchema.nullable(),
 })
 
 export type SaveCropData = z.infer<typeof saveCropSchema>

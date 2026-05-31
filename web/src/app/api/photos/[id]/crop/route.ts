@@ -39,7 +39,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       )
     }
 
-    await updateCropBox(auth.tenantId, photoId, parsed.data.cropBox)
+    await updateCropBox(auth.tenantId, photoId, parsed.data.cropBox ?? null)
     return NextResponse.json({ success: true })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Crop, Loader2, RotateCcw, RotateCw, Save, X } from 'lucide-react'
+import { Crop, Loader2, RotateCcw, RotateCw, Save, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -388,6 +388,26 @@ export function PhotoCropEditor({
     }
   }, [photo, cropBox, rotation, aspect, landmarks, onSaved, onOpenChange])
 
+  const handleClear = useCallback(async () => {
+    if (!photo) return
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/photos/${photo.id}/crop`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cropBox: null }),
+      })
+      if (!res.ok) throw new Error('Erro ao limpar recorte')
+      toast.success('Recorte removido')
+      onSaved?.()
+      onOpenChange(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao limpar recorte')
+    } finally {
+      setSaving(false)
+    }
+  }, [photo, onSaved, onOpenChange])
+
   // ─── Overlay clip path ────────────────────────────────────────────
 
   const clipPath = cropBox
@@ -641,6 +661,21 @@ export function PhotoCropEditor({
               <RotateCw className="size-3.5 mr-1" />
               Girar
             </Button>
+            {photo?.cropBox && (
+              <>
+                <div className="mx-1 h-5 w-px bg-border" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleClear}
+                  disabled={detecting || saving}
+                  className="text-red-600 hover:text-red-700"
+                >
+                  <Trash2 className="size-3.5 mr-1" />
+                  Limpar
+                </Button>
+              </>
+            )}
           </div>
 
           {statusText && (

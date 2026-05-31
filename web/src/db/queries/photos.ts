@@ -337,7 +337,7 @@ export async function getComparisonUrls(
 export async function updateCropBox(
   tenantId: string,
   photoId: string,
-  cropBox: PhotoCropData,
+  cropBox: PhotoCropData | null,
 ) {
   const [updated] = await db
     .update(photoAssets)
