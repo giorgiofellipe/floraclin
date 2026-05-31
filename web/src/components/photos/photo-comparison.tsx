@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -9,6 +9,8 @@ import {
   DialogContent,
 } from '@/components/ui/dialog'
 import { cn, formatDate } from '@/lib/utils'
+import { computeAlignmentTransform, alignmentTransformToCssMatrix } from '@/lib/face-alignment'
+import type { PhotoCropData } from '@/validations/photo-crop'
 import type { PhotoAssetWithUrl } from '@/db/queries/photos'
 import { timelineStageLabels } from '@/validations/photo'
 import type { TimelineStage } from '@/types'
@@ -45,6 +47,10 @@ export function PhotoComparisonDialog({
   const [loadingUrls, setLoadingUrls] = useState(false)
   const [opacity, setOpacity] = useState(50)
   const [sliderPosition, setSliderPosition] = useState(50)
+  const [alignmentOn, setAlignmentOn] = useState(true)
+  const [cropBoxA, setCropBoxA] = useState<PhotoCropData | null>(null)
+  const [cropBoxB, setCropBoxB] = useState<PhotoCropData | null>(null)
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
   const sliderContainerRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
 
@@ -52,6 +58,8 @@ export function PhotoComparisonDialog({
     if (!open || !photoA || !photoB) {
       setUrlA(null)
       setUrlB(null)
+      setCropBoxA(null)
+      setCropBoxB(null)
       setSliderPosition(50)
       return
     }
@@ -65,6 +73,8 @@ export function PhotoComparisonDialog({
         if (result.success && result.data) {
           setUrlA(result.data.urlA)
           setUrlB(result.data.urlB)
+          setCropBoxA(result.data.cropBoxA ?? null)
+          setCropBoxB(result.data.cropBoxB ?? null)
         }
       } finally {
         setLoadingUrls(false)
@@ -102,6 +112,32 @@ export function PhotoComparisonDialog({
     }
   }, [])
 
+  const hasLandmarks = !!(cropBoxA?.landmarks && cropBoxB?.landmarks)
+
+  useEffect(() => {
+    const el = sliderContainerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const obs = new ResizeObserver(([entry]) => {
+      setContainerSize({ w: entry.contentRect.width, h: entry.contentRect.height })
+    })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [urlA, urlB])
+
+  const alignmentCss = useMemo(() => {
+    if (!hasLandmarks || !alignmentOn || !cropBoxA?.landmarks || !cropBoxB?.landmarks)
+      return null
+    if (containerSize.w === 0 || containerSize.h === 0) return null
+    const transform = computeAlignmentTransform(
+      cropBoxA.landmarks,
+      cropBoxB.landmarks,
+      containerSize.w,
+      containerSize.h,
+    )
+    if (!transform) return null
+    return alignmentTransformToCssMatrix(transform)
+  }, [hasLandmarks, alignmentOn, cropBoxA, cropBoxB, containerSize])
+
   const labelA = photoA ? getPhotoLabel(photoA) : ''
   const labelB = photoB ? getPhotoLabel(photoB) : ''
 
@@ -127,14 +163,39 @@ export function PhotoComparisonDialog({
               </button>
             ))}
           </div>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-white/60 hover:text-white hover:bg-white/10"
-            onClick={() => onOpenChange(false)}
-          >
-            <X className="size-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            {hasLandmarks && (
+              <button
+                type="button"
+                onClick={() => setAlignmentOn((v) => !v)}
+                className={cn(
+                  'flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                  alignmentOn
+                    ? 'bg-sage/20 text-sage'
+                    : 'text-white/50 hover:text-white/80'
+                )}
+              >
+                <div className={cn(
+                  'h-3.5 w-6 rounded-full transition-colors relative',
+                  alignmentOn ? 'bg-sage' : 'bg-white/20',
+                )}>
+                  <div className={cn(
+                    'absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white transition-transform',
+                    alignmentOn ? 'translate-x-2.5' : 'translate-x-0.5',
+                  )} />
+                </div>
+                Alinhamento
+              </button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-white/60 hover:text-white hover:bg-white/10"
+              onClick={() => onOpenChange(false)}
+            >
+              <X className="size-5" />
+            </Button>
+          </div>
         </div>
 
         {/* Content area */}
@@ -159,6 +220,7 @@ export function PhotoComparisonDialog({
                     alt="Foto B"
                     className="h-auto max-h-[70vh] w-full object-contain"
                     draggable={false}
+                    style={{ transform: alignmentCss ?? undefined, transformOrigin: '0 0' }}
                   />
                   <div
                     className="absolute inset-0"
@@ -200,7 +262,7 @@ export function PhotoComparisonDialog({
                   </div>
                   <div className="space-y-2">
                     <div className="overflow-hidden rounded-lg">
-                      <img src={urlB} alt="Foto B" className="h-auto max-h-[70vh] w-full object-contain" />
+                      <img src={urlB} alt="Foto B" className="h-auto max-h-[70vh] w-full object-contain" style={{ transform: alignmentCss ?? undefined, transformOrigin: '0 0' }} />
                     </div>
                     <p className="text-center text-[11px] text-white/60">{labelB}</p>
                   </div>
@@ -227,7 +289,7 @@ export function PhotoComparisonDialog({
                       src={urlB}
                       alt="Foto B"
                       className="absolute inset-0 h-full w-full object-contain"
-                      style={{ opacity: opacity / 100 }}
+                      style={{ opacity: opacity / 100, transform: alignmentCss ?? undefined, transformOrigin: '0 0' }}
                     />
                   </div>
                   <div className="flex justify-between">

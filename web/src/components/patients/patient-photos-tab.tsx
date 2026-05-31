@@ -5,8 +5,10 @@ import { PhotoGrid } from '@/components/photos/photo-grid'
 import { PhotoUploader } from '@/components/photos/photo-uploader'
 import { PhotoComparisonDialog } from '@/components/photos/photo-comparison'
 import { PhotoAnnotationEditor } from '@/components/photos/photo-annotation-editor'
+import { PhotoCropEditor } from '@/components/photos/photo-crop-editor'
+import { CapturePoseGuide } from '@/components/photos/capture-pose-guide'
 import { Button } from '@/components/ui/button'
-import { Upload, GitCompareArrows, X } from 'lucide-react'
+import { Upload, GitCompareArrows, X, Camera } from 'lucide-react'
 import type { PhotoAssetWithUrl } from '@/db/queries/photos'
 
 interface PatientPhotosTabProps {
@@ -21,6 +23,8 @@ export function PatientPhotosTab({ patientId }: PatientPhotosTabProps) {
   const [selectedB, setSelectedB] = useState<PhotoAssetWithUrl | null>(null)
   const [showComparison, setShowComparison] = useState(false)
   const [annotatingPhoto, setAnnotatingPhoto] = useState<PhotoAssetWithUrl | null>(null)
+  const [croppingPhoto, setCroppingPhoto] = useState<PhotoAssetWithUrl | null>(null)
+  const [showCaptureGuide, setShowCaptureGuide] = useState(false)
 
   const handlePhotoSelect = useCallback((photo: PhotoAssetWithUrl) => {
     if (selectedA?.id === photo.id) {
@@ -66,6 +70,10 @@ export function PatientPhotosTab({ patientId }: PatientPhotosTabProps) {
               Comparar
             </Button>
           )}
+          <Button variant="outline" onClick={() => setShowCaptureGuide(true)}>
+            <Camera className="size-4 mr-1" />
+            Capturar com guia
+          </Button>
           <Button onClick={() => setShowUploader(!showUploader)}>
             <Upload className="size-4 mr-1" />
             Enviar Fotos
@@ -116,6 +124,7 @@ export function PatientPhotosTab({ patientId }: PatientPhotosTabProps) {
         selectedB={selectedB?.id ?? null}
         onPhotoSelect={handlePhotoSelect}
         onAnnotate={setAnnotatingPhoto}
+        onCrop={setCroppingPhoto}
       />
 
       <PhotoAnnotationEditor
@@ -137,6 +146,26 @@ export function PatientPhotosTab({ patientId }: PatientPhotosTabProps) {
         }}
         photoA={selectedA}
         photoB={selectedB}
+      />
+
+      <PhotoCropEditor
+        open={!!croppingPhoto}
+        onOpenChange={(open) => { if (!open) setCroppingPhoto(null) }}
+        photo={croppingPhoto}
+        onSaved={() => {
+          setCroppingPhoto(null)
+          setRefreshKey((k) => k + 1)
+        }}
+      />
+
+      <CapturePoseGuide
+        open={showCaptureGuide}
+        onOpenChange={setShowCaptureGuide}
+        patientId={patientId}
+        onCaptured={() => {
+          setShowCaptureGuide(false)
+          setRefreshKey((k) => k + 1)
+        }}
       />
     </div>
   )

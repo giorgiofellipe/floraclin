@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useCallback, useEffect, useState } from 'react'
-import { Trash2, ZoomIn, Pencil, Loader2 } from 'lucide-react'
+import { Trash2, ZoomIn, Pencil, Loader2, Crop } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -22,6 +22,7 @@ interface PhotoGridProps {
   patientId: string
   procedureRecordId?: string
   onAnnotate?: (photo: PhotoAssetWithUrl) => void
+  onCrop?: (photo: PhotoAssetWithUrl) => void
   refreshKey?: number
   timelineStage?: string
   comparisonMode?: boolean
@@ -36,6 +37,7 @@ export function PhotoGrid({
   patientId,
   procedureRecordId,
   onAnnotate,
+  onCrop,
   refreshKey,
   timelineStage,
   comparisonMode = false,
@@ -237,6 +239,26 @@ export function PhotoGrid({
                       </div>
                     } />
                     <TooltipContent side="top"><p>Desenhar</p></TooltipContent>
+                  </Tooltip>
+                )}
+                {onCrop && (
+                  <Tooltip>
+                    <TooltipTrigger render={
+                      <div className="relative">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="size-9 text-mid hover:text-charcoal"
+                          onClick={() => onCrop(photo)}
+                        >
+                          <Crop className="size-4" />
+                        </Button>
+                        {photo.cropBox && (
+                          <span className="absolute top-0.5 right-0.5 size-2 rounded-full bg-sage" />
+                        )}
+                      </div>
+                    } />
+                    <TooltipContent side="top"><p>Recortar</p></TooltipContent>
                   </Tooltip>
                 )}
                 <Tooltip>
