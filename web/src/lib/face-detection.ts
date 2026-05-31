@@ -22,6 +22,7 @@ const MODEL_URL =
 let landmarkerInstance: FaceLandmarker | null = null
 let initPromise: Promise<FaceLandmarker> | null = null
 let currentRunningMode: 'IMAGE' | 'VIDEO' = 'IMAGE'
+let detecting = false
 
 async function getLandmarker(mode: 'IMAGE' | 'VIDEO' = 'IMAGE'): Promise<FaceLandmarker> {
   if (landmarkerInstance) {
@@ -44,7 +45,7 @@ async function getLandmarker(mode: 'IMAGE' | 'VIDEO' = 'IMAGE'): Promise<FaceLan
     try {
       const vision = await FilesetResolver.forVisionTasks(WASM_URL)
       landmarkerInstance = await FaceLandmarker.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
+        baseOptions: { modelAssetPath: MODEL_URL },
         runningMode: mode,
         numFaces: 1,
         outputFaceBlendshapes: false,
@@ -122,9 +123,15 @@ export async function detectFaceFromVideo(
   video: HTMLVideoElement,
   timestampMs: number
 ): Promise<FaceDetectionResult | null> {
-  const landmarker = await getLandmarker('VIDEO')
-  const result = landmarker.detectForVideo(video, timestampMs)
-  return parseDetectionResult(result.faceLandmarks as Array<Array<{ x: number; y: number; z: number }>>)
+  if (detecting) return null
+  detecting = true
+  try {
+    const landmarker = await getLandmarker('VIDEO')
+    const result = landmarker.detectForVideo(video, timestampMs)
+    return parseDetectionResult(result.faceLandmarks as Array<Array<{ x: number; y: number; z: number }>>)
+  } finally {
+    detecting = false
+  }
 }
 
 export function disposeLandmarker() {

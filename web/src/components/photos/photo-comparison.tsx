@@ -51,6 +51,7 @@ export function PhotoComparisonDialog({
   const [cropBoxA, setCropBoxA] = useState<PhotoCropData | null>(null)
   const [cropBoxB, setCropBoxB] = useState<PhotoCropData | null>(null)
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
+  const containerRef = useRef<HTMLDivElement>(null)
   const sliderContainerRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
 
@@ -115,14 +116,14 @@ export function PhotoComparisonDialog({
   const hasLandmarks = !!(cropBoxA?.landmarks && cropBoxB?.landmarks)
 
   useEffect(() => {
-    const el = sliderContainerRef.current
+    const el = containerRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
     const obs = new ResizeObserver(([entry]) => {
       setContainerSize({ w: entry.contentRect.width, h: entry.contentRect.height })
     })
     obs.observe(el)
     return () => obs.disconnect()
-  }, [urlA, urlB])
+  }, [urlA, urlB, mode])
 
   const alignmentCss = useMemo(() => {
     if (!hasLandmarks || !alignmentOn || !cropBoxA?.landmarks || !cropBoxB?.landmarks)
@@ -184,7 +185,7 @@ export function PhotoComparisonDialog({
                     alignmentOn ? 'translate-x-2.5' : 'translate-x-0.5',
                   )} />
                 </div>
-                Alinhamento
+                Alinhamento automático
               </button>
             )}
             <Button
@@ -212,7 +213,10 @@ export function PhotoComparisonDialog({
             <>
               {mode === 'slider' && (
                 <div
-                  ref={sliderContainerRef}
+                  ref={(el) => {
+                    containerRef.current = el
+                    sliderContainerRef.current = el
+                  }}
                   className="relative max-h-[70vh] cursor-col-resize select-none overflow-hidden rounded-lg"
                 >
                   <img
@@ -261,7 +265,7 @@ export function PhotoComparisonDialog({
                     <p className="text-center text-[11px] text-white/60">{labelA}</p>
                   </div>
                   <div className="space-y-2">
-                    <div className="overflow-hidden rounded-lg">
+                    <div ref={containerRef} className="overflow-hidden rounded-lg">
                       <img src={urlB} alt="Foto B" className="h-auto max-h-[70vh] w-full object-contain" style={{ transform: alignmentCss ?? undefined, transformOrigin: '0 0' }} />
                     </div>
                     <p className="text-center text-[11px] text-white/60">{labelB}</p>
@@ -283,7 +287,7 @@ export function PhotoComparisonDialog({
                     />
                     <span className="text-xs text-white/50 tabular-nums w-8">{opacity}%</span>
                   </div>
-                  <div className="relative overflow-hidden rounded-lg">
+                  <div ref={containerRef} className="relative overflow-hidden rounded-lg">
                     <img src={urlA} alt="Foto A" className="h-auto max-h-[70vh] w-full object-contain" />
                     <img
                       src={urlB}

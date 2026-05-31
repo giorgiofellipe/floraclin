@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Camera, Loader2, VideoOff } from 'lucide-react'
+import { Camera, Loader2, SwitchCamera, VideoOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -184,6 +184,9 @@ export function CapturePoseGuide({
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [detection, setDetection] = useState<FaceDetectionResult | null>(null)
   const [isCapturing, setIsCapturing] = useState(false)
+  const [isMirrored, setIsMirrored] = useState(false)
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment')
+  const [hasMultipleCameras, setHasMultipleCameras] = useState(false)
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -199,20 +202,37 @@ export function CapturePoseGuide({
     setCameraError(null)
     setCameraReady(false)
 
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop())
+      streamRef.current = null
+    }
+
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setCameraError('Câmera não disponível. Use HTTPS ou um navegador compatível.')
+        return
+      }
+
       let stream: MediaStream
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 1920 } },
+          video: { facingMode, width: { ideal: 1920 } },
         })
       } catch {
-        // Fall back to any camera
         stream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 1920 } },
         })
       }
 
       streamRef.current = stream
+
+      const track = stream.getVideoTracks()[0]
+      const facing = track?.getSettings().facingMode
+      setIsMirrored(facing !== 'environment')
+
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      setHasMultipleCameras(devices.filter((d) => d.kind === 'videoinput').length > 1)
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         videoRef.current.onloadedmetadata = () => {
@@ -223,7 +243,7 @@ export function CapturePoseGuide({
       console.error('[capture-pose-guide] Camera error:', err)
       setCameraError('Não foi possível acessar a câmera. Verifique as permissões.')
     }
-  }, [])
+  }, [facingMode])
 
   const stopCamera = useCallback(() => {
     if (rafIdRef.current !== null) {
@@ -241,7 +261,7 @@ export function CapturePoseGuide({
     setDetection(null)
   }, [])
 
-  // Start/stop camera when dialog opens/closes
+  // Start/stop camera when dialog opens/closes or facing mode changes
   useEffect(() => {
     if (open) {
       startCamera()
@@ -380,15 +400,15 @@ export function CapturePoseGuide({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-2xl sm:max-w-2xl p-0 overflow-hidden"
+        className="max-w-2xl sm:max-w-2xl max-h-[100dvh] p-0 overflow-hidden flex flex-col"
         showCloseButton={true}
       >
-        <DialogHeader className="px-4 pt-4 pb-2">
+        <DialogHeader className="shrink-0 px-4 pt-4 pb-2">
           <DialogTitle>Captura com Guia de Pose</DialogTitle>
         </DialogHeader>
 
         {/* Pose selector tabs */}
-        <div className="flex gap-1 px-4 pb-2 overflow-x-auto">
+        <div className="shrink-0 flex gap-1 px-4 pb-2 overflow-x-auto">
           {POSES.map((p) => (
             <button
               key={p.key}
@@ -407,7 +427,7 @@ export function CapturePoseGuide({
         </div>
 
         {/* Camera viewport */}
-        <div className="relative aspect-[3/4] w-full bg-black overflow-hidden">
+        <div className="relative min-h-0 flex-1 w-full bg-black overflow-hidden">
           {/* Video element */}
           <video
             ref={videoRef}
@@ -415,6 +435,7 @@ export function CapturePoseGuide({
             playsInline
             muted
             className="h-full w-full object-cover"
+            style={isMirrored ? { transform: 'scaleX(-1)' } : undefined}
           />
 
           {/* Camera error */}
@@ -443,7 +464,10 @@ export function CapturePoseGuide({
 
           {/* Guide overlay */}
           {cameraReady && (
-            <div className="pointer-events-none absolute inset-0">
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={isMirrored ? { transform: 'scaleX(-1)' } : undefined}
+            >
               {/* Face outline oval */}
               <svg
                 className="absolute inset-0 h-full w-full"
@@ -486,41 +510,56 @@ export function CapturePoseGuide({
                 />
               </svg>
 
-              {/* Status indicator */}
-              <div className="absolute top-3 left-1/2 -translate-x-1/2">
-                <div
-                  className={cn(
-                    'rounded-full px-3 py-1 text-xs font-medium shadow-md backdrop-blur-sm',
-                    alignment.aligned
-                      ? 'bg-green-500/90 text-white'
-                      : 'bg-yellow-500/90 text-black',
-                  )}
-                >
-                  {alignment.aligned ? 'Posição ideal' : 'Ajustando posição...'}
-                </div>
-              </div>
-
-              {/* Directional hints */}
-              {!alignment.aligned && alignment.hints.length > 0 && (
-                <div className="absolute bottom-20 left-1/2 -translate-x-1/2">
-                  <div className="flex flex-col items-center gap-1 rounded-lg bg-black/60 px-4 py-2 backdrop-blur-sm">
-                    {alignment.hints.map((hint) => (
-                      <p
-                        key={hint}
-                        className="text-xs font-medium text-yellow-300"
-                      >
-                        {hint}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
+          )}
+
+          {/* Status indicator — outside mirrored container */}
+          {cameraReady && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2">
+              <div
+                className={cn(
+                  'rounded-full px-3 py-1 text-sm sm:text-xs font-medium shadow-md backdrop-blur-sm',
+                  alignment.aligned
+                    ? 'bg-green-500/90 text-white'
+                    : 'bg-yellow-500/90 text-black',
+                )}
+              >
+                {alignment.aligned ? 'Posição ideal' : 'Ajustando posição...'}
+              </div>
+            </div>
+          )}
+
+          {/* Directional hints */}
+          {cameraReady && !alignment.aligned && alignment.hints.length > 0 && (
+            <div className="absolute bottom-20 sm:bottom-4 left-1/2 -translate-x-1/2">
+              <div className="flex flex-col items-center gap-1 rounded-lg bg-black/60 px-4 py-2 backdrop-blur-sm">
+                {alignment.hints.map((hint) => (
+                  <p
+                    key={hint}
+                    className="text-sm sm:text-xs font-medium text-yellow-300"
+                  >
+                    {hint}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Switch camera button */}
+          {hasMultipleCameras && cameraReady && (
+            <button
+              type="button"
+              onClick={() => setFacingMode((m) => m === 'user' ? 'environment' : 'user')}
+              disabled={isCapturing}
+              className="absolute bottom-3 right-3 flex size-10 items-center justify-center rounded-full bg-black/40 text-white/70 backdrop-blur-sm transition-colors hover:bg-black/60 hover:text-white disabled:opacity-50"
+            >
+              <SwitchCamera className="size-5" />
+            </button>
           )}
         </div>
 
         {/* Bottom controls */}
-        <div className="flex items-center justify-center gap-4 px-4 py-4">
+        <div className="shrink-0 flex items-center justify-center gap-4 px-4 py-4">
           <Button
             variant="outline"
             size="sm"
