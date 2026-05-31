@@ -60,6 +60,7 @@ const FACE_SIZE_MIN = 0.40
 const FACE_SIZE_MAX = 0.70
 const CENTER_TOLERANCE = 0.10
 const PITCH_TOLERANCE = 22
+const GAZE_TOLERANCE = 0.11
 
 interface AlignmentStatus {
   aligned: boolean
@@ -79,17 +80,9 @@ function checkAlignment(
 
   const [yawMin, yawMax] = pose.yawRange
   if (rotation.yaw < yawMin) {
-    if (yawMin >= 0) {
-      hints.push('Vire mais para a esquerda')
-    } else {
-      hints.push('Vire mais para a direita')
-    }
+    hints.push('Vire mais para a esquerda')
   } else if (rotation.yaw > yawMax) {
-    if (yawMax <= 0) {
-      hints.push('Vire mais para a esquerda')
-    } else {
-      hints.push('Vire mais para a direita')
-    }
+    hints.push('Vire mais para a direita')
   }
 
   if (Math.abs(rotation.pitch) > PITCH_TOLERANCE) {
@@ -121,6 +114,13 @@ function checkAlignment(
       hints.push('Mova para baixo')
     } else {
       hints.push('Mova para cima')
+    }
+  }
+
+  if (pose.key === 'front') {
+    const { leftRatio, rightRatio } = detection.gaze
+    if (Math.abs(leftRatio - 0.5) > GAZE_TOLERANCE || Math.abs(rightRatio - 0.5) > GAZE_TOLERANCE) {
+      hints.push('Olhe para a câmera')
     }
   }
 
@@ -177,7 +177,49 @@ function captureFrameToBlob(
 // ─── Auto-take ────────────────────────────────────────────────────
 
 const AUTO_TAKE_KEY = 'floraclin:auto-capture'
-const AUTO_TAKE_DELAY_MS = 1500
+const AUTO_TAKE_DELAY_MS = 2000
+const SHARPNESS_THRESHOLD = 12
+const SHARPNESS_SAMPLE_SIZE = 128
+
+// Laplacian variance on a center crop — high variance = in focus
+function measureSharpness(video: HTMLVideoElement): number {
+  const canvas = document.createElement('canvas')
+  canvas.width = SHARPNESS_SAMPLE_SIZE
+  canvas.height = SHARPNESS_SAMPLE_SIZE
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) return 0
+
+  const vw = video.videoWidth
+  const vh = video.videoHeight
+  const sx = (vw - vw * 0.4) / 2
+  const sy = (vh - vh * 0.4) / 2
+  ctx.drawImage(video, sx, sy, vw * 0.4, vh * 0.4, 0, 0, SHARPNESS_SAMPLE_SIZE, SHARPNESS_SAMPLE_SIZE)
+
+  const { data } = ctx.getImageData(0, 0, SHARPNESS_SAMPLE_SIZE, SHARPNESS_SAMPLE_SIZE)
+  const w = SHARPNESS_SAMPLE_SIZE
+
+  let sum = 0
+  let count = 0
+  for (let y = 1; y < SHARPNESS_SAMPLE_SIZE - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = (y * w + x) * 4
+      const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114
+      const up = ((y - 1) * w + x) * 4
+      const down = ((y + 1) * w + x) * 4
+      const left = (y * w + (x - 1)) * 4
+      const right = (y * w + (x + 1)) * 4
+      const gUp = data[up] * 0.299 + data[up + 1] * 0.587 + data[up + 2] * 0.114
+      const gDown = data[down] * 0.299 + data[down + 1] * 0.587 + data[down + 2] * 0.114
+      const gLeft = data[left] * 0.299 + data[left + 1] * 0.587 + data[left + 2] * 0.114
+      const gRight = data[right] * 0.299 + data[right + 1] * 0.587 + data[right + 2] * 0.114
+      const lap = gUp + gDown + gLeft + gRight - 4 * gray
+      sum += lap * lap
+      count++
+    }
+  }
+
+  return count > 0 ? Math.sqrt(sum / count) : 0
+}
 
 // ─── CaptureContent ───────────────────────────────────────────────
 
@@ -408,15 +450,18 @@ export function CaptureContent({
               if (cancelled) return
               setDetection(result)
 
-              if (autoTakeRef.current && !isCapturingRef.current) {
+              if (autoTakeRef.current && !isCapturingRef.current && video) {
                 const currentPose = POSES.find((p) => p.key === selectedPoseRef.current) ?? POSES[0]
                 const a = checkAlignment(result, currentPose)
                 if (a.aligned) {
                   if (!alignedSinceRef.current) {
                     alignedSinceRef.current = now
                   } else if (now - alignedSinceRef.current >= AUTO_TAKE_DELAY_MS) {
-                    alignedSinceRef.current = null
-                    handleCaptureRef.current()
+                    const sharpness = measureSharpness(video)
+                    if (sharpness >= SHARPNESS_THRESHOLD) {
+                      alignedSinceRef.current = null
+                      handleCaptureRef.current()
+                    }
                   }
                 } else {
                   alignedSinceRef.current = null

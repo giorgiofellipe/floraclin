@@ -11,6 +11,7 @@ export interface FaceDetectionResult {
   }
   boundingBox: { x: number; y: number; width: number; height: number }
   rotation: { yaw: number; pitch: number; roll: number }
+  gaze: { leftRatio: number; rightRatio: number }
 }
 
 // Pin to installed version to avoid silent CDN breakage
@@ -66,6 +67,10 @@ async function getLandmarker(mode: 'IMAGE' | 'VIDEO' = 'IMAGE'): Promise<FaceLan
 const LEFT_EYE_CENTER = 468
 const RIGHT_EYE_CENTER = 473
 const NOSE_TIP = 1
+const LEFT_EYE_INNER = 133
+const LEFT_EYE_OUTER = 33
+const RIGHT_EYE_INNER = 362
+const RIGHT_EYE_OUTER = 263
 
 function parseDetectionResult(
   faceLandmarks: Array<Array<{ x: number; y: number; z: number }>>,
@@ -76,6 +81,10 @@ function parseDetectionResult(
   const leftEye = lm[LEFT_EYE_CENTER]
   const rightEye = lm[RIGHT_EYE_CENTER]
   const nose = lm[NOSE_TIP]
+  const leInner = lm[LEFT_EYE_INNER]
+  const leOuter = lm[LEFT_EYE_OUTER]
+  const reInner = lm[RIGHT_EYE_INNER]
+  const reOuter = lm[RIGHT_EYE_OUTER]
 
   const ipd = Math.sqrt(
     (rightEye.x - leftEye.x) ** 2 + (rightEye.y - leftEye.y) ** 2
@@ -99,6 +108,11 @@ function parseDetectionResult(
   const pitch = Math.atan2(noseOffsetY - ipd * 0.6, ipd) * (180 / Math.PI)
   const roll = Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x) * (180 / Math.PI)
 
+  const leWidth = leOuter.x - leInner.x
+  const reWidth = reInner.x - reOuter.x
+  const leftGaze = leWidth !== 0 ? (leftEye.x - leInner.x) / leWidth : 0.5
+  const rightGaze = reWidth !== 0 ? (rightEye.x - reOuter.x) / reWidth : 0.5
+
   return {
     landmarks: {
       leftEye: { x: leftEye.x, y: leftEye.y },
@@ -108,6 +122,7 @@ function parseDetectionResult(
     },
     boundingBox: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
     rotation: { yaw, pitch, roll },
+    gaze: { leftRatio: leftGaze, rightRatio: rightGaze },
   }
 }
 

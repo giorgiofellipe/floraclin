@@ -16,6 +16,7 @@ function makeFaceResult(overrides?: Partial<FaceDetectionResult>): FaceDetection
     },
     boundingBox: { x: 0.25, y: 0.2, width: 0.5, height: 0.6 },
     rotation: { yaw: 0, pitch: 0, roll: 0 },
+    gaze: { leftRatio: 0.5, rightRatio: 0.5 },
     ...overrides,
   }
 }
