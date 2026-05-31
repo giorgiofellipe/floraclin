@@ -2,6 +2,7 @@ import { db } from '@/db/client'
 import { photoAssets, photoAnnotations, patients, procedureRecords, procedureTypes } from '@/db/schema'
 import { eq, and, isNull, desc, sql, inArray } from 'drizzle-orm'
 import { getSignedUrl, deleteFile } from '@/lib/storage'
+import type { PhotoCropData } from '@/validations/photo-crop'
 import type { TimelineStage } from '@/types'
 import { timelineStageValues } from '@/validations/photo'
 import { verifyTenantOwnership } from './helpers'
@@ -23,6 +24,7 @@ export interface PhotoAssetWithUrl {
   procedureTypeName: string | null
   procedurePerformedAt: Date | null
   hasAnnotation: boolean
+  cropBox: PhotoCropData | null
 }
 
 export interface PhotosByStage {
@@ -63,6 +65,7 @@ export async function listPhotos(
       procedureTypeName: procedureTypes.name,
       procedurePerformedAt: procedureRecords.performedAt,
       hasAnnotation: sql<boolean>`exists(select 1 from ${photoAnnotations} where ${photoAnnotations.photoAssetId} = ${photoAssets.id})`,
+      cropBox: photoAssets.cropBox,
     })
     .from(photoAssets)
     .leftJoin(procedureRecords, eq(photoAssets.procedureRecordId, procedureRecords.id))
@@ -87,6 +90,7 @@ export async function listPhotos(
       procedureTypeName: photo.procedureTypeName,
       procedurePerformedAt: photo.procedurePerformedAt,
       hasAnnotation: !!photo.hasAnnotation,
+      cropBox: (photo.cropBox ?? null) as PhotoCropData | null,
     }))
   )
 
@@ -304,7 +308,12 @@ export async function getComparisonUrls(
   tenantId: string,
   photoIdA: string,
   photoIdB: string
-): Promise<{ urlA: string | null; urlB: string | null }> {
+): Promise<{
+  urlA: string | null
+  urlB: string | null
+  cropBoxA: PhotoCropData | null
+  cropBoxB: PhotoCropData | null
+}> {
   const [photoA, photoB] = await Promise.all([
     getPhotoAsset(tenantId, photoIdA),
     getPhotoAsset(tenantId, photoIdB),
@@ -315,5 +324,31 @@ export async function getComparisonUrls(
     photoB ? getSignedUrl(photoB.storagePath) : null,
   ])
 
-  return { urlA, urlB }
+  return {
+    urlA,
+    urlB,
+    cropBoxA: (photoA?.cropBox ?? null) as PhotoCropData | null,
+    cropBoxB: (photoB?.cropBox ?? null) as PhotoCropData | null,
+  }
+}
+
+// ─── Crop ──────────────────────────────────────────────────────────
+
+export async function updateCropBox(
+  tenantId: string,
+  photoId: string,
+  cropBox: PhotoCropData | null,
+) {
+  const [updated] = await db
+    .update(photoAssets)
+    .set({ cropBox })
+    .where(
+      and(
+        eq(photoAssets.tenantId, tenantId),
+        eq(photoAssets.id, photoId),
+      )
+    )
+    .returning()
+
+  return updated ?? null
 }

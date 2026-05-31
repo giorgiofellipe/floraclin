@@ -29,6 +29,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^5.2.2",
+    "@mediapipe/tasks-vision": "^0.10.35",
     "@sentry/nextjs": "^10.46.0",
     "@sparticuz/chromium-min": "^149.0.0",
     "@supabase/supabase-js": "^2.100.1",

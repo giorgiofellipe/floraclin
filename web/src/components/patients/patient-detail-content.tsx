@@ -45,7 +45,7 @@ import { IssueDocumentDialog } from '@/components/clinical-documents/issue-docum
 import { StartConversationDialog } from '@/components/whatsapp/start-conversation-dialog'
 import { PaymentForm } from '@/components/financial/payment-form'
 import { AppointmentForm } from '@/components/scheduling/appointment-form'
-import { Package, FileText } from 'lucide-react'
+import { FileText } from 'lucide-react'
 import { usePractitioners, useAppointmentProcedureTypes } from '@/hooks/queries/use-appointments'
 import type { Patient } from '@/db/queries/patients'
 import type { Role } from '@/types'
@@ -298,23 +298,6 @@ export function PatientDetailContent({
                     }
                   />
                   <TooltipContent side="bottom"><p>Nova Cobrança</p></TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Link href={`/pacientes/${patient.id}/atendimento?new=1`}>
-                        <Button
-                          variant="outline"
-                          size="icon-sm"
-                          className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
-                        >
-                          <Package className="size-4" />
-                        </Button>
-                      </Link>
-                    }
-                  />
-                  <TooltipContent side="bottom"><p>Novo Atendimento</p></TooltipContent>
                 </Tooltip>
 
                 <Tooltip>

@@ -1,14 +1,17 @@
 'use client'
 
 import * as React from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Loader2, X, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
 } from '@/components/ui/dialog'
 import { cn, formatDate } from '@/lib/utils'
+import { computeAlignmentTransform, alignmentTransformToCssMatrix } from '@/lib/face-alignment'
+import { autoDetectAndSaveCrop } from '@/lib/auto-crop'
+import type { PhotoCropData } from '@/validations/photo-crop'
 import type { PhotoAssetWithUrl } from '@/db/queries/photos'
 import { timelineStageLabels } from '@/validations/photo'
 import type { TimelineStage } from '@/types'
@@ -45,6 +48,18 @@ export function PhotoComparisonDialog({
   const [loadingUrls, setLoadingUrls] = useState(false)
   const [opacity, setOpacity] = useState(50)
   const [sliderPosition, setSliderPosition] = useState(50)
+  const [alignmentOn, setAlignmentOn] = useState(true)
+  const [cropBoxA, setCropBoxA] = useState<PhotoCropData | null>(null)
+  const [cropBoxB, setCropBoxB] = useState<PhotoCropData | null>(null)
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
+  const [imgNaturalSize, setImgNaturalSize] = useState<{ w: number; h: number } | null>(null)
+  const [autoDetecting, setAutoDetecting] = useState(false)
+  const autoDetectAttempted = useRef(new Set<string>())
+  const cropBoxARef = useRef(cropBoxA)
+  const cropBoxBRef = useRef(cropBoxB)
+  cropBoxARef.current = cropBoxA
+  cropBoxBRef.current = cropBoxB
+  const containerRef = useRef<HTMLDivElement>(null)
   const sliderContainerRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
 
@@ -52,7 +67,10 @@ export function PhotoComparisonDialog({
     if (!open || !photoA || !photoB) {
       setUrlA(null)
       setUrlB(null)
+      setCropBoxA(null)
+      setCropBoxB(null)
       setSliderPosition(50)
+      autoDetectAttempted.current.clear()
       return
     }
 
@@ -65,6 +83,8 @@ export function PhotoComparisonDialog({
         if (result.success && result.data) {
           setUrlA(result.data.urlA)
           setUrlB(result.data.urlB)
+          setCropBoxA(result.data.cropBoxA ?? null)
+          setCropBoxB(result.data.cropBoxB ?? null)
         }
       } finally {
         setLoadingUrls(false)
@@ -72,6 +92,46 @@ export function PhotoComparisonDialog({
     }
     loadUrls()
   }, [open, photoA, photoB])
+
+  useEffect(() => {
+    if (!urlA || !urlB) return
+
+    type DetectTask = { url: string; id: string; setter: (c: PhotoCropData) => void }
+    const tasks: DetectTask[] = []
+
+    if (!cropBoxARef.current && photoA && !autoDetectAttempted.current.has(photoA.id)) {
+      autoDetectAttempted.current.add(photoA.id)
+      tasks.push({ url: urlA, id: photoA.id, setter: setCropBoxA })
+    }
+    if (!cropBoxBRef.current && photoB && !autoDetectAttempted.current.has(photoB.id)) {
+      autoDetectAttempted.current.add(photoB.id)
+      tasks.push({ url: urlB, id: photoB.id, setter: setCropBoxB })
+    }
+
+    if (tasks.length === 0) return
+
+    let cancelled = false
+    setAutoDetecting(true)
+
+    Promise.all(
+      tasks.map(({ url, id, setter }) =>
+        autoDetectAndSaveCrop(url, id)
+          .then((crop) => { if (!cancelled && crop) setter(crop) })
+          .catch(() => {}),
+      ),
+    ).then(() => { if (!cancelled) setAutoDetecting(false) })
+
+    return () => { cancelled = true }
+  }, [urlA, urlB, photoA, photoB])
+
+  useEffect(() => {
+    const refUrl = cropBoxA ? urlA : cropBoxB ? urlB : null
+    if (!refUrl) { setImgNaturalSize(null); return }
+    const img = new Image()
+    img.onload = () => setImgNaturalSize({ w: img.naturalWidth, h: img.naturalHeight })
+    img.src = refUrl
+    return () => { img.onload = null }
+  }, [urlA, urlB, cropBoxA, cropBoxB])
 
   const handleSliderStart = useCallback(() => {
     isDragging.current = true
@@ -102,6 +162,116 @@ export function PhotoComparisonDialog({
     }
   }, [])
 
+  const hasLandmarks = !!(cropBoxA?.landmarks && cropBoxB?.landmarks)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const obs = new ResizeObserver(([entry]) => {
+      setContainerSize({ w: entry.contentRect.width, h: entry.contentRect.height })
+    })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [urlA, urlB, mode])
+
+  function toCropRelative(
+    landmarks: { leftEye: { x: number; y: number }; rightEye: { x: number; y: number } },
+    crop: PhotoCropData,
+  ) {
+    return {
+      leftEye: {
+        x: (landmarks.leftEye.x - crop.x) / crop.width,
+        y: (landmarks.leftEye.y - crop.y) / crop.height,
+      },
+      rightEye: {
+        x: (landmarks.rightEye.x - crop.x) / crop.width,
+        y: (landmarks.rightEye.y - crop.y) / crop.height,
+      },
+    }
+  }
+
+  const alignmentCss = useMemo(() => {
+    if (!hasLandmarks || !alignmentOn || !cropBoxA?.landmarks || !cropBoxB?.landmarks)
+      return null
+    if (containerSize.w === 0 || containerSize.h === 0) return null
+
+    const refLm = toCropRelative(cropBoxA.landmarks, cropBoxA)
+    const tgtLm = toCropRelative(cropBoxB.landmarks, cropBoxB)
+
+    const transform = computeAlignmentTransform(
+      refLm,
+      tgtLm,
+      containerSize.w,
+      containerSize.h,
+    )
+    if (!transform) return null
+    return alignmentTransformToCssMatrix(transform)
+  }, [hasLandmarks, alignmentOn, cropBoxA, cropBoxB, containerSize])
+
+  const cropAspect = useMemo(() => {
+    const crop = cropBoxA ?? cropBoxB
+    if (!crop) return null
+    if (imgNaturalSize) return { w: crop.width * imgNaturalSize.w, h: crop.height * imgNaturalSize.h }
+    return { w: crop.width, h: crop.height }
+  }, [cropBoxA, cropBoxB, imgNaturalSize])
+
+  function cropImgStyle(crop: PhotoCropData): React.CSSProperties {
+    return {
+      position: 'absolute',
+      width: `${100 / crop.width}%`,
+      height: `${100 / crop.height}%`,
+      maxWidth: 'none',
+      maxHeight: 'none',
+      left: `${-(crop.x / crop.width) * 100}%`,
+      top: `${-(crop.y / crop.height) * 100}%`,
+    }
+  }
+
+  const cropContainerStyle: React.CSSProperties | undefined = useMemo(() => {
+    if (!cropAspect) return undefined
+    const crop = cropBoxA ?? cropBoxB
+    const naturalW = crop && imgNaturalSize ? Math.round(crop.width * imgNaturalSize.w) : null
+    const parts = ['100%', `calc(70vh * ${cropAspect.w} / ${cropAspect.h})`]
+    if (naturalW) parts.push(`${naturalW}px`)
+    return { width: `min(${parts.join(', ')})` }
+  }, [cropAspect, cropBoxA, cropBoxB, imgNaturalSize])
+
+  const [redoing, setRedoing] = useState(false)
+
+  const handleRedoCrop = useCallback(async () => {
+    if (!urlA || !urlB || !photoA || !photoB) return
+    setRedoing(true)
+    try {
+      // Clear existing crops on server
+      await Promise.all([
+        fetch(`/api/photos/${photoA.id}/crop`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cropBox: null }),
+        }),
+        fetch(`/api/photos/${photoB.id}/crop`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cropBox: null }),
+        }),
+      ])
+      setCropBoxA(null)
+      setCropBoxB(null)
+      autoDetectAttempted.current.clear()
+      cropBoxARef.current = null
+      cropBoxBRef.current = null
+      // Re-detect
+      const [cropA, cropB] = await Promise.all([
+        autoDetectAndSaveCrop(urlA, photoA.id).catch(() => null),
+        autoDetectAndSaveCrop(urlB, photoB.id).catch(() => null),
+      ])
+      if (cropA) setCropBoxA(cropA)
+      if (cropB) setCropBoxB(cropB)
+    } finally {
+      setRedoing(false)
+    }
+  }, [urlA, urlB, photoA, photoB])
+
   const labelA = photoA ? getPhotoLabel(photoA) : ''
   const labelB = photoB ? getPhotoLabel(photoB) : ''
 
@@ -127,21 +297,60 @@ export function PhotoComparisonDialog({
               </button>
             ))}
           </div>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-white/60 hover:text-white hover:bg-white/10"
-            onClick={() => onOpenChange(false)}
-          >
-            <X className="size-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            {(cropBoxA || cropBoxB) && (
+              <button
+                type="button"
+                onClick={handleRedoCrop}
+                disabled={redoing}
+                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-white/50 hover:text-white/80 transition-colors disabled:opacity-50"
+              >
+                <RotateCcw className={cn('size-3.5', redoing && 'animate-spin')} />
+                Refazer recorte
+              </button>
+            )}
+            {hasLandmarks && (
+              <button
+                type="button"
+                onClick={() => setAlignmentOn((v) => !v)}
+                className={cn(
+                  'flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                  alignmentOn
+                    ? 'bg-sage/20 text-sage'
+                    : 'text-white/50 hover:text-white/80'
+                )}
+              >
+                <div className={cn(
+                  'h-3.5 w-6 rounded-full transition-colors relative',
+                  alignmentOn ? 'bg-sage' : 'bg-white/20',
+                )}>
+                  <div className={cn(
+                    'absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white transition-transform',
+                    alignmentOn ? 'translate-x-2.5' : 'translate-x-0.5',
+                  )} />
+                </div>
+                Alinhamento automático
+              </button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-white/60 hover:text-white hover:bg-white/10"
+              onClick={() => onOpenChange(false)}
+            >
+              <X className="size-5" />
+            </Button>
+          </div>
         </div>
 
         {/* Content area */}
         <div className="px-4 pb-4">
-          {loadingUrls ? (
-            <div className="flex items-center justify-center py-24">
+          {loadingUrls || autoDetecting ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-24">
               <Loader2 className="size-6 animate-spin text-white/40" />
+              {autoDetecting && (
+                <span className="text-xs text-white/40">Detectando rosto...</span>
+              )}
             </div>
           ) : !urlA || !urlB ? (
             <div className="flex items-center justify-center py-24">
@@ -151,26 +360,44 @@ export function PhotoComparisonDialog({
             <>
               {mode === 'slider' && (
                 <div
-                  ref={sliderContainerRef}
-                  className="relative max-h-[70vh] cursor-col-resize select-none overflow-hidden rounded-lg"
+                  ref={(el) => {
+                    containerRef.current = el
+                    sliderContainerRef.current = el
+                  }}
+                  className={cn('relative cursor-col-resize select-none overflow-hidden rounded-lg', cropAspect && 'mx-auto')}
+                  style={cropContainerStyle}
                 >
-                  <img
-                    src={urlB}
-                    alt="Foto B"
-                    className="h-auto max-h-[70vh] w-full object-contain"
-                    draggable={false}
-                  />
+                  {cropAspect ? (
+                    <svg viewBox={`0 0 ${cropAspect.w} ${cropAspect.h}`} className="block w-full" aria-hidden="true" />
+                  ) : (
+                    <img src={urlA} alt="" className="block w-full max-h-[70vh] object-contain invisible" aria-hidden="true" />
+                  )}
+
+                  {/* Photo B (behind) */}
                   <div
-                    className="absolute inset-0"
+                    className="absolute inset-0 overflow-hidden"
+                    style={alignmentCss ? { transform: alignmentCss, transformOrigin: '0 0' } : undefined}
+                  >
+                    {cropBoxB ? (
+                      <img src={urlB} alt="Foto B" draggable={false} style={cropImgStyle(cropBoxB)} />
+                    ) : (
+                      <img src={urlB} alt="Foto B" className="h-full w-full object-contain" draggable={false} />
+                    )}
+                  </div>
+
+                  {/* Photo A (front, clipped) */}
+                  <div
+                    className="absolute inset-0 overflow-hidden"
                     style={{ clipPath: `polygon(0 0, ${sliderPosition}% 0, ${sliderPosition}% 100%, 0 100%)` }}
                   >
-                    <img
-                      src={urlA}
-                      alt="Foto A"
-                      className="h-full w-full object-contain"
-                      draggable={false}
-                    />
+                    {cropBoxA ? (
+                      <img src={urlA} alt="Foto A" draggable={false} style={cropImgStyle(cropBoxA)} />
+                    ) : (
+                      <img src={urlA} alt="Foto A" className="h-full w-full object-contain" draggable={false} />
+                    )}
                   </div>
+
+                  {/* Slider handle */}
                   <div
                     className="absolute top-0 bottom-0 z-10 w-0.5 bg-white shadow-[0_0_8px_rgba(0,0,0,0.4)]"
                     style={{ left: `${sliderPosition}%` }}
@@ -193,14 +420,41 @@ export function PhotoComparisonDialog({
               {mode === 'side-by-side' && (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <div className="overflow-hidden rounded-lg">
-                      <img src={urlA} alt="Foto A" className="h-auto max-h-[70vh] w-full object-contain" />
+                    <div className="relative overflow-hidden rounded-lg">
+                      {cropAspect && cropBoxA ? (
+                        <>
+                          <svg viewBox={`0 0 ${cropAspect.w} ${cropAspect.h}`} className="block w-full" aria-hidden="true" />
+                          <div className="absolute inset-0 overflow-hidden">
+                            <img src={urlA} alt="Foto A" style={cropImgStyle(cropBoxA)} />
+                          </div>
+                        </>
+                      ) : (
+                        <img src={urlA} alt="Foto A" className="block w-full max-h-[70vh] object-contain" />
+                      )}
                     </div>
                     <p className="text-center text-[11px] text-white/60">{labelA}</p>
                   </div>
                   <div className="space-y-2">
-                    <div className="overflow-hidden rounded-lg">
-                      <img src={urlB} alt="Foto B" className="h-auto max-h-[70vh] w-full object-contain" />
+                    <div ref={containerRef} className="relative overflow-hidden rounded-lg">
+                      {cropAspect ? (
+                        <>
+                          <svg viewBox={`0 0 ${cropAspect.w} ${cropAspect.h}`} className="block w-full" aria-hidden="true" />
+                          <div
+                            className="absolute inset-0 overflow-hidden"
+                            style={alignmentCss ? { transform: alignmentCss, transformOrigin: '0 0' } : undefined}
+                          >
+                            {cropBoxB ? (
+                              <img src={urlB} alt="Foto B" style={cropImgStyle(cropBoxB)} />
+                            ) : (
+                              <img src={urlB} alt="Foto B" className="h-full w-full object-contain" />
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <img src={urlB} alt="Foto B" className="block w-full max-h-[70vh] object-contain"
+                          style={alignmentCss ? { transform: alignmentCss, transformOrigin: '0 0' } : undefined}
+                        />
+                      )}
                     </div>
                     <p className="text-center text-[11px] text-white/60">{labelB}</p>
                   </div>
@@ -221,14 +475,36 @@ export function PhotoComparisonDialog({
                     />
                     <span className="text-xs text-white/50 tabular-nums w-8">{opacity}%</span>
                   </div>
-                  <div className="relative overflow-hidden rounded-lg">
-                    <img src={urlA} alt="Foto A" className="h-auto max-h-[70vh] w-full object-contain" />
-                    <img
-                      src={urlB}
-                      alt="Foto B"
-                      className="absolute inset-0 h-full w-full object-contain"
-                      style={{ opacity: opacity / 100 }}
-                    />
+                  <div ref={containerRef} className={cn('relative overflow-hidden rounded-lg', cropAspect && 'mx-auto')} style={cropContainerStyle}>
+                    {cropAspect ? (
+                      <svg viewBox={`0 0 ${cropAspect.w} ${cropAspect.h}`} className="block w-full" aria-hidden="true" />
+                    ) : (
+                      <img src={urlA} alt="" className="block w-full max-h-[70vh] object-contain invisible" aria-hidden="true" />
+                    )}
+
+                    {/* Photo A base */}
+                    <div className="absolute inset-0 overflow-hidden">
+                      {cropBoxA ? (
+                        <img src={urlA} alt="Foto A" style={cropImgStyle(cropBoxA)} />
+                      ) : (
+                        <img src={urlA} alt="Foto A" className="h-full w-full object-contain" />
+                      )}
+                    </div>
+
+                    {/* Photo B overlay */}
+                    <div
+                      className="absolute inset-0 overflow-hidden"
+                      style={{
+                        opacity: opacity / 100,
+                        ...(alignmentCss ? { transform: alignmentCss, transformOrigin: '0 0' } : {}),
+                      }}
+                    >
+                      {cropBoxB ? (
+                        <img src={urlB} alt="Foto B" style={cropImgStyle(cropBoxB)} />
+                      ) : (
+                        <img src={urlB} alt="Foto B" className="h-full w-full object-contain" />
+                      )}
+                    </div>
                   </div>
                   <div className="flex justify-between">
                     <p className="text-[11px] text-white/60">{labelA}</p>

@@ -23,6 +23,7 @@ import {
   Download,
   Ruler,
 } from 'lucide-react'
+import { autoDetectAndSaveCrop } from '@/lib/auto-crop'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -593,6 +594,13 @@ export function PhotoAnnotationEditor({
 
       const uploadRes = await fetch('/api/photos', { method: 'POST', body: formData })
       if (uploadRes.ok) {
+        const uploadResult = await uploadRes.json().catch(() => null)
+        if (uploadResult?.data?.id) {
+          const blobUrl = URL.createObjectURL(blob)
+          autoDetectAndSaveCrop(blobUrl, uploadResult.data.id)
+            .catch(() => {})
+            .finally(() => URL.revokeObjectURL(blobUrl))
+        }
         toast.success('Foto anotada salva como nova imagem')
         setShowSaveAsDialog(false)
       } else {

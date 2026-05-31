@@ -26,7 +26,7 @@ export async function uploadFile(
   return { path: data.path, error: null }
 }
 
-export async function getSignedUrl(path: string, expiresIn = 900): Promise<string | null> {
+export async function getSignedUrl(path: string, expiresIn = 7200): Promise<string | null> {
   const supabase = createStorageClient()
 
   const { data, error } = await supabase.storage
