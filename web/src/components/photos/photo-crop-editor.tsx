@@ -349,7 +349,7 @@ export function PhotoCropEditor({
       })
       setStatusText('Recorte redefinido')
     }
-  }, [photo?.signedUrl, landmarks, naturalSize])
+  }, [photo?.signedUrl, landmarks, detectionRef, naturalSize])
 
   // ─── Save ─────────────────────────────────────────────────────────
 
