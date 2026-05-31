@@ -209,7 +209,7 @@ export function IssueDocumentDialog({
                 <Button
                   variant="outline"
                   size="sm"
-                  render={<Link href="/configuracoes/perfil" />}
+                  render={<Link href="/configuracoes?tab=perfil" />}
                 >
                   Ir para o perfil
                 </Button>

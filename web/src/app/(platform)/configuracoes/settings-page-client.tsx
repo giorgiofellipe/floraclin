@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import Link from 'next/link'
+import type { Role } from '@/types'
+import { useCallback, useState } from 'react'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { ClinicSettingsForm } from '@/components/settings/clinic-settings-form'
 import { ProcedureTypeList } from '@/components/settings/procedure-type-list'
 import { ProductList } from '@/components/settings/product-list'
@@ -13,6 +14,14 @@ import { AuditLogViewer } from '@/components/audit/audit-log-viewer'
 import { FinancialSettingsForm } from '@/components/financial/settings/financial-settings-form'
 import { ExpenseCategoriesManager } from '@/components/financial/settings/expense-categories-manager'
 import { WhatsAppSettingsForm } from '@/components/settings/whatsapp-settings-form'
+import { PackageTemplateList } from '@/components/packages/package-template-list'
+import { usePackageTemplates } from '@/hooks/queries/use-packages'
+import { DocumentTemplateList } from '@/components/settings/document-template-list'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useProfile } from '@/hooks/queries/use-profile'
+import { AccountInfoForm } from '@/components/settings/account-info-form'
+import { PasswordForm } from '@/components/settings/password-form'
+import { ProfessionalSignatureForm } from '@/components/settings/professional-signature-form'
 import { useCalendarConnections } from '@/hooks/queries/use-calendar'
 import { cn } from '@/lib/utils'
 import {
@@ -28,7 +37,6 @@ import {
   Package2Icon,
   ClipboardSignatureIcon,
   UserCogIcon,
-  ChevronRightIcon,
 } from 'lucide-react'
 
 interface Tenant {
@@ -98,33 +106,117 @@ interface SettingsPageClientProps {
   members: TeamMember[]
   consentTemplates: ConsentTemplate[]
   currentUserId: string
+  userRole: Role
+  initialTab?: string
   templateStatusMap?: Record<string, boolean>
 }
 
-const TABS = [
-  { key: 'clinica', label: 'Clínica', icon: BuildingIcon },
-  { key: 'procedimentos', label: 'Procedimentos', icon: SyringeIcon },
-  { key: 'produtos', label: 'Produtos', icon: PackageIcon },
-  { key: 'equipe', label: 'Equipe', icon: UsersIcon },
-  { key: 'termos', label: 'Contratos e Termos', icon: FileTextIcon },
-  { key: 'agendamento', label: 'Agendamento', icon: CalendarIcon },
-  { key: 'financeiro', label: 'Financeiro', icon: DollarSignIcon },
-  { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircleIcon },
-  { key: 'auditoria', label: 'Auditoria', icon: ShieldCheckIcon },
-] as const
+type TabKey =
+  | 'clinica' | 'equipe' | 'perfil'
+  | 'procedimentos' | 'produtos' | 'pacotes' | 'termos' | 'documentos'
+  | 'agendamento' | 'financeiro' | 'whatsapp'
+  | 'auditoria'
 
-// Items that route to dedicated configuration pages (not inline tabs).
-const LINK_ITEMS = [
-  { href: '/configuracoes/pacotes', label: 'Pacotes', icon: Package2Icon },
+interface TabItem {
+  key: TabKey
+  label: string
+  icon: typeof BuildingIcon
+}
+
+interface SidebarGroup {
+  label: string
+  items: TabItem[]
+}
+
+const SIDEBAR_GROUPS: SidebarGroup[] = [
   {
-    href: '/configuracoes/documentos',
-    label: 'Documentos',
-    icon: ClipboardSignatureIcon,
+    label: 'Geral',
+    items: [
+      { key: 'clinica', label: 'Clínica', icon: BuildingIcon },
+      { key: 'equipe', label: 'Equipe', icon: UsersIcon },
+      { key: 'perfil', label: 'Perfil', icon: UserCogIcon },
+    ],
   },
-  { href: '/configuracoes/perfil', label: 'Perfil', icon: UserCogIcon },
-] as const
+  {
+    label: 'Clínico',
+    items: [
+      { key: 'procedimentos', label: 'Procedimentos', icon: SyringeIcon },
+      { key: 'produtos', label: 'Produtos', icon: PackageIcon },
+      { key: 'pacotes', label: 'Pacotes', icon: Package2Icon },
+      { key: 'termos', label: 'Contratos e Termos', icon: FileTextIcon },
+      { key: 'documentos', label: 'Documentos', icon: ClipboardSignatureIcon },
+    ],
+  },
+  {
+    label: 'Operações',
+    items: [
+      { key: 'agendamento', label: 'Agendamento', icon: CalendarIcon },
+      { key: 'financeiro', label: 'Financeiro', icon: DollarSignIcon },
+      { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircleIcon },
+    ],
+  },
+  {
+    label: 'Sistema',
+    items: [
+      { key: 'auditoria', label: 'Auditoria', icon: ShieldCheckIcon },
+    ],
+  },
+]
 
-type TabKey = (typeof TABS)[number]['key']
+const ALL_TABS: TabItem[] = SIDEBAR_GROUPS.flatMap((g) => g.items)
+
+const VALID_TAB_KEYS = new Set<string>(ALL_TABS.map((t) => t.key))
+
+const TAB_ROLES: Partial<Record<TabKey, Role[]>> = {
+  perfil: [],
+  documentos: ['owner', 'practitioner'],
+}
+
+const DEFAULT_OWNER_TAB: TabKey = 'clinica'
+const DEFAULT_NON_OWNER_TAB: TabKey = 'perfil'
+
+function PacotesTabContent() {
+  const { data, isLoading } = usePackageTemplates()
+  return <PackageTemplateList templates={data ?? []} isLoading={isLoading} />
+}
+
+function PerfilTabContent({ userRole }: { userRole: Role }) {
+  const { data: profileData, isLoading, error } = useProfile()
+  const { data: connections } = useCalendarConnections()
+  const profile = profileData?.data ?? null
+  const showCalendar = userRole === 'owner' || userRole === 'practitioner'
+  const myConnection = connections?.find((c: { userId: string | null }) => c.userId === profile?.id) ?? null
+
+  if (isLoading) return <div className="py-12 text-center text-sm text-mid">Carregando perfil...</div>
+  if (error) return <div className="py-12 text-center text-sm text-mid">Erro ao carregar perfil.</div>
+  if (!profile) return null
+
+  return (
+    <div className="space-y-5">
+      <AccountInfoForm initial={profile} />
+      <div className="h-px bg-[#E8ECEF]" />
+      <PasswordForm />
+      <div className="h-px bg-[#E8ECEF]" />
+      <ProfessionalSignatureForm initialProfile={profile} />
+      {showCalendar && (
+        <>
+          <div className="h-px bg-[#E8ECEF]" />
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-sm font-medium text-charcoal">Google Calendar</h3>
+              <p className="text-xs text-mid mt-1">Sincronize seus agendamentos com o Google Calendar.</p>
+            </div>
+            <CalendarConnectionCard
+              type="practitioner"
+              connection={myConnection}
+              helperText="Sincronize seus agendamentos com o Google Calendar."
+            />
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 export function SettingsPageClient({
   tenant,
@@ -133,15 +225,55 @@ export function SettingsPageClient({
   members,
   consentTemplates,
   currentUserId,
+  userRole,
+  initialTab,
   templateStatusMap,
 }: SettingsPageClientProps) {
   const settings = (tenant.settings || {}) as Record<string, unknown>
   const publicBookingEnabled = (settings.online_booking_enabled as boolean) ?? false
-  const [activeTab, setActiveTab] = useState<TabKey>('clinica')
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  const visibleTabs = ALL_TABS.filter((tab) => {
+    const allowed = TAB_ROLES[tab.key as TabKey]
+    if (allowed === undefined) return userRole === 'owner'
+    if (allowed.length === 0) return true
+    return allowed.includes(userRole)
+  })
+
+  const visibleKeys = new Set(visibleTabs.map((t) => t.key))
+  const defaultTab = userRole === 'owner' ? DEFAULT_OWNER_TAB : DEFAULT_NON_OWNER_TAB
+
+  const [activeTab, setActiveTabState] = useState<TabKey>(() => {
+    const candidate = initialTab as TabKey
+    if (candidate && VALID_TAB_KEYS.has(candidate) && visibleKeys.has(candidate)) {
+      return candidate
+    }
+    return defaultTab
+  })
+
+  const setActiveTab = useCallback((newTab: TabKey) => {
+    setActiveTabState(newTab)
+    const params = new URLSearchParams(searchParams.toString())
+    if (newTab === defaultTab) {
+      params.delete('tab')
+    } else {
+      params.set('tab', newTab)
+    }
+    const qs = params.toString()
+    router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false })
+  }, [router, pathname, searchParams, defaultTab])
+
   const { data: calendarConnections } = useCalendarConnections()
   const clinicConnection = calendarConnections?.find((c: { userId: string | null }) => c.userId === null) ?? null
 
-  const activeTabConfig = TABS.find((t) => t.key === activeTab)!
+  const activeTabConfig = visibleTabs.find((t) => t.key === activeTab) ?? visibleTabs[0]
+
+  const visibleGroups = SIDEBAR_GROUPS.map((group) => ({
+    label: group.label,
+    items: group.items.filter((item) => visibleKeys.has(item.key)),
+  })).filter((group) => group.items.length > 0)
 
   return (
     <div className="p-4 sm:p-6">
@@ -152,10 +284,10 @@ export function SettingsPageClient({
         </p>
       </div>
 
-      {/* Mobile: horizontal scrollable tabs */}
+      {/* Mobile: horizontal scrollable tabs (flat, no group labels) */}
       <div className="md:hidden mb-6 -mx-4 px-4 overflow-x-auto scrollbar-hide">
         <div className="flex gap-1 min-w-max bg-[#E8ECEF] rounded-[3px] p-1">
-          {TABS.map((tab) => {
+          {visibleTabs.map((tab) => {
             const Icon = tab.icon
             const isActive = activeTab === tab.key
             return (
@@ -175,19 +307,6 @@ export function SettingsPageClient({
               </button>
             )
           })}
-          {LINK_ITEMS.map((item) => {
-            const Icon = item.icon
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-[3px] text-sm font-medium text-mid hover:text-charcoal whitespace-nowrap"
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            )
-          })}
         </div>
       </div>
 
@@ -195,48 +314,34 @@ export function SettingsPageClient({
       <div className="flex gap-6">
         {/* Sidebar nav (desktop only) */}
         <nav className="hidden md:block w-56 shrink-0">
-          <div className="sticky top-6 space-y-1">
-            {TABS.map((tab) => {
-              const Icon = tab.icon
-              const isActive = activeTab === tab.key
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setActiveTab(tab.key)}
-                  className={cn(
-                    'flex items-center gap-3 w-full px-3 py-2.5 rounded-[3px] text-sm font-medium transition-colors text-left',
-                    isActive
-                      ? 'bg-white text-[#2A2A2A] shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
-                      : 'text-mid hover:bg-[#F4F6F8] hover:text-charcoal'
-                  )}
-                >
-                  <Icon className={cn('h-4 w-4', isActive ? 'text-sage' : 'text-mid')} />
-                  {tab.label}
-                </button>
-              )
-            })}
-
-            {LINK_ITEMS.length > 0 && (
-              <div className="pt-2 mt-2 border-t border-[#E8ECEF]" />
-            )}
-
-            {LINK_ITEMS.map((item) => {
-              const Icon = item.icon
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="flex items-center justify-between w-full px-3 py-2.5 rounded-[3px] text-sm font-medium text-mid hover:bg-[#F4F6F8] hover:text-charcoal transition-colors"
-                >
-                  <span className="flex items-center gap-3">
-                    <Icon className="h-4 w-4 text-mid" />
-                    {item.label}
-                  </span>
-                  <ChevronRightIcon className="h-3.5 w-3.5 text-mid/40" />
-                </Link>
-              )
-            })}
+          <div className="sticky top-6 space-y-0.5">
+            {visibleGroups.map((group, gi) => (
+              <div key={group.label} className={gi > 0 ? 'pt-4' : ''}>
+                <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-mid/60">
+                  {group.label}
+                </div>
+                {group.items.map((tab) => {
+                  const Icon = tab.icon
+                  const isActive = activeTab === tab.key
+                  return (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setActiveTab(tab.key)}
+                      className={cn(
+                        'flex items-center gap-3 w-full px-3 py-2.5 rounded-[3px] text-sm font-medium transition-colors text-left',
+                        isActive
+                          ? 'bg-white text-[#2A2A2A] shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
+                          : 'text-mid hover:bg-[#F4F6F8] hover:text-charcoal'
+                      )}
+                    >
+                      <Icon className={cn('h-4 w-4', isActive ? 'text-sage' : 'text-mid')} />
+                      {tab.label}
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
           </div>
         </nav>
 
@@ -285,15 +390,30 @@ export function SettingsPageClient({
                 <ConsentTemplateList templates={consentTemplates} />
               )}
 
+              {activeTab === 'pacotes' && <PacotesTabContent />}
+
+              {activeTab === 'documentos' && (
+                <Tabs defaultValue="receita" className="space-y-4">
+                  <TabsList>
+                    <TabsTrigger value="receita">Receitas</TabsTrigger>
+                    <TabsTrigger value="atestado">Atestados</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="receita" className="space-y-4">
+                    <DocumentTemplateList kind="receita" />
+                  </TabsContent>
+                  <TabsContent value="atestado" className="space-y-4">
+                    <DocumentTemplateList kind="atestado" />
+                  </TabsContent>
+                </Tabs>
+              )}
+
               {activeTab === 'agendamento' && (
                 <div className="space-y-8">
                   <BookingSettings
                     slug={tenant.slug}
                     publicBookingEnabled={publicBookingEnabled}
                   />
-
                   <div className="h-px bg-[#E8ECEF]" />
-
                   <div className="space-y-4">
                     <div>
                       <h3 className="text-sm font-medium text-charcoal">Calendário da clínica</h3>
@@ -326,6 +446,8 @@ export function SettingsPageClient({
               {activeTab === 'auditoria' && (
                 <AuditLogViewer />
               )}
+
+              {activeTab === 'perfil' && <PerfilTabContent userRole={userRole} />}
             </div>
           </div>
         </div>

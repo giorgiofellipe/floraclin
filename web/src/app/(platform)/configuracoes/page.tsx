@@ -1,13 +1,28 @@
+import { Suspense } from 'react'
 import type { Metadata } from 'next'
-import { requireRole } from '@/lib/auth'
+import { getAuthContext } from '@/lib/auth'
 import { ConfiguracoesPageClientWrapper } from './configuracoes-page-client'
+import ConfiguracoesLoading from './loading'
 
 export const metadata: Metadata = {
   title: 'Configuracoes | FloraClin',
 }
 
-export default async function ConfiguracoesPage() {
-  const auth = await requireRole('owner')
+interface ConfiguracoesPageProps {
+  searchParams: Promise<{ tab?: string }>
+}
 
-  return <ConfiguracoesPageClientWrapper currentUserId={auth.userId} />
+export default async function ConfiguracoesPage({ searchParams }: ConfiguracoesPageProps) {
+  const auth = await getAuthContext()
+  const { tab } = await searchParams
+
+  return (
+    <Suspense fallback={<ConfiguracoesLoading />}>
+      <ConfiguracoesPageClientWrapper
+        currentUserId={auth.userId}
+        userRole={auth.role}
+        initialTab={tab}
+      />
+    </Suspense>
+  )
 }

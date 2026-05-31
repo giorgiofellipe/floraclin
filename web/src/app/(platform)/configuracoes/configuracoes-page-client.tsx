@@ -1,5 +1,6 @@
 'use client'
 
+import type { Role } from '@/types'
 import { useMemo } from 'react'
 import { useTenant, useTenantUsers } from '@/hooks/queries/use-tenant'
 import { useProcedureTypes } from '@/hooks/queries/use-procedure-types'
@@ -11,10 +12,11 @@ import ConfiguracoesLoading from './loading'
 
 interface ConfiguracoesPageClientProps {
   currentUserId: string
+  userRole: Role
+  initialTab?: string
 }
 
-export function ConfiguracoesPageClientWrapper({ currentUserId }: ConfiguracoesPageClientProps) {
-  const { data: tenant, isLoading: tenantLoading } = useTenant()
+function OwnerSettingsWrapper({ currentUserId, userRole, initialTab, tenant }: ConfiguracoesPageClientProps & { tenant: NonNullable<ReturnType<typeof useTenant>['data']> }) {
   const { data: procedureTypes, isLoading: ptLoading } = useProcedureTypes()
   const { data: products, isLoading: productsLoading } = useAllProducts()
   const { data: members, isLoading: membersLoading } = useTenantUsers()
@@ -37,18 +39,8 @@ export function ConfiguracoesPageClientWrapper({ currentUserId }: ConfiguracoesP
     return map
   }, [evaluationTemplates])
 
-  const isLoading = tenantLoading || ptLoading || productsLoading || membersLoading || ctLoading
-
-  if (isLoading) {
+  if (ptLoading || productsLoading || membersLoading || ctLoading) {
     return <ConfiguracoesLoading />
-  }
-
-  if (!tenant) {
-    return (
-      <div className="p-6">
-        <p className="text-sm text-muted-foreground">Erro ao carregar configura\u00e7\u00f5es.</p>
-      </div>
-    )
   }
 
   return (
@@ -59,7 +51,49 @@ export function ConfiguracoesPageClientWrapper({ currentUserId }: ConfiguracoesP
       members={members ?? []}
       consentTemplates={consentTemplates ?? []}
       currentUserId={currentUserId}
+      userRole={userRole}
+      initialTab={initialTab}
       templateStatusMap={templateStatusMap}
+    />
+  )
+}
+
+export function ConfiguracoesPageClientWrapper({ currentUserId, userRole, initialTab }: ConfiguracoesPageClientProps) {
+  const { data: tenant, isLoading: tenantLoading } = useTenant()
+
+  if (tenantLoading) {
+    return <ConfiguracoesLoading />
+  }
+
+  if (!tenant) {
+    return (
+      <div className="p-6">
+        <p className="text-sm text-muted-foreground">Erro ao carregar configurações.</p>
+      </div>
+    )
+  }
+
+  if (userRole === 'owner') {
+    return (
+      <OwnerSettingsWrapper
+        currentUserId={currentUserId}
+        userRole={userRole}
+        initialTab={initialTab}
+        tenant={tenant}
+      />
+    )
+  }
+
+  return (
+    <SettingsPageClient
+      tenant={tenant}
+      procedureTypes={[]}
+      products={[]}
+      members={[]}
+      consentTemplates={[]}
+      currentUserId={currentUserId}
+      userRole={userRole}
+      initialTab={initialTab}
     />
   )
 }

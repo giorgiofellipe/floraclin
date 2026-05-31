@@ -379,7 +379,7 @@ export function WhatsAppTemplateList({ onProvision }: WhatsAppTemplateListProps)
                     <div className="flex-1 min-w-0 space-y-1.5">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="text-sm font-medium text-charcoal truncate">
-                          {t.name}
+                          {(t.purposeKey && PURPOSE_LABELS[t.purposeKey]) || t.name}
                         </h4>
 
                         {/* Category badge */}
@@ -414,7 +414,7 @@ export function WhatsAppTemplateList({ onProvision }: WhatsAppTemplateListProps)
 
                       <div className="flex items-center gap-3 text-xs text-mid">
                         {t.purposeKey && PURPOSE_LABELS[t.purposeKey] && (
-                          <span>{PURPOSE_LABELS[t.purposeKey]}</span>
+                          <span className="text-mid/60">{t.name}</span>
                         )}
                         <span>
                           Sincronizado em{' '}

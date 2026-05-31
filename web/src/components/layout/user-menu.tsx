@@ -20,7 +20,7 @@ interface UserMenuProps {
 
 /**
  * Avatar dropdown in the top bar. "Meu Perfil" navigates to
- * `/configuracoes/perfil` — the canonical profile surface that holds
+ * `/configuracoes?tab=perfil` — the canonical profile surface that holds
  * account info, password, professional signature, and Google Calendar.
  *
  * (Until 2026-05-28 this opened an inline modal with name/phone/password +
@@ -54,7 +54,7 @@ export function UserMenu({ userName, userEmail }: UserMenuProps) {
           <p className="text-xs text-muted-foreground">{userEmail}</p>
         </div>
         <DropdownMenuSeparator />
-        <DropdownMenuItem render={<Link href="/configuracoes/perfil" />}>
+        <DropdownMenuItem render={<Link href="/configuracoes?tab=perfil" />}>
           <UserIcon className="mr-2 h-4 w-4" />
           Meu Perfil
         </DropdownMenuItem>
