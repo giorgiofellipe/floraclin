@@ -56,3 +56,6 @@ site/.next/
 .worktrees/
 .claude/worktrees/
 
+# playwright MCP
+.playwright-mcp/
+

@@ -6,6 +6,7 @@ import { Testimonial } from "@/components/testimonial";
 import { Pricing } from "@/components/pricing";
 import { CtaBanner } from "@/components/cta-banner";
 import { Faq } from "@/components/faq";
+import { Contact } from "@/components/contact";
 import { Footer } from "@/components/footer";
 
 export default function Home() {
@@ -20,6 +21,7 @@ export default function Home() {
         <Pricing />
         <CtaBanner />
         <Faq />
+        <Contact />
       </main>
       <Footer />
     </>

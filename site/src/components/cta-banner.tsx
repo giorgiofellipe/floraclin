@@ -73,7 +73,7 @@ export function CtaBanner() {
         </p>
 
         <a
-          href="#"
+          href="https://app.floraclin.com.br/signup"
           className="btn-primary bg-cream text-forest hover:bg-blush inline-flex text-base px-10 py-4"
         >
           Começar Grátis

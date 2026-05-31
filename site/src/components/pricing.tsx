@@ -110,7 +110,7 @@ export function Pricing() {
 
             {/* CTA */}
             <a
-              href="https://app.floraclin.com.br/login"
+              href="https://app.floraclin.com.br/signup"
               className="block w-full text-center bg-forest text-cream font-sans font-medium text-sm uppercase tracking-wider py-4 rounded-lg hover:bg-sage transition-colors no-underline"
             >
               Começar Grátis — 14 Dias

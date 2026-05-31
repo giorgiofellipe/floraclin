@@ -3,38 +3,20 @@ import Image from "next/image";
 
 const COLUMNS = [
   {
-    title: "Plataforma",
+    title: "Navegação",
     links: [
-      { label: "Agenda", href: "#" },
-      { label: "Prontuário", href: "#" },
-      { label: "Financeiro", href: "#" },
-      { label: "Diagrama Facial", href: "#" },
-    ],
-  },
-  {
-    title: "Recursos",
-    links: [
-      { label: "Assinatura Digital", href: "#" },
-      { label: "Agendamento Online", href: "#" },
-      { label: "Anamnese Digital", href: "#" },
-      { label: "Relatórios", href: "#" },
-    ],
-  },
-  {
-    title: "Empresa",
-    links: [
-      { label: "Sobre", href: "#" },
-      { label: "Blog", href: "#" },
+      { label: "Recursos", href: "#recursos" },
+      { label: "Como Funciona", href: "#como-funciona" },
+      { label: "Preços", href: "#precos" },
       { label: "Contato", href: "#contato" },
-      { label: "Carreiras", href: "#" },
     ],
   },
   {
     title: "Legal",
     links: [
-      { label: "Termos de Uso", href: "#" },
-      { label: "Privacidade", href: "#" },
-      { label: "LGPD", href: "#" },
+      { label: "Termos de Uso", href: "/termos" },
+      { label: "Privacidade", href: "/privacidade" },
+      { label: "LGPD", href: "/lgpd" },
     ],
   },
 ];
@@ -43,7 +25,7 @@ export function Footer() {
   return (
     <footer className="bg-forest text-cream/80 pt-16 md:pt-24 pb-8">
       <div className="mx-auto max-w-[1200px] px-6">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-12 md:gap-8 mb-16">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8 mb-16">
           {/* Brand column */}
           <div className="md:col-span-1">
             <Link href="/" className="flex items-center gap-2.5 no-underline mb-4">
@@ -97,12 +79,21 @@ export function Footer() {
               <ul className="list-none m-0 p-0 flex flex-col gap-3">
                 {column.links.map((link) => (
                   <li key={link.label}>
-                    <a
-                      href={link.href}
-                      className="text-cream/50 hover:text-cream text-sm transition-colors no-underline"
-                    >
-                      {link.label}
-                    </a>
+                    {link.href.startsWith("/") ? (
+                      <Link
+                        href={link.href}
+                        className="text-cream/50 hover:text-cream text-sm transition-colors no-underline"
+                      >
+                        {link.label}
+                      </Link>
+                    ) : (
+                      <a
+                        href={link.href}
+                        className="text-cream/50 hover:text-cream text-sm transition-colors no-underline"
+                      >
+                        {link.label}
+                      </a>
+                    )}
                   </li>
                 ))}
               </ul>

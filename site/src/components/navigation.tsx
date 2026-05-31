@@ -60,7 +60,7 @@ export function Navigation() {
 
         {/* Desktop CTA */}
         <div className="hidden md:block">
-          <a href="#" className="btn-primary text-sm py-2.5 px-6">
+          <a href="https://app.floraclin.com.br/signup" className="btn-primary text-sm py-2.5 px-6">
             Começar Grátis
           </a>
         </div>
@@ -90,7 +90,7 @@ export function Navigation() {
               </a>
             ))}
             <a
-              href="#"
+              href="https://app.floraclin.com.br/signup"
               className="btn-primary text-center mt-2"
               onClick={() => setMobileOpen(false)}
             >
