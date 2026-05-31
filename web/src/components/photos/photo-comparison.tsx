@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, X } from 'lucide-react'
+import { Loader2, X, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -236,6 +236,42 @@ export function PhotoComparisonDialog({
     return { width: `min(${parts.join(', ')})` }
   }, [cropAspect, cropBoxA, cropBoxB, imgNaturalSize])
 
+  const [redoing, setRedoing] = useState(false)
+
+  const handleRedoCrop = useCallback(async () => {
+    if (!urlA || !urlB || !photoA || !photoB) return
+    setRedoing(true)
+    try {
+      // Clear existing crops on server
+      await Promise.all([
+        fetch(`/api/photos/${photoA.id}/crop`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cropBox: null }),
+        }),
+        fetch(`/api/photos/${photoB.id}/crop`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cropBox: null }),
+        }),
+      ])
+      setCropBoxA(null)
+      setCropBoxB(null)
+      autoDetectAttempted.current.clear()
+      cropBoxARef.current = null
+      cropBoxBRef.current = null
+      // Re-detect
+      const [cropA, cropB] = await Promise.all([
+        autoDetectAndSaveCrop(urlA, photoA.id).catch(() => null),
+        autoDetectAndSaveCrop(urlB, photoB.id).catch(() => null),
+      ])
+      if (cropA) setCropBoxA(cropA)
+      if (cropB) setCropBoxB(cropB)
+    } finally {
+      setRedoing(false)
+    }
+  }, [urlA, urlB, photoA, photoB])
+
   const labelA = photoA ? getPhotoLabel(photoA) : ''
   const labelB = photoB ? getPhotoLabel(photoB) : ''
 
@@ -262,6 +298,17 @@ export function PhotoComparisonDialog({
             ))}
           </div>
           <div className="flex items-center gap-2">
+            {(cropBoxA || cropBoxB) && (
+              <button
+                type="button"
+                onClick={handleRedoCrop}
+                disabled={redoing}
+                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-white/50 hover:text-white/80 transition-colors disabled:opacity-50"
+              >
+                <RotateCcw className={cn('size-3.5', redoing && 'animate-spin')} />
+                Refazer recorte
+              </button>
+            )}
             {hasLandmarks && (
               <button
                 type="button"

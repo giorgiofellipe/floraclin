@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useCallback, useEffect, useState } from 'react'
-import { Trash2, ZoomIn, Pencil, Loader2, Crop } from 'lucide-react'
+import { Trash2, ZoomIn, Pencil, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -22,7 +22,6 @@ interface PhotoGridProps {
   patientId: string
   procedureRecordId?: string
   onAnnotate?: (photo: PhotoAssetWithUrl) => void
-  onCrop?: (photo: PhotoAssetWithUrl) => void
   refreshKey?: number
   timelineStage?: string
   comparisonMode?: boolean
@@ -37,7 +36,6 @@ export function PhotoGrid({
   patientId,
   procedureRecordId,
   onAnnotate,
-  onCrop,
   refreshKey,
   timelineStage,
   comparisonMode = false,
@@ -175,21 +173,38 @@ export function PhotoGrid({
       <div
         key={photo.id}
         className={cn(
-          'group overflow-hidden rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-all duration-200',
+          'group relative overflow-hidden rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-all duration-200',
           isA && 'ring-3 ring-[#4A6B52]',
           isB && 'ring-3 ring-[#D4845A]',
           comparisonMode && 'cursor-pointer',
         )}
         onClick={comparisonMode && onPhotoSelect ? () => onPhotoSelect(photo) : undefined}
       >
-        <div className="relative aspect-[3/4]">
+        <div className="relative aspect-[3/4] overflow-hidden">
           {photo.signedUrl ? (
-            <img
-              src={photo.signedUrl}
-              alt={photo.originalFilename ?? 'Foto'}
-              className="h-full w-full object-cover"
-              loading="lazy"
-            />
+            photo.cropBox ? (
+              <img
+                src={photo.signedUrl}
+                alt={photo.originalFilename ?? 'Foto'}
+                loading="lazy"
+                style={{
+                  position: 'absolute',
+                  width: `${100 / photo.cropBox.width}%`,
+                  height: `${100 / photo.cropBox.height}%`,
+                  maxWidth: 'none',
+                  maxHeight: 'none',
+                  left: `${-(photo.cropBox.x / photo.cropBox.width) * 100}%`,
+                  top: `${-(photo.cropBox.y / photo.cropBox.height) * 100}%`,
+                }}
+              />
+            ) : (
+              <img
+                src={photo.signedUrl}
+                alt={photo.originalFilename ?? 'Foto'}
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
+            )
           ) : (
             <div className="flex h-full items-center justify-center text-mid/60 text-xs">
               Erro ao carregar
@@ -207,87 +222,67 @@ export function PhotoGrid({
               {isA ? 'A' : 'B'}
             </div>
           )}
-        </div>
 
-        {/* Info + actions footer */}
-        <div className="flex items-center justify-between px-2 py-1.5">
-          <p className="truncate text-[11px] text-mid">
-            {formatDateTime(photo.createdAt)}
-          </p>
+          {/* Floating action bar */}
           {!comparisonMode && (
-            <TooltipProvider delay={300}>
-              <div className="flex items-center gap-1">
-                <Tooltip>
-                  <TooltipTrigger render={
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="size-9 text-mid hover:text-charcoal"
-                      onClick={() => setSelectedPhoto(photo)}
-                    >
-                      <ZoomIn className="size-4" />
-                    </Button>
-                  } />
-                  <TooltipContent side="top"><p>Ampliar</p></TooltipContent>
-                </Tooltip>
-                {onAnnotate && (
+            <div className="absolute inset-x-0 bottom-0 z-10 flex items-center justify-between bg-gradient-to-t from-black/60 to-transparent px-2 pt-6 pb-1.5">
+              <p className="truncate text-[11px] text-white/80">
+                {formatDateTime(photo.createdAt)}
+              </p>
+              <TooltipProvider delay={300}>
+                <div className="flex items-center gap-0.5">
                   <Tooltip>
                     <TooltipTrigger render={
-                      <div className="relative">
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className="size-9 text-mid hover:text-charcoal"
-                          onClick={() => onAnnotate(photo)}
-                        >
-                          <Pencil className="size-4" />
-                        </Button>
-                        {photo.hasAnnotation && (
-                          <span className="absolute top-0.5 right-0.5 size-2 rounded-full bg-amber" />
-                        )}
-                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="size-8 text-white/80 hover:text-white hover:bg-white/15"
+                        onClick={() => setSelectedPhoto(photo)}
+                      >
+                        <ZoomIn className="size-3.5" />
+                      </Button>
                     } />
-                    <TooltipContent side="top"><p>Desenhar</p></TooltipContent>
+                    <TooltipContent side="top"><p>Ampliar</p></TooltipContent>
                   </Tooltip>
-                )}
-                {onCrop && (
+                  {onAnnotate && (
+                    <Tooltip>
+                      <TooltipTrigger render={
+                        <div className="relative">
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="size-8 text-white/80 hover:text-white hover:bg-white/15"
+                            onClick={() => onAnnotate(photo)}
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                          {photo.hasAnnotation && (
+                            <span className="absolute top-0.5 right-0.5 size-2 rounded-full bg-amber" />
+                          )}
+                        </div>
+                      } />
+                      <TooltipContent side="top"><p>Desenhar</p></TooltipContent>
+                    </Tooltip>
+                  )}
                   <Tooltip>
                     <TooltipTrigger render={
-                      <div className="relative">
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className="size-9 text-mid hover:text-charcoal"
-                          onClick={() => onCrop(photo)}
-                        >
-                          <Crop className="size-4" />
-                        </Button>
-                        {photo.cropBox && (
-                          <span className="absolute top-0.5 right-0.5 size-2 rounded-full bg-sage" />
-                        )}
-                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="size-8 text-white/80 hover:text-red-400 hover:bg-white/15"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDeleteTarget(photo)
+                        }}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
                     } />
-                    <TooltipContent side="top"><p>Recortar</p></TooltipContent>
+                    <TooltipContent side="top"><p>Excluir</p></TooltipContent>
                   </Tooltip>
-                )}
-                <Tooltip>
-                  <TooltipTrigger render={
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="size-9 text-mid hover:text-red-600"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setDeleteTarget(photo)
-                      }}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  } />
-                  <TooltipContent side="top"><p>Excluir</p></TooltipContent>
-                </Tooltip>
-              </div>
-            </TooltipProvider>
+                </div>
+              </TooltipProvider>
+            </div>
           )}
         </div>
       </div>
