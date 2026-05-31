@@ -1,4 +1,5 @@
 import { ChevronDown } from "lucide-react";
+import { FadeIn } from "./fade-in";
 
 const FAQS = [
   {
@@ -45,25 +46,28 @@ export function Faq() {
 
         <div className="flex flex-col gap-4">
           {FAQS.map((faq) => (
-            <details
-              key={faq.question}
-              className="group bg-cream rounded-2xl border border-sage/10"
-            >
-              <summary className="flex items-center justify-between gap-4 px-6 py-5 md:px-8 md:py-6">
-                <span className="font-medium text-forest text-base md:text-lg">
-                  {faq.question}
-                </span>
-                <ChevronDown
-                  size={20}
-                  className="faq-chevron text-sage shrink-0"
-                />
-              </summary>
-              <div className="px-6 pb-5 md:px-8 md:pb-6 -mt-1">
-                <p className="text-charcoal/70 leading-relaxed">
-                  {faq.answer}
-                </p>
-              </div>
-            </details>
+            <FadeIn key={faq.question}>
+              <details className="group bg-cream rounded-2xl border border-sage/10">
+                <summary className="flex items-center justify-between gap-4 px-6 py-5 md:px-8 md:py-6">
+                  <span className="font-medium text-forest text-base md:text-lg">
+                    {faq.question}
+                  </span>
+                  <ChevronDown
+                    size={20}
+                    className="faq-chevron text-sage shrink-0"
+                  />
+                </summary>
+                <div className="faq-content">
+                  <div>
+                    <div className="px-6 pb-5 md:px-8 md:pb-6 -mt-1">
+                      <p className="text-charcoal/70 leading-relaxed">
+                        {faq.answer}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </details>
+            </FadeIn>
           ))}
         </div>
       </div>

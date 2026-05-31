@@ -148,3 +148,53 @@ details[open] summary .faq-chevron {
 .faq-chevron {
   transition: transform 0.2s ease;
 }
+
+/* Hero staggered fade-up animation */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  opacity: 0;
+  animation: fade-up 0.6s ease-out forwards;
+}
+
+.animate-delay-0 { animation-delay: 0ms; }
+.animate-delay-100 { animation-delay: 100ms; }
+.animate-delay-200 { animation-delay: 200ms; }
+.animate-delay-300 { animation-delay: 300ms; }
+.animate-delay-400 { animation-delay: 400ms; }
+
+/* Scroll-triggered fade-in */
+.fade-in-view {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+}
+
+.fade-in-view.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* FAQ smooth open/close */
+details .faq-content {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s ease-out;
+}
+
+details[open] .faq-content {
+  grid-template-rows: 1fr;
+}
+
+details .faq-content > div {
+  overflow: hidden;
+}

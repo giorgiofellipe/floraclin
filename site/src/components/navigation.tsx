@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Menu, X } from "lucide-react";
@@ -14,9 +14,22 @@ const NAV_LINKS = [
 
 export function Navigation() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    function onScroll() {
+      setScrolled(window.scrollY > 50);
+    }
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-cream/90 backdrop-blur-md border-b border-sage/10">
+    <header
+      className={`fixed top-0 left-0 right-0 z-50 bg-cream/90 backdrop-blur-md border-b border-sage/10 transition-shadow duration-200 ${
+        scrolled ? "shadow-md shadow-forest/5" : ""
+      }`}
+    >
       <nav className="mx-auto max-w-[1200px] px-6 flex items-center justify-between h-16 md:h-20">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 no-underline">
@@ -46,9 +59,11 @@ export function Navigation() {
         </ul>
 
         {/* Desktop CTA */}
-        <a href="#" className="btn-primary hidden md:inline-flex text-sm py-2.5 px-6">
-          Começar Grátis
-        </a>
+        <div className="hidden md:block">
+          <a href="#" className="btn-primary text-sm py-2.5 px-6">
+            Começar Grátis
+          </a>
+        </div>
 
         {/* Mobile hamburger */}
         <button

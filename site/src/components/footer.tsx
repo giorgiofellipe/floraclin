@@ -58,7 +58,7 @@ export function Footer() {
               </span>
             </Link>
             <p className="text-cream/50 text-sm leading-relaxed">
-              Onde o cuidado floresce.
+              Gestão clínica feita para HOF.
             </p>
 
             {/* Social */}

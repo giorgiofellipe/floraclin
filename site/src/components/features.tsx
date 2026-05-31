@@ -10,6 +10,7 @@ import {
   CalendarDays,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { FadeIn } from "./fade-in";
 
 interface Feature {
   icon: LucideIcon;
@@ -94,44 +95,60 @@ const GROUPS: FeatureGroup[] = [
   },
 ];
 
+const GROUP_BG = ["bg-cream", "bg-petal/40", "bg-cream"];
+const CARD_BG = ["bg-white", "bg-white", "bg-white"];
+
 export function Features() {
   return (
-    <section id="recursos" className="bg-cream py-16 md:py-32">
-      <div className="mx-auto max-w-[1200px] px-6">
-        <div className="text-center mb-16 md:mb-20">
-          <p className="section-label mb-4">Recursos</p>
-          <h2 className="text-3xl md:text-[2.5rem] md:leading-tight max-w-2xl mx-auto">
-            Feito para HOF. Não adaptado de outro sistema.
-          </h2>
+    <section id="recursos" className="py-0">
+      <div className="bg-cream pt-16 md:pt-32 pb-0">
+        <div className="mx-auto max-w-[1200px] px-6">
+          <div className="text-center mb-16 md:mb-20">
+            <p className="section-label mb-4">Recursos</p>
+            <h2 className="text-3xl md:text-[2.5rem] md:leading-tight max-w-2xl mx-auto">
+              Feito para HOF. Não adaptado de outro sistema.
+            </h2>
+          </div>
         </div>
+      </div>
 
-        <div className="space-y-16 md:space-y-20">
-          {GROUPS.map((group) => (
-            <div key={group.label}>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sage mb-8 text-center">
-                {group.label}
-              </p>
+      <div>
+        {GROUPS.map((group, groupIndex) => (
+          <div
+            key={group.label}
+            className={`${GROUP_BG[groupIndex]} py-12 md:py-16`}
+          >
+            <div className="mx-auto max-w-[1200px] px-6">
+              <div className="flex items-center justify-center gap-4 mb-8">
+                <span className="h-px w-8 bg-sage/30" />
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sage px-3 py-1.5 bg-sage/8 rounded-full">
+                  {group.label}
+                </p>
+                <span className="h-px w-8 bg-sage/30" />
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
                 {group.features.map((feature) => {
                   const Icon = feature.icon;
                   return (
-                    <div key={feature.title} className="feature-card">
-                      <div className="w-12 h-12 rounded-xl bg-sage/10 flex items-center justify-center mb-6">
-                        <Icon size={24} className="text-sage" />
+                    <FadeIn key={feature.title}>
+                      <div className={`feature-card ${CARD_BG[groupIndex]}`}>
+                        <div className="w-16 h-16 rounded-2xl bg-sage/10 ring-1 ring-sage/15 flex items-center justify-center mb-6 shadow-sm shadow-sage/5">
+                          <Icon size={28} className="text-sage" />
+                        </div>
+                        <h3 className="text-xl md:text-2xl mb-3">
+                          {feature.title}
+                        </h3>
+                        <p className="text-charcoal/70 leading-relaxed text-[0.95rem]">
+                          {feature.description}
+                        </p>
                       </div>
-                      <h3 className="text-xl md:text-2xl mb-3">
-                        {feature.title}
-                      </h3>
-                      <p className="text-charcoal/70 leading-relaxed text-[0.95rem]">
-                        {feature.description}
-                      </p>
-                    </div>
+                    </FadeIn>
                   );
                 })}
               </div>
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
     </section>
   );
