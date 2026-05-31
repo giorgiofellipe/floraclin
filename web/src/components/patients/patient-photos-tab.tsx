@@ -81,6 +81,7 @@ export function PatientPhotosTab({ patientId }: PatientPhotosTabProps) {
       />
 
       <PhotoUploadModal
+        key={uploadModalTab}
         open={uploadModalTab !== null}
         onOpenChange={(open) => {
           if (!open) setUploadModalTab(null)

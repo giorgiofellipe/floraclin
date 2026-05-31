@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Upload, Camera } from 'lucide-react'
 import {
   Dialog,
@@ -28,10 +28,6 @@ export function PhotoUploadModal({
   onComplete,
 }: PhotoUploadModalProps) {
   const [activeTab, setActiveTab] = useState(defaultTab)
-
-  useEffect(() => {
-    if (open) setActiveTab(defaultTab)
-  }, [open, defaultTab])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
