@@ -83,7 +83,6 @@ export function PhotoCropEditor({
   const containerRef = useRef<HTMLDivElement>(null)
   const imgRef = useRef<HTMLImageElement>(null)
   const [imgSize, setImgSize] = useState({ w: 0, h: 0 })
-  const [naturalSize, setNaturalSize] = useState({ w: 0, h: 0 })
 
   // ─── Load image & detect face on open ─────────────────────────────
 
@@ -98,10 +97,11 @@ export function PhotoCropEditor({
       return
     }
 
+    let cancelled = false
     const img = new Image()
     img.crossOrigin = 'anonymous'
     img.onload = async () => {
-      setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight })
+      if (cancelled) return
 
       // If the photo already has a crop, restore it
       if (photo.cropBox) {
@@ -127,6 +127,7 @@ export function PhotoCropEditor({
       setStatusText('Detectando rosto...')
       try {
         const result = await detectFace(img)
+        if (cancelled) return
         if (result) {
           setLandmarks(result.landmarks)
           setDetectionRef(result)
@@ -147,6 +148,7 @@ export function PhotoCropEditor({
           setStatusText('Nenhum rosto detectado')
         }
       } catch {
+        if (cancelled) return
         const ratio = 3 / 4
         const cropH = 0.8
         const cropW = Math.min(cropH * ratio, 1)
@@ -158,16 +160,17 @@ export function PhotoCropEditor({
         })
         setStatusText('Erro na detecção — recorte manual')
       } finally {
-        setDetecting(false)
+        if (!cancelled) setDetecting(false)
       }
     }
     img.src = photo.signedUrl
+    return () => { cancelled = true }
   }, [open, photo?.signedUrl, photo?.cropBox, photo?.id])
 
   // ─── Track rendered image size ────────────────────────────────────
 
   useEffect(() => {
-    if (!open) return
+    if (!open || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(() => {
       if (imgRef.current) {
         setImgSize({
@@ -349,7 +352,7 @@ export function PhotoCropEditor({
       })
       setStatusText('Recorte redefinido')
     }
-  }, [photo?.signedUrl, landmarks, detectionRef, naturalSize])
+  }, [photo?.signedUrl, detectionRef])
 
   // ─── Save ─────────────────────────────────────────────────────────
 
