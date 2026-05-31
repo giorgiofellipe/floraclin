@@ -2,10 +2,9 @@
 
 import { useCallback, useState } from 'react'
 import { PhotoGrid } from '@/components/photos/photo-grid'
-import { PhotoUploader } from '@/components/photos/photo-uploader'
+import { PhotoUploadModal } from '@/components/photos/photo-upload-modal'
 import { PhotoComparisonDialog } from '@/components/photos/photo-comparison'
 import { PhotoAnnotationEditor } from '@/components/photos/photo-annotation-editor'
-import { CapturePoseGuide } from '@/components/photos/capture-pose-guide'
 import { Button } from '@/components/ui/button'
 import { Upload, GitCompareArrows, X, Camera } from 'lucide-react'
 import type { PhotoAssetWithUrl } from '@/db/queries/photos'
@@ -15,14 +14,13 @@ interface PatientPhotosTabProps {
 }
 
 export function PatientPhotosTab({ patientId }: PatientPhotosTabProps) {
-  const [showUploader, setShowUploader] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [comparisonMode, setComparisonMode] = useState(false)
   const [selectedA, setSelectedA] = useState<PhotoAssetWithUrl | null>(null)
   const [selectedB, setSelectedB] = useState<PhotoAssetWithUrl | null>(null)
   const [showComparison, setShowComparison] = useState(false)
   const [annotatingPhoto, setAnnotatingPhoto] = useState<PhotoAssetWithUrl | null>(null)
-  const [showCaptureGuide, setShowCaptureGuide] = useState(false)
+  const [uploadModalTab, setUploadModalTab] = useState<'upload' | 'capture' | null>(null)
 
   const handlePhotoSelect = useCallback((photo: PhotoAssetWithUrl) => {
     if (selectedA?.id === photo.id) {
@@ -51,18 +49,6 @@ export function PatientPhotosTab({ patientId }: PatientPhotosTabProps) {
 
   return (
     <div className="space-y-6">
-      {showUploader && (
-        <div className="rounded-[3px] border bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-          <PhotoUploader
-            patientId={patientId}
-            onUploadComplete={() => {
-              setRefreshKey((k) => k + 1)
-              setShowUploader(false)
-            }}
-          />
-        </div>
-      )}
-
       <PhotoGrid
         patientId={patientId}
         refreshKey={refreshKey}
@@ -94,12 +80,14 @@ export function PatientPhotosTab({ patientId }: PatientPhotosTabProps) {
         photoB={selectedB}
       />
 
-      <CapturePoseGuide
-        open={showCaptureGuide}
-        onOpenChange={setShowCaptureGuide}
+      <PhotoUploadModal
+        open={uploadModalTab !== null}
+        onOpenChange={(open) => {
+          if (!open) setUploadModalTab(null)
+        }}
         patientId={patientId}
-        onCaptured={() => {
-          setShowCaptureGuide(false)
+        defaultTab={uploadModalTab ?? 'upload'}
+        onComplete={() => {
           setRefreshKey((k) => k + 1)
         }}
       />
@@ -143,13 +131,13 @@ export function PatientPhotosTab({ patientId }: PatientPhotosTabProps) {
               Comparar
             </Button>
           )}
-          <Button variant="outline" onClick={() => setShowCaptureGuide(true)}>
+          <Button variant="outline" onClick={() => setUploadModalTab('capture')}>
             <Camera className="size-4 mr-1" />
-            Capturar com guia
+            Capturar
           </Button>
-          <Button onClick={() => setShowUploader(!showUploader)}>
+          <Button onClick={() => setUploadModalTab('upload')}>
             <Upload className="size-4 mr-1" />
-            Enviar Fotos
+            Enviar
           </Button>
         </div>
       </div>
