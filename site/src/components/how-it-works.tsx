@@ -1,21 +1,21 @@
 const STEPS = [
   {
     number: "1",
-    title: "Cadastre sua clínica",
+    title: "Configure em minutos",
     description:
-      "Configure procedimentos, equipe e horários em minutos.",
+      "Cadastre sua equipe, procedimentos e horários. Modelos de termos e avaliação já vêm prontos.",
   },
   {
     number: "2",
-    title: "Gerencie o dia a dia",
+    title: "Paciente já chega preparado",
     description:
-      "Agenda, pacientes, atendimentos e financeiro em um só lugar.",
+      "Um link pelo WhatsApp e o paciente preenche a anamnese pelo celular. Quando chega na clínica, o prontuário já tem tudo.",
   },
   {
     number: "3",
-    title: "Acompanhe resultados",
+    title: "Atenda e documente",
     description:
-      "Relatórios, P&L por profissional e visão completa do negócio.",
+      "Siga o fluxo guiado: avaliação, diagrama facial, fotos, planejamento, execução. Tudo registrado automaticamente no prontuário.",
   },
 ];
 

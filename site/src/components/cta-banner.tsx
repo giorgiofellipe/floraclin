@@ -3,12 +3,11 @@ export function CtaBanner() {
     <section className="bg-forest py-16 md:py-32">
       <div className="mx-auto max-w-[1200px] px-6 text-center">
         <h2 className="text-3xl md:text-[2.5rem] md:leading-tight text-cream mb-6">
-          Comece a transformar sua clínica hoje
+          Pronto pra parar de improvisar?
         </h2>
 
         <p className="text-cream/70 text-lg md:text-xl max-w-xl mx-auto mb-10 leading-relaxed">
-          Teste grátis por 14 dias. Sem cartão de crédito. Cancele quando
-          quiser.
+          14 dias grátis. Sem cartão. Sem compromisso.
         </p>
 
         <a

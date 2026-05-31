@@ -7,18 +7,19 @@ export function Hero() {
         <div className="max-w-3xl mx-auto text-center">
           {/* Tagline */}
           <p className="section-label mb-6">
-            Onde o cuidado floresce. Do atendimento ao financeiro.
+            Para clínicas de Harmonização Orofacial que levam o registro clínico a sério.
           </p>
 
           {/* Headline */}
           <h1 className="text-4xl md:text-[4rem] md:leading-[1.1] leading-tight mb-6">
-            A gestão da sua clínica de HOF, do jeito certo.
+            A gestão clínica que seus resultados merecem.
           </h1>
 
           {/* Subtitle */}
           <p className="text-lg md:text-xl text-charcoal/80 leading-relaxed mb-10 max-w-2xl mx-auto">
-            Agenda, prontuário, financeiro e procedimentos — tudo integrado em
-            uma plataforma feita exclusivamente para Harmonização Orofacial.
+            Diagrama facial, comparação antes e depois com alinhamento
+            automático, assinatura digital, financeiro com parcelas e
+            comissões. Tudo que sua clínica de HOF precisa, num só lugar.
           </p>
 
           {/* CTAs */}
@@ -33,7 +34,7 @@ export function Hero() {
 
           {/* Social proof */}
           <p className="text-sm text-mid">
-            Utilizado por clínicas de HOF em todo o Brasil
+            Usado por clínicas de HOF em todo o Brasil
           </p>
         </div>
 

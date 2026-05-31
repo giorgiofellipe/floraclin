@@ -4,19 +4,22 @@ import { useState } from "react";
 import { Check } from "lucide-react";
 
 const FEATURES = [
-  "Agenda inteligente com visualização por profissional",
-  "Prontuário digital completo",
   "Diagrama facial interativo",
-  "Anamnese digital (preenchida pelo paciente)",
+  "Comparação antes e depois com alinhamento automático",
+  "Captura guiada com pose e auto-take",
+  "Anotações em foto (setas, círculos, régua)",
+  "Fluxo completo de atendimento guiado",
+  "Anamnese self-service pelo celular",
   "Assinatura digital de termos e contratos",
-  "Financeiro com parcelas, multas e juros",
-  "P&L por profissional",
-  "Página pública de agendamento",
-  "Confirmações via WhatsApp",
-  "Fluxo completo de atendimento",
-  "Fotos de evolução",
-  "Relatórios e insights",
-  "Usuários ilimitados (recepcionista, financeiro)",
+  "Agendamento online (página pública)",
+  "Integração WhatsApp bidirecional",
+  "Sincronização com Google Calendar",
+  "Prontuário digital com timeline de evolução",
+  "Pacotes de procedimentos com controle de sessões",
+  "Financeiro com parcelas, comissões e despesas",
+  "Comissão por profissional",
+  "Lembretes de aniversário",
+  "Usuários ilimitados (recepção e financeiro)",
   "Suporte por WhatsApp",
 ];
 

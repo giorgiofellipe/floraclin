@@ -14,12 +14,12 @@ const FAQS = [
   {
     question: "Meus pacientes precisam criar conta?",
     answer:
-      "Não. O paciente recebe um link por WhatsApp para preencher a anamnese. Sem cadastro, sem senha.",
+      "Não. O paciente recebe um link por WhatsApp para agendar, preencher a anamnese e assinar termos. Sem cadastro, sem senha.",
   },
   {
-    question: "Como funciona o financeiro?",
+    question: "Como funciona o alinhamento de fotos?",
     answer:
-      "Cobranças com parcelas, vencimentos personalizados, multa e juros automáticos, renegociação e estorno. Tudo integrado ao extrato e ao P&L por profissional.",
+      "O sistema detecta o rosto automaticamente e alinha as fotos de antes e depois para que a comparação seja precisa. Você também pode capturar com guia de pose, que indica a posição ideal e tira a foto sozinho quando está tudo certo.",
   },
   {
     question: "Posso migrar meus dados de outro sistema?",
@@ -28,7 +28,7 @@ const FAQS = [
   {
     question: "Quanto custa?",
     answer:
-      "Período de teste gratuito de 14 dias. Após isso, planos a partir de R$ XX/mês.",
+      "14 dias grátis, sem cartão. Depois, R$ 74/mês por profissional no plano anual ou R$ 89/mês no mensal. Recepcionistas e financeiro não pagam.",
   },
 ];
 
