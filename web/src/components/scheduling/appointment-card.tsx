@@ -12,6 +12,7 @@ const STATUS_LABELS: Record<string, string> = {
   completed: 'Concluído',
   cancelled: 'Cancelado',
   no_show: 'Não compareceu',
+  pending_reschedule: 'Reagendamento pendente',
 }
 
 /**

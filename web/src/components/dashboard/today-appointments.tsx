@@ -8,6 +8,7 @@ const STATUS_LABELS: Record<string, string> = {
   completed: 'Concluído',
   cancelled: 'Cancelado',
   no_show: 'Não compareceu',
+  pending_reschedule: 'Reagendamento',
 }
 
 const STATUS_BADGE_STYLES: Record<string, string> = {
@@ -17,6 +18,7 @@ const STATUS_BADGE_STYLES: Record<string, string> = {
   completed: 'bg-[#F0F7F1] text-[#4A6B52]',
   cancelled: 'bg-[#F5F5F5] text-[#7A7A7A]',
   no_show: 'bg-[#FFF4EF] text-[#D4845A]',
+  pending_reschedule: 'bg-amber-50 text-amber-700',
 }
 
 const STATUS_BORDER_COLORS: Record<string, string> = {
@@ -26,6 +28,7 @@ const STATUS_BORDER_COLORS: Record<string, string> = {
   completed: 'border-l-[#8FB49A]',
   cancelled: 'border-l-[#D0D0D0]',
   no_show: 'border-l-[#D4845A]',
+  pending_reschedule: 'border-l-amber-400',
 }
 
 interface TodayAppointmentsProps {

@@ -127,3 +127,37 @@ pnpm exec simple-git-hooks   # registers without reinstalling
 
 Before opening a PR, **always** run `pnpm ci:checks` locally to confirm green. The hook catches most of it, but it's wise to verify on the final commit.
 <!-- END:ci-pre-push-rules -->
+
+<!-- BEGIN:whatsapp-template-rules -->
+# WhatsApp template rules (Meta Cloud API)
+
+Meta's template API has strict, poorly-documented validation. Follow these rules when creating or editing templates.
+
+## Body text
+
+**Never end body text with a variable.** Even `{{4}}.` (variable + punctuation only) is rejected with "Variables can't be at the start or end of the template." Always add meaningful text after the last variable.
+
+```
+❌ '...no dia {{3}}, às {{4}}.'
+✅ '...no dia {{3}}, às {{4}}. Por favor, confirme abaixo.'
+```
+
+The same rule applies to the start — don't begin body text with `{{1}}`.
+
+## Editing approved templates
+
+**Meta rejects most edits on approved templates.** Don't call `editTemplate` — instead delete-and-recreate.
+
+## Deleting and recreating
+
+**Meta enforces a ~30-day cooldown on deleted template names.** After deleting a template, you cannot create a new one with the same name. Always use a different name when recreating (e.g. `confirm_appointment` instead of `appointment_confirmation`).
+
+## Name changes require updating references
+
+When a template name changes, update:
+1. The `whatsapp_templates` DB record (`name` column) — used by `sendTemplateMessage`
+2. The blueprint `name` field in `whatsapp-blueprints.ts` — used by the provision API
+3. The migration script itself — so it's idempotent on re-run
+
+The `purposeKey` stays the same — automations and the cron job resolve templates by `purposeKey`, not by name.
+<!-- END:whatsapp-template-rules -->

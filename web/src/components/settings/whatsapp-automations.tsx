@@ -6,14 +6,7 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Select,
-  SelectTrigger,
-  SelectContent,
-  SelectItem,
-  SelectValue,
-} from '@/components/ui/select'
-import { Bell, CreditCard, HeartPulse, Loader2, Save } from 'lucide-react'
+import { CalendarCheck, CheckCircle2, Clock, CreditCard, HeartPulse, Loader2, Plus, Save } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Automation {
@@ -39,13 +32,15 @@ type LocalState = Record<string, {
 
 const TRIGGERS = [
   {
-    key: 'appointment_reminder',
-    label: 'Lembrete de consulta',
-    description: 'Envia um lembrete automático antes da consulta agendada.',
-    icon: Bell,
-    purposeKey: 'appointment_reminder',
+    key: 'appointment_confirmation',
+    label: 'Confirmação de consulta',
+    description: 'Envia confirmação automática antes da consulta. O paciente confirma ou solicita reagendamento pelo WhatsApp.',
+    icon: CalendarCheck,
+    purposeKey: 'appointment_confirmation',
     configFields: [
       { key: 'hoursBeforeAppointment', label: 'Horas antes da consulta', type: 'number' as const, default: 24 },
+      { key: 'autoAnamnesisEnabled', label: 'Enviar anamnese automaticamente após confirmação', type: 'toggle' as const, default: false },
+      { key: 'anamnesisStaleDays', label: 'Dias para considerar anamnese desatualizada', type: 'number' as const, default: 60, dependsOn: 'autoAnamnesisEnabled' },
     ],
   },
   {
@@ -92,6 +87,7 @@ export function WhatsAppAutomations() {
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [provisioning, setProvisioning] = useState(false)
   const [localState, setLocalState] = useState<LocalState>({})
   const [dirty, setDirty] = useState<Set<string>>(new Set())
 
@@ -110,9 +106,7 @@ export function WhatsAppAutomations() {
       }
       if (tplRes.ok) {
         const tplData = await tplRes.json()
-        setTemplates(
-          ((tplData.data ?? []) as Template[]).filter((t) => t.status === 'APPROVED')
-        )
+        setTemplates((tplData.data ?? []) as Template[])
       }
       setDirty(new Set())
     } catch {
@@ -142,13 +136,15 @@ export function WhatsAppAutomations() {
     for (const triggerKey of dirty) {
       const state = localState[triggerKey]
       if (!state) continue
+      const trigger = TRIGGERS.find((t) => t.key === triggerKey)
+      const matched = trigger ? getMatchingTemplate(trigger.purposeKey) : undefined
       try {
         const res = await fetch(`/api/whatsapp/automations/${triggerKey}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             enabled: state.enabled,
-            templateId: state.templateId,
+            templateId: matched?.id ?? state.templateId,
             config: state.config,
           }),
         })
@@ -176,8 +172,25 @@ export function WhatsAppAutomations() {
     }
   }
 
-  function getApprovedTemplates(purposeKey: string): Template[] {
-    return templates.filter((t) => !t.purposeKey || t.purposeKey === purposeKey)
+  function getMatchingTemplate(purposeKey: string): Template | undefined {
+    return templates.find((t) => t.purposeKey === purposeKey)
+  }
+
+  async function handleProvision() {
+    setProvisioning(true)
+    try {
+      const res = await fetch('/api/whatsapp/templates/provision', { method: 'POST' })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Erro ao provisionar templates')
+      }
+      toast.success('Templates provisionados com sucesso')
+      await fetchData()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao provisionar templates')
+    } finally {
+      setProvisioning(false)
+    }
   }
 
   if (loading) {
@@ -213,7 +226,7 @@ export function WhatsAppAutomations() {
         {TRIGGERS.map((trigger) => {
           const state = localState[trigger.key]
           if (!state) return null
-          const availableTemplates = getApprovedTemplates(trigger.purposeKey)
+          const matchingTemplate = getMatchingTemplate(trigger.purposeKey)
           const Icon = trigger.icon
 
           return (
@@ -243,46 +256,75 @@ export function WhatsAppAutomations() {
                 <div className="pl-7 space-y-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs text-mid">Template</Label>
-                    <Select
-                      value={state.templateId ?? ''}
-                      onValueChange={(value) =>
-                        updateLocal(trigger.key, { templateId: value || null })
-                      }
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Selecione um template aprovado" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableTemplates.map((tpl) => (
-                          <SelectItem key={tpl.id} value={tpl.id}>
-                            {tpl.name}
-                          </SelectItem>
-                        ))}
-                        {availableTemplates.length === 0 && (
-                          <div className="px-2 py-1.5 text-xs text-mid">
-                            Nenhum template aprovado disponível
-                          </div>
+                    {matchingTemplate ? (
+                      matchingTemplate.status === 'APPROVED' ? (
+                        <div className="flex items-center gap-2 text-xs text-green-700">
+                          <CheckCircle2 className="size-3.5" />
+                          <span>Template aprovado</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-xs text-amber-700">
+                          <Clock className="size-3.5" />
+                          <span>Template em revisão pela Meta</span>
+                        </div>
+                      )
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-xs"
+                        disabled={provisioning}
+                        onClick={handleProvision}
+                      >
+                        {provisioning ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Plus className="size-3.5" />
                         )}
-                      </SelectContent>
-                    </Select>
+                        Criar template padrão
+                      </Button>
+                    )}
                   </div>
 
-                  {trigger.configFields.map((field) => (
-                    <div key={field.key} className="space-y-1.5">
-                      <Label className="text-xs text-mid">{field.label}</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        className="w-32"
-                        value={(state.config[field.key] as number) ?? field.default}
-                        onChange={(e) =>
-                          updateLocal(trigger.key, {
-                            config: { ...state.config, [field.key]: parseInt(e.target.value) || field.default },
-                          })
-                        }
-                      />
-                    </div>
-                  ))}
+                  {trigger.configFields.map((field) => {
+                    if ('dependsOn' in field && field.dependsOn && !state.config[field.dependsOn]) {
+                      return null
+                    }
+
+                    if (field.type === 'toggle') {
+                      return (
+                        <div key={field.key} className="flex items-center justify-between">
+                          <Label className="text-xs text-mid">{field.label}</Label>
+                          <Switch
+                            checked={Boolean(state.config[field.key] ?? field.default)}
+                            onCheckedChange={(checked) =>
+                              updateLocal(trigger.key, {
+                                config: { ...state.config, [field.key]: checked },
+                              })
+                            }
+                          />
+                        </div>
+                      )
+                    }
+
+                    return (
+                      <div key={field.key} className="space-y-1.5">
+                        <Label className="text-xs text-mid">{field.label}</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          className="w-32"
+                          value={(state.config[field.key] as number) ?? field.default}
+                          onChange={(e) =>
+                            updateLocal(trigger.key, {
+                              config: { ...state.config, [field.key]: parseInt(e.target.value) || field.default },
+                            })
+                          }
+                        />
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>

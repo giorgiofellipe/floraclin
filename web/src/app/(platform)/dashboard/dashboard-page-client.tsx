@@ -10,6 +10,7 @@ import { FinancialSummary } from '@/components/dashboard/financial-summary'
 import { RecentActivity } from '@/components/dashboard/recent-activity'
 import { UpcomingBirthdaysCard } from '@/components/dashboard/upcoming-birthdays-card'
 import { OpenPlanejamentosCard } from '@/components/dashboard/open-planejamentos-card'
+import { PendingRescheduleCard } from '@/components/dashboard/pending-reschedule-card'
 import DashboardLoading from './loading'
 
 function getGreeting(): string {
@@ -77,6 +78,9 @@ export function DashboardPageClient() {
           </Link>
         </div>
       </div>
+
+      {/* Pending Reschedule Alert */}
+      <PendingRescheduleCard count={data.pendingRescheduleCount ?? 0} />
 
       {/* KPI Cards */}
       <QuickStats stats={data.quickStats} showRevenue={true} todayCount={todayCount} />

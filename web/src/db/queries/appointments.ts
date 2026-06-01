@@ -1,8 +1,9 @@
 import { db } from '@/db/client'
 import { appointments, patients, procedureTypes, users, tenants, calendarBlocks } from '@/db/schema'
-import { eq, and, isNull, gte, lte, sql, or, ne } from 'drizzle-orm'
+import { eq, and, isNull, gte, lte, sql, or, ne, asc } from 'drizzle-orm'
 import type { AppointmentStatus, AppointmentSource } from '@/types'
 import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
+import { brToday, parseBrDate } from '@/lib/dates'
 import { verifyTenantOwnership, verifyUserBelongsToTenant } from './helpers'
 
 export interface AppointmentListFilters {
@@ -143,6 +144,7 @@ export async function checkTimeConflict(
     // Not cancelled or no_show
     ne(appointments.status, 'cancelled'),
     ne(appointments.status, 'no_show'),
+    ne(appointments.status, 'pending_reschedule'),
     // Overlap: existing.start < newEnd AND existing.end > newStart
     sql`${appointments.startTime} < ${endTime}::time`,
     sql`${appointments.endTime} > ${startTime}::time`,
@@ -386,6 +388,210 @@ export async function getAvailableSlots(
   }
 
   return slots
+}
+
+export async function getAppointmentsPendingConfirmation(
+  tenantId: string,
+  hoursBeforeAppointment: number,
+) {
+  const nowBr = parseBrDate(brToday(), new Date().toLocaleTimeString('sv-SE', { timeZone: 'America/Sao_Paulo' }))
+  const windowEnd = new Date(nowBr.getTime() + hoursBeforeAppointment * 60 * 60 * 1000)
+
+  const results = await db
+    .select({
+      id: appointments.id,
+      tenantId: appointments.tenantId,
+      patientId: appointments.patientId,
+      practitionerId: appointments.practitionerId,
+      date: appointments.date,
+      startTime: appointments.startTime,
+      bookingName: appointments.bookingName,
+      bookingPhone: appointments.bookingPhone,
+      patientName: patients.fullName,
+      patientPhone: patients.phone,
+    })
+    .from(appointments)
+    .leftJoin(patients, eq(patients.id, appointments.patientId))
+    .where(
+      and(
+        eq(appointments.tenantId, tenantId),
+        eq(appointments.status, 'scheduled'),
+        isNull(appointments.confirmationSentAt),
+        isNull(appointments.deletedAt),
+        sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' <= ${windowEnd}::timestamptz`,
+        sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' > now()`,
+      )
+    )
+
+  return results.filter((a) => a.patientPhone || a.bookingPhone)
+}
+
+export async function markConfirmationSent(
+  tenantId: string,
+  appointmentId: string,
+  confirmationMessageId: string,
+) {
+  const [result] = await db
+    .update(appointments)
+    .set({
+      confirmationSentAt: new Date(),
+      confirmationMessageId,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(appointments.tenantId, tenantId),
+        eq(appointments.id, appointmentId),
+        isNull(appointments.deletedAt),
+        isNull(appointments.confirmationSentAt),
+      )
+    )
+    .returning()
+
+  return result
+}
+
+export async function confirmAppointment(
+  tenantId: string,
+  appointmentId: string,
+) {
+  const [result] = await db
+    .update(appointments)
+    .set({
+      status: 'confirmed',
+      confirmedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(appointments.tenantId, tenantId),
+        eq(appointments.id, appointmentId),
+        eq(appointments.status, 'scheduled'),
+        isNull(appointments.deletedAt),
+      )
+    )
+    .returning()
+
+  return result
+}
+
+export async function requestReschedule(
+  tenantId: string,
+  appointmentId: string,
+) {
+  const [result] = await db
+    .update(appointments)
+    .set({
+      status: 'pending_reschedule' as AppointmentStatus,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(appointments.tenantId, tenantId),
+        eq(appointments.id, appointmentId),
+        eq(appointments.status, 'scheduled'),
+        isNull(appointments.deletedAt),
+      )
+    )
+    .returning()
+
+  return result ?? null
+}
+
+export async function getAppointmentByConfirmationMessageId(
+  tenantId: string,
+  confirmationMessageId: string,
+) {
+  const result = await db
+    .select({
+      id: appointments.id,
+      tenantId: appointments.tenantId,
+      patientId: appointments.patientId,
+      practitionerId: appointments.practitionerId,
+      date: appointments.date,
+      startTime: appointments.startTime,
+      endTime: appointments.endTime,
+      status: appointments.status,
+      bookingName: appointments.bookingName,
+      bookingPhone: appointments.bookingPhone,
+      patientName: patients.fullName,
+      patientPhone: patients.phone,
+    })
+    .from(appointments)
+    .leftJoin(patients, eq(patients.id, appointments.patientId))
+    .where(
+      and(
+        eq(appointments.tenantId, tenantId),
+        eq(appointments.confirmationMessageId, confirmationMessageId),
+        isNull(appointments.deletedAt),
+      )
+    )
+    .limit(1)
+
+  return result[0] ?? null
+}
+
+export async function getPendingRescheduleAppointments(
+  tenantId: string,
+  practitionerId?: string,
+) {
+  const conditions = [
+    eq(appointments.tenantId, tenantId),
+    eq(appointments.status, 'pending_reschedule'),
+    isNull(appointments.deletedAt),
+  ]
+
+  if (practitionerId) {
+    conditions.push(eq(appointments.practitionerId, practitionerId))
+  }
+
+  const result = await db
+    .select({
+      id: appointments.id,
+      tenantId: appointments.tenantId,
+      patientId: appointments.patientId,
+      practitionerId: appointments.practitionerId,
+      date: appointments.date,
+      startTime: appointments.startTime,
+      endTime: appointments.endTime,
+      status: appointments.status,
+      bookingName: appointments.bookingName,
+      bookingPhone: appointments.bookingPhone,
+      notes: appointments.notes,
+      updatedAt: appointments.updatedAt,
+      patientName: patients.fullName,
+      patientPhone: patients.phone,
+      practitionerName: users.fullName,
+    })
+    .from(appointments)
+    .leftJoin(patients, eq(patients.id, appointments.patientId))
+    .innerJoin(users, eq(users.id, appointments.practitionerId))
+    .where(and(...conditions))
+    .orderBy(asc(appointments.updatedAt))
+
+  return result
+}
+
+export async function countPendingReschedule(
+  tenantId: string,
+  practitionerId?: string,
+) {
+  const conditions = [
+    eq(appointments.tenantId, tenantId),
+    eq(appointments.status, 'pending_reschedule'),
+    isNull(appointments.deletedAt),
+  ]
+
+  if (practitionerId) {
+    conditions.push(eq(appointments.practitionerId, practitionerId))
+  }
+
+  const result = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(appointments)
+    .where(and(...conditions))
+
+  return result[0].count ?? 0
 }
 
 export async function listPractitioners(tenantId: string) {

@@ -90,7 +90,7 @@ export const TEMPLATE_BLUEPRINTS: TemplateBlueprint[] = [
   {
     slug: 'appointment_confirmation',
     purposeKey: 'appointment_confirmation',
-    name: 'appointment_confirmation',
+    name: 'confirm_appointment',
     category: 'UTILITY',
     language: 'pt_BR',
     description: 'Confirmação de presença na consulta',
@@ -100,15 +100,22 @@ export const TEMPLATE_BLUEPRINTS: TemplateBlueprint[] = [
       { index: 3, key: 'appointment_date', label: 'Data da consulta', example: '15/04/2026' },
       { index: 4, key: 'appointment_time', label: 'Horário', example: '14:30' },
     ],
-    components: makeBody(
-      'Olá, {{1}}! Gostaríamos de confirmar sua presença na {{2}} no dia {{3}}, às {{4}}. Por favor, responda *SIM* para confirmar ou *NÃO* para reagendar.',
-      [
-        { index: 1, key: 'patient_name', label: 'Nome do paciente', example: 'Maria Silva' },
-        { index: 2, key: 'clinic_name', label: 'Nome da clínica', example: 'Clínica Flora' },
-        { index: 3, key: 'appointment_date', label: 'Data da consulta', example: '15/04/2026' },
-        { index: 4, key: 'appointment_time', label: 'Horário', example: '14:30' },
-      ],
-    ),
+    components: [
+      {
+        type: 'BODY',
+        text: 'Olá, {{1}}! Gostaríamos de confirmar sua presença na {{2}} no dia {{3}}, às {{4}}. Por favor, confirme abaixo.',
+        example: {
+          body_text: [['Maria Silva', 'Clínica Flora', '15/04/2026', '14:30']],
+        },
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          { type: 'QUICK_REPLY', text: 'Confirmar' },
+          { type: 'QUICK_REPLY', text: 'Reagendar' },
+        ],
+      },
+    ],
   },
   {
     slug: 'follow_up',

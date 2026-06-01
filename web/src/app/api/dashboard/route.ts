@@ -6,6 +6,7 @@ import {
   getUpcomingFollowUps,
   getRecentActivity,
 } from '@/db/queries/dashboard'
+import { countPendingReschedule } from '@/db/queries/appointments'
 
 export async function GET() {
   try {
@@ -14,7 +15,7 @@ export async function GET() {
     // Practitioners see only their data, owners/others see all
     const practitionerId = ctx.role === 'practitioner' ? ctx.userId : undefined
 
-    const [todayAppointments, quickStats, upcomingFollowUps, recentActivity] =
+    const [todayAppointments, quickStats, upcomingFollowUps, recentActivity, pendingRescheduleCount] =
       await Promise.all([
         getTodayAppointments(ctx.tenantId, practitionerId).catch(() => []),
         getQuickStats(ctx.tenantId, practitionerId).catch(() => ({
@@ -24,6 +25,7 @@ export async function GET() {
         })),
         getUpcomingFollowUps(ctx.tenantId, practitionerId).catch(() => []),
         getRecentActivity(ctx.tenantId, 10).catch(() => []),
+        countPendingReschedule(ctx.tenantId, practitionerId).catch(() => 0),
       ])
 
     return NextResponse.json({
@@ -31,6 +33,7 @@ export async function GET() {
       quickStats,
       upcomingFollowUps,
       recentActivity,
+      pendingRescheduleCount,
     })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''

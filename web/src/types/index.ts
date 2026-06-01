@@ -1,6 +1,6 @@
 export type Role = 'owner' | 'practitioner' | 'receptionist' | 'financial'
 
-export type AppointmentStatus = 'scheduled' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'no_show'
+export type AppointmentStatus = 'scheduled' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'no_show' | 'pending_reschedule'
 
 export type AppointmentSource = 'internal' | 'online_booking'
 

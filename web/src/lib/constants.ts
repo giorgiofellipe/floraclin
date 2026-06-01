@@ -7,6 +7,7 @@ export const APPOINTMENT_STATUS_COLORS: Record<string, string> = {
   completed: 'bg-[#F0F7F1] text-sage',
   cancelled: 'bg-red-100 text-red-800',
   no_show: 'bg-[#FFF4EF] text-amber-dark',
+  pending_reschedule: 'bg-amber-50 text-amber-700',
 }
 
 export const PROCEDURE_CATEGORIES = [

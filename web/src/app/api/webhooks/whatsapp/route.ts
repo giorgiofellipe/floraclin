@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/db/client'
 import { tenants, procedureTypes, whatsappMessages } from '@/db/schema'
 import { eq, and, sql } from 'drizzle-orm'
-import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage, normalizeBrPhone } from '@/lib/whatsapp'
+import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage, sendTemplateMessage, normalizeBrPhone } from '@/lib/whatsapp'
 import {
   upsertConversation,
   createMessage,
@@ -14,7 +14,16 @@ import {
   getQueuedMessages,
   updateQueuedMessageStatus,
   expireStaleQueuedMessages,
+  listAutomations,
+  getTemplateByPurpose,
 } from '@/db/queries/whatsapp'
+import {
+  getAppointmentByConfirmationMessageId,
+  confirmAppointment,
+  requestReschedule,
+} from '@/db/queries/appointments'
+import { getAnamnesis } from '@/db/queries/anamnesis'
+import { createAnamnesisToken } from '@/db/queries/anamnesis-tokens'
 import {
   createNewProspect,
   getProspectByPhone,
@@ -22,7 +31,8 @@ import {
   logProspectActivity,
   setProspectProcedures,
 } from '@/db/queries/prospects'
-import { getPatientByPhone } from '@/db/queries/patients'
+import { getPatientByPhone, getPatient } from '@/db/queries/patients'
+import { getTenant } from '@/db/queries/tenants'
 import { classifyMessage } from '@/lib/classify-prospect'
 
 export const dynamic = 'force-dynamic'
@@ -225,6 +235,22 @@ async function processInboundMessage(
     })
   }
 
+  // Process confirmation button replies.
+  // Meta quick-reply template buttons send the button text in button_reply.title
+  // (the button_reply.id is an auto-generated UUID, not the button text).
+  const interactiveData = msg.interactive as {
+    type?: string
+    button_reply?: { id: string; title: string }
+  } | undefined
+  const buttonTitle = interactiveData?.button_reply?.title
+  const contextMessageId = (msg.context as { id?: string } | undefined)?.id
+
+  if (buttonTitle && contextMessageId) {
+    processConfirmationReply(tenantId, contextMessageId, buttonTitle, from).catch((err) => {
+      console.error('Error processing confirmation reply:', err)
+    })
+  }
+
   // Fire-and-forget: keep reclassifying while the lead is still in "novo" stage
   if (prospect.stage === 'novo') {
     // Subtract 60s buffer from prospect createdAt to account for clock difference
@@ -420,6 +446,118 @@ async function processStatusUpdate(
       conversationId: updated.conversationId,
     })
   }
+}
+
+// ---------------------------------------------------------------------------
+// Confirmation button reply processing
+// ---------------------------------------------------------------------------
+async function processConfirmationReply(
+  tenantId: string,
+  contextMessageId: string,
+  buttonTitle: string,
+  fromPhone: string,
+) {
+  const appointment = await getAppointmentByConfirmationMessageId(tenantId, contextMessageId)
+  if (!appointment) return
+  if (appointment.status !== 'scheduled') return
+
+  if (buttonTitle === 'Confirmar') {
+    const confirmed = await confirmAppointment(tenantId, appointment.id)
+    if (!confirmed) return
+
+    if (appointment.patientId) {
+      await maybeAutoSendAnamnesis(tenantId, appointment.patientId, fromPhone)
+    }
+  } else if (buttonTitle === 'Reagendar') {
+    await requestReschedule(tenantId, appointment.id)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Auto-send anamnesis link after confirmation (if enabled and stale)
+// ---------------------------------------------------------------------------
+async function maybeAutoSendAnamnesis(
+  tenantId: string,
+  patientId: string,
+  phone: string,
+) {
+  const automations = await listAutomations(tenantId)
+  const confirmationAuto = automations.find(
+    (a) => a.trigger === 'appointment_confirmation' && a.enabled
+  )
+  if (!confirmationAuto) return
+
+  const config = (confirmationAuto.config ?? {}) as Record<string, unknown>
+  if (!config.autoAnamnesisEnabled) return
+
+  const staleDays = (config.anamnesisStaleDays as number) ?? 60
+  const anamnesis = await getAnamnesis(tenantId, patientId)
+  if (anamnesis?.updatedAt) {
+    const daysSince = (Date.now() - new Date(anamnesis.updatedAt).getTime()) / (1000 * 60 * 60 * 24)
+    if (daysSince < staleDays) return
+  }
+
+  const template = await getTemplateByPurpose(tenantId, 'anamnese_link')
+  if (!template || template.status !== 'APPROVED') return
+
+  const patient = await getPatient(tenantId, patientId)
+  if (!patient) return
+
+  // Create anamnesis token
+  const tenant = await getTenant(tenantId)
+  if (!tenant) return
+
+  // Use a tenant owner as createdBy since the FK requires a valid user UUID
+  const { db: dbClient } = await import('@/db/client')
+  const { tenantUsers } = await import('@/db/schema')
+  const [owner] = await dbClient
+    .select({ userId: tenantUsers.userId })
+    .from(tenantUsers)
+    .where(and(eq(tenantUsers.tenantId, tenantId), eq(tenantUsers.role, 'owner')))
+    .limit(1)
+  if (!owner) return
+
+  const token = await createAnamnesisToken(tenantId, patientId, owner.userId)
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.floraclin.com.br'
+  const link = `${appUrl}/a/${token.token}`
+
+  const normalizedPhone = phone.startsWith('55') ? phone : `55${phone}`
+  const firstName = patient.fullName.split(' ')[0] || patient.fullName
+
+  const params: Record<string, string> = {
+    '1': firstName,
+    '2': tenant.name,
+    '3': link,
+  }
+
+  const result = await sendTemplateMessage(
+    tenantId,
+    normalizedPhone,
+    template.name,
+    template.language,
+    params,
+  )
+
+  const conversation = await upsertConversation(
+    tenantId,
+    normalizedPhone,
+    patient.fullName,
+    undefined,
+    patientId,
+  )
+
+  const message = await createMessage(tenantId, conversation.id, {
+    direction: 'outbound',
+    metaMessageId: result.metaMessageId,
+    body: `Olá, ${firstName}! Para agilizar seu atendimento na ${tenant.name}, pedimos que preencha sua ficha de anamnese pelo link abaixo:\n\n${link}\n\nQualquer dúvida, estamos à disposição.`,
+    templateName: template.name,
+    deliveryStatus: 'sent',
+  })
+
+  await pushSseEvent(tenantId, 'new_message', {
+    conversationId: conversation.id,
+    message,
+  })
 }
 
 // ---------------------------------------------------------------------------

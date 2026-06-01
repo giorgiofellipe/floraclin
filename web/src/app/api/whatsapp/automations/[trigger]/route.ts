@@ -4,7 +4,7 @@ import { getTenant } from '@/db/queries/tenants'
 import { upsertAutomation, getTemplateById } from '@/db/queries/whatsapp'
 import { updateAutomationSchema } from '@/validations/whatsapp'
 
-const VALID_TRIGGERS = ['appointment_reminder', 'payment_reminder', 'follow_up']
+const VALID_TRIGGERS = ['appointment_confirmation', 'payment_reminder', 'follow_up']
 
 type RouteParams = { params: Promise<{ trigger: string }> }
 
