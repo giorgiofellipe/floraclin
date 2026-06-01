@@ -1,0 +1,101 @@
+# FloraClin — Gestão Clínica para Harmonização Orofacial
+
+> Plataforma SaaS de gestão clínica desenvolvida exclusivamente para clínicas de Harmonização Orofacial (HOF) no Brasil. Integra agenda, prontuário, diagrama facial, financeiro, assinatura digital, agendamento online e fotos clínicas em uma única ferramenta.
+
+## O que é FloraClin?
+
+FloraClin é um software de gestão clínica feito sob medida para dentistas e profissionais que trabalham com Harmonização Orofacial (HOF). Diferentemente de sistemas genéricos adaptados, o FloraClin foi construído do zero para o fluxo de trabalho específico de clínicas de HOF — da anamnese ao diagrama facial, do planejamento à execução do procedimento.
+
+## Público-alvo
+
+- Dentistas especializados em Harmonização Orofacial
+- Clínicas de estética facial
+- Profissionais de HOF (harmonizadores orofaciais)
+- Clínicas com múltiplos profissionais atendendo simultaneamente
+
+## Recursos Principais
+
+### Precisão Clínica Visual
+
+- **Diagrama Facial Interativo**: Mapeie cada ponto de aplicação no rosto do paciente — produto, profundidade, quantidade e localização exata, tudo registrado visualmente e vinculado ao prontuário.
+- **Antes e Depois com Alinhamento Automático**: O sistema alinha as fotos automaticamente para que a comparação entre antes e depois seja precisa e justa.
+- **Captura Guiada + Anotações**: Guia de pose na câmera (frontal, perfil, oblíquo) com captura automática quando o rosto está alinhado e em foco. Anotações com setas, círculos e régua de medição.
+
+### Fluxo sem Atrito
+
+- **Atendimento Guiado Passo a Passo**: O sistema conduz o fluxo completo — anamnese, avaliação, planejamento, aprovação, execução, acompanhamento. Nenhuma etapa esquecida.
+- **Assinatura Digital pelo WhatsApp**: Termos de consentimento e contratos assinados pelo paciente no celular, direto pelo link no WhatsApp. Sem papel.
+- **Anamnese e Agendamento Self-service**: O paciente agenda online e preenche a anamnese pelo celular antes da consulta. Sem cadastro, sem senha.
+
+### Gestão do Negócio
+
+- **Financeiro Completo**: Cobranças parceladas, despesas recorrentes, comissão por profissional, multa e juros automáticos, renegociação e estorno.
+- **Pacotes e Controle de Sessões**: Venda pacotes de procedimentos e acompanhe sessões realizadas vs. contratadas.
+- **Agenda com Google Calendar**: Visualização por profissional, agendamento online pelo paciente e sincronização bidirecional com Google Calendar.
+
+### Outros recursos inclusos
+
+- CRM de pacientes com histórico completo e tags
+- Confirmação e lembrete automático de consultas por WhatsApp
+- Prontuário digital com timeline de evolução
+- Integração WhatsApp bidirecional
+- Lembretes de aniversário
+- Usuários ilimitados para recepção e financeiro
+- Controle de acesso por perfil (proprietário, profissional, recepcionista, financeiro)
+- Suporte por WhatsApp
+
+## Preços
+
+- **Plano Anual**: R$ 74/mês por profissional (cobrado anualmente)
+- **Plano Mensal**: R$ 89/mês por profissional
+- **Teste gratuito**: 14 dias, sem cartão de crédito
+- **Usuários administrativos**: Recepcionistas e equipe financeira não pagam
+- Cancele quando quiser
+
+## Perguntas Frequentes
+
+### Preciso instalar alguma coisa?
+Não. FloraClin funciona 100% no navegador, no computador ou celular. Nada para instalar.
+
+### Funciona para clínicas com mais de um profissional?
+Sim. A agenda mostra todos os profissionais lado a lado, com controle de acesso por perfil (proprietário, profissional, recepcionista, financeiro).
+
+### Meus pacientes precisam criar conta?
+Não. O paciente recebe um link por WhatsApp para agendar, preencher a anamnese e assinar termos. Sem cadastro, sem senha.
+
+### Como funciona o alinhamento de fotos?
+O sistema detecta o rosto automaticamente e alinha as fotos de antes e depois para que a comparação seja precisa. Você também pode capturar com guia de pose, que indica a posição ideal e tira a foto sozinho quando está tudo certo.
+
+### Posso migrar meus dados de outro sistema?
+Sim. Entre em contato conosco e ajudamos na migração.
+
+### Quanto custa?
+14 dias grátis, sem cartão. Depois, R$ 74/mês por profissional no plano anual ou R$ 89/mês no mensal. Recepcionistas e financeiro não pagam.
+
+## Como Funciona
+
+1. **Configure em minutos** — Cadastre sua equipe, procedimentos e horários. Modelos de termos e avaliação já vêm prontos.
+2. **Paciente já chega preparado** — Um link pelo WhatsApp e o paciente preenche a anamnese pelo celular. Quando chega na clínica, o prontuário já tem tudo.
+3. **Atenda e documente** — Siga o fluxo guiado: avaliação, diagrama facial, fotos, planejamento, execução. Tudo registrado automaticamente no prontuário.
+
+## Links
+
+- Site: https://floraclin.com.br
+- Aplicação: https://app.floraclin.com.br
+- Cadastro: https://app.floraclin.com.br/signup
+- Termos de Uso: https://floraclin.com.br/termos
+- Política de Privacidade: https://floraclin.com.br/privacidade
+- LGPD: https://floraclin.com.br/lgpd
+- Instagram: https://instagram.com/floraclin
+
+## Contato
+
+- Email: contato@floraclin.com.br
+- Privacidade: privacidade@floraclin.com.br
+- WhatsApp: +55 47 93618-2197
+
+## Empresa
+
+Bullcode Servicos em Tecnologia LTDA
+CNPJ: 27.435.275/0001-04
+Brasil

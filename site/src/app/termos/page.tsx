@@ -4,6 +4,9 @@ import { Footer } from "@/components/footer";
 
 export const metadata: Metadata = {
   title: "Termos de Uso — FloraClin",
+  description:
+    "Termos de uso da plataforma FloraClin para gestão de clínicas de Harmonização Orofacial.",
+  alternates: { canonical: "/termos" },
 };
 
 export default function TermosPage() {

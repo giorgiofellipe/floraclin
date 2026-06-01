@@ -1,0 +1,26 @@
+# FloraClin
+
+> Sistema de gestão clínica feito exclusivamente para clínicas de Harmonização Orofacial (HOF) no Brasil.
+
+FloraClin é uma plataforma SaaS que integra agenda, prontuário eletrônico, diagrama facial interativo, gestão financeira, assinatura digital, agendamento online, anamnese self-service e fotos antes/depois — tudo num só lugar, feito para dentistas e profissionais de HOF.
+
+## Links
+
+- [Site](https://floraclin.com.br)
+- [Aplicação](https://app.floraclin.com.br)
+- [Cadastro gratuito](https://app.floraclin.com.br/signup)
+- [Termos de Uso](https://floraclin.com.br/termos)
+- [Política de Privacidade](https://floraclin.com.br/privacidade)
+- [LGPD](https://floraclin.com.br/lgpd)
+- [Informações detalhadas](https://floraclin.com.br/llms-full.txt)
+
+## Contato
+
+- Email: contato@floraclin.com.br
+- WhatsApp: +55 47 93618-2197
+- Instagram: @floraclin
+
+## Empresa
+
+Bullcode Servicos em Tecnologia LTDA
+CNPJ: 27.435.275/0001-04

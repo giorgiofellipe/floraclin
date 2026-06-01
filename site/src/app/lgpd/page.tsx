@@ -4,6 +4,9 @@ import { Footer } from "@/components/footer";
 
 export const metadata: Metadata = {
   title: "LGPD — FloraClin",
+  description:
+    "Compromisso da FloraClin com a Lei Geral de Proteção de Dados: papéis, medidas de segurança e direitos dos titulares.",
+  alternates: { canonical: "/lgpd" },
 };
 
 export default function LgpdPage() {

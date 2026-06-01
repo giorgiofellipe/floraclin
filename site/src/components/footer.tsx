@@ -53,6 +53,7 @@ export function Footer() {
                 aria-label="@floraclin no Instagram"
               >
                 <svg
+                  aria-hidden="true"
                   width="20"
                   height="20"
                   viewBox="0 0 24 24"

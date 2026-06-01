@@ -20,6 +20,7 @@ export function Contact() {
               className="flex items-center gap-3 bg-white border border-sage/10 rounded-xl px-6 py-4 w-full sm:w-auto hover:border-sage/30 transition-colors no-underline group"
             >
               <svg
+                aria-hidden="true"
                 width="24"
                 height="24"
                 viewBox="0 0 24 24"
@@ -50,6 +51,7 @@ export function Contact() {
               className="flex items-center gap-3 bg-white border border-sage/10 rounded-xl px-6 py-4 w-full sm:w-auto hover:border-sage/30 transition-colors no-underline group"
             >
               <svg
+                aria-hidden="true"
                 width="24"
                 height="24"
                 viewBox="0 0 24 24"

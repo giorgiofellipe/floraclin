@@ -4,6 +4,9 @@ import { Footer } from "@/components/footer";
 
 export const metadata: Metadata = {
   title: "Política de Privacidade — FloraClin",
+  description:
+    "Como a FloraClin coleta, utiliza e protege dados pessoais de usuários e pacientes, em conformidade com a LGPD.",
+  alternates: { canonical: "/privacidade" },
 };
 
 export default function PrivacidadePage() {
