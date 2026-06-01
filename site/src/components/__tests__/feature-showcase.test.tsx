@@ -48,7 +48,7 @@ describe('FeatureShowcase', () => {
 
   it('renders the section heading', () => {
     render(<FeatureShowcase groups={TEST_GROUPS} />)
-    expect(screen.getByText('Feito para HOF. Não adaptado de outro sistema.')).toBeInTheDocument()
+    expect(screen.getByText('Construído do zero para HOF. Não adaptado de outro sistema.')).toBeInTheDocument()
   })
 
   it('renders group label pill', () => {
