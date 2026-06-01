@@ -22,10 +22,14 @@ export async function listPatients(
   }
 
   const escaped = search.trim().replace(/%/g, '\\%').replace(/_/g, '\\_')
+  const digitsOnly = search.replace(/\D/g, '')
+  const phoneCondition = digitsOnly.length >= 2
+    ? sql`regexp_replace(${patients.phone}, '[^0-9]', '', 'g') like ${'%' + digitsOnly + '%'}`
+    : ilike(patients.phone, `%${escaped}%`)
   const searchCondition = escaped
     ? or(
         ilike(patients.fullName, `%${escaped}%`),
-        ilike(patients.phone, `%${escaped}%`),
+        phoneCondition,
         ilike(patients.cpf, `%${escaped}%`)
       )
     : undefined

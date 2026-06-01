@@ -62,8 +62,8 @@ export async function GET(request: Request) {
 
 const startConversationSchema = z.object({
   patientId: z.string().uuid(),
-  templateName: z.string().min(1),
-  language: z.string().min(1),
+  templateName: z.string().min(1).optional(),
+  language: z.string().min(1).optional(),
   params: z.record(z.string(), z.string()).optional(),
 })
 
@@ -93,14 +93,6 @@ export async function POST(request: Request) {
     const phone = patient.phone.replace(/\D/g, '')
     const normalizedPhone = phone.startsWith('55') ? phone : `55${phone}`
 
-    const sendResult = await sendTemplateMessage(
-      ctx.tenantId,
-      normalizedPhone,
-      parsed.data.templateName,
-      parsed.data.language,
-      parsed.data.params,
-    )
-
     const conversation = await upsertConversation(
       ctx.tenantId,
       normalizedPhone,
@@ -109,23 +101,35 @@ export async function POST(request: Request) {
       patient.id,
     )
 
-    const tpl = await getTemplateByName(ctx.tenantId, parsed.data.templateName, parsed.data.language)
-    const templateBody = tpl ? resolveTemplateBody(tpl.components, parsed.data.params) : null
+    if (parsed.data.templateName && parsed.data.language) {
+      const sendResult = await sendTemplateMessage(
+        ctx.tenantId,
+        normalizedPhone,
+        parsed.data.templateName,
+        parsed.data.language,
+        parsed.data.params,
+      )
 
-    const message = await createMessage(ctx.tenantId, conversation.id, {
-      direction: 'outbound',
-      metaMessageId: sendResult.metaMessageId,
-      body: templateBody,
-      templateName: parsed.data.templateName,
-      deliveryStatus: 'sent',
-    })
+      const tpl = await getTemplateByName(ctx.tenantId, parsed.data.templateName, parsed.data.language)
+      const templateBody = tpl ? resolveTemplateBody(tpl.components, parsed.data.params) : null
 
-    await pushSseEvent(ctx.tenantId, 'new_message', {
-      conversationId: conversation.id,
-      message,
-    })
+      const message = await createMessage(ctx.tenantId, conversation.id, {
+        direction: 'outbound',
+        metaMessageId: sendResult.metaMessageId,
+        body: templateBody,
+        templateName: parsed.data.templateName,
+        deliveryStatus: 'sent',
+      })
 
-    return NextResponse.json({ success: true, data: { conversation, message } }, { status: 201 })
+      await pushSseEvent(ctx.tenantId, 'new_message', {
+        conversationId: conversation.id,
+        message,
+      })
+
+      return NextResponse.json({ success: true, data: { conversation, message } }, { status: 201 })
+    }
+
+    return NextResponse.json({ success: true, data: { conversation } }, { status: 201 })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('Meta API error')) {

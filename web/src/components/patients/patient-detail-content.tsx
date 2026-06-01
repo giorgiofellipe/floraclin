@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -42,7 +42,7 @@ import { PatientEvolutionsTab } from './patient-evolutions-tab'
 import { PatientPackagesTab } from '@/components/packages/patient-packages-tab'
 import { PatientDocumentsTab } from '@/components/clinical-documents/patient-documents-tab'
 import { IssueDocumentDialog } from '@/components/clinical-documents/issue-document-dialog'
-import { StartConversationDialog } from '@/components/whatsapp/start-conversation-dialog'
+import { toast } from 'sonner'
 import { PaymentForm } from '@/components/financial/payment-form'
 import { AppointmentForm } from '@/components/scheduling/appointment-form'
 import { FileText } from 'lucide-react'
@@ -122,7 +122,7 @@ export function PatientDetailContent({
 
   const [showPaymentForm, setShowPaymentForm] = useState(false)
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
-  const [showStartConversation, setShowStartConversation] = useState(false)
+  const [openingWhatsapp, setOpeningWhatsapp] = useState(false)
   const [showIssueDocument, setShowIssueDocument] = useState(false)
   const { data: practitioners = [] } = usePractitioners()
   const { data: procedureTypes = [] } = useAppointmentProcedureTypes()
@@ -153,10 +153,26 @@ export function PatientDetailContent({
 
   const age = patient.birthDate ? calculateAge(patient.birthDate) : null
 
-  const preselectedPatient = useMemo(
-    () => ({ id: patient.id, fullName: patient.fullName, phone: patient.phone }),
-    [patient.id, patient.fullName, patient.phone],
-  )
+  async function handleOpenWhatsapp() {
+    setOpeningWhatsapp(true)
+    try {
+      const res = await fetch('/api/whatsapp/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patientId: patient.id }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Erro ao abrir conversa' }))
+        throw new Error(err.error || 'Erro ao abrir conversa')
+      }
+      const data = await res.json()
+      router.push(`/whatsapp?conversa=${data.data.conversation.id}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao abrir conversa')
+    } finally {
+      setOpeningWhatsapp(false)
+    }
+  }
 
   function getInitials(name: string) {
     const parts = name.trim().split(/\s+/)
@@ -229,10 +245,11 @@ export function PatientDetailContent({
                           <button
                             type="button"
                             className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-[#F4F6F8] transition-colors"
-                            onClick={() => setShowStartConversation(true)}
+                            onClick={handleOpenWhatsapp}
+                            disabled={openingWhatsapp}
                           >
                             <MessageSquarePlus className="size-3.5 text-[#25D366]" />
-                            Iniciar conversa
+                            {openingWhatsapp ? 'Abrindo...' : 'Iniciar conversa'}
                           </button>
                         )}
                         <a
@@ -399,16 +416,6 @@ export function PatientDetailContent({
         }}
       />
 
-      {whatsappApiEnabled && patient.phone && (
-        <StartConversationDialog
-          open={showStartConversation}
-          onOpenChange={setShowStartConversation}
-          preselectedPatient={preselectedPatient}
-          onConversationStarted={() => {
-            router.push('/whatsapp')
-          }}
-        />
-      )}
 
       <IssueDocumentDialog
         open={showIssueDocument}
