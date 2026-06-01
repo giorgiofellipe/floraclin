@@ -9,15 +9,15 @@ const STEPS = [
   },
   {
     number: "2",
-    title: "Paciente já chega preparado",
+    title: "Paciente chega preparado",
     description:
-      "Um link pelo WhatsApp e o paciente preenche a anamnese pelo celular. Quando chega na clínica, o prontuário já tem tudo.",
+      "Um link pelo WhatsApp e o paciente agenda, preenche a anamnese e confirma presença. Quando chega, o prontuário já tem tudo.",
   },
   {
     number: "3",
-    title: "Atenda e documente",
+    title: "Atenda e documente sem esforço",
     description:
-      "Siga o fluxo guiado: avaliação, diagrama facial, fotos, planejamento, execução. Tudo registrado automaticamente no prontuário.",
+      "Siga o fluxo guiado: avaliação, diagrama facial, fotos, execução. Tudo registrado automaticamente.",
   },
 ];
 
@@ -132,7 +132,7 @@ export function HowItWorks() {
         <div className="text-center mb-16 md:mb-20">
           <p className="section-label mb-4">Como Funciona</p>
           <h2 className="text-3xl md:text-[2.5rem] md:leading-tight">
-            Do primeiro acesso ao atendimento em minutos
+            Do cadastro ao primeiro atendimento em minutos
           </h2>
         </div>
 

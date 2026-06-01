@@ -69,6 +69,12 @@ O sistema detecta o rosto automaticamente e alinha as fotos de antes e depois pa
 ### Posso migrar meus dados de outro sistema?
 Sim. Entre em contato conosco e ajudamos na migração.
 
+### O sistema envia lembretes de consulta?
+Sim. O FloraClin envia confirmação e lembrete automático por WhatsApp. O paciente confirma ou reagenda sem precisar ligar.
+
+### Tem CRM de pacientes?
+Sim. Você tem o histórico completo de cada paciente, com tags e acompanhamento de retorno. Sabe exatamente quem precisa de follow-up.
+
 ### Quanto custa?
 14 dias grátis, sem cartão. Depois, R$ 74/mês por profissional no plano anual ou R$ 89/mês no mensal. Recepcionistas e financeiro não pagam.
 

@@ -128,24 +128,25 @@ export function Hero() {
         <div className="max-w-3xl mx-auto text-center">
           {/* Tagline */}
           <p className="section-label mb-6 animate-fade-up animate-delay-0">
-            Para clínicas de Harmonização Orofacial que levam o registro clínico a sério.
+            Gestão clínica exclusiva para Harmonização Orofacial
           </p>
 
           {/* Headline */}
           <h1 className="text-4xl md:text-[4rem] md:leading-[1.1] leading-tight mb-6 animate-fade-up animate-delay-100">
-            A gestão clínica que seus resultados merecem.
+            Pare de adaptar sistemas genéricos ao seu fluxo de HOF.
           </h1>
 
           {/* Subtitle */}
           <p className="text-lg md:text-xl text-charcoal/80 leading-relaxed mb-10 max-w-2xl mx-auto animate-fade-up animate-delay-200">
-            Da agenda ao diagrama facial, do financeiro ao prontuário. Tudo
-            que sua clínica de HOF precisa, num só lugar.
+            Diagrama facial, antes e depois com alinhamento automático, fluxo
+            guiado de atendimento, financeiro, CRM e confirmação automática de
+            consultas — tudo num só lugar.
           </p>
 
           {/* CTAs */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-10 animate-fade-up animate-delay-300">
             <a href="https://app.floraclin.com.br/signup" className="btn-primary text-base px-10 py-4">
-              Começar Grátis
+              Testar Grátis por 14 Dias
             </a>
             <a
               href="https://wa.me/5547936182197?text=Ol%C3%A1%2C%20gostaria%20de%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20da%20FloraClin."

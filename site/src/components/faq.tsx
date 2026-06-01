@@ -27,6 +27,16 @@ const FAQS = [
     answer: "Sim. Entre em contato conosco e ajudamos na migração.",
   },
   {
+    question: "O sistema envia lembretes de consulta?",
+    answer:
+      "Sim. O FloraClin envia confirmação e lembrete automático por WhatsApp. O paciente confirma ou reagenda sem precisar ligar.",
+  },
+  {
+    question: "Tem CRM de pacientes?",
+    answer:
+      "Sim. Você tem o histórico completo de cada paciente, com tags e acompanhamento de retorno. Sabe exatamente quem precisa de follow-up.",
+  },
+  {
     question: "Quanto custa?",
     answer:
       "14 dias grátis, sem cartão. Depois, R$ 74/mês por profissional no plano anual ou R$ 89/mês no mensal. Recepcionistas e financeiro não pagam.",

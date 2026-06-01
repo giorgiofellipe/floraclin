@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { Menu, X } from "lucide-react";
 
 const NAV_LINKS = [
@@ -32,14 +31,14 @@ export function Navigation() {
     >
       <nav aria-label="Navegação principal" className="mx-auto max-w-[1200px] px-6 flex items-center justify-between h-16 md:h-20">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2.5 no-underline">
-          <Image
+        <Link href="/" className="flex items-center gap-3 no-underline">
+          <img
             src="/brand/logo-forest.svg"
-            alt="FloraClin"
-            width={32}
-            height={32}
+            alt=""
+            width={40}
+            height={40}
           />
-          <span className="font-serif text-xl font-medium text-forest tracking-tight">
+          <span className="font-serif text-2xl font-medium text-forest tracking-tight">
             FloraClin
           </span>
         </Link>

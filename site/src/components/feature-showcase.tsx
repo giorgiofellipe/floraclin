@@ -19,8 +19,9 @@ import {
   GuidedFlowDemo,
   DigitalSignatureDemo,
   SelfServiceDemo,
+  ConfirmationDemo,
   FinancialDemo,
-  PackagesDemo,
+  CrmDemo,
   CalendarDemo,
 } from './feature-demos'
 
@@ -35,7 +36,7 @@ interface FeatureShowcaseProps {
   }[]
 }
 
-const GROUP_BG = ['bg-cream', 'bg-petal/40', 'bg-cream']
+const GROUP_BG = ['bg-cream', 'bg-petal/40', 'bg-cream', 'bg-petal/40']
 const CYCLE_INTERVAL = 5000
 
 const DEFAULT_GROUPS: FeatureShowcaseProps['groups'] = [
@@ -45,19 +46,19 @@ const DEFAULT_GROUPS: FeatureShowcaseProps['groups'] = [
       {
         title: 'Diagrama Facial Interativo',
         description:
-          'Mapeie cada ponto de aplicação no rosto do paciente. Produto, profundidade, quantidade e localização exata, tudo registrado visualmente e vinculado ao prontuário.',
+          'Mapeie cada ponto de aplicação: produto, profundidade, quantidade e localização exata. Tudo visual, tudo vinculado ao prontuário.',
         demo: FaceDiagramDemo,
       },
       {
-        title: 'Antes e Depois que Convence',
+        title: 'Antes e Depois com Alinhamento Automático',
         description:
-          'O sistema alinha as fotos automaticamente para que a comparação seja justa. Seu paciente vê o resultado real, você documenta com precisão.',
+          'O sistema detecta o rosto e alinha as fotos para que a comparação seja justa. Seu paciente vê o resultado real.',
         demo: BeforeAfterDemo,
       },
       {
         title: 'Captura Guiada + Anotações',
         description:
-          'Guia de pose na câmera (frontal, perfil, oblíquo) com captura automática quando o rosto está alinhado e em foco. Anote com setas, círculos e régua de medição.',
+          'Guia de pose na câmera com captura automática quando o rosto está alinhado. Anote com setas, círculos e régua de medição.',
         demo: GuidedCaptureDemo,
       },
     ],
@@ -68,19 +69,25 @@ const DEFAULT_GROUPS: FeatureShowcaseProps['groups'] = [
       {
         title: 'Atendimento Guiado Passo a Passo',
         description:
-          'O sistema conduz o fluxo: anamnese, avaliação, planejamento, aprovação, execução, acompanhamento. Você só segue. Nenhuma etapa esquecida.',
+          'Anamnese, avaliação, planejamento, aprovação, execução, acompanhamento. O sistema conduz. Nenhuma etapa esquecida.',
         demo: GuidedFlowDemo,
       },
       {
         title: 'Assinatura Digital pelo WhatsApp',
         description:
-          'Termos de consentimento e contratos assinados pelo paciente no celular, direto pelo link no WhatsApp. 100% seguro, sem papel, sem complicação.',
+          'Termos de consentimento e contratos assinados pelo paciente no celular, direto pelo link no WhatsApp. Sem papel, sem complicação.',
         demo: DigitalSignatureDemo,
+      },
+      {
+        title: 'Confirmação Automática de Consultas',
+        description:
+          'Lembretes e confirmações enviados automaticamente por WhatsApp. Menos faltas, menos retrabalho na recepção.',
+        demo: ConfirmationDemo,
       },
       {
         title: 'Anamnese e Agendamento Self-service',
         description:
-          'O paciente agenda online e preenche a anamnese pelo celular antes da consulta. Sem cadastro, sem senha, sem ligar pra clínica.',
+          'O paciente agenda e preenche a anamnese pelo celular antes da consulta. Sem cadastro, sem senha, sem ligar pra clínica.',
         demo: SelfServiceDemo,
       },
     ],
@@ -91,19 +98,19 @@ const DEFAULT_GROUPS: FeatureShowcaseProps['groups'] = [
       {
         title: 'Financeiro Completo',
         description:
-          'Cobranças parceladas, despesas recorrentes, comissão por profissional, multa e juros automáticos, renegociação e estorno. Em breve: links de pagamento por PIX, boleto e cartão.',
+          'Parcelas, despesas recorrentes, comissão por profissional, multa e juros automáticos, renegociação e estorno.',
         demo: FinancialDemo,
       },
       {
-        title: 'Pacotes e Controle de Sessões',
+        title: 'CRM de Pacientes',
         description:
-          'Venda pacotes de procedimentos e acompanhe sessões realizadas vs. contratadas. Sem planilha, sem erro.',
-        demo: PackagesDemo,
+          'Histórico completo, tags, acompanhamento de retorno e relacionamento. Saiba exatamente onde cada paciente está no ciclo de tratamento.',
+        demo: CrmDemo,
       },
       {
         title: 'Agenda com Google Calendar',
         description:
-          'Visualização por profissional, agendamento online pelo paciente e sincronização bidirecional com Google Calendar. Sem conflito de horário.',
+          'Visualização por profissional, agendamento online e sincronização bidirecional. Sem conflito de horário.',
         demo: CalendarDemo,
       },
     ],
@@ -118,7 +125,7 @@ export function FeatureShowcase({ groups = DEFAULT_GROUPS }: Partial<FeatureShow
           <div className="text-center mb-16 md:mb-20">
             <p className="section-label mb-4">Recursos</p>
             <h2 className="text-3xl md:text-[2.5rem] md:leading-tight max-w-2xl mx-auto">
-              Feito para HOF. Não adaptado de outro sistema.
+              Construído do zero para HOF. Não adaptado de outro sistema.
             </h2>
           </div>
         </div>
@@ -176,7 +183,7 @@ function FeatureShowcaseGroup({
       <div className="mx-auto max-w-[1200px] px-6">
         <div className="flex items-center justify-center gap-4 mb-8">
           <span className="h-px w-8 bg-sage/30" />
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sage px-3 py-1.5 bg-sage/8 rounded-full">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-sage px-3 py-1.5 bg-sage/8 rounded-full">
             {group.label}
           </p>
           <span className="h-px w-8 bg-sage/30" />
@@ -216,7 +223,7 @@ function FeatureShowcaseGroup({
                         }
                       `}
                     >
-                      <h3 className={`text-lg mb-1 ${isActive ? 'text-forest' : 'text-charcoal/50'}`}>
+                      <h3 className={`text-lg font-bold mb-1 ${isActive ? 'text-forest' : 'text-charcoal/50'}`}>
                         {feature.title}
                       </h3>
                       <p className={`text-sm leading-relaxed ${isActive ? 'text-charcoal/70' : 'text-charcoal/40'}`}>
@@ -267,7 +274,7 @@ function FeatureShowcaseGroup({
                         ${index > 0 ? 'border-t border-sage/10' : ''}
                       `}
                     >
-                      <h3 className={`text-base ${isActive ? 'text-forest' : 'text-charcoal/50'}`}>
+                      <h3 className={`text-base font-bold ${isActive ? 'text-forest' : 'text-charcoal/50'}`}>
                         {feature.title}
                       </h3>
                     </button>

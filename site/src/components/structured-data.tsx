@@ -125,6 +125,22 @@ const SCHEMAS = [
       },
       {
         "@type": "Question",
+        name: "O sistema envia lembretes de consulta?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: "Sim. O FloraClin envia confirmação e lembrete automático por WhatsApp. O paciente confirma ou reagenda sem precisar ligar.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "Tem CRM de pacientes?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: "Sim. Você tem o histórico completo de cada paciente, com tags e acompanhamento de retorno. Sabe exatamente quem precisa de follow-up.",
+        },
+      },
+      {
+        "@type": "Question",
         name: "Quanto custa?",
         acceptedAnswer: {
           "@type": "Answer",

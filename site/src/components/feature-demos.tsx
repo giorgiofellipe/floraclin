@@ -269,6 +269,106 @@ export function PackagesDemo() {
   )
 }
 
+export function ConfirmationDemo() {
+  return (
+    <svg viewBox="0 0 400 280" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="w-full h-full">
+      <style>{`
+        @keyframes conf-msg { 0%, 5% { opacity: 0; transform: translateY(10px); } 15% { opacity: 1; transform: translateY(0); } 70% { opacity: 1; } 85%, 100% { opacity: 0; } }
+        @keyframes conf-check { 0%, 40% { opacity: 0; transform: scale(0); } 55% { opacity: 1; transform: scale(1.15); } 65%, 70% { transform: scale(1); } 85%, 100% { opacity: 0; } }
+        .conf-msg { animation: conf-msg 4s ease-in-out infinite; }
+        .conf-m1 { animation-delay: 0s; } .conf-m2 { animation-delay: 0.4s; } .conf-m3 { animation-delay: 0.8s; }
+        .conf-check { animation: conf-check 4s ease-in-out infinite; transform-origin: center; animation-delay: 1.2s; }
+        @media (prefers-reduced-motion: reduce) { .conf-msg, .conf-check { animation: none; opacity: 1; transform: none; } }
+      `}</style>
+      {/* Phone outline */}
+      <rect x="130" y="20" width="140" height="240" rx="16" stroke="#1C2B1E" strokeWidth="2" fill="#FAF7F3" />
+      <rect x="140" y="40" width="120" height="200" rx="4" fill="white" stroke="#E8D5C8" strokeWidth="0.5" />
+      {/* WhatsApp header */}
+      <rect x="140" y="40" width="120" height="28" rx="4" fill="#4A6B52" />
+      <text x="200" y="58" textAnchor="middle" fontSize="9" fill="white" fontFamily="sans-serif" fontWeight="600">FloraClin</text>
+      {/* Chat bubbles */}
+      <g className="conf-msg conf-m1">
+        <rect x="148" y="78" width="100" height="36" rx="8" fill="#4A6B52" opacity="0.1" />
+        <text x="156" y="92" fontSize="7.5" fill="#1C2B1E" fontFamily="sans-serif">Olá Maria! Lembrete:</text>
+        <text x="156" y="103" fontSize="7.5" fill="#1C2B1E" fontFamily="sans-serif">Consulta amanhã às 14h</text>
+      </g>
+      <g className="conf-msg conf-m2">
+        <rect x="148" y="122" width="100" height="28" rx="8" fill="#4A6B52" opacity="0.1" />
+        <text x="156" y="136" fontSize="7.5" fill="#1C2B1E" fontFamily="sans-serif">Confirmar ou Reagendar?</text>
+      </g>
+      {/* Patient reply */}
+      <g className="conf-msg conf-m3">
+        <rect x="178" y="158" width="74" height="24" rx="8" fill="#4A6B52" opacity="0.2" />
+        <text x="192" y="174" fontSize="8" fill="#4A6B52" fontFamily="sans-serif" fontWeight="600">Confirmado ✓</text>
+      </g>
+      {/* Status check */}
+      <g className="conf-check">
+        <circle cx="200" cy="210" r="14" fill="#4A6B52" opacity="0.15" />
+        <path d="M192 210 L198 216 L210 204" stroke="#4A6B52" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      </g>
+    </svg>
+  )
+}
+
+export function CrmDemo() {
+  return (
+    <svg viewBox="0 0 400 280" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="w-full h-full">
+      <style>{`
+        @keyframes crm-row { 0%, 5% { opacity: 0; transform: translateX(-15px); } 20% { opacity: 1; transform: translateX(0); } 70% { opacity: 1; } 85%, 100% { opacity: 0; } }
+        @keyframes crm-tag { 0%, 25% { opacity: 0; transform: scale(0.8); } 35% { opacity: 1; transform: scale(1); } 70% { opacity: 1; } 85%, 100% { opacity: 0; } }
+        .crm-row { animation: crm-row 4s ease-in-out infinite; }
+        .crm-r1 { animation-delay: 0s; } .crm-r2 { animation-delay: 0.25s; } .crm-r3 { animation-delay: 0.5s; } .crm-r4 { animation-delay: 0.75s; }
+        .crm-tag { animation: crm-tag 4s ease-in-out infinite; }
+        .crm-t1 { animation-delay: 0.6s; } .crm-t2 { animation-delay: 0.85s; } .crm-t3 { animation-delay: 1.1s; } .crm-t4 { animation-delay: 1.35s; }
+        @media (prefers-reduced-motion: reduce) { .crm-row, .crm-tag { animation: none; opacity: 1; transform: none; } }
+      `}</style>
+      {/* Card background */}
+      <rect x="40" y="24" width="320" height="232" rx="12" fill="white" stroke="#E8D5C8" strokeWidth="1" />
+      {/* Header */}
+      <text x="60" y="52" fontSize="11" fill="#1C2B1E" fontFamily="sans-serif" fontWeight="600">Pacientes</text>
+      <rect x="280" y="38" width="60" height="20" rx="10" fill="#4A6B52" opacity="0.1" />
+      <text x="310" y="52" textAnchor="middle" fontSize="8" fill="#4A6B52" fontFamily="sans-serif">Filtrar</text>
+      {/* Table header */}
+      <text x="60" y="80" fontSize="8" fill="#7A7A7A" fontFamily="sans-serif">Nome</text>
+      <text x="190" y="80" fontSize="8" fill="#7A7A7A" fontFamily="sans-serif">Último atend.</text>
+      <text x="280" y="80" fontSize="8" fill="#7A7A7A" fontFamily="sans-serif">Status</text>
+      <line x1="50" y1="86" x2="350" y2="86" stroke="#E8D5C8" strokeWidth="0.5" />
+      {/* Row 1 */}
+      <g className="crm-row crm-r1">
+        <circle cx="68" cy="103" r="10" fill="#4A6B52" opacity="0.12" />
+        <text x="68" y="107" textAnchor="middle" fontSize="8" fill="#4A6B52" fontFamily="sans-serif" fontWeight="600">M</text>
+        <text x="86" y="107" fontSize="9" fill="#1C2B1E" fontFamily="sans-serif">Maria Silva</text>
+        <text x="190" y="107" fontSize="8.5" fill="#7A7A7A" fontFamily="sans-serif">12/05/2026</text>
+      </g>
+      <g className="crm-tag crm-t1"><rect x="274" y="94" width="60" height="18" rx="9" fill="#4A6B52" opacity="0.15" /><text x="304" y="106" textAnchor="middle" fontSize="7.5" fill="#4A6B52" fontFamily="sans-serif">Retorno</text></g>
+      {/* Row 2 */}
+      <g className="crm-row crm-r2">
+        <circle cx="68" cy="138" r="10" fill="#8FB49A" opacity="0.15" />
+        <text x="68" y="142" textAnchor="middle" fontSize="8" fill="#4A6B52" fontFamily="sans-serif" fontWeight="600">J</text>
+        <text x="86" y="142" fontSize="9" fill="#1C2B1E" fontFamily="sans-serif">João Mendes</text>
+        <text x="190" y="142" fontSize="8.5" fill="#7A7A7A" fontFamily="sans-serif">28/04/2026</text>
+      </g>
+      <g className="crm-tag crm-t2"><rect x="274" y="129" width="60" height="18" rx="9" fill="#E8D5C8" opacity="0.5" /><text x="304" y="141" textAnchor="middle" fontSize="7.5" fill="#96725B" fontFamily="sans-serif">Follow-up</text></g>
+      {/* Row 3 */}
+      <g className="crm-row crm-r3">
+        <circle cx="68" cy="173" r="10" fill="#4A6B52" opacity="0.12" />
+        <text x="68" y="177" textAnchor="middle" fontSize="8" fill="#4A6B52" fontFamily="sans-serif" fontWeight="600">A</text>
+        <text x="86" y="177" fontSize="9" fill="#1C2B1E" fontFamily="sans-serif">Ana Costa</text>
+        <text x="190" y="177" fontSize="8.5" fill="#7A7A7A" fontFamily="sans-serif">05/05/2026</text>
+      </g>
+      <g className="crm-tag crm-t3"><rect x="274" y="164" width="60" height="18" rx="9" fill="#4A6B52" opacity="0.15" /><text x="304" y="176" textAnchor="middle" fontSize="7.5" fill="#4A6B52" fontFamily="sans-serif">Ativo</text></g>
+      {/* Row 4 */}
+      <g className="crm-row crm-r4">
+        <circle cx="68" cy="208" r="10" fill="#8FB49A" opacity="0.15" />
+        <text x="68" y="212" textAnchor="middle" fontSize="8" fill="#4A6B52" fontFamily="sans-serif" fontWeight="600">C</text>
+        <text x="86" y="212" fontSize="9" fill="#1C2B1E" fontFamily="sans-serif">Carlos Lima</text>
+        <text x="190" y="212" fontSize="8.5" fill="#7A7A7A" fontFamily="sans-serif">15/03/2026</text>
+      </g>
+      <g className="crm-tag crm-t4"><rect x="274" y="199" width="60" height="18" rx="9" fill="#F5E6E0" opacity="0.7" /><text x="304" y="211" textAnchor="middle" fontSize="7.5" fill="#C0392B" fontFamily="sans-serif">Inativo</text></g>
+    </svg>
+  )
+}
+
 export function CalendarDemo() {
   return (
     <svg viewBox="0 0 400 280" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="w-full h-full">
