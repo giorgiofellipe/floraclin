@@ -31,6 +31,7 @@ export interface ChatPanelHandle {
 interface ChatPanelProps {
   conversation: Conversation | null
   onMarkRead?: (convId: string) => void
+  draft?: string | null
 }
 
 function isWindowOpen(lastInboundAt: string | null): boolean {
@@ -73,7 +74,7 @@ function groupMessagesByDate(messages: Message[]): { dateKey: string; messages: 
 }
 
 export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
-  function ChatPanel({ conversation, onMarkRead }, ref) {
+  function ChatPanel({ conversation, onMarkRead, draft }, ref) {
     const [messages, setMessages] = useState<Message[]>([])
     const [loading, setLoading] = useState(false)
     const [loadingMore, setLoadingMore] = useState(false)
@@ -141,7 +142,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
       if (conversation.id !== prevConvIdRef.current) {
         prevConvIdRef.current = conversation.id
         setPage(1)
-        setInputText('')
+        setInputText(draft ?? '')
         firstQueueRef.current = true
         fetchMessages(conversation.id, 1, false)
       }

@@ -146,7 +146,7 @@ The same rule applies to the start — don't begin body text with `{{1}}`.
 
 ## Editing approved templates
 
-**Meta rejects most edits on approved templates.** Don't call `editTemplate` — instead delete-and-recreate.
+**Meta does not allow substantive edits on approved templates.** Changes to body text, buttons, or headers require creating a new template and going through approval again. Don't call `editTemplate` to change content — instead delete-and-recreate with a new name (see below).
 
 ## Deleting and recreating
 

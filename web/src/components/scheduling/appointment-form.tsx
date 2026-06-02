@@ -29,7 +29,7 @@ import {
 import { useCreatePatient } from '@/hooks/mutations/use-patient-mutations'
 import { PlusIcon } from 'lucide-react'
 import { maskPhone } from '@/lib/masks'
-import { STATUS_LABELS } from '@/components/scheduling/appointment-card'
+import { STATUS_LABELS, STATUS_SELECT_ITEMS } from '@/components/scheduling/appointment-card'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
 import type { AppointmentStatus } from '@/types'
 
@@ -507,13 +507,13 @@ export function AppointmentForm({
               <div className="flex gap-2">
                 {isEditing && (
                   <>
-                    <Select items={STATUS_LABELS} onValueChange={(v) => v && handleStatusChange(v as AppointmentStatus)}>
-                      <SelectTrigger className="w-auto text-sm">
+                    <Select items={STATUS_SELECT_ITEMS} value={appointment?.status} onValueChange={(v) => v && handleStatusChange(v as AppointmentStatus)}>
+                      <SelectTrigger className="min-w-48 text-sm">
                         <SelectValue placeholder="Alterar status" />
                       </SelectTrigger>
                       <SelectContent />
                     </Select>
-                    <Button type="button" variant="destructive" size="sm" onClick={handleDelete}>
+                    <Button type="button" variant="destructive" onClick={handleDelete}>
                       Cancelar
                     </Button>
                   </>

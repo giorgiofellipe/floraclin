@@ -30,7 +30,7 @@ export const updateAppointmentSchema = z.object({
 
 export const updateStatusSchema = z.object({
   id: z.string().uuid('Agendamento inválido'),
-  status: z.enum(['scheduled', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show'], {
+  status: z.enum(['scheduled', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show', 'pending_reschedule'], {
     message: 'Status inválido',
   }),
 })

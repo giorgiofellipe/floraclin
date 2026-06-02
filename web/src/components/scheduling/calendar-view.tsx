@@ -46,6 +46,16 @@ import type { CalendarBlockRow } from '@/db/queries/calendar'
 
 type ViewType = 'day' | 'week' | 'month'
 
+const STATUS_LEGEND: [string, string, string][] = [
+  ['scheduled', 'Agendado', 'bg-blue-400'],
+  ['confirmed', 'Confirmado', 'bg-emerald-400'],
+  ['in_progress', 'Em andamento', 'bg-indigo-400'],
+  ['completed', 'Concluído', 'bg-slate-400'],
+  ['cancelled', 'Cancelado', 'bg-red-400'],
+  ['no_show', 'Não compareceu', 'bg-rose-400'],
+  ['pending_reschedule', 'Aguardando Reagendamento', 'bg-amber-400'],
+]
+
 interface Practitioner {
   id: string
   fullName: string
@@ -65,6 +75,8 @@ interface CalendarViewProps {
   procedureTypes: ProcedureType[]
   initialAppointments: AppointmentWithDetails[]
   calendarBlocks?: CalendarBlockRow[]
+  autoOpenNew?: boolean
+  defaultPatient?: { id: string; fullName: string }
 }
 
 function getDateRange(date: Date, view: ViewType) {
@@ -104,6 +116,8 @@ export function CalendarView({
   procedureTypes,
   initialAppointments,
   calendarBlocks = [],
+  autoOpenNew,
+  defaultPatient,
 }: CalendarViewProps) {
   const router = useRouter()
   const cancelAppointment = useUpdateAppointmentStatus()
@@ -114,7 +128,7 @@ export function CalendarView({
   const [practitionerId, setPractitionerId] = React.useState(initialPractitionerId ?? 'all')
 
   // Form dialog state
-  const [formOpen, setFormOpen] = React.useState(false)
+  const [formOpen, setFormOpen] = React.useState(autoOpenNew ?? false)
   const [editingAppointment, setEditingAppointment] = React.useState<AppointmentWithDetails | null>(null)
   const [defaultFormDate, setDefaultFormDate] = React.useState<string>('')
   const [defaultFormTime, setDefaultFormTime] = React.useState<string>('')
@@ -564,7 +578,18 @@ export function CalendarView({
         defaultDate={defaultFormDate}
         defaultStartTime={defaultFormTime}
         defaultPractitionerId={practitionerId !== 'all' ? practitionerId : undefined}
+        defaultPatient={defaultPatient}
       />
+
+      {/* Status legend */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 pb-1">
+        {STATUS_LEGEND.map(([status, label, dotColor]) => (
+          <span key={status} className="flex items-center gap-1.5 text-[11px] text-mid">
+            <span className={`inline-block size-2.5 rounded-full ${dotColor}`} />
+            {label}
+          </span>
+        ))}
+      </div>
     </div>
   )
 }

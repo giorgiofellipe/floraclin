@@ -20,6 +20,7 @@ export default function WhatsAppPage() {
   const [showStartDialog, setShowStartDialog] = useState(false)
   const [startDialogPhone, setStartDialogPhone] = useState<string | null>(null)
   const [conversationsLoaded, setConversationsLoaded] = useState(false)
+  const draft = searchParams.get('draft')
   const conversationListRef = useRef<ConversationListHandle>(null)
   const chatPanelRef = useRef<ChatPanelHandle>(null)
   const deepLinkHandledRef = useRef(false)
@@ -284,6 +285,7 @@ export default function WhatsAppPage() {
       <ChatPanel
         ref={chatPanelRef}
         conversation={activeConversation}
+        draft={draft}
         onMarkRead={(convId) => {
           conversationListRef.current?.resetUnread(convId)
           setActiveConversation((prev) => (prev?.id === convId ? { ...prev, unreadCount: 0 } : prev))

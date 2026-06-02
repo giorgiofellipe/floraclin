@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Clock, CalendarClock, X } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Clock, CalendarClock, MessageCircle, X } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
@@ -37,6 +38,8 @@ export function PendingRescheduleList() {
   const [appointments, setAppointments] = useState<PendingAppointment[]>([])
   const [loading, setLoading] = useState(true)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
+  const [openingChatId, setOpeningChatId] = useState<string | null>(null)
+  const router = useRouter()
 
   const fetchAppointments = useCallback(async () => {
     try {
@@ -77,6 +80,30 @@ export function PendingRescheduleList() {
       )
     } finally {
       setCancellingId(null)
+    }
+  }
+
+  async function handleOpenChat(appt: PendingAppointment) {
+    if (!appt.patientId) return
+    setOpeningChatId(appt.id)
+    try {
+      const res = await fetch('/api/whatsapp/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patientId: appt.patientId }),
+      })
+      if (!res.ok) throw new Error('Erro ao abrir conversa')
+      const data = await res.json()
+      const name = appt.patientName || appt.bookingName || 'Paciente'
+      const firstName = name.split(' ')[0]
+      const draft = encodeURIComponent(
+        `Olá, ${firstName}! Vi que você solicitou reagendamento da sua consulta do dia ${formatDateBr(appt.date)} às ${appt.startTime.slice(0, 5)}. Qual horário fica melhor para você?`
+      )
+      router.push(`/whatsapp?conversa=${data.data.conversation.id}&draft=${draft}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao abrir conversa')
+    } finally {
+      setOpeningChatId(null)
     }
   }
 
@@ -121,9 +148,10 @@ export function PendingRescheduleList() {
           locale: ptBR,
           addSuffix: true,
         })
+        const displayNameEncoded = encodeURIComponent(displayName)
         const rescheduleHref = appt.patientId
-          ? `/agenda?new=true&patient=${appt.patientId}`
-          : '/agenda?new=true'
+          ? `/agenda?open=new&patient=${appt.patientId}&patientName=${displayNameEncoded}`
+          : '/agenda?open=new'
 
         return (
           <div
@@ -147,6 +175,17 @@ export function PendingRescheduleList() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
+                {appt.patientId && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={openingChatId === appt.id}
+                    onClick={() => handleOpenChat(appt)}
+                  >
+                    <MessageCircle className="size-3.5 mr-1" />
+                    WhatsApp
+                  </Button>
+                )}
                 <Link href={rescheduleHref}>
                   <Button variant="default" size="sm">
                     Reagendar

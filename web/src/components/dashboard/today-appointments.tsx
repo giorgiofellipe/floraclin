@@ -8,26 +8,26 @@ const STATUS_LABELS: Record<string, string> = {
   completed: 'Concluído',
   cancelled: 'Cancelado',
   no_show: 'Não compareceu',
-  pending_reschedule: 'Reagendamento',
+  pending_reschedule: 'Aguardando Reagendamento',
 }
 
 const STATUS_BADGE_STYLES: Record<string, string> = {
-  scheduled: 'bg-[#FFF4EF] text-[#D4845A]',
-  confirmed: 'bg-[#F0F7F1] text-[#4A6B52]',
-  in_progress: 'bg-[#FFF4EF] text-[#D4845A]',
-  completed: 'bg-[#F0F7F1] text-[#4A6B52]',
-  cancelled: 'bg-[#F5F5F5] text-[#7A7A7A]',
-  no_show: 'bg-[#FFF4EF] text-[#D4845A]',
+  scheduled: 'bg-blue-50 text-blue-700',
+  confirmed: 'bg-emerald-50 text-emerald-700',
+  in_progress: 'bg-indigo-50 text-indigo-700',
+  completed: 'bg-slate-100 text-slate-600',
+  cancelled: 'bg-red-50 text-red-700',
+  no_show: 'bg-rose-50 text-rose-700',
   pending_reschedule: 'bg-amber-50 text-amber-700',
 }
 
 const STATUS_BORDER_COLORS: Record<string, string> = {
-  scheduled: 'border-l-[#D4845A]',
-  confirmed: 'border-l-[#8FB49A]',
-  in_progress: 'border-l-[#D4845A]',
-  completed: 'border-l-[#8FB49A]',
-  cancelled: 'border-l-[#D0D0D0]',
-  no_show: 'border-l-[#D4845A]',
+  scheduled: 'border-l-blue-400',
+  confirmed: 'border-l-emerald-400',
+  in_progress: 'border-l-indigo-400',
+  completed: 'border-l-slate-300',
+  cancelled: 'border-l-red-300',
+  no_show: 'border-l-rose-400',
   pending_reschedule: 'border-l-amber-400',
 }
 

@@ -48,6 +48,9 @@ export function AgendaPageClient() {
   const dateStr = searchParams.get('date') ?? format(new Date(), 'yyyy-MM-dd')
   const currentDate = new Date(dateStr + 'T12:00:00')
   const practitionerFilter = searchParams.get('practitioner') ?? undefined
+  const autoOpenNew = searchParams.get('open') === 'new'
+  const patientId = searchParams.get('patient') ?? undefined
+  const patientName = searchParams.get('patientName') ?? undefined
 
   const { dateFrom, dateTo } = useMemo(
     // eslint-disable-next-line react-hooks/preserve-manual-memoization -- deps use dateStr (derived from currentDate) to avoid Date-identity churn; tracked separately
@@ -83,6 +86,8 @@ export function AgendaPageClient() {
         procedureTypes={procTypes ?? []}
         initialAppointments={appointments ?? []}
         calendarBlocks={calendarBlocks ?? []}
+        autoOpenNew={autoOpenNew}
+        defaultPatient={patientId ? { id: patientId, fullName: patientName ?? '' } : undefined}
       />
     </div>
   )
