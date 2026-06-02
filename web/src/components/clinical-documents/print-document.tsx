@@ -106,6 +106,25 @@ export function PrintDocument({ doc, tenant }: PrintDocumentProps) {
           registryLine={snapshot.registryLine}
         />
       </div>
+
+      {doc.verificationCode && (
+        <div className="mt-12 border-t border-gray-200 pt-4">
+          <div className="flex items-start justify-between text-[9px] text-gray-400 leading-relaxed">
+            <div>
+              <div>Documento emitido eletronicamente via FloraClin</div>
+              <div>Código de verificação: <span className="font-mono font-medium text-gray-500">{doc.verificationCode}</span></div>
+              <div>Emitido em: {formatDate(doc.issuedAt)} às {doc.issuedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
+              <div>Profissional: {snapshot.name} — {snapshot.registryLine}</div>
+              <div className="mt-1">
+                Verifique a autenticidade: <span className="font-mono text-gray-500">app.floraclin.com.br/verify/{doc.verificationCode}</span>
+              </div>
+            </div>
+            <div className="text-right shrink-0 ml-4">
+              <div className="font-mono text-[8px] text-gray-300">ID: {doc.id.slice(0, 8)}</div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

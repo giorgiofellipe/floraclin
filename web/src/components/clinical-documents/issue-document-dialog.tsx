@@ -8,12 +8,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  Select,
-  SelectContent,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -21,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Loader2, AlertCircle } from 'lucide-react'
+import { Loader2, AlertCircle, FileText, ClipboardCheck, CheckIcon, PencilIcon, ArrowLeftIcon } from 'lucide-react'
 import {
   useDocumentTemplates,
 } from '@/hooks/queries/use-document-templates'
@@ -34,6 +28,7 @@ import { DocumentPreview } from './document-preview'
 import { DeliveryActions } from './delivery-actions'
 import { AVAILABLE_DOCUMENT_PLACEHOLDERS } from '@/lib/templates/placeholders'
 import type { ClinicalDocumentKind } from '@/validations/clinical-document'
+import { cn } from '@/lib/utils'
 
 interface PatientLike {
   id: string
@@ -49,22 +44,25 @@ export interface IssueDocumentDialogProps {
   patient: PatientLike
 }
 
-const KIND_OPTIONS: Record<string, string> = {
-  receita: 'Receita',
-  atestado: 'Atestado',
-}
-
 const NO_TEMPLATE_VALUE = '__none__'
 
-type WizardStep = 'compose' | 'delivery'
+type WizardStep = 'kind' | 'template' | 'preview' | 'compose' | 'delivery'
+
+const STEP_LABELS: Record<string, string> = {
+  kind: 'Tipo',
+  template: 'Modelo',
+  preview: 'Pré-visualização',
+  compose: 'Editar',
+  delivery: 'Entrega',
+}
 
 export function IssueDocumentDialog({
   open,
   onOpenChange,
   patient,
 }: IssueDocumentDialogProps) {
-  const [step, setStep] = React.useState<WizardStep>('compose')
-  const [kind, setKind] = React.useState<ClinicalDocumentKind>('receita')
+  const [step, setStep] = React.useState<WizardStep>('kind')
+  const [kind, setKind] = React.useState<ClinicalDocumentKind>('atestado')
   const [templateId, setTemplateId] = React.useState<string>(NO_TEMPLATE_VALUE)
   const [title, setTitle] = React.useState('')
   const [body, setBody] = React.useState('')
@@ -84,11 +82,10 @@ export function IssueDocumentDialog({
       profile?.registryState,
   )
 
-  // Reset form when dialog opens/closes or the kind changes.
   React.useEffect(() => {
     if (!open) {
-      setStep('compose')
-      setKind('receita')
+      setStep('kind')
+      setKind('atestado')
       setTemplateId(NO_TEMPLATE_VALUE)
       setTitle('')
       setBody('')
@@ -96,19 +93,29 @@ export function IssueDocumentDialog({
     }
   }, [open])
 
-  React.useEffect(() => {
-    // When kind changes, clear the chosen template (it may not apply).
+  function handleSelectKind(k: ClinicalDocumentKind) {
+    setKind(k)
     setTemplateId(NO_TEMPLATE_VALUE)
-  }, [kind])
+    setTitle('')
+    setBody('')
+    setStep('template')
+  }
 
-  React.useEffect(() => {
-    if (templateId === NO_TEMPLATE_VALUE || !templatesData) return
-    const tpl = templatesData.find((t) => t.id === templateId)
-    if (tpl) {
-      setBody(tpl.body)
-      if (!title) setTitle(tpl.name)
+  function handleSelectTemplate(id: string) {
+    setTemplateId(id)
+    if (id === NO_TEMPLATE_VALUE) {
+      setTitle('')
+      setBody('')
+      setStep('compose')
+    } else {
+      const tpl = templatesData?.find((t) => t.id === id)
+      if (tpl) {
+        setBody(tpl.body)
+        setTitle(tpl.name)
+      }
+      setStep('preview')
     }
-  }, [templateId, templatesData, title])
+  }
 
   function insertPlaceholderAtCursor(token: string) {
     const el = bodyRef.current
@@ -172,11 +179,18 @@ export function IssueDocumentDialog({
         phone: (tenant.phone ?? null) as string | null,
         email: (tenant.email ?? null) as string | null,
         logoUrl: (tenant.logoUrl ?? null) as string | null,
-        address: (tenant.address ?? null) as IssueDocumentDialogProps['patient'] extends never
-          ? never
-          : Record<string, string | undefined> | null,
+        address: (tenant.address ?? null) as Record<string, string | undefined> | null,
       }
     : { name: '', phone: null, email: null, logoUrl: null, address: null }
+
+  const visibleSteps: WizardStep[] = ['kind', 'template', step === 'compose' ? 'compose' : 'preview']
+  const currentStepIndex = visibleSteps.indexOf(step === 'delivery' ? 'preview' : step)
+
+  function handleBack() {
+    if (step === 'template') setStep('kind')
+    else if (step === 'preview') setStep('template')
+    else if (step === 'compose') setStep('template')
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -186,6 +200,32 @@ export function IssueDocumentDialog({
           <DialogDescription>
             Emitir receita ou atestado para {patient.fullName}.
           </DialogDescription>
+
+          {step !== 'delivery' && (
+            <div className="flex items-center gap-2 pt-3">
+              {visibleSteps.map((s, i) => (
+                <React.Fragment key={s}>
+                  {i > 0 && <div className={cn('h-px flex-1', i <= currentStepIndex ? 'bg-sage' : 'bg-[#E8ECEF]')} />}
+                  <div className={cn(
+                    'flex items-center gap-1.5 text-xs font-medium',
+                    i < currentStepIndex ? 'text-sage' : i === currentStepIndex ? 'text-forest' : 'text-mid/50',
+                  )}>
+                    <span className={cn(
+                      'flex size-6 items-center justify-center rounded-full text-[11px] font-semibold',
+                      i < currentStepIndex
+                        ? 'bg-sage text-cream'
+                        : i === currentStepIndex
+                          ? 'bg-forest text-cream'
+                          : 'bg-[#F4F6F8] text-mid',
+                    )}>
+                      {i < currentStepIndex ? <CheckIcon className="size-3" /> : i + 1}
+                    </span>
+                    <span className="hidden sm:inline">{STEP_LABELS[s]}</span>
+                  </div>
+                </React.Fragment>
+              ))}
+            </div>
+          )}
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -216,54 +256,117 @@ export function IssueDocumentDialog({
               </div>
             </div>
           </div>
+        ) : step === 'kind' ? (
+          <div className="flex flex-1 flex-col items-center justify-center p-8">
+            <h3 className="text-lg font-medium text-charcoal mb-2">Que tipo de documento?</h3>
+            <p className="text-sm text-mid mb-8">Selecione o tipo de documento que deseja emitir.</p>
+            <div className="grid grid-cols-2 gap-4 max-w-md w-full">
+              <button
+                type="button"
+                onClick={() => handleSelectKind('atestado')}
+                className="flex flex-col items-center gap-3 rounded-lg border-2 border-[#E8ECEF] bg-white p-6 transition-all hover:border-forest hover:shadow-md group"
+              >
+                <div className="rounded-full bg-sage/10 p-4 group-hover:bg-forest/10 transition-colors">
+                  <ClipboardCheck className="size-8 text-sage group-hover:text-forest transition-colors" />
+                </div>
+                <span className="text-sm font-medium text-charcoal">Atestado</span>
+                <span className="text-xs text-mid text-center">Comparecimento, afastamento</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectKind('receita')}
+                className="flex flex-col items-center gap-3 rounded-lg border-2 border-[#E8ECEF] bg-white p-6 transition-all hover:border-forest hover:shadow-md group"
+              >
+                <div className="rounded-full bg-sage/10 p-4 group-hover:bg-forest/10 transition-colors">
+                  <FileText className="size-8 text-sage group-hover:text-forest transition-colors" />
+                </div>
+                <span className="text-sm font-medium text-charcoal">Receita</span>
+                <span className="text-xs text-mid text-center">Medicamentos, orientações</span>
+              </button>
+            </div>
+          </div>
+        ) : step === 'template' ? (
+          <div className="flex flex-1 flex-col p-6">
+            <h3 className="text-lg font-medium text-charcoal mb-2">Escolha um modelo</h3>
+            <p className="text-sm text-mid mb-6">
+              Use um modelo salvo ou comece do zero.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => handleSelectTemplate(NO_TEMPLATE_VALUE)}
+                className="flex items-center gap-3 rounded-lg border-2 border-dashed border-[#E8ECEF] bg-white p-4 text-left transition-all hover:border-forest hover:bg-[#F0F7F1] group"
+              >
+                <div className="rounded-full bg-[#F4F6F8] p-2.5 group-hover:bg-forest/10 transition-colors">
+                  <PencilIcon className="size-5 text-mid group-hover:text-forest transition-colors" />
+                </div>
+                <div>
+                  <span className="block text-sm font-medium text-charcoal">Documento em branco</span>
+                  <span className="block text-xs text-mid">Escrever do zero</span>
+                </div>
+              </button>
+              {(templatesData ?? []).map((tpl) => (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  onClick={() => handleSelectTemplate(tpl.id)}
+                  className="flex items-center gap-3 rounded-lg border-2 border-[#E8ECEF] bg-white p-4 text-left transition-all hover:border-forest hover:bg-[#F0F7F1] group"
+                >
+                  <div className="rounded-full bg-sage/10 p-2.5 group-hover:bg-forest/10 transition-colors">
+                    <FileText className="size-5 text-sage group-hover:text-forest transition-colors" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="block text-sm font-medium text-charcoal truncate">{tpl.name}</span>
+                    <span className="block text-xs text-mid truncate">
+                      {tpl.body.slice(0, 60)}{tpl.body.length > 60 ? '…' : ''}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : step === 'preview' ? (
+          <div className="flex flex-1 flex-col p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-medium text-charcoal">Pré-visualização</h3>
+                <p className="text-sm text-mid">Confira o documento antes de emitir.</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setStep('compose')}
+              >
+                <PencilIcon className="size-3.5" />
+                Editar
+              </Button>
+            </div>
+            <div className="flex-1 rounded-[3px] border border-[#E8ECEF] bg-[#F4F6F8] p-3 overflow-y-auto">
+              <DocumentPreview
+                kind={kind}
+                title={title}
+                body={body}
+                patient={{
+                  fullName: patient.fullName,
+                  cpf: patient.cpf,
+                  birthDate: patient.birthDate,
+                }}
+                practitioner={previewPractitioner}
+                tenant={previewTenant}
+              />
+            </div>
+          </div>
         ) : step === 'compose' ? (
           <div className="grid gap-4 p-4 md:grid-cols-[1fr_1fr]">
             {/* Left: form */}
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Tipo</Label>
-                <Select
-                  items={KIND_OPTIONS}
-                  value={kind}
-                  onValueChange={(v) => setKind((v as ClinicalDocumentKind) ?? 'receita')}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent />
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Modelo (opcional)</Label>
-                <Select
-                  items={{
-                    [NO_TEMPLATE_VALUE]: 'Sem modelo (em branco)',
-                    ...(templatesData ?? []).reduce(
-                      (acc, t) => {
-                        acc[t.id] = t.name
-                        return acc
-                      },
-                      {} as Record<string, string>,
-                    ),
-                  }}
-                  value={templateId}
-                  onValueChange={(v) => setTemplateId(v ?? NO_TEMPLATE_VALUE)}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Selecione um modelo" />
-                  </SelectTrigger>
-                  <SelectContent />
-                </Select>
-              </div>
-
               <div className="space-y-2">
                 <Label htmlFor="doc-title">Título</Label>
                 <Input
                   id="doc-title"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Ex.: Receita Dipirona 500mg"
+                  placeholder="Ex.: Atestado de Comparecimento"
                   maxLength={255}
                 />
               </div>
@@ -276,7 +379,7 @@ export function IssueDocumentDialog({
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
                   rows={14}
-                  placeholder="Use os marcadores ao lado para inserir dados do paciente, da clínica, etc."
+                  placeholder="Use os marcadores abaixo para inserir dados do paciente, da clínica, etc."
                   className="font-serif"
                 />
               </div>
@@ -342,14 +445,22 @@ export function IssueDocumentDialog({
 
         </div>
 
-        {profileReady && step === 'compose' && (
-          <DialogFooter className="m-0 flex-row justify-end gap-2 rounded-b-xl border-t border-[#E8ECEF] bg-muted/50 p-4">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Cancelar
+        {profileReady && (step === 'template' || step === 'preview' || step === 'compose') && (
+          <DialogFooter className="m-0 flex-row justify-between gap-2 rounded-b-xl border-t border-[#E8ECEF] bg-muted/50 p-4">
+            <Button variant="outline" onClick={handleBack}>
+              <ArrowLeftIcon className="size-4" />
+              Voltar
             </Button>
-            <Button onClick={handleIssue} disabled={issueMutation.isPending}>
-              {issueMutation.isPending ? 'Emitindo...' : 'Emitir documento'}
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cancelar
+              </Button>
+              {(step === 'preview' || step === 'compose') && (
+                <Button onClick={handleIssue} disabled={issueMutation.isPending}>
+                  {issueMutation.isPending ? 'Emitindo...' : 'Emitir documento'}
+                </Button>
+              )}
+            </div>
           </DialogFooter>
         )}
 

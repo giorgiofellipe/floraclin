@@ -122,6 +122,16 @@ export function DocumentPreview({
           </div>
         )}
       </div>
+
+      <div className="mt-12 border-t border-gray-200 pt-4">
+        <div className="text-[9px] text-gray-300 leading-relaxed">
+          <div>Documento emitido eletronicamente via FloraClin</div>
+          <div>Código de verificação: <span className="font-mono">FLC-XXXXXXXXXXXX</span></div>
+          <div>Emitido em: {formatDate(renderDate)}</div>
+          <div>Profissional: {practitioner.displayName} — {practitioner.registryLine}</div>
+          <div className="mt-1">Verifique a autenticidade: <span className="font-mono">app.floraclin.com.br/verify/FLC-XXXXXXXXXXXX</span></div>
+        </div>
+      </div>
     </div>
   )
 }

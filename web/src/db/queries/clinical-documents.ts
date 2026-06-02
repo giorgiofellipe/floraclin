@@ -182,6 +182,7 @@ export interface ClinicalDocumentWithContext {
   deliveredVia: string
   whatsappMessageId: string | null
   storagePath: string | null
+  verificationCode: string | null
   createdAt: Date
   updatedAt: Date
   // joined
@@ -255,6 +256,7 @@ export async function getClinicalDocumentWithContext(
     deliveredVia: row.doc.deliveredVia,
     whatsappMessageId: row.doc.whatsappMessageId,
     storagePath: row.doc.storagePath,
+    verificationCode: row.doc.verificationCode,
     createdAt: row.doc.createdAt,
     updatedAt: row.doc.updatedAt,
     patient: row.patient,
@@ -312,4 +314,32 @@ export async function updateDeliveryStatus(
         eq(clinicalDocuments.tenantId, tenantId),
       ),
     )
+}
+
+export async function findClinicalDocumentByVerificationCode(code: string) {
+  const [row] = await db
+    .select({
+      id: clinicalDocuments.id,
+      kind: clinicalDocuments.kind,
+      title: clinicalDocuments.title,
+      body: clinicalDocuments.body,
+      issuedAt: clinicalDocuments.issuedAt,
+      verificationCode: clinicalDocuments.verificationCode,
+      professionalSnapshot: clinicalDocuments.professionalSnapshot,
+      patientName: patients.fullName,
+      patientCpf: patients.cpf,
+      patientBirthDate: patients.birthDate,
+      tenantName: tenants.name,
+      tenantPhone: tenants.phone,
+      tenantEmail: tenants.email,
+      tenantLogoUrl: tenants.logoUrl,
+      tenantAddress: tenants.address,
+    })
+    .from(clinicalDocuments)
+    .innerJoin(patients, eq(patients.id, clinicalDocuments.patientId))
+    .innerJoin(tenants, eq(tenants.id, clinicalDocuments.tenantId))
+    .where(eq(clinicalDocuments.verificationCode, code))
+    .limit(1)
+
+  return row ?? null
 }

@@ -45,7 +45,8 @@ export async function issueClinicalDocument(
     signatureDataUrl: sig.signatureDataUrl,
   }
 
-  const bodyHash = await sha256(args.body)
+  const nonce = crypto.randomUUID()
+  const bodyHash = await sha256(`${args.body}|${nonce}`)
   const verificationCode = deriveVerificationCode(bodyHash)
 
   return insertClinicalDocument({
