@@ -258,7 +258,7 @@ export default function WhatsAppPage() {
         <Button
           className="bg-[#25D366] hover:bg-[#1DA851] text-white"
           nativeButton={false}
-          render={<Link href="/configuracoes" />}
+          render={<Link href="/configuracoes?tab=whatsapp" />}
         >
           <Settings className="mr-2 size-4" />
           Ir para Configurações

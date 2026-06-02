@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
-import { Menu, Bell } from 'lucide-react'
+import { Menu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -10,6 +10,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { UserMenu } from './user-menu'
+import { HelpMenu } from './help-menu'
 import { MobileSidebarContent, type TenantOption } from './sidebar'
 
 // ─── Page Title Mapping ───────────────────────────────────────────
@@ -125,13 +126,9 @@ export function Header({ userName, userEmail, userId, userRole, clinicName, tena
           </div>
         </div>
 
-        {/* Right: notification bell + user avatar */}
+        {/* Right: help menu + user avatar */}
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon-sm" className="relative" aria-label="Notifica\u00e7\u00f5es">
-            <Bell className="size-[18px] text-[#7A7A7A]" />
-            {/* Amber notification dot */}
-            <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-amber" />
-          </Button>
+          <HelpMenu />
           <UserMenu userName={userName} userEmail={userEmail} />
         </div>
       </header>

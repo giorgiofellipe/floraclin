@@ -49,8 +49,8 @@ const gestaoItems = [
 ]
 
 const comunicacaoItems = [
-  { href: '/whatsapp', label: 'WhatsApp', icon: MessageCircle },
   { href: '/crm', label: 'CRM', icon: ContactRound },
+  { href: '/whatsapp', label: 'WhatsApp', icon: MessageCircle },
 ]
 
 const bottomItems = [
@@ -379,22 +379,18 @@ function SidebarNav({
         ))}
       </div>
 
-      {whatsappEnabled && (
-        <>
-          <SectionLabel label="Comunicação" />
-          <div className="space-y-0.5">
-            {comunicacaoItems.map((item) => (
-              <NavItem
-                key={item.href}
-                {...item}
-                isActive={pathname.startsWith(item.href)}
-                badge={item.href === '/whatsapp' ? whatsappUnread : undefined}
-                onNavigate={onNavigate}
-              />
-            ))}
-          </div>
-        </>
-      )}
+      <SectionLabel label="Comunicação" />
+      <div className="space-y-0.5">
+        {comunicacaoItems.map((item) => (
+          <NavItem
+            key={item.href}
+            {...item}
+            isActive={pathname.startsWith(item.href)}
+            badge={item.href === '/whatsapp' && whatsappEnabled ? whatsappUnread : undefined}
+            onNavigate={onNavigate}
+          />
+        ))}
+      </div>
 
       {/* Separator */}
       <div className="mx-2 my-3 h-px bg-sage/15" />

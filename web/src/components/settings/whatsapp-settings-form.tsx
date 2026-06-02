@@ -239,20 +239,20 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
                       e crie ou selecione um aplicativo do tipo Business.
                     </li>
                     <li>
-                      No painel do app, adicione o produto WhatsApp e siga o assistente de configuracao.
+                      No painel do app, adicione o produto <strong>WhatsApp</strong> e siga o assistente de configuração.
                     </li>
                     <li>
                       Copie o <strong>Phone Number ID</strong> e o{' '}
-                      <strong>WhatsApp Business Account ID</strong> da secao WhatsApp {'>'} API Setup.
+                      <strong>WhatsApp Business Account ID</strong> da seção WhatsApp {'>'} API Setup.
                     </li>
                     <li>
-                      Gere um <strong>Access Token permanente</strong> com as permissoes{' '}
+                      Gere um <strong>Access Token permanente</strong> (System User Token) com as permissões{' '}
                       <code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">whatsapp_business_messaging</code>{' '}
                       e{' '}
                       <code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">whatsapp_business_management</code>.
                     </li>
                     <li>
-                      Na secao Webhooks, configure a <strong>Callback URL</strong> e o{' '}
+                      Na seção <strong>Webhooks</strong>, configure a <strong>Callback URL</strong> e o{' '}
                       <strong>Verify Token</strong> listados abaixo.
                     </li>
                     <li>
@@ -260,7 +260,7 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
                       e <code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">message_template_status_update</code>.
                     </li>
                     <li>
-                      Cole as credenciais nos campos abaixo e clique em &ldquo;Testar conexao&rdquo; para validar.
+                      Cole as credenciais nos campos abaixo e clique em <strong>Testar conexão</strong> para validar.
                     </li>
                   </ol>
                 </AccordionContent>
@@ -472,6 +472,7 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
 
           {/* Template Management */}
           <WhatsAppTemplateList
+            configured={!!(initialSettings?.whatsapp_phone_number_id && initialSettings?.whatsapp_access_token)}
             onProvision={async () => {
               const res = await fetch('/api/whatsapp/templates/provision', { method: 'POST' })
               const data = await res.json()

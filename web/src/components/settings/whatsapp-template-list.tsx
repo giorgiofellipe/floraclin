@@ -62,6 +62,7 @@ interface WhatsappTemplate {
 
 interface WhatsAppTemplateListProps {
   onProvision: () => Promise<void>
+  configured?: boolean
 }
 
 // ─── Constants ──────────────────────────────────────────────────────
@@ -107,7 +108,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 // ─── Component ──────────────────────────────────────────────────────
 
-export function WhatsAppTemplateList({ onProvision }: WhatsAppTemplateListProps) {
+export function WhatsAppTemplateList({ onProvision, configured = false }: WhatsAppTemplateListProps) {
   const [templates, setTemplates] = useState<WhatsappTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
@@ -137,8 +138,12 @@ export function WhatsAppTemplateList({ onProvision }: WhatsAppTemplateListProps)
   }, [])
 
   useEffect(() => {
+    if (!configured) {
+      setLoading(false)
+      return
+    }
     fetchTemplates()
-  }, [fetchTemplates])
+  }, [fetchTemplates, configured])
 
   // ─── Actions ────────────────────────────────────────────────────
 

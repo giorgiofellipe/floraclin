@@ -1,7 +1,7 @@
 'use client'
 
 import type { Role } from '@/types'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { ClinicSettingsForm } from '@/components/settings/clinic-settings-form'
 import { ProcedureTypeList } from '@/components/settings/procedure-type-list'
@@ -252,6 +252,13 @@ export function SettingsPageClient({
     }
     return defaultTab
   })
+
+  useEffect(() => {
+    const candidate = searchParams.get('tab') as TabKey
+    if (candidate && VALID_TAB_KEYS.has(candidate) && visibleKeys.has(candidate)) {
+      setActiveTabState(candidate)
+    }
+  }, [searchParams, visibleKeys])
 
   const setActiveTab = useCallback((newTab: TabKey) => {
     setActiveTabState(newTab)
