@@ -45,6 +45,7 @@ const principalItems = [
 
 const gestaoItems = [
   { href: '/financeiro', label: 'Financeiro', icon: Banknote },
+  { href: '#', label: 'Relatórios', icon: TrendingUp, disabled: true },
 ]
 
 const comunicacaoItems = [
@@ -53,7 +54,6 @@ const comunicacaoItems = [
 ]
 
 const bottomItems = [
-  { href: '#', label: 'Relatórios', icon: TrendingUp, disabled: true },
   { href: '/configuracoes', label: 'Configurações', icon: Settings },
 ]
 
@@ -370,9 +370,10 @@ function SidebarNav({
       <div className="space-y-0.5">
         {gestaoItems.map((item) => (
           <NavItem
-            key={item.href}
+            key={item.label}
             {...item}
-            isActive={pathname.startsWith(item.href)}
+            disabled={'disabled' in item ? item.disabled : false}
+            isActive={!('disabled' in item && item.disabled) && pathname.startsWith(item.href)}
             onNavigate={onNavigate}
           />
         ))}
@@ -403,8 +404,7 @@ function SidebarNav({
           <NavItem
             key={item.href}
             {...item}
-            disabled={item.disabled}
-            isActive={!item.disabled && pathname.startsWith(item.href)}
+            isActive={pathname.startsWith(item.href)}
             onNavigate={onNavigate}
           />
         ))}
