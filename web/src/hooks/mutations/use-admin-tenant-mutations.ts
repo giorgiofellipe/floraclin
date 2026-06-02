@@ -36,3 +36,23 @@ export function useUpdateTenant() {
     },
   })
 }
+
+export function useApproveTenant() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => mutateJson(`/api/admin/tenants/${id}/approve`, 'POST'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.tenants.all })
+    },
+  })
+}
+
+export function useRejectTenant() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => mutateJson(`/api/admin/tenants/${id}/reject`, 'POST'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.tenants.all })
+    },
+  })
+}

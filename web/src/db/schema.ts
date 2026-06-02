@@ -9,6 +9,7 @@ export const tenants = floraclinSchema.table('tenants', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 255 }).notNull(),
   slug: varchar('slug', { length: 100 }).notNull().unique(),
+  status: varchar('status', { length: 20 }).notNull().default('active'),
   logoUrl: text('logo_url'),
   phone: varchar('phone', { length: 20 }),
   email: varchar('email', { length: 255 }),

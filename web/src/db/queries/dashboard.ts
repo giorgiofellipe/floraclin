@@ -9,7 +9,7 @@ import {
   auditLogs,
   users,
 } from '@/db/schema'
-import { eq, and, isNull, gte, lte, sql, desc, count, sum } from 'drizzle-orm'
+import { eq, and, ne, isNull, gte, lte, sql, desc, count, sum } from 'drizzle-orm'
 import {
   startOfWeek,
   endOfWeek,
@@ -234,7 +234,7 @@ export async function getRecentActivity(
     })
     .from(auditLogs)
     .innerJoin(users, eq(auditLogs.userId, users.id))
-    .where(eq(auditLogs.tenantId, tenantId))
+    .where(and(eq(auditLogs.tenantId, tenantId), ne(auditLogs.entityType, 'impersonation')))
     .orderBy(desc(auditLogs.createdAt))
     .limit(limit)
 

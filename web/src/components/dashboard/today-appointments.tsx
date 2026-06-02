@@ -2,7 +2,7 @@ import Link from 'next/link'
 import type { TodayAppointment } from '@/db/queries/dashboard'
 
 const STATUS_LABELS: Record<string, string> = {
-  scheduled: 'Aguardando',
+  scheduled: 'Agendado',
   confirmed: 'Confirmado',
   in_progress: 'Em andamento',
   completed: 'Concluído',

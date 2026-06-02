@@ -19,6 +19,8 @@ const ACTION_ICONS: Record<string, LucideIcon> = {
   login: LogIn,
   logout: LogOut,
   consent_accepted: FileCheck,
+  impersonation_start: LogIn,
+  impersonation_end: LogOut,
 }
 
 const ACTION_VERBS: Record<string, string> = {
@@ -71,7 +73,7 @@ function formatActivityDescription(entry: RecentActivityEntry): { userName: stri
   const entityLabel =
     ENTITY_LABELS[entry.entityType] ?? entry.entityType
 
-  if (entry.action === 'login' || entry.action === 'logout') {
+  if (entry.action === 'login' || entry.action === 'logout' || entry.action === 'impersonation_start' || entry.action === 'impersonation_end') {
     return { userName: entry.userName, action: verb }
   }
 

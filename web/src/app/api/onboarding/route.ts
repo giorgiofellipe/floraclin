@@ -71,7 +71,7 @@ export async function POST(request: Request) {
 
     {
       // 1. Update tenant with clinic info, working hours, and slug
-      const slug = generateSlug(data.clinic.name)
+      const slug = data.clinic.slug || generateSlug(data.clinic.name)
 
       await updateTenant(auth.tenantId, {
         name: data.clinic.name,
@@ -175,12 +175,25 @@ export async function POST(request: Request) {
         }
       }
 
-      // 6. Mark onboarding as completed
+      // 6. Seed default clinical document templates (atestado de comparecimento)
+      const { listClinicalDocumentTemplates, createClinicalDocumentTemplate } = await import('@/db/queries/clinical-documents')
+      const existingDocTemplates = await listClinicalDocumentTemplates(auth.tenantId, {})
+      if (existingDocTemplates.length === 0) {
+        await createClinicalDocumentTemplate({
+          tenantId: auth.tenantId,
+          createdBy: auth.userId,
+          kind: 'atestado',
+          name: 'Atestado de Comparecimento',
+          body: 'Atesto, para os devidos fins, que {{patient.name}} compareceu a esta clínica na data de {{date}}, para realização de consulta/procedimento estético.\n\n{{date.long}}',
+        })
+      }
+
+      // 7. Mark onboarding as completed
       await updateTenantSettings(auth.tenantId, {
         onboarding_completed: true,
       })
 
-      // 7. Audit log
+      // 8. Audit log
       await createAuditLog({
         tenantId: auth.tenantId,
         userId: auth.userId,

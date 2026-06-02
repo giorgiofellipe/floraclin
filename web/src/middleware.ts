@@ -28,17 +28,47 @@ export default auth((req) => {
     return NextResponse.next()
   }
 
-  // Auth pages — redirect to dashboard if already logged in
-  if (pathname === '/login' || pathname === '/reset-password') {
+  // Auth pages — redirect authenticated users appropriately
+  if (pathname === '/login' || pathname === '/reset-password' || pathname === '/signup') {
     if (isAuthenticated) {
+      const session = req.auth as any
+      const tenantStatus = session?.tenantStatus as string | null
+      const tenantId = session?.tenantId as string | null
+
+      if (!tenantId) return NextResponse.redirect(new URL('/signup/clinic-details', req.url))
+      if (tenantStatus === 'pending_approval') return NextResponse.redirect(new URL('/pending-approval', req.url))
       return NextResponse.redirect(new URL('/dashboard', req.url))
     }
     return NextResponse.next()
   }
 
-  // Protected pages — redirect to login if not authenticated
+  // Not authenticated — redirect to login
   if (!isAuthenticated) {
     return NextResponse.redirect(new URL('/login', req.url))
+  }
+
+  // Authenticated from here — read tenant info from session
+  const session = req.auth as any
+  const tenantStatus = session?.tenantStatus as string | null
+  const tenantId = session?.tenantId as string | null
+  const isPlatformAdmin = session?.isPlatformAdmin as boolean
+
+  // Platform admins can always access /admin routes regardless of tenant status
+  if (pathname.startsWith('/admin')) {
+    if (isPlatformAdmin) return NextResponse.next()
+    return NextResponse.redirect(new URL('/dashboard', req.url))
+  }
+
+  // No tenant membership — Google OAuth user who hasn't set up clinic
+  if (!tenantId && !isPlatformAdmin) {
+    if (pathname === '/signup/clinic-details') return NextResponse.next()
+    return NextResponse.redirect(new URL('/signup/clinic-details', req.url))
+  }
+
+  // Pending approval — only allow pending-approval page
+  if (tenantStatus === 'pending_approval') {
+    if (pathname === '/pending-approval') return NextResponse.next()
+    return NextResponse.redirect(new URL('/pending-approval', req.url))
   }
 
   return NextResponse.next()

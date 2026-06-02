@@ -19,6 +19,8 @@ import type { Product } from '@/db/queries/products'
 import { MaskedInput } from '@/components/ui/masked-input'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { cn } from '@/lib/utils'
+import { ExternalLinkIcon, CircleCheckIcon, CircleXIcon, Loader2Icon } from 'lucide-react'
+import { Input } from '@/components/ui/input'
 
 interface ProcedureOverride {
   selected: boolean
@@ -104,8 +106,20 @@ export function OnboardingWizard({
   const [customProducts, setCustomProducts] = useState<ProductStepItem[]>([])
   const productsAlreadyConfigured = (existingProducts?.length ?? 0) > 0
 
+  // Slug state
+  const [customSlug, setCustomSlug] = useState('')
+  const [slugAvailable, setSlugAvailable] = useState<boolean | null>(null)
+  const [slugChecking, setSlugChecking] = useState(false)
+  const slug = (clinicData.name as string || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+
   // Step 4 state: track sent invites count
   const [invitesSent, setInvitesSent] = useState(0)
+  const [showInviteForm, setShowInviteForm] = useState(false)
 
   const handleClinicChange = useCallback((data: Record<string, unknown>) => {
     setClinicData(data)
@@ -169,6 +183,28 @@ export function OnboardingWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [procedureOverrides, productsTouched])
 
+  // Debounced slug availability check
+  const effectiveSlug = customSlug || slug
+  useEffect(() => {
+    if (!effectiveSlug) {
+      setSlugAvailable(null)
+      return
+    }
+    setSlugChecking(true)
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/slug-check?slug=${encodeURIComponent(effectiveSlug)}`)
+        const data = await res.json()
+        setSlugAvailable(data.available)
+      } catch {
+        setSlugAvailable(null)
+      } finally {
+        setSlugChecking(false)
+      }
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [effectiveSlug])
+
   function handleNext() {
     if (currentStep === 0) {
       if (!clinicData.name || (clinicData.name as string).trim().length === 0) {
@@ -221,6 +257,7 @@ export function OnboardingWizard({
         body: JSON.stringify({
           clinic: {
             name: (clinicData.name as string) || tenantName,
+            slug: customSlug || undefined,
             phone: (clinicData.phone as string) || undefined,
             email: (clinicData.email as string) || undefined,
             address: (clinicData.address as Record<string, string>) || undefined,
@@ -234,21 +271,13 @@ export function OnboardingWizard({
       const result = await res.json()
 
       if (result?.success) {
-        toast.success('Configuracao concluida! Bem-vindo ao FloraClin.')
+        toast.success('Configuração concluída! Bem-vindo ao FloraClin.')
         router.push('/dashboard')
       } else {
         toast.error(result?.error || 'Erro ao completar o onboarding')
       }
     })
   }
-
-  // Slug preview from clinic name
-  const slug = (clinicData.name as string || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
 
   return (
     <div className="min-h-screen bg-[#F4F6F8]">
@@ -360,12 +389,45 @@ export function OnboardingWizard({
               />
 
               {slug && (
-                <div className="mt-6 rounded-[3px] bg-[#F0F7F1] border border-sage/20 p-4">
-                  <p className="text-xs text-mid uppercase tracking-wider mb-1">
-                    Link de agendamento online
-                  </p>
-                  <p className="text-sm font-medium text-forest">
-                    floraclin.com.br/c/{slug}
+                <div className="mt-6 rounded-[3px] bg-[#F0F7F1] border border-sage/20 p-4 space-y-3">
+                  <div>
+                    <p className="text-xs text-mid uppercase tracking-wider mb-0.5">
+                      Link de agendamento online
+                    </p>
+                    <p className="text-xs text-mid">
+                      Seus pacientes poderão agendar consultas diretamente por este link.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-mid shrink-0">floraclin.com.br/c/</span>
+                    <Input
+                      value={customSlug || slug}
+                      onChange={(e) => {
+                        const v = e.target.value
+                          .toLowerCase()
+                          .replace(/[^a-z0-9-]/g, '')
+                        setCustomSlug(v)
+                        setSlugAvailable(null)
+                      }}
+                      className="h-8 text-sm font-medium text-forest max-w-48"
+                    />
+                    {slugChecking ? (
+                      <Loader2Icon className="h-4 w-4 text-mid animate-spin shrink-0" />
+                    ) : slugAvailable === true ? (
+                      <CircleCheckIcon className="h-4 w-4 text-emerald-500 shrink-0" />
+                    ) : slugAvailable === false ? (
+                      <CircleXIcon className="h-4 w-4 text-red-500 shrink-0" />
+                    ) : null}
+                  </div>
+
+                  {slugAvailable === false && (
+                    <p className="text-xs text-red-600">Este link já está em uso. Escolha outro.</p>
+                  )}
+
+                  <p className="inline-flex items-center gap-1.5 text-xs text-mid/60">
+                    <ExternalLinkIcon className="h-3 w-3" />
+                    Disponível após concluir o cadastro
                   </p>
                 </div>
               )}
@@ -482,7 +544,7 @@ export function OnboardingWizard({
               {existingProcedureTypes.length > 0 && (
                 <div className="mb-8">
                   <h3 className="text-xs font-medium text-mid uppercase tracking-wider mb-3">
-                    Procedimentos ja cadastrados
+                    Procedimentos já cadastrados
                   </h3>
                   <ProcedureTypeList
                     procedureTypes={existingProcedureTypes}
@@ -536,7 +598,7 @@ export function OnboardingWizard({
                 Convide sua Equipe
               </h2>
               <p className="text-sm text-mid mb-8">
-                Convide profissionais e recepcionistas para usar o sistema. Este passo e opcional.
+                Você pode convidar profissionais e recepcionistas agora, ou fazer isso depois em Configurações.
               </p>
 
               {invitesSent > 0 && (
@@ -544,20 +606,50 @@ export function OnboardingWizard({
                   <div className="w-8 h-8 rounded-full bg-sage/20 flex items-center justify-center flex-shrink-0">
                     <CheckIcon className="h-4 w-4 text-sage" />
                   </div>
-                  <p className="text-sm text-sage font-medium">
-                    {invitesSent} {invitesSent === 1 ? 'convite enviado' : 'convites enviados'} com sucesso.
-                  </p>
+                  <div>
+                    <p className="text-sm text-sage font-medium">
+                      {invitesSent} {invitesSent === 1 ? 'convite enviado' : 'convites enviados'} com sucesso.
+                    </p>
+                    {!showInviteForm && (
+                      <button
+                        type="button"
+                        onClick={() => setShowInviteForm(true)}
+                        className="text-xs text-sage/70 hover:text-forest transition-colors mt-0.5"
+                      >
+                        Convidar mais alguém
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
-              {/* Reuse InviteUserForm -- invites are sent immediately via inviteUserAction */}
-              <div className="rounded-lg border border-blush/30 p-5 bg-white">
-                <InviteUserForm
-                  onSuccess={() => {
-                    setInvitesSent(prev => prev + 1)
-                  }}
-                />
-              </div>
+              {showInviteForm ? (
+                <div className="rounded-lg border border-blush/30 p-5 bg-white animate-fade-in-up">
+                  <InviteUserForm
+                    onSuccess={() => {
+                      setInvitesSent(prev => prev + 1)
+                      setShowInviteForm(false)
+                    }}
+                  />
+                </div>
+              ) : invitesSent === 0 ? (
+                <div className="flex flex-col items-center py-8 text-center">
+                  <div className="rounded-full bg-sage/10 p-4 mb-4">
+                    <UsersIcon className="h-6 w-6 text-sage" />
+                  </div>
+                  <p className="text-sm text-charcoal font-medium mb-1">Nenhum convite enviado ainda</p>
+                  <p className="text-xs text-mid mb-5">Sua equipe receberá um e-mail com link de acesso.</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowInviteForm(true)}
+                    className="border-sage/30 text-sage hover:bg-sage/5 hover:text-forest"
+                  >
+                    <PlusIcon className="h-4 w-4" />
+                    Convidar membro da equipe
+                  </Button>
+                </div>
+              ) : null}
             </div>
           )}
         </Card>

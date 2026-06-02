@@ -27,6 +27,7 @@ export type ProductSelection = z.infer<typeof productSelectionSchema>
 
 const clinicDataSchema = z.object({
   name: z.string().trim().min(1),
+  slug: z.string().trim().min(1).max(100).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug inválido').optional(),
   phone: z.string().optional(),
   email: z.string().optional(),
   address: addressSchema.optional(),

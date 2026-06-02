@@ -45,9 +45,7 @@ export async function listAllTenants(
       )
     : undefined
 
-  const whereCondition = searchCondition
-    ? and(isNull(tenants.deletedAt), searchCondition)
-    : isNull(tenants.deletedAt)
+  const whereCondition = searchCondition ?? undefined
 
   const userCountSq = sql<number>`(
     SELECT COUNT(*)::int FROM floraclin.tenant_users
@@ -65,6 +63,7 @@ export async function listAllTenants(
         id: tenants.id,
         name: tenants.name,
         slug: tenants.slug,
+        status: tenants.status,
         logoUrl: tenants.logoUrl,
         phone: tenants.phone,
         email: tenants.email,
@@ -256,4 +255,117 @@ export async function getTenantDetail(
     financialEntryCount: financialCountResult[0]?.count ?? 0,
     members,
   }
+}
+
+// ─── Self-signup & approval ────────────────────────────────────────
+
+export async function createSelfSignupTenant(data: {
+  userId: string
+  clinicName: string
+  phone: string
+}) {
+  let baseSlug = data.clinicName
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+
+  if (!baseSlug) baseSlug = 'clinica'
+
+  return withTransaction(async (tx) => {
+    let slug = baseSlug
+    let attempt = 0
+
+    for (;;) {
+      const [existing] = await tx
+        .select({ id: tenants.id })
+        .from(tenants)
+        .where(eq(tenants.slug, slug))
+        .limit(1)
+
+      if (!existing) break
+
+      attempt++
+      slug = `${baseSlug}-${attempt}`
+    }
+
+    const [tenant] = await tx
+      .insert(tenants)
+      .values({
+        name: data.clinicName,
+        slug,
+        status: 'pending_approval',
+        phone: data.phone,
+      })
+      .returning()
+
+    await tx.insert(tenantUsers).values({
+      tenantId: tenant.id,
+      userId: data.userId,
+      role: 'owner',
+      isActive: true,
+    })
+
+    return tenant
+  })
+}
+
+export async function listTenantsByStatus(status?: string) {
+  const conditions = [isNull(tenants.deletedAt)]
+  if (status) {
+    conditions.push(eq(tenants.status, status))
+  }
+
+  return db
+    .select({
+      id: tenants.id,
+      name: tenants.name,
+      slug: tenants.slug,
+      status: tenants.status,
+      phone: tenants.phone,
+      email: tenants.email,
+      createdAt: tenants.createdAt,
+      ownerName: users.fullName,
+      ownerEmail: users.email,
+    })
+    .from(tenants)
+    .innerJoin(tenantUsers, and(eq(tenantUsers.tenantId, tenants.id), eq(tenantUsers.role, 'owner')))
+    .innerJoin(users, eq(users.id, tenantUsers.userId))
+    .where(and(...conditions))
+    .orderBy(desc(tenants.createdAt))
+    .groupBy(tenants.id, users.fullName, users.email)
+}
+
+export async function approveTenant(tenantId: string) {
+  const [updated] = await db
+    .update(tenants)
+    .set({ status: 'active', updatedAt: new Date() })
+    .where(and(eq(tenants.id, tenantId), eq(tenants.status, 'pending_approval')))
+    .returning({ id: tenants.id, name: tenants.name })
+
+  return updated
+}
+
+export async function rejectTenant(tenantId: string) {
+  const [updated] = await db
+    .update(tenants)
+    .set({ status: 'rejected', deletedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(tenants.id, tenantId), eq(tenants.status, 'pending_approval')))
+    .returning({ id: tenants.id, name: tenants.name })
+
+  return updated
+}
+
+export async function getTenantOwnerEmail(tenantId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ email: users.email })
+    .from(tenantUsers)
+    .innerJoin(users, eq(users.id, tenantUsers.userId))
+    .where(and(eq(tenantUsers.tenantId, tenantId), eq(tenantUsers.role, 'owner')))
+    .limit(1)
+
+  return row?.email ?? null
 }

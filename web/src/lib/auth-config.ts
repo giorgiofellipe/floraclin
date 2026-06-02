@@ -5,8 +5,8 @@ import Resend from 'next-auth/providers/resend'
 import { DrizzleAdapter } from '@auth/drizzle-adapter'
 import type { Adapter } from 'next-auth/adapters'
 import { db } from '@/db/client'
-import { users, sessions, accounts, verificationTokens } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { users, sessions, accounts, verificationTokens, tenantUsers, tenants } from '@/db/schema'
+import { eq, and, isNull } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 
 // The FloraClin schema uses custom column names (fullName instead of name,
@@ -70,18 +70,62 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       }
       return true
     },
-    async jwt({ token, user }) {
-      // On initial sign-in, persist the user id into the JWT
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.sub = user.id
       }
+
+      if (user || trigger === 'update') {
+        const userId = token.sub
+        if (userId) {
+          const [membership] = await db
+            .select({
+              tenantId: tenantUsers.tenantId,
+              role: tenantUsers.role,
+              tenantStatus: tenants.status,
+              isPlatformAdmin: users.isPlatformAdmin,
+            })
+            .from(tenantUsers)
+            .innerJoin(tenants, and(eq(tenants.id, tenantUsers.tenantId), isNull(tenants.deletedAt)))
+            .innerJoin(users, eq(users.id, tenantUsers.userId))
+            .where(
+              and(
+                eq(tenantUsers.userId, userId),
+                eq(tenantUsers.isActive, true)
+              )
+            )
+            .limit(1)
+
+          if (!membership) {
+            const [userRow] = await db
+              .select({ isPlatformAdmin: users.isPlatformAdmin })
+              .from(users)
+              .where(eq(users.id, userId))
+              .limit(1)
+
+            token.tenantId = null
+            token.tenantStatus = null
+            token.role = null
+            token.isPlatformAdmin = userRow?.isPlatformAdmin ?? false
+          } else {
+            token.tenantId = membership.tenantId
+            token.tenantStatus = membership.tenantStatus
+            token.role = membership.role
+            token.isPlatformAdmin = membership.isPlatformAdmin
+          }
+        }
+      }
+
       return token
     },
     async session({ session, token }) {
-      // Expose user id from JWT to the session object
       if (session.user && token.sub) {
         session.user.id = token.sub
       }
+      ;(session as any).tenantId = token.tenantId ?? null
+      ;(session as any).tenantStatus = token.tenantStatus ?? null
+      ;(session as any).role = token.role ?? null
+      ;(session as any).isPlatformAdmin = token.isPlatformAdmin ?? false
       return session
     },
   },

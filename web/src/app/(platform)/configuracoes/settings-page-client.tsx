@@ -141,8 +141,8 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     label: 'Clínico',
     items: [
       { key: 'procedimentos', label: 'Procedimentos', icon: SyringeIcon },
-      { key: 'produtos', label: 'Produtos', icon: PackageIcon },
       { key: 'pacotes', label: 'Pacotes', icon: Package2Icon },
+      { key: 'produtos', label: 'Produtos', icon: PackageIcon },
       { key: 'termos', label: 'Contratos e Termos', icon: FileTextIcon },
       { key: 'documentos', label: 'Documentos', icon: ClipboardSignatureIcon },
     ],
@@ -393,16 +393,16 @@ export function SettingsPageClient({
               {activeTab === 'pacotes' && <PacotesTabContent />}
 
               {activeTab === 'documentos' && (
-                <Tabs defaultValue="receita" className="space-y-4">
+                <Tabs defaultValue="atestado" className="space-y-4">
                   <TabsList>
-                    <TabsTrigger value="receita">Receitas</TabsTrigger>
                     <TabsTrigger value="atestado">Atestados</TabsTrigger>
+                    <TabsTrigger value="receita">Receitas</TabsTrigger>
                   </TabsList>
-                  <TabsContent value="receita" className="space-y-4">
-                    <DocumentTemplateList kind="receita" />
-                  </TabsContent>
                   <TabsContent value="atestado" className="space-y-4">
                     <DocumentTemplateList kind="atestado" />
+                  </TabsContent>
+                  <TabsContent value="receita" className="space-y-4">
+                    <DocumentTemplateList kind="receita" />
                   </TabsContent>
                 </Tabs>
               )}
