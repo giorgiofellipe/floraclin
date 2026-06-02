@@ -28,9 +28,9 @@ const TABS: readonly TabConfig[] = [
   { key: 'evolucoes', label: 'Evoluções', icon: BookOpen, requiredRoles: ['owner', 'practitioner'] },
   { key: 'procedimentos', label: 'Atendimentos', icon: Syringe },
   { key: 'pacotes', label: 'Pacotes', icon: Package },
+  { key: 'termos', label: 'Termos', icon: FileCheck },
   { key: 'documentos', label: 'Documentos', icon: FileText },
   { key: 'fotos', label: 'Fotos', icon: Camera },
-  { key: 'termos', label: 'Termos', icon: FileCheck },
   { key: 'financeiro', label: 'Financeiro', icon: Banknote },
   { key: 'timeline', label: 'Timeline', icon: Clock },
 ] as const

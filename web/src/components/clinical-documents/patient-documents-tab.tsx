@@ -132,7 +132,7 @@ export function PatientDocumentsTab({ patient }: PatientDocumentsTabProps) {
       />
 
       <Dialog open={!!openedDoc} onOpenChange={(o) => !o && setOpenedDoc(null)}>
-        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogContent className="max-h-[90vh] w-[95vw] sm:max-w-6xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{openedDoc?.title}</DialogTitle>
             <DialogDescription>
@@ -200,6 +200,7 @@ function HistoryPreview({ documentId, fallback, patientHasPhone }: HistoryPrevie
         kind={doc.kind}
         title={doc.title}
         body={doc.body}
+        verificationCode={doc.verificationCode}
         patient={{
           fullName: doc.patient.fullName,
           cpf: doc.patient.cpf,

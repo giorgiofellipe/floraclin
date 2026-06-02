@@ -45,6 +45,7 @@ export interface DocumentPreviewProps {
   practitioner: PreviewPractitioner
   tenant: PreviewTenant
   date?: Date
+  verificationCode?: string | null
   className?: string
 }
 
@@ -67,6 +68,7 @@ export function DocumentPreview({
   practitioner,
   tenant,
   date,
+  verificationCode,
   className,
 }: DocumentPreviewProps) {
   const renderDate = date ?? new Date()
@@ -124,12 +126,16 @@ export function DocumentPreview({
       </div>
 
       <div className="mt-12 border-t border-gray-200 pt-4">
-        <div className="text-[9px] text-gray-300 leading-relaxed">
+        <div className={`text-[9px] leading-relaxed ${verificationCode ? 'text-gray-400' : 'text-gray-300'}`}>
           <div>Documento emitido eletronicamente via FloraClin</div>
-          <div>Código de verificação: <span className="font-mono">FLC-XXXXXXXXXXXX</span></div>
+          <div>Código de verificação: <span className="font-mono font-medium">{verificationCode ?? 'FLC-XXXXXXXXXXXX'}</span></div>
           <div>Emitido em: {formatDate(renderDate)}</div>
           <div>Profissional: {practitioner.displayName} — {practitioner.registryLine}</div>
-          <div className="mt-1">Verifique a autenticidade: <span className="font-mono">app.floraclin.com.br/verify/FLC-XXXXXXXXXXXX</span></div>
+          <div className="mt-1">Verifique a autenticidade: {verificationCode ? (
+            <a href={`https://app.floraclin.com.br/verify/${verificationCode}`} target="_blank" rel="noopener noreferrer" className="font-mono underline">app.floraclin.com.br/verify/{verificationCode}</a>
+          ) : (
+            <span className="font-mono">app.floraclin.com.br/verify/FLC-XXXXXXXXXXXX</span>
+          )}</div>
         </div>
       </div>
     </div>

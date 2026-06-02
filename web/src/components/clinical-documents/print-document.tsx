@@ -116,7 +116,7 @@ export function PrintDocument({ doc, tenant }: PrintDocumentProps) {
               <div>Emitido em: {formatDate(doc.issuedAt)} às {doc.issuedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
               <div>Profissional: {snapshot.name} — {snapshot.registryLine}</div>
               <div className="mt-1">
-                Verifique a autenticidade: <span className="font-mono text-gray-500">app.floraclin.com.br/verify/{doc.verificationCode}</span>
+                Verifique a autenticidade: <a href={`https://app.floraclin.com.br/verify/${doc.verificationCode}`} className="font-mono text-gray-500 underline">app.floraclin.com.br/verify/{doc.verificationCode}</a>
               </div>
             </div>
             <div className="text-right shrink-0 ml-4">

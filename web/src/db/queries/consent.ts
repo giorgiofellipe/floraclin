@@ -210,6 +210,7 @@ export async function getConsentHistory(tenantId: string, patientId: string) {
       signatureData: consentAcceptances.signatureData,
       contentHash: consentAcceptances.contentHash,
       contentSnapshot: consentAcceptances.contentSnapshot,
+      verificationCode: consentAcceptances.verificationCode,
       acceptedAt: consentAcceptances.acceptedAt,
       procedureRecordId: consentAcceptances.procedureRecordId,
       templateTitle: consentTemplates.title,

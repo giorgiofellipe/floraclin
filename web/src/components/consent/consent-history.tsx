@@ -36,6 +36,7 @@ interface HistoryItem {
   signatureData: string | null
   contentSnapshot: string
   contentHash: string
+  verificationCode: string | null
 }
 
 export function ConsentHistory({ patientId }: ConsentHistoryProps) {
@@ -128,7 +129,7 @@ function ConsentHistoryItem({ item }: { item: HistoryItem }) {
           <DialogTrigger render={<Button variant="ghost" size="sm" />}>
             Ver termo
           </DialogTrigger>
-          <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{item.templateTitle}</DialogTitle>
             </DialogHeader>
@@ -137,8 +138,33 @@ function ConsentHistoryItem({ item }: { item: HistoryItem }) {
                 {item.contentSnapshot}
               </div>
             </ScrollArea>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-mid">
-              <span>Hash SHA-256: {item.contentHash}</span>
+
+            {item.signatureData && (
+              <div className="flex flex-col items-center py-4">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={item.signatureData} alt="Assinatura" className="h-20 max-w-[240px] object-contain" />
+                <div className="mt-1 w-[240px] border-t border-black" />
+              </div>
+            )}
+
+            <div className="border-t border-gray-200 pt-4">
+              <div className="text-[10px] text-gray-400 leading-relaxed space-y-0.5">
+                <div>Documento assinado eletronicamente via FloraClin</div>
+                {item.verificationCode && (
+                  <div>Código de verificação: <span className="font-mono font-medium text-gray-500">{item.verificationCode}</span></div>
+                )}
+                <div>Assinado em: {formatDateTime(item.acceptedAt)}</div>
+                <div>Método: {METHOD_LABELS[item.acceptanceMethod] ?? item.acceptanceMethod}</div>
+                <div className="font-mono text-[9px] text-gray-300">SHA-256: {item.contentHash}</div>
+                {item.verificationCode && (
+                  <div className="mt-1">
+                    Verifique a autenticidade:{' '}
+                    <a href={`https://app.floraclin.com.br/verify/${item.verificationCode}`} target="_blank" rel="noopener noreferrer" className="font-mono underline text-gray-500">
+                      app.floraclin.com.br/verify/{item.verificationCode}
+                    </a>
+                  </div>
+                )}
+              </div>
             </div>
           </DialogContent>
         </Dialog>

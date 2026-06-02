@@ -34,6 +34,7 @@ export interface ClinicalDocumentDetail {
   deliveredVia: string
   whatsappMessageId: string | null
   storagePath: string | null
+  verificationCode: string | null
   createdAt: string
   updatedAt: string
   patient: {
