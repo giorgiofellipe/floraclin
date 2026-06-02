@@ -289,7 +289,7 @@ export function RevenueChart() {
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(value) => [formatCurrency(Number(value)), 'Receita']}
+                    formatter={(value, name) => [formatCurrency(Number(value)), name]}
                     contentStyle={{
                       borderRadius: '12px',
                       border: 'none',
@@ -346,7 +346,7 @@ export function RevenueChart() {
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(value) => [formatCurrency(Number(value)), 'Receita']}
+                    formatter={(value, name) => [formatCurrency(Number(value)), name]}
                     contentStyle={{
                       borderRadius: '12px',
                       border: 'none',
