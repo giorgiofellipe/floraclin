@@ -80,6 +80,7 @@ export function ConsentViewer({
 
   const canSubmit = checked && (!requireSignature || !!signatureData)
 
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const handleSubmit = useCallback(async () => {
     if (!canSubmit || isSubmitting) return
 
