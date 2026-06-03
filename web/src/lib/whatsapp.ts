@@ -70,23 +70,37 @@ export async function sendTemplateMessage(
   templateName: string,
   language: string,
   params?: Record<string, string>,
+  buttonParams?: { index: number; subType: string; parameters: { type: string; text: string }[] }[],
 ) {
   const creds = await getCredentials(tenantId)
-  const components = params
-    ? [
-        {
-          type: 'body',
-          parameters: Object.values(params).map((v) => ({ type: 'text', text: v })),
-        },
-      ]
-    : undefined
+  const components: Record<string, unknown>[] = []
+  if (params && Object.keys(params).length > 0) {
+    components.push({
+      type: 'body',
+      parameters: Object.values(params).map((v) => ({ type: 'text', text: v })),
+    })
+  }
+  if (buttonParams) {
+    for (const btn of buttonParams) {
+      components.push({
+        type: 'button',
+        sub_type: btn.subType,
+        index: btn.index,
+        parameters: btn.parameters,
+      })
+    }
+  }
   const data = await graphFetch(`/${creds.phoneNumberId}/messages`, creds.accessToken, {
     method: 'POST',
     body: JSON.stringify({
       messaging_product: 'whatsapp',
       to,
       type: 'template',
-      template: { name: templateName, language: { code: language }, components },
+      template: {
+        name: templateName,
+        language: { code: language },
+        components: components.length > 0 ? components : undefined,
+      },
     }),
   })
   return { metaMessageId: data.messages?.[0]?.id as string }

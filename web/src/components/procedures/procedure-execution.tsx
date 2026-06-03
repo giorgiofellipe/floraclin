@@ -124,6 +124,8 @@ function SessionReadOnly({
   const { data } = useQuery<EncounterView>({
     queryKey: ['encounter-view', encounterId],
     queryFn: () => fetchEncounterView(encounterId),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 
   if (!data) return <div>Carregando…</div>
@@ -258,6 +260,8 @@ export function ProcedureExecution({
   const { data: encounterView } = useQuery<EncounterView>({
     queryKey: ['encounter-view', encounterId],
     queryFn: () => fetchEncounterView(encounterId),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 
   const invalidate = () =>

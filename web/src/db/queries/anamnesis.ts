@@ -57,12 +57,8 @@ export async function upsertAnamnesis(
         isPregnant: data.isPregnant,
         isBreastfeeding: data.isBreastfeeding,
         lifestyle: data.lifestyle,
-        skinType: data.skinType,
-        skinConditions: data.skinConditions,
         skincareRoutine: data.skincareRoutine,
         previousAestheticTreatments: data.previousAestheticTreatments,
-        contraindications: data.contraindications,
-        facialEvaluationNotes: data.facialEvaluationNotes,
         updatedBy: userId,
         updatedAt: new Date(),
       })
@@ -93,12 +89,8 @@ export async function upsertAnamnesis(
       isPregnant: data.isPregnant,
       isBreastfeeding: data.isBreastfeeding,
       lifestyle: data.lifestyle,
-      skinType: data.skinType,
-      skinConditions: data.skinConditions,
       skincareRoutine: data.skincareRoutine,
       previousAestheticTreatments: data.previousAestheticTreatments,
-      contraindications: data.contraindications,
-      facialEvaluationNotes: data.facialEvaluationNotes,
       updatedBy: userId,
     })
     .returning()

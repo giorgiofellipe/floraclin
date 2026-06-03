@@ -25,7 +25,7 @@ export interface Prospect {
   assignedUserId: string | null
   assignedUserName: string | null
   whatsappConversationId: string | null
-  patientId: string | null
+  convertedPatientId: string | null
   lostReason: string | null
   createdAt: string
   updatedAt: string

@@ -61,13 +61,24 @@ export async function POST(
     const normalizedPhone = phone.startsWith('55') ? phone : `55${phone}`
     const firstName = patient.fullName.split(' ')[0]
 
-    const templateParams = { '1': firstName, '2': tenant!.name, '3': parsed.data.url }
+    // Extract token from the URL (last path segment after /a/)
+    const urlToken = parsed.data.url.split('/a/').pop() ?? ''
+
+    const templateParams = { '1': firstName, '2': tenant!.name }
+    const buttonParams = [
+      {
+        index: 0,
+        subType: 'url' as const,
+        parameters: [{ type: 'text' as const, text: urlToken }],
+      },
+    ]
     const result = await sendTemplateMessage(
       ctx.tenantId,
       normalizedPhone,
       template.name,
       template.language,
       templateParams,
+      buttonParams,
     )
 
     const conversation = await upsertConversation(
@@ -78,10 +89,12 @@ export async function POST(
       patientId,
     )
 
+    // For the stored message body, include the full URL for display in the conversation view
+    const displayParams = { ...templateParams, '3': parsed.data.url }
     const message = await createMessage(ctx.tenantId, conversation.id, {
       direction: 'outbound',
       metaMessageId: result.metaMessageId,
-      body: resolveTemplateBody(template.components, templateParams),
+      body: resolveTemplateBody(template.components, displayParams) ?? `Anamnese: ${parsed.data.url}`,
       templateName: template.name,
       deliveryStatus: 'sent',
     })

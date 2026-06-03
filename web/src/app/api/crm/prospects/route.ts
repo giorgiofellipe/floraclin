@@ -125,7 +125,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ data: prospect }, { status: 201 })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('uq_prospects_tenant_phone')) {
+    const errCode = (error as Record<string, unknown>)?.code
+    if (msg.includes('uq_prospects_tenant_phone') || (errCode === '23505' && msg.includes('prospects'))) {
       return NextResponse.json({ error: 'Já existe um lead com este telefone' }, { status: 409 })
     }
     if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

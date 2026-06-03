@@ -202,23 +202,34 @@ export const TEMPLATE_BLUEPRINTS: TemplateBlueprint[] = [
   {
     slug: 'anamnese_link',
     purposeKey: 'anamnese_link',
-    name: 'anamnese_link',
+    name: 'anamnese_link_v2',
     category: 'UTILITY',
     language: 'pt_BR',
     description: 'Link para preenchimento de anamnese',
     variables: [
       { index: 1, key: 'patient_name', label: 'Nome do paciente', example: 'Maria Silva' },
       { index: 2, key: 'clinic_name', label: 'Nome da clínica', example: 'Clínica Flora' },
-      { index: 3, key: 'link', label: 'Link da anamnese', example: 'https://app.floraclin.com/anamnese/abc123' },
     ],
-    components: makeBody(
-      'Olá, {{1}}! Para agilizar seu atendimento na {{2}}, pedimos que preencha sua ficha de anamnese pelo link abaixo:\n\n{{3}}\n\nQualquer dúvida, estamos à disposição.',
-      [
-        { index: 1, key: 'patient_name', label: 'Nome do paciente', example: 'Maria Silva' },
-        { index: 2, key: 'clinic_name', label: 'Nome da clínica', example: 'Clínica Flora' },
-        { index: 3, key: 'link', label: 'Link da anamnese', example: 'https://app.floraclin.com/anamnese/abc123' },
-      ],
-    ),
+    components: [
+      {
+        type: 'BODY',
+        text: 'Olá, {{1}}! Para agilizar seu atendimento na {{2}}, pedimos que preencha sua ficha de anamnese clicando no botão abaixo. Qualquer dúvida, estamos à disposição.',
+        example: {
+          body_text: [['Maria Silva', 'Clínica Flora']],
+        },
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Preencher anamnese',
+            url: 'https://app.floraclin.com.br/a/{{1}}',
+            example: ['abc123'],
+          },
+        ],
+      },
+    ],
   },
   {
     slug: 'pre_procedure',

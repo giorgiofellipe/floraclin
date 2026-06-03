@@ -87,6 +87,23 @@ export async function getProspectByPhone(tenantId: string, phone: string): Promi
   return rows.find((p) => p.stage !== 'convertido' && p.stage !== 'perdido') ?? rows[0]
 }
 
+export async function getProspectByPatientId(tenantId: string, patientId: string): Promise<Prospect | null> {
+  const [row] = await db
+    .select()
+    .from(prospects)
+    .where(
+      and(
+        eq(prospects.tenantId, tenantId),
+        eq(prospects.convertedPatientId, patientId),
+        isNull(prospects.deletedAt),
+      ),
+    )
+    .orderBy(desc(prospects.createdAt))
+    .limit(1)
+
+  return row ?? null
+}
+
 export async function listProspects(
   tenantId: string,
   opts: { stage?: ProspectStage; search?: string; assignedUserId?: string } = {},

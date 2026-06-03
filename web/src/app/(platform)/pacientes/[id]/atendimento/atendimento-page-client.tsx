@@ -126,12 +126,8 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
         isPregnant: anamnesis.isPregnant ?? false,
         isBreastfeeding: anamnesis.isBreastfeeding ?? false,
         lifestyle: (anamnesis.lifestyle as AnamnesisFormData['lifestyle']) ?? {},
-        skinType: (anamnesis.skinType as AnamnesisFormData['skinType']) ?? undefined,
-        skinConditions: (anamnesis.skinConditions as string[]) ?? [],
         skincareRoutine: (anamnesis.skincareRoutine as AnamnesisFormData['skincareRoutine']) ?? [],
         previousAestheticTreatments: (anamnesis.previousAestheticTreatments as AnamnesisFormData['previousAestheticTreatments']) ?? [],
-        contraindications: (anamnesis.contraindications as string[]) ?? [],
-        facialEvaluationNotes: anamnesis.facialEvaluationNotes ?? '',
       }
     : null
 

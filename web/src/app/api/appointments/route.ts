@@ -7,7 +7,10 @@ import {
   createAppointment,
   checkTimeConflict,
 } from '@/db/queries/appointments'
+import { getProspectByPatientId, updateProspect, logProspectActivity } from '@/db/queries/prospects'
 import { createAppointmentSchema } from '@/validations/appointment'
+
+const STAGES_BEFORE_AGENDADO = ['novo', 'contatado', 'qualificado']
 
 export async function GET(request: Request) {
   try {
@@ -95,6 +98,24 @@ export async function POST(request: Request) {
     syncAppointmentToGoogle(ctx.tenantId, appointment.id).catch((err) => {
       console.error('Google Calendar push sync failed:', err)
     })
+
+    // Auto-move CRM lead to "agendado" if the patient has a linked prospect
+    if (data.patientId) {
+      try {
+        const prospect = await getProspectByPatientId(ctx.tenantId, data.patientId)
+        if (prospect && STAGES_BEFORE_AGENDADO.includes(prospect.stage)) {
+          const previousStage = prospect.stage
+          await updateProspect(ctx.tenantId, prospect.id, { stage: 'agendado' })
+          await logProspectActivity(ctx.tenantId, prospect.id, 'stage_changed', {
+            from: previousStage,
+            to: 'agendado',
+            trigger: 'appointment_created',
+          }, ctx.userId)
+        }
+      } catch (err) {
+        console.error('Failed to auto-advance prospect stage:', err)
+      }
+    }
 
     return NextResponse.json({ success: true, data: appointment })
   } catch (error) {

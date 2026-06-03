@@ -726,8 +726,10 @@ export function ServiceWizard({
     state.procedureStatus === 'in_progress' ||
     state.procedureStatus === 'completed'
 
-  // additionalTypeIds from procedure record
-  const additionalTypeIds = (localProcedure?.additionalTypeIds as string[] | null) ?? []
+  // additionalTypeIds: prefer wizard state (includes unsaved additions) over DB record
+  const additionalTypeIds = state.selectedTypeIds.length > 1
+    ? state.selectedTypeIds.slice(1)
+    : (localProcedure?.additionalTypeIds as string[] | null) ?? []
 
   const showSaveAndExit =
     state.currentStep === 1 || state.currentStep === 3 || state.currentStep === 5

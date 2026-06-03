@@ -190,6 +190,15 @@ export function ProspectDetailPanel({
                 Ver conversa no WhatsApp
               </Link>
             )}
+            {prospect.stage === 'convertido' && prospect.convertedPatientId && (
+              <Link
+                href={`/pacientes/${prospect.convertedPatientId}`}
+                className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-forest hover:underline"
+              >
+                <UserCheck className="h-3.5 w-3.5" />
+                Ver paciente
+              </Link>
+            )}
           </div>
 
           {/* Source */}

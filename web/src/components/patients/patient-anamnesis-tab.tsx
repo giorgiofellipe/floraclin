@@ -34,12 +34,8 @@ export function PatientAnamnesisTab({ patientId, patientName, patientPhone, what
       isPregnant: rawData.isPregnant ?? false,
       isBreastfeeding: rawData.isBreastfeeding ?? false,
       lifestyle: (rawData.lifestyle as AnamnesisFormData['lifestyle']) ?? {},
-      skinType: (rawData.skinType as AnamnesisFormData['skinType']) ?? undefined,
-      skinConditions: (rawData.skinConditions as string[]) ?? [],
       skincareRoutine: (rawData.skincareRoutine as AnamnesisFormData['skincareRoutine']) ?? [],
       previousAestheticTreatments: (rawData.previousAestheticTreatments as AnamnesisFormData['previousAestheticTreatments']) ?? [],
-      contraindications: (rawData.contraindications as string[]) ?? [],
-      facialEvaluationNotes: rawData.facialEvaluationNotes ?? '',
     } as AnamnesisFormData & { id?: string; updatedAt?: Date | string; updatedBy?: string | null }
   }, [rawData])
 

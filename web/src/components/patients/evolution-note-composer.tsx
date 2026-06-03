@@ -55,12 +55,8 @@ function toDatetimeLocalValue(d: Date): string {
   )}:${pad(d.getMinutes())}`
 }
 
-/**
- * Default value for a brand-new note: today in BR, anchored at noon, in the
- * `datetime-local` shape `YYYY-MM-DDTHH:mm`.
- */
 function defaultOccurredAtLocal(): string {
-  return `${brToday()}T12:00`
+  return toDatetimeLocalValue(new Date())
 }
 
 /**

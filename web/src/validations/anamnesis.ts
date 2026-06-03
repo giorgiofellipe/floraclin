@@ -85,12 +85,8 @@ export const anamnesisSchema = z.object({
   isPregnant: z.boolean().default(false),
   isBreastfeeding: z.boolean().default(false),
   lifestyle: lifestyleSchema.default({}),
-  skinType: z.enum(['I', 'II', 'III', 'IV', 'V', 'VI']).optional(),
-  skinConditions: z.array(z.string()).default([]),
   skincareRoutine: z.array(skincareItemSchema).default([]),
   previousAestheticTreatments: z.array(previousTreatmentSchema).default([]),
-  contraindications: z.array(z.string()).default([]),
-  facialEvaluationNotes: z.string().default(''),
 })
 
 export type AnamnesisFormData = z.infer<typeof anamnesisSchema>

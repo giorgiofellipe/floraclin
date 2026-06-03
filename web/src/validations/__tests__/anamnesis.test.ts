@@ -11,29 +11,11 @@ describe('anamnesisSchema', () => {
     const result = anamnesisSchema.safeParse({
       mainComplaint: 'Rugas na testa',
       patientGoals: 'Rejuvenescer',
-      skinType: 'III',
       isPregnant: false,
       isBreastfeeding: false,
       medications: [{ name: 'Aspirina', dosage: '100mg', frequency: 'Diario', reason: 'Cardio' }],
       allergies: [{ substance: 'Latex', reaction: 'Urticaria', severity: 'moderada' }],
     })
-    expect(result.success).toBe(true)
-  })
-
-  it('fails with invalid Fitzpatrick skin type', () => {
-    const result = anamnesisSchema.safeParse({ skinType: 'VII' })
-    expect(result.success).toBe(false)
-  })
-
-  it('accepts all valid Fitzpatrick types', () => {
-    for (const type of ['I', 'II', 'III', 'IV', 'V', 'VI']) {
-      const result = anamnesisSchema.safeParse({ skinType: type })
-      expect(result.success).toBe(true)
-    }
-  })
-
-  it('allows omitting skinType', () => {
-    const result = anamnesisSchema.safeParse({ mainComplaint: 'Test' })
     expect(result.success).toBe(true)
   })
 })

@@ -118,15 +118,6 @@ const SUN_EXPOSURE_OPTIONS = [
   { value: 'muito_alta', label: 'Muito alta' },
 ]
 
-const SKIN_TYPE_OPTIONS = [
-  { value: 'I', label: 'Tipo I - Muito clara' },
-  { value: 'II', label: 'Tipo II - Clara' },
-  { value: 'III', label: 'Tipo III - Morena clara' },
-  { value: 'IV', label: 'Tipo IV - Morena' },
-  { value: 'V', label: 'Tipo V - Morena escura' },
-  { value: 'VI', label: 'Tipo VI - Negra' },
-]
-
 // ─── Tag Input Component ────────────────────────────────────────────
 
 function TagInput({
@@ -278,12 +269,8 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
         sunExposure: undefined,
         ...(initialData?.lifestyle as Record<string, unknown> ?? {}),
       },
-      skinType: initialData?.skinType as AnamnesisFormData['skinType'] ?? undefined,
-      skinConditions: (initialData?.skinConditions ?? []) as string[],
       skincareRoutine: initialData?.skincareRoutine ?? [],
       previousAestheticTreatments: initialData?.previousAestheticTreatments ?? [],
-      contraindications: (initialData?.contraindications ?? []) as string[],
-      facialEvaluationNotes: initialData?.facialEvaluationNotes ?? '',
     },
   })
 
@@ -421,12 +408,8 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
     formValues.lifestyle &&
     Object.values(formValues.lifestyle).some(v => v != null && String(v) !== '')
   )
-  const isSkinTypeComplete = Boolean(formValues.skinType)
-  const isSkinConditionsComplete = (formValues.skinConditions?.length ?? 0) > 0
   const isSkincareComplete = (formValues.skincareRoutine?.length ?? 0) > 0
   const isTreatmentsComplete = (formValues.previousAestheticTreatments?.length ?? 0) > 0
-  const isContraindicationsComplete = (formValues.contraindications?.length ?? 0) > 0
-  const isFacialEvalComplete = Boolean(formValues.facialEvaluationNotes?.trim())
 
   // ─── Render ───────────────────────────────────────────────────
 
@@ -896,45 +879,6 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
             </div>
           </AnamnesisSection>
 
-          {/* ── Tipo de pele ── */}
-          <AnamnesisSection
-            value="skinType"
-            title="Tipo de pele (Fitzpatrick)"
-            isComplete={isSkinTypeComplete}
-          >
-            <Controller
-              control={control}
-              name="skinType"
-              render={({ field }) => (
-                <SelectField
-                  value={field.value ?? undefined}
-                  onValueChange={field.onChange}
-                  options={SKIN_TYPE_OPTIONS}
-                  placeholder="Selecione o tipo de pele..."
-                />
-              )}
-            />
-          </AnamnesisSection>
-
-          {/* ── Condições da pele ── */}
-          <AnamnesisSection
-            value="skinConditions"
-            title="Condições da pele"
-            isComplete={isSkinConditionsComplete}
-          >
-            <Controller
-              control={control}
-              name="skinConditions"
-              render={({ field }) => (
-                <TagInput
-                  value={field.value ?? []}
-                  onChange={field.onChange}
-                  placeholder="Ex: acne, rosácea, melasma... (Enter para adicionar)"
-                />
-              )}
-            />
-          </AnamnesisSection>
-
           {/* ── Rotina de cuidados ── */}
           <AnamnesisSection
             value="skincareRoutine"
@@ -1081,51 +1025,6 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
             </div>
           </AnamnesisSection>
 
-          {/* ── Contraindicações ── */}
-          <AnamnesisSection
-            value="contraindications"
-            title="Contraindicações"
-            isComplete={isContraindicationsComplete}
-          >
-            <Controller
-              control={control}
-              name="contraindications"
-              render={({ field }) => (
-                <TagInput
-                  value={field.value ?? []}
-                  onChange={field.onChange}
-                  placeholder="Ex: gravidez, uso de isotretinoína... (Enter para adicionar)"
-                />
-              )}
-            />
-          </AnamnesisSection>
-
-          {/* ── Avaliação facial ── */}
-          {!publicMode && (
-            <AnamnesisSection
-              value="facialEvaluation"
-              title="Avaliação facial"
-              isComplete={isFacialEvalComplete}
-            >
-              <div className="space-y-2">
-                <Controller
-                  control={control}
-                  name="facialEvaluationNotes"
-                  render={({ field }) => (
-                    <Textarea
-                      placeholder="Observações da avaliação facial..."
-                      rows={4}
-                      className="min-h-[100px] resize-none border-sage/20 focus:border-sage/40"
-                      {...field}
-                    />
-                  )}
-                />
-                <p className="text-xs text-mid/60">
-                  Fotos podem ser adicionadas na aba de Fotos do paciente.
-                </p>
-              </div>
-            </AnamnesisSection>
-          )}
         </Accordion>
 
         {/* ── Footer: save button + last saved info ── */}
