@@ -214,36 +214,3 @@ function VerificationBanner({ valid, details }: { valid: boolean; details: strin
     </div>
   )
 }
-
-function EvidenceDetails({ contentHash, evidenceHash, signedAt, timestampToken }: {
-  contentHash: string
-  evidenceHash: string
-  signedAt: string
-  timestampToken?: string
-}) {
-  return (
-    <div className="rounded-lg border border-[#E8ECEF] bg-white p-6 space-y-3">
-      <h3 className="text-sm font-medium text-charcoal uppercase tracking-wider">Cadeia de evidência criptográfica</h3>
-      <div className="space-y-2 text-xs">
-        <div>
-          <span className="text-mid">Hash do conteúdo</span>
-          <p className="font-mono text-charcoal break-all">{contentHash}</p>
-        </div>
-        <div>
-          <span className="text-mid">Hash da evidência</span>
-          <p className="font-mono text-charcoal break-all">{evidenceHash}</p>
-        </div>
-        <div>
-          <span className="text-mid">Assinado em</span>
-          <p className="font-mono text-charcoal">{signedAt}</p>
-        </div>
-        {timestampToken && (
-          <div>
-            <span className="text-mid">Carimbo de tempo (TSA)</span>
-            <p className="font-mono text-charcoal break-all text-[10px]">{timestampToken.slice(0, 64)}…</p>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}

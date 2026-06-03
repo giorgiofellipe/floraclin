@@ -10,7 +10,7 @@ import { PrintDocument } from '@/components/clinical-documents/print-document'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
 import { uploadPdfBuffer } from '@/lib/storage'
 import { sendOrEnqueueDocument } from '@/lib/whatsapp'
-import { normalizeBrPhone } from '@/lib/phone'
+import { toWhatsAppPhone } from '@/lib/phone'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -70,8 +70,7 @@ export async function POST(
     // 3. Send via WhatsApp
     // Use a sanitized filename so the patient sees a clean ".pdf" attachment
     // name in WhatsApp instead of the raw storage path.
-    const phone = normalizeBrPhone(doc.patient.phone)
-    const whatsappPhone = phone.startsWith('55') ? phone : `55${phone}`
+    const whatsappPhone = toWhatsAppPhone(doc.patient.phone)
     const firstName = doc.patient.fullName.split(' ')[0]
     const whatsappFilename = `${slugifyForFile(doc.title)}.pdf`
     const sendResult = await sendOrEnqueueDocument(

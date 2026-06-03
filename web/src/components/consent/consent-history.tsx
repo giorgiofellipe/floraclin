@@ -33,12 +33,6 @@ interface ConsentHistoryProps {
   patientHasPhone?: boolean
 }
 
-interface ProfessionalSnapshot {
-  name: string
-  registryLine: string
-  signatureDataUrl: string
-}
-
 interface HistoryItem {
   id: string
   templateTitle: string
@@ -221,33 +215,6 @@ function ConsentHistoryItem({ item, patientName, patientCpf, patientHasPhone }: 
           </DialogContent>
         </Dialog>
       </div>
-    </div>
-  )
-}
-
-function SignaturesBlock({ signatureData, professionalSnapshot }: { signatureData: string | null; professionalSnapshot: unknown }) {
-  const prof = professionalSnapshot as ProfessionalSnapshot | null
-  if (!signatureData && !prof) return null
-
-  return (
-    <div className="flex justify-around gap-6 py-4">
-      {signatureData && (
-        <div className="flex flex-col items-center">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={signatureData} alt="Assinatura do paciente" className="h-20 max-w-[200px] object-contain" />
-          <div className="mt-1 w-[200px] border-t border-black" />
-          <div className="mt-1 text-xs text-mid">Paciente</div>
-        </div>
-      )}
-      {prof && (
-        <div className="flex flex-col items-center">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={prof.signatureDataUrl} alt={`Assinatura de ${prof.name}`} className="h-20 max-w-[200px] object-contain" />
-          <div className="mt-1 w-[200px] border-t border-black" />
-          <div className="mt-1 text-xs font-medium">{prof.name}</div>
-          <div className="text-[10px] text-mid">{prof.registryLine}</div>
-        </div>
-      )}
     </div>
   )
 }

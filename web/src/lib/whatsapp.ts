@@ -156,14 +156,13 @@ export async function sendOrEnqueueDocument(
     return { sent: true, metaMessageId: result.metaMessageId }
   }
 
-  // No conversation exists yet — can't queue, send template + document directly
+  // No conversation exists yet — send template only, document must wait for patient reply
   if (!conversation) {
     const resumeTemplate = await getTemplateByPurpose(tenantId, 'resume_conversation')
     if (resumeTemplate?.status === 'APPROVED') {
       await sendTemplateMessage(tenantId, to, resumeTemplate.name, resumeTemplate.language, { '1': patientFirstName })
     }
-    const directResult = await sendMediaMessage(tenantId, to, 'document', mediaUrl, caption, filename)
-    return { sent: true, metaMessageId: directResult.metaMessageId }
+    return { queued: true }
   }
 
   // Window closed — check queue

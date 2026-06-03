@@ -8,7 +8,7 @@ import { db } from '@/db/client'
 import { users, tenants, tenantUsers } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
-import { createSelfSignupTenant } from '@/db/queries/admin-tenants'
+import { createSelfSignupTenant, generateSlug } from '@/db/queries/admin-tenants'
 import { sendNewSignupNotification } from '@/lib/email'
 import { withTransaction } from '@/lib/tenant'
 
@@ -48,44 +48,42 @@ export async function signUp(
   const userId = crypto.randomUUID()
   const passwordHash = await bcrypt.hash(password, 10)
 
-  await withTransaction(async (tx) => {
-    await tx.insert(users).values({ id: userId, fullName, email, passwordHash })
+  try {
+    await withTransaction(async (tx) => {
+      await tx.insert(users).values({ id: userId, fullName, email, passwordHash })
 
-    let baseSlug = clinicName
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[̀-ͯ]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9-]/g, '')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-    if (!baseSlug) baseSlug = 'clinica'
+      const baseSlug = generateSlug(clinicName)
+      let slug = baseSlug
+      let attempt = 0
+      for (;;) {
+        const [dup] = await tx
+          .select({ id: tenants.id })
+          .from(tenants)
+          .where(eq(tenants.slug, slug))
+          .limit(1)
+        if (!dup) break
+        attempt++
+        slug = `${baseSlug}-${attempt}`
+      }
 
-    let slug = baseSlug
-    let attempt = 0
-    for (;;) {
-      const [dup] = await tx
-        .select({ id: tenants.id })
-        .from(tenants)
-        .where(eq(tenants.slug, slug))
-        .limit(1)
-      if (!dup) break
-      attempt++
-      slug = `${baseSlug}-${attempt}`
-    }
+      const [tenant] = await tx
+        .insert(tenants)
+        .values({ name: clinicName, slug, status: 'pending_approval', phone })
+        .returning()
 
-    const [tenant] = await tx
-      .insert(tenants)
-      .values({ name: clinicName, slug, status: 'pending_approval', phone })
-      .returning()
-
-    await tx.insert(tenantUsers).values({
-      tenantId: tenant.id,
-      userId,
-      role: 'owner',
-      isActive: true,
+      await tx.insert(tenantUsers).values({
+        tenantId: tenant.id,
+        userId,
+        role: 'owner',
+        isActive: true,
+      })
     })
-  })
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('unique')) {
+      return { error: { email: ['Este e-mail já está cadastrado'] } }
+    }
+    throw err
+  }
 
   const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL
   if (adminEmail) {

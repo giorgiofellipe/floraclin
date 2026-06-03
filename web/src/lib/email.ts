@@ -153,7 +153,7 @@ export async function sendNewSignupNotification(opts: {
   await getResend().emails.send({
     from: FROM,
     to: opts.adminEmail,
-    subject: `Nova clínica aguardando aprovação — ${safeName}`,
+    subject: `Nova clínica aguardando aprovação — ${opts.clinicName}`,
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
         <h2 style="color: #1C2B1E; margin-bottom: 24px;">FloraClin — Nova Solicitação</h2>

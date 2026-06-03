@@ -259,12 +259,8 @@ export async function getTenantDetail(
 
 // ─── Self-signup & approval ────────────────────────────────────────
 
-export async function createSelfSignupTenant(data: {
-  userId: string
-  clinicName: string
-  phone: string
-}) {
-  let baseSlug = data.clinicName
+export function generateSlug(name: string): string {
+  const slug = name
     .toLowerCase()
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
@@ -272,8 +268,15 @@ export async function createSelfSignupTenant(data: {
     .replace(/[^a-z0-9-]/g, '')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
+  return slug || 'clinica'
+}
 
-  if (!baseSlug) baseSlug = 'clinica'
+export async function createSelfSignupTenant(data: {
+  userId: string
+  clinicName: string
+  phone: string
+}) {
+  const baseSlug = generateSlug(data.clinicName)
 
   return withTransaction(async (tx) => {
     let slug = baseSlug
@@ -336,7 +339,6 @@ export async function listTenantsByStatus(status?: string) {
     .innerJoin(users, eq(users.id, tenantUsers.userId))
     .where(and(...conditions))
     .orderBy(desc(tenants.createdAt))
-    .groupBy(tenants.id, users.fullName, users.email)
 }
 
 export async function approveTenant(tenantId: string) {

@@ -13,6 +13,11 @@ export function normalizeBrPhone(phone: string): string {
   return digits
 }
 
+export function toWhatsAppPhone(phone: string): string {
+  const normalized = normalizeBrPhone(phone)
+  return normalized.startsWith('55') ? normalized : `55${normalized}`
+}
+
 export function formatBrPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '')
   const local = digits.startsWith('55') ? digits.slice(2) : digits

@@ -91,12 +91,9 @@ export async function getRecentlyUsedSigningToken(token: string) {
     .where(eq(consentSigningTokens.token, token))
     .limit(1)
 
-  if (!row) return null
+  if (!row || !row.usedAt) return null
 
-  const deadline = row.usedAt
-    ? new Date(row.usedAt.getTime() + 60 * 60 * 1000)
-    : new Date(row.expiresAt.getTime() + 60 * 60 * 1000)
-
+  const deadline = new Date(row.usedAt.getTime() + 60 * 60 * 1000)
   if (new Date() > deadline) return null
 
   return row

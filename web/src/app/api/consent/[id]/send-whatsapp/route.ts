@@ -10,7 +10,7 @@ import { auth } from '@/lib/auth-config'
 import { db } from '@/db/client'
 import { consentAcceptances, tenantUsers } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
-import { normalizeBrPhone } from '@/lib/phone'
+import { toWhatsAppPhone } from '@/lib/phone'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -83,8 +83,7 @@ export async function POST(
       visibility: 'signed',
     })
 
-    const phone = normalizeBrPhone(acceptance.patientPhone)
-    const whatsappPhone = phone.startsWith('55') ? phone : `55${phone}`
+    const whatsappPhone = toWhatsAppPhone(acceptance.patientPhone)
     const firstName = acceptance.patientName.split(' ')[0]
     const whatsappFilename = `${slugifyForFile(acceptance.templateTitle)}.pdf`
     await sendOrEnqueueDocument(
