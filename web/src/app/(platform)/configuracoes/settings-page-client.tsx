@@ -1,7 +1,7 @@
 'use client'
 
 import type { Role } from '@/types'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { ClinicSettingsForm } from '@/components/settings/clinic-settings-form'
 import { ProcedureTypeList } from '@/components/settings/procedure-type-list'
@@ -245,7 +245,11 @@ export function SettingsPageClient({
   const visibleKeys = new Set(visibleTabs.map((t) => t.key))
   const defaultTab = userRole === 'owner' ? DEFAULT_OWNER_TAB : DEFAULT_NON_OWNER_TAB
 
+  const urlTab = searchParams.get('tab') as TabKey
+  const resolvedUrlTab = urlTab && VALID_TAB_KEYS.has(urlTab) && visibleKeys.has(urlTab) ? urlTab : null
+
   const [activeTab, setActiveTabState] = useState<TabKey>(() => {
+    if (resolvedUrlTab) return resolvedUrlTab
     const candidate = initialTab as TabKey
     if (candidate && VALID_TAB_KEYS.has(candidate) && visibleKeys.has(candidate)) {
       return candidate
@@ -253,12 +257,7 @@ export function SettingsPageClient({
     return defaultTab
   })
 
-  useEffect(() => {
-    const candidate = searchParams.get('tab') as TabKey
-    if (candidate && VALID_TAB_KEYS.has(candidate) && visibleKeys.has(candidate)) {
-      setActiveTabState(candidate)
-    }
-  }, [searchParams, visibleKeys])
+  const effectiveTab = resolvedUrlTab ?? activeTab
 
   const setActiveTab = useCallback((newTab: TabKey) => {
     setActiveTabState(newTab)
@@ -275,7 +274,7 @@ export function SettingsPageClient({
   const { data: calendarConnections } = useCalendarConnections()
   const clinicConnection = calendarConnections?.find((c: { userId: string | null }) => c.userId === null) ?? null
 
-  const activeTabConfig = visibleTabs.find((t) => t.key === activeTab) ?? visibleTabs[0]
+  const activeTabConfig = visibleTabs.find((t) => t.key === effectiveTab) ?? visibleTabs[0]
 
   const visibleGroups = SIDEBAR_GROUPS.map((group) => ({
     label: group.label,
@@ -296,7 +295,7 @@ export function SettingsPageClient({
         <div className="flex gap-1 min-w-max bg-[#E8ECEF] rounded-[3px] p-1">
           {visibleTabs.map((tab) => {
             const Icon = tab.icon
-            const isActive = activeTab === tab.key
+            const isActive = effectiveTab === tab.key
             return (
               <button
                 key={tab.key}
@@ -329,7 +328,7 @@ export function SettingsPageClient({
                 </div>
                 {group.items.map((tab) => {
                   const Icon = tab.icon
-                  const isActive = activeTab === tab.key
+                  const isActive = effectiveTab === tab.key
                   return (
                     <button
                       key={tab.key}
@@ -367,7 +366,7 @@ export function SettingsPageClient({
 
             {/* Section content */}
             <div className="p-5 sm:p-6">
-              {activeTab === 'clinica' && (
+              {effectiveTab === 'clinica' && (
                 <ClinicSettingsForm
                   initialData={{
                     name: tenant.name,
@@ -381,25 +380,25 @@ export function SettingsPageClient({
                 />
               )}
 
-              {activeTab === 'procedimentos' && (
+              {effectiveTab === 'procedimentos' && (
                 <ProcedureTypeList procedureTypes={procedureTypes} templateStatusMap={templateStatusMap} />
               )}
 
-              {activeTab === 'produtos' && (
+              {effectiveTab === 'produtos' && (
                 <ProductList products={products} />
               )}
 
-              {activeTab === 'equipe' && (
+              {effectiveTab === 'equipe' && (
                 <TeamList members={members} currentUserId={currentUserId} />
               )}
 
-              {activeTab === 'termos' && (
+              {effectiveTab === 'termos' && (
                 <ConsentTemplateList templates={consentTemplates} />
               )}
 
-              {activeTab === 'pacotes' && <PacotesTabContent />}
+              {effectiveTab === 'pacotes' && <PacotesTabContent />}
 
-              {activeTab === 'documentos' && (
+              {effectiveTab === 'documentos' && (
                 <Tabs defaultValue="atestado" className="space-y-4">
                   <TabsList>
                     <TabsTrigger value="atestado">Atestados</TabsTrigger>
@@ -414,7 +413,7 @@ export function SettingsPageClient({
                 </Tabs>
               )}
 
-              {activeTab === 'agendamento' && (
+              {effectiveTab === 'agendamento' && (
                 <div className="space-y-8">
                   <BookingSettings
                     slug={tenant.slug}
@@ -437,24 +436,24 @@ export function SettingsPageClient({
                 </div>
               )}
 
-              {activeTab === 'financeiro' && (
+              {effectiveTab === 'financeiro' && (
                 <div className="space-y-8">
                   <FinancialSettingsForm />
                   <ExpenseCategoriesManager />
                 </div>
               )}
 
-              {activeTab === 'whatsapp' && (
+              {effectiveTab === 'whatsapp' && (
                 <WhatsAppSettingsForm
                   initialSettings={settings as Record<string, unknown>}
                 />
               )}
 
-              {activeTab === 'auditoria' && (
+              {effectiveTab === 'auditoria' && (
                 <AuditLogViewer />
               )}
 
-              {activeTab === 'perfil' && <PerfilTabContent userRole={userRole} />}
+              {effectiveTab === 'perfil' && <PerfilTabContent userRole={userRole} />}
             </div>
           </div>
         </div>

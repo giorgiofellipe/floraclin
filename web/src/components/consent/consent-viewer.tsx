@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -66,14 +66,17 @@ export function ConsentViewer({
   const acceptConsent = useAcceptConsent()
   const isSubmitting = acceptConsent.isPending
 
-  const displayContent = template.type === 'service_contract' && contractContext
-    ? interpolateContract(template.content, buildContractData(
+  const displayContent = useMemo(() => {
+    if (template.type === 'service_contract' && contractContext) {
+      return interpolateContract(template.content, buildContractData(
         [], [], { totalAmount: 0, installmentCount: 1 },
         { fullName: contractContext.patientName || '', cpf: contractContext.patientCpf },
         contractContext.practitionerName || '',
         contractContext.clinicName || '',
       ))
-    : template.content
+    }
+    return template.content
+  }, [template.type, template.content, contractContext])
 
   const canSubmit = checked && (!requireSignature || !!signatureData)
 
