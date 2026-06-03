@@ -382,7 +382,14 @@ export function PatientDetailContent({
             />
           )}
           {tab === 'fotos' && <PatientPhotosTab patientId={patient.id} />}
-          {tab === 'termos' && <PatientConsentTab patientId={patient.id} />}
+          {tab === 'termos' && (
+            <PatientConsentTab
+              patientId={patient.id}
+              patientName={patient.fullName}
+              patientCpf={patient.cpf}
+              patientHasPhone={!!patient.phone}
+            />
+          )}
           {tab === 'financeiro' && (
             <PatientFinancialTab
               patientId={patient.id}

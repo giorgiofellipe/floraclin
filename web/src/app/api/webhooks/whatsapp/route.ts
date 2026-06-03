@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/db/client'
 import { tenants, procedureTypes, whatsappMessages } from '@/db/schema'
 import { eq, and, sql } from 'drizzle-orm'
-import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage, sendTemplateMessage, normalizeBrPhone } from '@/lib/whatsapp'
+import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage, sendTemplateMessage, sendMediaMessage, normalizeBrPhone } from '@/lib/whatsapp'
 import {
   upsertConversation,
   createMessage,
@@ -372,18 +372,25 @@ async function drainQueuedMessages(
 
   for (const qm of queued) {
     try {
-      if (!qm.body) {
+      if (!qm.body && !qm.mediaUrl) {
         await updateQueuedMessageStatus(tenantId, qm.id, 'expired')
         drainedQueueIds.push(qm.id)
         continue
       }
 
-      const result = await sendTextMessage(tenantId, phoneNumber, qm.body)
+      let result: { metaMessageId: string }
+      if (qm.mediaUrl && qm.mediaType) {
+        result = await sendMediaMessage(tenantId, phoneNumber, qm.mediaType as 'document', qm.mediaUrl, qm.body ?? undefined)
+      } else {
+        result = await sendTextMessage(tenantId, phoneNumber, qm.body!)
+      }
 
       const sentMessage = await createMessage(tenantId, conversationId, {
         direction: 'outbound',
         metaMessageId: result.metaMessageId,
         body: qm.body,
+        mediaType: qm.mediaType,
+        mediaUrl: qm.mediaUrl,
         deliveryStatus: 'sent',
       })
 

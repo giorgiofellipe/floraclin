@@ -33,6 +33,9 @@ export async function POST(request: Request) {
 
     const templates = await getTemplatesForToken(tokenData.tenantId, tokenData.consentTemplateIds as string[])
     const templateMap = new Map(templates.map((t) => [t.id, t]))
+    const renderedContents = (tokenData.renderedContents ?? {}) as Record<string, string>
+
+    const acceptanceIds: string[] = []
 
     await withTransaction(async (tx) => {
       const used = await markSigningTokenUsed(parsed.data.token, tx)
@@ -54,14 +57,18 @@ export async function POST(request: Request) {
             signatureData: sig.signatureData,
           },
           {
+            practitionerId: tokenData.createdBy,
             ipAddress,
             userAgent,
             signerCpf,
+            renderedContent: renderedContents[sig.consentTemplateId] || undefined,
             deviceFingerprint: sig.deviceFingerprint,
             geolocation: sig.geolocation,
           },
           tx,
         )
+
+        acceptanceIds.push(acceptance.id)
 
         await createAuditLog({
           tenantId: tokenData.tenantId,
@@ -80,7 +87,7 @@ export async function POST(request: Request) {
       }
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, acceptanceIds, signedAt: new Date().toISOString() })
   } catch (error) {
     if (error instanceof Error && error.message === 'TOKEN_ALREADY_USED') {
       return NextResponse.json({ error: 'Link expirado ou já utilizado' }, { status: 410 })

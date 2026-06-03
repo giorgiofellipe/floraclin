@@ -10,6 +10,7 @@ import { SignaturePad } from './signature-pad'
 import { useAcceptConsent } from '@/hooks/mutations/use-consent-mutations'
 import { CONSENT_TYPE_LABELS } from '@/lib/constants'
 import { collectDeviceFingerprint, type DeviceFingerprint, type Geolocation } from '@/lib/signature-evidence'
+import { interpolateContract, buildContractData } from '@/lib/contract-interpolation'
 
 interface ConsentTemplate {
   id: string
@@ -19,12 +20,20 @@ interface ConsentTemplate {
   version: number
 }
 
+interface ContractContext {
+  patientName: string
+  patientCpf?: string | null
+  clinicName: string
+  practitionerName: string
+}
+
 interface ConsentViewerProps {
   template: ConsentTemplate
   patientId: string
   patientCpf?: string | null
   procedureRecordId?: string
   requireSignature?: boolean
+  contractContext?: ContractContext
   onAccepted?: () => void
 }
 
@@ -34,6 +43,7 @@ export function ConsentViewer({
   patientCpf,
   procedureRecordId,
   requireSignature = false,
+  contractContext,
   onAccepted,
 }: ConsentViewerProps) {
   const [checked, setChecked] = useState(false)
@@ -56,6 +66,15 @@ export function ConsentViewer({
   const acceptConsent = useAcceptConsent()
   const isSubmitting = acceptConsent.isPending
 
+  const displayContent = template.type === 'service_contract' && contractContext
+    ? interpolateContract(template.content, buildContractData(
+        [], [], { totalAmount: 0, installmentCount: 1 },
+        { fullName: contractContext.patientName || '', cpf: contractContext.patientCpf },
+        contractContext.practitionerName || '',
+        contractContext.clinicName || '',
+      ))
+    : template.content
+
   const canSubmit = checked && (!requireSignature || !!signatureData)
 
   const handleSubmit = useCallback(async () => {
@@ -73,6 +92,9 @@ export function ConsentViewer({
         signerCpf: patientCpf ?? undefined,
         deviceFingerprint,
         geolocation,
+        ...(template.type === 'service_contract' && displayContent !== template.content
+          ? { renderedContent: displayContent }
+          : {}),
       })
       setAccepted(true)
       onAccepted?.()
@@ -118,7 +140,7 @@ export function ConsentViewer({
         {/* Scrollable consent text */}
         <ScrollArea className="h-[65vh] rounded-[3px] border border-[#E8ECEF] bg-white p-5">
           <div className="whitespace-pre-wrap text-sm leading-relaxed text-charcoal">
-            {template.content}
+            {displayContent}
           </div>
         </ScrollArea>
 

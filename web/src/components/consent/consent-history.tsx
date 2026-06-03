@@ -3,7 +3,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Dialog,
   DialogContent,
@@ -11,10 +10,15 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { SignaturePad } from './signature-pad'
 import { useConsentHistory } from '@/hooks/queries/use-consent'
 import { formatDateTime } from '@/lib/utils'
 import { CONSENT_TYPE_LABELS } from '@/lib/constants'
+import { Download, MessageCircle, Printer, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { useState, useMemo } from 'react'
+import { useTenant } from '@/hooks/queries/use-tenant'
+import { useProfile } from '@/hooks/queries/use-profile'
+import { PrintConsent } from './print-consent'
 
 const METHOD_LABELS: Record<string, string> = {
   checkbox: 'Checkbox',
@@ -24,6 +28,15 @@ const METHOD_LABELS: Record<string, string> = {
 
 interface ConsentHistoryProps {
   patientId: string
+  patientName?: string
+  patientCpf?: string | null
+  patientHasPhone?: boolean
+}
+
+interface ProfessionalSnapshot {
+  name: string
+  registryLine: string
+  signatureDataUrl: string
 }
 
 interface HistoryItem {
@@ -37,9 +50,11 @@ interface HistoryItem {
   contentSnapshot: string
   contentHash: string
   verificationCode: string | null
+  signatureEvidence: unknown
+  professionalSnapshot: unknown
 }
 
-export function ConsentHistory({ patientId }: ConsentHistoryProps) {
+export function ConsentHistory({ patientId, patientName, patientCpf, patientHasPhone = false }: ConsentHistoryProps) {
   const { data: rawHistory, isLoading } = useConsentHistory(patientId)
   const history = (rawHistory ?? []) as HistoryItem[]
 
@@ -74,7 +89,7 @@ export function ConsentHistory({ patientId }: ConsentHistoryProps) {
       <CardContent>
         <div className="space-y-3">
           {history.map((item) => (
-            <ConsentHistoryItem key={item.id} item={item} />
+            <ConsentHistoryItem key={item.id} item={item} patientName={patientName} patientCpf={patientCpf} patientHasPhone={patientHasPhone} />
           ))}
         </div>
       </CardContent>
@@ -82,7 +97,50 @@ export function ConsentHistory({ patientId }: ConsentHistoryProps) {
   )
 }
 
-function ConsentHistoryItem({ item }: { item: HistoryItem }) {
+function ConsentHistoryItem({ item, patientName, patientCpf, patientHasPhone }: { item: HistoryItem; patientName?: string; patientCpf?: string | null; patientHasPhone: boolean }) {
+  const [sendingWhatsapp, setSendingWhatsapp] = useState(false)
+  const { data: tenant } = useTenant()
+  const { data: profileResp } = useProfile()
+
+  const displayContent = useMemo(() => {
+    if (!item.contentSnapshot.includes('{{')) return item.contentSnapshot
+    let text = item.contentSnapshot
+    if (patientName) text = text.replace(/\{\{nome_paciente\}\}/g, patientName)
+    if (patientCpf) text = text.replace(/\{\{cpf_paciente\}\}/g, patientCpf)
+    if (tenant?.name) text = text.replace(/\{\{clinica\}\}/g, tenant.name as string)
+    if (profileResp?.data?.fullName) text = text.replace(/\{\{profissional\}\}/g, profileResp.data.fullName)
+    return text
+  }, [item.contentSnapshot, patientName, patientCpf, tenant, profileResp])
+
+  function handlePrint() {
+    window.open(`/termos/${item.id}/imprimir`, '_blank', 'noopener')
+  }
+
+  function handleDownload() {
+    const a = document.createElement('a')
+    a.href = `/api/consent/${item.id}/pdf`
+    a.target = '_blank'
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }
+
+  async function handleSendWhatsapp() {
+    setSendingWhatsapp(true)
+    try {
+      const res = await fetch(`/api/consent/${item.id}/send-whatsapp`, { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Falha ao enviar')
+      }
+      toast.success('Termo enviado via WhatsApp')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Falha ao enviar via WhatsApp')
+    } finally {
+      setSendingWhatsapp(false)
+    }
+  }
   return (
     <div className="flex items-center justify-between gap-3 rounded-[3px] bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
       <div className="min-w-0 flex-1 space-y-1.5">
@@ -102,73 +160,94 @@ function ConsentHistoryItem({ item }: { item: HistoryItem }) {
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
-        {/* View signature */}
-        {item.signatureData && (
-          <Dialog>
-            <DialogTrigger render={<Button variant="outline" size="sm" />}>
-              Ver assinatura
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Assinatura</DialogTitle>
-              </DialogHeader>
-              <SignaturePad
-                onSignatureChange={() => {}}
-                initialData={item.signatureData}
-                disabled
-              />
-              <p className="text-xs text-mid">
-                Aceito em {formatDateTime(item.acceptedAt)}
-              </p>
-            </DialogContent>
-          </Dialog>
-        )}
-
-        {/* View content snapshot */}
         <Dialog>
           <DialogTrigger render={<Button variant="ghost" size="sm" />}>
             Ver termo
           </DialogTrigger>
-          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{item.templateTitle}</DialogTitle>
             </DialogHeader>
-            <ScrollArea className="max-h-96 rounded-[3px] border border-[#E8ECEF] bg-white p-5">
-              <div className="whitespace-pre-wrap text-sm leading-relaxed text-charcoal">
-                {item.contentSnapshot}
-              </div>
-            </ScrollArea>
 
-            {item.signatureData && (
-              <div className="flex flex-col items-center py-4">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={item.signatureData} alt="Assinatura" className="h-20 max-w-[240px] object-contain" />
-                <div className="mt-1 w-[240px] border-t border-black" />
-              </div>
-            )}
+            <div className="rounded-[3px] border border-[#E8ECEF] bg-[#F4F6F8] p-3">
+              <PrintConsent
+                acceptance={{
+                  contentSnapshot: displayContent,
+                  contentHash: item.contentHash,
+                  signatureData: item.signatureData,
+                  signatureEvidence: item.signatureEvidence,
+                  professionalSnapshot: item.professionalSnapshot,
+                  verificationCode: item.verificationCode,
+                  acceptedAt: new Date(item.acceptedAt),
+                  acceptanceMethod: item.acceptanceMethod,
+                  templateTitle: item.templateTitle,
+                  templateType: item.templateType,
+                  templateVersion: item.templateVersion,
+                  patientName: patientName ?? '',
+                  patientCpf: patientCpf ?? null,
+                  tenantName: (tenant?.name as string) ?? '',
+                  tenantPhone: (tenant?.phone as string) ?? null,
+                  tenantEmail: (tenant?.email as string) ?? null,
+                  tenantLogoUrl: (tenant?.logoUrl as string) ?? null,
+                  tenantAddress: (tenant?.address ?? null) as Record<string, unknown> | null,
+                }}
+              />
+            </div>
 
-            <div className="border-t border-gray-200 pt-4">
-              <div className="text-[10px] text-gray-400 leading-relaxed space-y-0.5">
-                <div>Documento assinado eletronicamente via FloraClin</div>
-                {item.verificationCode && (
-                  <div>Código de verificação: <span className="font-mono font-medium text-gray-500">{item.verificationCode}</span></div>
+            <div className="flex flex-wrap items-center gap-2 border-t border-[#E8ECEF] pt-4">
+              <Button type="button" variant="outline" size="sm" onClick={handlePrint}>
+                <Printer className="size-3.5" />
+                Imprimir
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={handleDownload}>
+                <Download className="size-3.5" />
+                Baixar PDF
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleSendWhatsapp}
+                disabled={sendingWhatsapp || !patientHasPhone}
+                title={!patientHasPhone ? 'Paciente sem telefone cadastrado' : undefined}
+              >
+                {sendingWhatsapp ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <MessageCircle className="size-3.5" />
                 )}
-                <div>Assinado em: {formatDateTime(item.acceptedAt)}</div>
-                <div>Método: {METHOD_LABELS[item.acceptanceMethod] ?? item.acceptanceMethod}</div>
-                <div className="font-mono text-[9px] text-gray-300">SHA-256: {item.contentHash}</div>
-                {item.verificationCode && (
-                  <div className="mt-1">
-                    Verifique a autenticidade:{' '}
-                    <a href={`https://app.floraclin.com.br/verify/${item.verificationCode}`} target="_blank" rel="noopener noreferrer" className="font-mono underline text-gray-500">
-                      app.floraclin.com.br/verify/{item.verificationCode}
-                    </a>
-                  </div>
-                )}
-              </div>
+                Enviar WhatsApp
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
       </div>
+    </div>
+  )
+}
+
+function SignaturesBlock({ signatureData, professionalSnapshot }: { signatureData: string | null; professionalSnapshot: unknown }) {
+  const prof = professionalSnapshot as ProfessionalSnapshot | null
+  if (!signatureData && !prof) return null
+
+  return (
+    <div className="flex justify-around gap-6 py-4">
+      {signatureData && (
+        <div className="flex flex-col items-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={signatureData} alt="Assinatura do paciente" className="h-20 max-w-[200px] object-contain" />
+          <div className="mt-1 w-[200px] border-t border-black" />
+          <div className="mt-1 text-xs text-mid">Paciente</div>
+        </div>
+      )}
+      {prof && (
+        <div className="flex flex-col items-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={prof.signatureDataUrl} alt={`Assinatura de ${prof.name}`} className="h-20 max-w-[200px] object-contain" />
+          <div className="mt-1 w-[200px] border-t border-black" />
+          <div className="mt-1 text-xs font-medium">{prof.name}</div>
+          <div className="text-[10px] text-mid">{prof.registryLine}</div>
+        </div>
+      )}
     </div>
   )
 }

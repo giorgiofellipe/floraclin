@@ -376,7 +376,7 @@ export function ServiceWizard({
         // Leaving step 2 for the first time → mint the encounter id that
         // will key the finalize POST at step 4 and the execution at step 5.
         if (state.currentStep === 2 && pending === 'advance' && !state.encounterId) {
-          setEncounterId(crypto.randomUUID())
+          setEncounterId(globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36))
         }
 
         // After step 3 creates/updates a procedure, fetch fresh data client-side
@@ -475,7 +475,7 @@ export function ServiceWizard({
     if (isFinalizing) return
     let encId = state.encounterId
     if (!encId) {
-      encId = crypto.randomUUID()
+      encId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36)
       setEncounterId(encId)
     }
     if (!localProcedure) {

@@ -18,6 +18,8 @@ import {
 import { ConsentHistory } from '@/components/consent/consent-history'
 import { ConsentViewer } from '@/components/consent/consent-viewer'
 import { useConsentTemplates } from '@/hooks/queries/use-consent'
+import { useTenant } from '@/hooks/queries/use-tenant'
+import { useProfile } from '@/hooks/queries/use-profile'
 
 interface ConsentTemplate {
   id: string
@@ -30,14 +32,21 @@ interface ConsentTemplate {
 
 interface PatientConsentTabProps {
   patientId: string
+  patientName?: string
+  patientCpf?: string | null
+  patientHasPhone?: boolean
 }
 
-export function PatientConsentTab({ patientId }: PatientConsentTabProps) {
+export function PatientConsentTab({ patientId, patientName, patientCpf, patientHasPhone = false }: PatientConsentTabProps) {
   const [showNewConsent, setShowNewConsent] = useState(false)
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [selectedTemplate, setSelectedTemplate] = useState<ConsentTemplate | null>(null)
 
   const { data: rawTemplates, isLoading: loadingTemplates } = useConsentTemplates()
+  const { data: tenant } = useTenant()
+  const { data: profileResp } = useProfile()
+  const clinicName = (tenant?.name as string) ?? ''
+  const practitionerName = profileResp?.data?.fullName ?? ''
   const templates = (rawTemplates
     ? (Object.values(rawTemplates).flat() as unknown as ConsentTemplate[]).filter((t) => t.isActive)
     : [])
@@ -86,7 +95,7 @@ export function PatientConsentTab({ patientId }: PatientConsentTabProps) {
         </Button>
       </div>
 
-      <ConsentHistory patientId={patientId} />
+      <ConsentHistory patientId={patientId} patientName={patientName} patientCpf={patientCpf} patientHasPhone={patientHasPhone} />
 
       <Dialog open={showNewConsent} onOpenChange={setShowNewConsent}>
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -125,7 +134,14 @@ export function PatientConsentTab({ patientId }: PatientConsentTabProps) {
                 <ConsentViewer
                   template={selectedTemplate}
                   patientId={patientId}
+                  patientCpf={patientCpf}
                   requireSignature
+                  contractContext={{
+                    patientName: patientName ?? '',
+                    patientCpf,
+                    clinicName,
+                    practitionerName,
+                  }}
                   onAccepted={handleAccepted}
                 />
               )}

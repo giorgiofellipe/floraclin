@@ -33,11 +33,13 @@ export default async function SignPage({ params }: { params: Promise<{ token: st
 
   const rendered = (tokenData.renderedContents ?? {}) as Record<string, string>
   const firstName = tokenData.patientName?.split(' ')[0] ?? 'Paciente'
+  const whatsappEnabled = !!tokenData.whatsappEnabled
 
   return (
     <RemoteConsentSigning
       token={token}
       firstName={firstName}
+      whatsappEnabled={whatsappEnabled}
       templates={templates.map((t) => ({
         id: t.id,
         type: t.type,

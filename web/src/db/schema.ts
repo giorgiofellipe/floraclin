@@ -360,6 +360,7 @@ export const consentAcceptances = floraclinSchema.table('consent_acceptances', {
   ipAddress: inet('ip_address'),
   userAgent: text('user_agent'),
   signatureEvidence: jsonb('signature_evidence'),
+  professionalSnapshot: jsonb('professional_snapshot'),
   verificationCode: varchar('verification_code', { length: 16 }).unique(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

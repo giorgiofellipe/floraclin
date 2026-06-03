@@ -108,7 +108,7 @@ export function PointFormModal({
     }
 
     onSave({
-      id: point.id ?? crypto.randomUUID(),
+      id: point.id ?? (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36)),
       x: point.x,
       y: point.y,
       viewType: point.viewType,

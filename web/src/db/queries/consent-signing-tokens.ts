@@ -1,6 +1,6 @@
 import crypto from 'node:crypto'
 import { db } from '@/db/client'
-import { consentSigningTokens, patients, consentTemplates } from '@/db/schema'
+import { consentSigningTokens, patients, consentTemplates, tenants } from '@/db/schema'
 import { eq, and, isNull, sql, inArray } from 'drizzle-orm'
 
 const SIGNING_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
@@ -46,9 +46,11 @@ export async function getValidSigningToken(token: string) {
       expiresAt: consentSigningTokens.expiresAt,
       createdBy: consentSigningTokens.createdBy,
       patientName: patients.fullName,
+      whatsappEnabled: sql<boolean>`coalesce((${tenants.settings}->>'whatsapp_enabled')::boolean, false)`.as('whatsapp_enabled'),
     })
     .from(consentSigningTokens)
     .innerJoin(patients, eq(patients.id, consentSigningTokens.patientId))
+    .innerJoin(tenants, eq(tenants.id, consentSigningTokens.tenantId))
     .where(
       and(
         eq(consentSigningTokens.token, token),
@@ -76,6 +78,28 @@ export async function markSigningTokenUsed(token: string, tx?: typeof db) {
     .returning()
 
   return row ?? null
+}
+
+export async function getRecentlyUsedSigningToken(token: string) {
+  const [row] = await db
+    .select({
+      tenantId: consentSigningTokens.tenantId,
+      usedAt: consentSigningTokens.usedAt,
+      expiresAt: consentSigningTokens.expiresAt,
+    })
+    .from(consentSigningTokens)
+    .where(eq(consentSigningTokens.token, token))
+    .limit(1)
+
+  if (!row) return null
+
+  const deadline = row.usedAt
+    ? new Date(row.usedAt.getTime() + 60 * 60 * 1000)
+    : new Date(row.expiresAt.getTime() + 60 * 60 * 1000)
+
+  if (new Date() > deadline) return null
+
+  return row
 }
 
 export async function getTemplatesForToken(tenantId: string, templateIds: string[]) {

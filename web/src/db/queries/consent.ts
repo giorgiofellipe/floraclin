@@ -1,10 +1,11 @@
 import { db } from '@/db/client'
-import { consentTemplates, consentAcceptances, patients, procedureRecords } from '@/db/schema'
+import { consentTemplates, consentAcceptances, patients, procedureRecords, tenants } from '@/db/schema'
 import { eq, and, desc } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import type { ConsentTemplateInput, ConsentAcceptanceInput } from '@/validations/consent'
 import { verifyTenantOwnership } from './helpers'
 import { sha256, buildEvidencePackage, type DeviceFingerprint, type Geolocation } from '@/lib/signature-evidence'
+import { getSignatureBlock } from '@/lib/professional'
 
 export async function listConsentTemplates(tenantId: string) {
   const templates = await db
@@ -125,6 +126,7 @@ export async function acceptConsent(
   tenantId: string,
   data: ConsentAcceptanceInput,
   meta: {
+    practitionerId?: string
     ipAddress?: string
     userAgent?: string
     renderedContent?: string
@@ -166,11 +168,11 @@ export async function acceptConsent(
   let signatureEvidence: unknown = null
   let verificationCode: string | null = null
 
-  if (data.signatureData && meta.signerCpf && meta.deviceFingerprint) {
+  if (data.signatureData && meta.deviceFingerprint) {
     const evidenceResult = await buildEvidencePackage({
       contentText: snapshotContent,
       signatureData: data.signatureData,
-      signerCpf: meta.signerCpf,
+      signerCpf: meta.signerCpf || '',
       ipAddress: meta.ipAddress ?? 'unknown',
       userAgent: meta.userAgent ?? 'unknown',
       deviceFingerprint: meta.deviceFingerprint,
@@ -178,6 +180,22 @@ export async function acceptConsent(
     })
     signatureEvidence = evidenceResult.evidence
     verificationCode = evidenceResult.verificationCode
+  } else if (data.signatureData) {
+    const nonce = crypto.randomUUID()
+    const hash = await sha256(`${snapshotContent}|${nonce}`)
+    verificationCode = `FLC-${hash.slice(0, 12).toUpperCase()}`
+  }
+
+  let professionalSnapshot: unknown = null
+  if (meta.practitionerId) {
+    const sig = await getSignatureBlock(meta.practitionerId)
+    if (sig) {
+      professionalSnapshot = {
+        name: sig.displayName,
+        registryLine: sig.registryLine,
+        signatureDataUrl: sig.signatureDataUrl,
+      }
+    }
   }
 
   const [acceptance] = await target
@@ -195,6 +213,7 @@ export async function acceptConsent(
       ipAddress: meta.ipAddress ?? null,
       userAgent: meta.userAgent ?? null,
       signatureEvidence,
+      professionalSnapshot,
       verificationCode,
     })
     .returning()
@@ -211,6 +230,8 @@ export async function getConsentHistory(tenantId: string, patientId: string) {
       contentHash: consentAcceptances.contentHash,
       contentSnapshot: consentAcceptances.contentSnapshot,
       verificationCode: consentAcceptances.verificationCode,
+      signatureEvidence: consentAcceptances.signatureEvidence,
+      professionalSnapshot: consentAcceptances.professionalSnapshot,
       acceptedAt: consentAcceptances.acceptedAt,
       procedureRecordId: consentAcceptances.procedureRecordId,
       templateTitle: consentTemplates.title,
@@ -281,17 +302,64 @@ export async function findByVerificationCode(code: string) {
     .select({
       id: consentAcceptances.id,
       contentSnapshot: consentAcceptances.contentSnapshot,
+      contentHash: consentAcceptances.contentHash,
       signatureData: consentAcceptances.signatureData,
       signatureEvidence: consentAcceptances.signatureEvidence,
+      professionalSnapshot: consentAcceptances.professionalSnapshot,
       verificationCode: consentAcceptances.verificationCode,
       acceptedAt: consentAcceptances.acceptedAt,
       acceptanceMethod: consentAcceptances.acceptanceMethod,
       templateTitle: consentTemplates.title,
       templateType: consentTemplates.type,
+      templateVersion: consentTemplates.version,
+      patientName: patients.fullName,
+      patientCpf: patients.cpf,
+      tenantName: tenants.name,
+      tenantPhone: tenants.phone,
+      tenantEmail: tenants.email,
+      tenantLogoUrl: tenants.logoUrl,
+      tenantAddress: tenants.address,
     })
     .from(consentAcceptances)
     .innerJoin(consentTemplates, eq(consentAcceptances.consentTemplateId, consentTemplates.id))
+    .innerJoin(patients, eq(patients.id, consentAcceptances.patientId))
+    .innerJoin(tenants, eq(tenants.id, consentAcceptances.tenantId))
     .where(eq(consentAcceptances.verificationCode, code))
+    .limit(1)
+
+  return row ?? null
+}
+
+export async function getConsentAcceptanceWithContext(tenantId: string, acceptanceId: string) {
+  const [row] = await db
+    .select({
+      id: consentAcceptances.id,
+      contentSnapshot: consentAcceptances.contentSnapshot,
+      contentHash: consentAcceptances.contentHash,
+      signatureData: consentAcceptances.signatureData,
+      signatureEvidence: consentAcceptances.signatureEvidence,
+      professionalSnapshot: consentAcceptances.professionalSnapshot,
+      verificationCode: consentAcceptances.verificationCode,
+      acceptedAt: consentAcceptances.acceptedAt,
+      acceptanceMethod: consentAcceptances.acceptanceMethod,
+      patientId: consentAcceptances.patientId,
+      templateTitle: consentTemplates.title,
+      templateType: consentTemplates.type,
+      templateVersion: consentTemplates.version,
+      patientName: patients.fullName,
+      patientCpf: patients.cpf,
+      patientPhone: patients.phone,
+      tenantName: tenants.name,
+      tenantPhone: tenants.phone,
+      tenantEmail: tenants.email,
+      tenantLogoUrl: tenants.logoUrl,
+      tenantAddress: tenants.address,
+    })
+    .from(consentAcceptances)
+    .innerJoin(consentTemplates, eq(consentAcceptances.consentTemplateId, consentTemplates.id))
+    .innerJoin(patients, eq(patients.id, consentAcceptances.patientId))
+    .innerJoin(tenants, eq(tenants.id, consentAcceptances.tenantId))
+    .where(and(eq(consentAcceptances.id, acceptanceId), eq(consentAcceptances.tenantId, tenantId)))
     .limit(1)
 
   return row ?? null

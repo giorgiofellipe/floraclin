@@ -9,7 +9,8 @@ import {
 import { PrintDocument } from '@/components/clinical-documents/print-document'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
 import { uploadPdfBuffer } from '@/lib/storage'
-import { sendMediaMessage } from '@/lib/whatsapp'
+import { sendOrEnqueueDocument } from '@/lib/whatsapp'
+import { normalizeBrPhone } from '@/lib/phone'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -69,20 +70,25 @@ export async function POST(
     // 3. Send via WhatsApp
     // Use a sanitized filename so the patient sees a clean ".pdf" attachment
     // name in WhatsApp instead of the raw storage path.
+    const phone = normalizeBrPhone(doc.patient.phone)
+    const whatsappPhone = phone.startsWith('55') ? phone : `55${phone}`
+    const firstName = doc.patient.fullName.split(' ')[0]
     const whatsappFilename = `${slugifyForFile(doc.title)}.pdf`
-    const sendResult = await sendMediaMessage(
+    const sendResult = await sendOrEnqueueDocument(
       ctx.tenantId,
-      doc.patient.phone,
-      'document',
+      whatsappPhone,
+      firstName,
       url,
       doc.title,
       whatsappFilename,
     )
 
-    // 4. Persist delivery status — only WhatsApp sends count as "delivered".
+    // 4. Persist delivery status
+    const deliveredVia = sendResult.sent ? 'whatsapp' : 'pending'
+    const messageId = sendResult.metaMessageId ?? null
     await updateDeliveryStatus(ctx.tenantId, id, {
-      deliveredVia: 'whatsapp',
-      whatsappMessageId: sendResult.metaMessageId ?? null,
+      deliveredVia,
+      whatsappMessageId: messageId,
       storagePath,
     })
 
@@ -95,17 +101,14 @@ export async function POST(
       changes: {
         delivery: {
           old: { deliveredVia: doc.deliveredVia },
-          new: {
-            deliveredVia: 'whatsapp',
-            whatsappMessageId: sendResult.metaMessageId ?? null,
-          },
+          new: { deliveredVia, whatsappMessageId: messageId },
         },
       },
     })
 
     return NextResponse.json({
       success: true,
-      data: { deliveredVia: 'whatsapp', whatsappMessageId: sendResult.metaMessageId ?? null },
+      data: { deliveredVia, whatsappMessageId: messageId, queued: !!sendResult.queued },
     })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''

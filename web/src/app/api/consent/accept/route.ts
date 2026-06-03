@@ -28,6 +28,7 @@ export async function POST(request: Request) {
 
     const acceptance = await withTransaction(async (tx) => {
       const result = await acceptConsent(ctx.tenantId, parsed.data, {
+        practitionerId: ctx.userId,
         ipAddress,
         userAgent,
         renderedContent: parsed.data.renderedContent,

@@ -118,6 +118,93 @@ export async function sendMediaMessage(
   return { metaMessageId: data.messages?.[0]?.id as string }
 }
 
+export async function sendOrEnqueueDocument(
+  tenantId: string,
+  to: string,
+  patientFirstName: string,
+  mediaUrl: string,
+  caption: string,
+  filename: string,
+) {
+  const {
+    getConversationByPhone,
+    getTemplateByPurpose,
+    getQueuedCount,
+    createQueuedMessage,
+    createMessage,
+  } = await import('@/db/queries/whatsapp')
+
+  const conversation = await getConversationByPhone(tenantId, to)
+
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+  const windowOpen = conversation?.lastInboundAt
+    ? conversation.lastInboundAt > twentyFourHoursAgo
+    : false
+
+  // Window open → send directly
+  if (windowOpen && conversation) {
+    const result = await sendMediaMessage(tenantId, to, 'document', mediaUrl, caption, filename)
+    await createMessage(tenantId, conversation.id, {
+      direction: 'outbound',
+      metaMessageId: result.metaMessageId,
+      body: caption,
+      mediaType: 'document',
+      mediaUrl,
+      mediaFilename: filename,
+      deliveryStatus: 'sent',
+    })
+    return { sent: true, metaMessageId: result.metaMessageId }
+  }
+
+  // No conversation exists yet — can't queue, send template + document directly
+  if (!conversation) {
+    const resumeTemplate = await getTemplateByPurpose(tenantId, 'resume_conversation')
+    if (resumeTemplate?.status === 'APPROVED') {
+      await sendTemplateMessage(tenantId, to, resumeTemplate.name, resumeTemplate.language, { '1': patientFirstName })
+    }
+    const directResult = await sendMediaMessage(tenantId, to, 'document', mediaUrl, caption, filename)
+    return { sent: true, metaMessageId: directResult.metaMessageId }
+  }
+
+  // Window closed — check queue
+  const queueCount = await getQueuedCount(tenantId, conversation.id)
+
+  if (queueCount === 0) {
+    // First message when window is closed → send resume template
+    const resumeTemplate = await getTemplateByPurpose(tenantId, 'resume_conversation')
+    let resumeMetaMessageId: string | null = null
+    if (resumeTemplate?.status === 'APPROVED') {
+      const resumeResult = await sendTemplateMessage(tenantId, to, resumeTemplate.name, resumeTemplate.language, { '1': patientFirstName })
+      resumeMetaMessageId = resumeResult.metaMessageId
+
+      await createMessage(tenantId, conversation.id, {
+        direction: 'outbound',
+        metaMessageId: resumeMetaMessageId,
+        body: resolveTemplateBody(resumeTemplate.components, { '1': patientFirstName }),
+        templateName: resumeTemplate.name,
+        deliveryStatus: 'sent',
+      })
+    }
+
+    // Enqueue the document
+    await createQueuedMessage(tenantId, conversation.id, {
+      body: caption,
+      mediaType: 'document',
+      mediaUrl,
+      resumeMetaMessageId,
+    })
+    return { queued: true }
+  }
+
+  // Queue already has messages → just enqueue
+  await createQueuedMessage(tenantId, conversation.id, {
+    body: caption,
+    mediaType: 'document',
+    mediaUrl,
+  })
+  return { queued: true }
+}
+
 export async function getTemplates(tenantId: string) {
   const creds = await getCredentials(tenantId)
   const data = await graphFetch(

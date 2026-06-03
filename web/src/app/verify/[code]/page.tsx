@@ -5,6 +5,7 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { ptBR } from 'date-fns/locale'
 import type { ProfessionalSnapshot } from '@/validations/clinical-document'
 import { DocumentPreview } from '@/components/clinical-documents/document-preview'
+import { PrintConsent } from '@/components/consent/print-consent'
 
 const VERIFICATION_CODE_PATTERN = /^FLC-[0-9A-F]{12}$/
 
@@ -88,40 +89,31 @@ async function ConsentVerificationInner({ acceptance }: { acceptance: NonNullabl
     <div className="space-y-6">
       <VerificationBanner valid={verification.valid} details={verification.details} />
 
-      <div className="rounded-lg border border-[#E8ECEF] bg-white p-6 space-y-3">
-        <h3 className="text-sm font-medium text-charcoal uppercase tracking-wider">Detalhes do documento</h3>
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div>
-            <span className="text-mid">Tipo</span>
-            <p className="font-medium text-charcoal">{CONSENT_TYPE_LABELS[acceptance.templateType] ?? acceptance.templateType}</p>
-          </div>
-          <div>
-            <span className="text-mid">Título</span>
-            <p className="font-medium text-charcoal">{acceptance.templateTitle}</p>
-          </div>
-          <div>
-            <span className="text-mid">Data da assinatura</span>
-            <p className="font-medium text-charcoal">{formatInTimeZone(acceptance.acceptedAt, 'America/Sao_Paulo', "d 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}</p>
-          </div>
-          <div>
-            <span className="text-mid">Método</span>
-            <p className="font-medium text-charcoal">{acceptance.acceptanceMethod === 'both' ? 'Checkbox + Assinatura' : acceptance.acceptanceMethod === 'signature' ? 'Assinatura' : 'Checkbox'}</p>
-          </div>
-          <div>
-            <span className="text-mid">Código</span>
-            <p className="font-medium text-charcoal font-mono">{acceptance.verificationCode}</p>
-          </div>
-        </div>
-      </div>
-
-      {evidence && (
-        <EvidenceDetails
-          contentHash={evidence.contentHash}
-          evidenceHash={evidence.evidenceHash}
-          signedAt={evidence.signedAt}
-          timestampToken={evidence.timestampToken}
+      <div className="rounded-lg border border-[#E8ECEF] bg-[#F4F6F8] p-4">
+        <h3 className="text-sm font-medium text-charcoal uppercase tracking-wider mb-3">Documento</h3>
+        <PrintConsent
+          acceptance={{
+            contentSnapshot: acceptance.contentSnapshot,
+            contentHash: acceptance.contentHash,
+            signatureData: acceptance.signatureData,
+            signatureEvidence: acceptance.signatureEvidence,
+            professionalSnapshot: acceptance.professionalSnapshot,
+            verificationCode: acceptance.verificationCode,
+            acceptedAt: acceptance.acceptedAt,
+            acceptanceMethod: acceptance.acceptanceMethod,
+            templateTitle: acceptance.templateTitle,
+            templateType: acceptance.templateType,
+            templateVersion: acceptance.templateVersion,
+            patientName: acceptance.patientName,
+            patientCpf: acceptance.patientCpf,
+            tenantName: acceptance.tenantName,
+            tenantPhone: acceptance.tenantPhone,
+            tenantEmail: acceptance.tenantEmail,
+            tenantLogoUrl: acceptance.tenantLogoUrl,
+            tenantAddress: (acceptance.tenantAddress ?? null) as Record<string, unknown> | null,
+          }}
         />
-      )}
+      </div>
     </div>
   )
 }
