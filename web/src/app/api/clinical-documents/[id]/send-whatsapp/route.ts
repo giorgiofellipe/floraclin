@@ -80,6 +80,7 @@ export async function POST(
       url,
       doc.title,
       whatsappFilename,
+      storagePath,
     )
 
     // 4. Persist delivery status

@@ -139,6 +139,7 @@ export async function sendOrEnqueueDocument(
   mediaUrl: string,
   caption: string,
   filename: string,
+  storagePath?: string,
 ) {
   const {
     getConversationByPhone,
@@ -163,7 +164,7 @@ export async function sendOrEnqueueDocument(
       metaMessageId: result.metaMessageId,
       body: caption,
       mediaType: 'document',
-      mediaUrl,
+      mediaUrl: storagePath ? `/api/whatsapp/media?path=${encodeURIComponent(storagePath)}` : mediaUrl,
       mediaFilename: filename,
       deliveryStatus: 'sent',
     })

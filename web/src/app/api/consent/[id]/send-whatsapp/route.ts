@@ -75,7 +75,7 @@ export async function POST(
     )
 
     const fileName = `termos/${id}-${slugifyForFile(acceptance.templateTitle)}.pdf`
-    const { url } = await uploadPdfBuffer({
+    const { url, path: storagePath } = await uploadPdfBuffer({
       tenantId,
       patientId: acceptance.patientId,
       fileName,
@@ -93,6 +93,7 @@ export async function POST(
       url,
       `${acceptance.templateTitle} — FloraClin`,
       whatsappFilename,
+      storagePath,
     )
 
     return NextResponse.json({ success: true })
