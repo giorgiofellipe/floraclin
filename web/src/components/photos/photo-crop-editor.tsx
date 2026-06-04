@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Crop, Loader2, RotateCcw, RotateCw, Save, Trash2, X } from 'lucide-react'
+import { Crop, Loader2, RotateCcw, RotateCw, Save, Trash2, X, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -79,6 +79,9 @@ export function PhotoCropEditor({
   const [saving, setSaving] = useState(false)
   const [dragState, setDragState] = useState<DragState | null>(null)
   const [statusText, setStatusText] = useState('')
+  const [manualLandmarkMode, setManualLandmarkMode] = useState(false)
+  const [manualClicks, setManualClicks] = useState<Array<{ x: number; y: number }>>([])
+  const noFaceDetected = !landmarks && !detecting && !!cropBox
 
   const containerRef = useRef<HTMLDivElement>(null)
   const imgRef = useRef<HTMLImageElement>(null)
@@ -447,9 +450,55 @@ export function PhotoCropEditor({
         {/* Image + crop area */}
         <div
           ref={containerRef}
-          className="relative flex flex-1 items-center justify-center overflow-hidden bg-neutral-100"
+          className={cn(
+            "relative flex flex-1 items-center justify-center overflow-hidden bg-neutral-100",
+            manualLandmarkMode && "cursor-crosshair",
+          )}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
+          onClick={(e) => {
+            if (!manualLandmarkMode || !imgRef.current || imgSize.w === 0) return
+            const imgRect = imgRef.current.getBoundingClientRect()
+            const nx = (e.clientX - imgRect.left) / imgRect.width
+            const ny = (e.clientY - imgRect.top) / imgRect.height
+            if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return
+
+            const clicks = [...manualClicks, { x: nx, y: ny }]
+            setManualClicks(clicks)
+
+            if (clicks.length >= 2) {
+              const [eye1, eye2] = clicks
+              const noseTip = { x: (eye1.x + eye2.x) / 2, y: (eye1.y + eye2.y) / 2 + Math.abs(eye2.x - eye1.x) * 0.6 }
+              const ipd = Math.sqrt((eye2.x - eye1.x) ** 2 + (eye2.y - eye1.y) ** 2)
+              const manualLandmarks: FaceDetectionResult['landmarks'] = {
+                leftEye: eye1.x < eye2.x ? eye1 : eye2,
+                rightEye: eye1.x < eye2.x ? eye2 : eye1,
+                noseTip,
+                interPupillaryDistance: ipd,
+              }
+              const bbPad = ipd * 1.5
+              const manualDetection: FaceDetectionResult = {
+                landmarks: manualLandmarks,
+                boundingBox: {
+                  x: Math.max(0, noseTip.x - bbPad),
+                  y: Math.max(0, Math.min(eye1.y, eye2.y) - bbPad * 0.8),
+                  width: Math.min(bbPad * 2, 1),
+                  height: Math.min(bbPad * 2.5, 1),
+                },
+                rotation: { yaw: 0, pitch: 0, roll: 0 },
+                gaze: { leftRatio: 0.5, rightRatio: 0.5 },
+              }
+              setLandmarks(manualLandmarks)
+              setDetectionRef(manualDetection)
+              const autoCrop = computeAutoCrop(manualDetection, aspect, imgRef.current ? { width: imgRef.current.naturalWidth, height: imgRef.current.naturalHeight } : undefined)
+              setCropBox(autoCrop)
+              setManualLandmarkMode(false)
+              setManualClicks([])
+              setStatusText('Olhos marcados — recorte ajustado')
+            } else {
+              setStatusText(`Primeiro olho marcado — clique no segundo olho`)
+            }
+          }}
         >
           {photo?.signedUrl ? (
             <>
@@ -609,6 +658,60 @@ export function PhotoCropEditor({
                 </>
               )}
 
+              {/* Manual landmark clicks */}
+              {manualLandmarkMode && manualClicks.map((pt, i) => (
+                <div
+                  key={i}
+                  className="pointer-events-none absolute size-3 rounded-full bg-amber-400 border-2 border-amber-600 shadow-md"
+                  style={{
+                    left: (imgRef.current?.offsetLeft ?? 0) + pt.x * imgSize.w - 6,
+                    top: (imgRef.current?.offsetTop ?? 0) + pt.y * imgSize.h - 6,
+                  }}
+                />
+              ))}
+
+              {/* Manual landmark mode instruction */}
+              {manualLandmarkMode && imgSize.w > 0 && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-10">
+                  <span className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5 shadow-md text-xs font-medium text-amber-800">
+                    {manualClicks.length === 0 ? 'Clique no olho visível' : 'Clique no 2° olho ou confirme abaixo'}
+                  </span>
+                  {manualClicks.length === 1 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const eye = manualClicks[0]
+                        const estimatedIpd = 0.06
+                        const manualLandmarks: FaceDetectionResult['landmarks'] = {
+                          leftEye: { x: eye.x - estimatedIpd / 2, y: eye.y },
+                          rightEye: { x: eye.x + estimatedIpd / 2, y: eye.y },
+                          noseTip: { x: eye.x, y: eye.y + estimatedIpd * 0.6 },
+                          interPupillaryDistance: estimatedIpd,
+                        }
+                        const bbPad = 0.15
+                        const manualDetection: FaceDetectionResult = {
+                          landmarks: manualLandmarks,
+                          boundingBox: { x: Math.max(0, eye.x - bbPad), y: Math.max(0, eye.y - bbPad * 0.8), width: Math.min(bbPad * 2, 1), height: Math.min(bbPad * 2.5, 1) },
+                          rotation: { yaw: 0, pitch: 0, roll: 0 },
+                          gaze: { leftRatio: 0.5, rightRatio: 0.5 },
+                        }
+                        setLandmarks(manualLandmarks)
+                        setDetectionRef(manualDetection)
+                        const autoCrop = computeAutoCrop(manualDetection, aspect, imgRef.current ? { width: imgRef.current.naturalWidth, height: imgRef.current.naturalHeight } : undefined)
+                        setCropBox(autoCrop)
+                        setManualLandmarkMode(false)
+                        setManualClicks([])
+                        setStatusText('Olho marcado — recorte ajustado')
+                      }}
+                      className="rounded-lg bg-amber-500 px-5 py-2 text-sm text-white font-semibold shadow-lg hover:bg-amber-600 transition-colors"
+                    >
+                      Confirmar
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Loading spinner */}
               {detecting && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/20">
@@ -643,6 +746,22 @@ export function PhotoCropEditor({
               </Button>
             ))}
             <div className="mx-1 h-5 w-px bg-border" />
+            {noFaceDetected && (
+              <Button
+                variant={manualLandmarkMode ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => {
+                  setManualLandmarkMode(!manualLandmarkMode)
+                  setManualClicks([])
+                  if (!manualLandmarkMode) setStatusText('Clique nos olhos para alinhar')
+                }}
+                disabled={detecting || saving}
+                className={manualLandmarkMode ? 'bg-amber-500 hover:bg-amber-600' : ''}
+              >
+                <Eye className="size-3.5 mr-1" />
+                Marcar olhos
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"

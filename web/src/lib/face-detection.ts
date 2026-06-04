@@ -49,6 +49,8 @@ async function getLandmarker(mode: 'IMAGE' | 'VIDEO' = 'IMAGE'): Promise<FaceLan
         baseOptions: { modelAssetPath: MODEL_URL },
         runningMode: mode,
         numFaces: 1,
+        minFaceDetectionConfidence: 0.3,
+        minFacePresenceConfidence: 0.3,
         outputFaceBlendshapes: false,
         outputFacialTransformationMatrixes: false,
       })

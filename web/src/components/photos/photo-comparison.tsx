@@ -2,14 +2,14 @@
 
 import * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, X, RotateCcw } from 'lucide-react'
+import { Loader2, X, RotateCcw, Eye, Check, PencilLine } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
 } from '@/components/ui/dialog'
 import { cn, formatDate } from '@/lib/utils'
-import { computeAlignmentTransform, alignmentTransformToCssMatrix } from '@/lib/face-alignment'
+import { computeAlignmentTransform, alignmentTransformToCssMatrix, computeAutoCrop } from '@/lib/face-alignment'
 import { autoDetectAndSaveCrop } from '@/lib/auto-crop'
 import type { PhotoCropData } from '@/validations/photo-crop'
 import type { PhotoAssetWithUrl } from '@/db/queries/photos'
@@ -54,6 +54,87 @@ export function PhotoComparisonDialog({
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
   const [imgNaturalSize, setImgNaturalSize] = useState<{ w: number; h: number } | null>(null)
   const [autoDetecting, setAutoDetecting] = useState(false)
+  const [markingEyes, setMarkingEyes] = useState<'A' | 'B' | null>(null)
+  const [eyeClicks, setEyeClicks] = useState<Array<{ x: number; y: number }>>([])
+
+  const needsLandmarksA = !!cropBoxA && !cropBoxA.landmarks
+  const needsLandmarksB = !!cropBoxB && !cropBoxB.landmarks
+
+  const handleEyeClick = useCallback((e: React.MouseEvent<HTMLDivElement>, side: 'A' | 'B') => {
+    if (markingEyes !== side) return
+    e.stopPropagation()
+    const rect = e.currentTarget.getBoundingClientRect()
+    const nx = (e.clientX - rect.left) / rect.width
+    const ny = (e.clientY - rect.top) / rect.height
+    if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return
+
+    const crop = side === 'A' ? cropBoxA : cropBoxB
+    const imgNx = crop ? crop.x + nx * crop.width : nx
+    const imgNy = crop ? crop.y + ny * crop.height : ny
+
+    const clicks = [...eyeClicks, { x: imgNx, y: imgNy }]
+    setEyeClicks(clicks)
+
+    if (clicks.length >= 2) {
+      finalizeLandmarks(clicks, side)
+    }
+  }, [markingEyes, eyeClicks, cropBoxA, cropBoxB, photoA, photoB, imgNaturalSize]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const confirmSingleEye = useCallback((side: 'A' | 'B') => {
+    if (eyeClicks.length === 1) finalizeLandmarks(eyeClicks, side)
+  }, [eyeClicks, cropBoxA, cropBoxB, photoA, photoB, imgNaturalSize]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function finalizeLandmarks(clicks: Array<{ x: number; y: number }>, side: 'A' | 'B') {
+    let leftEye: { x: number; y: number }
+    let rightEye: { x: number; y: number }
+    let noseTip: { x: number; y: number }
+    let ipd: number
+
+    if (clicks.length === 1) {
+      const eye = clicks[0]
+      const estimatedIpd = 0.06
+      leftEye = { x: eye.x - estimatedIpd / 2, y: eye.y }
+      rightEye = { x: eye.x + estimatedIpd / 2, y: eye.y }
+      noseTip = { x: eye.x, y: eye.y + estimatedIpd * 0.6 }
+      ipd = estimatedIpd
+    } else {
+      const [eye1, eye2] = clicks
+      leftEye = eye1.x < eye2.x ? eye1 : eye2
+      rightEye = eye1.x < eye2.x ? eye2 : eye1
+      noseTip = { x: (eye1.x + eye2.x) / 2, y: (eye1.y + eye2.y) / 2 + Math.abs(eye2.x - eye1.x) * 0.6 }
+      ipd = Math.sqrt((eye2.x - eye1.x) ** 2 + (eye2.y - eye1.y) ** 2)
+    }
+
+    const landmarks = { leftEye, rightEye, noseTip, interPupillaryDistance: ipd }
+    const photo = side === 'A' ? photoA : photoB
+    const currentCrop = side === 'A' ? cropBoxA : cropBoxB
+    if (currentCrop && photo) {
+      const bbPad = Math.max(ipd * 1.5, 0.15)
+      const manualDetection = {
+        landmarks,
+        boundingBox: {
+          x: Math.max(0, noseTip.x - bbPad),
+          y: Math.max(0, leftEye.y - bbPad * 0.8),
+          width: Math.min(bbPad * 2, 1),
+          height: Math.min(bbPad * 2.5, 1),
+        },
+        rotation: { yaw: 0, pitch: 0, roll: 0 },
+        gaze: { leftRatio: 0.5, rightRatio: 0.5 },
+      }
+      const newCrop = computeAutoCrop(manualDetection, currentCrop.aspect ?? '3:4', imgNaturalSize ? { width: imgNaturalSize.w, height: imgNaturalSize.h } : undefined)
+      const updated: PhotoCropData = { ...currentCrop, ...newCrop, landmarks }
+      if (side === 'A') setCropBoxA(updated)
+      else setCropBoxB(updated)
+      fetch(`/api/photos/${photo.id}/crop`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cropBox: updated }),
+      }).catch(() => {})
+    }
+
+    setMarkingEyes(null)
+    setEyeClicks([])
+  }
   const autoDetectAttempted = useRef(new Set<string>())
   const cropBoxARef = useRef(cropBoxA)
   const cropBoxBRef = useRef(cropBoxB)
@@ -343,6 +424,73 @@ export function PhotoComparisonDialog({
           </div>
         </div>
 
+        {/* Manual landmark banner */}
+        {!autoDetecting && !loadingUrls && (needsLandmarksA || needsLandmarksB) && (
+          <div className="flex items-center justify-between gap-3 mx-4 mb-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-4 py-2.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <Eye className="size-4 text-amber-400 shrink-0" />
+              <p className="text-xs text-amber-200/90">
+                Não foi possível detectar o rosto automaticamente. Marque os olhos para alinhar.
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  if (cropBoxA?.landmarks) {
+                    setMarkingEyes('A'); setEyeClicks([]); setMode('side-by-side')
+                  } else {
+                    setMarkingEyes(markingEyes === 'A' ? null : 'A'); setEyeClicks([]); setMode('side-by-side')
+                  }
+                }}
+                className={cn(
+                  'flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors',
+                  markingEyes === 'A'
+                    ? 'bg-amber-500/30 text-amber-300'
+                    : cropBoxA?.landmarks
+                      ? 'text-emerald-400/80 hover:text-amber-300 hover:bg-amber-500/10'
+                      : 'text-amber-400/70 hover:text-amber-300 hover:bg-amber-500/10',
+                )}
+              >
+                {cropBoxA?.landmarks ? <Check className="size-3" /> : <Eye className="size-3" />}
+                Foto A
+                {cropBoxA?.landmarks && <PencilLine className="size-2.5 ml-0.5 opacity-60" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (cropBoxB?.landmarks) {
+                    setMarkingEyes('B'); setEyeClicks([]); setMode('side-by-side')
+                  } else {
+                    setMarkingEyes(markingEyes === 'B' ? null : 'B'); setEyeClicks([]); setMode('side-by-side')
+                  }
+                }}
+                className={cn(
+                  'flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors',
+                  markingEyes === 'B'
+                    ? 'bg-amber-500/30 text-amber-300'
+                    : cropBoxB?.landmarks
+                      ? 'text-emerald-400/80 hover:text-amber-300 hover:bg-amber-500/10'
+                      : 'text-amber-400/70 hover:text-amber-300 hover:bg-amber-500/10',
+                )}
+              >
+                {cropBoxB?.landmarks ? <Check className="size-3" /> : <Eye className="size-3" />}
+                Foto B
+                {cropBoxB?.landmarks && <PencilLine className="size-2.5 ml-0.5 opacity-60" />}
+              </button>
+              {hasLandmarks && (
+                <button
+                  type="button"
+                  onClick={() => { setAlignmentOn(true); setMarkingEyes(null) }}
+                  className="flex items-center gap-1 rounded-md bg-sage/20 px-2.5 py-1 text-[11px] font-medium text-sage transition-colors hover:bg-sage/30"
+                >
+                  Aplicar alinhamento
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Content area */}
         <div className="px-4 pb-4">
           {loadingUrls || autoDetecting ? (
@@ -420,7 +568,10 @@ export function PhotoComparisonDialog({
               {mode === 'side-by-side' && (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <div className="relative overflow-hidden rounded-lg">
+                    <div
+                      className={cn('relative overflow-hidden rounded-lg', markingEyes === 'A' && 'cursor-crosshair ring-2 ring-amber-400')}
+                      onClick={(e) => handleEyeClick(e, 'A')}
+                    >
                       {cropAspect && cropBoxA ? (
                         <>
                           <svg viewBox={`0 0 ${cropAspect.w} ${cropAspect.h}`} className="block w-full" aria-hidden="true" />
@@ -431,11 +582,34 @@ export function PhotoComparisonDialog({
                       ) : (
                         <img src={urlA} alt="Foto A" className="block w-full max-h-[70vh] object-contain" />
                       )}
+                      {markingEyes === 'A' && (
+                        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 z-10">
+                          <span className="rounded bg-black/60 px-2.5 py-1 text-[11px] text-white font-medium">
+                            {eyeClicks.length === 0 ? 'Clique no olho visível' : 'Clique no 2° olho ou confirme abaixo'}
+                          </span>
+                          {eyeClicks.length === 1 && (
+                            <button type="button" onClick={(e) => { e.stopPropagation(); confirmSingleEye('A') }} className="rounded-lg bg-amber-500 px-4 py-1.5 text-xs text-white font-semibold shadow-lg hover:bg-amber-600 transition-colors">
+                              Confirmar
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {markingEyes === 'A' && eyeClicks.map((pt, i) => (
+                        <div key={i} className="absolute size-3 rounded-full bg-amber-400 border-2 border-amber-600 shadow-md pointer-events-none" style={{
+                          left: `${((pt.x - (cropBoxA?.x ?? 0)) / (cropBoxA?.width ?? 1)) * 100}%`,
+                          top: `${((pt.y - (cropBoxA?.y ?? 0)) / (cropBoxA?.height ?? 1)) * 100}%`,
+                          transform: 'translate(-50%, -50%)',
+                        }} />
+                      ))}
                     </div>
                     <p className="text-center text-[11px] text-white/60">{labelA}</p>
                   </div>
                   <div className="space-y-2">
-                    <div ref={containerRef} className="relative overflow-hidden rounded-lg">
+                    <div
+                      ref={containerRef}
+                      className={cn('relative overflow-hidden rounded-lg', markingEyes === 'B' && 'cursor-crosshair ring-2 ring-amber-400')}
+                      onClick={(e) => handleEyeClick(e, 'B')}
+                    >
                       {cropAspect ? (
                         <>
                           <svg viewBox={`0 0 ${cropAspect.w} ${cropAspect.h}`} className="block w-full" aria-hidden="true" />
@@ -455,6 +629,25 @@ export function PhotoComparisonDialog({
                           style={alignmentCss ? { transform: alignmentCss, transformOrigin: '0 0' } : undefined}
                         />
                       )}
+                      {markingEyes === 'B' && (
+                        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 z-10">
+                          <span className="rounded bg-black/60 px-2.5 py-1 text-[11px] text-white font-medium">
+                            {eyeClicks.length === 0 ? 'Clique no olho visível' : 'Clique no 2° olho ou confirme abaixo'}
+                          </span>
+                          {eyeClicks.length === 1 && (
+                            <button type="button" onClick={(e) => { e.stopPropagation(); confirmSingleEye('B') }} className="rounded-lg bg-amber-500 px-4 py-1.5 text-xs text-white font-semibold shadow-lg hover:bg-amber-600 transition-colors">
+                              Confirmar
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {markingEyes === 'B' && eyeClicks.map((pt, i) => (
+                        <div key={i} className="absolute size-3 rounded-full bg-amber-400 border-2 border-amber-600 shadow-md pointer-events-none" style={{
+                          left: `${((pt.x - (cropBoxB?.x ?? 0)) / (cropBoxB?.width ?? 1)) * 100}%`,
+                          top: `${((pt.y - (cropBoxB?.y ?? 0)) / (cropBoxB?.height ?? 1)) * 100}%`,
+                          transform: 'translate(-50%, -50%)',
+                        }} />
+                      ))}
                     </div>
                     <p className="text-center text-[11px] text-white/60">{labelB}</p>
                   </div>

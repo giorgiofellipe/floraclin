@@ -27,13 +27,15 @@ const ASPECT_RATIOS: Record<string, number> = {
 
 const EYE_LINE_RATIO = 0.42
 const FACE_PADDING = 0.45
+const YAW_OFFSET_MAX = 0.15
+const YAW_OFFSET_PROFILE = 0.25
 
 export function computeAutoCrop(
   detection: FaceDetectionResult,
   aspect: '3:4' | '4:3' | '1:1' | 'free',
   imageDimensions?: { width: number; height: number },
 ): CropGeometry {
-  const { boundingBox, landmarks } = detection
+  const { boundingBox, landmarks, rotation } = detection
   const eyeCenterY = (landmarks.leftEye.y + landmarks.rightEye.y) / 2
   const eyeCenterX = (landmarks.leftEye.x + landmarks.rightEye.x) / 2
 
@@ -59,8 +61,23 @@ export function computeAutoCrop(
   cropW = Math.min(cropW, 1)
   cropH = Math.min(cropH, 1)
 
+  const yaw = rotation?.yaw ?? 0
+  const absYaw = Math.abs(yaw)
+  const yawSign = yaw >= 0 ? 1 : -1
+
+  // For high yaw angles, use bounding box center instead of eye center
+  // because both eyes project to nearly the same x in profile view
+  const centerX = absYaw > 50
+    ? boundingBox.x + boundingBox.width / 2
+    : eyeCenterX
+
+  // Scale offset: 15% for 45°, up to 25% for full profiles
+  const offsetScale = absYaw > 50 ? YAW_OFFSET_PROFILE : YAW_OFFSET_MAX
+  const yawFactor = Math.max(-1, Math.min(1, yaw / 45))
+  const yawOffset = -yawSign * Math.min(absYaw / 45, 1) * cropW * offsetScale
+
   const cropY = eyeCenterY - cropH * EYE_LINE_RATIO
-  const cropX = eyeCenterX - cropW / 2
+  const cropX = centerX - cropW / 2 + yawOffset
 
   return {
     x: Math.max(0, Math.min(cropX, 1 - cropW)),

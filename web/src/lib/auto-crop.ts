@@ -23,20 +23,47 @@ export async function autoDetectAndSaveCrop(
   }
 
   const detection = await detectFace(img)
-  if (!detection) return null
+  if (!detection) {
+    console.warn('[auto-crop] Face detection failed — using center crop fallback')
+  } else {
+    console.info('[auto-crop] Face detected, yaw:', detection.rotation.yaw.toFixed(1), 'ipd:', detection.landmarks.interPupillaryDistance.toFixed(3))
+  }
 
-  const crop = computeAutoCrop(detection, '3:4', {
-    width: img.naturalWidth,
-    height: img.naturalHeight,
-  })
-  const cropBox: PhotoCropData = {
-    x: crop.x,
-    y: crop.y,
-    width: crop.width,
-    height: crop.height,
-    rotation: 0,
-    aspect: '3:4',
-    landmarks: detection.landmarks,
+  let cropBox: PhotoCropData
+
+  if (detection) {
+    const crop = computeAutoCrop(detection, '3:4', {
+      width: img.naturalWidth,
+      height: img.naturalHeight,
+    })
+    cropBox = {
+      x: crop.x,
+      y: crop.y,
+      width: crop.width,
+      height: crop.height,
+      rotation: 0,
+      aspect: '3:4',
+      landmarks: detection.landmarks,
+    }
+  } else {
+    const imgAspect = img.naturalWidth / img.naturalHeight
+    const cropAspect = 3 / 4
+    let w: number, h: number
+    if (imgAspect > cropAspect) {
+      h = 1
+      w = (cropAspect / imgAspect)
+    } else {
+      w = 1
+      h = (imgAspect / cropAspect)
+    }
+    cropBox = {
+      x: (1 - w) / 2,
+      y: (1 - h) / 2,
+      width: w,
+      height: h,
+      rotation: 0,
+      aspect: '3:4',
+    }
   }
 
   const res = await fetch(`/api/photos/${photoId}/crop`, {
