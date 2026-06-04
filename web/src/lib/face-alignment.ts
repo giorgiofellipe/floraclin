@@ -27,8 +27,7 @@ const ASPECT_RATIOS: Record<string, number> = {
 
 const EYE_LINE_RATIO = 0.42
 const FACE_PADDING = 0.45
-const YAW_OFFSET_MAX = 0.15
-const YAW_OFFSET_PROFILE = 0.25
+const YAW_OFFSET_MAX = 0.10
 
 export function computeAutoCrop(
   detection: FaceDetectionResult,
@@ -65,16 +64,18 @@ export function computeAutoCrop(
   const absYaw = Math.abs(yaw)
   const yawSign = yaw >= 0 ? 1 : -1
 
-  // For high yaw angles, use bounding box center instead of eye center
-  // because both eyes project to nearly the same x in profile view
-  const centerX = absYaw > 50
-    ? boundingBox.x + boundingBox.width / 2
-    : eyeCenterX
+  // Smooth blend between eye center and bounding box center as yaw increases
+  const bbCenterX = boundingBox.x + boundingBox.width / 2
+  const blendFactor = Math.min(Math.max((absYaw - 30) / 40, 0), 1)
+  const centerX = eyeCenterX + (bbCenterX - eyeCenterX) * blendFactor
 
-  // Scale offset: 15% for 45°, up to 25% for full profiles
-  const offsetScale = absYaw > 50 ? YAW_OFFSET_PROFILE : YAW_OFFSET_MAX
-  const yawFactor = Math.max(-1, Math.min(1, yaw / 45))
-  const yawOffset = -yawSign * Math.min(absYaw / 45, 1) * cropW * offsetScale
+  // Dead zone below 25° — no offset for frontal/near-frontal
+  // Smooth ramp from 25° to 70° using a single scale
+  let yawOffset = 0
+  if (absYaw > 25) {
+    const rampFactor = Math.min((absYaw - 25) / 45, 1)
+    yawOffset = -yawSign * rampFactor * cropW * YAW_OFFSET_MAX
+  }
 
   const cropY = eyeCenterY - cropH * EYE_LINE_RATIO
   const cropX = centerX - cropW / 2 + yawOffset
