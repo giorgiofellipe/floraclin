@@ -283,7 +283,7 @@ export function PatientDetailContent({
             </div>
 
             {/* Right: actions */}
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
               <TooltipProvider delay={300}>
                 <Tooltip>
                   <TooltipTrigger

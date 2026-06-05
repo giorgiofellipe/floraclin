@@ -39,7 +39,7 @@ export function EvaluationTemplatesSection({
 }: Props) {
   if (isLoading) {
     return (
-      <div className="bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px] p-8">
+      <div className="bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px] p-4 sm:p-8">
         <div className="flex items-center justify-center gap-3">
           <Loader2 className="size-5 animate-spin text-sage" />
           <span className="text-sm text-mid">Carregando fichas de avaliação...</span>
@@ -74,7 +74,7 @@ export function EvaluationTemplatesSection({
 
                 return (
                   <div key={template.id} className="space-y-0">
-                    <div className="flex items-center gap-2.5 rounded-t-[3px] bg-forest/5 px-5 py-3 border border-b-0 border-[#E8ECEF]">
+                    <div className="flex items-center gap-2.5 rounded-t-[3px] bg-forest/5 px-3 sm:px-5 py-3 border border-b-0 border-[#E8ECEF]">
                       <div className="flex size-6 items-center justify-center rounded-full bg-forest/10">
                         <Stethoscope className="size-3.5 text-forest" />
                       </div>
@@ -82,7 +82,7 @@ export function EvaluationTemplatesSection({
                         {template.procedureTypeName} — Ficha de Avaliação
                       </span>
                     </div>
-                    <div className="rounded-b-[3px] border border-t-0 border-[#E8ECEF] bg-white p-5 shadow-[0_1px_4px_rgba(0,0,0,0.06)] mb-5">
+                    <div className="rounded-b-[3px] border border-t-0 border-[#E8ECEF] bg-white p-3 sm:p-5 shadow-[0_1px_4px_rgba(0,0,0,0.06)] mb-5">
                       <TemplateRenderer
                         sections={template.sections}
                         responses={responses}

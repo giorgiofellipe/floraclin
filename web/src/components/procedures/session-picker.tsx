@@ -179,7 +179,7 @@ export function SessionPicker({
               )}
             >
               {/* Header */}
-              <header className="border-b border-sage/10 px-5 pt-4 pb-3">
+              <header className="border-b border-sage/10 px-3 sm:px-5 pt-4 pb-3">
                 <div className="flex items-baseline justify-between gap-3">
                   <h3 className="font-heading text-base text-charcoal">
                     {rec.procedureTypeName}
@@ -226,7 +226,7 @@ export function SessionPicker({
                     <li
                       key={ord}
                       className={cn(
-                        'group relative flex items-center gap-4 px-5 py-4 transition-colors',
+                        'group relative flex items-center gap-3 sm:gap-4 px-3 sm:px-5 py-3 sm:py-4 transition-colors',
                         isNext && !isPackageClosed
                           ? 'bg-gradient-to-r from-sage/[0.06] via-transparent to-transparent'
                           : null,

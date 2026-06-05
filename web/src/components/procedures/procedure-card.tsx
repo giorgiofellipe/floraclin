@@ -149,8 +149,8 @@ export function ProcedureCard({
         )}
         onClick={onClick}
       >
-        <CardContent className="p-4">
-          <div className="flex items-start gap-4">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex items-start gap-3 sm:gap-4">
             {/* Category icon */}
             <div className="flex size-11 shrink-0 items-center justify-center rounded-[3px] bg-sage/10">
               <span className="text-xs font-bold text-forest tracking-wide">

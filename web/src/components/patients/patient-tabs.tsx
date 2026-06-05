@@ -50,8 +50,8 @@ export function PatientTabs({ activeTab, onTabChange, role }: PatientTabsProps) 
   )
 
   return (
-    <div className="bg-white rounded-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-      <nav className="flex overflow-x-auto" aria-label="Abas do paciente">
+    <div className="relative bg-white rounded-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+      <nav className="flex overflow-x-auto scrollbar-none" aria-label="Abas do paciente">
         {visibleTabs.map((tab) => {
           const Icon = tab.icon
           const isActive = activeTab === tab.key
@@ -80,6 +80,7 @@ export function PatientTabs({ activeTab, onTabChange, role }: PatientTabsProps) 
           )
         })}
       </nav>
+      <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white to-transparent md:hidden" />
     </div>
   )
 }

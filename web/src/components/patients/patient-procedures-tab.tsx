@@ -291,7 +291,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
             const spineDot = STATUS_DOT_BG[proc.status] ?? 'bg-mid/30'
 
             return (
-              <div key={enc.key} className="relative flex gap-5">
+              <div key={enc.key} className="relative flex gap-3 sm:gap-5">
                 {/* ── Timeline spine (status-tinted dot + connecting line) ── */}
                 <div className="flex flex-col items-center pt-5">
                   <span
@@ -310,7 +310,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                 {/* ── Card ── */}
                 <article
                   className={cn(
-                    'group relative mb-4 flex-1 rounded-[3px] border bg-white px-5 py-4 transition-colors duration-200',
+                    'group relative mb-4 flex-1 rounded-[3px] border bg-white px-3 sm:px-5 py-3 sm:py-4 transition-colors duration-200',
                     'border-sage/15 hover:border-sage/30',
                     isCancelled && 'opacity-65',
                   )}

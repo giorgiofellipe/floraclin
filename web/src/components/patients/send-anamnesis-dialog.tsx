@@ -111,9 +111,9 @@ export function SendAnamnesisDialog({
   const whatsAppUrl = getWhatsAppUrl()
 
   return (
-    <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-300">
+    <div className="flex flex-wrap items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-300">
       {/* URL display (truncated) */}
-      <div className="flex items-center gap-1.5 rounded-md border border-sage/15 bg-sage/5 px-2.5 py-1.5 text-xs text-mid max-w-[280px]">
+      <div className="flex items-center gap-1.5 rounded-md border border-sage/15 bg-sage/5 px-2.5 py-1.5 text-xs text-mid max-w-full sm:max-w-[280px]">
         <span className="truncate">{url.replace('https://', '')}</span>
       </div>
 

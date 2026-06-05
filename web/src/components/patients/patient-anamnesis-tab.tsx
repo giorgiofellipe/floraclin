@@ -52,7 +52,7 @@ export function PatientAnamnesisTab({ patientId, patientName, patientPhone, what
     <div className="w-full">
       {/* Send anamnesis link to patient */}
       {patientName && (
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-mid">
             Envie o link para o paciente preencher a anamnese pelo celular.
           </p>

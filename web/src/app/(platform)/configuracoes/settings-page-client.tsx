@@ -291,7 +291,7 @@ export function SettingsPageClient({
       </div>
 
       {/* Mobile: horizontal scrollable tabs (flat, no group labels) */}
-      <div className="md:hidden mb-6 -mx-4 px-4 overflow-x-auto scrollbar-hide">
+      <div className="relative md:hidden mb-6 -mx-4 px-4 overflow-x-auto scrollbar-hide">
         <div className="flex gap-1 min-w-max bg-[#E8ECEF] rounded-[3px] p-1">
           {visibleTabs.map((tab) => {
             const Icon = tab.icon
@@ -314,6 +314,7 @@ export function SettingsPageClient({
             )
           })}
         </div>
+        <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-cream to-transparent" />
       </div>
 
       {/* Desktop: sidebar + content layout */}
