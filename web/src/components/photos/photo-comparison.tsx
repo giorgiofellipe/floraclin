@@ -567,9 +567,9 @@ export function PhotoComparisonDialog({
 
               {mode === 'side-by-side' && (
                 <div className="grid grid-cols-2 gap-3 items-start">
-                  <div className={cn('space-y-2', markingEyes === 'A' && 'ring-2 ring-amber-400 rounded-lg cursor-crosshair')}>
+                  <div className="space-y-2">
                     <div
-                      className="relative overflow-hidden rounded-lg mx-auto"
+                      className={cn('relative overflow-hidden rounded-lg mx-auto', markingEyes === 'A' && 'outline-2 outline-amber-400 outline-offset-2 cursor-crosshair')}
                       style={cropContainerStyle}
                       onClick={(e) => handleEyeClick(e, 'A')}
                     >
@@ -605,10 +605,10 @@ export function PhotoComparisonDialog({
                     </div>
                     <p className="text-center text-[11px] text-white/60">{labelA}</p>
                   </div>
-                  <div className={cn('space-y-2', markingEyes === 'B' && 'ring-2 ring-amber-400 rounded-lg cursor-crosshair')}>
+                  <div className="space-y-2">
                     <div
                       ref={containerRef}
-                      className="relative overflow-hidden rounded-lg mx-auto"
+                      className={cn('relative overflow-hidden rounded-lg mx-auto', markingEyes === 'B' && 'outline-2 outline-amber-400 outline-offset-2 cursor-crosshair')}
                       style={cropContainerStyle}
                       onClick={(e) => handleEyeClick(e, 'B')}
                     >
