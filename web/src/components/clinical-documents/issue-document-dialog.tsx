@@ -326,11 +326,11 @@ export function IssueDocumentDialog({
             </div>
           </div>
         ) : step === 'preview' ? (
-          <div className="flex flex-1 flex-col p-4 sm:p-6">
-            <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-1 flex-col p-3 sm:p-6">
+            <div className="flex items-center justify-between mb-3 sm:mb-4">
               <div>
-                <h3 className="text-lg font-medium text-charcoal">Pré-visualização</h3>
-                <p className="text-sm text-mid">Confira o documento antes de emitir.</p>
+                <h3 className="text-base sm:text-lg font-medium text-charcoal">Pré-visualização</h3>
+                <p className="text-xs sm:text-sm text-mid">Confira antes de emitir.</p>
               </div>
               <Button
                 variant="outline"
@@ -341,7 +341,7 @@ export function IssueDocumentDialog({
                 Editar
               </Button>
             </div>
-            <div className="flex-1 rounded-[3px] border border-[#E8ECEF] bg-[#F4F6F8] p-3 overflow-y-auto">
+            <div className="flex-1 rounded-[3px] border border-[#E8ECEF] bg-[#F4F6F8] p-2 sm:p-3 overflow-y-auto">
               <DocumentPreview
                 kind={kind}
                 title={title}
@@ -446,18 +446,18 @@ export function IssueDocumentDialog({
         </div>
 
         {profileReady && (step === 'template' || step === 'preview' || step === 'compose') && (
-          <DialogFooter className="m-0 flex-row justify-between gap-2 rounded-b-xl border-t border-[#E8ECEF] bg-muted/50 p-4">
-            <Button variant="outline" onClick={handleBack}>
-              <ArrowLeftIcon className="size-4" />
+          <DialogFooter className="m-0 flex-row flex-wrap justify-between gap-2 rounded-b-xl border-t border-[#E8ECEF] bg-muted/50 p-3 sm:p-4">
+            <Button variant="outline" size="sm" onClick={handleBack}>
+              <ArrowLeftIcon className="size-3.5" />
               Voltar
             </Button>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
+              <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
                 Cancelar
               </Button>
               {(step === 'preview' || step === 'compose') && (
-                <Button onClick={handleIssue} disabled={issueMutation.isPending}>
-                  {issueMutation.isPending ? 'Emitindo...' : 'Emitir documento'}
+                <Button size="sm" onClick={handleIssue} disabled={issueMutation.isPending}>
+                  {issueMutation.isPending ? 'Emitindo...' : 'Emitir'}
                 </Button>
               )}
             </div>
