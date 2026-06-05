@@ -685,7 +685,7 @@ export function ProcedureApproval({
       )}
 
       {allUnsignedTypes.length > 0 && (
-        <div className="flex items-center justify-center gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center sm:justify-center gap-3 overflow-hidden">
           <SendConsentSigningLink
             patientId={patient.id}
             patientName={patient.fullName}

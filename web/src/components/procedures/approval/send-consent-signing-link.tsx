@@ -123,8 +123,8 @@ export function SendConsentSigningLink({
   const whatsAppUrl = getWhatsAppUrl()
 
   return (
-    <div className="flex flex-wrap items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-300">
-      <div className="flex items-center gap-1.5 rounded-md border border-sage/15 bg-sage/5 px-2.5 py-1.5 text-xs text-mid max-w-full sm:max-w-[280px] w-full sm:w-auto">
+    <div className="flex flex-wrap items-center gap-2 animate-in fade-in duration-300 w-full overflow-hidden">
+      <div className="flex items-center gap-1.5 rounded-md border border-sage/15 bg-sage/5 px-2.5 py-1.5 text-xs text-mid w-full overflow-hidden">
         <span className="truncate">{url.replace('https://', '')}</span>
       </div>
 
