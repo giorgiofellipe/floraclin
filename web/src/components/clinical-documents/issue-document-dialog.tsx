@@ -194,7 +194,7 @@ export function IssueDocumentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[90vh] w-[95vw] max-w-6xl flex-col gap-0 p-0 sm:max-w-6xl">
+      <DialogContent className="flex h-[90vh] w-[95vw] max-w-[95vw] flex-col gap-0 p-0 sm:max-w-6xl overflow-hidden">
         <DialogHeader className="border-b border-[#E8ECEF] px-4 sm:px-6 py-4">
           <DialogTitle>Novo documento clínico</DialogTitle>
           <DialogDescription>
