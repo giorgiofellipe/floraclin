@@ -286,21 +286,21 @@ export function IssueDocumentDialog({
             </div>
           </div>
         ) : step === 'template' ? (
-          <div className="flex flex-1 flex-col p-4 sm:p-6">
-            <h3 className="text-lg font-medium text-charcoal mb-2">Escolha um modelo</h3>
-            <p className="text-sm text-mid mb-4 sm:mb-6">
+          <div className="flex flex-1 flex-col p-3 sm:p-6">
+            <h3 className="text-base sm:text-lg font-medium text-charcoal mb-2">Escolha um modelo</h3>
+            <p className="text-xs sm:text-sm text-mid mb-3 sm:mb-6">
               Use um modelo salvo ou comece do zero.
             </p>
             <div className="grid gap-2 sm:grid-cols-2">
               <button
                 type="button"
                 onClick={() => handleSelectTemplate(NO_TEMPLATE_VALUE)}
-                className="flex items-center gap-3 rounded-lg border-2 border-dashed border-[#E8ECEF] bg-white p-3 sm:p-4 text-left transition-all hover:border-forest hover:bg-[#F0F7F1] group"
+                className="flex items-center gap-2.5 rounded-lg border-2 border-dashed border-[#E8ECEF] bg-white p-2.5 sm:p-4 text-left transition-all hover:border-forest hover:bg-[#F0F7F1] group"
               >
-                <div className="rounded-full bg-[#F4F6F8] p-2.5 group-hover:bg-forest/10 transition-colors">
-                  <PencilIcon className="size-5 text-mid group-hover:text-forest transition-colors" />
+                <div className="rounded-full bg-[#F4F6F8] p-2 sm:p-2.5 group-hover:bg-forest/10 transition-colors shrink-0">
+                  <PencilIcon className="size-4 sm:size-5 text-mid group-hover:text-forest transition-colors" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <span className="block text-sm font-medium text-charcoal">Documento em branco</span>
                   <span className="block text-xs text-mid">Escrever do zero</span>
                 </div>
@@ -310,10 +310,10 @@ export function IssueDocumentDialog({
                   key={tpl.id}
                   type="button"
                   onClick={() => handleSelectTemplate(tpl.id)}
-                  className="flex items-center gap-3 rounded-lg border-2 border-[#E8ECEF] bg-white p-3 sm:p-4 text-left transition-all hover:border-forest hover:bg-[#F0F7F1] group"
+                  className="flex items-center gap-2.5 rounded-lg border-2 border-[#E8ECEF] bg-white p-2.5 sm:p-4 text-left transition-all hover:border-forest hover:bg-[#F0F7F1] group"
                 >
-                  <div className="rounded-full bg-sage/10 p-2.5 group-hover:bg-forest/10 transition-colors">
-                    <FileText className="size-5 text-sage group-hover:text-forest transition-colors" />
+                  <div className="rounded-full bg-sage/10 p-2 sm:p-2.5 group-hover:bg-forest/10 transition-colors shrink-0">
+                    <FileText className="size-4 sm:size-5 text-sage group-hover:text-forest transition-colors" />
                   </div>
                   <div className="min-w-0">
                     <span className="block text-sm font-medium text-charcoal truncate">{tpl.name}</span>
