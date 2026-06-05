@@ -111,6 +111,13 @@ export async function POST(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
     }
+    const errorMsg = error instanceof Error ? error.message : ''
+    if (errorMsg.includes('já está em estado')) {
+      return NextResponse.json(
+        { success: false, error: errorMsg },
+        { status: 409 },
+      )
+    }
     console.error('Finalize atendimento error:', error)
     return NextResponse.json(
       { success: false, error: 'Erro ao finalizar atendimento' },

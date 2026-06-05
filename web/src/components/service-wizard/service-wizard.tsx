@@ -543,6 +543,12 @@ export function ServiceWizard({
       )
 
       if (!res.ok) {
+        if (res.status === 409) {
+          updateProcedureStatus('approved')
+          updateStepTimestamp('approval', new Date())
+          nextStep()
+          return
+        }
         const err = await res.json().catch(() => ({}))
         throw new Error(err.error || `Erro ao finalizar (HTTP ${res.status})`)
       }
