@@ -308,7 +308,7 @@ export function PhotoComparisonDialog({
     }
   }
 
-  const maxVh = mode === 'side-by-side' ? 55 : 65
+  const maxVh = mode === 'side-by-side' ? 70 : 75
 
   const cropContainerStyle: React.CSSProperties | undefined = useMemo(() => {
     if (!cropAspect) return undefined
@@ -360,7 +360,7 @@ export function PhotoComparisonDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-5xl max-h-[95vh] overflow-hidden border-0 bg-[#1C2B1E] p-0 [&>button:last-child]:hidden">
+      <DialogContent className="sm:max-w-[95vw] max-h-[95vh] overflow-hidden border-0 bg-[#1C2B1E] p-0 [&>button:last-child]:hidden">
         {/* Top bar */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
           <div className="flex items-center gap-1">
@@ -520,7 +520,7 @@ export function PhotoComparisonDialog({
                   {cropAspect ? (
                     <svg viewBox={`0 0 ${cropAspect.w} ${cropAspect.h}`} className="block w-full" aria-hidden="true" />
                   ) : (
-                    <img src={urlA} alt="" className="block w-full max-h-[65vh] object-contain invisible" aria-hidden="true" />
+                    <img src={urlA} alt="" className="block w-full max-h-[75vh] object-contain invisible" aria-hidden="true" />
                   )}
 
                   {/* Photo B (behind) */}
@@ -583,7 +583,7 @@ export function PhotoComparisonDialog({
                           </div>
                         </>
                       ) : (
-                        <img src={urlA} alt="Foto A" className="block w-full max-h-[65vh] object-contain" />
+                        <img src={urlA} alt="Foto A" className="block w-full max-h-[75vh] object-contain" />
                       )}
                       {markingEyes === 'A' && (
                         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 z-10">
@@ -629,7 +629,7 @@ export function PhotoComparisonDialog({
                           </div>
                         </>
                       ) : (
-                        <img src={urlB} alt="Foto B" className="block w-full max-h-[65vh] object-contain"
+                        <img src={urlB} alt="Foto B" className="block w-full max-h-[75vh] object-contain"
                           style={alignmentCss ? { transform: alignmentCss, transformOrigin: '0 0' } : undefined}
                         />
                       )}
@@ -676,7 +676,7 @@ export function PhotoComparisonDialog({
                     {cropAspect ? (
                       <svg viewBox={`0 0 ${cropAspect.w} ${cropAspect.h}`} className="block w-full" aria-hidden="true" />
                     ) : (
-                      <img src={urlA} alt="" className="block w-full max-h-[65vh] object-contain invisible" aria-hidden="true" />
+                      <img src={urlA} alt="" className="block w-full max-h-[75vh] object-contain invisible" aria-hidden="true" />
                     )}
 
                     {/* Photo A base */}
