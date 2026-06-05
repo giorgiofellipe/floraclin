@@ -226,7 +226,7 @@ export function SessionPicker({
                     <li
                       key={ord}
                       className={cn(
-                        'group relative flex items-center gap-3 sm:gap-4 px-3 sm:px-5 py-3 sm:py-4 transition-colors',
+                        'group relative flex flex-wrap items-center gap-2 sm:gap-4 px-3 sm:px-5 py-3 sm:py-4 transition-colors',
                         isNext && !isPackageClosed
                           ? 'bg-gradient-to-r from-sage/[0.06] via-transparent to-transparent'
                           : null,
@@ -298,8 +298,8 @@ export function SessionPicker({
                                 Próxima sessão
                               </span>
                             </div>
-                            <div className="mt-1.5 text-sm text-charcoal">
-                              Sessão {ord} pronta para iniciar
+                            <div className="mt-1 text-sm text-charcoal">
+                              Sessão {ord}
                             </div>
                           </div>
                         ) : (
@@ -322,7 +322,7 @@ export function SessionPicker({
                           type="button"
                           size="sm"
                           onClick={() => onPickPending(rec.id, ord)}
-                          className="shrink-0"
+                          className="w-full sm:w-auto shrink-0"
                         >
                           Executar agora
                         </Button>
