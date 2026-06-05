@@ -195,7 +195,7 @@ export function IssueDocumentDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[90vh] w-[95vw] max-w-6xl flex-col gap-0 p-0 sm:max-w-6xl">
-        <DialogHeader className="border-b border-[#E8ECEF] px-6 py-4">
+        <DialogHeader className="border-b border-[#E8ECEF] px-4 sm:px-6 py-4">
           <DialogTitle>Novo documento clínico</DialogTitle>
           <DialogDescription>
             Emitir receita ou atestado para {patient.fullName}.
@@ -257,45 +257,45 @@ export function IssueDocumentDialog({
             </div>
           </div>
         ) : step === 'kind' ? (
-          <div className="flex flex-1 flex-col items-center justify-center p-8">
+          <div className="flex flex-1 flex-col items-center justify-center p-4 sm:p-8">
             <h3 className="text-lg font-medium text-charcoal mb-2">Que tipo de documento?</h3>
-            <p className="text-sm text-mid mb-8">Selecione o tipo de documento que deseja emitir.</p>
-            <div className="grid grid-cols-2 gap-4 max-w-md w-full">
+            <p className="text-sm text-mid mb-6 sm:mb-8">Selecione o tipo de documento que deseja emitir.</p>
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 max-w-md w-full">
               <button
                 type="button"
                 onClick={() => handleSelectKind('atestado')}
-                className="flex flex-col items-center gap-3 rounded-lg border-2 border-[#E8ECEF] bg-white p-6 transition-all hover:border-forest hover:shadow-md group"
+                className="flex flex-col items-center gap-2 sm:gap-3 rounded-lg border-2 border-[#E8ECEF] bg-white p-4 sm:p-6 transition-all hover:border-forest hover:shadow-md group"
               >
-                <div className="rounded-full bg-sage/10 p-4 group-hover:bg-forest/10 transition-colors">
-                  <ClipboardCheck className="size-8 text-sage group-hover:text-forest transition-colors" />
+                <div className="rounded-full bg-sage/10 p-3 sm:p-4 group-hover:bg-forest/10 transition-colors">
+                  <ClipboardCheck className="size-6 sm:size-8 text-sage group-hover:text-forest transition-colors" />
                 </div>
                 <span className="text-sm font-medium text-charcoal">Atestado</span>
-                <span className="text-xs text-mid text-center">Comparecimento, afastamento</span>
+                <span className="text-xs text-mid text-center hidden sm:block">Comparecimento, afastamento</span>
               </button>
               <button
                 type="button"
                 onClick={() => handleSelectKind('receita')}
-                className="flex flex-col items-center gap-3 rounded-lg border-2 border-[#E8ECEF] bg-white p-6 transition-all hover:border-forest hover:shadow-md group"
+                className="flex flex-col items-center gap-2 sm:gap-3 rounded-lg border-2 border-[#E8ECEF] bg-white p-4 sm:p-6 transition-all hover:border-forest hover:shadow-md group"
               >
-                <div className="rounded-full bg-sage/10 p-4 group-hover:bg-forest/10 transition-colors">
-                  <FileText className="size-8 text-sage group-hover:text-forest transition-colors" />
+                <div className="rounded-full bg-sage/10 p-3 sm:p-4 group-hover:bg-forest/10 transition-colors">
+                  <FileText className="size-6 sm:size-8 text-sage group-hover:text-forest transition-colors" />
                 </div>
                 <span className="text-sm font-medium text-charcoal">Receita</span>
-                <span className="text-xs text-mid text-center">Medicamentos, orientações</span>
+                <span className="text-xs text-mid text-center hidden sm:block">Medicamentos, orientações</span>
               </button>
             </div>
           </div>
         ) : step === 'template' ? (
-          <div className="flex flex-1 flex-col p-6">
+          <div className="flex flex-1 flex-col p-4 sm:p-6">
             <h3 className="text-lg font-medium text-charcoal mb-2">Escolha um modelo</h3>
-            <p className="text-sm text-mid mb-6">
+            <p className="text-sm text-mid mb-4 sm:mb-6">
               Use um modelo salvo ou comece do zero.
             </p>
             <div className="grid gap-2 sm:grid-cols-2">
               <button
                 type="button"
                 onClick={() => handleSelectTemplate(NO_TEMPLATE_VALUE)}
-                className="flex items-center gap-3 rounded-lg border-2 border-dashed border-[#E8ECEF] bg-white p-4 text-left transition-all hover:border-forest hover:bg-[#F0F7F1] group"
+                className="flex items-center gap-3 rounded-lg border-2 border-dashed border-[#E8ECEF] bg-white p-3 sm:p-4 text-left transition-all hover:border-forest hover:bg-[#F0F7F1] group"
               >
                 <div className="rounded-full bg-[#F4F6F8] p-2.5 group-hover:bg-forest/10 transition-colors">
                   <PencilIcon className="size-5 text-mid group-hover:text-forest transition-colors" />
@@ -310,7 +310,7 @@ export function IssueDocumentDialog({
                   key={tpl.id}
                   type="button"
                   onClick={() => handleSelectTemplate(tpl.id)}
-                  className="flex items-center gap-3 rounded-lg border-2 border-[#E8ECEF] bg-white p-4 text-left transition-all hover:border-forest hover:bg-[#F0F7F1] group"
+                  className="flex items-center gap-3 rounded-lg border-2 border-[#E8ECEF] bg-white p-3 sm:p-4 text-left transition-all hover:border-forest hover:bg-[#F0F7F1] group"
                 >
                   <div className="rounded-full bg-sage/10 p-2.5 group-hover:bg-forest/10 transition-colors">
                     <FileText className="size-5 text-sage group-hover:text-forest transition-colors" />
@@ -326,7 +326,7 @@ export function IssueDocumentDialog({
             </div>
           </div>
         ) : step === 'preview' ? (
-          <div className="flex flex-1 flex-col p-6">
+          <div className="flex flex-1 flex-col p-4 sm:p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-lg font-medium text-charcoal">Pré-visualização</h3>
