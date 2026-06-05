@@ -357,9 +357,9 @@ export function IssueDocumentDialog({
             </div>
           </div>
         ) : step === 'compose' ? (
-          <div className="grid gap-4 p-4 md:grid-cols-[1fr_1fr]">
+          <div className="grid gap-4 p-3 sm:p-4 md:grid-cols-[1fr_1fr] overflow-hidden">
             {/* Left: form */}
-            <div className="space-y-4">
+            <div className="space-y-4 min-w-0">
               <div className="space-y-2">
                 <Label htmlFor="doc-title">Título</Label>
                 <Input
@@ -405,7 +405,7 @@ export function IssueDocumentDialog({
             </div>
 
             {/* Right: live preview */}
-            <div className="rounded-[3px] border border-[#E8ECEF] bg-[#F4F6F8] p-3">
+            <div className="rounded-[3px] border border-[#E8ECEF] bg-[#F4F6F8] p-2 sm:p-3 min-w-0 overflow-hidden">
               <div className="mb-2 text-xs uppercase tracking-wider text-mid">
                 Pré-visualização
               </div>
