@@ -228,7 +228,7 @@ export function IssueDocumentDialog({
           )}
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
 
         {profileLoading ? (
           <div className="flex h-64 items-center justify-center">
@@ -291,11 +291,11 @@ export function IssueDocumentDialog({
             <p className="text-xs sm:text-sm text-mid mb-3 sm:mb-6">
               Use um modelo salvo ou comece do zero.
             </p>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2 sm:grid-cols-2 overflow-hidden">
               <button
                 type="button"
                 onClick={() => handleSelectTemplate(NO_TEMPLATE_VALUE)}
-                className="flex items-center gap-2.5 rounded-lg border-2 border-dashed border-[#E8ECEF] bg-white p-2.5 sm:p-4 text-left transition-all hover:border-forest hover:bg-[#F0F7F1] group"
+                className="flex items-center gap-2.5 rounded-lg border-2 border-dashed border-[#E8ECEF] bg-white p-2.5 sm:p-4 text-left transition-all hover:border-forest hover:bg-[#F0F7F1] group overflow-hidden"
               >
                 <div className="rounded-full bg-[#F4F6F8] p-2 sm:p-2.5 group-hover:bg-forest/10 transition-colors shrink-0">
                   <PencilIcon className="size-4 sm:size-5 text-mid group-hover:text-forest transition-colors" />
@@ -310,7 +310,7 @@ export function IssueDocumentDialog({
                   key={tpl.id}
                   type="button"
                   onClick={() => handleSelectTemplate(tpl.id)}
-                  className="flex items-center gap-2.5 rounded-lg border-2 border-[#E8ECEF] bg-white p-2.5 sm:p-4 text-left transition-all hover:border-forest hover:bg-[#F0F7F1] group"
+                  className="flex items-center gap-2.5 rounded-lg border-2 border-[#E8ECEF] bg-white p-2.5 sm:p-4 text-left transition-all hover:border-forest hover:bg-[#F0F7F1] group overflow-hidden"
                 >
                   <div className="rounded-full bg-sage/10 p-2 sm:p-2.5 group-hover:bg-forest/10 transition-colors shrink-0">
                     <FileText className="size-4 sm:size-5 text-sage group-hover:text-forest transition-colors" />
