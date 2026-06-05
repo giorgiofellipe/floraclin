@@ -308,14 +308,16 @@ export function PhotoComparisonDialog({
     }
   }
 
+  const maxVh = mode === 'side-by-side' ? 55 : 65
+
   const cropContainerStyle: React.CSSProperties | undefined = useMemo(() => {
     if (!cropAspect) return undefined
     const crop = cropBoxA ?? cropBoxB
     const naturalW = crop && imgNaturalSize ? Math.round(crop.width * imgNaturalSize.w) : null
-    const parts = ['100%', `calc(65vh * ${cropAspect.w} / ${cropAspect.h})`]
+    const parts = ['100%', `calc(${maxVh}vh * ${cropAspect.w} / ${cropAspect.h})`]
     if (naturalW) parts.push(`${naturalW}px`)
     return { width: `min(${parts.join(', ')})` }
-  }, [cropAspect, cropBoxA, cropBoxB, imgNaturalSize])
+  }, [cropAspect, cropBoxA, cropBoxB, imgNaturalSize, maxVh])
 
   const [redoing, setRedoing] = useState(false)
 
@@ -569,7 +571,7 @@ export function PhotoComparisonDialog({
                 <div className="grid grid-cols-2 gap-3 items-start">
                   <div className="space-y-2">
                     <div
-                      className={cn('relative overflow-hidden rounded-lg mx-auto', markingEyes === 'A' && 'outline-2 outline-amber-400 outline-offset-2 cursor-crosshair')}
+                      className={cn('relative overflow-hidden rounded-lg mx-auto', markingEyes === 'A' && 'border-2 border-amber-400 cursor-crosshair')}
                       style={cropContainerStyle}
                       onClick={(e) => handleEyeClick(e, 'A')}
                     >
@@ -608,7 +610,7 @@ export function PhotoComparisonDialog({
                   <div className="space-y-2">
                     <div
                       ref={containerRef}
-                      className={cn('relative overflow-hidden rounded-lg mx-auto', markingEyes === 'B' && 'outline-2 outline-amber-400 outline-offset-2 cursor-crosshair')}
+                      className={cn('relative overflow-hidden rounded-lg mx-auto', markingEyes === 'B' && 'border-2 border-amber-400 cursor-crosshair')}
                       style={cropContainerStyle}
                       onClick={(e) => handleEyeClick(e, 'B')}
                     >
