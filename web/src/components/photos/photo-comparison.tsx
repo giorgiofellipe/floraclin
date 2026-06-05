@@ -9,7 +9,7 @@ import {
   DialogContent,
 } from '@/components/ui/dialog'
 import { cn, formatDate } from '@/lib/utils'
-import { computeAlignmentTransform, alignmentTransformToCssMatrix, computeAutoCrop } from '@/lib/face-alignment'
+import { computeAlignmentTransform, alignmentTransformToCssMatrix } from '@/lib/face-alignment'
 import { autoDetectAndSaveCrop } from '@/lib/auto-crop'
 import type { PhotoCropData } from '@/validations/photo-crop'
 import type { PhotoAssetWithUrl } from '@/db/queries/photos'
@@ -109,20 +109,7 @@ export function PhotoComparisonDialog({
     const photo = side === 'A' ? photoA : photoB
     const currentCrop = side === 'A' ? cropBoxA : cropBoxB
     if (currentCrop && photo) {
-      const bbPad = Math.max(ipd * 1.5, 0.15)
-      const manualDetection = {
-        landmarks,
-        boundingBox: {
-          x: Math.max(0, noseTip.x - bbPad),
-          y: Math.max(0, leftEye.y - bbPad * 0.8),
-          width: Math.min(bbPad * 2, 1),
-          height: Math.min(bbPad * 2.5, 1),
-        },
-        rotation: { yaw: 0, pitch: 0, roll: 0 },
-        gaze: { leftRatio: 0.5, rightRatio: 0.5 },
-      }
-      const newCrop = computeAutoCrop(manualDetection, currentCrop.aspect ?? '3:4', imgNaturalSize ? { width: imgNaturalSize.w, height: imgNaturalSize.h } : undefined)
-      const updated: PhotoCropData = { ...currentCrop, ...newCrop, landmarks }
+      const updated: PhotoCropData = { ...currentCrop, landmarks }
       if (side === 'A') setCropBoxA(updated)
       else setCropBoxB(updated)
       fetch(`/api/photos/${photo.id}/crop`, {
