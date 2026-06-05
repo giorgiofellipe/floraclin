@@ -312,7 +312,7 @@ export function PhotoComparisonDialog({
     if (!cropAspect) return undefined
     const crop = cropBoxA ?? cropBoxB
     const naturalW = crop && imgNaturalSize ? Math.round(crop.width * imgNaturalSize.w) : null
-    const parts = ['100%', `calc(55vh * ${cropAspect.w} / ${cropAspect.h})`]
+    const parts = ['100%', `calc(65vh * ${cropAspect.w} / ${cropAspect.h})`]
     if (naturalW) parts.push(`${naturalW}px`)
     return { width: `min(${parts.join(', ')})` }
   }, [cropAspect, cropBoxA, cropBoxB, imgNaturalSize])
@@ -518,7 +518,7 @@ export function PhotoComparisonDialog({
                   {cropAspect ? (
                     <svg viewBox={`0 0 ${cropAspect.w} ${cropAspect.h}`} className="block w-full" aria-hidden="true" />
                   ) : (
-                    <img src={urlA} alt="" className="block w-full max-h-[55vh] object-contain invisible" aria-hidden="true" />
+                    <img src={urlA} alt="" className="block w-full max-h-[65vh] object-contain invisible" aria-hidden="true" />
                   )}
 
                   {/* Photo B (behind) */}
@@ -566,21 +566,22 @@ export function PhotoComparisonDialog({
               )}
 
               {mode === 'side-by-side' && (
-                <div className="grid grid-cols-2 gap-3" style={{ maxHeight: '55vh' }}>
-                  <div className="space-y-2 min-h-0">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
                     <div
-                      className={cn('relative overflow-hidden rounded-lg max-h-[50vh]', markingEyes === 'A' && 'cursor-crosshair ring-2 ring-amber-400')}
+                      className={cn('relative overflow-hidden rounded-lg', markingEyes === 'A' && 'cursor-crosshair ring-2 ring-amber-400')}
+                      style={cropAspect ? { maxHeight: '65vh' } : undefined}
                       onClick={(e) => handleEyeClick(e, 'A')}
                     >
                       {cropAspect && cropBoxA ? (
                         <>
-                          <svg viewBox={`0 0 ${cropAspect.w} ${cropAspect.h}`} className="block w-full max-h-[50vh]" aria-hidden="true" />
+                          <svg viewBox={`0 0 ${cropAspect.w} ${cropAspect.h}`} className="block w-full" style={{ maxHeight: '65vh' }} aria-hidden="true" />
                           <div className="absolute inset-0 overflow-hidden">
                             <img src={urlA} alt="Foto A" style={cropImgStyle(cropBoxA)} />
                           </div>
                         </>
                       ) : (
-                        <img src={urlA} alt="Foto A" className="block w-full max-h-[55vh] object-contain" />
+                        <img src={urlA} alt="Foto A" className="block w-full max-h-[65vh] object-contain" />
                       )}
                       {markingEyes === 'A' && (
                         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 z-10">
@@ -604,15 +605,16 @@ export function PhotoComparisonDialog({
                     </div>
                     <p className="text-center text-[11px] text-white/60">{labelA}</p>
                   </div>
-                  <div className="space-y-2 min-h-0">
+                  <div className="space-y-2">
                     <div
                       ref={containerRef}
-                      className={cn('relative overflow-hidden rounded-lg max-h-[50vh]', markingEyes === 'B' && 'cursor-crosshair ring-2 ring-amber-400')}
+                      className={cn('relative overflow-hidden rounded-lg', markingEyes === 'B' && 'cursor-crosshair ring-2 ring-amber-400')}
+                      style={cropAspect ? { maxHeight: '65vh' } : undefined}
                       onClick={(e) => handleEyeClick(e, 'B')}
                     >
                       {cropAspect ? (
                         <>
-                          <svg viewBox={`0 0 ${cropAspect.w} ${cropAspect.h}`} className="block w-full max-h-[50vh]" aria-hidden="true" />
+                          <svg viewBox={`0 0 ${cropAspect.w} ${cropAspect.h}`} className="block w-full" style={{ maxHeight: '65vh' }} aria-hidden="true" />
                           <div
                             className="absolute inset-0 overflow-hidden"
                             style={alignmentCss ? { transform: alignmentCss, transformOrigin: '0 0' } : undefined}
@@ -625,7 +627,7 @@ export function PhotoComparisonDialog({
                           </div>
                         </>
                       ) : (
-                        <img src={urlB} alt="Foto B" className="block w-full max-h-[55vh] object-contain"
+                        <img src={urlB} alt="Foto B" className="block w-full max-h-[65vh] object-contain"
                           style={alignmentCss ? { transform: alignmentCss, transformOrigin: '0 0' } : undefined}
                         />
                       )}
@@ -672,7 +674,7 @@ export function PhotoComparisonDialog({
                     {cropAspect ? (
                       <svg viewBox={`0 0 ${cropAspect.w} ${cropAspect.h}`} className="block w-full" aria-hidden="true" />
                     ) : (
-                      <img src={urlA} alt="" className="block w-full max-h-[55vh] object-contain invisible" aria-hidden="true" />
+                      <img src={urlA} alt="" className="block w-full max-h-[65vh] object-contain invisible" aria-hidden="true" />
                     )}
 
                     {/* Photo A base */}
