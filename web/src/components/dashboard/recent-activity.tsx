@@ -29,7 +29,7 @@ const ACTION_VERBS: Record<string, string> = {
   delete: 'removeu',
   login: 'entrou no sistema',
   logout: 'saiu do sistema',
-  consent_accepted: 'aceitou um termo de',
+  consent_accepted: 'assinou um termo de consentimento',
   impersonation_start: 'iniciou impersonação em',
   impersonation_end: 'finalizou impersonação em',
 }
@@ -73,7 +73,7 @@ function formatActivityDescription(entry: RecentActivityEntry): { userName: stri
   const entityLabel =
     ENTITY_LABELS[entry.entityType] ?? entry.entityType
 
-  if (entry.action === 'login' || entry.action === 'logout' || entry.action === 'impersonation_start' || entry.action === 'impersonation_end') {
+  if (entry.action === 'login' || entry.action === 'logout' || entry.action === 'impersonation_start' || entry.action === 'impersonation_end' || entry.action === 'consent_accepted') {
     return { userName: entry.userName, action: verb }
   }
 
