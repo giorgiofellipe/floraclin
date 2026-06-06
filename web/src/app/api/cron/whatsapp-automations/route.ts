@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
-import { getAppointmentsPendingConfirmation, markConfirmationSent } from '@/db/queries/appointments'
+import { getAppointmentsPendingConfirmationUntil, markConfirmationSent } from '@/db/queries/appointments'
 import { listAutomations, getTemplateByPurpose, upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
 import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
 import { normalizeBrPhone } from '@/lib/phone'
@@ -44,12 +44,8 @@ export async function GET(request: Request) {
         continue
       }
 
-      const config = (confirmationAuto.config ?? {}) as Record<string, unknown>
-      const hoursBeforeAppointment = (config.hoursBeforeAppointment as number) ?? 24
-
-      const pendingAppointments = await getAppointmentsPendingConfirmation(
+      const pendingAppointments = await getAppointmentsPendingConfirmationUntil(
         tenant.id,
-        hoursBeforeAppointment,
       )
 
       for (const appt of pendingAppointments) {

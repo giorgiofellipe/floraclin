@@ -34,11 +34,10 @@ const TRIGGERS = [
   {
     key: 'appointment_confirmation',
     label: 'Confirmação de consulta',
-    description: 'Envia confirmação automática antes da consulta. O paciente confirma ou solicita reagendamento pelo WhatsApp.',
+    description: 'Envia confirmação automática diariamente às 8h para consultas de amanhã (e de hoje, caso ainda não tenham sido enviadas). O paciente confirma ou solicita reagendamento pelo WhatsApp.',
     icon: CalendarCheck,
     purposeKey: 'appointment_confirmation',
     configFields: [
-      { key: 'hoursBeforeAppointment', label: 'Horas antes da consulta', type: 'number' as const, default: 24 },
       { key: 'autoAnamnesisEnabled', label: 'Enviar anamnese automaticamente após confirmação', type: 'toggle' as const, default: false },
       { key: 'anamnesisStaleDays', label: 'Dias para considerar anamnese desatualizada', type: 'number' as const, default: 60, dependsOn: 'autoAnamnesisEnabled' },
     ],

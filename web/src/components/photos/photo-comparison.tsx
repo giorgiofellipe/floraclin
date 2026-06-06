@@ -306,6 +306,13 @@ export function PhotoComparisonDialog({
     return { width: `min(${parts.join(', ')})` }
   }, [cropAspect, cropBoxA, cropBoxB, imgNaturalSize, maxVh])
 
+  const hasBanner = !autoDetecting && !loadingUrls && (needsLandmarksA || needsLandmarksB)
+  const sideBySideContainerStyle: React.CSSProperties | undefined = useMemo(() => {
+    if (!cropAspect) return undefined
+    const targetVh = hasBanner ? 73 : 80
+    return { width: `min(100%, calc(${targetVh}vh * ${cropAspect.w} / ${cropAspect.h}))` }
+  }, [cropAspect, hasBanner])
+
   const [redoing, setRedoing] = useState(false)
 
   const handleRedoCrop = useCallback(async () => {
@@ -347,9 +354,9 @@ export function PhotoComparisonDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-6xl max-h-[95vh] overflow-hidden border-0 bg-[#1C2B1E] p-0 [&>button:last-child]:hidden">
+      <DialogContent className="sm:max-w-6xl max-h-[95vh] flex flex-col gap-0 overflow-hidden border-0 bg-[#1C2B1E] p-0 [&>button:last-child]:hidden">
         {/* Top bar */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+        <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/10">
           <div className="flex items-center gap-1">
             {(['slider', 'side-by-side', 'overlay'] as const).map((m) => (
               <button
@@ -415,7 +422,7 @@ export function PhotoComparisonDialog({
 
         {/* Manual landmark banner */}
         {!autoDetecting && !loadingUrls && (needsLandmarksA || needsLandmarksB) && (
-          <div className="flex items-center justify-between gap-3 mx-4 mb-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-4 py-2.5">
+          <div className="shrink-0 flex items-center justify-between gap-3 mx-4 my-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-4 py-2.5">
             <div className="flex items-center gap-2 min-w-0">
               <Eye className="size-4 text-amber-400 shrink-0" />
               <p className="text-xs text-amber-200/90">
@@ -481,7 +488,7 @@ export function PhotoComparisonDialog({
         )}
 
         {/* Content area */}
-        <div className="px-4 pb-4">
+        <div className="flex-1 min-h-0 px-4 pb-4 overflow-hidden">
           {loadingUrls || autoDetecting ? (
             <div className="flex flex-col items-center justify-center gap-2 py-24">
               <Loader2 className="size-6 animate-spin text-white/40" />

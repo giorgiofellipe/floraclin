@@ -160,4 +160,8 @@ When a template name changes, update:
 3. The migration script itself — so it's idempotent on re-run
 
 The `purposeKey` stays the same — automations and the cron job resolve templates by `purposeKey`, not by name.
+
+## Cleaning up old templates
+
+**When replacing a template (new name/version), always delete the old version from Meta.** Use the Meta Cloud API `DELETE /{WABA_ID}/message_templates?name={old_name}` to remove the superseded template. This prevents stale duplicates from appearing in the UI after sync. Also remove the old row from `whatsapp_templates` in the DB if it has no `purposeKey` (orphaned after the new version took ownership).
 <!-- END:whatsapp-template-rules -->

@@ -3,7 +3,8 @@ import { appointments, patients, procedureTypes, users, tenants, calendarBlocks 
 import { eq, and, isNull, gte, lte, sql, or, ne, asc } from 'drizzle-orm'
 import type { AppointmentStatus, AppointmentSource } from '@/types'
 import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
-import { brToday, parseBrDate } from '@/lib/dates'
+import { brToday, parseBrDate, endOfBrDay, toLocalYmd } from '@/lib/dates'
+import { addDays } from 'date-fns'
 import { verifyTenantOwnership, verifyUserBelongsToTenant } from './helpers'
 
 export interface AppointmentListFilters {
@@ -421,6 +422,39 @@ export async function getAppointmentsPendingConfirmation(
         sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' <= ${windowEnd}::timestamptz`,
         sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' > now()`,
       )
+    )
+
+  return results.filter((a) => a.patientPhone || a.bookingPhone)
+}
+
+export async function getAppointmentsPendingConfirmationUntil(tenantId: string) {
+  const tomorrowStr = toLocalYmd(addDays(new Date(), 1))
+  const windowEnd = endOfBrDay(tomorrowStr)
+
+  const results = await db
+    .select({
+      id: appointments.id,
+      tenantId: appointments.tenantId,
+      patientId: appointments.patientId,
+      practitionerId: appointments.practitionerId,
+      date: appointments.date,
+      startTime: appointments.startTime,
+      bookingName: appointments.bookingName,
+      bookingPhone: appointments.bookingPhone,
+      patientName: patients.fullName,
+      patientPhone: patients.phone,
+    })
+    .from(appointments)
+    .leftJoin(patients, eq(patients.id, appointments.patientId))
+    .where(
+      and(
+        eq(appointments.tenantId, tenantId),
+        eq(appointments.status, 'scheduled'),
+        isNull(appointments.confirmationSentAt),
+        isNull(appointments.deletedAt),
+        sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' > now()`,
+        sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' <= ${windowEnd}::timestamptz`,
+      ),
     )
 
   return results.filter((a) => a.patientPhone || a.bookingPhone)
