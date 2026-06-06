@@ -23,7 +23,7 @@ vi.mock('@/db/schema', () => ({
 }))
 
 vi.mock('@/db/queries/appointments', () => ({
-  getAppointmentsPendingConfirmation: vi.fn(),
+  getAppointmentsPendingConfirmationUntil: vi.fn(),
   markConfirmationSent: vi.fn(),
 }))
 
@@ -53,7 +53,7 @@ import { db } from '@/db/client'
 
 const dbMock = db as unknown as { select: ReturnType<typeof vi.fn>; from: ReturnType<typeof vi.fn> }
 import {
-  getAppointmentsPendingConfirmation,
+  getAppointmentsPendingConfirmationUntil,
   markConfirmationSent,
 } from '@/db/queries/appointments'
 import {
@@ -130,7 +130,7 @@ function makeAutomation(overrides: Record<string, unknown> = {}) {
     trigger: 'appointment_confirmation',
     enabled: true,
     templateId: 'tpl-1',
-    config: { hoursBeforeAppointment: 24 },
+    config: {},
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -280,7 +280,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
       ])
       vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
       vi.mocked(getTemplateByPurpose).mockResolvedValue(template)
-      vi.mocked(getAppointmentsPendingConfirmation).mockResolvedValue(appointments)
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue(appointments)
       vi.mocked(sendTemplateMessage).mockResolvedValue({ metaMessageId: 'wamid.abc123' })
       vi.mocked(markConfirmationSent).mockResolvedValue(undefined as never)
       vi.mocked(upsertConversation).mockResolvedValue({ id: 'conv-1' } as never)
@@ -445,39 +445,18 @@ describe('GET /api/cron/whatsapp-automations', () => {
       )
     })
 
-    it('passes hoursBeforeAppointment config to the query', async () => {
+    it('passes only tenantId to the query', async () => {
       dbMock.from.mockResolvedValue([
         makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
       ])
-      vi.mocked(listAutomations).mockResolvedValue([
-        makeAutomation({ config: { hoursBeforeAppointment: 48 } }),
-      ])
+      vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
       vi.mocked(getTemplateByPurpose).mockResolvedValue(makeTemplate())
-      vi.mocked(getAppointmentsPendingConfirmation).mockResolvedValue([])
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([])
 
       await GET(makeRequest(CRON_SECRET))
 
-      expect(getAppointmentsPendingConfirmation).toHaveBeenCalledWith(
+      expect(getAppointmentsPendingConfirmationUntil).toHaveBeenCalledWith(
         'tenant-1',
-        48,
-      )
-    })
-
-    it('defaults hoursBeforeAppointment to 24 when config is null', async () => {
-      dbMock.from.mockResolvedValue([
-        makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
-      ])
-      vi.mocked(listAutomations).mockResolvedValue([
-        makeAutomation({ config: null }),
-      ])
-      vi.mocked(getTemplateByPurpose).mockResolvedValue(makeTemplate())
-      vi.mocked(getAppointmentsPendingConfirmation).mockResolvedValue([])
-
-      await GET(makeRequest(CRON_SECRET))
-
-      expect(getAppointmentsPendingConfirmation).toHaveBeenCalledWith(
-        'tenant-1',
-        24,
       )
     })
   })
@@ -491,7 +470,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
       ])
       vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
       vi.mocked(getTemplateByPurpose).mockResolvedValue(makeTemplate())
-      vi.mocked(getAppointmentsPendingConfirmation).mockResolvedValue([
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
         makeAppointment({ patientPhone: phone }),
       ])
       vi.mocked(sendTemplateMessage).mockResolvedValue({ metaMessageId: 'wamid.x' })
@@ -568,7 +547,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
       ])
       vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
       vi.mocked(getTemplateByPurpose).mockResolvedValue(makeTemplate())
-      vi.mocked(getAppointmentsPendingConfirmation).mockResolvedValue([
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
         makeAppointment({ date, startTime }),
       ])
       vi.mocked(sendTemplateMessage).mockResolvedValue({ metaMessageId: 'wamid.x' })
@@ -617,7 +596,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
       ])
       vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
       vi.mocked(getTemplateByPurpose).mockResolvedValue(makeTemplate())
-      vi.mocked(getAppointmentsPendingConfirmation).mockResolvedValue([
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
         makeAppointment({ id: 'appt-fail', patientPhone: '11999990001' }),
         makeAppointment({ id: 'appt-ok', patientPhone: '11999990002' }),
       ])
@@ -650,7 +629,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         .mockResolvedValueOnce([makeAutomation()])
 
       vi.mocked(getTemplateByPurpose).mockResolvedValue(makeTemplate())
-      vi.mocked(getAppointmentsPendingConfirmation).mockResolvedValue([
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
         makeAppointment({ patientPhone: '11999990003' }),
       ])
       vi.mocked(sendTemplateMessage).mockResolvedValue({ metaMessageId: 'wamid.y' })
@@ -697,7 +676,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
       ])
       vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
       vi.mocked(getTemplateByPurpose).mockResolvedValue(makeTemplate())
-      vi.mocked(getAppointmentsPendingConfirmation).mockResolvedValue([])
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([])
 
       const res = await GET(makeRequest(CRON_SECRET))
       const json = await res.json()
@@ -720,7 +699,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
 
       vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
       vi.mocked(getTemplateByPurpose).mockResolvedValue(makeTemplate())
-      vi.mocked(getAppointmentsPendingConfirmation)
+      vi.mocked(getAppointmentsPendingConfirmationUntil)
         .mockResolvedValueOnce([makeAppointment({ id: 'a1', patientPhone: '11999990001' })])
         .mockResolvedValueOnce([makeAppointment({ id: 'a2', patientPhone: '11999990002' })])
       vi.mocked(sendTemplateMessage).mockResolvedValue({ metaMessageId: 'wamid.multi' })
@@ -734,9 +713,9 @@ describe('GET /api/cron/whatsapp-automations', () => {
       const json = await res.json()
 
       expect(json.sent).toBe(2)
-      expect(getAppointmentsPendingConfirmation).toHaveBeenCalledTimes(2)
-      expect(getAppointmentsPendingConfirmation).toHaveBeenCalledWith('t1', 24)
-      expect(getAppointmentsPendingConfirmation).toHaveBeenCalledWith('t2', 24)
+      expect(getAppointmentsPendingConfirmationUntil).toHaveBeenCalledTimes(2)
+      expect(getAppointmentsPendingConfirmationUntil).toHaveBeenCalledWith('t1')
+      expect(getAppointmentsPendingConfirmationUntil).toHaveBeenCalledWith('t2')
     })
   })
 })
