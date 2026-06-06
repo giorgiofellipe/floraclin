@@ -28,6 +28,17 @@ export default auth((req) => {
     return NextResponse.next()
   }
 
+  // Stale JWT — token minted before schema changes, clear it and force re-login
+  if (isAuthenticated) {
+    const token = req.auth as any
+    if (!token?.v || token.v < 2) {
+      const res = NextResponse.redirect(new URL('/login', req.url))
+      res.cookies.delete('authjs.session-token')
+      res.cookies.delete('__Secure-authjs.session-token')
+      return res
+    }
+  }
+
   // Auth pages — redirect authenticated users appropriately
   if (pathname === '/login' || pathname === '/reset-password' || pathname === '/signup') {
     if (isAuthenticated) {

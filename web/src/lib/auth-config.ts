@@ -70,47 +70,51 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       }
       return true
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.sub = user.id
       }
 
-      const userId = token.sub
-      if (userId) {
-        const [membership] = await db
-          .select({
-            tenantId: tenantUsers.tenantId,
-            role: tenantUsers.role,
-            tenantStatus: tenants.status,
-            isPlatformAdmin: users.isPlatformAdmin,
-          })
-          .from(tenantUsers)
-          .innerJoin(tenants, and(eq(tenants.id, tenantUsers.tenantId), isNull(tenants.deletedAt)))
-          .innerJoin(users, eq(users.id, tenantUsers.userId))
-          .where(
-            and(
-              eq(tenantUsers.userId, userId),
-              eq(tenantUsers.isActive, true)
-            )
-          )
-          .limit(1)
+      token.v = 2
 
-        if (!membership) {
-          const [userRow] = await db
-            .select({ isPlatformAdmin: users.isPlatformAdmin })
-            .from(users)
-            .where(eq(users.id, userId))
+      if (user || trigger === 'update') {
+        const userId = token.sub
+        if (userId) {
+          const [membership] = await db
+            .select({
+              tenantId: tenantUsers.tenantId,
+              role: tenantUsers.role,
+              tenantStatus: tenants.status,
+              isPlatformAdmin: users.isPlatformAdmin,
+            })
+            .from(tenantUsers)
+            .innerJoin(tenants, and(eq(tenants.id, tenantUsers.tenantId), isNull(tenants.deletedAt)))
+            .innerJoin(users, eq(users.id, tenantUsers.userId))
+            .where(
+              and(
+                eq(tenantUsers.userId, userId),
+                eq(tenantUsers.isActive, true)
+              )
+            )
             .limit(1)
 
-          token.tenantId = null
-          token.tenantStatus = null
-          token.role = null
-          token.isPlatformAdmin = userRow?.isPlatformAdmin ?? false
-        } else {
-          token.tenantId = membership.tenantId
-          token.tenantStatus = membership.tenantStatus
-          token.role = membership.role
-          token.isPlatformAdmin = membership.isPlatformAdmin
+          if (!membership) {
+            const [userRow] = await db
+              .select({ isPlatformAdmin: users.isPlatformAdmin })
+              .from(users)
+              .where(eq(users.id, userId))
+              .limit(1)
+
+            token.tenantId = null
+            token.tenantStatus = null
+            token.role = null
+            token.isPlatformAdmin = userRow?.isPlatformAdmin ?? false
+          } else {
+            token.tenantId = membership.tenantId
+            token.tenantStatus = membership.tenantStatus
+            token.role = membership.role
+            token.isPlatformAdmin = membership.isPlatformAdmin
+          }
         }
       }
 
@@ -124,6 +128,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       ;(session as any).tenantStatus = token.tenantStatus ?? null
       ;(session as any).role = token.role ?? null
       ;(session as any).isPlatformAdmin = token.isPlatformAdmin ?? false
+      ;(session as any).v = token.v ?? 0
       return session
     },
   },
