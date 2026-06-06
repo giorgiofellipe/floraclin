@@ -70,49 +70,47 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       }
       return true
     },
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user }) {
       if (user) {
         token.sub = user.id
       }
 
-      if (user || trigger === 'update') {
-        const userId = token.sub
-        if (userId) {
-          const [membership] = await db
-            .select({
-              tenantId: tenantUsers.tenantId,
-              role: tenantUsers.role,
-              tenantStatus: tenants.status,
-              isPlatformAdmin: users.isPlatformAdmin,
-            })
-            .from(tenantUsers)
-            .innerJoin(tenants, and(eq(tenants.id, tenantUsers.tenantId), isNull(tenants.deletedAt)))
-            .innerJoin(users, eq(users.id, tenantUsers.userId))
-            .where(
-              and(
-                eq(tenantUsers.userId, userId),
-                eq(tenantUsers.isActive, true)
-              )
+      const userId = token.sub
+      if (userId) {
+        const [membership] = await db
+          .select({
+            tenantId: tenantUsers.tenantId,
+            role: tenantUsers.role,
+            tenantStatus: tenants.status,
+            isPlatformAdmin: users.isPlatformAdmin,
+          })
+          .from(tenantUsers)
+          .innerJoin(tenants, and(eq(tenants.id, tenantUsers.tenantId), isNull(tenants.deletedAt)))
+          .innerJoin(users, eq(users.id, tenantUsers.userId))
+          .where(
+            and(
+              eq(tenantUsers.userId, userId),
+              eq(tenantUsers.isActive, true)
             )
+          )
+          .limit(1)
+
+        if (!membership) {
+          const [userRow] = await db
+            .select({ isPlatformAdmin: users.isPlatformAdmin })
+            .from(users)
+            .where(eq(users.id, userId))
             .limit(1)
 
-          if (!membership) {
-            const [userRow] = await db
-              .select({ isPlatformAdmin: users.isPlatformAdmin })
-              .from(users)
-              .where(eq(users.id, userId))
-              .limit(1)
-
-            token.tenantId = null
-            token.tenantStatus = null
-            token.role = null
-            token.isPlatformAdmin = userRow?.isPlatformAdmin ?? false
-          } else {
-            token.tenantId = membership.tenantId
-            token.tenantStatus = membership.tenantStatus
-            token.role = membership.role
-            token.isPlatformAdmin = membership.isPlatformAdmin
-          }
+          token.tenantId = null
+          token.tenantStatus = null
+          token.role = null
+          token.isPlatformAdmin = userRow?.isPlatformAdmin ?? false
+        } else {
+          token.tenantId = membership.tenantId
+          token.tenantStatus = membership.tenantStatus
+          token.role = membership.role
+          token.isPlatformAdmin = membership.isPlatformAdmin
         }
       }
 
