@@ -102,6 +102,7 @@ export function PointFormModal({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    e.stopPropagation()
     const parsedQuantity = parseFloat(quantity)
     if (!productName.trim() || isNaN(parsedQuantity) || parsedQuantity <= 0) {
       return
