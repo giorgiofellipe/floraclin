@@ -119,8 +119,16 @@ export function PhotoComparisonDialog({
       }).catch(() => {})
     }
 
-    setMarkingEyes(null)
     setEyeClicks([])
+
+    // Auto-start marking B after confirming A
+    const otherSide = side === 'A' ? 'B' : 'A'
+    const otherCrop = side === 'A' ? cropBoxB : cropBoxA
+    if (otherCrop && !otherCrop.landmarks) {
+      setMarkingEyes(otherSide)
+    } else {
+      setMarkingEyes(null)
+    }
   }
   const autoDetectAttempted = useRef(new Set<string>())
   const cropBoxARef = useRef(cropBoxA)
