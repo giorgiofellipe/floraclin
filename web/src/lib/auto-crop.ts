@@ -22,8 +22,14 @@ export async function autoDetectAndSaveCrop(
     img = imageSource
   }
 
-  const detection = await detectFace(img)
-  if (!detection) {
+  const rawDetection = await detectFace(img)
+  // Reject false positives: a real face in a clinical photo should occupy
+  // a meaningful portion of the frame (IPD >= 5% of image width).
+  const MIN_IPD = 0.05
+  const detection = rawDetection && rawDetection.landmarks.interPupillaryDistance >= MIN_IPD ? rawDetection : null
+  if (!detection && rawDetection) {
+    console.warn('[auto-crop] Face detection rejected — IPD too small:', rawDetection.landmarks.interPupillaryDistance.toFixed(4), '(min:', MIN_IPD, ') — using center crop fallback')
+  } else if (!detection) {
     console.warn('[auto-crop] Face detection failed — using center crop fallback')
   } else {
     console.info('[auto-crop] Face detected, yaw:', detection.rotation.yaw.toFixed(1), 'ipd:', detection.landmarks.interPupillaryDistance.toFixed(3))
