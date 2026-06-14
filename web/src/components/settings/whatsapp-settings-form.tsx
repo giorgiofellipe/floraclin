@@ -25,9 +25,43 @@ import {
   EyeIcon,
   EyeOffIcon,
   WifiIcon,
+  ImageIcon,
+  XIcon,
 } from 'lucide-react'
 import { WhatsAppTemplateList } from './whatsapp-template-list'
 import { WhatsAppAutomations } from './whatsapp-automations'
+
+// ─── Help Image ─────────────────────────────────────────────────────
+
+function HelpImage({ src, alt }: { src: string; alt: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1 text-sage hover:text-forest hover:underline text-xs font-medium transition-colors"
+      >
+        <ImageIcon className="size-3" />
+        ver imagem
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setOpen(false)}>
+          <div className="relative max-w-3xl max-h-[90vh] w-full" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="absolute -top-3 -right-3 z-10 flex items-center justify-center size-8 rounded-full bg-white shadow-lg text-charcoal hover:bg-cream transition-colors"
+            >
+              <XIcon className="size-4" />
+            </button>
+            <img src={src} alt={alt} className="w-full rounded-lg shadow-2xl" />
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
 
 // ─── Schema ──────────────────────────────────────────────────────────
 
@@ -222,47 +256,154 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
             <Accordion>
               <AccordionItem>
                 <AccordionTrigger className="text-sm font-medium text-charcoal">
-                  Como configurar o WhatsApp Business API
+                  Passo a passo: como configurar
                 </AccordionTrigger>
                 <AccordionContent>
-                  <ol className="list-decimal list-inside space-y-2 text-sm text-mid">
-                    <li>
-                      Acesse o{' '}
-                      <a
-                        href="https://developers.facebook.com/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sage hover:underline"
-                      >
-                        Meta for Developers
-                      </a>{' '}
-                      e crie ou selecione um aplicativo do tipo Business.
-                    </li>
-                    <li>
-                      No painel do app, adicione o produto <strong>WhatsApp</strong> e siga o assistente de configuração.
-                    </li>
-                    <li>
-                      Copie o <strong>Phone Number ID</strong> e o{' '}
-                      <strong>WhatsApp Business Account ID</strong> da seção WhatsApp {'>'} API Setup.
-                    </li>
-                    <li>
-                      Gere um <strong>Access Token permanente</strong> (System User Token) com as permissões{' '}
-                      <code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">whatsapp_business_messaging</code>{' '}
-                      e{' '}
-                      <code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">whatsapp_business_management</code>.
-                    </li>
-                    <li>
-                      Na seção <strong>Webhooks</strong>, configure a <strong>Callback URL</strong> e o{' '}
-                      <strong>Verify Token</strong> listados abaixo.
-                    </li>
-                    <li>
-                      Inscreva-se nos campos <code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">messages</code>{' '}
-                      e <code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">message_template_status_update</code>.
-                    </li>
-                    <li>
-                      Cole as credenciais nos campos abaixo e clique em <strong>Testar conexão</strong> para validar.
-                    </li>
-                  </ol>
+                  <div className="space-y-6 text-sm text-mid">
+                    {/* Step 1 */}
+                    <div className="space-y-1.5">
+                      <p className="font-medium text-charcoal flex items-center gap-2">
+                        <span className="flex items-center justify-center size-5 rounded-full bg-forest text-cream text-[10px] font-bold shrink-0">1</span>
+                        Criar um aplicativo no Meta
+                      </p>
+                      <div className="ml-7 space-y-2">
+                        <p>
+                          Acesse{' '}
+                          <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer" className="text-sage hover:underline font-medium">
+                            developers.facebook.com/apps
+                          </a>{' '}
+                          e faça login com a conta do Facebook da clínica.
+                        </p>
+                        <p>Clique em <strong>Criar aplicativo</strong> e siga os passos:</p>
+                        <ol className="list-decimal list-inside space-y-1 ml-1">
+                          <li>
+                            <strong>Detalhes do app</strong> — preencha o nome (ex: &quot;Minha Clínica&quot;) e o e-mail de contato.{' '}
+                            <HelpImage src="/help/whatsapp-setup/create-app-step1.png" alt="Detalhes do app" />
+                          </li>
+                          <li>
+                            <strong>Casos de uso</strong> — selecione <strong>Conectar-se com clientes pelo WhatsApp</strong>.{' '}
+                            <HelpImage src="/help/whatsapp-setup/create-app-step2.png" alt="Casos de uso" />
+                          </li>
+                          <li>
+                            <strong>Empresa</strong> — selecione o portfólio empresarial da sua clínica.{' '}
+                            <HelpImage src="/help/whatsapp-setup/create-app-step3.png" alt="Empresa" />
+                          </li>
+                          <li>
+                            <strong>Requisitos</strong> — não precisa alterar nada, apenas clique em <strong>Avançar</strong>.
+                          </li>
+                          <li>
+                            <strong>Visão geral</strong> — revise os dados e clique em <strong>Criar aplicativo</strong>.{' '}
+                            <HelpImage src="/help/whatsapp-setup/create-app-step5.png" alt="Visão geral" />
+                          </li>
+                        </ol>
+                      </div>
+                    </div>
+
+                    {/* Step 2 */}
+                    <div className="space-y-1.5">
+                      <p className="font-medium text-charcoal flex items-center gap-2">
+                        <span className="flex items-center justify-center size-5 rounded-full bg-forest text-cream text-[10px] font-bold shrink-0">2</span>
+                        Configurar o WhatsApp no aplicativo
+                      </p>
+                      <div className="ml-7 space-y-1">
+                        <p>
+                          Após criar o app, você verá o painel com a seção <strong>Personalização do app e requisitos</strong>.{' '}
+                          <HelpImage src="/help/whatsapp-setup/app-dashboard.png" alt="Painel do aplicativo" />
+                        </p>
+                        <p>Clique em <strong>Personalizar o caso de uso &quot;Conectar-se com clientes pelo WhatsApp&quot;</strong> e depois em <strong>Comece a usar a API</strong>.</p>
+                        <p>Siga o assistente para vincular sua conta do WhatsApp Business e adicionar um número de telefone. Se ainda não tem uma conta, ele vai guiar a criação.</p>
+                      </div>
+                    </div>
+
+                    {/* Step 3 */}
+                    <div className="space-y-1.5">
+                      <p className="font-medium text-charcoal flex items-center gap-2">
+                        <span className="flex items-center justify-center size-5 rounded-full bg-forest text-cream text-[10px] font-bold shrink-0">3</span>
+                        Copiar as credenciais
+                      </p>
+                      <div className="ml-7 space-y-1">
+                        <p>Na tela de <strong>Configuração da API</strong> (dentro do caso de uso do WhatsApp), você encontrará:</p>
+                        <ul className="list-disc list-inside ml-2 space-y-0.5">
+                          <li><strong>ID do número de telefone</strong> — abaixo do número selecionado</li>
+                          <li><strong>ID da conta do WhatsApp Business</strong> — no topo da página</li>
+                        </ul>
+                        <p>Copie ambos e cole nos campos <strong>Phone Number ID</strong> e <strong>Business Account ID</strong> abaixo.</p>
+                      </div>
+                    </div>
+
+                    {/* Step 4 */}
+                    <div className="space-y-1.5">
+                      <p className="font-medium text-charcoal flex items-center gap-2">
+                        <span className="flex items-center justify-center size-5 rounded-full bg-forest text-cream text-[10px] font-bold shrink-0">4</span>
+                        Gerar um token de acesso permanente
+                      </p>
+                      <div className="ml-7 space-y-2">
+                        <p>
+                          Acesse{' '}
+                          <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener noreferrer" className="text-sage hover:underline font-medium">
+                            Configurações do negócio → Usuários do sistema
+                          </a>.
+                        </p>
+                        <ol className="list-decimal list-inside space-y-1 ml-1">
+                          <li>Se não tiver um usuário do sistema, clique em <strong>Adicionar</strong>, dê um nome e selecione a função <strong>Admin</strong>.</li>
+                          <li>Clique em <strong>Atribuir ativos</strong> → selecione <strong>Apps</strong> → escolha seu app → ative <strong>Controle total</strong>. Depois selecione <strong>Contas do WhatsApp</strong> → escolha sua conta → ative <strong>Controle total</strong>.</li>
+                          <li>Clique em <strong>Gerar token</strong> → selecione seu app → validade <strong>Nunca</strong> → marque as permissões:</li>
+                        </ol>
+                        <ul className="list-disc list-inside ml-6 space-y-0.5">
+                          <li><code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">whatsapp_business_messaging</code></li>
+                          <li><code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">whatsapp_business_management</code></li>
+                        </ul>
+                        <p className="ml-1">Copie o token gerado (ele só aparece uma vez!) e cole no campo <strong>Access Token</strong> abaixo.</p>
+                      </div>
+                    </div>
+
+                    {/* Step 5 */}
+                    <div className="space-y-1.5">
+                      <p className="font-medium text-charcoal flex items-center gap-2">
+                        <span className="flex items-center justify-center size-5 rounded-full bg-forest text-cream text-[10px] font-bold shrink-0">5</span>
+                        Configurar o Webhook (para receber mensagens)
+                      </p>
+                      <div className="ml-7 space-y-1">
+                        <p>Volte ao painel do app → clique em <strong>Casos de uso</strong> no menu lateral → <strong>Personalizar</strong> → <strong>Configuração</strong>.</p>
+                        <p>Na seção <strong>Webhook</strong>, clique em <strong>Editar</strong> e preencha:</p>
+                        <ul className="list-disc list-inside ml-2 space-y-0.5">
+                          <li><strong>URL de retorno de chamada:</strong> copie da seção &quot;Webhook&quot; mais abaixo nesta página</li>
+                          <li><strong>Token de verificação:</strong> copie da seção &quot;Webhook&quot; mais abaixo nesta página</li>
+                        </ul>
+                        <p>Clique em <strong>Verificar e salvar</strong>.</p>
+                      </div>
+                    </div>
+
+                    {/* Step 6 */}
+                    <div className="space-y-1.5">
+                      <p className="font-medium text-charcoal flex items-center gap-2">
+                        <span className="flex items-center justify-center size-5 rounded-full bg-forest text-cream text-[10px] font-bold shrink-0">6</span>
+                        Ativar os campos do Webhook
+                      </p>
+                      <div className="ml-7 space-y-1">
+                        <p>Ainda na tela do Webhook, abaixo da URL configurada, clique em <strong>Gerenciar</strong> e ative:</p>
+                        <ul className="list-disc list-inside ml-2 space-y-0.5">
+                          <li><code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">messages</code> — para receber e acompanhar mensagens</li>
+                          <li><code className="bg-[#F4F6F8] px-1.5 py-0.5 rounded text-xs">message_template_status_update</code> — para atualizar status dos templates</li>
+                        </ul>
+                      </div>
+                    </div>
+
+                    {/* Step 7 */}
+                    <div className="space-y-1.5">
+                      <p className="font-medium text-charcoal flex items-center gap-2">
+                        <span className="flex items-center justify-center size-5 rounded-full bg-forest text-cream text-[10px] font-bold shrink-0">7</span>
+                        Testar a conexão
+                      </p>
+                      <div className="ml-7">
+                        <p>Preencha os campos abaixo com as credenciais copiadas e clique em <strong>Testar conexão</strong>. Se aparecer &quot;Conexão verificada&quot;, está tudo pronto!</p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[3px] border border-sage/20 bg-sage/5 px-3 py-2.5 text-xs text-mid">
+                      Precisa de ajuda? Entre em contato com nosso suporte pelo WhatsApp.
+                    </div>
+                  </div>
                 </AccordionContent>
               </AccordionItem>
             </Accordion>
