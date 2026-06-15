@@ -72,3 +72,10 @@ ALTER TABLE "floraclin"."whatsapp_credits" ADD CONSTRAINT "whatsapp_credits_tena
 CREATE UNIQUE INDEX "uq_whatsapp_credits_tenant_period" ON "floraclin"."whatsapp_credits" USING btree ("tenant_id","period_start");
 --> statement-breakpoint
 ALTER TABLE "floraclin"."whatsapp_templates" ADD COLUMN IF NOT EXISTS "system_template" boolean DEFAULT false NOT NULL;
+--> statement-breakpoint
+UPDATE "floraclin"."tenants"
+SET settings = settings || '{"whatsapp_mode": "own"}'::jsonb
+WHERE deleted_at IS NULL
+  AND settings->>'whatsapp_phone_number_id' IS NOT NULL
+  AND settings->>'whatsapp_access_token' IS NOT NULL
+  AND (settings->>'whatsapp_mode' IS NULL OR settings->>'whatsapp_mode' = '');
