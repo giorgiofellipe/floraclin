@@ -234,7 +234,7 @@ export function SubscriptionDetailDialog({
             <InfoField label="Fim" value={formatDate(subscription.currentPeriodEnd)} />
             <InfoField label="Origem" value={SOURCE_LABELS[subscription.source] ?? subscription.source} />
             {detail?.creditUsage != null && (
-              <InfoField label="Créditos WA" value={String(detail.creditUsage)} />
+              <InfoField label="Créditos WA" value={`${detail.creditUsage.used ?? 0} / ${detail.creditUsage.total ?? 0}`} />
             )}
           </div>
 
