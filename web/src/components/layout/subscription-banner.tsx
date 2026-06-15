@@ -28,7 +28,7 @@ export function SubscriptionBanner({ subscriptionStatus, currentPeriodEnd }: Sub
       <div className="flex items-center justify-between gap-3 border-b border-sage/20 bg-sage/10 px-4 py-2 text-sm text-forest">
         <p>
           Teste gratuito · {daysLeft} {daysLeft === 1 ? 'dia restante' : 'dias restantes'}.{' '}
-          <Link href="/configuracoes?tab=billing" className="font-medium underline underline-offset-2 hover:opacity-80">
+          <Link href="/configuracoes?tab=assinatura" className="font-medium underline underline-offset-2 hover:opacity-80">
             Ver planos
           </Link>
         </p>
@@ -51,7 +51,7 @@ export function SubscriptionBanner({ subscriptionStatus, currentPeriodEnd }: Sub
           Seu período de teste expirou. Assine um plano para continuar usando WhatsApp e outros recursos.
         </p>
         <Link
-          href="/configuracoes?tab=billing"
+          href="/configuracoes?tab=assinatura"
           className="shrink-0 rounded-md bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700 transition-colors"
         >
           Assinar agora

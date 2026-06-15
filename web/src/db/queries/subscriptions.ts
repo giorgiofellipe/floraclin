@@ -43,6 +43,55 @@ export async function getPlanBySlug(slug: string): Promise<Plan | null> {
   return plan ?? null
 }
 
+export async function createPlan(data: {
+  slug: string
+  name: string
+  priceCents: number
+  trialDays?: number | null
+  stripePriceId?: string | null
+  limits: Record<string, number>
+  features: Record<string, boolean>
+  displayOrder?: number
+}): Promise<Plan> {
+  const [plan] = await db
+    .insert(plans)
+    .values({
+      slug: data.slug,
+      name: data.name,
+      priceCents: data.priceCents,
+      trialDays: data.trialDays ?? null,
+      stripePriceId: data.stripePriceId ?? null,
+      limits: data.limits,
+      features: data.features,
+      displayOrder: data.displayOrder ?? 0,
+    })
+    .returning()
+
+  return plan
+}
+
+export async function updatePlan(
+  planId: string,
+  data: Partial<{
+    name: string
+    priceCents: number
+    trialDays: number | null
+    stripePriceId: string | null
+    limits: Record<string, number>
+    features: Record<string, boolean>
+    displayOrder: number
+    active: boolean
+  }>,
+): Promise<Plan> {
+  const [updated] = await db
+    .update(plans)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(plans.id, planId))
+    .returning()
+
+  return updated
+}
+
 // ─── SUBSCRIPTION READS ────────────────────────────────────────────
 
 export async function getSubscription(tenantId: string): Promise<SubscriptionWithPlan | null> {

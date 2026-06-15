@@ -47,8 +47,8 @@ export async function createCheckoutSession(
     customer,
     line_items: [{ price: plan.stripePriceId, quantity: 1 }],
     metadata: { tenantId, planSlug },
-    success_url: `${appUrl}/configuracoes?tab=billing&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${appUrl}/configuracoes?tab=billing`,
+    success_url: `${appUrl}/configuracoes?tab=assinatura&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${appUrl}/configuracoes?tab=assinatura`,
   })
 
   if (!session.url) throw new Error('Stripe Checkout session created without a URL')

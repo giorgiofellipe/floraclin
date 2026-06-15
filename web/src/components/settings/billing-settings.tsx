@@ -91,16 +91,20 @@ const STATUS_CONFIG: Record<SubscriptionStatus, { label: string; className: stri
   },
 }
 
-const FEATURE_LABELS: Record<string, string> = {
-  whatsapp: 'WhatsApp integrado',
-  online_booking: 'Agendamento online',
-  financial: 'Gestão financeira',
-  documents: 'Documentos personalizados',
-  consent_forms: 'Termos de consentimento',
-  evaluation_forms: 'Fichas de avaliação',
-  packages: 'Pacotes de procedimentos',
-  audit_log: 'Log de auditoria',
-  google_calendar: 'Google Calendar',
+const CORE_FEATURES = [
+  'WhatsApp integrado',
+  'Agendamento online',
+  'Gestão financeira',
+  'Documentos personalizados',
+  'Termos de consentimento',
+  'Fichas de avaliação',
+  'Pacotes de procedimentos',
+  'Log de auditoria',
+  'Google Calendar',
+]
+
+const GATED_FEATURE_LABELS: Record<string, string> = {
+  own_whatsapp_number: 'Número próprio de WhatsApp',
 }
 
 function UsageBar({ label, icon: Icon, used, limit }: {
@@ -191,13 +195,19 @@ function PlanCard({
             <MessageCircleIcon className="h-3.5 w-3.5 text-mid" />
             {(limits.whatsapp_conversations ?? 0) === -1
               ? 'Conversas ilimitadas'
-              : `${limits.whatsapp_conversations ?? 0} conversas/mês`}
+              : `${limits.whatsapp_conversations ?? 0} créditos de WhatsApp/mês`}
           </li>
         </ul>
 
         <p className="text-xs font-medium text-mid uppercase tracking-wider pt-2">Recursos</p>
         <ul className="space-y-1 text-sm">
-          {Object.entries(FEATURE_LABELS).map(([key, label]) => {
+          {CORE_FEATURES.map((label) => (
+            <li key={label} className="flex items-center gap-2 text-charcoal">
+              <CheckIcon className="h-3.5 w-3.5 text-sage" />
+              {label}
+            </li>
+          ))}
+          {Object.entries(GATED_FEATURE_LABELS).map(([key, label]) => {
             const enabled = features[key] === true
             return (
               <li
@@ -361,7 +371,7 @@ export function BillingSettings() {
         <div className="space-y-4">
           <UsageBar label="Usuários" icon={UsersIcon} used={usage.users.used} limit={usage.users.limit} />
           <UsageBar label="Pacientes" icon={UserIcon} used={usage.patients.used} limit={usage.patients.limit} />
-          <UsageBar label="Conversas WhatsApp" icon={MessageCircleIcon} used={usage.whatsapp.used} limit={usage.whatsapp.limit} />
+          <UsageBar label="Créditos WhatsApp" icon={MessageCircleIcon} used={usage.whatsapp.used} limit={usage.whatsapp.limit} />
         </div>
       </div>
 
@@ -370,7 +380,7 @@ export function BillingSettings() {
         <div>
           <p className="text-sm font-medium text-charcoal mb-4">Planos disponíveis</p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {plans.map((p) => (
+            {plans.filter((p) => !(p.priceCents === 0 && plan.priceCents > 0)).map((p) => (
               <PlanCard
                 key={p.id}
                 plan={p}
