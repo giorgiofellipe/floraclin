@@ -6,6 +6,7 @@ vi.mock('@/db/queries/tenants', () => ({
     id: 'tenant-1',
     settings: {
       whatsapp_enabled: true,
+      whatsapp_mode: 'own',
       whatsapp_phone_number_id: 'phone-id',
       whatsapp_access_token: 'access-token',
       whatsapp_business_account_id: 'biz-id',

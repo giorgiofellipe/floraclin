@@ -6,22 +6,54 @@ export { normalizeBrPhone } from '@/lib/phone'
 const GRAPH_API_VERSION = 'v21.0'
 const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`
 
+export type WhatsAppMode = 'floraclin' | 'own'
+
+export class CreditExhaustedError extends Error {
+  creditsUsed: number
+  creditsTotal: number
+
+  constructor(creditsUsed: number, creditsTotal: number) {
+    super(`WhatsApp credits exhausted (${creditsUsed}/${creditsTotal})`)
+    this.name = 'CreditExhaustedError'
+    this.creditsUsed = creditsUsed
+    this.creditsTotal = creditsTotal
+  }
+}
+
 interface WhatsAppCredentials {
   phoneNumberId: string
   accessToken: string
   businessAccountId: string
 }
 
+export async function getWhatsAppMode(tenantId: string): Promise<WhatsAppMode> {
+  const tenant = await getTenant(tenantId)
+  if (!tenant) throw new Error('Tenant not found')
+  const settings = tenant.settings as Record<string, unknown> | null
+  return (settings?.whatsapp_mode as WhatsAppMode) ?? 'floraclin'
+}
+
 async function getCredentials(tenantId: string): Promise<WhatsAppCredentials> {
   const tenant = await getTenant(tenantId)
   if (!tenant) throw new Error('Tenant not found')
   const settings = tenant.settings as Record<string, unknown> | null
-  if (!settings?.whatsapp_enabled) throw new Error('WhatsApp not enabled')
-  const phoneNumberId = settings.whatsapp_phone_number_id as string
-  const accessToken = settings.whatsapp_access_token as string
-  const businessAccountId = settings.whatsapp_business_account_id as string
+  const mode = (settings?.whatsapp_mode as WhatsAppMode) ?? 'floraclin'
+
+  if (mode === 'own') {
+    if (!settings?.whatsapp_enabled) throw new Error('WhatsApp not enabled')
+    const phoneNumberId = settings.whatsapp_phone_number_id as string
+    const accessToken = settings.whatsapp_access_token as string
+    const businessAccountId = settings.whatsapp_business_account_id as string
+    if (!phoneNumberId || !accessToken || !businessAccountId)
+      throw new Error('WhatsApp credentials missing (phoneNumberId, accessToken, or businessAccountId)')
+    return { phoneNumberId, accessToken, businessAccountId }
+  }
+
+  const phoneNumberId = process.env.FLORACLIN_WA_PHONE_NUMBER_ID
+  const accessToken = process.env.FLORACLIN_WA_ACCESS_TOKEN
+  const businessAccountId = process.env.FLORACLIN_WA_BUSINESS_ACCOUNT_ID
   if (!phoneNumberId || !accessToken || !businessAccountId)
-    throw new Error('WhatsApp credentials missing (phoneNumberId, accessToken, or businessAccountId)')
+    throw new Error('FloraClin shared WhatsApp credentials not configured (FLORACLIN_WA_* env vars)')
   return { phoneNumberId, accessToken, businessAccountId }
 }
 
@@ -72,6 +104,16 @@ export async function sendTemplateMessage(
   params?: Record<string, string>,
   buttonParams?: { index: number; subType: string; parameters: { type: string; text: string }[] }[],
 ) {
+  const mode = await getWhatsAppMode(tenantId)
+
+  if (mode === 'floraclin') {
+    const { consumeCredit } = await import('@/db/queries/whatsapp-credits')
+    const result = await consumeCredit(tenantId, to)
+    if (!result.allowed) {
+      throw new CreditExhaustedError(result.creditsUsed, result.creditsTotal)
+    }
+  }
+
   const creds = await getCredentials(tenantId)
   const components: Record<string, unknown>[] = []
   if (params && Object.keys(params).length > 0) {
@@ -143,7 +185,6 @@ export async function sendOrEnqueueDocument(
 ) {
   const {
     getConversationByPhone,
-    getTemplateByPurpose,
     getQueuedCount,
     createQueuedMessage,
     createMessage,
@@ -173,7 +214,7 @@ export async function sendOrEnqueueDocument(
 
   // No conversation exists yet — send template only, document must wait for patient reply
   if (!conversation) {
-    const resumeTemplate = await getTemplateByPurpose(tenantId, 'resume_conversation')
+    const resumeTemplate = await getTemplateForTenant(tenantId, 'resume_conversation')
     if (resumeTemplate?.status === 'APPROVED') {
       await sendTemplateMessage(tenantId, to, resumeTemplate.name, resumeTemplate.language, { '1': patientFirstName })
     }
@@ -185,7 +226,7 @@ export async function sendOrEnqueueDocument(
 
   if (queueCount === 0) {
     // First message when window is closed → send resume template
-    const resumeTemplate = await getTemplateByPurpose(tenantId, 'resume_conversation')
+    const resumeTemplate = await getTemplateForTenant(tenantId, 'resume_conversation')
     let resumeMetaMessageId: string | null = null
     if (resumeTemplate?.status === 'APPROVED') {
       const resumeResult = await sendTemplateMessage(tenantId, to, resumeTemplate.name, resumeTemplate.language, { '1': patientFirstName })
@@ -234,6 +275,37 @@ export async function getTemplates(tenantId: string) {
     components: unknown[]
     rejected_reason?: string | null
   }>
+}
+
+export async function getTemplateForTenant(
+  tenantId: string,
+  purposeKey: string,
+) {
+  const mode = await getWhatsAppMode(tenantId)
+  const { getTemplateByPurpose } = await import('@/db/queries/whatsapp')
+  if (mode === 'floraclin') {
+    return getSystemTemplate(purposeKey)
+  }
+  return getTemplateByPurpose(tenantId, purposeKey)
+}
+
+async function getSystemTemplate(purposeKey: string) {
+  const { db } = await import('@/db/client')
+  const { whatsappTemplates } = await import('@/db/schema')
+  const { eq, and } = await import('drizzle-orm')
+
+  const [template] = await db
+    .select()
+    .from(whatsappTemplates)
+    .where(
+      and(
+        eq(whatsappTemplates.systemTemplate, true),
+        eq(whatsappTemplates.purposeKey, purposeKey),
+      ),
+    )
+    .limit(1)
+
+  return template ?? null
 }
 
 export async function createTemplate(

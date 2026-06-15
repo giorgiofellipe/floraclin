@@ -5,7 +5,7 @@ import Resend from 'next-auth/providers/resend'
 import { DrizzleAdapter } from '@auth/drizzle-adapter'
 import type { Adapter } from 'next-auth/adapters'
 import { db } from '@/db/client'
-import { users, sessions, accounts, verificationTokens, tenantUsers, tenants } from '@/db/schema'
+import { users, sessions, accounts, verificationTokens, tenantUsers, tenants, tenantSubscriptions, plans } from '@/db/schema'
 import { eq, and, isNull } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 
@@ -109,11 +109,29 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             token.tenantStatus = null
             token.role = null
             token.isPlatformAdmin = userRow?.isPlatformAdmin ?? false
+            token.subscriptionStatus = 'expired'
+            token.planSlug = 'free'
+            token.planFeatures = {}
           } else {
             token.tenantId = membership.tenantId
             token.tenantStatus = membership.tenantStatus
             token.role = membership.role
             token.isPlatformAdmin = membership.isPlatformAdmin
+
+            const [sub] = await db
+              .select({
+                status: tenantSubscriptions.status,
+                planSlug: plans.slug,
+                planFeatures: plans.features,
+              })
+              .from(tenantSubscriptions)
+              .innerJoin(plans, eq(tenantSubscriptions.planId, plans.id))
+              .where(eq(tenantSubscriptions.tenantId, membership.tenantId))
+              .limit(1)
+
+            token.subscriptionStatus = sub?.status ?? 'expired'
+            token.planSlug = sub?.planSlug ?? 'free'
+            token.planFeatures = sub?.planFeatures ?? {}
           }
         }
       }
@@ -128,6 +146,9 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       ;(session as any).tenantStatus = token.tenantStatus ?? null
       ;(session as any).role = token.role ?? null
       ;(session as any).isPlatformAdmin = token.isPlatformAdmin ?? false
+      ;(session as any).subscriptionStatus = token.subscriptionStatus ?? 'expired'
+      ;(session as any).planSlug = token.planSlug ?? 'free'
+      ;(session as any).planFeatures = token.planFeatures ?? {}
       ;(session as any).v = token.v ?? 0
       return session
     },

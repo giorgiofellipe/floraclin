@@ -92,5 +92,12 @@ export const queryKeys = {
       list: (search: string, page: number) => ['admin', 'users', 'list', search, page] as const,
       detail: (id: string) => ['admin', 'users', 'detail', id] as const,
     },
+    subscriptions: {
+      all: ['admin', 'subscriptions'] as const,
+      list: (status?: string, plan?: string, search?: string) =>
+        ['admin', 'subscriptions', 'list', status, plan, search] as const,
+      detail: (tenantId: string) => ['admin', 'subscriptions', 'detail', tenantId] as const,
+    },
+    plans: ['admin', 'plans'] as const,
   },
 } as const

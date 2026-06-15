@@ -1,8 +1,9 @@
 import { db } from '@/db/client'
-import { tenants, users, tenantUsers, patients, financialEntries } from '@/db/schema'
+import { tenants, users, tenantUsers, patients, financialEntries, plans } from '@/db/schema'
 import { eq, and, ilike, or, sql, desc, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { sendInviteEmail } from '@/lib/email'
+import { createSubscription } from '@/db/queries/subscriptions'
 import type { PaginatedResult } from '@/types'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -115,7 +116,7 @@ export async function createTenantWithOwner(data: {
 
   const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/login`
 
-  return withTransaction(async (tx) => {
+  const tenant = await withTransaction(async (tx) => {
     // 1. Check if user already exists in our DB
     const [existingDbUser] = await tx
       .select({ id: users.id })
@@ -150,7 +151,7 @@ export async function createTenantWithOwner(data: {
     }
 
     // 3. Insert tenant
-    const [tenant] = await tx
+    const [t] = await tx
       .insert(tenants)
       .values({
         name: data.name,
@@ -160,7 +161,7 @@ export async function createTenantWithOwner(data: {
 
     // 4. Insert tenant_users (owner)
     await tx.insert(tenantUsers).values({
-      tenantId: tenant.id,
+      tenantId: t.id,
       userId,
       role: 'owner',
       isActive: true,
@@ -171,8 +172,15 @@ export async function createTenantWithOwner(data: {
       // Email delivery failure should not break tenant creation
     })
 
-    return tenant
+    return t
   })
+
+  const [freePlan] = await db.select().from(plans).where(eq(plans.slug, 'free')).limit(1)
+  if (freePlan) {
+    await createSubscription(tenant.id, freePlan.id)
+  }
+
+  return tenant
 }
 
 // ─── Update tenant (admin) ──────────────────────────────────────────
@@ -347,6 +355,13 @@ export async function approveTenant(tenantId: string) {
     .set({ status: 'active', updatedAt: new Date() })
     .where(and(eq(tenants.id, tenantId), eq(tenants.status, 'pending_approval')))
     .returning({ id: tenants.id, name: tenants.name })
+
+  if (updated) {
+    const [freePlan] = await db.select().from(plans).where(eq(plans.slug, 'free')).limit(1)
+    if (freePlan) {
+      await createSubscription(tenantId, freePlan.id)
+    }
+  }
 
   return updated
 }

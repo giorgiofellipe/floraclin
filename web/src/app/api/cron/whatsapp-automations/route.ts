@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { getAppointmentsPendingConfirmationUntil, markConfirmationSent } from '@/db/queries/appointments'
-import { listAutomations, getTemplateByPurpose, upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
-import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
+import { listAutomations, upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
+import { sendTemplateMessage, resolveTemplateBody, CreditExhaustedError, getTemplateForTenant } from '@/lib/whatsapp'
 import { normalizeBrPhone } from '@/lib/phone'
 
 export async function GET(request: Request) {
@@ -20,6 +20,8 @@ export async function GET(request: Request) {
 
   const waEnabled = allTenants.filter((t) => {
     const s = t.settings as Record<string, unknown> | null
+    const mode = (s?.whatsapp_mode as string) ?? 'floraclin'
+    if (mode === 'floraclin') return true
     return s?.whatsapp_enabled
   })
 
@@ -38,7 +40,7 @@ export async function GET(request: Request) {
         continue
       }
 
-      const template = await getTemplateByPurpose(tenant.id, 'appointment_confirmation')
+      const template = await getTemplateForTenant(tenant.id, 'appointment_confirmation')
       if (!template || template.status !== 'APPROVED') {
         skipped++
         continue
@@ -98,6 +100,10 @@ export async function GET(request: Request) {
 
           sent++
         } catch (err) {
+          if (err instanceof CreditExhaustedError) {
+            console.warn(`[cron] Credits exhausted for tenant ${tenant.name}, skipping remaining appointments`)
+            break
+          }
           console.error(`[cron] Failed to send confirmation for appointment ${appt.id}:`, err)
           errors.push({
             tenant: tenant.name,

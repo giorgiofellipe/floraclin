@@ -38,6 +38,13 @@ vi.mock('@/db/queries/whatsapp', () => ({
 vi.mock('@/lib/whatsapp', () => ({
   sendTemplateMessage: vi.fn(),
   resolveTemplateBody: vi.fn(),
+  getTemplateForTenant: vi.fn(),
+  CreditExhaustedError: class CreditExhaustedError extends Error {
+    constructor(public creditsUsed: number, public creditsTotal: number) {
+      super(`Credits exhausted: ${creditsUsed}/${creditsTotal}`)
+      this.name = 'CreditExhaustedError'
+    }
+  },
 }))
 
 vi.mock('@/lib/phone', () => ({
@@ -58,12 +65,11 @@ import {
 } from '@/db/queries/appointments'
 import {
   listAutomations,
-  getTemplateByPurpose,
   upsertConversation,
   createMessage,
   pushSseEvent,
 } from '@/db/queries/whatsapp'
-import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
+import { sendTemplateMessage, resolveTemplateBody, getTemplateForTenant } from '@/lib/whatsapp'
 import { GET } from '../route'
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -175,11 +181,11 @@ describe('GET /api/cron/whatsapp-automations', () => {
   // ── Tenant filtering ─────────────────────────────────────────────
 
   describe('tenant filtering', () => {
-    it('skips tenants without whatsapp_enabled setting', async () => {
+    it('skips tenants with own mode and whatsapp disabled', async () => {
       dbMock.from.mockResolvedValue([
-        makeTenant('t1', 'Clinic A', { whatsapp_enabled: false }),
-        makeTenant('t2', 'Clinic B', null),
-        makeTenant('t3', 'Clinic C', { someOtherSetting: true }),
+        makeTenant('t1', 'Clinic A', { whatsapp_mode: 'own', whatsapp_enabled: false }),
+        makeTenant('t2', 'Clinic B', { whatsapp_mode: 'own' }),
+        makeTenant('t3', 'Clinic C', { whatsapp_mode: 'own', someOtherSetting: true }),
       ])
 
       const res = await GET(makeRequest(CRON_SECRET))
@@ -188,7 +194,6 @@ describe('GET /api/cron/whatsapp-automations', () => {
       expect(res.status).toBe(200)
       expect(json.ok).toBe(true)
       expect(json.sent).toBe(0)
-      // listAutomations should never be called for non-WA tenants
       expect(listAutomations).not.toHaveBeenCalled()
     })
 
@@ -205,7 +210,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
 
       expect(json.skipped).toBe(1)
       expect(json.sent).toBe(0)
-      expect(getTemplateByPurpose).not.toHaveBeenCalled()
+      expect(getTemplateForTenant).not.toHaveBeenCalled()
     })
 
     it('skips tenant when appointment_confirmation automation is disabled', async () => {
@@ -228,7 +233,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         makeTenant('t1', 'Clinic A', { whatsapp_enabled: true }),
       ])
       vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
-      vi.mocked(getTemplateByPurpose).mockResolvedValue(
+      vi.mocked(getTemplateForTenant).mockResolvedValue(
         makeTemplate({ status: 'PENDING' }),
       )
 
@@ -245,7 +250,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         makeTenant('t1', 'Clinic A', { whatsapp_enabled: true }),
       ])
       vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
-      vi.mocked(getTemplateByPurpose).mockResolvedValue(null)
+      vi.mocked(getTemplateForTenant).mockResolvedValue(null)
 
       const res = await GET(makeRequest(CRON_SECRET))
       const json = await res.json()
@@ -279,7 +284,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
       ])
       vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
-      vi.mocked(getTemplateByPurpose).mockResolvedValue(template)
+      vi.mocked(getTemplateForTenant).mockResolvedValue(template)
       vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue(appointments)
       vi.mocked(sendTemplateMessage).mockResolvedValue({ metaMessageId: 'wamid.abc123' })
       vi.mocked(markConfirmationSent).mockResolvedValue(undefined as never)
@@ -450,7 +455,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
       ])
       vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
-      vi.mocked(getTemplateByPurpose).mockResolvedValue(makeTemplate())
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
       vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([])
 
       await GET(makeRequest(CRON_SECRET))
@@ -469,7 +474,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
       ])
       vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
-      vi.mocked(getTemplateByPurpose).mockResolvedValue(makeTemplate())
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
       vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
         makeAppointment({ patientPhone: phone }),
       ])
@@ -546,7 +551,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         makeTenant('tenant-1', 'Clinic', { whatsapp_enabled: true }),
       ])
       vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
-      vi.mocked(getTemplateByPurpose).mockResolvedValue(makeTemplate())
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
       vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
         makeAppointment({ date, startTime }),
       ])
@@ -595,7 +600,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
       ])
       vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
-      vi.mocked(getTemplateByPurpose).mockResolvedValue(makeTemplate())
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
       vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
         makeAppointment({ id: 'appt-fail', patientPhone: '11999990001' }),
         makeAppointment({ id: 'appt-ok', patientPhone: '11999990002' }),
@@ -628,7 +633,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         .mockRejectedValueOnce(new Error('DB connection lost'))
         .mockResolvedValueOnce([makeAutomation()])
 
-      vi.mocked(getTemplateByPurpose).mockResolvedValue(makeTemplate())
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
       vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
         makeAppointment({ patientPhone: '11999990003' }),
       ])
@@ -675,7 +680,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
       ])
       vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
-      vi.mocked(getTemplateByPurpose).mockResolvedValue(makeTemplate())
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
       vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([])
 
       const res = await GET(makeRequest(CRON_SECRET))
@@ -698,7 +703,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
       ])
 
       vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
-      vi.mocked(getTemplateByPurpose).mockResolvedValue(makeTemplate())
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
       vi.mocked(getAppointmentsPendingConfirmationUntil)
         .mockResolvedValueOnce([makeAppointment({ id: 'a1', patientPhone: '11999990001' })])
         .mockResolvedValueOnce([makeAppointment({ id: 'a2', patientPhone: '11999990002' })])
