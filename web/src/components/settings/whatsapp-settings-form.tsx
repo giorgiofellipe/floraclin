@@ -275,11 +275,11 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
               <div className="flex items-center gap-2">
                 <MessageSquareIcon className="size-4 text-forest" />
                 <span className="text-sm font-medium text-charcoal">
-                  FloraClin (Padrao)
+                  FloraClin (Padrão)
                 </span>
               </div>
               <p className="text-xs text-mid">
-                Use o WhatsApp compartilhado do FloraClin. Incluso no seu plano com creditos mensais de conversas.
+                Use o WhatsApp compartilhado do FloraClin. Incluso no seu plano com créditos mensais de conversas.
               </p>
             </div>
           </button>
@@ -312,11 +312,11 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
               <div className="flex items-center gap-2">
                 <SmartphoneIcon className="size-4 text-forest" />
                 <span className="text-sm font-medium text-charcoal">
-                  Numero proprio
+                  Número próprio
                 </span>
               </div>
               <p className="text-xs text-mid">
-                Conecte seu proprio numero via WhatsApp Business API. Mensagens saem com o nome da sua clinica.
+                Conecte seu próprio número via WhatsApp Business API. Mensagens saem com o nome da sua clínica.
               </p>
               {!canUseOwnNumber && !billingLoading && (
                 <div className="flex items-center gap-1.5 pt-1">
