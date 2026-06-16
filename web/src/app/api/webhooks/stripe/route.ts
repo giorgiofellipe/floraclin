@@ -127,7 +127,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
 }
 
 function extractSubscriptionId(invoice: Stripe.Invoice): string | undefined {
-  const sub = invoice.parent?.subscription_details?.subscription
+  const sub = (invoice as any).parent?.subscription_details?.subscription ?? (invoice as any).subscription
   if (!sub) return undefined
   return typeof sub === 'string' ? sub : sub.id
 }

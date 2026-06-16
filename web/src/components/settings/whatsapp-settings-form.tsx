@@ -525,7 +525,15 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
                     </div>
 
                     <div className="rounded-[3px] border border-sage/20 bg-sage/5 px-3 py-2.5 text-xs text-mid">
-                      Precisa de ajuda? Entre em contato com nosso suporte pelo WhatsApp.
+                      Precisa de ajuda?{' '}
+                      <a
+                        href="https://wa.me/5547936182197?text=Ol%C3%A1%2C%20preciso%20de%20ajuda%20para%20configurar%20o%20WhatsApp%20Business%20API"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-sage hover:text-forest underline underline-offset-2"
+                      >
+                        Fale com nosso suporte pelo WhatsApp
+                      </a>.
                     </div>
                   </div>
                 </AccordionContent>
