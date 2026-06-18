@@ -321,9 +321,9 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
               {!canUseOwnNumber && !billingLoading && (
                 <div className="flex items-center gap-1.5 pt-1">
                   <LockIcon className="size-3 text-mid" />
-                  <span className="text-xs text-mid font-medium">
+                  <a href="/configuracoes?tab=assinatura" className="text-xs text-sage font-medium hover:text-forest underline underline-offset-2">
                     Requer plano Starter ou superior
-                  </span>
+                  </a>
                 </div>
               )}
             </div>

@@ -55,16 +55,6 @@ export async function getOrCreateCurrentPeriod(tenantId: string): Promise<Credit
     )
     .limit(1)
 
-  if (existing) {
-    return {
-      id: existing.id,
-      creditsTotal: existing.creditsTotal,
-      creditsUsed: existing.creditsUsed,
-      periodStart: existing.periodStart,
-      periodEnd: existing.periodEnd,
-    }
-  }
-
   const [sub] = await db
     .select({ limits: plans.limits })
     .from(tenantSubscriptions)
@@ -74,6 +64,22 @@ export async function getOrCreateCurrentPeriod(tenantId: string): Promise<Credit
 
   const limits = (sub?.limits ?? {}) as Record<string, number>
   const creditsTotal = limits.whatsapp_conversations ?? 0
+
+  if (existing) {
+    if (existing.creditsTotal !== creditsTotal) {
+      await db
+        .update(whatsappCredits)
+        .set({ creditsTotal, updatedAt: new Date() })
+        .where(eq(whatsappCredits.id, existing.id))
+    }
+    return {
+      id: existing.id,
+      creditsTotal,
+      creditsUsed: existing.creditsUsed,
+      periodStart: existing.periodStart,
+      periodEnd: existing.periodEnd,
+    }
+  }
 
   const [created] = await db
     .insert(whatsappCredits)
