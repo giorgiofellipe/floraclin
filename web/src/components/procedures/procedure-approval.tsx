@@ -279,12 +279,12 @@ export function ProcedureApproval({
     return { service_contract: contractText }
   }, [contractText, contractSigned])
 
-  // Single initialization: load all data at once.
-  const initRef = useRef(false)
+  const loadedTypeIdsRef = useRef<string>('')
 
   useEffect(() => {
-    if (initRef.current) return
-    initRef.current = true
+    const key = allTypeIds.slice().sort().join(',')
+    if (key === loadedTypeIdsRef.current) return
+    loadedTypeIdsRef.current = key
 
     async function initAll() {
       const typesRes = await fetch('/api/procedure-types')

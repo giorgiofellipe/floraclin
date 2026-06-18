@@ -20,6 +20,7 @@ export async function createProspect(
     })
     .onConflictDoUpdate({
       target: [prospects.tenantId, prospects.phone] as never,
+      targetWhere: sql`stage NOT IN ('convertido', 'perdido')`,
       set: {
         name: data.name ?? sql`${prospects.name}`,
         deletedAt: null,

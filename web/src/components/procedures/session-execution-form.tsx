@@ -13,7 +13,7 @@
  */
 
 import * as React from 'react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useForm, useFieldArray, Controller, type Resolver, type UseFormReturn } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -207,6 +207,11 @@ export function SessionExecutionForm({
       ),
     },
   })
+
+  const prefillDiagramPoints = useMemo(
+    () => buildPrefillDiagramPoints(prefillFromPreviousSession?.diagrams) as DiagramPointData[],
+    [prefillFromPreviousSession?.diagrams],
+  )
 
   // The existing execution subcomponents expect `UseFormReturn<ProcedureExecutionFormData>`.
   // Our local schema is structurally compatible for the fields they touch
@@ -537,9 +542,9 @@ export function SessionExecutionForm({
         </p>
         <DiagramSection
           form={formAsExecution}
-          plannedPoints={[]}
+          plannedPoints={prefillDiagramPoints}
           plannedSnapshot={null}
-          showPlannedOverlay={false}
+          showPlannedOverlay={prefillDiagramPoints.length > 0}
           onToggleOverlay={() => {}}
           catalogProducts={catalogProducts}
           patientGender={patientGender}

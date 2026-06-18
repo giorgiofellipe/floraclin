@@ -23,9 +23,10 @@ export async function autoDetectAndSaveCrop(
   }
 
   const rawDetection = await detectFace(img)
-  // Reject false positives: a real face in a clinical photo should occupy
-  // a meaningful portion of the frame (IPD >= 5% of image width).
-  const MIN_IPD = 0.05
+  // Reject false positives: IPD threshold is yaw-aware because profile
+  // photos foreshorten the eye distance significantly.
+  const absYaw = rawDetection ? Math.abs(rawDetection.rotation.yaw) : 0
+  const MIN_IPD = absYaw > 40 ? 0.02 : 0.05
   const detection = rawDetection && rawDetection.landmarks.interPupillaryDistance >= MIN_IPD ? rawDetection : null
   if (!detection && rawDetection) {
     console.warn('[auto-crop] Face detection rejected — IPD too small:', rawDetection.landmarks.interPupillaryDistance.toFixed(4), '(min:', MIN_IPD, ') — using center crop fallback')

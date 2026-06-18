@@ -396,7 +396,7 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
                           <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer" className="text-sage hover:underline font-medium">
                             developers.facebook.com/apps
                           </a>{' '}
-                          e faça login com a conta do Facebook da clínica.
+                          e faça login com a conta do Meta Business da clínica.
                         </p>
                         <p>Clique em <strong>Criar aplicativo</strong> e siga os passos:</p>
                         <ol className="list-decimal list-inside space-y-1 ml-1">
