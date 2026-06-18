@@ -7,7 +7,6 @@ import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Accordion,
@@ -27,9 +26,13 @@ import {
   WifiIcon,
   ImageIcon,
   XIcon,
+  MessageSquareIcon,
+  SmartphoneIcon,
+  LockIcon,
 } from 'lucide-react'
 import { WhatsAppTemplateList } from './whatsapp-template-list'
 import { WhatsAppAutomations } from './whatsapp-automations'
+import { WhatsAppCreditBar } from './whatsapp-credit-bar'
 
 // ─── Help Image ─────────────────────────────────────────────────────
 
@@ -67,8 +70,10 @@ function HelpImage({ src, alt }: { src: string; alt: string }) {
 
 const ALLOWED_ROLES = ['owner', 'practitioner', 'receptionist', 'financial'] as const
 
+type WhatsAppMode = 'floraclin' | 'own'
+
 const whatsappSettingsSchema = z.object({
-  whatsapp_enabled: z.boolean(),
+  whatsapp_mode: z.enum(['floraclin', 'own']),
   whatsapp_phone_number_id: z.string().optional(),
   whatsapp_business_account_id: z.string().optional(),
   whatsapp_access_token: z.string().optional(),
@@ -76,6 +81,13 @@ const whatsappSettingsSchema = z.object({
 })
 
 type WhatsAppSettingsInput = z.infer<typeof whatsappSettingsSchema>
+
+type BillingUsage = {
+  plan: { name: string; slug: string; features?: Record<string, boolean> }
+  usage: {
+    whatsapp: { used: number; limit: number; periodEnd?: string }
+  }
+}
 
 // ─── Constants ───────────────────────────────────────────────────────
 
@@ -101,6 +113,8 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
   const [showAccessToken, setShowAccessToken] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [verifyResult, setVerifyResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [billingUsage, setBillingUsage] = useState<BillingUsage | null>(null)
+  const [billingLoading, setBillingLoading] = useState(true)
 
   const savedToken = (initialSettings?.whatsapp_access_token as string) || ''
   const verifyToken = (initialSettings?.whatsapp_verify_token as string) || 'floraclin_webhook_verify'
@@ -110,11 +124,12 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
     handleSubmit,
     watch,
     control,
+    setValue,
     formState: { errors, isDirty },
   } = useForm<WhatsAppSettingsInput>({
     resolver: zodResolver(whatsappSettingsSchema),
     defaultValues: {
-      whatsapp_enabled: (initialSettings?.whatsapp_enabled as boolean) ?? false,
+      whatsapp_mode: (initialSettings?.whatsapp_mode as WhatsAppMode) || 'floraclin',
       whatsapp_phone_number_id: (initialSettings?.whatsapp_phone_number_id as string) || '',
       whatsapp_business_account_id: (initialSettings?.whatsapp_business_account_id as string) || '',
       whatsapp_access_token: '',
@@ -122,9 +137,28 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
     },
   })
 
-  const enabled = watch('whatsapp_enabled')
+  const mode = watch('whatsapp_mode')
   const phoneNumberId = watch('whatsapp_phone_number_id')
   const accessToken = watch('whatsapp_access_token')
+
+  const canUseOwnNumber = billingUsage?.plan?.features?.own_whatsapp_number === true
+
+  useEffect(() => {
+    async function fetchBilling() {
+      try {
+        const res = await fetch('/api/billing/usage')
+        if (res.ok) {
+          const data = await res.json()
+          setBillingUsage(data)
+        }
+      } catch {
+        // Billing data is non-critical for the form
+      } finally {
+        setBillingLoading(false)
+      }
+    }
+    fetchBilling()
+  }, [])
 
   function maskToken(token: string): string {
     if (!token || token.length <= 4) return token
@@ -188,7 +222,8 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
       const payload: Record<string, unknown> = {
         _action: 'whatsapp_settings',
         settings: {
-          whatsapp_enabled: data.whatsapp_enabled,
+          whatsapp_mode: data.whatsapp_mode,
+          whatsapp_enabled: true,
           whatsapp_phone_number_id: data.whatsapp_phone_number_id || null,
           whatsapp_business_account_id: data.whatsapp_business_account_id || null,
           whatsapp_allowed_roles: data.whatsapp_allowed_roles,
@@ -209,40 +244,120 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
-      {/* Enable/Disable Toggle */}
+      {/* Mode Selector */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 mb-1">
           <h3 className="uppercase tracking-wider text-xs font-medium text-mid">
-            Integração
+            Modo de envio
           </h3>
           <div className="flex-1 h-px bg-blush/60" />
         </div>
 
-        <Controller
-          control={control}
-          name="whatsapp_enabled"
-          render={({ field }) => (
-            <div className="flex items-center gap-4 rounded-[3px] border border-[#E8ECEF] bg-white p-4 transition-colors">
-              <Switch
-                checked={field.value}
-                onCheckedChange={field.onChange}
-              />
-              <div className="space-y-0.5">
-                <Label className="text-sm font-medium text-charcoal">
-                  {field.value ? 'WhatsApp ativado' : 'WhatsApp desativado'}
-                </Label>
-                <p className="text-xs text-mid">
-                  {field.value
-                    ? 'Mensagens serão enviadas e recebidas via WhatsApp Business API.'
-                    : 'Ative para configurar o envio e recebimento de mensagens.'}
-                </p>
-              </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {/* Option A: FloraClin (Default) */}
+          <button
+            type="button"
+            onClick={() => setValue('whatsapp_mode', 'floraclin', { shouldDirty: true })}
+            className={`relative flex items-start gap-3 rounded-[3px] border-2 p-4 text-left transition-colors ${
+              mode === 'floraclin'
+                ? 'border-forest bg-forest/5'
+                : 'border-[#E8ECEF] bg-white hover:border-sage/40'
+            }`}
+          >
+            <div className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border-2 ${
+              mode === 'floraclin' ? 'border-forest' : 'border-mid/40'
+            }`}>
+              {mode === 'floraclin' && (
+                <div className="size-2 rounded-full bg-forest" />
+              )}
             </div>
-          )}
-        />
+            <div className="flex-1 space-y-1">
+              <div className="flex items-center gap-2">
+                <MessageSquareIcon className="size-4 text-forest" />
+                <span className="text-sm font-medium text-charcoal">
+                  FloraClin (Padrão)
+                </span>
+              </div>
+              <p className="text-xs text-mid">
+                Use o WhatsApp compartilhado do FloraClin. Incluso no seu plano com créditos mensais de conversas.
+              </p>
+            </div>
+          </button>
+
+          {/* Option B: Own Number */}
+          <button
+            type="button"
+            onClick={() => {
+              if (canUseOwnNumber) {
+                setValue('whatsapp_mode', 'own', { shouldDirty: true })
+              }
+            }}
+            disabled={!canUseOwnNumber}
+            className={`relative flex items-start gap-3 rounded-[3px] border-2 p-4 text-left transition-colors ${
+              mode === 'own'
+                ? 'border-forest bg-forest/5'
+                : !canUseOwnNumber
+                  ? 'border-[#E8ECEF] bg-[#F4F6F8] opacity-70 cursor-not-allowed'
+                  : 'border-[#E8ECEF] bg-white hover:border-sage/40'
+            }`}
+          >
+            <div className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border-2 ${
+              mode === 'own' ? 'border-forest' : 'border-mid/40'
+            }`}>
+              {mode === 'own' && (
+                <div className="size-2 rounded-full bg-forest" />
+              )}
+            </div>
+            <div className="flex-1 space-y-1">
+              <div className="flex items-center gap-2">
+                <SmartphoneIcon className="size-4 text-forest" />
+                <span className="text-sm font-medium text-charcoal">
+                  Número próprio
+                </span>
+              </div>
+              <p className="text-xs text-mid">
+                Conecte seu próprio número via WhatsApp Business API. Mensagens saem com o nome da sua clínica.
+              </p>
+              {!canUseOwnNumber && !billingLoading && (
+                <div className="flex items-center gap-1.5 pt-1">
+                  <LockIcon className="size-3 text-mid" />
+                  <span className="text-xs text-mid font-medium">
+                    Requer plano Starter ou superior
+                  </span>
+                </div>
+              )}
+            </div>
+          </button>
+        </div>
       </div>
 
-      {enabled && (
+      {/* FloraClin Mode: Credit Bar */}
+      {mode === 'floraclin' && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="uppercase tracking-wider text-xs font-medium text-mid">
+              Uso de conversas
+            </h3>
+            <div className="flex-1 h-px bg-blush/60" />
+          </div>
+
+          {billingLoading ? (
+            <div className="rounded-[3px] border border-[#E8ECEF] bg-white p-4 animate-pulse">
+              <div className="h-4 w-48 bg-[#F4F6F8] rounded mb-3" />
+              <div className="h-2 w-full bg-[#F4F6F8] rounded" />
+            </div>
+          ) : billingUsage ? (
+            <WhatsAppCreditBar
+              used={billingUsage.usage.whatsapp.used}
+              total={billingUsage.usage.whatsapp.limit}
+              periodEnd={billingUsage.usage.whatsapp.periodEnd ?? ''}
+            />
+          ) : null}
+        </div>
+      )}
+
+      {/* Own Number Mode: Setup Instructions + Credentials + Webhook + Templates */}
+      {mode === 'own' && (
         <>
           {/* Setup Instructions Accordion */}
           <div className="space-y-4">
@@ -251,6 +366,15 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
                 Ajuda
               </h3>
               <div className="flex-1 h-px bg-blush/60" />
+              <a
+                href="https://wa.me/5547936182197?text=Ol%C3%A1%2C%20preciso%20de%20ajuda%20para%20configurar%20o%20WhatsApp%20Business%20API"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-[3px] border border-forest/20 bg-forest/5 px-3 py-1.5 text-xs font-medium text-forest hover:bg-forest/10 transition-colors"
+              >
+                <MessageSquareIcon className="size-3.5" />
+                Pedir ajuda ao suporte
+              </a>
             </div>
 
             <Accordion>
@@ -401,7 +525,15 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
                     </div>
 
                     <div className="rounded-[3px] border border-sage/20 bg-sage/5 px-3 py-2.5 text-xs text-mid">
-                      Precisa de ajuda? Entre em contato com nosso suporte pelo WhatsApp.
+                      Precisa de ajuda?{' '}
+                      <a
+                        href="https://wa.me/5547936182197?text=Ol%C3%A1%2C%20preciso%20de%20ajuda%20para%20configurar%20o%20WhatsApp%20Business%20API"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-sage hover:text-forest underline underline-offset-2"
+                      >
+                        Fale com nosso suporte pelo WhatsApp
+                      </a>.
                     </div>
                   </div>
                 </AccordionContent>
@@ -567,50 +699,6 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
             </div>
           </div>
 
-          {/* Allowed Roles */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="uppercase tracking-wider text-xs font-medium text-mid">
-                Perfis com Acesso
-              </h3>
-              <div className="flex-1 h-px bg-blush/60" />
-            </div>
-
-            <p className="text-xs text-mid">
-              Selecione quais perfis podem enviar e visualizar mensagens do WhatsApp.
-            </p>
-
-            <Controller
-              control={control}
-              name="whatsapp_allowed_roles"
-              render={({ field }) => (
-                <div className="space-y-3">
-                  {ALLOWED_ROLES.map((role) => (
-                    <label
-                      key={role}
-                      className="flex items-center gap-3 cursor-pointer"
-                    >
-                      <Checkbox
-                        checked={field.value.includes(role)}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            field.onChange([...field.value, role])
-                          } else {
-                            field.onChange(field.value.filter((r) => r !== role))
-                          }
-                        }}
-                      />
-                      <span className="text-sm text-charcoal">{ROLE_LABELS[role]}</span>
-                    </label>
-                  ))}
-                  {errors.whatsapp_allowed_roles && (
-                    <p className="text-xs text-red-500">{errors.whatsapp_allowed_roles.message}</p>
-                  )}
-                </div>
-              )}
-            />
-          </div>
-
           {/* Template Management */}
           <WhatsAppTemplateList
             configured={!!(initialSettings?.whatsapp_phone_number_id && initialSettings?.whatsapp_access_token)}
@@ -620,11 +708,55 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
               if (!res.ok) throw new Error(data.error || 'Erro ao provisionar templates')
             }}
           />
-
-          {/* Automations */}
-          <WhatsAppAutomations />
         </>
       )}
+
+      {/* Allowed Roles (shown for both modes) */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 mb-1">
+          <h3 className="uppercase tracking-wider text-xs font-medium text-mid">
+            Perfis com Acesso
+          </h3>
+          <div className="flex-1 h-px bg-blush/60" />
+        </div>
+
+        <p className="text-xs text-mid">
+          Selecione quais perfis podem enviar e visualizar mensagens do WhatsApp.
+        </p>
+
+        <Controller
+          control={control}
+          name="whatsapp_allowed_roles"
+          render={({ field }) => (
+            <div className="space-y-3">
+              {ALLOWED_ROLES.map((role) => (
+                <label
+                  key={role}
+                  className="flex items-center gap-3 cursor-pointer"
+                >
+                  <Checkbox
+                    checked={field.value.includes(role)}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        field.onChange([...field.value, role])
+                      } else {
+                        field.onChange(field.value.filter((r) => r !== role))
+                      }
+                    }}
+                  />
+                  <span className="text-sm text-charcoal">{ROLE_LABELS[role]}</span>
+                </label>
+              ))}
+              {errors.whatsapp_allowed_roles && (
+                <p className="text-xs text-red-500">{errors.whatsapp_allowed_roles.message}</p>
+              )}
+            </div>
+          )}
+        />
+      </div>
+
+      {/* Automations (shown for both modes) */}
+      <WhatsAppAutomations />
 
       {/* Submit */}
       <div className="flex justify-end pt-2">

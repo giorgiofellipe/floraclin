@@ -756,6 +756,7 @@ export const whatsappTemplates = floraclinSchema.table('whatsapp_templates', {
   blueprintSlug: varchar('blueprint_slug', { length: 100 }),
   submittedAt: timestamp('submitted_at', { withTimezone: true }),
   variableMapping: jsonb('variable_mapping'),
+  systemTemplate: boolean('system_template').notNull().default(false),
   syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -999,6 +1000,55 @@ export const patientEvolutionRevisions = floraclinSchema.table('patient_evolutio
   editedAt: timestamp('edited_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('idx_patient_evolution_revisions_evolution').on(table.evolutionId, table.editedAt),
+])
+
+// ─── SUBSCRIPTIONS & PLANS ──────────────────────────────────────────
+
+export const plans = floraclinSchema.table('plans', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  slug: varchar('slug', { length: 50 }).notNull().unique(),
+  name: varchar('name', { length: 100 }).notNull(),
+  priceCents: integer('price_cents').notNull().default(0),
+  billingInterval: varchar('billing_interval', { length: 20 }).notNull().default('month'),
+  trialDays: integer('trial_days'),
+  stripePriceId: varchar('stripe_price_id', { length: 255 }),
+  limits: jsonb('limits').notNull().default({}),
+  features: jsonb('features').notNull().default({}),
+  displayOrder: integer('display_order').notNull().default(0),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const tenantSubscriptions = floraclinSchema.table('tenant_subscriptions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id).unique(),
+  planId: uuid('plan_id').notNull().references(() => plans.id),
+  status: varchar('status', { length: 20 }).notNull().default('trialing'),
+  stripeCustomerId: varchar('stripe_customer_id', { length: 255 }),
+  stripeSubscriptionId: varchar('stripe_subscription_id', { length: 255 }),
+  currentPeriodStart: timestamp('current_period_start', { withTimezone: true }).notNull().defaultNow(),
+  currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }).notNull(),
+  canceledAt: timestamp('canceled_at', { withTimezone: true }),
+  source: varchar('source', { length: 20 }).notNull().default('trial'),
+  giftedBy: uuid('gifted_by').references(() => users.id),
+  giftedMonths: integer('gifted_months'),
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const whatsappCredits = floraclinSchema.table('whatsapp_credits', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+  periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
+  creditsTotal: integer('credits_total').notNull(),
+  creditsUsed: integer('credits_used').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('uq_whatsapp_credits_tenant_period').on(table.tenantId, table.periodStart),
 ])
 
 // ─── RELATIONS ───────────────────────────────────────────────────────

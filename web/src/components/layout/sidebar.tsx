@@ -17,6 +17,8 @@ import {
   SearchIcon,
   MessageCircle,
   ContactRound,
+  CreditCard,
+  Package,
 } from 'lucide-react'
 import { useImpersonate } from '@/hooks/mutations/use-impersonation'
 import { useAdminTenants } from '@/hooks/queries/use-admin-tenants'
@@ -305,6 +307,8 @@ function TenantSwitcher({ currentTenantName, impersonatingTenantName }: { curren
 const adminItems = [
   { href: '/admin/clinicas', label: 'Clínicas', icon: Building2 },
   { href: '/admin/usuarios', label: 'Usuários', icon: UsersRound },
+  { href: '/admin/assinaturas', label: 'Assinaturas', icon: CreditCard },
+  { href: '/admin/planos', label: 'Planos', icon: Package },
 ]
 
 // ─── Navigation ────────────────────────────────────────────────────

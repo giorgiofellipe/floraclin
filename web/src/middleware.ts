@@ -63,6 +63,7 @@ export default auth((req) => {
   const tenantStatus = session?.tenantStatus as string | null
   const tenantId = session?.tenantId as string | null
   const isPlatformAdmin = session?.isPlatformAdmin as boolean
+  const subscriptionStatus = session?.subscriptionStatus as string | null
 
   // Platform admins can always access /admin routes regardless of tenant status
   if (pathname.startsWith('/admin')) {

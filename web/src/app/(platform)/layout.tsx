@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
+import { SubscriptionBanner } from '@/components/layout/subscription-banner'
 import { getAuthContext, getUserTenants } from '@/lib/auth'
+import { getSubscription } from '@/db/queries/subscriptions'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { eq } from 'drizzle-orm'
@@ -9,13 +11,14 @@ import { eq } from 'drizzle-orm'
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
   const auth = await getAuthContext()
 
-  const [[tenant], userTenants] = await Promise.all([
+  const [[tenant], userTenants, subscription] = await Promise.all([
     db
       .select({ name: tenants.name, settings: tenants.settings })
       .from(tenants)
       .where(eq(tenants.id, auth.tenantId))
       .limit(1),
     getUserTenants(auth.userId),
+    getSubscription(auth.tenantId),
   ])
 
   // Enforce onboarding completion before accessing platform
@@ -64,6 +67,10 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           isPlatformAdmin={auth.isPlatformAdmin}
           impersonatingTenantName={impersonatingTenantName}
           whatsappEnabled={!!settings.whatsapp_enabled}
+        />
+        <SubscriptionBanner
+          subscriptionStatus={subscription?.status ?? null}
+          currentPeriodEnd={subscription?.currentPeriodEnd?.toISOString() ?? null}
         />
         <main className="flex-1 p-6">{children}</main>
       </div>

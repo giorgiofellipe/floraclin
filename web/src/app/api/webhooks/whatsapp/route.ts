@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/db/client'
-import { tenants, procedureTypes, whatsappMessages } from '@/db/schema'
-import { eq, and, sql } from 'drizzle-orm'
-import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage, sendTemplateMessage, sendMediaMessage, normalizeBrPhone } from '@/lib/whatsapp'
+import { tenants, procedureTypes, whatsappMessages, whatsappConversations } from '@/db/schema'
+import { eq, and, sql, desc } from 'drizzle-orm'
+import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage, sendTemplateMessage, sendMediaMessage, normalizeBrPhone, getTemplateForTenant } from '@/lib/whatsapp'
 import {
   upsertConversation,
   createMessage,
@@ -15,7 +15,6 @@ import {
   updateQueuedMessageStatus,
   expireStaleQueuedMessages,
   listAutomations,
-  getTemplateByPurpose,
 } from '@/db/queries/whatsapp'
 import {
   getAppointmentByConfirmationMessageId,
@@ -81,6 +80,40 @@ export async function POST(request: NextRequest) {
       const phoneNumberId = value.metadata?.phone_number_id
 
       if (!phoneNumberId) continue
+
+      const isSharedNumber =
+        phoneNumberId === process.env.FLORACLIN_WA_PHONE_NUMBER_ID
+
+      if (isSharedNumber) {
+        for (const msg of value.messages ?? []) {
+          try {
+            const senderPhone = normalizeBrPhone(msg.from)
+            const tenantId = await resolveSharedNumberTenant(senderPhone)
+            if (!tenantId) {
+              console.warn(
+                `WhatsApp webhook (shared): no tenant found for sender ${senderPhone}`,
+              )
+              continue
+            }
+            await processInboundMessage(tenantId, msg, value.contacts?.[0])
+          } catch (err) {
+            console.error('Error processing WhatsApp message (shared):', err)
+          }
+        }
+
+        for (const status of value.statuses ?? []) {
+          try {
+            const recipientPhone = normalizeBrPhone(status.recipient_id)
+            const tenantId = await resolveSharedNumberTenant(recipientPhone)
+            if (!tenantId) continue
+            await processStatusUpdate(tenantId, status)
+          } catch (err) {
+            console.error('Error processing WhatsApp status (shared):', err)
+          }
+        }
+
+        continue
+      }
 
       // Look up tenant by WhatsApp phone number ID stored in settings JSONB
       const [tenant] = await db
@@ -456,6 +489,20 @@ async function processStatusUpdate(
 }
 
 // ---------------------------------------------------------------------------
+// Shared-number tenant resolution
+// ---------------------------------------------------------------------------
+async function resolveSharedNumberTenant(phone: string): Promise<string | null> {
+  const [row] = await db
+    .select({ tenantId: whatsappConversations.tenantId })
+    .from(whatsappConversations)
+    .where(eq(whatsappConversations.phoneNumber, phone))
+    .orderBy(desc(whatsappConversations.lastMessageAt))
+    .limit(1)
+
+  return row?.tenantId ?? null
+}
+
+// ---------------------------------------------------------------------------
 // Confirmation button reply processing
 // ---------------------------------------------------------------------------
 async function processConfirmationReply(
@@ -504,7 +551,7 @@ async function maybeAutoSendAnamnesis(
     if (daysSince < staleDays) return
   }
 
-  const template = await getTemplateByPurpose(tenantId, 'anamnese_link')
+  const template = await getTemplateForTenant(tenantId, 'anamnese_link')
   if (!template || template.status !== 'APPROVED') return
 
   const patient = await getPatient(tenantId, patientId)

@@ -51,7 +51,15 @@ vi.mock('@/lib/whatsapp', () => ({
   downloadAndStoreMedia: vi.fn(),
   sendTextMessage: vi.fn(),
   sendTemplateMessage: vi.fn(),
+  sendMediaMessage: vi.fn(),
   normalizeBrPhone: vi.fn((phone: string) => phone),
+  getTemplateForTenant: vi.fn(),
+  CreditExhaustedError: class CreditExhaustedError extends Error {
+    constructor(public creditsUsed: number, public creditsTotal: number) {
+      super(`Credits exhausted`)
+      this.name = 'CreditExhaustedError'
+    }
+  },
 }))
 
 vi.mock('@/db/queries/whatsapp', () => ({
@@ -66,7 +74,6 @@ vi.mock('@/db/queries/whatsapp', () => ({
   updateQueuedMessageStatus: vi.fn(),
   expireStaleQueuedMessages: vi.fn(() => []),
   listAutomations: vi.fn(() => []),
-  getTemplateByPurpose: vi.fn(),
 }))
 
 vi.mock('@/db/queries/appointments', () => ({
@@ -109,7 +116,7 @@ vi.mock('@/lib/classify-prospect', () => ({
 // ---------------------------------------------------------------------------
 
 import { db } from '@/db/client'
-import { verifyWebhookSignature, sendTemplateMessage } from '@/lib/whatsapp'
+import { verifyWebhookSignature, sendTemplateMessage, getTemplateForTenant } from '@/lib/whatsapp'
 import {
   upsertConversation,
   createMessage,
@@ -117,7 +124,6 @@ import {
   pushSseEvent,
   getMessageByMetaId,
   listAutomations,
-  getTemplateByPurpose,
 } from '@/db/queries/whatsapp'
 import {
   getAppointmentByConfirmationMessageId,
@@ -594,7 +600,7 @@ describe('maybeAutoSendAnamnesis — skip conditions', () => {
     } as never)
 
     // Template exists but is pending
-    vi.mocked(getTemplateByPurpose).mockResolvedValue({
+    vi.mocked(getTemplateForTenant).mockResolvedValue({
       name: 'anamnese_link',
       status: 'PENDING',
       language: 'pt_BR',
@@ -621,7 +627,7 @@ describe('maybeAutoSendAnamnesis — skip conditions', () => {
     ] as never)
 
     vi.mocked(getAnamnesis).mockResolvedValue(null as never)
-    vi.mocked(getTemplateByPurpose).mockResolvedValue(null as never)
+    vi.mocked(getTemplateForTenant).mockResolvedValue(null as never)
 
     const payload = makeButtonReplyPayload('Confirmar', CONTEXT_MSG_ID)
     await POST(makeRequest(payload))
@@ -678,7 +684,7 @@ describe('maybeAutoSendAnamnesis — happy path', () => {
     // No existing anamnesis — should be considered stale
     vi.mocked(getAnamnesis).mockResolvedValue(null as never)
 
-    vi.mocked(getTemplateByPurpose).mockResolvedValue({
+    vi.mocked(getTemplateForTenant).mockResolvedValue({
       name: 'anamnese_link_v1',
       status: 'APPROVED',
       language: 'pt_BR',
@@ -752,7 +758,7 @@ describe('maybeAutoSendAnamnesis — happy path', () => {
       updatedAt: thirtyOneDaysAgo.toISOString(),
     } as never)
 
-    vi.mocked(getTemplateByPurpose).mockResolvedValue({
+    vi.mocked(getTemplateForTenant).mockResolvedValue({
       name: 'anamnese_link_v1',
       status: 'APPROVED',
       language: 'pt_BR',
@@ -854,7 +860,7 @@ describe('maybeAutoSendAnamnesis — edge cases', () => {
       },
     ] as never)
     vi.mocked(getAnamnesis).mockResolvedValue(null as never)
-    vi.mocked(getTemplateByPurpose).mockResolvedValue({
+    vi.mocked(getTemplateForTenant).mockResolvedValue({
       name: 'anamnese_link_v1',
       status: 'APPROVED',
       language: 'pt_BR',
@@ -888,7 +894,7 @@ describe('maybeAutoSendAnamnesis — edge cases', () => {
       },
     ] as never)
     vi.mocked(getAnamnesis).mockResolvedValue(null as never)
-    vi.mocked(getTemplateByPurpose).mockResolvedValue({
+    vi.mocked(getTemplateForTenant).mockResolvedValue({
       name: 'anamnese_link_v1',
       status: 'APPROVED',
       language: 'pt_BR',
@@ -931,7 +937,7 @@ describe('maybeAutoSendAnamnesis — edge cases', () => {
       },
     ] as never)
     vi.mocked(getAnamnesis).mockResolvedValue(null as never)
-    vi.mocked(getTemplateByPurpose).mockResolvedValue({
+    vi.mocked(getTemplateForTenant).mockResolvedValue({
       name: 'anamnese_link_v1',
       status: 'APPROVED',
       language: 'pt_BR',

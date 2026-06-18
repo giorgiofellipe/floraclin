@@ -51,6 +51,9 @@ function getPageTitle(pathname: string): { title: string; subtitle?: string } {
   if (pathname === '/admin/usuarios') {
     return { title: 'Usu\u00e1rios' }
   }
+  if (pathname === '/admin/assinaturas') {
+    return { title: 'Assinaturas' }
+  }
   return { title: '' }
 }
 

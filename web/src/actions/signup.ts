@@ -5,10 +5,11 @@ import { redirect } from 'next/navigation'
 import { AuthError } from 'next-auth'
 import { signUpSchema, clinicDetailsSchema } from '@/validations/signup'
 import { db } from '@/db/client'
-import { users, tenants, tenantUsers } from '@/db/schema'
+import { users, tenants, tenantUsers, plans } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { createSelfSignupTenant, generateSlug } from '@/db/queries/admin-tenants'
+import { createSubscription } from '@/db/queries/subscriptions'
 import { sendNewSignupNotification } from '@/lib/email'
 import { withTransaction } from '@/lib/tenant'
 
@@ -48,6 +49,7 @@ export async function signUp(
   const userId = crypto.randomUUID()
   const passwordHash = await bcrypt.hash(password, 10)
 
+  let tenantId: string | undefined
   try {
     await withTransaction(async (tx) => {
       await tx.insert(users).values({ id: userId, fullName, email, passwordHash })
@@ -71,6 +73,8 @@ export async function signUp(
         .values({ name: clinicName, slug, status: 'pending_approval', phone })
         .returning()
 
+      tenantId = tenant.id
+
       await tx.insert(tenantUsers).values({
         tenantId: tenant.id,
         userId,
@@ -83,6 +87,13 @@ export async function signUp(
       return { error: { email: ['Este e-mail já está cadastrado'] } }
     }
     throw err
+  }
+
+  if (tenantId) {
+    const [freePlan] = await db.select().from(plans).where(eq(plans.slug, 'free')).limit(1)
+    if (freePlan) {
+      await createSubscription(tenantId, freePlan.id)
+    }
   }
 
   const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL
@@ -142,7 +153,12 @@ export async function createClinicForOAuthUser(
 
   const { clinicName, phone } = parsed.data
 
-  await createSelfSignupTenant({ userId: session.user.id, clinicName, phone })
+  const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone })
+
+  const [freePlan] = await db.select().from(plans).where(eq(plans.slug, 'free')).limit(1)
+  if (freePlan) {
+    await createSubscription(tenant.id, freePlan.id)
+  }
 
   const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL
   if (adminEmail) {

@@ -14,6 +14,7 @@ import { AuditLogViewer } from '@/components/audit/audit-log-viewer'
 import { FinancialSettingsForm } from '@/components/financial/settings/financial-settings-form'
 import { ExpenseCategoriesManager } from '@/components/financial/settings/expense-categories-manager'
 import { WhatsAppSettingsForm } from '@/components/settings/whatsapp-settings-form'
+import { BillingSettings } from '@/components/settings/billing-settings'
 import { PackageTemplateList } from '@/components/packages/package-template-list'
 import { usePackageTemplates } from '@/hooks/queries/use-packages'
 import { DocumentTemplateList } from '@/components/settings/document-template-list'
@@ -37,6 +38,7 @@ import {
   Package2Icon,
   ClipboardSignatureIcon,
   UserCogIcon,
+  CreditCardIcon,
 } from 'lucide-react'
 
 interface Tenant {
@@ -115,7 +117,7 @@ type TabKey =
   | 'clinica' | 'equipe' | 'perfil'
   | 'procedimentos' | 'produtos' | 'pacotes' | 'termos' | 'documentos'
   | 'agendamento' | 'financeiro' | 'whatsapp'
-  | 'auditoria'
+  | 'assinatura' | 'auditoria'
 
 interface TabItem {
   key: TabKey
@@ -158,6 +160,7 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
   {
     label: 'Sistema',
     items: [
+      { key: 'assinatura', label: 'Assinatura', icon: CreditCardIcon },
       { key: 'auditoria', label: 'Auditoria', icon: ShieldCheckIcon },
     ],
   },
@@ -449,6 +452,8 @@ export function SettingsPageClient({
                   initialSettings={settings as Record<string, unknown>}
                 />
               )}
+
+              {effectiveTab === 'assinatura' && <BillingSettings />}
 
               {effectiveTab === 'auditoria' && (
                 <AuditLogViewer />

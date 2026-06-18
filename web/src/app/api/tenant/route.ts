@@ -48,6 +48,7 @@ export async function PUT(request: Request) {
       }
 
       const settingsUpdate: Record<string, unknown> = {
+        whatsapp_mode: parsed.data.whatsapp_mode ?? 'floraclin',
         whatsapp_enabled: parsed.data.whatsapp_enabled,
         whatsapp_phone_number_id: parsed.data.whatsapp_phone_number_id ?? null,
         whatsapp_business_account_id: parsed.data.whatsapp_business_account_id ?? null,
