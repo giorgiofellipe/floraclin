@@ -202,7 +202,7 @@ export const TEMPLATE_BLUEPRINTS: TemplateBlueprint[] = [
   {
     slug: 'anamnese_link',
     purposeKey: 'anamnese_link',
-    name: 'anamnese_link_v2',
+    name: 'anamnesis_link',
     category: 'UTILITY',
     language: 'pt_BR',
     description: 'Link para preenchimento de anamnese',
