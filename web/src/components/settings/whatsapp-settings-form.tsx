@@ -701,7 +701,7 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
 
           {/* Template Management */}
           <WhatsAppTemplateList
-            configured={!!(initialSettings?.whatsapp_phone_number_id && initialSettings?.whatsapp_access_token)}
+            configured={!!(initialSettings?.whatsapp_phone_number_id)}
             onProvision={async () => {
               const res = await fetch('/api/whatsapp/templates/provision', { method: 'POST' })
               const data = await res.json()

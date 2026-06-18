@@ -7,10 +7,11 @@ import {
   createAppointment,
   checkTimeConflict,
 } from '@/db/queries/appointments'
-import { getProspectByPatientId, updateProspect, logProspectActivity } from '@/db/queries/prospects'
+import { getProspectByPatientId, getProspectByPhone, updateProspect, logProspectActivity } from '@/db/queries/prospects'
+import { getPatient } from '@/db/queries/patients'
 import { createAppointmentSchema } from '@/validations/appointment'
 
-const STAGES_BEFORE_AGENDADO = ['novo', 'contatado', 'qualificado']
+const STAGES_MOVABLE_TO_AGENDADO = ['novo', 'contatado', 'qualificado', 'convertido']
 
 export async function GET(request: Request) {
   try {
@@ -102,8 +103,14 @@ export async function POST(request: Request) {
     // Auto-move CRM lead to "agendado" if the patient has a linked prospect
     if (data.patientId) {
       try {
-        const prospect = await getProspectByPatientId(ctx.tenantId, data.patientId)
-        if (prospect && STAGES_BEFORE_AGENDADO.includes(prospect.stage)) {
+        let prospect = await getProspectByPatientId(ctx.tenantId, data.patientId)
+        if (!prospect) {
+          const patient = await getPatient(ctx.tenantId, data.patientId)
+          if (patient?.phone) {
+            prospect = await getProspectByPhone(ctx.tenantId, patient.phone)
+          }
+        }
+        if (prospect && STAGES_MOVABLE_TO_AGENDADO.includes(prospect.stage)) {
           const previousStage = prospect.stage
           await updateProspect(ctx.tenantId, prospect.id, { stage: 'agendado' })
           await logProspectActivity(ctx.tenantId, prospect.id, 'stage_changed', {
