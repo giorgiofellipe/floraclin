@@ -724,14 +724,18 @@ describe('maybeAutoSendAnamnesis — happy path', () => {
     await vi.waitFor(() => {
       expect(sendTemplateMessage).toHaveBeenCalledWith(
         TENANT_ID,
-        PATIENT_PHONE, // normalizeBrPhone is identity in mock, phone already starts with 55
+        PATIENT_PHONE,
         'anamnese_link_v1',
         'pt_BR',
         {
-          '1': 'Maria',       // first name extracted from fullName
+          '1': 'Maria',
           '2': 'Clínica Flora',
-          '3': 'https://app.floraclin.com.br/a/tok-abc123',
         },
+        [{
+          index: 0,
+          subType: 'url',
+          parameters: [{ type: 'text', text: 'tok-abc123' }],
+        }],
       )
     })
   })
@@ -802,8 +806,12 @@ describe('maybeAutoSendAnamnesis — happy path', () => {
         'pt_BR',
         expect.objectContaining({
           '1': 'Ana',
-          '3': 'https://app.floraclin.com.br/a/tok-xyz789',
         }),
+        [{
+          index: 0,
+          subType: 'url',
+          parameters: [{ type: 'text', text: 'tok-xyz789' }],
+        }],
       )
     })
   })

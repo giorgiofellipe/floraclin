@@ -581,8 +581,13 @@ async function maybeAutoSendAnamnesis(
   const params: Record<string, string> = {
     '1': firstName,
     '2': tenant.name,
-    '3': link,
   }
+
+  const buttonParams = [{
+    index: 0,
+    subType: 'url',
+    parameters: [{ type: 'text', text: token.token }],
+  }]
 
   const result = await sendTemplateMessage(
     tenantId,
@@ -590,6 +595,7 @@ async function maybeAutoSendAnamnesis(
     template.name,
     template.language,
     params,
+    buttonParams,
   )
 
   const conversation = await upsertConversation(
