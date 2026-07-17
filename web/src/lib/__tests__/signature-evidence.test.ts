@@ -6,6 +6,10 @@ beforeEach(() => {
   vi.stubGlobal('crypto', {
     subtle: { digest: mockDigest },
   })
+  // buildEvidencePackage requests a TSA token from freetsa.org — a real
+  // network call that made this suite flaky. It already degrades
+  // gracefully on failure, so reject fast instead of hitting the network.
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network disabled in tests')))
   mockDigest.mockImplementation(async (_algo: string, data: ArrayBuffer) => {
     // Deterministic fake hash: just return first 32 bytes padded
     const view = new Uint8Array(data)
