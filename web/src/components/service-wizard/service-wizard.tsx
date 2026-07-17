@@ -670,9 +670,18 @@ export function ServiceWizard({
   }, [router, patient.id])
 
   const handleSaveAndExit = useCallback(() => {
+    // Step 5 has no wizard-managed form to flush — sessions persist
+    // independently and the picker/orchestrator doesn't observe
+    // triggerSave, which would leave isSaving stuck. Exit directly.
+    if (state.currentStep === 5) {
+      isExitingRef.current = true
+      toast.success('Atendimento salvo. Retome quando quiser.')
+      router.push(`/pacientes/${patient.id}`)
+      return
+    }
     setPendingAction('exit')
     triggerSave()
-  }, [triggerSave])
+  }, [state.currentStep, triggerSave, router, patient.id])
 
   // ─── Wizard overrides for each step ────────────────────────────
 

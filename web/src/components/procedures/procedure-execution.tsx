@@ -264,6 +264,22 @@ export function ProcedureExecution({
     refetchOnWindowFocus: false,
   })
 
+  // Planned diagrams from the procedure record (step 3 planning) — used as
+  // the diagram prefill for the FIRST session, which has no previous
+  // session to inherit from.
+  const executeRecordId = mode.kind === 'execute' ? mode.recordId : null
+  const { data: plannedRecord, isPending: plannedPending } = useQuery<{ diagrams?: EncounterViewDiagram[] }>({
+    queryKey: ['procedure-planned', executeRecordId],
+    queryFn: async () => {
+      const res = await fetch(`/api/procedures/${executeRecordId}`)
+      if (!res.ok) throw new Error('Falha ao carregar planejamento')
+      return res.json()
+    },
+    enabled: !!executeRecordId,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  })
+
   const invalidate = () =>
     qc.invalidateQueries({ queryKey: ['encounter-view', encounterId] })
 
@@ -295,9 +311,18 @@ export function ProcedureExecution({
       }
     }
 
-    // While the view query is still pending on the deep-link path, hold off
-    // mounting the form so prefill can land in the initial defaultValues.
-    if (!encounterView) {
+    // First session: fall back to the planned diagram from step 3 so the
+    // clinician sees (and can adjust) what was planned. Product quantities
+    // auto-derive from diagram points inside the form.
+    if (!prefill && plannedRecord?.diagrams?.length) {
+      prefill = { diagrams: plannedRecord.diagrams, productApplications: [] }
+    }
+
+    // Hold off mounting the form until both queries settle — defaultValues
+    // capture prefill once at mount, so a late-arriving planned diagram
+    // would otherwise be silently dropped. (isPending is false on query
+    // error, so a failed planned fetch degrades to no prefill, not a hang.)
+    if (!encounterView || plannedPending) {
       return <div>Carregando…</div>
     }
 

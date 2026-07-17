@@ -100,15 +100,22 @@ export async function POST(request: Request) {
       console.error('Google Calendar push sync failed:', err)
     })
 
-    // Auto-move CRM lead to "agendado" if the patient has a linked prospect
-    if (data.patientId) {
+    // Auto-move CRM lead to "agendado" — matches by linked patient, patient
+    // phone, or booking phone (leads are often scheduled without a patient
+    // record, using only the booking name/phone fields).
+    if (data.patientId || data.bookingPhone) {
       try {
-        let prospect = await getProspectByPatientId(ctx.tenantId, data.patientId)
-        if (!prospect) {
+        let prospect = data.patientId
+          ? await getProspectByPatientId(ctx.tenantId, data.patientId)
+          : null
+        if (!prospect && data.patientId) {
           const patient = await getPatient(ctx.tenantId, data.patientId)
           if (patient?.phone) {
             prospect = await getProspectByPhone(ctx.tenantId, patient.phone)
           }
+        }
+        if (!prospect && data.bookingPhone) {
+          prospect = await getProspectByPhone(ctx.tenantId, data.bookingPhone)
         }
         if (prospect && STAGES_MOVABLE_TO_AGENDADO.includes(prospect.stage)) {
           const previousStage = prospect.stage

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { listTemplates, createLocalTemplate, upsertTemplate, markStaleTemplates } from '@/db/queries/whatsapp'
@@ -30,32 +30,36 @@ export async function GET() {
     const { ctx } = await checkWhatsAppAccess(false)
     const templates = await listTemplates(ctx.tenantId)
 
+    // The Meta sync can take 10s+ — never block the response on it. Serve
+    // local data immediately and refresh in the background via after();
+    // the client picks up the fresh rows on its next fetch or manual sync.
     if (templates.length > 0) {
       const mostRecent = templates.reduce((a, b) =>
         new Date(a.syncedAt) > new Date(b.syncedAt) ? a : b
       )
       const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000)
       if (new Date(mostRecent.syncedAt) < fiveMinAgo) {
-        try {
-          const metaTemplates = await fetchMetaTemplates(ctx.tenantId)
-          for (const tpl of metaTemplates) {
-            await upsertTemplate(ctx.tenantId, {
-              metaTemplateId: tpl.id,
-              name: tpl.name,
-              language: tpl.language,
-              category: tpl.category,
-              status: tpl.status,
-              components: tpl.components,
-              rejectedReason: tpl.rejected_reason ?? null,
-            })
+        const tenantId = ctx.tenantId
+        after(async () => {
+          try {
+            const metaTemplates = await fetchMetaTemplates(tenantId)
+            for (const tpl of metaTemplates) {
+              await upsertTemplate(tenantId, {
+                metaTemplateId: tpl.id,
+                name: tpl.name,
+                language: tpl.language,
+                category: tpl.category,
+                status: tpl.status,
+                components: tpl.components,
+                rejectedReason: tpl.rejected_reason ?? null,
+              })
+            }
+            const metaIds = metaTemplates.map((t) => t.id)
+            await markStaleTemplates(tenantId, metaIds)
+          } catch (syncErr) {
+            console.error('Background template sync failed:', syncErr)
           }
-          const metaIds = metaTemplates.map((t) => t.id)
-          await markStaleTemplates(ctx.tenantId, metaIds)
-          const refreshed = await listTemplates(ctx.tenantId)
-          return NextResponse.json({ data: refreshed })
-        } catch (syncErr) {
-          console.error('Background template sync failed:', syncErr)
-        }
+        })
       }
     }
 
