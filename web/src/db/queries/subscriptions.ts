@@ -156,6 +156,10 @@ export async function createSubscription(
   const periodStart = opts?.currentPeriodStart ?? now
   const periodEnd = opts?.currentPeriodEnd ?? addDays(now, opts?.trialDays ?? 14)
 
+  // Idempotent: a tenant can only have one subscription, and multiple flows
+  // may try to create it (self-signup, admin approval, admin creation).
+  // Keeping the existing row is always the right call — it may already
+  // carry Stripe state or an admin-granted plan.
   const [result] = await db
     .insert(tenantSubscriptions)
     .values({
@@ -166,9 +170,18 @@ export async function createSubscription(
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd,
     })
+    .onConflictDoNothing({ target: tenantSubscriptions.tenantId })
     .returning()
 
-  return result
+  if (result) return result
+
+  const [existing] = await db
+    .select()
+    .from(tenantSubscriptions)
+    .where(eq(tenantSubscriptions.tenantId, tenantId))
+    .limit(1)
+
+  return existing
 }
 
 export async function updateSubscriptionStatus(
