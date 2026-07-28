@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
+import { requireActiveSubscription, SubscriptionExpiredError, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
 import { listExpenses, createExpense } from '@/db/queries/expenses'
 import { expenseFilterSchema, createExpenseSchema } from '@/validations/expenses'
 
@@ -41,6 +42,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const ctx = await getAuthContext()
+    await requireActiveSubscription(ctx.tenantId)
     if (!['owner', 'financial'].includes(ctx.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
@@ -58,6 +60,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: expense })
   } catch (error) {
+    if (error instanceof SubscriptionExpiredError) {
+      return NextResponse.json(SUBSCRIPTION_EXPIRED_RESPONSE.body, { status: SUBSCRIPTION_EXPIRED_RESPONSE.status })
+    }
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

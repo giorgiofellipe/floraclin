@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
+import { requireActiveSubscription, SubscriptionExpiredError, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
 import { getTenant } from '@/db/queries/tenants'
 import { listProspects, getProspectStats, createProspect, logProspectActivity, getProspectProceduresBatch } from '@/db/queries/prospects'
 import { prospectFilterSchema, createProspectSchema } from '@/validations/prospect'
@@ -87,6 +88,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const ctx = await getAuthContext()
+    await requireActiveSubscription(ctx.tenantId)
 
     const tenant = await getTenant(ctx.tenantId)
     const settings = (tenant?.settings ?? {}) as Record<string, unknown>
@@ -124,6 +126,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ data: prospect }, { status: 201 })
   } catch (error) {
+    if (error instanceof SubscriptionExpiredError) {
+      return NextResponse.json(SUBSCRIPTION_EXPIRED_RESPONSE.body, { status: SUBSCRIPTION_EXPIRED_RESPONSE.status })
+    }
     const msg = error instanceof Error ? error.message : ''
     const errCode = (error as Record<string, unknown>)?.code
     if (msg.includes('uq_prospects_tenant_phone') || (errCode === '23505' && msg.includes('prospects'))) {

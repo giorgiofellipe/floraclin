@@ -42,9 +42,33 @@ export async function isSubscriptionActive(tenantId: string): Promise<boolean> {
     .where(eq(tenantSubscriptions.tenantId, tenantId))
     .limit(1)
 
-  if (!row) return false
+  // Tenants created before the subscription system have no row — never
+  // lock them out; the migration/backfill is what grants them a trial.
+  if (!row) return true
   return row.status === 'trialing' || row.status === 'active'
 }
+
+export class SubscriptionExpiredError extends Error {
+  constructor() {
+    super('Assinatura expirada. Assine um plano para continuar.')
+    this.name = 'SubscriptionExpiredError'
+  }
+}
+
+/** Throws SubscriptionExpiredError when the tenant cannot create new records. */
+export async function requireActiveSubscription(tenantId: string): Promise<void> {
+  const active = await isSubscriptionActive(tenantId)
+  if (!active) throw new SubscriptionExpiredError()
+}
+
+/** Standard 402 payload for creation endpoints blocked by expiry. */
+export const SUBSCRIPTION_EXPIRED_RESPONSE = {
+  body: {
+    error: 'Assinatura expirada. Assine um plano para continuar.',
+    code: 'subscription_expired',
+  },
+  status: 402,
+} as const
 
 // ─── Internal helpers ──────────────────────────────────────────────
 

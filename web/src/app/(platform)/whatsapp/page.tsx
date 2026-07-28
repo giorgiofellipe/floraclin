@@ -11,7 +11,7 @@ import { MessageSquare, Settings, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { Message } from '@/components/whatsapp/message-bubble'
 
-type ConfigStatus = 'loading' | 'configured' | 'not_configured' | 'no_access'
+type ConfigStatus = 'loading' | 'configured' | 'not_configured' | 'no_access' | 'subscription_expired'
 
 export default function WhatsAppPage() {
   const searchParams = useSearchParams()
@@ -30,7 +30,9 @@ export default function WhatsAppPage() {
     async function checkConfig() {
       try {
         const res = await fetch('/api/whatsapp/conversations?limit=1')
-        if (res.status === 403) {
+        if (res.status === 402) {
+          setConfigStatus('subscription_expired')
+        } else if (res.status === 403) {
           // 403 covers two distinct cases: own-number mode without a
           // finished setup vs. the user's role lacking WhatsApp access.
           const body = await res.json().catch(() => null)
@@ -240,6 +242,31 @@ export default function WhatsAppPage() {
     return (
       <div className="flex h-[calc(100vh-120px)] items-center justify-center">
         <Loader2 className="size-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  // Subscription expired — WhatsApp is a gated feature
+  if (configStatus === 'subscription_expired') {
+    return (
+      <div className="flex h-[calc(100vh-120px)] flex-col items-center justify-center gap-4">
+        <div className="rounded-full bg-[#25D366]/10 p-6">
+          <MessageSquare className="size-16 text-[#25D366]" />
+        </div>
+        <h2 className="text-xl font-medium text-[#2A2A2A]">
+          Assinatura expirada
+        </h2>
+        <p className="max-w-md text-center text-sm text-muted-foreground">
+          Seu período de teste terminou. Assine um plano para voltar a enviar e
+          receber mensagens pelo WhatsApp.
+        </p>
+        <Button
+          className="bg-forest hover:bg-sage text-white"
+          nativeButton={false}
+          render={<Link href="/configuracoes?tab=assinatura" />}
+        >
+          Ver planos
+        </Button>
       </div>
     )
   }
