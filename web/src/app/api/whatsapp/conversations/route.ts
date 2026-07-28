@@ -6,6 +6,7 @@ import { getPatient } from '@/db/queries/patients'
 import { listConversations, upsertConversation, createMessage, pushSseEvent, getTemplateByName } from '@/db/queries/whatsapp'
 import { conversationFilterSchema } from '@/validations/whatsapp'
 import { sendTemplateMessage, resolveTemplateBody, isWhatsAppEnabled } from '@/lib/whatsapp'
+import { isSubscriptionActive, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
 
 async function checkWhatsAppAccess() {
   const ctx = await getAuthContext()
@@ -18,6 +19,10 @@ async function checkWhatsAppAccess() {
   const settings = (tenant.settings ?? {}) as Record<string, unknown>
   if (!isWhatsAppEnabled(settings)) {
     return { error: NextResponse.json({ error: 'WhatsApp não habilitado' }, { status: 403 }) }
+  }
+
+  if (!(await isSubscriptionActive(ctx.tenantId))) {
+    return { error: NextResponse.json(SUBSCRIPTION_EXPIRED_RESPONSE.body, { status: SUBSCRIPTION_EXPIRED_RESPONSE.status }) }
   }
 
   const allowedRoles = (settings.whatsapp_allowed_roles as string[]) ?? ['owner']

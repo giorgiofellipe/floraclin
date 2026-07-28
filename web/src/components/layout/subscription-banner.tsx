@@ -13,7 +13,7 @@ interface SubscriptionBannerProps {
 export function SubscriptionBanner({ subscriptionStatus, currentPeriodEnd }: SubscriptionBannerProps) {
   const [dismissed, setDismissed] = useState(false)
 
-  if (!subscriptionStatus || subscriptionStatus === 'active' || subscriptionStatus === 'canceled') {
+  if (!subscriptionStatus || subscriptionStatus === 'active') {
     return null
   }
 
@@ -48,7 +48,7 @@ export function SubscriptionBanner({ subscriptionStatus, currentPeriodEnd }: Sub
     return (
       <div className="flex items-center justify-between gap-3 border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
         <p>
-          Seu período de teste expirou. Assine um plano para continuar usando WhatsApp e outros recursos.
+          Seu período de teste expirou. Assine um plano para voltar a usar o WhatsApp e criar novos agendamentos, pacientes e lançamentos.
         </p>
         <Link
           href="/configuracoes?tab=assinatura"
@@ -66,6 +66,22 @@ export function SubscriptionBanner({ subscriptionStatus, currentPeriodEnd }: Sub
         <p>
           Pagamento pendente. Atualize seu método de pagamento para evitar interrupção.
         </p>
+      </div>
+    )
+  }
+
+  if (subscriptionStatus === 'canceled') {
+    return (
+      <div className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+        <p>
+          Sua assinatura foi cancelada. Você mantém acesso até o fim do período contratado.
+        </p>
+        <Link
+          href="/configuracoes?tab=assinatura"
+          className="shrink-0 font-medium underline underline-offset-2 hover:opacity-80"
+        >
+          Reativar
+        </Link>
       </div>
     )
   }

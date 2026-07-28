@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
+import { subscriptionGate } from '@/lib/plans'
 import { getTenant } from '@/db/queries/tenants'
 import { getProspect, convertProspect, logProspectActivity } from '@/db/queries/prospects'
 import { createPatient, getPatient } from '@/db/queries/patients'
@@ -24,6 +25,9 @@ export async function POST(
     if (!allowedRoles.includes(ctx.role as Role) && ctx.role !== 'owner') {
       return NextResponse.json({ error: 'Sem permissão para acessar o CRM' }, { status: 403 })
     }
+
+    const gate = await subscriptionGate(ctx)
+    if (gate) return gate
 
     const { id } = await params
 

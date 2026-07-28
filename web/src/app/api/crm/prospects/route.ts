@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
+import { subscriptionGate } from '@/lib/plans'
 import { getTenant } from '@/db/queries/tenants'
 import { listProspects, getProspectStats, createProspect, logProspectActivity, getProspectProceduresBatch } from '@/db/queries/prospects'
 import { prospectFilterSchema, createProspectSchema } from '@/validations/prospect'
@@ -97,6 +98,9 @@ export async function POST(request: Request) {
     if (!allowedRoles.includes(ctx.role as Role) && ctx.role !== 'owner') {
       return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
     }
+
+    const gate = await subscriptionGate(ctx)
+    if (gate) return gate
 
     const body = await request.json()
     const parsed = createProspectSchema.safeParse(body)

@@ -95,7 +95,7 @@ canceled  → active     (user re-subscribes)
 
 - New tenants get a `tenant_subscriptions` row with `planId` → `free`, `status: 'trialing'`, `currentPeriodEnd` = now + 14 days.
 - A daily cron job (or middleware check) flips `trialing` → `expired` when `currentPeriodEnd` has passed.
-- Expired tenants: gated features (WhatsApp, etc.) are blocked. Core app (agenda, patients, financeiro, photos) remains fully accessible.
+- Inactive tenants (expired, or canceled/past_due after `currentPeriodEnd`): WhatsApp is fully blocked (inbox and every outbound send path), and creating new records is blocked (appointments, patients, prospects, financial entries, procedures, expenses, lead conversion, encounter finalize) with HTTP 402 `subscription_expired`. Existing data remains readable and editable. `canceled` and `past_due` keep full access until `currentPeriodEnd` passes (Stripe cancel-at-period-end and payment-retry semantics). Public booking pages keep accepting appointments, and inbound WhatsApp messages still create prospects. Tenants with no subscription row are blocked (fail closed), but sign-in self-heals by creating the standard trial row; platform admins are never blocked.
 
 ### Expiry check strategy
 

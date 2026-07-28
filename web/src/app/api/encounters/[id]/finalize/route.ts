@@ -26,6 +26,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { requireRole } from '@/lib/auth'
+import { subscriptionGate } from '@/lib/plans'
 import { finalizeEncounter } from '@/lib/encounter-finalize'
 import { encounterCartSchema } from '@/validations/encounter-cart'
 import { getDefaultPackageValidityMonths } from '@/lib/tenant-settings'
@@ -59,6 +60,10 @@ export async function POST(
 ) {
   try {
     const ctx = await requireRole('owner', 'practitioner')
+
+    const gate = await subscriptionGate(ctx)
+    if (gate) return gate
+
     const { id: encounterIdFromUrl } = await params
 
     // Validate the URL param is a UUID — this becomes the canonical

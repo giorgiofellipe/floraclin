@@ -1,3 +1,4 @@
+import { NextResponse } from 'next/server'
 import { db } from '@/db/client'
 import { tenantUsers, patients, whatsappCredits, tenantSubscriptions, plans } from '@/db/schema'
 import { eq, and, isNull, sql, gte, lte } from 'drizzle-orm'
@@ -37,13 +38,64 @@ export async function checkPlanFeature(
 
 export async function isSubscriptionActive(tenantId: string): Promise<boolean> {
   const [row] = await db
-    .select({ status: tenantSubscriptions.status })
+    .select({
+      status: tenantSubscriptions.status,
+      currentPeriodEnd: tenantSubscriptions.currentPeriodEnd,
+    })
     .from(tenantSubscriptions)
     .where(eq(tenantSubscriptions.tenantId, tenantId))
     .limit(1)
 
+  // Fail closed: a missing row means the tenant is blocked. Sign-in
+  // self-heals by creating the trial row (see auth-config jwt callback),
+  // so no legitimate tenant stays row-less past their next login.
   if (!row) return false
-  return row.status === 'trialing' || row.status === 'active'
+  if (row.status === 'trialing' || row.status === 'active') return true
+  // Canceled and past_due honor the already-paid period: Stripe cancels at
+  // period end and retries failed payments, and our cancel dialog promises
+  // access until the period closes.
+  if (row.status === 'canceled' || row.status === 'past_due') {
+    return row.currentPeriodEnd > new Date()
+  }
+  return false
+}
+
+/** Standard 402 payload for endpoints blocked by an inactive subscription. */
+export const SUBSCRIPTION_EXPIRED_RESPONSE = {
+  body: {
+    error: 'Assinatura expirada. Assine um plano para continuar.',
+    code: 'subscription_expired',
+  },
+  status: 402,
+} as const
+
+export class SubscriptionExpiredError extends Error {
+  constructor() {
+    super(SUBSCRIPTION_EXPIRED_RESPONSE.body.error)
+    this.name = 'SubscriptionExpiredError'
+  }
+}
+
+/** Throws SubscriptionExpiredError when the tenant cannot create new records. */
+export async function requireActiveSubscription(tenantId: string): Promise<void> {
+  const active = await isSubscriptionActive(tenantId)
+  if (!active) throw new SubscriptionExpiredError()
+}
+
+/**
+ * Route-handler gate: returns the 402 response when the tenant's
+ * subscription is inactive, or null when the request may proceed.
+ * Platform admins are never blocked.
+ */
+export async function subscriptionGate(ctx: {
+  tenantId: string
+  isPlatformAdmin?: boolean
+}): Promise<NextResponse | null> {
+  if (ctx.isPlatformAdmin) return null
+  if (await isSubscriptionActive(ctx.tenantId)) return null
+  return NextResponse.json(SUBSCRIPTION_EXPIRED_RESPONSE.body, {
+    status: SUBSCRIPTION_EXPIRED_RESPONSE.status,
+  })
 }
 
 // ─── Internal helpers ──────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
+import { subscriptionGate } from '@/lib/plans'
 import { listExpenses, createExpense } from '@/db/queries/expenses'
 import { expenseFilterSchema, createExpenseSchema } from '@/validations/expenses'
 
@@ -44,6 +45,9 @@ export async function POST(request: Request) {
     if (!['owner', 'financial'].includes(ctx.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+
+    const gate = await subscriptionGate(ctx)
+    if (gate) return gate
 
     const body = await request.json()
     const parsed = createExpenseSchema.safeParse(body)
