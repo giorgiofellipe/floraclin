@@ -2,14 +2,14 @@ import { NextResponse, after } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { listTemplates, createLocalTemplate, upsertTemplate, markStaleTemplates } from '@/db/queries/whatsapp'
-import { createTemplate as createMetaTemplate, getTemplates as fetchMetaTemplates } from '@/lib/whatsapp'
+import { createTemplate as createMetaTemplate, getTemplates as fetchMetaTemplates, isWhatsAppEnabled } from '@/lib/whatsapp'
 import { createTemplateSchema } from '@/validations/whatsapp'
 
 async function checkWhatsAppAccess(requireOwner: boolean) {
   const ctx = await getAuthContext()
   const tenant = await getTenant(ctx.tenantId)
   const settings = tenant?.settings as Record<string, unknown> | null
-  if (!settings?.whatsapp_enabled) {
+  if (!isWhatsAppEnabled(settings)) {
     throw new Error('WhatsApp not enabled')
   }
   if (requireOwner) {
@@ -17,7 +17,7 @@ async function checkWhatsAppAccess(requireOwner: boolean) {
       throw new Error('Forbidden')
     }
   } else {
-    const allowedRoles = (settings.whatsapp_allowed_roles as string[]) ?? ['owner']
+    const allowedRoles = (settings?.whatsapp_allowed_roles as string[]) ?? ['owner']
     if (!allowedRoles.includes(ctx.role)) {
       throw new Error('Forbidden')
     }

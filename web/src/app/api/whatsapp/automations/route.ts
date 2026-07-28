@@ -2,13 +2,14 @@ import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { listAutomations } from '@/db/queries/whatsapp'
+import { isWhatsAppEnabled } from '@/lib/whatsapp'
 
 export async function GET() {
   try {
     const ctx = await getAuthContext()
     const tenant = await getTenant(ctx.tenantId)
     const settings = tenant?.settings as Record<string, unknown> | null
-    if (!settings?.whatsapp_enabled) {
+    if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp not enabled' }, { status: 400 })
     }
     if (ctx.role !== 'owner') {

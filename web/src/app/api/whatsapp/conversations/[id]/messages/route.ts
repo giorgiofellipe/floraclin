@@ -18,7 +18,7 @@ import {
   sendTemplateSchema,
   sendMediaSchema,
 } from '@/validations/whatsapp'
-import { sendTextMessage, sendTemplateMessage, sendMediaMessage, resolveTemplateBody } from '@/lib/whatsapp'
+import { sendTextMessage, sendTemplateMessage, sendMediaMessage, resolveTemplateBody, isWhatsAppEnabled } from '@/lib/whatsapp'
 import { getProspect, updateProspect } from '@/db/queries/prospects'
 
 const messageListSchema = z.object({
@@ -35,7 +35,7 @@ async function checkWhatsAppAccess() {
   }
 
   const settings = (tenant.settings ?? {}) as Record<string, unknown>
-  if (!settings.whatsapp_enabled) {
+  if (!isWhatsAppEnabled(settings)) {
     return { error: NextResponse.json({ error: 'WhatsApp não habilitado' }, { status: 403 }) }
   }
 

@@ -5,7 +5,7 @@ import { getTenant } from '@/db/queries/tenants'
 import { getPatient } from '@/db/queries/patients'
 import { listConversations, upsertConversation, createMessage, pushSseEvent, getTemplateByName } from '@/db/queries/whatsapp'
 import { conversationFilterSchema } from '@/validations/whatsapp'
-import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
+import { sendTemplateMessage, resolveTemplateBody, isWhatsAppEnabled } from '@/lib/whatsapp'
 
 async function checkWhatsAppAccess() {
   const ctx = await getAuthContext()
@@ -16,7 +16,7 @@ async function checkWhatsAppAccess() {
   }
 
   const settings = (tenant.settings ?? {}) as Record<string, unknown>
-  if (!settings.whatsapp_enabled) {
+  if (!isWhatsAppEnabled(settings)) {
     return { error: NextResponse.json({ error: 'WhatsApp não habilitado' }, { status: 403 }) }
   }
 

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant, updateTenantSettings } from '@/db/queries/tenants'
 import { listTemplates, upsertTemplate, updateLocalTemplate } from '@/db/queries/whatsapp'
-import { getTemplates, createTemplate as createMetaTemplate } from '@/lib/whatsapp'
+import { getTemplates, createTemplate as createMetaTemplate, isWhatsAppEnabled } from '@/lib/whatsapp'
 import { TEMPLATE_BLUEPRINTS, generateTemplateName } from '@/lib/whatsapp-blueprints'
 
 function delay(ms: number) {
@@ -14,14 +14,14 @@ export async function POST() {
     const ctx = await getAuthContext()
     const tenant = await getTenant(ctx.tenantId)
     const settings = tenant?.settings as Record<string, unknown> | null
-    if (!settings?.whatsapp_enabled) {
+    if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp not enabled' }, { status: 400 })
     }
     if (ctx.role !== 'owner') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    let prefix = settings.whatsapp_template_prefix as string | undefined
+    let prefix = settings?.whatsapp_template_prefix as string | undefined
     if (!prefix) {
       prefix = generateTemplateName(tenant!.name, '').replace(/_$/, '')
       await updateTenantSettings(ctx.tenantId, { whatsapp_template_prefix: prefix })

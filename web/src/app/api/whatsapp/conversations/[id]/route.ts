@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { getConversation, markConversationRead } from '@/db/queries/whatsapp'
+import { isWhatsAppEnabled } from '@/lib/whatsapp'
 import { db } from '@/db/client'
 import { whatsappConversations } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
@@ -21,7 +22,7 @@ export async function GET(
     }
 
     const settings = (tenant.settings ?? {}) as Record<string, unknown>
-    if (!settings.whatsapp_enabled) {
+    if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp não habilitado' }, { status: 403 })
     }
 
@@ -58,7 +59,7 @@ export async function PATCH(
     }
 
     const settings = (tenant.settings ?? {}) as Record<string, unknown>
-    if (!settings.whatsapp_enabled) {
+    if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp não habilitado' }, { status: 403 })
     }
 

@@ -11,6 +11,7 @@ import {
   getTemplate as getMetaTemplate,
   editTemplate as editMetaTemplate,
   deleteTemplate as deleteMetaTemplate,
+  isWhatsAppEnabled,
 } from '@/lib/whatsapp'
 import { updateTemplateSchema } from '@/validations/whatsapp'
 
@@ -22,7 +23,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
     const ctx = await getAuthContext()
     const tenant = await getTenant(ctx.tenantId)
     const settings = tenant?.settings as Record<string, unknown> | null
-    if (!settings?.whatsapp_enabled) {
+    if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp not enabled' }, { status: 400 })
     }
     if (ctx.role !== 'owner') {
@@ -66,7 +67,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     const ctx = await getAuthContext()
     const tenant = await getTenant(ctx.tenantId)
     const settings = tenant?.settings as Record<string, unknown> | null
-    if (!settings?.whatsapp_enabled) {
+    if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp not enabled' }, { status: 400 })
     }
     if (ctx.role !== 'owner') {
@@ -125,7 +126,7 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
     const ctx = await getAuthContext()
     const tenant = await getTenant(ctx.tenantId)
     const settings = tenant?.settings as Record<string, unknown> | null
-    if (!settings?.whatsapp_enabled) {
+    if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp not enabled' }, { status: 400 })
     }
     if (ctx.role !== 'owner') {

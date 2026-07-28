@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { pollSseEvents, cleanupSseEvents, getLatestSseEventId } from '@/db/queries/whatsapp'
+import { isWhatsAppEnabled } from '@/lib/whatsapp'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,11 +10,11 @@ export async function GET() {
   const ctx = await getAuthContext()
   const tenant = await getTenant(ctx.tenantId)
   const settings = tenant?.settings as Record<string, unknown> | null
-  if (!settings?.whatsapp_enabled) {
+  if (!isWhatsAppEnabled(settings)) {
     return NextResponse.json({ error: 'WhatsApp not enabled' }, { status: 400 })
   }
 
-  const allowedRoles = (settings.whatsapp_allowed_roles as string[] | undefined) ?? ['owner']
+  const allowedRoles = (settings?.whatsapp_allowed_roles as string[] | undefined) ?? ['owner']
   if (!allowedRoles.includes(ctx.role) && ctx.role !== 'owner') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { upsertAutomation, getTemplateById } from '@/db/queries/whatsapp'
+import { isWhatsAppEnabled } from '@/lib/whatsapp'
 import { updateAutomationSchema } from '@/validations/whatsapp'
 
 const VALID_TRIGGERS = ['appointment_confirmation', 'payment_reminder', 'follow_up']
@@ -14,7 +15,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     const ctx = await getAuthContext()
     const tenant = await getTenant(ctx.tenantId)
     const settings = tenant?.settings as Record<string, unknown> | null
-    if (!settings?.whatsapp_enabled) {
+    if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp not enabled' }, { status: 400 })
     }
     if (ctx.role !== 'owner') {
