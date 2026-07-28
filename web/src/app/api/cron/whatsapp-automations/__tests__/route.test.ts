@@ -47,6 +47,10 @@ vi.mock('@/lib/whatsapp', () => ({
   },
 }))
 
+vi.mock('@/lib/plans', () => ({
+  isSubscriptionActive: vi.fn().mockResolvedValue(true),
+}))
+
 vi.mock('@/lib/phone', () => ({
   normalizeBrPhone: vi.fn((phone: string) => {
     const digits = phone.replace(/\D/g, '')

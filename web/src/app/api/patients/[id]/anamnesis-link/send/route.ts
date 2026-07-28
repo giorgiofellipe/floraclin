@@ -5,6 +5,7 @@ import { getTenant } from '@/db/queries/tenants'
 import { getPatient } from '@/db/queries/patients'
 import { getTemplateByPurpose, upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
 import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
+import { SubscriptionExpiredError, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
@@ -106,6 +107,9 @@ export async function POST(
 
     return NextResponse.json({ success: true, data: message }, { status: 201 })
   } catch (error) {
+    if (error instanceof SubscriptionExpiredError) {
+      return NextResponse.json(SUBSCRIPTION_EXPIRED_RESPONSE.body, { status: SUBSCRIPTION_EXPIRED_RESPONSE.status })
+    }
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('Meta API error')) {
       const detail = msg.replace('Meta API error: ', '')

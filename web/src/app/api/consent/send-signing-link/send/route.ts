@@ -5,6 +5,7 @@ import { getTenant } from '@/db/queries/tenants'
 import { getPatient } from '@/db/queries/patients'
 import { getTemplateByPurpose, upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
 import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
+import { SubscriptionExpiredError, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
 import { CONSENT_SIGNING_TEMPLATE_PURPOSE } from '@/validations/consent'
 
 const sendSchema = z.object({
@@ -92,6 +93,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    if (error instanceof SubscriptionExpiredError) {
+      return NextResponse.json(SUBSCRIPTION_EXPIRED_RESPONSE.body, { status: SUBSCRIPTION_EXPIRED_RESPONSE.status })
+    }
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('Meta API error')) {
       return NextResponse.json({ error: `Falha ao enviar via WhatsApp: ${msg.replace('Meta API error: ', '')}` }, { status: 502 })

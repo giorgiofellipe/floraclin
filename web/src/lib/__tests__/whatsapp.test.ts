@@ -14,6 +14,10 @@ vi.mock('@/db/queries/tenants', () => ({
   })),
 }))
 
+vi.mock('@/lib/plans', () => ({
+  requireActiveSubscription: vi.fn(async () => undefined),
+}))
+
 import { verifyWebhookSignature, sendMediaMessage } from '../whatsapp'
 
 describe('verifyWebhookSignature', () => {

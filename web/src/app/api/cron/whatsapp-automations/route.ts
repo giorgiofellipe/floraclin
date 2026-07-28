@@ -5,6 +5,7 @@ import { getAppointmentsPendingConfirmationUntil, markConfirmationSent } from '@
 import { listAutomations, upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
 import { sendTemplateMessage, resolveTemplateBody, CreditExhaustedError, getTemplateForTenant } from '@/lib/whatsapp'
 import { normalizeBrPhone } from '@/lib/phone'
+import { isSubscriptionActive } from '@/lib/plans'
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -31,6 +32,11 @@ export async function GET(request: Request) {
 
   for (const tenant of waEnabled) {
     try {
+      if (!(await isSubscriptionActive(tenant.id))) {
+        skipped++
+        continue
+      }
+
       const automations = await listAutomations(tenant.id)
       const confirmationAuto = automations.find(
         (a) => a.trigger === 'appointment_confirmation' && a.enabled

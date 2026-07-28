@@ -13,6 +13,27 @@ import type { Message } from '@/components/whatsapp/message-bubble'
 
 type ConfigStatus = 'loading' | 'configured' | 'not_configured' | 'no_access' | 'subscription_expired'
 
+function WhatsAppEmptyState({
+  title,
+  body,
+  action,
+}: {
+  title: string
+  body: string
+  action?: React.ReactNode
+}) {
+  return (
+    <div className="flex h-[calc(100vh-120px)] flex-col items-center justify-center gap-4">
+      <div className="rounded-full bg-[#25D366]/10 p-6">
+        <MessageSquare className="size-16 text-[#25D366]" />
+      </div>
+      <h2 className="text-xl font-medium text-charcoal">{title}</h2>
+      <p className="max-w-md text-center text-sm text-muted-foreground">{body}</p>
+      {action}
+    </div>
+  )
+}
+
 export default function WhatsAppPage() {
   const searchParams = useSearchParams()
   const [configStatus, setConfigStatus] = useState<ConfigStatus>('loading')
@@ -246,73 +267,52 @@ export default function WhatsAppPage() {
     )
   }
 
-  // Subscription expired — WhatsApp is a gated feature
+  // Subscription not active (expired, canceled or past_due past its period end)
   if (configStatus === 'subscription_expired') {
     return (
-      <div className="flex h-[calc(100vh-120px)] flex-col items-center justify-center gap-4">
-        <div className="rounded-full bg-[#25D366]/10 p-6">
-          <MessageSquare className="size-16 text-[#25D366]" />
-        </div>
-        <h2 className="text-xl font-medium text-[#2A2A2A]">
-          Assinatura expirada
-        </h2>
-        <p className="max-w-md text-center text-sm text-muted-foreground">
-          Seu período de teste terminou. Assine um plano para voltar a enviar e
-          receber mensagens pelo WhatsApp.
-        </p>
-        <Button
-          className="bg-forest hover:bg-sage text-white"
-          nativeButton={false}
-          render={<Link href="/configuracoes?tab=assinatura" />}
-        >
-          Ver planos
-        </Button>
-      </div>
+      <WhatsAppEmptyState
+        title="Assinatura inativa"
+        body="Sua assinatura não está ativa. Assine um plano para voltar a enviar e receber mensagens pelo WhatsApp."
+        action={
+          <Button
+            className="bg-forest text-cream hover:bg-sage"
+            nativeButton={false}
+            render={<Link href="/configuracoes?tab=assinatura" />}
+          >
+            Ver planos
+          </Button>
+        }
+      />
     )
   }
 
   // Role without WhatsApp access
   if (configStatus === 'no_access') {
     return (
-      <div className="flex h-[calc(100vh-120px)] flex-col items-center justify-center gap-4">
-        <div className="rounded-full bg-[#25D366]/10 p-6">
-          <MessageSquare className="size-16 text-[#25D366]" />
-        </div>
-        <h2 className="text-xl font-medium text-[#2A2A2A]">
-          Sem acesso ao WhatsApp
-        </h2>
-        <p className="max-w-md text-center text-sm text-muted-foreground">
-          Seu perfil não tem permissão para acessar o WhatsApp. Fale com o
-          proprietário da clínica para liberar o acesso nas configurações.
-        </p>
-      </div>
+      <WhatsAppEmptyState
+        title="Sem acesso ao WhatsApp"
+        body="Seu perfil não tem permissão para acessar o WhatsApp. Fale com o proprietário da clínica para liberar o acesso nas configurações."
+      />
     )
   }
 
   // Own-number mode selected but setup not finished
   if (configStatus === 'not_configured') {
     return (
-      <div className="flex h-[calc(100vh-120px)] flex-col items-center justify-center gap-4">
-        <div className="rounded-full bg-[#25D366]/10 p-6">
-          <MessageSquare className="size-16 text-[#25D366]" />
-        </div>
-        <h2 className="text-xl font-medium text-[#2A2A2A]">
-          Conclua a configuração do WhatsApp
-        </h2>
-        <p className="max-w-md text-center text-sm text-muted-foreground">
-          Sua clínica está configurada para usar um número próprio de WhatsApp,
-          mas a conexão ainda não foi concluída. Finalize a configuração — ou
-          volte para o modo FloraClin, que funciona sem nenhuma configuração.
-        </p>
-        <Button
-          className="bg-[#25D366] hover:bg-[#1DA851] text-white"
-          nativeButton={false}
-          render={<Link href="/configuracoes?tab=whatsapp" />}
-        >
-          <Settings className="mr-2 size-4" />
-          Ir para Configurações
-        </Button>
-      </div>
+      <WhatsAppEmptyState
+        title="Conclua a configuração do WhatsApp"
+        body="Sua clínica está configurada para usar um número próprio de WhatsApp, mas a conexão ainda não foi concluída. Finalize a configuração, ou volte para o modo FloraClin, que funciona sem nenhuma configuração."
+        action={
+          <Button
+            className="bg-[#25D366] hover:bg-[#1DA851] text-white"
+            nativeButton={false}
+            render={<Link href="/configuracoes?tab=whatsapp" />}
+          >
+            <Settings className="mr-2 size-4" />
+            Ir para Configurações
+          </Button>
+        }
+      />
     )
   }
 

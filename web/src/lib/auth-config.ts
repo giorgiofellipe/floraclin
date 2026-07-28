@@ -118,7 +118,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             token.role = membership.role
             token.isPlatformAdmin = membership.isPlatformAdmin
 
-            const [sub] = await db
+            let [sub] = await db
               .select({
                 status: tenantSubscriptions.status,
                 planSlug: plans.slug,
@@ -128,6 +128,29 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
               .innerJoin(plans, eq(tenantSubscriptions.planId, plans.id))
               .where(eq(tenantSubscriptions.tenantId, membership.tenantId))
               .limit(1)
+
+            // Self-heal: the API gates fail closed on a missing subscription
+            // row, so a tenant whose signup-time createSubscription failed
+            // would be locked out. Grant the standard trial on sign-in
+            // (createSubscription is idempotent).
+            if (!sub) {
+              try {
+                const [freePlan] = await db
+                  .select({ id: plans.id, slug: plans.slug, features: plans.features })
+                  .from(plans)
+                  .where(eq(plans.slug, 'free'))
+                  .limit(1)
+                if (freePlan) {
+                  const { createSubscription } = await import('@/db/queries/subscriptions')
+                  const created = await createSubscription(membership.tenantId, freePlan.id)
+                  if (created) {
+                    sub = { status: created.status, planSlug: freePlan.slug, planFeatures: freePlan.features }
+                  }
+                }
+              } catch (err) {
+                console.error('Subscription self-heal failed:', err)
+              }
+            }
 
             token.subscriptionStatus = sub?.status ?? 'expired'
             token.planSlug = sub?.planSlug ?? 'free'

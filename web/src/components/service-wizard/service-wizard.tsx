@@ -1023,7 +1023,7 @@ export function ServiceWizard({
               {state.errorType === 'validation' &&
                 'Corrija os campos destacados antes de continuar.'}
               {state.errorType === 'precondition' && state.error}
-              {state.errorType === 'server' && 'Erro ao salvar. Tente novamente.'}
+              {state.errorType === 'server' && (state.error || 'Erro ao salvar. Tente novamente.')}
               {!state.errorType && state.error}
             </p>
           </div>

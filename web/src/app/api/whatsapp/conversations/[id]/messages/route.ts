@@ -19,7 +19,7 @@ import {
   sendMediaSchema,
 } from '@/validations/whatsapp'
 import { sendTextMessage, sendTemplateMessage, sendMediaMessage, resolveTemplateBody, isWhatsAppEnabled } from '@/lib/whatsapp'
-import { requireActiveSubscription, SubscriptionExpiredError, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
+import { isSubscriptionActive, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
 import { getProspect, updateProspect } from '@/db/queries/prospects'
 
 const messageListSchema = z.object({
@@ -40,11 +40,17 @@ async function checkWhatsAppAccess() {
     return { error: NextResponse.json({ error: 'WhatsApp não habilitado' }, { status: 403 }) }
   }
 
-  await requireActiveSubscription(ctx.tenantId)
-
   const allowedRoles = (settings.whatsapp_allowed_roles as string[]) ?? ['owner']
   if (!allowedRoles.includes(ctx.role) && ctx.role !== 'owner') {
     return { error: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
+  }
+
+  if (!(await isSubscriptionActive(ctx.tenantId))) {
+    return {
+      error: NextResponse.json(SUBSCRIPTION_EXPIRED_RESPONSE.body, {
+        status: SUBSCRIPTION_EXPIRED_RESPONSE.status,
+      }),
+    }
   }
 
   return { ctx }
@@ -88,9 +94,6 @@ export async function GET(
     const data = await listMessages(ctx.tenantId, conversationId, parsed.data)
     return NextResponse.json(data)
   } catch (error) {
-    if (error instanceof SubscriptionExpiredError) {
-      return NextResponse.json(SUBSCRIPTION_EXPIRED_RESPONSE.body, { status: SUBSCRIPTION_EXPIRED_RESPONSE.status })
-    }
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -302,9 +305,6 @@ export async function POST(
 
     return NextResponse.json({ success: true, data: message }, { status: 201 })
   } catch (error) {
-    if (error instanceof SubscriptionExpiredError) {
-      return NextResponse.json(SUBSCRIPTION_EXPIRED_RESPONSE.body, { status: SUBSCRIPTION_EXPIRED_RESPONSE.status })
-    }
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('Meta API error')) {
       const detail = msg.replace('Meta API error: ', '')

@@ -90,7 +90,17 @@ async function graphFetch(path: string, token: string, options?: RequestInit) {
   return data
 }
 
+// Every outbound send is subscription-gated here, at the single choke
+// point, so non-inbox senders (cron, webhooks, consent/anamnesis links,
+// queued-message drain) cannot bypass the block. Queued messages simply
+// stay pending and deliver after the tenant resubscribes.
+async function requireSendAllowed(tenantId: string) {
+  const { requireActiveSubscription } = await import('@/lib/plans')
+  await requireActiveSubscription(tenantId)
+}
+
 export async function sendTextMessage(tenantId: string, to: string, body: string) {
+  await requireSendAllowed(tenantId)
   const creds = await getCredentials(tenantId)
   const data = await graphFetch(`/${creds.phoneNumberId}/messages`, creds.accessToken, {
     method: 'POST',
@@ -112,6 +122,7 @@ export async function sendTemplateMessage(
   params?: Record<string, string>,
   buttonParams?: { index: number; subType: string; parameters: { type: string; text: string }[] }[],
 ) {
+  await requireSendAllowed(tenantId)
   const mode = await getWhatsAppMode(tenantId)
 
   if (mode === 'floraclin') {
@@ -164,6 +175,7 @@ export async function sendMediaMessage(
   caption?: string,
   filename?: string,
 ) {
+  await requireSendAllowed(tenantId)
   const creds = await getCredentials(tenantId)
   const mediaPayload: Record<string, string> = { link: mediaUrl }
   if (caption) mediaPayload.caption = caption

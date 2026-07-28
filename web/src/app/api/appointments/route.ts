@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
-import { requireActiveSubscription, SubscriptionExpiredError, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
+import { subscriptionGate } from '@/lib/plans'
 import { syncAppointmentToGoogle } from '@/lib/google-calendar-sync'
 import {
   listAppointments,
@@ -44,10 +44,12 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const ctx = await getAuthContext()
-    await requireActiveSubscription(ctx.tenantId)
     if (!['owner', 'practitioner', 'receptionist'].includes(ctx.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+
+    const gate = await subscriptionGate(ctx)
+    if (gate) return gate
 
     const body = await request.json()
     const parsed = createAppointmentSchema.safeParse(body)
@@ -135,9 +137,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: appointment })
   } catch (error) {
-    if (error instanceof SubscriptionExpiredError) {
-      return NextResponse.json(SUBSCRIPTION_EXPIRED_RESPONSE.body, { status: SUBSCRIPTION_EXPIRED_RESPONSE.status })
-    }
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('exclusion')) {
       return NextResponse.json(
