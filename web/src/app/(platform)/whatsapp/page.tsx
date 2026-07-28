@@ -11,7 +11,7 @@ import { MessageSquare, Settings, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { Message } from '@/components/whatsapp/message-bubble'
 
-type ConfigStatus = 'loading' | 'configured' | 'not_configured'
+type ConfigStatus = 'loading' | 'configured' | 'not_configured' | 'no_access'
 
 export default function WhatsAppPage() {
   const searchParams = useSearchParams()
@@ -31,7 +31,10 @@ export default function WhatsAppPage() {
       try {
         const res = await fetch('/api/whatsapp/conversations?limit=1')
         if (res.status === 403) {
-          setConfigStatus('not_configured')
+          // 403 covers two distinct cases: own-number mode without a
+          // finished setup vs. the user's role lacking WhatsApp access.
+          const body = await res.json().catch(() => null)
+          setConfigStatus(body?.error === 'Forbidden' ? 'no_access' : 'not_configured')
         } else {
           setConfigStatus('configured')
         }
@@ -241,7 +244,25 @@ export default function WhatsAppPage() {
     )
   }
 
-  // Not configured state
+  // Role without WhatsApp access
+  if (configStatus === 'no_access') {
+    return (
+      <div className="flex h-[calc(100vh-120px)] flex-col items-center justify-center gap-4">
+        <div className="rounded-full bg-[#25D366]/10 p-6">
+          <MessageSquare className="size-16 text-[#25D366]" />
+        </div>
+        <h2 className="text-xl font-medium text-[#2A2A2A]">
+          Sem acesso ao WhatsApp
+        </h2>
+        <p className="max-w-md text-center text-sm text-muted-foreground">
+          Seu perfil não tem permissão para acessar o WhatsApp. Fale com o
+          proprietário da clínica para liberar o acesso nas configurações.
+        </p>
+      </div>
+    )
+  }
+
+  // Own-number mode selected but setup not finished
   if (configStatus === 'not_configured') {
     return (
       <div className="flex h-[calc(100vh-120px)] flex-col items-center justify-center gap-4">
@@ -249,11 +270,12 @@ export default function WhatsAppPage() {
           <MessageSquare className="size-16 text-[#25D366]" />
         </div>
         <h2 className="text-xl font-medium text-[#2A2A2A]">
-          Configure o WhatsApp para começar
+          Conclua a configuração do WhatsApp
         </h2>
         <p className="max-w-md text-center text-sm text-muted-foreground">
-          Conecte sua conta do WhatsApp Business nas configurações para gerenciar
-          conversas, enviar templates e acompanhar prospects diretamente pelo FloraClin.
+          Sua clínica está configurada para usar um número próprio de WhatsApp,
+          mas a conexão ainda não foi concluída. Finalize a configuração — ou
+          volte para o modo FloraClin, que funciona sem nenhuma configuração.
         </p>
         <Button
           className="bg-[#25D366] hover:bg-[#1DA851] text-white"
