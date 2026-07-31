@@ -182,7 +182,9 @@ function FeatureShowcaseGroup({
 
   return (
     <div className={`${bgClass} py-12 md:py-16`}>
-      <div className="mx-auto max-w-[1200px] px-6">
+      {/* Tighter gutter on phones: the demos are the point, and every pixel
+          of width goes straight into how large they render. */}
+      <div className="mx-auto max-w-[1200px] px-4 sm:px-6">
         <div className="flex items-center justify-center gap-4 mb-8">
           <span className="h-px w-8 bg-sage/30" />
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-sage px-3 py-1.5 bg-sage/8 rounded-full">
@@ -282,7 +284,13 @@ function FeatureShowcaseGroup({
                     </button>
                     {isActive && (
                       <div className="px-5 pb-4">
-                        <div className="aspect-[16/10] mb-3 rounded-lg overflow-hidden bg-cream/50">
+                        {/*
+                          Full-bleed and matched to the demos' own 400x280 ratio.
+                          A 16/10 box letterboxes a 10/7 drawing, and on a phone
+                          the scale is bound by width, so the padding and the
+                          letterbox were both coming straight out of legibility.
+                        */}
+                        <div className="aspect-[10/7] mb-3 -mx-5 overflow-hidden bg-cream/50">
                           <FeatureDemo key={activeIndex} />
                         </div>
                         <p className="text-sm text-charcoal/70 leading-relaxed mb-3">
