@@ -3,7 +3,7 @@
  *
  * Three rules every demo follows:
  *   1. Play once and hold. The showcase remounts each demo when its tab
- *      activates (key={activeIndex}) and cycles every 5s, so the story runs
+ *      activates (key={activeIndex}) and cycles every 6s, so the story runs
  *      inside ~4.2s and keeps its final frame. No infinite loop, no reset flash.
  *   2. Easing carries intent: --e-out for entrances, --e-pop for payoffs,
  *      --e-io for travel. Never ease-in-out for everything.

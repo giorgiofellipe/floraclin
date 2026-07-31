@@ -3,8 +3,9 @@
  *
  * Same three rules as the CRM demo:
  *   1. Play once and hold. The showcase remounts each demo when its tab
- *      activates and cycles every 5s, so each story runs inside ~4.2s and keeps
- *      its final frame. No infinite loop, no reset flash.
+ *      activates and cycles every 6s, so each story runs inside ~4.2s (the
+ *      before/after comparison takes 5s) and keeps its final frame. No
+ *      infinite loop, no reset flash.
  *   2. Easing carries intent: --e-out for entrances, --e-pop for payoffs,
  *      --e-io for travel. Never ease-in-out for everything.
  *   3. Compositor-friendly only: transform, opacity, filter (plus
@@ -12,8 +13,10 @@
  *      attributes like r, width or cx.
  *
  * Class and keyframe prefixes are unique per demo (fd-, ba-, gc-) because
- * the comparison lab renders the old and new demos on the same page.
+ * every demo can be in the DOM at once.
  */
+
+import { useId } from 'react'
 
 // ─── Diagrama facial ────────────────────────────────────────────────
 //
@@ -157,18 +160,39 @@ export function FaceDiagramDemo() {
 // photo to the first, then compare. The payoff is the rotation snapping into
 // place, not a padlock.
 
-function BaFace({ cx }: { cx: number }) {
+/**
+ * `lines` draws the expression lines the "antes" photo has and the "depois"
+ * one doesn't. Without a visible difference between the two faces the
+ * comparison slider has nothing to compare.
+ */
+function BaFace({ cx, lines = false }: { cx: number; lines?: boolean }) {
   return (
     <>
       <ellipse cx={cx} cy={126} rx="32" ry="44" stroke="#1C2B1E" strokeWidth="1.4" fill="none" />
       <ellipse cx={cx - 12} cy={112} rx="7" ry="3.5" stroke="#1C2B1E" strokeWidth="1" fill="none" />
       <ellipse cx={cx + 12} cy={112} rx="7" ry="3.5" stroke="#1C2B1E" strokeWidth="1" fill="none" />
       <path d={`M${cx - 10} 148 Q${cx} 156 ${cx + 10} 148`} stroke="#1C2B1E" strokeWidth="1" fill="none" />
+      {lines && (
+        <g stroke="#1C2B1E" strokeWidth="0.9" strokeLinecap="round" opacity="0.5" fill="none">
+          <path d={`M${cx - 10} 130 Q${cx - 15} 139 ${cx - 12} 149`} />
+          <path d={`M${cx + 10} 130 Q${cx + 15} 139 ${cx + 12} 149`} />
+          <path d={`M${cx - 3} 105 L${cx - 3.5} 99`} />
+          <path d={`M${cx + 3} 105 L${cx + 3.5} 99`} />
+          <path d={`M${cx - 24} 108 Q${cx - 21} 105 ${cx - 18} 106`} />
+          <path d={`M${cx + 24} 108 Q${cx + 21} 105 ${cx + 18} 106`} />
+        </g>
+      )}
     </>
   )
 }
 
 export function BeforeAfterDemo() {
+  // The showcase keeps its desktop and mobile trees in the DOM at once, so a
+  // literal id would give both copies the same clip. The hidden copy's rect
+  // doesn't animate (display:none suspends animations), which would freeze the
+  // reveal on whichever copy is actually visible.
+  const clipId = `ba-after-${useId().replace(/:/g, '')}`
+
   return (
     <svg viewBox="0 0 400 280" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="w-full h-full">
       <style>{`
@@ -183,26 +207,36 @@ export function BeforeAfterDemo() {
         @keyframes ba-fade { from { opacity: 0; } to { opacity: 1; } }
         /* The money moment: the misaligned photo rotates home and settles. */
         @keyframes ba-align {
-          0%, 42.9% { transform: translateY(6px) rotate(4deg); }
-          53%       { transform: translateY(-1.2px) rotate(-0.8deg); }
-          58%       { transform: translateY(0.4px) rotate(0.25deg); }
-          61%, 100% { transform: translateY(0) rotate(0deg); }
+          0%, 36%   { transform: translateY(6px) rotate(4deg); }
+          44.6%     { transform: translateY(-1.2px) rotate(-0.8deg); }
+          48.8%     { transform: translateY(0.4px) rotate(0.25deg); }
+          51.2%, 100% { transform: translateY(0) rotate(0deg); }
         }
         @keyframes ba-chip { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
-        /* The handle belongs to the "Depois" card (x 224..368): it enters at
-           that card's left edge and rests past its middle, so the final frame
-           reads as a comparison slider instead of a line parked on a border. */
+
+        /* Alignment done, the two frames slide into one stack: 32..176 and
+           224..368 both land on 128..272. Aligned, the faces superimpose
+           exactly, which is what makes the stack read as a single photo. */
+        @keyframes ba-mergeL { 0%, 60% { transform: translateX(0); } 72%, 100% { transform: translateX(96px); } }
+        @keyframes ba-mergeR { 0%, 60% { transform: translateX(0); } 72%, 100% { transform: translateX(-96px); } }
+
+        /* Landmarks and guides are scaffolding: they earned the alignment,
+           then get out of the way before the comparison. */
+        @keyframes ba-scaffold { 0%, 56% { opacity: 1; } 64%, 100% { opacity: 0; } }
+
+        /* Drives the handle and the reveal clip with identical values, so the
+           "depois" layer always ends exactly under the handle. */
         @keyframes ba-sweep {
-          0%, 69%   { opacity: 0; transform: translateX(230px); }
-          73%       { opacity: 1; transform: translateX(240px); }
-          93%, 100% { opacity: 1; transform: translateX(310px); }
+          0%, 72%   { opacity: 0; transform: translateX(128px); }
+          76%       { opacity: 1; transform: translateX(140px); }
+          92%, 100% { opacity: 1; transform: translateX(203px); }
         }
 
         .ba-card { opacity: 0; animation: ba-card 0.5s var(--e-out) forwards; }
         .ba-k2   { animation-delay: 0.08s; }
 
         .ba-scan  { opacity: 0; animation: ba-scan 0.6s var(--e-io) 0.5s forwards; }
-        .ba-align { animation: ba-align 4.2s var(--e-io) forwards; transform-origin: 296px 128px; }
+        .ba-align { animation: ba-align 5s var(--e-io) forwards; transform-origin: 296px 128px; }
 
         .ba-eye { opacity: 0; animation: ba-eye 0.4s var(--e-pop) forwards; transform-box: fill-box; transform-origin: center; }
         .ba-e1 { animation-delay: 1.00s; } .ba-e2 { animation-delay: 1.07s; }
@@ -211,41 +245,78 @@ export function BeforeAfterDemo() {
         .ba-guide { opacity: 0; animation: ba-fade 0.4s var(--e-out) 1.4s forwards; }
         .ba-join  { opacity: 0; animation: ba-fade 0.35s var(--e-out) 2.5s forwards; }
         .ba-chip  { opacity: 0; animation: ba-chip 0.45s var(--e-pop) 2.6s forwards; transform-box: fill-box; transform-origin: center; }
-        .ba-div   { opacity: 0; animation: ba-sweep 4.2s var(--e-io) forwards; }
+
+        .ba-scaffold { animation: ba-scaffold 5s linear forwards; }
+        .ba-mergeL   { animation: ba-mergeL 5s var(--e-io) forwards; }
+        .ba-mergeR   { animation: ba-mergeR 5s var(--e-io) forwards; }
+        .ba-sweep    { opacity: 0; animation: ba-sweep 5s var(--e-io) forwards; }
+        .ba-tag      { opacity: 0; animation: ba-fade 0.4s var(--e-out) 4s forwards; }
 
         @media (prefers-reduced-motion: reduce) {
-          .ba-card, .ba-scan, .ba-align, .ba-eye, .ba-guide,
-          .ba-join, .ba-chip, .ba-div { animation: none; }
-          .ba-card, .ba-eye, .ba-guide, .ba-join, .ba-chip { opacity: 1; transform: none; }
+          .ba-card, .ba-scan, .ba-align, .ba-eye, .ba-guide, .ba-join, .ba-chip,
+          .ba-scaffold, .ba-mergeL, .ba-mergeR, .ba-sweep, .ba-tag { animation: none; }
+          .ba-card, .ba-chip, .ba-tag { opacity: 1; transform: none; }
           .ba-align { transform: none; }
-          .ba-scan { opacity: 0; }
-          .ba-div  { opacity: 1; transform: translateX(310px); }
+          .ba-scan, .ba-scaffold { opacity: 0; }
+          .ba-mergeL { transform: translateX(96px); }
+          .ba-mergeR { transform: translateX(-96px); }
+          .ba-sweep  { opacity: 1; transform: translateX(203px); }
         }
       `}</style>
 
+      <defs>
+        {/*
+          Reveals the "depois" layer to the right of the handle. The rect is
+          280 wide so that before the sweep starts it still covers the frame in
+          its pre-merge position (224..368) and nothing gets clipped early.
+        */}
+        <clipPath id={clipId}>
+          <rect className="ba-sweep" x="0" y="0" width="280" height="280" />
+        </clipPath>
+      </defs>
+
       <text x="16" y="26" fontSize="11" fill="#1C2B1E" fontFamily="sans-serif" fontWeight="600">Antes e depois</text>
 
+      {/* "Antes": the base layer of the final stack, with expression lines. */}
       <g className="ba-card">
-        <rect x="32" y="44" width="144" height="168" rx="10" fill="#FAF7F3" stroke="#E8D5C8" strokeWidth="1" />
-        <BaFace cx={104} />
-        <line className="ba-guide" x1="66" y1="112" x2="142" y2="112" stroke="#4A6B52" strokeWidth="1" strokeDasharray="4 3" />
-        <circle className="ba-eye ba-e1" cx="92" cy="112" r="3.5" fill="#4A6B52" />
-        <circle className="ba-eye ba-e2" cx="116" cy="112" r="3.5" fill="#4A6B52" />
+        <g className="ba-mergeL">
+          <rect x="32" y="44" width="144" height="168" rx="10" fill="#FAF7F3" stroke="#E8D5C8" strokeWidth="1" />
+          <BaFace cx={104} lines />
+          <g className="ba-scaffold">
+            <line className="ba-guide" x1="66" y1="112" x2="142" y2="112" stroke="#4A6B52" strokeWidth="1" strokeDasharray="4 3" />
+            <circle className="ba-eye ba-e1" cx="92" cy="112" r="3.5" fill="#4A6B52" />
+            <circle className="ba-eye ba-e2" cx="116" cy="112" r="3.5" fill="#4A6B52" />
+          </g>
+        </g>
       </g>
 
-      {/* Entrance and alignment live on separate groups so the transforms don't fight. */}
-      <g className="ba-card ba-k2">
-        <g className="ba-align">
-          <rect x="224" y="44" width="144" height="168" rx="10" fill="#FAF7F3" stroke="#E8D5C8" strokeWidth="1" />
-          <BaFace cx={296} />
-          <line className="ba-guide" x1="258" y1="112" x2="334" y2="112" stroke="#4A6B52" strokeWidth="1" strokeDasharray="4 3" />
-          <circle className="ba-eye ba-e3" cx="284" cy="112" r="3.5" fill="#4A6B52" />
-          <circle className="ba-eye ba-e4" cx="308" cy="112" r="3.5" fill="#4A6B52" />
+      {/*
+        "Depois". The clip lives outside every animated transform: clipPath
+        coordinates resolve in the referencing element's space, so nesting it
+        under the merge or align groups would drag the clip along with them.
+        Entrance, merge and alignment then get a group each so the transforms
+        don't fight.
+      */}
+      <g clipPath={`url(#${clipId})`}>
+        <g className="ba-card ba-k2">
+          <g className="ba-mergeR">
+            <g className="ba-align">
+              <rect x="224" y="44" width="144" height="168" rx="10" fill="#FAF7F3" stroke="#E8D5C8" strokeWidth="1" />
+              <BaFace cx={296} />
+              <g className="ba-scaffold">
+                <line className="ba-guide" x1="258" y1="112" x2="334" y2="112" stroke="#4A6B52" strokeWidth="1" strokeDasharray="4 3" />
+                <circle className="ba-eye ba-e3" cx="284" cy="112" r="3.5" fill="#4A6B52" />
+                <circle className="ba-eye ba-e4" cx="308" cy="112" r="3.5" fill="#4A6B52" />
+              </g>
+            </g>
+          </g>
         </g>
       </g>
 
       {/* Bridges the two guides into one continuous eye line once aligned. */}
-      <line className="ba-join" x1="142" y1="112" x2="258" y2="112" stroke="#4A6B52" strokeWidth="1" strokeDasharray="4 3" />
+      <g className="ba-scaffold">
+        <line className="ba-join" x1="142" y1="112" x2="258" y2="112" stroke="#4A6B52" strokeWidth="1" strokeDasharray="4 3" />
+      </g>
 
       <g className="ba-scan">
         <rect x="32" y="44" width="144" height="10" rx="2" fill="#4A6B52" opacity="0.18" />
@@ -254,8 +325,15 @@ export function BeforeAfterDemo() {
         <line x1="224" y1="48" x2="368" y2="48" stroke="#4A6B52" strokeWidth="1.5" opacity="0.5" />
       </g>
 
-      <text x="104" y="228" textAnchor="middle" fontSize="9" fill="#7A7A7A" fontFamily="sans-serif">Antes</text>
-      <text x="296" y="228" textAnchor="middle" fontSize="9" fill="#7A7A7A" fontFamily="sans-serif">Depois</text>
+      {/* Captions travel with their frame, then hand off to the corner tags. */}
+      <g className="ba-scaffold">
+        <g className="ba-mergeL">
+          <text x="104" y="228" textAnchor="middle" fontSize="9" fill="#7A7A7A" fontFamily="sans-serif">Antes</text>
+        </g>
+        <g className="ba-mergeR">
+          <text x="296" y="228" textAnchor="middle" fontSize="9" fill="#7A7A7A" fontFamily="sans-serif">Depois</text>
+        </g>
+      </g>
 
       <g className="ba-chip">
         <rect x="150" y="240" width="100" height="22" rx="11" fill="#4A6B52" />
@@ -265,8 +343,16 @@ export function BeforeAfterDemo() {
         </text>
       </g>
 
+      {/* Corner tags name each half of the merged frame. */}
+      <g className="ba-tag">
+        <rect x="136" y="190" width="36" height="14" rx="7" fill="#1C2B1E" opacity="0.55" />
+        <text x="154" y="200" textAnchor="middle" fontSize="7.5" fill="white" fontFamily="sans-serif" fontWeight="600">Antes</text>
+        <rect x="226" y="190" width="40" height="14" rx="7" fill="#1C2B1E" opacity="0.55" />
+        <text x="246" y="200" textAnchor="middle" fontSize="7.5" fill="white" fontFamily="sans-serif" fontWeight="600">Depois</text>
+      </g>
+
       {/* Comparison handle, drawn at x=0 and translated so only transform animates. */}
-      <g className="ba-div">
+      <g className="ba-sweep">
         <line x1="0" y1="48" x2="0" y2="208" stroke="#4A6B52" strokeWidth="1.5" />
         <circle cx="0" cy="128" r="9" fill="white" stroke="#4A6B52" strokeWidth="1.5" />
         <path d="M-3 124 L-6 128 L-3 132 M3 124 L6 128 L3 132" stroke="#4A6B52" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
