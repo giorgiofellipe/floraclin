@@ -23,13 +23,26 @@ import { useId } from 'react'
 // Scene: what the product actually records: a product and a dose per point,
 // on one of three face views. Not anatomy labels.
 
+/**
+ * The face is the app's own female-front template, cropped to the head so it
+ * fills the frame (the full 340x440 asset leaves a quarter of its height on
+ * neck and hair). It sits at x 132..268, clear of the dose chips on both
+ * sides. Point coordinates below are anatomy on that crop: testa, pés de
+ * galinha, sulco nasogeniano, mento.
+ */
+const FACE_SRC = '/face-templates/female-front.webp'
+/** Same face with the lines a treatment softens, registered to FACE_SRC on
+ *  the eye line and interocular distance so the two stack exactly. */
+const FACE_SRC_ANTES = '/face-templates/female-front-antes.webp'
+const FACE_IMAGE = { x: 132, y: 56, width: 136, height: 176 }
+
 const FACE_POINTS = [
   // dot: where the application lands. leader: chip edge → just short of the dot.
-  { dot: [200, 122], leader: [272, 120, 206, 122], chip: [272, 112, 58], side: 'r', label: 'Botox 20U' },
-  { dot: [168, 148], leader: [128, 148, 162, 148], chip: [70, 140, 58], side: 'l', label: 'Botox 12U' },
-  { dot: [232, 148], leader: [272, 166, 238, 151], chip: [272, 158, 68], side: 'r', label: 'Ácido H. 1ml' },
-  { dot: [176, 196], leader: [128, 198, 182, 196], chip: [54, 190, 74], side: 'l', label: 'Preench. 0,8ml' },
-  { dot: [224, 204], leader: [272, 216, 230, 206], chip: [272, 208, 54], side: 'r', label: 'Botox 8U' },
+  { dot: [199, 113], leader: [272, 113, 206, 113], chip: [272, 105, 58], side: 'r', label: 'Botox 20U' },
+  { dot: [162, 148], leader: [128, 148, 155, 148], chip: [70, 140, 58], side: 'l', label: 'Botox 12U' },
+  { dot: [235, 148], leader: [272, 148, 242, 148], chip: [272, 140, 54], side: 'r', label: 'Botox 8U' },
+  { dot: [184, 183], leader: [128, 183, 177, 183], chip: [60, 175, 68], side: 'l', label: 'Ácido H. 1ml' },
+  { dot: [199, 204], leader: [272, 204, 206, 204], chip: [272, 196, 74], side: 'r', label: 'Preench. 0,8ml' },
 ] as const
 
 const FACE_VIEWS = [
@@ -42,7 +55,7 @@ export function FaceDiagramDemo() {
   return (
     <svg viewBox="0 0 400 280" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="w-full h-full">
       <style>{`
-        @keyframes fd-draw  { from { stroke-dashoffset: 390; } to { stroke-dashoffset: 0; } }
+        @keyframes fd-face  { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
         @keyframes fd-fade  { from { opacity: 0; } to { opacity: 1; } }
         @keyframes fd-tab   { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
         /* --e-pop is a back-out curve, so 0 → 1 already carries the ~1.15 overshoot. */
@@ -52,8 +65,7 @@ export function FaceDiagramDemo() {
         @keyframes fd-chipl { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
         @keyframes fd-sum   { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
 
-        .fd-outline { stroke-dasharray: 390; animation: fd-draw 0.65s var(--e-out) forwards; }
-        .fd-feat    { opacity: 0; animation: fd-fade 0.4s var(--e-out) 0.32s forwards; }
+        .fd-face { opacity: 0; animation: fd-face 0.6s var(--e-out) forwards; transform-box: fill-box; transform-origin: center; }
 
         .fd-tab { opacity: 0; animation: fd-tab 0.4s var(--e-out) forwards; }
         .fd-v1 { animation-delay: 0.30s; } .fd-v2 { animation-delay: 0.37s; } .fd-v3 { animation-delay: 0.44s; }
@@ -71,10 +83,9 @@ export function FaceDiagramDemo() {
         .fd-sum { opacity: 0; animation: fd-sum 0.5s var(--e-pop) 2.55s forwards; }
 
         @media (prefers-reduced-motion: reduce) {
-          .fd-outline, .fd-feat, .fd-tab, .fd-dot, .fd-ring,
+          .fd-face, .fd-tab, .fd-dot, .fd-ring,
           .fd-chip-r, .fd-chip-l, .fd-sum { animation: none; }
-          .fd-outline { stroke-dashoffset: 0; }
-          .fd-feat, .fd-tab, .fd-dot, .fd-chip-r, .fd-chip-l, .fd-sum { opacity: 1; transform: none; }
+          .fd-face, .fd-tab, .fd-dot, .fd-chip-r, .fd-chip-l, .fd-sum { opacity: 1; transform: none; }
           .fd-ring { opacity: 0; }
         }
       `}</style>
@@ -108,12 +119,18 @@ export function FaceDiagramDemo() {
         </g>
       ))}
 
-      <ellipse className="fd-outline" cx="200" cy="168" rx="54" ry="68" stroke="#1C2B1E" strokeWidth="2" fill="#FAF7F3" />
-      <g className="fd-feat">
-        <ellipse cx="182" cy="152" rx="9" ry="4.5" stroke="#1C2B1E" strokeWidth="1.2" fill="none" />
-        <ellipse cx="218" cy="152" rx="9" ry="4.5" stroke="#1C2B1E" strokeWidth="1.2" fill="none" />
-        <path d="M200 160 L195 180 Q200 184 205 180" stroke="#1C2B1E" strokeWidth="1" fill="none" />
-        <path d="M186 200 Q200 210 214 200" stroke="#1C2B1E" strokeWidth="1.2" fill="none" />
+      <g className="fd-face">
+        <rect
+          x={FACE_IMAGE.x - 6}
+          y={FACE_IMAGE.y - 5}
+          width={FACE_IMAGE.width + 12}
+          height={FACE_IMAGE.height + 10}
+          rx="8"
+          fill="white"
+          stroke="#E8D5C8"
+          strokeWidth="1"
+        />
+        <image href={FACE_SRC} {...FACE_IMAGE} />
       </g>
 
       {FACE_POINTS.map((point, i) => {
@@ -161,29 +178,15 @@ export function FaceDiagramDemo() {
 // place, not a padlock.
 
 /**
- * `lines` draws the expression lines the "antes" photo has and the "depois"
- * one doesn't. Without a visible difference between the two faces the
- * comparison slider has nothing to compare.
+ * Photo layer for one card. `x` is the image's left edge; the templates are
+ * 263x340, so 126x163 keeps their ratio and leaves a margin inside the
+ * 144-wide card. Both layers use the same box, which is what lets the two
+ * photos stack into one frame once aligned.
  */
-function BaFace({ cx, lines = false }: { cx: number; lines?: boolean }) {
-  return (
-    <>
-      <ellipse cx={cx} cy={126} rx="32" ry="44" stroke="#1C2B1E" strokeWidth="1.4" fill="none" />
-      <ellipse cx={cx - 12} cy={112} rx="7" ry="3.5" stroke="#1C2B1E" strokeWidth="1" fill="none" />
-      <ellipse cx={cx + 12} cy={112} rx="7" ry="3.5" stroke="#1C2B1E" strokeWidth="1" fill="none" />
-      <path d={`M${cx - 10} 148 Q${cx} 156 ${cx + 10} 148`} stroke="#1C2B1E" strokeWidth="1" fill="none" />
-      {lines && (
-        <g stroke="#1C2B1E" strokeWidth="0.9" strokeLinecap="round" opacity="0.5" fill="none">
-          <path d={`M${cx - 10} 130 Q${cx - 15} 139 ${cx - 12} 149`} />
-          <path d={`M${cx + 10} 130 Q${cx + 15} 139 ${cx + 12} 149`} />
-          <path d={`M${cx - 3} 105 L${cx - 3.5} 99`} />
-          <path d={`M${cx + 3} 105 L${cx + 3.5} 99`} />
-          <path d={`M${cx - 24} 108 Q${cx - 21} 105 ${cx - 18} 106`} />
-          <path d={`M${cx + 24} 108 Q${cx + 21} 105 ${cx + 18} 106`} />
-        </g>
-      )}
-    </>
-  )
+const BA_FACE = { y: 47, width: 126, height: 163 }
+
+function BaPhoto({ x, src }: { x: number; src: string }) {
+  return <image href={src} x={x} y={BA_FACE.y} width={BA_FACE.width} height={BA_FACE.height} />
 }
 
 export function BeforeAfterDemo() {
@@ -236,7 +239,7 @@ export function BeforeAfterDemo() {
         .ba-k2   { animation-delay: 0.08s; }
 
         .ba-scan  { opacity: 0; animation: ba-scan 0.6s var(--e-io) 0.5s forwards; }
-        .ba-align { animation: ba-align 5s var(--e-io) forwards; transform-origin: 296px 128px; }
+        .ba-align { animation: ba-align 5s var(--e-io) forwards; transform-origin: 295px 132px; }
 
         .ba-eye { opacity: 0; animation: ba-eye 0.4s var(--e-pop) forwards; transform-box: fill-box; transform-origin: center; }
         .ba-e1 { animation-delay: 1.00s; } .ba-e2 { animation-delay: 1.07s; }
@@ -281,11 +284,11 @@ export function BeforeAfterDemo() {
       <g className="ba-card">
         <g className="ba-mergeL">
           <rect x="32" y="44" width="144" height="168" rx="10" fill="#FAF7F3" stroke="#E8D5C8" strokeWidth="1" />
-          <BaFace cx={104} lines />
+          <BaPhoto x={41} src={FACE_SRC_ANTES} />
           <g className="ba-scaffold">
-            <line className="ba-guide" x1="66" y1="112" x2="142" y2="112" stroke="#4A6B52" strokeWidth="1" strokeDasharray="4 3" />
-            <circle className="ba-eye ba-e1" cx="92" cy="112" r="3.5" fill="#4A6B52" />
-            <circle className="ba-eye ba-e2" cx="116" cy="112" r="3.5" fill="#4A6B52" />
+            <line className="ba-guide" x1="60" y1="132" x2="146" y2="132" stroke="#4A6B52" strokeWidth="1" strokeDasharray="4 3" />
+            <circle className="ba-eye ba-e1" cx="82" cy="132" r="3.5" fill="#4A6B52" />
+            <circle className="ba-eye ba-e2" cx="123" cy="132" r="3.5" fill="#4A6B52" />
           </g>
         </g>
       </g>
@@ -302,11 +305,11 @@ export function BeforeAfterDemo() {
           <g className="ba-mergeR">
             <g className="ba-align">
               <rect x="224" y="44" width="144" height="168" rx="10" fill="#FAF7F3" stroke="#E8D5C8" strokeWidth="1" />
-              <BaFace cx={296} />
+              <BaPhoto x={233} src={FACE_SRC} />
               <g className="ba-scaffold">
-                <line className="ba-guide" x1="258" y1="112" x2="334" y2="112" stroke="#4A6B52" strokeWidth="1" strokeDasharray="4 3" />
-                <circle className="ba-eye ba-e3" cx="284" cy="112" r="3.5" fill="#4A6B52" />
-                <circle className="ba-eye ba-e4" cx="308" cy="112" r="3.5" fill="#4A6B52" />
+                <line className="ba-guide" x1="252" y1="132" x2="338" y2="132" stroke="#4A6B52" strokeWidth="1" strokeDasharray="4 3" />
+                <circle className="ba-eye ba-e3" cx="274" cy="132" r="3.5" fill="#4A6B52" />
+                <circle className="ba-eye ba-e4" cx="315" cy="132" r="3.5" fill="#4A6B52" />
               </g>
             </g>
           </g>
@@ -315,7 +318,7 @@ export function BeforeAfterDemo() {
 
       {/* Bridges the two guides into one continuous eye line once aligned. */}
       <g className="ba-scaffold">
-        <line className="ba-join" x1="142" y1="112" x2="258" y2="112" stroke="#4A6B52" strokeWidth="1" strokeDasharray="4 3" />
+        <line className="ba-join" x1="146" y1="132" x2="252" y2="132" stroke="#4A6B52" strokeWidth="1" strokeDasharray="4 3" />
       </g>
 
       <g className="ba-scan">
@@ -385,8 +388,8 @@ export function GuidedCaptureDemo() {
           62%       { opacity: 1; transform: scale(1); }
           78%, 100% { opacity: 0; transform: scale(1); }
         }
-        @keyframes gc-arrow { from { stroke-dashoffset: 68; } to { stroke-dashoffset: 0; } }
-        @keyframes gc-circ  { from { stroke-dashoffset: 114; } to { stroke-dashoffset: 0; } }
+        @keyframes gc-arrow { from { stroke-dashoffset: 92; } to { stroke-dashoffset: 0; } }
+        @keyframes gc-circ  { from { stroke-dashoffset: 101; } to { stroke-dashoffset: 0; } }
         @keyframes gc-rule  { from { stroke-dashoffset: 78; } to { stroke-dashoffset: 0; } }
         @keyframes gc-tip   { from { opacity: 0; transform: scale(0.5); } to { opacity: 1; transform: scale(1); } }
         @keyframes gc-meas  { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
@@ -400,9 +403,9 @@ export function GuidedCaptureDemo() {
         .gc-chip   { opacity: 0; animation: gc-chip 1s var(--e-pop) 1.4s forwards; transform-box: fill-box; transform-origin: center; }
         .gc-flash  { opacity: 0; animation: gc-flash 0.18s linear 1.6s forwards; }
 
-        .gc-arrow { stroke-dasharray: 68; stroke-dashoffset: 68; animation: gc-arrow 0.45s var(--e-out) 2.3s forwards; }
+        .gc-arrow { stroke-dasharray: 92; stroke-dashoffset: 92; animation: gc-arrow 0.45s var(--e-out) 2.3s forwards; }
         .gc-tip   { opacity: 0; animation: gc-tip 0.3s var(--e-pop) 2.68s forwards; transform-box: fill-box; transform-origin: center; }
-        .gc-circ  { stroke-dasharray: 114; stroke-dashoffset: 114; animation: gc-circ 0.55s var(--e-out) 2.55s forwards; }
+        .gc-circ  { stroke-dasharray: 101; stroke-dashoffset: 101; animation: gc-circ 0.55s var(--e-out) 2.55s forwards; }
         .gc-rule  { stroke-dasharray: 78; stroke-dashoffset: 78; animation: gc-rule 0.4s var(--e-out) 2.8s forwards; }
         .gc-meas  { opacity: 0; animation: gc-meas 0.35s var(--e-out) 3.1s forwards; }
 
@@ -416,24 +419,21 @@ export function GuidedCaptureDemo() {
       `}</style>
 
       <g className="gc-frame">
-        <rect x="70" y="24" width="260" height="232" rx="12" fill="#FAF7F3" stroke="#1C2B1E" strokeWidth="2" />
+        <rect x="70" y="24" width="260" height="232" rx="12" fill="white" stroke="#1C2B1E" strokeWidth="2" />
         <path d="M80 56 V38 H98" stroke="#4A6B52" strokeWidth="2.5" fill="none" />
         <path d="M320 56 V38 H302" stroke="#4A6B52" strokeWidth="2.5" fill="none" />
         <path d="M80 224 V242 H98" stroke="#4A6B52" strokeWidth="2.5" fill="none" />
         <path d="M320 224 V242 H302" stroke="#4A6B52" strokeWidth="2.5" fill="none" />
 
         {/* Pose guide: mint dashed while unaligned, sage solid once locked. */}
-        <ellipse className="gc-dashed" cx="200" cy="132" rx="54" ry="72" stroke="#8FB49A" strokeWidth="2" strokeDasharray="6 4" fill="none" />
+        <ellipse className="gc-dashed" cx="200" cy="124" rx="48" ry="70" stroke="#8FB49A" strokeWidth="2" strokeDasharray="6 4" fill="none" />
         <g className="gc-guide">
-          <ellipse className="gc-solid" cx="200" cy="132" rx="54" ry="72" stroke="#4A6B52" strokeWidth="2.5" fill="none" />
+          <ellipse className="gc-solid" cx="200" cy="124" rx="48" ry="70" stroke="#4A6B52" strokeWidth="2.5" fill="none" />
         </g>
 
+        {/* Sized to sit inside the pose guide, so "alinhado" is legible. */}
         <g className="gc-face">
-          <ellipse cx="200" cy="132" rx="40" ry="54" stroke="#1C2B1E" strokeWidth="1.5" fill="none" />
-          <ellipse cx="186" cy="116" rx="7" ry="3.5" stroke="#1C2B1E" strokeWidth="1" fill="none" />
-          <ellipse cx="214" cy="116" rx="7" ry="3.5" stroke="#1C2B1E" strokeWidth="1" fill="none" />
-          <path d="M200 124 L195 141 Q200 144 205 141" stroke="#1C2B1E" strokeWidth="1" fill="none" />
-          <path d="M190 152 Q200 161 210 152" stroke="#1C2B1E" strokeWidth="1" fill="none" />
+          <image href={FACE_SRC} x="132" y="36" width="136" height="176" />
         </g>
 
         <g className="gc-chip">
@@ -446,14 +446,15 @@ export function GuidedCaptureDemo() {
 
         <rect className="gc-flash" x="70" y="24" width="260" height="232" rx="12" fill="white" />
 
-        {/* Annotation pass, drawn onto the captured photo. */}
-        <path className="gc-arrow" d="M272 202 L224 156" stroke="#4A6B52" strokeWidth="2" fill="none" strokeLinecap="round" />
-        <path className="gc-tip" d="M224 156 L237 158 M224 156 L226 169" stroke="#4A6B52" strokeWidth="2" fill="none" strokeLinecap="round" />
-        <circle className="gc-circ" cx="178" cy="150" r="18" stroke="#4A6B52" strokeWidth="2" fill="none" />
-        <line className="gc-rule" x1="162" y1="206" x2="238" y2="206" stroke="#4A6B52" strokeWidth="2" strokeLinecap="round" />
+        {/* Annotation pass, drawn onto the captured photo: the circle sits on
+            the left nasolabial fold, the ruler measures below the chin. */}
+        <path className="gc-arrow" d="M284 208 L198 177" stroke="#4A6B52" strokeWidth="2" fill="none" strokeLinecap="round" />
+        <path className="gc-tip" d="M198 177 L211 178 M198 177 L203 189" stroke="#4A6B52" strokeWidth="2" fill="none" strokeLinecap="round" />
+        <circle className="gc-circ" cx="184" cy="163" r="16" stroke="#4A6B52" strokeWidth="2" fill="none" />
+        <line className="gc-rule" x1="164" y1="228" x2="236" y2="228" stroke="#4A6B52" strokeWidth="2" strokeLinecap="round" />
         <g className="gc-meas">
-          <path d="M162 200 V212 M238 200 V212" stroke="#4A6B52" strokeWidth="1.5" strokeLinecap="round" />
-          <text x="200" y="196" textAnchor="middle" fontSize="8.5" fill="#4A6B52" fontFamily="sans-serif" fontWeight="600">
+          <path d="M164 222 V234 M236 222 V234" stroke="#4A6B52" strokeWidth="1.5" strokeLinecap="round" />
+          <text x="200" y="219" textAnchor="middle" fontSize="8.5" fill="#4A6B52" fontFamily="sans-serif" fontWeight="600">
             12 mm
           </text>
         </g>

@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 export function Hero() {
   return (
     <section className="relative bg-cream pt-32 pb-20 md:pt-44 md:pb-40 overflow-hidden">
@@ -163,7 +165,7 @@ export function Hero() {
             Usado por clínicas de HOF em todo o Brasil
           </p>
 
-          {/* Product mockup — stylized browser frame */}
+          {/* Product mockup: the real Execução screen, in a browser frame. */}
           <div className="animate-fade-up animate-delay-400 mx-auto max-w-3xl">
             <div className="rounded-xl border border-sage/15 bg-white/60 shadow-lg shadow-forest/5 overflow-hidden">
               {/* Browser chrome bar */}
@@ -174,99 +176,15 @@ export function Hero() {
                 <div className="ml-3 flex-1 h-5 rounded bg-sage/8 max-w-[220px]" />
               </div>
 
-              {/* Dashboard wireframe */}
-              <svg
-                aria-hidden="true"
-                className="pointer-events-none w-full h-auto"
-                viewBox="0 0 720 400"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                {/* Background */}
-                <rect width="720" height="400" fill="#FAF7F3" />
-
-                {/* Sidebar */}
-                <rect x="0" y="0" width="160" height="400" fill="#1C2B1E" fillOpacity="0.05" />
-                {/* Sidebar logo placeholder */}
-                <rect x="20" y="20" width="120" height="16" rx="4" fill="#4A6B52" fillOpacity="0.15" />
-                {/* Sidebar nav items */}
-                <rect x="20" y="56" width="100" height="10" rx="3" fill="#4A6B52" fillOpacity="0.12" />
-                <rect x="20" y="78" width="80" height="10" rx="3" fill="#4A6B52" fillOpacity="0.08" />
-                <rect x="20" y="100" width="110" height="10" rx="3" fill="#4A6B52" fillOpacity="0.08" />
-                <rect x="20" y="122" width="70" height="10" rx="3" fill="#4A6B52" fillOpacity="0.08" />
-                <rect x="20" y="144" width="90" height="10" rx="3" fill="#4A6B52" fillOpacity="0.08" />
-                {/* Active indicator */}
-                <rect x="0" y="52" width="3" height="18" rx="1.5" fill="#4A6B52" fillOpacity="0.3" />
-
-                {/* Header bar */}
-                <rect x="160" y="0" width="560" height="48" fill="#FFFFFF" fillOpacity="0.6" />
-                <line x1="160" y1="48" x2="720" y2="48" stroke="#4A6B52" strokeOpacity="0.08" />
-                <rect x="180" y="16" width="140" height="14" rx="4" fill="#1C2B1E" fillOpacity="0.08" />
-                <circle cx="680" cy="24" r="14" fill="#4A6B52" fillOpacity="0.08" />
-
-                {/* Stats cards row */}
-                <rect x="180" y="68" width="120" height="70" rx="8" fill="#FFFFFF" stroke="#4A6B52" strokeOpacity="0.08" />
-                <rect x="196" y="82" width="50" height="8" rx="2" fill="#4A6B52" fillOpacity="0.12" />
-                <rect x="196" y="100" width="70" height="16" rx="3" fill="#1C2B1E" fillOpacity="0.1" />
-
-                <rect x="316" y="68" width="120" height="70" rx="8" fill="#FFFFFF" stroke="#4A6B52" strokeOpacity="0.08" />
-                <rect x="332" y="82" width="50" height="8" rx="2" fill="#4A6B52" fillOpacity="0.12" />
-                <rect x="332" y="100" width="60" height="16" rx="3" fill="#1C2B1E" fillOpacity="0.1" />
-
-                <rect x="452" y="68" width="120" height="70" rx="8" fill="#FFFFFF" stroke="#4A6B52" strokeOpacity="0.08" />
-                <rect x="468" y="82" width="50" height="8" rx="2" fill="#4A6B52" fillOpacity="0.12" />
-                <rect x="468" y="100" width="75" height="16" rx="3" fill="#1C2B1E" fillOpacity="0.1" />
-
-                <rect x="588" y="68" width="112" height="70" rx="8" fill="#FFFFFF" stroke="#4A6B52" strokeOpacity="0.08" />
-                <rect x="604" y="82" width="50" height="8" rx="2" fill="#4A6B52" fillOpacity="0.12" />
-                <rect x="604" y="100" width="55" height="16" rx="3" fill="#1C2B1E" fillOpacity="0.1" />
-
-                {/* Face diagram area */}
-                <rect x="180" y="158" width="280" height="220" rx="10" fill="#FFFFFF" stroke="#4A6B52" strokeOpacity="0.1" />
-                <text x="195" y="180" fontSize="9" fill="#4A6B52" fillOpacity="0.3" fontFamily="sans-serif">Diagrama Facial</text>
-
-                {/* Simplified face outline */}
-                <ellipse cx="320" cy="280" rx="55" ry="70" stroke="#4A6B52" strokeOpacity="0.15" strokeWidth="1.5" fill="none" />
-                {/* Eyes */}
-                <ellipse cx="300" cy="265" rx="12" ry="5" stroke="#4A6B52" strokeOpacity="0.12" strokeWidth="1" fill="none" />
-                <ellipse cx="340" cy="265" rx="12" ry="5" stroke="#4A6B52" strokeOpacity="0.12" strokeWidth="1" fill="none" />
-                {/* Nose */}
-                <path d="M320 275 L315 290 L325 290Z" stroke="#4A6B52" strokeOpacity="0.12" strokeWidth="1" fill="none" />
-                {/* Mouth */}
-                <path d="M307 300 Q320 310 333 300" stroke="#4A6B52" strokeOpacity="0.12" strokeWidth="1" fill="none" />
-                {/* Injection points */}
-                <circle cx="295" cy="255" r="3" fill="#4A6B52" fillOpacity="0.2" />
-                <circle cx="345" cy="255" r="3" fill="#4A6B52" fillOpacity="0.2" />
-                <circle cx="308" cy="302" r="3" fill="#4A6B52" fillOpacity="0.2" />
-                <circle cx="332" cy="302" r="3" fill="#4A6B52" fillOpacity="0.2" />
-                <circle cx="310" cy="240" r="2.5" fill="#8FB49A" fillOpacity="0.3" />
-                <circle cx="330" cy="240" r="2.5" fill="#8FB49A" fillOpacity="0.3" />
-
-                {/* Right panel — patient list / schedule */}
-                <rect x="480" y="158" width="220" height="220" rx="10" fill="#FFFFFF" stroke="#4A6B52" strokeOpacity="0.1" />
-                <text x="495" y="180" fontSize="9" fill="#4A6B52" fillOpacity="0.3" fontFamily="sans-serif">Agenda</text>
-
-                {/* Schedule rows */}
-                <rect x="495" y="194" width="190" height="28" rx="6" fill="#4A6B52" fillOpacity="0.04" />
-                <rect x="505" y="202" width="60" height="8" rx="2" fill="#4A6B52" fillOpacity="0.12" />
-                <rect x="635" y="202" width="40" height="8" rx="2" fill="#8FB49A" fillOpacity="0.2" />
-
-                <rect x="495" y="230" width="190" height="28" rx="6" fill="#4A6B52" fillOpacity="0.04" />
-                <rect x="505" y="238" width="75" height="8" rx="2" fill="#4A6B52" fillOpacity="0.12" />
-                <rect x="635" y="238" width="40" height="8" rx="2" fill="#8FB49A" fillOpacity="0.2" />
-
-                <rect x="495" y="266" width="190" height="28" rx="6" fill="#4A6B52" fillOpacity="0.06" />
-                <rect x="505" y="274" width="55" height="8" rx="2" fill="#4A6B52" fillOpacity="0.12" />
-                <rect x="635" y="274" width="40" height="8" rx="2" fill="#E8D5C8" fillOpacity="0.4" />
-
-                <rect x="495" y="302" width="190" height="28" rx="6" fill="#4A6B52" fillOpacity="0.04" />
-                <rect x="505" y="310" width="65" height="8" rx="2" fill="#4A6B52" fillOpacity="0.12" />
-                <rect x="635" y="310" width="40" height="8" rx="2" fill="#8FB49A" fillOpacity="0.2" />
-
-                <rect x="495" y="338" width="190" height="28" rx="6" fill="#4A6B52" fillOpacity="0.04" />
-                <rect x="505" y="346" width="70" height="8" rx="2" fill="#4A6B52" fillOpacity="0.12" />
-                <rect x="635" y="346" width="40" height="8" rx="2" fill="#8FB49A" fillOpacity="0.2" />
-              </svg>
+              <Image
+                src="/product/face-diagram.webp"
+                alt="Tela de execução do FloraClin com o diagrama facial e os pontos de aplicação marcados por produto e dose"
+                width={1600}
+                height={966}
+                priority
+                sizes="(max-width: 768px) 100vw, 768px"
+                className="w-full h-auto"
+              />
             </div>
           </div>
         </div>
