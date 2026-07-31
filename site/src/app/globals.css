@@ -18,6 +18,20 @@
   --font-sans: "DM Sans", system-ui, sans-serif;
 }
 
+/*
+ * Motion language for the feature demos.
+ *
+ * Each demo is mounted fresh when its tab activates and lives ~5s, so the
+ * animations play once and hold their final state instead of looping.
+ * Three curves carry the whole vocabulary: entrances decelerate, payoff
+ * moments overshoot, travel eases both ways.
+ */
+:root {
+  --e-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --e-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --e-io: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
 /* Base styles */
 html {
   scroll-behavior: smooth;

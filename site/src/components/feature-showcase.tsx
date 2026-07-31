@@ -16,14 +16,15 @@ import {
   FaceDiagramDemo,
   BeforeAfterDemo,
   GuidedCaptureDemo,
+} from './feature-demos-clinical'
+import {
   GuidedFlowDemo,
   DigitalSignatureDemo,
-  SelfServiceDemo,
   ConfirmationDemo,
-  FinancialDemo,
-  CrmDemo,
-  CalendarDemo,
-} from './feature-demos'
+  SelfServiceDemo,
+} from './feature-demos-flow'
+import { FinancialDemo, CalendarDemo } from './feature-demos-business'
+import { CrmDemo } from './feature-demos-crm'
 
 interface FeatureShowcaseProps {
   groups: {
@@ -37,7 +38,8 @@ interface FeatureShowcaseProps {
 }
 
 const GROUP_BG = ['bg-cream', 'bg-petal/40', 'bg-cream', 'bg-petal/40']
-const CYCLE_INTERVAL = 5000
+/** Demos animate for ~4.2s; the remainder is hold time on the finished frame. */
+const CYCLE_INTERVAL = 6000
 
 const DEFAULT_GROUPS: FeatureShowcaseProps['groups'] = [
   {

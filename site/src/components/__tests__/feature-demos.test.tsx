@@ -1,175 +1,83 @@
+/**
+ * Guards the demo motion contract.
+ *
+ * These demos are remounted when their tab activates and live ~6s, so they
+ * must play once and hold. The structural assertions below exist to stop a
+ * future edit from silently reintroducing the looping/reset-flash behaviour
+ * the demos used to have: a 4s infinite loop that faded the whole scene back
+ * to zero and restarted, so the showcase usually showed a half-erased frame.
+ */
 import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
+import type { ComponentType } from 'react'
+
+import { CrmDemo } from '../feature-demos-crm'
+import { FinancialDemo, CalendarDemo } from '../feature-demos-business'
 import {
   FaceDiagramDemo,
   BeforeAfterDemo,
   GuidedCaptureDemo,
+} from '../feature-demos-clinical'
+import {
   GuidedFlowDemo,
   DigitalSignatureDemo,
+  ConfirmationDemo,
   SelfServiceDemo,
-  FinancialDemo,
-  PackagesDemo,
-  CalendarDemo,
-} from '../feature-demos'
+} from '../feature-demos-flow'
 
-describe('Feature Demos — Group 1: Precisão Clínica Visual', () => {
-  it('FaceDiagramDemo renders an SVG with aria-hidden', () => {
-    const { container } = render(<FaceDiagramDemo />)
+const DEMOS: [string, ComponentType][] = [
+  ['FaceDiagramDemo', FaceDiagramDemo],
+  ['BeforeAfterDemo', BeforeAfterDemo],
+  ['GuidedCaptureDemo', GuidedCaptureDemo],
+  ['GuidedFlowDemo', GuidedFlowDemo],
+  ['DigitalSignatureDemo', DigitalSignatureDemo],
+  ['ConfirmationDemo', ConfirmationDemo],
+  ['SelfServiceDemo', SelfServiceDemo],
+  ['FinancialDemo', FinancialDemo],
+  ['CrmDemo', CrmDemo],
+  ['CalendarDemo', CalendarDemo],
+]
+
+function styleOf(Demo: ComponentType): string {
+  const { container } = render(<Demo />)
+  return container.querySelector('svg style')?.textContent ?? ''
+}
+
+describe.each(DEMOS)('%s', (name, Demo) => {
+  it('renders a decorative, full-bleed SVG', () => {
+    const { container } = render(<Demo />)
     const svg = container.querySelector('svg')
     expect(svg).toBeInTheDocument()
     expect(svg).toHaveAttribute('aria-hidden', 'true')
+    expect(svg).toHaveAttribute('viewBox', '0 0 400 280')
   })
 
-  it('BeforeAfterDemo renders an SVG with aria-hidden', () => {
-    const { container } = render(<BeforeAfterDemo />)
-    const svg = container.querySelector('svg')
-    expect(svg).toBeInTheDocument()
-    expect(svg).toHaveAttribute('aria-hidden', 'true')
+  it('plays once instead of looping forever', () => {
+    // `infinite` is what produced the v1 reset flash. The one sanctioned
+    // exception is a bounded repeat count (e.g. a 2-cycle sync indicator),
+    // which never uses the `infinite` keyword.
+    expect(styleOf(Demo)).not.toMatch(/\binfinite\b/)
   })
 
-  it('GuidedCaptureDemo renders an SVG with aria-hidden', () => {
-    const { container } = render(<GuidedCaptureDemo />)
-    const svg = container.querySelector('svg')
-    expect(svg).toBeInTheDocument()
-    expect(svg).toHaveAttribute('aria-hidden', 'true')
+  it('holds its final frame', () => {
+    expect(styleOf(Demo)).toMatch(/\bforwards\b/)
   })
 
-  it('FaceDiagramDemo contains injection dot elements', () => {
-    const { container } = render(<FaceDiagramDemo />)
-    const circles = container.querySelectorAll('svg circle')
-    expect(circles.length).toBeGreaterThanOrEqual(4)
+  it('honours prefers-reduced-motion', () => {
+    expect(styleOf(Demo)).toMatch(/prefers-reduced-motion/)
   })
 
-  it('BeforeAfterDemo contains two frame rectangles', () => {
-    const { container } = render(<BeforeAfterDemo />)
-    const rects = container.querySelectorAll('svg rect')
-    expect(rects.length).toBeGreaterThanOrEqual(2)
+  it('drives motion from the shared easing vocabulary', () => {
+    expect(styleOf(Demo)).toMatch(/var\(--e-(out|pop|io)\)/)
   })
 
-  it('GuidedCaptureDemo contains a viewfinder and face guide', () => {
-    const { container } = render(<GuidedCaptureDemo />)
-    const rects = container.querySelectorAll('svg rect')
-    const ellipses = container.querySelectorAll('svg ellipse')
-    expect(rects.length).toBeGreaterThanOrEqual(1)
-    expect(ellipses.length).toBeGreaterThanOrEqual(1)
-  })
-
-  it('each demo contains a <style> tag with scoped keyframes', () => {
-    for (const Demo of [FaceDiagramDemo, BeforeAfterDemo, GuidedCaptureDemo]) {
-      const { container } = render(<Demo />)
-      const style = container.querySelector('svg style')
-      expect(style).toBeInTheDocument()
-      expect(style?.textContent).toContain('@keyframes')
-    }
-  })
-
-  it('demos respect prefers-reduced-motion in style block', () => {
-    for (const Demo of [FaceDiagramDemo, BeforeAfterDemo, GuidedCaptureDemo]) {
-      const { container } = render(<Demo />)
-      const style = container.querySelector('svg style')
-      expect(style?.textContent).toContain('prefers-reduced-motion')
-    }
-  })
-})
-
-describe('Feature Demos — Group 2: Fluxo sem Atrito', () => {
-  it('GuidedFlowDemo renders an SVG with aria-hidden', () => {
-    const { container } = render(<GuidedFlowDemo />)
-    const svg = container.querySelector('svg')
-    expect(svg).toBeInTheDocument()
-    expect(svg).toHaveAttribute('aria-hidden', 'true')
-  })
-
-  it('GuidedFlowDemo has 5 step circles', () => {
-    const { container } = render(<GuidedFlowDemo />)
-    const circles = container.querySelectorAll('svg circle')
-    expect(circles.length).toBeGreaterThanOrEqual(5)
-  })
-
-  it('DigitalSignatureDemo renders an SVG with aria-hidden', () => {
-    const { container } = render(<DigitalSignatureDemo />)
-    const svg = container.querySelector('svg')
-    expect(svg).toBeInTheDocument()
-    expect(svg).toHaveAttribute('aria-hidden', 'true')
-  })
-
-  it('DigitalSignatureDemo has a signature path', () => {
-    const { container } = render(<DigitalSignatureDemo />)
-    const paths = container.querySelectorAll('svg path')
-    expect(paths.length).toBeGreaterThanOrEqual(1)
-  })
-
-  it('SelfServiceDemo renders an SVG with aria-hidden', () => {
-    const { container } = render(<SelfServiceDemo />)
-    const svg = container.querySelector('svg')
-    expect(svg).toBeInTheDocument()
-    expect(svg).toHaveAttribute('aria-hidden', 'true')
-  })
-
-  it('SelfServiceDemo has form-like rects for input fields', () => {
-    const { container } = render(<SelfServiceDemo />)
-    const rects = container.querySelectorAll('svg rect')
-    expect(rects.length).toBeGreaterThanOrEqual(3)
-  })
-
-  it('Group 2 demos each contain scoped keyframes and reduced-motion query', () => {
-    for (const Demo of [GuidedFlowDemo, DigitalSignatureDemo, SelfServiceDemo]) {
-      const { container } = render(<Demo />)
-      const style = container.querySelector('svg style')
-      expect(style).toBeInTheDocument()
-      expect(style?.textContent).toContain('@keyframes')
-      expect(style?.textContent).toContain('prefers-reduced-motion')
-    }
-  })
-})
-
-describe('Feature Demos — Group 3: Gestão do Negócio', () => {
-  it('FinancialDemo renders an SVG with aria-hidden', () => {
-    const { container } = render(<FinancialDemo />)
-    const svg = container.querySelector('svg')
-    expect(svg).toBeInTheDocument()
-    expect(svg).toHaveAttribute('aria-hidden', 'true')
-  })
-
-  it('FinancialDemo has bar chart rects', () => {
-    const { container } = render(<FinancialDemo />)
-    const rects = container.querySelectorAll('svg rect')
-    expect(rects.length).toBeGreaterThanOrEqual(4)
-  })
-
-  it('PackagesDemo renders an SVG with aria-hidden', () => {
-    const { container } = render(<PackagesDemo />)
-    const svg = container.querySelector('svg')
-    expect(svg).toBeInTheDocument()
-    expect(svg).toHaveAttribute('aria-hidden', 'true')
-  })
-
-  it('PackagesDemo has 5 session dot circles', () => {
-    const { container } = render(<PackagesDemo />)
-    const circles = container.querySelectorAll('svg circle')
-    expect(circles.length).toBeGreaterThanOrEqual(5)
-  })
-
-  it('CalendarDemo renders an SVG with aria-hidden', () => {
-    const { container } = render(<CalendarDemo />)
-    const svg = container.querySelector('svg')
-    expect(svg).toBeInTheDocument()
-    expect(svg).toHaveAttribute('aria-hidden', 'true')
-  })
-
-  it('CalendarDemo has calendar grid rects for appointment blocks', () => {
-    const { container } = render(<CalendarDemo />)
-    const rects = container.querySelectorAll('svg rect')
-    expect(rects.length).toBeGreaterThanOrEqual(7)
-  })
-
-  it('Group 3 demos each contain scoped keyframes and reduced-motion query', () => {
-    for (const Demo of [FinancialDemo, PackagesDemo, CalendarDemo]) {
-      const { container } = render(<Demo />)
-      const style = container.querySelector('svg style')
-      expect(style).toBeInTheDocument()
-      expect(style?.textContent).toContain('@keyframes')
-      expect(style?.textContent).toContain('prefers-reduced-motion')
+  it('never animates SVG geometry attributes', () => {
+    // Geometry attrs (r, cx, width) are not compositor-friendly; scale
+    // transforms are the supported way to resize a shape in place.
+    const style = styleOf(Demo)
+    const keyframeBodies = style.match(/@keyframes[^{]*\{[\s\S]*?\}\s*\}/g) ?? []
+    for (const block of keyframeBodies) {
+      expect(block).not.toMatch(/[{;]\s*(r|cx|cy|width|height)\s*:/)
     }
   })
 })
