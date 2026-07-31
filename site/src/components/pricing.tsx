@@ -1,9 +1,6 @@
-"use client";
-
-import { useState } from "react";
 import { Check } from "lucide-react";
 
-const FEATURES = [
+const SHARED_FEATURES = [
   "Diagrama facial interativo",
   "Comparação antes e depois com alinhamento automático",
   "Captura guiada com pose e auto-take",
@@ -20,17 +17,58 @@ const FEATURES = [
   "Pacotes de procedimentos com controle de sessões",
   "Financeiro com parcelas, comissões e despesas",
   "Lembretes de aniversário",
-  "Usuários ilimitados (recepção e financeiro)",
   "Suporte por WhatsApp",
 ];
 
+const PLANS = [
+  {
+    slug: "free",
+    name: "Teste Grátis",
+    price: "R$ 0",
+    period: "por 14 dias",
+    badge: "Sem cartão de crédito",
+    highlights: [
+      "Todas as funcionalidades",
+      "20 créditos de WhatsApp/mês",
+      "2 usuários",
+      "WhatsApp integrado (número FloraClin)",
+    ],
+    cta: "Começar Grátis",
+    featured: false,
+  },
+  {
+    slug: "starter",
+    name: "Starter",
+    price: "R$ 99",
+    period: "/mês",
+    badge: "Mais popular",
+    highlights: [
+      "300 créditos de WhatsApp/mês",
+      "5 usuários",
+      "Pacientes ilimitados",
+      "Número próprio de WhatsApp",
+    ],
+    cta: "Assinar Starter",
+    featured: true,
+  },
+  {
+    slug: "pro",
+    name: "Pro",
+    price: "R$ 199",
+    period: "/mês",
+    badge: "Para clínicas maiores",
+    highlights: [
+      "1000 créditos de WhatsApp/mês",
+      "Usuários ilimitados",
+      "Pacientes ilimitados",
+      "Número próprio de WhatsApp",
+    ],
+    cta: "Assinar Pro",
+    featured: false,
+  },
+];
+
 export function Pricing() {
-  const [annual, setAnnual] = useState(true);
-
-  const price = annual ? 74 : 89;
-  const period = annual ? "/mês (cobrado anualmente)" : "/mês";
-  const savings = annual ? "Economize R$180/ano por profissional" : null;
-
   return (
     <section id="precos" className="py-20 md:py-32 bg-white">
       <div className="mx-auto max-w-[1200px] px-6">
@@ -43,100 +81,82 @@ export function Pricing() {
             Simples e transparente
           </h2>
           <p className="text-mid mt-3 max-w-lg mx-auto">
-            Um plano, tudo incluso. Pague apenas pelos profissionais que atendem.
-            Recepcionistas e equipe financeira são gratuitos.
+            Teste grátis por 14 dias e escolha o plano que acompanha o tamanho
+            da sua clínica. Todos os planos incluem todas as funcionalidades.
           </p>
         </div>
 
-        {/* Billing toggle */}
-        <div className="flex items-center justify-center gap-3 mb-12">
-          <span
-            className={`text-sm font-medium transition-colors ${
-              !annual ? "text-charcoal" : "text-mid"
-            }`}
-          >
-            Mensal
-          </span>
-          <button
-            type="button"
-            onClick={() => setAnnual(!annual)}
-            className={`relative w-14 h-7 rounded-full transition-colors ${
-              annual ? "bg-forest" : "bg-blush"
-            }`}
-            aria-label="Alternar entre plano mensal e anual"
-          >
-            <span
-              className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform ${
-                annual ? "translate-x-7" : "translate-x-0"
+        {/* Plan cards */}
+        <div className="grid gap-6 md:grid-cols-3 max-w-4xl mx-auto mb-16">
+          {PLANS.map((plan) => (
+            <div
+              key={plan.slug}
+              className={`rounded-2xl border p-8 flex flex-col ${
+                plan.featured
+                  ? "border-forest bg-cream shadow-md relative"
+                  : "border-sage/15 bg-cream/50 shadow-sm"
               }`}
-            />
-          </button>
-          <span
-            className={`text-sm font-medium transition-colors ${
-              annual ? "text-charcoal" : "text-mid"
-            }`}
-          >
-            Anual
-          </span>
-          {annual && (
-            <span className="ml-2 rounded-full bg-mint/20 px-2.5 py-0.5 text-xs font-medium text-forest">
-              -17%
-            </span>
-          )}
+            >
+              {plan.featured && (
+                <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-forest px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-cream">
+                  {plan.badge}
+                </span>
+              )}
+              <div className="text-center mb-6">
+                <h3 className="font-serif text-xl font-medium text-charcoal mb-3">
+                  {plan.name}
+                </h3>
+                <div className="flex items-baseline justify-center gap-1">
+                  <span className="font-serif text-4xl font-medium text-forest">
+                    {plan.price}
+                  </span>
+                  <span className="text-sm text-mid">{plan.period}</span>
+                </div>
+                {!plan.featured && (
+                  <p className="text-sage text-xs font-medium mt-2">{plan.badge}</p>
+                )}
+              </div>
+
+              <ul className="space-y-3 mb-8 flex-1">
+                {plan.highlights.map((item) => (
+                  <li key={item} className="flex items-start gap-3">
+                    <Check className="w-4 h-4 text-sage mt-0.5 shrink-0" />
+                    <span className="text-sm text-charcoal">{item}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <a
+                href="https://app.floraclin.com.br/signup"
+                className={`block w-full text-center font-sans font-medium text-sm uppercase tracking-wider py-3.5 rounded-lg transition-colors no-underline ${
+                  plan.featured
+                    ? "bg-forest text-cream hover:bg-sage"
+                    : "border border-forest text-forest hover:bg-forest hover:text-cream"
+                }`}
+              >
+                {plan.cta}
+              </a>
+            </div>
+          ))}
         </div>
 
-        {/* Pricing card */}
-        <div className="mx-auto max-w-lg">
-          <div className="rounded-2xl border border-sage/15 bg-cream p-8 md:p-10 shadow-sm">
-            {/* Header */}
-            <div className="text-center mb-8">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sage mb-2">
-                14 DIAS GRÁTIS
-              </p>
-              <div className="flex items-baseline justify-center gap-1">
-                <span className="text-sm text-mid">R$</span>
-                <span className="font-serif text-6xl font-medium text-forest">
-                  {price}
-                </span>
-              </div>
-              <p className="text-mid text-sm mt-1">
-                por profissional{period}
-              </p>
-              {savings && (
-                <p className="text-sage text-xs font-medium mt-2">
-                  {savings}
-                </p>
-              )}
-            </div>
+        <p className="text-center text-xs text-mid mb-16 -mt-10">
+          Sem cartão de crédito para começar. Cancele quando quiser.
+        </p>
 
-            {/* CTA */}
-            <a
-              href="https://app.floraclin.com.br/signup"
-              className="block w-full text-center bg-forest text-cream font-sans font-medium text-sm uppercase tracking-wider py-4 rounded-lg hover:bg-sage transition-colors no-underline"
-            >
-              Começar Grátis — 14 Dias
-            </a>
-
-            <p className="text-center text-xs text-mid mt-3">
-              Sem cartão de crédito. Cancele quando quiser.
-            </p>
-
-            {/* Divider */}
-            <div className="border-t border-sage/10 my-8" />
-
-            {/* Features */}
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sage mb-4">
-              TUDO INCLUSO
-            </p>
-            <ul className="space-y-3">
-              {FEATURES.map((feature) => (
-                <li key={feature} className="flex items-start gap-3">
-                  <Check className="w-4 h-4 text-sage mt-0.5 shrink-0" />
-                  <span className="text-sm text-charcoal">{feature}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+        {/* Shared features */}
+        <div className="mx-auto max-w-3xl">
+          <p className="text-center text-xs font-semibold uppercase tracking-[0.2em] text-sage mb-6">
+            TUDO INCLUSO EM TODOS OS PLANOS
+          </p>
+          <ul className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+            {SHARED_FEATURES.map((feature) => (
+              <li key={feature} className="flex items-start gap-3">
+                <Check className="w-4 h-4 text-sage mt-0.5 shrink-0" />
+                <span className="text-sm text-charcoal">{feature}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </section>

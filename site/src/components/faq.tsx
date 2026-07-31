@@ -39,7 +39,7 @@ const FAQS = [
   {
     question: "Quanto custa?",
     answer:
-      "14 dias grátis, sem cartão. Depois, R$ 74/mês por profissional no plano anual ou R$ 89/mês no mensal. Recepcionistas e financeiro não pagam.",
+      "14 dias grátis, sem cartão. Depois, R$ 99/mês no plano Starter ou R$ 199/mês no Pro, que traz mais créditos de WhatsApp, usuários ilimitados e número próprio de WhatsApp.",
   },
 ];
 
