@@ -1,19 +1,34 @@
 import type { QuickStats } from '@/db/queries/dashboard'
+import { brToday, parseLocalDate } from '@/lib/dates'
 
 interface FinancialSummaryProps {
   stats: QuickStats
+  /** Selected month, 'YYYY-MM'. Defaults to the current month. */
+  month?: string
   monthlyGoal?: number
 }
 
-export function FinancialSummary({ stats, monthlyGoal = 0 }: FinancialSummaryProps) {
-  const now = new Date()
-  const monthName = now.toLocaleDateString('pt-BR', { month: 'long' })
+export function FinancialSummary({ stats, month, monthlyGoal = 0 }: FinancialSummaryProps) {
+  const resolvedMonth = month ?? brToday().slice(0, 7)
+  const anchor = parseLocalDate(`${resolvedMonth}-01`)
+  const monthName = anchor.toLocaleDateString('pt-BR', { month: 'long' })
   const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1)
-  const year = now.getFullYear()
+  const year = anchor.getFullYear()
 
+  // Practitioners must not see clinic-wide financial figures: getQuickStats
+  // returns all three as null for them (same rule as revenueThisMonth), so
+  // the whole money breakdown is hidden rather than showing misleading zeros.
+  const hasFinancialData =
+    stats.revenueThisMonth !== null &&
+    stats.totalPending !== null &&
+    stats.totalExpenses !== null
+
+  // Fallbacks are only ever read when hasFinancialData is false, in which
+  // case the breakdown below isn't rendered, so the value itself is inert.
   const received = stats.revenueThisMonth ?? 0
-  const receivable = 0 // Placeholder — would come from real financial data
-  const expenses = 0 // Placeholder — would come from real financial data
+  const receivable = stats.totalPending ?? 0
+  const expenses = stats.totalExpenses ?? 0
+
   const goal = monthlyGoal
   const progressPercent = goal > 0 ? Math.min(100, Math.round((received / goal) * 100)) : 0
   const netProfit = received - expenses
@@ -26,15 +41,16 @@ export function FinancialSummary({ stats, monthlyGoal = 0 }: FinancialSummaryPro
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <span className="text-[14px] font-medium text-[#2A2A2A]">
-          Financeiro — {capitalizedMonth}
+          Financeiro: {capitalizedMonth}
         </span>
         <span className="text-[11px] font-medium uppercase tracking-wider text-[#7A7A7A] bg-[#F4F6F8] rounded-full px-2 py-0.5">
           {year}
         </span>
       </div>
 
-      {/* Progress bar — only shown when a monthly goal is configured */}
-      {goal > 0 && (
+      {/* Progress bar — only shown when a monthly goal is configured and the
+          viewer is allowed to see financial figures */}
+      {hasFinancialData && goal > 0 && (
         <div className="mb-5">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[12px] text-[#7A7A7A]">
@@ -53,48 +69,51 @@ export function FinancialSummary({ stats, monthlyGoal = 0 }: FinancialSummaryPro
         </div>
       )}
 
-      {/* Breakdown */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-sm bg-[#8FB49A]" />
-            <span className="text-[13px] text-[#2A2A2A]">Recebido</span>
-          </div>
-          <span className="text-[13px] font-medium text-[#2A2A2A] tabular-nums">
-            R$ {received.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
-          </span>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-sm bg-[#D4845A]" />
-            <span className="text-[13px] text-[#2A2A2A]">A receber</span>
-          </div>
-          <span className="text-[13px] font-medium text-[#D4845A] tabular-nums">
-            R$ {receivable.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
-          </span>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-sm bg-[#D0D0D0]" />
-            <span className="text-[13px] text-[#2A2A2A]">Despesas</span>
-          </div>
-          <span className="text-[13px] font-medium text-[#2A2A2A] tabular-nums">
-            R$ {expenses.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
-          </span>
-        </div>
-
-        {/* Divider */}
-        <div className="border-t border-[#F0F0F0] pt-3">
+      {/* Breakdown — hidden entirely for practitioners, who don't get
+          clinic-wide financial figures */}
+      {hasFinancialData && (
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-[13px] text-[#7A7A7A]">Lucro liquido</span>
-            <span className="text-[16px] font-semibold text-[#2A2A2A] tabular-nums">
-              R$ {netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-sm bg-[#8FB49A]" />
+              <span className="text-[13px] text-[#2A2A2A]">Recebido</span>
+            </div>
+            <span className="text-[13px] font-medium text-[#2A2A2A] tabular-nums">
+              R$ {received.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
             </span>
           </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-sm bg-[#D4845A]" />
+              <span className="text-[13px] text-[#2A2A2A]">A receber</span>
+            </div>
+            <span className="text-[13px] font-medium text-[#D4845A] tabular-nums">
+              R$ {receivable.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-sm bg-[#D0D0D0]" />
+              <span className="text-[13px] text-[#2A2A2A]">Despesas</span>
+            </div>
+            <span className="text-[13px] font-medium text-[#2A2A2A] tabular-nums">
+              R$ {expenses.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
+            </span>
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-[#F0F0F0] pt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] text-[#7A7A7A]">Lucro liquido</span>
+              <span className="text-[16px] font-semibold text-[#2A2A2A] tabular-nums">
+                R$ {netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
+              </span>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

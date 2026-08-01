@@ -44,11 +44,19 @@ export function QuickStats({ stats, showRevenue = true, todayCount }: QuickStats
       sublabelColor: 'text-[#7A7A7A]',
     })
 
+    // Pending only. Overdue is a separate figure on the Financeiro screen and
+    // folding it in here would make the two disagree.
+    const pending = stats.totalPending ?? 0
+    const pendingFormatted = pending >= 1000
+      ? `R$ ${(pending / 1000).toFixed(1).replace('.', ',')}k`
+      : formatCurrency(pending)
+    const overdue = stats.totalOverdue ?? 0
+
     cards.push({
       key: 'receivable',
       eyebrow: 'A RECEBER',
-      value: 'R$ 0',
-      sublabel: '',
+      value: pendingFormatted,
+      sublabel: overdue > 0 ? `${formatCurrency(overdue)} vencido` : '',
       accentBorder: true,
       valueColor: 'text-[#D4845A]',
       sublabelColor: 'text-[#D4845A]',

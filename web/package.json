@@ -20,7 +20,10 @@
     "test:db:reset": "pnpm test:db:down && pnpm test:db:up",
     "test:dev": "pnpm exec dotenv -e .env.test -o -- next dev --turbopack",
     "test:e2e": "pnpm test:db:up && pnpm test:dev & sleep 5 && pnpm exec dotenv -e .env.test -o -- playwright test; EXIT=$?; lsof -ti:3100 | xargs kill -9 2>/dev/null; pnpm test:db:down; exit $EXIT",
-    "test:e2e:ui": "pnpm exec dotenv -e .env.test -o -- playwright test --ui"
+    "test:e2e:ui": "pnpm exec dotenv -e .env.test -o -- playwright test --ui",
+    "demo:safety": "pnpm exec dotenv -e .env.local -- tsx scripts/demo-clinic/verify.ts --safety-only",
+    "demo:seed": "pnpm exec dotenv -e .env.local -- tsx scripts/demo-clinic/seed.ts",
+    "demo:verify": "pnpm exec dotenv -e .env.local -- tsx scripts/demo-clinic/verify.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.1",

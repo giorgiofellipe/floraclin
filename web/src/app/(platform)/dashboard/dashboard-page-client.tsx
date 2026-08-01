@@ -1,9 +1,11 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { UserPlus, CalendarPlus } from 'lucide-react'
 import { useDashboard } from '@/hooks/queries/use-dashboard'
 import { useTenant } from '@/hooks/queries/use-tenant'
+import { brToday } from '@/lib/dates'
 import { QuickStats } from '@/components/dashboard/quick-stats'
 import { TodayAppointments } from '@/components/dashboard/today-appointments'
 import { FinancialSummary } from '@/components/dashboard/financial-summary'
@@ -11,6 +13,7 @@ import { RecentActivity } from '@/components/dashboard/recent-activity'
 import { UpcomingBirthdaysCard } from '@/components/dashboard/upcoming-birthdays-card'
 import { OpenPlanejamentosCard } from '@/components/dashboard/open-planejamentos-card'
 import { PendingRescheduleCard } from '@/components/dashboard/pending-reschedule-card'
+import { MonthSelector } from '@/components/dashboard/month-selector'
 import DashboardLoading from './loading'
 
 function getGreeting(): string {
@@ -21,7 +24,13 @@ function getGreeting(): string {
 }
 
 export function DashboardPageClient() {
-  const { data, isLoading } = useDashboard()
+  const currentMonth = brToday().slice(0, 7)
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth)
+  // Omit the month param entirely when it's the current month, so the
+  // request stays identical to the pre-navigation default.
+  const { data, isLoading } = useDashboard(
+    selectedMonth === currentMonth ? undefined : selectedMonth
+  )
   const { data: tenant } = useTenant()
 
   if (isLoading || !data) {
@@ -54,6 +63,11 @@ export function DashboardPageClient() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <MonthSelector
+            month={selectedMonth}
+            currentMonth={currentMonth}
+            onChange={setSelectedMonth}
+          />
           {overdueCount > 0 && (
             <div className="inline-flex items-center gap-1.5 rounded-full border border-[#F5D5C4] bg-[#FFF4EF] px-3 py-1">
               <span className="h-2 w-2 rounded-full bg-[#D4845A]" />
@@ -90,6 +104,7 @@ export function DashboardPageClient() {
         <TodayAppointments appointments={data.todayAppointments} />
         <FinancialSummary
           stats={data.quickStats}
+          month={selectedMonth}
           monthlyGoal={((tenant?.settings as Record<string, unknown>)?.monthly_revenue_goal as number) || 0}
         />
       </div>
