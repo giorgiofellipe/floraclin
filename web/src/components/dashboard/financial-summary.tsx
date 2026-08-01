@@ -1,15 +1,19 @@
 import type { QuickStats } from '@/db/queries/dashboard'
+import { brToday, parseLocalDate } from '@/lib/dates'
 
 interface FinancialSummaryProps {
   stats: QuickStats
+  /** Selected month, 'YYYY-MM'. Defaults to the current month. */
+  month?: string
   monthlyGoal?: number
 }
 
-export function FinancialSummary({ stats, monthlyGoal = 0 }: FinancialSummaryProps) {
-  const now = new Date()
-  const monthName = now.toLocaleDateString('pt-BR', { month: 'long' })
+export function FinancialSummary({ stats, month, monthlyGoal = 0 }: FinancialSummaryProps) {
+  const resolvedMonth = month ?? brToday().slice(0, 7)
+  const anchor = parseLocalDate(`${resolvedMonth}-01`)
+  const monthName = anchor.toLocaleDateString('pt-BR', { month: 'long' })
   const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1)
-  const year = now.getFullYear()
+  const year = anchor.getFullYear()
 
   const received = stats.revenueThisMonth ?? 0
   const receivable = 0 // Placeholder — would come from real financial data
@@ -26,7 +30,7 @@ export function FinancialSummary({ stats, monthlyGoal = 0 }: FinancialSummaryPro
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <span className="text-[14px] font-medium text-[#2A2A2A]">
-          Financeiro — {capitalizedMonth}
+          Financeiro: {capitalizedMonth}
         </span>
         <span className="text-[11px] font-medium uppercase tracking-wider text-[#7A7A7A] bg-[#F4F6F8] rounded-full px-2 py-0.5">
           {year}
