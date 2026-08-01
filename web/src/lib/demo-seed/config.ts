@@ -7,7 +7,7 @@
  */
 
 /** Fixed so re-runs replace the same tenant instead of accumulating copies. */
-export const DEMO_TENANT_ID = '00000000-0000-4000-8000-00000000d3m0'
+export const DEMO_TENANT_ID = '00000000-0000-4000-8000-00000000de40'
 export const DEMO_SLUG = 'clinica-lume'
 
 export const CLINIC = {

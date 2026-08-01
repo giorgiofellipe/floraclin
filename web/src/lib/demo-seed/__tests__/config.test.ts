@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { CATALOGUE, MONTH_MIX, TARGETS, PACKAGE_PRICE, SIX_MONTH_RECEIVED, SAFETY_SETTINGS } from '../config'
+import { CATALOGUE, MONTH_MIX, TARGETS, PACKAGE_PRICE, SIX_MONTH_RECEIVED, SAFETY_SETTINGS, DEMO_TENANT_ID } from '../config'
 
 describe('demo-seed config', () => {
   it('mixes exactly the targeted number of procedures', () => {
@@ -30,6 +30,12 @@ describe('demo-seed config', () => {
     // whatsapp_enabled is truthy. Both conditions must fail.
     expect(SAFETY_SETTINGS.whatsapp_mode).not.toBe('floraclin')
     expect(SAFETY_SETTINGS.whatsapp_enabled).toBe(false)
+  })
+
+  it('uses a tenant id Postgres will accept as a uuid', () => {
+    // A single non-hex character here is rejected by Postgres on the first
+    // query, and every other test in this file passes over it regardless.
+    expect(DEMO_TENANT_ID).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
   })
 
   it('every catalogue entry has a non-null category', () => {
