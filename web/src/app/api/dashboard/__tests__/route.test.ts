@@ -42,6 +42,9 @@ beforeEach(() => {
     patientsThisWeek: 1,
     proceduresThisMonth: 2,
     revenueThisMonth: 300,
+    totalPending: 150,
+    totalExpenses: 80,
+    totalOverdue: 40,
   })
   vi.mocked(getUpcomingFollowUps).mockResolvedValue([])
   vi.mocked(getRecentActivity).mockResolvedValue([])
@@ -89,5 +92,29 @@ describe('GET /api/dashboard', () => {
     const res = await GET(makeRequest('http://localhost/api/dashboard?month=2099-01'))
     expect(res.status).toBe(400)
     expect(getQuickStats).not.toHaveBeenCalled()
+  })
+
+  it('passes the month param through to getQuickStats, which scopes totalPending/totalExpenses/totalOverdue to it', async () => {
+    vi.mocked(getQuickStats).mockResolvedValue({
+      patientsThisWeek: null,
+      proceduresThisMonth: 9,
+      revenueThisMonth: 1000,
+      totalPending: 300,
+      totalExpenses: 150,
+      totalOverdue: 50,
+    })
+
+    const res = await GET(makeRequest('http://localhost/api/dashboard?month=2026-02'))
+    const json = await res.json()
+
+    expect(getQuickStats).toHaveBeenCalledWith('tenant-1', undefined, '2026-02')
+    expect(json.quickStats).toEqual({
+      patientsThisWeek: null,
+      proceduresThisMonth: 9,
+      revenueThisMonth: 1000,
+      totalPending: 300,
+      totalExpenses: 150,
+      totalOverdue: 50,
+    })
   })
 })

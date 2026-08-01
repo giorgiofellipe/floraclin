@@ -16,7 +16,7 @@ interface MonthSelectorProps {
 
 export function MonthSelector({ month, currentMonth, onChange }: MonthSelectorProps) {
   const anchor = parseLocalDate(`${month}-01`)
-  const label = format(anchor, "MMMM 'de' yyyy", { locale: ptBR })
+  const label = format(anchor, "MMMM/yyyy", { locale: ptBR })
   const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1)
   const isCurrentMonth = month === currentMonth
 

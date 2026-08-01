@@ -17,6 +17,7 @@ import {
   format,
 } from 'date-fns'
 import { brToday, startOfBrDay, endOfBrDay } from '@/lib/dates'
+import { getRevenueOverview } from './financial'
 
 // ─── Month resolution ──────────────────────────────────────────────
 
@@ -83,6 +84,12 @@ export interface QuickStats {
   patientsThisWeek: number | null
   proceduresThisMonth: number
   revenueThisMonth: number | null
+  // Same practitioner-visibility rule as revenueThisMonth: null for
+  // practitioners, since these are clinic-wide financial figures they
+  // must not see. Scoped to the selected month via getRevenueOverview.
+  totalPending: number | null
+  totalExpenses: number | null
+  totalOverdue: number | null
 }
 
 export interface UpcomingFollowUp {
@@ -210,6 +217,9 @@ export async function getQuickStats(
   // Revenue this month (selected month) - only for clinic-wide view (not
   // for practitioners). Practitioners should not see clinic-wide revenue.
   let revenueThisMonth: number | null = null
+  let totalPending: number | null = null
+  let totalExpenses: number | null = null
+  let totalOverdue: number | null = null
   if (!practitionerId) {
     const revenueConditions = [
       eq(installments.tenantId, tenantId),
@@ -226,12 +236,27 @@ export async function getQuickStats(
       .where(and(...revenueConditions))
 
     revenueThisMonth = Number(revenueResult[0]?.total ?? 0)
+
+    // Reuse getRevenueOverview (same query the Financeiro screen uses) for
+    // pending/expenses/overdue instead of duplicating that SQL here. Scoped
+    // to the same monthStartYmd/monthEndYmd resolved above, so the dashboard
+    // card and the Financeiro screen can never drift on month boundaries.
+    const revenueOverview = await getRevenueOverview(tenantId, monthStartYmd, monthEndYmd)
+    // Defensive Number(...): pg's driver can return numeric columns as
+    // strings, and getRevenueOverview's summary spreads the raw query
+    // row through without normalizing these two fields.
+    totalPending = Number(revenueOverview.summary.totalPending)
+    totalExpenses = Number(revenueOverview.summary.totalExpenses)
+    totalOverdue = Number(revenueOverview.summary.totalOverdue)
   }
 
   return {
     patientsThisWeek,
     proceduresThisMonth: Number(proceduresResult[0]?.total ?? 0),
     revenueThisMonth,
+    totalPending,
+    totalExpenses,
+    totalOverdue,
   }
 }
 
