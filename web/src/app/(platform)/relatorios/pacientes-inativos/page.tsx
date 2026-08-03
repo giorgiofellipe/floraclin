@@ -16,8 +16,10 @@ const REPORT = getReport('pacientes-inativos')!
 
 /**
  * Fetches the report rows for the currently active filters. `thresholdDays`
- * is the only filter this report declares; an absent/blank value lets the
- * route fall back to `tenants.settings.inactive_threshold_days` (or 180).
+ * is the only filter this report declares; the filter starts pre-filled with
+ * the registry default (see `ReportShell`), and if the user clears it, the
+ * blank value is omitted from the query so the route falls back to that same
+ * registry default (`getReport('pacientes-inativos').defaultDays`, 180).
  */
 function useInactivePatientsReport(filters: ReportFilterValues) {
   const thresholdDays = filters.thresholdDays?.trim()
@@ -75,6 +77,7 @@ export default function PacientesInativosPage() {
       filters={REPORT.filters}
       apiPath={REPORT.apiPath}
       paramName={REPORT.paramName}
+      defaultDays={REPORT.defaultDays}
     >
       {(filters) => <PacientesInativosBody filters={filters} />}
     </ReportShell>

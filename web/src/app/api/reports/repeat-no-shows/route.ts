@@ -16,13 +16,15 @@ export const runtime = 'nodejs'
 // Disable static optimization: the CSV/PDF branches render dynamic binary/text output.
 export const dynamic = 'force-dynamic'
 
-const DEFAULT_WINDOW_DAYS = 180
+const REPORT_SLUG = 'faltas'
+
+// The registry is the single source of truth for this report's default day
+// count, so the UI filter and this route can never disagree.
+const DEFAULT_WINDOW_DAYS = getReport(REPORT_SLUG)!.defaultDays
 const MAX_WINDOW_DAYS = 3650
 const DEFAULT_MIN_COUNT = 2
 const MAX_MIN_COUNT = 1000
 const INTEGER_RE = /^\d+$/
-
-const REPORT_SLUG = 'faltas'
 
 /**
  * Parses a non-negative integer query param strictly: rejects anything that

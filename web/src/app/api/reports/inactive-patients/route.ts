@@ -16,36 +16,23 @@ export const runtime = 'nodejs'
 // Disable static optimization: the CSV/PDF branches render dynamic binary/text output.
 export const dynamic = 'force-dynamic'
 
-const DEFAULT_THRESHOLD_DAYS = 180
-const MAX_THRESHOLD_DAYS = 3650
-const THRESHOLD_RE = /^\d+$/
-
 const REPORT_SLUG = 'pacientes-inativos'
 
-/**
- * Resolves the tenant's configured inactivity threshold from
- * `tenants.settings.inactive_threshold_days`, falling back to
- * `DEFAULT_THRESHOLD_DAYS` when absent or out of range.
- */
-function resolveDefaultThreshold(settings: Record<string, unknown> | null | undefined): number {
-  const configured = settings?.inactive_threshold_days
-  if (
-    typeof configured === 'number' &&
-    Number.isFinite(configured) &&
-    configured >= 0 &&
-    configured <= MAX_THRESHOLD_DAYS
-  ) {
-    return configured
-  }
-  return DEFAULT_THRESHOLD_DAYS
-}
+// The registry is the single source of truth for this report's default day
+// count. There is no settings UI for it, so it isn't tenant-configurable;
+// reading it from `tenants.settings` here would just create a second source
+// of truth that the UI default (also read from the registry) could drift
+// from.
+const DEFAULT_THRESHOLD_DAYS = getReport(REPORT_SLUG)!.defaultDays
+const MAX_THRESHOLD_DAYS = 3650
+const THRESHOLD_RE = /^\d+$/
 
 export async function GET(request: Request) {
   try {
     const ctx = await requireRole('owner', 'financial')
 
     const [tenant] = await db
-      .select({ name: tenants.name, settings: tenants.settings })
+      .select({ name: tenants.name })
       .from(tenants)
       .where(eq(tenants.id, ctx.tenantId))
       .limit(1)
@@ -55,9 +42,7 @@ export async function GET(request: Request) {
 
     let thresholdDays: number
     if (thresholdParam === null || thresholdParam.trim() === '') {
-      thresholdDays = resolveDefaultThreshold(
-        (tenant?.settings as Record<string, unknown> | null) ?? {},
-      )
+      thresholdDays = DEFAULT_THRESHOLD_DAYS
     } else {
       // Reject anything that isn't a plain non-negative integer rather than
       // coercing it: Number('abc') is NaN (caught below), but Number('-5')

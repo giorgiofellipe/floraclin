@@ -65,9 +65,7 @@ beforeEach(() => {
     fullName: 'Owner Example',
     isPlatformAdmin: false,
   } as never)
-  dbMock.limit.mockResolvedValue([
-    { name: 'Clínica Teste', settings: { inactive_threshold_days: 90 } },
-  ])
+  dbMock.limit.mockResolvedValue([{ name: 'Clínica Teste' }])
   vi.mocked(listInactivePatients).mockResolvedValue(SAMPLE_ROWS)
 })
 
@@ -124,20 +122,20 @@ describe('GET /api/reports/inactive-patients', () => {
     )
   })
 
-  it('defaults the threshold from tenants.settings.inactive_threshold_days when absent', async () => {
+  it('defaults the threshold to the registry value (180) when no param is sent', async () => {
     const res = await GET(makeRequest('http://localhost/api/reports/inactive-patients'))
 
     expect(res.status).toBe(200)
     expect(listInactivePatients).toHaveBeenCalledWith(
       'tenant-1',
-      expect.objectContaining({ thresholdDays: 90 }),
+      expect.objectContaining({ thresholdDays: 180 }),
     )
   })
 
-  it('falls back to 180 when the tenant has no configured threshold', async () => {
-    dbMock.limit.mockResolvedValue([{ name: 'Clínica Teste', settings: {} }])
-
-    const res = await GET(makeRequest('http://localhost/api/reports/inactive-patients'))
+  it('defaults the threshold to 180 when the param is present but blank', async () => {
+    const res = await GET(
+      makeRequest('http://localhost/api/reports/inactive-patients?thresholdDays='),
+    )
 
     expect(res.status).toBe(200)
     expect(listInactivePatients).toHaveBeenCalledWith(

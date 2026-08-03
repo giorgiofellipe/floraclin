@@ -25,4 +25,10 @@ export interface ReportDefinition {
    *  expect a different name (`windowDays`) depending on what the number
    *  actually means for that report. */
   paramName: 'thresholdDays' | 'windowDays'
+  /** Default value for the day-count filter, shown pre-filled in the UI and
+   *  used by the API route when no param (or a blank one) is sent. This is
+   *  the single source of truth for the default: both the filter UI and the
+   *  route import it from here rather than each keeping their own constant,
+   *  so they cannot drift apart. */
+  defaultDays: number
 }

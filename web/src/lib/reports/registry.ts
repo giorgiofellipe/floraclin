@@ -9,6 +9,7 @@ export const REPORTS: ReportDefinition[] = [
     filters: ['threshold-days'],
     apiPath: '/api/reports/inactive-patients',
     paramName: 'thresholdDays',
+    defaultDays: 180,
   },
   {
     slug: 'retornos',
@@ -21,6 +22,7 @@ export const REPORTS: ReportDefinition[] = [
     filters: ['threshold-days'],
     apiPath: '/api/reports/due-followups',
     paramName: 'windowDays',
+    defaultDays: 30,
   },
   {
     slug: 'faltas',
@@ -32,6 +34,7 @@ export const REPORTS: ReportDefinition[] = [
     filters: ['threshold-days'],
     apiPath: '/api/reports/repeat-no-shows',
     paramName: 'windowDays',
+    defaultDays: 180,
   },
 ]
 

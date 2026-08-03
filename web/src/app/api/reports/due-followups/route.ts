@@ -16,11 +16,13 @@ export const runtime = 'nodejs'
 // Disable static optimization: the CSV/PDF branches render dynamic binary/text output.
 export const dynamic = 'force-dynamic'
 
-const DEFAULT_WINDOW_DAYS = 30
+const REPORT_SLUG = 'retornos'
+
+// The registry is the single source of truth for this report's default day
+// count, so the UI filter and this route can never disagree.
+const DEFAULT_WINDOW_DAYS = getReport(REPORT_SLUG)!.defaultDays
 const MAX_WINDOW_DAYS = 3650
 const WINDOW_RE = /^\d+$/
-
-const REPORT_SLUG = 'retornos'
 
 export async function GET(request: Request) {
   try {

@@ -77,6 +77,7 @@ export default function FaltasPage() {
       filters={REPORT.filters}
       apiPath={REPORT.apiPath}
       paramName={REPORT.paramName}
+      defaultDays={REPORT.defaultDays}
     >
       {(filters) => <FaltasBody filters={filters} />}
     </ReportShell>

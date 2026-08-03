@@ -82,6 +82,7 @@ export default function RetornosPage() {
       filters={REPORT.filters}
       apiPath={REPORT.apiPath}
       paramName={REPORT.paramName}
+      defaultDays={REPORT.defaultDays}
     >
       {(filters) => <RetornosBody filters={filters} />}
     </ReportShell>

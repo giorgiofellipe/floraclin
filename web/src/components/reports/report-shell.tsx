@@ -15,6 +15,10 @@ interface ReportShellProps {
   /** Query-string key the numeric day-count filter must serialize under for
    *  this report's route (`thresholdDays` or `windowDays`). */
   paramName: 'thresholdDays' | 'windowDays'
+  /** Default value for the day-count filter, from the report's registry
+   *  entry. Seeds the filter on first render so the input never shows blank
+   *  and the export links carry it before the user touches anything. */
+  defaultDays: number
   /** Table area, rendered with the currently active filter values so the
    *  report page can fetch and display the matching rows. */
   children: (filters: ReportFilterValues) => ReactNode
@@ -31,9 +35,12 @@ export function ReportShell({
   filters,
   apiPath,
   paramName,
+  defaultDays,
   children,
 }: ReportShellProps) {
-  const [filterValues, setFilterValues] = useState<ReportFilterValues>({})
+  const [filterValues, setFilterValues] = useState<ReportFilterValues>(() =>
+    filters.includes('threshold-days') ? { thresholdDays: String(defaultDays) } : {},
+  )
 
   return (
     <div className="space-y-6">
