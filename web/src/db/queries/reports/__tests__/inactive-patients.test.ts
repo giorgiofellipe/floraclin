@@ -98,7 +98,10 @@ describe('listInactivePatients', () => {
   })
 
   afterEach(() => {
-    process.env.TZ = originalTz
+    // `process.env.TZ = undefined` would set the literal string "undefined",
+    // leaking an invalid TZ into every later test file in this worker.
+    if (originalTz === undefined) delete process.env.TZ
+    else process.env.TZ = originalTz
   })
 
   it('excludes a patient whose last procedure lands exactly on the threshold day', async () => {

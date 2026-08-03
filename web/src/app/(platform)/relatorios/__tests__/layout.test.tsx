@@ -19,18 +19,10 @@ beforeEach(() => {
 })
 
 describe('RelatoriosLayout', () => {
-  it('refuses a practitioner and never renders the section content', async () => {
-    vi.mocked(requireRole).mockRejectedValue(
-      new Error('Forbidden: insufficient permissions')
-    )
-
-    render(await renderLayout())
-
-    expect(screen.getByText('Acesso restrito')).toBeInTheDocument()
-    expect(screen.queryByText(CHILDREN_TEXT)).not.toBeInTheDocument()
-  })
-
-  it('refuses a receptionist and never renders the section content', async () => {
+  // `requireRole` is mocked, so which role was refused is decided there, not
+  // here — one rejection case covers every refused role (practitioner,
+  // receptionist, ...) rather than the same assertion repeated per role name.
+  it('renders the forbidden state and never the section content when requireRole rejects', async () => {
     vi.mocked(requireRole).mockRejectedValue(
       new Error('Forbidden: insufficient permissions')
     )
