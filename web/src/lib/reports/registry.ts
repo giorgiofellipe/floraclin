@@ -13,14 +13,19 @@ export const REPORTS: ReportDefinition[] = [
     title: 'Retornos a vencer',
     description:
       'Retornos agendados que estão próximos ou já venceram, excluindo quem já tem consulta marcada.',
-    filters: ['date-range'],
+    // The route filters by a day-count window (`windowDays`), not a calendar
+    // range, so it reuses the same numeric filter kind as pacientes-inativos
+    // rather than the date-range picker.
+    filters: ['threshold-days'],
   },
   {
     slug: 'faltas',
     title: 'Faltas recorrentes',
     description:
       'Pacientes que faltaram ou cancelaram mais de uma vez no período, com o valor perdido nos horários.',
-    filters: ['date-range'],
+    // Same reasoning as retornos: `windowDays` is a day count. `minCount`
+    // has no dedicated filter UI yet and keeps its server-side default.
+    filters: ['threshold-days'],
   },
 ]
 

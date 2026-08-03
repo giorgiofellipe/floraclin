@@ -48,7 +48,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
       <Sidebar
         clinicName={tenant?.name ?? 'FloraClin'}
         userName={auth.fullName}
-        userRole="HOF"
+        userRole={auth.role}
         tenants={tenantOptions}
         activeTenantId={auth.tenantId}
         isPlatformAdmin={auth.isPlatformAdmin}
