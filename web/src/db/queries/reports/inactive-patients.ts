@@ -36,8 +36,13 @@ export interface ListInactivePatientsOptions {
  * tests) control the reference instant explicitly.
  *
  * Ordered by lifetime value (sum of paid installments) descending, so the
- * clinic calls the highest-value lapsed patient first.
+ * clinic calls the highest-value lapsed patient first, capped at `MAX_ROWS`
+ * (applied after sorting, matching the precedent in
+ * `web/src/db/queries/followups.ts`, so the cap keeps the highest-value
+ * rows rather than an arbitrary DB-order slice).
  */
+const MAX_ROWS = 200
+
 export async function listInactivePatients(
   tenantId: string,
   { thresholdDays, today }: ListInactivePatientsOptions,
@@ -140,5 +145,5 @@ export async function listInactivePatients(
 
   rows.sort((a, b) => b.lifetimeValue - a.lifetimeValue)
 
-  return rows
+  return rows.slice(0, MAX_ROWS)
 }

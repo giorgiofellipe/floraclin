@@ -76,7 +76,13 @@ function RetornosBody({ filters }: { filters: ReportFilterValues }) {
 
 export default function RetornosPage() {
   return (
-    <ReportShell title={REPORT.title} description={REPORT.description} filters={REPORT.filters}>
+    <ReportShell
+      title={REPORT.title}
+      description={REPORT.description}
+      filters={REPORT.filters}
+      apiPath={REPORT.apiPath}
+      paramName={REPORT.paramName}
+    >
       {(filters) => <RetornosBody filters={filters} />}
     </ReportShell>
   )

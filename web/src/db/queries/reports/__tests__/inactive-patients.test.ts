@@ -252,6 +252,24 @@ describe('listInactivePatients', () => {
     expect(rows.map((r) => r.lifetimeValue)).toEqual([8000, 1200, 350])
   })
 
+  it('caps results at 200 rows', async () => {
+    const many = Array.from({ length: 250 }, (_, i) => ({
+      id: `p${i}`,
+      fullName: `Patient ${i}`,
+      phone: '11999990000',
+      createdAt: new Date('2020-01-01T12:00:00Z'),
+    }))
+
+    pushResults(many, [], [])
+
+    const rows = await listInactivePatients('tenant-1', {
+      thresholdDays: 30,
+      today: new Date('2026-04-15T10:00:00.000Z'),
+    })
+
+    expect(rows).toHaveLength(200)
+  })
+
   it('never surfaces a soft-deleted patient even if old procedure/installment rows reference them', async () => {
     const oldPerformedAt = new Date('2026-01-01T14:00:00.000Z')
 

@@ -51,6 +51,9 @@ vi.mock('@/db/schema', () => ({
     followUpDate: 'follow_up_date',
     procedureTypeId: 'procedure_type_id',
     performedAt: 'performed_at',
+    status: 'status',
+    cancelledAt: 'cancelled_at',
+    followupSnoozedUntil: 'followup_snoozed_until',
   },
   procedureTypes: {
     id: 'id',
@@ -87,6 +90,9 @@ function record(overrides: Partial<Record<string, unknown>> = {}) {
     followUpDate: '2026-04-15',
     procedureTypeName: 'Botox',
     performedAt: new Date('2026-01-15T14:00:00.000Z'),
+    status: 'completed',
+    cancelledAt: null,
+    followupSnoozedUntil: null,
     ...overrides,
   }
 }
@@ -226,5 +232,85 @@ describe('listDueFollowUps', () => {
     const rows = await listDueFollowUps('tenant-1', { windowDays, today })
 
     expect(rows).toEqual([])
+  })
+
+  it('excludes a draft procedure record', async () => {
+    pushResults([record({ status: 'draft', followUpDate: '2026-04-16' })], [])
+
+    const rows = await listDueFollowUps('tenant-1', { windowDays, today })
+
+    expect(rows).toEqual([])
+  })
+
+  it('excludes a cancelled procedure record', async () => {
+    pushResults([record({ status: 'cancelled', followUpDate: '2026-04-16' })], [])
+
+    const rows = await listDueFollowUps('tenant-1', { windowDays, today })
+
+    expect(rows).toEqual([])
+  })
+
+  it('excludes a record with cancelledAt set even if status disagrees', async () => {
+    pushResults(
+      [record({ status: 'completed', cancelledAt: new Date('2026-04-01T12:00:00.000Z'), followUpDate: '2026-04-16' })],
+      [],
+    )
+
+    const rows = await listDueFollowUps('tenant-1', { windowDays, today })
+
+    expect(rows).toEqual([])
+  })
+
+  it('excludes a record snoozed until tomorrow', async () => {
+    pushResults(
+      [record({ followUpDate: '2026-04-16', followupSnoozedUntil: '2026-04-16' })],
+      [],
+    )
+
+    const rows = await listDueFollowUps('tenant-1', { windowDays, today })
+
+    expect(rows).toEqual([])
+  })
+
+  it('includes a record whose snooze expired yesterday', async () => {
+    pushResults(
+      [record({ followUpDate: '2026-04-16', followupSnoozedUntil: '2026-04-14' })],
+      [],
+    )
+
+    const rows = await listDueFollowUps('tenant-1', { windowDays, today })
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0].patientId).toBe('p1')
+  })
+
+  it('excludes an overdue follow-up older than the overdue bound (today - windowDays)', async () => {
+    // window start (BR) = 2026-04-08; one day past = 2026-04-07.
+    pushResults([record({ followUpDate: '2026-04-07' })], [])
+
+    const rows = await listDueFollowUps('tenant-1', { windowDays, today })
+
+    expect(rows).toEqual([])
+  })
+
+  it('includes an overdue follow-up exactly on the overdue bound', async () => {
+    // window start (BR) = 2026-04-08.
+    pushResults([record({ followUpDate: '2026-04-08' })], [])
+
+    const rows = await listDueFollowUps('tenant-1', { windowDays, today })
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ followUpDate: '2026-04-08', isOverdue: true })
+  })
+
+  it('caps results at 200 rows', async () => {
+    const many = Array.from({ length: 250 }, (_, i) =>
+      record({ patientId: `p${i}`, followUpDate: '2026-04-15' }),
+    )
+    pushResults(many, [])
+
+    const rows = await listDueFollowUps('tenant-1', { windowDays, today })
+
+    expect(rows).toHaveLength(200)
   })
 })

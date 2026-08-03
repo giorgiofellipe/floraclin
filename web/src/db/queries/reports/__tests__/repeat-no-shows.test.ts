@@ -176,6 +176,38 @@ describe('listRepeatNoShows', () => {
     expect(rows[0].missedValue).not.toBeNaN()
   })
 
+  it('does not count a future-dated cancellation, and it does not contribute to missedValue', async () => {
+    // today = 2026-04-15 (BR); a cancellation dated next month has not
+    // happened yet and must not be treated as a miss.
+    pushResults([
+      occurrence({ date: '2026-04-20', status: 'cancelled', defaultPrice: '900.00' }),
+    ])
+
+    const rows = await listRepeatNoShows('tenant-1', { windowDays, minCount: 1, today })
+
+    expect(rows).toEqual([])
+  })
+
+  it('still counts a cancellation dated today (the upper bound is inclusive)', async () => {
+    pushResults([occurrence({ date: '2026-04-15', status: 'cancelled', defaultPrice: '100.00' })])
+
+    const rows = await listRepeatNoShows('tenant-1', { windowDays, minCount: 1, today })
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0].missedValue).toBe(100)
+  })
+
+  it('caps results at 200 rows', async () => {
+    const many = Array.from({ length: 250 }, (_, i) =>
+      occurrence({ patientId: `p${i}`, fullName: `Patient ${i}`, date: '2026-04-10' }),
+    )
+    pushResults(many)
+
+    const rows = await listRepeatNoShows('tenant-1', { windowDays, minCount: 1, today })
+
+    expect(rows).toHaveLength(200)
+  })
+
   it('orders by missed count descending, then missed value descending', async () => {
     pushResults([
       // low: 2 occurrences, low value

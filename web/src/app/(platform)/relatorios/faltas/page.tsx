@@ -71,7 +71,13 @@ function FaltasBody({ filters }: { filters: ReportFilterValues }) {
 
 export default function FaltasPage() {
   return (
-    <ReportShell title={REPORT.title} description={REPORT.description} filters={REPORT.filters}>
+    <ReportShell
+      title={REPORT.title}
+      description={REPORT.description}
+      filters={REPORT.filters}
+      apiPath={REPORT.apiPath}
+      paramName={REPORT.paramName}
+    >
       {(filters) => <FaltasBody filters={filters} />}
     </ReportShell>
   )

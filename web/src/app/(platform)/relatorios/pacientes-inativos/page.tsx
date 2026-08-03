@@ -69,7 +69,13 @@ function PacientesInativosBody({ filters }: { filters: ReportFilterValues }) {
 
 export default function PacientesInativosPage() {
   return (
-    <ReportShell title={REPORT.title} description={REPORT.description} filters={REPORT.filters}>
+    <ReportShell
+      title={REPORT.title}
+      description={REPORT.description}
+      filters={REPORT.filters}
+      apiPath={REPORT.apiPath}
+      paramName={REPORT.paramName}
+    >
       {(filters) => <PacientesInativosBody filters={filters} />}
     </ReportShell>
   )

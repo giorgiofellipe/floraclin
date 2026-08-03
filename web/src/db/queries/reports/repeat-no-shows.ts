@@ -22,13 +22,22 @@ export interface ListRepeatNoShowsOptions {
   today: Date
 }
 
+/** Report results are capped at this many rows, matching the precedent in
+ *  `web/src/db/queries/followups.ts`. Applied after sorting so the cap keeps
+ *  the most important rows (highest missed count, then highest missed
+ *  value), not an arbitrary DB-order slice. */
+const MAX_ROWS = 200
+
 /**
  * Recall report: patients who repeatedly no-show or cancel.
  *
  * Counts appointments in status `no_show` or `cancelled` whose `date` falls
  * within the last `windowDays` (inclusive of the boundary day, mirroring how
- * `due-followups` treats its window end as inclusive). A patient is included
- * only when that count reaches `minCount` or more.
+ * `due-followups` treats its window end as inclusive) AND is not in the
+ * future: the window runs through today, so a cancellation dated after today
+ * (e.g. a patient cancelling next month's appointment) is not a miss yet and
+ * must not be counted. A patient is included only when that count reaches
+ * `minCount` or more.
  *
  * `appointments.date` is a `date` column holding a BR calendar day, compared
  * throughout as a `YYYY-MM-DD` string. It is never passed through
@@ -40,7 +49,8 @@ export interface ListRepeatNoShowsOptions {
  * every counted occurrence, treating a missing procedure type or a null
  * price as 0 rather than producing `NaN`.
  *
- * Ordered by missed count descending, then missed value descending.
+ * Ordered by missed count descending, then missed value descending, capped
+ * at `MAX_ROWS`.
  */
 export async function listRepeatNoShows(
   tenantId: string,
@@ -76,9 +86,12 @@ export async function listRepeatNoShows(
 
   for (const row of rows) {
     if (!MISSED_STATUSES.has(row.status)) continue
-    // Lower bound only: the window starts `windowDays` ago (inclusive) and
-    // runs through today. An occurrence outside that range is not counted.
+    // The window starts `windowDays` ago (inclusive) and runs through today
+    // (inclusive), not beyond it. A future-dated cancellation (e.g. next
+    // month's appointment cancelled today) has not happened yet and is not
+    // a miss, so the upper bound matters just as much as the lower one.
     if (row.date < windowStartYmd) continue
+    if (row.date > todayYmd) continue
 
     const entry = byPatient.get(row.patientId) ?? {
       fullName: row.fullName,
@@ -107,5 +120,5 @@ export async function listRepeatNoShows(
 
   result.sort((a, b) => b.missedCount - a.missedCount || b.missedValue - a.missedValue)
 
-  return result
+  return result.slice(0, MAX_ROWS)
 }

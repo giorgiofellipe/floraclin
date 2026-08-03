@@ -7,6 +7,8 @@ export const REPORTS: ReportDefinition[] = [
     description:
       'Pacientes sem procedimento recente, ordenados por valor gasto: quem vale mais liga primeiro.',
     filters: ['threshold-days'],
+    apiPath: '/api/reports/inactive-patients',
+    paramName: 'thresholdDays',
   },
   {
     slug: 'retornos',
@@ -17,6 +19,8 @@ export const REPORTS: ReportDefinition[] = [
     // range, so it reuses the same numeric filter kind as pacientes-inativos
     // rather than the date-range picker.
     filters: ['threshold-days'],
+    apiPath: '/api/reports/due-followups',
+    paramName: 'windowDays',
   },
   {
     slug: 'faltas',
@@ -26,6 +30,8 @@ export const REPORTS: ReportDefinition[] = [
     // Same reasoning as retornos: `windowDays` is a day count. `minCount`
     // has no dedicated filter UI yet and keeps its server-side default.
     filters: ['threshold-days'],
+    apiPath: '/api/reports/repeat-no-shows',
+    paramName: 'windowDays',
   },
 ]
 
