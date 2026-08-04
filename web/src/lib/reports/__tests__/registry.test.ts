@@ -2,8 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { REPORTS, getReport } from '../registry'
 
 describe('REPORTS registry', () => {
-  it('gives every report a positive integer defaultDays', () => {
+  // Only reports that declare the `threshold-days` filter kind read
+  // `defaultDays` (see ReportShell/the filter UI); the sub-project 2 exports
+  // use `date-range`/`practitioner` instead and never set it.
+  it('gives every threshold-days report a positive integer defaultDays', () => {
     for (const report of REPORTS) {
+      if (!report.filters.includes('threshold-days')) continue
       expect(Number.isInteger(report.defaultDays)).toBe(true)
       expect(report.defaultDays).toBeGreaterThan(0)
     }

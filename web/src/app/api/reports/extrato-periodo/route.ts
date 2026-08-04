@@ -4,41 +4,33 @@ import { eq } from 'drizzle-orm'
 import { requireRole } from '@/lib/auth'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
+import { exportLedgerCSV } from '@/db/queries/cash-movements'
 import {
-  listDueFollowUps,
-  type DueFollowUpRow,
-  type DueFollowUpSortKey,
-} from '@/db/queries/reports/due-followups'
-import { DUE_FOLLOWUP_COLUMNS } from '@/lib/reports/columns/due-followups'
-import { toCsv, csvFilename } from '@/lib/reports/csv'
+  listLedgerReportRows,
+  type LedgerReportRow,
+  type LedgerReportSortKey,
+} from '@/db/queries/reports/extrato-periodo'
+import { LEDGER_REPORT_COLUMNS } from '@/lib/reports/columns/extrato-periodo'
+import { csvFilename } from '@/lib/reports/csv'
 import { getReport } from '@/lib/reports/registry'
 import { ReportPdf, REPORT_PDF_CSS } from '@/components/reports/report-pdf'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
 import { brToday } from '@/lib/dates'
+import { formatDate } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 // Disable static optimization: the CSV/PDF branches render dynamic binary/text output.
 export const dynamic = 'force-dynamic'
 
-const REPORT_SLUG = 'retornos'
-
-// The registry is the single source of truth for this report's default day
-// count, so the UI filter and this route can never disagree.
-// Non-null: this report declares the `threshold-days` filter kind, so the
-// registry always sets `defaultDays` for it (see registry.test.ts). Only
-// reports without that filter kind (the sub-project 2 exports) omit it.
-const DEFAULT_WINDOW_DAYS = getReport(REPORT_SLUG)!.defaultDays!
-const MAX_WINDOW_DAYS = 3650
-const WINDOW_RE = /^\d+$/
+const REPORT_SLUG = 'extrato-periodo'
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 // Allow-list of sort keys this report's query knows how to order by (see
-// `DueFollowUpSortKey` in `@/db/queries/reports/due-followups`). An
-// unrecognized `sort` value is rejected with 400 rather than silently
-// ignored or passed through to a query string.
-const SORT_KEYS = ['fullName', 'followUpDate', 'daysUntil'] as const
+// `LedgerReportSortKey` in `@/db/queries/reports/extrato-periodo`).
+const SORT_KEYS = ['movementDate', 'type', 'amount'] as const
 
 type ParsedSort =
-  | { ok: true; sort: { key: DueFollowUpSortKey; dir: 'asc' | 'desc' } | undefined }
+  | { ok: true; sort: { key: LedgerReportSortKey; dir: 'asc' | 'desc' } | undefined }
   | { ok: false; error: string }
 
 function parseSort(searchParams: URLSearchParams): ParsedSort {
@@ -56,8 +48,20 @@ function parseSort(searchParams: URLSearchParams): ParsedSort {
 
   return {
     ok: true,
-    sort: { key: sortParam as DueFollowUpSortKey, dir: dirParam === 'desc' ? 'desc' : 'asc' },
+    sort: { key: sortParam as LedgerReportSortKey, dir: dirParam === 'desc' ? 'desc' : 'asc' },
   }
+}
+
+/**
+ * Default window when neither `dateFrom` nor `dateTo` is sent: the current
+ * BR calendar month to date, matching what `PractitionerPLView` seeds
+ * client-side for the same underlying data. Built from `brToday()`'s
+ * `YYYY-MM-DD` string via slicing, never from a bare `new Date()`, so it
+ * can't drift a day on a UTC host.
+ */
+function defaultDateRange(): { dateFrom: string; dateTo: string } {
+  const today = brToday()
+  return { dateFrom: `${today.slice(0, 7)}-01`, dateTo: today }
 }
 
 export async function GET(request: Request) {
@@ -71,23 +75,22 @@ export async function GET(request: Request) {
       .limit(1)
 
     const { searchParams } = new URL(request.url)
-    const windowParam = searchParams.get('windowDays')
+    const rawDateFrom = searchParams.get('dateFrom')
+    const rawDateTo = searchParams.get('dateTo')
 
-    let windowDays: number
-    if (windowParam === null || windowParam.trim() === '') {
-      windowDays = DEFAULT_WINDOW_DAYS
+    let dateFrom: string
+    let dateTo: string
+    if (!rawDateFrom && !rawDateTo) {
+      ;({ dateFrom, dateTo } = defaultDateRange())
     } else {
-      // Reject anything that isn't a plain non-negative integer rather than
-      // coercing it: Number('abc') is NaN (caught below), but Number('-5')
-      // and Number('1e400') would otherwise sneak through a bare Number() cast.
-      if (!WINDOW_RE.test(windowParam)) {
-        return NextResponse.json({ error: 'Janela de dias inválida' }, { status: 400 })
+      if (!rawDateFrom || !DATE_RE.test(rawDateFrom) || !rawDateTo || !DATE_RE.test(rawDateTo)) {
+        return NextResponse.json({ error: 'Datas inválidas' }, { status: 400 })
       }
-      const parsed = Number(windowParam)
-      if (parsed > MAX_WINDOW_DAYS) {
-        return NextResponse.json({ error: 'Janela de dias inválida' }, { status: 400 })
+      if (rawDateFrom > rawDateTo) {
+        return NextResponse.json({ error: 'Data inicial posterior à data final' }, { status: 400 })
       }
-      windowDays = parsed
+      dateFrom = rawDateFrom
+      dateTo = rawDateTo
     }
 
     const parsedSort = parseSort(searchParams)
@@ -95,17 +98,16 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: parsedSort.error }, { status: 400 })
     }
 
-    const today = new Date()
-    const rows = await listDueFollowUps(ctx.tenantId, {
-      windowDays,
-      today,
-      sort: parsedSort.sort,
-    })
-
     const format = searchParams.get('format')
 
     if (format === 'csv') {
-      const csv = toCsv(rows, DUE_FOLLOWUP_COLUMNS)
+      // Calls the pre-existing ledger export function directly, NOT the
+      // generic toCsv(rows, columns) pipeline every other report uses, so
+      // this file stays byte-compatible with what
+      // `/api/financial/ledger/export` has always produced (see
+      // web/src/db/queries/cash-movements.ts). That endpoint is untouched;
+      // this is a second caller of the same function.
+      const csv = await exportLedgerCSV(ctx.tenantId, { dateFrom, dateTo, type: 'all' })
       return new Response(csv, {
         status: 200,
         headers: {
@@ -115,19 +117,21 @@ export async function GET(request: Request) {
       })
     }
 
+    const rows = await listLedgerReportRows(ctx.tenantId, { dateFrom, dateTo, sort: parsedSort.sort })
+
     if (format === 'pdf') {
       const report = getReport(REPORT_SLUG)
       const pdf = await renderReactToPdf(
         // `ReportPdf` is generic; createElement can't infer `Row` from the
         // props object alone, so instantiate it explicitly (TS 4.7+ generic
         // instantiation expression) rather than widening to `unknown`.
-        createElement(ReportPdf<DueFollowUpRow>, {
+        createElement(ReportPdf<LedgerReportRow>, {
           clinicName: tenant?.name ?? '',
-          reportTitle: report?.title ?? 'Retornos a vencer',
-          filterSummary: `Janela: ${windowDays} dias`,
+          reportTitle: report?.title ?? 'Extrato por período',
+          filterSummary: `Período: ${formatDate(dateFrom)} a ${formatDate(dateTo)}`,
           rows,
-          columns: DUE_FOLLOWUP_COLUMNS,
-          generatedAt: today,
+          columns: LEDGER_REPORT_COLUMNS,
+          generatedAt: new Date(),
         }),
         `${PRINT_BASE_CSS}${REPORT_PDF_CSS}`,
       )

@@ -82,6 +82,23 @@ describe('ExportButtons', () => {
     expect(params.get('minCount')).toBe('3')
   })
 
+  it('carries date-range and practitioner filters through unchanged when paramName is absent', () => {
+    render(
+      <ExportButtons
+        apiPath="/api/reports/extrato-periodo"
+        filters={{ dateFrom: '2026-04-01', dateTo: '2026-04-30', practitionerId: 'p1' }}
+      />,
+    )
+
+    const csvHref = screen.getByRole('link', { name: /exportar csv/i }).getAttribute('href')!
+    const params = new URLSearchParams(csvHref.split('?')[1])
+
+    expect(params.get('dateFrom')).toBe('2026-04-01')
+    expect(params.get('dateTo')).toBe('2026-04-30')
+    expect(params.get('practitionerId')).toBe('p1')
+    expect(params.has('thresholdDays')).toBe(false)
+  })
+
   it('carries the active sort into the export URL when one is set', () => {
     render(
       <ExportButtons

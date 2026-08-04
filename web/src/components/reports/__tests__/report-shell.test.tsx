@@ -83,6 +83,23 @@ describe('ReportShell', () => {
     expect(screen.getByLabelText('Período analisado (últimos dias)')).toBeInTheDocument()
   })
 
+  it('renders a date-range-only report without paramName, defaultDays or filterLabel', () => {
+    render(
+      <ReportShell
+        title="Extrato por período"
+        description="desc"
+        filters={['date-range']}
+        apiPath="/api/reports/extrato-periodo"
+      >
+        {() => <div>table</div>}
+      </ReportShell>,
+    )
+
+    expect(screen.getByText('Extrato por período')).toBeInTheDocument()
+    const params = new URLSearchParams(getCsvHref().split('?')[1])
+    expect(params.has('thresholdDays')).toBe(false)
+  })
+
   describe('sort state', () => {
     function renderShellWithSortProbe() {
       return render(

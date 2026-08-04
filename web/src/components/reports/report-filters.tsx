@@ -33,12 +33,16 @@ interface ReportFiltersProps {
   /** Label for the day-count (`threshold-days`) input. The same filter kind
    *  means a different thing per report, so the copy is supplied by the
    *  caller (ultimately the report's registry entry) rather than hardcoded
-   *  here. */
-  dayFilterLabel: string
+   *  here. Only relevant when `filters` includes `'threshold-days'`. */
+  dayFilterLabel?: string
 }
 
 export function ReportFilters({ filters, value, onChange, dayFilterLabel }: ReportFiltersProps) {
-  const { data: practitioners } = usePractitioners()
+  // Only fetch practitioners when the report actually declares the
+  // `practitioner` filter kind. Reports without it (the two recall reports
+  // that don't filter by practitioner, and any future report that skips it)
+  // must not fire this request on every render.
+  const { data: practitioners } = usePractitioners({ enabled: filters.includes('practitioner') })
 
   const practitionerItems = useMemo(() => {
     const items: Record<string, string> = { all: 'Todos os profissionais' }

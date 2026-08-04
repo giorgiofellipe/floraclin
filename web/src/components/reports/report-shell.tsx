@@ -13,16 +13,19 @@ interface ReportShellProps {
    *  links point at the handler, not at this page's own URL. */
   apiPath: string
   /** Query-string key the numeric day-count filter must serialize under for
-   *  this report's route (`thresholdDays` or `windowDays`). */
-  paramName: 'thresholdDays' | 'windowDays'
+   *  this report's route (`thresholdDays` or `windowDays`). Only present on
+   *  reports that declare the `threshold-days` filter kind. */
+  paramName?: 'thresholdDays' | 'windowDays'
   /** Default value for the day-count filter, from the report's registry
    *  entry. Seeds the filter on first render so the input never shows blank
-   *  and the export links carry it before the user touches anything. */
-  defaultDays: number
+   *  and the export links carry it before the user touches anything. Only
+   *  present on reports that declare the `threshold-days` filter kind. */
+  defaultDays?: number
   /** Label for the day-count filter input, from the report's registry entry
    *  (see `web/src/lib/reports/registry.ts`): the same filter kind means a
-   *  different thing per report. */
-  filterLabel: string
+   *  different thing per report. Only present on reports that declare the
+   *  `threshold-days` filter kind. */
+  filterLabel?: string
   /** Default value for the `min-count` filter, from the report's registry
    *  entry. Only relevant when `filters` includes `'min-count'`. */
   defaultMinCount?: number
@@ -55,7 +58,9 @@ export function ReportShell({
 }: ReportShellProps) {
   const [filterValues, setFilterValues] = useState<ReportFilterValues>(() => {
     const initial: ReportFilterValues = {}
-    if (filters.includes('threshold-days')) initial.thresholdDays = String(defaultDays)
+    if (filters.includes('threshold-days') && defaultDays !== undefined) {
+      initial.thresholdDays = String(defaultDays)
+    }
     if (filters.includes('min-count') && defaultMinCount !== undefined) {
       initial.minCount = String(defaultMinCount)
     }

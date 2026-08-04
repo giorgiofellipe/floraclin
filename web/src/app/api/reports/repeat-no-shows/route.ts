@@ -24,7 +24,10 @@ const REPORT_SLUG = 'faltas'
 
 // The registry is the single source of truth for this report's default day
 // count, so the UI filter and this route can never disagree.
-const DEFAULT_WINDOW_DAYS = getReport(REPORT_SLUG)!.defaultDays
+// Non-null: this report declares the `threshold-days` filter kind, so the
+// registry always sets `defaultDays` for it (see registry.test.ts). Only
+// reports without that filter kind (the sub-project 2 exports) omit it.
+const DEFAULT_WINDOW_DAYS = getReport(REPORT_SLUG)!.defaultDays!
 const MAX_WINDOW_DAYS = 3650
 // The registry is the single source of truth for the default, same reasoning
 // as DEFAULT_WINDOW_DAYS: it feeds both this route and the filter UI's

@@ -5,40 +5,32 @@ import { requireRole } from '@/lib/auth'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import {
-  listDueFollowUps,
-  type DueFollowUpRow,
-  type DueFollowUpSortKey,
-} from '@/db/queries/reports/due-followups'
-import { DUE_FOLLOWUP_COLUMNS } from '@/lib/reports/columns/due-followups'
+  listPractitionerEarnings,
+  type PractitionerPLRow,
+  type PractitionerEarningsSortKey,
+} from '@/db/queries/reports/ganhos-profissional'
+import { PRACTITIONER_EARNINGS_COLUMNS } from '@/lib/reports/columns/ganhos-profissional'
 import { toCsv, csvFilename } from '@/lib/reports/csv'
 import { getReport } from '@/lib/reports/registry'
 import { ReportPdf, REPORT_PDF_CSS } from '@/components/reports/report-pdf'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
 import { brToday } from '@/lib/dates'
+import { formatDate } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 // Disable static optimization: the CSV/PDF branches render dynamic binary/text output.
 export const dynamic = 'force-dynamic'
 
-const REPORT_SLUG = 'retornos'
-
-// The registry is the single source of truth for this report's default day
-// count, so the UI filter and this route can never disagree.
-// Non-null: this report declares the `threshold-days` filter kind, so the
-// registry always sets `defaultDays` for it (see registry.test.ts). Only
-// reports without that filter kind (the sub-project 2 exports) omit it.
-const DEFAULT_WINDOW_DAYS = getReport(REPORT_SLUG)!.defaultDays!
-const MAX_WINDOW_DAYS = 3650
-const WINDOW_RE = /^\d+$/
+const REPORT_SLUG = 'ganhos-profissional'
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // Allow-list of sort keys this report's query knows how to order by (see
-// `DueFollowUpSortKey` in `@/db/queries/reports/due-followups`). An
-// unrecognized `sort` value is rejected with 400 rather than silently
-// ignored or passed through to a query string.
-const SORT_KEYS = ['fullName', 'followUpDate', 'daysUntil'] as const
+// `PractitionerEarningsSortKey` in `@/db/queries/reports/ganhos-profissional`).
+const SORT_KEYS = ['practitionerName', 'procedureCount', 'revenueGenerated', 'revenueCollected'] as const
 
 type ParsedSort =
-  | { ok: true; sort: { key: DueFollowUpSortKey; dir: 'asc' | 'desc' } | undefined }
+  | { ok: true; sort: { key: PractitionerEarningsSortKey; dir: 'asc' | 'desc' } | undefined }
   | { ok: false; error: string }
 
 function parseSort(searchParams: URLSearchParams): ParsedSort {
@@ -56,8 +48,16 @@ function parseSort(searchParams: URLSearchParams): ParsedSort {
 
   return {
     ok: true,
-    sort: { key: sortParam as DueFollowUpSortKey, dir: dirParam === 'desc' ? 'desc' : 'asc' },
+    sort: { key: sortParam as PractitionerEarningsSortKey, dir: dirParam === 'desc' ? 'desc' : 'asc' },
   }
+}
+
+/** Default window when neither `dateFrom` nor `dateTo` is sent: the current
+ *  BR calendar month to date, matching `PractitionerPLView`'s client-side
+ *  default for the same underlying data. */
+function defaultDateRange(): { dateFrom: string; dateTo: string } {
+  const today = brToday()
+  return { dateFrom: `${today.slice(0, 7)}-01`, dateTo: today }
 }
 
 export async function GET(request: Request) {
@@ -71,41 +71,46 @@ export async function GET(request: Request) {
       .limit(1)
 
     const { searchParams } = new URL(request.url)
-    const windowParam = searchParams.get('windowDays')
+    const rawDateFrom = searchParams.get('dateFrom')
+    const rawDateTo = searchParams.get('dateTo')
 
-    let windowDays: number
-    if (windowParam === null || windowParam.trim() === '') {
-      windowDays = DEFAULT_WINDOW_DAYS
+    let dateFrom: string
+    let dateTo: string
+    if (!rawDateFrom && !rawDateTo) {
+      ;({ dateFrom, dateTo } = defaultDateRange())
     } else {
-      // Reject anything that isn't a plain non-negative integer rather than
-      // coercing it: Number('abc') is NaN (caught below), but Number('-5')
-      // and Number('1e400') would otherwise sneak through a bare Number() cast.
-      if (!WINDOW_RE.test(windowParam)) {
-        return NextResponse.json({ error: 'Janela de dias inválida' }, { status: 400 })
+      if (!rawDateFrom || !DATE_RE.test(rawDateFrom) || !rawDateTo || !DATE_RE.test(rawDateTo)) {
+        return NextResponse.json({ error: 'Datas inválidas' }, { status: 400 })
       }
-      const parsed = Number(windowParam)
-      if (parsed > MAX_WINDOW_DAYS) {
-        return NextResponse.json({ error: 'Janela de dias inválida' }, { status: 400 })
+      if (rawDateFrom > rawDateTo) {
+        return NextResponse.json({ error: 'Data inicial posterior à data final' }, { status: 400 })
       }
-      windowDays = parsed
+      dateFrom = rawDateFrom
+      dateTo = rawDateTo
     }
+
+    const practitionerIdParam = searchParams.get('practitionerId')
+    if (practitionerIdParam && !UUID_RE.test(practitionerIdParam)) {
+      return NextResponse.json({ error: 'Profissional inválido' }, { status: 400 })
+    }
+    const practitionerId = practitionerIdParam ?? undefined
 
     const parsedSort = parseSort(searchParams)
     if (!parsedSort.ok) {
       return NextResponse.json({ error: parsedSort.error }, { status: 400 })
     }
 
-    const today = new Date()
-    const rows = await listDueFollowUps(ctx.tenantId, {
-      windowDays,
-      today,
+    const rows = await listPractitionerEarnings(ctx.tenantId, {
+      dateFrom,
+      dateTo,
+      practitionerId,
       sort: parsedSort.sort,
     })
 
     const format = searchParams.get('format')
 
     if (format === 'csv') {
-      const csv = toCsv(rows, DUE_FOLLOWUP_COLUMNS)
+      const csv = toCsv(rows, PRACTITIONER_EARNINGS_COLUMNS)
       return new Response(csv, {
         status: 200,
         headers: {
@@ -121,13 +126,13 @@ export async function GET(request: Request) {
         // `ReportPdf` is generic; createElement can't infer `Row` from the
         // props object alone, so instantiate it explicitly (TS 4.7+ generic
         // instantiation expression) rather than widening to `unknown`.
-        createElement(ReportPdf<DueFollowUpRow>, {
+        createElement(ReportPdf<PractitionerPLRow>, {
           clinicName: tenant?.name ?? '',
-          reportTitle: report?.title ?? 'Retornos a vencer',
-          filterSummary: `Janela: ${windowDays} dias`,
+          reportTitle: report?.title ?? 'Ganhos por profissional',
+          filterSummary: `Período: ${formatDate(dateFrom)} a ${formatDate(dateTo)}`,
           rows,
-          columns: DUE_FOLLOWUP_COLUMNS,
-          generatedAt: today,
+          columns: PRACTITIONER_EARNINGS_COLUMNS,
+          generatedAt: new Date(),
         }),
         `${PRINT_BASE_CSS}${REPORT_PDF_CSS}`,
       )

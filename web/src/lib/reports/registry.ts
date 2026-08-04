@@ -48,6 +48,30 @@ export const REPORTS: ReportDefinition[] = [
     // the route default cannot drift apart.
     defaultMinCount: 2,
   },
+  {
+    slug: 'extrato-periodo',
+    title: 'Extrato por período',
+    description:
+      'Movimentações de caixa em um intervalo de datas, prontas para conferência ou para a contabilidade.',
+    filters: ['date-range'],
+    apiPath: '/api/reports/extrato-periodo',
+  },
+  {
+    slug: 'ganhos-profissional',
+    title: 'Ganhos por profissional',
+    description:
+      'Procedimentos, receita gerada e receita recebida por profissional em um período, como documento para pagamento.',
+    filters: ['date-range', 'practitioner'],
+    apiPath: '/api/reports/ganhos-profissional',
+  },
+  {
+    slug: 'procedimentos-realizados',
+    title: 'Procedimentos realizados',
+    description:
+      'Registro de rastreabilidade por lote: produto, lote e validade de cada aplicação, para consulta caso um procedimento seja questionado.',
+    filters: ['date-range', 'practitioner'],
+    apiPath: '/api/reports/procedimentos-realizados',
+  },
 ]
 
 export function getReport(slug: string): ReportDefinition | undefined {

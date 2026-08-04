@@ -11,8 +11,11 @@ interface ExportButtonsProps {
   apiPath: string
   /** Query-string key the numeric day-count filter (stored under
    *  `thresholdDays` in `ReportFilterValues`) must be renamed to for this
-   *  report's route. */
-  paramName: 'thresholdDays' | 'windowDays'
+   *  report's route. Absent on reports that don't declare the
+   *  `threshold-days` filter kind (e.g. the exports, which use
+   *  `date-range`/`practitioner` instead): `filters.thresholdDays` never
+   *  gets set for those, so there's nothing to rename. */
+  paramName?: 'thresholdDays' | 'windowDays'
   filters: ReportFilterValues
   /** Active sort, owned by `ReportShell`. Carried into the export URL as
    *  `sort`/`dir` so the exported file's row order matches what is on
@@ -29,14 +32,14 @@ interface ExportButtonsProps {
 function buildExportUrl(
   apiPath: string,
   format: 'csv' | 'pdf',
-  paramName: 'thresholdDays' | 'windowDays',
+  paramName: 'thresholdDays' | 'windowDays' | undefined,
   filters: ReportFilterValues,
   sort: ReportSort | undefined,
 ): string {
   const params = new URLSearchParams()
   for (const [key, filterValue] of Object.entries(filters)) {
     if (!filterValue) continue
-    const paramKey = key === 'thresholdDays' ? paramName : key
+    const paramKey = key === 'thresholdDays' && paramName ? paramName : key
     params.set(paramKey, filterValue)
   }
   if (sort) {

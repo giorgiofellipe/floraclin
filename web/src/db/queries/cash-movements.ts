@@ -151,12 +151,22 @@ export async function getLedgerSummary(
   }
 }
 
+export interface PractitionerPLRow {
+  practitionerId: string
+  practitionerName: string
+  revenueGenerated: number
+  revenueCollected: number
+  procedureCount: number
+  averageTicket: number
+  byProcedureType: { name: string; revenue: number; count: number }[]
+}
+
 export async function getPractitionerPL(
   tenantId: string,
   dateFrom: string,
   dateTo: string,
   practitionerId?: string
-) {
+): Promise<PractitionerPLRow[]> {
   // BR-local day boundaries as unambiguous ISO UTC strings. Postgres parses
   // `timestamptz` comparisons against these correctly regardless of session TZ.
   const dateFromTs = startOfBrDay(dateFrom).toISOString()

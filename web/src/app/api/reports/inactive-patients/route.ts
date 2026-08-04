@@ -27,7 +27,10 @@ const REPORT_SLUG = 'pacientes-inativos'
 // reading it from `tenants.settings` here would just create a second source
 // of truth that the UI default (also read from the registry) could drift
 // from.
-const DEFAULT_THRESHOLD_DAYS = getReport(REPORT_SLUG)!.defaultDays
+// Non-null: this report declares the `threshold-days` filter kind, so the
+// registry always sets `defaultDays` for it (see registry.test.ts). Only
+// reports without that filter kind (the sub-project 2 exports) omit it.
+const DEFAULT_THRESHOLD_DAYS = getReport(REPORT_SLUG)!.defaultDays!
 const MAX_THRESHOLD_DAYS = 3650
 const THRESHOLD_RE = /^\d+$/
 
