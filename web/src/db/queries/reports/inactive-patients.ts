@@ -3,6 +3,7 @@ import { patients, procedureRecords, procedureTypes, financialEntries, installme
 import { and, eq, isNull, sql, desc } from 'drizzle-orm'
 import { subDays } from 'date-fns'
 import { parseBrDate, toBrYmd, startOfBrDay } from '@/lib/dates'
+import { directionalCompare, type SortDirection } from '@/lib/reports/sort'
 
 export interface InactivePatientRow {
   patientId: string
@@ -14,9 +15,27 @@ export interface InactivePatientRow {
   lifetimeValue: number
 }
 
+/** Server-recognized sort keys for this report. The route validates an
+ *  incoming `sort` query param against this same list before it ever reaches
+ *  this function. */
+export type InactivePatientSortKey = 'fullName' | 'lastProcedureAt' | 'daysSince' | 'lifetimeValue'
+
 export interface ListInactivePatientsOptions {
   thresholdDays: number
   today: Date
+  /** Explicit sort requested by the caller. When absent, rows keep the
+   *  default urgency order (lifetime value descending). */
+  sort?: { key: InactivePatientSortKey; dir: SortDirection }
+}
+
+const SORT_ACCESSORS: Record<
+  InactivePatientSortKey,
+  (row: InactivePatientRow) => string | number | null
+> = {
+  fullName: (row) => row.fullName,
+  lastProcedureAt: (row) => row.lastProcedureAt,
+  daysSince: (row) => row.daysSince,
+  lifetimeValue: (row) => row.lifetimeValue,
 }
 
 /**
@@ -45,7 +64,7 @@ const MAX_ROWS = 200
 
 export async function listInactivePatients(
   tenantId: string,
-  { thresholdDays, today }: ListInactivePatientsOptions,
+  { thresholdDays, today, sort }: ListInactivePatientsOptions,
 ): Promise<InactivePatientRow[]> {
   const todayYmd = toBrYmd(today)
   const todayInstant = parseBrDate(todayYmd)
@@ -143,7 +162,17 @@ export async function listInactivePatients(
     })
   }
 
-  rows.sort((a, b) => b.lifetimeValue - a.lifetimeValue)
+  if (sort) {
+    const accessor = SORT_ACCESSORS[sort.key]
+    rows.sort((a, b) => directionalCompare(accessor(a), accessor(b), sort.dir))
+  } else {
+    // Default urgency order: highest lifetime value first, so the clinic
+    // calls the most valuable lapsed patient before a lower-value one.
+    rows.sort((a, b) => b.lifetimeValue - a.lifetimeValue)
+  }
 
+  // The cap MUST apply after sorting, not before: with an explicit sort the
+  // "top 200" has to be the top 200 of the requested order, not an arbitrary
+  // 200-row slice re-sorted afterward.
   return rows.slice(0, MAX_ROWS)
 }

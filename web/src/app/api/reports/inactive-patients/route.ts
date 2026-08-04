@@ -4,7 +4,11 @@ import { eq } from 'drizzle-orm'
 import { requireRole } from '@/lib/auth'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
-import { listInactivePatients, type InactivePatientRow } from '@/db/queries/reports/inactive-patients'
+import {
+  listInactivePatients,
+  type InactivePatientRow,
+  type InactivePatientSortKey,
+} from '@/db/queries/reports/inactive-patients'
 import { INACTIVE_PATIENT_COLUMNS } from '@/lib/reports/columns/inactive-patients'
 import { toCsv, csvFilename } from '@/lib/reports/csv'
 import { getReport } from '@/lib/reports/registry'
@@ -26,6 +30,35 @@ const REPORT_SLUG = 'pacientes-inativos'
 const DEFAULT_THRESHOLD_DAYS = getReport(REPORT_SLUG)!.defaultDays
 const MAX_THRESHOLD_DAYS = 3650
 const THRESHOLD_RE = /^\d+$/
+
+// Allow-list of sort keys this report's query knows how to order by (see
+// `InactivePatientSortKey` in `@/db/queries/reports/inactive-patients`). An
+// unrecognized `sort` value is rejected with 400 rather than silently
+// ignored or passed through to a query string.
+const SORT_KEYS = ['fullName', 'lastProcedureAt', 'daysSince', 'lifetimeValue'] as const
+
+type ParsedSort =
+  | { ok: true; sort: { key: InactivePatientSortKey; dir: 'asc' | 'desc' } | undefined }
+  | { ok: false; error: string }
+
+function parseSort(searchParams: URLSearchParams): ParsedSort {
+  const sortParam = searchParams.get('sort')
+  if (!sortParam) return { ok: true, sort: undefined }
+
+  if (!(SORT_KEYS as readonly string[]).includes(sortParam)) {
+    return { ok: false, error: 'Campo de ordenação inválido' }
+  }
+
+  const dirParam = searchParams.get('dir')
+  if (dirParam !== null && dirParam !== 'asc' && dirParam !== 'desc') {
+    return { ok: false, error: 'Direção de ordenação inválida' }
+  }
+
+  return {
+    ok: true,
+    sort: { key: sortParam as InactivePatientSortKey, dir: dirParam === 'desc' ? 'desc' : 'asc' },
+  }
+}
 
 export async function GET(request: Request) {
   try {
@@ -57,8 +90,17 @@ export async function GET(request: Request) {
       thresholdDays = parsed
     }
 
+    const parsedSort = parseSort(searchParams)
+    if (!parsedSort.ok) {
+      return NextResponse.json({ error: parsedSort.error }, { status: 400 })
+    }
+
     const today = new Date()
-    const rows = await listInactivePatients(ctx.tenantId, { thresholdDays, today })
+    const rows = await listInactivePatients(ctx.tenantId, {
+      thresholdDays,
+      today,
+      sort: parsedSort.sort,
+    })
 
     const format = searchParams.get('format')
 

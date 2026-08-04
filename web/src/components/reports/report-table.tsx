@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import type { ReportColumn } from '@/lib/reports/types'
+import { ArrowDownIcon, ArrowUpIcon, ArrowUpDownIcon } from 'lucide-react'
+import type { ReportColumn, ReportSort } from '@/lib/reports/types'
 import {
   Table,
   TableBody,
@@ -27,6 +28,16 @@ interface ReportTableProps<Row> {
    * without needing to know them.
    */
   rowClassName?: (row: Row) => string | undefined
+  /** Active sort, owned by the page's `ReportShell`. Sorting is resolved
+   *  server-side (see each report's route), since every report caps at 200
+   *  rows AFTER sorting by its urgency order — a client-only sort would
+   *  reorder only the rows that survived that cap. This prop only decides
+   *  which header shows the active indicator. */
+  sort?: ReportSort
+  /** Called with the column's `sortKey` (falling back to `key`) when a
+   *  sortable header is clicked. Absent when the caller has nowhere to send
+   *  a sort change; sortable headers then render without a click handler. */
+  onSortChange?: (key: string) => void
 }
 
 /**
@@ -34,7 +45,14 @@ interface ReportTableProps<Row> {
  * writer uses (see `@/lib/reports/csv.ts`), so the screen and the export can
  * never disagree.
  */
-export function ReportTable<Row>({ rows, columns, rowAction, rowClassName }: ReportTableProps<Row>) {
+export function ReportTable<Row>({
+  rows,
+  columns,
+  rowAction,
+  rowClassName,
+  sort,
+  onSortChange,
+}: ReportTableProps<Row>) {
   const colSpan = columns.length + (rowAction ? 1 : 0) || 1
 
   return (
@@ -42,17 +60,52 @@ export function ReportTable<Row>({ rows, columns, rowAction, rowClassName }: Rep
       <Table>
         <TableHeader>
           <TableRow className="border-b border-[#E8ECEF]">
-            {columns.map((column) => (
-              <TableHead
-                key={column.key}
-                className={cn(
-                  'text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] font-medium',
-                  column.align === 'right' && 'text-right',
-                )}
-              >
-                {column.header}
-              </TableHead>
-            ))}
+            {columns.map((column) => {
+              const sortKey = column.sortKey ?? column.key
+              const isActive = column.sortable && sort?.key === sortKey
+              const ariaSort = !column.sortable
+                ? undefined
+                : isActive
+                  ? sort!.dir === 'asc'
+                    ? 'ascending'
+                    : 'descending'
+                  : 'none'
+
+              return (
+                <TableHead
+                  key={column.key}
+                  aria-sort={ariaSort}
+                  className={cn(
+                    'text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] font-medium',
+                    column.align === 'right' && 'text-right',
+                  )}
+                >
+                  {column.sortable ? (
+                    <button
+                      type="button"
+                      onClick={() => onSortChange?.(sortKey)}
+                      className={cn(
+                        'inline-flex items-center gap-1 uppercase tracking-[0.15em] text-[10px] font-medium hover:text-charcoal transition-colors',
+                        column.align === 'right' && 'flex-row-reverse',
+                      )}
+                    >
+                      <span>{column.header}</span>
+                      {isActive ? (
+                        sort!.dir === 'asc' ? (
+                          <ArrowUpIcon className="size-3" aria-hidden="true" />
+                        ) : (
+                          <ArrowDownIcon className="size-3" aria-hidden="true" />
+                        )
+                      ) : (
+                        <ArrowUpDownIcon className="size-3 opacity-40" aria-hidden="true" />
+                      )}
+                    </button>
+                  ) : (
+                    column.header
+                  )}
+                </TableHead>
+              )
+            })}
             {rowAction && (
               <TableHead className="text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] font-medium text-right">
                 WhatsApp

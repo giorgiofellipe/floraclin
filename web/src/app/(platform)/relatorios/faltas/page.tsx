@@ -9,26 +9,42 @@ import { ReportTable } from '@/components/reports/report-table'
 import { ReportWhatsAppAction } from '@/components/reports/report-whatsapp-action'
 import { REPEAT_NO_SHOW_COLUMNS } from '@/lib/reports/columns/repeat-no-shows'
 import type { RepeatNoShowRow } from '@/db/queries/reports/repeat-no-shows'
+import type { ReportSort } from '@/lib/reports/types'
 
 // The registry is the single source of truth for which reports exist, see
 // web/src/lib/reports/registry.ts. This slug is guaranteed to be present.
 const REPORT = getReport('faltas')!
 
 /**
- * Fetches the report rows for the currently active filters. The report
- * declares a `threshold-days` filter representing the lookback window in
- * days; an absent/blank value lets the route fall back to its own 180-day
- * default. `minCount` has no dedicated filter control yet, so it always
- * keeps the route's default of 2.
+ * Fetches the report rows for the currently active filters and sort. The
+ * report declares a `threshold-days` filter representing the lookback window
+ * in days, and a `min-count` filter for the minimum number of misses; an
+ * absent/blank value for either lets the route fall back to its own default
+ * (see `web/src/app/api/reports/repeat-no-shows/route.ts`). Sort is included
+ * in both the query key and the request so the fetch always matches the
+ * export URL (see `ReportShell`, which owns both).
  */
-function useRepeatNoShowsReport(filters: ReportFilterValues) {
+function useRepeatNoShowsReport(filters: ReportFilterValues, sort: ReportSort | undefined) {
   const windowDays = filters.thresholdDays?.trim()
+  const minCount = filters.minCount?.trim()
 
   return useQuery({
-    queryKey: ['reports', 'faltas', windowDays || 'default'],
+    queryKey: [
+      'reports',
+      'faltas',
+      windowDays || 'default',
+      minCount || 'default',
+      sort?.key,
+      sort?.dir,
+    ],
     queryFn: async (): Promise<RepeatNoShowRow[]> => {
       const params = new URLSearchParams()
       if (windowDays) params.set('windowDays', windowDays)
+      if (minCount) params.set('minCount', minCount)
+      if (sort) {
+        params.set('sort', sort.key)
+        params.set('dir', sort.dir)
+      }
 
       const res = await fetch(`/api/reports/repeat-no-shows?${params.toString()}`)
       if (!res.ok) {
@@ -41,8 +57,16 @@ function useRepeatNoShowsReport(filters: ReportFilterValues) {
   })
 }
 
-function FaltasBody({ filters }: { filters: ReportFilterValues }) {
-  const { data, isLoading, isError } = useRepeatNoShowsReport(filters)
+function FaltasBody({
+  filters,
+  sort,
+  onSortChange,
+}: {
+  filters: ReportFilterValues
+  sort: ReportSort | undefined
+  onSortChange: (key: string) => void
+}) {
+  const { data, isLoading, isError } = useRepeatNoShowsReport(filters, sort)
 
   if (isLoading) {
     return (
@@ -65,6 +89,8 @@ function FaltasBody({ filters }: { filters: ReportFilterValues }) {
       rows={data ?? []}
       columns={REPEAT_NO_SHOW_COLUMNS}
       rowAction={(row) => <ReportWhatsAppAction phone={row.phone} fullName={row.fullName} />}
+      sort={sort}
+      onSortChange={onSortChange}
     />
   )
 }
@@ -78,8 +104,12 @@ export default function FaltasPage() {
       apiPath={REPORT.apiPath}
       paramName={REPORT.paramName}
       defaultDays={REPORT.defaultDays}
+      filterLabel={REPORT.filterLabel}
+      defaultMinCount={REPORT.defaultMinCount}
     >
-      {(filters) => <FaltasBody filters={filters} />}
+      {(filters, sort, onSortChange) => (
+        <FaltasBody filters={filters} sort={sort} onSortChange={onSortChange} />
+      )}
     </ReportShell>
   )
 }

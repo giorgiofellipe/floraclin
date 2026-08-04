@@ -23,15 +23,21 @@ export interface ReportFilterValues {
   dateFrom?: string
   dateTo?: string
   practitionerId?: string
+  minCount?: string
 }
 
 interface ReportFiltersProps {
   filters: ReportFilterKind[]
   value: ReportFilterValues
   onChange: (value: ReportFilterValues) => void
+  /** Label for the day-count (`threshold-days`) input. The same filter kind
+   *  means a different thing per report, so the copy is supplied by the
+   *  caller (ultimately the report's registry entry) rather than hardcoded
+   *  here. */
+  dayFilterLabel: string
 }
 
-export function ReportFilters({ filters, value, onChange }: ReportFiltersProps) {
+export function ReportFilters({ filters, value, onChange, dayFilterLabel }: ReportFiltersProps) {
   const { data: practitioners } = usePractitioners()
 
   const practitionerItems = useMemo(() => {
@@ -51,7 +57,7 @@ export function ReportFilters({ filters, value, onChange }: ReportFiltersProps) 
       {filters.includes('threshold-days') && (
         <div className="flex flex-col gap-1">
           <Label htmlFor="report-threshold-days" className="text-xs text-mid">
-            Limite (dias)
+            {dayFilterLabel}
           </Label>
           <Input
             id="report-threshold-days"
@@ -61,6 +67,23 @@ export function ReportFilters({ filters, value, onChange }: ReportFiltersProps) 
             className="w-[100px]"
             value={value.thresholdDays ?? ''}
             onChange={(e) => onChange({ ...value, thresholdDays: e.target.value })}
+          />
+        </div>
+      )}
+
+      {filters.includes('min-count') && (
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="report-min-count" className="text-xs text-mid">
+            Mínimo de faltas
+          </Label>
+          <Input
+            id="report-min-count"
+            type="number"
+            min={1}
+            inputMode="numeric"
+            className="w-[100px]"
+            value={value.minCount ?? ''}
+            onChange={(e) => onChange({ ...value, minCount: e.target.value })}
           />
         </div>
       )}

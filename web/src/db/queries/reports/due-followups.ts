@@ -3,6 +3,7 @@ import { patients, procedureRecords, procedureTypes, appointments } from '@/db/s
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { addDays, subDays } from 'date-fns'
 import { parseBrDate, toBrYmd } from '@/lib/dates'
+import { directionalCompare, type SortDirection } from '@/lib/reports/sort'
 
 /** Appointment statuses that mean "the patient is already booked". */
 const ACTIVE_APPOINTMENT_STATUSES = ['scheduled', 'confirmed', 'in_progress'] as const
@@ -32,9 +33,23 @@ export interface DueFollowUpRow {
   lastProcedureAt: string | null
 }
 
+/** Server-recognized sort keys for this report. The route validates an
+ *  incoming `sort` query param against this same list before it ever reaches
+ *  this function. */
+export type DueFollowUpSortKey = 'fullName' | 'followUpDate' | 'daysUntil'
+
 export interface ListDueFollowUpsOptions {
   windowDays: number
   today: Date
+  /** Explicit sort requested by the caller. When absent, rows keep the
+   *  default order (`follow_up_date` ascending, most overdue first). */
+  sort?: { key: DueFollowUpSortKey; dir: SortDirection }
+}
+
+const SORT_ACCESSORS: Record<DueFollowUpSortKey, (row: DueFollowUpRow) => string | number | null> = {
+  fullName: (row) => row.fullName,
+  followUpDate: (row) => row.followUpDate,
+  daysUntil: (row) => row.daysUntil,
 }
 
 /**
@@ -71,7 +86,7 @@ export interface ListDueFollowUpsOptions {
  */
 export async function listDueFollowUps(
   tenantId: string,
-  { windowDays, today }: ListDueFollowUpsOptions,
+  { windowDays, today, sort }: ListDueFollowUpsOptions,
 ): Promise<DueFollowUpRow[]> {
   const todayYmd = toBrYmd(today)
   const windowStartYmd = toBrYmd(subDays(parseBrDate(todayYmd), windowDays))
@@ -160,7 +175,14 @@ export async function listDueFollowUps(
     })
   }
 
-  rows.sort((a, b) => a.followUpDate.localeCompare(b.followUpDate))
+  if (sort) {
+    const accessor = SORT_ACCESSORS[sort.key]
+    rows.sort((a, b) => directionalCompare(accessor(a), accessor(b), sort.dir))
+  } else {
+    rows.sort((a, b) => a.followUpDate.localeCompare(b.followUpDate))
+  }
 
+  // The cap MUST apply after sorting, not before: with an explicit sort the
+  // "top 200" has to be the top 200 of the requested order.
   return rows.slice(0, MAX_ROWS)
 }

@@ -270,6 +270,113 @@ describe('listInactivePatients', () => {
     expect(rows).toHaveLength(200)
   })
 
+  it('keeps the default lifetime-value-descending order when no sort is given', async () => {
+    const oldPerformedAt = new Date('2026-01-01T14:00:00.000Z')
+
+    pushResults(
+      [
+        { id: 'low', fullName: 'Low Value', phone: '111', createdAt: new Date('2020-01-01T12:00:00Z') },
+        { id: 'high', fullName: 'High Value', phone: '222', createdAt: new Date('2020-01-01T12:00:00Z') },
+      ],
+      [
+        { patientId: 'low', performedAt: oldPerformedAt, procedureTypeName: 'Type A' },
+        { patientId: 'high', performedAt: oldPerformedAt, procedureTypeName: 'Type B' },
+      ],
+      [
+        { patientId: 'low', total: 350 },
+        { patientId: 'high', total: 8000 },
+      ],
+    )
+
+    const rows = await listInactivePatients('tenant-1', {
+      thresholdDays: 30,
+      today: new Date('2026-04-15T10:00:00.000Z'),
+    })
+
+    expect(rows.map((r) => r.patientId)).toEqual(['high', 'low'])
+  })
+
+  it('applies an explicit sort, overriding the default order', async () => {
+    const oldPerformedAt = new Date('2026-01-01T14:00:00.000Z')
+
+    pushResults(
+      [
+        { id: 'low', fullName: 'Low Value', phone: '111', createdAt: new Date('2020-01-01T12:00:00Z') },
+        { id: 'high', fullName: 'High Value', phone: '222', createdAt: new Date('2020-01-01T12:00:00Z') },
+      ],
+      [
+        { patientId: 'low', performedAt: oldPerformedAt, procedureTypeName: 'Type A' },
+        { patientId: 'high', performedAt: oldPerformedAt, procedureTypeName: 'Type B' },
+      ],
+      [
+        { patientId: 'low', total: 350 },
+        { patientId: 'high', total: 8000 },
+      ],
+    )
+
+    const rows = await listInactivePatients('tenant-1', {
+      thresholdDays: 30,
+      today: new Date('2026-04-15T10:00:00.000Z'),
+      sort: { key: 'lifetimeValue', dir: 'asc' },
+    })
+
+    // Ascending by lifetime value flips the default (descending) order.
+    expect(rows.map((r) => r.patientId)).toEqual(['low', 'high'])
+  })
+
+  it('sorts by fullName when requested', async () => {
+    const oldPerformedAt = new Date('2026-01-01T14:00:00.000Z')
+
+    pushResults(
+      [
+        { id: 'z', fullName: 'Zoe Almeida', phone: '111', createdAt: new Date('2020-01-01T12:00:00Z') },
+        { id: 'a', fullName: 'Ana Souza', phone: '222', createdAt: new Date('2020-01-01T12:00:00Z') },
+      ],
+      [
+        { patientId: 'z', performedAt: oldPerformedAt, procedureTypeName: 'Type A' },
+        { patientId: 'a', performedAt: oldPerformedAt, procedureTypeName: 'Type B' },
+      ],
+      [],
+    )
+
+    const rows = await listInactivePatients('tenant-1', {
+      thresholdDays: 30,
+      today: new Date('2026-04-15T10:00:00.000Z'),
+      sort: { key: 'fullName', dir: 'asc' },
+    })
+
+    expect(rows.map((r) => r.patientId)).toEqual(['a', 'z'])
+  })
+
+  it('applies the requested sort BEFORE the 200-row cap, not after', async () => {
+    // 250 patients, all past the threshold, with names in ascending order
+    // (Patient 000 .. Patient 249) and tied lifetime value (0, since no
+    // installments are pushed). Requesting an explicit descending sort by
+    // fullName means the correct top-200 is the LAST 200 inserted (Patient
+    // 050 .. Patient 249), not the first 200. A buggy implementation that
+    // caps at 200 before sorting would keep Patient 000..199, and after
+    // sorting those descending the top row would read "Patient 199" instead
+    // of the true maximum, "Patient 249".
+    const many = Array.from({ length: 250 }, (_, i) => ({
+      id: `p${i}`,
+      fullName: `Patient ${String(i).padStart(3, '0')}`,
+      phone: '11999990000',
+      createdAt: new Date('2020-01-01T12:00:00Z'),
+    }))
+
+    pushResults(many, [], [])
+
+    const rows = await listInactivePatients('tenant-1', {
+      thresholdDays: 30,
+      today: new Date('2026-04-15T10:00:00.000Z'),
+      sort: { key: 'fullName', dir: 'desc' },
+    })
+
+    expect(rows).toHaveLength(200)
+    expect(rows[0].fullName).toBe('Patient 249')
+    expect(rows[rows.length - 1].fullName).toBe('Patient 050')
+  })
+
   it('never surfaces a soft-deleted patient even if old procedure/installment rows reference them', async () => {
     const oldPerformedAt = new Date('2026-01-01T14:00:00.000Z')
 

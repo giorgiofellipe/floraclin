@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { ReportTable } from '../report-table'
 import type { ReportColumn } from '@/lib/reports/types'
 
@@ -128,5 +129,92 @@ describe('ReportTable', () => {
     const dataRows = screen.getAllByRole('row').slice(1)
     expect(dataRows[0].className).toContain('bg-red-50')
     expect(dataRows[1].className).not.toContain('bg-red-50')
+  })
+
+  describe('sortable columns', () => {
+    const sortableColumns: ReportColumn<Row>[] = [
+      { key: 'name', header: 'Paciente', value: (row) => row.name, sortable: true },
+      {
+        key: 'amount',
+        header: 'Valor',
+        value: (row) => `R$ ${row.amount.toFixed(2)}`,
+        align: 'right',
+        sortable: true,
+        sortKey: 'valorTotal',
+      },
+    ]
+
+    it('renders a non-sortable column header as plain text, not a button', () => {
+      render(<ReportTable rows={rows} columns={columns} />)
+
+      expect(screen.queryByRole('button', { name: /Paciente/ })).not.toBeInTheDocument()
+      expect(screen.getByRole('columnheader', { name: 'Paciente' })).toBeInTheDocument()
+    })
+
+    it('renders a sortable column header as a clickable button', () => {
+      render(<ReportTable rows={rows} columns={sortableColumns} />)
+
+      expect(screen.getByRole('button', { name: /Paciente/ })).toBeInTheDocument()
+    })
+
+    it('calls onSortChange with the column key when clicked', async () => {
+      const onSortChange = vi.fn()
+      render(<ReportTable rows={rows} columns={sortableColumns} onSortChange={onSortChange} />)
+
+      await userEvent.click(screen.getByRole('button', { name: /Paciente/ }))
+
+      expect(onSortChange).toHaveBeenCalledWith('name')
+    })
+
+    it('calls onSortChange with sortKey rather than key when the two differ', async () => {
+      const onSortChange = vi.fn()
+      render(<ReportTable rows={rows} columns={sortableColumns} onSortChange={onSortChange} />)
+
+      await userEvent.click(screen.getByRole('button', { name: /Valor/ }))
+
+      expect(onSortChange).toHaveBeenCalledWith('valorTotal')
+    })
+
+    it('marks the active ascending column with aria-sort="ascending"', () => {
+      render(
+        <ReportTable
+          rows={rows}
+          columns={sortableColumns}
+          sort={{ key: 'name', dir: 'asc' }}
+        />,
+      )
+
+      expect(screen.getByRole('columnheader', { name: /Paciente/ })).toHaveAttribute(
+        'aria-sort',
+        'ascending',
+      )
+      expect(screen.getByRole('columnheader', { name: /Valor/ })).toHaveAttribute(
+        'aria-sort',
+        'none',
+      )
+    })
+
+    it('marks the active descending column with aria-sort="descending"', () => {
+      render(
+        <ReportTable
+          rows={rows}
+          columns={sortableColumns}
+          sort={{ key: 'valorTotal', dir: 'desc' }}
+        />,
+      )
+
+      expect(screen.getByRole('columnheader', { name: /Valor/ })).toHaveAttribute(
+        'aria-sort',
+        'descending',
+      )
+    })
+
+    it('does not set aria-sort on non-sortable columns', () => {
+      render(<ReportTable rows={rows} columns={columns} sort={{ key: 'name', dir: 'asc' }} />)
+
+      expect(screen.getByRole('columnheader', { name: 'Paciente' })).not.toHaveAttribute(
+        'aria-sort',
+      )
+    })
   })
 })

@@ -18,6 +18,7 @@ export const INACTIVE_PATIENT_COLUMNS: ReportColumn<InactivePatientRow>[] = [
     key: 'fullName',
     header: 'Paciente',
     value: (row) => row.fullName,
+    sortable: true,
   },
   {
     key: 'phone',
@@ -28,12 +29,14 @@ export const INACTIVE_PATIENT_COLUMNS: ReportColumn<InactivePatientRow>[] = [
     key: 'lastProcedureAt',
     header: 'Último procedimento',
     value: (row) => (row.lastProcedureAt ? formatDate(row.lastProcedureAt) : 'Nunca atendido'),
+    sortable: true,
   },
   {
     key: 'daysSince',
     header: 'Dias sem retornar',
     value: (row) => String(row.daysSince),
     align: 'right',
+    sortable: true,
   },
   {
     key: 'lastProcedureType',
@@ -45,5 +48,6 @@ export const INACTIVE_PATIENT_COLUMNS: ReportColumn<InactivePatientRow>[] = [
     header: 'Valor total',
     value: (row) => formatCurrency(row.lifetimeValue),
     align: 'right',
+    sortable: true,
   },
 ]

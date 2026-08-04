@@ -9,26 +9,33 @@ import { ReportTable } from '@/components/reports/report-table'
 import { ReportWhatsAppAction } from '@/components/reports/report-whatsapp-action'
 import { DUE_FOLLOWUP_COLUMNS } from '@/lib/reports/columns/due-followups'
 import type { DueFollowUpRow } from '@/db/queries/reports/due-followups'
+import type { ReportSort } from '@/lib/reports/types'
 
 // The registry is the single source of truth for which reports exist, see
 // web/src/lib/reports/registry.ts. This slug is guaranteed to be present.
 const REPORT = getReport('retornos')!
 
 /**
- * Fetches the report rows for the currently active filters. The report
- * declares a `threshold-days` filter (the same numeric input pacientes
- * inativos uses), but here it represents the recall window in days rather
- * than an inactivity threshold; an absent/blank value lets the route fall
- * back to its own 30-day default.
+ * Fetches the report rows for the currently active filters and sort. The
+ * report declares a `threshold-days` filter (the same numeric input
+ * pacientes inativos uses), but here it represents the recall window in days
+ * rather than an inactivity threshold; an absent/blank value lets the route
+ * fall back to its own 30-day default. Sort is included in both the query
+ * key and the request so the fetch always matches the export URL (see
+ * `ReportShell`, which owns both).
  */
-function useDueFollowUpsReport(filters: ReportFilterValues) {
+function useDueFollowUpsReport(filters: ReportFilterValues, sort: ReportSort | undefined) {
   const windowDays = filters.thresholdDays?.trim()
 
   return useQuery({
-    queryKey: ['reports', 'retornos', windowDays || 'default'],
+    queryKey: ['reports', 'retornos', windowDays || 'default', sort?.key, sort?.dir],
     queryFn: async (): Promise<DueFollowUpRow[]> => {
       const params = new URLSearchParams()
       if (windowDays) params.set('windowDays', windowDays)
+      if (sort) {
+        params.set('sort', sort.key)
+        params.set('dir', sort.dir)
+      }
 
       const res = await fetch(`/api/reports/due-followups?${params.toString()}`)
       if (!res.ok) {
@@ -41,8 +48,16 @@ function useDueFollowUpsReport(filters: ReportFilterValues) {
   })
 }
 
-function RetornosBody({ filters }: { filters: ReportFilterValues }) {
-  const { data, isLoading, isError } = useDueFollowUpsReport(filters)
+function RetornosBody({
+  filters,
+  sort,
+  onSortChange,
+}: {
+  filters: ReportFilterValues
+  sort: ReportSort | undefined
+  onSortChange: (key: string) => void
+}) {
+  const { data, isLoading, isError } = useDueFollowUpsReport(filters, sort)
 
   if (isLoading) {
     return (
@@ -70,6 +85,8 @@ function RetornosBody({ filters }: { filters: ReportFilterValues }) {
       // it, but a row that needs to be called back-dated deserves to be seen
       // at a glance, not just read.
       rowClassName={(row) => (row.isOverdue ? 'bg-[#FBEAEA]' : undefined)}
+      sort={sort}
+      onSortChange={onSortChange}
     />
   )
 }
@@ -83,8 +100,11 @@ export default function RetornosPage() {
       apiPath={REPORT.apiPath}
       paramName={REPORT.paramName}
       defaultDays={REPORT.defaultDays}
+      filterLabel={REPORT.filterLabel}
     >
-      {(filters) => <RetornosBody filters={filters} />}
+      {(filters, sort, onSortChange) => (
+        <RetornosBody filters={filters} sort={sort} onSortChange={onSortChange} />
+      )}
     </ReportShell>
   )
 }

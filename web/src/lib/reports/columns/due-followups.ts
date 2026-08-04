@@ -33,6 +33,7 @@ export const DUE_FOLLOWUP_COLUMNS: ReportColumn<DueFollowUpRow>[] = [
     key: 'fullName',
     header: 'Paciente',
     value: (row) => row.fullName,
+    sortable: true,
   },
   {
     key: 'phone',
@@ -43,12 +44,14 @@ export const DUE_FOLLOWUP_COLUMNS: ReportColumn<DueFollowUpRow>[] = [
     key: 'followUpDate',
     header: 'Data do retorno',
     value: (row) => formatDate(row.followUpDate),
+    sortable: true,
   },
   {
     key: 'daysUntil',
     header: 'Dias até',
     value: (row) => formatDaysUntil(row.daysUntil),
     align: 'right',
+    sortable: true,
   },
   {
     key: 'procedureTypeName',

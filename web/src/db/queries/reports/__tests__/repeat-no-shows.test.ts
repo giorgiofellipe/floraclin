@@ -226,4 +226,43 @@ describe('listRepeatNoShows', () => {
 
     expect(rows.map((r) => r.patientId)).toEqual(['high-count', 'high-value', 'low'])
   })
+
+  it('applies an explicit sort by missedValue, overriding the default (count-first) order', async () => {
+    pushResults([
+      occurrence({ patientId: 'high-count', fullName: 'High Count', date: '2026-04-10', defaultPrice: '10.00' }),
+      occurrence({ patientId: 'high-count', fullName: 'High Count', date: '2026-04-11', defaultPrice: '10.00' }),
+      occurrence({ patientId: 'high-count', fullName: 'High Count', date: '2026-04-12', defaultPrice: '10.00' }),
+      occurrence({ patientId: 'high-value', fullName: 'High Value', date: '2026-04-10', defaultPrice: '500.00' }),
+      occurrence({ patientId: 'high-value', fullName: 'High Value', date: '2026-04-11', defaultPrice: '500.00' }),
+    ])
+
+    const rows = await listRepeatNoShows('tenant-1', {
+      windowDays,
+      minCount: 2,
+      today,
+      sort: { key: 'missedValue', dir: 'desc' },
+    })
+
+    // Default order puts high-count first (more occurrences); explicit
+    // sort by missedValue puts high-value first instead.
+    expect(rows.map((r) => r.patientId)).toEqual(['high-value', 'high-count'])
+  })
+
+  it('sorts by fullName when requested', async () => {
+    pushResults([
+      occurrence({ patientId: 'z', fullName: 'Zoe Almeida', date: '2026-04-10' }),
+      occurrence({ patientId: 'z', fullName: 'Zoe Almeida', date: '2026-04-11' }),
+      occurrence({ patientId: 'a', fullName: 'Ana Souza', date: '2026-04-10' }),
+      occurrence({ patientId: 'a', fullName: 'Ana Souza', date: '2026-04-11' }),
+    ])
+
+    const rows = await listRepeatNoShows('tenant-1', {
+      windowDays,
+      minCount: 2,
+      today,
+      sort: { key: 'fullName', dir: 'asc' },
+    })
+
+    expect(rows.map((r) => r.patientId)).toEqual(['a', 'z'])
+  })
 })

@@ -4,7 +4,11 @@ import { eq } from 'drizzle-orm'
 import { requireRole } from '@/lib/auth'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
-import { listDueFollowUps, type DueFollowUpRow } from '@/db/queries/reports/due-followups'
+import {
+  listDueFollowUps,
+  type DueFollowUpRow,
+  type DueFollowUpSortKey,
+} from '@/db/queries/reports/due-followups'
 import { DUE_FOLLOWUP_COLUMNS } from '@/lib/reports/columns/due-followups'
 import { toCsv, csvFilename } from '@/lib/reports/csv'
 import { getReport } from '@/lib/reports/registry'
@@ -23,6 +27,35 @@ const REPORT_SLUG = 'retornos'
 const DEFAULT_WINDOW_DAYS = getReport(REPORT_SLUG)!.defaultDays
 const MAX_WINDOW_DAYS = 3650
 const WINDOW_RE = /^\d+$/
+
+// Allow-list of sort keys this report's query knows how to order by (see
+// `DueFollowUpSortKey` in `@/db/queries/reports/due-followups`). An
+// unrecognized `sort` value is rejected with 400 rather than silently
+// ignored or passed through to a query string.
+const SORT_KEYS = ['fullName', 'followUpDate', 'daysUntil'] as const
+
+type ParsedSort =
+  | { ok: true; sort: { key: DueFollowUpSortKey; dir: 'asc' | 'desc' } | undefined }
+  | { ok: false; error: string }
+
+function parseSort(searchParams: URLSearchParams): ParsedSort {
+  const sortParam = searchParams.get('sort')
+  if (!sortParam) return { ok: true, sort: undefined }
+
+  if (!(SORT_KEYS as readonly string[]).includes(sortParam)) {
+    return { ok: false, error: 'Campo de ordenação inválido' }
+  }
+
+  const dirParam = searchParams.get('dir')
+  if (dirParam !== null && dirParam !== 'asc' && dirParam !== 'desc') {
+    return { ok: false, error: 'Direção de ordenação inválida' }
+  }
+
+  return {
+    ok: true,
+    sort: { key: sortParam as DueFollowUpSortKey, dir: dirParam === 'desc' ? 'desc' : 'asc' },
+  }
+}
 
 export async function GET(request: Request) {
   try {
@@ -54,8 +87,17 @@ export async function GET(request: Request) {
       windowDays = parsed
     }
 
+    const parsedSort = parseSort(searchParams)
+    if (!parsedSort.ok) {
+      return NextResponse.json({ error: parsedSort.error }, { status: 400 })
+    }
+
     const today = new Date()
-    const rows = await listDueFollowUps(ctx.tenantId, { windowDays, today })
+    const rows = await listDueFollowUps(ctx.tenantId, {
+      windowDays,
+      today,
+      sort: parsedSort.sort,
+    })
 
     const format = searchParams.get('format')
 

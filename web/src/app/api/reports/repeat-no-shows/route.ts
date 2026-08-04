@@ -4,7 +4,11 @@ import { eq } from 'drizzle-orm'
 import { requireRole } from '@/lib/auth'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
-import { listRepeatNoShows, type RepeatNoShowRow } from '@/db/queries/reports/repeat-no-shows'
+import {
+  listRepeatNoShows,
+  type RepeatNoShowRow,
+  type RepeatNoShowSortKey,
+} from '@/db/queries/reports/repeat-no-shows'
 import { REPEAT_NO_SHOW_COLUMNS } from '@/lib/reports/columns/repeat-no-shows'
 import { toCsv, csvFilename } from '@/lib/reports/csv'
 import { getReport } from '@/lib/reports/registry'
@@ -22,9 +26,41 @@ const REPORT_SLUG = 'faltas'
 // count, so the UI filter and this route can never disagree.
 const DEFAULT_WINDOW_DAYS = getReport(REPORT_SLUG)!.defaultDays
 const MAX_WINDOW_DAYS = 3650
-const DEFAULT_MIN_COUNT = 2
+// The registry is the single source of truth for the default, same reasoning
+// as DEFAULT_WINDOW_DAYS: it feeds both this route and the filter UI's
+// pre-filled value, so the two cannot drift apart.
+const DEFAULT_MIN_COUNT = getReport(REPORT_SLUG)!.defaultMinCount ?? 2
 const MAX_MIN_COUNT = 1000
 const INTEGER_RE = /^\d+$/
+
+// Allow-list of sort keys this report's query knows how to order by (see
+// `RepeatNoShowSortKey` in `@/db/queries/reports/repeat-no-shows`). An
+// unrecognized `sort` value is rejected with 400 rather than silently
+// ignored or passed through to a query string.
+const SORT_KEYS = ['fullName', 'missedCount', 'missedValue'] as const
+
+type ParsedSort =
+  | { ok: true; sort: { key: RepeatNoShowSortKey; dir: 'asc' | 'desc' } | undefined }
+  | { ok: false; error: string }
+
+function parseSort(searchParams: URLSearchParams): ParsedSort {
+  const sortParam = searchParams.get('sort')
+  if (!sortParam) return { ok: true, sort: undefined }
+
+  if (!(SORT_KEYS as readonly string[]).includes(sortParam)) {
+    return { ok: false, error: 'Campo de ordenação inválido' }
+  }
+
+  const dirParam = searchParams.get('dir')
+  if (dirParam !== null && dirParam !== 'asc' && dirParam !== 'desc') {
+    return { ok: false, error: 'Direção de ordenação inválida' }
+  }
+
+  return {
+    ok: true,
+    sort: { key: sortParam as RepeatNoShowSortKey, dir: dirParam === 'desc' ? 'desc' : 'asc' },
+  }
+}
 
 /**
  * Parses a non-negative integer query param strictly: rejects anything that
@@ -74,8 +110,18 @@ export async function GET(request: Request) {
       minCount = parsed
     }
 
+    const parsedSort = parseSort(searchParams)
+    if (!parsedSort.ok) {
+      return NextResponse.json({ error: parsedSort.error }, { status: 400 })
+    }
+
     const today = new Date()
-    const rows = await listRepeatNoShows(ctx.tenantId, { windowDays, minCount, today })
+    const rows = await listRepeatNoShows(ctx.tenantId, {
+      windowDays,
+      minCount,
+      today,
+      sort: parsedSort.sort,
+    })
 
     const format = searchParams.get('format')
 

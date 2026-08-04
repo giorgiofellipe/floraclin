@@ -313,4 +313,54 @@ describe('listDueFollowUps', () => {
 
     expect(rows).toHaveLength(200)
   })
+
+  it('keeps the default follow-up-date-ascending order when no sort is given', async () => {
+    pushResults(
+      [
+        record({ patientId: 'later', followUpDate: '2026-04-20' }),
+        record({ patientId: 'sooner', followUpDate: '2026-04-16' }),
+      ],
+      [],
+    )
+
+    const rows = await listDueFollowUps('tenant-1', { windowDays, today })
+
+    expect(rows.map((r) => r.patientId)).toEqual(['sooner', 'later'])
+  })
+
+  it('applies an explicit sort, overriding the default order', async () => {
+    pushResults(
+      [
+        record({ patientId: 'later', followUpDate: '2026-04-20' }),
+        record({ patientId: 'sooner', followUpDate: '2026-04-16' }),
+      ],
+      [],
+    )
+
+    const rows = await listDueFollowUps('tenant-1', {
+      windowDays,
+      today,
+      sort: { key: 'followUpDate', dir: 'desc' },
+    })
+
+    expect(rows.map((r) => r.patientId)).toEqual(['later', 'sooner'])
+  })
+
+  it('sorts by fullName when requested', async () => {
+    pushResults(
+      [
+        record({ patientId: 'z', fullName: 'Zoe Almeida', followUpDate: '2026-04-16' }),
+        record({ patientId: 'a', fullName: 'Ana Souza', followUpDate: '2026-04-16' }),
+      ],
+      [],
+    )
+
+    const rows = await listDueFollowUps('tenant-1', {
+      windowDays,
+      today,
+      sort: { key: 'fullName', dir: 'asc' },
+    })
+
+    expect(rows.map((r) => r.patientId)).toEqual(['a', 'z'])
+  })
 })

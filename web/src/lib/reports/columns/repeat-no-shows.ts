@@ -18,6 +18,7 @@ export const REPEAT_NO_SHOW_COLUMNS: ReportColumn<RepeatNoShowRow>[] = [
     key: 'fullName',
     header: 'Paciente',
     value: (row) => row.fullName,
+    sortable: true,
   },
   {
     key: 'phone',
@@ -29,6 +30,7 @@ export const REPEAT_NO_SHOW_COLUMNS: ReportColumn<RepeatNoShowRow>[] = [
     header: 'Faltas',
     value: (row) => String(row.missedCount),
     align: 'right',
+    sortable: true,
   },
   {
     key: 'dates',
@@ -40,5 +42,6 @@ export const REPEAT_NO_SHOW_COLUMNS: ReportColumn<RepeatNoShowRow>[] = [
     header: 'Valor perdido',
     value: (row) => formatCurrency(row.missedValue),
     align: 'right',
+    sortable: true,
   },
 ]

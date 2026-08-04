@@ -190,4 +190,59 @@ describe('GET /api/reports/inactive-patients', () => {
     )
     expect(renderReactToPdf).toHaveBeenCalled()
   })
+
+  describe('sort', () => {
+    it('rejects an unknown sort key with 400', async () => {
+      const res = await GET(
+        makeRequest('http://localhost/api/reports/inactive-patients?sort=notARealField'),
+      )
+      const json = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(json.error).toBeTruthy()
+      expect(listInactivePatients).not.toHaveBeenCalled()
+    })
+
+    it('rejects an invalid dir with 400', async () => {
+      const res = await GET(
+        makeRequest('http://localhost/api/reports/inactive-patients?sort=daysSince&dir=sideways'),
+      )
+
+      expect(res.status).toBe(400)
+      expect(listInactivePatients).not.toHaveBeenCalled()
+    })
+
+    it('passes no sort to the query when the param is absent', async () => {
+      await GET(makeRequest('http://localhost/api/reports/inactive-patients'))
+
+      expect(listInactivePatients).toHaveBeenCalledWith(
+        'tenant-1',
+        expect.objectContaining({ sort: undefined }),
+      )
+    })
+
+    it('passes a valid sort key and dir through to the query', async () => {
+      const res = await GET(
+        makeRequest('http://localhost/api/reports/inactive-patients?sort=daysSince&dir=desc'),
+      )
+
+      expect(res.status).toBe(200)
+      expect(listInactivePatients).toHaveBeenCalledWith(
+        'tenant-1',
+        expect.objectContaining({ sort: { key: 'daysSince', dir: 'desc' } }),
+      )
+    })
+
+    it('defaults dir to asc when a valid sort key is given without a dir', async () => {
+      const res = await GET(
+        makeRequest('http://localhost/api/reports/inactive-patients?sort=fullName'),
+      )
+
+      expect(res.status).toBe(200)
+      expect(listInactivePatients).toHaveBeenCalledWith(
+        'tenant-1',
+        expect.objectContaining({ sort: { key: 'fullName', dir: 'asc' } }),
+      )
+    })
+  })
 })

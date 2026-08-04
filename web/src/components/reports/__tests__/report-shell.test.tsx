@@ -16,6 +16,7 @@ function renderShell(defaultDays: number) {
       apiPath="/api/reports/inactive-patients"
       paramName="thresholdDays"
       defaultDays={defaultDays}
+      filterLabel="Limite (dias)"
     >
       {() => <div>table</div>}
     </ReportShell>,
@@ -62,5 +63,93 @@ describe('ReportShell', () => {
     expect((input as HTMLInputElement).value).toBe('')
     const params = new URLSearchParams(getCsvHref().split('?')[1])
     expect(params.has('thresholdDays')).toBe(false)
+  })
+
+  it('renders the day-count label passed via filterLabel, not a hardcoded string', () => {
+    render(
+      <ReportShell
+        title="Faltas recorrentes"
+        description="desc"
+        filters={['threshold-days']}
+        apiPath="/api/reports/repeat-no-shows"
+        paramName="windowDays"
+        defaultDays={180}
+        filterLabel="Período analisado (últimos dias)"
+      >
+        {() => <div>table</div>}
+      </ReportShell>,
+    )
+
+    expect(screen.getByLabelText('Período analisado (últimos dias)')).toBeInTheDocument()
+  })
+
+  describe('sort state', () => {
+    function renderShellWithSortProbe() {
+      return render(
+        <ReportShell
+          title="Pacientes inativos"
+          description="desc"
+          filters={['threshold-days']}
+          apiPath="/api/reports/inactive-patients"
+          paramName="thresholdDays"
+          defaultDays={180}
+          filterLabel="Limite (dias)"
+        >
+          {(_filters, sort, onSortChange) => (
+            <div>
+              <span data-testid="sort-state">{sort ? `${sort.key}:${sort.dir}` : 'none'}</span>
+              <button onClick={() => onSortChange('daysSince')}>sort-by-days</button>
+              <button onClick={() => onSortChange('lifetimeValue')}>sort-by-value</button>
+            </div>
+          )}
+        </ReportShell>,
+      )
+    }
+
+    it('starts with no sort, so the route applies its own default order', () => {
+      renderShellWithSortProbe()
+
+      expect(screen.getByTestId('sort-state')).toHaveTextContent('none')
+      const params = new URLSearchParams(getCsvHref().split('?')[1])
+      expect(params.has('sort')).toBe(false)
+      expect(params.has('dir')).toBe(false)
+    })
+
+    it('sets ascending direction on the first click of a new key', async () => {
+      renderShellWithSortProbe()
+
+      await userEvent.click(screen.getByRole('button', { name: 'sort-by-days' }))
+
+      expect(screen.getByTestId('sort-state')).toHaveTextContent('daysSince:asc')
+    })
+
+    it('toggles direction on a second click of the same key', async () => {
+      renderShellWithSortProbe()
+
+      await userEvent.click(screen.getByRole('button', { name: 'sort-by-days' }))
+      await userEvent.click(screen.getByRole('button', { name: 'sort-by-days' }))
+
+      expect(screen.getByTestId('sort-state')).toHaveTextContent('daysSince:desc')
+    })
+
+    it('resets to ascending when switching to a different key', async () => {
+      renderShellWithSortProbe()
+
+      await userEvent.click(screen.getByRole('button', { name: 'sort-by-days' }))
+      await userEvent.click(screen.getByRole('button', { name: 'sort-by-days' })) // now desc
+      await userEvent.click(screen.getByRole('button', { name: 'sort-by-value' }))
+
+      expect(screen.getByTestId('sort-state')).toHaveTextContent('lifetimeValue:asc')
+    })
+
+    it('carries the active sort into the export URL, matching what is on screen', async () => {
+      renderShellWithSortProbe()
+
+      await userEvent.click(screen.getByRole('button', { name: 'sort-by-days' }))
+
+      const params = new URLSearchParams(getCsvHref().split('?')[1])
+      expect(params.get('sort')).toBe('daysSince')
+      expect(params.get('dir')).toBe('asc')
+    })
   })
 })

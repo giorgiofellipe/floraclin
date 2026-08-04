@@ -204,4 +204,47 @@ describe('GET /api/reports/repeat-no-shows', () => {
     )
     expect(renderReactToPdf).toHaveBeenCalled()
   })
+
+  describe('sort', () => {
+    it('rejects an unknown sort key with 400', async () => {
+      const res = await GET(
+        makeRequest('http://localhost/api/reports/repeat-no-shows?sort=notARealField'),
+      )
+      const json = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(json.error).toBeTruthy()
+      expect(listRepeatNoShows).not.toHaveBeenCalled()
+    })
+
+    it('rejects an invalid dir with 400', async () => {
+      const res = await GET(
+        makeRequest('http://localhost/api/reports/repeat-no-shows?sort=missedCount&dir=sideways'),
+      )
+
+      expect(res.status).toBe(400)
+      expect(listRepeatNoShows).not.toHaveBeenCalled()
+    })
+
+    it('passes no sort to the query when the param is absent', async () => {
+      await GET(makeRequest('http://localhost/api/reports/repeat-no-shows'))
+
+      expect(listRepeatNoShows).toHaveBeenCalledWith(
+        'tenant-1',
+        expect.objectContaining({ sort: undefined }),
+      )
+    })
+
+    it('passes a valid sort key and dir through to the query', async () => {
+      const res = await GET(
+        makeRequest('http://localhost/api/reports/repeat-no-shows?sort=missedValue&dir=asc'),
+      )
+
+      expect(res.status).toBe(200)
+      expect(listRepeatNoShows).toHaveBeenCalledWith(
+        'tenant-1',
+        expect.objectContaining({ sort: { key: 'missedValue', dir: 'asc' } }),
+      )
+    })
+  })
 })

@@ -3,6 +3,7 @@ import { patients, appointments, procedureTypes } from '@/db/schema'
 import { and, eq, isNull } from 'drizzle-orm'
 import { subDays } from 'date-fns'
 import { parseBrDate, toBrYmd } from '@/lib/dates'
+import { directionalCompare, type SortDirection } from '@/lib/reports/sort'
 
 /** Appointment statuses that count as a missed slot for this report. */
 const MISSED_STATUSES = new Set(['no_show', 'cancelled'])
@@ -16,10 +17,25 @@ export interface RepeatNoShowRow {
   missedValue: number
 }
 
+/** Server-recognized sort keys for this report. The route validates an
+ *  incoming `sort` query param against this same list before it ever reaches
+ *  this function. */
+export type RepeatNoShowSortKey = 'fullName' | 'missedCount' | 'missedValue'
+
 export interface ListRepeatNoShowsOptions {
   windowDays: number
   minCount: number
   today: Date
+  /** Explicit sort requested by the caller. When absent, rows keep the
+   *  default order (missed count descending, then missed value
+   *  descending). */
+  sort?: { key: RepeatNoShowSortKey; dir: SortDirection }
+}
+
+const SORT_ACCESSORS: Record<RepeatNoShowSortKey, (row: RepeatNoShowRow) => string | number | null> = {
+  fullName: (row) => row.fullName,
+  missedCount: (row) => row.missedCount,
+  missedValue: (row) => row.missedValue,
 }
 
 /** Report results are capped at this many rows, matching the precedent in
@@ -54,7 +70,7 @@ const MAX_ROWS = 200
  */
 export async function listRepeatNoShows(
   tenantId: string,
-  { windowDays, minCount, today }: ListRepeatNoShowsOptions,
+  { windowDays, minCount, today, sort }: ListRepeatNoShowsOptions,
 ): Promise<RepeatNoShowRow[]> {
   const todayYmd = toBrYmd(today)
   const windowStartYmd = toBrYmd(subDays(parseBrDate(todayYmd), windowDays))
@@ -118,7 +134,14 @@ export async function listRepeatNoShows(
     })
   }
 
-  result.sort((a, b) => b.missedCount - a.missedCount || b.missedValue - a.missedValue)
+  if (sort) {
+    const accessor = SORT_ACCESSORS[sort.key]
+    result.sort((a, b) => directionalCompare(accessor(a), accessor(b), sort.dir))
+  } else {
+    result.sort((a, b) => b.missedCount - a.missedCount || b.missedValue - a.missedValue)
+  }
 
+  // The cap MUST apply after sorting, not before: with an explicit sort the
+  // "top 200" has to be the top 200 of the requested order.
   return result.slice(0, MAX_ROWS)
 }

@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
-import type { ReportFilterKind } from '@/lib/reports/types'
+import { useCallback, useState, type ReactNode } from 'react'
+import type { ReportFilterKind, ReportSort } from '@/lib/reports/types'
 import { ReportFilters, type ReportFilterValues } from './report-filters'
 import { ExportButtons } from './export-buttons'
 
@@ -19,15 +19,28 @@ interface ReportShellProps {
    *  entry. Seeds the filter on first render so the input never shows blank
    *  and the export links carry it before the user touches anything. */
   defaultDays: number
-  /** Table area, rendered with the currently active filter values so the
-   *  report page can fetch and display the matching rows. */
-  children: (filters: ReportFilterValues) => ReactNode
+  /** Label for the day-count filter input, from the report's registry entry
+   *  (see `web/src/lib/reports/registry.ts`): the same filter kind means a
+   *  different thing per report. */
+  filterLabel: string
+  /** Default value for the `min-count` filter, from the report's registry
+   *  entry. Only relevant when `filters` includes `'min-count'`. */
+  defaultMinCount?: number
+  /** Table area, rendered with the currently active filter values and sort
+   *  state so the report page can fetch and display the matching rows. The
+   *  shell owns the sort state (not the page) because it also has to feed
+   *  `ExportButtons`, so an export always matches what is on screen. */
+  children: (
+    filters: ReportFilterValues,
+    sort: ReportSort | undefined,
+    onSortChange: (key: string) => void,
+  ) => ReactNode
 }
 
 /**
- * Owns filters, export wiring and layout for a single report: the header,
- * the filter bar, the export buttons and the table area. Adding a report
- * means writing a query and columns, never a page layout.
+ * Owns filters, sort state, export wiring and layout for a single report:
+ * the header, the filter bar, the export buttons and the table area. Adding
+ * a report means writing a query and columns, never a page layout.
  */
 export function ReportShell({
   title,
@@ -36,11 +49,31 @@ export function ReportShell({
   apiPath,
   paramName,
   defaultDays,
+  filterLabel,
+  defaultMinCount,
   children,
 }: ReportShellProps) {
-  const [filterValues, setFilterValues] = useState<ReportFilterValues>(() =>
-    filters.includes('threshold-days') ? { thresholdDays: String(defaultDays) } : {},
-  )
+  const [filterValues, setFilterValues] = useState<ReportFilterValues>(() => {
+    const initial: ReportFilterValues = {}
+    if (filters.includes('threshold-days')) initial.thresholdDays = String(defaultDays)
+    if (filters.includes('min-count') && defaultMinCount !== undefined) {
+      initial.minCount = String(defaultMinCount)
+    }
+    return initial
+  })
+
+  // No sort param sent (`undefined`) means "use the route's own default
+  // urgency order" — the shell never picks an initial sort of its own.
+  const [sort, setSort] = useState<ReportSort | undefined>(undefined)
+
+  const handleSortChange = useCallback((key: string) => {
+    setSort((prev) => {
+      if (prev?.key === key) {
+        return { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+      }
+      return { key, dir: 'asc' }
+    })
+  }, [])
 
   return (
     <div className="space-y-6">
@@ -49,14 +82,19 @@ export function ReportShell({
           <h1 className="font-heading text-xl font-medium text-charcoal">{title}</h1>
           <p className="mt-1 text-sm text-mid">{description}</p>
         </div>
-        <ExportButtons apiPath={apiPath} paramName={paramName} filters={filterValues} />
+        <ExportButtons apiPath={apiPath} paramName={paramName} filters={filterValues} sort={sort} />
       </div>
 
       {filters.length > 0 && (
-        <ReportFilters filters={filters} value={filterValues} onChange={setFilterValues} />
+        <ReportFilters
+          filters={filters}
+          value={filterValues}
+          onChange={setFilterValues}
+          dayFilterLabel={filterLabel}
+        />
       )}
 
-      <div>{children(filterValues)}</div>
+      <div>{children(filterValues, sort, handleSortChange)}</div>
     </div>
   )
 }

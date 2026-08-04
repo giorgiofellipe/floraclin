@@ -9,26 +9,33 @@ import { ReportTable } from '@/components/reports/report-table'
 import { ReportWhatsAppAction } from '@/components/reports/report-whatsapp-action'
 import { INACTIVE_PATIENT_COLUMNS } from '@/lib/reports/columns/inactive-patients'
 import type { InactivePatientRow } from '@/db/queries/reports/inactive-patients'
+import type { ReportSort } from '@/lib/reports/types'
 
 // The registry is the single source of truth for which reports exist, see
 // web/src/lib/reports/registry.ts. This slug is guaranteed to be present.
 const REPORT = getReport('pacientes-inativos')!
 
 /**
- * Fetches the report rows for the currently active filters. `thresholdDays`
- * is the only filter this report declares; the filter starts pre-filled with
- * the registry default (see `ReportShell`), and if the user clears it, the
- * blank value is omitted from the query so the route falls back to that same
- * registry default (`getReport('pacientes-inativos').defaultDays`, 180).
+ * Fetches the report rows for the currently active filters and sort.
+ * `thresholdDays` is the only filter this report declares; the filter starts
+ * pre-filled with the registry default (see `ReportShell`), and if the user
+ * clears it, the blank value is omitted from the query so the route falls
+ * back to that same registry default (`getReport('pacientes-inativos').defaultDays`,
+ * 180). Sort is included in both the query key and the request so the fetch
+ * always matches the export URL (see `ReportShell`, which owns both).
  */
-function useInactivePatientsReport(filters: ReportFilterValues) {
+function useInactivePatientsReport(filters: ReportFilterValues, sort: ReportSort | undefined) {
   const thresholdDays = filters.thresholdDays?.trim()
 
   return useQuery({
-    queryKey: ['reports', 'pacientes-inativos', thresholdDays || 'default'],
+    queryKey: ['reports', 'pacientes-inativos', thresholdDays || 'default', sort?.key, sort?.dir],
     queryFn: async (): Promise<InactivePatientRow[]> => {
       const params = new URLSearchParams()
       if (thresholdDays) params.set('thresholdDays', thresholdDays)
+      if (sort) {
+        params.set('sort', sort.key)
+        params.set('dir', sort.dir)
+      }
 
       const res = await fetch(`/api/reports/inactive-patients?${params.toString()}`)
       if (!res.ok) {
@@ -41,8 +48,16 @@ function useInactivePatientsReport(filters: ReportFilterValues) {
   })
 }
 
-function PacientesInativosBody({ filters }: { filters: ReportFilterValues }) {
-  const { data, isLoading, isError } = useInactivePatientsReport(filters)
+function PacientesInativosBody({
+  filters,
+  sort,
+  onSortChange,
+}: {
+  filters: ReportFilterValues
+  sort: ReportSort | undefined
+  onSortChange: (key: string) => void
+}) {
+  const { data, isLoading, isError } = useInactivePatientsReport(filters, sort)
 
   if (isLoading) {
     return (
@@ -65,6 +80,8 @@ function PacientesInativosBody({ filters }: { filters: ReportFilterValues }) {
       rows={data ?? []}
       columns={INACTIVE_PATIENT_COLUMNS}
       rowAction={(row) => <ReportWhatsAppAction phone={row.phone} fullName={row.fullName} />}
+      sort={sort}
+      onSortChange={onSortChange}
     />
   )
 }
@@ -78,8 +95,11 @@ export default function PacientesInativosPage() {
       apiPath={REPORT.apiPath}
       paramName={REPORT.paramName}
       defaultDays={REPORT.defaultDays}
+      filterLabel={REPORT.filterLabel}
     >
-      {(filters) => <PacientesInativosBody filters={filters} />}
+      {(filters, sort, onSortChange) => (
+        <PacientesInativosBody filters={filters} sort={sort} onSortChange={onSortChange} />
+      )}
     </ReportShell>
   )
 }

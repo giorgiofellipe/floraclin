@@ -190,4 +190,47 @@ describe('GET /api/reports/due-followups', () => {
     )
     expect(renderReactToPdf).toHaveBeenCalled()
   })
+
+  describe('sort', () => {
+    it('rejects an unknown sort key with 400', async () => {
+      const res = await GET(
+        makeRequest('http://localhost/api/reports/due-followups?sort=notARealField'),
+      )
+      const json = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(json.error).toBeTruthy()
+      expect(listDueFollowUps).not.toHaveBeenCalled()
+    })
+
+    it('rejects an invalid dir with 400', async () => {
+      const res = await GET(
+        makeRequest('http://localhost/api/reports/due-followups?sort=daysUntil&dir=sideways'),
+      )
+
+      expect(res.status).toBe(400)
+      expect(listDueFollowUps).not.toHaveBeenCalled()
+    })
+
+    it('passes no sort to the query when the param is absent', async () => {
+      await GET(makeRequest('http://localhost/api/reports/due-followups'))
+
+      expect(listDueFollowUps).toHaveBeenCalledWith(
+        'tenant-1',
+        expect.objectContaining({ sort: undefined }),
+      )
+    })
+
+    it('passes a valid sort key and dir through to the query', async () => {
+      const res = await GET(
+        makeRequest('http://localhost/api/reports/due-followups?sort=followUpDate&dir=desc'),
+      )
+
+      expect(res.status).toBe(200)
+      expect(listDueFollowUps).toHaveBeenCalledWith(
+        'tenant-1',
+        expect.objectContaining({ sort: { key: 'followUpDate', dir: 'desc' } }),
+      )
+    })
+  })
 })
