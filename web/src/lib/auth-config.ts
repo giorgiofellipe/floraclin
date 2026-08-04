@@ -142,9 +142,9 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
                   .limit(1)
                 if (freePlan) {
                   const { createSubscription } = await import('@/db/queries/subscriptions')
-                  const created = await createSubscription(membership.tenantId, freePlan.id)
-                  if (created) {
-                    sub = { status: created.status, planSlug: freePlan.slug, planFeatures: freePlan.features }
+                  const { subscription } = await createSubscription(membership.tenantId, freePlan.id)
+                  if (subscription) {
+                    sub = { status: subscription.status, planSlug: freePlan.slug, planFeatures: freePlan.features }
                   }
                 }
               } catch (err) {

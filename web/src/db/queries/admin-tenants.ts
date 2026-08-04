@@ -4,6 +4,7 @@ import { eq, and, ilike, or, sql, desc, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { sendInviteEmail } from '@/lib/email'
 import { createSubscription } from '@/db/queries/subscriptions'
+import { notifyDiscord } from '@/lib/discord'
 import type { PaginatedResult } from '@/types'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -177,7 +178,16 @@ export async function createTenantWithOwner(data: {
 
   const [freePlan] = await db.select().from(plans).where(eq(plans.slug, 'free')).limit(1)
   if (freePlan) {
-    await createSubscription(tenant.id, freePlan.id)
+    const { created } = await createSubscription(tenant.id, freePlan.id)
+    if (created) {
+      await notifyDiscord({
+        kind: 'subscription.created',
+        tenantName: tenant.name,
+        planName: freePlan.name,
+        priceCents: freePlan.priceCents,
+        tenantId: tenant.id,
+      })
+    }
   }
 
   return tenant
@@ -359,7 +369,16 @@ export async function approveTenant(tenantId: string) {
   if (updated) {
     const [freePlan] = await db.select().from(plans).where(eq(plans.slug, 'free')).limit(1)
     if (freePlan) {
-      await createSubscription(tenantId, freePlan.id)
+      const { created } = await createSubscription(tenantId, freePlan.id)
+      if (created) {
+        await notifyDiscord({
+          kind: 'subscription.created',
+          tenantName: updated.name,
+          planName: freePlan.name,
+          priceCents: freePlan.priceCents,
+          tenantId,
+        })
+      }
     }
   }
 
