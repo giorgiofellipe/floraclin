@@ -1,5 +1,16 @@
 import type { ReportDefinition } from './types'
 
+/**
+ * Width of the default date range, in days, for every report that declares
+ * the `date-range` filter kind: the last 90 days up to today.
+ *
+ * It used to be "the current BR calendar month to date", which renders an
+ * empty table for anyone opening a report on the 2nd of the month. A report
+ * that opens empty by default reads as broken, so the default window is wide
+ * enough to contain something for a clinic that saw any movement at all.
+ */
+const DEFAULT_RANGE_DAYS = 90
+
 export const REPORTS: ReportDefinition[] = [
   {
     slug: 'pacientes-inativos',
@@ -13,6 +24,7 @@ export const REPORTS: ReportDefinition[] = [
     // A patient is "inactive" once their last visit is OLDER than this many
     // days, so raising the number shrinks the list, not the other way round.
     filterLabel: 'Sem retornar há mais de (dias)',
+    emptyHint: 'Reduza o número de dias sem retornar para incluir mais pacientes.',
   },
   {
     slug: 'retornos',
@@ -29,6 +41,7 @@ export const REPORTS: ReportDefinition[] = [
     // The window runs both directions from today: due soon AND overdue by up
     // to this many days.
     filterLabel: 'Próximos e vencidos em (dias)',
+    emptyHint: 'Aumente a janela de dias para alcançar retornos mais distantes.',
   },
   {
     slug: 'faltas',
@@ -47,6 +60,7 @@ export const REPORTS: ReportDefinition[] = [
     // web/src/app/api/reports/repeat-no-shows/route.ts) so the UI default and
     // the route default cannot drift apart.
     defaultMinCount: 2,
+    emptyHint: 'Aumente o período analisado ou reduza o mínimo de faltas.',
   },
   {
     slug: 'extrato-periodo',
@@ -55,6 +69,8 @@ export const REPORTS: ReportDefinition[] = [
       'Movimentações de caixa em um intervalo de datas, prontas para conferência ou para a contabilidade.',
     filters: ['date-range'],
     apiPath: '/api/reports/extrato-periodo',
+    defaultRangeDays: DEFAULT_RANGE_DAYS,
+    emptyHint: 'Amplie o período para incluir movimentações mais antigas.',
   },
   {
     slug: 'ganhos-profissional',
@@ -63,6 +79,8 @@ export const REPORTS: ReportDefinition[] = [
       'Procedimentos, receita gerada e receita recebida por profissional em um período, como documento para pagamento.',
     filters: ['date-range', 'practitioner'],
     apiPath: '/api/reports/ganhos-profissional',
+    defaultRangeDays: DEFAULT_RANGE_DAYS,
+    emptyHint: 'Amplie o período ou volte para todos os profissionais.',
   },
   {
     slug: 'procedimentos-realizados',
@@ -71,6 +89,8 @@ export const REPORTS: ReportDefinition[] = [
       'Registro de rastreabilidade por lote: produto, lote e validade de cada aplicação, para consulta caso um procedimento seja questionado.',
     filters: ['date-range', 'practitioner'],
     apiPath: '/api/reports/procedimentos-realizados',
+    defaultRangeDays: DEFAULT_RANGE_DAYS,
+    emptyHint: 'Amplie o período ou volte para todos os profissionais.',
   },
 ]
 

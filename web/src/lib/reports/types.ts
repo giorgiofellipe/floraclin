@@ -61,4 +61,17 @@ export interface ReportDefinition {
    *  route, same reasoning as `defaultDays`. Only set by reports that declare
    *  the `min-count` filter kind (today, just `faltas`). */
   defaultMinCount?: number
+  /** Width, in days, of the default date range: `today - defaultRangeDays`
+   *  through `today`. Read by both the filter UI (which seeds the two date
+   *  inputs with it, so the user can see the active window) and the report's
+   *  route (which applies it when neither `dateFrom` nor `dateTo` is sent),
+   *  so the screen and the server cannot disagree about what "no dates
+   *  picked" means. Only relevant to reports that declare the `date-range`
+   *  filter kind. */
+  defaultRangeDays?: number
+  /** Second line of the empty state, telling the user which filter to loosen
+   *  when the report has no rows. Per-report because the fix differs: some
+   *  reports need a wider period, `pacientes-inativos` needs a *smaller*
+   *  day count, `faltas` has two knobs. */
+  emptyHint?: string
 }

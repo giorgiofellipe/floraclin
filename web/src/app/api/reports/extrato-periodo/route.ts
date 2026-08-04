@@ -13,6 +13,7 @@ import {
 import { LEDGER_REPORT_COLUMNS } from '@/lib/reports/columns/extrato-periodo'
 import { csvFilename } from '@/lib/reports/csv'
 import { getReport } from '@/lib/reports/registry'
+import { resolveDateRange } from '@/lib/reports/date-range'
 import { ReportPdf, REPORT_PDF_CSS } from '@/components/reports/report-pdf'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
 import { brToday } from '@/lib/dates'
@@ -23,7 +24,12 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const REPORT_SLUG = 'extrato-periodo'
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+// The registry is the single source of truth for the default window width,
+// so the seeded date inputs in the UI and this route's fallback cannot drift.
+// Non-null: this report declares the `date-range` filter kind, so the
+// registry always sets `defaultRangeDays` for it (see registry.test.ts).
+const DEFAULT_RANGE_DAYS = getReport(REPORT_SLUG)!.defaultRangeDays!
 
 // Allow-list of sort keys this report's query knows how to order by (see
 // `LedgerReportSortKey` in `@/db/queries/reports/extrato-periodo`).
@@ -52,18 +58,6 @@ function parseSort(searchParams: URLSearchParams): ParsedSort {
   }
 }
 
-/**
- * Default window when neither `dateFrom` nor `dateTo` is sent: the current
- * BR calendar month to date, matching what `PractitionerPLView` seeds
- * client-side for the same underlying data. Built from `brToday()`'s
- * `YYYY-MM-DD` string via slicing, never from a bare `new Date()`, so it
- * can't drift a day on a UTC host.
- */
-function defaultDateRange(): { dateFrom: string; dateTo: string } {
-  const today = brToday()
-  return { dateFrom: `${today.slice(0, 7)}-01`, dateTo: today }
-}
-
 export async function GET(request: Request) {
   try {
     const ctx = await requireRole('owner', 'financial')
@@ -75,23 +69,15 @@ export async function GET(request: Request) {
       .limit(1)
 
     const { searchParams } = new URL(request.url)
-    const rawDateFrom = searchParams.get('dateFrom')
-    const rawDateTo = searchParams.get('dateTo')
 
-    let dateFrom: string
-    let dateTo: string
-    if (!rawDateFrom && !rawDateTo) {
-      ;({ dateFrom, dateTo } = defaultDateRange())
-    } else {
-      if (!rawDateFrom || !DATE_RE.test(rawDateFrom) || !rawDateTo || !DATE_RE.test(rawDateTo)) {
-        return NextResponse.json({ error: 'Datas inválidas' }, { status: 400 })
-      }
-      if (rawDateFrom > rawDateTo) {
-        return NextResponse.json({ error: 'Data inicial posterior à data final' }, { status: 400 })
-      }
-      dateFrom = rawDateFrom
-      dateTo = rawDateTo
+    // A partial range is completed, not rejected; see `resolveDateRange`.
+    const range = resolveDateRange(searchParams.get('dateFrom'), searchParams.get('dateTo'), {
+      defaultRangeDays: DEFAULT_RANGE_DAYS,
+    })
+    if (!range.ok) {
+      return NextResponse.json({ error: range.error }, { status: 400 })
     }
+    const { dateFrom, dateTo } = range
 
     const parsedSort = parseSort(searchParams)
     if (!parsedSort.ok) {

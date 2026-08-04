@@ -87,6 +87,7 @@ function RetornosBody({
       rowClassName={(row) => (row.isOverdue ? 'bg-[#FBEAEA]' : undefined)}
       sort={sort}
       onSortChange={onSortChange}
+      emptyHint={REPORT.emptyHint}
     />
   )
 }

@@ -38,6 +38,12 @@ interface ReportTableProps<Row> {
    *  sortable header is clicked. Absent when the caller has nowhere to send
    *  a sort change; sortable headers then render without a click handler. */
   onSortChange?: (key: string) => void
+  /** Second line of the empty state, telling the user which filter to loosen
+   *  (from the report's registry entry, `ReportDefinition.emptyHint`). An
+   *  empty report is usually a filter that is too tight, so the empty state
+   *  should say what to widen instead of leaving the user guessing whether
+   *  the report is broken. */
+  emptyHint?: string
 }
 
 /**
@@ -52,6 +58,7 @@ export function ReportTable<Row>({
   rowClassName,
   sort,
   onSortChange,
+  emptyHint,
 }: ReportTableProps<Row>) {
   const colSpan = columns.length + (rowAction ? 1 : 0) || 1
 
@@ -120,7 +127,12 @@ export function ReportTable<Row>({
                 colSpan={colSpan}
                 className="text-center text-mid py-12 whitespace-normal"
               >
-                Nenhum registro encontrado para os filtros selecionados.
+                <span className="block">
+                  Nenhum registro encontrado para os filtros selecionados.
+                </span>
+                {emptyHint && (
+                  <span className="mt-1 block text-[13px] text-mid/80">{emptyHint}</span>
+                )}
               </TableCell>
             </TableRow>
           ) : (

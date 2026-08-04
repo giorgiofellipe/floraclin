@@ -113,8 +113,44 @@ describe('ReportTable', () => {
       />,
     )
 
-    const emptyCell = screen.getByText('Nenhum registro encontrado para os filtros selecionados.')
+    const emptyCell = screen
+      .getByText('Nenhum registro encontrado para os filtros selecionados.')
+      .closest('td')
     expect(emptyCell).toHaveAttribute('colspan', String(columns.length + 1))
+  })
+
+  describe('empty state', () => {
+    it('shows the per-report hint so an empty table reads as a tight filter, not a bug', () => {
+      render(
+        <ReportTable
+          rows={[]}
+          columns={columns}
+          emptyHint="Amplie o período para incluir movimentações mais antigas."
+        />,
+      )
+
+      expect(
+        screen.getByText('Nenhum registro encontrado para os filtros selecionados.'),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText('Amplie o período para incluir movimentações mais antigas.'),
+      ).toBeInTheDocument()
+    })
+
+    it('renders only the base message when no hint is supplied', () => {
+      render(<ReportTable rows={[]} columns={columns} />)
+
+      const emptyCell = screen
+        .getByText('Nenhum registro encontrado para os filtros selecionados.')
+        .closest('td')!
+      expect(emptyCell.querySelectorAll('span')).toHaveLength(1)
+    })
+
+    it('does not render the empty state when there are rows', () => {
+      render(<ReportTable rows={rows} columns={columns} emptyHint="Amplie o período." />)
+
+      expect(screen.queryByText('Amplie o período.')).not.toBeInTheDocument()
+    })
   })
 
   it('applies rowClassName per row without affecting rows that opt out', () => {

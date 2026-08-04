@@ -15,10 +15,12 @@ import type { ReportSort } from '@/lib/reports/types'
 const REPORT = getReport('extrato-periodo')!
 
 /**
- * Fetches the report rows for the currently active date range and sort. An
- * absent `dateFrom`/`dateTo` (nothing picked yet) is sent through as-is: the
- * route falls back to the current BR calendar month to date, the same
- * "blank input -> omit param -> route default applies" pattern the
+ * Fetches the report rows for the currently active date range and sort. Both
+ * date inputs start seeded with the registry's default window (see
+ * `ReportShell` and `ReportDefinition.defaultRangeDays`), so the usual case
+ * sends an explicit range. If the user clears an input, the blank value is
+ * omitted and the route completes the range itself (see `resolveDateRange`),
+ * the same "blank input -> omit param -> route default applies" pattern the
  * threshold-days reports use (see `useInactivePatientsReport`).
  */
 function useLedgerReport(filters: ReportFilterValues, sort: ReportSort | undefined) {
@@ -77,7 +79,13 @@ function ExtratoPeriodoBody({
   }
 
   return (
-    <ReportTable rows={data ?? []} columns={LEDGER_REPORT_COLUMNS} sort={sort} onSortChange={onSortChange} />
+    <ReportTable
+      rows={data ?? []}
+      columns={LEDGER_REPORT_COLUMNS}
+      sort={sort}
+      onSortChange={onSortChange}
+      emptyHint={REPORT.emptyHint}
+    />
   )
 }
 
@@ -88,6 +96,7 @@ export default function ExtratoPeriodoPage() {
       description={REPORT.description}
       filters={REPORT.filters}
       apiPath={REPORT.apiPath}
+      defaultRangeDays={REPORT.defaultRangeDays}
     >
       {(filters, sort, onSortChange) => (
         <ExtratoPeriodoBody filters={filters} sort={sort} onSortChange={onSortChange} />

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useState, type ReactNode } from 'react'
+import { brToday, shiftBrYmd } from '@/lib/dates'
 import type { ReportFilterKind, ReportSort } from '@/lib/reports/types'
 import { ReportFilters, type ReportFilterValues } from './report-filters'
 import { ExportButtons } from './export-buttons'
@@ -29,6 +30,12 @@ interface ReportShellProps {
   /** Default value for the `min-count` filter, from the report's registry
    *  entry. Only relevant when `filters` includes `'min-count'`. */
   defaultMinCount?: number
+  /** Width in days of the default date range, from the report's registry
+   *  entry. Seeds both date inputs on first render (today minus this many
+   *  days, through today) so the user can SEE the window the table is
+   *  showing, and so the export links carry it before anything is touched.
+   *  Only present on reports that declare the `date-range` filter kind. */
+  defaultRangeDays?: number
   /** Table area, rendered with the currently active filter values and sort
    *  state so the report page can fetch and display the matching rows. The
    *  shell owns the sort state (not the page) because it also has to feed
@@ -54,6 +61,7 @@ export function ReportShell({
   defaultDays,
   filterLabel,
   defaultMinCount,
+  defaultRangeDays,
   children,
 }: ReportShellProps) {
   const [filterValues, setFilterValues] = useState<ReportFilterValues>(() => {
@@ -63,6 +71,14 @@ export function ReportShell({
     }
     if (filters.includes('min-count') && defaultMinCount !== undefined) {
       initial.minCount = String(defaultMinCount)
+    }
+    if (filters.includes('date-range') && defaultRangeDays !== undefined) {
+      // Seeded rather than left blank: an empty picker hides which window the
+      // table is actually showing, and the export link would then have to
+      // rely on the route's own fallback to agree with the screen.
+      const today = brToday()
+      initial.dateFrom = shiftBrYmd(today, -defaultRangeDays)
+      initial.dateTo = today
     }
     return initial
   })

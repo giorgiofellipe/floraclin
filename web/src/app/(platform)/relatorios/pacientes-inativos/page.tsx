@@ -82,6 +82,7 @@ function PacientesInativosBody({
       rowAction={(row) => <ReportWhatsAppAction phone={row.phone} fullName={row.fullName} />}
       sort={sort}
       onSortChange={onSortChange}
+      emptyHint={REPORT.emptyHint}
     />
   )
 }

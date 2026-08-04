@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // ─── Mocks (hoisted by vitest) ────────────────────────────────────────
 
@@ -87,30 +87,8 @@ describe('GET /api/reports/extrato-periodo', () => {
     expect(listLedgerReportRows).not.toHaveBeenCalled()
   })
 
-  it('rejects a malformed dateFrom with 400', async () => {
-    const res = await GET(
-      makeRequest('http://localhost/api/reports/extrato-periodo?dateFrom=04-2026&dateTo=2026-04-30'),
-    )
 
-    expect(res.status).toBe(400)
-    expect(listLedgerReportRows).not.toHaveBeenCalled()
-  })
 
-  it('rejects dateFrom given without dateTo with 400', async () => {
-    const res = await GET(makeRequest('http://localhost/api/reports/extrato-periodo?dateFrom=2026-04-01'))
-
-    expect(res.status).toBe(400)
-    expect(listLedgerReportRows).not.toHaveBeenCalled()
-  })
-
-  it('rejects dateFrom after dateTo with 400', async () => {
-    const res = await GET(
-      makeRequest('http://localhost/api/reports/extrato-periodo?dateFrom=2026-05-01&dateTo=2026-04-01'),
-    )
-
-    expect(res.status).toBe(400)
-    expect(listLedgerReportRows).not.toHaveBeenCalled()
-  })
 
   it('rejects an unknown sort key with 400', async () => {
     const res = await GET(
@@ -121,18 +99,6 @@ describe('GET /api/reports/extrato-periodo', () => {
     expect(listLedgerReportRows).not.toHaveBeenCalled()
   })
 
-  it('defaults to the current BR month when no dates are sent', async () => {
-    const res = await GET(makeRequest('http://localhost/api/reports/extrato-periodo'))
-
-    expect(res.status).toBe(200)
-    expect(listLedgerReportRows).toHaveBeenCalledWith(
-      'tenant-1',
-      expect.objectContaining({
-        dateFrom: expect.stringMatching(/^\d{4}-\d{2}-01$/),
-        dateTo: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-      }),
-    )
-  })
 
   it('passes well-formed dates through to the query', async () => {
     const res = await GET(
@@ -193,4 +159,76 @@ describe('GET /api/reports/extrato-periodo', () => {
     )
     expect(renderReactToPdf).toHaveBeenCalled()
   })
+
+  describe('date range', () => {
+    // Fixed clock so "the last 90 days" is a concrete pair of dates in the
+    // assertion rather than something recomputed from the same helpers the
+    // route uses.
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-08-03T15:00:00Z')) // BR noon on 2026-08-03
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('defaults to the last 90 days when no dates are sent', async () => {
+      const res = await GET(makeRequest('http://localhost/api/reports/extrato-periodo'))
+
+      expect(res.status).toBe(200)
+      expect(listLedgerReportRows).toHaveBeenCalledWith(
+        'tenant-1',
+        expect.objectContaining({ dateFrom: '2026-05-05', dateTo: '2026-08-03' }),
+      )
+    })
+
+    it('completes a dateFrom-only range with today instead of rejecting it', async () => {
+      const res = await GET(
+        makeRequest('http://localhost/api/reports/extrato-periodo?dateFrom=2026-01-15'),
+      )
+
+      expect(res.status).toBe(200)
+      expect(listLedgerReportRows).toHaveBeenCalledWith(
+        'tenant-1',
+        expect.objectContaining({ dateFrom: '2026-01-15', dateTo: '2026-08-03' }),
+      )
+    })
+
+    it('completes a dateTo-only range with 90 days before it', async () => {
+      const res = await GET(
+        makeRequest('http://localhost/api/reports/extrato-periodo?dateTo=2026-06-30'),
+      )
+
+      expect(res.status).toBe(200)
+      expect(listLedgerReportRows).toHaveBeenCalledWith(
+        'tenant-1',
+        expect.objectContaining({ dateFrom: '2026-04-01', dateTo: '2026-06-30' }),
+      )
+    })
+
+    it('still rejects a malformed dateFrom with 400, even on its own', async () => {
+      const res = await GET(makeRequest('http://localhost/api/reports/extrato-periodo?dateFrom=04-2026'))
+
+      expect(res.status).toBe(400)
+      expect(listLedgerReportRows).not.toHaveBeenCalled()
+    })
+
+    it('still rejects a malformed dateTo with 400, even on its own', async () => {
+      const res = await GET(makeRequest('http://localhost/api/reports/extrato-periodo?dateTo=2026-02-31'))
+
+      expect(res.status).toBe(400)
+      expect(listLedgerReportRows).not.toHaveBeenCalled()
+    })
+
+    it('still rejects dateFrom after dateTo with 400', async () => {
+      const res = await GET(
+        makeRequest('http://localhost/api/reports/extrato-periodo?dateFrom=2026-05-01&dateTo=2026-04-01'),
+      )
+
+      expect(res.status).toBe(400)
+      expect(listLedgerReportRows).not.toHaveBeenCalled()
+    })
+  })
+
 })

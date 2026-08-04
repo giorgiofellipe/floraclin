@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // ─── Mocks (hoisted by vitest) ────────────────────────────────────────
 
@@ -84,14 +84,6 @@ describe('GET /api/reports/procedimentos-realizados', () => {
     expect(listProcedureApplications).not.toHaveBeenCalled()
   })
 
-  it('rejects a malformed date with 400', async () => {
-    const res = await GET(
-      makeRequest('http://localhost/api/reports/procedimentos-realizados?dateFrom=2026/04/01&dateTo=2026-04-30'),
-    )
-
-    expect(res.status).toBe(400)
-    expect(listProcedureApplications).not.toHaveBeenCalled()
-  })
 
   it('rejects an invalid practitionerId with 400', async () => {
     const res = await GET(
@@ -111,18 +103,6 @@ describe('GET /api/reports/procedimentos-realizados', () => {
     expect(listProcedureApplications).not.toHaveBeenCalled()
   })
 
-  it('defaults to the current BR month when no dates are sent', async () => {
-    const res = await GET(makeRequest('http://localhost/api/reports/procedimentos-realizados'))
-
-    expect(res.status).toBe(200)
-    expect(listProcedureApplications).toHaveBeenCalledWith(
-      'tenant-1',
-      expect.objectContaining({
-        dateFrom: expect.stringMatching(/^\d{4}-\d{2}-01$/),
-        dateTo: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-      }),
-    )
-  })
 
   it('returns JSON rows with no format param', async () => {
     const res = await GET(makeRequest('http://localhost/api/reports/procedimentos-realizados'))
@@ -161,4 +141,76 @@ describe('GET /api/reports/procedimentos-realizados', () => {
     )
     expect(renderReactToPdf).toHaveBeenCalled()
   })
+
+  describe('date range', () => {
+    // Fixed clock so "the last 90 days" is a concrete pair of dates in the
+    // assertion rather than something recomputed from the same helpers the
+    // route uses.
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-08-03T15:00:00Z')) // BR noon on 2026-08-03
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('defaults to the last 90 days when no dates are sent', async () => {
+      const res = await GET(makeRequest('http://localhost/api/reports/procedimentos-realizados'))
+
+      expect(res.status).toBe(200)
+      expect(listProcedureApplications).toHaveBeenCalledWith(
+        'tenant-1',
+        expect.objectContaining({ dateFrom: '2026-05-05', dateTo: '2026-08-03' }),
+      )
+    })
+
+    it('completes a dateFrom-only range with today instead of rejecting it', async () => {
+      const res = await GET(
+        makeRequest('http://localhost/api/reports/procedimentos-realizados?dateFrom=2026-01-15'),
+      )
+
+      expect(res.status).toBe(200)
+      expect(listProcedureApplications).toHaveBeenCalledWith(
+        'tenant-1',
+        expect.objectContaining({ dateFrom: '2026-01-15', dateTo: '2026-08-03' }),
+      )
+    })
+
+    it('completes a dateTo-only range with 90 days before it', async () => {
+      const res = await GET(
+        makeRequest('http://localhost/api/reports/procedimentos-realizados?dateTo=2026-06-30'),
+      )
+
+      expect(res.status).toBe(200)
+      expect(listProcedureApplications).toHaveBeenCalledWith(
+        'tenant-1',
+        expect.objectContaining({ dateFrom: '2026-04-01', dateTo: '2026-06-30' }),
+      )
+    })
+
+    it('still rejects a malformed dateFrom with 400, even on its own', async () => {
+      const res = await GET(makeRequest('http://localhost/api/reports/procedimentos-realizados?dateFrom=04-2026'))
+
+      expect(res.status).toBe(400)
+      expect(listProcedureApplications).not.toHaveBeenCalled()
+    })
+
+    it('still rejects a malformed dateTo with 400, even on its own', async () => {
+      const res = await GET(makeRequest('http://localhost/api/reports/procedimentos-realizados?dateTo=2026-02-31'))
+
+      expect(res.status).toBe(400)
+      expect(listProcedureApplications).not.toHaveBeenCalled()
+    })
+
+    it('still rejects dateFrom after dateTo with 400', async () => {
+      const res = await GET(
+        makeRequest('http://localhost/api/reports/procedimentos-realizados?dateFrom=2026-05-01&dateTo=2026-04-01'),
+      )
+
+      expect(res.status).toBe(400)
+      expect(listProcedureApplications).not.toHaveBeenCalled()
+    })
+  })
+
 })

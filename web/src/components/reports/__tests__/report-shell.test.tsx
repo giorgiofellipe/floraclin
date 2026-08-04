@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ReportShell } from '../report-shell'
@@ -98,6 +98,89 @@ describe('ReportShell', () => {
     expect(screen.getByText('Extrato por período')).toBeInTheDocument()
     const params = new URLSearchParams(getCsvHref().split('?')[1])
     expect(params.has('thresholdDays')).toBe(false)
+  })
+
+  describe('date-range seeding', () => {
+    // Fixed clock so the seeded window is a concrete pair of dates rather
+    // than something recomputed from the same helpers the shell uses.
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-08-03T15:00:00Z')) // BR noon on 2026-08-03
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    function renderRangeShell(defaultRangeDays?: number) {
+      return render(
+        <ReportShell
+          title="Extrato por período"
+          description="desc"
+          filters={['date-range']}
+          apiPath="/api/reports/extrato-periodo"
+          defaultRangeDays={defaultRangeDays}
+        >
+          {(filterValues) => (
+            <span data-testid="active-range">
+              {filterValues.dateFrom ?? 'none'}..{filterValues.dateTo ?? 'none'}
+            </span>
+          )}
+        </ReportShell>,
+      )
+    }
+
+    it('seeds both date inputs with the default window so the user can see it', () => {
+      renderRangeShell(90)
+
+      // The DatePicker renders its value as dd/MM/yyyy.
+      expect(screen.getByText('05/05/2026')).toBeInTheDocument()
+      expect(screen.getByText('03/08/2026')).toBeInTheDocument()
+    })
+
+    it('hands the seeded range to the table on first render', () => {
+      renderRangeShell(90)
+
+      expect(screen.getByTestId('active-range')).toHaveTextContent('2026-05-05..2026-08-03')
+    })
+
+    it('carries the seeded range into the export href before anything is touched', () => {
+      renderRangeShell(90)
+
+      const params = new URLSearchParams(getCsvHref().split('?')[1])
+      expect(params.get('dateFrom')).toBe('2026-05-05')
+      expect(params.get('dateTo')).toBe('2026-08-03')
+    })
+
+    it('leaves the inputs blank when the report declares no defaultRangeDays', () => {
+      renderRangeShell(undefined)
+
+      expect(screen.getAllByText('dd/mm/aaaa')).toHaveLength(2)
+      const params = new URLSearchParams(getCsvHref().split('?')[1])
+      expect(params.has('dateFrom')).toBe(false)
+      expect(params.has('dateTo')).toBe(false)
+    })
+
+    it('does not seed dates for a report that declares no date-range filter', () => {
+      render(
+        <ReportShell
+          title="Pacientes inativos"
+          description="desc"
+          filters={['threshold-days']}
+          apiPath="/api/reports/inactive-patients"
+          paramName="thresholdDays"
+          defaultDays={180}
+          filterLabel="Limite (dias)"
+          defaultRangeDays={90}
+        >
+          {() => <div>table</div>}
+        </ReportShell>,
+      )
+
+      const params = new URLSearchParams(getCsvHref().split('?')[1])
+      expect(params.has('dateFrom')).toBe(false)
+      expect(params.has('dateTo')).toBe(false)
+    })
   })
 
   describe('sort state', () => {

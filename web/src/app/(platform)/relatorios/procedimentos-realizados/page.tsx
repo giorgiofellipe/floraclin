@@ -16,8 +16,10 @@ const REPORT = getReport('procedimentos-realizados')!
 
 /**
  * Fetches the report rows for the currently active date range, practitioner
- * filter and sort. Blank date inputs are sent through as absent params, and
- * the route falls back to the current BR calendar month to date.
+ * filter and sort. Both date inputs start seeded with the registry's default
+ * window (see `ReportShell` and `ReportDefinition.defaultRangeDays`); a blank
+ * input is sent through as an absent param and the route completes the range
+ * itself (see `resolveDateRange`).
  */
 function useProcedureApplicationsReport(filters: ReportFilterValues, sort: ReportSort | undefined) {
   const dateFrom = filters.dateFrom?.trim()
@@ -90,6 +92,7 @@ function ProcedimentosRealizadosBody({
       columns={PROCEDURE_APPLICATION_COLUMNS}
       sort={sort}
       onSortChange={onSortChange}
+      emptyHint={REPORT.emptyHint}
     />
   )
 }
@@ -101,6 +104,7 @@ export default function ProcedimentosRealizadosPage() {
       description={REPORT.description}
       filters={REPORT.filters}
       apiPath={REPORT.apiPath}
+      defaultRangeDays={REPORT.defaultRangeDays}
     >
       {(filters, sort, onSortChange) => (
         <ProcedimentosRealizadosBody filters={filters} sort={sort} onSortChange={onSortChange} />
