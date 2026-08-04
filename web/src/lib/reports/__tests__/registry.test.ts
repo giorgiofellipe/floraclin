@@ -64,4 +64,17 @@ describe('REPORTS registry', () => {
       expect(report.emptyHint, report.slug).toBeTruthy()
     }
   })
+
+  // Only procedimentos-realizados declares the `patient` filter kind: a
+  // clinic can have thousands of patients, so the control has to be a
+  // SUGGEST/autocomplete, not a `<select>` listing every one of them (see
+  // `PatientFilter` in report-filters.tsx). No other report filters by a
+  // single patient.
+  it('declares the patient filter only on procedimentos-realizados', () => {
+    expect(getReport('procedimentos-realizados')?.filters).toContain('patient')
+    for (const report of REPORTS) {
+      if (report.slug === 'procedimentos-realizados') continue
+      expect(report.filters, report.slug).not.toContain('patient')
+    }
+  })
 })

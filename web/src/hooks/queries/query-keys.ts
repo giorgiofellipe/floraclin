@@ -6,6 +6,7 @@ export const queryKeys = {
     list: (search: string, page: number) => ['patients', 'list', search, page] as const,
     detail: (id: string) => ['patients', 'detail', id] as const,
     timeline: (id: string) => ['patients', 'timeline', id] as const,
+    search: (search: string) => ['patients', 'search', search] as const,
   },
   appointments: {
     all: ['appointments'] as const,

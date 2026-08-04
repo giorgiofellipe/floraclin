@@ -94,6 +94,38 @@ describe('GET /api/reports/procedimentos-realizados', () => {
     expect(listProcedureApplications).not.toHaveBeenCalled()
   })
 
+  it('rejects a malformed patientId with 400', async () => {
+    const res = await GET(
+      makeRequest('http://localhost/api/reports/procedimentos-realizados?patientId=not-a-uuid'),
+    )
+
+    expect(res.status).toBe(400)
+    expect(listProcedureApplications).not.toHaveBeenCalled()
+  })
+
+  it('filters by patientId when a valid one is given', async () => {
+    const patientId = '11111111-1111-1111-1111-111111111111'
+    const res = await GET(
+      makeRequest(`http://localhost/api/reports/procedimentos-realizados?patientId=${patientId}`),
+    )
+
+    expect(res.status).toBe(200)
+    expect(listProcedureApplications).toHaveBeenCalledWith(
+      'tenant-1',
+      expect.objectContaining({ patientId }),
+    )
+  })
+
+  it('omits patientId (returns unfiltered results) when none is given', async () => {
+    const res = await GET(makeRequest('http://localhost/api/reports/procedimentos-realizados'))
+
+    expect(res.status).toBe(200)
+    expect(listProcedureApplications).toHaveBeenCalledWith(
+      'tenant-1',
+      expect.objectContaining({ patientId: undefined }),
+    )
+  })
+
   it('rejects an unknown sort key with 400', async () => {
     const res = await GET(
       makeRequest('http://localhost/api/reports/procedimentos-realizados?sort=notARealField'),

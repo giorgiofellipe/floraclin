@@ -16,7 +16,7 @@ export const REPORTS: ReportDefinition[] = [
     slug: 'pacientes-inativos',
     title: 'Pacientes inativos',
     description:
-      'Pacientes sem procedimento recente, ordenados por valor gasto: quem vale mais liga primeiro.',
+      'Pacientes sem procedimento recente, ordenados por quanto já gastaram na clínica, para priorizar o contato.',
     filters: ['threshold-days'],
     apiPath: '/api/reports/inactive-patients',
     paramName: 'thresholdDays',
@@ -87,7 +87,12 @@ export const REPORTS: ReportDefinition[] = [
     title: 'Procedimentos realizados',
     description:
       'Registro de rastreabilidade por lote: produto, lote e validade de cada aplicação, para consulta caso um procedimento seja questionado.',
-    filters: ['date-range', 'practitioner'],
+    // `patient` is a SUGGEST/autocomplete field (type to search, pick one),
+    // not a plain dropdown: even the demo tenant alone has 50 patients and a
+    // real clinic has thousands, so a `<select>`-style list would be
+    // unusable. Only declared here; the other reports don't filter by a
+    // single patient.
+    filters: ['date-range', 'practitioner', 'patient'],
     apiPath: '/api/reports/procedimentos-realizados',
     defaultRangeDays: DEFAULT_RANGE_DAYS,
     emptyHint: 'Amplie o período ou volte para todos os profissionais.',

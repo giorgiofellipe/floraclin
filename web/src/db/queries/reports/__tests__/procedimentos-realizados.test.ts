@@ -141,6 +141,33 @@ describe('listProcedureApplications', () => {
     expect(hasPractitionerCondition).toBe(false)
   })
 
+  it('adds a patientId condition only when one is given, alongside tenant scoping', async () => {
+    setRows([])
+
+    await listProcedureApplications('tenant-1', {
+      dateFrom: '2026-04-01',
+      dateTo: '2026-04-30',
+      patientId: 'patient-1',
+    })
+
+    const [conditions] = whereCalls[0] as [unknown[]]
+    expect(conditions).toContainEqual(['eq', 'patient_id', 'patient-1'])
+    expect(conditions).toContainEqual(['eq', 'tenant_id', 'tenant-1'])
+  })
+
+  it('omits the patientId condition when none is given', async () => {
+    setRows([])
+
+    await listProcedureApplications('tenant-1', { dateFrom: '2026-04-01', dateTo: '2026-04-30' })
+
+    const [conditions] = whereCalls[0] as [unknown[]]
+    const hasPatientCondition = conditions.some(
+      (c) => Array.isArray(c) && c[0] === 'eq' && c[1] === 'patient_id',
+    )
+    expect(hasPatientCondition).toBe(false)
+  })
+
+
   it('converts the decimal totalQuantity string to a number', async () => {
     setRows([row({ totalQuantity: '12.50' })])
 

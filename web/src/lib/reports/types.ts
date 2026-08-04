@@ -1,4 +1,4 @@
-export type ReportFilterKind = 'date-range' | 'threshold-days' | 'practitioner' | 'min-count'
+export type ReportFilterKind = 'date-range' | 'threshold-days' | 'practitioner' | 'min-count' | 'patient'
 
 export interface ReportColumn<Row> {
   key: string

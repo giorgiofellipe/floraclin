@@ -24,6 +24,7 @@ export interface ListProcedureApplicationsOptions {
   dateFrom: string
   dateTo: string
   practitionerId?: string
+  patientId?: string
   sort?: { key: ProcedureApplicationSortKey; dir: SortDirection }
 }
 
@@ -52,7 +53,7 @@ const MAX_ROWS = 200
  */
 export async function listProcedureApplications(
   tenantId: string,
-  { dateFrom, dateTo, practitionerId, sort }: ListProcedureApplicationsOptions,
+  { dateFrom, dateTo, practitionerId, patientId, sort }: ListProcedureApplicationsOptions,
 ): Promise<ProcedureApplicationRow[]> {
   const conditions = [
     eq(productApplications.tenantId, tenantId),
@@ -67,6 +68,15 @@ export async function listProcedureApplications(
 
   if (practitionerId) {
     conditions.push(eq(procedureRecords.practitionerId, practitionerId))
+  }
+
+  // Tenant scoping already comes from the procedureRecords.tenantId
+  // condition above; procedureRecords.patientId is only ever a patient
+  // belonging to that same tenant (enforced at write time), so no separate
+  // patients.tenantId condition is needed here, same reasoning as
+  // practitionerId above.
+  if (patientId) {
+    conditions.push(eq(procedureRecords.patientId, patientId))
   }
 
   const rows = await db

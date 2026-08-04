@@ -16,15 +16,17 @@ const REPORT = getReport('procedimentos-realizados')!
 
 /**
  * Fetches the report rows for the currently active date range, practitioner
- * filter and sort. Both date inputs start seeded with the registry's default
- * window (see `ReportShell` and `ReportDefinition.defaultRangeDays`); a blank
- * input is sent through as an absent param and the route completes the range
- * itself (see `resolveDateRange`).
+ * filter, patient filter and sort. Both date inputs start seeded with the
+ * registry's default window (see `ReportShell` and
+ * `ReportDefinition.defaultRangeDays`); a blank input is sent through as an
+ * absent param and the route completes the range itself (see
+ * `resolveDateRange`).
  */
 function useProcedureApplicationsReport(filters: ReportFilterValues, sort: ReportSort | undefined) {
   const dateFrom = filters.dateFrom?.trim()
   const dateTo = filters.dateTo?.trim()
   const practitionerId = filters.practitionerId?.trim()
+  const patientId = filters.patientId?.trim()
 
   return useQuery({
     queryKey: [
@@ -33,6 +35,7 @@ function useProcedureApplicationsReport(filters: ReportFilterValues, sort: Repor
       dateFrom || 'default',
       dateTo || 'default',
       practitionerId || 'all',
+      patientId || 'all',
       sort?.key,
       sort?.dir,
     ],
@@ -41,6 +44,7 @@ function useProcedureApplicationsReport(filters: ReportFilterValues, sort: Repor
       if (dateFrom) params.set('dateFrom', dateFrom)
       if (dateTo) params.set('dateTo', dateTo)
       if (practitionerId) params.set('practitionerId', practitionerId)
+      if (patientId) params.set('patientId', patientId)
       if (sort) {
         params.set('sort', sort.key)
         params.set('dir', sort.dir)

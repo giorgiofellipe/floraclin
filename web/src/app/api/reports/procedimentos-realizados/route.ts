@@ -85,6 +85,14 @@ export async function GET(request: Request) {
     }
     const practitionerId = practitionerIdParam ?? undefined
 
+    // An unselected patient means no filtering, not an error, same as
+    // practitionerId above; only a malformed id is a 400.
+    const patientIdParam = searchParams.get('patientId')
+    if (patientIdParam && !UUID_RE.test(patientIdParam)) {
+      return NextResponse.json({ error: 'Paciente inválido' }, { status: 400 })
+    }
+    const patientId = patientIdParam ?? undefined
+
     const parsedSort = parseSort(searchParams)
     if (!parsedSort.ok) {
       return NextResponse.json({ error: parsedSort.error }, { status: 400 })
@@ -94,6 +102,7 @@ export async function GET(request: Request) {
       dateFrom,
       dateTo,
       practitionerId,
+      patientId,
       sort: parsedSort.sort,
     })
 

@@ -7,6 +7,13 @@ vi.mock('@/hooks/queries/use-appointments', () => ({
   usePractitioners: () => ({ data: [{ id: '11111111-1111-1111-1111-111111111111', fullName: 'Dra. Ana' }] }),
 }))
 
+vi.mock('@/hooks/queries/use-patients', () => ({
+  usePatientSearch: () => ({
+    data: [{ id: '22222222-2222-2222-2222-222222222222', fullName: 'Ana Souza' }],
+    isFetching: false,
+  }),
+}))
+
 import PacientesInativosPage from '../pacientes-inativos/page'
 import RetornosPage from '../retornos/page'
 import FaltasPage from '../faltas/page'
@@ -15,6 +22,7 @@ import GanhosProfissionalPage from '../ganhos-profissional/page'
 import ProcedimentosRealizadosPage from '../procedimentos-realizados/page'
 
 const PRACTITIONER_ID = '11111111-1111-1111-1111-111111111111'
+const PATIENT_ID = '22222222-2222-2222-2222-222222222222'
 
 const fetchMock = vi.fn()
 
@@ -235,6 +243,27 @@ describe('relatórios pages', () => {
       await user.click(await screen.findByText('Dra. Ana'))
 
       await waitFor(() => expect(requestParams().get('practitionerId')).toBe(PRACTITIONER_ID))
+      expectExportToMatchRequest()
+    })
+
+    it('carries the selected patient in both the table request and the export URL', async () => {
+      const user = userEvent.setup()
+      renderWithProviders(<ProcedimentosRealizadosPage />)
+      await waitForRequests(1)
+
+      await user.click(screen.getByTestId('report-patient-filter-trigger'))
+      await user.type(screen.getByTestId('report-patient-filter-search'), 'ana')
+      await user.click(await screen.findByTestId(`report-patient-filter-option-${PATIENT_ID}`))
+
+      await waitFor(() => expect(requestParams().get('patientId')).toBe(PATIENT_ID))
+      expectExportToMatchRequest()
+    })
+
+    it('does not send patientId at all when no patient is selected', async () => {
+      renderWithProviders(<ProcedimentosRealizadosPage />)
+      await waitForRequests(1)
+
+      expect(requestParams().has('patientId')).toBe(false)
       expectExportToMatchRequest()
     })
   })
