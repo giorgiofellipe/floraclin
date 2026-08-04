@@ -12,6 +12,7 @@ import { createSelfSignupTenant, generateSlug } from '@/db/queries/admin-tenants
 import { createSubscription } from '@/db/queries/subscriptions'
 import { sendNewSignupNotification } from '@/lib/email'
 import { withTransaction } from '@/lib/tenant'
+import { notifyDiscord } from '@/lib/discord'
 
 export type SignUpState = {
   error?: { fullName?: string[]; email?: string[]; password?: string[]; clinicName?: string[]; phone?: string[]; general?: string[] }
@@ -90,9 +91,20 @@ export async function signUp(
   }
 
   if (tenantId) {
+    await notifyDiscord({ kind: 'clinic.created', tenantName: clinicName, city: null, state: null, tenantId })
+
     const [freePlan] = await db.select().from(plans).where(eq(plans.slug, 'free')).limit(1)
     if (freePlan) {
-      await createSubscription(tenantId, freePlan.id)
+      const { created } = await createSubscription(tenantId, freePlan.id)
+      if (created) {
+        await notifyDiscord({
+          kind: 'subscription.created',
+          tenantName: clinicName,
+          planName: freePlan.name,
+          priceCents: freePlan.priceCents,
+          tenantId,
+        })
+      }
     }
   }
 
@@ -155,9 +167,20 @@ export async function createClinicForOAuthUser(
 
   const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone })
 
+  await notifyDiscord({ kind: 'clinic.created', tenantName: clinicName, city: null, state: null, tenantId: tenant.id })
+
   const [freePlan] = await db.select().from(plans).where(eq(plans.slug, 'free')).limit(1)
   if (freePlan) {
-    await createSubscription(tenant.id, freePlan.id)
+    const { created } = await createSubscription(tenant.id, freePlan.id)
+    if (created) {
+      await notifyDiscord({
+        kind: 'subscription.created',
+        tenantName: clinicName,
+        planName: freePlan.name,
+        priceCents: freePlan.priceCents,
+        tenantId: tenant.id,
+      })
+    }
   }
 
   const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL

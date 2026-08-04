@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requirePlatformAdmin } from '@/lib/auth'
 import { approveTenant, getTenantOwnerEmail } from '@/db/queries/admin-tenants'
 import { sendApprovalEmail } from '@/lib/email'
+import { notifyDiscord } from '@/lib/discord'
 
 export async function POST(
   _req: Request,
@@ -19,6 +20,8 @@ export async function POST(
   if (ownerEmail) {
     sendApprovalEmail(ownerEmail, tenant.name).catch(() => {})
   }
+
+  await notifyDiscord({ kind: 'clinic.approved', tenantName: tenant.name, tenantId: id })
 
   return NextResponse.json({ data: tenant })
 }

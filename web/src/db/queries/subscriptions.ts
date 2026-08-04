@@ -151,7 +151,7 @@ export async function createSubscription(
     status?: SubscriptionStatus
     source?: string
   }
-) {
+): Promise<{ subscription: TenantSubscription; created: boolean }> {
   const now = new Date()
   const periodStart = opts?.currentPeriodStart ?? now
   const periodEnd = opts?.currentPeriodEnd ?? addDays(now, opts?.trialDays ?? 14)
@@ -160,7 +160,13 @@ export async function createSubscription(
   // may try to create it (self-signup, admin approval, admin creation).
   // Keeping the existing row is always the right call — it may already
   // carry Stripe state or an admin-granted plan.
-  const [result] = await db
+  //
+  // `created` tells the caller whether this call actually inserted the row,
+  // as opposed to finding one already there. This matters for anything that
+  // should fire once per real subscription (e.g. the Discord notifier) — a
+  // retried call (or a second flow racing the first) must not re-announce
+  // an existing subscription.
+  const [inserted] = await db
     .insert(tenantSubscriptions)
     .values({
       tenantId,
@@ -173,7 +179,7 @@ export async function createSubscription(
     .onConflictDoNothing({ target: tenantSubscriptions.tenantId })
     .returning()
 
-  if (result) return result
+  if (inserted) return { subscription: inserted, created: true }
 
   const [existing] = await db
     .select()
@@ -181,7 +187,7 @@ export async function createSubscription(
     .where(eq(tenantSubscriptions.tenantId, tenantId))
     .limit(1)
 
-  return existing
+  return { subscription: existing, created: false }
 }
 
 export async function updateSubscriptionStatus(
