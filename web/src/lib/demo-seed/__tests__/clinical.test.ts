@@ -4,8 +4,10 @@ import {
   buildAnamnesis,
   buildProcedureNotes,
   buildFaceDiagramPoints,
+  buildProductApplications,
 } from '../clinical'
 import { CATALOGUE } from '../config'
+import { parseBrDate } from '@/lib/dates'
 import type { SeededPatient } from '../types'
 
 function makePatient(overrides: Partial<SeededPatient> & { fullName: string }): SeededPatient {
@@ -210,5 +212,88 @@ describe('buildFaceDiagramPoints', () => {
     for (const item of CATALOGUE) {
       expect(() => buildFaceDiagramPoints(item.name)).not.toThrow()
     }
+  })
+})
+
+describe('buildProductApplications', () => {
+  const PROCEDURE_DATE = parseBrDate('2026-03-10')
+
+  it('sums to the same total quantity, per product, as buildFaceDiagramPoints', () => {
+    for (const item of CATALOGUE) {
+      const points = buildFaceDiagramPoints(item.name)
+      const applications = buildProductApplications(item.name, 0, PROCEDURE_DATE)
+
+      const expectedByProduct = new Map<string, number>()
+      for (const point of points) {
+        const key = `${point.productName}||${point.activeIngredient}||${point.quantityUnit}`
+        expectedByProduct.set(key, (expectedByProduct.get(key) ?? 0) + point.quantity)
+      }
+
+      const actualByProduct = new Map<string, number>()
+      for (const app of applications) {
+        const key = `${app.productName}||${app.activeIngredient}||${app.quantityUnit}`
+        actualByProduct.set(key, app.totalQuantity)
+      }
+
+      expect(actualByProduct.size, `product count mismatch for "${item.name}"`).toBe(expectedByProduct.size)
+      for (const [key, expectedQuantity] of expectedByProduct) {
+        expect(actualByProduct.get(key), `quantity mismatch for "${item.name}" / ${key}`).toBeCloseTo(
+          expectedQuantity,
+          2,
+        )
+      }
+    }
+  })
+
+  it('gives every row a non-empty batch number', () => {
+    for (const item of CATALOGUE) {
+      const applications = buildProductApplications(item.name, 0, PROCEDURE_DATE)
+      for (const app of applications) {
+        expect(app.batchNumber.trim().length).toBeGreaterThan(0)
+        // Letter prefix plus digits, e.g. "BOT4821".
+        expect(app.batchNumber).toMatch(/^[A-Z]+[0-9]+$/)
+      }
+    }
+  })
+
+  it('varies the batch number across repeat visits (index) for the same procedure', () => {
+    const first = buildProductApplications('Toxina botulínica completa', 0, PROCEDURE_DATE)
+    const second = buildProductApplications('Toxina botulínica completa', 1, PROCEDURE_DATE)
+    expect(first[0].batchNumber).not.toBe(second[0].batchNumber)
+  })
+
+  it('gives every row an expiration date strictly after the procedure date', () => {
+    for (const item of CATALOGUE) {
+      const applications = buildProductApplications(item.name, 0, PROCEDURE_DATE)
+      for (const app of applications) {
+        const expiration = parseBrDate(app.expirationDate)
+        expect(expiration.getTime()).toBeGreaterThan(PROCEDURE_DATE.getTime())
+      }
+    }
+  })
+
+  it('produces no applications for the non-injectable Limpeza de pele profunda', () => {
+    expect(buildProductApplications('Limpeza de pele profunda', 0, PROCEDURE_DATE)).toEqual([])
+  })
+
+  it('carries the applicationAreas and product/ingredient fields non-empty', () => {
+    const applications = buildProductApplications('Harmonização facial completa', 0, PROCEDURE_DATE)
+    expect(applications.length).toBeGreaterThan(0)
+    for (const app of applications) {
+      expect(app.productName.trim().length).toBeGreaterThan(0)
+      expect(app.activeIngredient.trim().length).toBeGreaterThan(0)
+      expect(app.applicationAreas.trim().length).toBeGreaterThan(0)
+      expect(app.notes.trim().length).toBeGreaterThan(0)
+    }
+  })
+
+  it('is deterministic for the same inputs', () => {
+    const first = buildProductApplications('Preenchimento malar', 2, PROCEDURE_DATE)
+    const second = buildProductApplications('Preenchimento malar', 2, PROCEDURE_DATE)
+    expect(second).toEqual(first)
+  })
+
+  it('throws for an unknown procedure name', () => {
+    expect(() => buildProductApplications('Procedimento inexistente', 0, PROCEDURE_DATE)).toThrow()
   })
 })

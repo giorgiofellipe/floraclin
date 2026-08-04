@@ -26,10 +26,18 @@
  *
  * tenant -> users + tenant_users -> tenant_subscriptions -> expense_categories
  * -> procedure_types -> patients -> appointments -> procedure_records
- * -> financial_entries + installments -> expenses + expense_installments
- * -> anamneses -> face_diagrams + diagram_points -> prospects +
- * prospect_activities -> whatsapp_conversations + whatsapp_messages ->
- * photo_assets + photo_annotations
+ * -> product_applications -> financial_entries + installments -> expenses +
+ * expense_installments -> anamneses -> face_diagrams + diagram_points ->
+ * prospects + prospect_activities -> whatsapp_conversations +
+ * whatsapp_messages -> photo_assets + photo_annotations
+ *
+ * `product_applications` is written for EVERY past procedure record (all of
+ * history + current month), not just the `FEATURED_PATIENT_COUNT` patients
+ * that get a rendered face diagram: a lot-level traceability log exists
+ * independently of whether the diagram was drawn, and the "Procedimentos
+ * realizados" report expects one for every performed procedure. Non-
+ * injectable procedures still contribute zero rows, same as
+ * `buildFaceDiagramPoints`.
  *
  * This deviates from the plan's listing in one place, deliberately.
  * `procedure_records.appointment_id` must point at the appointment the record
@@ -76,6 +84,7 @@ import {
   plans,
   procedureRecords,
   procedureTypes,
+  productApplications,
   prospectActivities,
   prospects,
   tenantSubscriptions,
@@ -107,6 +116,7 @@ import {
   buildAnamnesis,
   buildFaceDiagramPoints,
   buildProcedureNotes,
+  buildProductApplications,
 } from '@/lib/demo-seed/clinical'
 import {
   buildConversations,
@@ -284,6 +294,13 @@ function describePlan(plan: SeedPlan): Array<[string, string | number]> {
       const entry = findFeaturedEntry(plan.currentEntries, patientIndex)
       return total + (entry ? buildFaceDiagramPoints(entry.procedure.procedureName).length : 0)
     }, 0)
+  // Row count only -- content (batch numbers, expiration) doesn't depend on
+  // `index`, so 0 is a fine stand-in for the real per-record noteIndex here.
+  const productApplicationCount = pastEntries.reduce(
+    (total, entry) =>
+      total + buildProductApplications(entry.procedure.procedureName, 0, parseBrDate(plan.todayYmd)).length,
+    0,
+  )
 
   const currentMonthExpenses = plan.expenses.filter((e) => e.date.startsWith(plan.todayYmd.slice(0, 7)))
 
@@ -299,6 +316,7 @@ function describePlan(plan: SeedPlan): Array<[string, string | number]> {
     ['appointments (today)', plan.todaySlots.length],
     ['appointments (forward)', plan.forwardSlots.length],
     ['procedure_records', pastEntries.length],
+    ['product_applications', productApplicationCount],
     ['financial_entries', pastEntries.length],
     ['installments', countInstallments(pastEntries)],
     ['expenses', plan.expenses.length],
@@ -612,6 +630,37 @@ async function writeProcedureRecords(tx: Tx, ctx: WriteContext, pastRecords: Pas
   })
 
   await inChunks(rows, (chunk) => tx.insert(procedureRecords).values(chunk))
+}
+
+/**
+ * The lot-level traceability log: one row per distinct product used on each
+ * past procedure's face diagram (see `buildProductApplications`), written
+ * for every performed record, not only the `FEATURED_PATIENT_COUNT`
+ * patients whose diagram is actually rendered. `noteIndex` is reused from
+ * the same `PastRecord` so a repeat product on a later visit gets a
+ * different-looking batch number, and `performedAt` is recomputed the same
+ * way `writeProcedureRecords` does, so both rows agree on the instant.
+ */
+async function writeProductApplications(tx: Tx, pastRecords: PastRecord[]): Promise<number> {
+  const rows = pastRecords.flatMap(({ entry, procedureRecordId, noteIndex }) => {
+    const { procedure } = entry
+    const performedAt = brInstant(procedure.date, procedure.startTime)
+    return buildProductApplications(procedure.procedureName, noteIndex, performedAt).map((app) => ({
+      tenantId: DEMO_TENANT_ID,
+      procedureRecordId,
+      productName: app.productName,
+      activeIngredient: app.activeIngredient,
+      totalQuantity: app.totalQuantity.toFixed(2),
+      quantityUnit: app.quantityUnit,
+      batchNumber: app.batchNumber,
+      expirationDate: app.expirationDate,
+      applicationAreas: app.applicationAreas,
+      notes: app.notes,
+    }))
+  })
+
+  await inChunks(rows, (chunk) => tx.insert(productApplications).values(chunk))
+  return rows.length
 }
 
 async function writeFinancials(tx: Tx, ctx: WriteContext, pastRecords: PastRecord[]): Promise<void> {
@@ -999,6 +1048,7 @@ async function main(): Promise<number> {
 
   let planLabel = ''
   let diagramPointCount = 0
+  let productApplicationCount = 0
 
   await db.transaction(async (tx) => {
     // Re-checked inside the transaction: the pre-flight check above is a
@@ -1013,6 +1063,7 @@ async function main(): Promise<number> {
     await writePatients(tx, ctx)
     await writeAppointments(tx, ctx, pastRecords)
     await writeProcedureRecords(tx, ctx, pastRecords)
+    productApplicationCount = await writeProductApplications(tx, pastRecords)
     await writeFinancials(tx, ctx, pastRecords)
     await writeExpenses(tx, ctx)
     diagramPointCount = await writeClinicalRecords(tx, ctx, pastRecords)
@@ -1025,6 +1076,7 @@ async function main(): Promise<number> {
   printTable('Written', [
     ...describePlan(plan),
     ['diagram_points (actual)', diagramPointCount],
+    ['product_applications (actual)', productApplicationCount],
     ['subscription plan', planLabel],
   ])
 
