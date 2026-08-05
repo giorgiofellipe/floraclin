@@ -20,6 +20,7 @@ import FaltasPage from '../faltas/page'
 import ExtratoPeriodoPage from '../extrato-periodo/page'
 import GanhosProfissionalPage from '../ganhos-profissional/page'
 import ProcedimentosRealizadosPage from '../procedimentos-realizados/page'
+import PendenciasDocumentaisPage from '../pendencias-documentais/page'
 
 const PRACTITIONER_ID = '11111111-1111-1111-1111-111111111111'
 const PATIENT_ID = '22222222-2222-2222-2222-222222222222'
@@ -265,6 +266,24 @@ describe('relatórios pages', () => {
 
       expect(requestParams().has('patientId')).toBe(false)
       expectExportToMatchRequest()
+    })
+  })
+
+  describe('pendencias-documentais', () => {
+    it('loads with no filter params at all, and the export URL mirrors that', async () => {
+      renderWithProviders(<PendenciasDocumentaisPage />)
+      await waitForRequests(1)
+
+      expect(requestParams().toString()).toBe('')
+      expectExportToMatchRequest()
+    })
+
+    it('shows the report-specific hint when there are no rows', async () => {
+      renderWithProviders(<PendenciasDocumentaisPage />)
+
+      expect(
+        await screen.findByText('Nenhuma pendência: todas as anamneses e consentimentos estão em dia.'),
+      ).toBeInTheDocument()
     })
   })
 })

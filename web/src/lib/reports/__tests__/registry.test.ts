@@ -65,15 +65,20 @@ describe('REPORTS registry', () => {
     }
   })
 
-  // Only procedimentos-realizados declares the `patient` filter kind: a
-  // clinic can have thousands of patients, so the control has to be a
-  // SUGGEST/autocomplete, not a `<select>` listing every one of them (see
-  // `PatientFilter` in report-filters.tsx). No other report filters by a
+  // procedimentos-realizados and prontuario are the only two reports that
+  // declare the `patient` filter kind: a clinic can have thousands of
+  // patients, so the control has to be a SUGGEST/autocomplete, not a
+  // `<select>` listing every one of them (see `PatientFilter` in
+  // report-filters.tsx). prontuario additionally requires it (see its
+  // route, which 400s without a `patientId`); no other report filters by a
   // single patient.
-  it('declares the patient filter only on procedimentos-realizados', () => {
-    expect(getReport('procedimentos-realizados')?.filters).toContain('patient')
+  it('declares the patient filter only on procedimentos-realizados and prontuario', () => {
+    const patientFilterSlugs = ['procedimentos-realizados', 'prontuario']
+    for (const slug of patientFilterSlugs) {
+      expect(getReport(slug)?.filters, slug).toContain('patient')
+    }
     for (const report of REPORTS) {
-      if (report.slug === 'procedimentos-realizados') continue
+      if (patientFilterSlugs.includes(report.slug)) continue
       expect(report.filters, report.slug).not.toContain('patient')
     }
   })
