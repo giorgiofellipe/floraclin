@@ -7,6 +7,7 @@ import { tenants } from '@/db/schema'
 import { getPatientDossier } from '@/db/queries/reports/prontuario'
 import { ProntuarioPdf, PRONTUARIO_PDF_CSS } from '@/components/reports/prontuario-pdf'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
+import { reportRouteError } from '@/lib/reports/api-error'
 
 export const runtime = 'nodejs'
 // Disable static optimization: the PDF branch renders dynamic binary output.
@@ -86,11 +87,6 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ data: dossier })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect'))
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return reportRouteError(error, request)
   }
 }

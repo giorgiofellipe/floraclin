@@ -5,7 +5,15 @@ import { formatDate } from '@/lib/utils'
 import { formatBrPhone } from '@/lib/phone'
 import { CONSENT_TYPE_LABELS, METHOD_LABELS } from '@/lib/constants'
 import { FloraclinBrandHeader } from '@/lib/pdf-branding'
-import { VIEW_LABELS, VIEW_FILES, resolveGenderKey } from '@/components/face-diagram/face-template'
+// Imported from `face-template-data`, never from `face-template` itself:
+// that module is `'use client'`, and this one renders on the server inside
+// the `/api/reports/prontuario` route handler. See the header comment in
+// `face-template-data.ts` for why the distinction is load-bearing.
+import {
+  VIEW_LABELS,
+  VIEW_FILES,
+  resolveGenderKey,
+} from '@/components/face-diagram/face-template-data'
 import type { ProntuarioDossier } from '@/db/queries/reports/prontuario'
 import type { AnamnesisFormData } from '@/validations/anamnesis'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
