@@ -59,6 +59,7 @@ import {
 } from '@/db/schema'
 import { getQuickStats } from '@/db/queries/dashboard'
 import { getRevenueOverview } from '@/db/queries/financial'
+import { getLedgerSummary } from '@/db/queries/cash-movements'
 import { brToday } from '@/lib/dates'
 import {
   DEMO_TENANT_ID,
@@ -240,6 +241,22 @@ export async function runTargetAssertions(): Promise<string[]> {
   expectAmount(failures, 'getRevenueOverview.summary.totalOverdue', overview.summary.totalOverdue, 0)
   expectAmount(failures, 'getRevenueOverview.summary.totalExpenses', overview.summary.totalExpenses, TARGETS.expensesThisMonth)
   expectAmount(failures, 'getRevenueOverview.summary.netProfit', overview.summary.netProfit, TARGETS.netProfitThisMonth)
+
+  // `cash_movements` is a separate ledger from `installments` /
+  // `expense_installments` -- it only reflects reality if the seed also
+  // writes a movement for every paid installment (see `writeCashMovements`
+  // in `seed.ts`). These assertions catch drift between the two the moment
+  // one of them is touched without the other.
+  const ledger = await getLedgerSummary(DEMO_TENANT_ID, {
+    dateFrom: month.from,
+    dateTo: month.to,
+    type: 'all',
+    page: 1,
+    limit: 50,
+  })
+  expectAmount(failures, 'getLedgerSummary.totalInflows', ledger.totalInflows, TARGETS.receivedThisMonth)
+  expectAmount(failures, 'getLedgerSummary.totalOutflows', ledger.totalOutflows, TARGETS.expensesThisMonth)
+  expectAmount(failures, 'getLedgerSummary.netResult', ledger.netResult, TARGETS.netProfitThisMonth)
 
   const window = sixMonthRange(todayYmd)
   const sixMonths = await getRevenueOverview(DEMO_TENANT_ID, window.from, window.to)

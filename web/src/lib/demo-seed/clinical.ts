@@ -16,8 +16,15 @@
  *   or 'mL' into (`QuantityUnit` in `web/src/types/index.ts`), and
  *   `product_name` / `active_ingredient` / `technique` / `depth` / `notes`
  *   as free text with `sort_order` an integer starting at 0.
+ * - `product_applications.total_quantity` is `decimal(8,2)`, `batch_number`
+ *   / `expiration_date` / `application_areas` are free text (batch and
+ *   expiration nullable in the schema, but every row built here fills both --
+ *   a traceability log with an empty batch number is not a traceability
+ *   log). `expiration_date` is a `date` column: a BR calendar day, never an
+ *   instant, so it comes out as a `YYYY-MM-DD` string here too.
  */
 
+import { toBrYmd } from '@/lib/dates'
 import type { SeededPatient } from './types'
 
 /** Number of patients that get a full clinical record (anamnese, procedure
@@ -347,4 +354,192 @@ export function buildFaceDiagramPoints(procedureName: string): DemoDiagramPoint[
     throw new Error(`demo-seed clinical: unknown procedure "${procedureName}"`)
   }
   return withSortOrder(points)
+}
+
+// ─── Product applications ───────────────────────────────────────────────
+// Pure calendar helpers (no Date parsing, no host-TZ dependence) -- the same
+// small set `revenue.ts` / `schedule.ts` duplicate rather than share, so
+// this file keeps its "no `new Date()` inside the module" guarantee without
+// pulling in a cross-generator dependency.
+
+function ymd(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+function ymdParts(value: string): { year: number; month: number; day: number } {
+  const [year, month, day] = value.split('-').map(Number)
+  return { year, month, day }
+}
+
+function isLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
+}
+
+function daysInMonth(year: number, month: number): number {
+  const days = [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  return days[month - 1]
+}
+
+function shiftMonth(year: number, month: number, delta: number): { year: number; month: number } {
+  const zeroBased = month - 1 + delta
+  const shiftedYear = year + Math.floor(zeroBased / 12)
+  const shiftedMonth = ((zeroBased % 12) + 12) % 12 + 1
+  return { year: shiftedYear, month: shiftedMonth }
+}
+
+/** Adds whole months to a `YYYY-MM-DD` string, clamping the day to the
+ * target month's length. No `Date` involved, so it is safe to call with the
+ * BR calendar day derived from any instant, on any host TZ. */
+function addMonthsYmd(day: string, months: number): string {
+  const { year, month, day: d } = ymdParts(day)
+  const shifted = shiftMonth(year, month, months)
+  return ymd(shifted.year, shifted.month, Math.min(d, daysInMonth(shifted.year, shifted.month)))
+}
+
+export interface DemoProductApplication {
+  productName: string
+  activeIngredient: string
+  /** Sum of every `buildFaceDiagramPoints` point sharing this product on
+   * this procedure -- this is what keeps the traceability row from ever
+   * contradicting the diagram. */
+  totalQuantity: number
+  quantityUnit: 'U' | 'mL'
+  batchNumber: string
+  /** BR calendar day (`YYYY-MM-DD`), always after `procedureDate`. */
+  expirationDate: string
+  applicationAreas: string
+  notes: string
+}
+
+/** Injectables are logged with an 18-month shelf life counted from the day
+ * they were applied. Each additional product on a multi-product procedure
+ * (e.g. "Harmonização facial completa") gets a few extra months so batches
+ * on the same chart don't all expire on the same day, the way distinct real
+ * boxes bought at different times would. */
+const BASE_SHELF_LIFE_MONTHS = 18
+const SHELF_LIFE_STEP_MONTHS = 3
+
+/**
+ * Coarse anatomical area a diagram point's free-text `notes` refers to,
+ * independent of the exact wording -- "Frontal, lado direito" and "Ponto
+ * central do frontal" both read as "Testa". Falls back to the raw note when
+ * nothing matches, so an unrecognized point still produces readable text
+ * instead of silently losing information.
+ */
+function areaLabel(notes: string): string {
+  const lower = notes.toLowerCase()
+  if (/frontal|testa/.test(lower)) return 'Testa'
+  if (/glabela|corrugador|prócero/.test(lower)) return 'Glabela'
+  if (/pé de galinha/.test(lower)) return 'Pés de galinha'
+  if (/malar/.test(lower)) return 'Malar'
+  if (/olheira/.test(lower)) return 'Olheiras'
+  if (/lábio/.test(lower)) return 'Lábios'
+  if (/mento/.test(lower)) return 'Mento'
+  if (/têmpora/.test(lower)) return 'Têmporas'
+  if (/mandíbula/.test(lower)) return 'Mandíbula'
+  if (/bochecha/.test(lower)) return 'Bochechas'
+  if (/queixo/.test(lower)) return 'Queixo'
+  return notes
+}
+
+/** Stable, non-cryptographic string hash -- just enough to make batch
+ * numbers vary by product name without pulling in a hashing library. */
+function hashString(value: string): number {
+  let hash = 0
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0
+  }
+  return hash
+}
+
+/** 2-3 uppercase letters derived from the product name, ignoring any
+ * parenthetical (e.g. "Botox (onabotulinumtoxinA)" -> "BOT", not "BO"). */
+function batchPrefix(productName: string): string {
+  const base = productName.split('(')[0].trim()
+  const words = base.split(/\s+/).filter(Boolean)
+  const initials = words
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase()
+  const prefix = initials.length >= 2 ? initials : base.slice(0, 3).toUpperCase()
+  return prefix || 'LOT'
+}
+
+/**
+ * A batch/lot number that reads like a real label (letter prefix + digits)
+ * and varies across products, procedures and repeat visits, while staying
+ * fully deterministic for the same inputs.
+ */
+function buildBatchNumber(productName: string, index: number, groupIndex: number): string {
+  const prefix = batchPrefix(productName)
+  const base = hashString(productName) % 90
+  const digits = 1000 + ((base + index * 17 + groupIndex * 53) % 9000)
+  return `${prefix}${digits}`
+}
+
+/**
+ * Builds the lot-level traceability rows for `procedureName`, shaped for
+ * `product_applications`. One row per distinct product actually used on the
+ * face diagram (`buildFaceDiagramPoints`), with `totalQuantity` the sum of
+ * that product's points, so this can never disagree with the diagram or
+ * with the dose named in `buildProcedureNotes`. Non-injectable procedures
+ * (e.g. "Limpeza de pele profunda") have no diagram points and therefore
+ * produce no applications, same as `buildFaceDiagramPoints`.
+ *
+ * `procedureDate` anchors `expirationDate`: every batch expires after it,
+ * never before. Callers pass the instant the procedure was actually
+ * performed (`procedure_records.performed_at`) -- never `new Date()`.
+ */
+export function buildProductApplications(
+  procedureName: string,
+  index: number,
+  procedureDate: Date,
+): DemoProductApplication[] {
+  const points = buildFaceDiagramPoints(procedureName)
+  if (points.length === 0) return []
+
+  interface ProductGroup {
+    productName: string
+    activeIngredient: string
+    quantityUnit: 'U' | 'mL'
+    quantity: number
+    areas: string[]
+  }
+
+  const groups = new Map<string, ProductGroup>()
+  for (const point of points) {
+    const key = `${point.productName}||${point.activeIngredient}||${point.quantityUnit}`
+    const area = areaLabel(point.notes)
+    const group = groups.get(key)
+    if (group) {
+      group.quantity += point.quantity
+      if (!group.areas.includes(area)) group.areas.push(area)
+    } else {
+      groups.set(key, {
+        productName: point.productName,
+        activeIngredient: point.activeIngredient,
+        quantityUnit: point.quantityUnit,
+        quantity: point.quantity,
+        areas: [area],
+      })
+    }
+  }
+
+  const procedureYmd = toBrYmd(procedureDate)
+
+  return Array.from(groups.values()).map((group, groupIndex) => {
+    const applicationAreas = group.areas.join(', ')
+    return {
+      productName: group.productName,
+      activeIngredient: group.activeIngredient,
+      // Guards against float drift (e.g. repeated 0.1 additions); every
+      // quantity in this module is already at most 2 decimal places.
+      totalQuantity: Math.round(group.quantity * 100) / 100,
+      quantityUnit: group.quantityUnit,
+      batchNumber: buildBatchNumber(group.productName, index, groupIndex),
+      expirationDate: addMonthsYmd(procedureYmd, BASE_SHELF_LIFE_MONTHS + groupIndex * SHELF_LIFE_STEP_MONTHS),
+      applicationAreas,
+      notes: `Registro de lote gerado a partir do mapa facial (${applicationAreas}).`,
+    }
+  })
 }

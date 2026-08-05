@@ -6,6 +6,7 @@ import { useFinancialPatients } from '@/hooks/queries/use-financial'
 import { useExpenseCategories } from '@/hooks/queries/use-financial-settings'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import { DateRangePicker } from '@/components/ui/date-picker'
 import {
   Select,
@@ -125,28 +126,37 @@ export function LedgerView() {
         />
 
         {/* Payment method */}
-        <Select items={PAYMENT_METHOD_FILTER_ITEMS} value={paymentMethod || 'all'} onValueChange={(v) => { setPaymentMethod(!v || v === 'all' ? '' : v); setPage(1) }}>
-          <SelectTrigger className="w-[170px] border-sage/20">
-            <SelectValue placeholder="Método" />
-          </SelectTrigger>
-          <SelectContent />
-        </Select>
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs text-mid">Método</Label>
+          <Select items={PAYMENT_METHOD_FILTER_ITEMS} value={paymentMethod || 'all'} onValueChange={(v) => { setPaymentMethod(!v || v === 'all' ? '' : v); setPage(1) }}>
+            <SelectTrigger className="w-[170px] border-sage/20">
+              <SelectValue placeholder="Método" />
+            </SelectTrigger>
+            <SelectContent />
+          </Select>
+        </div>
 
         {/* Patient filter */}
-        <Select items={patientFilterItems} value={patientId || 'all'} onValueChange={(v) => { setPatientId(!v || v === 'all' ? '' : v); setPage(1) }}>
-          <SelectTrigger className="w-[180px] border-sage/20">
-            <SelectValue placeholder="Paciente" />
-          </SelectTrigger>
-          <SelectContent />
-        </Select>
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs text-mid">Paciente</Label>
+          <Select items={patientFilterItems} value={patientId || 'all'} onValueChange={(v) => { setPatientId(!v || v === 'all' ? '' : v); setPage(1) }}>
+            <SelectTrigger className="w-[180px] border-sage/20">
+              <SelectValue placeholder="Paciente" />
+            </SelectTrigger>
+            <SelectContent />
+          </Select>
+        </div>
 
         {/* Category filter */}
-        <Select items={categoryFilterItems} value={categoryId || 'all'} onValueChange={(v) => { setCategoryId(!v || v === 'all' ? '' : v); setPage(1) }}>
-          <SelectTrigger className="w-[170px] border-sage/20">
-            <SelectValue placeholder="Categoria" />
-          </SelectTrigger>
-          <SelectContent />
-        </Select>
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs text-mid">Categoria</Label>
+          <Select items={categoryFilterItems} value={categoryId || 'all'} onValueChange={(v) => { setCategoryId(!v || v === 'all' ? '' : v); setPage(1) }}>
+            <SelectTrigger className="w-[170px] border-sage/20">
+              <SelectValue placeholder="Categoria" />
+            </SelectTrigger>
+            <SelectContent />
+          </Select>
+        </div>
 
         {hasActiveFilters && (
           <Button

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -302,27 +303,30 @@ export function WhatsAppTemplateList({ onProvision, configured = false }: WhatsA
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-end gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-mid" />
           <Input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Buscar por nome..."
-            className="pl-8"
+            className="pl-8 border-sage/20"
           />
         </div>
 
-        <Select
-          items={STATUS_FILTER_ITEMS}
-          value={statusFilter}
-          onValueChange={(val) => setStatusFilter(val ?? '')}
-        >
-          <SelectTrigger className="w-[140px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent />
-        </Select>
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs text-mid">Status</Label>
+          <Select
+            items={STATUS_FILTER_ITEMS}
+            value={statusFilter}
+            onValueChange={(val) => setStatusFilter(val ?? '')}
+          >
+            <SelectTrigger className="w-[140px] border-sage/20">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent />
+          </Select>
+        </div>
       </div>
 
       {/* Loading skeleton */}

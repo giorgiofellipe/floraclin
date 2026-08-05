@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn, formatDate } from '@/lib/utils'
 import { useAdminSubscriptions, useAdminPlans } from '@/hooks/queries/use-admin-subscriptions'
@@ -89,33 +90,39 @@ export function SubscriptionList() {
   return (
     <div className="space-y-3">
       {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-end gap-3 flex-wrap">
         <Input
           placeholder="Buscar clínicas..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-xs border-sage/20"
         />
-        <Select
-          items={STATUS_ITEMS}
-          value={statusFilter}
-          onValueChange={(v) => setStatusFilter(v ?? '')}
-        >
-          <SelectTrigger className="w-36 border-sage/20 h-8 text-sm">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent />
-        </Select>
-        <Select
-          items={planItems}
-          value={planFilter}
-          onValueChange={(v) => setPlanFilter(v ?? '')}
-        >
-          <SelectTrigger className="w-36 border-sage/20 h-8 text-sm">
-            <SelectValue placeholder="Plano" />
-          </SelectTrigger>
-          <SelectContent />
-        </Select>
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs text-mid">Status</Label>
+          <Select
+            items={STATUS_ITEMS}
+            value={statusFilter}
+            onValueChange={(v) => setStatusFilter(v ?? '')}
+          >
+            <SelectTrigger className="w-36 border-sage/20 h-8 text-sm">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent />
+          </Select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs text-mid">Plano</Label>
+          <Select
+            items={planItems}
+            value={planFilter}
+            onValueChange={(v) => setPlanFilter(v ?? '')}
+          >
+            <SelectTrigger className="w-36 border-sage/20 h-8 text-sm">
+              <SelectValue placeholder="Plano" />
+            </SelectTrigger>
+            <SelectContent />
+          </Select>
+        </div>
         <span className="text-xs text-mid tabular-nums shrink-0">
           {subscriptions.length} {subscriptions.length === 1 ? 'assinatura' : 'assinaturas'}
         </span>

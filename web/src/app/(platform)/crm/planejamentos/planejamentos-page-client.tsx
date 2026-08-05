@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { ClipboardList, RefreshCw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -112,8 +113,8 @@ export function PlanejamentosPageClient() {
       </div>
 
       <div className="grid grid-cols-1 gap-3 rounded-lg border border-input bg-card p-3 md:grid-cols-2 lg:grid-cols-5">
-        <div className="space-y-1">
-          <Label className="text-xs uppercase tracking-wider text-mid">
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs text-mid">
             Profissional
           </Label>
           <Select
@@ -123,15 +124,15 @@ export function PlanejamentosPageClient() {
               setPractitionerId(v === ALL_VALUE || !v ? undefined : v)
             }
           >
-            <SelectTrigger className="h-8 w-full">
+            <SelectTrigger className="h-8 w-full border-sage/20">
               <SelectValue placeholder="Todos" />
             </SelectTrigger>
             <SelectContent />
           </Select>
         </div>
 
-        <div className="space-y-1">
-          <Label className="text-xs uppercase tracking-wider text-mid">
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs text-mid">
             Procedimento
           </Label>
           <Select
@@ -141,18 +142,18 @@ export function PlanejamentosPageClient() {
               setProcedureTypeId(v === ALL_VALUE || !v ? undefined : v)
             }
           >
-            <SelectTrigger className="h-8 w-full">
+            <SelectTrigger className="h-8 w-full border-sage/20">
               <SelectValue placeholder="Todos" />
             </SelectTrigger>
             <SelectContent />
           </Select>
         </div>
 
-        <div className="space-y-1">
-          <Label htmlFor="min-value" className="text-xs uppercase tracking-wider text-mid">
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="min-value" className="text-xs text-mid">
             Valor mín. (R$)
           </Label>
-          <input
+          <Input
             id="min-value"
             type="number"
             inputMode="decimal"
@@ -161,15 +162,15 @@ export function PlanejamentosPageClient() {
             value={minValue}
             onChange={(e) => setMinValue(e.target.value)}
             placeholder="0"
-            className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 focus:outline-none"
+            className="border-sage/20"
           />
         </div>
 
-        <div className="space-y-1">
-          <Label htmlFor="max-value" className="text-xs uppercase tracking-wider text-mid">
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="max-value" className="text-xs text-mid">
             Valor máx. (R$)
           </Label>
-          <input
+          <Input
             id="max-value"
             type="number"
             inputMode="decimal"
@@ -178,7 +179,7 @@ export function PlanejamentosPageClient() {
             value={maxValue}
             onChange={(e) => setMaxValue(e.target.value)}
             placeholder="Sem limite"
-            className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 focus:outline-none"
+            className="border-sage/20"
           />
         </div>
 

@@ -26,10 +26,18 @@
  *
  * tenant -> users + tenant_users -> tenant_subscriptions -> expense_categories
  * -> procedure_types -> patients -> appointments -> procedure_records
- * -> financial_entries + installments -> expenses + expense_installments
- * -> anamneses -> face_diagrams + diagram_points -> prospects +
- * prospect_activities -> whatsapp_conversations + whatsapp_messages ->
- * photo_assets + photo_annotations
+ * -> product_applications -> financial_entries + installments -> expenses +
+ * expense_installments -> cash_movements -> anamneses -> face_diagrams +
+ * diagram_points -> prospects + prospect_activities -> whatsapp_conversations +
+ * whatsapp_messages -> photo_assets + photo_annotations
+ *
+ * `product_applications` is written for EVERY past procedure record (all of
+ * history + current month), not just the `FEATURED_PATIENT_COUNT` patients
+ * that get a rendered face diagram: a lot-level traceability log exists
+ * independently of whether the diagram was drawn, and the "Procedimentos
+ * realizados" report expects one for every performed procedure. Non-
+ * injectable procedures still contribute zero rows, same as
+ * `buildFaceDiagramPoints`.
  *
  * This deviates from the plan's listing in one place, deliberately.
  * `procedure_records.appointment_id` must point at the appointment the record
@@ -48,6 +56,18 @@
  * `tenant_id` and the overview filters `expenses.created_at`, so the expense
  * parent is back-dated per month too, not just its installment.
  *
+ * `cash_movements` is an append-only ledger the app writes only when a
+ * payment goes through `recordPayment` / `payExpenseInstallment` (see
+ * `web/src/db/queries/financial.ts` and `web/src/db/queries/expenses.ts`).
+ * Seeded installments and expenses are inserted already marked `paid`,
+ * bypassing that path entirely, so this file writes the matching
+ * `cash_movements` row itself for every paid installment (inflow) and every
+ * paid expense installment (outflow), each dated to that row's own `paidAt`
+ * -- same shape the app produces, just written directly instead of through
+ * the service function. Without this, `listCashMovements` / `getLedgerSummary`
+ * / `exportLedgerCSV` (the "Extrato por período" report and the Financeiro
+ * ledger) render empty even though the financial totals above are correct.
+ *
  * Every date goes through `@/lib/dates`. There is no bare
  * `new Date('YYYY-MM-DD')` and no `.toISOString().split('T')[0]` in this file:
  * a `YYYY-MM-DD` here is always a BR calendar day, anchored with
@@ -63,6 +83,7 @@ import { db } from '@/db/client'
 import {
   anamneses,
   appointments,
+  cashMovements,
   diagramPoints,
   expenseCategories,
   expenseInstallments,
@@ -76,6 +97,7 @@ import {
   plans,
   procedureRecords,
   procedureTypes,
+  productApplications,
   prospectActivities,
   prospects,
   tenantSubscriptions,
@@ -107,6 +129,7 @@ import {
   buildAnamnesis,
   buildFaceDiagramPoints,
   buildProcedureNotes,
+  buildProductApplications,
 } from '@/lib/demo-seed/clinical'
 import {
   buildConversations,
@@ -267,6 +290,14 @@ function countInstallments(entries: PlannedEntry[]): number {
   return entries.reduce((total, entry) => total + entry.installments.length, 0)
 }
 
+/** One `cash_movements` inflow gets written per paid installment. */
+function countPaidInstallments(entries: PlannedEntry[]): number {
+  return entries.reduce(
+    (total, entry) => total + entry.installments.filter((i) => i.status === 'paid').length,
+    0,
+  )
+}
+
 function printTable(title: string, rows: Array<[string, string | number]>): void {
   const width = Math.max(...rows.map(([label]) => label.length))
   console.log(title)
@@ -284,6 +315,13 @@ function describePlan(plan: SeedPlan): Array<[string, string | number]> {
       const entry = findFeaturedEntry(plan.currentEntries, patientIndex)
       return total + (entry ? buildFaceDiagramPoints(entry.procedure.procedureName).length : 0)
     }, 0)
+  // Row count only -- content (batch numbers, expiration) doesn't depend on
+  // `index`, so 0 is a fine stand-in for the real per-record noteIndex here.
+  const productApplicationCount = pastEntries.reduce(
+    (total, entry) =>
+      total + buildProductApplications(entry.procedure.procedureName, 0, parseBrDate(plan.todayYmd)).length,
+    0,
+  )
 
   const currentMonthExpenses = plan.expenses.filter((e) => e.date.startsWith(plan.todayYmd.slice(0, 7)))
 
@@ -299,10 +337,12 @@ function describePlan(plan: SeedPlan): Array<[string, string | number]> {
     ['appointments (today)', plan.todaySlots.length],
     ['appointments (forward)', plan.forwardSlots.length],
     ['procedure_records', pastEntries.length],
+    ['product_applications', productApplicationCount],
     ['financial_entries', pastEntries.length],
     ['installments', countInstallments(pastEntries)],
     ['expenses', plan.expenses.length],
     ['expense_installments', plan.expenses.length],
+    ['cash_movements', countPaidInstallments(pastEntries) + plan.expenses.length],
     ['anamneses', Math.min(FEATURED_PATIENT_COUNT, plan.patients.length)],
     ['face_diagrams', countFeaturedDiagrams(plan)],
     ['diagram_points', diagramPointCount],
@@ -614,6 +654,37 @@ async function writeProcedureRecords(tx: Tx, ctx: WriteContext, pastRecords: Pas
   await inChunks(rows, (chunk) => tx.insert(procedureRecords).values(chunk))
 }
 
+/**
+ * The lot-level traceability log: one row per distinct product used on each
+ * past procedure's face diagram (see `buildProductApplications`), written
+ * for every performed record, not only the `FEATURED_PATIENT_COUNT`
+ * patients whose diagram is actually rendered. `noteIndex` is reused from
+ * the same `PastRecord` so a repeat product on a later visit gets a
+ * different-looking batch number, and `performedAt` is recomputed the same
+ * way `writeProcedureRecords` does, so both rows agree on the instant.
+ */
+async function writeProductApplications(tx: Tx, pastRecords: PastRecord[]): Promise<number> {
+  const rows = pastRecords.flatMap(({ entry, procedureRecordId, noteIndex }) => {
+    const { procedure } = entry
+    const performedAt = brInstant(procedure.date, procedure.startTime)
+    return buildProductApplications(procedure.procedureName, noteIndex, performedAt).map((app) => ({
+      tenantId: DEMO_TENANT_ID,
+      procedureRecordId,
+      productName: app.productName,
+      activeIngredient: app.activeIngredient,
+      totalQuantity: app.totalQuantity.toFixed(2),
+      quantityUnit: app.quantityUnit,
+      batchNumber: app.batchNumber,
+      expirationDate: app.expirationDate,
+      applicationAreas: app.applicationAreas,
+      notes: app.notes,
+    }))
+  })
+
+  await inChunks(rows, (chunk) => tx.insert(productApplications).values(chunk))
+  return rows.length
+}
+
 async function writeFinancials(tx: Tx, ctx: WriteContext, pastRecords: PastRecord[]): Promise<void> {
   const entryRows = pastRecords.map(({ entry, appointmentId, procedureRecordId, financialEntryId }) => {
     const paidCount = entry.installments.filter((i) => i.status === 'paid').length
@@ -663,17 +734,32 @@ async function writeFinancials(tx: Tx, ctx: WriteContext, pastRecords: PastRecor
   await inChunks(installmentRows, (chunk) => tx.insert(installments).values(chunk))
 }
 
-async function writeExpenses(tx: Tx, ctx: WriteContext): Promise<void> {
-  const expenseRows: Array<{ id: string; date: string; amount: number }> = []
+/**
+ * One planned expense installment, resolved into the ids `writeCashMovements`
+ * needs to link its outflow row back to `expense_installments` and
+ * `expense_categories` -- the same two foreign keys `payExpenseInstallment`
+ * sets when the app records a real expense payment.
+ */
+interface PlannedExpenseInstallment {
+  id: string
+  categoryId: string
+  amount: number
+  /** BR calendar day the expense installment was paid. */
+  date: string
+}
+
+async function writeExpenses(tx: Tx, ctx: WriteContext): Promise<PlannedExpenseInstallment[]> {
+  const expenseRows: Array<{ id: string; date: string; amount: number; categoryId: string }> = []
 
   const rows = ctx.plan.expenses.map((expense) => {
     const id = randomUUID()
-    expenseRows.push({ id, date: expense.date, amount: expense.amount })
+    const categoryId = ctx.categoryIdByName.get(expense.category)!
+    expenseRows.push({ id, date: expense.date, amount: expense.amount, categoryId })
     const recordedAt = brInstant(expense.date, '10:00')
     return {
       id,
       tenantId: DEMO_TENANT_ID,
-      categoryId: ctx.categoryIdByName.get(expense.category)!,
+      categoryId,
       description: expense.description,
       totalAmount: money(expense.amount),
       installmentCount: 1,
@@ -687,7 +773,18 @@ async function writeExpenses(tx: Tx, ctx: WriteContext): Promise<void> {
     }
   })
 
-  const installmentRows = expenseRows.map((expense) => ({
+  // Pre-generated (rather than left to the column default) so
+  // `writeCashMovements` can point `cash_movements.expense_installment_id`
+  // at the right row without a round trip.
+  const installmentPlans: PlannedExpenseInstallment[] = expenseRows.map((expense) => ({
+    id: randomUUID(),
+    categoryId: expense.categoryId,
+    amount: expense.amount,
+    date: expense.date,
+  }))
+
+  const installmentRows = expenseRows.map((expense, index) => ({
+    id: installmentPlans[index].id,
     expenseId: expense.id,
     installmentNumber: 1,
     amount: money(expense.amount),
@@ -699,6 +796,68 @@ async function writeExpenses(tx: Tx, ctx: WriteContext): Promise<void> {
 
   await inChunks(rows, (chunk) => tx.insert(expenses).values(chunk))
   await inChunks(installmentRows, (chunk) => tx.insert(expenseInstallments).values(chunk))
+
+  return installmentPlans
+}
+
+/**
+ * Writes the `cash_movements` rows the app itself would have written had
+ * these installments been paid through `recordPayment` /
+ * `payExpenseInstallment` instead of seeded pre-paid. One inflow per paid
+ * receivable installment, one outflow per paid expense installment, each
+ * dated to that installment's own `paidAt` so the ledger reconciles with
+ * `getRevenueOverview`'s totals and the six-month chart.
+ *
+ * Shapes match the two write sites exactly:
+ * - inflow: `web/src/db/queries/financial.ts` `recordPayment` step 5.
+ * - outflow: `web/src/db/queries/expenses.ts` `payExpenseInstallment`.
+ *
+ * Neither a `payment_records` nor a `paymentRecordId` link is created --
+ * that column is nullable and unused by any reader of this table
+ * (`listCashMovements`, `getLedgerSummary`, `exportLedgerCSV`,
+ * `listLedgerReportRows`), so it stays null here exactly as the schema
+ * allows.
+ */
+async function writeCashMovements(
+  tx: Tx,
+  ctx: WriteContext,
+  pastRecords: PastRecord[],
+  expenseInstallmentPlans: PlannedExpenseInstallment[],
+): Promise<number> {
+  const inflowRows = pastRecords.flatMap(({ entry }) =>
+    entry.installments
+      .filter((installment): installment is typeof installment & { paidAt: string } =>
+        installment.status === 'paid' && installment.paidAt !== undefined,
+      )
+      .map((installment) => ({
+        tenantId: DEMO_TENANT_ID,
+        type: 'inflow' as const,
+        amount: money(installment.amount),
+        description: `Pagamento: ${entry.procedure.procedureName}`,
+        paymentMethod: installment.paymentMethod ?? null,
+        movementDate: brInstant(installment.paidAt, '12:00'),
+        patientId: patientIdFor(ctx.plan, entry.procedure.patientIndex),
+        recordedBy: ctx.practitionerId,
+      })),
+  )
+
+  const outflowRows = expenseInstallmentPlans.map((installment) => ({
+    tenantId: DEMO_TENANT_ID,
+    type: 'outflow' as const,
+    // Matches `payExpenseInstallment`'s description exactly -- every
+    // seeded expense has exactly one installment, so the number is always 1.
+    amount: money(installment.amount),
+    description: 'Despesa parcela 1',
+    paymentMethod: 'transfer',
+    movementDate: brInstant(installment.date, '12:00'),
+    expenseInstallmentId: installment.id,
+    expenseCategoryId: installment.categoryId,
+    recordedBy: ctx.practitionerId,
+  }))
+
+  const rows = [...inflowRows, ...outflowRows]
+  await inChunks(rows, (chunk) => tx.insert(cashMovements).values(chunk))
+  return rows.length
 }
 
 /** Empty booleans plus the generated history paragraph in the free-text slot. */
@@ -999,6 +1158,8 @@ async function main(): Promise<number> {
 
   let planLabel = ''
   let diagramPointCount = 0
+  let productApplicationCount = 0
+  let cashMovementCount = 0
 
   await db.transaction(async (tx) => {
     // Re-checked inside the transaction: the pre-flight check above is a
@@ -1013,8 +1174,10 @@ async function main(): Promise<number> {
     await writePatients(tx, ctx)
     await writeAppointments(tx, ctx, pastRecords)
     await writeProcedureRecords(tx, ctx, pastRecords)
+    productApplicationCount = await writeProductApplications(tx, pastRecords)
     await writeFinancials(tx, ctx, pastRecords)
-    await writeExpenses(tx, ctx)
+    const expenseInstallmentPlans = await writeExpenses(tx, ctx)
+    cashMovementCount = await writeCashMovements(tx, ctx, pastRecords, expenseInstallmentPlans)
     diagramPointCount = await writeClinicalRecords(tx, ctx, pastRecords)
     await writeProspects(tx, ctx)
     await writeConversations(tx, ctx)
@@ -1025,6 +1188,8 @@ async function main(): Promise<number> {
   printTable('Written', [
     ...describePlan(plan),
     ['diagram_points (actual)', diagramPointCount],
+    ['product_applications (actual)', productApplicationCount],
+    ['cash_movements (actual)', cashMovementCount],
     ['subscription plan', planLabel],
   ])
 

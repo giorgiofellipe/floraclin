@@ -10,6 +10,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -224,10 +225,8 @@ export function AuditLogViewer() {
     <div className="space-y-5">
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3 rounded-[3px] bg-white border border-[#E8ECEF] p-4">
-        <div className="min-w-[180px]">
-          <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wider text-mid">
-            Tipo de Entidade
-          </label>
+        <div className="flex flex-col gap-1 min-w-[180px]">
+          <Label className="text-xs text-mid">Tipo de Entidade</Label>
           <Select
             items={entityTypeItems}
             value={entityTypeFilter || '__all__'}
@@ -236,17 +235,15 @@ export function AuditLogViewer() {
               setPage(1)
             }}
           >
-            <SelectTrigger>
+            <SelectTrigger className="border-sage/20">
               <SelectValue placeholder="Todos" />
             </SelectTrigger>
             <SelectContent />
           </Select>
         </div>
 
-        <div>
-          <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wider text-mid">
-            Data Inicial
-          </label>
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs text-mid">Data Inicial</Label>
           <DatePicker
             value={dateFrom}
             onChange={(v) => {
@@ -257,10 +254,8 @@ export function AuditLogViewer() {
           />
         </div>
 
-        <div>
-          <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wider text-mid">
-            Data Final
-          </label>
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs text-mid">Data Final</Label>
           <DatePicker
             value={dateTo}
             onChange={(v) => {

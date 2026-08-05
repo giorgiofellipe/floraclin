@@ -47,8 +47,12 @@ const principalItems = [
 
 const gestaoItems = [
   { href: '/financeiro', label: 'Financeiro', icon: Banknote },
-  { href: '#', label: 'Relatórios', icon: TrendingUp, disabled: true },
 ]
+
+// Roles allowed to open /relatorios. Kept out of the module-level nav array
+// (which every role shares) so the link only renders for these roles instead
+// of being disabled for everyone.
+const REPORTS_ROLES = ['owner', 'financial']
 
 const comunicacaoItems = [
   { href: '/crm', label: 'CRM', icon: ContactRound },
@@ -344,17 +348,20 @@ function useWhatsAppUnreadCount(enabled: boolean) {
 
 function SidebarNav({
   onNavigate,
+  userRole,
   isPlatformAdmin,
   impersonatingTenantName,
   whatsappEnabled,
 }: {
   onNavigate?: () => void
+  userRole?: string
   isPlatformAdmin?: boolean
   impersonatingTenantName?: string
   whatsappEnabled?: boolean
 }) {
   const pathname = usePathname()
   const whatsappUnread = useWhatsAppUnreadCount(!!whatsappEnabled)
+  const canViewReports = !!userRole && REPORTS_ROLES.includes(userRole)
 
   return (
     <nav className="flex-1 px-3 py-1 overflow-y-auto">
@@ -374,13 +381,21 @@ function SidebarNav({
       <div className="space-y-0.5">
         {gestaoItems.map((item) => (
           <NavItem
-            key={item.label}
+            key={item.href}
             {...item}
-            disabled={'disabled' in item ? item.disabled : false}
-            isActive={!('disabled' in item && item.disabled) && pathname.startsWith(item.href)}
+            isActive={pathname.startsWith(item.href)}
             onNavigate={onNavigate}
           />
         ))}
+        {canViewReports && (
+          <NavItem
+            href="/relatorios"
+            label="Relatórios"
+            icon={TrendingUp}
+            isActive={pathname.startsWith('/relatorios')}
+            onNavigate={onNavigate}
+          />
+        )}
       </div>
 
       <SectionLabel label="Comunicação" />
@@ -441,7 +456,7 @@ export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantI
     >
       <div className="relative flex flex-1 flex-col min-h-0">
         <SidebarLogo />
-        <SidebarNav isPlatformAdmin={isPlatformAdmin} impersonatingTenantName={impersonatingTenantName} whatsappEnabled={whatsappEnabled} />
+        <SidebarNav userRole={userRole} isPlatformAdmin={isPlatformAdmin} impersonatingTenantName={impersonatingTenantName} whatsappEnabled={whatsappEnabled} />
         {isPlatformAdmin && (
           <div className="shrink-0 border-t border-[#E8ECEF] pb-3 pt-1 relative overflow-visible">
             <TenantSwitcher currentTenantName={clinicName} impersonatingTenantName={impersonatingTenantName} />
@@ -462,6 +477,7 @@ export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantI
 export function MobileSidebarContent({
   onNavigate,
   clinicName = 'FloraClin',
+  userRole,
   isPlatformAdmin,
   impersonatingTenantName,
   whatsappEnabled,
@@ -479,7 +495,7 @@ export function MobileSidebarContent({
   return (
     <div className="relative flex h-full flex-1 flex-col min-h-0 bg-white overflow-hidden">
       <SidebarLogo />
-      <SidebarNav onNavigate={onNavigate} isPlatformAdmin={isPlatformAdmin} impersonatingTenantName={impersonatingTenantName} whatsappEnabled={whatsappEnabled} />
+      <SidebarNav onNavigate={onNavigate} userRole={userRole} isPlatformAdmin={isPlatformAdmin} impersonatingTenantName={impersonatingTenantName} whatsappEnabled={whatsappEnabled} />
       {isPlatformAdmin && (
         <div className="shrink-0 border-t border-[#E8ECEF] pb-3 pt-1">
           <TenantSwitcher currentTenantName={clinicName} impersonatingTenantName={impersonatingTenantName} />

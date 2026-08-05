@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Cake, Search, Loader2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -112,17 +113,17 @@ export function AniversariantesPageClient() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="flex items-center gap-2">
-          <label className="text-[13px] text-mid" htmlFor="aniv-month">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="aniv-month" className="text-xs text-mid">
             Mês
-          </label>
+          </Label>
           <Select
             items={MONTH_ITEMS}
             value={selectedMonth}
             onValueChange={(v) => setSelectedMonth(v ?? String(currentMonth))}
           >
-            <SelectTrigger id="aniv-month" className="min-w-[160px]">
+            <SelectTrigger id="aniv-month" className="min-w-[160px] border-sage/20">
               <SelectValue placeholder="Selecione o mês" />
             </SelectTrigger>
             <SelectContent />
@@ -136,7 +137,7 @@ export function AniversariantesPageClient() {
             placeholder="Buscar por nome..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+            className="pl-9 border-sage/20"
             data-testid="aniversariantes-search"
           />
         </div>

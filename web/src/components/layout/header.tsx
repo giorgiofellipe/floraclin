@@ -144,6 +144,7 @@ export function Header({ userName, userEmail, userId, userRole, clinicName, tena
             onNavigate={() => setMobileMenuOpen(false)}
             clinicName={clinicName}
             userName={userName}
+            userRole={userRole}
             tenants={tenants}
             activeTenantId={activeTenantId}
             isPlatformAdmin={isPlatformAdmin}

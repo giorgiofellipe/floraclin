@@ -78,6 +78,38 @@ export function toBrYmd(date: Date): string {
 }
 
 /**
+ * True when `ymd` is both shaped like `YYYY-MM-DD` and a real calendar day.
+ * The shape check alone lets `2026-02-31` or `2026-13-01` through, which then
+ * silently roll over into a different day once parsed. Round-tripping through
+ * a BR-anchored parse catches that: a real day formats back to itself.
+ */
+export function isValidYmd(ymd: string): boolean {
+  if (!YMD_ONLY.test(ymd)) return false
+  const parsed = parseBrDate(ymd, '12:00:00')
+  // `2026-13-01` doesn't roll over, it parses to an Invalid Date, which would
+  // make the round-trip below throw instead of returning false.
+  if (Number.isNaN(parsed.getTime())) return false
+  return toBrYmd(parsed) === ymd
+}
+
+/**
+ * Shift a `YYYY-MM-DD` BR calendar day by a whole number of days (negative to
+ * go back) and return the resulting BR calendar day.
+ *
+ * Anchored at BR noon and shifted by exact 24h steps, so neither the host's
+ * timezone nor an hour-level offset can flip the answer by a day. Use this
+ * instead of `addDays(new Date(ymd), n)` anywhere a calendar-day window has
+ * to be computed from another calendar day.
+ *
+ * @example
+ *   shiftBrYmd('2026-08-03', -90) // '2026-05-05'
+ */
+export function shiftBrYmd(ymd: string, days: number): string {
+  const anchor = parseBrDate(ymd, '12:00:00')
+  return toBrYmd(new Date(anchor.getTime() + days * 24 * 60 * 60 * 1000))
+}
+
+/**
  * Format a `Date` as a `YYYY-MM-DD` string using **local** getters.
  * Prefer `toBrYmd` on the server. Use this only when you're formatting a
  * Date that was constructed from a DB `date` column (Drizzle round-trips

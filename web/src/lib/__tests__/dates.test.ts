@@ -8,6 +8,8 @@ import {
   brToday,
   toBrYmd,
   toLocalYmd,
+  isValidYmd,
+  shiftBrYmd,
 } from '../dates'
 import { formatInTimeZone } from 'date-fns-tz'
 
@@ -93,6 +95,53 @@ describe('dates helpers', () => {
       const ymd = '2026-04-16'
       const d = parseLocalDate(ymd, '23:30:00')
       expect(toLocalYmd(d)).toBe('2026-04-16')
+    })
+  })
+
+  describe('isValidYmd', () => {
+    it('accepts a real calendar day', () => {
+      expect(isValidYmd('2026-04-16')).toBe(true)
+      expect(isValidYmd('2024-02-29')).toBe(true)
+    })
+
+    it('rejects anything not shaped like YYYY-MM-DD', () => {
+      expect(isValidYmd('16/04/2026')).toBe(false)
+      expect(isValidYmd('2026-4-16')).toBe(false)
+      expect(isValidYmd('ontem')).toBe(false)
+      expect(isValidYmd('')).toBe(false)
+    })
+
+    it('rejects a well-shaped string that is not a real day', () => {
+      expect(isValidYmd('2026-02-31')).toBe(false)
+      expect(isValidYmd('2026-13-01')).toBe(false)
+      expect(isValidYmd('2026-00-10')).toBe(false)
+      expect(isValidYmd('2025-02-29')).toBe(false)
+    })
+  })
+
+  describe('shiftBrYmd', () => {
+    it('walks back a whole number of days', () => {
+      expect(shiftBrYmd('2026-08-03', -90)).toBe('2026-05-05')
+      expect(shiftBrYmd('2026-04-16', -1)).toBe('2026-04-15')
+    })
+
+    it('walks forward too', () => {
+      expect(shiftBrYmd('2026-04-16', 1)).toBe('2026-04-17')
+      expect(shiftBrYmd('2026-12-31', 1)).toBe('2027-01-01')
+    })
+
+    it('crosses month and year boundaries, including leap day', () => {
+      expect(shiftBrYmd('2026-03-01', -1)).toBe('2026-02-28')
+      expect(shiftBrYmd('2024-03-01', -1)).toBe('2024-02-29')
+      expect(shiftBrYmd('2026-01-01', -1)).toBe('2025-12-31')
+    })
+
+    it('is a no-op for zero', () => {
+      expect(shiftBrYmd('2026-04-16', 0)).toBe('2026-04-16')
+    })
+
+    it('rejects input that is not YYYY-MM-DD', () => {
+      expect(() => shiftBrYmd('16/04/2026', -1)).toThrow(/expected YYYY-MM-DD/)
     })
   })
 
