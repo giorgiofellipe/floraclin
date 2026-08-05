@@ -218,7 +218,9 @@ function PatientFilter({
             />
           }
         >
-          <span className={cn('truncate', value && selectedName ? 'text-charcoal' : 'text-mid/60')}>
+          {/* Matches the Select primitive: a chosen value inherits, a placeholder
+              is muted. Hardcoding a colour here is what made the two disagree. */}
+          <span className={cn('truncate', !(value && selectedName) && 'text-muted-foreground')}>
             {value && selectedName ? selectedName : 'Todos os pacientes'}
           </span>
           <ChevronDown className="size-4 shrink-0 text-mid" />
