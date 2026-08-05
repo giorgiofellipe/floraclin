@@ -3,6 +3,8 @@ import { ptBR } from 'date-fns/locale'
 import { BR_TZ, toBrYmd } from '@/lib/dates'
 import { formatDate } from '@/lib/utils'
 import { formatBrPhone } from '@/lib/phone'
+import { CONSENT_TYPE_LABELS, METHOD_LABELS } from '@/lib/constants'
+import { VIEW_LABELS } from '@/components/face-diagram/face-template'
 import type { ProntuarioDossier } from '@/db/queries/reports/prontuario'
 import type { AnamnesisFormData } from '@/validations/anamnesis'
 
@@ -202,7 +204,9 @@ export function ProntuarioPdf({ clinicName, dossier, generatedAt }: ProntuarioPd
             {procedure.faceDiagrams.length > 0 &&
               procedure.faceDiagrams.map((diagram) => (
                 <div key={diagram.id} className="prontuario-tag-list">
-                  <strong>Diagrama facial ({diagram.viewType}):</strong>{' '}
+                  <strong>
+                  Diagrama facial ({VIEW_LABELS[diagram.viewType as keyof typeof VIEW_LABELS] ?? diagram.viewType}):
+                </strong>{' '}
                   {diagram.points.length === 0
                     ? 'sem pontos marcados'
                     : diagram.points
@@ -235,9 +239,9 @@ export function ProntuarioPdf({ clinicName, dossier, generatedAt }: ProntuarioPd
             {consents.map((consent) => (
               <tr key={consent.id}>
                 <td>{consent.templateTitle}</td>
-                <td>{consent.templateType}</td>
+                <td>{CONSENT_TYPE_LABELS[consent.templateType] ?? consent.templateType}</td>
                 <td>{formatBrTimestamp(consent.acceptedAt)}</td>
-                <td>{consent.acceptanceMethod}</td>
+                <td>{METHOD_LABELS[consent.acceptanceMethod] ?? consent.acceptanceMethod}</td>
                 <td>{consent.verificationCode ?? '-'}</td>
               </tr>
             ))}
@@ -307,14 +311,49 @@ function AnamnesisSection({ anamnesis }: { anamnesis: ProntuarioDossier['anamnes
   )
 }
 
-// Photos are referenced, not fully embedded: a patient's full-resolution
-// timeline can run into dozens of images, and embedding every one would
-// slow the headless-Chromium render and risk the function's memory limit
-// (see AGENTS.md guidance to bound PDF work). Instead, this shows ONE
-// thumbnail per timeline stage — the most recent photo in that stage, since
-// `listPhotos` already returns each stage's photos newest-first — capped at
-// the 6 fixed stages, plus a full textual count/date list underneath so no
-// photo is silently missing from the document, only from the visual grid.
+// Every photo is embedded as a thumbnail, grouped by timeline stage and
+// chronological within each stage: a prontuário handed to a patient is
+// largely about the photographic record, so summarizing most of it away as
+// filenames would gut the section. The `.prontuario-photo-card img` CSS
+// already renders these at 110x110 (see `PRONTUARIO_PDF_CSS`), which is what
+// keeps the headless-Chromium render and memory footprint bounded — not a
+// cap on how many photos get embedded. `MAX_PHOTOS` below is purely a guard
+// against a pathological record; it must never fire for a normal patient
+// timeline. When it does, a visible note says how many photos were omitted
+// so nothing is silently missing from the document.
+const MAX_PHOTOS = 60
+
+type PhotoStage = ProntuarioDossier['photos'][number]
+type Photo = PhotoStage['photos'][number]
+
+interface CappedStage {
+  stage: string
+  label: string
+  totalInStage: number
+  visible: Photo[]
+}
+
+/** Plain helper (not a component/hook, so the React Compiler doesn't apply
+ *  its render-purity rules to it): walks the stages in order and hands out
+ *  the shared `cap` budget stage by stage, so the running total lives in
+ *  this function's own local scope instead of a variable mutated inside the
+ *  component's render/JSX. */
+function capPhotosPerStage(stagesWithPhotos: PhotoStage[], cap: number): CappedStage[] {
+  let remaining = cap
+  return stagesWithPhotos.map((stage) => {
+    // `listPhotos` returns each stage's photos newest-first; sort to
+    // chronological (oldest first) for the printed timeline, using
+    // `takenAt` when present since it reflects when the photo was actually
+    // taken rather than when it was uploaded.
+    const chronological = [...stage.photos].sort(
+      (a, b) => (a.takenAt ?? a.createdAt).getTime() - (b.takenAt ?? b.createdAt).getTime(),
+    )
+    const visible = chronological.slice(0, Math.max(0, remaining))
+    remaining -= visible.length
+    return { stage: stage.stage, label: stage.label, totalInStage: stage.photos.length, visible }
+  })
+}
+
 function PhotosSection({ photos }: { photos: ProntuarioDossier['photos'] }) {
   const totalPhotos = photos.reduce((sum, stage) => sum + stage.photos.length, 0)
 
@@ -322,35 +361,44 @@ function PhotosSection({ photos }: { photos: ProntuarioDossier['photos'] }) {
     return <div className="prontuario-empty">Nenhuma foto registrada.</div>
   }
 
-  const representative = photos.filter((stage) => stage.photos.length > 0)
+  const stagesWithPhotos = photos.filter((stage) => stage.photos.length > 0)
+  const omittedCount = Math.max(0, totalPhotos - MAX_PHOTOS)
+  const capped = capPhotosPerStage(stagesWithPhotos, MAX_PHOTOS)
 
   return (
     <div>
-      <div className="prontuario-photo-grid">
-        {representative.map((stage) => {
-          const photo = stage.photos[0]
-          return (
-            <div className="prontuario-photo-card" key={stage.stage}>
-              {photo.signedUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={photo.signedUrl} alt={stage.label} />
-              ) : (
-                <div>(imagem indisponível)</div>
-              )}
-              <div>{stage.label}</div>
-              <div>{photo.takenAt ? formatInstantAsBrDate(photo.takenAt) : formatInstantAsBrDate(photo.createdAt)}</div>
+      {capped.map((stage) =>
+        stage.visible.length === 0 ? null : (
+          <div key={stage.stage}>
+            <h3 className="prontuario-subsection-title">
+              {stage.label} ({stage.totalInStage} foto(s))
+            </h3>
+            <div className="prontuario-photo-grid">
+              {stage.visible.map((photo) => (
+                <div className="prontuario-photo-card" key={photo.id}>
+                  {photo.signedUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={photo.signedUrl} alt={stage.label} />
+                  ) : (
+                    <div>(imagem indisponível)</div>
+                  )}
+                  <div>{photo.takenAt ? formatInstantAsBrDate(photo.takenAt) : formatInstantAsBrDate(photo.createdAt)}</div>
+                </div>
+              ))}
             </div>
-          )
-        })}
-      </div>
+          </div>
+        ),
+      )}
       <div className="prontuario-photo-counts">
-        {photos
-          .filter((stage) => stage.photos.length > 0)
-          .map((stage) => `${stage.label}: ${stage.photos.length} foto(s)`)
-          .join(' · ')}
+        {stagesWithPhotos.map((stage) => `${stage.label}: ${stage.photos.length} foto(s)`).join(' · ')}
         {' — '}
         {totalPhotos} foto(s) no total.
       </div>
+      {omittedCount > 0 && (
+        <div className="prontuario-empty">
+          {omittedCount} foto(s) não exibida(s) por exceder o limite de {MAX_PHOTOS} imagens neste documento.
+        </div>
+      )}
     </div>
   )
 }
