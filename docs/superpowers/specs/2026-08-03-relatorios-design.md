@@ -118,9 +118,27 @@ timeline and signed consents. Printable and handable to the patient. This is the
 heaviest single report and the most differentiating: generic clinic software
 does not produce it.
 
-**3.2 Pendências documentais.** Patients missing a completed anamnese or a
-signed consent for a procedure already performed. Both a compliance gap and a
-work list, so rows carry a send action for the anamnesis or signing link.
+**3.2 Pendências documentais (deferred, not built).** Patients missing a
+completed anamnese or a signed consent for a procedure already performed.
+Both a compliance gap and a work list, so rows would carry a send action for
+the anamnesis or signing link.
+
+Built once, then removed: the anamnese half of the report is actionable (the
+send dialog lives in `patient-anamnesis-tab.tsx` and works any time), but the
+consent half is not. `SendConsentSigningLink` is only mounted inside
+`procedure-approval.tsx`, reachable from the service wizard approval step and
+the single procedure page. There is no way to send a consent link for an
+atendimento that has already been finalized, so the report would surface
+compliance gaps the product has no way to close.
+
+The blocker: `/api/consent/send-signing-link` needs a `consentTypes` array,
+which today is computed only client-side in `procedure-approval.tsx` from a
+local category map. There is no server-side resolver from a
+`procedureRecordId` to the consent types it still requires.
+
+The prerequisite is that resolver. Once it exists, the send action belongs on
+the finalized procedure page and the patient documents tab first, and this
+report after that, not before.
 
 ## Testing
 

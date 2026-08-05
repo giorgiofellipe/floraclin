@@ -110,19 +110,6 @@ export const REPORTS: ReportDefinition[] = [
     apiPath: '/api/reports/prontuario',
     emptyHint: 'Escolha um paciente para gerar o prontuário completo.',
   },
-  {
-    slug: 'pendencias-documentais',
-    title: 'Pendências documentais',
-    description:
-      'Pacientes sem anamnese registrada ou sem termo de consentimento assinado para um procedimento já realizado.',
-    // Not a threshold, a date range or a single practitioner: this is a
-    // compliance snapshot, not a time-windowed list, so it declares no
-    // filters at all (see ReportShell/ReportFilters, which already support
-    // an empty `filters` array).
-    filters: [],
-    apiPath: '/api/reports/pendencias-documentais',
-    emptyHint: 'Nenhuma pendência: todas as anamneses e consentimentos estão em dia.',
-  },
 ]
 
 export function getReport(slug: string): ReportDefinition | undefined {
