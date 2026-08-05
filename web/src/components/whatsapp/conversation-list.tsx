@@ -195,7 +195,7 @@ export const ConversationList = forwardRef<ConversationListHandle, ConversationL
               <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Buscar contato..."
-                className="pl-8 h-9"
+                className="pl-8 h-8 text-sm border-sage/20"
                 onChange={(e) => handleSearchChange(e.target.value)}
               />
             </div>

@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react'
 import { usePractitionerPL } from '@/hooks/queries/use-practitioner-pl'
 import { usePractitioners } from '@/hooks/queries/use-appointments'
+import { Label } from '@/components/ui/label'
 import { DateRangePicker } from '@/components/ui/date-picker'
 import {
   Select,
@@ -48,12 +49,15 @@ export function PractitionerPLView() {
           onDateToChange={(v) => setDateTo(v)}
         />
 
-        <Select items={practitionerItems} value={practitionerId || 'all'} onValueChange={(v) => setPractitionerId(!v || v === 'all' ? '' : v)}>
-          <SelectTrigger className="w-[200px] border-sage/20">
-            <SelectValue placeholder="Profissional" />
-          </SelectTrigger>
-          <SelectContent />
-        </Select>
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs text-mid">Profissional</Label>
+          <Select items={practitionerItems} value={practitionerId || 'all'} onValueChange={(v) => setPractitionerId(!v || v === 'all' ? '' : v)}>
+            <SelectTrigger className="w-[200px] border-sage/20">
+              <SelectValue placeholder="Profissional" />
+            </SelectTrigger>
+            <SelectContent />
+          </Select>
+        </div>
       </div>
 
       {/* Practitioner cards */}

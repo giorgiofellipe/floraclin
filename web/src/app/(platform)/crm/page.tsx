@@ -196,7 +196,7 @@ export default function CrmPage() {
               placeholder="Buscar leads..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-64 pl-9"
+              className="w-64 pl-9 border-sage/20"
             />
           </div>
 

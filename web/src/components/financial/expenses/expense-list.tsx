@@ -175,27 +175,36 @@ export function ExpenseList() {
       {/* Collapsible filters */}
       {showFilters && (
         <div className="rounded-lg border border-sage/15 bg-white p-4 shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Select items={STATUS_FILTER_ITEMS} value={statusFilter || 'all'} onValueChange={(v) => { setStatusFilter(!v || v === 'all' ? '' : v); setPage(1) }}>
-              <SelectTrigger className="w-[130px] border-sage/20 h-8 text-sm">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent />
-            </Select>
+          <div className="flex items-end gap-3 flex-wrap">
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-mid">Status</Label>
+              <Select items={STATUS_FILTER_ITEMS} value={statusFilter || 'all'} onValueChange={(v) => { setStatusFilter(!v || v === 'all' ? '' : v); setPage(1) }}>
+                <SelectTrigger className="w-[130px] border-sage/20 h-8 text-sm">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent />
+              </Select>
+            </div>
 
-            <Select items={categoryFilterItems} value={categoryFilter || 'all'} onValueChange={(v) => { setCategoryFilter(!v || v === 'all' ? '' : v); setPage(1) }}>
-              <SelectTrigger className="w-[170px] border-sage/20 h-8 text-sm">
-                <SelectValue placeholder="Categoria" />
-              </SelectTrigger>
-              <SelectContent />
-            </Select>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-mid">Categoria</Label>
+              <Select items={categoryFilterItems} value={categoryFilter || 'all'} onValueChange={(v) => { setCategoryFilter(!v || v === 'all' ? '' : v); setPage(1) }}>
+                <SelectTrigger className="w-[170px] border-sage/20 h-8 text-sm">
+                  <SelectValue placeholder="Categoria" />
+                </SelectTrigger>
+                <SelectContent />
+              </Select>
+            </div>
 
-            <Select items={PAYMENT_METHOD_FILTER_ITEMS} value={paymentMethodFilter || 'all'} onValueChange={(v) => { setPaymentMethodFilter(!v || v === 'all' ? '' : v); setPage(1) }}>
-              <SelectTrigger className="w-[150px] border-sage/20 h-8 text-sm">
-                <SelectValue placeholder="Método" />
-              </SelectTrigger>
-              <SelectContent />
-            </Select>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-mid">Método</Label>
+              <Select items={PAYMENT_METHOD_FILTER_ITEMS} value={paymentMethodFilter || 'all'} onValueChange={(v) => { setPaymentMethodFilter(!v || v === 'all' ? '' : v); setPage(1) }}>
+                <SelectTrigger className="w-[150px] border-sage/20 h-8 text-sm">
+                  <SelectValue placeholder="Método" />
+                </SelectTrigger>
+                <SelectContent />
+              </Select>
+            </div>
 
             <div className="h-5 w-px bg-sage/15" />
 

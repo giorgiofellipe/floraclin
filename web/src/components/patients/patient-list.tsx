@@ -119,7 +119,7 @@ export function PatientList({ result, search: initialSearch = '', isFetching = f
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleSearch()
             }}
-            className="pl-10 rounded-lg border-blush/60 focus:shadow-md focus:ring-sage/30 transition-shadow"
+            className="pl-10 border-sage/20"
             data-testid="patient-search"
           />
         </div>
