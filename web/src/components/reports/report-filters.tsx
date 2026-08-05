@@ -79,7 +79,7 @@ export function ReportFilters({ filters, value, onChange, dayFilterLabel }: Repo
             type="number"
             min={0}
             inputMode="numeric"
-            className="w-[100px]"
+            className="w-[100px] border-sage/20"
             value={value.thresholdDays ?? ''}
             onChange={(e) => onChange({ ...value, thresholdDays: e.target.value })}
           />
@@ -96,7 +96,7 @@ export function ReportFilters({ filters, value, onChange, dayFilterLabel }: Repo
             type="number"
             min={1}
             inputMode="numeric"
-            className="w-[100px]"
+            className="w-[100px] border-sage/20"
             value={value.minCount ?? ''}
             onChange={(e) => onChange({ ...value, minCount: e.target.value })}
           />
@@ -113,18 +113,21 @@ export function ReportFilters({ filters, value, onChange, dayFilterLabel }: Repo
       )}
 
       {filters.includes('practitioner') && (
-        <Select
-          items={practitionerItems}
-          value={value.practitionerId || 'all'}
-          onValueChange={(v) =>
-            onChange({ ...value, practitionerId: !v || v === 'all' ? undefined : v })
-          }
-        >
-          <SelectTrigger className="w-[200px] border-sage/20">
-            <SelectValue placeholder="Profissional" />
-          </SelectTrigger>
-          <SelectContent />
-        </Select>
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs text-mid">Profissional</Label>
+          <Select
+            items={practitionerItems}
+            value={value.practitionerId || 'all'}
+            onValueChange={(v) =>
+              onChange({ ...value, practitionerId: !v || v === 'all' ? undefined : v })
+            }
+          >
+            <SelectTrigger className="w-[200px] border-sage/20">
+              <SelectValue placeholder="Profissional" />
+            </SelectTrigger>
+            <SelectContent />
+          </Select>
+        </div>
       )}
 
       {filters.includes('patient') && (
@@ -209,8 +212,8 @@ function PatientFilter({
               type="button"
               data-testid="report-patient-filter-trigger"
               className={cn(
-                'flex w-[220px] items-center justify-between gap-2 rounded-lg border border-sage/20 bg-white px-3 py-2 text-left text-sm transition-colors',
-                'hover:border-sage/40 focus:outline-none focus:ring-2 focus:ring-sage/30',
+                'flex h-8 w-[220px] items-center justify-between gap-2 rounded-lg border border-sage/20 bg-transparent px-2.5 text-left text-sm outline-none transition-colors',
+                'hover:border-sage/40 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
               )}
             />
           }
