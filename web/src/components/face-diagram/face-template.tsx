@@ -54,4 +54,4 @@ export function FaceTemplate({ viewType, gender, className }: FaceTemplateProps)
   )
 }
 
-export { VIEW_LABELS, VIEW_FILES }
+export { VIEW_LABELS, VIEW_FILES, resolveGenderKey }

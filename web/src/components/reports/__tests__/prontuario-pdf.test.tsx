@@ -199,10 +199,108 @@ describe('ProntuarioPdf', () => {
     render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
 
     expect(screen.getAllByText('Toxina botulínica').length).toBeGreaterThan(0)
-    expect(screen.getByText('Botox')).toBeInTheDocument()
+    // "Botox" appears twice: the product-applications table and the face
+    // diagram's own legend table (see the dedicated face-diagram tests below).
+    expect(screen.getAllByText('Botox').length).toBeGreaterThan(0)
     expect(screen.getByText('L12345')).toBeInTheDocument()
     expect(screen.getByText(/Diagrama facial \(Frontal\)/)).toBeInTheDocument()
-    expect(screen.getByText(/4\.00 U/)).toBeInTheDocument()
+    expect(screen.getByText(/4\.00/)).toBeInTheDocument()
+  })
+
+  describe('face diagram section', () => {
+    function dossierWithDiagram(faceDiagrams: ProntuarioDossier['procedures'][number]['faceDiagrams']) {
+      return emptyDossier({
+        procedures: [
+          {
+            id: 'proc-1',
+            performedAt: new Date('2026-04-10T15:00:00Z'),
+            status: 'completed',
+            technique: null,
+            notes: null,
+            sessionsTotal: 1,
+            sessionsExecuted: 1,
+            sessions: [],
+            procedureTypeName: 'Toxina botulínica',
+            procedureTypeCategory: 'toxina',
+            practitionerName: 'Dra. Beatriz',
+            productApplications: [],
+            faceDiagrams,
+          },
+        ],
+      })
+    }
+
+    it('renders points with product and dose, positioned on the face template image', () => {
+      const dossier = dossierWithDiagram([
+        {
+          id: 'diag-1',
+          viewType: 'front',
+          points: [
+            {
+              id: 'point-1',
+              x: '10.00',
+              y: '20.00',
+              productName: 'Botox',
+              activeIngredient: null,
+              quantity: '4.00',
+              quantityUnit: 'U',
+              technique: null,
+              depth: null,
+              notes: null,
+              sortOrder: 0,
+            },
+            {
+              id: 'point-2',
+              x: '60.00',
+              y: '40.00',
+              productName: 'Juvederm Voluma',
+              activeIngredient: 'Ácido hialurônico',
+              quantity: '1.00',
+              quantityUnit: 'mL',
+              technique: null,
+              depth: null,
+              notes: null,
+              sortOrder: 1,
+            },
+          ],
+        },
+      ] as never)
+
+      render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+
+      // The template image itself, positioned via the face-templates asset.
+      const images = screen.getAllByRole('img')
+      expect(images.length).toBeGreaterThan(0)
+      expect(images[0]).toHaveAttribute('src', expect.stringContaining('/face-templates/'))
+
+      // Legend rows carry product + dose, the data that must stay readable in print.
+      expect(screen.getByText('Botox')).toBeInTheDocument()
+      expect(screen.getByText('4.00 U')).toBeInTheDocument()
+      expect(screen.getByText('Juvederm Voluma')).toBeInTheDocument()
+      expect(screen.getByText('1.00 mL')).toBeInTheDocument()
+    })
+
+    it('renders an empty state for a procedure with no face diagram', () => {
+      const dossier = dossierWithDiagram([])
+
+      render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+
+      expect(
+        screen.getByText('Nenhum diagrama facial registrado para este procedimento.'),
+      ).toBeInTheDocument()
+      expect(screen.queryAllByRole('img')).toHaveLength(0)
+    })
+
+    it('renders an empty state for a diagram with no points marked', () => {
+      const dossier = dossierWithDiagram([
+        { id: 'diag-1', viewType: 'front', points: [] },
+      ] as never)
+
+      render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+
+      expect(screen.getByText('Nenhum ponto marcado neste diagrama.')).toBeInTheDocument()
+      expect(screen.queryAllByRole('img')).toHaveLength(0)
+    })
   })
 
   it('renders signed consents', () => {

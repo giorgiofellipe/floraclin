@@ -4,9 +4,11 @@ import { BR_TZ, toBrYmd } from '@/lib/dates'
 import { formatDate } from '@/lib/utils'
 import { formatBrPhone } from '@/lib/phone'
 import { CONSENT_TYPE_LABELS, METHOD_LABELS } from '@/lib/constants'
-import { VIEW_LABELS } from '@/components/face-diagram/face-template'
+import { FloraclinBrandHeader } from '@/lib/pdf-branding'
+import { VIEW_LABELS, VIEW_FILES, resolveGenderKey } from '@/components/face-diagram/face-template'
 import type { ProntuarioDossier } from '@/db/queries/reports/prontuario'
 import type { AnamnesisFormData } from '@/validations/anamnesis'
+import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 
 /**
  * Extra CSS for the prontuário document, layered on top of `PRINT_BASE_CSS`
@@ -34,6 +36,21 @@ export const PRONTUARIO_PDF_CSS = `
   .prontuario-photo-counts { font-size: 11px; color: #444; margin-top: 0.5rem; }
   .prontuario-generated-at { margin-top: 2rem; font-size: 10px; color: #888; text-align: right; }
   .prontuario-tag-list { font-size: 11px; }
+  .prontuario-diagram-list { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.5rem; }
+  .prontuario-diagram-title { font-size: 11px; font-weight: 600; margin-bottom: 0.35rem; }
+  .prontuario-diagram-body { display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
+  .prontuario-diagram-canvas { position: relative; width: 190px; height: 190px; flex-shrink: 0; border: 1px solid #eee; background: #fafafa; }
+  .prontuario-diagram-image { width: 100%; height: 100%; object-fit: contain; }
+  .prontuario-diagram-marker {
+    position: absolute; transform: translate(-50%, -50%); width: 16px; height: 16px; border-radius: 50%;
+    color: white; font-size: 8px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  }
+  .prontuario-diagram-legend { flex: 1; min-width: 200px; margin-top: 0; }
+  .prontuario-diagram-legend-dot {
+    display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px;
+    border-radius: 50%; color: white; font-size: 8px; font-weight: 700;
+  }
 `
 
 function formatBrTimestamp(date: Date): string {
@@ -107,6 +124,7 @@ export function ProntuarioPdf({ clinicName, dossier, generatedAt }: ProntuarioPd
 
   return (
     <div>
+      <FloraclinBrandHeader />
       <header>
         <div>
           <div className="clinic-name">{clinicName}</div>
@@ -201,19 +219,11 @@ export function ProntuarioPdf({ clinicName, dossier, generatedAt }: ProntuarioPd
               </table>
             )}
 
-            {procedure.faceDiagrams.length > 0 &&
-              procedure.faceDiagrams.map((diagram) => (
-                <div key={diagram.id} className="prontuario-tag-list">
-                  <strong>
-                  Diagrama facial ({VIEW_LABELS[diagram.viewType as keyof typeof VIEW_LABELS] ?? diagram.viewType}):
-                </strong>{' '}
-                  {diagram.points.length === 0
-                    ? 'sem pontos marcados'
-                    : diagram.points
-                        .map((point) => `${point.productName} (${point.quantity} ${point.quantityUnit})`)
-                        .join(', ')}
-                </div>
-              ))}
+            {procedure.faceDiagrams.length > 0 ? (
+              <FaceDiagramSection diagrams={procedure.faceDiagrams} gender={patient.gender} />
+            ) : (
+              <div className="prontuario-empty">Nenhum diagrama facial registrado para este procedimento.</div>
+            )}
           </div>
         ))
       )}
@@ -250,6 +260,123 @@ export function ProntuarioPdf({ clinicName, dossier, generatedAt }: ProntuarioPd
       )}
 
       <div className="prontuario-generated-at">Gerado em {formatBrTimestamp(generatedAt)}</div>
+    </div>
+  )
+}
+
+// Category → marker color, mirroring `getPointColor` in
+// `@/components/face-diagram/diagram-point.tsx`. Duplicated rather than
+// imported: that module is `'use client'` and pulls in `@/components/ui/tooltip`,
+// which has no business running inside `renderReactToPdf`'s server-only,
+// `renderToStaticMarkup` pass — this document's rendering is deliberately
+// independent of the app's interactive UI components (see the plain
+// `<table>`/`<div>` markup and dedicated `PRONTUARIO_PDF_CSS` throughout
+// this file, rather than reusing Tailwind-based app components).
+const POINT_COLOR_RULES: Array<{ match: RegExp; color: string }> = [
+  { match: /botox|toxina|dysport|xeomin|botul[íi]nic/i, color: '#3b82f6' }, // neurotoxins
+  { match: /filler|preenchedor|hialur[ôo]nic|juvederm|restylane|\bah\b/i, color: '#ec4899' }, // fillers
+  { match: /bioestimulador|biostimulator|sculptra|radiesse|ellans[ée]/i, color: '#22c55e' }, // biostimulators
+]
+
+function getPointColor(productName: string): string {
+  return POINT_COLOR_RULES.find((rule) => rule.match.test(productName))?.color ?? '#a855f7'
+}
+
+/**
+ * Absolute URL for a face-template image (`web/public/face-templates/*.webp`,
+ * the same files `FaceTemplate` renders on screen). `renderReactToPdf` gives
+ * Chromium a raw HTML string via `page.setContent` with no base URL, so a
+ * root-relative `VIEW_FILES` path (e.g. `/face-templates/female-front.webp`)
+ * never resolves there — it needs the deployed app's own origin prefixed,
+ * the same pattern `VerificationFooter` in `@/lib/pdf` already uses for
+ * `NEXT_PUBLIC_APP_URL`. Reading the file off disk instead was considered
+ * and rejected: Vercel/Lambda's file-tracer does not guarantee arbitrary
+ * `public/` assets ship inside the serverless function bundle, so `fs`
+ * would work locally and silently 404 in production.
+ */
+function faceTemplateUrl(viewType: string, gender: string | null | undefined): string {
+  const genderKey = resolveGenderKey(gender)
+  const files = VIEW_FILES[genderKey]
+  const path = files[viewType as keyof typeof files] ?? files.front
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.floraclin.com.br'
+  return `${appUrl}${path}`
+}
+
+/**
+ * Prints the same thing the app shows in the face-diagram editor — the
+ * template silhouette with each point positioned over it — instead of a
+ * text list, so the printed document matches what the practitioner actually
+ * drew (see `web/src/components/face-diagram/face-diagram-editor.tsx` and
+ * `diagram-point.tsx` for the on-screen equivalent this mirrors). Each
+ * marker is numbered rather than labeled inline (no room for a product name
+ * inside a 16px circle, and static print has no hover tooltip to fall back
+ * on); the legend table underneath keeps product, dose and unit — the data
+ * a practitioner needs to read off this document — legible in print.
+ */
+function FaceDiagramSection({
+  diagrams,
+  gender,
+}: {
+  diagrams: DiagramWithPoints[]
+  gender: string | null | undefined
+}) {
+  return (
+    <div className="prontuario-diagram-list">
+      {diagrams.map((diagram) => (
+        <div key={diagram.id}>
+          <div className="prontuario-diagram-title">
+            Diagrama facial ({VIEW_LABELS[diagram.viewType as keyof typeof VIEW_LABELS] ?? diagram.viewType})
+          </div>
+          {diagram.points.length === 0 ? (
+            <div className="prontuario-empty">Nenhum ponto marcado neste diagrama.</div>
+          ) : (
+            <div className="prontuario-diagram-body">
+              <div className="prontuario-diagram-canvas">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={faceTemplateUrl(diagram.viewType, gender)}
+                  alt={VIEW_LABELS[diagram.viewType as keyof typeof VIEW_LABELS] ?? diagram.viewType}
+                  className="prontuario-diagram-image"
+                />
+                {diagram.points.map((point, index) => (
+                  <span
+                    key={point.id}
+                    className="prontuario-diagram-marker"
+                    style={{ left: `${point.x}%`, top: `${point.y}%`, backgroundColor: getPointColor(point.productName) }}
+                  >
+                    {index + 1}
+                  </span>
+                ))}
+              </div>
+              <table className="prontuario-table prontuario-diagram-legend">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Produto</th>
+                    <th>Dose</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {diagram.points.map((point, index) => (
+                    <tr key={point.id}>
+                      <td>
+                        <span
+                          className="prontuario-diagram-legend-dot"
+                          style={{ backgroundColor: getPointColor(point.productName) }}
+                        >
+                          {index + 1}
+                        </span>
+                      </td>
+                      <td>{point.productName}</td>
+                      <td>{point.quantity} {point.quantityUnit}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   )
 }

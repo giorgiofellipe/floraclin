@@ -7,6 +7,7 @@
 // instead of silently bundling Chromium + react-dom/server into the browser.
 import 'server-only'
 import React, { type ReactElement } from 'react'
+import { buildFloraclinFooterTemplate } from './pdf-branding'
 
 // @sparticuz/chromium-min 149.0.0 → matching pack tar URL.
 // Override via process.env.CHROMIUM_PACK_URL in production (e.g. S3).
@@ -87,16 +88,34 @@ export const PRINT_BASE_CSS = `
   }
 `
 
+export interface RenderReactToPdfOptions {
+  /**
+   * Raw HTML for Puppeteer's per-page footer (`page.pdf({ footerTemplate })`).
+   * Defaults to the FloraClin brand line so every PDF gets it for free,
+   * without every call site having to remember to pass one. Pass `''` to
+   * suppress it entirely (still requires `displayHeaderFooter`, which this
+   * function always sets once any footer is in play).
+   */
+  footerTemplate?: string
+}
+
 /**
  * Renders a React element to a PDF Buffer using headless Chromium.
  *
  * Important: do NOT call this from inside an HTTP loop or fetch a separate
  * print URL. The print component is shared with the authenticated print page
  * and rendered server-side with react-dom/server here.
+ *
+ * Every PDF gets a repeating per-page footer via Puppeteer's native
+ * `footerTemplate` mechanism (see `page.pdf` below) — a plain React node
+ * rendered into the body only ever appears once, wherever pagination lands
+ * it, which is why a footer that must repeat on every page can't be a
+ * regular part of `tree`.
  */
 export async function renderReactToPdf(
   tree: ReactElement,
   baseStyles: string = PRINT_BASE_CSS,
+  options: RenderReactToPdfOptions = {},
 ): Promise<Buffer> {
   // Dynamic imports keep these heavy deps (and react-dom/server) out of the
   // cold-start critical path for routes that never render PDFs, and prevent
@@ -137,10 +156,20 @@ export async function renderReactToPdf(
   try {
     const page = await browser.newPage()
     await page.setContent(html, { waitUntil: 'load' })
+    const footerTemplate = options.footerTemplate ?? buildFloraclinFooterTemplate()
     const pdf = await page.pdf({
       format: 'A4',
       printBackground: true,
       margin: { top: '20mm', bottom: '20mm', left: '20mm', right: '20mm' },
+      // `displayHeaderFooter` is required for `footerTemplate` to take
+      // effect at all. `headerTemplate` is left blank (Puppeteer's default
+      // otherwise prints its own date/title/url/page-number header, which
+      // we don't want) — the FloraClin brand mark on page 1 is instead part
+      // of `tree` itself (`FloraclinBrandHeader` in `@/lib/pdf-branding`),
+      // since that only needs to appear once, not repeat per page.
+      displayHeaderFooter: true,
+      headerTemplate: '<span></span>',
+      footerTemplate,
     })
     return Buffer.from(pdf)
   } finally {
