@@ -367,7 +367,7 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
               </h3>
               <div className="flex-1 h-px bg-blush/60" />
               <a
-                href="https://wa.me/5547936182197?text=Ol%C3%A1%2C%20preciso%20de%20ajuda%20para%20configurar%20o%20WhatsApp%20Business%20API"
+                href="https://wa.me/5547936181734?text=Ol%C3%A1%2C%20preciso%20de%20ajuda%20para%20configurar%20o%20WhatsApp%20Business%20API"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-[3px] border border-forest/20 bg-forest/5 px-3 py-1.5 text-xs font-medium text-forest hover:bg-forest/10 transition-colors"
@@ -527,7 +527,7 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
                     <div className="rounded-[3px] border border-sage/20 bg-sage/5 px-3 py-2.5 text-xs text-mid">
                       Precisa de ajuda?{' '}
                       <a
-                        href="https://wa.me/5547936182197?text=Ol%C3%A1%2C%20preciso%20de%20ajuda%20para%20configurar%20o%20WhatsApp%20Business%20API"
+                        href="https://wa.me/5547936181734?text=Ol%C3%A1%2C%20preciso%20de%20ajuda%20para%20configurar%20o%20WhatsApp%20Business%20API"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="font-medium text-sage hover:text-forest underline underline-offset-2"

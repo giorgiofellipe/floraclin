@@ -14,7 +14,7 @@ export function Contact() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-6 max-w-lg mx-auto">
             <a
-              href="https://wa.me/5547936182197"
+              href="https://wa.me/5547936181734"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-3 bg-white border border-sage/10 rounded-xl px-6 py-4 w-full sm:w-auto hover:border-sage/30 transition-colors no-underline group"
@@ -41,7 +41,7 @@ export function Contact() {
                   WhatsApp
                 </p>
                 <p className="text-xs text-charcoal/50">
-                  +55 47 93618-2197
+                  +55 47 93618-1734
                 </p>
               </div>
             </a>
