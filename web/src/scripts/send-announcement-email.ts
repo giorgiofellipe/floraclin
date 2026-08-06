@@ -29,7 +29,14 @@ const SEND_TO_ALL = false
 const OWNERS_ONLY = false
 
 const FROM = process.env.EMAIL_FROM ?? 'FloraClin <contato@floraclin.com.br>'
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://floraclin.com.br'
+// This mailer targets real customers, so the button must never point at a dev URL.
+// Honor an explicit override, else NEXT_PUBLIC_APP_URL only when it's not localhost,
+// else the production domain (NEXT_PUBLIC_APP_URL is localhost in .env.local).
+const PROD_URL = 'https://floraclin.com.br'
+const envUrl = process.env.NEXT_PUBLIC_APP_URL
+const APP_URL =
+  process.env.ANNOUNCEMENT_APP_URL ??
+  (envUrl && !/localhost|127\.0\.0\.1/.test(envUrl) ? envUrl : PROD_URL)
 
 // ─── Brand (FloraClin) ──────────────────────────────────────────────
 // Logo lockup (symbol + wordmark) as a hosted PNG — email clients (Gmail/Outlook)
