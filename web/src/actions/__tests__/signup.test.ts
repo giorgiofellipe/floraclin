@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
 import '@/tests/mocks/db'
 
 vi.mock('next-auth', () => {
@@ -50,19 +50,26 @@ vi.mock('next/navigation', () => ({
 }))
 
 describe('signUp action', () => {
+  // The first import of the signup module pulls in db/auth/tenant/email and can take a few
+  // seconds. Loading it once here keeps that one-time cost out of any single test's timeout,
+  // which otherwise flakes under full-suite load.
+  let signUp: (typeof import('../signup'))['signUp']
+
+  beforeAll(async () => {
+    signUp = (await import('../signup')).signUp
+  }, 30000)
+
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
   it('rejects empty form data', async () => {
-    const { signUp } = await import('../signup')
     const formData = new FormData()
     const result = await signUp(null, formData)
     expect(result?.error).toBeDefined()
   })
 
   it('rejects invalid email', async () => {
-    const { signUp } = await import('../signup')
     const formData = new FormData()
     formData.set('fullName', 'Maria')
     formData.set('email', 'not-email')
@@ -74,7 +81,6 @@ describe('signUp action', () => {
   })
 
   it('rejects short password', async () => {
-    const { signUp } = await import('../signup')
     const formData = new FormData()
     formData.set('fullName', 'Maria')
     formData.set('email', 'maria@test.com')
@@ -86,7 +92,6 @@ describe('signUp action', () => {
   })
 
   it('rejects phone shorter than 10 chars', async () => {
-    const { signUp } = await import('../signup')
     const formData = new FormData()
     formData.set('fullName', 'Maria')
     formData.set('email', 'maria@test.com')
