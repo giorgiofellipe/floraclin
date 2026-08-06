@@ -151,7 +151,7 @@ export function Hero() {
               Testar Grátis por 14 Dias
             </a>
             <a
-              href="https://wa.me/5547936182197?text=Ol%C3%A1%2C%20gostaria%20de%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20da%20FloraClin."
+              href="https://wa.me/5547936181734?text=Ol%C3%A1%2C%20gostaria%20de%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20da%20FloraClin."
               target="_blank"
               rel="noopener noreferrer"
               className="btn-secondary text-base px-10 py-4"

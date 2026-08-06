@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { HelpCircle, Mail, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const WHATSAPP_NUMBER = '5547936182197'
+const WHATSAPP_NUMBER = '5547936181734'
 const SUPPORT_EMAIL = 'contato@floraclin.com.br'
 
 function WhatsAppIcon({ className }: { className?: string }) {

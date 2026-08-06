@@ -11,7 +11,7 @@ const SCHEMAS = [
     contactPoint: [
       {
         "@type": "ContactPoint",
-        telephone: "+55-47-93618-2197",
+        telephone: "+55-47-93618-1734",
         contactType: "customer service",
         availableLanguage: "Portuguese",
         areaServed: "BR",
