@@ -31,6 +31,17 @@ const OWNERS_ONLY = false
 const FROM = process.env.EMAIL_FROM ?? 'FloraClin <contato@floraclin.com.br>'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://floraclin.com.br'
 
+// ─── Brand (FloraClin) ──────────────────────────────────────────────
+// Logo lockup (symbol + wordmark) as a hosted PNG — email clients (Gmail/Outlook)
+// don't render SVG <img>, so we host a raster. Regenerate via
+// floraclin-content/_brand/render-logo.mjs in the openclaw-agents repo.
+const LOGO_URL = 'https://bullcode-agent-content.s3.sa-east-1.amazonaws.com/floraclin-content/brand/logo-email.png'
+// Brand fonts degrade gracefully: Apple Mail honors the linked web fonts; Gmail/Outlook
+// strip the <link> and fall back to the stacks. No @font-face payload is embedded, so
+// there's no deliverability/spam impact — just the brand feel where it's supported.
+const SERIF = "'Cormorant Garamond', Georgia, 'Times New Roman', serif"
+const SANS = "'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+
 // ─── Content (the announce-features skill edits SUBJECT + FEATURES monthly) ──
 const SUBJECT = '🌿 Novidades na FloraClin'
 
@@ -62,18 +73,19 @@ function escapeHtml(str: string): string {
 }
 
 function featureCard(feature: Feature, highlighted: boolean): string {
-  const bg = highlighted
-    ? 'background: linear-gradient(135deg, #eef4ef 0%, #f6faf6 100%); border-left: 4px solid #4A6B52;'
-    : 'background-color: #f8f9fa;'
+  const style = highlighted
+    ? 'background: linear-gradient(135deg, #F2E8E1 0%, #FAF7F3 100%); border-left: 4px solid #4A6B52;'
+    : 'background-color: #F7F5F1; border-left: 4px solid #8FB49A;'
   return `
-    <div style="${bg} border-radius: 10px; padding: 20px 24px; margin: 12px 0;">
-      <p style="margin: 0 0 6px; font-size: 17px; font-weight: 700; color: #1C2B1E;">${feature.emoji} ${escapeHtml(feature.title)}</p>
-      <p style="margin: 0; font-size: 15px; line-height: 1.55; color: #2A2A2A;">${escapeHtml(feature.description)}</p>
+    <div style="${style} border-radius: 12px; padding: 18px 22px; margin: 12px 0;">
+      <p style="margin: 0 0 6px; font-size: 16px; font-weight: 700; color: #1C2B1E;">${feature.emoji} ${escapeHtml(feature.title)}</p>
+      <p style="margin: 0; font-size: 15px; line-height: 1.6; color: #2A2A2A;">${escapeHtml(feature.description)}</p>
     </div>`
 }
 
 function generateEmailHtml(userName: string): string {
-  const greetingName = userName ? escapeHtml(userName.split(' ')[0]) : 'tudo bem'
+  const greetingName = userName ? escapeHtml(userName.split(' ')[0]) : ''
+  const hi = greetingName ? `Olá, ${greetingName}!` : 'Olá!'
   const cards = FEATURES.map((f, i) => featureCard(f, i === 0)).join('')
   return `
 <!DOCTYPE html>
@@ -81,30 +93,34 @@ function generateEmailHtml(userName: string): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
-<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f8f9fa;">
-  <div style="background-color: #f8f9fa; padding: 40px 20px;">
-    <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.08);">
-      <div style="padding: 28px 40px; text-align: center; border-bottom: 3px solid #4A6B52;">
-        <h1 style="margin: 0; font-size: 24px; color: #1C2B1E;">FloraClin 🌿</h1>
+<body style="margin: 0; padding: 0; background-color: #FAF7F3; font-family: ${SANS};">
+  <div style="display: none; max-height: 0; overflow: hidden; opacity: 0;">Novidades na FloraClin para deixar a gestão da sua clínica mais leve.</div>
+  <div style="background-color: #FAF7F3; padding: 40px 20px;">
+    <div style="max-width: 600px; margin: 0 auto; background-color: #FFFFFF; border-radius: 16px; overflow: hidden; box-shadow: 0 6px 24px rgba(28,43,30,0.08);">
+      <div style="padding: 32px 40px 26px; text-align: center; background-color: #FFFFFF; border-bottom: 3px solid #4A6B52;">
+        <img src="${LOGO_URL}" alt="FloraClin" width="196" style="display: inline-block; width: 196px; height: auto; border: 0;">
       </div>
-      <div style="padding: 32px 40px;">
-        <p style="font-size: 16px; color: #2A2A2A;">Olá ${greetingName}! 👋</p>
-        <p style="font-size: 16px; line-height: 1.55; color: #2A2A2A;">
+      <div style="padding: 36px 40px 8px;">
+        <h1 style="margin: 0 0 6px; font-family: ${SERIF}; font-weight: 600; font-size: 30px; line-height: 1.15; color: #1C2B1E;">${hi}</h1>
+        <p style="margin: 0 0 22px; font-size: 16px; line-height: 1.6; color: #2A2A2A;">
           Temos novidades na FloraClin para deixar o dia a dia da sua clínica mais leve. Veja o que chegou:
         </p>
         ${cards}
-        <div style="text-align: center; margin: 32px 0 8px;">
-          <a href="${APP_URL}/dashboard" style="display: inline-block; background: #4A6B52; color: #ffffff; padding: 13px 28px; border-radius: 6px; text-decoration: none; font-weight: 600;">
+        <div style="text-align: center; margin: 34px 0 10px;">
+          <a href="${APP_URL}/dashboard" style="display: inline-block; background-color: #4A6B52; color: #FFFFFF; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 15px;">
             Acessar a FloraClin
           </a>
         </div>
-        <p style="font-size: 14px; line-height: 1.55; color: #7A7A7A; margin-top: 28px;">
-          Tem uma sugestão? É só responder este e-mail — a gente lê tudo. 💚
+        <p style="font-size: 14px; line-height: 1.6; color: #7A7A7A; margin: 26px 0 4px;">
+          Tem uma sugestão? É só responder este e-mail — a gente lê tudo. 🌿
         </p>
       </div>
-      <div style="padding: 20px 40px; border-top: 1px solid #eee; text-align: center;">
-        <p style="font-size: 12px; color: #9AA0A6; margin: 0;">FloraClin · Gestão para clínicas · floraclin.com.br</p>
+      <div style="padding: 22px 40px 28px; background-color: #FAF7F3; border-top: 1px solid #EFE7DF; text-align: center;">
+        <p style="margin: 0 0 4px; font-family: ${SERIF}; font-size: 16px; color: #1C2B1E;">FloraClin</p>
+        <p style="margin: 0; font-size: 12px; line-height: 1.5; color: #9A9A9A;">Gestão para clínicas de Harmonização Orofacial · <a href="${APP_URL}" style="color: #4A6B52; text-decoration: none;">floraclin.com.br</a></p>
       </div>
     </div>
   </div>
