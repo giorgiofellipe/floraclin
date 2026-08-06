@@ -1,4 +1,4 @@
-import type { ReportDefinition } from './types'
+import type { ReportDefinition, ReportGroup } from './types'
 
 /**
  * Width of the default date range, in days, for every report that declares
@@ -11,12 +11,38 @@ import type { ReportDefinition } from './types'
  */
 const DEFAULT_RANGE_DAYS = 90
 
+/**
+ * Order the /relatorios landing page groups its cards in, plus a one-line
+ * subtitle per group. This is the single source of truth for which groups
+ * exist: the landing page renders exactly these, in this order, and skips
+ * any group with no reports (see `RelatoriosPage`). Adding a group is a
+ * change here only; it never touches the page itself.
+ */
+export const REPORT_GROUPS: { key: ReportGroup; title: string; subtitle: string }[] = [
+  {
+    key: 'pacientes',
+    title: 'Pacientes',
+    subtitle: 'Quem contatar: inativos, retornos a vencer e faltas recorrentes.',
+  },
+  {
+    key: 'financeiro',
+    title: 'Financeiro',
+    subtitle: 'Movimentações de caixa e ganhos por profissional em um período.',
+  },
+  {
+    key: 'clinico',
+    title: 'Clínico',
+    subtitle: 'Registros de procedimentos aplicados e o prontuário completo do paciente.',
+  },
+]
+
 export const REPORTS: ReportDefinition[] = [
   {
     slug: 'pacientes-inativos',
     title: 'Pacientes inativos',
     description:
       'Pacientes sem procedimento recente, ordenados por quanto já gastaram na clínica, para priorizar o contato.',
+    group: 'pacientes',
     filters: ['threshold-days'],
     apiPath: '/api/reports/inactive-patients',
     paramName: 'thresholdDays',
@@ -31,6 +57,7 @@ export const REPORTS: ReportDefinition[] = [
     title: 'Retornos a vencer',
     description:
       'Retornos agendados que estão próximos ou já venceram, excluindo quem já tem consulta marcada.',
+    group: 'pacientes',
     // The route filters by a day-count window (`windowDays`), not a calendar
     // range, so it reuses the same numeric filter kind as pacientes-inativos
     // rather than the date-range picker.
@@ -48,6 +75,7 @@ export const REPORTS: ReportDefinition[] = [
     title: 'Faltas recorrentes',
     description:
       'Pacientes que faltaram ou cancelaram mais de uma vez no período, com o valor perdido nos horários.',
+    group: 'pacientes',
     // Same reasoning as retornos: `windowDays` is a day count.
     filters: ['threshold-days', 'min-count'],
     apiPath: '/api/reports/repeat-no-shows',
@@ -67,6 +95,7 @@ export const REPORTS: ReportDefinition[] = [
     title: 'Extrato por período',
     description:
       'Movimentações de caixa em um intervalo de datas, prontas para conferência ou para a contabilidade.',
+    group: 'financeiro',
     filters: ['date-range'],
     apiPath: '/api/reports/extrato-periodo',
     defaultRangeDays: DEFAULT_RANGE_DAYS,
@@ -77,6 +106,7 @@ export const REPORTS: ReportDefinition[] = [
     title: 'Ganhos por profissional',
     description:
       'Procedimentos, receita gerada e receita recebida por profissional em um período, como documento para pagamento.',
+    group: 'financeiro',
     filters: ['date-range', 'practitioner'],
     apiPath: '/api/reports/ganhos-profissional',
     defaultRangeDays: DEFAULT_RANGE_DAYS,
@@ -87,6 +117,9 @@ export const REPORTS: ReportDefinition[] = [
     title: 'Procedimentos realizados',
     description:
       'Registro de rastreabilidade por lote: produto, lote e validade de cada aplicação, para consulta caso um procedimento seja questionado.',
+    // Clinical, not financial: this is a per-application traceability log
+    // (what was applied to which patient), not a money report.
+    group: 'clinico',
     // `patient` is a SUGGEST/autocomplete field (type to search, pick one),
     // not a plain dropdown: even the demo tenant alone has 50 patients and a
     // real clinic has thousands, so a `<select>`-style list would be
@@ -102,6 +135,7 @@ export const REPORTS: ReportDefinition[] = [
     title: 'Prontuário completo',
     description:
       'O histórico completo de um paciente em PDF: identificação, anamnese, procedimentos com produtos e doses, diagrama facial, fotos e consentimentos assinados.',
+    group: 'clinico',
     // A different shape from every other report: one patient, not a
     // filtered table, so the only filter it declares is `patient` (see
     // `web/src/app/(platform)/relatorios/prontuario/page.tsx`, which reuses

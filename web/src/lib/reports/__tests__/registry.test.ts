@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { REPORTS, getReport } from '../registry'
+import { REPORTS, REPORT_GROUPS, getReport } from '../registry'
+import type { ReportDefinition } from '../types'
 
 describe('REPORTS registry', () => {
   // Only reports that declare the `threshold-days` filter kind read
@@ -65,6 +66,42 @@ describe('REPORTS registry', () => {
     }
   })
 
+  // The landing page groups cards by REPORT_GROUPS and skips any group with
+  // no reports (see RelatoriosPage). Both directions matter: a report whose
+  // group isn't in REPORT_GROUPS would never render anywhere, and a group in
+  // REPORT_GROUPS with no reports would render as an empty heading if the
+  // page didn't filter it out.
+  it('gives every report a group that exists in REPORT_GROUPS', () => {
+    const groupKeys = REPORT_GROUPS.map((group) => group.key)
+    for (const report of REPORTS) {
+      expect(groupKeys, report.slug).toContain(report.group)
+    }
+  })
+
+  it('gives every group in REPORT_GROUPS at least one report', () => {
+    for (const group of REPORT_GROUPS) {
+      const reportsInGroup = REPORTS.filter((report) => report.group === group.key)
+      expect(reportsInGroup.length, group.key).toBeGreaterThan(0)
+    }
+  })
+
+  it('gives every group a title and a subtitle', () => {
+    for (const group of REPORT_GROUPS) {
+      expect(group.title, group.key).toBeTruthy()
+      expect(group.subtitle, group.key).toBeTruthy()
+    }
+  })
+
+  it('groups reports into the expected categories', () => {
+    expect(getReport('pacientes-inativos')?.group).toBe('pacientes')
+    expect(getReport('retornos')?.group).toBe('pacientes')
+    expect(getReport('faltas')?.group).toBe('pacientes')
+    expect(getReport('extrato-periodo')?.group).toBe('financeiro')
+    expect(getReport('ganhos-profissional')?.group).toBe('financeiro')
+    expect(getReport('procedimentos-realizados')?.group).toBe('clinico')
+    expect(getReport('prontuario')?.group).toBe('clinico')
+  })
+
   // procedimentos-realizados and prontuario are the only two reports that
   // declare the `patient` filter kind: a clinic can have thousands of
   // patients, so the control has to be a SUGGEST/autocomplete, not a
@@ -83,3 +120,21 @@ describe('REPORTS registry', () => {
     }
   })
 })
+
+// `ReportDefinition.group` is a union (`ReportGroup`), not a free string, so
+// an unrecognized group value must fail `tsc` at the assignment below rather
+// than slip through as a silently-ungrouped report. This is a compile-time
+// check only: nothing here executes, and there is no runtime assertion for
+// it because the type system already rejects the invalid value.
+function assertGroupIsAUnion(base: Omit<ReportDefinition, 'group'>): void {
+  const valid: ReportDefinition = { ...base, group: 'financeiro' }
+  void valid
+
+  const invalid: ReportDefinition = {
+    ...base,
+    // @ts-expect-error 'not-a-real-group' is not a member of ReportGroup
+    group: 'not-a-real-group',
+  }
+  void invalid
+}
+void assertGroupIsAUnion
