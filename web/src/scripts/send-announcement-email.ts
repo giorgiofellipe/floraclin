@@ -28,15 +28,11 @@ const SEND_TO_ALL = false
 // When sending to all, restrict to clinic owners instead of every active member.
 const OWNERS_ONLY = false
 
-const FROM = process.env.EMAIL_FROM ?? 'FloraClin <contato@floraclin.com.br>'
-// This mailer targets real customers, so the button must never point at a dev URL.
-// Honor an explicit override, else NEXT_PUBLIC_APP_URL only when it's not localhost,
-// else the production domain (NEXT_PUBLIC_APP_URL is localhost in .env.local).
-const PROD_URL = 'https://floraclin.com.br'
-const envUrl = process.env.NEXT_PUBLIC_APP_URL
-const APP_URL =
-  process.env.ANNOUNCEMENT_APP_URL ??
-  (envUrl && !/localhost|127\.0\.0\.1/.test(envUrl) ? envUrl : PROD_URL)
+// This mailer targets real customers — always use the production sender and URLs,
+// never whatever a dev .env.local carries (EMAIL_FROM=noreply, NEXT_PUBLIC_APP_URL=localhost).
+const FROM = 'FloraClin <contato@floraclin.com.br>'
+const APP_URL = 'https://app.floraclin.com.br' // the app (CTA button -> /dashboard)
+const SITE_URL = 'https://floraclin.com.br' // the marketing site (footer)
 
 // ─── Brand (FloraClin) ──────────────────────────────────────────────
 // Logo lockup (symbol + wordmark) as a hosted PNG — email clients (Gmail/Outlook)
@@ -127,7 +123,7 @@ function generateEmailHtml(userName: string): string {
       </div>
       <div style="padding: 22px 40px 28px; background-color: #FAF7F3; border-top: 1px solid #EFE7DF; text-align: center;">
         <p style="margin: 0 0 4px; font-family: ${SERIF}; font-size: 16px; color: #1C2B1E;">FloraClin</p>
-        <p style="margin: 0; font-size: 12px; line-height: 1.5; color: #9A9A9A;">Gestão para clínicas de Harmonização Orofacial · <a href="${APP_URL}" style="color: #4A6B52; text-decoration: none;">floraclin.com.br</a></p>
+        <p style="margin: 0; font-size: 12px; line-height: 1.5; color: #9A9A9A;">Gestão para clínicas de Harmonização Orofacial · <a href="${SITE_URL}" style="color: #4A6B52; text-decoration: none;">floraclin.com.br</a></p>
       </div>
     </div>
   </div>
