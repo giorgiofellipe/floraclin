@@ -8,6 +8,7 @@
 import 'server-only'
 import React, { type ReactElement } from 'react'
 import { buildFloraclinFooterTemplate } from './pdf-branding'
+import { getAppUrl } from './app-url'
 
 // @sparticuz/chromium-min 149.0.0 → matching pack tar URL.
 // Override via process.env.CHROMIUM_PACK_URL in production (e.g. S3).
@@ -178,7 +179,7 @@ export async function renderReactToPdf(
 }
 
 export function VerificationFooter({ code }: { code: string }): ReactElement {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl = getAppUrl()
   return React.createElement(
     'div',
     { className: 'verification-footer' },

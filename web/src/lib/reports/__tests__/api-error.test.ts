@@ -53,11 +53,30 @@ describe('reportRouteError', () => {
     expect(forbidden.status).toBe(403)
     await expect(forbidden.json()).resolves.toEqual({ error: 'Forbidden' })
 
-    const unauthorized = reportRouteError(new Error('NEXT_REDIRECT'), new Request(URL_PDF))
+    // Shaped like a real `redirect()` throw: message is literally
+    // `NEXT_REDIRECT` and `digest` carries the encoded destination/type/
+    // status, exactly what `next/navigation`'s `redirect()` produces (see
+    // `node_modules/next/dist/client/components/redirect.js`).
+    const redirectError = Object.assign(new Error('NEXT_REDIRECT'), {
+      digest: 'NEXT_REDIRECT;replace;/login;307;',
+    })
+    const unauthorized = reportRouteError(redirectError, new Request(URL_PDF))
     expect(unauthorized.status).toBe(401)
     await expect(unauthorized.json()).resolves.toEqual({ error: 'Unauthorized' })
 
     expect(captureExceptionMock).not.toHaveBeenCalled()
+  })
+
+  it('reports a real error whose message merely mentions "redirect" instead of misclassifying it as an auth failure', async () => {
+    // No `digest` at all: this is what a genuine failure looks like, e.g.
+    // headless Chromium bailing out of the PDF branch.
+    const tooManyRedirects = new Error('Too many redirects')
+
+    const res = reportRouteError(tooManyRedirects, new Request(URL_PDF))
+
+    expect(res.status).toBe(500)
+    await expect(res.json()).resolves.toMatchObject({ eventId: 'evt-abc123' })
+    expect(captureExceptionMock).toHaveBeenCalledWith(tooManyRedirects, expect.anything())
   })
 
   it('handles a non-Error throw', async () => {

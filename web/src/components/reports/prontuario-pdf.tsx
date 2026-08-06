@@ -3,8 +3,10 @@ import { ptBR } from 'date-fns/locale'
 import { BR_TZ, toBrYmd } from '@/lib/dates'
 import { formatDate } from '@/lib/utils'
 import { formatBrPhone } from '@/lib/phone'
-import { CONSENT_TYPE_LABELS, METHOD_LABELS } from '@/lib/constants'
+import { CONSENT_TYPE_LABELS, METHOD_LABELS, GENDER_LABELS } from '@/lib/constants'
 import { FloraclinBrandHeader } from '@/lib/pdf-branding'
+import { getAppUrl } from '@/lib/app-url'
+import { timelineStageValues, timelineStageLabels } from '@/validations/photo'
 // Imported from `face-template-data`, never from `face-template` itself:
 // that module is `'use client'`, and this one renders on the server inside
 // the `/api/reports/prontuario` route handler. See the header comment in
@@ -71,13 +73,6 @@ function formatBrTimestamp(date: Date): string {
  *  `web/src/lib/pdf.ts`), same reasoning as `PROCEDURE_APPLICATION_COLUMNS`. */
 function formatInstantAsBrDate(date: Date): string {
   return formatDate(toBrYmd(date))
-}
-
-const GENDER_LABELS: Record<string, string> = {
-  feminino: 'Feminino',
-  masculino: 'Masculino',
-  outro: 'Outro',
-  nao_informado: 'Não informado',
 }
 
 const MEDICAL_HISTORY_LABELS: Record<string, string> = {
@@ -296,18 +291,17 @@ function getPointColor(productName: string): string {
  * Chromium a raw HTML string via `page.setContent` with no base URL, so a
  * root-relative `VIEW_FILES` path (e.g. `/face-templates/female-front.webp`)
  * never resolves there — it needs the deployed app's own origin prefixed,
- * the same pattern `VerificationFooter` in `@/lib/pdf` already uses for
- * `NEXT_PUBLIC_APP_URL`. Reading the file off disk instead was considered
- * and rejected: Vercel/Lambda's file-tracer does not guarantee arbitrary
- * `public/` assets ship inside the serverless function bundle, so `fs`
- * would work locally and silently 404 in production.
+ * the same pattern `VerificationFooter` in `@/lib/pdf` already uses, via the
+ * shared `getAppUrl` helper (`@/lib/app-url`). Reading the file off disk
+ * instead was considered and rejected: Vercel/Lambda's file-tracer does not
+ * guarantee arbitrary `public/` assets ship inside the serverless function
+ * bundle, so `fs` would work locally and silently 404 in production.
  */
 function faceTemplateUrl(viewType: string, gender: string | null | undefined): string {
   const genderKey = resolveGenderKey(gender)
   const files = VIEW_FILES[genderKey]
   const path = files[viewType as keyof typeof files] ?? files.front
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.floraclin.com.br'
-  return `${appUrl}${path}`
+  return `${getAppUrl()}${path}`
 }
 
 /**
@@ -446,47 +440,120 @@ function AnamnesisSection({ anamnesis }: { anamnesis: ProntuarioDossier['anamnes
   )
 }
 
-// Every photo is embedded as a thumbnail, grouped by timeline stage and
-// chronological within each stage: a prontuário handed to a patient is
-// largely about the photographic record, so summarizing most of it away as
-// filenames would gut the section. The `.prontuario-photo-card img` CSS
-// already renders these at 110x110 (see `PRONTUARIO_PDF_CSS`), which is what
-// keeps the headless-Chromium render and memory footprint bounded — not a
-// cap on how many photos get embedded. `MAX_PHOTOS` below is purely a guard
-// against a pathological record; it must never fire for a normal patient
-// timeline. When it does, a visible note says how many photos were omitted
-// so nothing is silently missing from the document.
-const MAX_PHOTOS = 60
+// Every photo is embedded as a thumbnail, grouped by PROCEDURE, newest
+// procedure first, matching the on-screen grouping in
+// `@/components/photos/photo-grid.tsx` (`procedureGroups`, keyed by
+// `photo.procedureRecordId`), not the timeline stage this section used to
+// group by. Grouping by stage alone pooled photos from procedures months
+// apart under one heading (the wrong story for a clinical document) and
+// separated a procedure's photos from the procedure entry this same PDF
+// already lists above under "Procedimentos". Within a procedure, photos are
+// ordered by clinical timeline stage (pré, pós imediato, 7d, 30d, 90d,
+// outro) and each card is labeled with its stage, since a group can now mix
+// stages. Photos with no `procedureRecordId` ("fotos avulsas") land in one
+// final "Sem procedimento vinculado" group, after every real procedure.
+//
+// `MAX_PHOTOS_PER_PROCEDURE` bounds embedded images PER GROUP instead of a
+// single flat budget for the whole document: a flat budget meant one
+// procedure with a burst of uploads could exhaust it and starve every later
+// procedure's photos entirely. 12 covers two photos across each of the six
+// stages, generous for any real procedure, while still bounding a
+// pathological one; a visible note in Portuguese says how many were omitted
+// whenever a group's own photos exceed it.
+const MAX_PHOTOS_PER_PROCEDURE = 12
 
 type PhotoStage = ProntuarioDossier['photos'][number]
 type Photo = PhotoStage['photos'][number]
+type StagedPhoto = Photo & { stage: string }
 
-interface CappedStage {
-  stage: string
-  label: string
-  totalInStage: number
-  visible: Photo[]
+// Fixed clinical order for stages within a procedure group: the same order
+// `listPhotos` (`@/db/queries/photos.ts`) already buckets `dossier.photos`
+// in, reused here rather than re-declared so the two can't drift.
+const STAGE_ORDER: readonly string[] = timelineStageValues
+
+interface PhotoGroup {
+  key: string
+  procedureRecordId: string | null
+  procedureTypeName: string | null
+  procedurePerformedAt: Date | null
+  photos: StagedPhoto[]
 }
 
-/** Plain helper (not a component/hook, so the React Compiler doesn't apply
- *  its render-purity rules to it): walks the stages in order and hands out
- *  the shared `cap` budget stage by stage, so the running total lives in
- *  this function's own local scope instead of a variable mutated inside the
- *  component's render/JSX. */
-function capPhotosPerStage(stagesWithPhotos: PhotoStage[], cap: number): CappedStage[] {
-  let remaining = cap
-  return stagesWithPhotos.map((stage) => {
-    // `listPhotos` returns each stage's photos newest-first; sort to
-    // chronological (oldest first) for the printed timeline, using
-    // `takenAt` when present since it reflects when the photo was actually
-    // taken rather than when it was uploaded.
-    const chronological = [...stage.photos].sort(
-      (a, b) => (a.takenAt ?? a.createdAt).getTime() - (b.takenAt ?? b.createdAt).getTime(),
-    )
-    const visible = chronological.slice(0, Math.max(0, remaining))
-    remaining -= visible.length
-    return { stage: stage.stage, label: stage.label, totalInStage: stage.photos.length, visible }
+interface CappedGroup extends Omit<PhotoGroup, 'photos'> {
+  totalInGroup: number
+  visible: StagedPhoto[]
+  omitted: number
+}
+
+/** Groups every photo across all stage buckets by the procedure it belongs
+ *  to, newest procedure first (`procedurePerformedAt` descending), with an
+ *  unlinked ("avulsas") group always last regardless of date. This mirrors
+ *  `photo-grid.tsx`'s grouping but with the unlinked bucket pinned to the
+ *  end rather than sorted in by its own timestamp, per this section's own
+ *  presentation order. Plain helper (not a component/hook) so the React
+ *  Compiler doesn't apply render-purity rules meant for JSX-returning
+ *  functions to it. */
+function groupPhotosByProcedure(stagesWithPhotos: PhotoStage[]): PhotoGroup[] {
+  const groups = new Map<string, PhotoGroup>()
+  const UNLINKED_KEY = '__unlinked__'
+
+  // Sort defensively into clinical stage order rather than trusting the
+  // caller's array order, then traverse stage-major: appending each stage's
+  // photos to their procedure's group in that order gives every group's
+  // `photos` array the right within-procedure stage order for free, without
+  // a second sort.
+  const orderedStages = [...stagesWithPhotos].sort(
+    (a, b) => STAGE_ORDER.indexOf(a.stage) - STAGE_ORDER.indexOf(b.stage),
+  )
+  for (const stage of orderedStages) {
+    for (const photo of stage.photos) {
+      const key = photo.procedureRecordId ?? UNLINKED_KEY
+      let group = groups.get(key)
+      if (!group) {
+        group = {
+          key,
+          procedureRecordId: photo.procedureRecordId,
+          procedureTypeName: photo.procedureTypeName,
+          procedurePerformedAt: photo.procedurePerformedAt,
+          photos: [],
+        }
+        groups.set(key, group)
+      }
+      group.photos.push({ ...photo, stage: stage.stage })
+    }
+  }
+
+  const linked = [...groups.values()].filter((g) => g.procedureRecordId !== null)
+  linked.sort((a, b) => {
+    const aTime = a.procedurePerformedAt?.getTime() ?? -Infinity
+    const bTime = b.procedurePerformedAt?.getTime() ?? -Infinity
+    return bTime - aTime
   })
+
+  const unlinked = groups.get(UNLINKED_KEY)
+  return unlinked ? [...linked, unlinked] : linked
+}
+
+/** Caps each group independently at `capPerGroup`, keeping the earliest
+ *  photos in clinical-stage order (same "oldest/most-baseline first" bias
+ *  the old flat cap used) and reporting how many of that group's own photos
+ *  were left out. */
+function capPhotoGroups(groups: PhotoGroup[], capPerGroup: number): CappedGroup[] {
+  return groups.map(({ photos, ...group }) => {
+    const visible = photos.slice(0, capPerGroup)
+    return {
+      ...group,
+      totalInGroup: photos.length,
+      visible,
+      omitted: Math.max(0, photos.length - capPerGroup),
+    }
+  })
+}
+
+function photoGroupHeading(group: CappedGroup): string {
+  if (!group.procedureRecordId) return 'Sem procedimento vinculado'
+  const name = group.procedureTypeName ?? 'Procedimento'
+  return group.procedurePerformedAt ? `${name} (${formatInstantAsBrDate(group.procedurePerformedAt)})` : name
 }
 
 function PhotosSection({ photos }: { photos: ProntuarioDossier['photos'] }) {
@@ -497,41 +564,46 @@ function PhotosSection({ photos }: { photos: ProntuarioDossier['photos'] }) {
   }
 
   const stagesWithPhotos = photos.filter((stage) => stage.photos.length > 0)
-  const omittedCount = Math.max(0, totalPhotos - MAX_PHOTOS)
-  const capped = capPhotosPerStage(stagesWithPhotos, MAX_PHOTOS)
+  const groups = groupPhotosByProcedure(stagesWithPhotos)
+  const capped = capPhotoGroups(groups, MAX_PHOTOS_PER_PROCEDURE)
+  const totalOmitted = capped.reduce((sum, group) => sum + group.omitted, 0)
 
   return (
     <div>
-      {capped.map((stage) =>
-        stage.visible.length === 0 ? null : (
-          <div key={stage.stage}>
-            <h3 className="prontuario-subsection-title">
-              {stage.label} ({stage.totalInStage} foto(s))
-            </h3>
-            <div className="prontuario-photo-grid">
-              {stage.visible.map((photo) => (
-                <div className="prontuario-photo-card" key={photo.id}>
-                  {photo.signedUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={photo.signedUrl} alt={stage.label} />
-                  ) : (
-                    <div>(imagem indisponível)</div>
-                  )}
-                  <div>{photo.takenAt ? formatInstantAsBrDate(photo.takenAt) : formatInstantAsBrDate(photo.createdAt)}</div>
-                </div>
-              ))}
-            </div>
+      {capped.map((group) => (
+        <div key={group.key}>
+          <h3 className="prontuario-subsection-title">
+            {photoGroupHeading(group)} ({group.totalInGroup} foto(s))
+          </h3>
+          <div className="prontuario-photo-grid">
+            {group.visible.map((photo) => (
+              <div className="prontuario-photo-card" key={photo.id}>
+                {photo.signedUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={photo.signedUrl} alt={timelineStageLabels[photo.stage as keyof typeof timelineStageLabels] ?? photo.stage} />
+                ) : (
+                  <div>(imagem indisponível)</div>
+                )}
+                <div>{timelineStageLabels[photo.stage as keyof typeof timelineStageLabels] ?? photo.stage}</div>
+                <div>{photo.takenAt ? formatInstantAsBrDate(photo.takenAt) : formatInstantAsBrDate(photo.createdAt)}</div>
+              </div>
+            ))}
           </div>
-        ),
-      )}
+          {group.omitted > 0 && (
+            <div className="prontuario-empty">
+              {group.omitted} foto(s) não exibida(s) por exceder o limite de {MAX_PHOTOS_PER_PROCEDURE} imagens por procedimento neste documento.
+            </div>
+          )}
+        </div>
+      ))}
       <div className="prontuario-photo-counts">
-        {stagesWithPhotos.map((stage) => `${stage.label}: ${stage.photos.length} foto(s)`).join(' · ')}
+        {capped.map((group) => `${photoGroupHeading(group)}: ${group.totalInGroup} foto(s)`).join(' · ')}
         {' — '}
         {totalPhotos} foto(s) no total.
       </div>
-      {omittedCount > 0 && (
+      {totalOmitted > 0 && (
         <div className="prontuario-empty">
-          {omittedCount} foto(s) não exibida(s) por exceder o limite de {MAX_PHOTOS} imagens neste documento.
+          {totalOmitted} foto(s) não exibida(s) no total por exceder o limite por procedimento.
         </div>
       )}
     </div>

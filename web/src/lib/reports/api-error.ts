@@ -1,6 +1,34 @@
 import { NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 
+// Next 16.2.3 (the version installed here, see `web/package.json`) no
+// longer re-exports `isRedirectError` from the public `next/navigation`
+// entry point: verified against
+// `node_modules/next/dist/client/components/navigation.d.ts`, whose export
+// list ends at `redirect`, `permanentRedirect`, `notFound`, `forbidden`,
+// `unauthorized`, `unstable_rethrow` and the `use*` hooks, no
+// `isRedirectError`. Older Next versions (and most training data) exported
+// it directly from `next/navigation`. The function still exists internally
+// (`node_modules/next/dist/client/components/redirect-error.js`), but
+// importing from `next/dist/*` reaches into an unversioned path this repo
+// shouldn't pin to.
+//
+// The signal it checks is a small, stable contract instead: `redirect()` /
+// `permanentRedirect()` throw an `Error` whose `digest` starts with
+// `NEXT_REDIRECT;` (same file). Checking the digest directly reproduces
+// `isRedirectError` exactly, and unlike the substring match this
+// replaces, it can't be fooled by an unrelated error whose *message* happens
+// to contain the word "redirect" (e.g. a headless-Chromium "Too many
+// redirects" failure in the PDF branch), which the old check turned into a
+// false 401 that never reached Sentry.
+const REDIRECT_DIGEST_PREFIX = 'NEXT_REDIRECT;'
+
+function isNextRedirectError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const digest = (error as { digest?: unknown }).digest
+  return typeof digest === 'string' && digest.startsWith(REDIRECT_DIGEST_PREFIX)
+}
+
 /**
  * Shared `catch` handler for every route under `/api/reports`.
  *
@@ -25,7 +53,7 @@ import * as Sentry from '@sentry/nextjs'
 export function reportRouteError(error: unknown, request?: Request): NextResponse {
   const msg = error instanceof Error ? error.message : ''
   if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect'))
+  if (isNextRedirectError(error))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // `format` is the single most useful discriminator here: the JSON and PDF

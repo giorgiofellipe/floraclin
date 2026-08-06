@@ -8,17 +8,11 @@ import { ReportFilters, type ReportFilterValues } from '@/components/reports/rep
 import { Button } from '@/components/ui/button'
 import { formatDate } from '@/lib/utils'
 import { formatBrPhone } from '@/lib/phone'
+import { GENDER_LABELS } from '@/lib/constants'
 
 // The registry is the single source of truth for which reports exist, see
 // web/src/lib/reports/registry.ts. This slug is guaranteed to be present.
 const REPORT = getReport('prontuario')!
-
-const GENDER_LABELS: Record<string, string> = {
-  feminino: 'Feminino',
-  masculino: 'Masculino',
-  outro: 'Outro',
-  nao_informado: 'Não informado',
-}
 
 /** Shape of the JSON summary this page reads (`?format` absent). A lighter
  *  view than the PDF: enough to confirm this is the right patient and that

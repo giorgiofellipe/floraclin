@@ -35,7 +35,7 @@ import { getProductApplications } from '@/db/queries/product-applications'
 import { getFaceDiagram } from '@/db/queries/face-diagrams'
 import { listPhotos } from '@/db/queries/photos'
 import { getConsentHistory } from '@/db/queries/consent'
-import { getPatientDossier } from '../prontuario'
+import { getPatientDossier, toProntuarioSummary, type ProntuarioDossier } from '../prontuario'
 
 const TENANT_A = 'tenant-a'
 const TENANT_B = 'tenant-b'
@@ -172,5 +172,133 @@ describe('getPatientDossier', () => {
 
     expect(result?.procedures).toHaveLength(100)
     expect(result?.proceduresTruncated).toBe(true)
+  })
+})
+
+describe('toProntuarioSummary', () => {
+  function fullDossier(): ProntuarioDossier {
+    return {
+      patient: {
+        id: PATIENT_ID,
+        tenantId: TENANT_A,
+        responsibleUserId: null,
+        fullName: 'Ana Souza',
+        cpf: '123.456.789-00',
+        birthDate: '1990-05-20',
+        gender: 'feminino',
+        email: 'ana@example.com',
+        phone: '11987654321',
+        phoneSecondary: null,
+        address: null,
+        occupation: null,
+        referralSource: null,
+        notes: 'Notas internas sensíveis',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        deletedAt: null,
+      } as never,
+      anamnesis: {
+        id: 'an-1',
+        tenantId: TENANT_A,
+        patientId: PATIENT_ID,
+        mainComplaint: 'Rugas de expressão',
+        patientGoals: 'Objetivos sensíveis do paciente',
+      } as never,
+      procedures: [
+        {
+          id: 'proc-1',
+          performedAt: new Date('2026-04-10T15:00:00Z'),
+          status: 'completed',
+          technique: 'Técnica X',
+          notes: null,
+          sessionsTotal: 1,
+          sessionsExecuted: 1,
+          sessions: [],
+          procedureTypeName: 'Botox',
+          procedureTypeCategory: 'toxina',
+          practitionerName: 'Dra. Beatriz',
+          productApplications: [
+            { id: 'app-1', productName: 'Botox', activeIngredient: null, totalQuantity: '20.00', quantityUnit: 'U', batchNumber: 'L1', expirationDate: '2027-01-01', labelPhotoId: null, applicationAreas: null, notes: null },
+          ],
+          faceDiagrams: [
+            { id: 'diag-1', viewType: 'front', points: [{ id: 'point-1', x: '10.00', y: '20.00', productName: 'Botox', quantity: '4.00', quantityUnit: 'U' }] },
+          ],
+        },
+      ] as never,
+      proceduresTruncated: false,
+      photos: [
+        {
+          stage: 'pre',
+          label: 'Pré',
+          photos: [
+            { id: 'photo-1', signedUrl: 'https://storage.example.com/signed/photo-1.jpg', storagePath: 'a/b', createdAt: new Date(), takenAt: null, timelineStage: 'pre', procedureRecordId: null, procedureTypeName: null, procedurePerformedAt: null, hasAnnotation: false, cropBox: null, originalFilename: null, mimeType: null, fileSizeBytes: null, notes: null },
+          ],
+        },
+        { stage: 'immediate_post', label: 'Pós Imediato', photos: [] },
+        { stage: '7d', label: '7 Dias', photos: [] },
+        { stage: '30d', label: '30 Dias', photos: [] },
+        { stage: '90d', label: '90 Dias', photos: [] },
+        { stage: 'other', label: 'Outro', photos: [] },
+      ] as never,
+      consents: [
+        {
+          id: 'consent-1',
+          acceptanceMethod: 'signature',
+          signatureData: 'data:image/png;base64,AAAAsensitivesignaturebytes',
+          contentHash: 'hash',
+          contentSnapshot: 'Texto completo do termo, sensível',
+          verificationCode: 'FLC-ABC123',
+          signatureEvidence: { ip: '1.2.3.4', userAgent: 'sensitive-ua' },
+          professionalSnapshot: { fullName: 'Dra. Beatriz', registryNumber: 'CRM-123' },
+          acceptedAt: new Date('2026-03-01T13:00:00Z'),
+          procedureRecordId: null,
+          templateTitle: 'Termo de consentimento - Botox',
+          templateType: 'botox',
+          templateVersion: 1,
+        },
+      ] as never,
+    }
+  }
+
+  it('keeps identification, anamnese presence and procedure/consent counts', () => {
+    const summary = toProntuarioSummary(fullDossier())
+
+    expect(summary.patient.fullName).toBe('Ana Souza')
+    expect(summary.anamnesis).toEqual({ mainComplaint: 'Rugas de expressão' })
+    expect(summary.procedures).toHaveLength(1)
+    expect(summary.procedures[0].procedureTypeName).toBe('Botox')
+    expect(summary.consents).toHaveLength(1)
+    expect(summary.consents[0].templateTitle).toBe('Termo de consentimento - Botox')
+    // Preserves the length the summary page sums for its "Fotos" counter.
+    expect(summary.photos.find((s) => s.stage === 'pre')?.photos).toHaveLength(1)
+  })
+
+  it('strips every field the summary page does not render, including all consent and photo secrets', () => {
+    const summary = toProntuarioSummary(fullDossier())
+    const serialized = JSON.stringify(summary)
+
+    // Patient notes are never rendered by the summary page.
+    expect(serialized).not.toContain('Notas internas sensíveis')
+    expect(serialized).not.toContain('Objetivos sensíveis do paciente')
+
+    // Consent secrets.
+    expect(serialized).not.toContain('signatureData')
+    expect(serialized).not.toContain('base64')
+    expect(serialized).not.toContain('contentSnapshot')
+    expect(serialized).not.toContain('Texto completo do termo')
+    expect(serialized).not.toContain('signatureEvidence')
+    expect(serialized).not.toContain('sensitive-ua')
+    expect(serialized).not.toContain('professionalSnapshot')
+    expect(serialized).not.toContain('CRM-123')
+
+    // Photo storage/signing details and face-diagram points.
+    expect(serialized).not.toContain('signedUrl')
+    expect(serialized).not.toContain('storage.example.com')
+    expect(serialized).not.toContain('storagePath')
+    expect(serialized).not.toContain('faceDiagrams')
+    expect(serialized).not.toContain('point-1')
+
+    // Product application detail (batch numbers etc.) is dropped too.
+    expect(serialized).not.toContain('L1')
   })
 })

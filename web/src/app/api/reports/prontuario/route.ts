@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm'
 import { requireRole } from '@/lib/auth'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
-import { getPatientDossier } from '@/db/queries/reports/prontuario'
+import { getPatientDossier, toProntuarioSummary } from '@/db/queries/reports/prontuario'
 import { ProntuarioPdf, PRONTUARIO_PDF_CSS } from '@/components/reports/prontuario-pdf'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
 import { reportRouteError } from '@/lib/reports/api-error'
@@ -85,7 +85,13 @@ export async function GET(request: Request) {
       })
     }
 
-    return NextResponse.json({ data: dossier })
+    // Only the JSON branch is projected down to a summary; the PDF branch
+    // above keeps rendering from the full `dossier`. See `toProntuarioSummary`
+    // for why: the on-screen summary page only ever renders counters and a
+    // few procedure lines, so the full dossier (every consent's signature
+    // data, every photo's signed URL, every diagram point) has no business
+    // reaching the browser here.
+    return NextResponse.json({ data: toProntuarioSummary(dossier) })
   } catch (error) {
     return reportRouteError(error, request)
   }

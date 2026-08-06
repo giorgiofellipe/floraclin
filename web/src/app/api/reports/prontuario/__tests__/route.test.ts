@@ -21,6 +21,7 @@ vi.mock('@/db/schema', () => ({
 
 vi.mock('@/db/queries/reports/prontuario', () => ({
   getPatientDossier: vi.fn(),
+  toProntuarioSummary: vi.fn(),
 }))
 
 vi.mock('@/lib/pdf', () => ({
@@ -32,7 +33,7 @@ vi.mock('@/lib/pdf', () => ({
 
 import { requireRole } from '@/lib/auth'
 import { db } from '@/db/client'
-import { getPatientDossier } from '@/db/queries/reports/prontuario'
+import { getPatientDossier, toProntuarioSummary } from '@/db/queries/reports/prontuario'
 import { renderReactToPdf } from '@/lib/pdf'
 import { GET } from '../route'
 import type { ProntuarioDossier } from '@/db/queries/reports/prontuario'
@@ -84,6 +85,19 @@ beforeEach(() => {
   } as never)
   dbMock.limit.mockResolvedValue([{ name: 'Clínica Teste' }])
   vi.mocked(getPatientDossier).mockResolvedValue(SAMPLE_DOSSIER)
+  // A minimal passthrough is enough for these route-wiring tests; the real
+  // projection's behavior (what it strips, what it keeps) is covered by the
+  // dedicated tests in `db/queries/reports/__tests__/prontuario.test.ts`,
+  // which call `toProntuarioSummary` directly without needing this route's
+  // heavier mock setup.
+  vi.mocked(toProntuarioSummary).mockImplementation((dossier) => ({
+    patient: { fullName: dossier.patient.fullName, phone: dossier.patient.phone, cpf: null, birthDate: null, gender: null, email: null },
+    anamnesis: null,
+    procedures: [],
+    proceduresTruncated: false,
+    photos: [],
+    consents: [],
+  }))
 })
 
 describe('GET /api/reports/prontuario', () => {
@@ -143,6 +157,36 @@ describe('GET /api/reports/prontuario', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('Content-Type')).toContain('application/json')
     expect(json.data.patient.fullName).toBe('Ana Souza')
+  })
+
+  it('projects the JSON branch through toProntuarioSummary instead of returning the raw dossier', async () => {
+    // A sentinel the passthrough mock above would never itself produce,
+    // so this only passes if the route's response body IS what
+    // `toProntuarioSummary` returned, not the raw `dossier` object (which
+    // carries every consent's signature data and every photo's signed URL).
+    const projected = { __projected: true }
+    vi.mocked(toProntuarioSummary).mockReturnValue(projected as never)
+
+    const res = await GET(makeRequest(`http://localhost/api/reports/prontuario?patientId=${VALID_PATIENT_ID}`))
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(toProntuarioSummary).toHaveBeenCalledWith(SAMPLE_DOSSIER)
+    expect(json.data).toEqual(projected)
+    expect(json.data).not.toHaveProperty('consents')
+  })
+
+  it('still renders the PDF branch from the full dossier, not the JSON summary', async () => {
+    const res = await GET(
+      makeRequest(`http://localhost/api/reports/prontuario?patientId=${VALID_PATIENT_ID}&format=pdf`),
+    )
+
+    expect(res.status).toBe(200)
+    // `toProntuarioSummary` is JSON-branch-only; the PDF branch must never
+    // call it, or the PDF would silently lose everything the summary drops
+    // (signatures, photos, face-diagram points).
+    expect(toProntuarioSummary).not.toHaveBeenCalled()
+    expect(renderReactToPdf).toHaveBeenCalled()
   })
 
   it('returns a PDF with the right content type and Content-Disposition for format=pdf', async () => {

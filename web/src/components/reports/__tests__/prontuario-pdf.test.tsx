@@ -41,35 +41,56 @@ const STAGE_LABELS: Record<string, string> = {
   other: 'Outro',
 }
 
-function makePhoto(id: string, createdAt: Date) {
+function makePhoto(
+  id: string,
+  overrides: {
+    stage?: keyof typeof STAGE_LABELS
+    createdAt?: Date
+    procedureRecordId?: string | null
+    procedureTypeName?: string | null
+    procedurePerformedAt?: Date | null
+  } = {},
+) {
   return {
     id,
     storagePath: `path/${id}`,
     originalFilename: null,
     mimeType: null,
     fileSizeBytes: null,
-    timelineStage: null,
+    timelineStage: overrides.stage ?? 'pre',
     takenAt: null,
     notes: null,
-    createdAt,
+    createdAt: overrides.createdAt ?? new Date(2026, 0, 1, 12, 0, 0),
     signedUrl: `https://example.com/${id}.jpg`,
-    procedureRecordId: null,
-    procedureTypeName: null,
-    procedurePerformedAt: null,
+    procedureRecordId: overrides.procedureRecordId ?? null,
+    procedureTypeName: overrides.procedureTypeName ?? null,
+    procedurePerformedAt: overrides.procedurePerformedAt ?? null,
     hasAnnotation: false,
     cropBox: null,
   }
 }
 
-/** Builds a `photos` dossier field with N photos per stage, mirroring the
- *  shape `listPhotos` returns (all six fixed stages, only some populated). */
+/** Builds a `photos` dossier field with N photos per stage, all otherwise
+ *  identical (no procedure), mirroring the shape `listPhotos` returns (all
+ *  six fixed stages, only some populated). */
 function photosWithCounts(counts: Partial<Record<keyof typeof STAGE_LABELS, number>>): ProntuarioDossier['photos'] {
   return Object.entries(STAGE_LABELS).map(([stage, label]) => ({
     stage,
     label,
-    photos: Array.from({ length: counts[stage] ?? 0 }, (_, i) =>
-      makePhoto(`${stage}-${i}`, new Date(2026, 0, i + 1, 12, 0, 0)),
+    photos: Array.from({ length: counts[stage as keyof typeof STAGE_LABELS] ?? 0 }, (_, i) =>
+      makePhoto(`${stage}-${i}`, { stage: stage as keyof typeof STAGE_LABELS, createdAt: new Date(2026, 0, i + 1, 12, 0, 0) }),
     ),
+  })) as never
+}
+
+/** Buckets a flat list of photos (each already carrying its own `stage`)
+ *  into the six fixed stage groups `listPhotos` always returns, the shape
+ *  `PhotosSection` (and `groupPhotosByProcedure`) actually consumes. */
+function bucketByStage(photos: ReturnType<typeof makePhoto>[]): ProntuarioDossier['photos'] {
+  return Object.entries(STAGE_LABELS).map(([stage, label]) => ({
+    stage,
+    label,
+    photos: photos.filter((p) => p.timelineStage === stage),
   })) as never
 }
 
@@ -400,24 +421,132 @@ describe('ProntuarioPdf', () => {
     render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
 
     expect(screen.getAllByRole('img')).toHaveLength(11)
-    expect(screen.getByText('Pré (8 foto(s))')).toBeInTheDocument()
-    expect(screen.getByText('30 Dias (3 foto(s))')).toBeInTheDocument()
+    // No procedure on any of these photos, so everything lands in the
+    // single "Sem procedimento vinculado" group.
+    expect(screen.getByText('Sem procedimento vinculado (11 foto(s))')).toBeInTheDocument()
   })
 
-  it('caps embedded photos at 60 and shows an omission note when the record exceeds it', () => {
-    const dossier = emptyDossier({ photos: photosWithCounts({ pre: 40, '30d': 25 }) })
-
-    render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
-
-    expect(screen.getAllByRole('img')).toHaveLength(60)
-    expect(screen.getByText(/5 foto\(s\) não exibida\(s\)/)).toBeInTheDocument()
-  })
-
-  it('does not show an omission note when the photo count is under the cap', () => {
+  it('does not show an omission note when the photo count is under the per-procedure cap', () => {
     const dossier = emptyDossier({ photos: photosWithCounts({ pre: 3, '30d': 2 }) })
 
     render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
 
     expect(screen.queryByText(/não exibida/)).not.toBeInTheDocument()
+  })
+
+  describe('photo grouping by procedure', () => {
+    const PROC_A = 'proc-a' // newer
+    const PROC_B = 'proc-b' // older
+
+    it('groups photos under their procedure heading, newest procedure first', () => {
+      const dossier = emptyDossier({
+        photos: bucketByStage([
+          makePhoto('a-1', {
+            stage: 'pre',
+            procedureRecordId: PROC_A,
+            procedureTypeName: 'Botox',
+            procedurePerformedAt: new Date('2026-06-01T12:00:00Z'),
+          }),
+          makePhoto('b-1', {
+            stage: 'pre',
+            procedureRecordId: PROC_B,
+            procedureTypeName: 'Preenchimento',
+            procedurePerformedAt: new Date('2026-01-01T12:00:00Z'),
+          }),
+        ]),
+      })
+
+      render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+
+      const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)
+      const botoxIndex = headings.findIndex((t) => t?.startsWith('Botox'))
+      const preenchimentoIndex = headings.findIndex((t) => t?.startsWith('Preenchimento'))
+      expect(botoxIndex).toBeGreaterThanOrEqual(0)
+      expect(preenchimentoIndex).toBeGreaterThanOrEqual(0)
+      expect(botoxIndex).toBeLessThan(preenchimentoIndex)
+    })
+
+    it('does not pool photos from unrelated procedures under one stage heading', () => {
+      const dossier = emptyDossier({
+        photos: bucketByStage([
+          makePhoto('a-1', { stage: 'pre', procedureRecordId: PROC_A, procedureTypeName: 'Botox', procedurePerformedAt: new Date('2026-06-01T12:00:00Z') }),
+          makePhoto('b-1', { stage: 'pre', procedureRecordId: PROC_B, procedureTypeName: 'Preenchimento', procedurePerformedAt: new Date('2026-01-01T12:00:00Z') }),
+        ]),
+      })
+
+      render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+
+      // Each procedure gets its own "(1 foto(s))" group, not a shared "Pré" heading.
+      expect(screen.getByText(/Botox.*\(1 foto\(s\)\)/)).toBeInTheDocument()
+      expect(screen.getByText(/Preenchimento.*\(1 foto\(s\)\)/)).toBeInTheDocument()
+      expect(screen.queryByText(/^Pré \(/)).not.toBeInTheDocument()
+    })
+
+    it('orders photos within a procedure by clinical timeline stage, and labels each with its stage', () => {
+      const dossier = emptyDossier({
+        photos: bucketByStage([
+          makePhoto('p-90d', { stage: '90d', procedureRecordId: PROC_A, procedureTypeName: 'Botox', procedurePerformedAt: new Date('2026-06-01T12:00:00Z') }),
+          makePhoto('p-pre', { stage: 'pre', procedureRecordId: PROC_A, procedureTypeName: 'Botox', procedurePerformedAt: new Date('2026-06-01T12:00:00Z') }),
+          makePhoto('p-7d', { stage: '7d', procedureRecordId: PROC_A, procedureTypeName: 'Botox', procedurePerformedAt: new Date('2026-06-01T12:00:00Z') }),
+        ]),
+      })
+
+      render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+
+      const images = screen.getAllByRole('img')
+      expect(images.map((img) => img.getAttribute('alt'))).toEqual(['Pré', '7 Dias', '90 Dias'])
+    })
+
+    it('puts photos with no procedureRecordId in a final "Sem procedimento vinculado" group', () => {
+      const dossier = emptyDossier({
+        photos: bucketByStage([
+          makePhoto('linked-1', { stage: 'pre', procedureRecordId: PROC_A, procedureTypeName: 'Botox', procedurePerformedAt: new Date('2026-01-01T12:00:00Z') }),
+          makePhoto('avulsa-1', { stage: 'pre' }),
+        ]),
+      })
+
+      render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+
+      const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent ?? '')
+      const botoxIndex = headings.findIndex((t) => t.startsWith('Botox'))
+      const unlinkedIndex = headings.findIndex((t) => t.startsWith('Sem procedimento vinculado'))
+      expect(botoxIndex).toBeGreaterThanOrEqual(0)
+      expect(unlinkedIndex).toBe(headings.length - 1)
+      expect(botoxIndex).toBeLessThan(unlinkedIndex)
+    })
+
+    it('caps each procedure at its own budget so one procedure with many photos does not starve another', () => {
+      const busyProcedurePhotos = Array.from({ length: 15 }, (_, i) =>
+        makePhoto(`busy-${i}`, {
+          stage: 'pre',
+          createdAt: new Date(2026, 0, i + 1, 12, 0, 0),
+          procedureRecordId: PROC_A,
+          procedureTypeName: 'Botox',
+          procedurePerformedAt: new Date('2026-06-01T12:00:00Z'),
+        }),
+      )
+      const otherProcedurePhotos = Array.from({ length: 3 }, (_, i) =>
+        makePhoto(`quiet-${i}`, {
+          stage: 'pre',
+          createdAt: new Date(2026, 1, i + 1, 12, 0, 0),
+          procedureRecordId: PROC_B,
+          procedureTypeName: 'Preenchimento',
+          procedurePerformedAt: new Date('2026-01-01T12:00:00Z'),
+        }),
+      )
+
+      const dossier = emptyDossier({
+        photos: bucketByStage([...busyProcedurePhotos, ...otherProcedurePhotos]),
+      })
+
+      render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+
+      // 12 from the busy procedure (capped) + all 3 from the quiet one:
+      // the quiet procedure is not starved by the busy one's overflow.
+      expect(screen.getAllByRole('img')).toHaveLength(15)
+      expect(screen.getByText(/Botox.*\(15 foto\(s\)\)/)).toBeInTheDocument()
+      expect(screen.getByText(/Preenchimento.*\(3 foto\(s\)\)/)).toBeInTheDocument()
+      expect(screen.getByText(/3 foto\(s\) não exibida\(s\) por exceder o limite de 12 imagens por procedimento/)).toBeInTheDocument()
+    })
   })
 })

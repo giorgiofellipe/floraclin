@@ -66,6 +66,88 @@ export interface ProntuarioDossier {
   consents: ConsentHistoryEntry[]
 }
 
+/**
+ * The subset of `ProntuarioDossier` the on-screen summary
+ * (`web/src/app/(platform)/relatorios/prontuario/page.tsx`) actually reads:
+ * patient identification, an anamnese presence check, the last few
+ * procedures' name/date/practitioner, and photo/consent *counts*. See
+ * `toProntuarioSummary` below for why this exists as its own shape rather
+ * than reusing `ProntuarioDossier` for the JSON branch of the route.
+ */
+export interface ProntuarioSummary {
+  patient: {
+    fullName: string
+    phone: string
+    cpf: string | null
+    birthDate: string | null
+    gender: string | null
+    email: string | null
+  }
+  anamnesis: { mainComplaint: string | null } | null
+  procedures: Array<{
+    id: string
+    procedureTypeName: string
+    performedAt: Date | null
+    practitionerName: string
+    productApplications: unknown[]
+  }>
+  proceduresTruncated: boolean
+  photos: Array<{ stage: string; label: string; photos: unknown[] }>
+  consents: Array<{ id: string; templateTitle: string; acceptedAt: Date }>
+}
+
+/**
+ * Projects a full `ProntuarioDossier` down to `ProntuarioSummary`, which is
+ * what the JSON branch of `/api/reports/prontuario` returns. The PDF branch keeps
+ * using the full dossier server-side; this projection exists ONLY because
+ * the JSON branch used to hand the browser the entire dossier as-is, which
+ * meant every consent's base64 `signatureData`, `contentSnapshot`,
+ * `signatureEvidence` and `professionalSnapshot`, every photo's storage
+ * `signedUrl`, and every face-diagram point set shipped to the client even
+ * though the summary page only ever renders counters and a handful of
+ * procedure lines.
+ *
+ * `procedures[].productApplications` and `photos[].photos` are kept as
+ * (empty / id-only) arrays rather than dropped, matching the page's own
+ * `ProntuarioSummary` type shape 1:1, but only their *length* is ever read
+ * there (e.g. `data.photos.reduce((sum, stage) => sum + stage.photos.length, 0)`),
+ * so no actual photo or product-application content needs to travel over
+ * the wire to preserve that.
+ */
+export function toProntuarioSummary(dossier: ProntuarioDossier): ProntuarioSummary {
+  const { patient, anamnesis, procedures, proceduresTruncated, photos, consents } = dossier
+
+  return {
+    patient: {
+      fullName: patient.fullName,
+      phone: patient.phone,
+      cpf: patient.cpf,
+      birthDate: patient.birthDate,
+      gender: patient.gender,
+      email: patient.email,
+    },
+    anamnesis: anamnesis ? { mainComplaint: anamnesis.mainComplaint } : null,
+    procedures: procedures.map((procedure) => ({
+      id: procedure.id,
+      procedureTypeName: procedure.procedureTypeName,
+      performedAt: procedure.performedAt,
+      practitionerName: procedure.practitionerName,
+      productApplications: [],
+    })),
+    proceduresTruncated,
+    photos: photos.map((stage) => ({
+      stage: stage.stage,
+      label: stage.label,
+      photos: stage.photos.map((photo) => ({ id: photo.id })),
+    })),
+    consents: consents.map((consent) => ({
+      id: consent.id,
+      templateTitle: consent.templateTitle,
+      acceptedAt: consent.acceptedAt,
+    })),
+  }
+}
+
 function toProntuarioProcedure(
   record: ProcedureListItem,
   productApplications: ProductApplicationRecord[],
