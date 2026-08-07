@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { buttonVariants } from '@/components/ui/button'
 import { cn, maskCPF } from '@/lib/utils'
+import { GENDER_LABELS } from '@/lib/constants'
 import {
   Tooltip,
   TooltipContent,
@@ -77,13 +78,6 @@ function phoneToDigits(phone: string): string {
   const digits = phone.replace(/\D/g, '')
   // If it doesn't start with country code, assume Brazil (+55)
   return digits.startsWith('55') ? digits : `55${digits}`
-}
-
-const GENDER_LABELS: Record<string, string> = {
-  feminino: 'Feminino',
-  masculino: 'Masculino',
-  outro: 'Outro',
-  nao_informado: 'Não informado',
 }
 
 const VALID_TABS: PatientTabKey[] = [

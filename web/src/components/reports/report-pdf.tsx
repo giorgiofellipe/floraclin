@@ -1,6 +1,7 @@
 import { formatInTimeZone } from 'date-fns-tz'
 import { ptBR } from 'date-fns/locale'
 import { BR_TZ } from '@/lib/dates'
+import { FloraclinBrandHeader } from '@/lib/pdf-branding'
 import type { ReportColumn } from '@/lib/reports/types'
 
 /**
@@ -51,6 +52,7 @@ export function ReportPdf<Row>({
 }: ReportPdfProps<Row>) {
   return (
     <div>
+      <FloraclinBrandHeader />
       <header>
         <div>
           <div className="clinic-name">{clinicName}</div>

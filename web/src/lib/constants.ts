@@ -86,6 +86,19 @@ export const CONSENT_TYPE_LABELS: Record<string, string> = {
   service_contract: 'Contrato de Serviço',
 }
 
+export const METHOD_LABELS: Record<string, string> = {
+  checkbox: 'Checkbox',
+  signature: 'Assinatura',
+  both: 'Checkbox + Assinatura',
+}
+
+export const GENDER_LABELS: Record<string, string> = {
+  feminino: 'Feminino',
+  masculino: 'Masculino',
+  outro: 'Outro',
+  nao_informado: 'Não informado',
+}
+
 export const PROCEDURE_STATUS_COLORS: Record<string, string> = {
   draft: 'bg-[#F4F6F8] text-[#7A7A7A]',
   planned: 'bg-[#FFF4EF] text-[#D4845A]',

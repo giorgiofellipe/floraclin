@@ -2,34 +2,13 @@
 
 import Image from 'next/image'
 import type { DiagramViewType } from '@/types'
+import { VIEW_FILES, VIEW_LABELS, resolveGenderKey, type Gender } from './face-template-data'
 
-const VIEW_LABELS: Record<DiagramViewType, string> = {
-  front: 'Frontal',
-  left_profile: 'Perfil Esquerdo',
-  right_profile: 'Perfil Direito',
-}
-
-type Gender = 'masculino' | 'feminino' | string | null | undefined
-
-const VIEW_FILES: Record<string, Record<DiagramViewType, string>> = {
-  female: {
-    front: '/face-templates/female-front.webp',
-    left_profile: '/face-templates/female-left.webp',
-    right_profile: '/face-templates/female-right.webp',
-  },
-  male: {
-    front: '/face-templates/male-front.webp',
-    left_profile: '/face-templates/male-left.webp',
-    right_profile: '/face-templates/male-right.webp',
-  },
-}
-
-function resolveGenderKey(gender: Gender): 'female' | 'male' {
-  if (!gender) return 'female'
-  const g = gender.toLowerCase().trim()
-  if (g === 'masculino' || g === 'male' || g === 'm') return 'male'
-  return 'female'
-}
+// The labels, asset paths and gender resolution deliberately live in
+// `./face-template-data` and are NOT re-exported from here. Server code
+// (the prontuário PDF) needs them, and re-exporting through this
+// `'use client'` module would hand the server a client-reference stub that
+// throws on access. Import them from `./face-template-data` directly.
 
 interface FaceTemplateProps {
   viewType: DiagramViewType
@@ -53,5 +32,3 @@ export function FaceTemplate({ viewType, gender, className }: FaceTemplateProps)
     />
   )
 }
-
-export { VIEW_LABELS, VIEW_FILES }

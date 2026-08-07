@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { ClinicHeader } from '@/components/print/clinic-header'
+import { FloraclinBrandHeader } from '@/lib/pdf-branding'
 import { formatDate } from '@/lib/utils'
 import { CONSENT_TYPE_LABELS } from '@/lib/constants'
 
@@ -59,6 +60,7 @@ export function PrintConsent({ acceptance }: PrintConsentProps) {
       data-print-area
       className="print-document mx-auto max-w-[820px] bg-white p-8 text-black"
     >
+      <FloraclinBrandHeader />
       <ClinicHeader
         tenant={{
           name: a.tenantName,
