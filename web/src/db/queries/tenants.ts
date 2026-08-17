@@ -19,6 +19,38 @@ export async function getTenant(tenantId: string): Promise<Tenant | null> {
   return tenant ?? null
 }
 
+export interface TenantHeaderInfo {
+  name: string
+  phone: string | null
+  email: string | null
+  logoUrl: string | null
+  address: Record<string, unknown> | null
+}
+
+/**
+ * Minimal tenant projection for `<ClinicHeader>` (`@/components/print/clinic-header`):
+ * name, contact details, logo and address. Used by every report PDF route
+ * under `/api/reports/*` so each one renders the clinic's own identity
+ * instead of just a bare `tenants.name` string. `address` stays the raw
+ * JSONB shape here; callers cast it to `ClinicHeader`'s structured `Address`
+ * at render time, same as `getClinicalDocumentWithContext` does.
+ */
+export async function getTenantHeaderInfo(tenantId: string): Promise<TenantHeaderInfo | null> {
+  const [tenant] = await db
+    .select({
+      name: tenants.name,
+      phone: tenants.phone,
+      email: tenants.email,
+      logoUrl: tenants.logoUrl,
+      address: tenants.address,
+    })
+    .from(tenants)
+    .where(eq(tenants.id, tenantId))
+    .limit(1)
+
+  return (tenant as TenantHeaderInfo | undefined) ?? null
+}
+
 export async function updateTenant(
   tenantId: string,
   data: UpdateTenantInput

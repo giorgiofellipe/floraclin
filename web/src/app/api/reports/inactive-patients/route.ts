@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createElement } from 'react'
-import { eq } from 'drizzle-orm'
 import { requireRole } from '@/lib/auth'
-import { db } from '@/db/client'
-import { tenants } from '@/db/schema'
+import { getTenantHeaderInfo } from '@/db/queries/tenants'
 import {
   listInactivePatients,
   type InactivePatientRow,
@@ -68,11 +66,7 @@ export async function GET(request: Request) {
   try {
     const ctx = await requireRole('owner', 'financial')
 
-    const [tenant] = await db
-      .select({ name: tenants.name })
-      .from(tenants)
-      .where(eq(tenants.id, ctx.tenantId))
-      .limit(1)
+    const tenant = await getTenantHeaderInfo(ctx.tenantId)
 
     const { searchParams } = new URL(request.url)
     const thresholdParam = searchParams.get('thresholdDays')
@@ -126,7 +120,7 @@ export async function GET(request: Request) {
         // props object alone, so instantiate it explicitly (TS 4.7+ generic
         // instantiation expression) rather than widening to `unknown`.
         createElement(ReportPdf<InactivePatientRow>, {
-          clinicName: tenant?.name ?? '',
+          tenant: tenant ?? { name: '', phone: null, email: null, logoUrl: null, address: null },
           reportTitle: report?.title ?? 'Pacientes inativos',
           filterSummary: `Limite: ${thresholdDays} dias`,
           rows,

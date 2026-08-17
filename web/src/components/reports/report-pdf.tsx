@@ -2,6 +2,7 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { ptBR } from 'date-fns/locale'
 import { BR_TZ } from '@/lib/dates'
 import { FloraclinBrandHeader } from '@/lib/pdf-branding'
+import { ClinicHeader } from '@/components/print/clinic-header'
 import type { ReportColumn } from '@/lib/reports/types'
 
 /**
@@ -18,7 +19,20 @@ export const REPORT_PDF_CSS = `
 `
 
 interface ReportPdfProps<Row> {
-  clinicName: string
+  /**
+   * Raw tenant projection (`getTenantHeaderInfo`, `@/db/queries/tenants`).
+   * `address` stays the free-form JSONB shape here; it's narrowed to
+   * `ClinicHeader`'s structured `Address` below, same cast
+   * `PrintDocument`/`PrintConsent` already do for the same reason: the DB
+   * column has no fixed shape, `ClinicHeader` does.
+   */
+  tenant: {
+    name: string
+    phone: string | null
+    email: string | null
+    logoUrl: string | null
+    address: Record<string, unknown> | null
+  }
   reportTitle: string
   /** Human readable summary of the filters in effect, e.g. "Limite: 180 dias". */
   filterSummary: string
@@ -43,21 +57,44 @@ function formatBrTimestamp(date: Date): string {
  * timestamp. Rendered server-side via `renderReactToPdf` from `@/lib/pdf`.
  */
 export function ReportPdf<Row>({
-  clinicName,
+  tenant,
   reportTitle,
   filterSummary,
   rows,
   columns,
   generatedAt,
 }: ReportPdfProps<Row>) {
+  const headerAddress = tenant.address
+    ? (tenant.address as {
+        street?: string
+        number?: string
+        complement?: string
+        neighborhood?: string
+        city?: string
+        state?: string
+        zip?: string
+      })
+    : null
+
   return (
     <div>
+      {/* FloraClin stays as a small mark above the clinic's own header: the
+          document belongs to the clinic (it's what an accountant/auditor is
+          reviewing), FloraClin is just the software that produced it. The
+          per-page footer (`renderReactToPdf` / `buildFloraclinFooterTemplate`)
+          already carries the durable provenance line, so this header mark is
+          optional branding, not the provenance record — see the module doc
+          on `FloraclinBrandHeader` in `@/lib/pdf-branding`. */}
       <FloraclinBrandHeader />
-      <header>
-        <div>
-          <div className="clinic-name">{clinicName}</div>
-        </div>
-      </header>
+      <ClinicHeader
+        tenant={{
+          name: tenant.name,
+          phone: tenant.phone,
+          email: tenant.email,
+          logoUrl: tenant.logoUrl,
+          address: headerAddress,
+        }}
+      />
 
       <h1>{reportTitle}</h1>
       {filterSummary && <div className="meta-row">{filterSummary}</div>}

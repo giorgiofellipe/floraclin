@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createElement } from 'react'
-import { eq } from 'drizzle-orm'
 import { requireRole } from '@/lib/auth'
-import { db } from '@/db/client'
-import { tenants } from '@/db/schema'
+import { getTenantHeaderInfo } from '@/db/queries/tenants'
 import { getPatientDossier, toProntuarioSummary } from '@/db/queries/reports/prontuario'
 import { ProntuarioPdf, PRONTUARIO_PDF_CSS } from '@/components/reports/prontuario-pdf'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
@@ -54,15 +52,11 @@ export async function GET(request: Request) {
     }
 
     if (format === 'pdf') {
-      const [tenant] = await db
-        .select({ name: tenants.name })
-        .from(tenants)
-        .where(eq(tenants.id, ctx.tenantId))
-        .limit(1)
+      const tenant = await getTenantHeaderInfo(ctx.tenantId)
 
       const pdf = await renderReactToPdf(
         createElement(ProntuarioPdf, {
-          clinicName: tenant?.name ?? '',
+          tenant: tenant ?? { name: '', phone: null, email: null, logoUrl: null, address: null },
           dossier,
           generatedAt: new Date(),
         }),

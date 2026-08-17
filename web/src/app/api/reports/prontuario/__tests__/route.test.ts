@@ -6,17 +6,8 @@ vi.mock('@/lib/auth', () => ({
   requireRole: vi.fn(),
 }))
 
-vi.mock('@/db/client', () => ({
-  db: {
-    select: vi.fn().mockReturnThis(),
-    from: vi.fn().mockReturnThis(),
-    where: vi.fn().mockReturnThis(),
-    limit: vi.fn(),
-  },
-}))
-
-vi.mock('@/db/schema', () => ({
-  tenants: { id: 'id', name: 'name' },
+vi.mock('@/db/queries/tenants', () => ({
+  getTenantHeaderInfo: vi.fn(),
 }))
 
 vi.mock('@/db/queries/reports/prontuario', () => ({
@@ -32,13 +23,11 @@ vi.mock('@/lib/pdf', () => ({
 // ─── Imports (after mocks) ───────────────────────────────────────────
 
 import { requireRole } from '@/lib/auth'
-import { db } from '@/db/client'
+import { getTenantHeaderInfo } from '@/db/queries/tenants'
 import { getPatientDossier, toProntuarioSummary } from '@/db/queries/reports/prontuario'
 import { renderReactToPdf } from '@/lib/pdf'
 import { GET } from '../route'
 import type { ProntuarioDossier } from '@/db/queries/reports/prontuario'
-
-const dbMock = db as unknown as { limit: ReturnType<typeof vi.fn> }
 
 function makeRequest(url: string) {
   return new Request(url)
@@ -83,7 +72,13 @@ beforeEach(() => {
     fullName: 'Owner Example',
     isPlatformAdmin: false,
   } as never)
-  dbMock.limit.mockResolvedValue([{ name: 'Clínica Teste' }])
+  vi.mocked(getTenantHeaderInfo).mockResolvedValue({
+    name: 'Clínica Teste',
+    phone: '11987654321',
+    email: 'contato@clinicateste.com.br',
+    logoUrl: 'https://storage.example.com/tenant-1/branding/logo.png',
+    address: { city: 'São Paulo', state: 'SP' },
+  })
   vi.mocked(getPatientDossier).mockResolvedValue(SAMPLE_DOSSIER)
   // A minimal passthrough is enough for these route-wiring tests; the real
   // projection's behavior (what it strips, what it keeps) is covered by the
@@ -198,5 +193,16 @@ describe('GET /api/reports/prontuario', () => {
     expect(res.headers.get('Content-Type')).toBe('application/pdf')
     expect(res.headers.get('Content-Disposition')).toMatch(/^attachment; filename="prontuario-.*\.pdf"$/)
     expect(renderReactToPdf).toHaveBeenCalled()
+
+    // The PDF tree gets the full tenant projection `ClinicHeader` needs
+    // (name, phone, email, logoUrl, address), not just `tenants.name`.
+    const element = vi.mocked(renderReactToPdf).mock.calls[0][0] as { props: { tenant: unknown } }
+    expect(element.props.tenant).toEqual({
+      name: 'Clínica Teste',
+      phone: '11987654321',
+      email: 'contato@clinicateste.com.br',
+      logoUrl: 'https://storage.example.com/tenant-1/branding/logo.png',
+      address: { city: 'São Paulo', state: 'SP' },
+    })
   })
 })

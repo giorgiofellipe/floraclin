@@ -5,6 +5,7 @@ import { formatDate } from '@/lib/utils'
 import { formatBrPhone } from '@/lib/phone'
 import { CONSENT_TYPE_LABELS, METHOD_LABELS, GENDER_LABELS } from '@/lib/constants'
 import { FloraclinBrandHeader } from '@/lib/pdf-branding'
+import { ClinicHeader } from '@/components/print/clinic-header'
 import { getAppUrl } from '@/lib/app-url'
 import { timelineStageValues, timelineStageLabels } from '@/validations/photo'
 // Imported from `face-template-data`, never from `face-template` itself:
@@ -109,7 +110,20 @@ function formatAddress(address: unknown): string | null {
 }
 
 interface ProntuarioPdfProps {
-  clinicName: string
+  /**
+   * Raw tenant projection (`getTenantHeaderInfo`, `@/db/queries/tenants`).
+   * `address` stays the free-form JSONB shape here; it's narrowed to
+   * `ClinicHeader`'s structured `Address` below, same cast
+   * `PrintDocument`/`PrintConsent` already do for the same reason: the DB
+   * column has no fixed shape, `ClinicHeader` does.
+   */
+  tenant: {
+    name: string
+    phone: string | null
+    email: string | null
+    logoUrl: string | null
+    address: Record<string, unknown> | null
+  }
   dossier: ProntuarioDossier
   generatedAt: Date
 }
@@ -121,18 +135,40 @@ interface ProntuarioPdfProps {
  * server-side via `renderReactToPdf` from `@/lib/pdf`, same pipeline as
  * every other report and the consent PDF.
  */
-export function ProntuarioPdf({ clinicName, dossier, generatedAt }: ProntuarioPdfProps) {
+export function ProntuarioPdf({ tenant, dossier, generatedAt }: ProntuarioPdfProps) {
   const { patient, anamnesis, procedures, proceduresTruncated, photos, consents } = dossier
   const address = formatAddress(patient.address)
+  const tenantHeaderAddress = tenant.address
+    ? (tenant.address as {
+        street?: string
+        number?: string
+        complement?: string
+        neighborhood?: string
+        city?: string
+        state?: string
+        zip?: string
+      })
+    : null
 
   return (
     <div>
+      {/* FloraClin stays as a small mark above the clinic's own header: this
+          document is handed to the PATIENT, so the clinic's identity leads.
+          The per-page footer (`renderReactToPdf` / `buildFloraclinFooterTemplate`)
+          already carries the durable "made with FloraClin" provenance line,
+          so this header mark is optional branding, not the provenance
+          record — see the module doc on `FloraclinBrandHeader` in
+          `@/lib/pdf-branding`. */}
       <FloraclinBrandHeader />
-      <header>
-        <div>
-          <div className="clinic-name">{clinicName}</div>
-        </div>
-      </header>
+      <ClinicHeader
+        tenant={{
+          name: tenant.name,
+          phone: tenant.phone,
+          email: tenant.email,
+          logoUrl: tenant.logoUrl,
+          address: tenantHeaderAddress,
+        }}
+      />
 
       <h1>Prontuário completo</h1>
       <div className="meta-row">Documento de uso do paciente e da clínica. Não substitui laudo médico.</div>

@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createElement } from 'react'
-import { eq } from 'drizzle-orm'
 import { requireRole } from '@/lib/auth'
-import { db } from '@/db/client'
-import { tenants } from '@/db/schema'
+import { getTenantHeaderInfo } from '@/db/queries/tenants'
 import {
   listProcedureApplications,
   type ProcedureApplicationRow,
@@ -63,11 +61,7 @@ export async function GET(request: Request) {
   try {
     const ctx = await requireRole('owner', 'financial')
 
-    const [tenant] = await db
-      .select({ name: tenants.name })
-      .from(tenants)
-      .where(eq(tenants.id, ctx.tenantId))
-      .limit(1)
+    const tenant = await getTenantHeaderInfo(ctx.tenantId)
 
     const { searchParams } = new URL(request.url)
 
@@ -130,7 +124,7 @@ export async function GET(request: Request) {
         // in the footer, which is what makes this export tamper-evident
         // enough to hand over if an application is ever questioned.
         createElement(ReportPdf<ProcedureApplicationRow>, {
-          clinicName: tenant?.name ?? '',
+          tenant: tenant ?? { name: '', phone: null, email: null, logoUrl: null, address: null },
           reportTitle: report?.title ?? 'Procedimentos realizados',
           filterSummary: `Período: ${formatDate(dateFrom)} a ${formatDate(dateTo)}`,
           rows,
