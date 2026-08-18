@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import { db } from '@/db/client'
 import { tenants, procedureTypes, whatsappMessages, whatsappConversations } from '@/db/schema'
-import { eq, and, sql, desc } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage, sendTemplateMessage, sendMediaMessage, normalizeBrPhone, getTemplateForTenant } from '@/lib/whatsapp'
 import {
   upsertConversation,
@@ -88,7 +89,8 @@ export async function POST(request: NextRequest) {
         for (const msg of value.messages ?? []) {
           try {
             const senderPhone = normalizeBrPhone(msg.from)
-            const tenantId = await resolveSharedNumberTenant(senderPhone)
+            const contextMessageId = (msg.context as { id?: string } | undefined)?.id
+            const tenantId = await resolveSharedNumberTenant(senderPhone, contextMessageId)
             if (!tenantId) {
               console.warn(
                 `WhatsApp webhook (shared): no tenant found for sender ${senderPhone}`,
@@ -104,7 +106,9 @@ export async function POST(request: NextRequest) {
         for (const status of value.statuses ?? []) {
           try {
             const recipientPhone = normalizeBrPhone(status.recipient_id)
-            const tenantId = await resolveSharedNumberTenant(recipientPhone)
+            // status.id is Meta's id of the outbound message the status refers
+            // to -- an exact key into whatsapp_messages, so try it first.
+            const tenantId = await resolveSharedNumberTenant(recipientPhone, status.id)
             if (!tenantId) continue
             await processStatusUpdate(tenantId, status)
           } catch (err) {
@@ -490,16 +494,68 @@ async function processStatusUpdate(
 
 // ---------------------------------------------------------------------------
 // Shared-number tenant resolution
+//
+// Multiple tenants can share the FloraClin WhatsApp number. When an inbound
+// message or status update arrives, we must not guess which tenant it
+// belongs to -- routing it to the wrong tenant exposes one clinic's patient
+// to another clinic's inbox. Resolution tries, in order:
+//
+//   1. Reply context / message id, exact. If the payload carries the Meta id
+//      of a message we sent (context.id on a reply, or the status' own id
+//      on a status update), whatsapp_messages.meta_message_id is globally
+//      unique (see uq_whatsapp_messages_meta_id), so this maps to exactly
+//      one tenant with certainty.
+//   2. Phone history, only when unambiguous. No usable message id means a
+//      genuinely new inbound message (a patient messaging a clinic for the
+//      first time). Fall back to phone lookup, but only route when exactly
+//      one tenant has ever had a conversation with that phone.
+//   3. Ambiguous: refuse. Two or more candidate tenants and no message id
+//      to disambiguate -- do not guess. Log and report to Sentry instead.
 // ---------------------------------------------------------------------------
-async function resolveSharedNumberTenant(phone: string): Promise<string | null> {
+async function resolveTenantByMessageId(metaMessageId: string): Promise<string | null> {
   const [row] = await db
-    .select({ tenantId: whatsappConversations.tenantId })
-    .from(whatsappConversations)
-    .where(eq(whatsappConversations.phoneNumber, phone))
-    .orderBy(desc(whatsappConversations.lastMessageAt))
+    .select({ tenantId: whatsappMessages.tenantId })
+    .from(whatsappMessages)
+    .where(eq(whatsappMessages.metaMessageId, metaMessageId))
     .limit(1)
 
   return row?.tenantId ?? null
+}
+
+async function resolveTenantByPhoneHistory(phone: string): Promise<string | null> {
+  const rows = await db
+    .selectDistinct({ tenantId: whatsappConversations.tenantId })
+    .from(whatsappConversations)
+    .where(eq(whatsappConversations.phoneNumber, phone))
+
+  if (rows.length === 1) return rows[0].tenantId
+
+  if (rows.length > 1) {
+    const candidateTenantIds = rows.map((r) => r.tenantId)
+    console.error(
+      `WhatsApp webhook (shared): ambiguous tenant for phone ${phone}, candidates: ${candidateTenantIds.join(', ')}`,
+    )
+    Sentry.captureException(
+      new Error('WhatsApp shared-number: ambiguous tenant resolution'),
+      { extra: { phone, candidateTenantIds } },
+    )
+  }
+
+  return null
+}
+
+async function resolveSharedNumberTenant(
+  phone: string,
+  messageId?: string | null,
+): Promise<string | null> {
+  if (messageId) {
+    const tenantId = await resolveTenantByMessageId(messageId)
+    if (tenantId) return tenantId
+    // Unknown message id (not one of ours) -- fall through to phone rules
+    // rather than dropping the message.
+  }
+
+  return resolveTenantByPhoneHistory(phone)
 }
 
 // ---------------------------------------------------------------------------
