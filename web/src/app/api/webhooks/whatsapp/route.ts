@@ -500,26 +500,70 @@ async function processStatusUpdate(
 // belongs to -- routing it to the wrong tenant exposes one clinic's patient
 // to another clinic's inbox. Resolution tries, in order:
 //
-//   1. Reply context / message id, exact. If the payload carries the Meta id
-//      of a message we sent (context.id on a reply, or the status' own id
-//      on a status update), whatsapp_messages.meta_message_id is globally
-//      unique (see uq_whatsapp_messages_meta_id), so this maps to exactly
-//      one tenant with certainty.
+//   1. Reply context / message id, scoped to the sender. A context.id (on a
+//      reply) or a status' own id is only trustworthy as a routing key when
+//      it names a message WE sent (direction 'outbound') to THIS sender.
+//      meta_message_id is globally unique (see uq_whatsapp_messages_meta_id),
+//      but unique does not mean "belongs to this conversation" -- an id
+//      could name a message sent to a different phone entirely, so we join
+//      to whatsapp_conversations and compare its phone_number (normalized)
+//      against the sender's. Three outcomes:
+//        - resolves, phone matches -> route with certainty (exact).
+//        - resolves, phone MISMATCHES -> refuse and report to Sentry. Do
+//          NOT fall back to phone history for this request -- falling back
+//          would let an attacker bypass the check by supplying a mismatched
+//          context id that happens to phone-resolve unambiguously.
+//        - does not resolve to an outbound message of this sender's (unknown
+//          id, or the message found is inbound) -> fall through to
+//          phone-history rules. This is deliberate: our own write can lose a
+//          race with the reply, and refusing outright would drop legitimate
+//          messages.
 //   2. Phone history, only when unambiguous. No usable message id means a
 //      genuinely new inbound message (a patient messaging a clinic for the
 //      first time). Fall back to phone lookup, but only route when exactly
 //      one tenant has ever had a conversation with that phone.
-//   3. Ambiguous: refuse. Two or more candidate tenants and no message id
-//      to disambiguate -- do not guess. Log and report to Sentry instead.
+//   3. Ambiguous or zero-candidate: refuse. Two or more candidate tenants,
+//      or none at all, and no message id to disambiguate -- do not guess.
+//      Log and report to Sentry instead (the two reasons are distinguishable
+//      by error message) so a dropped message is never silent.
 // ---------------------------------------------------------------------------
-async function resolveTenantByMessageId(metaMessageId: string): Promise<string | null> {
+type MessageIdResolution =
+  | { status: 'exact'; tenantId: string }
+  | { status: 'mismatch'; tenantId: string }
+  | { status: 'not_found' }
+
+// whatsapp_conversations.phone_number is stored normalized (see
+// upsertConversation, which runs every write through normalizeBrPhone), but
+// we normalize it again here defensively -- normalizeBrPhone is idempotent,
+// and this guards against any legacy/unnormalized row causing a false
+// mismatch rather than a false match.
+async function resolveTenantByMessageId(
+  metaMessageId: string,
+  senderPhone: string,
+): Promise<MessageIdResolution> {
   const [row] = await db
-    .select({ tenantId: whatsappMessages.tenantId })
+    .select({
+      tenantId: whatsappMessages.tenantId,
+      direction: whatsappMessages.direction,
+      conversationPhone: whatsappConversations.phoneNumber,
+    })
     .from(whatsappMessages)
+    .innerJoin(
+      whatsappConversations,
+      eq(whatsappMessages.conversationId, whatsappConversations.id),
+    )
     .where(eq(whatsappMessages.metaMessageId, metaMessageId))
     .limit(1)
 
-  return row?.tenantId ?? null
+  // Not one of ours, or it names a message the sender wrote (not us) -- a
+  // reply's context should only ever point at something we sent.
+  if (!row || row.direction !== 'outbound') return { status: 'not_found' }
+
+  if (normalizeBrPhone(row.conversationPhone) === senderPhone) {
+    return { status: 'exact', tenantId: row.tenantId }
+  }
+
+  return { status: 'mismatch', tenantId: row.tenantId }
 }
 
 async function resolveTenantByPhoneHistory(phone: string): Promise<string | null> {
@@ -539,7 +583,14 @@ async function resolveTenantByPhoneHistory(phone: string): Promise<string | null
       new Error('WhatsApp shared-number: ambiguous tenant resolution'),
       { extra: { phone, candidateTenantIds } },
     )
+    return null
   }
+
+  console.warn(`WhatsApp webhook (shared): no tenant found for phone ${phone}`)
+  Sentry.captureException(
+    new Error('WhatsApp shared-number: no tenant found for phone'),
+    { extra: { phone } },
+  )
 
   return null
 }
@@ -549,10 +600,24 @@ async function resolveSharedNumberTenant(
   messageId?: string | null,
 ): Promise<string | null> {
   if (messageId) {
-    const tenantId = await resolveTenantByMessageId(messageId)
-    if (tenantId) return tenantId
-    // Unknown message id (not one of ours) -- fall through to phone rules
-    // rather than dropping the message.
+    const resolution = await resolveTenantByMessageId(messageId, phone)
+
+    if (resolution.status === 'exact') return resolution.tenantId
+
+    if (resolution.status === 'mismatch') {
+      console.error(
+        `WhatsApp webhook (shared): context ${messageId} belongs to a conversation with a phone different from sender ${phone} (message tenant ${resolution.tenantId})`,
+      )
+      Sentry.captureException(
+        new Error('WhatsApp shared-number: context/sender phone mismatch'),
+        { extra: { messageId, phone, tenantId: resolution.tenantId } },
+      )
+      return null
+    }
+
+    // not_found: unknown message id (not one of ours), or it names a
+    // message the sender wrote rather than one we sent -- fall through to
+    // phone rules rather than dropping the message.
   }
 
   return resolveTenantByPhoneHistory(phone)

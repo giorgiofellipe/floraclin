@@ -17,17 +17,19 @@ import crypto from 'crypto'
 // ---------------------------------------------------------------------------
 
 /**
- * Builds a chainable object that mimics drizzle's query builder for both
+ * Builds a chainable object that mimics drizzle's query builder for all
  * shapes used by the resolver:
- *   - db.select(...).from(...).where(...).limit(1)      (message-id lookup)
- *   - db.selectDistinct(...).from(...).where(...)        (phone-history lookup, awaited directly)
+ *   - db.select(...).from(...).innerJoin(...).where(...).limit(1)  (message-id lookup)
+ *   - db.selectDistinct(...).from(...).where(...)                  (phone-history lookup, awaited directly)
  */
 function makeSelectChain(result: unknown[]) {
   const promise = Object.assign(Promise.resolve(result), {
     limit: vi.fn().mockResolvedValue(result),
   })
+  const whereStage = { where: vi.fn().mockReturnValue(promise) }
   return {
     from: vi.fn().mockReturnValue({
+      innerJoin: vi.fn().mockReturnValue(whereStage),
       where: vi.fn().mockReturnValue(promise),
     }),
   }
@@ -57,8 +59,14 @@ vi.mock('@/db/schema', () => ({
   tenants: { id: 'id', settings: 'settings' },
   tenantUsers: { tenantId: 'tenant_id', userId: 'user_id', role: 'role' },
   procedureTypes: { id: 'id', name: 'name', tenantId: 'tenant_id', defaultPrice: 'default_price' },
-  whatsappMessages: { tenantId: 'tenant_id', metaMessageId: 'meta_message_id', mediaUrl: 'media_url' },
-  whatsappConversations: { tenantId: 'tenant_id', phoneNumber: 'phone_number', lastMessageAt: 'last_message_at' },
+  whatsappMessages: {
+    tenantId: 'tenant_id',
+    metaMessageId: 'meta_message_id',
+    mediaUrl: 'media_url',
+    conversationId: 'conversation_id',
+    direction: 'direction',
+  },
+  whatsappConversations: { id: 'id', tenantId: 'tenant_id', phoneNumber: 'phone_number', lastMessageAt: 'last_message_at' },
 }))
 
 vi.mock('drizzle-orm', () => ({
@@ -256,7 +264,11 @@ function setupCommonInboundMocks() {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks()
+  // resetAllMocks (not clearAllMocks) so a queued mockReturnValueOnce/
+  // mockImplementationOnce left unconsumed by one test (e.g. a phone-history
+  // fallback deliberately never reached) cannot leak into the next test's
+  // FIFO queue and shift its results.
+  vi.resetAllMocks()
   process.env.META_APP_SECRET = TEST_APP_SECRET
   process.env.NEXT_PUBLIC_APP_URL = 'https://app.floraclin.com.br'
   process.env.FLORACLIN_WA_PHONE_NUMBER_ID = SHARED_PHONE_NUMBER_ID
@@ -265,10 +277,13 @@ beforeEach(() => {
 
 describe('resolveSharedNumberTenant — reply context wins over phone history', () => {
   it('routes to the tenant owning the replied-to message, even when a different tenant messaged this phone more recently', async () => {
-    // db.select(...).from(whatsappMessages).where(meta_message_id = contextId).limit(1)
-    // resolves to TENANT_A, the owner of the message being replied to.
+    // db.select(...).from(whatsappMessages).innerJoin(whatsappConversations)
+    // .where(meta_message_id = contextId).limit(1) resolves to TENANT_A, the
+    // owner of the outbound message being replied to, sent to this same phone.
     vi.mocked(db.select).mockReturnValueOnce(
-      makeSelectChain([{ tenantId: TENANT_A }]) as never,
+      makeSelectChain([
+        { tenantId: TENANT_A, direction: 'outbound', conversationPhone: PATIENT_PHONE },
+      ]) as never,
     )
 
     const payload = makeInboundPayload({ contextId: CONTEXT_MSG_ID })
@@ -286,6 +301,72 @@ describe('resolveSharedNumberTenant — reply context wins over phone history', 
 
     // Phone-history fallback must never be consulted -- context resolved it.
     expect(db.selectDistinct).not.toHaveBeenCalled()
+  })
+})
+
+describe('resolveSharedNumberTenant — reply context bound to the sender phone (security)', () => {
+  it('refuses and reports to Sentry when the context id names a message sent to a DIFFERENT phone, without falling back to phone history', async () => {
+    const OTHER_PHONE = '5511988887777'
+
+    // The context id resolves, but the message it names was sent to a
+    // different phone than the one that actually sent this inbound message.
+    vi.mocked(db.select).mockReturnValueOnce(
+      makeSelectChain([
+        { tenantId: TENANT_A, direction: 'outbound', conversationPhone: OTHER_PHONE },
+      ]) as never,
+    )
+    // Even though phone history WOULD resolve unambiguously if consulted,
+    // it must never be reached -- prove that by making it return a single
+    // candidate and asserting it's never called.
+    vi.mocked(db.selectDistinct).mockReturnValueOnce(
+      makeSelectChain([{ tenantId: TENANT_B }]) as never,
+    )
+
+    const payload = makeInboundPayload({ contextId: CONTEXT_MSG_ID })
+    await POST(makeRequest(payload))
+
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(upsertConversation).not.toHaveBeenCalled()
+    expect(db.selectDistinct).not.toHaveBeenCalled()
+    expect(captureExceptionMock).toHaveBeenCalledTimes(1)
+    const [, ctx] = captureExceptionMock.mock.calls[0]
+    expect(ctx).toMatchObject({
+      extra: {
+        messageId: CONTEXT_MSG_ID,
+        phone: PATIENT_PHONE,
+        tenantId: TENANT_A,
+      },
+    })
+  })
+
+  it('does not accept a context id that points at an INBOUND message as a routing key, and falls back to phone history instead', async () => {
+    // The context id resolves to a real message with a matching phone, but
+    // it's a message the sender wrote (inbound), not one we sent -- it must
+    // not be treated as an exact match.
+    vi.mocked(db.select).mockReturnValueOnce(
+      makeSelectChain([
+        { tenantId: TENANT_A, direction: 'inbound', conversationPhone: PATIENT_PHONE },
+      ]) as never,
+    )
+    vi.mocked(db.selectDistinct).mockReturnValueOnce(
+      makeSelectChain([{ tenantId: TENANT_B }]) as never,
+    )
+
+    const payload = makeInboundPayload({ contextId: CONTEXT_MSG_ID })
+    await POST(makeRequest(payload))
+
+    await vi.waitFor(() => {
+      expect(upsertConversation).toHaveBeenCalledWith(
+        TENANT_B,
+        PATIENT_PHONE,
+        'Maria',
+        'prospect-1',
+        null,
+      )
+    })
+
+    expect(captureExceptionMock).not.toHaveBeenCalled()
   })
 })
 
@@ -325,12 +406,33 @@ describe('resolveSharedNumberTenant — phone history, ambiguous', () => {
 
     expect(upsertConversation).not.toHaveBeenCalled()
     expect(captureExceptionMock).toHaveBeenCalledTimes(1)
-    const [, ctx] = captureExceptionMock.mock.calls[0]
+    const [err, ctx] = captureExceptionMock.mock.calls[0]
+    expect((err as Error).message).toMatch(/ambiguous/i)
     expect(ctx).toMatchObject({
       extra: {
         phone: PATIENT_PHONE,
         candidateTenantIds: [TENANT_A, TENANT_B],
       },
+    })
+  })
+})
+
+describe('resolveSharedNumberTenant — phone history, zero candidates', () => {
+  it('does not route and reports to Sentry, distinguishably from the ambiguous case, when no tenant has ever conversed with this phone', async () => {
+    vi.mocked(db.selectDistinct).mockReturnValueOnce(makeSelectChain([]) as never)
+
+    const payload = makeInboundPayload({})
+    await POST(makeRequest(payload))
+
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(upsertConversation).not.toHaveBeenCalled()
+    expect(captureExceptionMock).toHaveBeenCalledTimes(1)
+    const [err, ctx] = captureExceptionMock.mock.calls[0]
+    expect((err as Error).message).toMatch(/no tenant found/i)
+    expect((err as Error).message).not.toMatch(/ambiguous/i)
+    expect(ctx).toMatchObject({
+      extra: { phone: PATIENT_PHONE },
     })
   })
 })
@@ -365,7 +467,9 @@ describe('resolveSharedNumberTenant — unknown context id falls through to phon
 describe('resolveSharedNumberTenant — status updates', () => {
   it('resolves the owning tenant from the status message id and processes the update', async () => {
     vi.mocked(db.select).mockReturnValueOnce(
-      makeSelectChain([{ tenantId: TENANT_A }]) as never,
+      makeSelectChain([
+        { tenantId: TENANT_A, direction: 'outbound', conversationPhone: PATIENT_PHONE },
+      ]) as never,
     )
     vi.mocked(updateMessageStatus).mockResolvedValue({
       conversationId: CONVERSATION_ID,
