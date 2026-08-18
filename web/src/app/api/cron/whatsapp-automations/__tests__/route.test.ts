@@ -72,6 +72,10 @@ vi.mock('@/lib/phone', () => ({
   }),
 }))
 
+vi.mock('@/lib/discord', () => ({
+  notifyDiscord: vi.fn().mockResolvedValue(undefined),
+}))
+
 // ─── Imports (after mocks) ───────────────────────────────────────────
 
 import { db } from '@/db/client'
@@ -89,6 +93,7 @@ import {
 } from '@/db/queries/whatsapp'
 import { sendTemplateMessage, resolveTemplateBody, getTemplateForTenant, CreditExhaustedError } from '@/lib/whatsapp'
 import { isSubscriptionActive } from '@/lib/plans'
+import { notifyDiscord } from '@/lib/discord'
 import { GET } from '../route'
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -198,6 +203,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   process.env.CRON_SECRET = CRON_SECRET
   vi.mocked(isSubscriptionActive).mockResolvedValue(true)
+  vi.mocked(notifyDiscord).mockResolvedValue(undefined)
 
   // Default: db.select().from() returns empty tenants list
   dbMock.from.mockResolvedValue([])
@@ -979,6 +985,125 @@ describe('GET /api/cron/whatsapp-automations', () => {
       })
       expect(json.sent).toBe(1)
       expect(json.outcomes).toHaveLength(4)
+    })
+  })
+
+  // ── Per-tenant outcome logging ───────────────────────────────────
+  //
+  // The `outcomes` array in the JSON response is discarded by Vercel, so
+  // the rollup line alone can say "N tenants skipped" but never which N.
+  // These tests check the per-tenant lines that fix that.
+
+  describe('per-tenant outcome logging', () => {
+    it('logs one line per tenant outcome, in addition to the rollup summary line', async () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      dbMock.from.mockResolvedValue([
+        makeTenant('t-disabled', 'Disabled Clinic', { whatsapp_mode: 'own', whatsapp_enabled: false }),
+        makeTenant('t-inactive', 'Inactive Clinic', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(isSubscriptionActive).mockImplementation(async (tenantId: string) => tenantId !== 't-inactive')
+
+      await GET(makeRequest(CRON_SECRET))
+
+      const outcomeCalls = logSpy.mock.calls.filter((c) => c[0] === '[cron] whatsapp-automations outcome')
+      expect(outcomeCalls).toHaveLength(2)
+
+      const logged = outcomeCalls.map((c) => JSON.parse(c[1] as string))
+      expect(logged).toContainEqual(
+        expect.objectContaining({ tenantId: 't-disabled', tenantName: 'Disabled Clinic', reason: 'wa_disabled' }),
+      )
+      expect(logged).toContainEqual(
+        expect.objectContaining({ tenantId: 't-inactive', tenantName: 'Inactive Clinic', reason: 'subscription_inactive' }),
+      )
+
+      const summaryCalls = logSpy.mock.calls.filter((c) => c[0] === '[cron] whatsapp-automations run summary')
+      expect(summaryCalls).toHaveLength(1)
+
+      logSpy.mockRestore()
+    })
+  })
+
+  // ── Discord digest ────────────────────────────────────────────────
+
+  describe('Discord digest', () => {
+    it('posts the digest exactly once per run', async () => {
+      setupHappyPath()
+
+      await GET(makeRequest(CRON_SECRET))
+
+      expect(notifyDiscord).toHaveBeenCalledTimes(1)
+      expect(notifyDiscord).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'whatsapp_automations.digest' }),
+      )
+    })
+
+    it('does not fail the cron when the Discord digest post rejects', async () => {
+      setupHappyPath()
+      vi.mocked(notifyDiscord).mockRejectedValueOnce(new Error('discord down'))
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(json.ok).toBe(true)
+      expect(json.sent).toBe(1)
+    })
+
+    it('reports no failing tenants on a routine run where everything sends', async () => {
+      setupHappyPath()
+
+      await GET(makeRequest(CRON_SECRET))
+
+      expect(notifyDiscord).toHaveBeenCalledWith(
+        expect.objectContaining({ failingTenants: [] }),
+      )
+    })
+
+    it('lists the failing tenant by name and reason on an abnormal run, without listing every tenant', async () => {
+      dbMock.from.mockResolvedValue([
+        makeTenant('t-fail', 'Failing Clinic', { whatsapp_enabled: true }),
+        makeTenant('t-ok', 'OK Clinic', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
+      vi.mocked(getAppointmentsPendingConfirmationUntil)
+        .mockResolvedValueOnce([makeAppointment({ id: 'a-fail', patientPhone: '11999990003' })])
+        .mockResolvedValueOnce([makeAppointment({ id: 'a-ok', patientPhone: '11999990004' })])
+      vi.mocked(sendTemplateMessage)
+        .mockRejectedValueOnce(new Error('Meta API down'))
+        .mockResolvedValueOnce({ metaMessageId: 'wamid.y' })
+      vi.mocked(markConfirmationSent).mockResolvedValue(undefined as never)
+      vi.mocked(upsertConversation).mockResolvedValue({ id: 'conv-1' } as never)
+      vi.mocked(resolveTemplateBody).mockReturnValue('text')
+      vi.mocked(createMessage).mockResolvedValue({ id: 'msg-1' } as never)
+      vi.mocked(pushSseEvent).mockResolvedValue(undefined as never)
+
+      await GET(makeRequest(CRON_SECRET))
+
+      expect(notifyDiscord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          failingTenants: [
+            { tenantName: 'Failing Clinic', reason: 'send_failed', appointmentsFailed: 1 },
+          ],
+        }),
+      )
+      // 'OK Clinic' (which sent successfully) is not in the failing list --
+      // the digest names the problem tenants, not every tenant in the run.
+      const call = vi.mocked(notifyDiscord).mock.calls[0][0] as { failingTenants: Array<{ tenantName: string }> }
+      expect(call.failingTenants.map((t) => t.tenantName)).not.toContain('OK Clinic')
+    })
+
+    it('does not include credit_exhausted or tenant_error tenants as ordinary skips in failingTenants', async () => {
+      dbMock.from.mockResolvedValue([
+        makeTenant('t-noauto', 'No Automation Clinic', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([])
+
+      await GET(makeRequest(CRON_SECRET))
+
+      expect(notifyDiscord).toHaveBeenCalledWith(
+        expect.objectContaining({ failingTenants: [] }),
+      )
     })
   })
 })

@@ -7,6 +7,7 @@ import { listAutomations, upsertConversation, createMessage, pushSseEvent } from
 import { sendTemplateMessage, resolveTemplateBody, CreditExhaustedError, getTemplateForTenant } from '@/lib/whatsapp'
 import { normalizeBrPhone } from '@/lib/phone'
 import { isSubscriptionActive } from '@/lib/plans'
+import { notifyDiscord, type WhatsappDigestFailingTenant } from '@/lib/discord'
 
 // Vercel invokes this route and discards the response body, so nothing in
 // here can rely on a human reading `NextResponse.json(...)`. Every tenant
@@ -34,6 +35,15 @@ interface TenantOutcome {
   appointmentsSent: number
   appointmentsFailed: number
 }
+
+// Reasons that represent a real problem rather than an expected skip. Used
+// both to decide whether the Discord digest is "routine" or "abnormal" and
+// to pick which tenants it lists by name.
+const FAILING_REASONS: ReadonlySet<TenantOutcomeReason> = new Set([
+  'send_failed',
+  'tenant_error',
+  'credit_exhausted',
+])
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -261,6 +271,17 @@ export async function GET(request: Request) {
     return acc
   }, {} as Record<TenantOutcomeReason, number>)
 
+  // One line per tenant, not one line for the whole array. At today's scale
+  // (~10 tenants) this stays well within a page of Vercel's log viewer, and
+  // unlike a single JSON-array line it lets you scan or grep a specific
+  // tenant's outcome directly, which is the exact question this branch
+  // exists to answer ("why did this clinic get nothing").  The `outcomes`
+  // array in the JSON response below is discarded by Vercel, so this is the
+  // only place any of this detail survives the run.
+  for (const outcome of outcomes) {
+    console.log('[cron] whatsapp-automations outcome', JSON.stringify(outcome))
+  }
+
   // One structured, greppable line with the whole run's shape. Deliberately
   // NOT also sent to Sentry as a rollup message: every send_failed and
   // tenant_error outcome above already reached Sentry individually with the
@@ -272,6 +293,35 @@ export async function GET(request: Request) {
     sent,
     summary,
   }))
+
+  // Daily heartbeat to floraclin-logs, every run, success or not. Silence
+  // today is ambiguous between "nothing to send" and "the cron never ran";
+  // posting on every run turns a quiet channel into a real signal. This is
+  // reporting, not part of the job: notifyDiscord never throws, so a down
+  // or unconfigured Discord can never fail the cron.
+  const failingTenants: WhatsappDigestFailingTenant[] = outcomes
+    .filter((o) => FAILING_REASONS.has(o.reason))
+    .map((o) => ({
+      tenantName: o.tenantName,
+      reason: o.reason as WhatsappDigestFailingTenant['reason'],
+      appointmentsFailed: o.appointmentsFailed,
+    }))
+
+  // notifyDiscord already never throws by contract (see web/src/lib/discord.ts),
+  // but the digest is reporting, not part of the job -- this catch is belt
+  // and suspenders so a future change to that contract can never take the
+  // cron down with it.
+  try {
+    await notifyDiscord({
+      kind: 'whatsapp_automations.digest',
+      tenantsProcessed: allTenants.length,
+      sent,
+      summary,
+      failingTenants,
+    })
+  } catch (err) {
+    console.error('[cron] Failed to post whatsapp-automations digest to Discord:', err)
+  }
 
   return NextResponse.json({ ok: true, sent, outcomes, summary })
 }
