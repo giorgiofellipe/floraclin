@@ -768,7 +768,7 @@ export async function cleanupSseEvents(): Promise<void> {
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000)
   await db
     .delete(sseEvents)
-    .where(sql`${sseEvents.createdAt} < ${fiveMinutesAgo}`)
+    .where(sql`${sseEvents.createdAt} < ${fiveMinutesAgo.toISOString()}`)
 }
 
 // ─── STATS ─────────────────────────────────────────────────────────
