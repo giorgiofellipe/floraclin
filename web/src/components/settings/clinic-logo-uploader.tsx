@@ -17,8 +17,9 @@ interface ClinicLogoUploaderProps {
  * Upload / replace / clear the tenant's logo image. Used by the clinic
  * settings page; the saved URL is the same `tenants.logoUrl` that's read
  * by `<ClinicHeader>` (receitas, atestados, evoluções, termos de
- * consentimento, procedimentos) and by the public booking page, so it
- * shows up everywhere automatically.
+ * consentimento, procedimentos, os relatórios em PDF e o prontuário
+ * completo) and by the public booking page, so it shows up everywhere
+ * automatically.
  */
 export function ClinicLogoUploader({ initialLogoUrl }: ClinicLogoUploaderProps) {
   const [logoUrl, setLogoUrl] = useState<string | null>(initialLogoUrl)
@@ -89,7 +90,8 @@ export function ClinicLogoUploader({ initialLogoUrl }: ClinicLogoUploaderProps) 
       <div className="flex flex-1 flex-col gap-2">
         <p className="text-sm text-charcoal">
           Aparece no topo de documentos impressos (receitas, atestados,
-          evoluções, termos de consentimento e procedimentos) e na página
+          evoluções, termos de consentimento e procedimentos), nos
+          relatórios em PDF e no prontuário completo, além da página
           pública de agendamento.
         </p>
         <p className="text-xs text-mid">

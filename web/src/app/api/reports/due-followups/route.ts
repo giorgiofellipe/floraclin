@@ -63,8 +63,6 @@ export async function GET(request: Request) {
   try {
     const ctx = await requireRole('owner', 'financial')
 
-    const tenant = await getTenantHeaderInfo(ctx.tenantId)
-
     const { searchParams } = new URL(request.url)
     const windowParam = searchParams.get('windowDays')
 
@@ -111,6 +109,7 @@ export async function GET(request: Request) {
     }
 
     if (format === 'pdf') {
+      const tenant = await getTenantHeaderInfo(ctx.tenantId)
       const report = getReport(REPORT_SLUG)
       const pdf = await renderReactToPdf(
         // `ReportPdf` is generic; createElement can't infer `Row` from the

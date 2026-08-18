@@ -48,7 +48,9 @@ export async function getTenantHeaderInfo(tenantId: string): Promise<TenantHeade
     .where(eq(tenants.id, tenantId))
     .limit(1)
 
-  return (tenant as TenantHeaderInfo | undefined) ?? null
+  if (!tenant) return null
+
+  return { ...tenant, address: (tenant.address as Record<string, unknown> | null) ?? null }
 }
 
 export async function updateTenant(

@@ -5,7 +5,8 @@ import { formatDate } from '@/lib/utils'
 import { formatBrPhone } from '@/lib/phone'
 import { CONSENT_TYPE_LABELS, METHOD_LABELS, GENDER_LABELS } from '@/lib/constants'
 import { FloraclinBrandHeader } from '@/lib/pdf-branding'
-import { ClinicHeader } from '@/components/print/clinic-header'
+import { ClinicHeader, toClinicHeaderAddress } from '@/components/print/clinic-header'
+import type { TenantHeaderInfo } from '@/db/queries/tenants'
 import { getAppUrl } from '@/lib/app-url'
 import { timelineStageValues, timelineStageLabels } from '@/validations/photo'
 // Imported from `face-template-data`, never from `face-template` itself:
@@ -113,17 +114,11 @@ interface ProntuarioPdfProps {
   /**
    * Raw tenant projection (`getTenantHeaderInfo`, `@/db/queries/tenants`).
    * `address` stays the free-form JSONB shape here; it's narrowed to
-   * `ClinicHeader`'s structured `Address` below, same cast
-   * `PrintDocument`/`PrintConsent` already do for the same reason: the DB
-   * column has no fixed shape, `ClinicHeader` does.
+   * `ClinicHeader`'s structured `Address` via `toClinicHeaderAddress` below,
+   * same helper `PrintDocument`/`PrintConsent` use for the same reason: the
+   * DB column has no fixed shape, `ClinicHeader` does.
    */
-  tenant: {
-    name: string
-    phone: string | null
-    email: string | null
-    logoUrl: string | null
-    address: Record<string, unknown> | null
-  }
+  tenant: TenantHeaderInfo
   dossier: ProntuarioDossier
   generatedAt: Date
 }
@@ -138,17 +133,7 @@ interface ProntuarioPdfProps {
 export function ProntuarioPdf({ tenant, dossier, generatedAt }: ProntuarioPdfProps) {
   const { patient, anamnesis, procedures, proceduresTruncated, photos, consents } = dossier
   const address = formatAddress(patient.address)
-  const tenantHeaderAddress = tenant.address
-    ? (tenant.address as {
-        street?: string
-        number?: string
-        complement?: string
-        neighborhood?: string
-        city?: string
-        state?: string
-        zip?: string
-      })
-    : null
+  const tenantHeaderAddress = toClinicHeaderAddress(tenant.address)
 
   return (
     <div>
@@ -157,7 +142,7 @@ export function ProntuarioPdf({ tenant, dossier, generatedAt }: ProntuarioPdfPro
           The per-page footer (`renderReactToPdf` / `buildFloraclinFooterTemplate`)
           already carries the durable "made with FloraClin" provenance line,
           so this header mark is optional branding, not the provenance
-          record — see the module doc on `FloraclinBrandHeader` in
+          record; see the module doc on `FloraclinBrandHeader` in
           `@/lib/pdf-branding`. */}
       <FloraclinBrandHeader />
       <ClinicHeader

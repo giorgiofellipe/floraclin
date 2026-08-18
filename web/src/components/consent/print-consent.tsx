@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { ClinicHeader } from '@/components/print/clinic-header'
+import { ClinicHeader, toClinicHeaderAddress } from '@/components/print/clinic-header'
 import { FloraclinBrandHeader } from '@/lib/pdf-branding'
 import { formatDate } from '@/lib/utils'
 import { CONSENT_TYPE_LABELS } from '@/lib/constants'
@@ -43,17 +43,7 @@ export function PrintConsent({ acceptance }: PrintConsentProps) {
   const a = acceptance
   const professional = a.professionalSnapshot as ProfessionalSnapshot | null
   const evidence = a.signatureEvidence as { contentHash: string; evidenceHash: string; signedAt: string; timestampToken?: string } | null
-  const headerAddress = a.tenantAddress && typeof a.tenantAddress === 'object'
-    ? (a.tenantAddress as {
-        street?: string
-        number?: string
-        complement?: string
-        neighborhood?: string
-        city?: string
-        state?: string
-        zip?: string
-      })
-    : null
+  const headerAddress = toClinicHeaderAddress(a.tenantAddress)
 
   return (
     <div

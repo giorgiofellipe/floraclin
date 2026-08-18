@@ -1,6 +1,6 @@
 import * as React from 'react'
 
-interface Address {
+export interface Address {
   street?: string
   number?: string
   complement?: string
@@ -8,6 +8,16 @@ interface Address {
   city?: string
   state?: string
   zip?: string
+}
+
+/**
+ * Narrows a tenant's free-form JSONB `address` column into the structured
+ * shape `ClinicHeader` expects. The column has no fixed schema, so this is
+ * a best-effort cast, not real validation: any object shape is accepted,
+ * and non-objects (including `null`) become `null`.
+ */
+export function toClinicHeaderAddress(raw: unknown): Address | null {
+  return raw && typeof raw === 'object' ? (raw as Address) : null
 }
 
 export interface ClinicHeaderProps {
@@ -39,9 +49,11 @@ export function ClinicHeader({ tenant, className }: ClinicHeaderProps) {
         <img src={tenant.logoUrl} alt={tenant.name} className="h-16 w-16 object-contain" />
       )}
       <div className="flex-1">
-        <div className="text-lg font-semibold">{tenant.name}</div>
-        {tenant.address && <div className="text-xs text-gray-700">{formatAddress(tenant.address)}</div>}
-        <div className="text-xs text-gray-700">
+        <div className="clinic-name text-lg font-semibold">{tenant.name}</div>
+        {tenant.address && (
+          <div className="clinic-meta text-xs text-gray-700">{formatAddress(tenant.address)}</div>
+        )}
+        <div className="clinic-meta text-xs text-gray-700">
           {[tenant.phone, tenant.email].filter(Boolean).join(' · ')}
         </div>
       </div>

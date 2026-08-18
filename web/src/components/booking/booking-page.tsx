@@ -17,7 +17,6 @@ interface ClinicInfo {
   name: string
   logoUrl: string | null
   phone: string | null
-  email: string | null
 }
 
 interface Slot {
@@ -41,8 +40,11 @@ const STEP_LABELS = [
 ]
 
 function ClinicBrand({ clinic }: { clinic: ClinicInfo }) {
-  if (!clinic.logoUrl) {
-    // No logo on file: the clinic name takes the hero spot, in the display
+  const [logoFailed, setLogoFailed] = useState(false)
+
+  if (!clinic.logoUrl || logoFailed) {
+    // No logo on file (or the logo URL failed to load, e.g. an expired
+    // signed URL): the clinic name takes the hero spot, in the display
     // font, so the page never looks broken or empty.
     return (
       <div className="text-center" data-testid="clinic-name-fallback">
@@ -64,7 +66,8 @@ function ClinicBrand({ clinic }: { clinic: ClinicInfo }) {
         src={clinic.logoUrl}
         alt={clinic.name}
         data-testid="clinic-logo"
-        className="mx-auto h-16 sm:h-20 max-h-20 w-auto max-w-[220px] object-contain"
+        onError={() => setLogoFailed(true)}
+        className="mx-auto h-16 sm:h-20 w-auto max-w-[220px] object-contain"
       />
       <div className="mt-1.5 flex items-center justify-center gap-2">
         <div className="h-px w-8 bg-blush" />
