@@ -1,15 +1,29 @@
 /**
  * Unit tests for the WhatsApp automations cron job.
  *
- * The cron runs hourly, iterates WhatsApp-enabled tenants, and sends
- * appointment-confirmation templates for upcoming appointments.
+ * The cron runs daily at 08:00 BRT, iterates WhatsApp-enabled tenants, and
+ * sends appointment-confirmation templates for upcoming appointments.
  *
- * All DB queries and the WhatsApp send API are mocked — no network or
+ * Because Vercel invokes this route and discards the response body, the
+ * route records a structured outcome reason per tenant and reports real
+ * failures (not ordinary skips) to Sentry. These tests exercise both: the
+ * outcome taxonomy returned in the response, and what does/doesn't reach
+ * Sentry.
+ *
+ * All DB queries and the WhatsApp send API are mocked -- no network or
  * database access occurs.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // ─── Mocks (hoisted by vitest) ────────────────────────────────────────
+
+const captureExceptionMock = vi.fn()
+const captureMessageMock = vi.fn()
+
+vi.mock('@sentry/nextjs', () => ({
+  captureException: (...args: unknown[]) => captureExceptionMock(...args),
+  captureMessage: (...args: unknown[]) => captureMessageMock(...args),
+}))
 
 vi.mock('@/db/client', () => ({
   db: {
@@ -29,7 +43,6 @@ vi.mock('@/db/queries/appointments', () => ({
 
 vi.mock('@/db/queries/whatsapp', () => ({
   listAutomations: vi.fn(),
-  getTemplateByPurpose: vi.fn(),
   upsertConversation: vi.fn(),
   createMessage: vi.fn(),
   pushSseEvent: vi.fn(),
@@ -58,6 +71,10 @@ vi.mock('@/lib/phone', () => ({
   }),
 }))
 
+vi.mock('@/lib/discord', () => ({
+  notifyDiscord: vi.fn().mockResolvedValue(undefined),
+}))
+
 // ─── Imports (after mocks) ───────────────────────────────────────────
 
 import { db } from '@/db/client'
@@ -73,7 +90,9 @@ import {
   createMessage,
   pushSseEvent,
 } from '@/db/queries/whatsapp'
-import { sendTemplateMessage, resolveTemplateBody, getTemplateForTenant } from '@/lib/whatsapp'
+import { sendTemplateMessage, resolveTemplateBody, getTemplateForTenant, CreditExhaustedError } from '@/lib/whatsapp'
+import { isSubscriptionActive } from '@/lib/plans'
+import { notifyDiscord } from '@/lib/discord'
 import { GET } from '../route'
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -147,11 +166,43 @@ function makeAutomation(overrides: Record<string, unknown> = {}) {
   } as never
 }
 
+/** Wires the mocks for a tenant that sails through every gate. */
+function setupHappyPath(appointments = [makeAppointment()]) {
+  const template = makeTemplate()
+  dbMock.from.mockResolvedValue([
+    makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
+  ])
+  vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
+  vi.mocked(getTemplateForTenant).mockResolvedValue(template)
+  vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue(appointments)
+  vi.mocked(sendTemplateMessage).mockResolvedValue({ metaMessageId: 'wamid.abc123' })
+  vi.mocked(markConfirmationSent).mockResolvedValue(undefined as never)
+  vi.mocked(upsertConversation).mockResolvedValue({ id: 'conv-1' } as never)
+  vi.mocked(resolveTemplateBody).mockReturnValue('Olá Maria, sua consulta...')
+  vi.mocked(createMessage).mockResolvedValue({ id: 'msg-1' } as never)
+  vi.mocked(pushSseEvent).mockResolvedValue(undefined as never)
+  return template
+}
+
+interface TenantOutcomeJson {
+  tenantId: string
+  tenantName: string
+  reason: string
+  appointmentsSent: number
+  appointmentsFailed: number
+}
+
+function findOutcome(json: { outcomes: TenantOutcomeJson[] }, tenantId: string) {
+  return json.outcomes.find((o) => o.tenantId === tenantId)
+}
+
 // ─── Setup ───────────────────────────────────────────────────────────
 
 beforeEach(() => {
   vi.clearAllMocks()
   process.env.CRON_SECRET = CRON_SECRET
+  vi.mocked(isSubscriptionActive).mockResolvedValue(true)
+  vi.mocked(notifyDiscord).mockResolvedValue(undefined)
 
   // Default: db.select().from() returns empty tenants list
   dbMock.from.mockResolvedValue([])
@@ -180,76 +231,79 @@ describe('GET /api/cron/whatsapp-automations', () => {
       const res = await GET(makeRequest(CRON_SECRET))
       expect(res.status).toBe(401)
     })
+
+    it('does not post a Discord digest on the unauthorized path', async () => {
+      const res = await GET(makeRequest('wrong-secret'))
+      expect(res.status).toBe(401)
+      expect(notifyDiscord).not.toHaveBeenCalled()
+    })
   })
 
-  // ── Tenant filtering ─────────────────────────────────────────────
+  // ── Outcome taxonomy: one reason per gate ────────────────────────
 
-  describe('tenant filtering', () => {
-    it('skips tenants with own mode and whatsapp disabled', async () => {
+  describe('outcome taxonomy', () => {
+    it('records wa_disabled for a tenant on own mode with whatsapp disabled', async () => {
       dbMock.from.mockResolvedValue([
         makeTenant('t1', 'Clinic A', { whatsapp_mode: 'own', whatsapp_enabled: false }),
-        makeTenant('t2', 'Clinic B', { whatsapp_mode: 'own' }),
-        makeTenant('t3', 'Clinic C', { whatsapp_mode: 'own', someOtherSetting: true }),
       ])
 
       const res = await GET(makeRequest(CRON_SECRET))
       const json = await res.json()
 
-      expect(res.status).toBe(200)
-      expect(json.ok).toBe(true)
       expect(json.sent).toBe(0)
+      expect(findOutcome(json, 't1')?.reason).toBe('wa_disabled')
+      expect(json.summary.wa_disabled).toBe(1)
       expect(listAutomations).not.toHaveBeenCalled()
+      expect(captureExceptionMock).not.toHaveBeenCalled()
+      expect(captureMessageMock).not.toHaveBeenCalled()
     })
 
-    it('skips tenant without appointment_confirmation automation', async () => {
+    it('does not filter tenants on own mode with whatsapp enabled, or on default floraclin mode', async () => {
+      dbMock.from.mockResolvedValue([
+        makeTenant('t2', 'Clinic B', { whatsapp_mode: 'own', whatsapp_enabled: true }),
+        makeTenant('t3', 'Clinic C', null),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([])
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(findOutcome(json, 't2')?.reason).toBe('no_automation')
+      expect(findOutcome(json, 't3')?.reason).toBe('no_automation')
+    })
+
+    it('records subscription_inactive and does not call Sentry', async () => {
+      dbMock.from.mockResolvedValue([
+        makeTenant('t1', 'Clinic A', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(isSubscriptionActive).mockResolvedValue(false)
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(findOutcome(json, 't1')?.reason).toBe('subscription_inactive')
+      expect(listAutomations).not.toHaveBeenCalled()
+      expect(captureExceptionMock).not.toHaveBeenCalled()
+    })
+
+    it('records no_automation when there is no enabled appointment_confirmation automation', async () => {
       dbMock.from.mockResolvedValue([
         makeTenant('t1', 'Clinic A', { whatsapp_enabled: true }),
       ])
       vi.mocked(listAutomations).mockResolvedValue([
         makeAutomation({ trigger: 'birthday_greeting' }),
+        makeAutomation({ trigger: 'appointment_confirmation', enabled: false }),
       ])
 
       const res = await GET(makeRequest(CRON_SECRET))
       const json = await res.json()
 
-      expect(json.skipped).toBe(1)
-      expect(json.sent).toBe(0)
+      expect(findOutcome(json, 't1')?.reason).toBe('no_automation')
       expect(getTemplateForTenant).not.toHaveBeenCalled()
+      expect(captureExceptionMock).not.toHaveBeenCalled()
     })
 
-    it('skips tenant when appointment_confirmation automation is disabled', async () => {
-      dbMock.from.mockResolvedValue([
-        makeTenant('t1', 'Clinic A', { whatsapp_enabled: true }),
-      ])
-      vi.mocked(listAutomations).mockResolvedValue([
-        makeAutomation({ enabled: false }),
-      ])
-
-      const res = await GET(makeRequest(CRON_SECRET))
-      const json = await res.json()
-
-      expect(json.skipped).toBe(1)
-      expect(json.sent).toBe(0)
-    })
-
-    it('skips tenant when template is not APPROVED', async () => {
-      dbMock.from.mockResolvedValue([
-        makeTenant('t1', 'Clinic A', { whatsapp_enabled: true }),
-      ])
-      vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
-      vi.mocked(getTemplateForTenant).mockResolvedValue(
-        makeTemplate({ status: 'PENDING' }),
-      )
-
-      const res = await GET(makeRequest(CRON_SECRET))
-      const json = await res.json()
-
-      expect(json.skipped).toBe(1)
-      expect(json.sent).toBe(0)
-      expect(sendTemplateMessage).not.toHaveBeenCalled()
-    })
-
-    it('skips tenant when template is null (not found)', async () => {
+    it('records template_missing when getTemplateForTenant returns null', async () => {
       dbMock.from.mockResolvedValue([
         makeTenant('t1', 'Clinic A', { whatsapp_enabled: true }),
       ])
@@ -259,46 +313,92 @@ describe('GET /api/cron/whatsapp-automations', () => {
       const res = await GET(makeRequest(CRON_SECRET))
       const json = await res.json()
 
-      expect(json.skipped).toBe(1)
-      expect(json.sent).toBe(0)
+      expect(findOutcome(json, 't1')?.reason).toBe('template_missing')
+      expect(captureExceptionMock).not.toHaveBeenCalled()
     })
 
-    it('skips tenant when automation has no templateId', async () => {
+    it('records template_not_approved when the template is PENDING', async () => {
       dbMock.from.mockResolvedValue([
         makeTenant('t1', 'Clinic A', { whatsapp_enabled: true }),
       ])
-      vi.mocked(listAutomations).mockResolvedValue([
-        makeAutomation({ templateId: null }),
+      vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate({ status: 'PENDING' }))
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(findOutcome(json, 't1')?.reason).toBe('template_not_approved')
+      expect(sendTemplateMessage).not.toHaveBeenCalled()
+      expect(captureExceptionMock).not.toHaveBeenCalled()
+    })
+
+    it('records no_pending_appointments when the query returns no appointments', async () => {
+      dbMock.from.mockResolvedValue([
+        makeTenant('t1', 'Clinic A', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([])
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(findOutcome(json, 't1')?.reason).toBe('no_pending_appointments')
+      expect(sendTemplateMessage).not.toHaveBeenCalled()
+    })
+
+    it('records no_valid_phone when appointments exist but none has a usable phone', async () => {
+      dbMock.from.mockResolvedValue([
+        makeTenant('t1', 'Clinic A', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
+        makeAppointment({ patientPhone: null, bookingPhone: null }),
       ])
 
       const res = await GET(makeRequest(CRON_SECRET))
       const json = await res.json()
 
-      expect(json.skipped).toBe(1)
-      expect(json.sent).toBe(0)
+      expect(findOutcome(json, 't1')?.reason).toBe('no_valid_phone')
+      expect(sendTemplateMessage).not.toHaveBeenCalled()
+      expect(captureExceptionMock).not.toHaveBeenCalled()
+    })
+
+    it('records sent when at least one confirmation goes out', async () => {
+      setupHappyPath()
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      const outcome = findOutcome(json, 'tenant-1')
+      expect(outcome?.reason).toBe('sent')
+      expect(outcome?.appointmentsSent).toBe(1)
+      expect(outcome?.appointmentsFailed).toBe(0)
+      expect(json.summary.sent).toBe(1)
+    })
+
+    it('records tenant_error (and reports to Sentry) when a gate query throws unexpectedly', async () => {
+      dbMock.from.mockResolvedValue([
+        makeTenant('t-fail', 'Failing Clinic', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockRejectedValue(new Error('DB connection lost'))
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(findOutcome(json, 't-fail')?.reason).toBe('tenant_error')
+      expect(captureExceptionMock).toHaveBeenCalledTimes(1)
+      expect(captureExceptionMock).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({ extra: expect.objectContaining({ tenantId: 't-fail', tenantName: 'Failing Clinic' }) }),
+      )
     })
   })
 
   // ── Sending confirmations ────────────────────────────────────────
 
   describe('sending confirmations', () => {
-    function setupHappyPath(appointments = [makeAppointment()]) {
-      const template = makeTemplate()
-      dbMock.from.mockResolvedValue([
-        makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
-      ])
-      vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
-      vi.mocked(getTemplateForTenant).mockResolvedValue(template)
-      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue(appointments)
-      vi.mocked(sendTemplateMessage).mockResolvedValue({ metaMessageId: 'wamid.abc123' })
-      vi.mocked(markConfirmationSent).mockResolvedValue(undefined as never)
-      vi.mocked(upsertConversation).mockResolvedValue({ id: 'conv-1' } as never)
-      vi.mocked(resolveTemplateBody).mockReturnValue('Olá Maria, sua consulta...')
-      vi.mocked(createMessage).mockResolvedValue({ id: 'msg-1' } as never)
-      vi.mocked(pushSseEvent).mockResolvedValue(undefined as never)
-      return template
-    }
-
     it('calls sendTemplateMessage with correct params', async () => {
       setupHappyPath()
 
@@ -383,6 +483,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
 
       expect(json.sent).toBe(2)
       expect(sendTemplateMessage).toHaveBeenCalledTimes(2)
+      expect(findOutcome(json, 'tenant-1')?.appointmentsSent).toBe(2)
     })
 
     it('uses bookingPhone when patientPhone is null', async () => {
@@ -406,16 +507,18 @@ describe('GET /api/cron/whatsapp-automations', () => {
       )
     })
 
-    it('skips appointment when neither patientPhone nor bookingPhone is present', async () => {
+    it('skips appointment when neither patientPhone nor bookingPhone is present, alongside others that send', async () => {
       setupHappyPath([
-        makeAppointment({ patientPhone: null, bookingPhone: null }),
+        makeAppointment({ id: 'appt-nophone', patientPhone: null, bookingPhone: null }),
+        makeAppointment({ id: 'appt-ok', patientPhone: '11999990000' }),
       ])
 
       const res = await GET(makeRequest(CRON_SECRET))
       const json = await res.json()
 
-      expect(json.sent).toBe(0)
-      expect(sendTemplateMessage).not.toHaveBeenCalled()
+      expect(json.sent).toBe(1)
+      expect(sendTemplateMessage).toHaveBeenCalledTimes(1)
+      expect(findOutcome(json, 'tenant-1')?.reason).toBe('sent')
     })
 
     it('uses the full name as firstName when name has no spaces', async () => {
@@ -596,10 +699,10 @@ describe('GET /api/cron/whatsapp-automations', () => {
     })
   })
 
-  // ── Error handling ───────────────────────────────────────────────
+  // ── Error handling & Sentry ──────────────────────────────────────
 
   describe('error handling', () => {
-    it('per-appointment error does not stop processing other appointments', async () => {
+    it('per-appointment error does not stop processing other appointments, and reports to Sentry', async () => {
       dbMock.from.mockResolvedValue([
         makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
       ])
@@ -609,8 +712,9 @@ describe('GET /api/cron/whatsapp-automations', () => {
         makeAppointment({ id: 'appt-fail', patientPhone: '11999990001' }),
         makeAppointment({ id: 'appt-ok', patientPhone: '11999990002' }),
       ])
+      const metaError = new Error('Meta API timeout')
       vi.mocked(sendTemplateMessage)
-        .mockRejectedValueOnce(new Error('Meta API timeout'))
+        .mockRejectedValueOnce(metaError)
         .mockResolvedValueOnce({ metaMessageId: 'wamid.ok' })
       vi.mocked(markConfirmationSent).mockResolvedValue(undefined as never)
       vi.mocked(upsertConversation).mockResolvedValue({ id: 'conv-1' } as never)
@@ -622,26 +726,38 @@ describe('GET /api/cron/whatsapp-automations', () => {
       const json = await res.json()
 
       expect(json.sent).toBe(1)
-      expect(json.errors).toHaveLength(1)
-      expect(json.errors[0].error).toContain('appt-fail')
-      expect(json.errors[0].error).toContain('Meta API timeout')
+      const outcome = findOutcome(json, 'tenant-1')
+      expect(outcome?.reason).toBe('sent')
+      expect(outcome?.appointmentsSent).toBe(1)
+      expect(outcome?.appointmentsFailed).toBe(1)
+
+      expect(captureExceptionMock).toHaveBeenCalledTimes(1)
+      expect(captureExceptionMock).toHaveBeenCalledWith(
+        metaError,
+        expect.objectContaining({
+          extra: expect.objectContaining({
+            tenantId: 'tenant-1',
+            tenantName: 'Flora Clinic',
+            appointmentId: 'appt-fail',
+          }),
+        }),
+      )
     })
 
-    it('per-tenant error does not stop processing other tenants', async () => {
+    it('records send_failed when every appointment for a tenant fails, without aborting other tenants', async () => {
       dbMock.from.mockResolvedValue([
         makeTenant('t-fail', 'Failing Clinic', { whatsapp_enabled: true }),
         makeTenant('t-ok', 'OK Clinic', { whatsapp_enabled: true }),
       ])
 
-      vi.mocked(listAutomations)
-        .mockRejectedValueOnce(new Error('DB connection lost'))
-        .mockResolvedValueOnce([makeAutomation()])
-
+      vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
       vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
-      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
-        makeAppointment({ patientPhone: '11999990003' }),
-      ])
-      vi.mocked(sendTemplateMessage).mockResolvedValue({ metaMessageId: 'wamid.y' })
+      vi.mocked(getAppointmentsPendingConfirmationUntil)
+        .mockResolvedValueOnce([makeAppointment({ id: 'a-fail', patientPhone: '11999990003' })])
+        .mockResolvedValueOnce([makeAppointment({ id: 'a-ok', patientPhone: '11999990004' })])
+      vi.mocked(sendTemplateMessage)
+        .mockRejectedValueOnce(new Error('Meta API down'))
+        .mockResolvedValueOnce({ metaMessageId: 'wamid.y' })
       vi.mocked(markConfirmationSent).mockResolvedValue(undefined as never)
       vi.mocked(upsertConversation).mockResolvedValue({ id: 'conv-1' } as never)
       vi.mocked(resolveTemplateBody).mockReturnValue('text')
@@ -652,12 +768,12 @@ describe('GET /api/cron/whatsapp-automations', () => {
       const json = await res.json()
 
       expect(json.sent).toBe(1)
-      expect(json.errors).toHaveLength(1)
-      expect(json.errors[0].tenant).toBe('Failing Clinic')
-      expect(json.errors[0].error).toContain('DB connection lost')
+      expect(findOutcome(json, 't-fail')?.reason).toBe('send_failed')
+      expect(findOutcome(json, 't-ok')?.reason).toBe('sent')
+      expect(captureExceptionMock).toHaveBeenCalledTimes(1)
     })
 
-    it('returns 200 with summary even when all tenants fail', async () => {
+    it('returns 200 with a summary even when all tenants fail', async () => {
       dbMock.from.mockResolvedValue([
         makeTenant('t1', 'Clinic A', { whatsapp_enabled: true }),
       ])
@@ -669,7 +785,114 @@ describe('GET /api/cron/whatsapp-automations', () => {
       expect(res.status).toBe(200)
       expect(json.ok).toBe(true)
       expect(json.sent).toBe(0)
-      expect(json.errors).toHaveLength(1)
+      expect(json.summary.tenant_error).toBe(1)
+    })
+
+    it('does not call Sentry for ordinary skips (no eligible appointments)', async () => {
+      dbMock.from.mockResolvedValue([
+        makeTenant('t1', 'Clinic A', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([])
+
+      await GET(makeRequest(CRON_SECRET))
+
+      expect(captureExceptionMock).not.toHaveBeenCalled()
+      expect(captureMessageMock).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── Credit exhaustion ────────────────────────────────────────────
+
+  describe('credit exhaustion', () => {
+    it('records credit_exhausted as its own outcome, distinct from send_failed', async () => {
+      dbMock.from.mockResolvedValue([
+        makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
+        makeAppointment({ id: 'appt-1', patientPhone: '11999990001' }),
+        makeAppointment({ id: 'appt-2', patientPhone: '11999990002' }),
+      ])
+      vi.mocked(sendTemplateMessage).mockRejectedValue(new CreditExhaustedError(100, 100))
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      const outcome = findOutcome(json, 'tenant-1')
+      expect(outcome?.reason).toBe('credit_exhausted')
+      expect(outcome?.reason).not.toBe('send_failed')
+      expect(json.summary.credit_exhausted).toBe(1)
+    })
+
+    it('stops processing remaining appointments for that tenant once credits are exhausted', async () => {
+      dbMock.from.mockResolvedValue([
+        makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
+        makeAppointment({ id: 'appt-1', patientPhone: '11999990001' }),
+        makeAppointment({ id: 'appt-2', patientPhone: '11999990002' }),
+      ])
+      vi.mocked(sendTemplateMessage).mockRejectedValue(new CreditExhaustedError(50, 50))
+
+      await GET(makeRequest(CRON_SECRET))
+
+      expect(sendTemplateMessage).toHaveBeenCalledTimes(1)
+    })
+
+    it('reports credit exhaustion to Sentry as a message, not an exception', async () => {
+      dbMock.from.mockResolvedValue([
+        makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
+        makeAppointment({ id: 'appt-1', patientPhone: '11999990001' }),
+      ])
+      vi.mocked(sendTemplateMessage).mockRejectedValue(new CreditExhaustedError(20, 20))
+
+      await GET(makeRequest(CRON_SECRET))
+
+      expect(captureMessageMock).toHaveBeenCalledTimes(1)
+      expect(captureMessageMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          level: 'warning',
+          extra: expect.objectContaining({ tenantId: 'tenant-1', tenantName: 'Flora Clinic' }),
+        }),
+      )
+      expect(captureExceptionMock).not.toHaveBeenCalled()
+    })
+
+    it('does not stop processing other tenants after one hits credit exhaustion', async () => {
+      dbMock.from.mockResolvedValue([
+        makeTenant('t-exhausted', 'Exhausted Clinic', { whatsapp_enabled: true }),
+        makeTenant('t-ok', 'OK Clinic', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
+      vi.mocked(getAppointmentsPendingConfirmationUntil)
+        .mockResolvedValueOnce([makeAppointment({ id: 'a1', patientPhone: '11999990005' })])
+        .mockResolvedValueOnce([makeAppointment({ id: 'a2', patientPhone: '11999990006' })])
+      vi.mocked(sendTemplateMessage)
+        .mockRejectedValueOnce(new CreditExhaustedError(10, 10))
+        .mockResolvedValueOnce({ metaMessageId: 'wamid.z' })
+      vi.mocked(markConfirmationSent).mockResolvedValue(undefined as never)
+      vi.mocked(upsertConversation).mockResolvedValue({ id: 'conv-1' } as never)
+      vi.mocked(resolveTemplateBody).mockReturnValue('text')
+      vi.mocked(createMessage).mockResolvedValue({ id: 'msg-1' } as never)
+      vi.mocked(pushSseEvent).mockResolvedValue(undefined as never)
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(findOutcome(json, 't-exhausted')?.reason).toBe('credit_exhausted')
+      expect(findOutcome(json, 't-ok')?.reason).toBe('sent')
+      expect(json.sent).toBe(1)
     })
   })
 
@@ -691,7 +914,6 @@ describe('GET /api/cron/whatsapp-automations', () => {
       const json = await res.json()
 
       expect(json.sent).toBe(0)
-      expect(json.errors).toHaveLength(0)
       expect(sendTemplateMessage).not.toHaveBeenCalled()
       expect(markConfirmationSent).not.toHaveBeenCalled()
     })
@@ -725,6 +947,168 @@ describe('GET /api/cron/whatsapp-automations', () => {
       expect(getAppointmentsPendingConfirmationUntil).toHaveBeenCalledTimes(2)
       expect(getAppointmentsPendingConfirmationUntil).toHaveBeenCalledWith('t1')
       expect(getAppointmentsPendingConfirmationUntil).toHaveBeenCalledWith('t2')
+    })
+  })
+
+  // ── Run summary ──────────────────────────────────────────────────
+
+  describe('run summary', () => {
+    it('reports correct totals per outcome across a mixed run', async () => {
+      dbMock.from.mockResolvedValue([
+        makeTenant('t-disabled', 'Disabled Clinic', { whatsapp_mode: 'own', whatsapp_enabled: false }),
+        makeTenant('t-inactive', 'Inactive Clinic', { whatsapp_enabled: true }),
+        makeTenant('t-no-auto', 'No Automation Clinic', { whatsapp_enabled: true }),
+        makeTenant('t-sent', 'Sending Clinic', { whatsapp_enabled: true }),
+      ])
+
+      vi.mocked(isSubscriptionActive).mockImplementation(async (tenantId: string) =>
+        tenantId !== 't-inactive',
+      )
+      vi.mocked(listAutomations).mockImplementation(async (tenantId: string) => {
+        if (tenantId === 't-no-auto') return []
+        return [makeAutomation()]
+      })
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
+        makeAppointment({ id: 'a-sent', patientPhone: '11999990009' }),
+      ])
+      vi.mocked(sendTemplateMessage).mockResolvedValue({ metaMessageId: 'wamid.summary' })
+      vi.mocked(markConfirmationSent).mockResolvedValue(undefined as never)
+      vi.mocked(upsertConversation).mockResolvedValue({ id: 'conv-1' } as never)
+      vi.mocked(resolveTemplateBody).mockReturnValue('text')
+      vi.mocked(createMessage).mockResolvedValue({ id: 'msg-1' } as never)
+      vi.mocked(pushSseEvent).mockResolvedValue(undefined as never)
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(json.summary).toEqual({
+        wa_disabled: 1,
+        subscription_inactive: 1,
+        no_automation: 1,
+        sent: 1,
+      })
+      expect(json.sent).toBe(1)
+      expect(json.outcomes).toHaveLength(4)
+    })
+  })
+
+  // ── Per-tenant outcome logging ───────────────────────────────────
+  //
+  // The `outcomes` array in the JSON response is discarded by Vercel, so
+  // the rollup line alone can say "N tenants skipped" but never which N.
+  // These tests check the per-tenant lines that fix that.
+
+  describe('per-tenant outcome logging', () => {
+    it('logs one line per tenant outcome, in addition to the rollup summary line', async () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      dbMock.from.mockResolvedValue([
+        makeTenant('t-disabled', 'Disabled Clinic', { whatsapp_mode: 'own', whatsapp_enabled: false }),
+        makeTenant('t-inactive', 'Inactive Clinic', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(isSubscriptionActive).mockImplementation(async (tenantId: string) => tenantId !== 't-inactive')
+
+      await GET(makeRequest(CRON_SECRET))
+
+      const outcomeCalls = logSpy.mock.calls.filter((c) => c[0] === '[cron] whatsapp-automations outcome')
+      expect(outcomeCalls).toHaveLength(2)
+
+      const logged = outcomeCalls.map((c) => JSON.parse(c[1] as string))
+      expect(logged).toContainEqual(
+        expect.objectContaining({ tenantId: 't-disabled', tenantName: 'Disabled Clinic', reason: 'wa_disabled' }),
+      )
+      expect(logged).toContainEqual(
+        expect.objectContaining({ tenantId: 't-inactive', tenantName: 'Inactive Clinic', reason: 'subscription_inactive' }),
+      )
+
+      const summaryCalls = logSpy.mock.calls.filter((c) => c[0] === '[cron] whatsapp-automations run summary')
+      expect(summaryCalls).toHaveLength(1)
+
+      logSpy.mockRestore()
+    })
+  })
+
+  // ── Discord digest ────────────────────────────────────────────────
+
+  describe('Discord digest', () => {
+    it('posts the digest exactly once per run', async () => {
+      setupHappyPath()
+
+      await GET(makeRequest(CRON_SECRET))
+
+      expect(notifyDiscord).toHaveBeenCalledTimes(1)
+      expect(notifyDiscord).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'whatsapp_automations.digest' }),
+      )
+    })
+
+    it('does not fail the cron when the Discord digest post rejects', async () => {
+      setupHappyPath()
+      vi.mocked(notifyDiscord).mockRejectedValueOnce(new Error('discord down'))
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(json.ok).toBe(true)
+      expect(json.sent).toBe(1)
+    })
+
+    it('reports no failing tenants on a routine run where everything sends', async () => {
+      setupHappyPath()
+
+      await GET(makeRequest(CRON_SECRET))
+
+      expect(notifyDiscord).toHaveBeenCalledWith(
+        expect.objectContaining({ failingTenants: [] }),
+      )
+    })
+
+    it('lists the failing tenant by name and reason on an abnormal run, without listing every tenant', async () => {
+      dbMock.from.mockResolvedValue([
+        makeTenant('t-fail', 'Failing Clinic', { whatsapp_enabled: true }),
+        makeTenant('t-ok', 'OK Clinic', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
+      vi.mocked(getAppointmentsPendingConfirmationUntil)
+        .mockResolvedValueOnce([makeAppointment({ id: 'a-fail', patientPhone: '11999990003' })])
+        .mockResolvedValueOnce([makeAppointment({ id: 'a-ok', patientPhone: '11999990004' })])
+      vi.mocked(sendTemplateMessage)
+        .mockRejectedValueOnce(new Error('Meta API down'))
+        .mockResolvedValueOnce({ metaMessageId: 'wamid.y' })
+      vi.mocked(markConfirmationSent).mockResolvedValue(undefined as never)
+      vi.mocked(upsertConversation).mockResolvedValue({ id: 'conv-1' } as never)
+      vi.mocked(resolveTemplateBody).mockReturnValue('text')
+      vi.mocked(createMessage).mockResolvedValue({ id: 'msg-1' } as never)
+      vi.mocked(pushSseEvent).mockResolvedValue(undefined as never)
+
+      await GET(makeRequest(CRON_SECRET))
+
+      expect(notifyDiscord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          failingTenants: [
+            { tenantName: 'Failing Clinic', reason: 'send_failed', appointmentsFailed: 1 },
+          ],
+        }),
+      )
+      // 'OK Clinic' (which sent successfully) is not in the failing list --
+      // the digest names the problem tenants, not every tenant in the run.
+      const call = vi.mocked(notifyDiscord).mock.calls[0][0] as { failingTenants: Array<{ tenantName: string }> }
+      expect(call.failingTenants.map((t) => t.tenantName)).not.toContain('OK Clinic')
+    })
+
+    it('does not list ordinary skips (no_automation) as failing tenants', async () => {
+      dbMock.from.mockResolvedValue([
+        makeTenant('t-noauto', 'No Automation Clinic', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([])
+
+      await GET(makeRequest(CRON_SECRET))
+
+      expect(notifyDiscord).toHaveBeenCalledWith(
+        expect.objectContaining({ failingTenants: [] }),
+      )
     })
   })
 })
