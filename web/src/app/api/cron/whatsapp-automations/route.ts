@@ -38,12 +38,34 @@ interface TenantOutcome {
 
 // Reasons that represent a real problem rather than an expected skip. Used
 // both to decide whether the Discord digest is "routine" or "abnormal" and
-// to pick which tenants it lists by name.
-const FAILING_REASONS: ReadonlySet<TenantOutcomeReason> = new Set([
-  'send_failed',
-  'tenant_error',
-  'credit_exhausted',
-])
+// to pick which tenants it lists by name. Typed from the Discord union (not
+// TenantOutcomeReason) so adding a reason here without teaching discord.ts
+// about it fails typecheck instead of silently printing "undefined".
+const FAILING_REASONS: ReadonlySet<WhatsappDigestFailingTenant['reason']> =
+  new Set<WhatsappDigestFailingTenant['reason']>(['send_failed', 'tenant_error', 'credit_exhausted'])
+
+const isFailingReason = (
+  reason: TenantOutcomeReason,
+): reason is WhatsappDigestFailingTenant['reason'] =>
+  FAILING_REASONS.has(reason as WhatsappDigestFailingTenant['reason'])
+
+// Builds a zero-appointments outcome for a gate that skipped the tenant
+// before it ever got to sending anything. Keeps the gate sequence below
+// readable as a list of gates rather than seven near-identical object
+// literals.
+function skipOutcome(
+  tenantId: string,
+  tenantName: string,
+  reason: TenantOutcomeReason,
+): TenantOutcome {
+  return {
+    tenantId,
+    tenantName,
+    reason,
+    appointmentsSent: 0,
+    appointmentsFailed: 0,
+  }
+}
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -64,13 +86,7 @@ export async function GET(request: Request) {
     const mode = (s?.whatsapp_mode as string) ?? 'floraclin'
     if (mode === 'floraclin') return true
     if (s?.whatsapp_enabled) return true
-    outcomes.push({
-      tenantId: t.id,
-      tenantName: t.name,
-      reason: 'wa_disabled',
-      appointmentsSent: 0,
-      appointmentsFailed: 0,
-    })
+    outcomes.push(skipOutcome(t.id, t.name, 'wa_disabled'))
     return false
   })
 
@@ -79,13 +95,7 @@ export async function GET(request: Request) {
   for (const tenant of waEnabled) {
     try {
       if (!(await isSubscriptionActive(tenant.id))) {
-        outcomes.push({
-          tenantId: tenant.id,
-          tenantName: tenant.name,
-          reason: 'subscription_inactive',
-          appointmentsSent: 0,
-          appointmentsFailed: 0,
-        })
+        outcomes.push(skipOutcome(tenant.id, tenant.name, 'subscription_inactive'))
         continue
       }
 
@@ -94,35 +104,17 @@ export async function GET(request: Request) {
         (a) => a.trigger === 'appointment_confirmation' && a.enabled
       )
       if (!confirmationAuto) {
-        outcomes.push({
-          tenantId: tenant.id,
-          tenantName: tenant.name,
-          reason: 'no_automation',
-          appointmentsSent: 0,
-          appointmentsFailed: 0,
-        })
+        outcomes.push(skipOutcome(tenant.id, tenant.name, 'no_automation'))
         continue
       }
 
       const template = await getTemplateForTenant(tenant.id, 'appointment_confirmation')
       if (!template) {
-        outcomes.push({
-          tenantId: tenant.id,
-          tenantName: tenant.name,
-          reason: 'template_missing',
-          appointmentsSent: 0,
-          appointmentsFailed: 0,
-        })
+        outcomes.push(skipOutcome(tenant.id, tenant.name, 'template_missing'))
         continue
       }
       if (template.status !== 'APPROVED') {
-        outcomes.push({
-          tenantId: tenant.id,
-          tenantName: tenant.name,
-          reason: 'template_not_approved',
-          appointmentsSent: 0,
-          appointmentsFailed: 0,
-        })
+        outcomes.push(skipOutcome(tenant.id, tenant.name, 'template_not_approved'))
         continue
       }
 
@@ -131,13 +123,7 @@ export async function GET(request: Request) {
       )
 
       if (pendingAppointments.length === 0) {
-        outcomes.push({
-          tenantId: tenant.id,
-          tenantName: tenant.name,
-          reason: 'no_pending_appointments',
-          appointmentsSent: 0,
-          appointmentsFailed: 0,
-        })
+        outcomes.push(skipOutcome(tenant.id, tenant.name, 'no_pending_appointments'))
         continue
       }
 
@@ -229,6 +215,9 @@ export async function GET(request: Request) {
         }
       }
 
+      // Every pending appointment with a phone either sends, fails, or
+      // trips creditExhausted (which breaks the loop), so if none of the
+      // first three branches match, no appointment had a usable phone.
       let reason: TenantOutcomeReason
       if (creditExhausted) {
         reason = 'credit_exhausted'
@@ -236,10 +225,8 @@ export async function GET(request: Request) {
         reason = 'sent'
       } else if (tenantFailed > 0) {
         reason = 'send_failed'
-      } else if (!tenantHadPhone) {
-        reason = 'no_valid_phone'
       } else {
-        reason = 'no_pending_appointments'
+        reason = 'no_valid_phone'
       }
 
       outcomes.push({
@@ -256,20 +243,14 @@ export async function GET(request: Request) {
       Sentry.captureException(err, {
         extra: { tenantId: tenant.id, tenantName: tenant.name },
       })
-      outcomes.push({
-        tenantId: tenant.id,
-        tenantName: tenant.name,
-        reason: 'tenant_error',
-        appointmentsSent: 0,
-        appointmentsFailed: 0,
-      })
+      outcomes.push(skipOutcome(tenant.id, tenant.name, 'tenant_error'))
     }
   }
 
-  const summary = outcomes.reduce<Record<TenantOutcomeReason, number>>((acc, o) => {
+  const summary = outcomes.reduce<Partial<Record<TenantOutcomeReason, number>>>((acc, o) => {
     acc[o.reason] = (acc[o.reason] ?? 0) + 1
     return acc
-  }, {} as Record<TenantOutcomeReason, number>)
+  }, {})
 
   // One line per tenant, not one line for the whole array. At today's scale
   // (~10 tenants) this stays well within a page of Vercel's log viewer, and
@@ -300,10 +281,13 @@ export async function GET(request: Request) {
   // reporting, not part of the job: notifyDiscord never throws, so a down
   // or unconfigured Discord can never fail the cron.
   const failingTenants: WhatsappDigestFailingTenant[] = outcomes
-    .filter((o) => FAILING_REASONS.has(o.reason))
+    .filter(
+      (o): o is TenantOutcome & { reason: WhatsappDigestFailingTenant['reason'] } =>
+        isFailingReason(o.reason),
+    )
     .map((o) => ({
       tenantName: o.tenantName,
-      reason: o.reason as WhatsappDigestFailingTenant['reason'],
+      reason: o.reason,
       appointmentsFailed: o.appointmentsFailed,
     }))
 

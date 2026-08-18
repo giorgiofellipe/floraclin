@@ -43,7 +43,6 @@ vi.mock('@/db/queries/appointments', () => ({
 
 vi.mock('@/db/queries/whatsapp', () => ({
   listAutomations: vi.fn(),
-  getTemplateByPurpose: vi.fn(),
   upsertConversation: vi.fn(),
   createMessage: vi.fn(),
   pushSseEvent: vi.fn(),
@@ -231,6 +230,12 @@ describe('GET /api/cron/whatsapp-automations', () => {
       delete process.env.CRON_SECRET
       const res = await GET(makeRequest(CRON_SECRET))
       expect(res.status).toBe(401)
+    })
+
+    it('does not post a Discord digest on the unauthorized path', async () => {
+      const res = await GET(makeRequest('wrong-secret'))
+      expect(res.status).toBe(401)
+      expect(notifyDiscord).not.toHaveBeenCalled()
     })
   })
 
@@ -1093,7 +1098,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
       expect(call.failingTenants.map((t) => t.tenantName)).not.toContain('OK Clinic')
     })
 
-    it('does not include credit_exhausted or tenant_error tenants as ordinary skips in failingTenants', async () => {
+    it('does not list ordinary skips (no_automation) as failing tenants', async () => {
       dbMock.from.mockResolvedValue([
         makeTenant('t-noauto', 'No Automation Clinic', { whatsapp_enabled: true }),
       ])

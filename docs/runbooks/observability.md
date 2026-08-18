@@ -2,7 +2,10 @@
 
 Two Discord channels, two different jobs:
 
-- **floraclin-logs**: something is broken. Fed by Sentry's own Discord integration.
+- **floraclin-logs**: something is broken, or a daily heartbeat proving the
+  cron is alive. Fed by Sentry's own Discord integration, and also by
+  `notifyDiscord` in `web/src/lib/discord.ts` for the whatsapp-automations
+  cron digest.
 - **floraclin**: the business grew. Fed by `notifyDiscord` in `web/src/lib/discord.ts`.
 
 ## floraclin-logs (Sentry alert rule)
@@ -33,6 +36,39 @@ from this page; it is otherwise invisible to anyone who did not set it up.
 **To verify it's still wired up:** trigger a test error in production (or use
 Sentry's "Send Test Notification" on the alert rule) and confirm a message
 lands in `floraclin-logs`.
+
+### whatsapp-automations digest (code-based)
+
+The daily whatsapp-automations cron (`web/src/app/api/cron/whatsapp-automations/route.ts`)
+also posts to `floraclin-logs`, via `notifyDiscord` with a
+`whatsapp_automations.digest` event -- not through Sentry's integration.
+
+It posts on **every run**, success or not. Silence in the channel is
+ambiguous between "nothing to send today" and "the cron never ran", so the
+digest turns the channel into a positive signal instead: expect exactly one
+digest message per day. A message with an empty `failingTenants` list and a
+green color is the routine, healthy case -- it is not noise, it is the proof
+the job executed. Tenants with `send_failed`, `tenant_error` or
+`credit_exhausted` outcomes are listed by name and turn the embed red.
+
+Posting the digest can never fail the cron: `notifyDiscord` never throws by
+contract, and the route additionally wraps the call in a try/catch that only
+`console.error`s.
+
+### Env var: `DISCORD_WEBHOOK_LOGS`
+
+- Set in **Vercel → Project Settings → Environment Variables**, scoped to
+  **Production only**, same as `DISCORD_WEBHOOK_EVENTS` below. Preview
+  deploys and local `pnpm dev` must not have it set, or they will post into
+  the real `floraclin-logs` channel.
+- If it is unset, `notifyDiscord` returns immediately before building a
+  payload or calling `fetch`, same guard as `DISCORD_WEBHOOK_EVENTS` -- this
+  is what keeps local dev and the test suite silent.
+- To get a new webhook URL: Discord channel `floraclin-logs` → Edit Channel
+  → Integrations → Webhooks → New Webhook → copy URL. Paste it directly into
+  Vercel; do not paste it into a chat transcript or commit it anywhere.
+- If a webhook URL is ever exposed, regenerate it in Discord and update the
+  Vercel env var, same as `DISCORD_WEBHOOK_EVENTS` below.
 
 ## floraclin (business events)
 

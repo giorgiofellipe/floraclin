@@ -86,7 +86,11 @@ describe('buildDiscordPayload', () => {
       const embed = payload.embeds[0]
       expect(embed.fields).toContainEqual({ name: 'Admin', value: 'https://app.floraclin.com.br/admin/clinicas' })
     } finally {
-      process.env.NEXT_PUBLIC_APP_URL = original
+      if (original === undefined) {
+        delete process.env.NEXT_PUBLIC_APP_URL
+      } else {
+        process.env.NEXT_PUBLIC_APP_URL = original
+      }
     }
   })
 
@@ -173,8 +177,16 @@ describe('notifyDiscord', () => {
 
   afterEach(() => {
     global.fetch = originalFetch
-    process.env.DISCORD_WEBHOOK_EVENTS = originalWebhook
-    process.env.DISCORD_WEBHOOK_LOGS = originalWebhookLogs
+    if (originalWebhook === undefined) {
+      delete process.env.DISCORD_WEBHOOK_EVENTS
+    } else {
+      process.env.DISCORD_WEBHOOK_EVENTS = originalWebhook
+    }
+    if (originalWebhookLogs === undefined) {
+      delete process.env.DISCORD_WEBHOOK_LOGS
+    } else {
+      process.env.DISCORD_WEBHOOK_LOGS = originalWebhookLogs
+    }
   })
 
   it('calls fetch zero times when DISCORD_WEBHOOK_EVENTS is unset (the guard that protects the real channel)', async () => {
