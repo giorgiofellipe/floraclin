@@ -8,6 +8,7 @@ import {
   getAutomationUsingTemplate,
 } from '@/db/queries/whatsapp'
 import {
+  canManageTemplates,
   getTemplate as getMetaTemplate,
   editTemplate as editMetaTemplate,
   deleteTemplate as deleteMetaTemplate,
@@ -17,6 +18,11 @@ import { updateTemplateSchema } from '@/validations/whatsapp'
 import { handleApiError, reportSideEffectFailure } from '@/lib/api-error'
 
 type RouteParams = { params: Promise<{ id: string }> }
+
+// A system template is platform content every shared-number clinic sends.
+// The row still belongs to the tenant that seeded it, so tenant scoping alone
+// would let that one clinic edit or delete it for everybody.
+const SYSTEM_TEMPLATE_ERROR = 'Template gerenciado pelo FloraClin'
 
 export async function GET(request: Request, { params }: RouteParams) {
   try {
@@ -66,13 +72,16 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp not enabled' }, { status: 400 })
     }
-    if (ctx.role !== 'owner') {
+    if (ctx.role !== 'owner' || !canManageTemplates(settings)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const template = await getTemplateById(ctx.tenantId, id)
     if (!template) {
       return NextResponse.json({ error: 'Template não encontrado' }, { status: 404 })
+    }
+    if (template.systemTemplate) {
+      return NextResponse.json({ error: SYSTEM_TEMPLATE_ERROR }, { status: 403 })
     }
     if (template.status !== 'APPROVED') {
       return NextResponse.json(
@@ -122,13 +131,16 @@ export async function DELETE(request: Request, { params }: RouteParams) {
     if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp not enabled' }, { status: 400 })
     }
-    if (ctx.role !== 'owner') {
+    if (ctx.role !== 'owner' || !canManageTemplates(settings)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const template = await getTemplateById(ctx.tenantId, id)
     if (!template) {
       return NextResponse.json({ error: 'Template não encontrado' }, { status: 404 })
+    }
+    if (template.systemTemplate) {
+      return NextResponse.json({ error: SYSTEM_TEMPLATE_ERROR }, { status: 403 })
     }
 
     const activeAutomation = await getAutomationUsingTemplate(ctx.tenantId, id)
