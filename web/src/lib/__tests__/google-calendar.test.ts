@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+const captureExceptionMock = vi.fn()
+vi.mock('@sentry/nextjs', () => ({
+  captureException: (...args: unknown[]) => captureExceptionMock(...args),
+}))
+
 // Set env vars before module evaluation
 process.env.GOOGLE_CLIENT_ID = 'test-client-id'
 process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret'
@@ -53,6 +58,8 @@ import {
   verifyOAuthState,
   generateFeedToken,
   buildAuthUrl,
+  isGoogleAuthFailure,
+  reportCalendarFailure,
 } from '../google-calendar'
 
 describe('signOAuthState / verifyOAuthState', () => {
@@ -104,5 +111,57 @@ describe('buildAuthUrl', () => {
   it('should return a Google OAuth URL', () => {
     const url = buildAuthUrl('test-state')
     expect(url).toContain('accounts.google.com')
+  })
+})
+
+describe('isGoogleAuthFailure', () => {
+  it('recognizes a revoked refresh token', () => {
+    expect(isGoogleAuthFailure(new Error('invalid_grant: Token has been expired or revoked.'))).toBe(
+      true,
+    )
+  })
+
+  it.each([401, 403])('recognizes a %i from Google, wherever gaxios put it', status => {
+    expect(isGoogleAuthFailure(Object.assign(new Error('Request failed'), { status }))).toBe(true)
+    expect(isGoogleAuthFailure(Object.assign(new Error('Request failed'), { code: status }))).toBe(
+      true,
+    )
+    // gaxios sometimes reports the code as a string
+    expect(
+      isGoogleAuthFailure(Object.assign(new Error('Request failed'), { code: String(status) })),
+    ).toBe(true)
+    expect(
+      isGoogleAuthFailure(Object.assign(new Error('Request failed'), { response: { status } })),
+    ).toBe(true)
+  })
+
+  it('does not swallow a real failure', () => {
+    expect(isGoogleAuthFailure(new Error('socket hang up'))).toBe(false)
+    expect(isGoogleAuthFailure(Object.assign(new Error('boom'), { status: 500 }))).toBe(false)
+    expect(isGoogleAuthFailure(Object.assign(new Error('dns'), { code: 'ENOTFOUND' }))).toBe(false)
+    expect(isGoogleAuthFailure('not an error')).toBe(false)
+  })
+})
+
+describe('reportCalendarFailure', () => {
+  beforeEach(() => captureExceptionMock.mockClear())
+
+  it('stays quiet when the clinic simply has to reconnect', () => {
+    // This fires on every appointment write while a connection is broken, so
+    // reporting it would drown the sync failures that are ours to fix.
+    reportCalendarFailure(new Error('invalid_grant'), 'push_appointment', { appointmentId: 'a1' })
+
+    expect(captureExceptionMock).not.toHaveBeenCalled()
+  })
+
+  it('reports anything else, tagged for triage', () => {
+    const boom = new Error('socket hang up')
+
+    reportCalendarFailure(boom, 'push_appointment', { appointmentId: 'a1' })
+
+    expect(captureExceptionMock).toHaveBeenCalledWith(boom, {
+      tags: { area: 'calendar-sync', step: 'push_appointment' },
+      extra: { appointmentId: 'a1' },
+    })
   })
 })

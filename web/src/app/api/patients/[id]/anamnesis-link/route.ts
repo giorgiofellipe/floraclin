@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { createAnamnesisToken } from '@/db/queries/anamnesis-tokens'
+import { handleApiError } from '@/lib/api-error'
 
 export async function POST(
   request: Request,
@@ -21,10 +22,6 @@ export async function POST(
 
     return NextResponse.json({ url, expiresAt: token.expiresAt })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect'))
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('Anamnesis link API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

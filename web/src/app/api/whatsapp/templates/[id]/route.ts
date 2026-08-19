@@ -15,6 +15,8 @@ import {
   isWhatsAppEnabled,
 } from '@/lib/whatsapp'
 import { updateTemplateSchema } from '@/validations/whatsapp'
+import { handleApiError } from '@/lib/api-error'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -23,7 +25,7 @@ type RouteParams = { params: Promise<{ id: string }> }
 // would let that one clinic edit or delete it for everybody.
 const SYSTEM_TEMPLATE_ERROR = 'Template gerenciado pelo FloraClin'
 
-export async function GET(_request: Request, { params }: RouteParams) {
+export async function GET(request: Request, { params }: RouteParams) {
   try {
     const { id } = await params
     const ctx = await getAuthContext()
@@ -58,12 +60,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
 
     return NextResponse.json({ data: template })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    console.error('Error fetching WhatsApp template:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 
@@ -118,18 +115,15 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     return NextResponse.json({ data: updated })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+
     if (msg.includes('Meta API error')) {
       return NextResponse.json({ error: msg }, { status: 422 })
     }
-    console.error('Error updating WhatsApp template:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 
-export async function DELETE(_request: Request, { params }: RouteParams) {
+export async function DELETE(request: Request, { params }: RouteParams) {
   try {
     const { id } = await params
     const ctx = await getAuthContext()
@@ -162,18 +156,15 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
       try {
         await deleteMetaTemplate(ctx.tenantId, template.name)
       } catch (err) {
-        console.error('Failed to delete template from Meta:', err)
+        // The local row goes away either way, so a failure here leaves a
+        // stale template on Meta's side that only a sync will surface.
+        reportSideEffectFailure(err, { area: 'whatsapp', step: 'delete_meta_template' })
       }
     }
 
     await deleteLocalTemplate(ctx.tenantId, id)
     return NextResponse.json({ success: true })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    console.error('Error deleting WhatsApp template:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

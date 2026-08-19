@@ -72,6 +72,10 @@ beforeEach(() => {
   } as never)
 })
 
+// Next.js always passes the Request to a route handler; the route reads it
+// so a failure can be reported with its route and method.
+const makeRequest = () => new Request('https://app.floraclin.com.br/api/whatsapp/templates')
+
 describe('GET /api/whatsapp/templates', () => {
   it('refreshes a PENDING template from Meta before responding', async () => {
     vi.mocked(listTemplates)
@@ -84,7 +88,7 @@ describe('GET /api/whatsapp/templates', () => {
       rejected_reason: null,
     } as never)
 
-    const res = await GET()
+    const res = await GET(makeRequest())
     const body = await res.json()
 
     expect(getMetaTemplate).toHaveBeenCalledWith('tenant-1', 'meta-1')
@@ -108,7 +112,7 @@ describe('GET /api/whatsapp/templates', () => {
       rejected_reason: null,
     } as never)
 
-    await GET()
+    await GET(makeRequest())
 
     // 12 pending rows, capped at 10, one Meta call each and no duplicates.
     expect(getMetaTemplate).toHaveBeenCalledTimes(10)
@@ -121,7 +125,7 @@ describe('GET /api/whatsapp/templates', () => {
       template({ metaTemplateId: null }),
     ] as never)
 
-    const res = await GET()
+    const res = await GET(makeRequest())
     const body = await res.json()
 
     expect(getMetaTemplate).not.toHaveBeenCalled()
@@ -133,7 +137,7 @@ describe('GET /api/whatsapp/templates', () => {
       template({ status: 'APPROVED' }),
     ] as never)
 
-    await GET()
+    await GET(makeRequest())
 
     expect(getMetaTemplate).not.toHaveBeenCalled()
     expect(updateLocalTemplate).not.toHaveBeenCalled()
@@ -143,7 +147,7 @@ describe('GET /api/whatsapp/templates', () => {
     vi.mocked(listTemplates).mockResolvedValue([template()] as never)
     vi.mocked(getMetaTemplate).mockRejectedValue(new Error('Meta API error'))
 
-    const res = await GET()
+    const res = await GET(makeRequest())
     const body = await res.json()
 
     expect(updateLocalTemplate).not.toHaveBeenCalled()

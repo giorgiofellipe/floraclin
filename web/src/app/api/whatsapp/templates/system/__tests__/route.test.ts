@@ -37,6 +37,11 @@ beforeEach(() => {
   vi.mocked(listSystemTemplates).mockResolvedValue([SYSTEM_ROW] as never)
 })
 
+// Next.js always passes the Request to a route handler; the route reads it
+// so a failure can be reported with its route and method.
+const makeRequest = () =>
+  new Request('https://app.floraclin.com.br/api/whatsapp/templates/system')
+
 describe('GET /api/whatsapp/templates/system', () => {
   it('returns the platform templates and the clinic name that fills clinic_name', async () => {
     vi.mocked(getTenant).mockResolvedValue({
@@ -45,7 +50,7 @@ describe('GET /api/whatsapp/templates/system', () => {
       settings: { whatsapp_mode: 'floraclin' },
     } as never)
 
-    const res = await GET()
+    const res = await GET(makeRequest())
     const body = await res.json()
 
     expect(res.status).toBe(200)
@@ -65,7 +70,7 @@ describe('GET /api/whatsapp/templates/system', () => {
       settings: { whatsapp_mode: 'floraclin', whatsapp_allowed_roles: ['owner'] },
     } as never)
 
-    const res = await GET()
+    const res = await GET(makeRequest())
 
     expect(res.status).toBe(403)
     expect(listSystemTemplates).not.toHaveBeenCalled()
@@ -78,7 +83,7 @@ describe('GET /api/whatsapp/templates/system', () => {
       settings: { whatsapp_mode: 'own', whatsapp_enabled: false },
     } as never)
 
-    const res = await GET()
+    const res = await GET(makeRequest())
 
     expect(res.status).toBe(400)
     expect(listSystemTemplates).not.toHaveBeenCalled()

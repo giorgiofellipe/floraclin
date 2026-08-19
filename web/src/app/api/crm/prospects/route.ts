@@ -8,6 +8,7 @@ import { db } from '@/db/client'
 import { tenantUsers, users, procedureTypes } from '@/db/schema'
 import { eq, and, isNull } from 'drizzle-orm'
 import type { Role } from '@/types'
+import { handleApiError } from '@/lib/api-error'
 
 export async function GET(request: Request) {
   try {
@@ -77,11 +78,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ data: enriched, stats, members, procedures })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 
@@ -133,9 +130,6 @@ export async function POST(request: Request) {
     if (msg.includes('uq_prospects_tenant_phone') || (errCode === '23505' && msg.includes('prospects'))) {
       return NextResponse.json({ error: 'Já existe um lead com este telefone' }, { status: 409 })
     }
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

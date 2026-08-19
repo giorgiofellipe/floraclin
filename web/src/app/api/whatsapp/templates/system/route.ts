@@ -3,6 +3,7 @@ import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { listSystemTemplates } from '@/db/queries/whatsapp'
 import { isWhatsAppEnabled } from '@/lib/whatsapp'
+import { handleApiError } from '@/lib/api-error'
 
 /**
  * Read-only listing of the platform-managed templates. Clinics on the shared
@@ -11,7 +12,7 @@ import { isWhatsAppEnabled } from '@/lib/whatsapp'
  * path resolves through getSystemTemplate, plus the clinic name that fills
  * the clinic_name variable in the preview.
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const ctx = await getAuthContext()
     const tenant = await getTenant(ctx.tenantId)
@@ -29,11 +30,6 @@ export async function GET() {
     const templates = await listSystemTemplates()
     return NextResponse.json({ data: templates, clinicName: tenant!.name })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    console.error('Error listing system WhatsApp templates:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

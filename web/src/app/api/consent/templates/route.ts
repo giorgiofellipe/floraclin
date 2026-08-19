@@ -3,6 +3,7 @@ import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import { listConsentTemplates, createConsentTemplate } from '@/db/queries/consent'
 import { consentTemplateSchema } from '@/validations/consent'
+import { handleApiError } from '@/lib/api-error'
 
 export async function GET(request: Request) {
   try {
@@ -23,11 +24,7 @@ export async function GET(request: Request) {
     const flat = Object.values(templates).flat()
     return NextResponse.json(flat)
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 
@@ -60,10 +57,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: template })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

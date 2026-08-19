@@ -34,8 +34,23 @@ import { getPatientByPhone, getPatient } from '@/db/queries/patients'
 import { getTenant } from '@/db/queries/tenants'
 import { classifyMessage } from '@/lib/classify-prospect'
 import { toWhatsAppPhone } from '@/lib/phone'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 export const dynamic = 'force-dynamic'
+
+// Meta retries a webhook only when the whole request fails, so every one of
+// these handlers swallows its error on purpose: one bad message must not cost
+// us the rest of the batch, or make Meta replay the batch forever. Swallowed
+// is not the same as invisible, though. A patient reply that never lands in
+// the inbox is exactly the failure a clinic notices before we do, and a
+// `console.error` on Vercel is not something anyone reads.
+function reportWebhookFailure(
+  error: unknown,
+  step: string,
+  extra?: Record<string, unknown>,
+) {
+  reportSideEffectFailure(error, { area: 'whatsapp-webhook', step, extra })
+}
 
 // ---------------------------------------------------------------------------
 // GET -- Meta verification challenge
@@ -98,7 +113,7 @@ export async function POST(request: NextRequest) {
             }
             await processInboundMessage(tenantId, msg, value.contacts?.[0])
           } catch (err) {
-            console.error('Error processing WhatsApp message (shared):', err)
+            reportWebhookFailure(err, 'inbound_message_shared')
           }
         }
 
@@ -109,7 +124,7 @@ export async function POST(request: NextRequest) {
             if (!tenantId) continue
             await processStatusUpdate(tenantId, status)
           } catch (err) {
-            console.error('Error processing WhatsApp status (shared):', err)
+            reportWebhookFailure(err, 'status_update_shared')
           }
         }
 
@@ -139,7 +154,7 @@ export async function POST(request: NextRequest) {
         try {
           await processInboundMessage(tenantId, msg, value.contacts?.[0])
         } catch (err) {
-          console.error('Error processing WhatsApp message:', err)
+          reportWebhookFailure(err, 'inbound_message', { tenantId })
         }
       }
 
@@ -148,7 +163,7 @@ export async function POST(request: NextRequest) {
         try {
           await processStatusUpdate(tenantId, status)
         } catch (err) {
-          console.error('Error processing WhatsApp status:', err)
+          reportWebhookFailure(err, 'status_update', { tenantId })
         }
       }
     }
@@ -236,7 +251,9 @@ async function processInboundMessage(
           .then((result: { storedUrl: string }) => {
             updateMessageMedia(tenantId, metaMessageId, result.storedUrl)
           })
-          .catch((err: unknown) => console.error('Media download failed:', err))
+          .catch((err: unknown) =>
+            reportWebhookFailure(err, 'media_download', { tenantId, mediaId }),
+          )
       }
     }
   }
@@ -294,7 +311,7 @@ async function processInboundMessage(
     // patient who tapped Confirmar still marked as scheduled.
     after(
       processConfirmationReply(tenantId, contextMessageId, buttonTitle, from).catch((err) => {
-        console.error('Error processing confirmation reply:', err)
+        reportWebhookFailure(err, 'confirmation_reply', { tenantId })
       }),
     )
   }
@@ -306,13 +323,13 @@ async function processInboundMessage(
     // for existing ones the createdAt is old enough that 60s is irrelevant.
     const classifyAfter = new Date(new Date(prospect.createdAt).getTime() - 60_000)
     classifyAndUpdateProspect(tenantId, prospect.id, conversation.id, classifyAfter).catch((err) =>
-      console.error('Classification failed:', err),
+      reportWebhookFailure(err, 'prospect_classification', { tenantId }),
     )
   }
 
   // Drain any queued messages now that the window is open
   drainQueuedMessages(tenantId, conversation.id, from).catch((err) =>
-    console.error('Queue drain failed:', err),
+    reportWebhookFailure(err, 'queue_drain', { tenantId }),
   )
 }
 
@@ -450,7 +467,7 @@ async function drainQueuedMessages(
         message: sentMessage,
       })
     } catch (err) {
-      console.error(`Failed to drain queued message ${qm.id}:`, err)
+      reportWebhookFailure(err, 'queue_drain_message', { tenantId, queuedMessageId: qm.id })
     }
   }
 

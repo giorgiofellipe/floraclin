@@ -23,9 +23,10 @@ import {
 } from '@/db/schema'
 import { listDiagramsForSession } from '@/db/queries/face-diagrams'
 import { listProductApplicationsForSession } from '@/db/queries/product-applications'
+import { handleApiError } from '@/lib/api-error'
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -157,19 +158,6 @@ export async function GET(
       },
     })
   } catch (error) {
-    if (error instanceof Error) {
-      const msg = error.message
-      if (msg.includes('Forbidden')) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-      }
-      if (msg.includes('redirect') || msg.includes('NEXT_REDIRECT')) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-    }
-    console.error('GET /api/encounters/[id] error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Erro ao carregar atendimento' },
-      { status: 500 },
-    )
+    return handleApiError(error, request, { body: { success: false, error: 'Erro ao carregar atendimento' } })
   }
 }

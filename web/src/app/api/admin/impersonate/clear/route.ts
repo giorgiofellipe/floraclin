@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { requirePlatformAdmin, getUserTenants, setActiveTenant } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error'
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     const context = await requirePlatformAdmin()
     const tenants = await getUserTenants(context.userId)
@@ -13,10 +14,6 @@ export async function POST() {
     await setActiveTenant(tenants[0].tenantId)
     return NextResponse.json({ success: true })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('Clear impersonation API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

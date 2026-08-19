@@ -13,3 +13,21 @@ export class BusinessError extends Error {
     this.name = 'BusinessError'
   }
 }
+
+/**
+ * Authorization failure: the caller is authenticated but lacks the role for
+ * this operation. Thrown by `requireRole` / `requirePlatformAdmin` and mapped
+ * to a 403 by `handleApiError`.
+ *
+ * A distinct class rather than `new Error('Forbidden')` because the API layer
+ * used to detect this with `error.message.includes('Forbidden')`, which also
+ * swallowed any *real* failure whose message happened to mention the word
+ * (an upstream "403 Forbidden" from Meta or Google, say), turning a bug into a
+ * silent 403 that never reached Sentry.
+ */
+export class ForbiddenError extends Error {
+  constructor(message = 'Forbidden') {
+    super(message)
+    this.name = 'ForbiddenError'
+  }
+}

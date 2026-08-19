@@ -6,6 +6,7 @@ import { acceptConsent } from '@/db/queries/consent'
 import { getValidSigningToken, markSigningTokenUsed, getTemplatesForToken } from '@/db/queries/consent-signing-tokens'
 import { getPatient } from '@/db/queries/patients'
 import { remoteConsentSignatureSchema } from '@/validations/consent'
+import { handleApiError } from '@/lib/api-error'
 
 export async function POST(request: Request) {
   try {
@@ -92,7 +93,6 @@ export async function POST(request: Request) {
     if (error instanceof Error && error.message === 'TOKEN_ALREADY_USED') {
       return NextResponse.json({ error: 'Link expirado ou já utilizado' }, { status: 410 })
     }
-    console.error('Remote consent sign API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

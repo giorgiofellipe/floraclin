@@ -3,6 +3,7 @@ import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { eq, and, isNull } from 'drizzle-orm'
 import { getAvailableSlots } from '@/db/queries/appointments'
+import { handleApiError } from '@/lib/api-error'
 
 interface TenantSettings {
   online_booking_enabled?: boolean
@@ -83,10 +84,6 @@ export async function GET(
       })),
     })
   } catch (error) {
-    console.error('Error fetching slots:', error)
-    return NextResponse.json(
-      { error: 'Erro interno do servidor' },
-      { status: 500 }
-    )
+    return handleApiError(error, request, { body: { error: 'Erro interno do servidor' } })
   }
 }

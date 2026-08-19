@@ -9,12 +9,13 @@ import {
   syncTemplatesForTenant,
 } from '@/lib/whatsapp'
 import { TEMPLATE_BLUEPRINTS, resolveTemplatePrefix } from '@/lib/whatsapp-blueprints'
+import { handleApiError } from '@/lib/api-error'
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     const ctx = await getAuthContext()
     const tenant = await getTenant(ctx.tenantId)
@@ -96,11 +97,6 @@ export async function POST() {
 
     return NextResponse.json({ synced, provisioned, errors })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    console.error('Error provisioning WhatsApp templates:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

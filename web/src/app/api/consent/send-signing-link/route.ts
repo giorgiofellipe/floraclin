@@ -5,6 +5,7 @@ import { getPatient } from '@/db/queries/patients'
 import { createSigningToken } from '@/db/queries/consent-signing-tokens'
 import { getActiveConsentForType } from '@/db/queries/consent'
 import { sendSigningLinkSchema } from '@/validations/consent'
+import { handleApiError } from '@/lib/api-error'
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
@@ -75,11 +76,6 @@ export async function POST(request: Request) {
       expiresAt: signingToken.expiresAt,
     })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    console.error('Consent signing link API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

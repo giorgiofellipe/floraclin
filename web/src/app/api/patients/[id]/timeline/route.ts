@@ -18,6 +18,7 @@ import {
 } from '@/db/schema'
 import { eq, and, isNull, inArray } from 'drizzle-orm'
 import type { TimelineEntry, TimelineGroup, PatientTimeline } from '@/types/timeline'
+import { handleApiError } from '@/lib/api-error'
 
 // ─── Label maps ─────────────────────────────────────────────────────
 
@@ -48,7 +49,7 @@ const PAYMENT_LABELS: Record<string, string> = {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -65,11 +66,7 @@ export async function GET(
     const data = await buildPatientTimeline(tenantId, patientId)
     return NextResponse.json(data)
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 

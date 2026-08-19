@@ -3,6 +3,7 @@ import { requireRole } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import { saveAnnotation as saveAnnotationQuery } from '@/db/queries/photos'
 import { saveAnnotationSchema } from '@/validations/photo'
+import { handleApiError } from '@/lib/api-error'
 
 export async function POST(request: Request) {
   try {
@@ -34,10 +35,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: annotation })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('Annotation save error:', error)
-    return NextResponse.json({ success: false, error: 'Erro interno' }, { status: 500 })
+    return handleApiError(error, request, { body: { success: false, error: 'Erro interno' } })
   }
 }
