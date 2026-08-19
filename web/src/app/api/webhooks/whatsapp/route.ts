@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { db } from '@/db/client'
 import { tenants, procedureTypes, whatsappMessages, whatsappConversations } from '@/db/schema'
-import { eq, and, sql, desc } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage, sendTemplateMessage, sendMediaMessage, normalizeBrPhone, getTemplateForTenant } from '@/lib/whatsapp'
 import {
   upsertConversation,
@@ -104,13 +104,11 @@ export async function POST(request: NextRequest) {
         for (const msg of value.messages ?? []) {
           try {
             const senderPhone = normalizeBrPhone(msg.from)
-            const tenantId = await resolveSharedNumberTenant(senderPhone)
-            if (!tenantId) {
-              console.warn(
-                `WhatsApp webhook (shared): no tenant found for sender ${senderPhone}`,
-              )
-              continue
-            }
+            const contextMessageId = msg.context?.id
+            const tenantId = await resolveSharedNumberTenant(senderPhone, contextMessageId)
+            // The resolver logs or reports why it refused, so nothing to
+            // add here beyond skipping the message.
+            if (!tenantId) continue
             await processInboundMessage(tenantId, msg, value.contacts?.[0])
           } catch (err) {
             reportWebhookFailure(err, 'inbound_message_shared')
@@ -120,7 +118,9 @@ export async function POST(request: NextRequest) {
         for (const status of value.statuses ?? []) {
           try {
             const recipientPhone = normalizeBrPhone(status.recipient_id)
-            const tenantId = await resolveSharedNumberTenant(recipientPhone)
+            // status.id is Meta's id of the outbound message the status refers
+            // to -- an exact key into whatsapp_messages, so try it first.
+            const tenantId = await resolveSharedNumberTenant(recipientPhone, status.id)
             if (!tenantId) continue
             await processStatusUpdate(tenantId, status)
           } catch (err) {
@@ -302,7 +302,7 @@ async function processInboundMessage(
   } | undefined
   const templateButton = msg.button as { text?: string; payload?: string } | undefined
   const buttonTitle = interactiveData?.button_reply?.title ?? templateButton?.text
-  const contextMessageId = (msg.context as { id?: string } | undefined)?.id
+  const contextMessageId = msg.context?.id
 
   if (buttonTitle && contextMessageId) {
     // Registered with `after` rather than left floating. Meta needs its 200
@@ -522,16 +522,161 @@ async function processStatusUpdate(
 
 // ---------------------------------------------------------------------------
 // Shared-number tenant resolution
+//
+// Multiple tenants can share the FloraClin WhatsApp number. When an inbound
+// message or status update arrives, we must not guess which tenant it
+// belongs to -- routing it to the wrong tenant exposes one clinic's patient
+// to another clinic's inbox. Resolution tries, in order:
+//
+//   1. Reply context / message id, scoped to the sender. A context.id (on a
+//      reply) or a status' own id is only trustworthy as a routing key when
+//      it names a message WE sent (direction 'outbound') to THIS sender.
+//      meta_message_id is globally unique (see uq_whatsapp_messages_meta_id),
+//      but unique does not mean "belongs to this conversation" -- an id
+//      could name a message sent to a different phone entirely, so we join
+//      to whatsapp_conversations and compare its phone_number (normalized)
+//      against the sender's. Three outcomes:
+//        - resolves, phone matches -> route with certainty (exact).
+//        - resolves, phone MISMATCHES -> refuse and report. Do NOT fall
+//          back to phone history for this request. Not because a sender
+//          could forge the id (the payload is HMAC-verified and context.id
+//          is set by Meta, not by the patient), but because a mismatch
+//          means our own data disagrees with itself, and guessing a tenant
+//          from a second signal we already know to be inconsistent is how
+//          a message crosses a clinic boundary.
+//        - does not resolve to an outbound message of this sender's (unknown
+//          id, or the message found is inbound) -> fall through to
+//          phone-history rules. This is deliberate: our own write can lose a
+//          race with the reply, and refusing outright would drop legitimate
+//          messages.
+//   2. Phone history, only when unambiguous. No usable message id means a
+//      genuinely new inbound message (a patient messaging a clinic for the
+//      first time). Fall back to phone lookup, but only route when exactly
+//      one tenant has ever had a conversation with that phone.
+//   3. Ambiguous or zero-candidate: refuse. Two or more candidate tenants,
+//      or none at all, and no message id to disambiguate -- do not guess.
+//      Log and report to Sentry instead (the two reasons are distinguishable
+//      by error message) so a dropped message is never silent.
 // ---------------------------------------------------------------------------
-async function resolveSharedNumberTenant(phone: string): Promise<string | null> {
+type MessageIdResolution =
+  | { status: 'exact'; tenantId: string }
+  | { status: 'mismatch'; tenantId: string }
+  | { status: 'not_found' }
+
+// whatsapp_conversations.phone_number is stored normalized (see
+// upsertConversation, which runs every write through normalizeBrPhone), but
+// we normalize it again here defensively -- normalizeBrPhone is idempotent,
+// and this guards against any legacy/unnormalized row causing a false
+// mismatch rather than a false match.
+async function resolveTenantByMessageId(
+  metaMessageId: string,
+  senderPhone: string,
+): Promise<MessageIdResolution> {
   const [row] = await db
-    .select({ tenantId: whatsappConversations.tenantId })
-    .from(whatsappConversations)
-    .where(eq(whatsappConversations.phoneNumber, phone))
-    .orderBy(desc(whatsappConversations.lastMessageAt))
+    .select({
+      tenantId: whatsappMessages.tenantId,
+      direction: whatsappMessages.direction,
+      conversationPhone: whatsappConversations.phoneNumber,
+    })
+    .from(whatsappMessages)
+    .innerJoin(
+      whatsappConversations,
+      eq(whatsappMessages.conversationId, whatsappConversations.id),
+    )
+    .where(eq(whatsappMessages.metaMessageId, metaMessageId))
     .limit(1)
 
-  return row?.tenantId ?? null
+  // Not one of ours, or it names a message the sender wrote (not us) -- a
+  // reply's context should only ever point at something we sent.
+  if (!row || row.direction !== 'outbound') return { status: 'not_found' }
+
+  if (normalizeBrPhone(row.conversationPhone) === senderPhone) {
+    return { status: 'exact', tenantId: row.tenantId }
+  }
+
+  return { status: 'mismatch', tenantId: row.tenantId }
+}
+
+/**
+ * How recent a conversation has to be to break a tie between clinics.
+ *
+ * Only reached when the same phone has a conversation with more than one
+ * clinic and the message carries no reply context. Refusing outright would
+ * drop the message, and the likeliest sequence that lands here is a patient
+ * confirming an appointment (which routes exactly, by context id) and then
+ * typing a follow-up a moment later. One clinic being active inside this
+ * window is a strong signal; two are not, and that still refuses.
+ */
+const AMBIGUITY_RECENCY_WINDOW_MS = 24 * 60 * 60 * 1000
+
+async function resolveTenantByPhoneHistory(phone: string): Promise<string | null> {
+  const rows = await db
+    .select({
+      tenantId: whatsappConversations.tenantId,
+      lastMessageAt: whatsappConversations.lastMessageAt,
+    })
+    .from(whatsappConversations)
+    .where(eq(whatsappConversations.phoneNumber, phone))
+
+  const tenantIds = [...new Set(rows.map((r) => r.tenantId))]
+
+  if (tenantIds.length === 1) return tenantIds[0]
+
+  if (tenantIds.length > 1) {
+    const cutoff = Date.now() - AMBIGUITY_RECENCY_WINDOW_MS
+    const recentTenantIds = [
+      ...new Set(
+        rows
+          .filter((r) => r.lastMessageAt !== null && r.lastMessageAt.getTime() >= cutoff)
+          .map((r) => r.tenantId),
+      ),
+    ]
+
+    if (recentTenantIds.length === 1) return recentTenantIds[0]
+
+    // Either nothing is live or more than one clinic is. Recency cannot
+    // separate them, so refuse rather than guess across a tenant boundary.
+    reportWebhookFailure(
+      new Error('WhatsApp shared-number: ambiguous tenant resolution'),
+      'shared_tenant_ambiguous',
+      { phone, candidateTenantIds: tenantIds, recentTenantIds },
+    )
+    return null
+  }
+
+  // No conversation for this phone under any tenant. On the shared number a
+  // conversation row only exists once a clinic has messaged the person, so
+  // this is every cold inbound: wrong numbers, spam, anyone who found the
+  // FloraClin number. Ordinary traffic, so it logs rather than raising an
+  // exception that would page through the Sentry to Discord route.
+  console.warn(`WhatsApp webhook (shared): no tenant found for phone ${phone}`)
+  return null
+}
+
+async function resolveSharedNumberTenant(
+  phone: string,
+  messageId?: string | null,
+): Promise<string | null> {
+  if (messageId) {
+    const resolution = await resolveTenantByMessageId(messageId, phone)
+
+    if (resolution.status === 'exact') return resolution.tenantId
+
+    if (resolution.status === 'mismatch') {
+      reportWebhookFailure(
+        new Error('WhatsApp shared-number: context/sender phone mismatch'),
+        'shared_context_phone_mismatch',
+        { messageId, phone, tenantId: resolution.tenantId },
+      )
+      return null
+    }
+
+    // not_found: unknown message id (not one of ours), or it names a
+    // message the sender wrote rather than one we sent -- fall through to
+    // phone rules rather than dropping the message.
+  }
+
+  return resolveTenantByPhoneHistory(phone)
 }
 
 // ---------------------------------------------------------------------------
