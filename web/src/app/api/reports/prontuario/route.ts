@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createElement } from 'react'
 import { requireRole } from '@/lib/auth'
-import { getTenantHeaderInfo } from '@/db/queries/tenants'
+import { getTenantHeaderInfoForPdf } from '@/db/queries/tenants'
+import { EMPTY_TENANT_HEADER } from '@/lib/tenant-header'
 import { getPatientDossier, toProntuarioSummary } from '@/db/queries/reports/prontuario'
 import { ProntuarioPdf, PRONTUARIO_PDF_CSS } from '@/components/reports/prontuario-pdf'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
@@ -52,11 +53,11 @@ export async function GET(request: Request) {
     }
 
     if (format === 'pdf') {
-      const tenant = await getTenantHeaderInfo(ctx.tenantId)
+      const tenant = await getTenantHeaderInfoForPdf(ctx.tenantId)
 
       const pdf = await renderReactToPdf(
         createElement(ProntuarioPdf, {
-          tenant: tenant ?? { name: '', phone: null, email: null, logoUrl: null, address: null },
+          tenant: tenant ?? EMPTY_TENANT_HEADER,
           dossier,
           generatedAt: new Date(),
         }),

@@ -7,7 +7,7 @@ vi.mock('@/lib/auth', () => ({
 }))
 
 vi.mock('@/db/queries/tenants', () => ({
-  getTenantHeaderInfo: vi.fn(),
+  getTenantHeaderInfoForPdf: vi.fn(),
 }))
 
 vi.mock('@/db/queries/reports/procedimentos-realizados', () => ({
@@ -22,7 +22,7 @@ vi.mock('@/lib/pdf', () => ({
 // ─── Imports (after mocks) ───────────────────────────────────────────
 
 import { requireRole } from '@/lib/auth'
-import { getTenantHeaderInfo } from '@/db/queries/tenants'
+import { getTenantHeaderInfoForPdf } from '@/db/queries/tenants'
 import { listProcedureApplications } from '@/db/queries/reports/procedimentos-realizados'
 import { renderReactToPdf } from '@/lib/pdf'
 import { GET } from '../route'
@@ -58,7 +58,7 @@ beforeEach(() => {
     fullName: 'Owner Example',
     isPlatformAdmin: false,
   } as never)
-  vi.mocked(getTenantHeaderInfo).mockResolvedValue({
+  vi.mocked(getTenantHeaderInfoForPdf).mockResolvedValue({
     name: 'Clínica Teste',
     phone: '11987654321',
     email: 'contato@clinicateste.com.br',

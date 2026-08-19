@@ -5,6 +5,7 @@ import { eq, and, isNull, or, gte } from 'drizzle-orm'
 import { z } from 'zod'
 import { checkTimeConflict, createAppointment } from '@/db/queries/appointments'
 import { handleApiError } from '@/lib/api-error'
+import { signLogoPath } from '@/lib/logo'
 
 interface WorkingHoursDay {
   start: string
@@ -89,7 +90,10 @@ export async function GET(
     return NextResponse.json({
       clinic: {
         name: tenant.name,
-        logoUrl: tenant.logoUrl,
+        // Signed here, not stored signed: this endpoint is public and
+        // unauthenticated, so the URL it hands out should stop working soon
+        // rather than carry a year-long bearer token.
+        logoUrl: await signLogoPath(tenant.logoUrl),
         phone: tenant.phone,
         email: tenant.email,
       },

@@ -15,11 +15,12 @@ interface ClinicLogoUploaderProps {
 
 /**
  * Upload / replace / clear the tenant's logo image. Used by the clinic
- * settings page; the saved URL is the same `tenants.logoUrl` that's read
- * by `<ClinicHeader>` (receitas, atestados, evoluções, termos de
+ * settings page; the stored storage path is the same `tenants.logoUrl` that's
+ * read by `<ClinicHeader>` (receitas, atestados, evoluções, termos de
  * consentimento, procedimentos, os relatórios em PDF e o prontuário
  * completo) and by the public booking page, so it shows up everywhere
- * automatically.
+ * automatically. Both `initialLogoUrl` and the POST response carry a
+ * short-lived signed URL, since this component renders a preview.
  */
 export function ClinicLogoUploader({ initialLogoUrl }: ClinicLogoUploaderProps) {
   const [logoUrl, setLogoUrl] = useState<string | null>(initialLogoUrl)

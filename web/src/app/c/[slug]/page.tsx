@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { BookingPage } from '@/components/booking/booking-page'
+import { signLogoPath } from '@/lib/logo'
 import type { Metadata } from 'next'
 
 interface ClinicApiResponse {
@@ -59,7 +60,10 @@ async function getClinicData(slug: string): Promise<ClinicApiResponse | null> {
   return {
     clinic: {
       name: t.name,
-      logoUrl: t.logoUrl,
+      // Signed here, not stored signed: this page is public and
+      // unauthenticated, so the URL it renders should stop working soon
+      // rather than carry a year-long bearer token.
+      logoUrl: await signLogoPath(t.logoUrl),
       phone: t.phone,
       email: t.email,
     },

@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createElement } from 'react'
 import { requireRole } from '@/lib/auth'
-import { getTenantHeaderInfo } from '@/db/queries/tenants'
+import { getTenantHeaderInfoForPdf } from '@/db/queries/tenants'
+import { EMPTY_TENANT_HEADER } from '@/lib/tenant-header'
 import {
   listRepeatNoShows,
   type RepeatNoShowRow,
@@ -133,14 +134,14 @@ export async function GET(request: Request) {
     }
 
     if (format === 'pdf') {
-      const tenant = await getTenantHeaderInfo(ctx.tenantId)
+      const tenant = await getTenantHeaderInfoForPdf(ctx.tenantId)
       const report = getReport(REPORT_SLUG)
       const pdf = await renderReactToPdf(
         // `ReportPdf` is generic; createElement can't infer `Row` from the
         // props object alone, so instantiate it explicitly (TS 4.7+ generic
         // instantiation expression) rather than widening to `unknown`.
         createElement(ReportPdf<RepeatNoShowRow>, {
-          tenant: tenant ?? { name: '', phone: null, email: null, logoUrl: null, address: null },
+          tenant: tenant ?? EMPTY_TENANT_HEADER,
           reportTitle: report?.title ?? 'Faltas recorrentes',
           filterSummary: `Janela: ${windowDays} dias · Mínimo de faltas: ${minCount}`,
           rows,

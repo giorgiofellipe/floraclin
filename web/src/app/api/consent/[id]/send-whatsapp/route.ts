@@ -4,6 +4,7 @@ import { getConsentAcceptanceWithContext } from '@/db/queries/consent'
 import { getRecentlyUsedSigningToken } from '@/db/queries/consent-signing-tokens'
 import { PrintConsent } from '@/components/consent/print-consent'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
+import { fetchLogoDataUri } from '@/lib/logo'
 import { uploadPdfBuffer } from '@/lib/storage'
 import { sendOrEnqueueDocument } from '@/lib/whatsapp'
 import { auth } from '@/lib/auth-config'
@@ -70,8 +71,12 @@ export async function POST(
       return NextResponse.json({ error: 'Paciente sem telefone cadastrado' }, { status: 400 })
     }
 
+    // Inline the logo so headless Chromium makes no network request while
+    // rendering; see `fetchLogoDataUri` (`@/lib/logo`).
+    const tenantLogoUrl = await fetchLogoDataUri(acceptance.tenantLogoUrl)
+
     const pdfBuffer = await renderReactToPdf(
-      createElement(PrintConsent, { acceptance }),
+      createElement(PrintConsent, { acceptance: { ...acceptance, tenantLogoUrl } }),
       PRINT_BASE_CSS,
     )
 

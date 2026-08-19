@@ -27,6 +27,7 @@ import { useTenant } from '@/hooks/queries/use-tenant'
 import { DocumentPreview } from './document-preview'
 import { DeliveryActions } from './delivery-actions'
 import { AVAILABLE_DOCUMENT_PLACEHOLDERS } from '@/lib/templates/placeholders'
+import { EMPTY_TENANT_HEADER } from '@/lib/tenant-header'
 import type { ClinicalDocumentKind } from '@/validations/clinical-document'
 import { cn } from '@/lib/utils'
 
@@ -181,7 +182,7 @@ export function IssueDocumentDialog({
         logoUrl: (tenant.logoUrl ?? null) as string | null,
         address: (tenant.address ?? null) as Record<string, string | undefined> | null,
       }
-    : { name: '', phone: null, email: null, logoUrl: null, address: null }
+    : EMPTY_TENANT_HEADER
 
   const visibleSteps: WizardStep[] = ['kind', 'template', step === 'compose' ? 'compose' : 'preview']
   const currentStepIndex = visibleSteps.indexOf(step === 'delivery' ? 'preview' : step)

@@ -2,8 +2,8 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { ptBR } from 'date-fns/locale'
 import { BR_TZ } from '@/lib/dates'
 import { FloraclinBrandHeader } from '@/lib/pdf-branding'
-import { ClinicHeader, toClinicHeaderAddress } from '@/components/print/clinic-header'
-import type { TenantHeaderInfo } from '@/db/queries/tenants'
+import { ClinicHeader, toClinicHeaderTenant } from '@/components/print/clinic-header'
+import type { TenantHeaderInfo } from '@/lib/tenant-header'
 import type { ReportColumn } from '@/lib/reports/types'
 
 /**
@@ -21,11 +21,8 @@ export const REPORT_PDF_CSS = `
 
 interface ReportPdfProps<Row> {
   /**
-   * Raw tenant projection (`getTenantHeaderInfo`, `@/db/queries/tenants`).
-   * `address` stays the free-form JSONB shape here; it's narrowed to
-   * `ClinicHeader`'s structured `Address` via `toClinicHeaderAddress` below,
-   * same helper `PrintDocument`/`PrintConsent` use for the same reason: the
-   * DB column has no fixed shape, `ClinicHeader` does.
+   * Raw tenant projection (`getTenantHeaderInfoForPdf`, `@/db/queries/tenants`).
+   * `toClinicHeaderTenant` narrows its free-form JSONB `address` for the header.
    */
   tenant: TenantHeaderInfo
   reportTitle: string
@@ -59,8 +56,6 @@ export function ReportPdf<Row>({
   columns,
   generatedAt,
 }: ReportPdfProps<Row>) {
-  const headerAddress = toClinicHeaderAddress(tenant.address)
-
   return (
     <div>
       {/* FloraClin stays as a small mark above the clinic's own header: the
@@ -71,15 +66,7 @@ export function ReportPdf<Row>({
           optional branding, not the provenance record; see the module doc
           on `FloraclinBrandHeader` in `@/lib/pdf-branding`. */}
       <FloraclinBrandHeader />
-      <ClinicHeader
-        tenant={{
-          name: tenant.name,
-          phone: tenant.phone,
-          email: tenant.email,
-          logoUrl: tenant.logoUrl,
-          address: headerAddress,
-        }}
-      />
+      <ClinicHeader tenant={toClinicHeaderTenant(tenant)} />
 
       <h1>{reportTitle}</h1>
       {filterSummary && <div className="meta-row">{filterSummary}</div>}

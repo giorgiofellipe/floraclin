@@ -5,8 +5,8 @@ import { formatDate } from '@/lib/utils'
 import { formatBrPhone } from '@/lib/phone'
 import { CONSENT_TYPE_LABELS, METHOD_LABELS, GENDER_LABELS } from '@/lib/constants'
 import { FloraclinBrandHeader } from '@/lib/pdf-branding'
-import { ClinicHeader, toClinicHeaderAddress } from '@/components/print/clinic-header'
-import type { TenantHeaderInfo } from '@/db/queries/tenants'
+import { ClinicHeader, toClinicHeaderTenant } from '@/components/print/clinic-header'
+import type { TenantHeaderInfo } from '@/lib/tenant-header'
 import { getAppUrl } from '@/lib/app-url'
 import { timelineStageValues, timelineStageLabels } from '@/validations/photo'
 // Imported from `face-template-data`, never from `face-template` itself:
@@ -112,11 +112,8 @@ function formatAddress(address: unknown): string | null {
 
 interface ProntuarioPdfProps {
   /**
-   * Raw tenant projection (`getTenantHeaderInfo`, `@/db/queries/tenants`).
-   * `address` stays the free-form JSONB shape here; it's narrowed to
-   * `ClinicHeader`'s structured `Address` via `toClinicHeaderAddress` below,
-   * same helper `PrintDocument`/`PrintConsent` use for the same reason: the
-   * DB column has no fixed shape, `ClinicHeader` does.
+   * Raw tenant projection (`getTenantHeaderInfoForPdf`, `@/db/queries/tenants`).
+   * `toClinicHeaderTenant` narrows its free-form JSONB `address` for the header.
    */
   tenant: TenantHeaderInfo
   dossier: ProntuarioDossier
@@ -133,7 +130,6 @@ interface ProntuarioPdfProps {
 export function ProntuarioPdf({ tenant, dossier, generatedAt }: ProntuarioPdfProps) {
   const { patient, anamnesis, procedures, proceduresTruncated, photos, consents } = dossier
   const address = formatAddress(patient.address)
-  const tenantHeaderAddress = toClinicHeaderAddress(tenant.address)
 
   return (
     <div>
@@ -145,15 +141,7 @@ export function ProntuarioPdf({ tenant, dossier, generatedAt }: ProntuarioPdfPro
           record; see the module doc on `FloraclinBrandHeader` in
           `@/lib/pdf-branding`. */}
       <FloraclinBrandHeader />
-      <ClinicHeader
-        tenant={{
-          name: tenant.name,
-          phone: tenant.phone,
-          email: tenant.email,
-          logoUrl: tenant.logoUrl,
-          address: tenantHeaderAddress,
-        }}
-      />
+      <ClinicHeader tenant={toClinicHeaderTenant(tenant)} />
 
       <h1>Prontuário completo</h1>
       <div className="meta-row">Documento de uso do paciente e da clínica. Não substitui laudo médico.</div>

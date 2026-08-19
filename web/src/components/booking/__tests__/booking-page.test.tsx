@@ -57,18 +57,16 @@ describe('BookingPage', () => {
       />
     )
 
-    // The hero is the clinic name, not a "Flora" / "Clin" two-tone wordmark.
-    // `queryByText` matches full normalized text content, so it would still
-    // pass if the wordmark markup were deleted entirely; scope the check to
-    // the hero container instead, where only the clinic name is expected.
-    const hero = screen.getByTestId('clinic-name-fallback')
-    expect(hero).toHaveTextContent(CLINIC.name)
-    expect(hero.textContent).not.toContain('Flora')
-    expect(hero.textContent).not.toContain('Clin')
+    // The hero is the clinic's own identity.
+    expect(screen.getByTestId('clinic-name-fallback')).toHaveTextContent(CLINIC.name)
 
-    // The only FloraClin mention left is the discreet powered-by note.
-    const poweredBy = screen.getByTestId('booking-powered-by')
-    expect(poweredBy).toHaveTextContent('Agendamento por FloraClin')
+    // And FloraClin is named exactly once on the whole page, in the discreet
+    // powered-by note at the bottom. A wordmark hero creeping back in would
+    // add a second mention, which is what this actually guards.
+    const mentions = screen.getAllByText(/floraclin/i)
+    expect(mentions).toHaveLength(1)
+    expect(mentions[0]).toBe(screen.getByTestId('booking-powered-by'))
+    expect(mentions[0]).toHaveTextContent('Agendamento por FloraClin')
   })
 
   it('falls back to the clinic name when the logo image fails to load (e.g. an expired signed URL)', () => {

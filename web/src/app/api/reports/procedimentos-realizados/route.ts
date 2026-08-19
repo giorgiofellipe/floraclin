@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createElement } from 'react'
 import { requireRole } from '@/lib/auth'
-import { getTenantHeaderInfo } from '@/db/queries/tenants'
+import { getTenantHeaderInfoForPdf } from '@/db/queries/tenants'
+import { EMPTY_TENANT_HEADER } from '@/lib/tenant-header'
 import {
   listProcedureApplications,
   type ProcedureApplicationRow,
@@ -113,7 +114,7 @@ export async function GET(request: Request) {
     }
 
     if (format === 'pdf') {
-      const tenant = await getTenantHeaderInfo(ctx.tenantId)
+      const tenant = await getTenantHeaderInfoForPdf(ctx.tenantId)
       const report = getReport(REPORT_SLUG)
       const pdf = await renderReactToPdf(
         // `ReportPdf` is generic; createElement can't infer `Row` from the
@@ -123,7 +124,7 @@ export async function GET(request: Request) {
         // in the footer, which is what makes this export tamper-evident
         // enough to hand over if an application is ever questioned.
         createElement(ReportPdf<ProcedureApplicationRow>, {
-          tenant: tenant ?? { name: '', phone: null, email: null, logoUrl: null, address: null },
+          tenant: tenant ?? EMPTY_TENANT_HEADER,
           reportTitle: report?.title ?? 'Procedimentos realizados',
           filterSummary: `Período: ${formatDate(dateFrom)} a ${formatDate(dateTo)}`,
           rows,
