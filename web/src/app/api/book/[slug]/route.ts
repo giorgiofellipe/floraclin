@@ -4,6 +4,7 @@ import { tenants, tenantUsers, users, appointments } from '@/db/schema'
 import { eq, and, isNull, or, gte } from 'drizzle-orm'
 import { z } from 'zod'
 import { checkTimeConflict, createAppointment } from '@/db/queries/appointments'
+import { handleApiError } from '@/lib/api-error'
 
 interface WorkingHoursDay {
   start: string
@@ -61,7 +62,7 @@ async function getPractitioners(tenantId: string) {
 
 // GET /api/book/[slug] - Returns clinic info and practitioners
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
@@ -98,11 +99,7 @@ export async function GET(
       })),
     })
   } catch (error) {
-    console.error('Error fetching clinic info:', error)
-    return NextResponse.json(
-      { error: 'Erro interno do servidor' },
-      { status: 500 }
-    )
+    return handleApiError(error, request, { body: { error: 'Erro interno do servidor' } })
   }
 }
 
@@ -250,10 +247,6 @@ export async function POST(
       { status: 201 }
     )
   } catch (error) {
-    console.error('Error creating booking:', error)
-    return NextResponse.json(
-      { error: 'Erro interno do servidor' },
-      { status: 500 }
-    )
+    return handleApiError(error, request, { body: { error: 'Erro interno do servidor' } })
   }
 }

@@ -4,6 +4,7 @@ import { getTenant } from '@/db/queries/tenants'
 import { upsertAutomation, getTemplateById } from '@/db/queries/whatsapp'
 import { isWhatsAppEnabled } from '@/lib/whatsapp'
 import { updateAutomationSchema } from '@/validations/whatsapp'
+import { handleApiError } from '@/lib/api-error'
 
 const VALID_TRIGGERS = ['appointment_confirmation', 'payment_reminder', 'follow_up']
 
@@ -45,11 +46,6 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     const automation = await upsertAutomation(ctx.tenantId, trigger, parsed.data)
     return NextResponse.json({ data: automation })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    console.error('Error updating WhatsApp automation:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

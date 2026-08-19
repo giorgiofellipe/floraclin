@@ -4,6 +4,7 @@ import { users, verificationTokens } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
+import { handleApiError } from '@/lib/api-error'
 
 export async function POST(request: Request) {
   try {
@@ -48,7 +49,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Password reset confirm error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

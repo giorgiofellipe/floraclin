@@ -5,6 +5,7 @@ import { createSessionWireSchema } from '@/validations/procedure-session'
 import { BusinessError } from '@/lib/errors'
 import type { DiagramViewType } from '@/types'
 import type { ProductApplicationItem } from '@/validations/procedure'
+import { handleApiError } from '@/lib/api-error'
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -41,15 +42,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       // P2: map business errors to 409 with stable code so the UI can refetch picker state
       return NextResponse.json({ success: false, code: error.code, error: error.message }, { status: 409 })
     }
-    if (error instanceof Error) {
-      const msg = error.message
-      if (msg === 'concurrent_session_insert') {
-        return NextResponse.json({ success: false, code: 'concurrent_session_insert', error: msg }, { status: 409 })
-      }
-      if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-      if (msg.includes('redirect') || msg.includes('NEXT_REDIRECT')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    console.error('Create session error:', error)
-    return NextResponse.json({ success: false, error: 'Erro ao salvar sessão' }, { status: 500 })
+    return handleApiError(error, request, { body: { success: false, error: 'Erro ao salvar sessão' } })
   }
 }

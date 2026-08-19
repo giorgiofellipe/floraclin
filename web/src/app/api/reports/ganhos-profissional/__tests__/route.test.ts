@@ -27,6 +27,7 @@ import { listPractitionerEarnings } from '@/db/queries/reports/ganhos-profission
 import { renderReactToPdf } from '@/lib/pdf'
 import { GET } from '../route'
 import type { PractitionerPLRow } from '@/db/queries/reports/ganhos-profissional'
+import { ForbiddenError } from '@/lib/errors'
 
 function makeRequest(url: string) {
   return new Request(url)
@@ -66,7 +67,7 @@ beforeEach(() => {
 
 describe('GET /api/reports/ganhos-profissional', () => {
   it('returns 403 for a practitioner', async () => {
-    vi.mocked(requireRole).mockRejectedValue(new Error('Forbidden: insufficient permissions'))
+    vi.mocked(requireRole).mockRejectedValue(new ForbiddenError('Forbidden: insufficient permissions'))
 
     const res = await GET(makeRequest('http://localhost/api/reports/ganhos-profissional'))
     const json = await res.json()

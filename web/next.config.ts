@@ -8,6 +8,13 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ['192.168.2.99'],
   env: {
     NEXT_PUBLIC_BUILD_DATE: new Date().toISOString().slice(0, 16).replace('T', ' '),
+    // Inlined from the server-side `VERCEL_ENV` at build time so the browser
+    // SDK gets the right environment name without depending on Vercel's
+    // "Automatically expose System Environment Variables" toggle. With the
+    // toggle off, `NEXT_PUBLIC_VERCEL_ENV` is undefined in the client bundle
+    // and every preview error would tag itself `production`, straight into the
+    // Discord alert rule.
+    NEXT_PUBLIC_SENTRY_ENVIRONMENT: process.env.VERCEL_ENV ?? 'development',
   },
   images: {
     remotePatterns: [

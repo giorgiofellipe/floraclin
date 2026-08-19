@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { signOAuthState, buildAuthUrl } from '@/lib/google-calendar'
+import { handleApiError } from '@/lib/api-error'
 
 export async function GET(request: Request) {
   try {
@@ -33,11 +34,6 @@ export async function GET(request: Request) {
     const authUrl = buildAuthUrl(state)
     return NextResponse.redirect(authUrl)
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    console.error('Calendar connect error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

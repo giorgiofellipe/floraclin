@@ -2,14 +2,20 @@ import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant, updateTenantSettings } from '@/db/queries/tenants'
 import { listTemplates, upsertTemplate, updateLocalTemplate } from '@/db/queries/whatsapp'
-import { getTemplates, createTemplate as createMetaTemplate, isWhatsAppEnabled } from '@/lib/whatsapp'
-import { TEMPLATE_BLUEPRINTS, generateTemplateName } from '@/lib/whatsapp-blueprints'
+import {
+  canManageTemplates,
+  createTemplate as createMetaTemplate,
+  isWhatsAppEnabled,
+  syncTemplatesForTenant,
+} from '@/lib/whatsapp'
+import { TEMPLATE_BLUEPRINTS, resolveTemplatePrefix } from '@/lib/whatsapp-blueprints'
+import { handleApiError } from '@/lib/api-error'
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     const ctx = await getAuthContext()
     const tenant = await getTenant(ctx.tenantId)
@@ -17,29 +23,19 @@ export async function POST() {
     if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp not enabled' }, { status: 400 })
     }
-    if (ctx.role !== 'owner') {
+    if (ctx.role !== 'owner' || !canManageTemplates(settings)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     let prefix = settings?.whatsapp_template_prefix as string | undefined
     if (!prefix) {
-      prefix = generateTemplateName(tenant!.name, '').replace(/_$/, '')
+      prefix = resolveTemplatePrefix(tenant!.name)
       await updateTenantSettings(ctx.tenantId, { whatsapp_template_prefix: prefix })
     }
 
-    const metaTemplates = await getTemplates(ctx.tenantId)
-    let synced = 0
-    for (const tpl of metaTemplates) {
-      await upsertTemplate(ctx.tenantId, {
-        metaTemplateId: tpl.id,
-        name: tpl.name,
-        language: tpl.language,
-        category: tpl.category,
-        status: tpl.status,
-        components: tpl.components,
-      })
-      synced++
-    }
+    // Every tenant shares the same WABA, so this only imports templates that
+    // match this tenant's own prefix. See syncTemplatesForTenant.
+    const { synced } = await syncTemplatesForTenant(ctx.tenantId, prefix)
 
     const existingTemplates = await listTemplates(ctx.tenantId)
     const existingPurposeKeys = new Set(
@@ -101,11 +97,6 @@ export async function POST() {
 
     return NextResponse.json({ synced, provisioned, errors })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    console.error('Error provisioning WhatsApp templates:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

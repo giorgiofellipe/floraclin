@@ -27,6 +27,7 @@ import { listRepeatNoShows } from '@/db/queries/reports/repeat-no-shows'
 import { renderReactToPdf } from '@/lib/pdf'
 import { GET } from '../route'
 import type { RepeatNoShowRow } from '@/db/queries/reports/repeat-no-shows'
+import { ForbiddenError } from '@/lib/errors'
 
 function makeRequest(url: string) {
   return new Request(url)
@@ -65,7 +66,7 @@ beforeEach(() => {
 
 describe('GET /api/reports/repeat-no-shows', () => {
   it('returns 403 for a practitioner', async () => {
-    vi.mocked(requireRole).mockRejectedValue(new Error('Forbidden: insufficient permissions'))
+    vi.mocked(requireRole).mockRejectedValue(new ForbiddenError('Forbidden: insufficient permissions'))
 
     const res = await GET(makeRequest('http://localhost/api/reports/repeat-no-shows'))
     const json = await res.json()

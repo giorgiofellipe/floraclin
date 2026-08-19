@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server'
 import { getValidToken, markTokenUsed } from '@/db/queries/anamnesis-tokens'
 import { upsertAnamnesis } from '@/db/queries/anamnesis'
 import { anamnesisSchema } from '@/validations/anamnesis'
+import { handleApiError } from '@/lib/api-error'
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ token: string }> }
 ) {
   try {
@@ -23,11 +24,7 @@ export async function GET(
       patientId: row.patientId,
     })
   } catch (error) {
-    console.error('Token validation error:', error)
-    return NextResponse.json(
-      { error: 'Internal Server Error' },
-      { status: 500 }
-    )
+    return handleApiError(error, request)
   }
 }
 
@@ -73,10 +70,6 @@ export async function PUT(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Token submission error:', error)
-    return NextResponse.json(
-      { error: 'Internal Server Error' },
-      { status: 500 }
-    )
+    return handleApiError(error, request)
   }
 }

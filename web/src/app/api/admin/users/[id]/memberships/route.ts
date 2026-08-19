@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requirePlatformAdmin } from '@/lib/auth'
 import { addUserMembership } from '@/db/queries/admin-users'
 import { addMembershipSchema } from '@/validations/admin'
+import { handleApiError } from '@/lib/api-error'
 
 export async function POST(
   request: Request,
@@ -22,10 +23,6 @@ export async function POST(
     const membership = await addUserMembership(id, parsed.data.tenantId, parsed.data.role)
     return NextResponse.json({ success: true, data: membership })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

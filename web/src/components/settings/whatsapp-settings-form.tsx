@@ -33,6 +33,7 @@ import {
 import { WhatsAppTemplateList } from './whatsapp-template-list'
 import { WhatsAppAutomations } from './whatsapp-automations'
 import { WhatsAppCreditBar } from './whatsapp-credit-bar'
+import { WhatsAppSystemTemplates } from './whatsapp-system-templates'
 
 // ─── Help Image ─────────────────────────────────────────────────────
 
@@ -355,6 +356,9 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
           ) : null}
         </div>
       )}
+
+      {/* FloraClin Mode: read-only preview of the platform-managed templates */}
+      {mode === 'floraclin' && <WhatsAppSystemTemplates />}
 
       {/* Own Number Mode: Setup Instructions + Credentials + Webhook + Templates */}
       {mode === 'own' && (
@@ -756,7 +760,7 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
       </div>
 
       {/* Automations (shown for both modes) */}
-      <WhatsAppAutomations />
+      <WhatsAppAutomations mode={mode} />
 
       {/* Submit */}
       <div className="flex justify-end pt-2">

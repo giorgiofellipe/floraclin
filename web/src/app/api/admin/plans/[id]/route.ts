@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { updatePlan } from '@/db/queries/subscriptions'
+import { handleApiError } from '@/lib/api-error'
 
 export async function PATCH(
   request: Request,
@@ -17,10 +18,6 @@ export async function PATCH(
     const plan = await updatePlan(id, body)
     return NextResponse.json(plan)
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
