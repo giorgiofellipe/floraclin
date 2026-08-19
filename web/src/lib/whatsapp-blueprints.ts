@@ -394,3 +394,132 @@ export function generateTemplateName(tenantName: string, blueprintName: string):
   }
   return `${slug}_${blueprintName}`
 }
+
+/**
+ * A tenant's WhatsApp templates all share the prefix `${prefix}_`, derived
+ * from the clinic name (see generateTemplateName). Every WABA on FloraClin
+ * is shared across multiple tenants, so this prefix is the only reliable
+ * way to tell which templates in a Meta API response belong to which clinic.
+ */
+export function resolveTemplatePrefix(
+  tenantName: string,
+  existingPrefix?: string | null,
+): string {
+  if (existingPrefix) return existingPrefix
+  return generateTemplateName(tenantName, '').replace(/_$/, '')
+}
+
+/** True when a Meta template name belongs to the tenant identified by `prefix`. */
+export function belongsToTemplatePrefix(templateName: string, prefix: string): boolean {
+  if (!prefix) return false
+  return templateName.startsWith(`${prefix}_`)
+}
+
+/**
+ * Finds the blueprint whose `name` matches the end of a full template name
+ * (`${prefix}_${blueprint.name}`). When more than one blueprint name would
+ * match as a suffix, the longest one wins. A naive first-match can pick a
+ * shorter blueprint name that happens to also be a suffix of a longer one.
+ */
+export function findBlueprintForTemplateName(
+  templateName: string,
+  blueprints: TemplateBlueprint[] = TEMPLATE_BLUEPRINTS,
+): TemplateBlueprint | null {
+  let best: TemplateBlueprint | null = null
+  for (const blueprint of blueprints) {
+    const matches =
+      templateName === blueprint.name || templateName.endsWith(`_${blueprint.name}`)
+    if (matches && (!best || blueprint.name.length > best.name.length)) {
+      best = blueprint
+    }
+  }
+  return best
+}
+
+/**
+ * Friendly Portuguese label for a template row. Prefers the persisted
+ * purposeKey (set by provisioning); falls back to matching the template
+ * name against the blueprint list; falls back to the raw template name.
+ */
+export function getTemplateDisplayLabel(template: {
+  purposeKey: string | null
+  name: string
+}): string {
+  if (template.purposeKey && PURPOSE_LABELS[template.purposeKey]) {
+    return PURPOSE_LABELS[template.purposeKey]
+  }
+  const blueprint = findBlueprintForTemplateName(template.name)
+  if (blueprint && PURPOSE_LABELS[blueprint.purposeKey]) {
+    return PURPOSE_LABELS[blueprint.purposeKey]
+  }
+  return template.name
+}
+
+export interface TemplatePreview {
+  body: string
+  buttons: string[]
+}
+
+interface PreviewableTemplate {
+  name: string
+  purposeKey: string | null
+  components: unknown
+  variableMapping?: unknown
+}
+
+function isVariableList(value: unknown): value is TemplateVariable[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (v) =>
+        typeof v === 'object' &&
+        v !== null &&
+        typeof (v as TemplateVariable).index === 'number' &&
+        typeof (v as TemplateVariable).key === 'string',
+    )
+  )
+}
+
+function resolvePreviewVariables(template: PreviewableTemplate): TemplateVariable[] {
+  if (isVariableList(template.variableMapping)) return template.variableMapping
+  const byPurpose = template.purposeKey
+    ? TEMPLATE_BLUEPRINTS.find((b) => b.purposeKey === template.purposeKey)
+    : null
+  const blueprint = byPurpose ?? findBlueprintForTemplateName(template.name)
+  return blueprint?.variables ?? []
+}
+
+/**
+ * Renders a template the way the patient receives it: body text with every
+ * {{n}} replaced by an example value, and the clinic's real name in place of
+ * the clinic_name variable. Used by the read-only view clinics on the shared
+ * FloraClin number get instead of template management.
+ *
+ * Client-safe on purpose — lib/whatsapp.ts pulls in node crypto and the db
+ * client, so resolveTemplateBody can't be reused from a client component.
+ */
+export function buildTemplatePreview(
+  template: PreviewableTemplate,
+  clinicName: string,
+): TemplatePreview {
+  const components = Array.isArray(template.components)
+    ? (template.components as Record<string, unknown>[])
+    : []
+
+  const bodyComponent = components.find((c) => c.type === 'BODY')
+  let body = typeof bodyComponent?.text === 'string' ? bodyComponent.text : ''
+
+  for (const variable of resolvePreviewVariables(template)) {
+    const value = variable.key === 'clinic_name' ? clinicName : variable.example
+    body = body.replaceAll(`{{${variable.index}}}`, value)
+  }
+
+  const buttonsComponent = components.find((c) => c.type === 'BUTTONS')
+  const buttons = Array.isArray(buttonsComponent?.buttons)
+    ? (buttonsComponent.buttons as Record<string, unknown>[])
+        .map((b) => (typeof b.text === 'string' ? b.text : ''))
+        .filter(Boolean)
+    : []
+
+  return { body, buttons }
+}

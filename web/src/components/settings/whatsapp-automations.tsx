@@ -81,7 +81,11 @@ function buildLocalState(automations: Automation[]): LocalState {
   return state
 }
 
-export function WhatsAppAutomations() {
+interface WhatsAppAutomationsProps {
+  mode: 'floraclin' | 'own'
+}
+
+export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
   const [serverAutomations, setServerAutomations] = useState<Automation[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
@@ -89,13 +93,28 @@ export function WhatsAppAutomations() {
   const [provisioning, setProvisioning] = useState(false)
   const [localState, setLocalState] = useState<LocalState>({})
   const [dirty, setDirty] = useState<Set<string>>(new Set())
+  const [pendingChecks, setPendingChecks] = useState(0)
+
+  // On the shared FloraClin number the clinic has no templates of its own —
+  // sends resolve the platform-managed ones, so the panel reads those too.
+  const templatesUrl =
+    mode === 'floraclin'
+      ? '/api/whatsapp/templates/system'
+      : '/api/whatsapp/templates'
+
+  const fetchTemplates = useCallback(async () => {
+    const res = await fetch(templatesUrl)
+    if (!res.ok) return
+    const data = await res.json()
+    setTemplates((data.data ?? []) as Template[])
+  }, [templatesUrl])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const [autoRes, tplRes] = await Promise.all([
+      const [autoRes] = await Promise.all([
         fetch('/api/whatsapp/automations'),
-        fetch('/api/whatsapp/templates'),
+        fetchTemplates(),
       ])
       if (autoRes.ok) {
         const autoData = await autoRes.json()
@@ -103,21 +122,32 @@ export function WhatsAppAutomations() {
         setServerAutomations(automations)
         setLocalState(buildLocalState(automations))
       }
-      if (tplRes.ok) {
-        const tplData = await tplRes.json()
-        setTemplates((tplData.data ?? []) as Template[])
-      }
       setDirty(new Set())
     } catch {
       toast.error('Erro ao carregar automações')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [fetchTemplates])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // Meta approves a new template within seconds, so a PENDING status is almost
+  // always about to change. Re-read it a few times to let the label settle on
+  // its own instead of leaving the clinic to reload the page.
+  useEffect(() => {
+    if (loading || pendingChecks >= 3) return
+    if (!templates.some((t) => t.status === 'PENDING')) return
+    const timer = setTimeout(() => {
+      setPendingChecks((n) => n + 1)
+      // Templates only — a reload of the automations would discard edits in
+      // progress.
+      fetchTemplates().catch(() => {})
+    }, 15_000)
+    return () => clearTimeout(timer)
+  }, [templates, loading, pendingChecks, fetchTemplates])
 
   function updateLocal(triggerKey: string, patch: Partial<LocalState[string]>) {
     setLocalState((prev) => ({
@@ -143,7 +173,7 @@ export function WhatsAppAutomations() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             enabled: state.enabled,
-            templateId: matched?.id ?? state.templateId,
+            templateId: mode === 'floraclin' ? null : (matched?.id ?? state.templateId),
             config: state.config,
           }),
         })
@@ -261,12 +291,23 @@ export function WhatsAppAutomations() {
                           <CheckCircle2 className="size-3.5" />
                           <span>Template aprovado</span>
                         </div>
+                      ) : mode === 'floraclin' ? (
+                        // Nothing for the clinic to do about a shared template's
+                        // approval, so don't ask them to wait on Meta.
+                        <div className="flex items-center gap-2 text-xs text-mid">
+                          <CheckCircle2 className="size-3.5" />
+                          <span>Mensagem padrão do FloraClin</span>
+                        </div>
                       ) : (
                         <div className="flex items-center gap-2 text-xs text-amber-700">
                           <Clock className="size-3.5" />
                           <span>Template em revisão pela Meta</span>
                         </div>
                       )
+                    ) : mode === 'floraclin' ? (
+                      <p className="text-xs text-mid">
+                        Mensagem padrão do FloraClin.
+                      </p>
                     ) : (
                       <Button
                         type="button"

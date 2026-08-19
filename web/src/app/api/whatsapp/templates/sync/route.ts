@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
-import { getTenant } from '@/db/queries/tenants'
-import { upsertTemplate, markStaleTemplates } from '@/db/queries/whatsapp'
-import { getTemplates, isWhatsAppEnabled } from '@/lib/whatsapp'
+import { getTenant, updateTenantSettings } from '@/db/queries/tenants'
+import { isWhatsAppEnabled, syncTemplatesForTenant } from '@/lib/whatsapp'
+import { resolveTemplatePrefix } from '@/lib/whatsapp-blueprints'
 
 export async function POST() {
   try {
@@ -16,26 +16,17 @@ export async function POST() {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const metaTemplates = await getTemplates(ctx.tenantId)
-
-    let synced = 0
-    for (const tpl of metaTemplates) {
-      await upsertTemplate(ctx.tenantId, {
-        metaTemplateId: tpl.id,
-        name: tpl.name,
-        language: tpl.language,
-        category: tpl.category,
-        status: tpl.status,
-        components: tpl.components,
-        rejectedReason: (tpl as Record<string, unknown>).rejected_reason as string | null ?? null,
-      })
-      synced++
+    // Every tenant shares the same WABA, so Meta returns every clinic's
+    // templates here. Only the ones matching this tenant's prefix are ours.
+    let prefix = settings?.whatsapp_template_prefix as string | undefined
+    if (!prefix) {
+      prefix = resolveTemplatePrefix(tenant!.name)
+      await updateTenantSettings(ctx.tenantId, { whatsapp_template_prefix: prefix })
     }
 
-    const metaIds = metaTemplates.map((t) => t.id)
-    const marked = await markStaleTemplates(ctx.tenantId, metaIds)
+    const { synced, skipped, removed } = await syncTemplatesForTenant(ctx.tenantId, prefix)
 
-    return NextResponse.json({ synced, removed: marked })
+    return NextResponse.json({ synced, skipped, removed })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {

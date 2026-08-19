@@ -2,8 +2,12 @@ import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant, updateTenantSettings } from '@/db/queries/tenants'
 import { listTemplates, upsertTemplate, updateLocalTemplate } from '@/db/queries/whatsapp'
-import { getTemplates, createTemplate as createMetaTemplate, isWhatsAppEnabled } from '@/lib/whatsapp'
-import { TEMPLATE_BLUEPRINTS, generateTemplateName } from '@/lib/whatsapp-blueprints'
+import {
+  createTemplate as createMetaTemplate,
+  isWhatsAppEnabled,
+  syncTemplatesForTenant,
+} from '@/lib/whatsapp'
+import { TEMPLATE_BLUEPRINTS, resolveTemplatePrefix } from '@/lib/whatsapp-blueprints'
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -23,23 +27,13 @@ export async function POST() {
 
     let prefix = settings?.whatsapp_template_prefix as string | undefined
     if (!prefix) {
-      prefix = generateTemplateName(tenant!.name, '').replace(/_$/, '')
+      prefix = resolveTemplatePrefix(tenant!.name)
       await updateTenantSettings(ctx.tenantId, { whatsapp_template_prefix: prefix })
     }
 
-    const metaTemplates = await getTemplates(ctx.tenantId)
-    let synced = 0
-    for (const tpl of metaTemplates) {
-      await upsertTemplate(ctx.tenantId, {
-        metaTemplateId: tpl.id,
-        name: tpl.name,
-        language: tpl.language,
-        category: tpl.category,
-        status: tpl.status,
-        components: tpl.components,
-      })
-      synced++
-    }
+    // Every tenant shares the same WABA, so this only imports templates that
+    // match this tenant's own prefix. See syncTemplatesForTenant.
+    const { synced } = await syncTemplatesForTenant(ctx.tenantId, prefix)
 
     const existingTemplates = await listTemplates(ctx.tenantId)
     const existingPurposeKeys = new Set(

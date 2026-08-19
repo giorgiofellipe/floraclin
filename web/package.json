@@ -25,7 +25,8 @@
     "demo:seed": "pnpm exec dotenv -e .env.local -- tsx scripts/demo-clinic/seed.ts",
     "demo:verify": "pnpm exec dotenv -e .env.local -- tsx scripts/demo-clinic/verify.ts",
     "demo:backfill-applications": "pnpm exec dotenv -e .env.local -- tsx scripts/demo-clinic/backfill-applications.ts",
-    "demo:backfill-cash-movements": "pnpm exec dotenv -e .env.local -- tsx scripts/demo-clinic/backfill-cash-movements.ts"
+    "demo:backfill-cash-movements": "pnpm exec dotenv -e .env.local -- tsx scripts/demo-clinic/backfill-cash-movements.ts",
+    "whatsapp:cleanup-foreign-templates": "pnpm exec dotenv -e .env.local -- tsx scripts/cleanup-foreign-templates.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.1",

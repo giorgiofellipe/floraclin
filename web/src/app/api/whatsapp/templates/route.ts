@@ -1,8 +1,14 @@
 import { NextResponse, after } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
-import { listTemplates, createLocalTemplate, upsertTemplate, markStaleTemplates } from '@/db/queries/whatsapp'
-import { createTemplate as createMetaTemplate, getTemplates as fetchMetaTemplates, isWhatsAppEnabled } from '@/lib/whatsapp'
+import { listTemplates, createLocalTemplate, updateLocalTemplate } from '@/db/queries/whatsapp'
+import {
+  createTemplate as createMetaTemplate,
+  getTemplate as getMetaTemplate,
+  isWhatsAppEnabled,
+  syncTemplatesForTenant,
+} from '@/lib/whatsapp'
+import { resolveTemplatePrefix } from '@/lib/whatsapp-blueprints'
 import { createTemplateSchema } from '@/validations/whatsapp'
 
 async function checkWhatsAppAccess(requireOwner: boolean) {
@@ -25,10 +31,52 @@ async function checkWhatsAppAccess(requireOwner: boolean) {
   return { ctx, tenant: tenant!, settings }
 }
 
+// A template is written locally as PENDING the moment it's created, and Meta
+// usually approves it seconds later. The background sync below can't repair
+// that: it only runs when the newest row is over 5 minutes old, and it lands
+// after the response. So a just-approved template kept rendering "em revisão"
+// until the clinic reloaded the page twice. PENDING rows are few and the state
+// is short-lived, so refresh them inline and answer with the real status.
+const MAX_INLINE_REFRESH = 10
+
+async function refreshPendingTemplates(
+  tenantId: string,
+  templates: Awaited<ReturnType<typeof listTemplates>>,
+): Promise<boolean> {
+  const pending = templates
+    .filter((t) => t.status === 'PENDING' && t.metaTemplateId)
+    .slice(0, MAX_INLINE_REFRESH)
+  if (pending.length === 0) return false
+
+  const results = await Promise.all(
+    pending.map(async (template) => {
+      try {
+        const metaData = await getMetaTemplate(tenantId, template.metaTemplateId!)
+        if (metaData.status === template.status) return false
+        await updateLocalTemplate(tenantId, template.id, {
+          status: metaData.status,
+          rejectedReason: metaData.rejected_reason ?? null,
+          syncedAt: new Date(),
+        })
+        return true
+      } catch {
+        // Meta unreachable — keep the local status rather than failing the list
+        return false
+      }
+    }),
+  )
+
+  return results.some(Boolean)
+}
+
 export async function GET() {
   try {
-    const { ctx } = await checkWhatsAppAccess(false)
-    const templates = await listTemplates(ctx.tenantId)
+    const { ctx, tenant, settings } = await checkWhatsAppAccess(false)
+    let templates = await listTemplates(ctx.tenantId)
+
+    if (await refreshPendingTemplates(ctx.tenantId, templates)) {
+      templates = await listTemplates(ctx.tenantId)
+    }
 
     // The Meta sync can take 10s+ — never block the response on it. Serve
     // local data immediately and refresh in the background via after();
@@ -40,22 +88,17 @@ export async function GET() {
       const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000)
       if (new Date(mostRecent.syncedAt) < fiveMinAgo) {
         const tenantId = ctx.tenantId
+        // Own-prefix filtering happens inside syncTemplatesForTenant: the
+        // shared WABA returns every clinic's templates here too.
+        const prefix = resolveTemplatePrefix(
+          tenant.name,
+          settings?.whatsapp_template_prefix as string | undefined,
+        )
         after(async () => {
           try {
-            const metaTemplates = await fetchMetaTemplates(tenantId)
-            for (const tpl of metaTemplates) {
-              await upsertTemplate(tenantId, {
-                metaTemplateId: tpl.id,
-                name: tpl.name,
-                language: tpl.language,
-                category: tpl.category,
-                status: tpl.status,
-                components: tpl.components,
-                rejectedReason: tpl.rejected_reason ?? null,
-              })
+            if (prefix) {
+              await syncTemplatesForTenant(tenantId, prefix)
             }
-            const metaIds = metaTemplates.map((t) => t.id)
-            await markStaleTemplates(tenantId, metaIds)
           } catch (syncErr) {
             console.error('Background template sync failed:', syncErr)
           }

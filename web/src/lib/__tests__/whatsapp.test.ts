@@ -18,7 +18,15 @@ vi.mock('@/lib/plans', () => ({
   requireActiveSubscription: vi.fn(async () => undefined),
 }))
 
-import { verifyWebhookSignature, sendMediaMessage } from '../whatsapp'
+const upsertTemplateMock = vi.fn(async (_tenantId: string, _template: { name: string }) => ({}))
+const markStaleTemplatesMock = vi.fn(async (_tenantId: string, _metaTemplateIds: string[]) => 0)
+
+vi.mock('@/db/queries/whatsapp', () => ({
+  upsertTemplate: upsertTemplateMock,
+  markStaleTemplates: markStaleTemplatesMock,
+}))
+
+import { verifyWebhookSignature, sendMediaMessage, syncTemplatesForTenant } from '../whatsapp'
 
 describe('verifyWebhookSignature', () => {
   it('returns true for valid signature', () => {
@@ -102,5 +110,67 @@ describe('sendMediaMessage', () => {
     const call = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
     const body = JSON.parse((call[1] as RequestInit).body as string)
     expect(body.document).toEqual({ link: 'https://example.com/doc.pdf' })
+  })
+})
+
+describe('syncTemplatesForTenant', () => {
+  const originalFetch = global.fetch
+
+  const metaTemplates = [
+    { id: 'meta-1', name: 'dra_micaela_floriani_confirm_appointment', language: 'pt_BR', category: 'UTILITY', status: 'APPROVED', components: [] },
+    { id: 'meta-2', name: 'dra_micaela_floriani_follow_up', language: 'pt_BR', category: 'UTILITY', status: 'APPROVED', components: [] },
+    // Foreign templates that belong to other tenants on the shared WABA.
+    { id: 'meta-3', name: 'dra_nicole_biomedica_esteta_confirm_appointment', language: 'pt_BR', category: 'UTILITY', status: 'APPROVED', components: [] },
+    { id: 'meta-4', name: 'clinica_floraclin_reactivation', language: 'pt_BR', category: 'MARKETING', status: 'APPROVED', components: [] },
+  ]
+
+  beforeEach(() => {
+    global.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ data: metaTemplates }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    ) as unknown as typeof fetch
+    upsertTemplateMock.mockClear()
+    markStaleTemplatesMock.mockClear()
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
+    vi.clearAllMocks()
+  })
+
+  it('upserts only templates matching this tenant prefix and skips the rest', async () => {
+    const result = await syncTemplatesForTenant('tenant-1', 'dra_micaela_floriani')
+
+    expect(result.synced).toBe(2)
+    expect(result.skipped).toBe(2)
+    expect(upsertTemplateMock).toHaveBeenCalledTimes(2)
+    const upsertedNames = upsertTemplateMock.mock.calls.map((call) => call[1].name)
+    expect(upsertedNames).toEqual([
+      'dra_micaela_floriani_confirm_appointment',
+      'dra_micaela_floriani_follow_up',
+    ])
+  })
+
+  it('feeds markStaleTemplates the same filtered id list that was upserted, not every id from Meta', async () => {
+    await syncTemplatesForTenant('tenant-1', 'dra_micaela_floriani')
+
+    expect(markStaleTemplatesMock).toHaveBeenCalledTimes(1)
+    const [, idsPassed] = markStaleTemplatesMock.mock.calls[0]
+    expect(idsPassed).toEqual(['meta-1', 'meta-2'])
+    // Foreign ids must never reach markStaleTemplates for this tenant --
+    // otherwise a row that legitimately belongs to another tenant, or a
+    // stray foreign row already sitting here, gets an inconsistent verdict.
+    expect(idsPassed).not.toContain('meta-3')
+    expect(idsPassed).not.toContain('meta-4')
+  })
+
+  it('reports every template as skipped when no template matches the prefix', async () => {
+    const result = await syncTemplatesForTenant('tenant-1', 'some_other_clinic')
+    expect(result.synced).toBe(0)
+    expect(result.skipped).toBe(4)
+    expect(upsertTemplateMock).not.toHaveBeenCalled()
+    expect(markStaleTemplatesMock).toHaveBeenCalledWith('tenant-1', [])
   })
 })

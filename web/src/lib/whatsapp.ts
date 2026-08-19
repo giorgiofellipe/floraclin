@@ -309,6 +309,54 @@ export async function getTemplateForTenant(
   return getTemplateByPurpose(tenantId, purposeKey)
 }
 
+export interface TemplateSyncResult {
+  synced: number
+  skipped: number
+  removed: number
+}
+
+/**
+ * Pulls templates from Meta for the tenant's WABA and upserts only the ones
+ * that belong to this tenant, per `belongsToTemplatePrefix`. The WABA is
+ * shared across every tenant on FloraClin, so the Meta response includes
+ * every other clinic's templates too, and those are skipped, not imported.
+ *
+ * `markStaleTemplates` is fed the same filtered id list used for the
+ * upsert, so a template row that was never ours (metaTemplateId belongs to
+ * another tenant's template) is left untouched rather than being marked
+ * DELETED or wrongly kept alive by an unrelated tenant's sync.
+ */
+export async function syncTemplatesForTenant(
+  tenantId: string,
+  prefix: string,
+): Promise<TemplateSyncResult> {
+  const { upsertTemplate, markStaleTemplates } = await import('@/db/queries/whatsapp')
+  const { belongsToTemplatePrefix } = await import('@/lib/whatsapp-blueprints')
+
+  const metaTemplates = await getTemplates(tenantId)
+  const ownTemplates = metaTemplates.filter((tpl) => belongsToTemplatePrefix(tpl.name, prefix))
+  const skipped = metaTemplates.length - ownTemplates.length
+
+  let synced = 0
+  for (const tpl of ownTemplates) {
+    await upsertTemplate(tenantId, {
+      metaTemplateId: tpl.id,
+      name: tpl.name,
+      language: tpl.language,
+      category: tpl.category,
+      status: tpl.status,
+      components: tpl.components,
+      rejectedReason: tpl.rejected_reason ?? null,
+    })
+    synced++
+  }
+
+  const metaIds = ownTemplates.map((tpl) => tpl.id)
+  const removed = await markStaleTemplates(tenantId, metaIds)
+
+  return { synced, skipped, removed }
+}
+
 async function getSystemTemplate(purposeKey: string) {
   const { db } = await import('@/db/client')
   const { whatsappTemplates } = await import('@/db/schema')
