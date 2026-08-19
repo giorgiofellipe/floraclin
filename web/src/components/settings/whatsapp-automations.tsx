@@ -146,6 +146,9 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
         setLocalState(buildLocalState(automations))
       }
       setDirty(new Set())
+      // A full reload is a fresh start for the poll budget too: provisioning
+      // calls this after creating templates, and those arrive PENDING.
+      setPendingChecks(0)
     } catch {
       toast.error('Erro ao carregar automações')
     } finally {

@@ -116,6 +116,18 @@ describe('GET /api/whatsapp/templates', () => {
     expect(new Set(requestedIds).size).toBe(10)
   })
 
+  it('leaves a pending row alone when it has no Meta id yet', async () => {
+    vi.mocked(listTemplates).mockResolvedValue([
+      template({ metaTemplateId: null }),
+    ] as never)
+
+    const res = await GET()
+    const body = await res.json()
+
+    expect(getMetaTemplate).not.toHaveBeenCalled()
+    expect(body.data[0].status).toBe('PENDING')
+  })
+
   it('does not call Meta when every template is already approved', async () => {
     vi.mocked(listTemplates).mockResolvedValue([
       template({ status: 'APPROVED' }),

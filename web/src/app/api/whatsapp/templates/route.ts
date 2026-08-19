@@ -80,9 +80,12 @@ export async function GET() {
       templates = await listTemplates(ctx.tenantId)
     }
 
-    // The Meta sync can take 10s+ — never block the response on it. Serve
-    // local data immediately and refresh in the background via after();
+    // The full Meta sync can take 10s+ — never block the response on it.
+    // Serve local data immediately and refresh in the background via after();
     // the client picks up the fresh rows on its next fetch or manual sync.
+    // (The targeted PENDING refresh above is a different thing: a handful of
+    // single-template reads, and every reader of this route — settings, the
+    // chat template picker, birthdays — wants a PENDING row's real status.)
     if (templates.length > 0) {
       const mostRecent = templates.reduce((a, b) =>
         new Date(a.syncedAt) > new Date(b.syncedAt) ? a : b
@@ -98,9 +101,7 @@ export async function GET() {
         )
         after(async () => {
           try {
-            if (prefix) {
-              await syncTemplatesForTenant(tenantId, prefix)
-            }
+            await syncTemplatesForTenant(tenantId, prefix)
           } catch (syncErr) {
             console.error('Background template sync failed:', syncErr)
           }

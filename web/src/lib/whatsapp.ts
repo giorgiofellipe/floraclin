@@ -333,10 +333,12 @@ export interface TemplateSyncResult {
  * shared across every tenant on FloraClin, so the Meta response includes
  * every other clinic's templates too, and those are skipped, not imported.
  *
- * `markStaleTemplates` is fed the same filtered id list used for the
- * upsert, so a template row that was never ours (metaTemplateId belongs to
- * another tenant's template) is left untouched rather than being marked
- * DELETED or wrongly kept alive by an unrelated tenant's sync.
+ * `markStaleTemplates` is fed the same filtered id list used for the upsert,
+ * so it marks every local row outside this prefix DELETED — including rows
+ * imported from another clinic by the old unfiltered sync, which is the
+ * point. System rows are the exception and are excluded inside the query:
+ * a tenant sync never sees them and so is never evidence that a
+ * platform-managed template is gone.
  */
 export async function syncTemplatesForTenant(
   tenantId: string,
