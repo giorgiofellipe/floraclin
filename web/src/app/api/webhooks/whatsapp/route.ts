@@ -269,13 +269,21 @@ async function processInboundMessage(
   }
 
   // Process confirmation button replies.
-  // Meta quick-reply template buttons send the button text in button_reply.title
-  // (the button_reply.id is an auto-generated UUID, not the button text).
+  //
+  // A quick reply arrives in one of two shapes, and which one depends on what
+  // was sent, not on what the button looks like:
+  //   - tapped on a *template*    -> type 'button',      button.text
+  //   - tapped on an *interactive* -> type 'interactive', interactive.button_reply.title
+  // The confirmation messages are templates, so the first shape is the one
+  // that matters in production. Both are read because both are reachable.
+  //
+  // Always the label, never the id: button_reply.id is a generated UUID.
   const interactiveData = msg.interactive as {
     type?: string
     button_reply?: { id: string; title: string }
   } | undefined
-  const buttonTitle = interactiveData?.button_reply?.title
+  const templateButton = msg.button as { text?: string; payload?: string } | undefined
+  const buttonTitle = interactiveData?.button_reply?.title ?? templateButton?.text
   const contextMessageId = (msg.context as { id?: string } | undefined)?.id
 
   if (buttonTitle && contextMessageId) {
@@ -655,6 +663,10 @@ interface WhatsAppMessage {
   timestamp: string
   type: string
   text?: { body: string }
+  /** Quick reply tapped on a template message. */
+  button?: { text?: string; payload?: string }
+  /** Reply to another message. Carries the wamid of the message replied to. */
+  context?: { id?: string; from?: string }
   image?: WhatsAppMediaPayload
   video?: WhatsAppMediaPayload
   audio?: WhatsAppMediaPayload
