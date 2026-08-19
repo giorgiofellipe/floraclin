@@ -419,7 +419,7 @@ export async function getAppointmentsPendingConfirmation(
         eq(appointments.status, 'scheduled'),
         isNull(appointments.confirmationSentAt),
         isNull(appointments.deletedAt),
-        sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' <= ${windowEnd}::timestamptz`,
+        sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' <= ${windowEnd.toISOString()}::timestamptz`,
         sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' > now()`,
       )
     )
@@ -453,7 +453,7 @@ export async function getAppointmentsPendingConfirmationUntil(tenantId: string) 
         isNull(appointments.confirmationSentAt),
         isNull(appointments.deletedAt),
         sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' > now()`,
-        sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' <= ${windowEnd}::timestamptz`,
+        sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' <= ${windowEnd.toISOString()}::timestamptz`,
       ),
     )
 
