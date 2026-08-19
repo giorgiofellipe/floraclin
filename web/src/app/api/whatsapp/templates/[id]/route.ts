@@ -15,7 +15,8 @@ import {
   isWhatsAppEnabled,
 } from '@/lib/whatsapp'
 import { updateTemplateSchema } from '@/validations/whatsapp'
-import { handleApiError, reportSideEffectFailure } from '@/lib/api-error'
+import { handleApiError } from '@/lib/api-error'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 type RouteParams = { params: Promise<{ id: string }> }
 

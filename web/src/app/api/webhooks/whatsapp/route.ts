@@ -34,7 +34,7 @@ import { getPatientByPhone, getPatient } from '@/db/queries/patients'
 import { getTenant } from '@/db/queries/tenants'
 import { classifyMessage } from '@/lib/classify-prospect'
 import { toWhatsAppPhone } from '@/lib/phone'
-import { reportSideEffectFailure } from '@/lib/api-error'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 export const dynamic = 'force-dynamic'
 

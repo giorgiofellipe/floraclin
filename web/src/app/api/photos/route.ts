@@ -13,7 +13,8 @@ import {
   ACCEPTED_IMAGE_TYPES,
   isDngFile,
 } from '@/validations/photo'
-import { handleApiError, reportSideEffectFailure } from '@/lib/api-error'
+import { handleApiError } from '@/lib/api-error'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 // ─── Upload Photo ───────────────────────────────────────────────────
 

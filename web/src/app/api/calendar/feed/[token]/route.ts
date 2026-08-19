@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getConnectionByFeedToken } from '@/db/queries/calendar'
 import { generateICalFeed } from '@/lib/ical-feed'
-import { reportSideEffectFailure } from '@/lib/api-error'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 export async function GET(
   _request: Request,
@@ -37,7 +37,7 @@ export async function GET(
     })
   } catch (error) {
     // Not JSON, so not handleApiError: subscribers expect text/calendar.
-    reportSideEffectFailure(error, { area: 'calendar-sync', step: 'ical_feed' })
+    reportSideEffectFailure(error, { area: 'calendar-feed', step: 'render' })
     return new NextResponse('Internal Server Error', { status: 500 })
   }
 }

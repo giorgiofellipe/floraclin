@@ -9,7 +9,8 @@ import {
   updateSubscriptionPlan,
   updateSubscriptionStatus,
 } from '@/db/queries/subscriptions'
-import { handleApiError, reportSideEffectFailure } from '@/lib/api-error'
+import { handleApiError } from '@/lib/api-error'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,7 +25,13 @@ export async function POST(request: NextRequest) {
     // A rotated STRIPE_WEBHOOK_SECRET drops every billing event, and the 400
     // is invisible from our side: Stripe retries, gives up, and the first
     // symptom is a subscription that silently stopped updating.
-    reportSideEffectFailure(err, { area: 'billing', step: 'stripe_signature' })
+    //
+    // Only when a signature was actually presented, though. This endpoint is
+    // public, and a scanner posting to it carries no `stripe-signature`
+    // header at all; reporting those would be reporting the internet.
+    if (signature) {
+      reportSideEffectFailure(err, { area: 'billing', step: 'stripe_signature' })
+    }
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
 

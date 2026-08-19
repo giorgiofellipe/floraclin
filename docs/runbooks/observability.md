@@ -20,9 +20,9 @@ Sentry is the error store; Discord is where the alerts land.
 |---|---|
 | Uncaught server errors (RSC, route handlers, server actions) | `onRequestError` in `web/src/instrumentation.ts` |
 | Caught API route failures (the 500 branch) | `handleApiError` in `web/src/lib/api-error.ts` |
-| Swallowed side effects: Google Calendar push sync and OAuth, WhatsApp webhook steps, Stripe signature checks, photo cleanup | `reportSideEffectFailure` in `web/src/lib/api-error.ts` |
+| Swallowed side effects | `reportSideEffectFailure` in `web/src/lib/observability.ts`, plus `reportCalendarFailure` in `web/src/lib/google-calendar.ts` for the Google ones |
 | Client render errors inside the app | `error.tsx` in the `(auth)` and `(platform)` route groups |
-| Client render errors in the root layout | `web/src/app/global-error.tsx` |
+| Client render errors anywhere else (the root layout, and the `sign`, `verify`, `onboarding`, `a`, `c` and `(print)` trees, which have no boundary of their own) | `web/src/app/global-error.tsx` |
 | Missed or failed `calendar-renew` / `subscription-expiry` runs | `Sentry.withMonitor` in each cron route |
 | whatsapp-automations tenant failures | `Sentry.captureMessage` / `captureException` in that route, plus the Discord digest below |
 
@@ -33,15 +33,41 @@ are expected outcomes, not bugs, and paging on them buries the real signal. A
 route that maps a business failure to a 400 must do so *before* calling
 `handleApiError`, or it becomes a reported 500.
 
+The side-effect `area` values in use: `calendar-sync`, `calendar-oauth`,
+`calendar-feed`, `whatsapp-webhook`, `whatsapp`, `billing`, `photos`, `crm`,
+`admin`, `cron`.
+
 Every 500 that goes through `handleApiError` carries an `eventId` in its JSON
 body. Whoever hits the failure can read that id off the response and look it up
-in Sentry directly, without correlating by timestamp. A handful of routes still
+in Sentry directly, without correlating by timestamp. Eighteen routes still
 return a hand-built 500 for a "the update returned nothing" case; those have no
-`eventId` and do not reach Sentry.
+`eventId` and do not reach Sentry. `grep -rn "status: 500" web/src/app/api` to
+find them.
 
-The `route` tag is masked: uuids, numeric ids and opaque tokens become `:id`.
-That keeps `/api/anamnesis/token/<live-token>` out of Sentry and groups issues
-by route instead of by row.
+### What is scrubbed, and what is not
+
+`maskPath` in `web/src/lib/observability.ts` masks every path segment that is
+not lowercase kebab-case letters, plus anything uuid-shaped, to `:id`. It is an
+allowlist because a blocklist of id shapes let a uuid beginning with a letter
+through once already. If you add a route directory with a digit or an
+underscore in its name, its tag will read `:id` and
+`web/src/lib/__tests__/observability.test.ts` will tell you.
+
+`scrubEvent` is wired as `beforeSend` on both SDKs. The browser SDK copies
+`window.location.href` onto every event and the server SDK attaches the request
+URL, neither of which `sendDefaultPii: false` covers: without it a render error
+on `/reset-password?token=<live>&email=<person>` would ship a working
+credential and a real e-mail address. It masks the path and replaces the value
+of `token`, `code`, `email`, `secret`, `key`, `signature`, `password`,
+`access_token` and `state`.
+
+**Not** masked, on purpose: the clinic slug in `/api/book/<slug>`. It is the
+public booking URL, it is worth reading straight off the issue, and it is the
+same order of cardinality as the `tenant_id` tag.
+
+Route handlers never return an exception message to the client. The clinic gets
+a fixed message plus the `eventId`; the underlying reason is one Sentry lookup
+away.
 
 ### Environment names
 
@@ -73,21 +99,33 @@ because Vercel evaluates cron expressions in UTC. If a schedule changes in
 `vercel.json`, change it in the route too or Sentry will report every run as
 late.
 
-`calendar-renew` fails its check-in only when *every* renewal failed. One
-clinic with a revoked Google grant is that clinic's problem and would otherwise
-turn the cron red every night until they reconnect; zero renewals out of N is
-the integration being down, which is the alert worth having.
+`calendar-renew` fails its check-in only when every renewal failed *and* at
+least one of those failures was not a "this clinic must reconnect" one. A
+revoked grant is that clinic's problem, and on a quiet night it can be the only
+expiring connection, so counting it would turn the cron red until they come
+back. A failed run produces both a red check-in and a Sentry issue, since the
+throw also travels through `handleApiError`.
 
 `whatsapp-automations` has no monitor on purpose: its daily Discord digest is
 already a positive heartbeat (see below).
 
 ### Google Calendar failures we do not report
 
-`reportCalendarFailure` in `web/src/lib/google-calendar.ts` drops `invalid_grant`
-and 401/403 responses from Google before reporting. Those mean the clinic has to
-reconnect, which the UI already tells them, and the calendar side effects fire on
-every appointment write and every webhook: one disconnected clinic would produce
-a Sentry event per operation until it reconnects. Everything else reports.
+`reportCalendarFailure` in `web/src/lib/google-calendar.ts` drops
+`invalid_grant` and 401 responses from Google, and 403s that are not throttling.
+Those mean the clinic has to reconnect, which the UI already tells them, and the
+calendar side effects fire on every appointment write and every webhook: one
+disconnected clinic would produce a Sentry event per operation until it
+reconnects.
+
+Google also answers 403 for `rateLimitExceeded`, `quotaExceeded` and
+`backendError`. Those still report, because a quota incident is an outage, not a
+clinic-side state. Everything else reports.
+
+Report where the error is *caught*, not where the promise is held.
+`syncAppointmentToGoogle`, `stopWebhookChannel` and `revokeToken` swallow their
+own failures, so a `.catch()` at the call site never runs. An earlier version of
+this branch had six such handlers, all dead.
 
 ## floraclin-logs (Sentry alert rule)
 

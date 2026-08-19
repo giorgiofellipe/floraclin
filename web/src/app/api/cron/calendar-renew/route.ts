@@ -1,20 +1,18 @@
 import { NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { getExpiringConnections, updateConnection } from '@/db/queries/calendar'
-import { registerWebhookChannel, stopWebhookChannel, reportCalendarFailure } from '@/lib/google-calendar'
+import {
+  registerWebhookChannel,
+  stopWebhookChannel,
+  reportCalendarFailure,
+  isGoogleAuthFailure,
+} from '@/lib/google-calendar'
 import { handleApiError } from '@/lib/api-error'
+import { cronMonitorConfig } from '@/lib/observability'
 
-// Schedule mirrors `vercel.json`. Vercel evaluates cron expressions in UTC,
-// so the monitor has to be told the same thing or Sentry marks every run late.
-// `checkinMargin` and `maxRuntime` are minutes: an hour of slack before a run
-// counts as missed, and ten minutes before it counts as hung.
+// Schedule mirrors `vercel.json`; see cronMonitorConfig for the rest.
 const MONITOR_SLUG = 'calendar-renew'
-const MONITOR_CONFIG = {
-  schedule: { type: 'crontab', value: '0 6 * * *' },
-  timezone: 'Etc/UTC',
-  checkinMargin: 60,
-  maxRuntime: 10,
-} as const
+const MONITOR_CONFIG = cronMonitorConfig('0 6 * * *')
 
 export async function GET(request: Request) {
   try {
@@ -35,6 +33,7 @@ export async function GET(request: Request) {
         const connections = await getExpiringConnections(48)
         let renewed = 0
         let failed = 0
+        let mustReconnect = 0
 
         for (const connection of connections) {
           try {
@@ -63,24 +62,26 @@ export async function GET(request: Request) {
             // other clinics from renewing, but a swallowed error still has to
             // be seen: this used to be a `console.error` nobody reads, and a
             // connection that fails every night simply stops syncing.
-            reportCalendarFailure(error, MONITOR_SLUG, {
+            reportCalendarFailure(error, 'renew_channel', {
               connectionId: connection.id,
               tenantId: connection.tenantId,
             })
             failed++
+            if (isGoogleAuthFailure(error)) mustReconnect++
           }
         }
 
         // A green check-in on a run where nothing renewed would be a lie, and
         // it is the difference between "the cron ran" and "the cron worked".
-        // Only the all-failed case throws: one clinic with a revoked grant is
-        // that clinic's problem, and failing the monitor on it would turn the
-        // cron red every night until they reconnect.
-        if (failed > 0 && renewed === 0) {
-          throw new Error(`calendar-renew: all ${failed} channel renewals failed`)
+        // Clinics that simply have to reconnect are excluded: on a small night
+        // they can be the only expiring connections, and failing the monitor
+        // on them would turn the cron red until they come back.
+        const realFailures = failed - mustReconnect
+        if (realFailures > 0 && renewed === 0) {
+          throw new Error(`calendar-renew: all ${realFailures} channel renewals failed`)
         }
 
-        return { renewed, failed, total: connections.length }
+        return { renewed, failed, mustReconnect, total: connections.length }
       },
       MONITOR_CONFIG,
     )

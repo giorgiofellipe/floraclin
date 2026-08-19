@@ -11,7 +11,8 @@ import {
 import { getProspectByPatientId, getProspectByPhone, updateProspect, logProspectActivity } from '@/db/queries/prospects'
 import { getPatient } from '@/db/queries/patients'
 import { createAppointmentSchema } from '@/validations/appointment'
-import { handleApiError, reportSideEffectFailure } from '@/lib/api-error'
+import { handleApiError } from '@/lib/api-error'
+import { reportSideEffectFailure } from '@/lib/observability'
 import { reportCalendarFailure } from '@/lib/google-calendar'
 
 const STAGES_MOVABLE_TO_AGENDADO = ['novo', 'contatado', 'qualificado', 'convertido']
@@ -98,9 +99,10 @@ export async function POST(request: Request) {
       entityId: appointment.id,
     })
 
-    syncAppointmentToGoogle(ctx.tenantId, appointment.id).catch((err) => {
-      reportCalendarFailure(err, 'push_appointment', { appointmentId: appointment.id })
-    })
+    // Deliberately not awaited: Google must never slow down saving an
+    // appointment. It swallows and reports its own failures, so there is
+    // nothing here to catch.
+    void syncAppointmentToGoogle(ctx.tenantId, appointment.id)
 
     // Auto-move CRM lead to "agendado" — matches by linked patient, patient
     // phone, or booking phone (leads are often scheduled without a patient

@@ -121,8 +121,15 @@ describe('isGoogleAuthFailure', () => {
     )
   })
 
-  it.each([401, 403])('recognizes a %i from Google', status => {
+  it.each([401, 403])('recognizes a %i from Google, wherever gaxios put it', status => {
     expect(isGoogleAuthFailure(Object.assign(new Error('Request failed'), { status }))).toBe(true)
+    expect(isGoogleAuthFailure(Object.assign(new Error('Request failed'), { code: status }))).toBe(
+      true,
+    )
+    // gaxios sometimes reports the code as a string
+    expect(
+      isGoogleAuthFailure(Object.assign(new Error('Request failed'), { code: String(status) })),
+    ).toBe(true)
     expect(
       isGoogleAuthFailure(Object.assign(new Error('Request failed'), { response: { status } })),
     ).toBe(true)
@@ -131,6 +138,7 @@ describe('isGoogleAuthFailure', () => {
   it('does not swallow a real failure', () => {
     expect(isGoogleAuthFailure(new Error('socket hang up'))).toBe(false)
     expect(isGoogleAuthFailure(Object.assign(new Error('boom'), { status: 500 }))).toBe(false)
+    expect(isGoogleAuthFailure(Object.assign(new Error('dns'), { code: 'ENOTFOUND' }))).toBe(false)
     expect(isGoogleAuthFailure('not an error')).toBe(false)
   })
 })

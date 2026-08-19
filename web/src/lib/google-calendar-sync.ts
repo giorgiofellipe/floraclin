@@ -1,7 +1,7 @@
 import { db } from '@/db/client'
 import { appointments, patients, procedureTypes } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
-import { getGoogleCalendarClient } from '@/lib/google-calendar'
+import { getGoogleCalendarClient, reportCalendarFailure } from '@/lib/google-calendar'
 import { getConnectionByUserId, getClinicConnection } from '@/db/queries/calendar'
 
 const BR_TZ = 'America/Sao_Paulo'
@@ -100,7 +100,11 @@ export async function syncAppointmentToGoogle(
     await syncToCalendar(appt, 'practitioner', isCancelled)
     await syncToCalendar(appt, 'clinic', isCancelled)
   } catch (error) {
-    console.error(`Failed to sync appointment ${appointmentId} to Google:`, error)
+    // Swallowed so a Google outage never costs the clinic the appointment it
+    // just saved. Reported here rather than at the call sites, because this
+    // catch is the last place the error exists: the promise callers hold
+    // never rejects.
+    reportCalendarFailure(error, 'push_appointment', { tenantId, appointmentId })
   }
 }
 
@@ -169,6 +173,10 @@ async function syncToCalendar(
       }
     }
   } catch (error) {
-    console.error(`Failed to sync to ${target} calendar for appointment ${appt.id}:`, error)
+    reportCalendarFailure(error, 'push_appointment', {
+      tenantId: appt.tenantId,
+      appointmentId: appt.id,
+      target,
+    })
   }
 }

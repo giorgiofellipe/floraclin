@@ -3,7 +3,7 @@ import { db } from '@/db/client'
 import { calendarConnections } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { randomBytes, createHmac, timingSafeEqual } from 'crypto'
-import { reportSideEffectFailure } from '@/lib/api-error'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events'
 
@@ -148,7 +148,7 @@ export async function stopWebhookChannel(
       },
     })
   } catch (error) {
-    console.warn('Failed to stop webhook channel:', error)
+    reportCalendarFailure(error, 'stop_channel', { connectionId })
   }
 }
 
@@ -157,7 +157,9 @@ export async function revokeToken(accessToken: string) {
     const oauth2Client = createOAuth2Client()
     await oauth2Client.revokeToken(accessToken)
   } catch (error) {
-    console.warn('Failed to revoke Google token:', error)
+    // A token we failed to revoke stays valid on Google's side until it
+    // expires, so this is the one cleanup failure worth knowing about.
+    reportCalendarFailure(error, 'revoke_token')
   }
 }
 
@@ -170,13 +172,22 @@ export async function revokeToken(accessToken: string) {
  * produce a Sentry event per operation, for as long as it stays disconnected,
  * burying the sync failures that actually are ours to fix.
  */
+// Google answers 403 for quota and rate limiting too, and those are outages we
+// very much want to hear about. Only the authorization flavour is a clinic-side
+// state.
+const GOOGLE_THROTTLING = /rateLimit|quota|userRateLimitExceeded|backendError/i
+
 export function isGoogleAuthFailure(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   if (error.message.includes('invalid_grant')) return true
 
+  // gaxios puts the status on `status`, on the response, or on `code`, which
+  // is sometimes a string and sometimes a non-numeric code like `ENOTFOUND`.
   const e = error as { status?: unknown; code?: unknown; response?: { status?: unknown } }
-  const status = e.status ?? e.code ?? e.response?.status
-  return status === 401 || status === 403
+  const status = Number(e.status ?? e.response?.status ?? e.code)
+
+  if (status === 401) return true
+  return status === 403 && !GOOGLE_THROTTLING.test(error.message)
 }
 
 /**

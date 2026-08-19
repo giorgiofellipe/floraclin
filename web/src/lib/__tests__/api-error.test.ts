@@ -6,7 +6,7 @@ vi.mock('@sentry/nextjs', () => ({
   captureException: (...args: unknown[]) => captureExceptionMock(...args),
 }))
 
-import { handleApiError, reportSideEffectFailure } from '../api-error'
+import { handleApiError } from '../api-error'
 import { ForbiddenError } from '../errors'
 
 const URL_PATIENTS = 'https://app.floraclin.com.br/api/patients?q=ana'
@@ -122,11 +122,12 @@ describe('handleApiError', () => {
     })
 
     it('masks the anamnesis access token, which is a live credential in the path', () => {
-      const token = '9f2a1c8b7e6d5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e'
+      // Starts with a letter on purpose: a leading digit is already caught
+      // by the kebab-case rule, so only this shape exercises LONG_HEX.
+      const token = 'af2a1c8b7e6d5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e'
       handleApiError(new Error('boom'), new Request(`https://app.floraclin.com.br/api/anamnesis/token/${token}`))
 
       expect(routeTag()).toBe('/api/anamnesis/token/:id')
-      expect(routeTag()).not.toContain(token)
     })
 
     it('masks numeric ids', () => {
@@ -145,33 +146,6 @@ describe('handleApiError', () => {
       )
 
       expect(routeTag()).toBe('/api/reports/procedimentos-realizados')
-    })
-  })
-
-  describe('reportSideEffectFailure', () => {
-    it('reports with the area and step, and does not return a response', () => {
-      const boom = new Error('google says no')
-
-      const result = reportSideEffectFailure(boom, {
-        area: 'calendar-sync',
-        step: 'push_appointment',
-        extra: { appointmentId: 'a1' },
-      })
-
-      expect(result).toBeUndefined()
-      expect(captureExceptionMock).toHaveBeenCalledWith(boom, {
-        tags: { area: 'calendar-sync', step: 'push_appointment' },
-        extra: { appointmentId: 'a1' },
-      })
-    })
-
-    it('works without extra context', () => {
-      reportSideEffectFailure('nope', { area: 'billing', step: 'stripe_signature' })
-
-      expect(captureExceptionMock).toHaveBeenCalledWith('nope', {
-        tags: { area: 'billing', step: 'stripe_signature' },
-        extra: undefined,
-      })
     })
   })
 

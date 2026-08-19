@@ -82,9 +82,7 @@ export async function PUT(
       entityId: appointmentId,
     })
 
-    syncAppointmentToGoogle(ctx.tenantId, appointmentId).catch((err) => {
-      reportCalendarFailure(err, 'push_appointment', { appointmentId })
-    })
+    void syncAppointmentToGoogle(ctx.tenantId, appointmentId)
 
     return NextResponse.json({ success: true, data: appointment })
   } catch (error) {
@@ -123,9 +121,7 @@ export async function DELETE(
       entityId: id,
     })
 
-    syncAppointmentToGoogle(ctx.tenantId, id).catch((err) => {
-      reportCalendarFailure(err, 'push_appointment', { appointmentId: id })
-    })
+    void syncAppointmentToGoogle(ctx.tenantId, id)
 
     return NextResponse.json({ success: true })
   } catch (error) {

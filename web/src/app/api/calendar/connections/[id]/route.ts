@@ -8,7 +8,7 @@ import {
   getConnectionByUserId,
   listConnections,
 } from '@/db/queries/calendar'
-import { stopWebhookChannel, revokeToken, reportCalendarFailure } from '@/lib/google-calendar'
+import { stopWebhookChannel, revokeToken } from '@/lib/google-calendar'
 import { handleApiError } from '@/lib/api-error'
 
 export async function PATCH(
@@ -70,9 +70,7 @@ export async function DELETE(
     }
 
     if (connection.channelId && connection.channelResourceId) {
-      await stopWebhookChannel(connection.id, connection.channelId, connection.channelResourceId).catch((err) => {
-        reportCalendarFailure(err, 'stop_channel', { connectionId: connection.id })
-      })
+      await stopWebhookChannel(connection.id, connection.channelId, connection.channelResourceId)
     }
 
     await deleteBlocksByConnection(connection.id)
@@ -81,11 +79,8 @@ export async function DELETE(
     const deleted = await deleteConnection(id, ctx.tenantId)
 
     if (deleted) {
-      revokeToken(deleted.accessToken).catch((err) => {
-        // A token we failed to revoke stays valid on Google's side until it
-        // expires, so this is the one cleanup failure worth knowing about.
-        reportCalendarFailure(err, 'revoke_token')
-      })
+      // Both helpers swallow and report their own failures; neither rejects.
+      void revokeToken(deleted.accessToken)
     }
 
     return NextResponse.json({ success: true })

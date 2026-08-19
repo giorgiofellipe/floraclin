@@ -13,7 +13,8 @@ import {
 import { resolveTemplatePrefix } from '@/lib/whatsapp-blueprints'
 import { createTemplateSchema } from '@/validations/whatsapp'
 import { ForbiddenError } from '@/lib/errors'
-import { handleApiError, reportSideEffectFailure } from '@/lib/api-error'
+import { handleApiError } from '@/lib/api-error'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 async function checkWhatsAppAccess(requireOwner: boolean) {
   const ctx = await getAuthContext()
@@ -168,10 +169,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ data: template }, { status: 201 })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
-
-    if (msg.includes('Meta API error')) {
-      return NextResponse.json({ error: msg }, { status: 422 })
-    }
     if (msg === 'WhatsApp not enabled') return NextResponse.json({ error: msg }, { status: 400 })
     if (msg.includes('Meta API error')) {
       return NextResponse.json({ error: msg }, { status: 422 })

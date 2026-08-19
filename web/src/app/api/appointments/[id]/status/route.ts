@@ -47,9 +47,7 @@ export async function PUT(
       changes: { status: { old: '', new: body.status } },
     })
 
-    syncAppointmentToGoogle(ctx.tenantId, id).catch((err) => {
-      reportCalendarFailure(err, 'push_appointment', { appointmentId: id })
-    })
+    void syncAppointmentToGoogle(ctx.tenantId, id)
 
     return NextResponse.json({ success: true, data: appointment })
   } catch (error) {

@@ -11,14 +11,8 @@ import { handleApiError } from '@/lib/api-error'
  * up narrows it to headless-Chromium rendering vs everything else immediately.
  */
 export function reportRouteError(error: unknown, request?: Request): NextResponse {
-  let format: string | undefined
-  if (request) {
-    try {
-      format = new URL(request.url).searchParams.get('format') ?? 'json'
-    } catch {
-      // A malformed request URL is not worth losing the error report over.
-    }
-  }
+  // `Request.url` is always absolute, so this cannot throw.
+  const format = request ? (new URL(request.url).searchParams.get('format') ?? 'json') : undefined
 
   return handleApiError(error, request, { tags: { area: 'reports', format } })
 }

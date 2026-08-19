@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/nextjs'
+import { scrubEvent } from '@/lib/observability'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -15,6 +16,9 @@ if (isProd) {
     replaysSessionSampleRate: 0,
     replaysOnErrorSampleRate: 1.0,
     sendDefaultPii: false,
+    // The browser SDK attaches window.location.href to every event, which
+    // `sendDefaultPii: false` does not cover. See scrubEvent.
+    beforeSend: scrubEvent,
     debug: false,
   })
 }

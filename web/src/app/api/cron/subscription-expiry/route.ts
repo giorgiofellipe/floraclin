@@ -2,18 +2,11 @@ import { NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { getExpiredTrials, updateSubscriptionStatus } from '@/db/queries/subscriptions'
 import { handleApiError } from '@/lib/api-error'
+import { cronMonitorConfig } from '@/lib/observability'
 
-// Schedule mirrors `vercel.json`. Vercel evaluates cron expressions in UTC,
-// so the monitor has to be told the same thing or Sentry marks every run late.
-// `checkinMargin` and `maxRuntime` are minutes: an hour of slack before a run
-// counts as missed, and ten minutes before it counts as hung.
+// Schedule mirrors `vercel.json`; see cronMonitorConfig for the rest.
 const MONITOR_SLUG = 'subscription-expiry'
-const MONITOR_CONFIG = {
-  schedule: { type: 'crontab', value: '0 3 * * *' },
-  timezone: 'Etc/UTC',
-  checkinMargin: 60,
-  maxRuntime: 10,
-} as const
+const MONITOR_CONFIG = cronMonitorConfig('0 3 * * *')
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')

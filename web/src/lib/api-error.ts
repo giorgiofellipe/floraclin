@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { ForbiddenError } from './errors'
+import { maskPath } from './observability'
 
 // Next 16.2.3 (the version installed here, see `web/package.json`) no
 // longer re-exports `isRedirectError` from the public `next/navigation`
@@ -16,8 +17,10 @@ import { ForbiddenError } from './errors'
 //
 // The signal it checks is a small, stable contract instead: `redirect()` /
 // `permanentRedirect()` throw an `Error` whose `digest` starts with
-// `NEXT_REDIRECT;` (same file). Checking the digest directly reproduces
-// `isRedirectError` exactly, and unlike a substring match on the message,
+// `NEXT_REDIRECT;` (same file). Next's own `isRedirectError` goes further and
+// validates the type, destination and status inside the digest; this prefix
+// check accepts anything Next produces without re-encoding those details, and
+// unlike a substring match on the message,
 // it can't be fooled by an unrelated error whose *message* happens to
 // contain the word "redirect" (e.g. a headless-Chromium "Too many
 // redirects" failure), which the old check turned into a false 401 that
@@ -42,40 +45,6 @@ export type ApiErrorOptions = {
    * in. Defaults to `{ error: 'Internal Server Error' }`.
    */
   body?: Record<string, unknown>
-}
-
-// Path segments that identify a row (or, worse, authorize one) must never
-// reach Sentry. `/api/anamnesis/token/<token>` carries a live access token in
-// the URL and `/api/patients/<uuid>` carries a health-linked identifier;
-// neither is filtered by `sendDefaultPii: false`, because an explicit tag is
-// not "default PII". Masking also gives the tag the shape you actually want to
-// group by: one `/api/patients/:id` rather than one tag value per patient.
-//
-// The test is inverted on purpose. Every static segment in `src/app/api` is
-// kebab-case lowercase (verified against the directory tree), so anything that
-// is not gets masked, and an allowlist fails safe in a way a blocklist of id
-// shapes does not. Long all-hex runs are the one kebab-shaped exception:
-// `randomBytes(32).toString('hex')` would otherwise pass as a word.
-const STATIC_SEGMENT = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/
-const LONG_HEX = /^[0-9a-f]{16,}$/
-
-function maskedRoute(request?: Request): string | undefined {
-  if (!request) return undefined
-  let pathname: string
-  try {
-    pathname = new URL(request.url).pathname
-  } catch {
-    // A malformed request URL is not worth losing the error report over.
-    return undefined
-  }
-
-  return pathname
-    .split('/')
-    .map(segment => {
-      if (!segment) return segment
-      return STATIC_SEGMENT.test(segment) && !LONG_HEX.test(segment) ? segment : ':id'
-    })
-    .join('/')
 }
 
 /**
@@ -108,7 +77,8 @@ export function handleApiError(
   if (isNextRedirectError(error))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const route = maskedRoute(request)
+  // `Request.url` is always absolute, so this cannot throw.
+  const route = request ? maskPath(new URL(request.url).pathname) : undefined
 
   const eventId = Sentry.captureException(error, {
     // Caller tags first: `route` and `method` are derived here and are the
@@ -117,33 +87,13 @@ export function handleApiError(
     tags: { ...options?.tags, route, method: request?.method },
   })
 
-  // Kept for `pnpm dev`, where Sentry is not initialized at all and this is
-  // the only place the stack shows up.
+  // Also logged, not only reported: in `pnpm dev` Sentry is not initialized
+  // at all, and in production the Vercel log is where you land when you
+  // already have the request open in front of you.
   console.error('API error:', { route, eventId }, error)
 
   return NextResponse.json(
     { ...(options?.body ?? { error: 'Internal Server Error' }), eventId },
     { status: 500 },
   )
-}
-
-/**
- * Report a failure from a side effect that is deliberately allowed to fail
- * without failing the request: a Google Calendar push sync, a WhatsApp webhook
- * step, a background classification.
- *
- * Swallowing these is the right call, since none of them should cost the user
- * the operation they actually asked for. Swallowing them *silently* is not:
- * every one of these used to be a `console.error`, and a Vercel log stream is
- * not somewhere anyone looks. A push sync that has been failing for a week is
- * the kind of thing a clinic reports to us, rather than the other way round.
- */
-export function reportSideEffectFailure(
-  error: unknown,
-  context: { area: string; step: string; extra?: Record<string, unknown> },
-): void {
-  Sentry.captureException(error, {
-    tags: { area: context.area, step: context.step },
-    extra: context.extra,
-  })
 }
