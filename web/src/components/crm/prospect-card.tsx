@@ -9,6 +9,7 @@ import { ptBR } from 'date-fns/locale'
 import type { Prospect } from './types'
 import { INTENT_CONFIG } from './constants'
 import { formatCurrency } from '@/lib/utils'
+import { formatBrPhone } from '@/lib/phone'
 
 interface ProspectCardProps {
   prospect: Prospect
@@ -37,7 +38,7 @@ export function ProspectCard({ prospect, onClick }: ProspectCardProps) {
     ? INTENT_CONFIG[prospect.intent]
     : undefined
 
-  const displayName = prospect.name || prospect.phone
+  const displayName = prospect.name || formatBrPhone(prospect.phone)
 
   const timeSince = prospect.createdAt
     ? formatDistanceToNow(new Date(prospect.createdAt), {

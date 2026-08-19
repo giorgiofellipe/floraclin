@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { toWhatsAppPhone } from '@/lib/phone'
 
 interface SendAnamnesisDialogProps {
   patientId: string
@@ -81,8 +82,7 @@ export function SendAnamnesisDialog({
 
   function getWhatsAppUrl() {
     if (!url || !patientPhone) return null
-    const digits = patientPhone.replace(/\D/g, '')
-    const phone = digits.startsWith('55') ? digits : `55${digits}`
+    const phone = toWhatsAppPhone(patientPhone)
     const message = `Olá ${patientName.split(' ')[0]}! Preencha seu formulário de anamnese antes da consulta: ${url}`
     return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
   }

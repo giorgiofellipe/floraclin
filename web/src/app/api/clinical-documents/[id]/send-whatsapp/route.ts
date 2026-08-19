@@ -11,6 +11,7 @@ import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
 import { uploadPdfBuffer } from '@/lib/storage'
 import { sendOrEnqueueDocument } from '@/lib/whatsapp'
 import { toWhatsAppPhone } from '@/lib/phone'
+import { handleApiError } from '@/lib/api-error'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -27,7 +28,7 @@ function slugifyForFile(input: string): string {
 }
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -111,15 +112,6 @@ export async function POST(
       data: { deliveredVia, whatsappMessageId: messageId, queued: !!sendResult.queued },
     })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden'))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect'))
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('Send WhatsApp error:', error)
-    return NextResponse.json(
-      { error: msg || 'Falha ao enviar via WhatsApp' },
-      { status: 500 },
-    )
+    return handleApiError(error, req, { body: { error: 'Falha ao enviar via WhatsApp' } })
   }
 }

@@ -3,8 +3,7 @@ import {
   verifyOAuthState,
   exchangeCodeForTokens,
   generateFeedToken,
-  registerWebhookChannel,
-} from '@/lib/google-calendar'
+  registerWebhookChannel, reportCalendarFailure } from '@/lib/google-calendar'
 import { upsertConnection, updateConnection } from '@/db/queries/calendar'
 import { runInitialSync } from '@/lib/google-calendar-pull'
 
@@ -57,12 +56,12 @@ export async function GET(request: Request) {
         channelExpiry: channel.expiration,
       })
     } catch (err) {
-      console.error('Failed to register webhook channel:', err)
+      reportCalendarFailure(err, 'register_channel', { connectionId: connection.id })
     }
 
     if (userId) {
       runInitialSync(connection.id).catch((err) => {
-        console.error('Initial sync failed:', err)
+        reportCalendarFailure(err, 'initial_sync', { connectionId: connection.id })
       })
     }
 
@@ -73,7 +72,14 @@ export async function GET(request: Request) {
 
     return NextResponse.redirect(redirectUrl)
   } catch (error) {
-    console.error('Calendar callback error:', error)
+    // This one can't answer JSON, so it can't go through handleApiError: the
+    // user is mid-OAuth and has to land back in the app. A clinic that cannot
+    // connect its calendar produced no signal at all before this.
+    //
+    // Via reportCalendarFailure because `exchangeCodeForTokens` answers
+    // `invalid_grant` for a reused or expired authorization code, which is
+    // what the back button and a slow consent screen produce.
+    reportCalendarFailure(error, 'callback')
     return NextResponse.redirect(`${APP_URL}/configuracoes?calendar=error`)
   }
 }

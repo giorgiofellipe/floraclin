@@ -6,6 +6,7 @@ import { createAuditLog } from '@/lib/audit'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { createStorageClient } from '@/lib/supabase/storage-client'
+import { handleApiError } from '@/lib/api-error'
 
 const BUCKET_NAME = 'floraclin'
 const MAX_LOGO_BYTES = 1 * 1024 * 1024 // 1 MB — logos render at 64-128px, anything bigger is wasted bandwidth
@@ -114,12 +115,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, logoUrl: signed.signedUrl })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    console.error('Logo upload error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 
@@ -128,7 +124,7 @@ export async function POST(request: Request) {
  * storage — re-pointing or re-uploading is cheap, and keeping orphaned
  * files is fine for now. (A scheduled cleanup pass can sweep them.)
  */
-export async function DELETE() {
+export async function DELETE(request: Request) {
   try {
     const ctx = await getAuthContext()
     if (ctx.role !== 'owner') {
@@ -148,11 +144,6 @@ export async function DELETE() {
     })
     return NextResponse.json({ success: true })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    console.error('Logo clear error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

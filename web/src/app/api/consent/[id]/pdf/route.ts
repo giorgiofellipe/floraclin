@@ -4,12 +4,13 @@ import { getAuthContext } from '@/lib/auth'
 import { getConsentAcceptanceWithContext } from '@/db/queries/consent'
 import { PrintConsent } from '@/components/consent/print-consent'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
+import { handleApiError } from '@/lib/api-error'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -34,10 +35,6 @@ export async function GET(
       },
     })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect'))
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('Consent PDF render error:', error)
-    return NextResponse.json({ error: 'Falha ao gerar PDF' }, { status: 500 })
+    return handleApiError(error, req, { body: { error: 'Falha ao gerar PDF' } })
   }
 }

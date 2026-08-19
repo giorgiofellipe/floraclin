@@ -7,6 +7,7 @@ import {
   getPatientForTenant,
   recordGreeting,
 } from '@/db/queries/birthdays'
+import { handleApiError } from '@/lib/api-error'
 
 function parseYear(value: unknown): number | null {
   if (value === undefined || value === null) return null
@@ -53,12 +54,7 @@ export async function POST(
 
     return NextResponse.json({ success: true, data: { patientId, year } })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect'))
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 
@@ -95,11 +91,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect'))
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

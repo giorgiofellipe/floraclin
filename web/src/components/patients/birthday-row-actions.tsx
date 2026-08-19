@@ -10,12 +10,9 @@ import {
   useToggleGreeting,
 } from '@/hooks/queries/use-birthdays'
 import { useTenant } from '@/hooks/queries/use-tenant'
+import { toWhatsAppPhone } from '@/lib/phone'
 
-/** Strip non-digit chars and prepend the BR country code if absent. */
-function phoneToWhatsappDigits(phone: string): string {
-  const digits = phone.replace(/\D/g, '')
-  return digits.startsWith('55') ? digits : `55${digits}`
-}
+const phoneToWhatsappDigits = toWhatsAppPhone
 
 /** First word of the full name, sentence-cased — used in the WhatsApp template. */
 function firstName(fullName: string): string {

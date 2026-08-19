@@ -5,8 +5,9 @@ import {
   createExpenseCategory,
 } from '@/db/queries/financial-settings'
 import { expenseCategorySchema } from '@/validations/expenses'
+import { handleApiError } from '@/lib/api-error'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const ctx = await getAuthContext()
 
@@ -14,11 +15,7 @@ export async function GET() {
 
     return NextResponse.json({ data: categories })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 
@@ -39,10 +36,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: category })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

@@ -5,6 +5,7 @@ import {
   deleteExpenseCategory,
 } from '@/db/queries/financial-settings'
 import { expenseCategorySchema } from '@/validations/expenses'
+import { handleApiError } from '@/lib/api-error'
 
 export async function PUT(
   request: Request,
@@ -28,16 +29,13 @@ export async function PUT(
     return NextResponse.json({ success: true, data: category })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     if (msg.includes('não encontrada') || msg.includes('not found')) return NextResponse.json({ error: msg }, { status: 404 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -49,10 +47,7 @@ export async function DELETE(
     return NextResponse.json({ success: true })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     if (msg.includes('não encontrada') || msg.includes('not found')) return NextResponse.json({ error: msg }, { status: 404 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

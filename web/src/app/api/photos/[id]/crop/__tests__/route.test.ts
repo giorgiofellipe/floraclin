@@ -12,6 +12,7 @@ vi.mock('@/db/queries/photos', () => ({
 import { requireRole } from '@/lib/auth'
 import { getPhotoAsset, updateCropBox } from '@/db/queries/photos'
 import { PATCH } from '../route'
+import { ForbiddenError } from '@/lib/errors'
 
 const validCropBox = {
   cropBox: {
@@ -82,7 +83,7 @@ describe('PATCH /api/photos/[id]/crop', () => {
   })
 
   it('returns 403 when user lacks permission', async () => {
-    vi.mocked(requireRole).mockRejectedValue(new Error('Forbidden'))
+    vi.mocked(requireRole).mockRejectedValue(new ForbiddenError('Forbidden'))
     const res = await PATCH(makeRequest(validCropBox), context)
     expect(res.status).toBe(403)
   })

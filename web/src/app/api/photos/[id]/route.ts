@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth'
 import { deletePhotoAsset } from '@/db/queries/photos'
+import { handleApiError } from '@/lib/api-error'
 
 interface RouteContext {
   params: Promise<{ id: string }>
 }
 
-export async function DELETE(_request: Request, context: RouteContext) {
+export async function DELETE(request: Request, context: RouteContext) {
   try {
     const auth = await requireRole('owner', 'practitioner')
     const { id: photoId } = await context.params
@@ -21,15 +22,6 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden'))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect'))
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('Photo delete error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Erro interno ao deletar foto' },
-      { status: 500 },
-    )
+    return handleApiError(error, request, { body: { success: false, error: 'Erro interno ao deletar foto' } })
   }
 }

@@ -6,6 +6,7 @@ import { diagramSaveSchema } from '@/validations/procedure'
 import { saveFaceDiagram, getFaceDiagram, getPreviousDiagramPoints } from '@/db/queries/face-diagrams'
 import { verifyTenantOwnership } from '@/db/queries/helpers'
 import { procedureRecords } from '@/db/schema'
+import { handleApiError } from '@/lib/api-error'
 
 export async function GET(request: Request) {
   try {
@@ -27,11 +28,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ error: 'Missing parameters' }, { status: 400 })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 
@@ -78,10 +75,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: { diagramId } })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

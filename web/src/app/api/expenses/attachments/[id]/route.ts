@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { deleteExpenseAttachment } from '@/db/queries/expenses'
 import { deleteFile } from '@/lib/storage'
+import { handleApiError } from '@/lib/api-error'
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -24,12 +25,9 @@ export async function DELETE(
     return NextResponse.json({ success: true })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (msg.includes('não encontrado')) {
       return NextResponse.json({ error: msg }, { status: 404 })
     }
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

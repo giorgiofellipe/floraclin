@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { Prospect } from './types'
+import { formatBrPhone } from '@/lib/phone'
 
 interface PatientResult {
   id: string
@@ -51,7 +52,7 @@ export function ConvertProspectModal({
   useEffect(() => {
     if (prospect && open) {
       setNewPatientName(prospect.name || '')
-      setNewPatientPhone(prospect.phone || '')
+      setNewPatientPhone(prospect.phone ? formatBrPhone(prospect.phone) : '')
       setMode('search')
       setSearchQuery('')
       setSearchResults([])

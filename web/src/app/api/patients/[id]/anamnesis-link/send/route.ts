@@ -6,6 +6,8 @@ import { getPatient } from '@/db/queries/patients'
 import { getTemplateByPurpose, upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
 import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
 import { SubscriptionExpiredError, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
+import { toWhatsAppPhone } from '@/lib/phone'
+import { handleApiError } from '@/lib/api-error'
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
@@ -58,8 +60,7 @@ export async function POST(
       return NextResponse.json({ error: 'Template de anamnese aguardando aprovação da Meta. Use a opção "WhatsApp Web" enquanto isso.' }, { status: 400 })
     }
 
-    const phone = patient.phone.replace(/\D/g, '')
-    const normalizedPhone = phone.startsWith('55') ? phone : `55${phone}`
+    const normalizedPhone = toWhatsAppPhone(patient.phone)
     const firstName = patient.fullName.split(' ')[0]
 
     // Extract token from the URL (last path segment after /a/)
@@ -115,10 +116,6 @@ export async function POST(
       const detail = msg.replace('Meta API error: ', '')
       return NextResponse.json({ error: `Falha ao enviar via WhatsApp: ${detail}` }, { status: 502 })
     }
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    console.error('Anamnesis link send API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

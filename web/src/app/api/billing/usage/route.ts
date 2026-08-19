@@ -5,10 +5,11 @@ import { db } from '@/db/client'
 import { tenantUsers, patients } from '@/db/schema'
 import { eq, and, isNull, sql } from 'drizzle-orm'
 import { getCreditUsage } from '@/db/queries/whatsapp-credits'
+import { handleApiError } from '@/lib/api-error'
 
 type PlanLimits = Record<string, number>
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const ctx = await getAuthContext()
 
@@ -71,10 +72,6 @@ export async function GET() {
       },
     })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('Billing usage error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
