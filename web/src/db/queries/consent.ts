@@ -6,6 +6,7 @@ import type { ConsentTemplateInput, ConsentAcceptanceInput } from '@/validations
 import { verifyTenantOwnership } from './helpers'
 import { sha256, buildEvidencePackage, type DeviceFingerprint, type Geolocation } from '@/lib/signature-evidence'
 import { getSignatureBlock } from '@/lib/professional'
+import { signLogoPath } from '@/lib/logo'
 
 export async function listConsentTemplates(tenantId: string) {
   const templates = await db
@@ -327,7 +328,10 @@ export async function findByVerificationCode(code: string) {
     .where(eq(consentAcceptances.verificationCode, code))
     .limit(1)
 
-  return row ?? null
+  if (!row) return null
+
+  // The public /verify page renders this logo, so the path has to be signed.
+  return { ...row, tenantLogoUrl: await signLogoPath(row.tenantLogoUrl) }
 }
 
 export async function getConsentAcceptanceWithContext(tenantId: string, acceptanceId: string) {
@@ -362,5 +366,9 @@ export async function getConsentAcceptanceWithContext(tenantId: string, acceptan
     .where(and(eq(consentAcceptances.id, acceptanceId), eq(consentAcceptances.tenantId, tenantId)))
     .limit(1)
 
-  return row ?? null
+  if (!row) return null
+
+  // `tenants.logo_url` holds a storage path; the termo print page and PDF
+  // route both render this straight into an <img>.
+  return { ...row, tenantLogoUrl: await signLogoPath(row.tenantLogoUrl) }
 }

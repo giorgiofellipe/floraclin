@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { ClinicHeader } from '@/components/print/clinic-header'
+import { ClinicHeader, toClinicHeaderAddress } from '@/components/print/clinic-header'
 import { FloraclinBrandHeader } from '@/lib/pdf-branding'
 import { ProfessionalSignatureBlock } from '@/components/professional/professional-signature-block'
 import { renderPlaceholders, buildDocumentPlaceholders } from '@/lib/templates/placeholders'
@@ -55,20 +55,10 @@ export function PrintDocument({ doc, tenant }: PrintDocumentProps) {
   const resolvedBody = renderPlaceholders(doc.body, placeholderValues)
   const kindLabel = KIND_LABEL[doc.kind] ?? doc.kind
 
-  // Normalize the tenant address shape for the header — it accepts the
+  // Normalize the tenant address shape for the header: it accepts the
   // structured Address interface but tenants.address is a free JSONB. Pass
   // whatever fields exist; absent ones become undefined.
-  const headerAddress = tenantForHeader.address
-    ? (tenantForHeader.address as {
-        street?: string
-        number?: string
-        complement?: string
-        neighborhood?: string
-        city?: string
-        state?: string
-        zip?: string
-      })
-    : null
+  const headerAddress = toClinicHeaderAddress(tenantForHeader.address)
 
   return (
     <div

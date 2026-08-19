@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createElement } from 'react'
-import { eq } from 'drizzle-orm'
 import { requireRole } from '@/lib/auth'
-import { db } from '@/db/client'
-import { tenants } from '@/db/schema'
+import { getTenantHeaderInfoForPdf } from '@/db/queries/tenants'
+import { EMPTY_TENANT_HEADER } from '@/lib/tenant-header'
 import {
   listPractitionerEarnings,
   type PractitionerPLRow,
@@ -63,12 +62,6 @@ export async function GET(request: Request) {
   try {
     const ctx = await requireRole('owner', 'financial')
 
-    const [tenant] = await db
-      .select({ name: tenants.name })
-      .from(tenants)
-      .where(eq(tenants.id, ctx.tenantId))
-      .limit(1)
-
     const { searchParams } = new URL(request.url)
 
     // A partial range is completed, not rejected; see `resolveDateRange`.
@@ -112,13 +105,14 @@ export async function GET(request: Request) {
     }
 
     if (format === 'pdf') {
+      const tenant = await getTenantHeaderInfoForPdf(ctx.tenantId)
       const report = getReport(REPORT_SLUG)
       const pdf = await renderReactToPdf(
         // `ReportPdf` is generic; createElement can't infer `Row` from the
         // props object alone, so instantiate it explicitly (TS 4.7+ generic
         // instantiation expression) rather than widening to `unknown`.
         createElement(ReportPdf<PractitionerPLRow>, {
-          clinicName: tenant?.name ?? '',
+          tenant: tenant ?? EMPTY_TENANT_HEADER,
           reportTitle: report?.title ?? 'Ganhos por profissional',
           filterSummary: `Período: ${formatDate(dateFrom)} a ${formatDate(dateTo)}`,
           rows,

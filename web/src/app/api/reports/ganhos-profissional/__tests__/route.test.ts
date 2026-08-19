@@ -6,17 +6,8 @@ vi.mock('@/lib/auth', () => ({
   requireRole: vi.fn(),
 }))
 
-vi.mock('@/db/client', () => ({
-  db: {
-    select: vi.fn().mockReturnThis(),
-    from: vi.fn().mockReturnThis(),
-    where: vi.fn().mockReturnThis(),
-    limit: vi.fn(),
-  },
-}))
-
-vi.mock('@/db/schema', () => ({
-  tenants: { id: 'id', name: 'name' },
+vi.mock('@/db/queries/tenants', () => ({
+  getTenantHeaderInfoForPdf: vi.fn(),
 }))
 
 vi.mock('@/db/queries/reports/ganhos-profissional', () => ({
@@ -31,14 +22,12 @@ vi.mock('@/lib/pdf', () => ({
 // ─── Imports (after mocks) ───────────────────────────────────────────
 
 import { requireRole } from '@/lib/auth'
-import { db } from '@/db/client'
+import { getTenantHeaderInfoForPdf } from '@/db/queries/tenants'
 import { listPractitionerEarnings } from '@/db/queries/reports/ganhos-profissional'
 import { renderReactToPdf } from '@/lib/pdf'
 import { GET } from '../route'
 import type { PractitionerPLRow } from '@/db/queries/reports/ganhos-profissional'
 import { ForbiddenError } from '@/lib/errors'
-
-const dbMock = db as unknown as { limit: ReturnType<typeof vi.fn> }
 
 function makeRequest(url: string) {
   return new Request(url)
@@ -66,7 +55,13 @@ beforeEach(() => {
     fullName: 'Owner Example',
     isPlatformAdmin: false,
   } as never)
-  dbMock.limit.mockResolvedValue([{ name: 'Clínica Teste' }])
+  vi.mocked(getTenantHeaderInfoForPdf).mockResolvedValue({
+    name: 'Clínica Teste',
+    phone: '11987654321',
+    email: 'contato@clinicateste.com.br',
+    logoUrl: 'https://storage.example.com/tenant-1/branding/logo.png',
+    address: { city: 'São Paulo', state: 'SP' },
+  })
   vi.mocked(listPractitionerEarnings).mockResolvedValue(SAMPLE_ROWS)
 })
 
@@ -147,6 +142,17 @@ describe('GET /api/reports/ganhos-profissional', () => {
       /^attachment; filename="ganhos-profissional-\d{4}-\d{2}-\d{2}\.pdf"$/,
     )
     expect(renderReactToPdf).toHaveBeenCalled()
+
+    // The PDF tree gets the full tenant projection `ClinicHeader` needs
+    // (name, phone, email, logoUrl, address), not just `tenants.name`.
+    const element = vi.mocked(renderReactToPdf).mock.calls[0][0] as { props: { tenant: unknown } }
+    expect(element.props.tenant).toEqual({
+      name: 'Clínica Teste',
+      phone: '11987654321',
+      email: 'contato@clinicateste.com.br',
+      logoUrl: 'https://storage.example.com/tenant-1/branding/logo.png',
+      address: { city: 'São Paulo', state: 'SP' },
+    })
   })
 
   describe('date range', () => {

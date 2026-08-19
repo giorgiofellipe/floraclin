@@ -27,7 +27,8 @@
     "demo:backfill-applications": "pnpm exec dotenv -e .env.local -- tsx scripts/demo-clinic/backfill-applications.ts",
     "demo:backfill-cash-movements": "pnpm exec dotenv -e .env.local -- tsx scripts/demo-clinic/backfill-cash-movements.ts",
     "whatsapp:cleanup-foreign-templates": "pnpm exec dotenv -e .env.local -- tsx scripts/cleanup-foreign-templates.ts",
-    "whatsapp:normalize-phones": "pnpm exec dotenv -e .env.local -- tsx scripts/normalize-stored-phones.ts"
+    "whatsapp:normalize-phones": "pnpm exec dotenv -e .env.local -- tsx scripts/normalize-stored-phones.ts",
+    "logo:migrate-paths": "pnpm exec dotenv -e .env.local -- tsx scripts/migrate-logo-urls-to-paths.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.1",

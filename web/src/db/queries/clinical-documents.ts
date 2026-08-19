@@ -7,6 +7,7 @@ import {
   users,
 } from '@/db/schema'
 import { and, eq, isNull, desc, asc } from 'drizzle-orm'
+import { signLogoPath } from '@/lib/logo'
 import type {
   ClinicalDocumentKind,
   ProfessionalSnapshot,
@@ -260,7 +261,12 @@ export async function getClinicalDocumentWithContext(
     createdAt: row.doc.createdAt,
     updatedAt: row.doc.updatedAt,
     patient: row.patient,
-    tenant: row.tenant as ClinicalDocumentWithContext['tenant'],
+    tenant: {
+      ...(row.tenant as ClinicalDocumentWithContext['tenant']),
+      // `tenants.logo_url` holds a storage path; the receita/atestado print
+      // page and PDF route both render this straight into an <img>.
+      logoUrl: await signLogoPath(row.tenant.logoUrl),
+    },
   }
 }
 
@@ -341,5 +347,8 @@ export async function findClinicalDocumentByVerificationCode(code: string) {
     .where(eq(clinicalDocuments.verificationCode, code))
     .limit(1)
 
-  return row ?? null
+  if (!row) return null
+
+  // The public /verify page renders this logo, so the path has to be signed.
+  return { ...row, tenantLogoUrl: await signLogoPath(row.tenantLogoUrl) }
 }

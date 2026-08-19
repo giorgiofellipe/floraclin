@@ -6,14 +6,12 @@ import { createAuditLog } from '@/lib/audit'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { createStorageClient } from '@/lib/supabase/storage-client'
+import { LOGO_SIGNED_URL_TTL } from '@/lib/logo'
 import { handleApiError } from '@/lib/api-error'
 
 const BUCKET_NAME = 'floraclin'
 const MAX_LOGO_BYTES = 1 * 1024 * 1024 // 1 MB — logos render at 64-128px, anything bigger is wasted bandwidth
 const ALLOWED_MIME = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'] as const
-// Signed URL TTL for the logo. Long enough that operators don't have to
-// re-sign in normal use; if it ever expires the operator can re-upload.
-const LOGO_SIGNED_URL_TTL = 60 * 60 * 24 * 365 // 1 year
 
 function mimeToExt(mime: string): string {
   if (mime === 'image/png') return 'png'
@@ -24,14 +22,17 @@ function mimeToExt(mime: string): string {
 
 /**
  * Uploads (or replaces) the tenant's logo image. The image is stored
- * privately in the `floraclin` bucket under `<tenantId>/branding/`, and
- * a long-lived signed URL is persisted on `tenants.logo_url` so server-
- * rendered `<ClinicHeader>` (print pages, PDF generation, public booking
- * page) can just consume `tenant.logoUrl` like any other URL.
+ * privately in the `floraclin` bucket under `<tenantId>/branding/`, and the
+ * STORAGE PATH is persisted on `tenants.logo_url`. Every read boundary that
+ * renders a logo signs that path on the way out (`signLogoPath`, `@/lib/logo`),
+ * so no bearer token is ever persisted and nothing expires on the clinic.
+ *
+ * The response still carries a signed URL, for the settings page preview
+ * right after the upload.
  *
  * Owner-only. New uploads write to a new random filename so previous
  * print/PDF copies that captured a snapshot of the prior URL keep
- * working until the signed URL expires.
+ * working until that signed URL expires.
  */
 export async function POST(request: Request) {
   try {
@@ -89,11 +90,11 @@ export async function POST(request: Request) {
 
     await db
       .update(tenants)
-      .set({ logoUrl: signed.signedUrl, updatedAt: new Date() })
+      .set({ logoUrl: path, updatedAt: new Date() })
       .where(eq(tenants.id, ctx.tenantId))
 
-    // Audit only a hash of the file — the URL itself is just a signed path
-    // and would bloat the log without adding forensic value.
+    // Audit only a hash of the file: the bytes are what matters forensically,
+    // and the storage path is already recorded below.
     await createAuditLog({
       tenantId: ctx.tenantId,
       userId: ctx.userId,

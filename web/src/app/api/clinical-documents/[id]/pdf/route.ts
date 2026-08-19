@@ -4,6 +4,7 @@ import { getAuthContext } from '@/lib/auth'
 import { getClinicalDocumentWithContext } from '@/db/queries/clinical-documents'
 import { PrintDocument } from '@/components/clinical-documents/print-document'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
+import { fetchLogoDataUri } from '@/lib/logo'
 import { handleApiError } from '@/lib/api-error'
 
 export const runtime = 'nodejs'
@@ -22,8 +23,12 @@ export async function GET(
       return new NextResponse('Not found', { status: 404 })
     }
 
+    // Inline the logo so headless Chromium makes no network request while
+    // rendering; see `fetchLogoDataUri` (`@/lib/logo`).
+    const tenant = { ...doc.tenant, logoUrl: await fetchLogoDataUri(doc.tenant.logoUrl) }
+
     const pdf = await renderReactToPdf(
-      createElement(PrintDocument, { doc, tenant: doc.tenant }),
+      createElement(PrintDocument, { doc, tenant }),
       PRINT_BASE_CSS,
     )
 
