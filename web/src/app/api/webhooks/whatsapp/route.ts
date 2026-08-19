@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { db } from '@/db/client'
 import { tenants, procedureTypes, whatsappMessages, whatsappConversations } from '@/db/schema'
 import { eq, and, sql, desc } from 'drizzle-orm'
@@ -33,6 +33,7 @@ import {
 import { getPatientByPhone, getPatient } from '@/db/queries/patients'
 import { getTenant } from '@/db/queries/tenants'
 import { classifyMessage } from '@/lib/classify-prospect'
+import { toWhatsAppPhone } from '@/lib/phone'
 
 export const dynamic = 'force-dynamic'
 
@@ -287,9 +288,15 @@ async function processInboundMessage(
   const contextMessageId = (msg.context as { id?: string } | undefined)?.id
 
   if (buttonTitle && contextMessageId) {
-    processConfirmationReply(tenantId, contextMessageId, buttonTitle, from).catch((err) => {
-      console.error('Error processing confirmation reply:', err)
-    })
+    // Registered with `after` rather than left floating. Meta needs its 200
+    // quickly, but a bare fire-and-forget promise can be cut off when the
+    // serverless invocation freezes after the response, which would leave a
+    // patient who tapped Confirmar still marked as scheduled.
+    after(
+      processConfirmationReply(tenantId, contextMessageId, buttonTitle, from).catch((err) => {
+        console.error('Error processing confirmation reply:', err)
+      }),
+    )
   }
 
   // Fire-and-forget: keep reclassifying while the lead is still in "novo" stage
@@ -583,7 +590,7 @@ async function maybeAutoSendAnamnesis(
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.floraclin.com.br'
   const link = `${appUrl}/a/${token.token}`
 
-  const normalizedPhone = phone.startsWith('55') ? phone : `55${phone}`
+  const normalizedPhone = toWhatsAppPhone(phone)
   const firstName = patient.fullName.split(' ')[0] || patient.fullName
 
   const params: Record<string, string> = {

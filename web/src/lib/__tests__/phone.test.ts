@@ -55,6 +55,17 @@ describe('normalizeBrPhone', () => {
     expect(normalizeBrPhone('55 47 9 8844 3635')).toBe('5547988443635')
   })
 
+  it('leaves non-geographic numbers alone', () => {
+    // 0800 numbers are also 11 digits. Read as DDD 08 they would be rewritten
+    // into a geographic number that does not exist, and the migration would
+    // have written that corruption to the database.
+    expect(normalizeBrPhone('08001234567')).toBe('08001234567')
+    expect(normalizeBrPhone('0800123456')).toBe('0800123456')
+    // No valid DDD has a zero in either position.
+    expect(normalizeBrPhone('10987654321')).toBe('10987654321')
+    expect(normalizeBrPhone('01987654321')).toBe('01987654321')
+  })
+
   it('returns unrecognized input as plain digits rather than inventing a prefix', () => {
     // A number we cannot place must not be handed a 55 it never had, or it
     // would silently become a wrong Brazilian number.

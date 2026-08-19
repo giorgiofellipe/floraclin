@@ -35,6 +35,12 @@ export function normalizeBrPhone(phone: string): string {
   const ddd = local.slice(0, 2)
   const subscriber = local.slice(2)
 
+  // Real DDDs run 11 to 99 with no zero in either position. The check is what
+  // keeps non-geographic numbers out: 0800 1234 567 is also 11 digits, and
+  // without this it would be read as DDD 08 and rewritten into a geographic
+  // number that does not exist.
+  if (!/^[1-9][1-9]$/.test(ddd)) return digits
+
   // 8-digit subscribers starting 6-9 are mobiles from before the 9th digit.
   // Landlines start 2-5 and must never receive one.
   const withNinthDigit =

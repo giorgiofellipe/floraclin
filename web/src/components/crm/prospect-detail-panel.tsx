@@ -31,6 +31,7 @@ import { formatCurrency } from '@/lib/utils'
 import type { Prospect, ProspectStage, TeamMember, ProcedureTypeOption } from './types'
 import { STAGE_CONFIG, PROSPECT_STAGES, INTENT_CONFIG, SENTIMENT_CONFIG } from './constants'
 import { ConvertProspectModal } from './convert-prospect-modal'
+import { formatBrPhone } from '@/lib/phone'
 
 interface Activity {
   id: string
@@ -179,7 +180,7 @@ export function ProspectDetailPanel({
             </h3>
             <div className="flex items-center gap-1.5 text-sm text-[#7A7A7A]">
               <Phone className="h-3.5 w-3.5" />
-              {prospect.phone}
+              {formatBrPhone(prospect.phone)}
             </div>
             {prospect.whatsappConversationId && (
               <Link

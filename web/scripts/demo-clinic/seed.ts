@@ -140,6 +140,7 @@ import {
   type DemoWhatsappConversation,
 } from '@/lib/demo-seed/engagement'
 import type { PlannedEntry, SeededPatient } from '@/lib/demo-seed/types'
+import { normalizeBrPhone } from '@/lib/phone'
 import { runSafetyAssertions, runTargetAssertions } from './verify'
 
 /** The transaction handle drizzle hands to the `db.transaction` callback. */
@@ -970,7 +971,7 @@ async function writeProspects(tx: Tx, ctx: WriteContext): Promise<void> {
       id,
       tenantId: DEMO_TENANT_ID,
       name: prospect.name,
-      phone: prospect.phone,
+      phone: normalizeBrPhone(prospect.phone),
       source: prospect.source,
       stage: prospect.stage,
       intent: prospect.intent,
@@ -1009,7 +1010,7 @@ async function writeConversations(tx: Tx, ctx: WriteContext): Promise<void> {
     return {
       id,
       tenantId: DEMO_TENANT_ID,
-      phoneNumber: conversation.phoneNumber,
+      phoneNumber: normalizeBrPhone(conversation.phoneNumber),
       profileName: conversation.profileName,
       patientId: conversation.patientId,
       lastMessageAt,

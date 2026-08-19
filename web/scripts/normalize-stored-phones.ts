@@ -10,7 +10,9 @@
  * patients.phone is deliberately untouched. It holds what the clinic typed and
  * is queried by comparing digits, not by equality.
  *
- * Dry run by default. Pass --yes to write.
+ * Dry run by default. Pass --yes to write. Exits non-zero when any row is left
+ * holding a non-canonical phone, because those are exactly the rows the webhook
+ * will keep failing to route.
  *
  *   pnpm --filter @floraclin/web whatsapp:normalize-phones
  *   pnpm --filter @floraclin/web whatsapp:normalize-phones -- --yes
@@ -22,139 +24,159 @@ import { normalizeBrPhone } from '@/lib/phone'
 
 const apply = process.argv.includes('--yes')
 
-interface Change {
-  table: string
+type TableName = 'whatsapp_conversations' | 'prospects'
+
+interface Row {
+  table: TableName
   id: string
   tenantId: string
-  from: string
+  phone: string
+  /**
+   * Whether a uniqueness rule actually covers this row.
+   *
+   * `uq_whatsapp_conversations_tenant_phone` is unconditional, so every
+   * conversation counts. `uq_prospects_tenant_phone` is partial, applying only
+   * while the stage is not terminal, so a converted or lost lead can share a
+   * number with a live one and is not a collision.
+   */
+  unique: boolean
+}
+
+interface Change extends Row {
   to: string
 }
 
-async function collectConversations(): Promise<Change[]> {
-  const rows = await db
-    .select({
-      id: whatsappConversations.id,
-      tenantId: whatsappConversations.tenantId,
-      phone: whatsappConversations.phoneNumber,
-    })
-    .from(whatsappConversations)
+/**
+ * Read both tables ONCE.
+ *
+ * The changes and the collision index are derived from the same snapshot on
+ * purpose. Reading twice puts live traffic between the two queries, and a row
+ * written in that gap lands in one view but not the other, which is how a real
+ * collision goes unreported.
+ */
+async function loadRows(): Promise<Row[]> {
+  const [convRows, prospectRows] = await Promise.all([
+    db
+      .select({
+        id: whatsappConversations.id,
+        tenantId: whatsappConversations.tenantId,
+        phone: whatsappConversations.phoneNumber,
+      })
+      .from(whatsappConversations),
+    db
+      .select({
+        id: prospects.id,
+        tenantId: prospects.tenantId,
+        phone: prospects.phone,
+        stage: prospects.stage,
+        deletedAt: prospects.deletedAt,
+      })
+      .from(prospects),
+  ])
 
-  return rows
-    .map((r) => ({
-      table: 'whatsapp_conversations',
+  return [
+    ...convRows.map((r) => ({
+      table: 'whatsapp_conversations' as const,
       id: r.id,
       tenantId: r.tenantId,
-      from: r.phone,
-      to: normalizeBrPhone(r.phone),
-    }))
-    .filter((c) => c.from !== c.to)
-}
-
-async function collectProspects(): Promise<Change[]> {
-  const rows = await db
-    .select({
-      id: prospects.id,
-      tenantId: prospects.tenantId,
-      phone: prospects.phone,
-    })
-    .from(prospects)
-
-  return rows
-    .map((r) => ({
-      table: 'prospects',
+      phone: r.phone,
+      unique: true,
+    })),
+    ...prospectRows.map((r) => ({
+      table: 'prospects' as const,
       id: r.id,
       tenantId: r.tenantId,
-      from: r.phone,
-      to: normalizeBrPhone(r.phone),
-    }))
-    .filter((c) => c.from !== c.to)
+      phone: r.phone,
+      unique: r.stage !== 'convertido' && r.stage !== 'perdido' && !r.deletedAt,
+    })),
+  ]
 }
 
 /**
- * Two rows for the same person in the same tenant would collide once both
- * normalize to the same string. Report them instead of merging: deciding which
- * conversation history survives is not a migration's call.
+ * Rows whose normalized value would land on a value another row already holds.
+ *
+ * Reported, never merged: deciding which conversation history or which lead
+ * survives is not a migration's call.
  */
-function findCollisions(changes: Change[], existing: Map<string, string[]>): Change[] {
-  const collisions: Change[] = []
+function findCollisions(changes: Change[], rows: Row[]): Set<string> {
+  const holders = new Map<string, string[]>()
+  for (const r of rows) {
+    if (!r.unique) continue
+    const key = `${r.table}:${r.tenantId}:${normalizeBrPhone(r.phone)}`
+    holders.set(key, [...(holders.get(key) ?? []), r.id])
+  }
+
+  const collisions = new Set<string>()
   for (const c of changes) {
+    if (!c.unique) continue
     const key = `${c.table}:${c.tenantId}:${c.to}`
-    const holders = existing.get(key) ?? []
-    if (holders.some((id) => id !== c.id)) collisions.push(c)
+    if ((holders.get(key) ?? []).some((id) => id !== c.id)) collisions.add(c.id)
   }
   return collisions
 }
 
-async function main() {
-  const [convChanges, prospectChanges] = await Promise.all([
-    collectConversations(),
-    collectProspects(),
-  ])
-  const changes = [...convChanges, ...prospectChanges]
+async function run(): Promise<number> {
+  const rows = await loadRows()
+  const changes: Change[] = rows
+    .map((r) => ({ ...r, to: normalizeBrPhone(r.phone) }))
+    .filter((c) => c.phone !== c.to)
 
-  // Build the post-migration index so collisions are detected against the
-  // normalized values, not the current mixed ones.
-  const index = new Map<string, string[]>()
-  const allConv = await db
-    .select({
-      id: whatsappConversations.id,
-      tenantId: whatsappConversations.tenantId,
-      phone: whatsappConversations.phoneNumber,
-    })
-    .from(whatsappConversations)
-  const allProspects = await db
-    .select({ id: prospects.id, tenantId: prospects.tenantId, phone: prospects.phone })
-    .from(prospects)
+  const collisions = findCollisions(changes, rows)
+  const safe = changes.filter((c) => !collisions.has(c.id))
+  const skipped = changes.filter((c) => collisions.has(c.id))
 
-  for (const r of allConv) {
-    const key = `whatsapp_conversations:${r.tenantId}:${normalizeBrPhone(r.phone)}`
-    index.set(key, [...(index.get(key) ?? []), r.id])
-  }
-  for (const r of allProspects) {
-    const key = `prospects:${r.tenantId}:${normalizeBrPhone(r.phone)}`
-    index.set(key, [...(index.get(key) ?? []), r.id])
-  }
-
-  const collisions = findCollisions(changes, index)
-  const safe = changes.filter((c) => !collisions.includes(c))
+  const countIn = (t: TableName) => safe.filter((c) => c.table === t).length
 
   console.log(`\n${apply ? 'APPLYING' : 'DRY RUN'} — phone normalization\n`)
-  console.log(`whatsapp_conversations: ${convChanges.length} row(s) to rewrite`)
-  console.log(`prospects:              ${prospectChanges.length} row(s) to rewrite\n`)
+  console.log(`whatsapp_conversations: ${countIn('whatsapp_conversations')} row(s) to rewrite`)
+  console.log(`prospects:              ${countIn('prospects')} row(s) to rewrite\n`)
 
   for (const c of safe) {
-    console.log(`  ${c.table.padEnd(23)} ${c.from.padEnd(20)} -> ${c.to}`)
+    console.log(`  ${c.table.padEnd(23)} ${c.phone.padEnd(20)} -> ${c.to}`)
   }
 
-  if (collisions.length > 0) {
-    console.log(`\n  ${collisions.length} row(s) SKIPPED — would collide with an existing row:`)
-    for (const c of collisions) {
-      console.log(`  ${c.table.padEnd(23)} ${c.from.padEnd(20)} -> ${c.to}  (id ${c.id})`)
+  if (skipped.length > 0) {
+    console.log(`\n  ${skipped.length} row(s) SKIPPED — would collide with an existing row:`)
+    for (const c of skipped) {
+      console.log(`  ${c.table.padEnd(23)} ${c.phone.padEnd(20)} -> ${c.to}  (id ${c.id})`)
     }
     console.log('  Merge these by hand. The migration will not pick a winner.')
   }
 
   if (!apply) {
     console.log('\nNothing written. Re-run with --yes to apply.\n')
-    process.exit(0)
+    return skipped.length > 0 ? 1 : 0
   }
 
-  for (const c of safe) {
-    if (c.table === 'whatsapp_conversations') {
-      await db
-        .update(whatsappConversations)
-        .set({ phoneNumber: c.to })
-        .where(eq(whatsappConversations.id, c.id))
-    } else {
-      await db.update(prospects).set({ phone: c.to }).where(eq(prospects.id, c.id))
+  // One transaction. A half-applied run leaves exactly the mixed formats this
+  // script exists to remove, and the collision set on the retry would then be
+  // computed against a table that is part old and part new.
+  await db.transaction(async (tx) => {
+    for (const c of safe) {
+      if (c.table === 'whatsapp_conversations') {
+        await tx
+          .update(whatsappConversations)
+          .set({ phoneNumber: c.to })
+          .where(eq(whatsappConversations.id, c.id))
+      } else {
+        await tx.update(prospects).set({ phone: c.to }).where(eq(prospects.id, c.id))
+      }
     }
-  }
+  })
 
-  console.log(`\nRewrote ${safe.length} row(s).\n`)
-  process.exit(0)
+  console.log(`\nRewrote ${safe.length} row(s).`)
+  if (skipped.length > 0) {
+    console.log(`${skipped.length} row(s) still hold a non-canonical phone and will not route.`)
+  }
+  console.log('')
+  return skipped.length > 0 ? 1 : 0
 }
 
-main().catch((err) => {
-  console.error(err)
-  process.exit(1)
-})
+// Exit from the caller rather than mid-run, so stdout is fully flushed. This
+// output is the only record of what the migration did.
+run()
+  .then((code) => process.exit(code))
+  .catch((err) => {
+    console.error(err)
+    process.exit(1)
+  })
