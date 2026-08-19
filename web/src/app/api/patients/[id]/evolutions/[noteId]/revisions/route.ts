@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth'
 import { listRevisions } from '@/db/queries/patient-evolutions'
 import { getPatient } from '@/db/queries/patients'
+import { handleApiError } from '@/lib/api-error'
 
 /**
  * GET /api/patients/[id]/evolutions/[noteId]/revisions
@@ -15,7 +16,7 @@ import { getPatient } from '@/db/queries/patients'
  * envelope.
  */
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string; noteId: string }> },
 ) {
   try {
@@ -35,14 +36,6 @@ export async function GET(
 
     return NextResponse.json({ revisions })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    if (msg === 'Forbidden') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-    console.error('Evolution revisions GET error:', error)
-    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
+    return handleApiError(error, req, { body: { error: 'Erro interno' } })
   }
 }

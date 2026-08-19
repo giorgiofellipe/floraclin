@@ -41,6 +41,7 @@ import { listLedgerReportRows } from '@/db/queries/reports/extrato-periodo'
 import { renderReactToPdf } from '@/lib/pdf'
 import { GET } from '../route'
 import type { LedgerReportRow } from '@/db/queries/reports/extrato-periodo'
+import { ForbiddenError } from '@/lib/errors'
 
 const dbMock = db as unknown as { limit: ReturnType<typeof vi.fn> }
 
@@ -77,7 +78,7 @@ beforeEach(() => {
 
 describe('GET /api/reports/extrato-periodo', () => {
   it('returns 403 for a practitioner', async () => {
-    vi.mocked(requireRole).mockRejectedValue(new Error('Forbidden: insufficient permissions'))
+    vi.mocked(requireRole).mockRejectedValue(new ForbiddenError('Forbidden: insufficient permissions'))
 
     const res = await GET(makeRequest('http://localhost/api/reports/extrato-periodo'))
     const json = await res.json()

@@ -160,6 +160,46 @@ function sign(body: string, secret: string): string {
   return `sha256=${hmac}`
 }
 
+/**
+ * Build a Meta webhook payload for a quick reply tapped on a *template*.
+ *
+ * This is the shape production actually receives, because the confirmation
+ * messages are templates. Meta sends `type: 'button'` with `button.text`, not
+ * the `interactive` / `button_reply` shape every other test here uses. The
+ * suite was green against `interactive` while production never confirmed a
+ * single appointment.
+ */
+function makeTemplateButtonPayload(buttonText: string, contextId: string) {
+  return {
+    object: 'whatsapp_business_account',
+    entry: [
+      {
+        id: 'entry-1',
+        changes: [
+          {
+            field: 'messages',
+            value: {
+              messaging_product: 'whatsapp',
+              metadata: { phone_number_id: PHONE_NUMBER_ID },
+              contacts: [{ wa_id: PATIENT_PHONE, profile: { name: 'Maria' } }],
+              messages: [
+                {
+                  id: META_MSG_ID,
+                  from: PATIENT_PHONE,
+                  timestamp: String(Math.floor(Date.now() / 1000)),
+                  type: 'button',
+                  button: { text: buttonText, payload: buttonText },
+                  context: { id: contextId },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  }
+}
+
 /** Build a Meta webhook payload with an interactive button reply. */
 function makeButtonReplyPayload(buttonTitle: string, contextId: string) {
   return {
@@ -264,6 +304,48 @@ beforeEach(() => {
   process.env.META_APP_SECRET = TEST_APP_SECRET
   process.env.NEXT_PUBLIC_APP_URL = 'https://app.floraclin.com.br'
   setupCommonMocks()
+})
+
+describe('processConfirmationReply — template quick replies', () => {
+  it('confirms from button.text, the shape templates actually send', async () => {
+    vi.mocked(getAppointmentByConfirmationMessageId).mockResolvedValue({
+      id: APPOINTMENT_ID,
+      status: 'scheduled',
+      patientId: PATIENT_ID,
+    } as never)
+    vi.mocked(confirmAppointment).mockResolvedValue({ id: APPOINTMENT_ID } as never)
+    vi.mocked(listAutomations).mockResolvedValue([])
+
+    const payload = makeTemplateButtonPayload('Confirmar', CONTEXT_MSG_ID)
+    const res = await POST(makeRequest(payload))
+    expect(res.status).toBe(200)
+
+    await vi.waitFor(() => {
+      expect(getAppointmentByConfirmationMessageId).toHaveBeenCalledWith(
+        TENANT_ID,
+        CONTEXT_MSG_ID,
+      )
+      expect(confirmAppointment).toHaveBeenCalledWith(TENANT_ID, APPOINTMENT_ID)
+    })
+  })
+
+  it('reschedules from button.text', async () => {
+    vi.mocked(getAppointmentByConfirmationMessageId).mockResolvedValue({
+      id: APPOINTMENT_ID,
+      status: 'scheduled',
+      patientId: PATIENT_ID,
+    } as never)
+    vi.mocked(listAutomations).mockResolvedValue([])
+
+    const payload = makeTemplateButtonPayload('Reagendar', CONTEXT_MSG_ID)
+    const res = await POST(makeRequest(payload))
+    expect(res.status).toBe(200)
+
+    await vi.waitFor(() => {
+      expect(requestReschedule).toHaveBeenCalledWith(TENANT_ID, APPOINTMENT_ID)
+    })
+    expect(confirmAppointment).not.toHaveBeenCalled()
+  })
 })
 
 describe('processConfirmationReply — button title extraction', () => {

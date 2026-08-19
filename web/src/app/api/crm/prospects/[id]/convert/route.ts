@@ -7,6 +7,7 @@ import { createPatient, getPatient } from '@/db/queries/patients'
 import { pushSseEvent } from '@/db/queries/whatsapp'
 import { convertProspectSchema } from '@/validations/prospect'
 import type { Role } from '@/types'
+import { handleApiError } from '@/lib/api-error'
 
 export async function POST(
   request: Request,
@@ -88,10 +89,6 @@ export async function POST(
 
     return NextResponse.json({ data: prospect })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

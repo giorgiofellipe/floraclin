@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth'
 import { updateCropBox, getPhotoAsset } from '@/db/queries/photos'
 import { saveCropSchema } from '@/validations/photo-crop'
+import { handleApiError } from '@/lib/api-error'
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -42,15 +43,6 @@ export async function PATCH(request: Request, context: RouteContext) {
     await updateCropBox(auth.tenantId, photoId, parsed.data.cropBox ?? null)
     return NextResponse.json({ success: true })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden'))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect'))
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('Crop update error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Erro interno ao salvar recorte' },
-      { status: 500 },
-    )
+    return handleApiError(error, request, { body: { success: false, error: 'Erro interno ao salvar recorte' } })
   }
 }

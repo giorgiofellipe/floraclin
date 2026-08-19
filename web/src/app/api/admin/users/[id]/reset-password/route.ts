@@ -4,9 +4,10 @@ import { resetUserPassword } from '@/db/queries/admin-users'
 import { db } from '@/db/client'
 import { users } from '@/db/schema'
 import { eq } from 'drizzle-orm'
+import { handleApiError } from '@/lib/api-error'
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -26,10 +27,6 @@ export async function POST(
     const result = await resetUserPassword(user.email)
     return NextResponse.json(result)
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

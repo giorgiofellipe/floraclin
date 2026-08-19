@@ -50,6 +50,7 @@ import { FileText } from 'lucide-react'
 import { usePractitioners, useAppointmentProcedureTypes } from '@/hooks/queries/use-appointments'
 import type { Patient } from '@/db/queries/patients'
 import type { Role } from '@/types'
+import { toWhatsAppPhone } from '@/lib/phone'
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -74,11 +75,7 @@ function formatBirthDate(birthDate: string): string {
 }
 
 /** Strip non-digit chars to build tel: / whatsapp links */
-function phoneToDigits(phone: string): string {
-  const digits = phone.replace(/\D/g, '')
-  // If it doesn't start with country code, assume Brazil (+55)
-  return digits.startsWith('55') ? digits : `55${digits}`
-}
+const phoneToDigits = toWhatsAppPhone
 
 const VALID_TABS: PatientTabKey[] = [
   'dados',

@@ -7,6 +7,8 @@ import { getTemplateByPurpose, upsertConversation, createMessage, pushSseEvent }
 import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
 import { SubscriptionExpiredError, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
 import { CONSENT_SIGNING_TEMPLATE_PURPOSE } from '@/validations/consent'
+import { toWhatsAppPhone } from '@/lib/phone'
+import { handleApiError } from '@/lib/api-error'
 
 const sendSchema = z.object({
   url: z.string().url(),
@@ -57,8 +59,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const phone = patient.phone.replace(/\D/g, '')
-    const normalizedPhone = phone.startsWith('55') ? phone : `55${phone}`
+    const normalizedPhone = toWhatsAppPhone(patient.phone)
     const firstName = patient.fullName.split(' ')[0]
 
     const templateParams = { '1': firstName, '2': tenant.name, '3': parsed.data.url }
@@ -100,10 +101,6 @@ export async function POST(request: Request) {
     if (msg.includes('Meta API error')) {
       return NextResponse.json({ error: `Falha ao enviar via WhatsApp: ${msg.replace('Meta API error: ', '')}` }, { status: 502 })
     }
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    console.error('Consent signing link send error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

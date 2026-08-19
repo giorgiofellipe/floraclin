@@ -9,6 +9,8 @@ import {
 } from '@/db/schema'
 import { eq, and, or, desc, gt, gte, lt, ilike, sql, notInArray, inArray } from 'drizzle-orm'
 import { normalizeBrPhone } from '@/lib/phone'
+import { getTenant } from '@/db/queries/tenants'
+import { resolveTemplatePrefix, belongsToTemplatePrefix } from '@/lib/whatsapp-blueprints'
 import type { PaginatedResult } from '@/types'
 
 // ─── TYPE EXPORTS ──────────────────────────────────────────────────
@@ -514,10 +516,71 @@ export async function upsertTemplate(
   return created
 }
 
+/**
+ * Read-only prefix resolution for filtering. Does not persist a fallback;
+ * write paths (sync/provision) are responsible for that so the prefix stays
+ * stable even if the tenant is later renamed. See resolveTemplatePrefix.
+ */
+async function resolveTenantTemplatePrefix(tenantId: string): Promise<string | null> {
+  const tenant = await getTenant(tenantId)
+  if (!tenant) return null
+  const settings = tenant.settings as Record<string, unknown> | null
+  return resolveTemplatePrefix(
+    tenant.name,
+    settings?.whatsapp_template_prefix as string | undefined,
+  )
+}
+
+/**
+ * Templates the clinic can see and manage in its own settings UI. The WABA
+ * is shared across tenants, so this filters loadTemplates' cached rows down
+ * to the ones whose name belongs to this tenant's prefix. The cached rows
+ * themselves are left unfiltered so getTemplateById/getTemplateByName/
+ * getTemplateByPurpose (used on the send path) keep seeing the full set.
+ */
 export async function listTemplates(
   tenantId: string,
 ): Promise<WhatsappTemplate[]> {
-  return loadTemplates(tenantId)
+  const templates = await loadTemplates(tenantId)
+  const prefix = await resolveTenantTemplatePrefix(tenantId)
+  if (!prefix) return templates
+  return templates.filter((t) => t.systemTemplate || belongsToTemplatePrefix(t.name, prefix))
+}
+
+export interface SystemTemplate {
+  id: string
+  name: string
+  language: string
+  purposeKey: string | null
+  status: string
+  components: unknown
+  variableMapping: unknown
+}
+
+/**
+ * The platform-managed templates sent from the shared FloraClin number.
+ * Deliberately not tenant-scoped: these rows live under whichever tenant
+ * seeded them, and every tenant on the shared number sends them. Mirrors
+ * the resolution getSystemTemplate does on the send path.
+ *
+ * Projected, not `select()`: every clinic reads this, so the seeding
+ * tenant's id, the Meta template id and the review metadata stay out of
+ * the response. Callers only need to label and render the message.
+ */
+export async function listSystemTemplates(): Promise<SystemTemplate[]> {
+  return db
+    .select({
+      id: whatsappTemplates.id,
+      name: whatsappTemplates.name,
+      language: whatsappTemplates.language,
+      purposeKey: whatsappTemplates.purposeKey,
+      status: whatsappTemplates.status,
+      components: whatsappTemplates.components,
+      variableMapping: whatsappTemplates.variableMapping,
+    })
+    .from(whatsappTemplates)
+    .where(eq(whatsappTemplates.systemTemplate, true))
+    .orderBy(whatsappTemplates.name)
 }
 
 export async function getTemplateById(
@@ -620,6 +683,10 @@ export async function markStaleTemplates(
     .where(
       and(
         eq(whatsappTemplates.tenantId, tenantId),
+        // A tenant sync sees only its own prefix, so it can never be evidence
+        // that a platform template is gone. Marking one DELETED here would
+        // stop the cron for every clinic on the shared number.
+        eq(whatsappTemplates.systemTemplate, false),
         notInArray(whatsappTemplates.metaTemplateId, metaTemplateIds),
         sql`${whatsappTemplates.metaTemplateId} IS NOT NULL`,
         sql`${whatsappTemplates.status} != 'DELETED'`
@@ -768,7 +835,7 @@ export async function cleanupSseEvents(): Promise<void> {
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000)
   await db
     .delete(sseEvents)
-    .where(sql`${sseEvents.createdAt} < ${fiveMinutesAgo}`)
+    .where(sql`${sseEvents.createdAt} < ${fiveMinutesAgo.toISOString()}`)
 }
 
 // ─── STATS ─────────────────────────────────────────────────────────

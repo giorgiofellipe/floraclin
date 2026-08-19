@@ -5,11 +5,12 @@ import { getPatientEvolutionFeed } from '@/db/queries/patient-evolutions'
 import { getPatient } from '@/db/queries/patients'
 import { createNote } from '@/lib/patient-evolutions'
 import { createEvolutionSchema } from '@/validations/patient-evolution'
+import { handleApiError } from '@/lib/api-error'
 
 // GET /api/patients/[id]/evolutions — feed of clinical notes + executed sessions.
 // Response shape per RA-7: `{ entries }` directly (no `{ success, data }` envelope).
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -29,18 +30,11 @@ export async function GET(
 
     return NextResponse.json({ entries })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    if (msg.includes('Forbidden')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+
     if (error instanceof BusinessError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 409 })
     }
-    console.error('Evolutions GET error:', error)
-    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
+    return handleApiError(error, request, { body: { error: 'Erro interno' } })
   }
 }
 
@@ -88,17 +82,10 @@ export async function POST(
 
     return NextResponse.json({ note }, { status: 201 })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    if (msg.includes('Forbidden')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+
     if (error instanceof BusinessError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 409 })
     }
-    console.error('Evolutions POST error:', error)
-    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
+    return handleApiError(error, request, { body: { error: 'Erro interno' } })
   }
 }

@@ -1,10 +1,12 @@
 import { redirect } from 'next/navigation'
+import * as Sentry from '@sentry/nextjs'
 import { cookies } from 'next/headers'
 import { auth } from '@/lib/auth-config'
 import { db } from '@/db/client'
 import { tenantUsers, users, tenants } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
 import type { AuthContext, Role } from '@/types'
+import { ForbiddenError } from '@/lib/errors'
 
 const TENANT_COOKIE = 'floraclin_tenant_id'
 
@@ -84,6 +86,19 @@ export async function getAuthContext(): Promise<AuthContext> {
     redirect('/login')
   }
 
+  // Every server-side error report from here on carries who hit it and which
+  // clinic they were in. Without this a Sentry issue in a multi-tenant product
+  // is unactionable: you can see that something broke, but not whether it broke
+  // for one clinic's data or for everyone. Ids only, since `sendDefaultPii` is off
+  // and patient-adjacent identity (name, e-mail) has no business leaving the
+  // database. Sentry scopes this per request, so it does not leak between
+  // concurrent requests on a warm Vercel instance.
+  Sentry.setUser({ id: userId })
+  Sentry.setTags({
+    tenant_id: activeMembership.tenantId,
+    role: activeMembership.role,
+  })
+
   return {
     userId,
     tenantId: activeMembership.tenantId,
@@ -128,7 +143,7 @@ export async function requireRole(...allowedRoles: Role[]): Promise<AuthContext>
   const context = await getAuthContext()
 
   if (!allowedRoles.includes(context.role)) {
-    throw new Error('Forbidden: insufficient permissions')
+    throw new ForbiddenError('Forbidden: insufficient permissions')
   }
 
   return context
@@ -137,7 +152,7 @@ export async function requireRole(...allowedRoles: Role[]): Promise<AuthContext>
 export async function requirePlatformAdmin(): Promise<AuthContext> {
   const context = await getAuthContext()
   if (!context.isPlatformAdmin) {
-    throw new Error('Forbidden: not platform admin')
+    throw new ForbiddenError('Forbidden: not platform admin')
   }
   return context
 }

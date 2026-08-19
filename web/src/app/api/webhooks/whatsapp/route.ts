@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
-import * as Sentry from '@sentry/nextjs'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { db } from '@/db/client'
 import { tenants, procedureTypes, whatsappMessages, whatsappConversations } from '@/db/schema'
 import { eq, and, sql } from 'drizzle-orm'
@@ -34,8 +33,24 @@ import {
 import { getPatientByPhone, getPatient } from '@/db/queries/patients'
 import { getTenant } from '@/db/queries/tenants'
 import { classifyMessage } from '@/lib/classify-prospect'
+import { toWhatsAppPhone } from '@/lib/phone'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 export const dynamic = 'force-dynamic'
+
+// Meta retries a webhook only when the whole request fails, so every one of
+// these handlers swallows its error on purpose: one bad message must not cost
+// us the rest of the batch, or make Meta replay the batch forever. Swallowed
+// is not the same as invisible, though. A patient reply that never lands in
+// the inbox is exactly the failure a clinic notices before we do, and a
+// `console.error` on Vercel is not something anyone reads.
+function reportWebhookFailure(
+  error: unknown,
+  step: string,
+  extra?: Record<string, unknown>,
+) {
+  reportSideEffectFailure(error, { area: 'whatsapp-webhook', step, extra })
+}
 
 // ---------------------------------------------------------------------------
 // GET -- Meta verification challenge
@@ -89,17 +104,14 @@ export async function POST(request: NextRequest) {
         for (const msg of value.messages ?? []) {
           try {
             const senderPhone = normalizeBrPhone(msg.from)
-            const contextMessageId = (msg.context as { id?: string } | undefined)?.id
+            const contextMessageId = msg.context?.id
             const tenantId = await resolveSharedNumberTenant(senderPhone, contextMessageId)
-            if (!tenantId) {
-              console.warn(
-                `WhatsApp webhook (shared): no tenant found for sender ${senderPhone}`,
-              )
-              continue
-            }
+            // The resolver logs or reports why it refused, so nothing to
+            // add here beyond skipping the message.
+            if (!tenantId) continue
             await processInboundMessage(tenantId, msg, value.contacts?.[0])
           } catch (err) {
-            console.error('Error processing WhatsApp message (shared):', err)
+            reportWebhookFailure(err, 'inbound_message_shared')
           }
         }
 
@@ -112,7 +124,7 @@ export async function POST(request: NextRequest) {
             if (!tenantId) continue
             await processStatusUpdate(tenantId, status)
           } catch (err) {
-            console.error('Error processing WhatsApp status (shared):', err)
+            reportWebhookFailure(err, 'status_update_shared')
           }
         }
 
@@ -142,7 +154,7 @@ export async function POST(request: NextRequest) {
         try {
           await processInboundMessage(tenantId, msg, value.contacts?.[0])
         } catch (err) {
-          console.error('Error processing WhatsApp message:', err)
+          reportWebhookFailure(err, 'inbound_message', { tenantId })
         }
       }
 
@@ -151,7 +163,7 @@ export async function POST(request: NextRequest) {
         try {
           await processStatusUpdate(tenantId, status)
         } catch (err) {
-          console.error('Error processing WhatsApp status:', err)
+          reportWebhookFailure(err, 'status_update', { tenantId })
         }
       }
     }
@@ -239,7 +251,9 @@ async function processInboundMessage(
           .then((result: { storedUrl: string }) => {
             updateMessageMedia(tenantId, metaMessageId, result.storedUrl)
           })
-          .catch((err: unknown) => console.error('Media download failed:', err))
+          .catch((err: unknown) =>
+            reportWebhookFailure(err, 'media_download', { tenantId, mediaId }),
+          )
       }
     }
   }
@@ -273,19 +287,33 @@ async function processInboundMessage(
   }
 
   // Process confirmation button replies.
-  // Meta quick-reply template buttons send the button text in button_reply.title
-  // (the button_reply.id is an auto-generated UUID, not the button text).
+  //
+  // A quick reply arrives in one of two shapes, and which one depends on what
+  // was sent, not on what the button looks like:
+  //   - tapped on a *template*    -> type 'button',      button.text
+  //   - tapped on an *interactive* -> type 'interactive', interactive.button_reply.title
+  // The confirmation messages are templates, so the first shape is the one
+  // that matters in production. Both are read because both are reachable.
+  //
+  // Always the label, never the id: button_reply.id is a generated UUID.
   const interactiveData = msg.interactive as {
     type?: string
     button_reply?: { id: string; title: string }
   } | undefined
-  const buttonTitle = interactiveData?.button_reply?.title
-  const contextMessageId = (msg.context as { id?: string } | undefined)?.id
+  const templateButton = msg.button as { text?: string; payload?: string } | undefined
+  const buttonTitle = interactiveData?.button_reply?.title ?? templateButton?.text
+  const contextMessageId = msg.context?.id
 
   if (buttonTitle && contextMessageId) {
-    processConfirmationReply(tenantId, contextMessageId, buttonTitle, from).catch((err) => {
-      console.error('Error processing confirmation reply:', err)
-    })
+    // Registered with `after` rather than left floating. Meta needs its 200
+    // quickly, but a bare fire-and-forget promise can be cut off when the
+    // serverless invocation freezes after the response, which would leave a
+    // patient who tapped Confirmar still marked as scheduled.
+    after(
+      processConfirmationReply(tenantId, contextMessageId, buttonTitle, from).catch((err) => {
+        reportWebhookFailure(err, 'confirmation_reply', { tenantId })
+      }),
+    )
   }
 
   // Fire-and-forget: keep reclassifying while the lead is still in "novo" stage
@@ -295,13 +323,13 @@ async function processInboundMessage(
     // for existing ones the createdAt is old enough that 60s is irrelevant.
     const classifyAfter = new Date(new Date(prospect.createdAt).getTime() - 60_000)
     classifyAndUpdateProspect(tenantId, prospect.id, conversation.id, classifyAfter).catch((err) =>
-      console.error('Classification failed:', err),
+      reportWebhookFailure(err, 'prospect_classification', { tenantId }),
     )
   }
 
   // Drain any queued messages now that the window is open
   drainQueuedMessages(tenantId, conversation.id, from).catch((err) =>
-    console.error('Queue drain failed:', err),
+    reportWebhookFailure(err, 'queue_drain', { tenantId }),
   )
 }
 
@@ -439,7 +467,7 @@ async function drainQueuedMessages(
         message: sentMessage,
       })
     } catch (err) {
-      console.error(`Failed to drain queued message ${qm.id}:`, err)
+      reportWebhookFailure(err, 'queue_drain_message', { tenantId, queuedMessageId: qm.id })
     }
   }
 
@@ -509,10 +537,13 @@ async function processStatusUpdate(
 //      to whatsapp_conversations and compare its phone_number (normalized)
 //      against the sender's. Three outcomes:
 //        - resolves, phone matches -> route with certainty (exact).
-//        - resolves, phone MISMATCHES -> refuse and report to Sentry. Do
-//          NOT fall back to phone history for this request -- falling back
-//          would let an attacker bypass the check by supplying a mismatched
-//          context id that happens to phone-resolve unambiguously.
+//        - resolves, phone MISMATCHES -> refuse and report. Do NOT fall
+//          back to phone history for this request. Not because a sender
+//          could forge the id (the payload is HMAC-verified and context.id
+//          is set by Meta, not by the patient), but because a mismatch
+//          means our own data disagrees with itself, and guessing a tenant
+//          from a second signal we already know to be inconsistent is how
+//          a message crosses a clinic boundary.
 //        - does not resolve to an outbound message of this sender's (unknown
 //          id, or the message found is inbound) -> fall through to
 //          phone-history rules. This is deliberate: our own write can lose a
@@ -566,32 +597,59 @@ async function resolveTenantByMessageId(
   return { status: 'mismatch', tenantId: row.tenantId }
 }
 
+/**
+ * How recent a conversation has to be to break a tie between clinics.
+ *
+ * Only reached when the same phone has a conversation with more than one
+ * clinic and the message carries no reply context. Refusing outright would
+ * drop the message, and the likeliest sequence that lands here is a patient
+ * confirming an appointment (which routes exactly, by context id) and then
+ * typing a follow-up a moment later. One clinic being active inside this
+ * window is a strong signal; two are not, and that still refuses.
+ */
+const AMBIGUITY_RECENCY_WINDOW_MS = 24 * 60 * 60 * 1000
+
 async function resolveTenantByPhoneHistory(phone: string): Promise<string | null> {
   const rows = await db
-    .selectDistinct({ tenantId: whatsappConversations.tenantId })
+    .select({
+      tenantId: whatsappConversations.tenantId,
+      lastMessageAt: whatsappConversations.lastMessageAt,
+    })
     .from(whatsappConversations)
     .where(eq(whatsappConversations.phoneNumber, phone))
 
-  if (rows.length === 1) return rows[0].tenantId
+  const tenantIds = [...new Set(rows.map((r) => r.tenantId))]
 
-  if (rows.length > 1) {
-    const candidateTenantIds = rows.map((r) => r.tenantId)
-    console.error(
-      `WhatsApp webhook (shared): ambiguous tenant for phone ${phone}, candidates: ${candidateTenantIds.join(', ')}`,
-    )
-    Sentry.captureException(
+  if (tenantIds.length === 1) return tenantIds[0]
+
+  if (tenantIds.length > 1) {
+    const cutoff = Date.now() - AMBIGUITY_RECENCY_WINDOW_MS
+    const recentTenantIds = [
+      ...new Set(
+        rows
+          .filter((r) => r.lastMessageAt !== null && r.lastMessageAt.getTime() >= cutoff)
+          .map((r) => r.tenantId),
+      ),
+    ]
+
+    if (recentTenantIds.length === 1) return recentTenantIds[0]
+
+    // Either nothing is live or more than one clinic is. Recency cannot
+    // separate them, so refuse rather than guess across a tenant boundary.
+    reportWebhookFailure(
       new Error('WhatsApp shared-number: ambiguous tenant resolution'),
-      { extra: { phone, candidateTenantIds } },
+      'shared_tenant_ambiguous',
+      { phone, candidateTenantIds: tenantIds, recentTenantIds },
     )
     return null
   }
 
+  // No conversation for this phone under any tenant. On the shared number a
+  // conversation row only exists once a clinic has messaged the person, so
+  // this is every cold inbound: wrong numbers, spam, anyone who found the
+  // FloraClin number. Ordinary traffic, so it logs rather than raising an
+  // exception that would page through the Sentry to Discord route.
   console.warn(`WhatsApp webhook (shared): no tenant found for phone ${phone}`)
-  Sentry.captureException(
-    new Error('WhatsApp shared-number: no tenant found for phone'),
-    { extra: { phone } },
-  )
-
   return null
 }
 
@@ -605,12 +663,10 @@ async function resolveSharedNumberTenant(
     if (resolution.status === 'exact') return resolution.tenantId
 
     if (resolution.status === 'mismatch') {
-      console.error(
-        `WhatsApp webhook (shared): context ${messageId} belongs to a conversation with a phone different from sender ${phone} (message tenant ${resolution.tenantId})`,
-      )
-      Sentry.captureException(
+      reportWebhookFailure(
         new Error('WhatsApp shared-number: context/sender phone mismatch'),
-        { extra: { messageId, phone, tenantId: resolution.tenantId } },
+        'shared_context_phone_mismatch',
+        { messageId, phone, tenantId: resolution.tenantId },
       )
       return null
     }
@@ -696,7 +752,7 @@ async function maybeAutoSendAnamnesis(
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.floraclin.com.br'
   const link = `${appUrl}/a/${token.token}`
 
-  const normalizedPhone = phone.startsWith('55') ? phone : `55${phone}`
+  const normalizedPhone = toWhatsAppPhone(phone)
   const firstName = patient.fullName.split(' ')[0] || patient.fullName
 
   const params: Record<string, string> = {
@@ -776,6 +832,10 @@ interface WhatsAppMessage {
   timestamp: string
   type: string
   text?: { body: string }
+  /** Quick reply tapped on a template message. */
+  button?: { text?: string; payload?: string }
+  /** Reply to another message. Carries the wamid of the message replied to. */
+  context?: { id?: string; from?: string }
   image?: WhatsAppMediaPayload
   video?: WhatsAppMediaPayload
   audio?: WhatsAppMediaPayload

@@ -3,6 +3,7 @@ import { patients } from '@/db/schema'
 import { eq, and, isNull, ilike, or, sql, asc } from 'drizzle-orm'
 import type { PaginatedResult } from '@/types'
 import type { CreatePatientInput, UpdatePatientInput } from '@/validations/patient'
+import { normalizeBrPhone } from '@/lib/phone'
 
 export type Patient = typeof patients.$inferSelect
 
@@ -79,20 +80,47 @@ export async function getPatient(tenantId: string, patientId: string): Promise<P
   return patient ?? null
 }
 
+/**
+ * Match on the tail of the number, country code and 9th digit agnostic.
+ *
+ * `patients.phone` holds whatever the clinic typed and is never normalized, so
+ * the same person can be stored as `(47) 98844-3635`, `+55 47 98844-3635` or
+ * `(47) 8844-3635`. Callers, meanwhile, now pass the canonical
+ * `5547988443635`. Comparing a canonicalized input against a raw column finds
+ * only one of those shapes, and a miss is not harmless: the webhook then calls
+ * `upsertConversation` with `patientId: null`, which clears an existing link.
+ */
+export function phoneTailVariants(phone: string): string[] {
+  const canonical = normalizeBrPhone(phone)
+  if (!/^55\d{10,11}$/.test(canonical)) return []
+
+  const local = canonical.slice(2)
+  const ddd = local.slice(0, 2)
+  const subscriber = local.slice(2)
+
+  // A mobile is stored either with or without the 9th digit. A landline has
+  // only the 8-digit form, and must not gain a variant that invents a 9.
+  return subscriber.length === 9 && subscriber.startsWith('9')
+    ? [ddd + subscriber, ddd + subscriber.slice(1)]
+    : [ddd + subscriber]
+}
+
 export async function getPatientByPhone(tenantId: string, phone: string): Promise<Patient | null> {
-  const digits = phone.replace(/\D/g, '')
-  const local = digits.startsWith('55') ? digits.slice(2) : digits
+  const variants = phoneTailVariants(phone)
+  const storedDigits = sql`regexp_replace(${patients.phone}, '\\D', '', 'g')`
+
+  // Nothing placeable in the input (a foreign number, a half-typed entry).
+  // Fall back to comparing the digits exactly rather than matching a tail,
+  // which on a short string would match far too much.
+  const phoneMatches =
+    variants.length > 0
+      ? or(...variants.map((v) => sql`right(${storedDigits}, ${v.length}) = ${v}`))
+      : sql`${storedDigits} = ${phone.replace(/\D/g, '')}`
 
   const [patient] = await db
     .select()
     .from(patients)
-    .where(
-      and(
-        eq(patients.tenantId, tenantId),
-        isNull(patients.deletedAt),
-        sql`regexp_replace(${patients.phone}, '\\D', '', 'g') = ${local}`,
-      ),
-    )
+    .where(and(eq(patients.tenantId, tenantId), isNull(patients.deletedAt), phoneMatches))
     .limit(1)
 
   return patient ?? null

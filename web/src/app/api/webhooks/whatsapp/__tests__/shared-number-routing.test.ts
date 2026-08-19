@@ -1,6 +1,15 @@
 /**
  * Tests for shared-number tenant resolution in the WhatsApp webhook.
  *
+ * This file merges two suites that were written independently against the
+ * same path: the reply-context routing rules below, and the phone
+ * canonicalization assertions at the end. The second set exists because the
+ * cron stored one string and the webhook looked up another, so every inbound
+ * message on the shared number was dropped before anything was written.
+ * Keeping them together is deliberate: they exercise the same resolver
+ * through the same entry point, and two files would mean two mock walls
+ * drifting apart.
+ *
  * Multiple tenants share the FloraClin WhatsApp number. resolveSharedNumberTenant
  * (not exported) decides which tenant an inbound message or status update
  * belongs to. It is not exported from route.ts, so we exercise it through the
@@ -20,7 +29,10 @@ import crypto from 'crypto'
  * Builds a chainable object that mimics drizzle's query builder for all
  * shapes used by the resolver:
  *   - db.select(...).from(...).innerJoin(...).where(...).limit(1)  (message-id lookup)
- *   - db.selectDistinct(...).from(...).where(...)                  (phone-history lookup, awaited directly)
+ *   - db.select(...).from(...).where(...)                          (phone-history lookup, awaited directly)
+ *
+ * Both go through db.select, so tests that exercise the context path queue
+ * the message lookup first and the phone-history lookup second.
  */
 function makeSelectChain(result: unknown[]) {
   const promise = Object.assign(Promise.resolve(result), {
@@ -35,16 +47,18 @@ function makeSelectChain(result: unknown[]) {
   }
 }
 
-const captureExceptionMock = vi.fn()
+// The route reports through reportWebhookFailure -> reportSideEffectFailure,
+// which tags every report with an area and a step. Asserting on that wrapper
+// rather than on Sentry directly keeps the tests honest about the tagging.
+const reportSideEffectFailureMock = vi.fn()
 
-vi.mock('@sentry/nextjs', () => ({
-  captureException: (...args: unknown[]) => captureExceptionMock(...args),
+vi.mock('@/lib/observability', () => ({
+  reportSideEffectFailure: (...args: unknown[]) => reportSideEffectFailureMock(...args),
 }))
 
 vi.mock('@/db/client', () => ({
   db: {
     select: vi.fn(),
-    selectDistinct: vi.fn(),
     update: vi.fn(() => ({
       set: vi.fn(() => ({
         where: vi.fn(() => ({
@@ -70,18 +84,23 @@ vi.mock('@/db/schema', () => ({
 }))
 
 vi.mock('drizzle-orm', () => ({
-  eq: vi.fn((...args: unknown[]) => args),
+  eq: vi.fn((column: unknown, value: unknown) => ({ column, value })),
   and: vi.fn((...args: unknown[]) => args),
   sql: vi.fn(),
 }))
 
-vi.mock('@/lib/whatsapp', () => ({
+// normalizeBrPhone is NOT stubbed. Mocking it as the identity function is
+// what let the original canonicalization bug through: the suite stayed green
+// while the cron and the webhook produced different strings for one person.
+vi.mock('@/lib/whatsapp', async () => {
+  const { normalizeBrPhone } = await vi.importActual<typeof import('@/lib/phone')>('@/lib/phone')
+  return {
+  normalizeBrPhone,
   verifyWebhookSignature: vi.fn(),
   downloadAndStoreMedia: vi.fn(),
   sendTextMessage: vi.fn(),
   sendTemplateMessage: vi.fn(),
   sendMediaMessage: vi.fn(),
-  normalizeBrPhone: vi.fn((phone: string) => phone),
   getTemplateForTenant: vi.fn(),
   CreditExhaustedError: class CreditExhaustedError extends Error {
     constructor(public creditsUsed: number, public creditsTotal: number) {
@@ -89,7 +108,8 @@ vi.mock('@/lib/whatsapp', () => ({
       this.name = 'CreditExhaustedError'
     }
   },
-}))
+  }
+})
 
 vi.mock('@/db/queries/whatsapp', () => ({
   upsertConversation: vi.fn(),
@@ -157,6 +177,7 @@ import {
 import { getProspectByPhone } from '@/db/queries/prospects'
 import { getPatientByPhone } from '@/db/queries/patients'
 import { NextRequest } from 'next/server'
+import { eq } from 'drizzle-orm'
 import { POST } from '../route'
 
 // ---------------------------------------------------------------------------
@@ -165,7 +186,13 @@ import { POST } from '../route'
 
 const TEST_APP_SECRET = 'test-app-secret'
 const SHARED_PHONE_NUMBER_ID = 'floraclin-shared-waba-id'
-const PATIENT_PHONE = '5511999990000'
+// What Meta puts in `from`: Brazilian mobiles arrive without the 9th digit
+// for accounts predating the 2012-2016 renumbering.
+const PATIENT_PHONE = '554788443635'
+// What the clinic typed into the patient record, and so what the cron stored.
+const PATIENT_RECORD_PHONE = '(47) 98844-3635'
+// The one canonical form both must collapse to.
+const CANONICAL = '5547988443635'
 const TENANT_A = 'tenant-a'
 const TENANT_B = 'tenant-b'
 const CONVERSATION_ID = 'conv-1'
@@ -248,6 +275,14 @@ function makeStatusPayload(statusId: string) {
   }
 }
 
+/** A conversation row as the phone-history lookup now returns it. */
+function convRow(tenantId: string, agoMs: number) {
+  return { tenantId, lastMessageAt: new Date(Date.now() - agoMs) }
+}
+const MINUTES = 60 * 1000
+const HOURS = 60 * MINUTES
+const DAYS = 24 * HOURS
+
 function setupCommonInboundMocks() {
   vi.mocked(verifyWebhookSignature).mockReturnValue(true)
   vi.mocked(getMessageByMetaId).mockResolvedValue(null as never)
@@ -292,7 +327,7 @@ describe('resolveSharedNumberTenant — reply context wins over phone history', 
     await vi.waitFor(() => {
       expect(upsertConversation).toHaveBeenCalledWith(
         TENANT_A,
-        PATIENT_PHONE,
+        CANONICAL,
         'Maria',
         'prospect-1',
         null,
@@ -300,7 +335,8 @@ describe('resolveSharedNumberTenant — reply context wins over phone history', 
     })
 
     // Phone-history fallback must never be consulted -- context resolved it.
-    expect(db.selectDistinct).not.toHaveBeenCalled()
+    // Only the message-id lookup ran, so exactly one select.
+    expect(db.select).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -318,25 +354,25 @@ describe('resolveSharedNumberTenant — reply context bound to the sender phone 
     // Even though phone history WOULD resolve unambiguously if consulted,
     // it must never be reached -- prove that by making it return a single
     // candidate and asserting it's never called.
-    vi.mocked(db.selectDistinct).mockReturnValueOnce(
-      makeSelectChain([{ tenantId: TENANT_B }]) as never,
+    // Phone history WOULD resolve unambiguously if consulted. Queue it so a
+    // regression that falls through routes somewhere, then assert it never ran.
+    vi.mocked(db.select).mockReturnValueOnce(
+      makeSelectChain([convRow(TENANT_B, 1 * HOURS)]) as never,
     )
 
     const payload = makeInboundPayload({ contextId: CONTEXT_MSG_ID })
     await POST(makeRequest(payload))
 
-    await new Promise((r) => setTimeout(r, 50))
+    await vi.waitFor(() => expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1))
 
     expect(upsertConversation).not.toHaveBeenCalled()
-    expect(db.selectDistinct).not.toHaveBeenCalled()
-    expect(captureExceptionMock).toHaveBeenCalledTimes(1)
-    const [, ctx] = captureExceptionMock.mock.calls[0]
-    expect(ctx).toMatchObject({
-      extra: {
-        messageId: CONTEXT_MSG_ID,
-        phone: PATIENT_PHONE,
-        tenantId: TENANT_A,
-      },
+    // One select: the message lookup. The queued phone-history chain is untouched.
+    expect(db.select).toHaveBeenCalledTimes(1)
+    const [, meta] = reportSideEffectFailureMock.mock.calls[0]
+    expect(meta).toMatchObject({
+      area: 'whatsapp-webhook',
+      step: 'shared_context_phone_mismatch',
+      extra: { messageId: CONTEXT_MSG_ID, phone: CANONICAL, tenantId: TENANT_A },
     })
   })
 
@@ -349,8 +385,8 @@ describe('resolveSharedNumberTenant — reply context bound to the sender phone 
         { tenantId: TENANT_A, direction: 'inbound', conversationPhone: PATIENT_PHONE },
       ]) as never,
     )
-    vi.mocked(db.selectDistinct).mockReturnValueOnce(
-      makeSelectChain([{ tenantId: TENANT_B }]) as never,
+    vi.mocked(db.select).mockReturnValueOnce(
+      makeSelectChain([convRow(TENANT_B, 1 * HOURS)]) as never,
     )
 
     const payload = makeInboundPayload({ contextId: CONTEXT_MSG_ID })
@@ -359,21 +395,23 @@ describe('resolveSharedNumberTenant — reply context bound to the sender phone 
     await vi.waitFor(() => {
       expect(upsertConversation).toHaveBeenCalledWith(
         TENANT_B,
-        PATIENT_PHONE,
+        CANONICAL,
         'Maria',
         'prospect-1',
         null,
       )
     })
 
-    expect(captureExceptionMock).not.toHaveBeenCalled()
+    expect(reportSideEffectFailureMock).not.toHaveBeenCalled()
   })
 })
 
 describe('resolveSharedNumberTenant — phone history, unambiguous', () => {
   it('routes to the single tenant that has ever conversed with this phone when there is no context id', async () => {
-    vi.mocked(db.selectDistinct).mockReturnValueOnce(
-      makeSelectChain([{ tenantId: TENANT_B }]) as never,
+    // Two rows, one tenant: the same clinic can hold more than one row only
+    // through data drift, and it must still resolve rather than look ambiguous.
+    vi.mocked(db.select).mockReturnValueOnce(
+      makeSelectChain([convRow(TENANT_B, 40 * DAYS), convRow(TENANT_B, 90 * DAYS)]) as never,
     )
 
     const payload = makeInboundPayload({})
@@ -382,58 +420,114 @@ describe('resolveSharedNumberTenant — phone history, unambiguous', () => {
     await vi.waitFor(() => {
       expect(upsertConversation).toHaveBeenCalledWith(
         TENANT_B,
-        PATIENT_PHONE,
+        CANONICAL,
         'Maria',
         'prospect-1',
         null,
       )
     })
 
-    expect(db.select).not.toHaveBeenCalled()
+    // No context id, so the message lookup is skipped entirely.
+    expect(db.select).toHaveBeenCalledTimes(1)
   })
 })
 
 describe('resolveSharedNumberTenant — phone history, ambiguous', () => {
-  it('does not route and reports to Sentry when two tenants share the phone and there is no context id', async () => {
-    vi.mocked(db.selectDistinct).mockReturnValueOnce(
-      makeSelectChain([{ tenantId: TENANT_A }, { tenantId: TENANT_B }]) as never,
+  it('refuses and reports when two tenants share the phone and neither is recently active', async () => {
+    vi.mocked(db.select).mockReturnValueOnce(
+      makeSelectChain([convRow(TENANT_A, 30 * DAYS), convRow(TENANT_B, 60 * DAYS)]) as never,
     )
 
     const payload = makeInboundPayload({})
     await POST(makeRequest(payload))
 
-    await new Promise((r) => setTimeout(r, 50))
+    await vi.waitFor(() => expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1))
 
     expect(upsertConversation).not.toHaveBeenCalled()
-    expect(captureExceptionMock).toHaveBeenCalledTimes(1)
-    const [err, ctx] = captureExceptionMock.mock.calls[0]
+    const [err, meta] = reportSideEffectFailureMock.mock.calls[0]
     expect((err as Error).message).toMatch(/ambiguous/i)
-    expect(ctx).toMatchObject({
-      extra: {
-        phone: PATIENT_PHONE,
-        candidateTenantIds: [TENANT_A, TENANT_B],
-      },
+    expect(meta).toMatchObject({
+      area: 'whatsapp-webhook',
+      step: 'shared_tenant_ambiguous',
+      extra: { phone: CANONICAL, candidateTenantIds: [TENANT_A, TENANT_B], recentTenantIds: [] },
     })
   })
-})
 
-describe('resolveSharedNumberTenant — phone history, zero candidates', () => {
-  it('does not route and reports to Sentry, distinguishably from the ambiguous case, when no tenant has ever conversed with this phone', async () => {
-    vi.mocked(db.selectDistinct).mockReturnValueOnce(makeSelectChain([]) as never)
+  it('routes to the only recently active tenant instead of dropping the message', async () => {
+    // The sequence this tier exists for: the patient confirms with clinic A
+    // (routed exactly, by context id), then types a follow-up seconds later
+    // with no context. Clinic B has a stale conversation for the same phone.
+    // Refusing here would silently lose the follow-up.
+    vi.mocked(db.select).mockReturnValueOnce(
+      makeSelectChain([convRow(TENANT_A, 5 * MINUTES), convRow(TENANT_B, 40 * DAYS)]) as never,
+    )
 
     const payload = makeInboundPayload({})
     await POST(makeRequest(payload))
 
-    await new Promise((r) => setTimeout(r, 50))
+    await vi.waitFor(() => {
+      expect(upsertConversation).toHaveBeenCalledWith(
+        TENANT_A,
+        CANONICAL,
+        'Maria',
+        'prospect-1',
+        null,
+      )
+    })
+
+    expect(reportSideEffectFailureMock).not.toHaveBeenCalled()
+  })
+
+  it('still refuses when both tenants are active inside the window', async () => {
+    // Recency cannot separate them, so guessing would cross a clinic boundary.
+    vi.mocked(db.select).mockReturnValueOnce(
+      makeSelectChain([convRow(TENANT_A, 2 * HOURS), convRow(TENANT_B, 3 * HOURS)]) as never,
+    )
+
+    const payload = makeInboundPayload({})
+    await POST(makeRequest(payload))
+
+    await vi.waitFor(() => expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1))
 
     expect(upsertConversation).not.toHaveBeenCalled()
-    expect(captureExceptionMock).toHaveBeenCalledTimes(1)
-    const [err, ctx] = captureExceptionMock.mock.calls[0]
-    expect((err as Error).message).toMatch(/no tenant found/i)
-    expect((err as Error).message).not.toMatch(/ambiguous/i)
-    expect(ctx).toMatchObject({
-      extra: { phone: PATIENT_PHONE },
+    const [, meta] = reportSideEffectFailureMock.mock.calls[0]
+    expect(meta).toMatchObject({
+      step: 'shared_tenant_ambiguous',
+      extra: { recentTenantIds: [TENANT_A, TENANT_B] },
     })
+  })
+
+  it('treats a conversation with no lastMessageAt as not recent', async () => {
+    vi.mocked(db.select).mockReturnValueOnce(
+      makeSelectChain([
+        { tenantId: TENANT_A, lastMessageAt: null },
+        convRow(TENANT_B, 40 * DAYS),
+      ]) as never,
+    )
+
+    const payload = makeInboundPayload({})
+    await POST(makeRequest(payload))
+
+    await vi.waitFor(() => expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1))
+    expect(upsertConversation).not.toHaveBeenCalled()
+  })
+})
+
+describe('resolveSharedNumberTenant — phone history, zero candidates', () => {
+  it('drops the message without raising an alert, since a cold inbound is ordinary traffic', async () => {
+    // On the shared number a conversation row only exists once a clinic has
+    // messaged the person, so every wrong number and every bit of spam lands
+    // here. Reporting it would page through the Sentry to Discord route on
+    // traffic that is working as designed.
+    vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([]) as never)
+
+    const payload = makeInboundPayload({})
+    await POST(makeRequest(payload))
+
+    await vi.waitFor(() => expect(db.select).toHaveBeenCalledTimes(1))
+
+    expect(upsertConversation).not.toHaveBeenCalled()
+    expect(reportSideEffectFailureMock).not.toHaveBeenCalled()
   })
 })
 
@@ -442,8 +536,8 @@ describe('resolveSharedNumberTenant — unknown context id falls through to phon
     // Context lookup finds nothing.
     vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([]) as never)
     // Phone-history fallback finds exactly one tenant.
-    vi.mocked(db.selectDistinct).mockReturnValueOnce(
-      makeSelectChain([{ tenantId: TENANT_B }]) as never,
+    vi.mocked(db.select).mockReturnValueOnce(
+      makeSelectChain([convRow(TENANT_B, 1 * HOURS)]) as never,
     )
 
     const payload = makeInboundPayload({ contextId: 'wamid.unknown' })
@@ -452,15 +546,15 @@ describe('resolveSharedNumberTenant — unknown context id falls through to phon
     await vi.waitFor(() => {
       expect(upsertConversation).toHaveBeenCalledWith(
         TENANT_B,
-        PATIENT_PHONE,
+        CANONICAL,
         'Maria',
         'prospect-1',
         null,
       )
     })
 
-    expect(db.select).toHaveBeenCalledTimes(1)
-    expect(db.selectDistinct).toHaveBeenCalledTimes(1)
+    // Message lookup then phone history.
+    expect(db.select).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -488,13 +582,14 @@ describe('resolveSharedNumberTenant — status updates', () => {
       )
     })
 
-    expect(db.selectDistinct).not.toHaveBeenCalled()
+    // The status id resolved, so phone history was never consulted.
+    expect(db.select).toHaveBeenCalledTimes(1)
   })
 
   it('falls back to phone history for a status update when the message id is unknown', async () => {
     vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([]) as never)
-    vi.mocked(db.selectDistinct).mockReturnValueOnce(
-      makeSelectChain([{ tenantId: TENANT_B }]) as never,
+    vi.mocked(db.select).mockReturnValueOnce(
+      makeSelectChain([convRow(TENANT_B, 1 * HOURS)]) as never,
     )
     vi.mocked(updateMessageStatus).mockResolvedValue({
       conversationId: CONVERSATION_ID,
@@ -516,16 +611,44 @@ describe('resolveSharedNumberTenant — status updates', () => {
 
   it('drops the status update when tenant resolution is ambiguous', async () => {
     vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([]) as never)
-    vi.mocked(db.selectDistinct).mockReturnValueOnce(
-      makeSelectChain([{ tenantId: TENANT_A }, { tenantId: TENANT_B }]) as never,
+    vi.mocked(db.select).mockReturnValueOnce(
+      makeSelectChain([convRow(TENANT_A, 30 * DAYS), convRow(TENANT_B, 60 * DAYS)]) as never,
     )
 
     const payload = makeStatusPayload('wamid.ambiguous-status')
     await POST(makeRequest(payload))
 
-    await new Promise((r) => setTimeout(r, 50))
-
+    await vi.waitFor(() => expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1))
     expect(updateMessageStatus).not.toHaveBeenCalled()
-    expect(captureExceptionMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('phone canonicalization', () => {
+  // The bug that made every inbound message on the shared number disappear:
+  // the cron stored the patient-record form and the webhook looked up the
+  // Meta form, and the conversation lookup matches by string equality.
+  it('collapses the patient-record form and the Meta form to one string', async () => {
+    const { normalizeBrPhone } = await vi.importActual<typeof import('@/lib/phone')>('@/lib/phone')
+    expect(normalizeBrPhone(PATIENT_RECORD_PHONE)).toBe(CANONICAL)
+    expect(normalizeBrPhone(PATIENT_PHONE)).toBe(CANONICAL)
+  })
+
+  it('looks the conversation up by the same string the cron stored', async () => {
+    vi.mocked(db.select).mockReturnValueOnce(
+      makeSelectChain([convRow(TENANT_B, 1 * HOURS)]) as never,
+    )
+
+    await POST(makeRequest(makeInboundPayload({})))
+    await vi.waitFor(() => expect(upsertConversation).toHaveBeenCalled())
+
+    // `eq` echoes its arguments, so this reads the actual lookup key rather
+    // than a value the test made up.
+    const comparedPhones = (vi.mocked(eq).mock.calls as unknown as [string, string][])
+      .filter(([column]) => column === 'phone_number')
+      .map(([, value]) => value)
+
+    expect(comparedPhones).toContain(CANONICAL)
+    // The pre-fix value. If this returns, replies stop being routed.
+    expect(comparedPhones).not.toContain('47988443635')
   })
 })
