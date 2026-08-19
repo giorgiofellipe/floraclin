@@ -20,6 +20,7 @@ import { eq } from 'drizzle-orm'
 // withTransaction removed — helper functions use global db which deadlocks in transactions
 import { onboardingCompleteSchema } from '@/validations/onboarding'
 import { handleApiError } from '@/lib/api-error'
+import { ForbiddenError } from '@/lib/errors'
 
 function generateSlug(name: string): string {
   return name
@@ -216,7 +217,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
+    if (error instanceof ForbiddenError) {
       return NextResponse.json({ success: false, error: 'Sem permissao para completar o onboarding' }, { status: 403 })
     }
     return handleApiError(error, request, { body: { success: false, error: 'Erro ao completar o onboarding. Tente novamente.' } })

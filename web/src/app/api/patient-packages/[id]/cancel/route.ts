@@ -52,6 +52,8 @@ export async function POST(
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('não encontrado')) return NextResponse.json({ error: msg }, { status: 404 })
     return handleApiError(error, request)
   }
 }

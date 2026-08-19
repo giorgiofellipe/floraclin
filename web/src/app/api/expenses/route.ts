@@ -59,6 +59,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: expense })
   } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('Categoria não encontrada')) return NextResponse.json({ error: msg }, { status: 400 })
     return handleApiError(error, request)
   }
 }

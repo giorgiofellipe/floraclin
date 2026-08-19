@@ -9,7 +9,8 @@ import {
   checkTimeConflict,
 } from '@/db/queries/appointments'
 import { updateAppointmentSchema } from '@/validations/appointment'
-import { handleApiError, reportSideEffectFailure } from '@/lib/api-error'
+import { handleApiError } from '@/lib/api-error'
+import { reportCalendarFailure } from '@/lib/google-calendar'
 
 export async function PUT(
   request: Request,
@@ -82,11 +83,7 @@ export async function PUT(
     })
 
     syncAppointmentToGoogle(ctx.tenantId, appointmentId).catch((err) => {
-      reportSideEffectFailure(err, {
-        area: 'calendar-sync',
-        step: 'push_appointment',
-        extra: { appointmentId },
-      })
+      reportCalendarFailure(err, 'push_appointment', { appointmentId })
     })
 
     return NextResponse.json({ success: true, data: appointment })
@@ -127,11 +124,7 @@ export async function DELETE(
     })
 
     syncAppointmentToGoogle(ctx.tenantId, id).catch((err) => {
-      reportSideEffectFailure(err, {
-        area: 'calendar-sync',
-        step: 'push_appointment',
-        extra: { appointmentId: id },
-      })
+      reportCalendarFailure(err, 'push_appointment', { appointmentId: id })
     })
 
     return NextResponse.json({ success: true })

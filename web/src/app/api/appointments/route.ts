@@ -12,6 +12,7 @@ import { getProspectByPatientId, getProspectByPhone, updateProspect, logProspect
 import { getPatient } from '@/db/queries/patients'
 import { createAppointmentSchema } from '@/validations/appointment'
 import { handleApiError, reportSideEffectFailure } from '@/lib/api-error'
+import { reportCalendarFailure } from '@/lib/google-calendar'
 
 const STAGES_MOVABLE_TO_AGENDADO = ['novo', 'contatado', 'qualificado', 'convertido']
 
@@ -98,11 +99,7 @@ export async function POST(request: Request) {
     })
 
     syncAppointmentToGoogle(ctx.tenantId, appointment.id).catch((err) => {
-      reportSideEffectFailure(err, {
-        area: 'calendar-sync',
-        step: 'push_appointment',
-        extra: { appointmentId: appointment.id },
-      })
+      reportCalendarFailure(err, 'push_appointment', { appointmentId: appointment.id })
     })
 
     // Auto-move CRM lead to "agendado" — matches by linked patient, patient

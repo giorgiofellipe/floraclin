@@ -32,6 +32,10 @@ export async function POST(
 
     return NextResponse.json(result)
   } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('não encontrado') || msg.includes('não pertence') || msg.includes('já foi estornado')) {
+      return NextResponse.json({ error: msg }, { status: 400 })
+    }
     return handleApiError(error, request)
   }
 }

@@ -3,6 +3,7 @@ import { db } from '@/db/client'
 import { calendarConnections } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { randomBytes, createHmac, timingSafeEqual } from 'crypto'
+import { reportSideEffectFailure } from '@/lib/api-error'
 
 const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events'
 
@@ -158,4 +159,35 @@ export async function revokeToken(accessToken: string) {
   } catch (error) {
     console.warn('Failed to revoke Google token:', error)
   }
+}
+
+/**
+ * A revoked, expired or withdrawn Google grant is a clinic-side state, not a
+ * bug of ours. The clinic has to reconnect, and the UI already tells them so.
+ *
+ * It matters because the calendar side effects fire on every appointment
+ * write and every webhook: one clinic that revoked access would otherwise
+ * produce a Sentry event per operation, for as long as it stays disconnected,
+ * burying the sync failures that actually are ours to fix.
+ */
+export function isGoogleAuthFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  if (error.message.includes('invalid_grant')) return true
+
+  const e = error as { status?: unknown; code?: unknown; response?: { status?: unknown } }
+  const status = e.status ?? e.code ?? e.response?.status
+  return status === 401 || status === 403
+}
+
+/**
+ * Report a swallowed Google Calendar failure, minus the "you must reconnect"
+ * class. See {@link isGoogleAuthFailure}.
+ */
+export function reportCalendarFailure(
+  error: unknown,
+  step: string,
+  extra?: Record<string, unknown>,
+): void {
+  if (isGoogleAuthFailure(error)) return
+  reportSideEffectFailure(error, { area: 'calendar-sync', step, extra })
 }

@@ -18,6 +18,8 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, data: membership })
   } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('ultima clinica')) return NextResponse.json({ error: msg }, { status: 400 })
     return handleApiError(error, request)
   }
 }

@@ -39,6 +39,10 @@ export async function PUT(
 
     return NextResponse.json({ success: true, data: installment })
   } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('não encontrada') || msg.includes('já foi paga')) {
+      return NextResponse.json({ error: msg }, { status: 400 })
+    }
     return handleApiError(error, request)
   }
 }

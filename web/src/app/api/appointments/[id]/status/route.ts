@@ -5,7 +5,8 @@ import { syncAppointmentToGoogle } from '@/lib/google-calendar-sync'
 import { updateAppointmentStatus } from '@/db/queries/appointments'
 import { updateStatusSchema } from '@/validations/appointment'
 import type { AppointmentStatus } from '@/types'
-import { handleApiError, reportSideEffectFailure } from '@/lib/api-error'
+import { handleApiError } from '@/lib/api-error'
+import { reportCalendarFailure } from '@/lib/google-calendar'
 
 export async function PUT(
   request: Request,
@@ -47,11 +48,7 @@ export async function PUT(
     })
 
     syncAppointmentToGoogle(ctx.tenantId, id).catch((err) => {
-      reportSideEffectFailure(err, {
-        area: 'calendar-sync',
-        step: 'push_appointment',
-        extra: { appointmentId: id },
-      })
+      reportCalendarFailure(err, 'push_appointment', { appointmentId: id })
     })
 
     return NextResponse.json({ success: true, data: appointment })

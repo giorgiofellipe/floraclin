@@ -28,6 +28,8 @@ export async function PUT(
 
     return NextResponse.json({ success: true, data: category })
   } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('não encontrada') || msg.includes('not found')) return NextResponse.json({ error: msg }, { status: 404 })
     return handleApiError(error, request)
   }
 }
@@ -44,6 +46,8 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('não encontrada') || msg.includes('not found')) return NextResponse.json({ error: msg }, { status: 404 })
     return handleApiError(error, request)
   }
 }

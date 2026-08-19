@@ -41,6 +41,10 @@ export async function DELETE(
 
     return NextResponse.json(result)
   } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('não encontrada') || msg.includes('já está cancelada')) {
+      return NextResponse.json({ error: msg }, { status: 400 })
+    }
     return handleApiError(error, request)
   }
 }

@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { getExpiringConnections, updateConnection } from '@/db/queries/calendar'
-import { registerWebhookChannel, stopWebhookChannel } from '@/lib/google-calendar'
+import { registerWebhookChannel, stopWebhookChannel, reportCalendarFailure } from '@/lib/google-calendar'
 import { handleApiError } from '@/lib/api-error'
 
 // Schedule mirrors `vercel.json`. Vercel evaluates cron expressions in UTC,
 // so the monitor has to be told the same thing or Sentry marks every run late.
+// `checkinMargin` and `maxRuntime` are minutes: an hour of slack before a run
+// counts as missed, and ten minutes before it counts as hung.
 const MONITOR_SLUG = 'calendar-renew'
 const MONITOR_CONFIG = {
   schedule: { type: 'crontab', value: '0 6 * * *' },
@@ -61,12 +63,21 @@ export async function GET(request: Request) {
             // other clinics from renewing, but a swallowed error still has to
             // be seen: this used to be a `console.error` nobody reads, and a
             // connection that fails every night simply stops syncing.
-            Sentry.captureException(error, {
-              tags: { area: 'cron', cron: MONITOR_SLUG },
-              extra: { connectionId: connection.id, tenantId: connection.tenantId },
+            reportCalendarFailure(error, MONITOR_SLUG, {
+              connectionId: connection.id,
+              tenantId: connection.tenantId,
             })
             failed++
           }
+        }
+
+        // A green check-in on a run where nothing renewed would be a lie, and
+        // it is the difference between "the cron ran" and "the cron worked".
+        // Only the all-failed case throws: one clinic with a revoked grant is
+        // that clinic's problem, and failing the monitor on it would turn the
+        // cron red every night until they reconnect.
+        if (failed > 0 && renewed === 0) {
+          throw new Error(`calendar-renew: all ${failed} channel renewals failed`)
         }
 
         return { renewed, failed, total: connections.length }

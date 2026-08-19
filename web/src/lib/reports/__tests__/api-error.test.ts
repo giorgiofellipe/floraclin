@@ -42,10 +42,14 @@ describe('reportRouteError', () => {
   it('tags the JSON branch as such so a 500 can be told apart from a PDF failure', () => {
     reportRouteError(new Error('kaboom'), new Request(URL_JSON))
 
-    expect(captureExceptionMock).toHaveBeenCalledWith(
-      expect.any(Error),
-      expect.objectContaining({ tags: expect.objectContaining({ format: 'json' }) }),
-    )
+    expect(captureExceptionMock).toHaveBeenCalledWith(expect.any(Error), {
+      tags: {
+        route: '/api/reports/prontuario',
+        method: 'GET',
+        area: 'reports',
+        format: 'json',
+      },
+    })
   })
 
   it('still reports, without route context, when no request is passed', async () => {
@@ -68,5 +72,15 @@ describe('reportRouteError', () => {
     await expect(unauthorized.json()).resolves.toEqual({ error: 'Unauthorized' })
 
     expect(captureExceptionMock).not.toHaveBeenCalled()
+  })
+
+  it('reports a real failure whose message merely mentions "redirect"', () => {
+    // The bug this helper was written for: no `digest`, so it is a genuine
+    // failure (headless Chromium bailing out of the PDF branch), not an auth
+    // redirect. The old substring check turned it into a silent 401.
+    const tooManyRedirects = new Error('Too many redirects')
+
+    expect(reportRouteError(tooManyRedirects, new Request(URL_PDF)).status).toBe(500)
+    expect(captureExceptionMock).toHaveBeenCalledWith(tooManyRedirects, expect.anything())
   })
 })

@@ -37,9 +37,6 @@ import { reportSideEffectFailure } from '@/lib/api-error'
 
 export const dynamic = 'force-dynamic'
 
-// ---------------------------------------------------------------------------
-// GET -- Meta verification challenge
-// ---------------------------------------------------------------------------
 // Meta retries a webhook only when the whole request fails, so every one of
 // these handlers swallows its error on purpose: one bad message must not cost
 // us the rest of the batch, or make Meta replay the batch forever. Swallowed
@@ -54,6 +51,9 @@ function reportWebhookFailure(
   reportSideEffectFailure(error, { area: 'whatsapp-webhook', step, extra })
 }
 
+// ---------------------------------------------------------------------------
+// GET -- Meta verification challenge
+// ---------------------------------------------------------------------------
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const mode = searchParams.get('hub.mode')

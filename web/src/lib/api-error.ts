@@ -44,8 +44,42 @@ export type ApiErrorOptions = {
   body?: Record<string, unknown>
 }
 
+// Path segments that identify a row (or, worse, authorize one) must never
+// reach Sentry. `/api/anamnesis/token/<token>` carries a live access token in
+// the URL and `/api/patients/<uuid>` carries a health-linked identifier;
+// neither is filtered by `sendDefaultPii: false`, because an explicit tag is
+// not "default PII". Masking also gives the tag the shape you actually want to
+// group by: one `/api/patients/:id` rather than one tag value per patient.
+//
+// The test is inverted on purpose. Every static segment in `src/app/api` is
+// kebab-case lowercase (verified against the directory tree), so anything that
+// is not gets masked, and an allowlist fails safe in a way a blocklist of id
+// shapes does not. Long all-hex runs are the one kebab-shaped exception:
+// `randomBytes(32).toString('hex')` would otherwise pass as a word.
+const STATIC_SEGMENT = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/
+const LONG_HEX = /^[0-9a-f]{16,}$/
+
+function maskedRoute(request?: Request): string | undefined {
+  if (!request) return undefined
+  let pathname: string
+  try {
+    pathname = new URL(request.url).pathname
+  } catch {
+    // A malformed request URL is not worth losing the error report over.
+    return undefined
+  }
+
+  return pathname
+    .split('/')
+    .map(segment => {
+      if (!segment) return segment
+      return STATIC_SEGMENT.test(segment) && !LONG_HEX.test(segment) ? segment : ':id'
+    })
+    .join('/')
+}
+
 /**
- * Shared `catch` handler for every route under `/api`.
+ * Shared `catch` handler for the JSON route handlers under `/api`.
  *
  * Route handlers have two failure modes that look identical from the outside
  * but are not: an expected authorization outcome (403/401), and a genuine bug
@@ -74,19 +108,17 @@ export function handleApiError(
   if (isNextRedirectError(error))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let route: string | undefined
-  if (request) {
-    try {
-      route = new URL(request.url).pathname
-    } catch {
-      // A malformed request URL is not worth losing the error report over.
-    }
-  }
+  const route = maskedRoute(request)
 
   const eventId = Sentry.captureException(error, {
-    tags: { route, method: request?.method, ...options?.tags },
+    // Caller tags first: `route` and `method` are derived here and are the
+    // authoritative values, so a caller can add dimensions but not overwrite
+    // the two everything else is grouped by.
+    tags: { ...options?.tags, route, method: request?.method },
   })
 
+  // Kept for `pnpm dev`, where Sentry is not initialized at all and this is
+  // the only place the stack shows up.
   console.error('API error:', { route, eventId }, error)
 
   return NextResponse.json(

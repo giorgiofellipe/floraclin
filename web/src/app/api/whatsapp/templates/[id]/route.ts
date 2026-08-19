@@ -14,7 +14,7 @@ import {
   isWhatsAppEnabled,
 } from '@/lib/whatsapp'
 import { updateTemplateSchema } from '@/validations/whatsapp'
-import { handleApiError } from '@/lib/api-error'
+import { handleApiError, reportSideEffectFailure } from '@/lib/api-error'
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -143,7 +143,9 @@ export async function DELETE(request: Request, { params }: RouteParams) {
       try {
         await deleteMetaTemplate(ctx.tenantId, template.name)
       } catch (err) {
-        console.error('Failed to delete template from Meta:', err)
+        // The local row goes away either way, so a failure here leaves a
+        // stale template on Meta's side that only a sync will surface.
+        reportSideEffectFailure(err, { area: 'whatsapp', step: 'delete_meta_template' })
       }
     }
 

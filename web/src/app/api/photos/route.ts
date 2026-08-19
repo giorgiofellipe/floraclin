@@ -13,7 +13,7 @@ import {
   ACCEPTED_IMAGE_TYPES,
   isDngFile,
 } from '@/validations/photo'
-import { handleApiError } from '@/lib/api-error'
+import { handleApiError, reportSideEffectFailure } from '@/lib/api-error'
 
 // ─── Upload Photo ───────────────────────────────────────────────────
 
@@ -94,7 +94,9 @@ export async function POST(request: Request) {
       try {
         await deleteFile(storagePath)
       } catch (cleanupError) {
-        console.error('Failed to clean up uploaded file after DB error:', cleanupError)
+        // Both the insert and the cleanup failed, so a patient photo is now
+        // orphaned in storage with no row pointing at it.
+        reportSideEffectFailure(cleanupError, { area: 'photos', step: 'upload_cleanup' })
       }
       throw dbError
     }

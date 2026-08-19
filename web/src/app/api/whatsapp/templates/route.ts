@@ -5,7 +5,7 @@ import { listTemplates, createLocalTemplate, upsertTemplate, markStaleTemplates 
 import { createTemplate as createMetaTemplate, getTemplates as fetchMetaTemplates, isWhatsAppEnabled } from '@/lib/whatsapp'
 import { createTemplateSchema } from '@/validations/whatsapp'
 import { ForbiddenError } from '@/lib/errors'
-import { handleApiError } from '@/lib/api-error'
+import { handleApiError, reportSideEffectFailure } from '@/lib/api-error'
 
 async function checkWhatsAppAccess(requireOwner: boolean) {
   const ctx = await getAuthContext()
@@ -59,7 +59,7 @@ export async function GET(request: Request) {
             const metaIds = metaTemplates.map((t) => t.id)
             await markStaleTemplates(tenantId, metaIds)
           } catch (syncErr) {
-            console.error('Background template sync failed:', syncErr)
+            reportSideEffectFailure(syncErr, { area: 'whatsapp', step: 'template_sync' })
           }
         })
       }
@@ -67,6 +67,8 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ data: templates })
   } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (msg === 'WhatsApp not enabled') return NextResponse.json({ error: msg }, { status: 400 })
     return handleApiError(error, request)
   }
 }
@@ -108,6 +110,10 @@ export async function POST(request: Request) {
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
 
+    if (msg.includes('Meta API error')) {
+      return NextResponse.json({ error: msg }, { status: 422 })
+    }
+    if (msg === 'WhatsApp not enabled') return NextResponse.json({ error: msg }, { status: 400 })
     if (msg.includes('Meta API error')) {
       return NextResponse.json({ error: msg }, { status: 422 })
     }

@@ -31,8 +31,6 @@ export async function GET(
     return NextResponse.json({ entries })
   } catch (error) {
 
-    
-
     if (error instanceof BusinessError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 409 })
     }
@@ -84,8 +82,6 @@ export async function POST(
 
     return NextResponse.json({ note }, { status: 201 })
   } catch (error) {
-
-    
 
     if (error instanceof BusinessError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 409 })

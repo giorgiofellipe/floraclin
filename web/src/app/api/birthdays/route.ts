@@ -25,6 +25,13 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ data: rows })
   } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (
+      msg.startsWith('parseBrDate expected') ||
+      msg.startsWith('parseLocalDate expected') ||
+      msg.startsWith('yearFromYmd expected')
+    )
+      return NextResponse.json({ error: 'Datas inválidas' }, { status: 400 })
     return handleApiError(error, request)
   }
 }

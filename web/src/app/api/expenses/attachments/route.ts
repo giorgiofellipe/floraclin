@@ -119,6 +119,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: attachment })
   } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('not found') || msg.includes('does not belong')) {
+      return NextResponse.json({ error: 'Despesa não encontrada' }, { status: 404 })
+    }
     return handleApiError(error, request)
   }
 }

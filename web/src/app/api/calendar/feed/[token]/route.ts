@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getConnectionByFeedToken } from '@/db/queries/calendar'
 import { generateICalFeed } from '@/lib/ical-feed'
+import { reportSideEffectFailure } from '@/lib/api-error'
 
 export async function GET(
   _request: Request,
@@ -35,7 +36,8 @@ export async function GET(
       },
     })
   } catch (error) {
-    console.error('iCal feed error:', error)
+    // Not JSON, so not handleApiError: subscribers expect text/calendar.
+    reportSideEffectFailure(error, { area: 'calendar-sync', step: 'ical_feed' })
     return new NextResponse('Internal Server Error', { status: 500 })
   }
 }

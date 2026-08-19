@@ -6,7 +6,7 @@ vi.mock('@sentry/nextjs', () => ({
   captureException: (...args: unknown[]) => captureExceptionMock(...args),
 }))
 
-import { handleApiError } from '../api-error'
+import { handleApiError, reportSideEffectFailure } from '../api-error'
 import { ForbiddenError } from '../errors'
 
 const URL_PATIENTS = 'https://app.floraclin.com.br/api/patients?q=ana'
@@ -90,13 +90,88 @@ describe('handleApiError', () => {
     })
   })
 
-  it('merges caller tags over the derived ones', () => {
+  it('merges caller tags with the derived ones', () => {
     handleApiError(new Error('boom'), new Request(URL_PATIENTS), {
       tags: { area: 'reports', format: 'pdf' },
     })
 
     expect(captureExceptionMock).toHaveBeenCalledWith(expect.any(Error), {
       tags: { route: '/api/patients', method: 'GET', area: 'reports', format: 'pdf' },
+    })
+  })
+
+  it('does not let a caller tag overwrite the derived route or method', () => {
+    handleApiError(new Error('boom'), new Request(URL_PATIENTS), {
+      tags: { route: 'something-else', method: undefined },
+    })
+
+    expect(captureExceptionMock).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { route: '/api/patients', method: 'GET' },
+    })
+  })
+
+  describe('route tag', () => {
+    const routeTag = () =>
+      (captureExceptionMock.mock.calls.at(-1)?.[1] as { tags: { route?: string } }).tags.route
+
+    it('masks a patient uuid so one issue covers every patient', () => {
+      const url = 'https://app.floraclin.com.br/api/patients/0f8fad5b-d9cb-469f-a165-70867728950e'
+      handleApiError(new Error('boom'), new Request(url))
+
+      expect(routeTag()).toBe('/api/patients/:id')
+    })
+
+    it('masks the anamnesis access token, which is a live credential in the path', () => {
+      const token = '9f2a1c8b7e6d5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e'
+      handleApiError(new Error('boom'), new Request(`https://app.floraclin.com.br/api/anamnesis/token/${token}`))
+
+      expect(routeTag()).toBe('/api/anamnesis/token/:id')
+      expect(routeTag()).not.toContain(token)
+    })
+
+    it('masks numeric ids', () => {
+      handleApiError(
+        new Error('boom'),
+        new Request('https://app.floraclin.com.br/api/appointments/12345/status'),
+      )
+
+      expect(routeTag()).toBe('/api/appointments/:id/status')
+    })
+
+    it('keeps long kebab-case static segments intact', () => {
+      handleApiError(
+        new Error('boom'),
+        new Request('https://app.floraclin.com.br/api/reports/procedimentos-realizados'),
+      )
+
+      expect(routeTag()).toBe('/api/reports/procedimentos-realizados')
+    })
+  })
+
+  describe('reportSideEffectFailure', () => {
+    it('reports with the area and step, and does not return a response', () => {
+      const boom = new Error('google says no')
+
+      const result = reportSideEffectFailure(boom, {
+        area: 'calendar-sync',
+        step: 'push_appointment',
+        extra: { appointmentId: 'a1' },
+      })
+
+      expect(result).toBeUndefined()
+      expect(captureExceptionMock).toHaveBeenCalledWith(boom, {
+        tags: { area: 'calendar-sync', step: 'push_appointment' },
+        extra: { appointmentId: 'a1' },
+      })
+    })
+
+    it('works without extra context', () => {
+      reportSideEffectFailure('nope', { area: 'billing', step: 'stripe_signature' })
+
+      expect(captureExceptionMock).toHaveBeenCalledWith('nope', {
+        tags: { area: 'billing', step: 'stripe_signature' },
+        extra: undefined,
+      })
     })
   })
 

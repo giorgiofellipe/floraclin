@@ -7,6 +7,7 @@ import {
 } from '@/lib/google-calendar'
 import { upsertConnection, updateConnection } from '@/db/queries/calendar'
 import { runInitialSync } from '@/lib/google-calendar-pull'
+import { reportSideEffectFailure } from '@/lib/api-error'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
@@ -57,12 +58,16 @@ export async function GET(request: Request) {
         channelExpiry: channel.expiration,
       })
     } catch (err) {
-      console.error('Failed to register webhook channel:', err)
+      reportSideEffectFailure(err, { area: 'calendar-oauth', step: 'register_channel' })
     }
 
     if (userId) {
       runInitialSync(connection.id).catch((err) => {
-        console.error('Initial sync failed:', err)
+        reportSideEffectFailure(err, {
+          area: 'calendar-oauth',
+          step: 'initial_sync',
+          extra: { connectionId: connection.id },
+        })
       })
     }
 
@@ -73,7 +78,10 @@ export async function GET(request: Request) {
 
     return NextResponse.redirect(redirectUrl)
   } catch (error) {
-    console.error('Calendar callback error:', error)
+    // This one can't answer JSON, so it can't go through handleApiError: the
+    // user is mid-OAuth and has to land back in the app. A clinic that cannot
+    // connect its calendar produced no signal at all before this.
+    reportSideEffectFailure(error, { area: 'calendar-oauth', step: 'callback' })
     return NextResponse.redirect(`${APP_URL}/configuracoes?calendar=error`)
   }
 }

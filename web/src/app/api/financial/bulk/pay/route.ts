@@ -43,6 +43,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: results })
   } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('não encontradas') || msg.includes('já pagas')) {
+      return NextResponse.json({ error: msg }, { status: 400 })
+    }
     return handleApiError(error, request)
   }
 }

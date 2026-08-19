@@ -20,27 +20,42 @@ Sentry is the error store; Discord is where the alerts land.
 |---|---|
 | Uncaught server errors (RSC, route handlers, server actions) | `onRequestError` in `web/src/instrumentation.ts` |
 | Caught API route failures (the 500 branch) | `handleApiError` in `web/src/lib/api-error.ts` |
-| Swallowed side effects (Google Calendar push sync, WhatsApp webhook steps) | `reportSideEffectFailure` in `web/src/lib/api-error.ts` |
-| Client render errors inside the app | `error.tsx` in each route group |
+| Swallowed side effects: Google Calendar push sync and OAuth, WhatsApp webhook steps, Stripe signature checks, photo cleanup | `reportSideEffectFailure` in `web/src/lib/api-error.ts` |
+| Client render errors inside the app | `error.tsx` in the `(auth)` and `(platform)` route groups |
 | Client render errors in the root layout | `web/src/app/global-error.tsx` |
 | Missed or failed `calendar-renew` / `subscription-expiry` runs | `Sentry.withMonitor` in each cron route |
 | whatsapp-automations tenant failures | `Sentry.captureMessage` / `captureException` in that route, plus the Discord digest below |
 
 Deliberately **not** reported: 401 (logged-out caller, which arrives as a
-Next.js `redirect()` throw), 403 (`ForbiddenError` from `requireRole`), 400
-validation failures, and 404s. These are expected outcomes, not bugs, and
-paging on them buries the real signal.
+Next.js `redirect()` throw), 403 (`ForbiddenError` from `requireRole`), and the
+400/404 branches each route checks before falling through to the helper. These
+are expected outcomes, not bugs, and paging on them buries the real signal. A
+route that maps a business failure to a 400 must do so *before* calling
+`handleApiError`, or it becomes a reported 500.
 
-Every 500 from an API route carries an `eventId` in its JSON body. Whoever
-hits the failure can read that id off the response and look it up in Sentry
-directly, without correlating by timestamp.
+Every 500 that goes through `handleApiError` carries an `eventId` in its JSON
+body. Whoever hits the failure can read that id off the response and look it up
+in Sentry directly, without correlating by timestamp. A handful of routes still
+return a hand-built 500 for a "the update returned nothing" case; those have no
+`eventId` and do not reach Sentry.
+
+The `route` tag is masked: uuids, numeric ids and opaque tokens become `:id`.
+That keeps `/api/anamnesis/token/<live-token>` out of Sentry and groups issues
+by route instead of by row.
 
 ### Environment names
 
-`Sentry.init` sets `environment` explicitly to `production` / `preview` from
-`VERCEL_ENV`. Do not remove that line and fall back to the SDK default: it
-prefixes the value and reports `vercel-production`, which the alert rule below
-(scoped to `production`) would silently never match.
+`Sentry.init` sets `environment` explicitly to `production` / `preview`. Do not
+remove that line and fall back to the SDK default: it prefixes the value and
+reports `vercel-production`, which the alert rule below (scoped to
+`production`) would silently never match.
+
+Server-side it reads `VERCEL_ENV` directly. Client-side it reads
+`NEXT_PUBLIC_SENTRY_ENVIRONMENT`, which `next.config.ts` inlines from
+`VERCEL_ENV` at build time. That indirection exists so the browser bundle does
+not depend on Vercel's "Automatically expose System Environment Variables"
+toggle: with the toggle off, `NEXT_PUBLIC_VERCEL_ENV` is undefined in the
+client and every preview error would tag itself `production`.
 
 ### Tenant and user context
 
@@ -58,8 +73,21 @@ because Vercel evaluates cron expressions in UTC. If a schedule changes in
 `vercel.json`, change it in the route too or Sentry will report every run as
 late.
 
+`calendar-renew` fails its check-in only when *every* renewal failed. One
+clinic with a revoked Google grant is that clinic's problem and would otherwise
+turn the cron red every night until they reconnect; zero renewals out of N is
+the integration being down, which is the alert worth having.
+
 `whatsapp-automations` has no monitor on purpose: its daily Discord digest is
 already a positive heartbeat (see below).
+
+### Google Calendar failures we do not report
+
+`reportCalendarFailure` in `web/src/lib/google-calendar.ts` drops `invalid_grant`
+and 401/403 responses from Google before reporting. Those mean the clinic has to
+reconnect, which the UI already tells them, and the calendar side effects fire on
+every appointment write and every webhook: one disconnected clinic would produce
+a Sentry event per operation until it reconnects. Everything else reports.
 
 ## floraclin-logs (Sentry alert rule)
 

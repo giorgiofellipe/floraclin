@@ -5,6 +5,8 @@ import { handleApiError } from '@/lib/api-error'
 
 // Schedule mirrors `vercel.json`. Vercel evaluates cron expressions in UTC,
 // so the monitor has to be told the same thing or Sentry marks every run late.
+// `checkinMargin` and `maxRuntime` are minutes: an hour of slack before a run
+// counts as missed, and ten minutes before it counts as hung.
 const MONITOR_SLUG = 'subscription-expiry'
 const MONITOR_CONFIG = {
   schedule: { type: 'crontab', value: '0 3 * * *' },

@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { getConnectionByChannelId } from '@/db/queries/calendar'
 import { incrementalSync } from '@/lib/google-calendar-pull'
-import { handleApiError, reportSideEffectFailure } from '@/lib/api-error'
+import { handleApiError } from '@/lib/api-error'
+import { reportCalendarFailure } from '@/lib/google-calendar'
 
 export async function POST(request: Request) {
   try {
@@ -33,11 +34,7 @@ export async function POST(request: Request) {
     }
 
     incrementalSync(connection.id).catch((err) => {
-      reportSideEffectFailure(err, {
-        area: 'calendar-sync',
-        step: 'incremental_sync',
-        extra: { connectionId: connection.id },
-      })
+      reportCalendarFailure(err, 'incremental_sync', { connectionId: connection.id })
     })
 
     return NextResponse.json({ ok: true })

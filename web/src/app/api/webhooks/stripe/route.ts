@@ -9,7 +9,7 @@ import {
   updateSubscriptionPlan,
   updateSubscriptionStatus,
 } from '@/db/queries/subscriptions'
-import { handleApiError } from '@/lib/api-error'
+import { handleApiError, reportSideEffectFailure } from '@/lib/api-error'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,7 +21,10 @@ export async function POST(request: NextRequest) {
   try {
     event = constructWebhookEvent(body, signature)
   } catch (err) {
-    console.error('Stripe webhook signature verification failed:', err)
+    // A rotated STRIPE_WEBHOOK_SECRET drops every billing event, and the 400
+    // is invisible from our side: Stripe retries, gives up, and the first
+    // symptom is a subscription that silently stopped updating.
+    reportSideEffectFailure(err, { area: 'billing', step: 'stripe_signature' })
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
 

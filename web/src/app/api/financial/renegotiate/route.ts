@@ -25,6 +25,15 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: result })
   } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (
+      msg.includes('não encontradas') ||
+      msg.includes('mesmo paciente') ||
+      msg.includes('renegociadas') ||
+      msg.includes('positivo')
+    ) {
+      return NextResponse.json({ error: msg }, { status: 400 })
+    }
     return handleApiError(error, request)
   }
 }
