@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getPatientPackagesWithConsumption } from '@/db/queries/packages'
+import { handleApiError } from '@/lib/api-error'
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -13,10 +14,6 @@ export async function GET(
     const packages = await getPatientPackagesWithConsumption(ctx.tenantId, patientId)
     return NextResponse.json(packages)
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

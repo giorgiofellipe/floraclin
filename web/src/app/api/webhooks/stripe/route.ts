@@ -9,6 +9,7 @@ import {
   updateSubscriptionPlan,
   updateSubscriptionStatus,
 } from '@/db/queries/subscriptions'
+import { handleApiError } from '@/lib/api-error'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,8 +44,7 @@ export async function POST(request: NextRequest) {
         break
     }
   } catch (err) {
-    console.error(`Stripe webhook error handling ${event.type}:`, err)
-    return NextResponse.json({ error: 'Webhook handler failed' }, { status: 500 })
+    return handleApiError(err, request, { body: { error: 'Webhook handler failed' } })
   }
 
   return NextResponse.json({ received: true })

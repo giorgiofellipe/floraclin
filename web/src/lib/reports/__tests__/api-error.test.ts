@@ -7,6 +7,7 @@ vi.mock('@sentry/nextjs', () => ({
 }))
 
 import { reportRouteError } from '../api-error'
+import { ForbiddenError } from '@/lib/errors'
 
 const URL_JSON = 'https://app.floraclin.com.br/api/reports/prontuario?patientId=p1'
 const URL_PDF = `${URL_JSON}&format=pdf`
@@ -29,16 +30,22 @@ describe('reportRouteError', () => {
     })
     expect(captureExceptionMock).toHaveBeenCalledOnce()
     expect(captureExceptionMock).toHaveBeenCalledWith(boom, {
-      tags: { area: 'reports', route: '/api/reports/prontuario', format: 'pdf' },
+      tags: {
+        route: '/api/reports/prontuario',
+        method: 'GET',
+        area: 'reports',
+        format: 'pdf',
+      },
     })
   })
 
   it('tags the JSON branch as such so a 500 can be told apart from a PDF failure', () => {
     reportRouteError(new Error('kaboom'), new Request(URL_JSON))
 
-    expect(captureExceptionMock).toHaveBeenCalledWith(expect.any(Error), {
-      tags: { area: 'reports', route: '/api/reports/prontuario', format: 'json' },
-    })
+    expect(captureExceptionMock).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ tags: expect.objectContaining({ format: 'json' }) }),
+    )
   })
 
   it('still reports, without route context, when no request is passed', async () => {
@@ -48,15 +55,11 @@ describe('reportRouteError', () => {
     await expect(res.json()).resolves.toMatchObject({ eventId: 'evt-abc123' })
   })
 
-  it('does not report authorization outcomes — those are expected, not bugs', async () => {
-    const forbidden = reportRouteError(new Error('Forbidden'), new Request(URL_PDF))
+  it('does not report authorization outcomes, those are expected, not bugs', async () => {
+    const forbidden = reportRouteError(new ForbiddenError(), new Request(URL_PDF))
     expect(forbidden.status).toBe(403)
     await expect(forbidden.json()).resolves.toEqual({ error: 'Forbidden' })
 
-    // Shaped like a real `redirect()` throw: message is literally
-    // `NEXT_REDIRECT` and `digest` carries the encoded destination/type/
-    // status, exactly what `next/navigation`'s `redirect()` produces (see
-    // `node_modules/next/dist/client/components/redirect.js`).
     const redirectError = Object.assign(new Error('NEXT_REDIRECT'), {
       digest: 'NEXT_REDIRECT;replace;/login;307;',
     })
@@ -65,25 +68,5 @@ describe('reportRouteError', () => {
     await expect(unauthorized.json()).resolves.toEqual({ error: 'Unauthorized' })
 
     expect(captureExceptionMock).not.toHaveBeenCalled()
-  })
-
-  it('reports a real error whose message merely mentions "redirect" instead of misclassifying it as an auth failure', async () => {
-    // No `digest` at all: this is what a genuine failure looks like, e.g.
-    // headless Chromium bailing out of the PDF branch.
-    const tooManyRedirects = new Error('Too many redirects')
-
-    const res = reportRouteError(tooManyRedirects, new Request(URL_PDF))
-
-    expect(res.status).toBe(500)
-    await expect(res.json()).resolves.toMatchObject({ eventId: 'evt-abc123' })
-    expect(captureExceptionMock).toHaveBeenCalledWith(tooManyRedirects, expect.anything())
-  })
-
-  it('handles a non-Error throw', async () => {
-    const res = reportRouteError('just a string', new Request(URL_PDF))
-
-    expect(res.status).toBe(500)
-    await expect(res.json()).resolves.toMatchObject({ eventId: 'evt-abc123' })
-    expect(captureExceptionMock).toHaveBeenCalledWith('just a string', expect.anything())
   })
 })

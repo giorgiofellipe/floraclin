@@ -36,6 +36,7 @@ import { listProcedureApplications } from '@/db/queries/reports/procedimentos-re
 import { renderReactToPdf } from '@/lib/pdf'
 import { GET } from '../route'
 import type { ProcedureApplicationRow } from '@/db/queries/reports/procedimentos-realizados'
+import { ForbiddenError } from '@/lib/errors'
 
 const dbMock = db as unknown as { limit: ReturnType<typeof vi.fn> }
 
@@ -74,7 +75,7 @@ beforeEach(() => {
 
 describe('GET /api/reports/procedimentos-realizados', () => {
   it('returns 403 for a practitioner', async () => {
-    vi.mocked(requireRole).mockRejectedValue(new Error('Forbidden: insufficient permissions'))
+    vi.mocked(requireRole).mockRejectedValue(new ForbiddenError('Forbidden: insufficient permissions'))
 
     const res = await GET(makeRequest('http://localhost/api/reports/procedimentos-realizados'))
     const json = await res.json()

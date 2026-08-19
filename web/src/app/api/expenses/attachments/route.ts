@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { getAuthContext } from '@/lib/auth'
 import { addExpenseAttachment } from '@/db/queries/expenses'
 import { uploadFile } from '@/lib/storage'
+import { handleApiError } from '@/lib/api-error'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 const ALLOWED_MIME_TYPES = [
@@ -118,13 +119,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: attachment })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (msg.includes('not found') || msg.includes('does not belong')) {
-      return NextResponse.json({ error: 'Despesa não encontrada' }, { status: 404 })
-    }
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

@@ -1,13 +1,14 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getClinicalDocumentWithContext } from '@/db/queries/clinical-documents'
+import { handleApiError } from '@/lib/api-error'
 
 /**
  * Returns the full clinical document (including body + patient/tenant context)
  * for the history preview modal. Tenant-scoped via `getClinicalDocumentWithContext`.
  */
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -19,12 +20,6 @@ export async function GET(
     }
     return NextResponse.json({ data: doc })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden'))
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect'))
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('Clinical document GET error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

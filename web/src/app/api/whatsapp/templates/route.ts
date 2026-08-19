@@ -4,6 +4,8 @@ import { getTenant } from '@/db/queries/tenants'
 import { listTemplates, createLocalTemplate, upsertTemplate, markStaleTemplates } from '@/db/queries/whatsapp'
 import { createTemplate as createMetaTemplate, getTemplates as fetchMetaTemplates, isWhatsAppEnabled } from '@/lib/whatsapp'
 import { createTemplateSchema } from '@/validations/whatsapp'
+import { ForbiddenError } from '@/lib/errors'
+import { handleApiError } from '@/lib/api-error'
 
 async function checkWhatsAppAccess(requireOwner: boolean) {
   const ctx = await getAuthContext()
@@ -14,18 +16,18 @@ async function checkWhatsAppAccess(requireOwner: boolean) {
   }
   if (requireOwner) {
     if (ctx.role !== 'owner') {
-      throw new Error('Forbidden')
+      throw new ForbiddenError()
     }
   } else {
     const allowedRoles = (settings?.whatsapp_allowed_roles as string[]) ?? ['owner']
     if (!allowedRoles.includes(ctx.role)) {
-      throw new Error('Forbidden')
+      throw new ForbiddenError()
     }
   }
   return { ctx, tenant: tenant!, settings }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const { ctx } = await checkWhatsAppAccess(false)
     const templates = await listTemplates(ctx.tenantId)
@@ -65,14 +67,7 @@ export async function GET() {
 
     return NextResponse.json({ data: templates })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg === 'Forbidden') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg === 'WhatsApp not enabled') return NextResponse.json({ error: msg }, { status: 400 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    console.error('Error listing WhatsApp templates:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 
@@ -112,15 +107,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ data: template }, { status: 201 })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
-    if (msg === 'Forbidden') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg === 'WhatsApp not enabled') return NextResponse.json({ error: msg }, { status: 400 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+
     if (msg.includes('Meta API error')) {
       return NextResponse.json({ error: msg }, { status: 422 })
     }
-    console.error('Error creating WhatsApp template:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

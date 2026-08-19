@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requirePlatformAdmin } from '@/lib/auth'
 import { getPlanBySlug, giftSubscription, getSubscription } from '@/db/queries/subscriptions'
 import { createAuditLog } from '@/lib/audit'
+import { handleApiError } from '@/lib/api-error'
 
 export async function POST(
   req: Request,
@@ -53,10 +54,6 @@ export async function POST(
 
     return NextResponse.json({ data: result })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('Admin gift subscription error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, req)
   }
 }

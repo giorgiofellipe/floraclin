@@ -19,6 +19,7 @@ import { tenants } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 // withTransaction removed — helper functions use global db which deadlocks in transactions
 import { onboardingCompleteSchema } from '@/validations/onboarding'
+import { handleApiError } from '@/lib/api-error'
 
 function generateSlug(name: string): string {
   return name
@@ -30,7 +31,7 @@ function generateSlug(name: string): string {
     .substring(0, 80)
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const auth = await requireRole('owner')
     const tenant = await getTenant(auth.tenantId)
@@ -40,10 +41,10 @@ export async function GET() {
     const settings = (tenant.settings as Record<string, unknown>) || {}
     return NextResponse.json({ completed: settings.onboarding_completed === true })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    return NextResponse.json({ completed: false })
+    // The old fallthrough answered 200 `{ completed: false }` for *any*
+    // failure, so a transient DB error read as "this clinic never onboarded"
+    // and would have walked an established clinic back through the wizard.
+    return handleApiError(error, request)
   }
 }
 
@@ -218,11 +219,6 @@ export async function POST(request: Request) {
     if (error instanceof Error && error.message === 'Forbidden: insufficient permissions') {
       return NextResponse.json({ success: false, error: 'Sem permissao para completar o onboarding' }, { status: 403 })
     }
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    console.error('Onboarding error:', error)
-    return NextResponse.json({ success: false, error: 'Erro ao completar o onboarding. Tente novamente.' }, { status: 500 })
+    return handleApiError(error, request, { body: { success: false, error: 'Erro ao completar o onboarding. Tente novamente.' } })
   }
 }

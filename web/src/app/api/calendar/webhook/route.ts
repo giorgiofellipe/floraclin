@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getConnectionByChannelId } from '@/db/queries/calendar'
 import { incrementalSync } from '@/lib/google-calendar-pull'
+import { handleApiError, reportSideEffectFailure } from '@/lib/api-error'
 
 export async function POST(request: Request) {
   try {
@@ -32,12 +33,15 @@ export async function POST(request: Request) {
     }
 
     incrementalSync(connection.id).catch((err) => {
-      console.error(`Incremental sync failed for connection ${connection.id}:`, err)
+      reportSideEffectFailure(err, {
+        area: 'calendar-sync',
+        step: 'incremental_sync',
+        extra: { connectionId: connection.id },
+      })
     })
 
     return NextResponse.json({ ok: true })
   } catch (error) {
-    console.error('Webhook error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

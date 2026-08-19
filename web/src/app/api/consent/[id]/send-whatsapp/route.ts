@@ -11,6 +11,7 @@ import { db } from '@/db/client'
 import { consentAcceptances, tenantUsers } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { toWhatsAppPhone } from '@/lib/phone'
+import { handleApiError } from '@/lib/api-error'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -98,8 +99,7 @@ export async function POST(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Consent WhatsApp send error:', error)
-    return NextResponse.json({ error: 'Falha ao enviar via WhatsApp' }, { status: 500 })
+    return handleApiError(error, req, { body: { error: 'Falha ao enviar via WhatsApp' } })
   }
 }
 

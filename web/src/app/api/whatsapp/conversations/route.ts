@@ -7,6 +7,7 @@ import { listConversations, upsertConversation, createMessage, pushSseEvent, get
 import { conversationFilterSchema } from '@/validations/whatsapp'
 import { sendTemplateMessage, resolveTemplateBody, isWhatsAppEnabled } from '@/lib/whatsapp'
 import { isSubscriptionActive, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
+import { handleApiError } from '@/lib/api-error'
 
 async function checkWhatsAppAccess() {
   const ctx = await getAuthContext()
@@ -57,11 +58,7 @@ export async function GET(request: Request) {
     const data = await listConversations(ctx.tenantId, parsed.data)
     return NextResponse.json(data)
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 
@@ -141,9 +138,6 @@ export async function POST(request: Request) {
       const detail = msg.replace('Meta API error: ', '')
       return NextResponse.json({ error: `Falha ao enviar via WhatsApp: ${detail}` }, { status: 502 })
     }
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

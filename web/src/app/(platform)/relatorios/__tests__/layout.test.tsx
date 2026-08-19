@@ -7,6 +7,7 @@ vi.mock('@/lib/auth', () => ({
 
 import { requireRole } from '@/lib/auth'
 import RelatoriosLayout from '../layout'
+import { ForbiddenError } from '@/lib/errors'
 
 const CHILDREN_TEXT = 'conteúdo do relatório'
 
@@ -24,7 +25,7 @@ describe('RelatoriosLayout', () => {
   // receptionist, ...) rather than the same assertion repeated per role name.
   it('renders the forbidden state and never the section content when requireRole rejects', async () => {
     vi.mocked(requireRole).mockRejectedValue(
-      new Error('Forbidden: insufficient permissions')
+      new ForbiddenError('Forbidden: insufficient permissions')
     )
 
     render(await renderLayout())

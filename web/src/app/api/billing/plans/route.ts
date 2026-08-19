@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { listPlans } from '@/db/queries/subscriptions'
+import { handleApiError } from '@/lib/api-error'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     await getAuthContext()
 
@@ -10,10 +11,6 @@ export async function GET() {
 
     return NextResponse.json({ data: activePlans })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('Billing plans error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

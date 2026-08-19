@@ -9,6 +9,7 @@ import {
   listConnections,
 } from '@/db/queries/calendar'
 import { stopWebhookChannel, revokeToken } from '@/lib/google-calendar'
+import { handleApiError } from '@/lib/api-error'
 
 export async function PATCH(
   request: Request,
@@ -44,16 +45,12 @@ export async function PATCH(
     const { accessToken: _a, refreshToken: _r, syncToken: _s, ...safe } = result
     return NextResponse.json({ success: true, data: safe })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -91,10 +88,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

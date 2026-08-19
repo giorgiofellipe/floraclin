@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getExpense, cancelExpense, updateExpense } from '@/db/queries/expenses'
 import { updateExpenseSchema } from '@/validations/expenses'
+import { handleApiError } from '@/lib/api-error'
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -21,16 +22,12 @@ export async function GET(
 
     return NextResponse.json(expense)
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -44,14 +41,7 @@ export async function DELETE(
 
     return NextResponse.json(result)
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (msg.includes('não encontrada') || msg.includes('já está cancelada')) {
-      return NextResponse.json({ error: msg }, { status: 400 })
-    }
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 
@@ -79,10 +69,7 @@ export async function PUT(
     return NextResponse.json(result)
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+
     if (
       msg.includes('Despesa não encontrada') ||
       msg.includes('Despesa cancelada') ||
@@ -94,7 +81,6 @@ export async function PUT(
     ) {
       return NextResponse.json({ error: msg }, { status: 400 })
     }
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

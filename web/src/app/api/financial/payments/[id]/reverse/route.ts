@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { reversePayment } from '@/db/queries/financial'
 import { z } from 'zod'
+import { handleApiError } from '@/lib/api-error'
 
 const reversePaymentSchema = z.object({
   reason: z.string().optional(),
@@ -31,13 +32,6 @@ export async function POST(
 
     return NextResponse.json(result)
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (msg.includes('não encontrado') || msg.includes('não pertence') || msg.includes('já foi estornado')) {
-      return NextResponse.json({ error: msg }, { status: 400 })
-    }
-    console.error('Reverse payment API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

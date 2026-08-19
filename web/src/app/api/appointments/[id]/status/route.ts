@@ -5,6 +5,7 @@ import { syncAppointmentToGoogle } from '@/lib/google-calendar-sync'
 import { updateAppointmentStatus } from '@/db/queries/appointments'
 import { updateStatusSchema } from '@/validations/appointment'
 import type { AppointmentStatus } from '@/types'
+import { handleApiError, reportSideEffectFailure } from '@/lib/api-error'
 
 export async function PUT(
   request: Request,
@@ -46,15 +47,15 @@ export async function PUT(
     })
 
     syncAppointmentToGoogle(ctx.tenantId, id).catch((err) => {
-      console.error('Google Calendar push sync failed:', err)
+      reportSideEffectFailure(err, {
+        area: 'calendar-sync',
+        step: 'push_appointment',
+        extra: { appointmentId: id },
+      })
     })
 
     return NextResponse.json({ success: true, data: appointment })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

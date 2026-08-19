@@ -3,6 +3,7 @@ import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import { recordPayment } from '@/db/queries/financial'
 import { recordPaymentSchema } from '@/validations/financial'
+import { handleApiError } from '@/lib/api-error'
 
 export async function PUT(
   request: Request,
@@ -53,13 +54,6 @@ export async function PUT(
 
     return NextResponse.json({ success: true, data: result })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (msg.includes('não encontrada') || msg.includes('já está') || msg.includes('cancelada')) {
-      return NextResponse.json({ error: msg }, { status: 400 })
-    }
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

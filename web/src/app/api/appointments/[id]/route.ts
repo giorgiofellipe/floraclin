@@ -9,6 +9,7 @@ import {
   checkTimeConflict,
 } from '@/db/queries/appointments'
 import { updateAppointmentSchema } from '@/validations/appointment'
+import { handleApiError, reportSideEffectFailure } from '@/lib/api-error'
 
 export async function PUT(
   request: Request,
@@ -81,7 +82,11 @@ export async function PUT(
     })
 
     syncAppointmentToGoogle(ctx.tenantId, appointmentId).catch((err) => {
-      console.error('Google Calendar push sync failed:', err)
+      reportSideEffectFailure(err, {
+        area: 'calendar-sync',
+        step: 'push_appointment',
+        extra: { appointmentId },
+      })
     })
 
     return NextResponse.json({ success: true, data: appointment })
@@ -93,15 +98,12 @@ export async function PUT(
         { status: 409 }
       )
     }
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -125,15 +127,15 @@ export async function DELETE(
     })
 
     syncAppointmentToGoogle(ctx.tenantId, id).catch((err) => {
-      console.error('Google Calendar push sync failed:', err)
+      reportSideEffectFailure(err, {
+        area: 'calendar-sync',
+        step: 'push_appointment',
+        extra: { appointmentId: id },
+      })
     })
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
