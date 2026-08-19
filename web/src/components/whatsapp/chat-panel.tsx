@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { MessageBubble, type Message } from './message-bubble'
 import { TemplatePicker } from './template-picker'
 import type { Conversation } from './conversation-list'
-import { formatBrPhone, stripCountryCode } from '@/lib/phone'
+import { formatBrPhone } from '@/lib/phone'
 import { toast } from 'sonner'
 import {
   Send,

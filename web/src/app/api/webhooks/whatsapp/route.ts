@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { db } from '@/db/client'
 import { tenants, procedureTypes, whatsappMessages, whatsappConversations } from '@/db/schema'
 import { eq, and, sql, desc } from 'drizzle-orm'
@@ -33,6 +33,7 @@ import {
 import { getPatientByPhone, getPatient } from '@/db/queries/patients'
 import { getTenant } from '@/db/queries/tenants'
 import { classifyMessage } from '@/lib/classify-prospect'
+import { toWhatsAppPhone } from '@/lib/phone'
 import { reportSideEffectFailure } from '@/lib/api-error'
 
 export const dynamic = 'force-dynamic'
@@ -286,19 +287,33 @@ async function processInboundMessage(
   }
 
   // Process confirmation button replies.
-  // Meta quick-reply template buttons send the button text in button_reply.title
-  // (the button_reply.id is an auto-generated UUID, not the button text).
+  //
+  // A quick reply arrives in one of two shapes, and which one depends on what
+  // was sent, not on what the button looks like:
+  //   - tapped on a *template*    -> type 'button',      button.text
+  //   - tapped on an *interactive* -> type 'interactive', interactive.button_reply.title
+  // The confirmation messages are templates, so the first shape is the one
+  // that matters in production. Both are read because both are reachable.
+  //
+  // Always the label, never the id: button_reply.id is a generated UUID.
   const interactiveData = msg.interactive as {
     type?: string
     button_reply?: { id: string; title: string }
   } | undefined
-  const buttonTitle = interactiveData?.button_reply?.title
+  const templateButton = msg.button as { text?: string; payload?: string } | undefined
+  const buttonTitle = interactiveData?.button_reply?.title ?? templateButton?.text
   const contextMessageId = (msg.context as { id?: string } | undefined)?.id
 
   if (buttonTitle && contextMessageId) {
-    processConfirmationReply(tenantId, contextMessageId, buttonTitle, from).catch((err) => {
-      reportWebhookFailure(err, 'confirmation_reply', { tenantId })
-    })
+    // Registered with `after` rather than left floating. Meta needs its 200
+    // quickly, but a bare fire-and-forget promise can be cut off when the
+    // serverless invocation freezes after the response, which would leave a
+    // patient who tapped Confirmar still marked as scheduled.
+    after(
+      processConfirmationReply(tenantId, contextMessageId, buttonTitle, from).catch((err) => {
+        reportWebhookFailure(err, 'confirmation_reply', { tenantId })
+      }),
+    )
   }
 
   // Fire-and-forget: keep reclassifying while the lead is still in "novo" stage
@@ -592,7 +607,7 @@ async function maybeAutoSendAnamnesis(
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.floraclin.com.br'
   const link = `${appUrl}/a/${token.token}`
 
-  const normalizedPhone = phone.startsWith('55') ? phone : `55${phone}`
+  const normalizedPhone = toWhatsAppPhone(phone)
   const firstName = patient.fullName.split(' ')[0] || patient.fullName
 
   const params: Record<string, string> = {
@@ -672,6 +687,10 @@ interface WhatsAppMessage {
   timestamp: string
   type: string
   text?: { body: string }
+  /** Quick reply tapped on a template message. */
+  button?: { text?: string; payload?: string }
+  /** Reply to another message. Carries the wamid of the message replied to. */
+  context?: { id?: string; from?: string }
   image?: WhatsAppMediaPayload
   video?: WhatsAppMediaPayload
   audio?: WhatsAppMediaPayload
