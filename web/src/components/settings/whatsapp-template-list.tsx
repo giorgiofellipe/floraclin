@@ -38,7 +38,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatDateTime } from '@/lib/utils'
-import { PURPOSE_LABELS } from '@/lib/whatsapp-blueprints'
+import { getTemplateDisplayLabel } from '@/lib/whatsapp-blueprints'
 import { WhatsAppTemplateEditor } from './whatsapp-template-editor'
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -377,6 +377,7 @@ export function WhatsAppTemplateList({ onProvision, configured = false }: WhatsA
                 label: t.status,
                 className: 'bg-[#F4F6F8] text-mid border-[#E8ECEF]',
               }
+              const displayLabel = getTemplateDisplayLabel(t)
 
               return (
                 <div
@@ -388,7 +389,7 @@ export function WhatsAppTemplateList({ onProvision, configured = false }: WhatsA
                     <div className="flex-1 min-w-0 space-y-1.5">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="text-sm font-medium text-charcoal truncate">
-                          {(t.purposeKey && PURPOSE_LABELS[t.purposeKey]) || t.name}
+                          {displayLabel}
                         </h4>
 
                         {/* Category badge */}
@@ -422,7 +423,7 @@ export function WhatsAppTemplateList({ onProvision, configured = false }: WhatsA
                       </div>
 
                       <div className="flex items-center gap-3 text-xs text-mid">
-                        {t.purposeKey && PURPOSE_LABELS[t.purposeKey] && (
+                        {displayLabel !== t.name && (
                           <span className="text-mid/60">{t.name}</span>
                         )}
                         <span>

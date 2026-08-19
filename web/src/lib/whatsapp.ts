@@ -34,6 +34,18 @@ export function isWhatsAppEnabled(settings: Record<string, unknown> | null | und
   return !!settings?.whatsapp_enabled
 }
 
+/**
+ * True when the tenant manages its own Meta templates. Clinics on the shared
+ * FloraClin number must not reach any template mutation: the templates there
+ * are platform-owned and live in a WABA every other clinic sends from, so
+ * hiding the buttons is not enough — the routes have to refuse.
+ */
+export function canManageTemplates(
+  settings: Record<string, unknown> | null | undefined,
+): boolean {
+  return ((settings?.whatsapp_mode as WhatsAppMode) ?? 'floraclin') === 'own'
+}
+
 export async function getWhatsAppMode(tenantId: string): Promise<WhatsAppMode> {
   const tenant = await getTenant(tenantId)
   if (!tenant) throw new Error('Tenant not found')
@@ -307,6 +319,56 @@ export async function getTemplateForTenant(
     return getSystemTemplate(purposeKey)
   }
   return getTemplateByPurpose(tenantId, purposeKey)
+}
+
+export interface TemplateSyncResult {
+  synced: number
+  skipped: number
+  removed: number
+}
+
+/**
+ * Pulls templates from Meta for the tenant's WABA and upserts only the ones
+ * that belong to this tenant, per `belongsToTemplatePrefix`. The WABA is
+ * shared across every tenant on FloraClin, so the Meta response includes
+ * every other clinic's templates too, and those are skipped, not imported.
+ *
+ * `markStaleTemplates` is fed the same filtered id list used for the upsert,
+ * so it marks every local row outside this prefix DELETED — including rows
+ * imported from another clinic by the old unfiltered sync, which is the
+ * point. System rows are the exception and are excluded inside the query:
+ * a tenant sync never sees them and so is never evidence that a
+ * platform-managed template is gone.
+ */
+export async function syncTemplatesForTenant(
+  tenantId: string,
+  prefix: string,
+): Promise<TemplateSyncResult> {
+  const { upsertTemplate, markStaleTemplates } = await import('@/db/queries/whatsapp')
+  const { belongsToTemplatePrefix } = await import('@/lib/whatsapp-blueprints')
+
+  const metaTemplates = await getTemplates(tenantId)
+  const ownTemplates = metaTemplates.filter((tpl) => belongsToTemplatePrefix(tpl.name, prefix))
+  const skipped = metaTemplates.length - ownTemplates.length
+
+  let synced = 0
+  for (const tpl of ownTemplates) {
+    await upsertTemplate(tenantId, {
+      metaTemplateId: tpl.id,
+      name: tpl.name,
+      language: tpl.language,
+      category: tpl.category,
+      status: tpl.status,
+      components: tpl.components,
+      rejectedReason: tpl.rejected_reason ?? null,
+    })
+    synced++
+  }
+
+  const metaIds = ownTemplates.map((tpl) => tpl.id)
+  const removed = await markStaleTemplates(tenantId, metaIds)
+
+  return { synced, skipped, removed }
 }
 
 async function getSystemTemplate(purposeKey: string) {
