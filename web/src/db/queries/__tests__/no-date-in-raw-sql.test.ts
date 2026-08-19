@@ -27,7 +27,7 @@ import path from 'node:path'
  * statically flags `${...}` interpolations that look like they carry a
  * `Date`, instead of relying on a live DB round-trip.
  *
- * ── Heuristic (sound, not complete) ─────────────────────────────────────
+ * ── Heuristic (best-effort: it both misses cases and can over-flag) ────
  * We cannot know real types without a type checker, so we approximate:
  *
  *   1. Find every `` sql`...` `` (and `` sql<T>`...` ``) tagged template.
@@ -67,7 +67,9 @@ import path from 'node:path'
 const SRC = path.resolve(__dirname, '../../..')
 
 /** Directories that contain (or have contained) raw `sql` fragments. */
-const SCAN_DIRS = ['db/queries', 'app/api', 'lib']
+// 'db' rather than 'db/queries': manual migrations under db/migrations/manual are
+// exactly where a "delete rows older than X" cutoff Date gets written.
+const SCAN_DIRS = ['db', 'app/api', 'lib']
 
 const DATE_PRODUCING_CALLS = [
   'new Date(',
@@ -175,17 +177,39 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+/**
+ * Calls that take a Date and hand back a string. A Date appearing as their
+ * argument has already been converted by the time it reaches the template, so
+ * seeing one of these on the outside makes the whole initializer safe.
+ *
+ * Without this, `const d = toLocalYmd(addDays(new Date(), 1))` is flagged for
+ * containing `addDays(`, even though `d` is a string. That construction is
+ * AGENTS.md's own recommended form, so the scanner would reject the pattern
+ * the project tells you to write.
+ */
+const DATE_TO_STRING_CALLS = ['toLocalYmd(', 'toBrYmd(', 'brToday(', 'format(']
+
 /** True if `name` is declared in `source` via a known Date-producing call. */
 function isLocallyDateProducing(name: string, source: string): boolean {
-  const declRe = new RegExp(`\\b(?:const|let|var)\\s+${escapeRegExp(name)}\\b[^=\\n]*=\\s*([^\\n;]+)`)
-  const m = declRe.exec(source)
-  if (!m) return false
-  const init = m[1].trim()
-  // Already converted to a string at the declaration site (e.g.
-  // `const x = endOfBrDay(d).toISOString()`) — not a Date by the time it
-  // reaches the interpolation.
-  if (/\.toISOString\(\)\s*$/.test(init)) return false
-  return DATE_PRODUCING_CALLS.some((call) => init.includes(call))
+  // Every declaration, not just the first. `appointments.ts` already declares
+  // `windowEnd` twice, and matching only the first means one unrelated
+  // declaration earlier in the file can mask a real Date at every later site.
+  const declRe = new RegExp(
+    `\\b(?:const|let|var)\\s+${escapeRegExp(name)}\\b[^=\\n]*=\\s*([^\\n;]+)`,
+    'g',
+  )
+
+  let m: RegExpExecArray | null
+  while ((m = declRe.exec(source)) !== null) {
+    const init = m[1].trim()
+    // Already a string by the time it reaches the interpolation, either via
+    // the documented `.toISOString()` escape or a Date-to-string helper.
+    if (/\.toISOString\(\)\s*$/.test(init)) continue
+    if (DATE_TO_STRING_CALLS.some((call) => init.startsWith(call))) continue
+    if (DATE_PRODUCING_CALLS.some((call) => init.includes(call))) return true
+  }
+
+  return false
 }
 
 /** Classifies one interpolation expression against a file's source. Returns
@@ -255,11 +279,24 @@ function collectScanFiles(): string[] {
   return files
 }
 
+/** Per-directory counts, so a moved directory fails loudly instead of
+ *  quietly dropping out of the scan. `walk` returns nothing for a path that
+ *  does not exist, and the old single total stayed comfortably above its
+ *  threshold even with the query layer missing entirely. */
+function countScanFiles(dir: string): number {
+  const files: string[] = []
+  walk(path.join(SRC, dir), files)
+  return files.length
+}
+
 describe('raw sql templates never interpolate a Date', () => {
   const files = collectScanFiles()
 
-  it('found source files to scan (sanity check the scan isn\'t vacuous)', () => {
-    expect(files.length).toBeGreaterThan(10)
+  it.each(SCAN_DIRS)('still finds %s to scan', (dir) => {
+    // The outage this test exists for came from db/queries. If that directory
+    // is renamed and this list is not updated, the scan must fail rather than
+    // keep passing on the directories that remain.
+    expect(countScanFiles(dir)).toBeGreaterThan(0)
   })
 
   it.each(files.map((f) => path.relative(SRC, f)))('%s has no raw Date interpolation', (relFile) => {
@@ -301,5 +338,60 @@ describe('raw sql templates never interpolate a Date', () => {
       }
     }
     expect(fixedViolations).toEqual([])
+  })
+
+  /** Scans a fixture the same way the real files are scanned. */
+  function scanFixture(source: string): string[] {
+    const found: string[] = []
+    for (const template of findSqlTemplates(source)) {
+      for (const { expr } of findInterpolations(template)) {
+        if (classifyInterpolation(expr, source)) found.push(expr.trim())
+      }
+    }
+    return found
+  }
+
+  it('is not masked by an earlier unrelated declaration of the same name', () => {
+    // The scanner used to read only the FIRST declaration of a name. Since
+    // appointments.ts already declares `windowEnd` twice, one harmless
+    // earlier declaration anywhere above would have hidden every real Date
+    // below it and left the suite green.
+    const fixture = `
+      import { endOfBrDay, brToday } from '@/lib/dates'
+      function unrelated() {
+        const windowEnd = brToday()
+        return windowEnd
+      }
+      export async function broken() {
+        const windowEnd = endOfBrDay('2026-04-13')
+        return db.select().where(sql\`x <= \${windowEnd}::timestamptz\`)
+      }
+    `
+    expect(scanFixture(fixture)).toEqual(['windowEnd'])
+  })
+
+  it('does not flag a Date that a helper already turned into a string', () => {
+    // `toLocalYmd(addDays(...))` returns a string and is AGENTS.md's own
+    // recommended form. Flagging it would make the scanner reject the
+    // pattern the project documents.
+    const fixture = `
+      import { addDays } from 'date-fns'
+      import { toLocalYmd } from '@/lib/dates'
+      export async function fine() {
+        const dueDate = toLocalYmd(addDays(new Date(), 30))
+        return db.select().where(sql\`due <= \${dueDate}::date\`)
+      }
+    `
+    expect(scanFixture(fixture)).toEqual([])
+  })
+
+  it('still flags an inline Date construction', () => {
+    // Rule 3a had no fixture, so this branch could rot unnoticed.
+    const fixture = `
+      export async function broken() {
+        return db.select().where(sql\`created <= \${new Date()}::timestamptz\`)
+      }
+    `
+    expect(scanFixture(fixture)).toEqual(['new Date()'])
   })
 })
