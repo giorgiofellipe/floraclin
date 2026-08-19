@@ -12,19 +12,13 @@ import {
 } from '@/components/ui/dialog'
 import { useConsentHistory } from '@/hooks/queries/use-consent'
 import { formatDateTime } from '@/lib/utils'
-import { CONSENT_TYPE_LABELS } from '@/lib/constants'
+import { CONSENT_TYPE_LABELS, METHOD_LABELS } from '@/lib/constants'
 import { Download, MessageCircle, Printer, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useState, useMemo } from 'react'
 import { useTenant } from '@/hooks/queries/use-tenant'
 import { useProfile } from '@/hooks/queries/use-profile'
 import { PrintConsent } from './print-consent'
-
-const METHOD_LABELS: Record<string, string> = {
-  checkbox: 'Checkbox',
-  signature: 'Assinatura',
-  both: 'Checkbox + Assinatura',
-}
 
 interface ConsentHistoryProps {
   patientId: string

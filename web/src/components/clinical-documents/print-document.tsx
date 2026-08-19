@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { ClinicHeader } from '@/components/print/clinic-header'
+import { FloraclinBrandHeader } from '@/lib/pdf-branding'
 import { ProfessionalSignatureBlock } from '@/components/professional/professional-signature-block'
 import { renderPlaceholders, buildDocumentPlaceholders } from '@/lib/templates/placeholders'
 import type { ClinicalDocumentWithContext } from '@/db/queries/clinical-documents'
@@ -74,6 +75,7 @@ export function PrintDocument({ doc, tenant }: PrintDocumentProps) {
       data-print-area
       className="print-document mx-auto max-w-[820px] bg-white p-8 text-black"
     >
+      <FloraclinBrandHeader />
       <ClinicHeader
         tenant={{
           name: tenantForHeader.name,

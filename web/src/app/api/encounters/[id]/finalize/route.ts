@@ -32,6 +32,7 @@ import { encounterCartSchema } from '@/validations/encounter-cart'
 import { getDefaultPackageValidityMonths } from '@/lib/tenant-settings'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
+import { handleApiError } from '@/lib/api-error'
 
 const requestSchema = z.object({
   cart: encounterCartSchema,
@@ -107,15 +108,7 @@ export async function POST(
         { status: 400 },
       )
     }
-    if (error instanceof Error) {
-      const msg = error.message
-      if (msg.includes('Forbidden')) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-      }
-      if (msg.includes('redirect') || msg.includes('NEXT_REDIRECT')) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-    }
+
     const errorMsg = error instanceof Error ? error.message : ''
     if (errorMsg.includes('já está em estado')) {
       return NextResponse.json(
@@ -123,10 +116,6 @@ export async function POST(
         { status: 409 },
       )
     }
-    console.error('Finalize atendimento error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Erro ao finalizar atendimento' },
-      { status: 500 },
-    )
+    return handleApiError(error, request, { body: { success: false, error: 'Erro ao finalizar atendimento' } })
   }
 }

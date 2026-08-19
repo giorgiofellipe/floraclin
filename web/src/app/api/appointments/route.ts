@@ -11,6 +11,9 @@ import {
 import { getProspectByPatientId, getProspectByPhone, updateProspect, logProspectActivity } from '@/db/queries/prospects'
 import { getPatient } from '@/db/queries/patients'
 import { createAppointmentSchema } from '@/validations/appointment'
+import { handleApiError } from '@/lib/api-error'
+import { reportSideEffectFailure } from '@/lib/observability'
+import { reportCalendarFailure } from '@/lib/google-calendar'
 
 const STAGES_MOVABLE_TO_AGENDADO = ['novo', 'contatado', 'qualificado', 'convertido']
 
@@ -33,11 +36,7 @@ export async function GET(request: Request) {
     })
     return NextResponse.json(data)
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 
@@ -100,9 +99,10 @@ export async function POST(request: Request) {
       entityId: appointment.id,
     })
 
-    syncAppointmentToGoogle(ctx.tenantId, appointment.id).catch((err) => {
-      console.error('Google Calendar push sync failed:', err)
-    })
+    // Deliberately not awaited: Google must never slow down saving an
+    // appointment. It swallows and reports its own failures, so there is
+    // nothing here to catch.
+    void syncAppointmentToGoogle(ctx.tenantId, appointment.id)
 
     // Auto-move CRM lead to "agendado" — matches by linked patient, patient
     // phone, or booking phone (leads are often scheduled without a patient
@@ -131,7 +131,7 @@ export async function POST(request: Request) {
           }, ctx.userId)
         }
       } catch (err) {
-        console.error('Failed to auto-advance prospect stage:', err)
+        reportSideEffectFailure(err, { area: 'crm', step: 'auto_advance_prospect' })
       }
     }
 
@@ -144,9 +144,6 @@ export async function POST(request: Request) {
         { status: 409 }
       )
     }
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

@@ -7,6 +7,7 @@ import { users } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { professionalProfileSchema } from '@/validations/professional'
+import { handleApiError } from '@/lib/api-error'
 
 function hashSignature(sig: string | null | undefined): string | null {
   if (!sig) return null
@@ -20,7 +21,7 @@ const updateProfileSchema = z
   })
   .merge(professionalProfileSchema)
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const ctx = await getAuthContext()
     const [user] = await db
@@ -43,11 +44,7 @@ export async function GET() {
     if (!user) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json({ data: user })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect'))
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('Profile API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }
 
@@ -150,10 +147,6 @@ export async function PUT(request: Request) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect'))
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('Profile API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

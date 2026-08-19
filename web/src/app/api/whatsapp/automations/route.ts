@@ -3,8 +3,9 @@ import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { listAutomations } from '@/db/queries/whatsapp'
 import { isWhatsAppEnabled } from '@/lib/whatsapp'
+import { handleApiError } from '@/lib/api-error'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const ctx = await getAuthContext()
     const tenant = await getTenant(ctx.tenantId)
@@ -19,11 +20,6 @@ export async function GET() {
     const automations = await listAutomations(ctx.tenantId)
     return NextResponse.json({ data: automations })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    console.error('Error listing WhatsApp automations:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

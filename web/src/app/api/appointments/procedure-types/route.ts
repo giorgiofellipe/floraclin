@@ -3,8 +3,9 @@ import { getAuthContext } from '@/lib/auth'
 import { db } from '@/db/client'
 import { procedureTypes } from '@/db/schema'
 import { eq, and, isNull } from 'drizzle-orm'
+import { handleApiError } from '@/lib/api-error'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const ctx = await getAuthContext()
 
@@ -26,10 +27,6 @@ export async function GET() {
 
     return NextResponse.json(result)
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, request)
   }
 }

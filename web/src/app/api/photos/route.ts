@@ -13,6 +13,8 @@ import {
   ACCEPTED_IMAGE_TYPES,
   isDngFile,
 } from '@/validations/photo'
+import { handleApiError } from '@/lib/api-error'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 // ─── Upload Photo ───────────────────────────────────────────────────
 
@@ -93,7 +95,9 @@ export async function POST(request: Request) {
       try {
         await deleteFile(storagePath)
       } catch (cleanupError) {
-        console.error('Failed to clean up uploaded file after DB error:', cleanupError)
+        // Both the insert and the cleanup failed, so a patient photo is now
+        // orphaned in storage with no row pointing at it.
+        reportSideEffectFailure(cleanupError, { area: 'photos', step: 'upload_cleanup' })
       }
       throw dbError
     }
@@ -108,11 +112,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: photoAsset })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('Photo upload error:', error)
-    return NextResponse.json({ success: false, error: 'Erro interno ao fazer upload' }, { status: 500 })
+    return handleApiError(error, request, { body: { success: false, error: 'Erro interno ao fazer upload' } })
   }
 }
 
@@ -141,10 +141,6 @@ export async function GET(request: Request) {
     const photosByStage = await listPhotosQuery(context.tenantId, patientId, procedureRecordId)
     return NextResponse.json({ success: true, data: photosByStage })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('Photo list error:', error)
-    return NextResponse.json({ success: false, error: 'Erro interno' }, { status: 500 })
+    return handleApiError(error, request, { body: { success: false, error: 'Erro interno' } })
   }
 }

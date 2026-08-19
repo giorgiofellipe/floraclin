@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import * as Sentry from '@sentry/nextjs'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle } from 'lucide-react'
 
@@ -12,7 +13,11 @@ export default function AuthError({
   reset: () => void
 }) {
   useEffect(() => {
-    console.error('Auth error:', error)
+    // `global-error.tsx` only runs when the root layout itself fails. A render
+    // error on login, signup or password reset lands here instead, so without
+    // this call the pages a user hits *before* we know who they are reported
+    // nothing.
+    Sentry.captureException(error)
   }, [error])
 
   return (

@@ -3,9 +3,10 @@ import { requirePlatformAdmin } from '@/lib/auth'
 import { getSubscription, getPlanBySlug, updateSubscriptionPlan, updateSubscriptionStatus } from '@/db/queries/subscriptions'
 import { getCreditUsage } from '@/db/queries/whatsapp-credits'
 import { createAuditLog } from '@/lib/audit'
+import { handleApiError } from '@/lib/api-error'
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ tenantId: string }> },
 ) {
   try {
@@ -21,11 +22,7 @@ export async function GET(
 
     return NextResponse.json({ data: { ...subscription, creditUsage } })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('Admin subscription detail error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, req)
   }
 }
 
@@ -101,10 +98,6 @@ export async function PATCH(
 
     return NextResponse.json({ data: result })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('Admin subscription update error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return handleApiError(error, req)
   }
 }

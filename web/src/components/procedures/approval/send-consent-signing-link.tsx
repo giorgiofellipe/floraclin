@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { toWhatsAppPhone } from '@/lib/phone'
 
 interface SendConsentSigningLinkProps {
   patientId: string
@@ -95,8 +96,7 @@ export function SendConsentSigningLink({
 
   function getWhatsAppUrl() {
     if (!url || !patientPhone) return null
-    const digits = patientPhone.replace(/\D/g, '')
-    const phone = digits.startsWith('55') ? digits : `55${digits}`
+    const phone = toWhatsAppPhone(patientPhone)
     const firstName = patientName.split(' ')[0]
     const message = `Olá ${firstName}! Acesse o link abaixo para revisar e assinar os termos do seu procedimento: ${url}`
     return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`

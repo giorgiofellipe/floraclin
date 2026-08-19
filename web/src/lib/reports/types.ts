@@ -1,5 +1,13 @@
 export type ReportFilterKind = 'date-range' | 'threshold-days' | 'practitioner' | 'min-count' | 'patient'
 
+/** Category a report is grouped under on the /relatorios landing page. A
+ *  union, not a free string, so declaring a report under a group that
+ *  doesn't exist is a type error rather than a silently-dropped card. Group
+ *  order and per-group copy live in the registry (see `REPORT_GROUPS`), not
+ *  here or on the landing page, so adding a group is a registry-only
+ *  change. */
+export type ReportGroup = 'pacientes' | 'financeiro' | 'clinico'
+
 export interface ReportColumn<Row> {
   key: string
   header: string
@@ -29,6 +37,12 @@ export interface ReportDefinition {
   slug: string
   title: string
   description: string
+  /** Category this report is grouped under on the /relatorios landing page.
+   *  A required union field so a new report must declare a valid group; an
+   *  unrecognized value fails the build rather than silently landing
+   *  outside every section. See `REPORT_GROUPS` in `./registry` for the
+   *  group order and per-group heading/subtitle. */
+  group: ReportGroup
   filters: ReportFilterKind[]
   /** The API route that serves this report's data and export formats, e.g.
    *  `/api/reports/inactive-patients`. Export links are built from this, not

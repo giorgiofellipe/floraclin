@@ -17,6 +17,7 @@ import { ReportPdf, REPORT_PDF_CSS } from '@/components/reports/report-pdf'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
 import { brToday } from '@/lib/dates'
 import { formatDate } from '@/lib/utils'
+import { reportRouteError } from '@/lib/reports/api-error'
 
 export const runtime = 'nodejs'
 // Disable static optimization: the CSV/PDF branches render dynamic binary/text output.
@@ -138,11 +139,6 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ data: rows })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('Forbidden')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect'))
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    console.error('API error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return reportRouteError(error, request)
   }
 }

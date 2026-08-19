@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import * as Sentry from '@sentry/nextjs'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle } from 'lucide-react'
 
@@ -12,7 +13,10 @@ export default function PlatformError({
   reset: () => void
 }) {
   useEffect(() => {
-    console.error('Platform error:', error)
+    // `global-error.tsx` only runs when the root layout itself fails. Every
+    // render error inside the app lands here instead, so without this call the
+    // whole authenticated UI reported nothing.
+    Sentry.captureException(error)
   }, [error])
 
   return (

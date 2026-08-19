@@ -7,6 +7,7 @@ import {
   deleteEvolutionSchema,
   editEvolutionSchema,
 } from '@/validations/patient-evolution'
+import { handleApiError } from '@/lib/api-error'
 
 export async function PATCH(
   req: Request,
@@ -72,18 +73,7 @@ export async function PATCH(
         { status: 409 },
       )
     }
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    if (msg === 'Forbidden') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-    console.error('Evolution PATCH error:', error)
-    return NextResponse.json(
-      { error: 'Internal Server Error' },
-      { status: 500 },
-    )
+    return handleApiError(error, req)
   }
 }
 
@@ -143,17 +133,6 @@ export async function DELETE(
         { status: 409 },
       )
     }
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('NEXT_REDIRECT') || msg.includes('redirect')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    if (msg === 'Forbidden') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-    console.error('Evolution DELETE error:', error)
-    return NextResponse.json(
-      { error: 'Internal Server Error' },
-      { status: 500 },
-    )
+    return handleApiError(error, req)
   }
 }
