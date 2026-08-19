@@ -467,15 +467,20 @@ interface PreviewableTemplate {
   variableMapping?: unknown
 }
 
+// An empty array counts as absent, not as "this template has no variables":
+// a row stored with variable_mapping [] would otherwise suppress the
+// blueprint fallback and render raw {{1}} placeholders to the clinic.
 function isVariableList(value: unknown): value is TemplateVariable[] {
   return (
     Array.isArray(value) &&
+    value.length > 0 &&
     value.every(
       (v) =>
         typeof v === 'object' &&
         v !== null &&
         typeof (v as TemplateVariable).index === 'number' &&
-        typeof (v as TemplateVariable).key === 'string',
+        typeof (v as TemplateVariable).key === 'string' &&
+        typeof (v as TemplateVariable).example === 'string',
     )
   )
 }
@@ -502,9 +507,11 @@ export function buildTemplatePreview(
   template: PreviewableTemplate,
   clinicName: string,
 ): TemplatePreview {
-  const components = Array.isArray(template.components)
-    ? (template.components as Record<string, unknown>[])
-    : []
+  const components = (
+    Array.isArray(template.components) ? template.components : []
+  ).filter(
+    (c): c is Record<string, unknown> => typeof c === 'object' && c !== null,
+  )
 
   const bodyComponent = components.find((c) => c.type === 'BODY')
   let body = typeof bodyComponent?.text === 'string' ? bodyComponent.text : ''

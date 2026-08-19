@@ -3,6 +3,7 @@ import { getAuthContext } from '@/lib/auth'
 import { getTenant, updateTenantSettings } from '@/db/queries/tenants'
 import { listTemplates, upsertTemplate, updateLocalTemplate } from '@/db/queries/whatsapp'
 import {
+  canManageTemplates,
   createTemplate as createMetaTemplate,
   isWhatsAppEnabled,
   syncTemplatesForTenant,
@@ -21,7 +22,7 @@ export async function POST() {
     if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp not enabled' }, { status: 400 })
     }
-    if (ctx.role !== 'owner') {
+    if (ctx.role !== 'owner' || !canManageTemplates(settings)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

@@ -27,6 +27,9 @@ export function WhatsAppSystemTemplates() {
         if (!active) return
         setTemplates((data.data ?? []) as SystemTemplate[])
         setClinicName((data.clinicName as string) ?? '')
+      } catch {
+        // Nothing actionable for the clinic here: the section is reference
+        // material, so a failed load leaves it hidden rather than throwing.
       } finally {
         if (active) setLoading(false)
       }
@@ -93,8 +96,9 @@ export function WhatsAppSystemTemplates() {
           })}
 
           <p className="text-xs text-mid">
-            Nome do paciente, data, horário e valores são exemplos. Cada mensagem é
-            preenchida com os dados reais do agendamento.
+            Os dados mostrados acima são exemplos. No envio, cada mensagem é
+            preenchida com as informações do paciente, da clínica ou do
+            atendimento correspondente.
           </p>
         </div>
       )}

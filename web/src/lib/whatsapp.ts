@@ -34,6 +34,18 @@ export function isWhatsAppEnabled(settings: Record<string, unknown> | null | und
   return !!settings?.whatsapp_enabled
 }
 
+/**
+ * True when the tenant manages its own Meta templates. Clinics on the shared
+ * FloraClin number must not reach any template mutation: the templates there
+ * are platform-owned and live in a WABA every other clinic sends from, so
+ * hiding the buttons is not enough — the routes have to refuse.
+ */
+export function canManageTemplates(
+  settings: Record<string, unknown> | null | undefined,
+): boolean {
+  return ((settings?.whatsapp_mode as WhatsAppMode) ?? 'floraclin') === 'own'
+}
+
 export async function getWhatsAppMode(tenantId: string): Promise<WhatsAppMode> {
   const tenant = await getTenant(tenantId)
   if (!tenant) throw new Error('Tenant not found')

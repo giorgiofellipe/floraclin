@@ -234,6 +234,51 @@ describe('buildTemplatePreview', () => {
     expect(body).not.toContain('Clínica Flora')
   })
 
+  it('falls back to the blueprint variables when variableMapping is an empty array', () => {
+    // A row stored with [] must not read as "no variables to substitute".
+    const { body } = buildTemplatePreview(
+      {
+        name: 'clinica_flora_confirm_appointment',
+        purposeKey: 'appointment_confirmation',
+        components: confirmation.components,
+        variableMapping: [],
+      },
+      'Clínica Flora',
+    )
+
+    expect(body).not.toMatch(/\{\{\d+\}\}/)
+    expect(body).toContain('Maria Silva')
+    expect(body).toContain('Clínica Flora')
+  })
+
+  it('ignores a mapping entry with no example instead of printing "undefined"', () => {
+    const { body } = buildTemplatePreview(
+      {
+        name: 'clinica_flora_confirm_appointment',
+        purposeKey: null,
+        components: confirmation.components,
+        variableMapping: [{ index: 1, key: 'patient_name', label: 'Paciente' }],
+      },
+      'Clínica Flora',
+    )
+
+    expect(body).not.toContain('undefined')
+  })
+
+  it('skips malformed component entries rather than crashing', () => {
+    const preview = buildTemplatePreview(
+      {
+        name: 'x',
+        purposeKey: null,
+        components: [null, { type: 'BODY', text: 'Olá!' }],
+        variableMapping: null,
+      },
+      'Clínica Flora',
+    )
+
+    expect(preview.body).toBe('Olá!')
+  })
+
   it('falls back to the blueprint variables when variableMapping is missing', () => {
     const { body } = buildTemplatePreview(
       {
@@ -246,6 +291,9 @@ describe('buildTemplatePreview', () => {
     )
 
     expect(body).not.toMatch(/\{\{\d+\}\}/)
+    expect(body).toContain('Maria Silva')
+    expect(body).toContain('Clínica Flora')
+    expect(body).toContain('15/04/2026')
   })
 
   it('returns the quick-reply button labels', () => {

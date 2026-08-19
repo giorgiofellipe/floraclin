@@ -547,15 +547,37 @@ export async function listTemplates(
   return templates.filter((t) => t.systemTemplate || belongsToTemplatePrefix(t.name, prefix))
 }
 
+export interface SystemTemplate {
+  id: string
+  name: string
+  language: string
+  purposeKey: string | null
+  status: string
+  components: unknown
+  variableMapping: unknown
+}
+
 /**
  * The platform-managed templates sent from the shared FloraClin number.
  * Deliberately not tenant-scoped: these rows live under whichever tenant
  * seeded them, and every tenant on the shared number sends them. Mirrors
  * the resolution getSystemTemplate does on the send path.
+ *
+ * Projected, not `select()`: every clinic reads this, so the seeding
+ * tenant's id, the Meta template id and the review metadata stay out of
+ * the response. Callers only need to label and render the message.
  */
-export async function listSystemTemplates(): Promise<WhatsappTemplate[]> {
+export async function listSystemTemplates(): Promise<SystemTemplate[]> {
   return db
-    .select()
+    .select({
+      id: whatsappTemplates.id,
+      name: whatsappTemplates.name,
+      language: whatsappTemplates.language,
+      purposeKey: whatsappTemplates.purposeKey,
+      status: whatsappTemplates.status,
+      components: whatsappTemplates.components,
+      variableMapping: whatsappTemplates.variableMapping,
+    })
     .from(whatsappTemplates)
     .where(eq(whatsappTemplates.systemTemplate, true))
     .orderBy(whatsappTemplates.name)
@@ -661,6 +683,10 @@ export async function markStaleTemplates(
     .where(
       and(
         eq(whatsappTemplates.tenantId, tenantId),
+        // A tenant sync sees only its own prefix, so it can never be evidence
+        // that a platform template is gone. Marking one DELETED here would
+        // stop the cron for every clinic on the shared number.
+        eq(whatsappTemplates.systemTemplate, false),
         notInArray(whatsappTemplates.metaTemplateId, metaTemplateIds),
         sql`${whatsappTemplates.metaTemplateId} IS NOT NULL`,
         sql`${whatsappTemplates.status} != 'DELETED'`

@@ -9,6 +9,10 @@
  *   - its `name` does NOT start with the owning tenant's
  *     `${whatsapp_template_prefix}_` (see resolveTemplatePrefix /
  *     belongsToTemplatePrefix in web/src/lib/whatsapp-blueprints.ts)
+ *   - its `name` DOES belong to another tenant's prefix, which is the only
+ *     positive evidence that the row was imported from someone else. A row
+ *     matching no tenant at all (a custom template the clinic named itself,
+ *     Meta's hello_world sample) is kept: not ours to judge.
  *   - its `purpose_key` is NULL (a matched purpose means provisioning
  *     explicitly claimed this row for this tenant -- never touch it)
  *   - `system_template` is false (system rows are intentionally shared
@@ -20,6 +24,7 @@
  * - `--yes` is required to actually delete rows.
  * - Never deletes a row with a non-null purpose_key.
  * - Never deletes a row where system_template is true.
+ * - Never deletes a row whose name belongs to no tenant prefix.
  * - Only ever deletes rows matched by the foreign-pollution rule above --
  *   everything else is reported as "kept".
  */
@@ -60,17 +65,28 @@ async function buildPlan(): Promise<TenantPlan[]> {
     templatesByTenant.set(tpl.tenantId, list)
   }
 
+  const prefixByTenant = new Map<string, string>()
+  for (const tenant of allTenants) {
+    const settings = (tenant.settings ?? {}) as Record<string, unknown>
+    prefixByTenant.set(
+      tenant.id,
+      resolveTemplatePrefix(
+        tenant.name,
+        settings.whatsapp_template_prefix as string | undefined,
+      ),
+    )
+  }
+
   const plans: TenantPlan[] = []
 
   for (const tenant of allTenants) {
     const rows = templatesByTenant.get(tenant.id)
     if (!rows || rows.length === 0) continue
 
-    const settings = (tenant.settings ?? {}) as Record<string, unknown>
-    const prefix = resolveTemplatePrefix(
-      tenant.name,
-      settings.whatsapp_template_prefix as string | undefined,
-    )
+    const prefix = prefixByTenant.get(tenant.id)!
+    const otherPrefixes = [...prefixByTenant.entries()]
+      .filter(([id]) => id !== tenant.id)
+      .map(([, p]) => p)
 
     const toRemove: TenantPlan['toRemove'] = []
     let keptCount = 0
@@ -79,7 +95,8 @@ async function buildPlan(): Promise<TenantPlan[]> {
       const isForeignPollution =
         !row.systemTemplate &&
         row.purposeKey === null &&
-        !belongsToTemplatePrefix(row.name, prefix)
+        !belongsToTemplatePrefix(row.name, prefix) &&
+        otherPrefixes.some((other) => belongsToTemplatePrefix(row.name, other))
 
       if (isForeignPollution) {
         toRemove.push({ id: row.id, name: row.name, purposeKey: row.purposeKey })

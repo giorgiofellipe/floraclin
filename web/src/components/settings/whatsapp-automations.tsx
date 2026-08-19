@@ -6,7 +6,7 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { CalendarCheck, CheckCircle2, Clock, CreditCard, HeartPulse, Loader2, Plus, Save } from 'lucide-react'
+import { AlertTriangle, CalendarCheck, CheckCircle2, Clock, CreditCard, HeartPulse, Loader2, Plus, Save } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Automation {
@@ -63,6 +63,29 @@ const TRIGGERS = [
     ],
   },
 ]
+
+/**
+ * What the panel can tell the clinic about the template behind a trigger.
+ * On the shared number the clinic can neither create a template nor chase its
+ * approval, so the only two useful answers are "the FloraClin default is in
+ * place" and "it is not, and this automation will not send".
+ */
+type TemplateState =
+  | 'approved'
+  | 'platform'
+  | 'unavailable'
+  | 'pending'
+  | 'provision'
+
+function resolveTemplateState(
+  template: Template | undefined,
+  mode: 'floraclin' | 'own',
+): TemplateState {
+  const usable = template?.status === 'APPROVED'
+  if (mode === 'floraclin') return usable ? 'platform' : 'unavailable'
+  if (!template) return 'provision'
+  return usable ? 'approved' : 'pending'
+}
 
 function buildLocalState(automations: Automation[]): LocalState {
   const state: LocalState = {}
@@ -256,6 +279,7 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
           const state = localState[trigger.key]
           if (!state) return null
           const matchingTemplate = getMatchingTemplate(trigger.purposeKey)
+          const templateState = resolveTemplateState(matchingTemplate, mode)
           const Icon = trigger.icon
 
           return (
@@ -285,30 +309,33 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
                 <div className="pl-7 space-y-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs text-mid">Template</Label>
-                    {matchingTemplate ? (
-                      matchingTemplate.status === 'APPROVED' ? (
-                        <div className="flex items-center gap-2 text-xs text-green-700">
-                          <CheckCircle2 className="size-3.5" />
-                          <span>Template aprovado</span>
-                        </div>
-                      ) : mode === 'floraclin' ? (
-                        // Nothing for the clinic to do about a shared template's
-                        // approval, so don't ask them to wait on Meta.
-                        <div className="flex items-center gap-2 text-xs text-mid">
-                          <CheckCircle2 className="size-3.5" />
-                          <span>Mensagem padrão do FloraClin</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 text-xs text-amber-700">
-                          <Clock className="size-3.5" />
-                          <span>Template em revisão pela Meta</span>
-                        </div>
-                      )
-                    ) : mode === 'floraclin' ? (
-                      <p className="text-xs text-mid">
-                        Mensagem padrão do FloraClin.
-                      </p>
-                    ) : (
+                    {templateState === 'approved' && (
+                      <div className="flex items-center gap-2 text-xs text-green-700">
+                        <CheckCircle2 className="size-3.5" />
+                        <span>Template aprovado</span>
+                      </div>
+                    )}
+                    {templateState === 'platform' && (
+                      <div className="flex items-center gap-2 text-xs text-mid">
+                        <CheckCircle2 className="size-3.5" />
+                        <span>Mensagem padrão do FloraClin</span>
+                      </div>
+                    )}
+                    {templateState === 'pending' && (
+                      <div className="flex items-center gap-2 text-xs text-amber-700">
+                        <Clock className="size-3.5" />
+                        <span>Template em revisão pela Meta</span>
+                      </div>
+                    )}
+                    {templateState === 'unavailable' && (
+                      <div className="flex items-center gap-2 text-xs text-amber-700">
+                        <AlertTriangle className="size-3.5" />
+                        <span>
+                          Mensagem indisponível no momento. Fale com o suporte.
+                        </span>
+                      </div>
+                    )}
+                    {templateState === 'provision' && (
                       <Button
                         type="button"
                         variant="outline"

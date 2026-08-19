@@ -2,7 +2,9 @@ import { NextResponse, after } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { listTemplates, createLocalTemplate, updateLocalTemplate } from '@/db/queries/whatsapp'
+import { updateTenantSettings } from '@/db/queries/tenants'
 import {
+  canManageTemplates,
   createTemplate as createMetaTemplate,
   getTemplate as getMetaTemplate,
   isWhatsAppEnabled,
@@ -121,7 +123,10 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { ctx } = await checkWhatsAppAccess(true)
+    const { ctx, tenant, settings } = await checkWhatsAppAccess(true)
+    if (!canManageTemplates(settings)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
     const body = await request.json()
     const parsed = createTemplateSchema.safeParse(body)
     if (!parsed.success) {
@@ -133,8 +138,18 @@ export async function POST(request: Request) {
 
     const { name, category, language, components, purposeKey, variableMapping } = parsed.data
 
+    // Named with the tenant prefix like provisioned templates are, otherwise
+    // the clinic's own template is invisible to listTemplates and reads as
+    // another clinic's row to every prefix-based check.
+    let prefix = settings?.whatsapp_template_prefix as string | undefined
+    if (!prefix) {
+      prefix = resolveTemplatePrefix(tenant.name)
+      await updateTenantSettings(ctx.tenantId, { whatsapp_template_prefix: prefix })
+    }
+    const prefixedName = name.startsWith(`${prefix}_`) ? name : `${prefix}_${name}`
+
     const metaResult = await createMetaTemplate(ctx.tenantId, {
-      name,
+      name: prefixedName,
       category,
       language,
       components,
@@ -142,7 +157,7 @@ export async function POST(request: Request) {
 
     const template = await createLocalTemplate(ctx.tenantId, {
       metaTemplateId: metaResult.id,
-      name,
+      name: prefixedName,
       language,
       category,
       status: metaResult.status || 'PENDING',
