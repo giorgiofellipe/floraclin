@@ -20,9 +20,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const captureExceptionMock = vi.fn()
 const captureMessageMock = vi.fn()
 
+const flushMock = vi.fn().mockResolvedValue(true)
+
 vi.mock('@sentry/nextjs', () => ({
   captureException: (...args: unknown[]) => captureExceptionMock(...args),
   captureMessage: (...args: unknown[]) => captureMessageMock(...args),
+  // The route runs under withCronMonitor now. Stand in for the check-in
+  // wrapper by just running the body, and keep flush observable so the
+  // suite can assert the closing check-in is actually pushed out.
+  withMonitor: (_slug: string, body: () => Promise<unknown>) => body(),
+  flush: (...args: unknown[]) => flushMock(...args),
 }))
 
 vi.mock('@/db/client', () => ({
@@ -236,6 +243,22 @@ describe('GET /api/cron/whatsapp-automations', () => {
       const res = await GET(makeRequest('wrong-secret'))
       expect(res.status).toBe(401)
       expect(notifyDiscord).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('cron check-in', () => {
+    it('flushes Sentry before returning, so the closing check-in is not dropped', async () => {
+      // Serverless freezes the instance the moment the response is sent. The
+      // opening check-in survives because it goes out before the work; the
+      // closing one does not, and Sentry then reports a timeout for a run
+      // that finished fine. That is exactly what happened to this project's
+      // first two monitors.
+      dbMock.from.mockResolvedValue([])
+
+      const res = await GET(makeRequest(CRON_SECRET))
+
+      expect(res.status).toBe(200)
+      expect(flushMock).toHaveBeenCalled()
     })
   })
 
