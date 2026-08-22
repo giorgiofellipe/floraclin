@@ -8,6 +8,13 @@ import { sendTemplateMessage, resolveTemplateBody, CreditExhaustedError, getTemp
 import { normalizeBrPhone } from '@/lib/phone'
 import { isSubscriptionActive } from '@/lib/plans'
 import { notifyDiscord, type WhatsappDigestFailingTenant } from '@/lib/discord'
+import { withCronMonitor } from '@/lib/observability'
+
+// Schedule mirrors `vercel.json`; see withCronMonitor for the rest. This is
+// the cron a clinic notices first when it stops running, so it gets the same
+// dead-man's switch as the other two.
+const MONITOR_SLUG = 'whatsapp-automations'
+const MONITOR_SCHEDULE = '0 11 * * *'
 
 // Vercel invokes this route and discards the response body, so nothing in
 // here can rely on a human reading `NextResponse.json(...)`. Every tenant
@@ -75,6 +82,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const result = await withCronMonitor(MONITOR_SLUG, MONITOR_SCHEDULE, runAutomations)
+
+  return NextResponse.json(result)
+}
+
+/**
+ * The job itself, lifted out of the handler so it can be handed to
+ * `withCronMonitor` whole. Nothing in here touches the request.
+ */
+async function runAutomations() {
   const allTenants = await db
     .select({ id: tenants.id, name: tenants.name, settings: tenants.settings })
     .from(tenants)
@@ -307,7 +324,7 @@ export async function GET(request: Request) {
     console.error('[cron] Failed to post whatsapp-automations digest to Discord:', err)
   }
 
-  return NextResponse.json({ ok: true, sent, outcomes, summary })
+  return { ok: true, sent, outcomes, summary }
 }
 
 function formatDateBr(dateStr: string): string {

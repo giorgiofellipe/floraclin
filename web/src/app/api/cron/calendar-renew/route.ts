@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import * as Sentry from '@sentry/nextjs'
 import { getExpiringConnections, updateConnection } from '@/db/queries/calendar'
 import {
   registerWebhookChannel,
@@ -8,11 +7,11 @@ import {
   isGoogleAuthFailure,
 } from '@/lib/google-calendar'
 import { handleApiError } from '@/lib/api-error'
-import { cronMonitorConfig } from '@/lib/observability'
+import { withCronMonitor } from '@/lib/observability'
 
-// Schedule mirrors `vercel.json`; see cronMonitorConfig for the rest.
+// Schedule mirrors `vercel.json`; see withCronMonitor for the rest.
 const MONITOR_SLUG = 'calendar-renew'
-const MONITOR_CONFIG = cronMonitorConfig('0 6 * * *')
+const MONITOR_SCHEDULE = '0 6 * * *'
 
 export async function GET(request: Request) {
   try {
@@ -27,8 +26,9 @@ export async function GET(request: Request) {
     // logs, Google's webhook channels just expire and calendar sync dies
     // silently a couple of days later. The check-in makes the absence itself
     // the alert.
-    const result = await Sentry.withMonitor(
+    const result = await withCronMonitor(
       MONITOR_SLUG,
+      MONITOR_SCHEDULE,
       async () => {
         const connections = await getExpiringConnections(48)
         let renewed = 0
@@ -83,7 +83,6 @@ export async function GET(request: Request) {
 
         return { renewed, failed, mustReconnect, total: connections.length }
       },
-      MONITOR_CONFIG,
     )
 
     return NextResponse.json({ ok: true, ...result })
