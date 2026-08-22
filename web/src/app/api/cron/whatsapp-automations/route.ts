@@ -8,7 +8,7 @@ import { sendTemplateMessage, resolveTemplateBody, CreditExhaustedError, getTemp
 import { normalizeBrPhone } from '@/lib/phone'
 import { isSubscriptionActive } from '@/lib/plans'
 import { notifyDiscord, type WhatsappDigestFailingTenant } from '@/lib/discord'
-import { withCronMonitor } from '@/lib/observability'
+import { withCronMonitor } from '@/lib/cron-monitor'
 
 // Schedule mirrors `vercel.json`; see withCronMonitor for the rest. This is
 // the cron a clinic notices first when it stops running, so it gets the same

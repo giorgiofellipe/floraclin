@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getExpiredTrials, updateSubscriptionStatus } from '@/db/queries/subscriptions'
 import { handleApiError } from '@/lib/api-error'
-import { withCronMonitor } from '@/lib/observability'
+import { withCronMonitor } from '@/lib/cron-monitor'
 
 // Schedule mirrors `vercel.json`; see withCronMonitor for the rest.
 const MONITOR_SLUG = 'subscription-expiry'

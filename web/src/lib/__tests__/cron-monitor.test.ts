@@ -21,7 +21,7 @@ vi.mock('@sentry/nextjs', () => ({
   captureException: vi.fn(),
 }))
 
-import { withCronMonitor } from '@/lib/observability'
+import { withCronMonitor } from '@/lib/cron-monitor'
 
 beforeEach(() => {
   vi.clearAllMocks()

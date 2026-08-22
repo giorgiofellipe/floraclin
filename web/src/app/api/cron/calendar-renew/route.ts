@@ -7,7 +7,7 @@ import {
   isGoogleAuthFailure,
 } from '@/lib/google-calendar'
 import { handleApiError } from '@/lib/api-error'
-import { withCronMonitor } from '@/lib/observability'
+import { withCronMonitor } from '@/lib/cron-monitor'
 
 // Schedule mirrors `vercel.json`; see withCronMonitor for the rest.
 const MONITOR_SLUG = 'calendar-renew'
