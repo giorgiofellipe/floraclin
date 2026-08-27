@@ -4,805 +4,411 @@
 
 **Goal:** A stranger can go from the marketing site to a paid FloraClin account with no human intervention, and a clinic that stops paying keeps read access to its own records.
 
-**Architecture:** Three changes that only make sense together. The manual approval gate is replaced by email confirmation, so self-serve does not also mean open season for bots. Subscription expiry becomes read-only, enforced by one method-based rule in middleware rather than 108 per-route guards. And a confirm endpoint closes the race between Stripe's redirect and its webhook, so nobody pays and stays locked out.
+**Architecture:** Enforcement extends the mechanism this repo already has. `subscriptionGate` in `src/lib/plans.ts` is DB-backed, resolves the caller's *active* tenant, exempts platform admins, and already honours the "canceled and past_due keep access until `currentPeriodEnd`" promise. Eight routes use it. This plan adds `requireWrite`, a thin wrapper pairing the existing role check with that gate, and applies it to every mutating route. Middleware is touched only for the email-confirmation redirect.
 
-**Tech Stack:** Next.js 16 App Router, NextAuth v5 (JWT strategy, Drizzle adapter), Drizzle + Supabase Postgres, Stripe, Resend, vitest.
+**Tech Stack:** Next.js 16 App Router, NextAuth v5 (JWT strategy, Drizzle adapter), Drizzle + Postgres, Stripe, Resend, vitest.
 
 **Source spec:** `docs/superpowers/specs/2026-08-27-public-subscriptions-design.md`
 
 ---
 
-## File Structure
+## Why this differs from the spec
 
-New modules, and why each exists as its own file:
+An adversarial review rejected the spec's middleware design. Three findings, all verified against the code:
+
+**The JWT cannot enforce expiry.** `auth-config.ts:80` refreshes subscription state only on sign-in or an explicit `session.update()`. The expiry cron and the Stripe webhook write the DB, so an already-logged-in user keeps `trialing` in their token and keeps writing indefinitely. A middleware rule reading that claim enforces nothing.
+
+**The JWT's subscription belongs to the wrong tenant.** `auth-config.ts:83` takes an arbitrary first membership with `.limit(1)`, while routes resolve the active tenant from the `floraclin_tenant_id` cookie (`lib/auth.ts:58`). A user with two clinics would be judged against the wrong one. Middleware would also block platform admins, who `subscriptionGate` explicitly exempts.
+
+**The banner already exists.** `components/layout/subscription-banner.tsx` is rendered by `(platform)/layout.tsx:14`, which reads `getSubscription(auth.tenantId)` from the DB. Creating a second one would duplicate it and downgrade it to stale JWT state.
+
+Two spec decisions are also dropped as no longer justified:
+
+**Trial still starts at signup, not confirmation.** The spec moved it because manual approval could take days. Confirmation takes seconds, so the problem is gone. Keeping `createSubscription` at signup also avoids colliding with the JWT self-heal at `auth-config.ts:132`, which mints a trial for any signed-in user lacking a subscription row.
+
+**`canceled` and `past_due` keep access until `currentPeriodEnd`.** `plans.ts:54`, its tests, and the banner copy all promise this today. Using `subscriptionGate` preserves it rather than silently changing the product.
+
+---
+
+## File Structure
 
 | File | Responsibility |
 |---|---|
-| `src/lib/write-access.ts` | The read-only policy: which paths and methods survive an expired subscription. Its own module so middleware and the coverage test share one source of truth instead of two drifting copies. |
-| `src/lib/confirm-email.ts` | Issue, verify and consume confirmation tokens. Separate from `lib/email.ts` because the token lifecycle is logic worth testing without touching Resend. |
+| `src/lib/write-access.ts` | `requireWrite`: role check plus `subscriptionGate`, one call per mutating route. |
+| `src/lib/confirm-email.ts` | Issue and atomically consume confirmation tokens. |
 | `src/app/api/billing/confirm/route.ts` | Closes the Stripe redirect race. |
-| `src/app/api/auth/confirm/route.ts` | Consumes a confirmation token. |
-| `src/app/api/auth/confirm/resend/route.ts` | Re-issues one, rate limited. |
+| `src/app/api/auth/confirm/route.ts` | GET renders; POST consumes. |
+| `src/app/api/auth/confirm/resend/route.ts` | Re-issues, durably rate limited. |
 | `src/app/confirm-email/page.tsx` | Replaces `/pending-approval`. |
-| `src/components/billing/subscription-banner.tsx` | The persistent read-only banner. |
+| `src/db/migrations/0023_email_confirmation.sql` | Backfills existing users, adds resend throttling columns. |
 
-**Critical ownership note:** `src/middleware.ts` is modified by exactly one task (B1) even though three separate concerns touch it. Splitting it across agents would conflict. Same for `src/actions/signup.ts`, owned only by B2.
-
----
-
-## Group A (parallel — no shared files)
-
-### Task A1: Stripe checkout confirmation
-
-**Files:**
-- Modify: `src/lib/stripe.ts`
-- Create: `src/app/api/billing/confirm/route.ts`
-- Test: `src/app/api/billing/__tests__/confirm.test.ts`
-
-- [ ] **Step 1: Write the failing test**
-
-```ts
-// src/app/api/billing/__tests__/confirm.test.ts
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-const retrieveCheckoutSessionMock = vi.fn()
-const updateSubscriptionPlanMock = vi.fn()
-const getPlanBySlugMock = vi.fn()
-
-vi.mock('@/lib/stripe', () => ({
-  retrieveCheckoutSession: (...a: unknown[]) => retrieveCheckoutSessionMock(...a),
-}))
-vi.mock('@/db/queries/subscriptions', () => ({
-  updateSubscriptionPlan: (...a: unknown[]) => updateSubscriptionPlanMock(...a),
-  getPlanBySlug: (...a: unknown[]) => getPlanBySlugMock(...a),
-}))
-vi.mock('@/lib/auth', () => ({
-  getAuthContext: vi.fn(async () => ({ tenantId: 'tenant-1', role: 'owner', userId: 'u1' })),
-}))
-
-import { POST } from '../confirm/route'
-
-function req(body: unknown) {
-  return new Request('http://localhost/api/billing/confirm', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-}
-
-beforeEach(() => {
-  vi.clearAllMocks()
-  getPlanBySlugMock.mockResolvedValue({ id: 'plan-1', slug: 'starter', active: true })
-})
-
-describe('POST /api/billing/confirm', () => {
-  it('activates the subscription when the session is paid', async () => {
-    retrieveCheckoutSessionMock.mockResolvedValue({
-      payment_status: 'paid',
-      subscription: 'sub_123',
-      customer: 'cus_123',
-      metadata: { tenantId: 'tenant-1', planSlug: 'starter' },
-    })
-
-    const res = await POST(req({ sessionId: 'cs_1' }))
-
-    expect(res.status).toBe(200)
-    expect(updateSubscriptionPlanMock).toHaveBeenCalledWith(
-      'tenant-1',
-      'plan-1',
-      'stripe',
-      expect.objectContaining({ status: 'active', stripeSubscriptionId: 'sub_123' }),
-    )
-  })
-
-  it('does not activate an unpaid session', async () => {
-    retrieveCheckoutSessionMock.mockResolvedValue({
-      payment_status: 'unpaid',
-      metadata: { tenantId: 'tenant-1', planSlug: 'starter' },
-    })
-
-    const res = await POST(req({ sessionId: 'cs_1' }))
-
-    expect(res.status).toBe(200)
-    expect(updateSubscriptionPlanMock).not.toHaveBeenCalled()
-  })
-
-  it('refuses a session belonging to another tenant', async () => {
-    // The session id travels in a URL the customer can edit. Without this
-    // check, pasting someone else's session id would activate your account
-    // on their payment.
-    retrieveCheckoutSessionMock.mockResolvedValue({
-      payment_status: 'paid',
-      subscription: 'sub_123',
-      metadata: { tenantId: 'someone-else', planSlug: 'starter' },
-    })
-
-    const res = await POST(req({ sessionId: 'cs_1' }))
-
-    expect(res.status).toBe(403)
-    expect(updateSubscriptionPlanMock).not.toHaveBeenCalled()
-  })
-})
-```
-
-- [ ] **Step 2: Run it, confirm it fails**
-
-Run: `pnpm exec vitest run src/app/api/billing/__tests__/confirm.test.ts`
-Expected: FAIL, cannot resolve `../confirm/route`.
-
-- [ ] **Step 3: Add the Stripe helper**
-
-Append to `src/lib/stripe.ts`:
-
-```ts
-/**
- * Reads a Checkout Session back from Stripe.
- *
- * Used to close the gap between Stripe redirecting the customer to
- * `success_url` and the webhook arriving. Without it a clinic pays, returns
- * to the app, and is still told to subscribe.
- */
-export async function retrieveCheckoutSession(sessionId: string) {
-  return getStripeClient().checkout.sessions.retrieve(sessionId)
-}
-```
-
-- [ ] **Step 4: Write the route**
-
-```ts
-// src/app/api/billing/confirm/route.ts
-import { NextResponse } from 'next/server'
-import { getAuthContext } from '@/lib/auth'
-import { retrieveCheckoutSession } from '@/lib/stripe'
-import { getPlanBySlug, updateSubscriptionPlan } from '@/db/queries/subscriptions'
-import { handleApiError } from '@/lib/api-error'
-
-/**
- * Activates a subscription straight from a completed Checkout Session.
- *
- * Stripe redirects the customer back before the webhook necessarily lands,
- * and `subscriptionStatus` lives in a JWT that only refreshes on sign-in. So
- * the webhook alone is not enough: the customer would return from a
- * successful payment into a read-only app telling them to subscribe.
- *
- * Idempotent with the webhook by design. Whichever arrives first activates,
- * and the other is a no-op, because `updateSubscriptionPlan` writes the same
- * end state either way.
- */
-export async function POST(request: Request) {
-  try {
-    const ctx = await getAuthContext()
-    if (ctx.role !== 'owner') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
-    const body = await request.json()
-    const sessionId = body.sessionId as string | undefined
-    if (!sessionId) {
-      return NextResponse.json({ error: 'sessionId é obrigatório' }, { status: 400 })
-    }
-
-    const session = await retrieveCheckoutSession(sessionId)
-
-    // The session id arrives in a URL the customer controls. Binding it to
-    // the caller's tenant stops one clinic activating itself on another's
-    // payment.
-    if (session.metadata?.tenantId !== ctx.tenantId) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
-    if (session.payment_status !== 'paid') {
-      return NextResponse.json({ activated: false })
-    }
-
-    const planSlug = session.metadata?.planSlug
-    if (!planSlug) return NextResponse.json({ activated: false })
-
-    const plan = await getPlanBySlug(planSlug)
-    if (!plan) return NextResponse.json({ activated: false })
-
-    const subscriptionId =
-      typeof session.subscription === 'string'
-        ? session.subscription
-        : session.subscription?.id
-
-    const customerId =
-      typeof session.customer === 'string' ? session.customer : session.customer?.id
-
-    await updateSubscriptionPlan(ctx.tenantId, plan.id, 'stripe', {
-      status: 'active',
-      stripeSubscriptionId: subscriptionId,
-      stripeCustomerId: customerId,
-    })
-
-    return NextResponse.json({ activated: true })
-  } catch (error) {
-    return handleApiError(error, request)
-  }
-}
-```
-
-- [ ] **Step 5: Run tests, expect PASS**
-
-Run: `pnpm exec vitest run src/app/api/billing/__tests__/confirm.test.ts`
-
-- [ ] **Step 6: Verify `updateSubscriptionPlan` accepts those option keys**
-
-Read `src/db/queries/subscriptions.ts`. If its options type lacks `stripeSubscriptionId` or `stripeCustomerId`, extend it. Do not change its behaviour otherwise; the webhook depends on it.
+**Exclusive ownership:** `src/middleware.ts` only in C1. `src/actions/signup.ts` only in B2. `src/lib/auth-config.ts` only in B3.
 
 ---
 
-### Task A2: Confirmation tokens and email
+## Group A (parallel — independent files)
 
-**Files:**
-- Create: `src/lib/confirm-email.ts`
-- Modify: `src/lib/email.ts`
-- Test: `src/lib/__tests__/confirm-email.test.ts`
+### Task A0: Migration — backfill and throttling columns
 
-**Context you need:** `src/app/api/profile/reset-request/route.ts` already establishes the token pattern: 32 random bytes, sha256 hashed at rest, raw token in the email, `delete`-then-`insert` per identifier, one hour expiry.
+**Files:** Create `src/db/migrations/0023_email_confirmation.sql`
 
-**The trap:** that delete removes *every* row for an identifier. If confirmation tokens used the bare email as identifier, a password reset would silently destroy a pending confirmation and strand the account with no visible cause. Confirmation tokens are namespaced `confirm:<email>`.
+**This is the task that prevents a production lockout.** 13 users exist; 12 have `email_verified` null, including four paying clinics. Migrations here are applied **manually** (no `db:migrate` script, not in build, not in CI), so this cannot be left implicit.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the migration**
 
-```ts
-// src/lib/__tests__/confirm-email.test.ts
-import { describe, expect, it } from 'vitest'
-import { confirmIdentifier, hashToken } from '@/lib/confirm-email'
+```sql
+-- Existing accounts were vetted by a human through the approval gate that
+-- this change removes. Treating them as unverified would lock every current
+-- customer out of production the moment the confirmation gate ships.
+UPDATE floraclin.users SET email_verified = now() WHERE email_verified IS NULL;
 
-describe('confirm-email tokens', () => {
-  it('namespaces the identifier so a password reset cannot destroy it', () => {
-    // reset-request deletes every verification_tokens row for an identifier.
-    // Sharing the bare email would make a reset silently strand a signup.
-    expect(confirmIdentifier('a@b.com')).toBe('confirm:a@b.com')
-    expect(confirmIdentifier('A@B.com')).toBe('confirm:a@b.com')
-  })
-
-  it('hashes tokens so a database read cannot confirm an account', () => {
-    const raw = 'abc123'
-    expect(hashToken(raw)).not.toBe(raw)
-    expect(hashToken(raw)).toBe(hashToken(raw))
-    expect(hashToken(raw)).toHaveLength(64)
-  })
-})
+-- Durable resend throttling. An in-memory limiter does not survive Vercel's
+-- multiple instances, and this endpoint sends email to an address supplied
+-- by an unauthenticated caller.
+ALTER TABLE floraclin.verification_tokens
+  ADD COLUMN IF NOT EXISTS last_sent_at timestamptz;
 ```
 
-- [ ] **Step 2: Run it, confirm it fails**
+- [ ] **Step 2: Mirror the columns in `src/db/schema.ts`**
 
-Run: `pnpm exec vitest run src/lib/__tests__/confirm-email.test.ts`
+Add `lastSentAt` to `verificationTokens`. Do not change any other column.
 
-- [ ] **Step 3: Implement**
+- [ ] **Step 3: Verification query for the deploy runbook**
 
-```ts
-// src/lib/confirm-email.ts
-import crypto from 'node:crypto'
-import { and, eq } from 'drizzle-orm'
-import { db } from '@/db/client'
-import { users, verificationTokens } from '@/db/schema'
-
-/** 24 hours, not the one hour a password reset gets. This is first contact
- *  and may well be read the next morning. */
-const CONFIRM_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
-
-/**
- * Confirmation tokens share `verification_tokens` with password resets, and
- * `reset-request` deletes every row for an identifier before inserting. The
- * namespace is what stops a reset from silently destroying a pending
- * confirmation.
- */
-export function confirmIdentifier(email: string): string {
-  return `confirm:${email.toLowerCase()}`
-}
-
-export function hashToken(raw: string): string {
-  return crypto.createHash('sha256').update(raw).digest('hex')
-}
-
-/** Issues a token and returns the raw value, which only ever leaves in an
- *  email. The database keeps the hash. */
-export async function issueConfirmationToken(email: string): Promise<string> {
-  const raw = crypto.randomBytes(32).toString('hex')
-  const identifier = confirmIdentifier(email)
-
-  await db.delete(verificationTokens).where(eq(verificationTokens.identifier, identifier))
-  await db.insert(verificationTokens).values({
-    identifier,
-    token: hashToken(raw),
-    expires: new Date(Date.now() + CONFIRM_TOKEN_TTL_MS),
-  })
-
-  return raw
-}
-
-/**
- * Consumes a token. Returns the confirmed email, or null when the token is
- * unknown or expired. Deletes on success so a link cannot be replayed.
- */
-export async function consumeConfirmationToken(
-  email: string,
-  rawToken: string,
-): Promise<string | null> {
-  const identifier = confirmIdentifier(email)
-
-  const [row] = await db
-    .select()
-    .from(verificationTokens)
-    .where(
-      and(
-        eq(verificationTokens.identifier, identifier),
-        eq(verificationTokens.token, hashToken(rawToken)),
-      ),
-    )
-    .limit(1)
-
-  if (!row) return null
-
-  await db.delete(verificationTokens).where(eq(verificationTokens.identifier, identifier))
-
-  if (row.expires.getTime() < Date.now()) return null
-
-  return email.toLowerCase()
-}
-
-/** Marks the account verified. Also the join point for the Google path, so a
- *  linked Google sign-in satisfies a pending credentials confirmation. */
-export async function markEmailVerified(email: string): Promise<void> {
-  await db
-    .update(users)
-    .set({ emailVerified: new Date() })
-    .where(eq(users.email, email.toLowerCase()))
-}
+```sql
+SELECT count(*) FROM floraclin.users WHERE email_verified IS NULL;
 ```
 
-- [ ] **Step 4: Add the email**
-
-Append to `src/lib/email.ts`, following the existing `sendPasswordResetEmail` shape and tone (Portuguese, same layout):
-
-```ts
-export async function sendConfirmationEmail(email: string, url: string, clinicName: string) {
-  // Mirror sendPasswordResetEmail's structure exactly: same from address,
-  // same wrapper markup, same Resend call. Subject: "Confirme seu e-mail".
-  // Body: welcome the clinic by name, one primary button to `url`, and a note
-  // that the link expires in 24 hours.
-}
-```
-
-- [ ] **Step 5: Run tests, expect PASS**
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add src/lib/confirm-email.ts src/lib/email.ts src/lib/__tests__/confirm-email.test.ts
-git commit -m "feat(auth): confirmation token lifecycle"
-```
-
----
-
-### Task A3: Block public booking for expired clinics
-
-**Files:**
-- Modify: `src/app/api/book/[slug]/route.ts`
-- Modify: `src/app/c/[slug]/page.tsx`
-- Modify: `src/components/booking/booking-page.tsx`
-- Test: `src/app/api/book/[slug]/__tests__/route.test.ts`
-
-**Why this is not covered by middleware:** the booking route is unauthenticated, so middleware cannot know which tenant it concerns. It resolves the tenant by slug and checks for itself.
-
-**Requirement:** a patient must never see an error. The page renders a closed message.
-
-- [ ] **Step 1: Write the failing test**
-
-Test that `POST /api/book/[slug]` returns 403 with a Portuguese message when the tenant's subscription is not `trialing` or `active`, and still creates the appointment when it is. Mock `isSubscriptionActive` from `@/lib/plans`.
-
-- [ ] **Step 2: Run it, confirm it fails**
-
-- [ ] **Step 3: Guard the route**
-
-In `src/app/api/book/[slug]/route.ts`, after resolving the tenant from the slug and before creating anything:
-
-```ts
-// Unauthenticated, so middleware cannot identify the tenant. Checked here
-// instead. A patient sees a closed-bookings message rather than an error;
-// they have done nothing wrong.
-if (!(await isSubscriptionActive(tenant.id))) {
-  return NextResponse.json(
-    { error: 'Esta clínica não está aceitando agendamentos online no momento.' },
-    { status: 403 },
-  )
-}
-```
-
-- [ ] **Step 4: Render the closed state**
-
-`src/app/c/[slug]/page.tsx` already loads the tenant. Also resolve `isSubscriptionActive(tenant.id)` and pass `acceptingBookings` into `BookingPage`. When false, `booking-page.tsx` renders the clinic header and a single message in place of the booking form: `Esta clínica não está aceitando agendamentos online no momento.` Keep the clinic's name and logo visible; only the form is replaced.
-
-- [ ] **Step 5: Run tests, expect PASS**
-
-- [ ] **Step 6: Commit**
-
----
-
-### Task A4: Read-only banner
-
-**Files:**
-- Create: `src/components/billing/subscription-banner.tsx`
-- Modify: `src/app/(platform)/layout.tsx`
-- Test: `src/components/billing/__tests__/subscription-banner.test.tsx`
-
-- [ ] **Step 1: Write the failing test**
-
-Assert: renders nothing for `trialing` and `active`; renders a message plus a link to `/configuracoes?tab=assinatura` for `expired`, `canceled` and `past_due`; is not dismissible (no close control).
-
-- [ ] **Step 2: Run it, confirm it fails**
-
-- [ ] **Step 3: Implement**
-
-```tsx
-// src/components/billing/subscription-banner.tsx
-const ACTIVE_STATUSES = ['trialing', 'active']
-
-/**
- * Persistent, not dismissible. An expired clinic can still read everything
- * it owns but cannot change any of it, and read-only should never be a
- * mystery: the banner is the only thing explaining why saving fails.
- */
-export function SubscriptionBanner({ status }: { status: string | null }) {
-  if (status && ACTIVE_STATUSES.includes(status)) return null
-  // Render: amber bar, "Sua assinatura expirou. Você ainda pode consultar
-  // seus dados, mas não fazer alterações.", link "Assinar agora" ->
-  // /configuracoes?tab=assinatura
-}
-```
-
-Wire into `src/app/(platform)/layout.tsx` above the main content, reading the status from the session. Follow how the layout already reads session values.
-
-- [ ] **Step 4: Run tests, expect PASS**
-
-- [ ] **Step 5: Commit**
-
----
-
-### Task A5: Write-access policy and its coverage test
-
-**Files:**
-- Create: `src/lib/write-access.ts`
-- Test: `src/lib/__tests__/write-access.test.ts`
-- Test: `src/app/api/__tests__/write-access-coverage.test.ts`
-
-This task owns the policy. B1 only wires it into middleware, so the rule and the test that guards it cannot drift apart.
-
-- [ ] **Step 1: Write the failing unit test**
-
-```ts
-// src/lib/__tests__/write-access.test.ts
-import { describe, expect, it } from 'vitest'
-import { requiresActiveSubscription } from '@/lib/write-access'
-
-describe('requiresActiveSubscription', () => {
-  it('lets every read through', () => {
-    expect(requiresActiveSubscription('/api/patients', 'GET')).toBe(false)
-    expect(requiresActiveSubscription('/api/patients', 'HEAD')).toBe(false)
-  })
-
-  it('catches every write', () => {
-    for (const m of ['POST', 'PATCH', 'PUT', 'DELETE']) {
-      expect(requiresActiveSubscription('/api/patients', m)).toBe(true)
-    }
-  })
-
-  it('always allows the path out of the problem', () => {
-    // Blocking billing would trap an expired clinic with no way to pay.
-    expect(requiresActiveSubscription('/api/billing/checkout', 'POST')).toBe(false)
-    expect(requiresActiveSubscription('/api/billing/confirm', 'POST')).toBe(false)
-  })
-
-  it('never blocks auth', () => {
-    expect(requiresActiveSubscription('/api/auth/signout', 'POST')).toBe(false)
-  })
-
-  it('ignores paths outside /api', () => {
-    expect(requiresActiveSubscription('/dashboard', 'POST')).toBe(false)
-  })
-})
-```
-
-- [ ] **Step 2: Run it, confirm it fails**
-
-- [ ] **Step 3: Implement**
-
-```ts
-// src/lib/write-access.ts
-
-/** Read methods. Everything else mutates and needs an active subscription. */
-const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
-
-/**
- * Paths that must keep working while a subscription is expired.
- *
- * `/api/billing` is the way out: block it and an expired clinic can never
- * pay, which turns a soft lapse into a permanent one. `/api/auth` must stay
- * open or they cannot even sign out.
- *
- * Webhooks and crons are deliberately absent. They are unauthenticated, so
- * the middleware rule never reaches them, and listing them here would imply
- * a guarantee this module does not provide.
- */
-export const WRITE_ACCESS_ALLOWLIST = ['/api/billing/', '/api/auth/'] as const
-
-export function requiresActiveSubscription(pathname: string, method: string): boolean {
-  if (!pathname.startsWith('/api/')) return false
-  if (READ_METHODS.has(method.toUpperCase())) return false
-  return !WRITE_ACCESS_ALLOWLIST.some((prefix) => pathname.startsWith(prefix))
-}
-```
-
-- [ ] **Step 4: Write the coverage scanner**
-
-```ts
-// src/app/api/__tests__/write-access-coverage.test.ts
-```
-
-Walk `src/app/api` for files exporting `POST`, `PATCH`, `PUT` or `DELETE`. Derive each route's URL path from its directory. Assert every one is either caught by `requiresActiveSubscription(path, 'POST')` or appears in an explicit, commented list of intentional exceptions (the webhooks, the crons, the public booking and consent routes, the password reset routes).
-
-Include a guard-the-guard fixture proving the walker actually finds routes, in the style of `src/db/queries/__tests__/no-date-in-raw-sql.test.ts`. Assert a non-trivial route count per directory rather than one total, so a moved directory fails loudly instead of silently shrinking the scan.
-
-**Why this test exists:** the allowlist is a prefix list maintained by hand. When it rots, it fails *open*: a new mutating route silently becomes free. Nothing else in the codebase would notice.
-
-- [ ] **Step 5: Run tests, expect PASS**
-
-- [ ] **Step 6: Commit**
-
----
-
-### Task A6: Persist and expose email verification
-
-**Files:**
-- Modify: `src/lib/auth-config.ts`
-- Test: `src/lib/__tests__/auth-config-verification.test.ts`
-
-**Context:** the `signIn` callback at `src/lib/auth-config.ts:66` already refuses a Google profile whose `email_verified` is false. It never persists that fact, which is why both existing Google users show `emailVerified: null`. `allowDangerousEmailAccountLinking` is already true, justified by exactly that check.
-
-- [ ] **Step 1: Write the failing test**
-
-Assert the `signIn` callback still returns false for an unverified Google profile, returns true for a verified one, and calls `markEmailVerified` with the profile email in that case.
-
-- [ ] **Step 2: Run it, confirm it fails**
-
-- [ ] **Step 3: Stamp on Google sign-in**
-
-```ts
-async signIn({ account, profile }) {
-  if (account?.provider === 'google') {
-    if (!(profile as any)?.email_verified) return false
-
-    // Google has asserted the address, so a Google sign-in also satisfies a
-    // pending credentials confirmation for the same email. Account linking is
-    // already on, which makes "entrar com Google" the escape hatch for a
-    // confirmation email that never arrived.
-    const email = (profile as any)?.email as string | undefined
-    if (email) await markEmailVerified(email)
-  }
-  return true
-}
-```
-
-- [ ] **Step 4: Expose it on the session**
-
-In the `jwt` callback, alongside `tenantStatus` and `subscriptionStatus`, select `users.emailVerified` and set `token.emailVerified = <boolean>`. Surface it in the `session` callback the same way the neighbouring fields are. Middleware needs it, and middleware can only read the token.
-
-Set it in **every** branch that already assigns `tenantStatus`, including the no-membership branch. A branch that forgets it leaves `emailVerified` undefined, which B1 must treat as unverified, which would lock the user out.
-
-- [ ] **Step 5: Run tests, expect PASS**
-
-- [ ] **Step 6: Commit**
-
----
-
-## Group B (depends on Group A)
-
-### Task B1: The middleware rule
-
-**Files:**
-- Modify: `src/middleware.ts`
-- Test: `src/__tests__/middleware.test.ts`
-
-**This task exclusively owns `src/middleware.ts`.** Three separate concerns land here and splitting them across agents would conflict.
-
-**Current shape:** lines 17 to 28 are one `if` whose arms include `pathname.startsWith('/api/')`, returning `NextResponse.next()` at line 28. That single arm is why middleware does nothing for API routes today.
-
-**The `/api/` arm must be lifted out into its own branch placed before that condition.** Do not insert code above line 23 and leave the arm in place; the blanket allow would still fire. The other arms (`/c/`, `/a/`, `/sign/`, `/verify/`, `/_next/`, favicon, image extensions) keep their unconditional pass.
-
-- [ ] **Step 1: Write the failing tests**
-
-Cover, at minimum:
-- authenticated + `subscriptionStatus: 'expired'` + `POST /api/patients` → 402
-- same + `GET /api/patients` → passes
-- same + `POST /api/billing/checkout` → passes
-- authenticated + `'active'` + `POST /api/patients` → passes
-- authenticated + `'trialing'` + `POST /api/patients` → passes
-- **unauthenticated** + `POST /api/webhooks/whatsapp` → passes untouched
-- authenticated + `emailVerified: false` + `GET /dashboard` → redirects to `/confirm-email`
-- authenticated + `emailVerified: false` + `GET /confirm-email` → passes
-- no reference to `/pending-approval` survives anywhere in the file
-
-- [ ] **Step 2: Run them, confirm they fail**
-
-- [ ] **Step 3: Implement**
-
-```ts
-// Replaces the `/api/` arm of the public-routes condition.
-//
-// Every mutating route in the app lives under /api (108 of them), and the
-// only two 'use server' files are auth and signup, neither of which mutates
-// tenant data. So one method-based rule here covers everything, including
-// routes not yet written. Per-route guards would mean 108 edits and no
-// guarantee for the 109th.
-if (pathname.startsWith('/api/')) {
-  const session = req.auth as any
-  const subscriptionStatus = session?.subscriptionStatus as string | null
-
-  if (
-    isAuthenticated &&
-    !['trialing', 'active'].includes(subscriptionStatus ?? '') &&
-    requiresActiveSubscription(pathname, req.method)
-  ) {
-    return NextResponse.json(
-      { error: 'Sua assinatura expirou. Reative para continuar editando.' },
-      { status: 402 },
-    )
-  }
-
-  // Unauthenticated requests fall through untouched. That is what keeps the
-  // WhatsApp webhook writing while a clinic is expired: Meta gets a 200 and
-  // never retries, so a dropped patient message is lost for good.
-  return NextResponse.next()
-}
-```
-
-Then, in the authenticated section: delete the `pending_approval` branches (both the auth-page redirect and the later guard), and add in their place:
-
-```ts
-if (isAuthenticated && session?.emailVerified === false) {
-  if (pathname === '/confirm-email') return NextResponse.next()
-  return NextResponse.redirect(new URL('/confirm-email', req.url))
-}
-```
-
-- [ ] **Step 4: Run tests, expect PASS**
-
-- [ ] **Step 5: Run the full suite**
-
-Run: `pnpm --filter @floraclin/web test:run`. The middleware change is the one that can break unrelated routes.
-
-- [ ] **Step 6: Commit**
-
----
-
-### Task B2: Signup creates active, unconfirmed tenants
-
-**Files:**
-- Modify: `src/actions/signup.ts`
-- Modify: `src/db/queries/admin-tenants.ts`
-- Test: `src/actions/__tests__/signup.test.ts`
-
-**Two tenant-creation sites, both must change:**
-- `src/actions/signup.ts:74` — the credentials path
-- `src/db/queries/admin-tenants.ts:321`, inside `createSelfSignupTenant` — the OAuth path
-
-- [ ] **Step 1: Write the failing tests**
-
-Assert: the credentials path creates the tenant with `status: 'active'`; it issues a confirmation token and sends the email; it does **not** call `notifyDiscord`; it does **not** create a subscription; and it redirects to `/confirm-email` rather than `/pending-approval`.
-
-- [ ] **Step 2: Run them, confirm they fail**
-
-- [ ] **Step 3: Change both status assignments to `'active'`**
-
-- [ ] **Step 4: Move the deferred work out of signup**
-
-Remove the `notifyDiscord` and `createSubscription` calls from the credentials path. Both move to confirmation (Task B3).
-
-**Why:** firing `clinic.created` at signup would notify on every bot that never confirms, which is exactly the noise the approval gate was absorbing. And a trial that starts at signup spends its first day on an account nobody has opened.
-
-The OAuth path in `createClinicForOAuthUser` keeps both, because Google users are verified on arrival and never see the confirmation step.
-
-- [ ] **Step 5: Issue the token and send the email**
-
-After the transaction commits, call `issueConfirmationToken(email)` and `sendConfirmationEmail(...)` with a link to `/api/auth/confirm?email=<encoded>&token=<raw>`. Then redirect to `/confirm-email`.
-
-- [ ] **Step 6: Run tests, expect PASS**
-
-- [ ] **Step 7: Commit**
-
----
-
-### Task B3: Confirmation endpoints and screen
-
-**Files:**
-- Create: `src/app/api/auth/confirm/route.ts`
-- Create: `src/app/api/auth/confirm/resend/route.ts`
-- Create: `src/app/confirm-email/page.tsx`
-- Test: `src/app/api/auth/confirm/__tests__/route.test.ts`
-
-- [ ] **Step 1: Write the failing tests**
-
-Assert: a valid token marks the user verified, creates the subscription and fires `clinic.created`; an expired token does not and shows an error; a token cannot be replayed; and resend is refused within the cooldown window.
-
-- [ ] **Step 2: Run them, confirm they fail**
-
-- [ ] **Step 3: Implement `GET /api/auth/confirm`**
-
-Reads `email` and `token` from the query string, calls `consumeConfirmationToken`. On success: `markEmailVerified`, create the free-plan subscription (the trial starts here, not at signup), fire `notifyDiscord({ kind: 'clinic.created', ... })` and `subscription.created`, then redirect to `/dashboard`. On failure, redirect to `/confirm-email?error=invalid`.
-
-- [ ] **Step 4: Implement `POST /api/auth/confirm/resend`**
-
-Re-issues a token and resends. Rate limit to one per 60 seconds per email, returning 429 otherwise. With double opt-in an undelivered email is a dead signup, so this path is load-bearing, but it is also an unauthenticated email trigger and must not become a spam relay.
-
-- [ ] **Step 5: Build `/confirm-email`**
-
-Shows the address the link went to, a resend button wired to the route above, and a **"Entrar com Google"** button. Account linking is already enabled and Google sign-in stamps `emailVerified` (Task A6), so that button retroactively satisfies the gate for a stuck credentials signup. It is the main recovery path and should be as prominent as resend.
-
-Model the layout on the `/pending-approval` page being deleted; it already has the right shape.
-
-- [ ] **Step 6: Run tests, expect PASS**
-
-- [ ] **Step 7: Commit**
-
----
-
-### Task B4: Billing page closes the payment race
-
-**Files:**
-- Modify: `src/components/settings/billing-settings.tsx`
-- Test: `src/components/settings/__tests__/billing-settings.test.tsx`
-
-- [ ] **Step 1: Write the failing test**
-
-Assert that when the page mounts with `session_id` in the query string it calls `POST /api/billing/confirm` with that id, and calls `session.update()` afterwards.
-
-- [ ] **Step 2: Run it, confirm it fails**
-
-- [ ] **Step 3: Implement**
-
-On mount, read `session_id` from the search params. If present, `POST /api/billing/confirm`, then call `update()` from `useSession()` so the JWT picks up the new status, then clear the parameter from the URL so a refresh does not re-post.
-
-**Why:** without this the customer pays, returns, and sits in a read-only app being asked to subscribe, because the JWT still says expired and the webhook may not have landed.
-
-- [ ] **Step 4: Run tests, expect PASS**
-
-- [ ] **Step 5: Commit**
-
----
-
-## Group C (depends on Group B)
-
-### Task C1: Remove the approval gate's remains
-
-**Files:**
-- Delete: `src/app/pending-approval/page.tsx`
-- Delete: `src/app/pending-approval/layout.tsx`
-- Delete: `src/app/pending-approval/logout-button.tsx`
-
-- [ ] **Step 1: Confirm nothing references it**
-
-Run: `grep -rn "pending-approval\|pending_approval" src`
-
-Expected: only `src/db/queries/admin-tenants.ts` (the admin reject/approve queries, which stay) and `src/components/admin/admin-tenant-list.tsx`. **No hits in `middleware.ts` or `actions/signup.ts`.** If there are, B1 or B2 is incomplete; stop and fix there.
-
-- [ ] **Step 2: Delete the three files**
-
-- [ ] **Step 3: Run the full suite**
+Must return 0 before C1 ships. Record this in the task's commit message.
 
 - [ ] **Step 4: Commit**
 
 ---
 
+### Task A1: Stripe checkout confirmation
+
+**Files:** Modify `src/lib/stripe.ts`; create `src/app/api/billing/confirm/route.ts`; test `src/app/api/billing/__tests__/confirm.test.ts`
+
+`getPlanBySlug` and `updateSubscriptionPlan`'s options already exist (`subscriptions.ts:36`, `:216`). No changes needed there.
+
+- [ ] **Step 1: Write the failing tests**
+
+Cover: a paid session for the caller's tenant activates; an unpaid session does not; a session whose `metadata.tenantId` is another tenant returns 403; **a paid session whose Stripe subscription is now `canceled` does not reactivate**; an inactive plan is refused; and calling twice produces one active subscription.
+
+- [ ] **Step 2: Run them, confirm they fail**
+
+- [ ] **Step 3: Add the helper to `src/lib/stripe.ts`**
+
+```ts
+/** Reads a Checkout Session back, expanding the subscription so the caller
+ *  can check its *current* state rather than trusting the session snapshot. */
+export async function retrieveCheckoutSession(sessionId: string) {
+  return getStripeClient().checkout.sessions.retrieve(sessionId, {
+    expand: ['subscription'],
+  })
+}
+```
+
+- [ ] **Step 4: Write the route**
+
+Requirements, each guarding a specific failure the review identified:
+
+- `getAuthContext`, owner only.
+- Refuse when `session.metadata.tenantId !== ctx.tenantId`. The session id travels in a URL the customer controls; without this, pasting another clinic's id activates yours on their payment.
+- Refuse unless `session.payment_status === 'paid'`.
+- **Refuse unless the expanded `session.subscription.status` is currently `active` or `trialing`.** A `cs_…` stays paid forever, so replaying an old one after a cancellation would otherwise resurrect the subscription.
+- Refuse when the plan is missing or `active === false`.
+- Then `updateSubscriptionPlan(ctx.tenantId, plan.id, 'stripe', { status: 'active', stripeSubscriptionId, stripeCustomerId })`.
+
+- [ ] **Step 5: Run tests, expect PASS. Commit.**
+
+---
+
+### Task A2: Confirmation tokens
+
+**Files:** Create `src/lib/confirm-email.ts`; modify `src/lib/email.ts`; test `src/lib/__tests__/confirm-email.test.ts`
+
+**Two traps, both already solved elsewhere in this repo:**
+
+`reset-request/route.ts:34` deletes *every* token for an identifier. Confirmation tokens must be namespaced `confirm:<email>` or a password reset silently destroys a pending confirmation.
+
+`reset-confirm/route.ts:24` consumes atomically with `DELETE … RETURNING`. A `SELECT` then `DELETE` lets two concurrent clicks both succeed and fire side effects twice. Reuse the atomic pattern.
+
+- [ ] **Step 1: Write the failing tests**
+
+Cover: identifier namespacing and lowercasing; tokens hashed at rest; an expired token is rejected *and* consumed; a token cannot be replayed; two concurrent consumptions yield exactly one success.
+
+- [ ] **Step 2: Run them, confirm they fail**
+
+- [ ] **Step 3: Implement**
+
+`confirmIdentifier`, `hashToken`, `issueConfirmationToken` (24h TTL, sets `lastSentAt`), `consumeConfirmationToken` using `db.delete(...).where(...).returning()` and checking expiry on the returned row, and `markEmailVerified`.
+
+- [ ] **Step 4: Add `sendConfirmationEmail` to `src/lib/email.ts`**
+
+Mirror `sendPasswordResetEmail` exactly: same from address, wrapper, Resend call. Subject "Confirme seu e-mail". Link points at the GET confirmation page.
+
+- [ ] **Step 5: Run tests, expect PASS. Commit.**
+
+---
+
+### Task A3: Booking and slots blocked for expired clinics
+
+**Files:** Modify `src/app/api/book/[slug]/route.ts`, `src/app/api/book/[slug]/slots/route.ts`, `src/app/c/[slug]/page.tsx`, `src/components/booking/booking-page.tsx`; test `src/app/api/book/[slug]/__tests__/route.test.ts`
+
+Unauthenticated, so no middleware or `getAuthContext` gate applies. Each resolves its tenant by slug and checks `isSubscriptionActive` itself.
+
+- [ ] **Step 1: Write the failing tests**
+
+Both `POST /api/book/[slug]` and the slots endpoint return 403 for an expired tenant and behave normally otherwise.
+
+- [ ] **Step 2: Run them, confirm they fail**
+
+- [ ] **Step 3: Guard both routes**
+
+Use `isSubscriptionActive(tenant.id)` so `canceled`/`past_due` retain access until period end, matching everywhere else.
+
+- [ ] **Step 4: Render the closed state**
+
+`page.tsx` passes `acceptingBookings` into `BookingPage`, which renders the clinic header plus "Esta clínica não está aceitando agendamentos online no momento." in place of the form.
+
+**Also handle the late 403.** If the page loaded while active and the subscription lapses before submit, `booking-page.tsx:203` currently shows a generic error. Map a 403 from the booking POST to the same closed state, so a patient never sees a raw error for something they did not cause.
+
+- [ ] **Step 5: Run tests, expect PASS. Commit.**
+
+---
+
+### Task A4: `requireWrite`
+
+**Files:** Create `src/lib/write-access.ts`; test `src/lib/__tests__/write-access.test.ts`
+
+Wraps the two checks every mutating route already performs separately, so applying it is a one-line change per route.
+
+- [ ] **Step 1: Write the failing tests**
+
+Cover: forbidden role throws before the subscription is consulted; an active subscription returns the context; an inactive one returns the 402 response; a platform admin is never blocked; `canceled` within `currentPeriodEnd` passes.
+
+- [ ] **Step 2: Run them, confirm they fail**
+
+- [ ] **Step 3: Implement**
+
+```ts
+// src/lib/write-access.ts
+import type { NextResponse } from 'next/server'
+import { requireRole, type AuthContext, type Role } from '@/lib/auth'
+import { subscriptionGate } from '@/lib/plans'
+
+/**
+ * Role plus subscription, for any route that mutates tenant data.
+ *
+ * Deliberately not middleware. Middleware can only see the JWT, which
+ * refreshes on sign-in (auth-config.ts:80) and carries an arbitrary first
+ * membership (auth-config.ts:83). It would enforce nothing for existing
+ * sessions and judge multi-clinic users against the wrong tenant.
+ * `subscriptionGate` reads the DB for the caller's active tenant and exempts
+ * platform admins.
+ *
+ * Returns either a context to proceed with, or a response to return.
+ */
+export async function requireWrite(
+  ...roles: Role[]
+): Promise<{ ctx: AuthContext; blocked: null } | { ctx: null; blocked: NextResponse }> {
+  const ctx = await requireRole(...roles)
+  const blocked = await subscriptionGate(ctx)
+  return blocked ? { ctx: null, blocked } : { ctx, blocked: null }
+}
+```
+
+- [ ] **Step 4: Run tests, expect PASS. Commit.**
+
+---
+
+### Task A5: Write-coverage scanner
+
+**Files:** Test `src/app/api/__tests__/write-access-coverage.test.ts`
+
+Depends on A4 existing only by name; write it against the intended API.
+
+- [ ] **Step 1: Write the scanner**
+
+Walk `src/app/api` for files exporting `POST`, `PATCH`, `PUT` or `DELETE`. Assert each either calls `requireWrite`, or appears in an explicit commented exemption list.
+
+Exemptions, each with a stated reason: webhooks (`stripe`, `whatsapp`, `calendar`) and crons are unauthenticated machine callers; `book/[slug]`, `consent/sign`, `anamnesis/token/[token]` are public capability-token routes gated internally; `profile/reset-request` and `reset-confirm` must work while expired; `billing/*` is the way out; `admin/*` is platform-admin only.
+
+**Also scan GET handlers** against a second list. `calendar/auth/callback/route.ts:42` and `whatsapp/templates/[id]/route.ts:46` mutate on GET. The scanner must assert that list is exhaustive, so a new mutating GET fails the build rather than slipping past a method-based rule.
+
+Include a guard-the-guard fixture and per-directory count assertions, in the style of `src/db/queries/__tests__/no-date-in-raw-sql.test.ts`.
+
+**Why this matters most:** the exemption list is maintained by hand and, when it rots, it fails *open*. Nothing else would notice.
+
+- [ ] **Step 2: Run it. It will fail, listing every unguarded route. Record that list; it is B1's worklist.**
+
+- [ ] **Step 3: Commit the scanner as skipped (`describe.skip`) with a comment pointing at B1.**
+
+---
+
+### Task A6: Public capability-token writes
+
+**Files:** Modify `src/app/api/consent/sign/route.ts`, `src/app/api/anamnesis/token/[token]/route.ts`; tests alongside each
+
+Both resolve a tenant from a capability token and mutate records while unauthenticated, so no gate reaches them today.
+
+- [ ] **Step 1: Write failing tests** — each returns 403 when its resolved tenant's subscription is inactive.
+- [ ] **Step 2: Run, confirm failure.**
+- [ ] **Step 3: Add `isSubscriptionActive(resolvedTenantId)` after token resolution.**
+
+Gate on the tenant the *token* resolves to, never on the caller's session. A logged-in user from an expired clinic must still be able to sign a consent for a different, active clinic.
+
+- [ ] **Step 4: Run tests, expect PASS. Commit.**
+
+---
+
+## Group B (depends on Group A)
+
+### Task B1: Apply `requireWrite` across mutating routes
+
+**Files:** Every route on A5's failing list. **No other task touches these files.**
+
+- [ ] **Step 1: Take the list from A5**
+
+- [ ] **Step 2: Convert each route**
+
+Replace `const ctx = await requireRole(...)` (or the inline role check plus `getAuthContext`) with:
+
+```ts
+const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+if (blocked) return blocked
+```
+
+Mechanical. Do not change any other logic. The eight routes already calling `subscriptionGate` directly convert to the same shape for consistency.
+
+- [ ] **Step 3: Un-skip the A5 scanner and run it. Expect PASS.**
+
+- [ ] **Step 4: Run the full suite**
+
+Run: `pnpm --filter @floraclin/web test:run`. This touches ~100 files; existing route tests will need their mocks updated to stub `requireWrite`.
+
+- [ ] **Step 5: Commit**
+
+---
+
+### Task B2: Signup creates active, unconfirmed tenants
+
+**Files:** Modify `src/actions/signup.ts`, `src/db/queries/admin-tenants.ts`; test `src/actions/__tests__/signup.test.ts`
+
+Both tenant-creation sites change: `signup.ts:74` and `createSelfSignupTenant` at `admin-tenants.ts:321`.
+
+- [ ] **Step 1: Write failing tests** — credentials signup creates `status: 'active'`, issues a token, sends the email, and redirects to `/confirm-email`.
+
+- [ ] **Step 2: Run, confirm failure.**
+
+- [ ] **Step 3: Set both statuses to `'active'`.**
+
+- [ ] **Step 4: Issue the token and send the email**
+
+Keep `createSubscription` and `notifyDiscord` where they are. Trial-at-signup stays, for the reasons in "Why this differs from the spec".
+
+**Delivery must not strand the account.** The row is already committed and the auto sign-in at `signup.ts:116` follows. Wrap the send so a Resend failure still completes sign-in and still redirects to `/confirm-email`, where the user can resend. A thrown send would otherwise leave an account that exists, cannot be re-registered, and has no session to reach the resend screen.
+
+- [ ] **Step 5: Run tests, expect PASS. Commit.**
+
+---
+
+### Task B3: Confirmation endpoints, screen, and Google stamping
+
+**Files:** Create `src/app/api/auth/confirm/route.ts`, `src/app/api/auth/confirm/resend/route.ts`, `src/app/confirm-email/page.tsx`; modify `src/lib/auth-config.ts`; tests alongside
+
+- [ ] **Step 1: Write failing tests**
+
+Cover: GET does not consume; POST with a valid token verifies; an expired token fails; replay fails; resend inside the cooldown returns 429; resend for an unknown or already-verified address sends nothing but does not reveal which; a new Google user ends up with `emailVerified` set; a Google sign-in linking an existing unconfirmed credentials account satisfies the gate.
+
+- [ ] **Step 2: Run, confirm failure.**
+
+- [ ] **Step 3: `GET /api/auth/confirm` renders, it does not consume**
+
+Corporate mail scanners follow links before the recipient does. A GET that verifies would be consumed in transit. GET renders a page with a "Confirmar e-mail" button that POSTs the token.
+
+- [ ] **Step 4: `POST` consumes**
+
+`consumeConfirmationToken`, then `markEmailVerified`, then **`session.update()` on the client before navigating**. The JWT still holds `emailVerified: false`; redirecting straight to `/dashboard` would bounce them back to `/confirm-email` forever (`auth-config.ts:80` does not reload without `trigger === 'update'`).
+
+- [ ] **Step 5: Resend, durably throttled**
+
+Use `verification_tokens.last_sent_at` from A0. One send per 60s per identifier, enforced by a conditional UPDATE rather than a read-then-write. Return the same response whether or not the account exists.
+
+- [ ] **Step 6: `/confirm-email` page**
+
+Shows the address, a resend button, and **"Entrar com Google"** given equal prominence. Account linking is already enabled, so Google is the reliable escape from an undelivered email.
+
+- [ ] **Step 7: Stamp Google verification after the user exists**
+
+**Not in the `signIn` callback.** It runs before the adapter creates a new user, so `markEmailVerified` would update zero rows on a first Google sign-in. Stamp in the `jwt` callback on the sign-in pass (where `user` is present) or in an `events.signIn` handler, after persistence. Keep the existing `signIn` rejection of unverified Google profiles exactly as is.
+
+- [ ] **Step 8: Run tests, expect PASS. Commit.**
+
+---
+
+### Task B4: Billing page closes the payment race
+
+**Files:** Modify `src/components/settings/billing-settings.tsx`; test alongside
+
+- [ ] **Step 1: Write failing test** — mounting with `session_id` present POSTs to `/api/billing/confirm`, then calls `update()`, then clears the parameter.
+- [ ] **Step 2: Run, confirm failure.**
+- [ ] **Step 3: Implement.** Clearing the parameter matters: a refresh would otherwise re-post the same session id.
+- [ ] **Step 4: Run tests, expect PASS. Commit.**
+
+---
+
+## Group C (depends on Group B)
+
+### Task C1: Middleware and the gate's remains
+
+**Files:** Modify `src/middleware.ts`; test `src/__tests__/middleware.test.ts`; delete `src/app/pending-approval/*`
+
+**Middleware changes only for email confirmation.** The `/api/` blanket allow at line 23 stays exactly as it is; write enforcement lives in `requireWrite`.
+
+- [ ] **Step 1: Verify A0's backfill has been applied**
+
+Run the verification query. **If it returns anything other than 0, stop.** Shipping this step first would lock those users out.
+
+- [ ] **Step 2: Write failing tests**
+
+Authenticated with `emailVerified: false` on `/dashboard` redirects to `/confirm-email`; on `/confirm-email` passes; `emailVerified: true` passes; **`emailVerified` absent from the token passes** (a stale token must not lock anyone out); no reference to `/pending-approval` remains.
+
+- [ ] **Step 3: Implement**
+
+Add `emailVerified` to the JWT and session in `auth-config.ts`'s **every** branch that sets `tenantStatus`, including the no-membership branch. Bump `token.v` to 3 so existing tokens are re-minted rather than treated as unverified.
+
+Place the confirmation branch **after** the stale-token check at `middleware.ts:31`, and gate on `=== false` only, never on falsy, so a missing claim fails open.
+
+Delete both `pending_approval` branches.
+
+- [ ] **Step 4: Delete `src/app/pending-approval/*`**
+
+Confirm `grep -rn "pending-approval" src` leaves only the admin list and queries.
+
+- [ ] **Step 5: Run the full suite. Commit.**
+
+---
+
+## Deploy runbook
+
+Order matters; two steps are not reversible in a hurry.
+
+1. Apply `0023_email_confirmation.sql` **manually** against production. Migrations are not automated in this repo.
+2. Verify `SELECT count(*) FROM floraclin.users WHERE email_verified IS NULL` returns 0.
+3. Deploy.
+4. Confirm the Stripe webhook endpoint is trimmed to the five handled events.
+5. Sign up as a real stranger, end to end, including payment.
+
+---
+
 ## Self-Review
 
-**Spec coverage:** Part 1 → B2, C1. Part 2 → A2, A6, B2, B3. Part 3 → A3, A4, A5, B1. Part 4 → A1, B4. Every spec section maps to at least one task.
+**Spec coverage:** gate removal → B2, C1. Confirmation → A0, A2, B2, B3. Read-only → A3, A4, A5, A6, B1. Payment race → A1, B4.
 
-**File ownership:** `middleware.ts` only in B1. `signup.ts` only in B2. `stripe.ts` only in A1. `email.ts` only in A2. `auth-config.ts` only in A6. `billing-settings.tsx` only in B4. No file appears in two tasks of the same group.
+**File ownership:** `middleware.ts` only C1. `signup.ts` only B2. `auth-config.ts` only B3. `stripe.ts` only A1. `email.ts` only A2. `plans.ts` unmodified.
 
-**Cross-group dependencies:** B1 needs A5 (`requiresActiveSubscription`) and A6 (`token.emailVerified`). B2 needs A2 (`issueConfirmationToken`). B3 needs A2. B4 needs A1. All flow forwards; no cycles.
+**Dependencies:** all forward. A5 is written against A4's API and committed skipped, so the two do not block each other. B1 consumes A5's failure list.
 
-**Type consistency:** `requiresActiveSubscription(pathname, method)` is used identically in A5's tests and B1's implementation. `markEmailVerified(email)` is defined in A2 and consumed in A6 and B3. `consumeConfirmationToken(email, raw)` is defined in A2 and consumed in B3.
-
-**Known risk carried deliberately:** the allowlist in A5 is a hand-maintained prefix list, and when it rots it fails open. The coverage scanner is the mitigation, and it is the single most important test in this plan.
+**Known risk carried deliberately:** the scanner's exemption lists are hand-maintained and fail open when they rot. That is why A5 asserts per-directory counts and carries a guard-the-guard fixture.
