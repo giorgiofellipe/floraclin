@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -249,6 +251,61 @@ export function BillingSettings() {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [checkingOutSlug, setCheckingOutSlug] = useState<string | null>(null)
   const queryClient = useQueryClient()
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const { update } = useSession()
+
+  // Stripe redirects to success_url as soon as the card clears, before the
+  // webhook arrives. Without this, the customer lands back here and sees a
+  // read-only banner telling them to subscribe to what they just paid for.
+  const sessionId = searchParams.get('session_id')
+  const confirmedRef = useRef(false)
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(() => Boolean(sessionId))
+
+  const confirmMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch('/api/billing/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: id }),
+      })
+      if (!res.ok) {
+        throw new Error('Erro ao confirmar pagamento')
+      }
+      return res.json()
+    },
+    onSuccess: async () => {
+      // Refresh the JWT so it picks up the new subscription status, then
+      // refetch whatever drives this page. The webhook already wrote the
+      // DB; this just makes the session catch up.
+      await update()
+      queryClient.invalidateQueries({ queryKey: ['billing'] })
+    },
+    onError: (err) => {
+      // The webhook is still the source of truth and will very likely
+      // activate the subscription within seconds. A customer who just paid
+      // should never see a scary error for something that isn't broken.
+      console.error('Falha ao confirmar pagamento pelo retorno do Stripe', err)
+    },
+    onSettled: () => {
+      // Clear session_id regardless of outcome so a refresh does not
+      // re-post the same id.
+      const params = new URLSearchParams(searchParams.toString())
+      params.delete('session_id')
+      const qs = params.toString()
+      router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false })
+      setIsConfirmingPayment(false)
+    },
+  })
+
+  useEffect(() => {
+    if (sessionId && !confirmedRef.current) {
+      confirmedRef.current = true
+      confirmMutation.mutate(sessionId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- confirmedRef guards against re-running; only sessionId should retrigger
+  }, [sessionId])
 
   const { data: usageData, isLoading: usageLoading } = useQuery<BillingUsageResponse>({
     queryKey: ['billing', 'usage'],
@@ -320,7 +377,7 @@ export function BillingSettings() {
     checkoutMutation.mutate(planSlug)
   }
 
-  if (usageLoading || plansLoading) {
+  if (usageLoading || plansLoading || isConfirmingPayment) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-32 w-full" />

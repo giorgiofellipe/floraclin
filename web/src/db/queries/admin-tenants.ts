@@ -318,7 +318,7 @@ export async function createSelfSignupTenant(data: {
       .values({
         name: data.clinicName,
         slug,
-        status: 'pending_approval',
+        status: 'active',
         phone: data.phone,
       })
       .returning()

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { db } from '@/db/client'
 import { users } from '@/db/schema'
@@ -50,7 +51,8 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const ctx = await getAuthContext()
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner', 'receptionist', 'financial')
+    if (blocked) return blocked
     const body = await request.json()
     const parsed = updateProfileSchema.safeParse(body)
 

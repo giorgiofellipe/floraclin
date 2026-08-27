@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { currentBrYear } from '@/lib/birthdays'
 import {
@@ -21,10 +21,8 @@ export async function POST(
   { params }: { params: Promise<{ patientId: string }> }
 ) {
   try {
-    const ctx = await getAuthContext()
-    if (!['owner', 'practitioner', 'receptionist'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner', 'receptionist')
+    if (blocked) return blocked
 
     const { patientId } = await params
     const body = await request.json().catch(() => ({}))
@@ -63,10 +61,8 @@ export async function DELETE(
   { params }: { params: Promise<{ patientId: string }> }
 ) {
   try {
-    const ctx = await getAuthContext()
-    if (!['owner', 'practitioner', 'receptionist'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner', 'receptionist')
+    if (blocked) return blocked
 
     const { patientId } = await params
     const { searchParams } = new URL(request.url)

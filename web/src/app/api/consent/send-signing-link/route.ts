@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { getTenant } from '@/db/queries/tenants'
 import { getPatient } from '@/db/queries/patients'
 import { createSigningToken } from '@/db/queries/consent-signing-tokens'
@@ -11,10 +11,8 @@ const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getAuthContext()
-    if (!['owner', 'practitioner'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+    if (blocked) return blocked
 
     const body = await request.json()
     const parsed = sendSigningLinkSchema.safeParse(body)

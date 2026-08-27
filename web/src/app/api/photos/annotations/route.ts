@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireRole } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { saveAnnotation as saveAnnotationQuery } from '@/db/queries/photos'
 import { saveAnnotationSchema } from '@/validations/photo'
@@ -7,7 +7,8 @@ import { handleApiError } from '@/lib/api-error'
 
 export async function POST(request: Request) {
   try {
-    const context = await requireRole('owner', 'practitioner')
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+    if (blocked) return blocked
 
     const body = await request.json()
     const { photoAssetId, annotationData } = body
@@ -19,15 +20,15 @@ export async function POST(request: Request) {
     }
 
     const annotation = await saveAnnotationQuery(
-      context.tenantId,
+      ctx.tenantId,
       photoAssetId,
-      context.userId,
+      ctx.userId,
       annotationData
     )
 
     await createAuditLog({
-      tenantId: context.tenantId,
-      userId: context.userId,
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
       action: annotation ? 'update' : 'create',
       entityType: 'photo_annotation',
       entityId: annotation.id,

@@ -118,6 +118,16 @@ const EXEMPT_MUTATING_ROUTES: Record<string, string> = {
   'book/[slug]/route.ts': 'public booking form, gated by tenant subscription status internally',
   'consent/sign/route.ts': 'public capability-token route, gated internally (Task A6)',
   'anamnesis/token/[token]/route.ts': 'public capability-token route, gated internally (Task A6)',
+  // Hybrid: resolveAuthorizedTenantId accepts either a session or a
+  // capability token, so requireWrite (which needs a session) cannot apply.
+  // Gated internally against the tenant it resolves, like the two above.
+  'consent/[id]/send-whatsapp/route.ts': 'session-or-token route, gated internally on the resolved tenant',
+
+  // Email confirmation. The caller is a brand new owner who has not confirmed
+  // yet, and blocking them would make the account unreachable: they need
+  // these routes precisely to reach a usable state.
+  'auth/confirm/route.ts': 'email confirmation must work before the account is usable',
+  'auth/confirm/resend/route.ts': 'email confirmation must work before the account is usable',
 
   // Must work while the account is in the exact state requireWrite would
   // block: reset-request/reset-confirm are unauthenticated, and billing/* is
@@ -264,7 +274,7 @@ describe('write-access coverage: every mutating route is gated', () => {
     }
   })
 
-  describe.skip(
+  describe(
     // Un-skipped by Task B1, which converts every route on the worklist at
     // docs/plans/b1-worklist.txt to call requireWrite. Every assertion below
     // fails today because that call does not exist anywhere yet — expected,

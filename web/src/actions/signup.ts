@@ -10,9 +10,11 @@ import { eq, and } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { createSelfSignupTenant, generateSlug } from '@/db/queries/admin-tenants'
 import { createSubscription } from '@/db/queries/subscriptions'
-import { sendNewSignupNotification } from '@/lib/email'
+import { sendNewSignupNotification, sendConfirmationEmail } from '@/lib/email'
 import { withTransaction } from '@/lib/tenant'
 import { notifyDiscord } from '@/lib/discord'
+import { issueConfirmationToken } from '@/lib/confirm-email'
+import { getAppUrl } from '@/lib/app-url'
 
 export type SignUpState = {
   error?: { fullName?: string[]; email?: string[]; password?: string[]; clinicName?: string[]; phone?: string[]; general?: string[] }
@@ -71,7 +73,7 @@ export async function signUp(
 
       const [tenant] = await tx
         .insert(tenants)
-        .values({ name: clinicName, slug, status: 'pending_approval', phone })
+        .values({ name: clinicName, slug, status: 'active', phone })
         .returning()
 
       tenantId = tenant.id
@@ -113,8 +115,22 @@ export async function signUp(
     sendNewSignupNotification({ adminEmail, clinicName, ownerName: fullName, ownerEmail: email, phone }).catch(() => {})
   }
 
+  // The tenant, user and membership rows are already committed above. If
+  // Resend throws here and the error escapes, the sign-in below never runs:
+  // the account exists, cannot be registered again because the email is
+  // taken, and has no session to reach /confirm-email for a resend. Sending
+  // must never be allowed to block sign-in.
   try {
-    await signIn('credentials', { email, password, redirectTo: '/pending-approval' })
+    const appUrl = getAppUrl()
+    const rawToken = await issueConfirmationToken(email)
+    const confirmUrl = `${appUrl}/api/auth/confirm?email=${encodeURIComponent(email)}&token=${rawToken}`
+    await sendConfirmationEmail(email, confirmUrl, clinicName)
+  } catch (err) {
+    console.error('Failed to send confirmation email', err)
+  }
+
+  try {
+    await signIn('credentials', { email, password, redirectTo: '/confirm-email' })
   } catch (error) {
     if (error instanceof AuthError) {
       return { error: { general: ['Conta criada, mas erro ao fazer login automático. Faça login manualmente.'] } }
@@ -194,5 +210,8 @@ export async function createClinicForOAuthUser(
     }).catch(() => {})
   }
 
-  redirect('/pending-approval')
+  // Straight in. This is the Google path, and Google has already asserted the
+  // address, so there is nothing to confirm. Only the credentials path stops
+  // at /confirm-email.
+  redirect('/dashboard')
 }

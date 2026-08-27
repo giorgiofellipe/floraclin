@@ -31,7 +31,7 @@ export default auth((req) => {
   // Stale JWT — token minted before schema changes, clear it and force re-login
   if (isAuthenticated) {
     const token = req.auth as any
-    if (!token?.v || token.v < 2) {
+    if (!token?.v || token.v < 3) {
       const res = NextResponse.redirect(new URL('/login', req.url))
       res.cookies.delete('authjs.session-token')
       res.cookies.delete('__Secure-authjs.session-token')
@@ -47,7 +47,7 @@ export default auth((req) => {
       const tenantId = session?.tenantId as string | null
 
       if (!tenantId) return NextResponse.redirect(new URL('/signup/clinic-details', req.url))
-      if (tenantStatus === 'pending_approval') return NextResponse.redirect(new URL('/pending-approval', req.url))
+      if (session?.emailVerified === false) return NextResponse.redirect(new URL('/confirm-email', req.url))
       return NextResponse.redirect(new URL('/dashboard', req.url))
     }
     return NextResponse.next()
@@ -77,10 +77,16 @@ export default auth((req) => {
     return NextResponse.redirect(new URL('/signup/clinic-details', req.url))
   }
 
-  // Pending approval — only allow pending-approval page
-  if (tenantStatus === 'pending_approval') {
-    if (pathname === '/pending-approval') return NextResponse.next()
-    return NextResponse.redirect(new URL('/pending-approval', req.url))
+  // Email not confirmed yet. Replaces the manual approval gate: the wait is
+  // now the user's own inbox rather than someone clicking approve.
+  //
+  // Gated on an explicit `false`, never on falsy. A token minted before this
+  // claim existed carries `undefined`, and treating that as unverified would
+  // trap every already-logged-in user. Those tokens are re-minted by the
+  // version check above; until then they pass.
+  if (session?.emailVerified === false) {
+    if (pathname === '/confirm-email') return NextResponse.next()
+    return NextResponse.redirect(new URL('/confirm-email', req.url))
   }
 
   return NextResponse.next()

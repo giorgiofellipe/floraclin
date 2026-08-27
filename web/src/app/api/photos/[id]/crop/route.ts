@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireRole } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { updateCropBox, getPhotoAsset } from '@/db/queries/photos'
 import { saveCropSchema } from '@/validations/photo-crop'
 import { handleApiError } from '@/lib/api-error'
@@ -10,7 +10,8 @@ interface RouteContext {
 
 export async function PATCH(request: Request, context: RouteContext) {
   try {
-    const auth = await requireRole('owner', 'practitioner')
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+    if (blocked) return blocked
     const { id: photoId } = await context.params
 
     let body: unknown
@@ -32,7 +33,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       )
     }
 
-    const photo = await getPhotoAsset(auth.tenantId, photoId)
+    const photo = await getPhotoAsset(ctx.tenantId, photoId)
     if (!photo) {
       return NextResponse.json(
         { success: false, error: 'Foto não encontrada' },
@@ -40,7 +41,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       )
     }
 
-    await updateCropBox(auth.tenantId, photoId, parsed.data.cropBox ?? null)
+    await updateCropBox(ctx.tenantId, photoId, parsed.data.cropBox ?? null)
     return NextResponse.json({ success: true })
   } catch (error) {
     return handleApiError(error, request, { body: { success: false, error: 'Erro interno ao salvar recorte' } })

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { deleteBlockById } from '@/db/queries/calendar'
 import { handleApiError } from '@/lib/api-error'
 
@@ -8,12 +8,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getAuthContext()
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+    if (blocked) return blocked
     const { id } = await params
-
-    if (!['owner', 'practitioner'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
 
     const deleted = await deleteBlockById(ctx.tenantId, id)
     if (!deleted) {

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { withTransaction } from '@/lib/tenant'
 import { getProcedure, cancelProcedure } from '@/db/queries/procedures'
@@ -13,10 +13,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getAuthContext()
-    if (!['owner', 'practitioner'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+    if (blocked) return blocked
 
     const { id: procedureId } = await params
     const body = await request.json()
