@@ -74,8 +74,14 @@ const { consumeConfirmationTokenMock, markEmailVerifiedMock, issueConfirmationTo
 vi.mock('@/lib/confirm-email', () => ({
   confirmIdentifier: (email: string) => `confirm:${email.toLowerCase()}`,
   consumeConfirmationToken: consumeConfirmationTokenMock,
-  markEmailVerified: markEmailVerifiedMock,
   issueConfirmationToken: issueConfirmationTokenMock,
+}))
+
+// markEmailVerified lives in the users query module, not beside the tokens.
+// auth-config calls it and is imported by middleware, which runs on the Edge
+// Runtime where the token module's node:crypto import is unavailable.
+vi.mock('@/db/queries/users', () => ({
+  markEmailVerified: markEmailVerifiedMock,
 }))
 
 const { sendConfirmationEmailMock } = vi.hoisted(() => ({

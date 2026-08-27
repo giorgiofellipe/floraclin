@@ -1,5 +1,5 @@
 import { db } from '@/db/client'
-import { users, verificationTokens } from '@/db/schema'
+import { verificationTokens } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
 import crypto from 'crypto'
 
@@ -79,6 +79,3 @@ export async function consumeConfirmationToken(email: string, rawToken: string):
   return email.toLowerCase()
 }
 
-export async function markEmailVerified(email: string): Promise<void> {
-  await db.update(users).set({ emailVerified: new Date() }).where(eq(users.email, email.toLowerCase()))
-}

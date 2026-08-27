@@ -44,8 +44,15 @@ import {
   hashToken,
   issueConfirmationToken,
   consumeConfirmationToken,
-  markEmailVerified,
 } from '../confirm-email'
+
+// markEmailVerified lives in the users query module rather than beside the
+// tokens: `auth-config` calls it, and `auth-config` is imported by middleware,
+// which runs on the Edge Runtime where this module's `node:crypto` import is
+// unavailable.
+vi.mock('@/lib/email', () => ({ sendInviteEmail: vi.fn() }))
+vi.mock('@/lib/tenant', () => ({ withTransaction: vi.fn() }))
+import { markEmailVerified } from '@/db/queries/users'
 
 beforeEach(() => {
   vi.clearAllMocks()

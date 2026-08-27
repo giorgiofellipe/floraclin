@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { consumeConfirmationToken, markEmailVerified } from '@/lib/confirm-email'
+import { consumeConfirmationToken } from '@/lib/confirm-email'
+import { markEmailVerified } from '@/db/queries/users'
 import { handleApiError } from '@/lib/api-error'
 
 /**

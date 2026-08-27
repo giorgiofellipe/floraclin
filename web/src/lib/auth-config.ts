@@ -8,7 +8,7 @@ import { db } from '@/db/client'
 import { users, sessions, accounts, verificationTokens, tenantUsers, tenants, tenantSubscriptions, plans } from '@/db/schema'
 import { eq, and, isNull } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
-import { markEmailVerified } from '@/lib/confirm-email'
+import { markEmailVerified } from '@/db/queries/users'
 
 // The FloraClin schema uses custom column names (fullName instead of name,
 // avatarUrl instead of image) which causes type mismatches with the default

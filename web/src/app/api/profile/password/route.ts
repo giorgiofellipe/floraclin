@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireWrite } from '@/lib/write-access'
+import { requireRole } from '@/lib/auth'
 import { db } from '@/db/client'
 import { users } from '@/db/schema'
 import { eq } from 'drizzle-orm'
@@ -14,8 +14,11 @@ const changePasswordSchema = z.object({
 
 export async function PUT(request: Request) {
   try {
-    const { ctx, blocked } = await requireWrite('owner', 'practitioner', 'receptionist', 'financial')
-    if (blocked) return blocked
+    // Deliberately requireRole, not requireWrite. Changing your own password
+    // is account hygiene, not tenant data, and it had no role restriction
+    // before this change either. Gating it on billing would mean a lapsed
+    // clinic cannot rotate a leaked credential.
+    const ctx = await requireRole('owner', 'practitioner', 'receptionist', 'financial')
     const body = await request.json()
     const parsed = changePasswordSchema.safeParse(body)
 

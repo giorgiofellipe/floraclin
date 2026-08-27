@@ -134,6 +134,11 @@ const EXEMPT_MUTATING_ROUTES: Record<string, string> = {
   // the only way out of an expired subscription.
   'profile/reset-request/route.ts': 'password reset must work before login',
   'profile/reset-confirm/route.ts': 'password reset must work before login',
+  // Your own account, not tenant data, and neither had a role restriction
+  // before the conversion. A lapsed clinic must still be able to rotate a
+  // leaked credential or correct a wrong email.
+  'profile/password/route.ts': 'own password is account hygiene, not tenant data',
+  'profile/route.ts': 'own profile is account hygiene, not tenant data',
   'billing/cancel/route.ts': 'billing is the way out of an expired subscription',
   'billing/checkout/route.ts': 'billing is the way out of an expired subscription',
   'billing/confirm/route.ts': 'billing is the way out of an expired subscription',
