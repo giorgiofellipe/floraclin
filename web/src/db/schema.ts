@@ -652,6 +652,10 @@ export const verificationTokens = floraclinSchema.table('verification_tokens', {
   identifier: varchar('identifier', { length: 255 }).notNull(),
   token: varchar('token', { length: 255 }).notNull().unique(),
   expires: timestamp('expires', { withTimezone: true }).notNull(),
+  // Cooldown for the email-confirmation resend endpoint, which an
+  // unauthenticated caller can trigger. Nullable because NextAuth's Resend
+  // provider writes this table for magic links and never sets it.
+  lastSentAt: timestamp('last_sent_at', { withTimezone: true }),
 })
 
 // ─── PROSPECTS (CRM) ────────────────────────────────────────────────

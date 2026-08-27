@@ -56,6 +56,14 @@ export async function createCheckoutSession(
   return { sessionId: session.id, url: session.url }
 }
 
+/** Reads a Checkout Session back, expanding the subscription so the caller
+ *  can check its *current* state rather than trusting the session snapshot. */
+export async function retrieveCheckoutSession(sessionId: string) {
+  return getStripeClient().checkout.sessions.retrieve(sessionId, {
+    expand: ['subscription'],
+  })
+}
+
 export async function cancelStripeSubscription(stripeSubscriptionId: string) {
   const stripe = getStripeClient()
   return stripe.subscriptions.update(stripeSubscriptionId, {

@@ -20,6 +20,7 @@ describe('BookingPage', () => {
         clinic={{ ...CLINIC, logoUrl: 'https://xyz.supabase.co/storage/v1/object/sign/floraclin/logo.png?token=abc' }}
         practitioners={[]}
         slug="bela-pele"
+        acceptingBookings
       />
     )
 
@@ -39,6 +40,7 @@ describe('BookingPage', () => {
         clinic={{ ...CLINIC, logoUrl: null }}
         practitioners={[]}
         slug="bela-pele"
+        acceptingBookings
       />
     )
 
@@ -54,6 +56,7 @@ describe('BookingPage', () => {
         clinic={{ ...CLINIC, logoUrl: null }}
         practitioners={[]}
         slug="bela-pele"
+        acceptingBookings
       />
     )
 
@@ -75,6 +78,7 @@ describe('BookingPage', () => {
         clinic={{ ...CLINIC, logoUrl: 'https://xyz.supabase.co/storage/v1/object/sign/floraclin/logo.png?token=expired' }}
         practitioners={[]}
         slug="bela-pele"
+        acceptingBookings
       />
     )
 

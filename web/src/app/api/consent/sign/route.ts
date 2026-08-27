@@ -7,6 +7,7 @@ import { getValidSigningToken, markSigningTokenUsed, getTemplatesForToken } from
 import { getPatient } from '@/db/queries/patients'
 import { remoteConsentSignatureSchema } from '@/validations/consent'
 import { handleApiError } from '@/lib/api-error'
+import { isSubscriptionActive } from '@/lib/plans'
 
 export async function POST(request: Request) {
   try {
@@ -22,6 +23,16 @@ export async function POST(request: Request) {
     const tokenData = await getValidSigningToken(parsed.data.token)
     if (!tokenData) {
       return NextResponse.json({ error: 'Link expirado ou já utilizado' }, { status: 410 })
+    }
+
+    // Gate on the tenant the token resolves to, not any session the caller
+    // might hold. The patient may be signing while an unrelated clinic's
+    // subscription is inactive; that must not block them.
+    if (!(await isSubscriptionActive(tokenData.tenantId))) {
+      return NextResponse.json(
+        { error: 'Esta clínica não está aceitando assinaturas no momento.' },
+        { status: 403 },
+      )
     }
 
     const patient = await getPatient(tokenData.tenantId, tokenData.patientId)
