@@ -15,7 +15,7 @@ const { attributionStore } = vi.hoisted(() => ({
 }))
 
 // ---------------------------------------------------------------------------
-// Mocks — hoisted by vitest, declared before any imports from the module
+// Mocks, hoisted by vitest, declared before any imports from the module
 // ---------------------------------------------------------------------------
 
 vi.mock('@/db/client', () => ({
