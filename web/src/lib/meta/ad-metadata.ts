@@ -93,7 +93,7 @@ export async function backfillAdMetadata(
         campaignId: metadata.campaign?.id ?? null,
         ...(row.adHeadline ? {} : { adHeadline: metadata.name ?? null }),
       })
-      .where(eq(leadAttributions.id, row.id))
+      .where(and(eq(leadAttributions.tenantId, tenantId), eq(leadAttributions.id, row.id)))
 
     resolved += 1
   }

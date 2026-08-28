@@ -7,7 +7,6 @@ import { updateProspectSchema } from '@/validations/prospect'
 import type { Role } from '@/types'
 import { handleApiError } from '@/lib/api-error'
 import { enqueueMetaEvent } from '@/lib/meta/events'
-import { hasScheduleForProspect } from '@/db/queries/meta-events'
 
 async function requireWhatsappAccess() {
   const ctx = await getAuthContext()
@@ -101,22 +100,19 @@ export async function PATCH(
           actionSource: 'system_generated',
         })
       } else if (parsed.data.stage === 'agendado') {
-        // A lead that already has a real appointment already produced a
-        // Schedule under the appointment's id; the unique index can't
-        // catch that here because the event ids differ.
-        const alreadyScheduled = await hasScheduleForProspect(ctx.tenantId, id)
-        if (!alreadyScheduled) {
-          await enqueueMetaEvent({
-            tenantId: ctx.tenantId,
-            eventName: 'Schedule',
-            eventId: `schedule:${id}`,
-            eventTime: new Date(),
-            prospectId: id,
-            patientId: prospect.convertedPatientId,
-            contact: { phone: prospect.phone, fullName: prospect.name },
-            actionSource: 'system_generated',
-          })
-        }
+        // Same id an appointment-sourced Schedule computes, so the unique
+        // index on (tenant_id, event_id) keeps a lead to one Schedule however
+        // many paths fire it.
+        await enqueueMetaEvent({
+          tenantId: ctx.tenantId,
+          eventName: 'Schedule',
+          eventId: `schedule:${id}`,
+          eventTime: new Date(),
+          prospectId: id,
+          patientId: prospect.convertedPatientId,
+          contact: { phone: prospect.phone, fullName: prospect.name },
+          actionSource: 'system_generated',
+        })
       }
     }
     if (parsed.data.assignedUserId !== undefined && parsed.data.assignedUserId !== existing.assignedUserId) {

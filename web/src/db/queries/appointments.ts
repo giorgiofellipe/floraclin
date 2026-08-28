@@ -9,7 +9,6 @@ import { verifyTenantOwnership, verifyUserBelongsToTenant } from './helpers'
 import { getPatient } from './patients'
 import { enqueueMetaEvent } from '@/lib/meta/events'
 import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
-import { hasScheduleForProspect } from './meta-events'
 import { reportSideEffectFailure } from '@/lib/observability'
 
 export interface AppointmentListFilters {
@@ -237,12 +236,6 @@ async function emitScheduleEvent(
     })
     if (!prospect) return
 
-    // A lead can already have a Schedule from a hand-moved CRM stage change,
-    // or from an earlier appointment for the same prospect: this is what
-    // keeps Schedule to at most one per lead across every path that can fire it.
-    const alreadyScheduled = await hasScheduleForProspect(tenantId, prospect.id)
-    if (alreadyScheduled) return
-
     // bookingPhone/bookingName exist only on the public booking route, so a
     // staff-created appointment has to read the identity off the patient row
     // or the event reaches Meta with nothing to match on.
@@ -251,7 +244,11 @@ async function emitScheduleEvent(
     await enqueueMetaEvent({
       tenantId,
       eventName: 'Schedule',
-      eventId: `schedule:${appointment.id}`,
+      // Keyed on the lead, never on the appointment: a second appointment for
+      // the same lead, and a hand-moved CRM card, all compute this id, so the
+      // unique index on (tenant_id, event_id) collapses them into one Schedule
+      // even when two of them race.
+      eventId: `schedule:${prospect.id}`,
       eventTime: new Date(),
       prospectId: prospect.id,
       patientId: data.patientId ?? null,

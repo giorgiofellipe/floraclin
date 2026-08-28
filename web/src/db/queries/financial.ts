@@ -106,12 +106,16 @@ export async function createFinancialEntry(
 
 // ─── META CONVERSIONS: Purchase on payment ──────────────────────────
 
-/** Everything a Purchase event needs that cannot be read from the payment transaction. */
+/**
+ * Everything a Purchase event needs that cannot be read from the payment
+ * transaction. `prerequisites` is null when the pre-transaction resolution
+ * failed: the event still goes to the outbox, just without a payload.
+ */
 interface MetaPurchaseContext {
   patientId: string
   contact: { phone: string | null; email: string | null; fullName: string | null }
   prospectId: string | null
-  prerequisites: MetaEventPrerequisites
+  prerequisites: MetaEventPrerequisites | null
 }
 
 /**
@@ -119,6 +123,9 @@ interface MetaPurchaseContext {
  * Every read here runs on the global pool handle, and the pool holds 5
  * connections: five concurrent payments each waiting on a sixth checkout
  * while holding a locked installment row would deadlock the pool outright.
+ *
+ * Purely an optimisation. Nothing here is allowed to decide whether the event
+ * happens, only how much of it can be built up front.
  */
 async function prepareMetaPurchaseContexts(
   tenantId: string,
@@ -153,25 +160,43 @@ async function prepareMetaPurchaseContexts(
     for (const row of rows) {
       if (contexts.has(row.financialEntryId)) continue
 
-      const prospect = await resolveProspectForPatient(tenantId, {
-        patientId: row.patientId,
-        phone: row.phone,
-      })
-      const prospectId = prospect?.id ?? null
+      const contact = {
+        phone: row.phone ?? null,
+        email: row.email ?? null,
+        fullName: row.fullName ?? null,
+      }
 
-      contexts.set(row.financialEntryId, {
-        patientId: row.patientId,
-        contact: { phone: row.phone ?? null, email: row.email ?? null, fullName: row.fullName ?? null },
-        prospectId,
-        prerequisites: await resolveMetaEventPrerequisites(tenantId, {
-          prospectId,
+      // Per row, so one unresolvable patient costs its own payload and not
+      // every other entry in the same bulk payment.
+      try {
+        const prospect = await resolveProspectForPatient(tenantId, {
           patientId: row.patientId,
-        }),
-      })
+          phone: row.phone,
+        })
+        const prospectId = prospect?.id ?? null
+
+        contexts.set(row.financialEntryId, {
+          patientId: row.patientId,
+          contact,
+          prospectId,
+          prerequisites: await resolveMetaEventPrerequisites(tenantId, {
+            prospectId,
+            patientId: row.patientId,
+            phone: row.phone,
+          }),
+        })
+      } catch (error) {
+        reportSideEffectFailure(error, { area: 'meta-capi', step: 'prepare_purchase_context' })
+        contexts.set(row.financialEntryId, {
+          patientId: row.patientId,
+          contact,
+          prospectId: null,
+          prerequisites: null,
+        })
+      }
     }
   } catch (error) {
     reportSideEffectFailure(error, { area: 'meta-capi', step: 'prepare_purchase_context' })
-    contexts.clear()
   }
 
   return contexts
@@ -183,6 +208,10 @@ async function prepareMetaPurchaseContexts(
  * its balance is money already reported as Purchase on the original entry.
  * No "first payment" check: eventId is stable per financial entry, and the
  * outbox's unique index on (tenant_id, event_id) is the once-only guarantee.
+ *
+ * A missing context is not a reason to skip. Purchase is the one event the
+ * cron never reconciles, so a row that is not written here is lost for good;
+ * without a context it goes in bare and is enriched when it is sent.
  */
 async function emitPurchaseEventForEntry(
   tx: typeof db,
@@ -191,8 +220,6 @@ async function emitPurchaseEventForEntry(
   eventTime: Date,
   context: MetaPurchaseContext | undefined
 ) {
-  if (!context) return
-
   try {
     const [entry] = await tx
       .select({
@@ -231,18 +258,18 @@ async function emitPurchaseEventForEntry(
       eventName: 'Purchase',
       eventId: `purchase:${financialEntryId}`,
       eventTime,
-      prospectId: context.prospectId,
-      patientId: context.patientId,
-      contact: context.contact,
+      prospectId: context?.prospectId ?? null,
+      patientId: context?.patientId ?? null,
+      contact: context?.contact ?? { phone: null, email: null, fullName: null },
       actionSource: 'system_generated',
       value: entry.totalAmount,
       tx,
-      prerequisites: context.prerequisites,
+      prerequisites: context?.prerequisites ?? undefined,
     })
   } catch (error) {
     // Re-raised on purpose: every statement above ran on the caller's
-    // transaction, so a swallowed failure would let the payment commit as a
-    // silent rollback behind a 201.
+    // transaction, so Postgres has already aborted the block. Swallowing it
+    // would let the payment commit as a silent rollback behind a 201.
     reportSideEffectFailure(error, { area: 'meta-capi', step: 'purchase_event' })
     throw error
   }

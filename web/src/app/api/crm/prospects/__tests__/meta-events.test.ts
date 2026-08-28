@@ -34,16 +34,11 @@ vi.mock('@/lib/meta/events', () => ({
   enqueueMetaEvent: vi.fn(),
 }))
 
-vi.mock('@/db/queries/meta-events', () => ({
-  hasScheduleForProspect: vi.fn(),
-}))
-
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { subscriptionGate } from '@/lib/plans'
 import { createProspect, getProspect, logProspectActivity, updateProspect } from '@/db/queries/prospects'
 import { enqueueMetaEvent } from '@/lib/meta/events'
-import { hasScheduleForProspect } from '@/db/queries/meta-events'
 import { POST as createProspectRoute } from '../route'
 import { PATCH } from '../[id]/route'
 
@@ -80,7 +75,6 @@ beforeEach(() => {
     settings: { whatsapp_enabled: true },
   } as never)
   vi.mocked(subscriptionGate).mockResolvedValue(null)
-  vi.mocked(hasScheduleForProspect).mockResolvedValue(false)
 })
 
 function patchRequest(body: Record<string, unknown>) {
@@ -179,24 +173,9 @@ describe('PATCH /api/crm/prospects/[id] - stage change emission', () => {
     expect(enqueueMetaEvent).not.toHaveBeenCalled()
   })
 
-  it('moving a lead that already has an appointment-sourced Schedule back into agendado emits nothing', async () => {
+  it('moving a lead into agendado emits one Schedule event, keyed on the lead', async () => {
     vi.mocked(getProspect).mockResolvedValue(prospect({ stage: 'qualificado' }) as never)
     vi.mocked(updateProspect).mockResolvedValue(prospect({ stage: 'agendado' }) as never)
-    vi.mocked(hasScheduleForProspect).mockResolvedValue(true)
-
-    const res = await PATCH(patchRequest({ stage: 'agendado' }), {
-      params: Promise.resolve({ id: 'prospect-1' }),
-    })
-    expect(res.status).toBe(200)
-
-    expect(hasScheduleForProspect).toHaveBeenCalledWith('tenant-1', 'prospect-1')
-    expect(enqueueMetaEvent).not.toHaveBeenCalled()
-  })
-
-  it('moving a lead with no prior Schedule into agendado emits one Schedule event', async () => {
-    vi.mocked(getProspect).mockResolvedValue(prospect({ stage: 'qualificado' }) as never)
-    vi.mocked(updateProspect).mockResolvedValue(prospect({ stage: 'agendado' }) as never)
-    vi.mocked(hasScheduleForProspect).mockResolvedValue(false)
 
     const res = await PATCH(patchRequest({ stage: 'agendado' }), {
       params: Promise.resolve({ id: 'prospect-1' }),
@@ -284,7 +263,6 @@ describe('an opted-out patient is recorded as skipped, not sent', () => {
       insertConversionEvent: insertConversionEventMock,
       markEventSent: vi.fn(),
       markEventFailure: vi.fn(),
-      hasScheduleForProspect: vi.fn(),
     }))
     vi.doMock('@/db/queries/meta-connections', () => ({
       getMetaConnection: vi.fn(async () => ({
@@ -331,27 +309,12 @@ describe('an opted-out patient is recorded as skipped, not sent', () => {
     await enqueue({ ...contactEvent, patientId: 'patient-1' })
 
     expect(isMarketingOptedOutMock).toHaveBeenCalledWith('tenant-1', {
-      prospectId: 'prospect-1',
       patientId: 'patient-1',
+      phone: '+5511999999999',
     })
     expect(postEventsMock).not.toHaveBeenCalled()
     expect(insertConversionEventMock).toHaveBeenCalledWith(
       expect.objectContaining({ eventName: 'Contact', status: 'skipped', skipReason: 'opted_out' }),
-      undefined,
-    )
-  })
-
-  it('sends the event when the same call omits patientId, which is the defect', async () => {
-    isMarketingOptedOutMock.mockImplementation(
-      async (_tenantId: string, ref: { patientId?: string | null }) => ref.patientId === 'patient-1',
-    )
-    const enqueue = await loadRealEnqueue()
-
-    await enqueue(contactEvent)
-
-    expect(postEventsMock).toHaveBeenCalledTimes(1)
-    expect(insertConversionEventMock).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'pending' }),
       undefined,
     )
   })

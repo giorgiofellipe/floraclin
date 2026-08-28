@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { prospects, leadAttributions, financialEntries, installments, paymentRecords } from '@/db/schema'
-import { and, eq, gte, lte, inArray, isNull } from 'drizzle-orm'
+import { and, asc, eq, gte, lte, inArray, isNull } from 'drizzle-orm'
 import { startOfBrDay, endOfBrDay } from '@/lib/dates'
 import { directionalCompare, type SortDirection } from '@/lib/reports/sort'
 
@@ -64,6 +64,10 @@ const MAX_ROWS = 200
  * (`payment_records.principal_covered` by `paid_at`), the same "Receita
  * Recebida" figure `getPractitionerPL` produces, not the patient's lifetime
  * billing.
+ *
+ * Every prospect in the window is loaded: `leads`, `contacted`, `scheduled`
+ * and `converted` are counts over the whole set, so a SQL `LIMIT` here would
+ * silently understate them. `MAX_ROWS` caps the grouped output instead.
  */
 export async function listMarketingReportRows(
   tenantId: string,
@@ -87,10 +91,15 @@ export async function listMarketingReportRows(
     .where(
       and(
         eq(prospects.tenantId, tenantId),
+        isNull(prospects.deletedAt),
         gte(prospects.createdAt, startOfBrDay(dateFrom)),
         lte(prospects.createdAt, endOfBrDay(dateTo)),
       ),
     )
+    // Two `convertido` prospects can point at the same patient, and only one
+    // of them may claim that patient's revenue. Without an explicit order the
+    // planner decides which, so the same data yields different reports.
+    .orderBy(asc(prospects.createdAt), asc(prospects.id))
 
   const convertedPatientIds = [
     ...new Set(leadRows.map((row) => row.convertedPatientId).filter((id): id is string => id !== null)),
@@ -105,10 +114,21 @@ export async function listMarketingReportRows(
       })
       .from(paymentRecords)
       .innerJoin(installments, eq(installments.id, paymentRecords.installmentId))
-      .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
+      // Tenant equality is asserted in the join, not just filtered on the
+      // entry: the foreign keys allow an installment of one tenant to hang
+      // off another tenant's entry, and there is no row level security to
+      // catch it, so one clinic's payment could land in another's report.
+      .innerJoin(
+        financialEntries,
+        and(
+          eq(financialEntries.id, installments.financialEntryId),
+          eq(financialEntries.tenantId, installments.tenantId),
+        ),
+      )
       .where(
         and(
           eq(financialEntries.tenantId, tenantId),
+          eq(installments.tenantId, tenantId),
           inArray(financialEntries.patientId, convertedPatientIds),
           isNull(financialEntries.deletedAt),
           isNull(paymentRecords.reversedAt),
@@ -124,8 +144,8 @@ export async function listMarketingReportRows(
 
   const groups = new Map<string, MarketingReportRow>()
   // `uq_prospects_tenant_phone` excludes `convertido`, so the same patient can
-  // be pointed at by several converted prospect rows. Their revenue belongs to
-  // whichever group claims it first, never to both.
+  // be pointed at by several converted prospect rows. The revenue belongs to
+  // the oldest of them (the query orders by `createdAt`), never to both.
   const countedPatientIds = new Set<string>()
 
   for (const row of leadRows) {

@@ -58,6 +58,8 @@ export async function POST(request: Request) {
 
     const response = await fetch(url, {
       method: 'GET',
+      // Without this a hung Meta socket hangs the settings page.
+      signal: AbortSignal.timeout(10_000),
       headers: { authorization: `Bearer ${accessToken}` },
     })
     const graphBody = (await response.json().catch(() => ({}))) as GraphDatasetsResponse

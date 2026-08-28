@@ -78,6 +78,34 @@ interface MetaTokenResponse {
   error?: { message?: string }
 }
 
+const TOKEN_ENDPOINT = `https://graph.facebook.com/${META_GRAPH_VERSION}/oauth/access_token`
+
+/**
+ * Meta documents this endpoint as GET with query parameters, but it reads a
+ * form-encoded POST body just as well (verified against the live endpoint:
+ * with no parameters it answers "Missing client_id parameter", with a body it
+ * moves on to validating the value). The body is what we want, because the
+ * app secret, the authorization code and both tokens would otherwise sit in a
+ * request URL, and Vercel and Sentry both log those.
+ */
+async function requestToken(
+  params: Record<string, string>,
+  failureLabel: string,
+): Promise<MetaTokenResponse> {
+  const response = await fetch(TOKEN_ENDPOINT, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(params).toString(),
+  })
+
+  const body = (await response.json().catch(() => ({}))) as MetaTokenResponse
+  if (!response.ok || !body.access_token) {
+    throw new Error(body.error?.message ?? `${failureLabel}: HTTP ${response.status}`)
+  }
+
+  return body
+}
+
 /**
  * The initial code exchange returns a short-lived user token. A second call
  * trades that for the long-lived token FloraClin actually stores, so the
@@ -88,32 +116,28 @@ export async function exchangeCodeForLongLivedToken(
 ): Promise<{ accessToken: string; expiresAt: Date | null }> {
   const { appId, appSecret, redirectUri } = getConfig()
 
-  const shortLivedUrl = new URL(`https://graph.facebook.com/${META_GRAPH_VERSION}/oauth/access_token`)
-  shortLivedUrl.searchParams.set('client_id', appId)
-  shortLivedUrl.searchParams.set('redirect_uri', redirectUri)
-  shortLivedUrl.searchParams.set('client_secret', appSecret)
-  shortLivedUrl.searchParams.set('code', code)
+  const shortLived = await requestToken(
+    {
+      client_id: appId,
+      redirect_uri: redirectUri,
+      client_secret: appSecret,
+      code,
+    },
+    'Meta token exchange failed',
+  )
 
-  const shortLivedRes = await fetch(shortLivedUrl.toString())
-  const shortLivedBody = (await shortLivedRes.json().catch(() => ({}))) as MetaTokenResponse
-  if (!shortLivedRes.ok || !shortLivedBody.access_token) {
-    throw new Error(shortLivedBody.error?.message ?? `Meta token exchange failed: HTTP ${shortLivedRes.status}`)
-  }
-
-  const longLivedUrl = new URL(`https://graph.facebook.com/${META_GRAPH_VERSION}/oauth/access_token`)
-  longLivedUrl.searchParams.set('grant_type', 'fb_exchange_token')
-  longLivedUrl.searchParams.set('client_id', appId)
-  longLivedUrl.searchParams.set('client_secret', appSecret)
-  longLivedUrl.searchParams.set('fb_exchange_token', shortLivedBody.access_token)
-
-  const longLivedRes = await fetch(longLivedUrl.toString())
-  const longLivedBody = (await longLivedRes.json().catch(() => ({}))) as MetaTokenResponse
-  if (!longLivedRes.ok || !longLivedBody.access_token) {
-    throw new Error(longLivedBody.error?.message ?? `Meta long-lived token exchange failed: HTTP ${longLivedRes.status}`)
-  }
+  const longLived = await requestToken(
+    {
+      grant_type: 'fb_exchange_token',
+      client_id: appId,
+      client_secret: appSecret,
+      fb_exchange_token: shortLived.access_token,
+    },
+    'Meta long-lived token exchange failed',
+  )
 
   return {
-    accessToken: longLivedBody.access_token,
-    expiresAt: longLivedBody.expires_in ? new Date(Date.now() + longLivedBody.expires_in * 1000) : null,
+    accessToken: longLived.access_token,
+    expiresAt: longLived.expires_in ? new Date(Date.now() + longLived.expires_in * 1000) : null,
   }
 }

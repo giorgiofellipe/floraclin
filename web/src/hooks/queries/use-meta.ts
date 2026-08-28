@@ -54,7 +54,8 @@ export function useMetaConnection() {
 
 export interface SaveMetaConnectionInput {
   datasetId: string
-  accessToken: string
+  /** Omit to keep the stored credentials and update settings only. */
+  accessToken?: string
   testEventCode?: string | null
   advancedMatchingEnabled?: boolean
   acknowledgementVersion: string

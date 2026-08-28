@@ -9,10 +9,13 @@ const postEventsMock = vi.fn()
 const insertConversionEventMock = vi.fn()
 const markEventSentMock = vi.fn()
 const markEventFailureMock = vi.fn()
+const markEventSkippedMock = vi.fn()
 const getMetaConnectionMock = vi.fn()
 const markConnectionInvalidMock = vi.fn()
 const getAttributionMock = vi.fn()
 const isMarketingOptedOutMock = vi.fn()
+const getPatientMock = vi.fn()
+const getProspectMock = vi.fn()
 const reportSideEffectFailureMock = vi.fn()
 
 vi.mock('@/lib/meta/capi-client', () => ({
@@ -23,6 +26,7 @@ vi.mock('@/db/queries/meta-events', () => ({
   insertConversionEvent: (...args: unknown[]) => insertConversionEventMock(...args),
   markEventSent: (...args: unknown[]) => markEventSentMock(...args),
   markEventFailure: (...args: unknown[]) => markEventFailureMock(...args),
+  markEventSkipped: (...args: unknown[]) => markEventSkippedMock(...args),
 }))
 
 vi.mock('@/db/queries/meta-connections', () => ({
@@ -36,6 +40,14 @@ vi.mock('@/db/queries/lead-attributions', () => ({
 
 vi.mock('@/db/queries/marketing-consent', () => ({
   isMarketingOptedOut: (...args: unknown[]) => isMarketingOptedOutMock(...args),
+}))
+
+vi.mock('@/db/queries/patients', () => ({
+  getPatient: (...args: unknown[]) => getPatientMock(...args),
+}))
+
+vi.mock('@/db/queries/prospects', () => ({
+  getProspect: (...args: unknown[]) => getProspectMock(...args),
 }))
 
 vi.mock('@/lib/observability', () => ({
@@ -71,6 +83,10 @@ function insertedPayload(): MetaEventPayload {
   return call.payload
 }
 
+function postedPayload(): MetaEventPayload {
+  return (postEventsMock.mock.calls[0][1] as MetaEventPayload[])[0]
+}
+
 describe('enqueueMetaEvent', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -79,6 +95,8 @@ describe('enqueueMetaEvent', () => {
     isMarketingOptedOutMock.mockResolvedValue(false)
     getMetaConnectionMock.mockResolvedValue(CONNECTION)
     getAttributionMock.mockResolvedValue(null)
+    getPatientMock.mockResolvedValue(null)
+    getProspectMock.mockResolvedValue(null)
     insertConversionEventMock.mockResolvedValue({ inserted: true, id: 'evt-1' })
     postEventsMock.mockResolvedValue({ ok: true, eventsReceived: 1, fbTraceId: 'trace-1' })
   })
@@ -98,8 +116,8 @@ describe('enqueueMetaEvent', () => {
     )
 
     expect(isMarketingOptedOutMock).toHaveBeenCalledWith(TENANT, {
-      prospectId: null,
       patientId: 'patient-1',
+      phone: '(47) 98844-3635',
     })
     expect(postEventsMock).not.toHaveBeenCalled()
   })
@@ -110,9 +128,24 @@ describe('enqueueMetaEvent', () => {
     await enqueueMetaEvent(baseInput({ patientId: 'patient-1' }))
 
     expect(isMarketingOptedOutMock).toHaveBeenCalledWith(TENANT, {
-      prospectId: PROSPECT,
       patientId: 'patient-1',
+      phone: '(47) 98844-3635',
     })
+  })
+
+  // The leak an opted-out patient used to walk through: no patient link at
+  // all, only the phone the prospect wrote in from.
+  it('passes the contact phone to the opt-out check when there is no patient id', async () => {
+    const { enqueueMetaEvent } = await import('../events')
+    isMarketingOptedOutMock.mockResolvedValue(true)
+
+    await enqueueMetaEvent(baseInput())
+
+    expect(isMarketingOptedOutMock).toHaveBeenCalledWith(TENANT, {
+      patientId: undefined,
+      phone: '(47) 98844-3635',
+    })
+    expect(postEventsMock).not.toHaveBeenCalled()
   })
 
   // 1. Never throws.
@@ -174,22 +207,82 @@ describe('enqueueMetaEvent', () => {
 
     await enqueueMetaEvent(baseInput())
 
-    expect(isMarketingOptedOutMock).toHaveBeenCalledWith(TENANT, { prospectId: PROSPECT })
+    expect(isMarketingOptedOutMock).toHaveBeenCalledWith(TENANT, {
+      patientId: undefined,
+      phone: '(47) 98844-3635',
+    })
   })
 
   // 3b. tx supplied.
-  it('with tx supplied, inserts the outbox row on that tx and returns without posting', async () => {
+  it('with tx and prerequisites, inserts the outbox row on that tx and returns without posting', async () => {
     const { enqueueMetaEvent } = await import('../events')
     const fakeTx = { marker: 'tx' } as never
     insertConversionEventMock.mockResolvedValue({ inserted: true, id: 'evt-tx' })
 
-    await enqueueMetaEvent(baseInput({ tx: fakeTx }))
+    await enqueueMetaEvent(
+      baseInput({
+        tx: fakeTx,
+        prerequisites: { optedOut: false, connection: CONNECTION, attribution: null },
+      }),
+    )
 
     expect(insertConversionEventMock).toHaveBeenCalledTimes(1)
     expect(insertConversionEventMock.mock.calls[0][1]).toBe(fakeTx)
     expect(postEventsMock).not.toHaveBeenCalled()
     expect(markEventSentMock).not.toHaveBeenCalled()
     expect(markEventFailureMock).not.toHaveBeenCalled()
+  })
+
+  // Fix 1: a pre-transaction lookup that never ran must not cost the event.
+  describe('tx with no prerequisites', () => {
+    it('inserts a bare pending row on the caller transaction and reads nothing', async () => {
+      const { enqueueMetaEvent } = await import('../events')
+      const fakeTx = { marker: 'tx' } as never
+
+      await enqueueMetaEvent(
+        baseInput({ eventName: 'Purchase', eventId: 'purchase:entry-1', value: '3000.00', tx: fakeTx }),
+      )
+
+      expect(insertConversionEventMock).toHaveBeenCalledTimes(1)
+      expect(insertConversionEventMock.mock.calls[0][0]).toEqual(
+        expect.objectContaining({
+          status: 'pending',
+          payload: null,
+          value: '3000.00',
+          eventId: 'purchase:entry-1',
+          prospectId: PROSPECT,
+        }),
+      )
+      expect(insertConversionEventMock.mock.calls[0][1]).toBe(fakeTx)
+      expect(isMarketingOptedOutMock).not.toHaveBeenCalled()
+      expect(getMetaConnectionMock).not.toHaveBeenCalled()
+      expect(getAttributionMock).not.toHaveBeenCalled()
+      expect(postEventsMock).not.toHaveBeenCalled()
+    })
+
+    it('carries no value for a non-Purchase event', async () => {
+      const { enqueueMetaEvent } = await import('../events')
+      const fakeTx = { marker: 'tx' } as never
+
+      await enqueueMetaEvent(baseInput({ value: '99.00', tx: fakeTx }))
+
+      expect(insertConversionEventMock.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ value: null }),
+      )
+    })
+
+    it('still writes the row when the external id secret is missing, so nothing is lost', async () => {
+      const { enqueueMetaEvent } = await import('../events')
+      delete process.env.META_EXTERNAL_ID_SECRET
+      const fakeTx = { marker: 'tx' } as never
+
+      await expect(enqueueMetaEvent(baseInput({ tx: fakeTx }))).resolves.toBeUndefined()
+
+      expect(insertConversionEventMock.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ status: 'pending', payload: null }),
+      )
+      expect(insertConversionEventMock.mock.calls[0][1]).toBe(fakeTx)
+    })
   })
 
   // 4. Advanced matching disabled.
@@ -312,6 +405,14 @@ describe('enqueueMetaEvent', () => {
     expect(markEventSentMock).toHaveBeenCalledWith(TENANT, 'evt-42', 'trace-42')
   })
 
+  it('posts the payload it stored, without rebuilding it', async () => {
+    const { enqueueMetaEvent } = await import('../events')
+
+    await enqueueMetaEvent(baseInput())
+
+    expect(postedPayload()).toEqual(insertedPayload())
+  })
+
   // 10. Transient failure leaves the row pending and does not throw.
   it('records a transient failure without throwing and without invalidating the connection', async () => {
     const { enqueueMetaEvent } = await import('../events')
@@ -358,15 +459,6 @@ describe('enqueueMetaEvent', () => {
       'current transaction is aborted',
     )
     expect(reportSideEffectFailureMock).not.toHaveBeenCalled()
-  })
-
-  it('re-raises a prerequisite failure on the transactional path but swallows it without tx', async () => {
-    const { enqueueMetaEvent } = await import('../events')
-    const fakeTx = { marker: 'tx' } as never
-    isMarketingOptedOutMock.mockRejectedValue(new Error('db is down'))
-
-    await expect(enqueueMetaEvent(baseInput({ tx: fakeTx }))).rejects.toThrow('db is down')
-    await expect(enqueueMetaEvent(baseInput())).resolves.toBeUndefined()
   })
 
   // 14. Caller-supplied prerequisites replace every read.
@@ -430,6 +522,17 @@ describe('enqueueMetaEvent', () => {
 
       expect(getAttributionMock).not.toHaveBeenCalled()
     })
+
+    it('forwards the phone to the opt-out check', async () => {
+      const { resolveMetaEventPrerequisites } = await import('../events')
+
+      await resolveMetaEventPrerequisites(TENANT, { prospectId: PROSPECT, phone: '5547988443635' })
+
+      expect(isMarketingOptedOutMock).toHaveBeenCalledWith(TENANT, {
+        patientId: undefined,
+        phone: '5547988443635',
+      })
+    })
   })
 
   // 15. A missing external id secret is recorded, never dropped.
@@ -449,20 +552,6 @@ describe('enqueueMetaEvent', () => {
         }),
       )
       expect(postEventsMock).not.toHaveBeenCalled()
-      expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1)
-      expect(reportSideEffectFailureMock.mock.calls[0][1]).toEqual(
-        expect.objectContaining({ area: 'meta-capi', step: 'external_id_secret' }),
-      )
-    })
-
-    it('writes that skipped row on the caller transaction and does not throw into it', async () => {
-      const { enqueueMetaEvent } = await import('../events')
-      delete process.env.META_EXTERNAL_ID_SECRET
-      const fakeTx = { marker: 'tx' } as never
-
-      await expect(enqueueMetaEvent(baseInput({ tx: fakeTx }))).resolves.toBeUndefined()
-
-      expect(insertConversionEventMock.mock.calls[0][1]).toBe(fakeTx)
     })
 
     it('still sends an event with no prospect, since it needs no external_id', async () => {
@@ -496,5 +585,208 @@ describe('enqueueMetaEvent', () => {
     await enqueueMetaEvent(baseInput({ eventName: 'Contact', eventId: 'contact:1', value: '199.90' }))
 
     expect(insertedPayload().custom_data).toBeUndefined()
+  })
+})
+
+describe('sendPendingEvent', () => {
+  const STORED_PAYLOAD: MetaEventPayload = {
+    event_name: 'Lead',
+    event_time: 1_755_000_000,
+    event_id: 'lead:prospect-1',
+    action_source: 'website',
+    user_data: { em: ['already-hashed'] },
+  }
+
+  function pendingRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'evt-1',
+      tenantId: TENANT,
+      prospectId: PROSPECT,
+      patientId: null,
+      eventName: 'Lead' as const,
+      eventId: 'lead:prospect-1',
+      eventTime: new Date('2026-08-20T12:00:00.000Z'),
+      value: null,
+      payload: STORED_PAYLOAD as unknown,
+      ...overrides,
+    }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    process.env.META_EXTERNAL_ID_SECRET = 'f'.repeat(64)
+
+    isMarketingOptedOutMock.mockResolvedValue(false)
+    getMetaConnectionMock.mockResolvedValue(CONNECTION)
+    getAttributionMock.mockResolvedValue(null)
+    getPatientMock.mockResolvedValue(null)
+    getProspectMock.mockResolvedValue(null)
+    postEventsMock.mockResolvedValue({ ok: true, eventsReceived: 1, fbTraceId: 'trace-1' })
+  })
+
+  it('posts the stored payload and marks the row sent', async () => {
+    const { sendPendingEvent } = await import('../events')
+
+    await sendPendingEvent(pendingRow())
+
+    expect(postEventsMock).toHaveBeenCalledTimes(1)
+    expect(postedPayload()).toEqual(STORED_PAYLOAD)
+    expect(markEventSentMock).toHaveBeenCalledWith(TENANT, 'evt-1', 'trace-1')
+  })
+
+  it('leaves the row pending and posts nothing when the tenant has no connection', async () => {
+    const { sendPendingEvent } = await import('../events')
+    getMetaConnectionMock.mockResolvedValue(null)
+
+    await sendPendingEvent(pendingRow())
+
+    expect(postEventsMock).not.toHaveBeenCalled()
+    expect(markEventSkippedMock).not.toHaveBeenCalled()
+    expect(markEventFailureMock).not.toHaveBeenCalled()
+    expect(markEventSentMock).not.toHaveBeenCalled()
+  })
+
+  // Fix 3: a patient who opts out during a Meta outage must not be sent by
+  // the next sweep, even though the payload was built before they opted out.
+  it('re-checks the opt-out and skips instead of sending when it now says suppressed', async () => {
+    const { sendPendingEvent } = await import('../events')
+    isMarketingOptedOutMock.mockResolvedValue(true)
+
+    await sendPendingEvent(pendingRow({ patientId: 'patient-1' }))
+
+    expect(markEventSkippedMock).toHaveBeenCalledWith(TENANT, 'evt-1', 'opted_out')
+    expect(postEventsMock).not.toHaveBeenCalled()
+    expect(markEventSentMock).not.toHaveBeenCalled()
+  })
+
+  it('resolves the prospect phone for the opt-out re-check when the row has no patient id', async () => {
+    const { sendPendingEvent } = await import('../events')
+    getProspectMock.mockResolvedValue({ id: PROSPECT, phone: '5547988443635', name: 'Ana Souza' })
+
+    await sendPendingEvent(pendingRow())
+
+    expect(getProspectMock).toHaveBeenCalledWith(TENANT, PROSPECT)
+    expect(isMarketingOptedOutMock).toHaveBeenCalledWith(TENANT, {
+      patientId: null,
+      phone: '5547988443635',
+    })
+  })
+
+  it('prefers the patient record over the prospect for the opt-out re-check', async () => {
+    const { sendPendingEvent } = await import('../events')
+    getPatientMock.mockResolvedValue({
+      phone: '(47) 98844-3635',
+      email: 'ana@clinica.com',
+      fullName: 'Ana Souza',
+    })
+
+    await sendPendingEvent(pendingRow({ patientId: 'patient-1' }))
+
+    expect(getProspectMock).not.toHaveBeenCalled()
+    expect(isMarketingOptedOutMock).toHaveBeenCalledWith(TENANT, {
+      patientId: 'patient-1',
+      phone: '(47) 98844-3635',
+    })
+  })
+
+  describe('rebuilding a bare row', () => {
+    function bareRow(overrides: Record<string, unknown> = {}) {
+      return pendingRow({
+        eventName: 'Purchase' as const,
+        eventId: 'purchase:entry-1',
+        value: '3000.00',
+        payload: null,
+        patientId: 'patient-1',
+        ...overrides,
+      })
+    }
+
+    beforeEach(() => {
+      getPatientMock.mockResolvedValue({
+        phone: '(47) 98844-3635',
+        email: 'Ana@Clinica.com',
+        fullName: 'Ana Souza',
+      })
+    })
+
+    it('builds the payload from the patient, the attribution and the row value', async () => {
+      const { sendPendingEvent } = await import('../events')
+      getAttributionMock.mockResolvedValue({
+        ctwaClid: 'clid-1',
+        fbc: null,
+        fbp: null,
+        clientIp: null,
+        userAgent: null,
+      })
+
+      await sendPendingEvent(bareRow())
+
+      const payload = postedPayload()
+      expect(payload.event_name).toBe('Purchase')
+      expect(payload.event_id).toBe('purchase:entry-1')
+      expect(payload.action_source).toBe('system_generated')
+      expect(payload.custom_data).toEqual({ value: 3000, currency: 'BRL' })
+      expect(payload.user_data.ctwa_clid).toBe('clid-1')
+      expect(payload.user_data.em).toEqual([hashEmail('Ana@Clinica.com')])
+      expect(payload.user_data.ph).toEqual([hashPhone('(47) 98844-3635')])
+      expect(payload.user_data.external_id).toEqual([
+        createHmac('sha256', process.env.META_EXTERNAL_ID_SECRET!)
+          .update(`${TENANT}:${PROSPECT}`)
+          .digest('hex'),
+      ])
+      expect(markEventSentMock).toHaveBeenCalledWith(TENANT, 'evt-1', 'trace-1')
+    })
+
+    it('omits the hashed contact fields when advanced matching is disabled', async () => {
+      const { sendPendingEvent } = await import('../events')
+      getMetaConnectionMock.mockResolvedValue({ ...CONNECTION, advancedMatchingEnabled: false })
+
+      await sendPendingEvent(bareRow())
+
+      expect(postedPayload().user_data.em).toBeUndefined()
+      expect(postedPayload().user_data.ph).toBeUndefined()
+      expect(postedPayload().user_data.external_id).toBeDefined()
+    })
+
+    it('skips with no_external_id_secret rather than posting an unmatchable event', async () => {
+      const { sendPendingEvent } = await import('../events')
+      delete process.env.META_EXTERNAL_ID_SECRET
+
+      await sendPendingEvent(bareRow())
+
+      expect(markEventSkippedMock).toHaveBeenCalledWith(TENANT, 'evt-1', 'no_external_id_secret')
+      expect(postEventsMock).not.toHaveBeenCalled()
+    })
+
+    it('sends a row with no prospect even without the secret, since it needs no external_id', async () => {
+      const { sendPendingEvent } = await import('../events')
+      delete process.env.META_EXTERNAL_ID_SECRET
+
+      await sendPendingEvent(bareRow({ prospectId: null }))
+
+      expect(postEventsMock).toHaveBeenCalledTimes(1)
+      expect(postedPayload().user_data.external_id).toBeUndefined()
+      expect(getAttributionMock).not.toHaveBeenCalled()
+    })
+  })
+
+  it('marks the connection invalid and the row failed on an auth failure', async () => {
+    const { sendPendingEvent } = await import('../events')
+    postEventsMock.mockResolvedValue({ ok: false, kind: 'auth', message: 'token expired' })
+
+    await sendPendingEvent(pendingRow())
+
+    expect(markConnectionInvalidMock).toHaveBeenCalledWith(TENANT, 'token expired')
+    expect(markEventFailureMock).toHaveBeenCalledWith(TENANT, 'evt-1', 'auth', 'token expired')
+  })
+
+  it('records a transient failure without invalidating the connection', async () => {
+    const { sendPendingEvent } = await import('../events')
+    postEventsMock.mockResolvedValue({ ok: false, kind: 'transient', message: 'timeout' })
+
+    await sendPendingEvent(pendingRow())
+
+    expect(markEventFailureMock).toHaveBeenCalledWith(TENANT, 'evt-1', 'transient', 'timeout')
+    expect(markConnectionInvalidMock).not.toHaveBeenCalled()
   })
 })

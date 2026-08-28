@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
-import { metaConversionEvents } from '@/db/schema'
-import { and, asc, eq, lt, ne, sql } from 'drizzle-orm'
+import { metaConversionEvents, prospects } from '@/db/schema'
+import { and, asc, desc, eq, inArray, lt, ne } from 'drizzle-orm'
 import type { MetaEventName } from '@/lib/meta/types'
 
 export const MAX_ATTEMPTS = 8
@@ -9,6 +9,7 @@ const CLAIM_MIN_AGE_MS = 60_000
 export interface InsertConversionEventInput {
   tenantId: string
   prospectId: string | null
+  patientId?: string | null
   eventName: MetaEventName
   eventId: string
   eventTime: Date
@@ -21,6 +22,17 @@ export interface InsertConversionEventInput {
 export interface PendingEvent {
   id: string
   tenantId: string
+  prospectId: string | null
+  /**
+   * The stored `patient_id` when the emitting site knew one, otherwise derived
+   * from `prospects.converted_patient_id`: the opt-out flag lives on the
+   * patient, and a lead can convert after its outbox row was written.
+   */
+  patientId: string | null
+  eventName: MetaEventName
+  eventId: string
+  eventTime: Date
+  value: string | null
   payload: unknown
   createdAt: Date
 }
@@ -50,6 +62,7 @@ export async function insertConversionEvent(
     .values({
       tenantId: input.tenantId,
       prospectId: input.prospectId,
+      patientId: input.patientId ?? null,
       eventName: input.eventName,
       eventId: input.eventId,
       eventTime: input.eventTime,
@@ -130,14 +143,26 @@ export async function markEventSkipped(tenantId: string, id: string, reason: str
     .where(and(eq(metaConversionEvents.tenantId, tenantId), eq(metaConversionEvents.id, id)))
 }
 
-export async function claimPendingEvents(limit: number): Promise<PendingEvent[]> {
-  return db.transaction(async (trx) => {
+/**
+ * Selects, it does not claim: the row lock dies with the transaction that took
+ * it and nothing marks a row in flight, so two overlapping runs can pick the
+ * same row and send it twice. Meta dedups on event_id, which is what makes
+ * that safe.
+ */
+export async function selectPendingEvents(limit: number): Promise<PendingEvent[]> {
+  const rows = await db.transaction(async (trx) => {
     const cutoff = new Date(Date.now() - CLAIM_MIN_AGE_MS)
 
-    const rows = await trx
+    return trx
       .select({
         id: metaConversionEvents.id,
         tenantId: metaConversionEvents.tenantId,
+        prospectId: metaConversionEvents.prospectId,
+        patientId: metaConversionEvents.patientId,
+        eventName: metaConversionEvents.eventName,
+        eventId: metaConversionEvents.eventId,
+        eventTime: metaConversionEvents.eventTime,
+        value: metaConversionEvents.value,
         payload: metaConversionEvents.payload,
         createdAt: metaConversionEvents.createdAt,
       })
@@ -146,9 +171,66 @@ export async function claimPendingEvents(limit: number): Promise<PendingEvent[]>
       .orderBy(asc(metaConversionEvents.createdAt))
       .limit(limit)
       .for('update', { skipLocked: true })
-
-    return rows
   })
+
+  const patientIds = await resolveConvertedPatients(rows.filter((row) => !row.patientId))
+
+  return rows.map((row) => ({
+    ...row,
+    eventName: row.eventName as MetaEventName,
+    patientId:
+      row.patientId ??
+      (row.prospectId ? patientIds.get(`${row.tenantId}:${row.prospectId}`) ?? null : null),
+  }))
+}
+
+/**
+ * Keyed by tenant as well as prospect id so a row can never pick up another
+ * tenant's patient link.
+ */
+async function resolveConvertedPatients(
+  rows: { tenantId: string; prospectId: string | null }[],
+): Promise<Map<string, string | null>> {
+  const prospectIds = [...new Set(rows.map((row) => row.prospectId).filter((id): id is string => Boolean(id)))]
+  if (prospectIds.length === 0) return new Map()
+
+  const links = await db
+    .select({
+      id: prospects.id,
+      tenantId: prospects.tenantId,
+      convertedPatientId: prospects.convertedPatientId,
+    })
+    .from(prospects)
+    .where(inArray(prospects.id, prospectIds))
+
+  return new Map(links.map((link) => [`${link.tenantId}:${link.id}`, link.convertedPatientId]))
+}
+
+export interface EventOutcomeCounts {
+  sent: number
+  failed: number
+}
+
+/**
+ * The shared sender records each row's outcome itself and returns nothing, so
+ * the cron reads the statuses back to report what the run actually did.
+ */
+export async function countEventOutcomes(tenantId: string, ids: string[]): Promise<EventOutcomeCounts> {
+  if (ids.length === 0) return { sent: 0, failed: 0 }
+
+  const rows = await db
+    .select({ status: metaConversionEvents.status })
+    .from(metaConversionEvents)
+    .where(and(eq(metaConversionEvents.tenantId, tenantId), inArray(metaConversionEvents.id, ids)))
+
+  let sent = 0
+  let failed = 0
+  for (const row of rows) {
+    if (row.status === 'sent') sent += 1
+    else if (row.status === 'failed') failed += 1
+  }
+
+  return { sent, failed }
 }
 
 export async function listRecentEvents(tenantId: string, limit: number): Promise<RecentEvent[]> {
@@ -168,7 +250,7 @@ export async function listRecentEvents(tenantId: string, limit: number): Promise
     })
     .from(metaConversionEvents)
     .where(eq(metaConversionEvents.tenantId, tenantId))
-    .orderBy(sql`${metaConversionEvents.createdAt} DESC`)
+    .orderBy(desc(metaConversionEvents.createdAt))
     .limit(limit)
 
   return rows

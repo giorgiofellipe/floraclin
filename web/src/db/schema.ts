@@ -1082,6 +1082,7 @@ export const metaConversionEvents = floraclinSchema.table('meta_conversion_event
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   prospectId: uuid('prospect_id').references(() => prospects.id),
+  patientId: uuid('patient_id').references(() => patients.id),
   eventName: varchar('event_name', { length: 30 }).notNull(),
   eventId: varchar('event_id', { length: 120 }).notNull(),
   eventTime: timestamp('event_time', { withTimezone: true }).notNull(),

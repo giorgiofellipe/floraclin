@@ -412,7 +412,9 @@ describe('financial.ts meta conversions', () => {
       expect(enqueueMetaEventMock).toHaveBeenCalledTimes(12)
     })
 
-    it('a failure while preparing the meta context costs the event, never the payment', async () => {
+    // Purchase is the one event the cron never reconciles, so a prepare that
+    // never ran must still leave an outbox row behind.
+    it('a failure while preparing the meta context still writes the Purchase, bare', async () => {
       const { recordPayment } = await import('../financial')
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
@@ -425,6 +427,7 @@ describe('financial.ts meta conversions', () => {
       tx.select.mockReturnValueOnce(chain([]))
       tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
+      queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
 
       tx.insert.mockReturnValueOnce(chain([{ id: 'pay-1' }]))
       tx.insert.mockReturnValueOnce(chain(undefined))
@@ -438,11 +441,132 @@ describe('financial.ts meta conversions', () => {
       } as never)
 
       expect(result.installmentPaid).toBe(true)
-      expect(enqueueMetaEventMock).not.toHaveBeenCalled()
+      expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
+      const call = enqueueMetaEventMock.mock.calls[0][0] as Record<string, unknown>
+      expect(call.eventId).toBe(`purchase:${ENTRY_ID}`)
+      expect(call.value).toBe('600.00')
+      expect(call.prospectId).toBeNull()
+      expect(call.patientId).toBeNull()
+      expect(call.prerequisites).toBeUndefined()
+      expect(call.tx).toBe(tx)
       expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1)
       expect(reportSideEffectFailureMock.mock.calls[0][1]).toEqual(
         expect.objectContaining({ area: 'meta-capi', step: 'prepare_purchase_context' }),
       )
+    })
+
+    it('one unresolvable patient degrades only its own entry', async () => {
+      const { bulkPayInstallments } = await import('../financial')
+      const tx = makeTx()
+      dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+
+      const CONTACT_A = { phone: '+5511900000001', email: 'a@example.com', fullName: 'Patient A' }
+      const CONTACT_B = { phone: '+5511900000002', email: 'b@example.com', fullName: 'Patient B' }
+
+      queuePrepareRows([
+        { financialEntryId: 'entry-a', patientId: 'patient-a', ...CONTACT_A },
+        { financialEntryId: 'entry-b', patientId: 'patient-b', ...CONTACT_B },
+      ])
+      resolveProspectForPatientMock.mockRejectedValueOnce(new Error('prospect lookup failed'))
+      resolveProspectForPatientMock.mockResolvedValueOnce({ id: 'prospect-b' })
+
+      tx.execute.mockResolvedValueOnce([{ id: 'installment-a' }, { id: 'installment-b' }])
+      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+
+      for (const [id, entryId] of [
+        ['installment-a', 'entry-a'],
+        ['installment-b', 'entry-b'],
+      ]) {
+        tx.select.mockReturnValueOnce(chain([typedInstallmentRow({ id, financialEntryId: entryId })]))
+        tx.select.mockReturnValueOnce(chain([{ patientId: 'patient-x', description: 'x' }]))
+        tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
+        queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
+
+        tx.insert.mockReturnValueOnce(chain([{ id: `pay-${id}` }]))
+        tx.insert.mockReturnValueOnce(chain(undefined))
+        tx.update.mockReturnValueOnce(chain(undefined))
+        tx.update.mockReturnValueOnce(chain(undefined))
+      }
+
+      await bulkPayInstallments(TENANT, USER_ID, {
+        installmentIds: ['installment-a', 'installment-b'],
+        paymentMethod: 'pix',
+      })
+
+      expect(enqueueMetaEventMock).toHaveBeenCalledTimes(2)
+      const [degraded, intact] = enqueueMetaEventMock.mock.calls.map(
+        (c) => c[0] as Record<string, unknown>,
+      )
+      expect(degraded.prospectId).toBeNull()
+      expect(degraded.prerequisites).toBeUndefined()
+      expect(degraded.patientId).toBe('patient-a')
+      expect(degraded.contact).toEqual(CONTACT_A)
+      expect(intact.prospectId).toBe('prospect-b')
+      expect(intact.prerequisites).toEqual(PREREQUISITES)
+      expect(intact.contact).toEqual(CONTACT_B)
+    })
+
+    it('a failed prerequisite resolution degrades to a bare row rather than dropping the event', async () => {
+      const { recordPayment } = await import('../financial')
+      const tx = makeTx()
+      dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+      queuePrepareRows()
+      resolveMetaEventPrerequisitesMock.mockRejectedValueOnce(new Error('connection read failed'))
+
+      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
+      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([]))
+      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
+      tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
+      queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
+
+      tx.insert.mockReturnValueOnce(chain([{ id: 'pay-1' }]))
+      tx.insert.mockReturnValueOnce(chain(undefined))
+      tx.update.mockReturnValueOnce(chain(undefined))
+      tx.update.mockReturnValueOnce(chain(undefined))
+
+      await recordPayment(TENANT, USER_ID, {
+        installmentId: INSTALLMENT_ID,
+        amount: 600,
+        paymentMethod: 'pix',
+      } as never)
+
+      expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
+      const call = enqueueMetaEventMock.mock.calls[0][0] as Record<string, unknown>
+      expect(call.prerequisites).toBeUndefined()
+      expect(call.patientId).toBe(PATIENT_ID)
+      expect(call.contact).toEqual(patientContactRow)
+    })
+
+    it('passes the patient phone to the prerequisite resolution so the opt-out can match on it', async () => {
+      const { recordPayment } = await import('../financial')
+      const tx = makeTx()
+      dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+      queuePrepareRows()
+
+      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
+      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([]))
+      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
+      tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
+      queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
+
+      tx.insert.mockReturnValueOnce(chain([{ id: 'pay-1' }]))
+      tx.insert.mockReturnValueOnce(chain(undefined))
+      tx.update.mockReturnValueOnce(chain(undefined))
+      tx.update.mockReturnValueOnce(chain(undefined))
+
+      await recordPayment(TENANT, USER_ID, {
+        installmentId: INSTALLMENT_ID,
+        amount: 600,
+        paymentMethod: 'pix',
+      } as never)
+
+      expect(resolveMetaEventPrerequisitesMock).toHaveBeenCalledWith(TENANT, {
+        prospectId: null,
+        patientId: PATIENT_ID,
+        phone: patientContactRow.phone,
+      })
     })
   })
 

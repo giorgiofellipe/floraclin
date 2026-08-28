@@ -136,6 +136,49 @@ describe('meta-events queries', () => {
       expect(result).toEqual({ inserted: true, id: 'evt-tx' })
       expect(dbMock.insert).not.toHaveBeenCalled()
     })
+
+    it('persists patientId on a bare row, the only handle the cron has on a walk-in Purchase', async () => {
+      const { insertConversionEvent } = await import('../meta-events')
+      const insertChain = chain([{ id: 'evt-bare' }])
+      dbMock.insert.mockReturnValueOnce(insertChain)
+
+      const result = await insertConversionEvent({
+        tenantId: TENANT_A,
+        prospectId: null,
+        patientId: 'patient-7',
+        eventName: 'Purchase',
+        eventId: 'purchase:installment-1',
+        eventTime: new Date('2026-08-28T12:00:00Z'),
+        value: '250.00',
+        payload: null,
+        status: 'pending',
+      })
+
+      expect(result).toEqual({ inserted: true, id: 'evt-bare' })
+      expect(insertChain.__calls.values[0][0]).toMatchObject({
+        prospectId: null,
+        patientId: 'patient-7',
+        payload: null,
+      })
+    })
+
+    it('stores patientId as null when the caller omits it', async () => {
+      const { insertConversionEvent } = await import('../meta-events')
+      const insertChain = chain([{ id: 'evt-1' }])
+      dbMock.insert.mockReturnValueOnce(insertChain)
+
+      await insertConversionEvent({
+        tenantId: TENANT_A,
+        prospectId: 'prospect-1',
+        eventName: 'Lead',
+        eventId: 'lead:prospect-1',
+        eventTime: new Date('2026-08-28T12:00:00Z'),
+        payload: {},
+        status: 'pending',
+      })
+
+      expect(insertChain.__calls.values[0][0]).toMatchObject({ patientId: null })
+    })
   })
 
   describe('markEventSent', () => {
@@ -290,13 +333,19 @@ describe('meta-events queries', () => {
     })
   })
 
-  describe('claimPendingEvents', () => {
+  describe('selectPendingEvents', () => {
     it('runs inside a transaction with FOR UPDATE SKIP LOCKED and returns the trimmed rows', async () => {
-      const { claimPendingEvents } = await import('../meta-events')
+      const { selectPendingEvents } = await import('../meta-events')
 
       const row = {
         id: 'evt-1',
         tenantId: TENANT_A,
+        prospectId: null,
+        patientId: null,
+        eventName: 'Lead',
+        eventId: 'lead:prospect-1',
+        eventTime: new Date('2026-08-28T09:00:00Z'),
+        value: null,
         payload: { event_name: 'Lead' },
         createdAt: new Date('2026-08-28T09:00:00Z'),
       }
@@ -309,7 +358,7 @@ describe('meta-events queries', () => {
 
       dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
 
-      const result = await claimPendingEvents(10)
+      const result = await selectPendingEvents(10)
 
       expect(dbMock.transaction).toHaveBeenCalledTimes(1)
       expect(selectChain.__calls.for).toEqual([['update', { skipLocked: true }]])
@@ -318,24 +367,26 @@ describe('meta-events queries', () => {
       expect(result).toEqual([row])
     })
 
-    it('does not touch attempts: claiming a row is not a delivery attempt', async () => {
-      const { claimPendingEvents } = await import('../meta-events')
+    it('does not touch attempts: selecting a row is not a delivery attempt', async () => {
+      const { selectPendingEvents } = await import('../meta-events')
 
       const trx = {
         select: vi.fn(() =>
-          chain([{ id: 'evt-1', tenantId: TENANT_A, payload: {}, createdAt: new Date() }]),
+          chain([
+            { id: 'evt-1', tenantId: TENANT_A, prospectId: null, patientId: null, payload: {}, createdAt: new Date() },
+          ]),
         ),
         update: vi.fn(() => chain(undefined)),
       }
       dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
 
-      await claimPendingEvents(10)
+      await selectPendingEvents(10)
 
       expect(trx.update).not.toHaveBeenCalled()
     })
 
     it('excludes rows younger than 60 seconds via the createdAt filter', async () => {
-      const { claimPendingEvents } = await import('../meta-events')
+      const { selectPendingEvents } = await import('../meta-events')
 
       const selectChain = chain([])
       const trx = {
@@ -345,7 +396,7 @@ describe('meta-events queries', () => {
       dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
 
       const before = Date.now()
-      const result = await claimPendingEvents(5)
+      const result = await selectPendingEvents(5)
 
       expect(result).toEqual([])
 
@@ -357,15 +408,110 @@ describe('meta-events queries', () => {
       expect(Date.parse(String(params[1]))).toBeLessThanOrEqual(before - 59_000)
     })
 
-    it('returns [] when nothing is claimable', async () => {
-      const { claimPendingEvents } = await import('../meta-events')
+    it('returns [] when nothing is pending', async () => {
+      const { selectPendingEvents } = await import('../meta-events')
       const trx = {
         select: vi.fn(() => chain([])),
         update: vi.fn(() => chain(undefined)),
       }
       dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
 
-      expect(await claimPendingEvents(5)).toEqual([])
+      expect(await selectPendingEvents(5)).toEqual([])
+    })
+
+    it('prefers the stored patientId over the prospect fallback', async () => {
+      const { selectPendingEvents } = await import('../meta-events')
+
+      const trx = {
+        select: vi.fn(() =>
+          chain([
+            {
+              id: 'evt-1',
+              tenantId: TENANT_A,
+              prospectId: 'prospect-1',
+              patientId: 'patient-stored',
+              eventName: 'Purchase',
+              eventId: 'purchase:installment-1',
+              eventTime: new Date('2026-08-28T09:00:00Z'),
+              value: '250.00',
+              payload: null,
+              createdAt: new Date('2026-08-28T09:00:00Z'),
+            },
+          ]),
+        ),
+        update: vi.fn(() => chain(undefined)),
+      }
+      dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
+
+      const [event] = await selectPendingEvents(10)
+
+      expect(event.patientId).toBe('patient-stored')
+      // The prospect lookup is skipped entirely for a row that already knows.
+      expect(dbMock.select).not.toHaveBeenCalled()
+    })
+
+    it("falls back to the prospect's convertedPatientId when no patientId is stored", async () => {
+      const { selectPendingEvents } = await import('../meta-events')
+
+      const trx = {
+        select: vi.fn(() =>
+          chain([
+            {
+              id: 'evt-1',
+              tenantId: TENANT_A,
+              prospectId: 'prospect-1',
+              patientId: null,
+              eventName: 'Lead',
+              eventId: 'lead:prospect-1',
+              eventTime: new Date('2026-08-28T09:00:00Z'),
+              value: null,
+              payload: {},
+              createdAt: new Date('2026-08-28T09:00:00Z'),
+            },
+          ]),
+        ),
+        update: vi.fn(() => chain(undefined)),
+      }
+      dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
+      dbMock.select.mockReturnValueOnce(
+        chain([{ id: 'prospect-1', tenantId: TENANT_A, convertedPatientId: 'patient-converted' }]),
+      )
+
+      const [event] = await selectPendingEvents(10)
+
+      expect(event.patientId).toBe('patient-converted')
+    })
+
+    it('never picks up another tenant\'s patient link for the same prospect id', async () => {
+      const { selectPendingEvents } = await import('../meta-events')
+
+      const trx = {
+        select: vi.fn(() =>
+          chain([
+            {
+              id: 'evt-1',
+              tenantId: TENANT_B,
+              prospectId: 'prospect-1',
+              patientId: null,
+              eventName: 'Lead',
+              eventId: 'lead:prospect-1',
+              eventTime: new Date('2026-08-28T09:00:00Z'),
+              value: null,
+              payload: {},
+              createdAt: new Date('2026-08-28T09:00:00Z'),
+            },
+          ]),
+        ),
+        update: vi.fn(() => chain(undefined)),
+      }
+      dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
+      dbMock.select.mockReturnValueOnce(
+        chain([{ id: 'prospect-1', tenantId: TENANT_A, convertedPatientId: 'patient-of-a' }]),
+      )
+
+      const [event] = await selectPendingEvents(10)
+
+      expect(event.patientId).toBeNull()
     })
   })
 

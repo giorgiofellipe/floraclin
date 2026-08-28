@@ -2,6 +2,8 @@ import { createHmac } from 'crypto'
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
+import { scrubUrl } from '@/lib/observability'
+
 import {
   buildAuthUrl,
   signOAuthState,
@@ -128,9 +130,17 @@ describe('meta/oauth', () => {
   })
 
   describe('exchangeCodeForLongLivedToken', () => {
+    function params(init: RequestInit): URLSearchParams {
+      return new URLSearchParams(init.body as string)
+    }
+
+    function isLongLivedLeg(init: RequestInit): boolean {
+      return params(init).get('grant_type') === 'fb_exchange_token'
+    }
+
     it('exchanges the code for a short-lived token, then a long-lived token', async () => {
-      const fetchMock = vi.fn(async (url: string) => {
-        if (url.includes('fb_exchange_token')) {
+      const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+        if (isLongLivedLeg(init)) {
           return new Response(
             JSON.stringify({ access_token: 'long-lived-token', expires_in: 5184000 }),
             { status: 200 },
@@ -147,11 +157,15 @@ describe('meta/oauth', () => {
       expect(result.expiresAt).not.toBeNull()
       expect(result.expiresAt!.getTime()).toBeGreaterThanOrEqual(before + 5184000 * 1000)
       expect(fetchMock).toHaveBeenCalledTimes(2)
+
+      // The second leg trades exactly the token the first leg returned.
+      expect(params(fetchMock.mock.calls[0][1]).get('code')).toBe('auth-code')
+      expect(params(fetchMock.mock.calls[1][1]).get('fb_exchange_token')).toBe('short-lived-token')
     })
 
     it('returns a null expiresAt when the long-lived response has no expires_in', async () => {
-      global.fetch = vi.fn(async (url: string) => {
-        if (url.includes('fb_exchange_token')) {
+      global.fetch = vi.fn(async (_url: string, init: RequestInit) => {
+        if (isLongLivedLeg(init)) {
           return new Response(JSON.stringify({ access_token: 'long-lived-token' }), { status: 200 })
         }
         return new Response(JSON.stringify({ access_token: 'short-lived-token' }), { status: 200 })
@@ -162,8 +176,8 @@ describe('meta/oauth', () => {
       expect(result.expiresAt).toBeNull()
     })
 
-    it('sends the app secret as client_secret on both exchange calls', async () => {
-      const fetchMock = vi.fn(async (_url: string) =>
+    it('sends the app secret as client_secret in the form body on both exchange calls', async () => {
+      const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
         new Response(JSON.stringify({ access_token: 'tok' }), { status: 200 }),
       )
       global.fetch = fetchMock as unknown as typeof fetch
@@ -171,9 +185,33 @@ describe('meta/oauth', () => {
       await exchangeCodeForLongLivedToken('auth-code')
 
       expect(fetchMock).toHaveBeenCalledTimes(2)
-      for (const call of fetchMock.mock.calls) {
-        const calledUrl = new URL(call[0] as string)
-        expect(calledUrl.searchParams.get('client_secret')).toBe(ENV.META_APP_SECRET)
+      for (const [, init] of fetchMock.mock.calls) {
+        expect(init.method).toBe('POST')
+        expect((init.headers as Record<string, string>)['content-type']).toBe(
+          'application/x-www-form-urlencoded',
+        )
+        expect(params(init).get('client_secret')).toBe(ENV.META_APP_SECRET)
+      }
+    })
+
+    it('never puts the app secret, the code, or a token in the request url', async () => {
+      const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+        if (isLongLivedLeg(init)) {
+          return new Response(JSON.stringify({ access_token: 'long-lived-token' }), { status: 200 })
+        }
+        return new Response(JSON.stringify({ access_token: 'short-lived-token' }), { status: 200 })
+      })
+      global.fetch = fetchMock as unknown as typeof fetch
+
+      await exchangeCodeForLongLivedToken('auth-code')
+
+      for (const [calledUrl] of fetchMock.mock.calls) {
+        const url = calledUrl as string
+        expect(url).toBe(`https://graph.facebook.com/${META_GRAPH_VERSION}/oauth/access_token`)
+        expect(url).not.toContain('?')
+        expect(url).not.toContain(ENV.META_APP_SECRET)
+        expect(url).not.toContain('auth-code')
+        expect(url).not.toContain('short-lived-token')
       }
     })
 
@@ -190,8 +228,8 @@ describe('meta/oauth', () => {
     })
 
     it('handles a Meta error response on the long-lived exchange without an unhandled rejection', async () => {
-      global.fetch = vi.fn(async (url: string) => {
-        if (url.includes('fb_exchange_token')) {
+      global.fetch = vi.fn(async (_url: string, init: RequestInit) => {
+        if (isLongLivedLeg(init)) {
           return new Response(JSON.stringify({ error: { message: 'Invalid OAuth access token.' } }), {
             status: 401,
           })
@@ -212,6 +250,35 @@ describe('meta/oauth', () => {
       await expect(exchangeCodeForLongLivedToken('auth-code')).rejects.toThrow(
         'Meta token exchange failed: HTTP 500',
       )
+    })
+
+    it('labels a long-lived leg failure distinctly from the short-lived one', async () => {
+      global.fetch = vi.fn(async (_url: string, init: RequestInit) => {
+        if (isLongLivedLeg(init)) return new Response('not json', { status: 500 })
+        return new Response(JSON.stringify({ access_token: 'short-lived-token' }), { status: 200 })
+      }) as unknown as typeof fetch
+
+      await expect(exchangeCodeForLongLivedToken('auth-code')).rejects.toThrow(
+        'Meta long-lived token exchange failed: HTTP 500',
+      )
+    })
+  })
+
+  // Belt and braces for the exchange above: even if a Meta URL with these
+  // parameters reaches Sentry from somewhere else (an SDK fetch breadcrumb, a
+  // trace span), the values must not travel with it.
+  describe('scrubUrl on Meta token-exchange parameters', () => {
+    it('masks client_secret, code, access_token and fb_exchange_token', () => {
+      const scrubbed = scrubUrl(
+        `https://graph.facebook.com/${META_GRAPH_VERSION}/oauth/access_token` +
+          '?client_id=app-123&client_secret=super-secret&code=auth-code' +
+          '&access_token=short-lived-token&fb_exchange_token=short-lived-token',
+      )
+
+      expect(scrubbed).not.toContain('super-secret')
+      expect(scrubbed).not.toContain('auth-code')
+      expect(scrubbed).not.toContain('short-lived-token')
+      expect(scrubbed).toContain('client_id=app-123')
     })
   })
 })

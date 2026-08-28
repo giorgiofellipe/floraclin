@@ -35,6 +35,19 @@ const EVENT_STATUS_LABELS: Record<string, string> = {
   skipped: 'Ignorado',
 }
 
+const CONNECTION_STATUS_LABELS: Record<string, string> = {
+  active: 'Conectado',
+  invalid_token: 'Token expirado ou revogado',
+  disabled: 'Desativado',
+}
+
+const SKIP_REASON_LABELS: Record<string, string> = {
+  no_connection: 'Meta não conectada',
+  no_external_id_secret: 'Chave de identificação não configurada',
+  opted_out: 'Paciente optou por não compartilhar dados',
+  marketing_opt_out: 'Paciente optou por não compartilhar dados',
+}
+
 export function MetaConnectionCard() {
   const { data, isLoading } = useMetaConnection()
   const saveMutation = useSaveMetaConnection()
@@ -49,6 +62,7 @@ export function MetaConnectionCard() {
   const [accessToken, setAccessToken] = useState('')
   const [businessId, setBusinessId] = useState('')
   const [testEventCode, setTestEventCode] = useState('')
+  const [pendingAdvancedMatching, setPendingAdvancedMatching] = useState<boolean | null>(null)
 
   const connection = data?.data ?? null
   const events = data?.events ?? []
@@ -121,20 +135,25 @@ export function MetaConnectionCard() {
     }
   }
 
-  async function handleToggleAdvancedMatching(checked: boolean) {
-    if (!connection || connection.connectionType !== 'manual' || !accessToken) {
-      toast.error('Para alterar, informe o token novamente na seção de conexão manual.')
-      return
-    }
+  function handleToggleAdvancedMatching(checked: boolean) {
+    setPendingAdvancedMatching(checked)
+  }
+
+  async function handleConfirmAdvancedMatching() {
+    if (!connection || pendingAdvancedMatching === null) return
     try {
+      // No accessToken: this keeps the stored credentials and the connection
+      // type, so an OAuth clinic can change the setting without reconnecting.
       await saveMutation.mutateAsync({
         datasetId: connection.datasetId,
-        accessToken,
         testEventCode: connection.testEventCode,
-        advancedMatchingEnabled: checked,
+        advancedMatchingEnabled: pendingAdvancedMatching,
         acknowledgementVersion: ACKNOWLEDGEMENT_VERSION,
       })
-      toast.success(checked ? 'Correspondência avançada ativada' : 'Correspondência avançada desativada')
+      toast.success(
+        pendingAdvancedMatching ? 'Correspondência avançada ativada' : 'Correspondência avançada desativada',
+      )
+      setPendingAdvancedMatching(null)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Erro ao atualizar configuração')
     }
@@ -163,7 +182,7 @@ export function MetaConnectionCard() {
               className={`h-2 w-2 rounded-full ${isActive ? 'bg-green-500' : 'bg-amber-500'}`}
             />
             <span className="text-sm font-medium text-charcoal">
-              {isActive ? 'Conectado' : `Status: ${connection.status}`}
+              {CONNECTION_STATUS_LABELS[connection.status] ?? 'Status desconhecido'}
             </span>
           </div>
 
@@ -175,14 +194,31 @@ export function MetaConnectionCard() {
             <Label className="text-sm text-charcoal">Correspondência avançada</Label>
           </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full text-red-600 border-red-200 hover:bg-red-50"
-            onClick={() => setConfirmOpen(true)}
-          >
-            Desconectar
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleTest}
+              disabled={testMutation.isPending}
+              className="flex-1"
+            >
+              {testMutation.isPending ? <Loader2Icon className="h-4 w-4 animate-spin" /> : 'Testar conexão'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 text-red-600 border-red-200 hover:bg-red-50"
+              onClick={() => setConfirmOpen(true)}
+            >
+              Desconectar
+            </Button>
+          </div>
+
+          {testMutation.data && (
+            <pre className="whitespace-pre-wrap break-all rounded-[3px] border border-[#E8ECEF] bg-cream p-3 text-xs text-charcoal">
+              {JSON.stringify(testMutation.data.body, null, 2)}
+            </pre>
+          )}
         </div>
       )}
 
@@ -302,31 +338,14 @@ export function MetaConnectionCard() {
                   />
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    onClick={handleSaveManual}
-                    disabled={!acknowledged || saveMutation.isPending}
-                    className="flex-1"
-                  >
-                    {saveMutation.isPending ? <Loader2Icon className="h-4 w-4 animate-spin" /> : 'Salvar conexão'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleTest}
-                    disabled={testMutation.isPending}
-                    className="flex-1"
-                  >
-                    {testMutation.isPending ? <Loader2Icon className="h-4 w-4 animate-spin" /> : 'Testar conexão'}
-                  </Button>
-                </div>
-
-                {testMutation.data && (
-                  <pre className="whitespace-pre-wrap break-all rounded-[3px] border border-[#E8ECEF] bg-cream p-3 text-xs text-charcoal">
-                    {JSON.stringify(testMutation.data.body, null, 2)}
-                  </pre>
-                )}
+                <Button
+                  type="button"
+                  onClick={handleSaveManual}
+                  disabled={!acknowledged || saveMutation.isPending}
+                  className="w-full"
+                >
+                  {saveMutation.isPending ? <Loader2Icon className="h-4 w-4 animate-spin" /> : 'Salvar conexão'}
+                </Button>
               </div>
             )}
           </div>
@@ -355,7 +374,9 @@ export function MetaConnectionCard() {
                     <TableCell>
                       <span className="block">{EVENT_STATUS_LABELS[event.status] ?? event.status}</span>
                       {event.status === 'skipped' && event.skipReason && (
-                        <span className="block text-xs text-mid">{event.skipReason}</span>
+                        <span className="block text-xs text-mid">
+                          {SKIP_REASON_LABELS[event.skipReason] ?? 'Motivo não identificado'}
+                        </span>
                       )}
                     </TableCell>
                     <TableCell>{formatDateTime(event.createdAt)}</TableCell>
@@ -367,6 +388,32 @@ export function MetaConnectionCard() {
           )}
         </div>
       )}
+
+      <Dialog
+        open={pendingAdvancedMatching !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingAdvancedMatching(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {pendingAdvancedMatching ? 'Ativar correspondência avançada' : 'Desativar correspondência avançada'}
+            </DialogTitle>
+            <DialogDescription>
+              {pendingAdvancedMatching
+                ? 'Os dados de contato do paciente voltam a ser enviados à Meta de forma criptografada.'
+                : 'A Meta passa a receber apenas os identificadores de clique. A conexão continua ativa.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>Cancelar</DialogClose>
+            <Button onClick={handleConfirmAdvancedMatching} disabled={saveMutation.isPending}>
+              {saveMutation.isPending ? <Loader2Icon className="h-4 w-4 animate-spin" /> : 'Confirmar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>

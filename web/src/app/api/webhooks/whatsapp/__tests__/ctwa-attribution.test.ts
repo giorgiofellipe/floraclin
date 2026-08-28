@@ -300,6 +300,31 @@ describe('Lead event emission', () => {
     )
   })
 
+  it('enqueues the Lead only after the attribution row exists, with the patient id', async () => {
+    vi.mocked(getProspectByPhone).mockResolvedValue(null as never)
+    vi.mocked(createNewProspect).mockResolvedValue(existingProspect() as never)
+    vi.mocked(getPatientByPhone).mockResolvedValue({ id: 'patient-1' } as never)
+
+    const res = await POST(
+      makeRequest(makePayload({ metaMessageId: 'wamid-7', referral: FULL_REFERRAL })),
+    )
+    expect(res.status).toBe(200)
+
+    // enqueueMetaEvent resolves attribution at call time, so a Lead enqueued
+    // first carries no ctwa_clid and no ad id.
+    const attributionCall = vi.mocked(recordAttribution).mock.invocationCallOrder[0]
+    const enqueueCall = vi.mocked(enqueueMetaEvent).mock.invocationCallOrder[0]
+    expect(attributionCall).toBeLessThan(enqueueCall)
+
+    expect(enqueueMetaEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventName: 'Lead',
+        prospectId: PROSPECT_ID,
+        patientId: 'patient-1',
+      }),
+    )
+  })
+
   it('emits no Lead for an existing prospect', async () => {
     vi.mocked(getProspectByPhone).mockResolvedValue(existingProspect() as never)
 

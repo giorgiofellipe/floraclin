@@ -212,16 +212,6 @@ async function processInboundMessage(
       auto: true,
       ...(previousProspectId ? { previousProspectId } : {}),
     })
-    await enqueueMetaEvent({
-      tenantId,
-      eventName: 'Lead',
-      eventId: `lead:${prospect.id}`,
-      eventTime: timestamp,
-      prospectId: prospect.id,
-      patientId: prospect.convertedPatientId,
-      actionSource: 'business_messaging',
-      contact: { phone: from, fullName: profileName },
-    })
   }
 
   // Every inbound message gets exactly one attribution row, whether or not
@@ -248,6 +238,22 @@ async function processInboundMessage(
 
   // Match to existing patient by phone
   const patient = await getPatientByPhone(tenantId, from)
+
+  // Emitted here and not next to createNewProspect: enqueueMetaEvent reads the
+  // attribution row at call time, so a Lead enqueued before recordAttribution
+  // reaches Meta with no ctwa_clid and no ad id, which is the whole match.
+  if (isNewProspect) {
+    await enqueueMetaEvent({
+      tenantId,
+      eventName: 'Lead',
+      eventId: `lead:${prospect.id}`,
+      eventTime: timestamp,
+      prospectId: prospect.id,
+      patientId: patient?.id ?? null,
+      actionSource: 'business_messaging',
+      contact: { phone: from, fullName: profileName },
+    })
+  }
 
   // Upsert conversation
   const conversation = await upsertConversation(

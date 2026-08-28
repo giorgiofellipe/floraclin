@@ -235,7 +235,13 @@ export async function POST(
     if (!prospect) {
       prospect = await createNewProspect(tenant.id, { phone, name, source: 'booking_page' })
     }
-    await updateProspect(tenant.id, prospect.id, { stage: 'agendado' })
+    // That same lookup falls back to a `convertido` or `perdido` lead when the
+    // phone has no active one. Moving such a card to `agendado` would undo the
+    // conversion the Kanban, the conversion count and the marketing report all
+    // read, while convertedPatientId still says otherwise.
+    if (prospect.stage !== 'convertido' && prospect.stage !== 'perdido') {
+      await updateProspect(tenant.id, prospect.id, { stage: 'agendado' })
+    }
 
     const landingUrl = request.headers.get('referer') ?? null
     const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null

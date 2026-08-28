@@ -50,14 +50,6 @@ vi.mock('@/lib/meta/resolve-prospect', () => ({
   resolveProspectForPatient: resolveProspectForPatientMock,
 }))
 
-const { hasScheduleForProspectMock } = vi.hoisted(() => ({
-  hasScheduleForProspectMock: vi.fn(),
-}))
-
-vi.mock('../meta-events', () => ({
-  hasScheduleForProspect: hasScheduleForProspectMock,
-}))
-
 const { enqueueMetaEventMock } = vi.hoisted(() => ({
   enqueueMetaEventMock: vi.fn(),
 }))
@@ -104,7 +96,7 @@ function mockInsertedAppointment(row: Record<string, unknown>) {
 describe('createAppointment: Meta Schedule event', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    hasScheduleForProspectMock.mockResolvedValue(false)
+    enqueueMetaEventMock.mockReset()
     getPatientMock.mockResolvedValue(null)
   })
 
@@ -121,13 +113,12 @@ describe('createAppointment: Meta Schedule event', () => {
       patientId: undefined,
       phone: '5511999999999',
     })
-    expect(hasScheduleForProspectMock).toHaveBeenCalledWith(TENANT, PROSPECT)
     expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
     expect(enqueueMetaEventMock).toHaveBeenCalledWith(
       expect.objectContaining({
         tenantId: TENANT,
         eventName: 'Schedule',
-        eventId: 'schedule:appt-1',
+        eventId: `schedule:${PROSPECT}`,
         prospectId: PROSPECT,
         patientId: null,
         contact: { phone: '5511999999999', email: null, fullName: 'Jane Doe' },
@@ -142,32 +133,28 @@ describe('createAppointment: Meta Schedule event', () => {
 
     await createAppointment(TENANT, baseAppointmentData({ patientId: 'patient-1' }))
 
-    expect(hasScheduleForProspectMock).not.toHaveBeenCalled()
     expect(enqueueMetaEventMock).not.toHaveBeenCalled()
   })
 
-  it('emits nothing when the card was already dragged to agendado', async () => {
-    mockInsertedAppointment({ id: 'appt-3', source: 'internal' })
+  it('two appointments for one prospect resolve to a single Schedule', async () => {
     resolveProspectForPatientMock.mockResolvedValue({ id: PROSPECT })
-    hasScheduleForProspectMock.mockResolvedValue(true)
 
-    await createAppointment(TENANT, baseAppointmentData({ bookingPhone: '5511999999999' }))
-
-    expect(enqueueMetaEventMock).not.toHaveBeenCalled()
-  })
-
-  it('emits nothing for a second appointment for the same prospect', async () => {
-    resolveProspectForPatientMock.mockResolvedValue({ id: PROSPECT })
+    // Stands in for the unique index on (tenant_id, event_id): a repeat of an
+    // id already stored is a no-op, which is what makes the two calls below
+    // one conversion instead of two.
+    const stored = new Set<string>()
+    enqueueMetaEventMock.mockImplementation(async (input: { eventId: string }) => {
+      stored.add(input.eventId)
+    })
 
     mockInsertedAppointment({ id: 'appt-4', source: 'internal' })
-    hasScheduleForProspectMock.mockResolvedValueOnce(false)
     await createAppointment(TENANT, baseAppointmentData({ bookingPhone: '5511999999999' }))
 
     mockInsertedAppointment({ id: 'appt-5', source: 'internal' })
-    hasScheduleForProspectMock.mockResolvedValueOnce(true)
     await createAppointment(TENANT, baseAppointmentData({ bookingPhone: '5511999999999' }))
 
-    expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
+    expect(enqueueMetaEventMock).toHaveBeenCalledTimes(2)
+    expect(stored).toEqual(new Set([`schedule:${PROSPECT}`]))
   })
 
   it('still emits for a prospect found only by the patient phone, with no convertedPatientId', async () => {

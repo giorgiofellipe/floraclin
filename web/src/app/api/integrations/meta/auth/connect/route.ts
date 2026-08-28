@@ -3,6 +3,9 @@ import { requireRole } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error'
 import { signOAuthState, buildAuthUrl } from '@/lib/meta/oauth'
 import { getMetaConnectionRaw } from '@/db/queries/meta-connections'
+import { ACKNOWLEDGEMENT_VERSION } from '@/lib/meta/acknowledgement'
+
+const MAX_DATASET_ID_LENGTH = 64
 
 export async function GET(request: Request) {
   try {
@@ -10,11 +13,12 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const acknowledgementVersion = searchParams.get('acknowledgementVersion')
 
-    // Enforced here too, not only in the settings UI: the OAuth flow must
-    // carry the accepted text version through to the callback, which cannot
-    // ask the user for anything mid-redirect.
-    if (!acknowledgementVersion) {
-      return NextResponse.json({ error: 'acknowledgementVersion é obrigatório.' }, { status: 400 })
+    // Compared to the constant, not merely required: the version travels in
+    // the signed state into the callback and ends up in audit_logs as the
+    // evidence of which text the owner accepted. Any other string proves
+    // nothing.
+    if (acknowledgementVersion !== ACKNOWLEDGEMENT_VERSION) {
+      return NextResponse.json({ error: 'acknowledgementVersion inválido.' }, { status: 400 })
     }
 
     // A clinic reconnecting an existing manual connection keeps its dataset
@@ -23,7 +27,7 @@ export async function GET(request: Request) {
     const existing = datasetId ? null : await getMetaConnectionRaw(ctx.tenantId)
     const resolvedDatasetId = datasetId ?? existing?.datasetId
 
-    if (!resolvedDatasetId) {
+    if (!resolvedDatasetId || resolvedDatasetId.length > MAX_DATASET_ID_LENGTH) {
       return NextResponse.json({ error: 'datasetId é obrigatório.' }, { status: 400 })
     }
 

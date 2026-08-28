@@ -174,6 +174,23 @@ describe('POST /api/book/[slug] attribution', () => {
     expect(updateProspectMock).toHaveBeenCalledWith(TENANT_ID, 'prospect-existing', { stage: 'agendado' })
   })
 
+  it.each(['convertido', 'perdido'])(
+    'leaves a %s lead in its stage instead of dragging it to agendado',
+    async (stage) => {
+      queueSelects()
+      getProspectByPhoneMock.mockResolvedValueOnce(
+        newProspectRow({ id: 'prospect-terminal', stage, convertedPatientId: 'patient-1' }),
+      )
+
+      const res = await post(bookingBody())
+
+      expect(res.status).toBe(201)
+      expect(createNewProspectMock).not.toHaveBeenCalled()
+      expect(updateProspectMock).not.toHaveBeenCalled()
+      expect(createAppointmentMock).toHaveBeenCalled()
+    },
+  )
+
   it('stores a well-formed fbc when the booking carries an fbclid', async () => {
     queueSelects()
     getProspectByPhoneMock.mockResolvedValueOnce(null)

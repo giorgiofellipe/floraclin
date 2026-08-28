@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server'
-import { getAuthContext } from '@/lib/auth'
+import { requireRole } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error'
 import { getMetaConnectionRaw, markConnectionVerified } from '@/db/queries/meta-connections'
 import { postEvents } from '@/lib/meta/capi-client'
 
+// Owner-only like the rest of the connection routes: this fires a real
+// Conversions API call on the clinic's stored token, so it is a write as far
+// as Meta is concerned, not a read.
 export async function POST(request: Request) {
   try {
-    const ctx = await getAuthContext()
+    const ctx = await requireRole('owner')
     const connection = await getMetaConnectionRaw(ctx.tenantId)
 
     if (!connection) {

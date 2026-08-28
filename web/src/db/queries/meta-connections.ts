@@ -68,6 +68,37 @@ export async function upsertMetaConnection(
   return connection
 }
 
+export interface UpdateMetaConnectionSettingsInput {
+  advancedMatchingEnabled?: boolean
+  testEventCode?: string | null
+}
+
+/**
+ * Settings-only update: leaves the stored credentials, the connection type and
+ * the status untouched, so an OAuth clinic can change these without pasting a
+ * token it does not have.
+ */
+export async function updateMetaConnectionSettings(
+  tenantId: string,
+  data: UpdateMetaConnectionSettingsInput,
+): Promise<MetaConnection | null> {
+  const values: Partial<typeof metaConnections.$inferInsert> = { updatedAt: new Date() }
+  if (data.advancedMatchingEnabled !== undefined) {
+    values.advancedMatchingEnabled = data.advancedMatchingEnabled
+  }
+  if (data.testEventCode !== undefined) {
+    values.testEventCode = data.testEventCode
+  }
+
+  const [connection] = await db
+    .update(metaConnections)
+    .set(values)
+    .where(eq(metaConnections.tenantId, tenantId))
+    .returning()
+
+  return connection ?? null
+}
+
 export async function markConnectionInvalid(tenantId: string, message: string): Promise<void> {
   await db
     .update(metaConnections)
