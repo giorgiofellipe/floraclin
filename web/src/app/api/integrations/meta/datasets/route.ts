@@ -14,6 +14,11 @@ interface GraphDatasetsResponse {
   error?: { message?: string }
 }
 
+interface DatasetsRequestBody {
+  businessId?: string
+  accessToken?: string
+}
+
 /**
  * `/auth/connect` needs a datasetId before it can even start the OAuth
  * redirect (it goes into the signed state). This is what lets the settings
@@ -21,19 +26,22 @@ interface GraphDatasetsResponse {
  * one instead of typing a raw id blind. Pixel, not ad account, because
  * `capi-client.ts` posts to `/{datasetId}/events`, the pixel events
  * endpoint.
+ *
+ * POST rather than GET because the caller may hand us a token it has not
+ * saved yet: Vercel and Sentry both log request URLs, so it travels in the
+ * body inbound and in an Authorization header outbound.
  */
-export async function GET(request: Request) {
+export async function POST(request: Request) {
   try {
     const ctx = await requireRole('owner')
-    const { searchParams } = new URL(request.url)
-    const businessId = searchParams.get('businessId')
-    const source = searchParams.get('source') === 'ad_accounts' ? 'owned_ad_accounts' : 'adspixels'
+    const body = (await request.json().catch(() => ({}))) as DatasetsRequestBody
+    const businessId = body.businessId
 
     if (!businessId) {
       return NextResponse.json({ error: 'businessId é obrigatório.' }, { status: 400 })
     }
 
-    let accessToken = searchParams.get('accessToken')
+    let accessToken = body.accessToken ?? null
     if (!accessToken) {
       const connection = await getMetaConnectionRaw(ctx.tenantId)
       accessToken = connection?.accessToken ?? null
@@ -46,21 +54,22 @@ export async function GET(request: Request) {
       )
     }
 
-    const url = new URL(`https://graph.facebook.com/${META_GRAPH_VERSION}/${businessId}/${source}`)
-    url.searchParams.set('fields', 'id,name')
-    url.searchParams.set('access_token', accessToken)
+    const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(businessId)}/adspixels?fields=id,name`
 
-    const response = await fetch(url.toString())
-    const body = (await response.json().catch(() => ({}))) as GraphDatasetsResponse
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { authorization: `Bearer ${accessToken}` },
+    })
+    const graphBody = (await response.json().catch(() => ({}))) as GraphDatasetsResponse
 
     if (!response.ok) {
       return NextResponse.json(
-        { error: body.error?.message ?? `HTTP ${response.status}` },
+        { error: graphBody.error?.message ?? `HTTP ${response.status}` },
         { status: 400 },
       )
     }
 
-    const datasets = (body.data ?? []).map((item) => ({ id: item.id, name: item.name }))
+    const datasets = (graphBody.data ?? []).map((item) => ({ id: item.id, name: item.name }))
     return NextResponse.json({ data: datasets })
   } catch (error) {
     return handleApiError(error, request)

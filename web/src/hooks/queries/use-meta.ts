@@ -2,9 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-// Scoped locally rather than added to the shared `queryKeys` module: this
-// card is the only consumer, and other in-flight tasks own that file.
-const META_CONNECTION_KEY = ['meta', 'connection'] as const
+import { queryKeys } from './query-keys'
 
 export interface MetaConnectionSummary {
   id: string
@@ -45,7 +43,7 @@ interface MetaConnectionResponse {
 
 export function useMetaConnection() {
   return useQuery<MetaConnectionResponse>({
-    queryKey: META_CONNECTION_KEY,
+    queryKey: queryKeys.meta.connection,
     queryFn: async () => {
       const res = await fetch('/api/integrations/meta/connection')
       if (!res.ok) throw new Error('Erro ao carregar conexão')
@@ -76,7 +74,7 @@ export function useSaveMetaConnection() {
       return json.data as MetaConnectionSummary
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: META_CONNECTION_KEY })
+      queryClient.invalidateQueries({ queryKey: queryKeys.meta.connection })
     },
   })
 }
@@ -89,7 +87,7 @@ export function useDisconnectMeta() {
       if (!res.ok) throw new Error('Erro ao desconectar')
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: META_CONNECTION_KEY })
+      queryClient.invalidateQueries({ queryKey: queryKeys.meta.connection })
     },
   })
 }
@@ -117,9 +115,11 @@ export interface MetaDataset {
 export function useMetaDatasets() {
   return useMutation<MetaDataset[], Error, { businessId: string; accessToken?: string }>({
     mutationFn: async ({ businessId, accessToken }) => {
-      const search = new URLSearchParams({ businessId })
-      if (accessToken) search.set('accessToken', accessToken)
-      const res = await fetch(`/api/integrations/meta/datasets?${search.toString()}`)
+      const res = await fetch('/api/integrations/meta/datasets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ businessId, accessToken }),
+      })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json.error || 'Erro ao listar datasets')
       return (json.data ?? []) as MetaDataset[]

@@ -1,3 +1,5 @@
+import { createHmac } from 'crypto'
+
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 import {
@@ -38,11 +40,34 @@ describe('meta/oauth', () => {
       acknowledgementVersion: '2026-08-v1',
     }
 
-    it('round-trips a signed state back to the original payload', () => {
+    it('round-trips a fresh signed state back to the original payload', () => {
       const state = signOAuthState(payload)
       const result = verifyOAuthState(state)
 
-      expect(result).toEqual(payload)
+      expect(result).toMatchObject(payload)
+    })
+
+    it('rejects a state older than the 10 minute window', () => {
+      vi.useFakeTimers()
+      try {
+        vi.setSystemTime(new Date('2026-08-28T12:00:00Z'))
+        const state = signOAuthState(payload)
+
+        vi.setSystemTime(new Date('2026-08-28T12:09:00Z'))
+        expect(verifyOAuthState(state)).toMatchObject(payload)
+
+        vi.setSystemTime(new Date('2026-08-28T12:10:01Z'))
+        expect(verifyOAuthState(state)).toBeNull()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('rejects a correctly signed state that carries no issuedAt', () => {
+      const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url')
+      const signature = createHmac('sha256', ENV.META_APP_SECRET).update(encoded).digest('base64url')
+
+      expect(verifyOAuthState(`${encoded}.${signature}`)).toBeNull()
     })
 
     it('rejects a state with a tampered payload segment', () => {

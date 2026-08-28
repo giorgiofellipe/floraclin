@@ -1,15 +1,19 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import { META_GRAPH_VERSION } from './types'
 
-export { ACKNOWLEDGEMENT_VERSION, ACKNOWLEDGEMENT_TEXT } from './acknowledgement'
-
 const OAUTH_SCOPES = 'business_management,ads_management'
+
+const STATE_MAX_AGE_MS = 10 * 60 * 1000
 
 export interface MetaOAuthStatePayload {
   userId: string
   tenantId: string
   acknowledgementVersion: string
   datasetId?: string
+}
+
+interface SignedOAuthState extends MetaOAuthStatePayload {
+  issuedAt: number
 }
 
 function getConfig() {
@@ -32,7 +36,8 @@ export function buildAuthUrl(state: string): string {
 }
 
 export function signOAuthState(payload: MetaOAuthStatePayload): string {
-  const json = JSON.stringify(payload)
+  const signed: SignedOAuthState = { ...payload, issuedAt: Date.now() }
+  const json = JSON.stringify(signed)
   const encoded = Buffer.from(json).toString('base64url')
   const { appSecret } = getConfig()
   const signature = createHmac('sha256', appSecret).update(encoded).digest('base64url')
@@ -52,12 +57,19 @@ export function verifyOAuthState(state: string): MetaOAuthStatePayload | null {
   const expectedBuf = Buffer.from(expectedSig)
   if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) return null
 
+  let payload: SignedOAuthState
   try {
-    const json = Buffer.from(encoded, 'base64url').toString('utf-8')
-    return JSON.parse(json)
+    payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf-8')) as SignedOAuthState
   } catch {
     return null
   }
+
+  // A signed state stays valid until the app secret rotates unless it expires
+  // on its own, so a captured redirect cannot be replayed days later.
+  if (typeof payload.issuedAt !== 'number') return null
+  if (Date.now() - payload.issuedAt > STATE_MAX_AGE_MS) return null
+
+  return payload
 }
 
 interface MetaTokenResponse {

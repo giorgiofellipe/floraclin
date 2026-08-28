@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/auth', () => ({
   getAuthContext: vi.fn(),
@@ -56,6 +56,7 @@ import { reportSideEffectFailure } from '@/lib/observability'
 import { GET, PUT, DELETE } from '../connection/route'
 import { POST as testConnection } from '../connection/test/route'
 import { GET as callback } from '../auth/callback/route'
+import { POST as listDatasets } from '../datasets/route'
 
 function connection(overrides: Partial<MetaConnection> = {}): MetaConnection {
   return {
@@ -340,5 +341,69 @@ describe('GET /api/integrations/meta/auth/callback', () => {
     expect(res.headers.get('location')).toContain('meta=error')
     expect(reportSideEffectFailure).toHaveBeenCalled()
     expect(upsertMetaConnection).not.toHaveBeenCalled()
+  })
+})
+
+describe('POST /api/integrations/meta/datasets', () => {
+  const originalFetch = global.fetch
+
+  afterEach(() => {
+    global.fetch = originalFetch
+  })
+
+  function datasetsRequest(body: Record<string, unknown>) {
+    return new Request('http://localhost/api/integrations/meta/datasets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  }
+
+  it('sends the token in an Authorization header, never in the graph url', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
+      new Response(JSON.stringify({ data: [{ id: '111', name: 'Pixel' }] }), { status: 200 }),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const res = await listDatasets(datasetsRequest({ businessId: 'biz-1', accessToken: 'token-abc' }))
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.data).toEqual([{ id: '111', name: 'Pixel' }])
+
+    const [calledUrl, init] = fetchMock.mock.calls[0]
+    expect(calledUrl).not.toContain('token-abc')
+    expect(calledUrl).not.toContain('access_token')
+    expect((init.headers as Record<string, string>).authorization).toBe('Bearer token-abc')
+  })
+
+  it('falls back to the stored connection token when the body has none', async () => {
+    vi.mocked(getMetaConnectionRaw).mockResolvedValue(connection())
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
+      new Response(JSON.stringify({ data: [] }), { status: 200 }),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await listDatasets(datasetsRequest({ businessId: 'biz-1' }))
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect((init.headers as Record<string, string>).authorization).toBe('Bearer secret-token')
+  })
+
+  it('rejects a non-owner with 403 before calling Meta', async () => {
+    vi.mocked(requireRole).mockRejectedValue(new ForbiddenError('Forbidden: insufficient permissions'))
+    const fetchMock = vi.fn()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const res = await listDatasets(datasetsRequest({ businessId: 'biz-1', accessToken: 'token-abc' }))
+
+    expect(res.status).toBe(403)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 when businessId is missing', async () => {
+    const res = await listDatasets(datasetsRequest({}))
+
+    expect(res.status).toBe(400)
   })
 })
