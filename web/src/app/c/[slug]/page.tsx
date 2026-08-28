@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { BookingPage } from '@/components/booking/booking-page'
+import { MetaPixel } from '@/components/booking/meta-pixel'
 import type { Metadata } from 'next'
 
 interface ClinicApiResponse {
@@ -10,6 +11,7 @@ interface ClinicApiResponse {
     email: string | null
   }
   practitioners: { id: string; name: string }[]
+  metaDatasetId: string | null
 }
 
 async function getClinicData(slug: string): Promise<ClinicApiResponse | null> {
@@ -37,6 +39,9 @@ async function getClinicData(slug: string): Promise<ClinicApiResponse | null> {
   const t = tenant[0]
   const settings = (t.settings as Record<string, unknown>) ?? {}
   if (settings.online_booking_enabled !== true) return null
+
+  const { getMetaConnection } = await import('@/db/queries/meta-connections')
+  const connection = await getMetaConnection(t.id)
 
   const practitioners = await db
     .select({
@@ -67,6 +72,7 @@ async function getClinicData(slug: string): Promise<ClinicApiResponse | null> {
       id: p.id,
       name: p.fullName,
     })),
+    metaDatasetId: connection?.datasetId ?? null,
   }
 }
 
@@ -101,10 +107,13 @@ export default async function PublicBookingPage({
   }
 
   return (
-    <BookingPage
-      clinic={data.clinic}
-      practitioners={data.practitioners}
-      slug={slug}
-    />
+    <>
+      <MetaPixel datasetId={data.metaDatasetId} />
+      <BookingPage
+        clinic={data.clinic}
+        practitioners={data.practitioners}
+        slug={slug}
+      />
+    </>
   )
 }

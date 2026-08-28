@@ -4,6 +4,10 @@ import { tenants, tenantUsers, users, appointments } from '@/db/schema'
 import { eq, and, isNull, or, gte } from 'drizzle-orm'
 import { z } from 'zod'
 import { checkTimeConflict, createAppointment } from '@/db/queries/appointments'
+import { getProspectByPhone, createNewProspect, updateProspect } from '@/db/queries/prospects'
+import { recordAttribution } from '@/db/queries/lead-attributions'
+import { buildFbc } from '@/lib/meta/attribution'
+import { enqueueMetaEvent } from '@/lib/meta/events'
 import { handleApiError } from '@/lib/api-error'
 
 interface WorkingHoursDay {
@@ -113,6 +117,8 @@ const bookingSchema = z.object({
   practitionerId: z.string().uuid('Profissional inválido'),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida'),
   startTime: z.string().regex(/^\d{2}:\d{2}$/, 'Horário inválido'),
+  fbclid: z.string().optional(),
+  fbp: z.string().optional(),
 })
 
 // POST /api/book/[slug] - Create a booking
@@ -149,7 +155,7 @@ export async function POST(
       )
     }
 
-    const { name, phone, email, practitionerId, date, startTime } = parsed.data
+    const { name, phone, email, practitionerId, date, startTime, fbclid, fbp } = parsed.data
 
     // Rate limiting: check for duplicate booking from same phone in last 5 minutes
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000)
@@ -219,6 +225,44 @@ export async function POST(
         { status: 400 }
       )
     }
+
+    // Resolve or create the prospect. A phone that already has an active
+    // lead (WhatsApp or otherwise) must reuse it: prospects has a partial
+    // unique index on (tenant_id, phone) WHERE stage NOT IN ('convertido',
+    // 'perdido'), so an unconditional createNewProspect raises 23505 for
+    // the common case of a returning lead booking online.
+    let prospect = await getProspectByPhone(tenant.id, phone)
+    if (!prospect) {
+      prospect = await createNewProspect(tenant.id, { phone, name, source: 'booking_page' })
+    }
+    await updateProspect(tenant.id, prospect.id, { stage: 'agendado' })
+
+    const landingUrl = request.headers.get('referer') ?? null
+    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null
+    const userAgent = request.headers.get('user-agent') ?? null
+
+    await recordAttribution({
+      tenantId: tenant.id,
+      prospectId: prospect.id,
+      channel: 'booking_page',
+      fbclid: fbclid ?? null,
+      fbp: fbp ?? null,
+      fbc: fbclid ? buildFbc(fbclid) : null,
+      landingUrl,
+      clientIp,
+      userAgent,
+    })
+
+    await enqueueMetaEvent({
+      tenantId: tenant.id,
+      eventName: 'Lead',
+      eventId: `lead:${prospect.id}`,
+      eventTime: new Date(),
+      prospectId: prospect.id,
+      contact: { phone, fullName: name, email: email || null },
+      actionSource: 'website',
+      eventSourceUrl: landingUrl,
+    })
 
     // Create appointment
     const appointment = await createAppointment(tenant.id, {

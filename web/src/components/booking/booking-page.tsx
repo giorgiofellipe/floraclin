@@ -33,6 +33,17 @@ interface BookingPageProps {
 
 type Step = 1 | 2 | 3 | 4
 
+function readFbclid(): string | undefined {
+  if (typeof window === 'undefined') return undefined
+  return new URLSearchParams(window.location.search).get('fbclid') ?? undefined
+}
+
+function readFbp(): string | undefined {
+  if (typeof document === 'undefined') return undefined
+  const match = document.cookie.match(/(?:^|;\s*)_fbp=([^;]+)/)
+  return match ? decodeURIComponent(match[1]) : undefined
+}
+
 const STEP_LABELS = [
   'Profissional',
   'Data e Horário',
@@ -175,6 +186,8 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
           practitionerId: selectedPractitioner.id,
           date: format(selectedDate, 'yyyy-MM-dd'),
           startTime: selectedSlot,
+          fbclid: readFbclid(),
+          fbp: readFbp(),
         }),
       })
 
