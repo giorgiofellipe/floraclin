@@ -18,6 +18,13 @@ export interface EnqueueMetaEventInput {
   eventId: string
   eventTime: Date
   prospectId: string | null
+  /**
+   * The patient this event concerns, when there is one. Required for the
+   * opt-out check to see the patient's own flag: a Purchase for a walk-in
+   * has no prospect at all, and a converted lead can opt out on the patient
+   * record long after the prospect row was written.
+   */
+  patientId?: string | null
   /** Contact data for advanced matching. Hashed inside; pass raw. */
   contact: { phone?: string | null; email?: string | null; fullName?: string | null }
   actionSource: MetaActionSource
@@ -86,7 +93,10 @@ function buildUserData(
 
 export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<void> {
   try {
-    const optedOut = await isMarketingOptedOut(input.tenantId, { prospectId: input.prospectId })
+    const optedOut = await isMarketingOptedOut(input.tenantId, {
+      prospectId: input.prospectId,
+      patientId: input.patientId,
+    })
     if (optedOut) {
       await insertConversionEvent(
         {

@@ -83,6 +83,38 @@ describe('enqueueMetaEvent', () => {
     postEventsMock.mockResolvedValue({ ok: true, eventsReceived: 1, fbTraceId: 'trace-1' })
   })
 
+  it('passes patientId to the opt-out check so a walk-in Purchase can be suppressed', async () => {
+    const { enqueueMetaEvent } = await import('../events')
+    isMarketingOptedOutMock.mockResolvedValue(true)
+
+    await enqueueMetaEvent(
+      baseInput({
+        eventName: 'Purchase',
+        eventId: 'purchase:entry-1',
+        prospectId: null,
+        patientId: 'patient-1',
+        value: '3000.00',
+      }),
+    )
+
+    expect(isMarketingOptedOutMock).toHaveBeenCalledWith(TENANT, {
+      prospectId: null,
+      patientId: 'patient-1',
+    })
+    expect(postEventsMock).not.toHaveBeenCalled()
+  })
+
+  it('forwards patientId on the happy path so the patient flag is always consulted', async () => {
+    const { enqueueMetaEvent } = await import('../events')
+
+    await enqueueMetaEvent(baseInput({ patientId: 'patient-1' }))
+
+    expect(isMarketingOptedOutMock).toHaveBeenCalledWith(TENANT, {
+      prospectId: PROSPECT,
+      patientId: 'patient-1',
+    })
+  })
+
   // 1. Never throws.
   it('never throws when a dependency throws, and reports the failure', async () => {
     const { enqueueMetaEvent } = await import('../events')
