@@ -6,6 +6,10 @@ import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
 import { brToday, parseBrDate, endOfBrDay, toLocalYmd } from '@/lib/dates'
 import { addDays } from 'date-fns'
 import { verifyTenantOwnership, verifyUserBelongsToTenant } from './helpers'
+import { enqueueMetaEvent } from '@/lib/meta/events'
+import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
+import { hasScheduleForProspect } from './meta-events'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 export interface AppointmentListFilters {
   practitionerId?: string
@@ -205,7 +209,47 @@ export async function createAppointment(
     })
     .returning()
 
+  await emitScheduleEvent(tenantId, result, data)
+
   return result
+}
+
+/**
+ * `createAppointment` is the sole insert point for appointments, so this
+ * covers both the internal booking route and the public booking page with
+ * one hook. Never lets a Meta emission failure surface to the caller.
+ */
+async function emitScheduleEvent(
+  tenantId: string,
+  appointment: typeof appointments.$inferSelect,
+  data: { patientId?: string | null; bookingPhone?: string; bookingName?: string }
+) {
+  try {
+    const prospect = await resolveProspectForPatient(tenantId, {
+      patientId: data.patientId,
+      phone: data.bookingPhone,
+    })
+    if (!prospect) return
+
+    // A lead can already have a Schedule from a hand-moved CRM stage change,
+    // or from an earlier appointment for the same prospect: this is what
+    // keeps Schedule to at most one per lead across every path that can fire it.
+    const alreadyScheduled = await hasScheduleForProspect(tenantId, prospect.id)
+    if (alreadyScheduled) return
+
+    await enqueueMetaEvent({
+      tenantId,
+      eventName: 'Schedule',
+      eventId: `schedule:${appointment.id}`,
+      eventTime: new Date(),
+      prospectId: prospect.id,
+      patientId: data.patientId ?? null,
+      contact: { phone: data.bookingPhone, fullName: data.bookingName },
+      actionSource: appointment.source === 'online_booking' ? 'website' : 'system_generated',
+    })
+  } catch (error) {
+    reportSideEffectFailure(error, { area: 'meta-capi', step: 'appointment_schedule_event' })
+  }
 }
 
 export async function updateAppointment(
