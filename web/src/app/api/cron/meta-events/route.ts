@@ -12,9 +12,14 @@ import {
   markEventSkipped,
   type PendingEvent,
 } from '@/db/queries/meta-events'
-import { getMetaConnection, markConnectionInvalid } from '@/db/queries/meta-connections'
+import {
+  getMetaConnection,
+  markConnectionInvalid,
+  type MetaConnection,
+} from '@/db/queries/meta-connections'
 import { postEvents } from '@/lib/meta/capi-client'
 import { enqueueMetaEvent } from '@/lib/meta/events'
+import { backfillAdMetadata } from '@/lib/meta/ad-metadata'
 import type { MetaEventPayload } from '@/lib/meta/types'
 import { handleApiError } from '@/lib/api-error'
 import { cronMonitorConfig } from '@/lib/observability'
@@ -52,13 +57,20 @@ interface RetrySweepResult {
   failed: number
 }
 
+interface RetrySweepOutcome {
+  result: RetrySweepResult
+  // Connections already resolved this run, reused by the ad metadata
+  // backfill below instead of re-querying meta_connections per tenant.
+  connections: Map<string, MetaConnection>
+}
+
 /**
  * Claims pending outbox rows, resolves each tenant's connection once, and
  * replays them through the Conversions API in batches of up to 1000 (Meta's
  * per-request event cap). A tenant with more than 10 rows moving to `failed`
  * in this run gets one Sentry warning, tagged with the tenant id.
  */
-async function runRetrySweep(): Promise<RetrySweepResult> {
+async function runRetrySweep(): Promise<RetrySweepOutcome> {
   const claimed = await claimPendingEvents(CLAIM_LIMIT)
 
   const byTenant = new Map<string, PendingEvent[]>()
@@ -72,6 +84,7 @@ async function runRetrySweep(): Promise<RetrySweepResult> {
   let skippedNoConnection = 0
   let failed = 0
   const failedByTenant = new Map<string, number>()
+  const connections = new Map<string, MetaConnection>()
 
   for (const [tenantId, events] of byTenant) {
     const connection = await getMetaConnection(tenantId)
@@ -82,6 +95,7 @@ async function runRetrySweep(): Promise<RetrySweepResult> {
       skippedNoConnection += events.length
       continue
     }
+    connections.set(tenantId, connection)
 
     for (const batch of chunk(events, POST_BATCH_SIZE)) {
       const result = await postEvents(
@@ -124,7 +138,28 @@ async function runRetrySweep(): Promise<RetrySweepResult> {
     }
   }
 
-  return { claimed: claimed.length, sent, skippedNoConnection, failed }
+  return { result: { claimed: claimed.length, sent, skippedNoConnection, failed }, connections }
+}
+
+interface AdMetadataBackfillResult {
+  resolved: number
+}
+
+/**
+ * Enriches lead_attributions with campaign/adset ids for tenants already
+ * touched by this run's retry sweep, reusing the connection it resolved
+ * rather than a separate tenant scan. backfillAdMetadata itself skips
+ * anything that isn't an OAuth connection.
+ */
+async function runAdMetadataBackfill(
+  connections: Map<string, MetaConnection>,
+): Promise<AdMetadataBackfillResult> {
+  let resolved = 0
+  for (const [tenantId, connection] of connections) {
+    const outcome = await backfillAdMetadata(tenantId, connection)
+    resolved += outcome.resolved
+  }
+  return { resolved }
 }
 
 interface ReconciledCandidate {
@@ -302,9 +337,10 @@ export async function GET(request: Request) {
     const result = await Sentry.withMonitor(
       MONITOR_SLUG,
       async () => {
-        const retrySweep = await runRetrySweep()
+        const { result: retrySweep, connections } = await runRetrySweep()
         const reconciliation = await runReconciliation()
-        return { retrySweep, reconciliation }
+        const adMetadataBackfill = await runAdMetadataBackfill(connections)
+        return { retrySweep, reconciliation, adMetadataBackfill }
       },
       MONITOR_CONFIG,
     )
