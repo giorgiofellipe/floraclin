@@ -24,15 +24,22 @@ function renderSql(condition: unknown) {
 // below, are themselves hoisted above plain declarations), so anything a
 // factory closes over must go through `vi.hoisted` or it's a TDZ error.
 
-const { dbMock, captureMessageMock, withMonitorMock } = vi.hoisted(() => ({
+const { dbMock, captureMessageMock, captureExceptionMock, withMonitorMock, flushMock } = vi.hoisted(() => ({
   dbMock: { select: vi.fn() },
   captureMessageMock: vi.fn(),
+  captureExceptionMock: vi.fn(),
   withMonitorMock: vi.fn((_slug: string, fn: () => unknown) => fn()),
+  flushMock: vi.fn(async (_timeout?: number) => true),
 }))
 
+// The route runs under withCronMonitor, which is left real so the closing
+// flush is exercised. Standing in for withMonitor runs the body; flush stays
+// observable because a cron that never flushes reports phantom timeouts.
 vi.mock('@sentry/nextjs', () => ({
   captureMessage: (...args: unknown[]) => captureMessageMock(...args),
+  captureException: (...args: unknown[]) => captureExceptionMock(...args),
   withMonitor: (...args: unknown[]) => withMonitorMock(...(args as [string, () => unknown])),
+  flush: (timeout?: number) => flushMock(timeout),
 }))
 
 vi.mock('@/db/client', () => ({ db: dbMock }))

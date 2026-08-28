@@ -8,6 +8,7 @@ import {
 } from '@/db/queries/clinical-documents'
 import { PrintDocument } from '@/components/clinical-documents/print-document'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
+import { fetchLogoDataUri } from '@/lib/logo'
 import { uploadPdfBuffer } from '@/lib/storage'
 import { sendOrEnqueueDocument } from '@/lib/whatsapp'
 import { toWhatsAppPhone } from '@/lib/phone'
@@ -51,8 +52,12 @@ export async function POST(
     }
 
     // 1. Render PDF
+    // Inline the logo so headless Chromium makes no network request while
+    // rendering; see `fetchLogoDataUri` (`@/lib/logo`).
+    const tenant = { ...doc.tenant, logoUrl: await fetchLogoDataUri(doc.tenant.logoUrl) }
+
     const pdfBuffer = await renderReactToPdf(
-      createElement(PrintDocument, { doc, tenant: doc.tenant }),
+      createElement(PrintDocument, { doc, tenant }),
       PRINT_BASE_CSS,
     )
 

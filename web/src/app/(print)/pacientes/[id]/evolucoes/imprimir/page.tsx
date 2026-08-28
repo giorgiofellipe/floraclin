@@ -5,6 +5,7 @@ import { requireRole } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { getPatient } from '@/db/queries/patients'
 import { getPatientEvolutionFeed } from '@/db/queries/patient-evolutions'
+import { signLogoPath } from '@/lib/logo'
 import { PrintEvolucoesPageClient } from './print-evolucoes-page-client'
 
 interface PrintEvolucoesPageProps {
@@ -39,7 +40,7 @@ export default async function PrintEvolucoesPage({ params }: PrintEvolucoesPageP
           name: tenant.name,
           phone: tenant.phone,
           email: tenant.email,
-          logoUrl: tenant.logoUrl,
+          logoUrl: await signLogoPath(tenant.logoUrl),
           address: (tenant.address as Record<string, string> | null) ?? null,
         }}
         patient={{

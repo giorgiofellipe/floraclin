@@ -4,6 +4,7 @@ import { getAuthContext } from '@/lib/auth'
 import { getConsentAcceptanceWithContext } from '@/db/queries/consent'
 import { PrintConsent } from '@/components/consent/print-consent'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
+import { fetchLogoDataUri } from '@/lib/logo'
 import { handleApiError } from '@/lib/api-error'
 
 export const runtime = 'nodejs'
@@ -21,8 +22,12 @@ export async function GET(
       return new NextResponse('Not found', { status: 404 })
     }
 
+    // Inline the logo so headless Chromium makes no network request while
+    // rendering; see `fetchLogoDataUri` (`@/lib/logo`).
+    const tenantLogoUrl = await fetchLogoDataUri(acceptance.tenantLogoUrl)
+
     const pdf = await renderReactToPdf(
-      createElement(PrintConsent, { acceptance }),
+      createElement(PrintConsent, { acceptance: { ...acceptance, tenantLogoUrl } }),
       PRINT_BASE_CSS,
     )
 

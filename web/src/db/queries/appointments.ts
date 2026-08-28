@@ -277,10 +277,51 @@ export async function updateAppointment(
     notes: string
   }>
 ) {
+  const [current] = await db
+    .select({
+      date: appointments.date,
+      startTime: appointments.startTime,
+    })
+    .from(appointments)
+    .where(
+      and(
+        eq(appointments.tenantId, tenantId),
+        eq(appointments.id, appointmentId),
+        isNull(appointments.deletedAt)
+      )
+    )
+    .limit(1)
+
+  if (!current) return undefined
+
+  // Moving an appointment invalidates whatever was already sent about it.
+  //
+  // The confirmation cron only picks up rows where confirmationSentAt is
+  // null, so leaving the old stamp in place means a rescheduled appointment
+  // never gets a confirmation for its new time: the patient holds a message
+  // about a slot that no longer exists and hears nothing about the one that
+  // does.
+  //
+  // confirmationMessageId has to go with it. It names the WhatsApp message
+  // describing the OLD slot, and processConfirmationReply resolves an
+  // appointment from exactly that id. Leave it and a patient scrolling back
+  // to tap Confirmar on the stale message confirms the new time while
+  // reading the old one.
+  //
+  // Guarded on the date or the time actually changing. A caller editing
+  // notes or the practitioner must not trigger a second confirmation to the
+  // patient, and this route is also how those edits arrive.
+  const reschedules =
+    (data.date !== undefined && data.date !== current.date) ||
+    (data.startTime !== undefined && data.startTime !== current.startTime)
+
   const [result] = await db
     .update(appointments)
     .set({
       ...data,
+      ...(reschedules
+        ? { confirmationSentAt: null, confirmationMessageId: null }
+        : {}),
       updatedAt: new Date(),
     })
     .where(
@@ -475,7 +516,7 @@ export async function getAppointmentsPendingConfirmation(
         eq(appointments.status, 'scheduled'),
         isNull(appointments.confirmationSentAt),
         isNull(appointments.deletedAt),
-        sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' <= ${windowEnd}::timestamptz`,
+        sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' <= ${windowEnd.toISOString()}::timestamptz`,
         sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' > now()`,
       )
     )
@@ -509,7 +550,7 @@ export async function getAppointmentsPendingConfirmationUntil(tenantId: string) 
         isNull(appointments.confirmationSentAt),
         isNull(appointments.deletedAt),
         sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' > now()`,
-        sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' <= ${windowEnd}::timestamptz`,
+        sql`(${appointments.date} || ' ' || ${appointments.startTime})::timestamp AT TIME ZONE 'America/Sao_Paulo' <= ${windowEnd.toISOString()}::timestamptz`,
       ),
     )
 

@@ -6,6 +6,7 @@ import { getProcedure } from '@/db/queries/procedures'
 import { getPatient } from '@/db/queries/patients'
 import { getProductApplications } from '@/db/queries/product-applications'
 import { getSignatureBlock } from '@/lib/professional'
+import { signLogoPath } from '@/lib/logo'
 import { PrintProcedurePageClient } from './print-procedure-page-client'
 
 interface PrintProcedurePageProps {
@@ -42,7 +43,7 @@ export default async function PrintProcedurePage({ params }: PrintProcedurePageP
         name: tenant.name,
         phone: tenant.phone,
         email: tenant.email,
-        logoUrl: tenant.logoUrl,
+        logoUrl: await signLogoPath(tenant.logoUrl),
         address: (tenant.address as Record<string, string> | null) ?? null,
       }}
       procedure={{

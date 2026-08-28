@@ -6,6 +6,7 @@ import { createAuditLog } from '@/lib/audit'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { getTenant, updateTenant, updateTenantSettings } from '@/db/queries/tenants'
+import { signLogoPath } from '@/lib/logo'
 import { updateTenantSchema, bookingSettingsSchema } from '@/validations/tenant'
 import { whatsappSettingsSchema } from '@/validations/whatsapp'
 import { handleApiError } from '@/lib/api-error'
@@ -14,12 +15,19 @@ export async function GET(request: Request) {
   try {
     const ctx = await getAuthContext()
     const tenant = await getTenant(ctx.tenantId)
-    if (tenant?.settings) {
+    if (!tenant) return NextResponse.json(null)
+
+    // `tenants.logo_url` holds a storage path; the browser needs a URL it can
+    // actually load. This is the boundary the settings page, the consent
+    // history preview and the clinical-document preview all read through.
+    const logoUrl = await signLogoPath(tenant.logoUrl)
+
+    if (tenant.settings) {
       const settings = { ...(tenant.settings as Record<string, unknown>) }
       delete settings.whatsapp_access_token
-      return NextResponse.json({ ...tenant, settings })
+      return NextResponse.json({ ...tenant, logoUrl, settings })
     }
-    return NextResponse.json(tenant)
+    return NextResponse.json({ ...tenant, logoUrl })
   } catch (error) {
     return handleApiError(error, request)
   }

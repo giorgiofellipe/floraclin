@@ -94,6 +94,19 @@ function bucketByStage(photos: ReturnType<typeof makePhoto>[]): ProntuarioDossie
   })) as never
 }
 
+const TENANT = {
+  name: 'Clínica Teste',
+  phone: '11987654321',
+  email: 'contato@clinicateste.com.br',
+  logoUrl: null,
+  address: { street: 'Rua das Flores', number: '100', city: 'São Paulo', state: 'SP' },
+}
+
+const TENANT_WITH_LOGO = {
+  ...TENANT,
+  logoUrl: 'https://storage.example.com/tenant-1/branding/logo.png?token=abc',
+}
+
 function emptyDossier(overrides: Partial<ProntuarioDossier> = {}): ProntuarioDossier {
   return {
     patient: BASE_PATIENT,
@@ -107,8 +120,23 @@ function emptyDossier(overrides: Partial<ProntuarioDossier> = {}): ProntuarioDos
 }
 
 describe('ProntuarioPdf', () => {
+  it('renders the clinic header (name and logo) when logoUrl is present', () => {
+    render(<ProntuarioPdf tenant={TENANT_WITH_LOGO} dossier={emptyDossier()} generatedAt={new Date('2026-08-05T12:00:00Z')} />)
+
+    expect(screen.getByText('Clínica Teste')).toBeInTheDocument()
+    const logo = screen.getByRole('img', { name: 'Clínica Teste' })
+    expect(logo).toHaveAttribute('src', TENANT_WITH_LOGO.logoUrl)
+  })
+
+  it('renders the clinic name without throwing when logoUrl is null', () => {
+    render(<ProntuarioPdf tenant={TENANT} dossier={emptyDossier()} generatedAt={new Date('2026-08-05T12:00:00Z')} />)
+
+    expect(screen.getByText('Clínica Teste')).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: 'Clínica Teste' })).not.toBeInTheDocument()
+  })
+
   it('renders identification fields', () => {
-    render(<ProntuarioPdf clinicName="Clínica Teste" dossier={emptyDossier()} generatedAt={new Date('2026-08-05T12:00:00Z')} />)
+    render(<ProntuarioPdf tenant={TENANT} dossier={emptyDossier()} generatedAt={new Date('2026-08-05T12:00:00Z')} />)
 
     expect(screen.getByText('Ana Souza')).toBeInTheDocument()
     expect(screen.getByText('123.456.789-00')).toBeInTheDocument()
@@ -117,7 +145,7 @@ describe('ProntuarioPdf', () => {
   })
 
   it('renders empty-state copy for every section when the patient has no data, without throwing', () => {
-    render(<ProntuarioPdf clinicName="Clínica Teste" dossier={emptyDossier()} generatedAt={new Date()} />)
+    render(<ProntuarioPdf tenant={TENANT} dossier={emptyDossier()} generatedAt={new Date()} />)
 
     expect(screen.getByText('Anamnese não preenchida.')).toBeInTheDocument()
     expect(screen.getByText('Nenhum procedimento registrado.')).toBeInTheDocument()
@@ -153,7 +181,7 @@ describe('ProntuarioPdf', () => {
       } as never,
     })
 
-    render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+    render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
 
     expect(screen.getByText('Rugas de expressão')).toBeInTheDocument()
     expect(screen.getByText('Rejuvenescimento')).toBeInTheDocument()
@@ -217,7 +245,7 @@ describe('ProntuarioPdf', () => {
       ],
     })
 
-    render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+    render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
 
     expect(screen.getAllByText('Toxina botulínica').length).toBeGreaterThan(0)
     // "Botox" appears twice: the product-applications table and the face
@@ -287,7 +315,7 @@ describe('ProntuarioPdf', () => {
         },
       ] as never)
 
-      render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+      render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
 
       // The template image itself, positioned via the face-templates asset.
       const images = screen.getAllByRole('img')
@@ -304,7 +332,7 @@ describe('ProntuarioPdf', () => {
     it('renders an empty state for a procedure with no face diagram', () => {
       const dossier = dossierWithDiagram([])
 
-      render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+      render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
 
       expect(
         screen.getByText('Nenhum diagrama facial registrado para este procedimento.'),
@@ -317,7 +345,7 @@ describe('ProntuarioPdf', () => {
         { id: 'diag-1', viewType: 'front', points: [] },
       ] as never)
 
-      render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+      render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
 
       expect(screen.getByText('Nenhum ponto marcado neste diagrama.')).toBeInTheDocument()
       expect(screen.queryAllByRole('img')).toHaveLength(0)
@@ -345,7 +373,7 @@ describe('ProntuarioPdf', () => {
       ] as never,
     })
 
-    render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+    render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
 
     expect(screen.getByText('Termo de consentimento - Botox')).toBeInTheDocument()
     expect(screen.getByText('FLC-ABC123')).toBeInTheDocument()
@@ -354,7 +382,7 @@ describe('ProntuarioPdf', () => {
   it('shows a truncation notice when the procedure list was capped', () => {
     const dossier = emptyDossier({ proceduresTruncated: true })
 
-    render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+    render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
 
     expect(screen.getByText(/mais procedimentos do que os listados/)).toBeInTheDocument()
   })
@@ -380,7 +408,7 @@ describe('ProntuarioPdf', () => {
       ] as never,
     })
 
-    render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+    render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
 
     expect(screen.getByText('Toxina Botulínica')).toBeInTheDocument()
     expect(screen.getByText('Assinatura')).toBeInTheDocument()
@@ -409,7 +437,7 @@ describe('ProntuarioPdf', () => {
       ] as never,
     })
 
-    render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+    render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
 
     expect(screen.getByText('tipo_novo')).toBeInTheDocument()
     expect(screen.getByText('carta_registrada')).toBeInTheDocument()
@@ -418,7 +446,7 @@ describe('ProntuarioPdf', () => {
   it('embeds every photo across multiple stages, not just one per stage', () => {
     const dossier = emptyDossier({ photos: photosWithCounts({ pre: 8, '30d': 3 }) })
 
-    render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+    render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
 
     expect(screen.getAllByRole('img')).toHaveLength(11)
     // No procedure on any of these photos, so everything lands in the
@@ -429,7 +457,7 @@ describe('ProntuarioPdf', () => {
   it('does not show an omission note when the photo count is under the per-procedure cap', () => {
     const dossier = emptyDossier({ photos: photosWithCounts({ pre: 3, '30d': 2 }) })
 
-    render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+    render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
 
     expect(screen.queryByText(/não exibida/)).not.toBeInTheDocument()
   })
@@ -456,7 +484,7 @@ describe('ProntuarioPdf', () => {
         ]),
       })
 
-      render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+      render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
 
       const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)
       const botoxIndex = headings.findIndex((t) => t?.startsWith('Botox'))
@@ -474,7 +502,7 @@ describe('ProntuarioPdf', () => {
         ]),
       })
 
-      render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+      render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
 
       // Each procedure gets its own "(1 foto(s))" group, not a shared "Pré" heading.
       expect(screen.getByText(/Botox.*\(1 foto\(s\)\)/)).toBeInTheDocument()
@@ -491,7 +519,7 @@ describe('ProntuarioPdf', () => {
         ]),
       })
 
-      render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+      render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
 
       const images = screen.getAllByRole('img')
       expect(images.map((img) => img.getAttribute('alt'))).toEqual(['Pré', '7 Dias', '90 Dias'])
@@ -505,7 +533,7 @@ describe('ProntuarioPdf', () => {
         ]),
       })
 
-      render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+      render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
 
       const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent ?? '')
       const botoxIndex = headings.findIndex((t) => t.startsWith('Botox'))
@@ -539,7 +567,7 @@ describe('ProntuarioPdf', () => {
         photos: bucketByStage([...busyProcedurePhotos, ...otherProcedurePhotos]),
       })
 
-      render(<ProntuarioPdf clinicName="Clínica Teste" dossier={dossier} generatedAt={new Date()} />)
+      render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
 
       // 12 from the busy procedure (capped) + all 3 from the quiet one:
       // the quiet procedure is not starved by the busy one's overflow.

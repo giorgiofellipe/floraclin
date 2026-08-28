@@ -17,7 +17,6 @@ interface ClinicInfo {
   name: string
   logoUrl: string | null
   phone: string | null
-  email: string | null
 }
 
 interface Slot {
@@ -51,16 +50,39 @@ const STEP_LABELS = [
   'Confirmação',
 ]
 
-function Logo({ clinicName }: { clinicName: string }) {
+function ClinicBrand({ clinic }: { clinic: ClinicInfo }) {
+  const [logoFailed, setLogoFailed] = useState(false)
+
+  if (!clinic.logoUrl || logoFailed) {
+    // No logo on file (or the logo URL failed to load, e.g. an expired
+    // signed URL): the clinic name takes the hero spot, in the display
+    // font, so the page never looks broken or empty.
+    return (
+      <div className="text-center" data-testid="clinic-name-fallback">
+        <div className="font-display text-3xl sm:text-4xl font-semibold text-forest tracking-tight">
+          {clinic.name}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="text-center">
-      <div className="font-display text-3xl sm:text-4xl tracking-tight">
-        <span className="text-forest font-semibold">Flora</span>
-        <span className="text-mint font-medium">Clin</span>
-      </div>
+      {/* logoUrl is a Supabase Storage signed URL (sometimes SVG); next/image's
+          loader doesn't fit that, so this matches the plain <img> convention
+          used by ClinicHeader for the same field. Height is capped so an
+          oversized logo can't blow out the layout on mobile. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={clinic.logoUrl}
+        alt={clinic.name}
+        data-testid="clinic-logo"
+        onError={() => setLogoFailed(true)}
+        className="mx-auto h-16 sm:h-20 w-auto max-w-[220px] object-contain"
+      />
       <div className="mt-1.5 flex items-center justify-center gap-2">
         <div className="h-px w-8 bg-blush" />
-        <p className="text-mid text-sm font-medium">{clinicName}</p>
+        <p className="text-mid text-sm font-medium">{clinic.name}</p>
         <div className="h-px w-8 bg-blush" />
       </div>
     </div>
@@ -228,7 +250,7 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
       <div className="max-w-lg mx-auto px-4 py-8 sm:py-12">
         {/* Header */}
         <div className="mb-10">
-          <Logo clinicName={clinic.name} />
+          <ClinicBrand clinic={clinic} />
         </div>
 
         {/* Stepper */}
@@ -583,12 +605,8 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
 
         {/* Footer */}
         <div className="mt-10 text-center">
-          <p className="text-[11px] text-gold">
-            Powered by{' '}
-            <span className="font-display text-sm">
-              <span className="text-gold">Flora</span>
-              <span className="text-gold/70">Clin</span>
-            </span>
+          <p className="text-[11px] text-mid/70" data-testid="booking-powered-by">
+            Agendamento por FloraClin
           </p>
         </div>
       </div>

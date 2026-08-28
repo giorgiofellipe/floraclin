@@ -15,11 +15,11 @@ import { getMetaConnection, type MetaConnection } from '@/db/queries/meta-connec
 import { enqueueMetaEvent, sendPendingEvent } from '@/lib/meta/events'
 import { backfillAdMetadata } from '@/lib/meta/ad-metadata'
 import { handleApiError } from '@/lib/api-error'
-import { cronMonitorConfig } from '@/lib/observability'
+import { withCronMonitor } from '@/lib/cron-monitor'
 
-// Schedule mirrors `vercel.json`; see cronMonitorConfig for the rest.
+// Schedule mirrors `vercel.json`; see withCronMonitor for the rest.
 const MONITOR_SLUG = 'meta-events'
-const MONITOR_CONFIG = cronMonitorConfig('*/5 * * * *')
+const MONITOR_SCHEDULE = '*/5 * * * *'
 
 const CLAIM_LIMIT = 500
 const RECONCILE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
@@ -385,15 +385,15 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await Sentry.withMonitor(
+    const result = await withCronMonitor(
       MONITOR_SLUG,
+      MONITOR_SCHEDULE,
       async () => {
         const retrySweep = await runRetrySweep()
         const reconciliation = await runReconciliation()
         const adMetadataBackfill = await runAdMetadataBackfill()
         return { retrySweep, reconciliation, adMetadataBackfill }
       },
-      MONITOR_CONFIG,
     )
 
     return NextResponse.json({ ok: true, ...result })

@@ -25,24 +25,6 @@ export function reportSideEffectFailure(
   })
 }
 
-/**
- * Sentry cron monitor config for a Vercel cron.
- *
- * `schedule` must mirror the entry in `web/vercel.json`, and the timezone is
- * `Etc/UTC` because Vercel evaluates cron expressions in UTC: tell Sentry
- * anything else and it reports every run as late. `checkinMargin` and
- * `maxRuntime` are minutes, so a run has an hour of slack before it counts as
- * missed and ten minutes before it counts as hung.
- */
-export function cronMonitorConfig(schedule: string) {
-  return {
-    schedule: { type: 'crontab', value: schedule },
-    timezone: 'Etc/UTC',
-    checkinMargin: 60,
-    maxRuntime: 10,
-  } as const
-}
-
 // Path segments that identify a row (or, worse, authorize one) must never
 // reach Sentry. `/api/anamnesis/token/<token>` carries a live access token in
 // the URL and `/api/patients/<uuid>` a health-linked identifier; neither is

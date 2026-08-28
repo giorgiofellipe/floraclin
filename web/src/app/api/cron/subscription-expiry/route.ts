@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server'
-import * as Sentry from '@sentry/nextjs'
 import { getExpiredTrials, updateSubscriptionStatus } from '@/db/queries/subscriptions'
 import { handleApiError } from '@/lib/api-error'
-import { cronMonitorConfig } from '@/lib/observability'
+import { withCronMonitor } from '@/lib/cron-monitor'
 
-// Schedule mirrors `vercel.json`; see cronMonitorConfig for the rest.
+// Schedule mirrors `vercel.json`; see withCronMonitor for the rest.
 const MONITOR_SLUG = 'subscription-expiry'
-const MONITOR_CONFIG = cronMonitorConfig('0 3 * * *')
+const MONITOR_SCHEDULE = '0 3 * * *'
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -20,8 +19,9 @@ export async function GET(request: Request) {
     // A cron that stops being invoked is invisible: nothing throws, nothing
     // logs, trials just quietly stay active forever. The check-in makes the
     // absence itself the alert.
-    const expired = await Sentry.withMonitor(
+    const expired = await withCronMonitor(
       MONITOR_SLUG,
+      MONITOR_SCHEDULE,
       async () => {
         const expiredTrials = await getExpiredTrials()
 
@@ -31,7 +31,6 @@ export async function GET(request: Request) {
 
         return expiredTrials.length
       },
-      MONITOR_CONFIG,
     )
 
     return NextResponse.json({ ok: true, expired })
