@@ -7,6 +7,8 @@
  * network or database access occurs.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import fs from 'node:fs'
+import path from 'node:path'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import type { SQL } from 'drizzle-orm'
 
@@ -100,7 +102,7 @@ import {
 import { getMetaConnection, type MetaConnection } from '@/db/queries/meta-connections'
 import { enqueueMetaEvent, sendPendingEvent } from '@/lib/meta/events'
 import { backfillAdMetadata } from '@/lib/meta/ad-metadata'
-import { GET, computeReconciliationWindowStart } from '../route'
+import { GET, MONITOR_SCHEDULE, computeReconciliationWindowStart } from '../route'
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
@@ -587,6 +589,28 @@ describe('GET /api/cron/meta-events', () => {
 
       expect(computeReconciliationWindowStart('2026-08-27', now)).toBeNull()
       expect(computeReconciliationWindowStart('2026-08-27T00:00:00', now)).toBeNull()
+    })
+  })
+
+  // Sentry reports every run as late when the monitor and the real schedule
+  // disagree, and the Hobby plan rejects anything finer than daily.
+  describe('monitor schedule', () => {
+    const vercelConfig = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, '../../../../../../vercel.json'), 'utf8'),
+    ) as { crons: Array<{ path: string; schedule: string }> }
+
+    it('matches the schedule vercel.json declares for this cron', () => {
+      const cron = vercelConfig.crons.find((c) => c.path === '/api/cron/meta-events')
+
+      expect(cron).toBeDefined()
+      expect(MONITOR_SCHEDULE).toBe(cron?.schedule)
+    })
+
+    it('runs at most once a day, and not at the same hour as another cron', () => {
+      expect(MONITOR_SCHEDULE).toMatch(/^\d+ \d+ \* \* \*$/)
+
+      const hours = vercelConfig.crons.map((c) => c.schedule)
+      expect(new Set(hours).size).toBe(hours.length)
     })
   })
 })

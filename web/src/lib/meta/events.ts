@@ -459,8 +459,10 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
     // Purchase and it must insert once.
     if (!inserted) return
 
-    // Held inside the caller's transaction: the cron delivers this row
-    // within 5 minutes instead of holding an HTTP call under a row lock.
+    // Inside the caller's transaction the row is written but never sent: an
+    // HTTP call here would hold recordPayment's row lock across a network
+    // round trip. The caller sends it after commit, and the daily cron is the
+    // net for anything that send misses.
     if (input.tx) return
 
     await sendPendingEvent({

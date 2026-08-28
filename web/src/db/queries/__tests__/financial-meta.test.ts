@@ -27,9 +27,11 @@ vi.mock('@/db/client', () => ({ db: dbMock }))
 
 const enqueueMetaEventMock = vi.fn()
 const resolveMetaEventPrerequisitesMock = vi.fn()
+const sendPendingEventMock = vi.fn()
 vi.mock('@/lib/meta/events', () => ({
   enqueueMetaEvent: (...args: unknown[]) => enqueueMetaEventMock(...args),
   resolveMetaEventPrerequisites: (...args: unknown[]) => resolveMetaEventPrerequisitesMock(...args),
+  sendPendingEvent: (...args: unknown[]) => sendPendingEventMock(...args),
 }))
 
 const resolveProspectForPatientMock = vi.fn()
@@ -133,10 +135,27 @@ function queuePrepareRows(
   dbMock.select.mockReturnValueOnce(chain(rows))
 }
 
+/** The outbox row emitPurchaseEventForEntry re-reads after the enqueue. */
+function queuedPurchaseRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'outbox-1',
+    prospectId: null,
+    patientId: PATIENT_ID,
+    eventId: `purchase:${ENTRY_ID}`,
+    eventTime: new Date('2026-01-01T12:00:00.000Z'),
+    value: '600.00',
+    payload: null,
+    status: 'pending',
+    ...overrides,
+  }
+}
+
 /**
- * Queues the two selects emitPurchaseEventForEntry issues after
- * updateEntryStatus: the entry status/totalAmount recheck and the
- * renegotiation-link check.
+ * Queues the selects emitPurchaseEventForEntry issues after
+ * updateEntryStatus: the entry status/totalAmount recheck, the
+ * renegotiation-link check, and the outbox re-read that decides what the
+ * caller sends once the transaction commits. `queued: null` stands for an
+ * outbox row that is not there at all.
  */
 function queueGateSelects(
   tx: ReturnType<typeof makeTx>,
@@ -144,6 +163,7 @@ function queueGateSelects(
     entryStatus: string
     totalAmount?: string
     renegotiated?: boolean
+    queued?: Record<string, unknown> | null
   },
 ) {
   tx.select.mockReturnValueOnce(
@@ -152,6 +172,22 @@ function queueGateSelects(
   if (opts.entryStatus !== 'paid' && opts.entryStatus !== 'partial') return
 
   tx.select.mockReturnValueOnce(chain(opts.renegotiated ? [{ id: 'link-1' }] : []))
+  if (opts.renegotiated) return
+
+  const queued = opts.queued === undefined ? queuedPurchaseRow() : opts.queued
+  tx.select.mockReturnValueOnce(chain(queued ? [queued] : []))
+}
+
+/**
+ * Stands in for `withTransaction` and fires `onCommit` once the callback has
+ * resolved, so a test can prove a send happened outside the transaction.
+ */
+function transactionCommittingWith(tx: ReturnType<typeof makeTx>, onCommit: () => void) {
+  return async (cb: (tx: unknown) => unknown) => {
+    const out = await cb(tx)
+    onCommit()
+    return out
+  }
 }
 
 /** Walks a drizzle SQL fragment looking for a bound parameter value. */
@@ -239,10 +275,13 @@ describe('financial.ts meta conversions', () => {
       expect(eventIds).toEqual([`purchase:${ENTRY_ID}`, `purchase:${ENTRY_ID}`])
     })
 
-    it('never calls postEvents from inside the payment transaction: enqueueMetaEvent always receives the tx handle', async () => {
+    // The enqueue holds the caller's tx and deliberately posts nothing, so the
+    // send has to happen out here or the daily cron becomes the only delivery.
+    it('sends the Purchase after the transaction commits, never inside it', async () => {
       const { recordPayment } = await import('../financial')
       const tx = makeTx()
-      dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+      const commit = vi.fn()
+      dbMock.transaction.mockImplementationOnce(transactionCommittingWith(tx, commit))
       queuePrepareRows()
 
       tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
@@ -262,8 +301,92 @@ describe('financial.ts meta conversions', () => {
       await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 600, paymentMethod: 'pix' } as never)
 
       expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
-      const call = enqueueMetaEventMock.mock.calls[0][0] as Record<string, unknown>
-      expect(call.tx).toBe(tx)
+      expect((enqueueMetaEventMock.mock.calls[0][0] as Record<string, unknown>).tx).toBe(tx)
+
+      expect(sendPendingEventMock).toHaveBeenCalledTimes(1)
+      expect(enqueueMetaEventMock.mock.invocationCallOrder[0]).toBeLessThan(
+        commit.mock.invocationCallOrder[0],
+      )
+      expect(commit.mock.invocationCallOrder[0]).toBeLessThan(
+        sendPendingEventMock.mock.invocationCallOrder[0],
+      )
+
+      expect(sendPendingEventMock).toHaveBeenCalledWith({
+        id: 'outbox-1',
+        tenantId: TENANT,
+        prospectId: null,
+        patientId: PATIENT_ID,
+        eventName: 'Purchase',
+        eventId: `purchase:${ENTRY_ID}`,
+        eventTime: new Date('2026-01-01T12:00:00.000Z'),
+        value: '600.00',
+        payload: null,
+      })
+    })
+
+    it('a failing post-commit send neither fails the payment nor touches the row, which stays pending for the cron', async () => {
+      const { recordPayment } = await import('../financial')
+      const tx = makeTx()
+      dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+      queuePrepareRows()
+
+      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
+      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([]))
+      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
+      tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
+      queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
+
+      tx.insert.mockReturnValueOnce(chain([{ id: 'pay-1' }]))
+      tx.insert.mockReturnValueOnce(chain(undefined))
+      tx.update.mockReturnValueOnce(chain(undefined))
+      tx.update.mockReturnValueOnce(chain(undefined))
+
+      sendPendingEventMock.mockRejectedValueOnce(new Error('graph.facebook.com unreachable'))
+
+      const result = await recordPayment(TENANT, USER_ID, {
+        installmentId: INSTALLMENT_ID,
+        amount: 600,
+        paymentMethod: 'pix',
+      } as never)
+
+      expect(result.installmentPaid).toBe(true)
+      expect(result.paymentRecord).toEqual({ id: 'pay-1' })
+      expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1)
+      expect(reportSideEffectFailureMock.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ area: 'meta-capi', step: 'purchase_event_send' }),
+      )
+      // Only sendPendingEvent moves an outbox row off `pending`, and it threw:
+      // the two updates here are the installment and its parent entry.
+      expect(tx.update).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not resend a Purchase an earlier installment already delivered', async () => {
+      const { recordPayment } = await import('../financial')
+      const tx = makeTx()
+      dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+      queuePrepareRows()
+
+      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
+      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([]))
+      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
+      tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
+      queueGateSelects(tx, {
+        entryStatus: 'paid',
+        totalAmount: '600.00',
+        queued: queuedPurchaseRow({ status: 'sent' }),
+      })
+
+      tx.insert.mockReturnValueOnce(chain([{ id: 'pay-1' }]))
+      tx.insert.mockReturnValueOnce(chain(undefined))
+      tx.update.mockReturnValueOnce(chain(undefined))
+      tx.update.mockReturnValueOnce(chain(undefined))
+
+      await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 600, paymentMethod: 'pix' } as never)
+
+      expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
+      expect(sendPendingEventMock).not.toHaveBeenCalled()
     })
 
     it('a payment for a patient with no originating prospect still emits, with prospectId null', async () => {
@@ -696,6 +819,66 @@ describe('financial.ts meta conversions', () => {
       expect(calls.map((c) => c.contact)).toEqual([CONTACT_A, CONTACT_B])
       expect(calls.every((c) => c.tx === tx)).toBe(true)
     })
+
+    it('sends both Purchase events after the single transaction commits', async () => {
+      const { bulkPayInstallments } = await import('../financial')
+      const tx = makeTx()
+      const commit = vi.fn()
+      dbMock.transaction.mockImplementationOnce(transactionCommittingWith(tx, commit))
+
+      const INSTALLMENT_A = 'installment-a'
+      const INSTALLMENT_B = 'installment-b'
+      const ENTRY_A = 'entry-a'
+      const ENTRY_B = 'entry-b'
+
+      queuePrepareRows([
+        { financialEntryId: ENTRY_A, patientId: 'patient-a', ...patientContactRow },
+        { financialEntryId: ENTRY_B, patientId: 'patient-b', ...patientContactRow },
+      ])
+
+      tx.execute.mockResolvedValueOnce([{ id: INSTALLMENT_A }, { id: INSTALLMENT_B }])
+      tx.select.mockReturnValueOnce(chain([financialSettingsRow])) // getGracePeriodDays
+
+      for (const [installmentId, entryId, outboxId] of [
+        [INSTALLMENT_A, ENTRY_A, 'outbox-a'],
+        [INSTALLMENT_B, ENTRY_B, 'outbox-b'],
+      ]) {
+        tx.select.mockReturnValueOnce(
+          chain([typedInstallmentRow({ id: installmentId, financialEntryId: entryId })]),
+        )
+        tx.select.mockReturnValueOnce(chain([{ patientId: 'patient-a', description: 'x' }]))
+        tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
+        queueGateSelects(tx, {
+          entryStatus: 'paid',
+          totalAmount: '600.00',
+          queued: queuedPurchaseRow({ id: outboxId, eventId: `purchase:${entryId}` }),
+        })
+
+        tx.insert.mockReturnValueOnce(chain([{ id: `pay-${installmentId}` }]))
+        tx.insert.mockReturnValueOnce(chain(undefined))
+        tx.update.mockReturnValueOnce(chain(undefined))
+        tx.update.mockReturnValueOnce(chain(undefined))
+      }
+
+      const results = await bulkPayInstallments(TENANT, USER_ID, {
+        installmentIds: [INSTALLMENT_A, INSTALLMENT_B],
+        paymentMethod: 'pix',
+      })
+
+      expect(results).toHaveLength(2)
+      expect(dbMock.transaction).toHaveBeenCalledTimes(1)
+      expect(sendPendingEventMock).toHaveBeenCalledTimes(2)
+      expect(
+        sendPendingEventMock.mock.calls.map((c) => (c[0] as Record<string, unknown>).id),
+      ).toEqual(['outbox-a', 'outbox-b'])
+      expect(
+        sendPendingEventMock.mock.calls.map((c) => (c[0] as Record<string, unknown>).eventId),
+      ).toEqual([`purchase:${ENTRY_A}`, `purchase:${ENTRY_B}`])
+
+      for (const order of sendPendingEventMock.mock.invocationCallOrder) {
+        expect(commit.mock.invocationCallOrder[0]).toBeLessThan(order)
+      }
+    })
   })
 
   // ─── Tenant scoping: this repo has no RLS ───────────────────────────
@@ -738,6 +921,7 @@ describe('financial.ts meta conversions', () => {
         recordingChain([{ status: 'paid', totalAmount: '600.00' }]),
       )
       tx.select.mockReturnValueOnce(recordingChain([]))
+      tx.select.mockReturnValueOnce(recordingChain([queuedPurchaseRow()]))
 
       tx.insert.mockReturnValueOnce(chain([{ id: 'pay-1' }]))
       tx.insert.mockReturnValueOnce(chain(undefined))
@@ -746,11 +930,13 @@ describe('financial.ts meta conversions', () => {
 
       await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 600, paymentMethod: 'pix' } as never)
 
-      // Four scoped predicates: the prepare join (installments, entries,
-      // patients) and both gate selects inside the transaction.
-      expect(whereArgs.length).toBeGreaterThanOrEqual(4)
-      expect(whereArgs.filter((arg) => carriesValue(arg, TENANT)).length).toBeGreaterThanOrEqual(4)
+      // Five scoped predicates: the prepare join (installments, entries,
+      // patients), both gate selects inside the transaction, and the outbox
+      // re-read that decides what is sent after the commit.
+      expect(whereArgs.length).toBeGreaterThanOrEqual(5)
+      expect(whereArgs.filter((arg) => carriesValue(arg, TENANT)).length).toBeGreaterThanOrEqual(5)
       expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
+      expect(sendPendingEventMock).toHaveBeenCalledTimes(1)
     })
   })
 })

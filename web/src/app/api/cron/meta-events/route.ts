@@ -19,7 +19,7 @@ import { withCronMonitor } from '@/lib/cron-monitor'
 
 // Schedule mirrors `vercel.json`; see withCronMonitor for the rest.
 const MONITOR_SLUG = 'meta-events'
-const MONITOR_SCHEDULE = '*/5 * * * *'
+export const MONITOR_SCHEDULE = '0 4 * * *'
 
 const CLAIM_LIMIT = 500
 const RECONCILE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
@@ -29,6 +29,7 @@ const TENANT_FAILURE_ALERT_THRESHOLD = 10
 
 // Meta rejects events whose event_time is more than 7 days old, so a row
 // that waited this long for a working connection can never be delivered.
+// The sweep runs daily, so a parked row gets about six attempts inside it.
 const NO_CONNECTION_GRACE_MS = 7 * 24 * 60 * 60 * 1000
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -47,9 +48,10 @@ interface RetrySweepResult {
 
 /**
  * A tenant with no usable connection keeps its rows `pending`: a disabled
- * connection, a revoked token and a re-paste are all minutes apart, and a
- * terminal status here loses events the clinic never agreed to lose. Rows
- * are only given up once they age past what Meta still accepts.
+ * connection or a revoked token is fixed by a clinic on its own schedule,
+ * over hours or days, and a terminal status here loses events the clinic
+ * never agreed to lose before that fix lands. Rows are only given up once
+ * they age past what Meta still accepts.
  */
 async function deferOrExpire(
   tenantId: string,
@@ -335,8 +337,9 @@ export function computeReconciliationWindowStart(startAtRaw: string, now: Date):
  * entirely off `prospect_activities`, never the prospect's current stage: a
  * lead that went straight `novo` -> `agendado` never had a Contact, and
  * reconciling from current stage would invent one. `Purchase` is not
- * reconciled here; its outbox insert is already atomic with the payment
- * transaction.
+ * reconciled here: its outbox insert is atomic with the payment transaction,
+ * and the payment itself sends the row once that transaction commits, so only
+ * a failed send leaves one for the retry sweep above.
  */
 async function runReconciliation(): Promise<ReconciliationResult> {
   const startAtRaw = process.env.META_EVENTS_START_AT
