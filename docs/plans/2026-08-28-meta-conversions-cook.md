@@ -57,7 +57,7 @@ Every task's requirements implicitly include this section.
 | `web/src/db/queries/financial.ts` | 343, 702 | emit `Purchase` inside the existing transaction |
 | `web/src/app/api/book/[slug]/route.ts` | 224 | create the missing prospect, write attribution |
 | `web/src/app/c/[slug]/page.tsx` | - | render the tenant Pixel |
-| `web/src/components/settings/settings-page-client.tsx` | 116-176, 441 | new Integrações tab |
+| `web/src/app/(platform)/configuracoes/settings-page-client.tsx` | 116-176, 441 | new Integrações tab |
 | `web/src/lib/reports/registry.ts` | - | register the marketing report |
 | `web/vercel.json` | crons | add `/api/cron/meta-events` |
 
@@ -68,8 +68,8 @@ Group A (3 parallel)  foundation, no interdependencies
 Group B (3 parallel)  db queries, depend on A1 schema
 Group C (1)           events.ts keystone, depends on A + B
 Group D (6 parallel)  emission hook-ups and capture, depend on C
-Group E (3 parallel)  cron, connection API, connection UI, depend on C
-Group F (3 parallel)  report, card attribution, LGPD surfaces, depend on D
+Group E (2 parallel)  retry cron and connection API, depend on C
+Group F (5 parallel)  report, card, LGPD, ad backfill, settings UI; depend on D and E
 ```
 
 **File ownership is exclusive within a group.** No two tasks in the same group touch the same file. Verified: see the ownership table at the end of this plan.
@@ -128,7 +128,9 @@ export const metaConversionEvents = floraclinSchema.table('meta_conversion_event
   eventTime: timestamp('event_time', { withTimezone: true }).notNull(),
   value: decimal('value', { precision: 10, scale: 2 }),
   currency: varchar('currency', { length: 3 }).notNull().default('BRL'),
-  payload: jsonb('payload').notNull(),
+  // Nullable on purpose: a `skipped` row is written before any payload is
+  // built, and that row is the evidence an opt-out was honoured.
+  payload: jsonb('payload'),
   status: varchar('status', { length: 10 }).notNull().default('pending'),
   skipReason: varchar('skip_reason', { length: 40 }),
   attempts: integer('attempts').notNull().default(0),
@@ -154,6 +156,7 @@ export const metaConnections = floraclinSchema.table('meta_connections', {
   advancedMatchingEnabled: boolean('advanced_matching_enabled').notNull().default(true),
   status: varchar('status', { length: 20 }).notNull().default('active'),
   acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
+  acknowledgementVersion: varchar('acknowledgement_version', { length: 20 }),
   acknowledgedBy: uuid('acknowledged_by').references(() => users.id),
   lastVerifiedAt: timestamp('last_verified_at', { withTimezone: true }),
   lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
@@ -199,7 +202,7 @@ CREATE TABLE IF NOT EXISTS "floraclin"."lead_attributions" (
 );
 --> statement-breakpoint
 ```
-Continue with `meta_conversion_events` and `meta_connections` in the same style, then the FK constraints, then:
+Continue with `meta_conversion_events` (note `payload` is nullable) and `meta_connections` in the same style, then the FK constraints, then:
 ```sql
 ALTER TABLE "floraclin"."patients" ADD COLUMN IF NOT EXISTS "marketing_opt_out" boolean DEFAULT false NOT NULL;
 --> statement-breakpoint
@@ -406,7 +409,8 @@ git commit -m "feat(meta): advanced matching field hashing"
 ```ts
 export const META_GRAPH_VERSION = 'v21.0'
 
-export type MetaEventName = 'Lead' | 'Contact' | 'Schedule' | 'Purchase'
+/** PageView exists only for the "Testar conexão" probe and is never written to the outbox. */
+export type MetaEventName = 'Lead' | 'Contact' | 'Schedule' | 'Purchase' | 'PageView'
 
 export type MetaActionSource = 'business_messaging' | 'website' | 'system_generated'
 
@@ -564,6 +568,16 @@ describe('postEvents', () => {
     expect(result).toEqual(expect.objectContaining({ ok: false, kind: 'transient' }))
   })
 
+  it('classifies a timeout as transient', async () => {
+    global.fetch = vi.fn(async () => {
+      throw new DOMException('The operation was aborted.', 'TimeoutError')
+    }) as unknown as typeof fetch
+
+    const result = await postEvents(target, [makeEvent()])
+
+    expect(result).toEqual(expect.objectContaining({ ok: false, kind: 'transient' }))
+  })
+
   it('classifies a thrown network error as transient', async () => {
     global.fetch = vi.fn(async () => {
       throw new Error('network down')
@@ -615,6 +629,8 @@ export async function postEvents(
   try {
     response = await fetch(url, {
       method: 'POST',
+      // Without this a hung Meta socket hangs whatever awaited the event.
+      signal: AbortSignal.timeout(10_000),
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         data: events,
@@ -686,6 +702,7 @@ All three tasks depend only on the schema from A1. They own separate files and m
   - `getMetaConnectionRaw(tenantId: string): Promise<MetaConnection | null>`
   - `upsertMetaConnection(tenantId, data: UpsertMetaConnectionInput): Promise<MetaConnection>`
   - `markConnectionInvalid(tenantId: string, message: string): Promise<void>`
+  - `recordAcknowledgement(tenantId: string, userId: string, version: string): Promise<void>`
   - `markConnectionVerified(tenantId: string): Promise<void>`
   - `deleteMetaConnection(tenantId: string): Promise<void>`
   - `acknowledgeMetaConnection(tenantId: string, userId: string): Promise<void>`
@@ -714,21 +731,29 @@ All three tasks depend only on the schema from A1. They own separate files and m
 **Interfaces:**
 - Consumes: `metaConversionEvents` from `@/db/schema`.
 - Produces:
-  - `insertConversionEvent(input: InsertConversionEventInput, tx?: typeof db): Promise<{ inserted: boolean }>`
-  - `markEventSent(id: string, fbTraceId?: string): Promise<void>`
-  - `markEventFailure(id: string, kind: 'transient' | 'invalid' | 'auth', message: string): Promise<void>`
-  - `listPendingEvents(limit: number): Promise<PendingEvent[]>`
+  - `insertConversionEvent(input: InsertConversionEventInput, tx?: typeof db): Promise<{ inserted: boolean; id: string }>`
+  - `markEventSent(tenantId: string, id: string, fbTraceId?: string): Promise<void>`
+  - `markEventFailure(tenantId: string, id: string, kind: 'transient' | 'invalid' | 'auth', message: string): Promise<void>`
+  - `markEventSkipped(tenantId: string, id: string, reason: string): Promise<void>`
+  - `claimPendingEvents(limit: number): Promise<PendingEvent[]>`
   - `listRecentEvents(tenantId: string, limit: number): Promise<RecentEvent[]>`
   - `hasEvent(tenantId: string, eventId: string): Promise<boolean>`
+  - `hasScheduleForProspect(tenantId: string, prospectId: string): Promise<boolean>`
+
+**Tenant scoping is mandatory on every one of these.** This repo has no row
+level security (grep `ENABLE ROW LEVEL SECURITY` across the migrations returns
+nothing), so the `tenantId` argument is the only thing standing between two
+clinics. A query keyed on a bare uuid is the pattern that leaks.
   - `InsertConversionEventInput = { tenantId: string; prospectId: string | null; eventName: MetaEventName; eventId: string; eventTime: Date; value?: string | null; payload: unknown; status: 'pending' | 'skipped'; skipReason?: string | null }`
 
 **Behavioural requirements:**
-- `insertConversionEvent` uses `.onConflictDoNothing({ target: [metaConversionEvents.tenantId, metaConversionEvents.eventId] })` and returns `{ inserted: false }` when the row already existed. **This is the once-only guarantee for Purchase**: six installment payments call it six times and it inserts once.
+- `insertConversionEvent` uses `.onConflictDoNothing({ target: [metaConversionEvents.tenantId, metaConversionEvents.eventId] })` and returns `{ inserted: false }` when the row already existed. **This is the once-only guarantee for Purchase**: six installment payments call it six times and it inserts once. It must return the row `id` in both cases, so the caller can mark the outcome; `onConflictDoNothing().returning()` yields nothing on conflict, so re-select by `(tenantId, eventId)` when the insert was a no-op.
 - It accepts an optional `tx` so `recordPayment` can enqueue inside its existing transaction. Default to the module `db` when not given.
 - `markEventFailure` increments `attempts`. When `kind` is `'invalid'` or `'auth'`, it sets `status = 'failed'` immediately, because retrying a malformed payload or a dead token is wasted budget. When `kind` is `'transient'`, it leaves `status = 'pending'` unless `attempts` has reached 8, at which point it sets `'failed'`.
-- `listPendingEvents` selects `status = 'pending'` AND `createdAt` older than 60 seconds, ordered by `createdAt` ascending, joined to nothing (the payload is self-contained). Returns `tenantId` so the cron can batch per tenant.
+- `claimPendingEvents` selects `status = 'pending'` AND `createdAt` older than 60 seconds, ordered by `createdAt` ascending, **`FOR UPDATE SKIP LOCKED`**, and increments `attempts` under that same lock. Without the lock, a run that overruns its 5 minute window overlaps the next one: both pick the same rows, both POST, and both increment `attempts`, so a row reaches the 8 attempt cutoff in four real failures instead of eight. Returns `tenantId` so the cron can batch per tenant.
+- `hasScheduleForProspect` matches **any** row with `eventName = 'Schedule'` for that prospect, whatever its event id. This is what enforces the spec's "Schedule fires at most once per lead" across both the appointment id and the hand-moved prospect id.
 
-- [ ] **Step 1: Write the failing test.** Cover: conflict returns `inserted: false`, `markEventFailure('invalid')` sets failed on the first attempt, `markEventFailure('transient')` keeps pending at attempt 1 and flips to failed at attempt 8, `listPendingEvents` excludes rows younger than 60 seconds.
+- [ ] **Step 1: Write the failing test.** Cover: conflict returns `inserted: false`, `markEventFailure('invalid')` sets failed on the first attempt, `markEventFailure('transient')` keeps pending at attempt 1 and flips to failed at attempt 8, `claimPendingEvents` excludes rows younger than 60 seconds, `claimPendingEvents` increments `attempts` under the lock, `hasScheduleForProspect` matches a Schedule row whose event id is an appointment id, and every query rejects a row belonging to another tenant.
 - [ ] **Step 2: Run it and confirm it fails.**
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run tests, confirm pass.**
@@ -740,17 +765,25 @@ All three tasks depend only on the schema from A1. They own separate files and m
 
 **Files:**
 - Create: `web/src/db/queries/lead-attributions.ts`
+- Create: `web/src/db/queries/marketing-consent.ts`
 - Create: `web/src/lib/meta/attribution.ts`
 - Test: `web/src/db/queries/__tests__/lead-attributions.test.ts`
+- Test: `web/src/db/queries/__tests__/marketing-consent.test.ts`
 - Test: `web/src/lib/meta/__tests__/attribution.test.ts`
 
 **Interfaces:**
 - Consumes: `leadAttributions` from `@/db/schema`.
 - Produces:
-  - `getAttribution(prospectId: string): Promise<LeadAttribution | null>`
+  - `getAttribution(tenantId: string, prospectId: string): Promise<LeadAttribution | null>`
   - `recordAttribution(input: RecordAttributionInput): Promise<{ recorded: boolean }>`
   - from `attribution.ts`: `parseReferral(referral: unknown): ReferralCapture | null`, `buildFbc(fbclid: string, clickedAt?: Date): string`
   - `ReferralCapture = { ctwaClid?: string; adId?: string; adHeadline?: string; sourceUrl?: string; sourceType?: string }`
+  - from `marketing-consent.ts`: `isMarketingOptedOut(tenantId: string, ref: { prospectId?: string | null; patientId?: string | null }): Promise<boolean>`
+
+`isMarketingOptedOut` returns true if **either** the prospect row or the linked
+patient row has `marketingOptOut` set. Both are checked because the flag can be
+set on a patient record long after the lead that produced it, and the lead is
+what carries the ad attribution.
 
 **Behavioural requirements:**
 - `recordAttribution` uses `.onConflictDoNothing({ target: leadAttributions.prospectId })` and returns `{ recorded: false }` when a row already existed. **This is the first-touch rule**, enforced by the unique index rather than by a read-then-write race.
@@ -771,7 +804,9 @@ All three tasks depend only on the schema from A1. They own separate files and m
 
 **Files:**
 - Create: `web/src/lib/meta/events.ts`
+- Create: `web/src/lib/meta/resolve-prospect.ts`
 - Test: `web/src/lib/meta/__tests__/events.test.ts`
+- Test: `web/src/lib/meta/__tests__/resolve-prospect.test.ts`
 
 **Interfaces:**
 - Consumes: `postEvents` and types from A3, hashing from A2, all three query modules from B, `reportSideEffectFailure` from `@/lib/observability`, the `db` handle type from `@/db/client` (for the optional `tx` parameter).
@@ -790,31 +825,68 @@ export interface EnqueueMetaEventInput {
   actionSource: MetaActionSource
   value?: string | null
   eventSourceUrl?: string | null
-  optedOut?: boolean
+  /**
+   * When present the outbox row joins the caller's transaction and NO HTTP
+   * call is made. See "Why tx suppresses the send" below.
+   */
   tx?: typeof db
 }
 
 export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<void>
 ```
 
+`resolve-prospect.ts` exports the lookup both D3 and D4 need:
+
+```ts
+export async function resolveProspectForPatient(
+  tenantId: string,
+  ref: { patientId?: string | null; phone?: string | null },
+): Promise<{ id: string } | null>
+```
+
+It reproduces the three-step chain that `web/src/app/api/appointments/route.ts:110-123`
+already uses: `patientId` via `getProspectByPatientId`, then the patient's own
+phone via `getProspectByPhone`, then the supplied phone via `getProspectByPhone`.
+
+**This matters more than it looks.** `getProspectByPatientId` matches only on
+`prospects.convertedPatientId`, which is written by `convertProspect` alone, and
+that runs only from the explicit `POST /api/crm/prospects/[id]/convert` flow. A
+booking-page or CTWA lead whose patient record a receptionist creates by hand has
+it null. Resolving by that column alone would mean `Purchase` never fires for
+precisely the ad-attributed leads this feature exists to measure.
+
+**Why `tx` suppresses the send.** `enqueueMetaEvent` otherwise does insert, then
+an HTTP round trip, then an update. Called with a transaction handle, that would
+hold `recordPayment`'s `SELECT ... FOR UPDATE` row lock open across a call to
+graph.facebook.com, once per installment in `bulkPayInstallments`, against a pool
+of 5 connections. The follow-up `markEventSent` runs on a different pooled
+connection where the uncommitted row is invisible, so it would match zero rows
+and every Purchase would sit `pending` forever. And a rollback later in the loop
+would leave a conversion already delivered to Meta with no row to show for it.
+
+So: with `tx`, insert only and return. The cron delivers within 5 minutes. The
+outbox insert is still atomic with the payment, which is the property that
+actually matters.
+
 **Behavioural requirements, each one a test:**
 
 1. **Never throws.** Every path is wrapped; failures go to `reportSideEffectFailure(error, { area: 'meta-capi', step: '...' })`. A caller that awaits it must never see a rejection, because these calls sit directly after domain writes.
 2. **No connection: writes a `skipped` row** with `skipReason: 'no_connection'` and does not call `postEvents`. The row is the audit trail that says why nothing was sent.
-3. **Opted out: writes a `skipped` row** with `skipReason: 'opted_out'`. Checked before any hashing happens, so an opted-out patient's phone is never even hashed in memory.
+3. **Opted out: writes a `skipped` row** with `skipReason: 'opted_out'`. `enqueueMetaEvent` resolves this itself by calling `isMarketingOptedOut(tenantId, { prospectId, patientId })`. It is NOT a caller-supplied flag: a flag every call site must remember to pass is a flag that will be forgotten, and the failure mode is sending an opted-out patient's data to Meta. Checked before any hashing, so the phone is never hashed in memory.
+3b. **`tx` present: insert the outbox row and return.** No `postEvents`, no status update. Assert in a test that `postEvents` was not called when `tx` is supplied.
 4. **Advanced matching disabled on the connection**: sends the event, but `user_data` carries only `external_id`, click ids, IP and user agent. No `em`, `ph`, `fn`, `ln`.
-5. **CTWA events carry both required fields.** When the prospect's attribution has a `ctwaClid`, `action_source` is `'business_messaging'` AND `messaging_channel` is `'whatsapp'`, and `ctwa_clid` sits in `user_data` unhashed.
+5. **`action_source` is always the caller's, never inferred.** Spec Part 3 assigns `system_generated` to staff stage moves and `website` to booking page events; overriding those because the lead happens to have a `ctwaClid` would misreport every one of them. What the attribution governs is narrower: `messaging_channel: 'whatsapp'` is set if and only if `actionSource === 'business_messaging'`, and `ctwa_clid` is placed in `user_data` **unhashed** whenever the attribution has one, regardless of action source.
 6. **Advanced matching is always sent when enabled, even alongside a click id.** A Purchase with a `ctwaClid` still carries `ph` and `em`, because the click id window expires before the sale does.
 7. **`external_id` is an opaque per-tenant HMAC of the prospect id**, not the raw uuid. Use `createHmac('sha256', process.env.META_EXTERNAL_ID_SECRET)` keyed with the tenant id, so the same person is stable within a clinic and uncorrelatable across clinics.
 8. **Duplicate `eventId` is a no-op.** `insertConversionEvent` returned `{ inserted: false }`, so `postEvents` is never called. Test this with `purchase:<entryId>` called twice.
-9. **A successful POST marks the row sent** with the returned `fbTraceId`.
+9. **A successful POST marks the row sent** with the returned `fbTraceId`, using the `id` that `insertConversionEvent` returned.
 10. **A transient failure leaves the row pending** and does not throw.
 11. **An auth failure marks the connection invalid** via `markConnectionInvalid`, so the UI can warn.
 12. **`value` is only present on Purchase** and is sent as a number in `custom_data.value` with `currency: 'BRL'`.
 
 - [ ] **Step 1: Write the failing test** covering all twelve behaviours above. Mock `@/lib/meta/capi-client`, `@/db/queries/meta-events`, `@/db/queries/meta-connections`, `@/db/queries/lead-attributions` and `@/lib/observability` at the module boundary. Set `process.env.META_EXTERNAL_ID_SECRET` in `beforeEach`.
 - [ ] **Step 2: Run and confirm failure.** `pnpm --filter @floraclin/web exec vitest run src/lib/meta/__tests__/events.test.ts`
-- [ ] **Step 3: Implement `events.ts`.** Order of operations, which the tests pin: resolve opt-out, resolve connection, build `event_id` row and insert with conflict-do-nothing, bail if not inserted, load attribution, hash contact fields, assemble payload, POST, record result.
+- [ ] **Step 3: Implement `resolve-prospect.ts` and `events.ts`.** Order of operations in `enqueueMetaEvent`, which the tests pin: resolve opt-out, resolve connection, insert the outbox row with conflict-do-nothing and keep its `id`, bail if not inserted, bail if `tx` was supplied, load attribution, hash contact fields, assemble payload, POST, record result against that `id`.
 - [ ] **Step 4: Run tests, confirm pass.**
 - [ ] **Step 5: Add `META_EXTERNAL_ID_SECRET` to `web/.env.example`** with an empty value and a one-line comment saying it must be a random 32-byte hex string and must never change once set, because changing it re-identifies every patient to Meta as a new person.
 - [ ] **Step 6: Commit** `feat(meta): enqueueMetaEvent with outbox and advanced matching`
@@ -843,12 +915,18 @@ Every task in this group calls `enqueueMetaEvent` from Task C1 and owns files no
 
 **Work:**
 1. Add `referral` to the `WhatsAppMessage` type used in this file.
-2. After the prospect upsert block (line 211), call `parseReferral(msg.referral)`. When it returns a capture, call `recordAttribution({ tenantId, prospectId: prospect.id, channel: capture.ctwaClid ? 'ctwa' : 'organic', ...capture })`. Do this whether or not `isNewProspect` is true: an existing prospect with no attribution row should still get its first observed ad click.
+2. After the prospect upsert block (line 211), call `parseReferral(msg.referral)` and call `recordAttribution` **unconditionally**, not only when a referral is present:
+   - referral with `ctwa_clid` → `channel: 'ctwa'` plus the captured fields
+   - referral without `ctwa_clid` (an organic post click) → `channel: 'organic'` plus the captured fields
+   - no referral at all → `channel: 'organic'` with no click ids
+   Every prospect gets exactly one attribution row. Writing one only when a referral exists would leave organic WhatsApp leads with no row at all, and the F1 report groups from `lead_attributions`, so those leads would vanish from the funnel instead of appearing under `organic`.
+   Do this whether or not `isNewProspect` is true: an existing prospect with no attribution row should still get its first observed ad click. The unique index makes the repeat a no-op.
 3. When `isNewProspect`, call `enqueueMetaEvent` with `eventName: 'Lead'`, `eventId: \`lead:${prospect.id}\``, `actionSource: 'business_messaging'`, `contact: { phone: from, fullName: profileName }`.
 
 **Tests (use real Meta webhook payload shapes):**
 - a message with a full `referral` object writes an attribution row with `channel: 'ctwa'` and the `ctwa_clid` intact
-- a message with no `referral` writes no attribution row
+- a message with no `referral` writes an `organic` attribution row with no click ids
+- an organic message arriving after a CTWA message does not downgrade the row to `organic`
 - a second ad-originated message from the same prospect does not overwrite the first attribution
 - a new prospect emits exactly one `Lead` with `eventId` `lead:<prospectId>`
 - an existing prospect emits no `Lead`
@@ -862,15 +940,15 @@ Every task in this group calls `enqueueMetaEvent` from Task C1 and owns files no
 **Files:**
 - Modify: `web/src/app/api/crm/prospects/route.ts` (after line 124)
 - Modify: `web/src/app/api/crm/prospects/[id]/route.ts` (in the stage-changed branch, lines 84-89)
-- Modify: `web/src/app/api/crm/prospects/[id]/convert/route.ts` (after line 82)
+- Note: `convert/route.ts` is deliberately NOT modified. `convertido` is a CRM state, not money.
 - Test: `web/src/app/api/crm/prospects/__tests__/meta-events.test.ts`
 
 **Work:**
 - Manual create emits `Lead` with `actionSource: 'system_generated'`, `eventId: lead:<prospectId>`.
-- Stage change to `contatado` emits `Contact` (`contact:<prospectId>`). Stage change to `agendado` emits `Schedule` with `eventId: schedule:<prospectId>` (the hand-moved fallback, since no appointment exists on this path).
+- Stage change to `contatado` emits `Contact` (`contact:<prospectId>`). Stage change to `agendado` emits `Schedule` with `eventId: schedule:<prospectId>` (the hand-moved fallback, since no appointment exists on this path), **but only after `hasScheduleForProspect(tenantId, prospectId)` returns false**. A lead that already has a real appointment has already produced a `Schedule` under the appointment's id, and the unique index cannot catch that because the ids differ.
 - Conversion emits nothing on its own. `convertido` is a CRM state, not a purchase. `Purchase` comes from money in Task D4.
 
-**Tests:** stage `novo` → `contatado` emits one `Contact`; `novo` → `perdido` emits nothing; a PATCH that does not change stage emits nothing; conversion emits nothing.
+**Tests:** stage `novo` → `contatado` emits one `Contact`; `novo` → `perdido` emits nothing; a PATCH that does not change stage emits nothing; conversion emits nothing; **moving a lead that already has an appointment-sourced `Schedule` back into `agendado` emits nothing.**
 
 - [ ] Write failing tests → run → implement → run → commit `feat(meta): emit contact and schedule events on CRM stage changes`
 
@@ -886,11 +964,18 @@ Every task in this group calls `enqueueMetaEvent` from Task C1 and owns files no
 **Work:**
 `createAppointment` is the sole insert point for appointments, verified by grep. Emit `Schedule` there so both the internal route and the public booking route are covered by one hook.
 
-After the insert returns, resolve the prospect: prefer `getProspectByPatientId(tenantId, patientId)` when `patientId` is set, otherwise `getProspectByPhone(tenantId, bookingPhone)`. When a prospect is found, emit `Schedule` with `eventId: schedule:<appointment.id>` and `actionSource` `'website'` when `source === 'online_booking'`, otherwise `'system_generated'`.
+After the insert returns, resolve the prospect with `resolveProspectForPatient(tenantId, { patientId, phone: bookingPhone })` from Task C1. Do not inline a narrower lookup: `getProspectByPatientId` alone misses every lead whose patient record was created outside the convert flow.
 
-**Deduplication requirement:** a lead dragged to `agendado` (D2, id `schedule:<prospectId>`) and then given a real appointment (id `schedule:<appointmentId>`) would produce two `Schedule` events for one lead. Before emitting from `createAppointment`, call `hasEvent(tenantId, \`schedule:${prospectId}\`)` and skip if it is already there. The reverse order is already safe: D2 only fires on a stage transition into `agendado`, and the appointment path sets that stage itself.
+When a prospect is found, emit `Schedule` with `eventId: schedule:<appointment.id>` and `actionSource` `'website'` when `source === 'online_booking'`, otherwise `'system_generated'`.
 
-**Tests:** appointment for a matched prospect emits one `Schedule`; appointment for a patient with no prospect emits nothing; an appointment created after the card was already dragged to `agendado` emits nothing.
+**Deduplication requirement.** Spec Part 3: Schedule fires at most once per lead. Three ways it can double-fire, and one check that stops all three:
+- card dragged to `agendado` first (`schedule:<prospectId>`), appointment created after (`schedule:<apptId>`)
+- appointment created first, card later moved out of and back into `agendado`
+- a second appointment for the same prospect (rebook, follow-up) producing `schedule:<apptId2>`
+
+Call `hasScheduleForProspect(tenantId, prospectId)` and skip when true. Checking one hardcoded id catches only the first case.
+
+**Tests:** appointment for a matched prospect emits one `Schedule`; appointment for a patient with no prospect emits nothing; an appointment created after the card was already dragged to `agendado` emits nothing; **a second appointment for the same prospect emits nothing**; a prospect found only by the patient's phone (no `convertedPatientId`) still emits.
 
 - [ ] Write failing tests → run → implement → run → commit `feat(meta): emit schedule events from appointment creation`
 
@@ -903,21 +988,39 @@ After the insert returns, resolve the prospect: prefer `getProspectByPatientId(t
 - Test: `web/src/db/queries/__tests__/financial-meta.test.ts`
 
 **Work:**
-Both functions already run inside `withTransaction`, so pass `tx` to `enqueueMetaEvent` and let the outbox insert join the transaction.
+Both functions already run inside `withTransaction`. Pass `tx` to `enqueueMetaEvent`, which under Task C1 makes it insert the outbox row and return without any HTTP call. The cron delivers. Do **not** let a Meta round trip happen inside the payment transaction: `recordPayment` holds a `SELECT ... FOR UPDATE` row lock (`financial.ts:109-113`), `bulkPayInstallments` calls this once per installment in a loop, and the pool is 5 connections.
 
-After `updateEntryStatus`, read the entry's `patientId` and `totalAmount`, resolve the prospect via `getProspectByPatientId`, and emit:
+After `updateEntryStatus`, gate and emit:
+
+**Gate 1, money actually arrived.** Emit only when the entry status is now `'paid'` or `'partial'`. `recordPayment` can leave an installment `pending` on a short payment (`financial.ts:322-335`), and firing a full-value Purchase on a deposit that did not clear would overstate revenue to Meta.
+
+**Gate 2, not a renegotiation.** Skip entries that are the target of a `renegotiation_links` row. A renegotiated balance is a new `financial_entries` row for money that was already reported when the original entry was paid; emitting again double counts the same revenue.
+
+Then:
 ```
 eventName: 'Purchase'
 eventId: `purchase:${financialEntryId}`
 value: entry.totalAmount
 actionSource: 'system_generated'
+prospectId: resolved or null
+contact: { phone: patient.phone, email: patient.email, fullName: patient.fullName }
 ```
+
+Resolve the prospect with `resolveProspectForPatient(tenantId, { patientId, phone: patient.phone })`. **When no prospect is found, still emit, with `prospectId: null`.** A walk-in patient who was never a lead is real revenue, the outbox column is nullable for exactly this reason, and the patient's own contact data is what makes it matchable. Emitting nothing would silently drop the majority of a clinic's revenue.
+
+Always load the patient's phone, email and name for `contact`. Purchase is the event most likely to fall outside the `ctwa_clid` window, so advanced matching is the only identifier that will still work.
+
 No "is this the first payment" check is written. The unique index on `(tenant_id, event_id)` is the once-only guarantee.
+
+**Not hooked, deliberately:** `reversePayment` (`financial.ts:355`) sends no compensating event. Meta has no reliable refund semantics for a Purchase already attributed, and a clinic reversing a mistaken entry is rarer than the double-reporting a naive compensation would cause. `payInstallment` (`financial.ts:1321`) is also not hooked because it has no API caller and is dead.
 
 **Tests:**
 - paying installment 1 of 6 emits one `Purchase` carrying the full `totalAmount`, not the installment amount
-- paying installments 2 through 6 emits nothing further (assert `insertConversionEvent` returned `inserted: false` and `postEvents` was not called again)
-- a payment for a patient with no originating prospect emits nothing
+- paying installments 2 through 6 emits nothing further (assert `insertConversionEvent` returned `inserted: false`)
+- **`postEvents` is never called from inside the payment transaction**
+- a payment for a patient with no originating prospect still emits, with `prospectId: null`
+- a short payment that leaves the entry `pending` emits nothing
+- a renegotiated entry emits nothing
 - `bulkPayInstallments` across two entries emits exactly two `Purchase` events
 
 - [ ] Write failing tests → run → implement → run → commit `feat(meta): emit purchase events on first payment of a financial entry`
@@ -951,17 +1054,40 @@ No "is this the first payment" check is written. The unique index on `(tenant_id
 1. Extend `bookingSchema` (lines 106-116) with optional `fbclid` and `fbp` strings.
 2. `meta-pixel.tsx` renders the standard Meta Pixel snippet with the tenant's `datasetId` via `next/script` with `strategy="afterInteractive"`. It renders nothing when no dataset is passed. Do not fire a `Lead` from the browser: the server owns event emission, and a browser event without `event_id` coordination would double-count.
 3. `booking-page.tsx` reads `fbclid` from `window.location.search` and `_fbp` from `document.cookie`, and includes both in the POST body.
-4. In the route, after `createAppointment` at line 224: create a prospect at stage `agendado` via `createNewProspect(tenant.id, { phone, name, source: 'booking_page' })`, then `recordAttribution({ channel: 'booking_page', fbclid, fbp, fbc: fbclid ? buildFbc(fbclid) : null, landingUrl, clientIp, userAgent })`, then emit `Lead` with `actionSource: 'website'`.
+4. In the route, **before** `createAppointment` at line 224, resolve or create the prospect:
 
-`Schedule` for this booking is emitted by Task D3 inside `createAppointment`, so do not emit it here. Order matters: D3's hook resolves the prospect by `bookingPhone`, so the prospect must be created before `createAppointment` runs, not after. Move the prospect creation above line 224.
+```ts
+let prospect = await getProspectByPhone(tenant.id, phone)
+if (!prospect) {
+  prospect = await createNewProspect(tenant.id, { phone, name, source: 'booking_page' })
+}
+await updateProspect(tenant.id, prospect.id, { stage: 'agendado' })
+```
 
-**Tests:** a booking creates a prospect at `agendado`; a booking with `fbclid` stores a well-formed `fbc`; a booking without `fbclid` still creates the prospect and attribution with `channel: 'booking_page'`; a repeat booking from the same phone does not create a second attribution row.
+**Do not call `createNewProspect` unconditionally.** It is a bare insert with no
+conflict handling (`prospects.ts:35-49`), and `prospects` carries a partial
+unique index on `(tenant_id, phone) WHERE stage NOT IN ('convertido','perdido')`
+(`schema.ts:679`). A patient who messaged on WhatsApp and then books online
+already has an active lead, so the insert raises `23505`, the route's catch at
+`book/[slug]/route.ts:249` turns it into a 500, and online booking breaks for
+returning leads. That is the common path, not an edge case.
+
+`createNewProspect` also takes no `stage` argument, which is why the stage is set
+by a following `updateProspect` rather than at insert time.
+
+Then `recordAttribution({ tenantId, prospectId: prospect.id, channel: 'booking_page', fbclid, fbp, fbc: fbclid ? buildFbc(fbclid) : null, landingUrl, clientIp, userAgent })`, then emit `Lead` with `actionSource: 'website'`.
+
+`Schedule` for this booking is emitted by Task D3 inside `createAppointment`, so do not emit it here. The prospect must exist before `createAppointment` runs, because D3's hook resolves it by `bookingPhone`.
+
+**This task therefore also modifies `web/src/db/queries/prospects.ts`? No.** It uses `getProspectByPhone`, `createNewProspect` and `updateProspect` exactly as they already exist. No signature changes are needed, which is what keeps this task out of conflict with F2.
+
+**Tests:** a booking creates a prospect at `agendado`; **a booking from a phone that already has an active WhatsApp lead reuses it and returns 201, not 500**; a booking with `fbclid` stores a well-formed `fbc`; a booking without `fbclid` still creates the prospect and attribution with `channel: 'booking_page'`; a repeat booking from the same phone does not create a second attribution row.
 
 - [ ] Write failing tests → run → implement → run → commit `feat(meta): booking page pixel, prospect creation and website attribution`
 
 ---
 
-# Group E: Delivery and connection (3 parallel, depend on C)
+# Group E: Delivery and connection (2 parallel, depend on C)
 
 ### Task E1: Retry and reconciliation cron
 
@@ -981,8 +1107,20 @@ const MONITOR_CONFIG = cronMonitorConfig('*/5 * * * *')
 Add to `web/vercel.json` crons: `{ "path": "/api/cron/meta-events", "schedule": "*/5 * * * *" }`.
 
 Two jobs in one run:
-1. **Retry sweep.** `listPendingEvents(500)`, group by `tenantId`, resolve each tenant's connection once, `postEvents` in batches of up to 1000, record per-row results.
-2. **Reconciliation.** For the last 7 days only, find prospects whose stage implies an event that has no row at all, and enqueue it. Query shape: prospects with `stage IN ('contatado','qualificado','agendado','convertido')` and `updatedAt > now() - 7 days`, left joined to `meta_conversion_events` on `event_id = 'contact:' || prospects.id`, where the event id is null. This repairs a crash between the stage write and the outbox insert, which is the failure a transaction would have prevented but never repaired.
+
+**1. Retry sweep.** `claimPendingEvents(500)` (which takes `FOR UPDATE SKIP LOCKED` and increments `attempts` under the lock), group by `tenantId`, resolve each tenant's connection once, `postEvents` in batches of up to 1000, record per-row results. A tenant with no connection has its rows moved to `skipped` with reason `no_connection` via `markEventSkipped`, not left pending forever.
+
+**2. Reconciliation.** This repairs a crash between a domain write and the outbox insert. It is dangerous if written naively, and three constraints are not optional:
+
+- **Drive it from `prospect_activities`, never from the prospect's current stage.** A `stage_changed` activity row (`schema.ts:682-692`) carries `from`, `to` and a real `createdAt`. The current stage does not: a lead that went `novo` → `agendado` never had a Contact, and reconciling from current stage would invent one. The activity's `createdAt` is also the only correct `eventTime`; using `now()` would file the conversion on the wrong day and can push it outside a click id window the original event was inside.
+- **Gate on `META_EVENTS_START_AT`**, an ISO timestamp env var set at deploy. Without it, the first run finds every prospect ever touched, none of which has an outbox row, and fires a backfill of invented conversions at Meta. Add it to `web/.env.example`.
+- **Scope the join by tenant.** The unique index is `(tenant_id, event_id)`, so the left join must equate `meta_conversion_events.tenant_id = prospect_activities.tenant_id` as well as the event id. This repo has no row level security; a join without a tenant predicate is a cross-tenant read.
+
+Reconcile `Contact` (activity `to = 'contatado'`), `Schedule` (`to = 'agendado'`, and only when `hasScheduleForProspect` is false) and `Lead` (prospect created, activity action `'created'`). Window: activities newer than both `META_EVENTS_START_AT` and `now() - 7 days`.
+
+`Purchase` is **not** reconciled here: its outbox insert is already atomic with the payment transaction (Task D4), so the crash window this repairs does not exist for it.
+
+Reconciled events need contact data to be matchable, so the query must select the prospect's `phone` and `name`, not just its id.
 
 **Sentry failure-rate alert.** Spec Part 7 calls for an alert when a tenant's
 failure rate crosses a threshold. Emit one `Sentry.captureMessage` per run, at
@@ -990,7 +1128,7 @@ failure rate crosses a threshold. Emit one `Sentry.captureMessage` per run, at
 in that run, with the tenant id as a tag. The threshold rule itself is
 configured in Sentry's UI, not in code, the same way the Discord alert rule was.
 
-**Tests:** unauthorized without the bearer token; a pending event is retried and marked sent; an auth failure marks the connection invalid and stops that tenant's batch; a tenant with no connection has its pending rows marked `skipped`; reconciliation enqueues a missing `Contact` for a `contatado` prospect and does not enqueue one that already has a row; reconciliation ignores prospects older than 7 days.
+**Tests:** unauthorized without the bearer token; a pending event is retried and marked sent; an auth failure marks the connection invalid and stops that tenant's batch; a tenant with no connection has its pending rows marked `skipped`; reconciliation enqueues a missing `Contact` from a `stage_changed` activity and does not enqueue one that already has a row; **reconciliation ignores activities older than `META_EVENTS_START_AT`**; **reconciliation uses the activity's `createdAt` as `eventTime`, not `now()`**; **reconciliation never matches an event row belonging to another tenant**; a lead that went straight `novo` → `agendado` gets a `Schedule` and no `Contact`.
 
 - [ ] Write failing tests → run → implement → run → commit `feat(meta): cron to retry failed conversion events and reconcile missing ones`
 
@@ -1010,7 +1148,8 @@ configured in Sentry's UI, not in code, the same way the Discord alert rule was.
 Follow the Google Calendar integration pattern exactly (`web/src/app/api/calendar/auth/connect/route.ts` and `callback/route.ts`), including `signOAuthState` / `verifyOAuthState`. Reuse those helpers' approach in `web/src/lib/meta/oauth.ts` rather than importing from `google-calendar.ts`.
 
 - `GET /api/integrations/meta/connection` returns the connection with `accessToken` **stripped**, exactly as the calendar connections route strips tokens. Also returns the last 20 events from `listRecentEvents` for the diagnostics panel.
-- `PUT` accepts `{ datasetId, accessToken, testEventCode?, advancedMatchingEnabled? }`, owner role only, calls `upsertMetaConnection` with `connectionType: 'manual'`.
+- `PUT` accepts `{ datasetId, accessToken, testEventCode?, advancedMatchingEnabled?, acknowledgementVersion }`, owner role only, calls `upsertMetaConnection` with `connectionType: 'manual'`.
+- **The acknowledgement is enforced server side, not just in the UI.** `PUT` and the OAuth callback both reject with 400 unless `acknowledgementVersion` is present, call `recordAcknowledgement(tenantId, userId, version)`, and write an `audit_logs` row carrying the user, the timestamp and the version of the text accepted. Spec Part 5.1 requires the text version specifically: an overwritten connection row would otherwise lose the record of what was agreed to, which is the entire evidentiary value. Define the current version as a constant `ACKNOWLEDGEMENT_VERSION = '2026-08-v1'` in `web/src/lib/meta/oauth.ts` so the UI and the route cannot disagree.
 - `POST .../test` fires a real `PageView` through `postEvents` using the stored `testEventCode` and returns Meta's verdict. On success calls `markConnectionVerified`.
 - `GET .../auth/connect` redirects to Facebook Login for Business requesting `business_management,ads_management`, with signed state.
 - `GET .../auth/callback` verifies state, exchanges the code for a long-lived token, calls `upsertMetaConnection` with `connectionType: 'oauth'`, then redirects to `/configuracoes?tab=integracoes&meta=connected|denied|error`. This route cannot return JSON (the browser is mid-redirect), so failures go through `reportSideEffectFailure`.
@@ -1020,42 +1159,19 @@ needs both the OAuth token from here and the cron from E1, so it is Task F4.
 
 Required env vars, added to `web/.env.example`: `META_APP_ID`, `META_OAUTH_REDIRECT_URI`. `META_APP_SECRET` already exists.
 
-**Tests:** GET never returns `accessToken`; PUT rejects a non-owner with 403; the test route reports Meta's error message verbatim on failure; the callback redirects with `meta=denied` when the user cancels.
+**Tests:** GET never returns `accessToken`; PUT rejects a non-owner with 403; **PUT without `acknowledgementVersion` returns 400 and writes no connection**; **a successful PUT writes an `audit_logs` row containing the version**; the test route reports Meta's error message verbatim on failure; the callback redirects with `meta=denied` when the user cancels.
 
 - [ ] Write failing tests → run → implement → run → commit `feat(meta): connection api with oauth and manual token paths`
 
 ---
 
-### Task E3: Connection settings UI
+# Group F: Reporting, LGPD and settings UI (5 parallel, depend on D and E)
 
-**Files:**
-- Create: `web/src/components/settings/meta-connection-card.tsx`
-- Create: `web/src/hooks/queries/use-meta.ts`
-- Modify: `web/src/components/settings/settings-page-client.tsx` (TabKey line 116, SIDEBAR_GROUPS line 133, TAB_ROLES line 173, render branch after line 441)
-- Test: `web/src/components/settings/__tests__/meta-connection-card.test.tsx`
-
-**Work:**
-Model the card on `web/src/components/settings/calendar-connection-card.tsx`: not-connected state with a "Conectar Meta" button doing a full-page redirect to `/api/integrations/meta/auth/connect`, connected state with status, a disconnect confirm dialog, and React Query invalidation with `sonner` toasts.
-
-Additions specific to this card:
-- A collapsible "Conectar manualmente" section with Dataset ID and token inputs plus a "Testar conexão" button that shows Meta's actual response.
-- The **LGPD acknowledgement**: a required checkbox with the controller text, shown before the connection can be activated. Submitting records `acknowledgedAt` / `acknowledgedBy`. Copy, in Portuguese, no dashes:
-
-> A clínica é a controladora dos dados dos seus pacientes. Ao ativar esta integração, dados de contato (telefone e email) serão enviados de forma criptografada à Meta para medição de anúncios. A clínica é responsável pela base legal do tratamento perante seus pacientes.
-
-- An "Correspondência avançada" switch bound to `advancedMatchingEnabled`.
-- A diagnostics table of the last 20 events: event name, status, time, and Meta's trace id.
-- A warning banner when `status === 'invalid_token'`.
-
-Add `'integracoes'` to `TabKey`, to the `'Sistema'` group in `SIDEBAR_GROUPS` with a plug icon, and leave it out of `TAB_ROLES` so it defaults to owner-only.
-
-**Tests:** the connect button is disabled until the acknowledgement is checked; an `invalid_token` status renders the warning; the diagnostics table renders a `skipped` row with its reason.
-
-- [ ] Write failing tests → run → implement → run → commit `feat(meta): integration settings card with acknowledgement and diagnostics`
-
----
-
-# Group F: Reporting and LGPD surfaces (3 parallel, depend on D)
+F5 sits here rather than in Group E because it consumes E2's contract in three
+places: the `GET /api/integrations/meta/connection` response shape including the
+embedded recent-events array, the `PUT` body, and E2's callback redirect target
+`?tab=integracoes`, which only resolves once F5 adds the tab key. Running them in
+parallel would mean coding against an interface that does not exist yet.
 
 ### Task F1: Marketing report
 
@@ -1069,7 +1185,7 @@ Add `'integracoes'` to `TabKey`, to the `'Sistema'` group in `SIDEBAR_GROUPS` wi
 - Test: `web/src/app/api/reports/marketing/__tests__/route.test.ts`
 
 **Work:**
-Copy the seven-file shape of the `faltas` report exactly. Registry entry:
+Copy the seven-file shape of the `extrato-periodo` report, which is the `date-range` model. Do NOT copy `faltas`: it is a `threshold-days` report and its filter plumbing is different. Reuse the `DEFAULT_RANGE_DAYS` constant already defined at `web/src/lib/reports/registry.ts:12`; do not introduce a second literal. Registry entry:
 
 ```ts
 {
@@ -1079,12 +1195,14 @@ Copy the seven-file shape of the `faltas` report exactly. Registry entry:
   group: 'financeiro',
   filters: ['date-range'],
   apiPath: '/api/reports/marketing',
-  defaultRangeDays: 30,
+  defaultRangeDays: DEFAULT_RANGE_DAYS,
   emptyHint: 'Nenhum lead atribuído a anúncios no período. Verifique a integração com a Meta.',
 }
 ```
 
-Rows are ads, grouped by `campaignId` where known, falling back to `adId`, falling back to `channel` for unattributed leads. Columns: anúncio, leads, contatados, agendados, convertidos, receita, taxa de conversão.
+Rows are ads, grouped by `campaignId` where known (populated by Task F4), falling back to `adId`, falling back to `channel`.
+
+**Query from `prospects` LEFT JOIN `lead_attributions`, not from `lead_attributions`.** Task D1 now writes an `organic` row for every WhatsApp lead, but manually added prospects still have none, and a report that inner joins would silently omit them and overstate the ad-driven share of the funnel. Derive the fallback bucket from `prospects.source` when no attribution row exists. Columns: anúncio, leads, contatados, agendados, convertidos, receita, taxa de conversão.
 
 Revenue joins `lead_attributions` → `prospects.convertedPatientId` → `financial_entries` where the entry's status is `paid` or `partial`, summing `totalAmount`.
 
@@ -1129,7 +1247,9 @@ Date filtering uses `resolveDateRange` in the route and `startOfBrDay` / `endOfB
 2. The PATCH route accepts and persists the field.
 3. A section on both public pages describing that contact data may be shared in hashed form with Meta for ad measurement when the clinic enables the integration, and that a patient may opt out with their clinic.
 
-Enforcement already lives in `enqueueMetaEvent` from Task C1 and needs no change here. Verify with one test that an opted-out patient produces a `skipped` row rather than no row at all, since the audit trail is the point.
+Enforcement lives in `enqueueMetaEvent`, which resolves the flag itself through `isMarketingOptedOut` (Task B3) rather than trusting a caller to pass it. Nothing further is needed here beyond the UI and the column.
+
+Verify with one test that an opted-out patient produces a `skipped` row rather than no row at all. The absence of a row proves nothing under audit; a `skipped` row with reason `opted_out` is the evidence the opt-out was honoured.
 
 - [ ] Write failing tests → run → implement → run → commit `feat(lgpd): patient opt out of ad measurement and privacy copy`
 
@@ -1171,6 +1291,35 @@ does not throw; an existing `adHeadline` is not overwritten.
 
 ---
 
+### Task F5: Connection settings UI
+
+**Files:**
+- Create: `web/src/components/settings/meta-connection-card.tsx`
+- Create: `web/src/hooks/queries/use-meta.ts`
+- Modify: `web/src/app/(platform)/configuracoes/settings-page-client.tsx` (TabKey line 116, SIDEBAR_GROUPS line 133, TAB_ROLES line 173, render branch after line 441)
+- Test: `web/src/components/settings/__tests__/meta-connection-card.test.tsx`
+
+**Work:**
+Model the card on `web/src/components/settings/calendar-connection-card.tsx`: not-connected state with a "Conectar Meta" button doing a full-page redirect to `/api/integrations/meta/auth/connect`, connected state with status, a disconnect confirm dialog, and React Query invalidation with `sonner` toasts.
+
+Additions specific to this card:
+- A collapsible "Conectar manualmente" section with Dataset ID and token inputs plus a "Testar conexão" button that shows Meta's actual response.
+- The **LGPD acknowledgement**: a required checkbox with the controller text, shown before the connection can be activated. Submitting records `acknowledgedAt` / `acknowledgedBy`. Copy, in Portuguese, no dashes:
+
+> A clínica é a controladora dos dados dos seus pacientes. Ao ativar esta integração, dados de contato (telefone e email) serão enviados de forma criptografada à Meta para medição de anúncios. A clínica é responsável pela base legal do tratamento perante seus pacientes.
+
+- An "Correspondência avançada" switch bound to `advancedMatchingEnabled`.
+- A diagnostics table of the last 20 events: event name, status, time, and Meta's trace id.
+- A warning banner when `status === 'invalid_token'`.
+
+Add `'integracoes'` to `TabKey`, to the `'Sistema'` group in `SIDEBAR_GROUPS` with a plug icon, and leave it out of `TAB_ROLES` so it defaults to owner-only.
+
+**Tests:** the connect button is disabled until the acknowledgement is checked; an `invalid_token` status renders the warning; the diagnostics table renders a `skipped` row with its reason.
+
+- [ ] Write failing tests → run → implement → run → commit `feat(meta): integration settings card with acknowledgement and diagnostics`
+
+---
+
 # File Ownership Verification
 
 No file appears twice within any single group.
@@ -1182,24 +1331,28 @@ No file appears twice within any single group.
 | A | A3 | `lib/meta/types.ts`, `lib/meta/capi-client.ts` |
 | B | B1 | `db/queries/meta-connections.ts` |
 | B | B2 | `db/queries/meta-events.ts` |
-| B | B3 | `db/queries/lead-attributions.ts`, `lib/meta/attribution.ts` |
-| C | C1 | `lib/meta/events.ts`, `.env.example` |
+| B | B3 | `db/queries/lead-attributions.ts`, `db/queries/marketing-consent.ts`, `lib/meta/attribution.ts` |
+| C | C1 | `lib/meta/events.ts`, `lib/meta/resolve-prospect.ts`, `.env.example` |
 | D | D1 | `api/webhooks/whatsapp/route.ts` |
-| D | D2 | `api/crm/prospects/**` |
+| D | D2 | `api/crm/prospects/route.ts`, `api/crm/prospects/[id]/route.ts` |
 | D | D3 | `db/queries/appointments.ts`, `api/appointments/route.ts` |
 | D | D4 | `db/queries/financial.ts` |
 | D | D5 | `api/whatsapp/conversations/[id]/messages/route.ts` |
 | D | D6 | `api/book/[slug]/route.ts`, `app/c/[slug]/page.tsx`, `components/booking/**` |
 | E | E1 | `api/cron/meta-events/**`, `vercel.json` |
 | E | E2 | `lib/meta/oauth.ts`, `api/integrations/meta/**` |
-| E | E3 | `components/settings/**`, `hooks/queries/use-meta.ts` |
+
 | F | F1 | `db/queries/reports/marketing.ts`, `lib/reports/**`, `api/reports/marketing/**`, `relatorios/marketing/**` |
 | F | F2 | `components/crm/**`, `db/queries/prospects.ts` |
 | F | F3 | `api/patients/[id]/route.ts`, `components/patients/**`, `site/src/app/privacidade`, `site/src/app/lgpd` |
 | F | F4 | `lib/meta/ad-metadata.ts`, `api/cron/meta-events/route.ts` |
+| F | F5 | `components/settings/meta-connection-card.tsx`, `hooks/queries/use-meta.ts`, `app/(platform)/configuracoes/settings-page-client.tsx` |
 
 **Cross-group ordering that matters:**
 - D6 must create the prospect *before* calling `createAppointment`, because D3's hook inside `createAppointment` resolves the prospect by `bookingPhone`.
 - D3 must check `hasEvent('schedule:<prospectId>')` before emitting, to avoid double `Schedule` with D2.
 - F2 modifies `db/queries/prospects.ts`, which no Group D task owns. Safe.
 - F4 modifies `api/cron/meta-events/route.ts`, owned by E1 in the previous group. Safe because groups are sequential, and no other Group F task touches it.
+- F5 modifies `app/(platform)/configuracoes/settings-page-client.tsx`, which no other task in any group touches.
+- D2 does NOT touch `api/crm/prospects/[id]/convert/route.ts`. Conversion emits no event, so the file is left alone.
+- D6 uses `getProspectByPhone`, `createNewProspect` and `updateProspect` at their existing signatures and does not modify `db/queries/prospects.ts`, which F2 owns in a later group.
