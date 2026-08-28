@@ -153,7 +153,21 @@ export default function PrivacidadePage() {
                     <strong>Obrigação legal:</strong> quando exigido por lei,
                     ordem judicial ou autoridade competente.
                   </li>
+                  <li>
+                    <strong>Medição de anúncios (Meta):</strong> quando a
+                    clínica ativa a integração com a Meta (Facebook e
+                    Instagram), dados de contato do paciente, como telefone e
+                    e-mail, podem ser compartilhados com a Meta em formato
+                    criptografado (hash), para medir o resultado de campanhas
+                    publicitárias. A Meta recebe apenas o hash, nunca o dado
+                    em texto claro.
+                  </li>
                 </ul>
+                <p>
+                  O paciente que não deseja ter seus dados usados nessa
+                  medição pode solicitar a exclusão diretamente com a clínica
+                  responsável pelo seu atendimento, a qualquer momento.
+                </p>
               </div>
             </section>
 
