@@ -25,7 +25,7 @@ describe('postEvents', () => {
   })
 
   it('posts to the dataset events endpoint with the pinned graph version', async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
       new Response(JSON.stringify({ events_received: 1, fbtrace_id: 'tr-1' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -36,16 +36,16 @@ describe('postEvents', () => {
     const result = await postEvents(target, [makeEvent()])
 
     expect(result).toEqual({ ok: true, eventsReceived: 1, fbTraceId: 'tr-1' })
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe('https://graph.facebook.com/v21.0/123/events')
-    expect(init.method).toBe('POST')
-    const body = JSON.parse(init.body as string)
+    expect(init?.method).toBe('POST')
+    const body = JSON.parse(init?.body as string)
     expect(body.data).toHaveLength(1)
     expect(body.access_token).toBe('tok')
   })
 
   it('never puts the access token in the URL', async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
       new Response(JSON.stringify({ events_received: 1 }), { status: 200 }),
     )
     global.fetch = fetchMock as unknown as typeof fetch
@@ -56,14 +56,14 @@ describe('postEvents', () => {
   })
 
   it('includes test_event_code only when the target carries one', async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
       new Response(JSON.stringify({ events_received: 1 }), { status: 200 }),
     )
     global.fetch = fetchMock as unknown as typeof fetch
 
     await postEvents({ ...target, testEventCode: 'TEST123' }, [makeEvent()])
 
-    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string)
     expect(body.test_event_code).toBe('TEST123')
   })
 
