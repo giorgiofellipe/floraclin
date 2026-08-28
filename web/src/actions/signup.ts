@@ -2,7 +2,6 @@
 
 import { signIn } from '@/lib/auth-config'
 import { redirect } from 'next/navigation'
-import { AuthError } from 'next-auth'
 import { signUpSchema, clinicDetailsSchema } from '@/validations/signup'
 import { db } from '@/db/client'
 import { users, tenants, tenantUsers, plans } from '@/db/schema'
@@ -129,16 +128,13 @@ export async function signUp(
     console.error('Failed to send confirmation email', err)
   }
 
-  try {
-    await signIn('credentials', { email, password, redirectTo: '/confirm-email' })
-  } catch (error) {
-    if (error instanceof AuthError) {
-      return { error: { general: ['Conta criada, mas erro ao fazer login automático. Faça login manualmente.'] } }
-    }
-    throw error
-  }
-
-  return null
+  // Deliberately no signIn here. Signing the user in before they confirm
+  // would hand an unconfirmed account a working session cookie, and the API
+  // would accept it: middleware's /api branch returns before any email check.
+  // The first sign-in happens after confirming, and `authorize` refuses until
+  // then. The address rides in the query string because there is no session
+  // for the page to read it from.
+  redirect(`/confirm-email?email=${encodeURIComponent(email)}`)
 }
 
 export async function signUpWithGoogle() {

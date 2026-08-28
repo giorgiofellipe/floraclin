@@ -92,4 +92,41 @@ describe('BookingPage', () => {
     expect(fallback).toBeInTheDocument()
     expect(fallback).toHaveTextContent(CLINIC.name)
   })
+  /**
+   * The closed state is the only new behaviour on this page, and it is the
+   * one a patient sees. Both routes into it matter: the clinic was already
+   * lapsed when the page rendered, and the clinic lapsed between page load
+   * and submit. The second is the one that would otherwise surface a raw
+   * error to someone who did nothing wrong.
+   */
+  describe('when the clinic is not accepting bookings', () => {
+    it('shows the closed message instead of the form, keeping the clinic brand', () => {
+      render(
+        <BookingPage
+          clinic={{ ...CLINIC, logoUrl: null }}
+          practitioners={[]}
+          slug="bela-pele"
+          acceptingBookings={false}
+        />
+      )
+
+      expect(screen.getByTestId('booking-closed')).toBeInTheDocument()
+      // The clinic is still identified. Only the form goes away.
+      expect(screen.getByTestId('clinic-name-fallback')).toBeInTheDocument()
+    })
+
+    it('does not show the closed message while the clinic is active', () => {
+      render(
+        <BookingPage
+          clinic={{ ...CLINIC, logoUrl: null }}
+          practitioners={[]}
+          slug="bela-pele"
+          acceptingBookings
+        />
+      )
+
+      expect(screen.queryByTestId('booking-closed')).not.toBeInTheDocument()
+    })
+  })
+
 })

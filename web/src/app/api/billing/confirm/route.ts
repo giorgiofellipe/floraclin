@@ -44,6 +44,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ activated: false })
     }
 
+    // Cancellation here is cancel_at_period_end, so Stripe keeps reporting
+    // 'active' right up to the period end. Without this, replaying the
+    // original Checkout Session after cancelling flips the local status back
+    // to active and undoes the cancellation.
+    if (subscription.cancel_at_period_end) {
+      return NextResponse.json({ activated: false })
+    }
+
     const planSlug = session.metadata?.planSlug
     const plan = planSlug ? await getPlanBySlug(planSlug) : null
     if (!plan || !plan.active) {

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn, formatDate } from '@/lib/utils'
 import { useAdminTenants, useAdminTenantDetail } from '@/hooks/queries/use-admin-tenants'
-import { useUpdateTenant, useApproveTenant, useRejectTenant } from '@/hooks/mutations/use-admin-tenant-mutations'
+import { useUpdateTenant, useSuspendTenant } from '@/hooks/mutations/use-admin-tenant-mutations'
 import { AdminTenantDialog } from './admin-tenant-dialog'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
@@ -62,8 +62,7 @@ export function AdminTenantList() {
 
   const { data: result, isPending, isFetching } = useAdminTenants(search, page)
   const updateTenant = useUpdateTenant()
-  const approveTenant = useApproveTenant()
-  const rejectTenant = useRejectTenant()
+    const suspendTenant = useSuspendTenant()
 
   const tenants: Tenant[] = result?.data ?? []
   const total = result?.total ?? 0
@@ -115,28 +114,17 @@ export function AdminTenantList() {
     setDialogOpen(true)
   }, [])
 
-  const handleApprove = useCallback(
-    async (tenant: Tenant) => {
-      try {
-        await approveTenant.mutateAsync(tenant.id)
-        toast.success(`${tenant.name} aprovada`)
-      } catch {
-        toast.error('Erro ao aprovar clínica')
-      }
-    },
-    [approveTenant],
-  )
 
-  const handleReject = useCallback(
+  const handleSuspend = useCallback(
     async (tenant: Tenant) => {
       try {
-        await rejectTenant.mutateAsync(tenant.id)
+        await suspendTenant.mutateAsync(tenant.id)
         toast.success(`${tenant.name} rejeitada`)
       } catch {
         toast.error('Erro ao rejeitar clínica')
       }
     },
-    [rejectTenant],
+    [suspendTenant],
   )
 
   return (
@@ -244,7 +232,7 @@ export function AdminTenantList() {
 
                   {/* Actions */}
                   <div className="flex items-center gap-1 shrink-0">
-                    {tenant.status === 'pending_approval' ? (
+                    {tenant.status === 'active' ? (
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger
@@ -252,33 +240,12 @@ export function AdminTenantList() {
                               <Button
                                 variant="ghost"
                                 size="icon-sm"
-                                className="text-mid hover:text-emerald-600"
-                                onClick={() => handleApprove(tenant)}
-                                disabled={approveTenant.isPending}
-                                data-testid="admin-tenant-approve"
-                              >
-                                {approveTenant.isPending ? (
-                                  <Loader2Icon className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <CheckIcon className="h-3.5 w-3.5" />
-                                )}
-                              </Button>
-                            }
-                          />
-                          <TooltipContent>Aprovar</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
                                 className="text-mid hover:text-red-600"
-                                onClick={() => handleReject(tenant)}
-                                disabled={rejectTenant.isPending}
-                                data-testid="admin-tenant-reject"
+                                onClick={() => handleSuspend(tenant)}
+                                disabled={suspendTenant.isPending}
+                                data-testid="admin-tenant-suspend"
                               >
-                                {rejectTenant.isPending ? (
+                                {suspendTenant.isPending ? (
                                   <Loader2Icon className="h-3.5 w-3.5 animate-spin" />
                                 ) : (
                                   <XIcon className="h-3.5 w-3.5" />
@@ -286,7 +253,7 @@ export function AdminTenantList() {
                               </Button>
                             }
                           />
-                          <TooltipContent>Rejeitar</TooltipContent>
+                          <TooltipContent>Suspender</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     ) : (

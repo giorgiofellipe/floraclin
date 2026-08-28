@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requirePlatformAdmin } from '@/lib/auth'
-import { rejectTenant, getTenantOwnerEmail } from '@/db/queries/admin-tenants'
+import { suspendTenant, getTenantOwnerEmail } from '@/db/queries/admin-tenants'
 import { sendRejectionEmail } from '@/lib/email'
 import { handleApiError } from '@/lib/api-error'
 import { reportSideEffectFailure } from '@/lib/observability'
@@ -14,14 +14,14 @@ export async function POST(
     const { id } = await params
 
     const ownerEmail = await getTenantOwnerEmail(id)
-    const tenant = await rejectTenant(id)
+    const tenant = await suspendTenant(id)
     if (!tenant) {
-      return NextResponse.json({ error: 'Tenant not found or not pending' }, { status: 404 })
+      return NextResponse.json({ error: 'Clínica não encontrada' }, { status: 404 })
     }
 
     if (ownerEmail) {
       void sendRejectionEmail(ownerEmail, tenant.name).catch(err =>
-        reportSideEffectFailure(err, { area: 'admin', step: 'rejection_email' }),
+        reportSideEffectFailure(err, { area: 'admin', step: 'suspension_email' }),
       )
     }
 

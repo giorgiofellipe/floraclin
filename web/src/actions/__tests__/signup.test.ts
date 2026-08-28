@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
 import '@/tests/mocks/db'
 import { db } from '@/db/client'
 import { signIn } from '@/lib/auth-config'
+import { redirect } from 'next/navigation'
 
 const { tenantInsertSpy, issueConfirmationTokenMock, sendConfirmationEmailMock } = vi.hoisted(() => ({
   tenantInsertSpy: vi.fn(),
@@ -149,8 +150,7 @@ describe('signUp action', () => {
   })
 
   it('creates the tenant with status active', async () => {
-    const result = await signUp(null, validFormData({ email: 'active@test.com' }))
-    expect(result).toBeNull()
+    await signUp(null, validFormData({ email: 'active@test.com' }))
 
     const tenantCall = tenantInsertSpy.mock.calls.find(([vals]) => 'status' in vals)
     expect(tenantCall?.[0]).toMatchObject({ status: 'active' })
@@ -169,27 +169,38 @@ describe('signUp action', () => {
     expect(confirmUrl).toContain('/api/auth/confirm')
   })
 
-  it('still completes sign-in and redirects to /confirm-email when the confirmation email fails to send', async () => {
+  it('still reaches /confirm-email when the confirmation email fails to send', async () => {
+    // The rows are already committed by this point. If a Resend failure
+    // escaped, the account would exist, be unregisterable because the email
+    // is taken, and have no way to ask for a resend.
     sendConfirmationEmailMock.mockRejectedValueOnce(new Error('Resend is down'))
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    const result = await signUp(null, validFormData({ email: 'send-fails@test.com' }))
+    await signUp(null, validFormData({ email: 'send-fails@test.com' }))
 
-    expect(result).toBeNull()
-    expect(signIn).toHaveBeenCalledWith('credentials', {
-      email: 'send-fails@test.com',
-      password: 'secure123',
-      redirectTo: '/confirm-email',
-    })
+    expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
 
     consoleErrorSpy.mockRestore()
   })
 
-  it('redirects to /confirm-email and never /pending-approval', async () => {
+  it('never signs the new account in', async () => {
+    // Double opt-in is only real if an unconfirmed account has no session.
+    // Middleware lets every /api request through before it checks
+    // emailVerified, so a session here would make the whole API reachable
+    // without ever opening the email.
+    await signUp(null, validFormData({ email: 'nosession@test.com' }))
+
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('redirects to /confirm-email carrying the address, never to /pending-approval', async () => {
     await signUp(null, validFormData({ email: 'redirect@test.com' }))
 
-    const call = vi.mocked(signIn).mock.calls.at(-1)
-    expect(call?.[1]).toMatchObject({ redirectTo: '/confirm-email' })
-    expect(call?.[1]).not.toMatchObject({ redirectTo: '/pending-approval' })
+    const target = vi.mocked(redirect).mock.calls.at(-1)?.[0] as string
+    expect(target).toContain('/confirm-email')
+    // The page has no session to read the address from now, so it rides in
+    // the query string.
+    expect(target).toContain('redirect%40test.com')
+    expect(target).not.toContain('/pending-approval')
   })
 })

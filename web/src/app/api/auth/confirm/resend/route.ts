@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/db/client'
-import { users, verificationTokens, tenantUsers, tenants } from '@/db/schema'
+import { users, tenantUsers, tenants } from '@/db/schema'
 import { eq, and, or, isNull, lt } from 'drizzle-orm'
-import { confirmIdentifier, issueConfirmationToken } from '@/lib/confirm-email'
+import { issueConfirmationToken } from '@/lib/confirm-email'
 import { sendConfirmationEmail } from '@/lib/email'
 import { getAppUrl } from '@/lib/app-url'
 import { handleApiError } from '@/lib/api-error'
@@ -37,36 +37,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true })
     }
 
-    const identifier = confirmIdentifier(normalizedEmail)
-    const cooldownCutoff = new Date(Date.now() - RESEND_COOLDOWN_MS)
+    // One atomic upsert does both the throttle and the issue. The previous
+    // shape claimed the row, then deleted it while re-issuing, which left a
+    // window where a concurrent caller found no row, concluded there was
+    // nothing to throttle against, and sent a second email.
+    const rawToken = await issueConfirmationToken(normalizedEmail, RESEND_COOLDOWN_MS)
 
-    const claimed = await db
-      .update(verificationTokens)
-      .set({ lastSentAt: new Date() })
-      .where(
-        and(
-          eq(verificationTokens.identifier, identifier),
-          or(isNull(verificationTokens.lastSentAt), lt(verificationTokens.lastSentAt, cooldownCutoff))
-        )
-      )
-      .returning({ identifier: verificationTokens.identifier })
-
-    if (claimed.length === 0) {
-      // The conditional UPDATE above already is the throttle gate -- only
-      // one caller can win it inside a 60s window, race or not. This read
-      // only decides which message comes back: a pending token row that
-      // just didn't clear its cooldown, versus no row at all (nothing to
-      // throttle against yet), so a race here can't let two callers bypass
-      // the cooldown.
-      const [existing] = await db
-        .select({ identifier: verificationTokens.identifier })
-        .from(verificationTokens)
-        .where(eq(verificationTokens.identifier, identifier))
-        .limit(1)
-
-      if (existing) {
-        return NextResponse.json({ error: 'Aguarde um pouco antes de solicitar outro link.' }, { status: 429 })
-      }
+    // Throttled. Same response as every other case on purpose: a 429 here
+    // would say "this address has an unconfirmed account", which is exactly
+    // the fact an anonymous caller must not be able to probe for.
+    if (!rawToken) {
+      return NextResponse.json({ success: true })
     }
 
     const [membership] = await db
@@ -77,7 +58,6 @@ export async function POST(request: NextRequest) {
       .limit(1)
 
     const appUrl = getAppUrl()
-    const rawToken = await issueConfirmationToken(normalizedEmail)
     const confirmUrl = `${appUrl}/api/auth/confirm?email=${encodeURIComponent(normalizedEmail)}&token=${rawToken}`
     await sendConfirmationEmail(normalizedEmail, confirmUrl, membership?.tenantName ?? 'FloraClin')
 

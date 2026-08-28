@@ -8,7 +8,7 @@ import { db } from '@/db/client'
 import { users, sessions, accounts, verificationTokens, tenantUsers, tenants, tenantSubscriptions, plans } from '@/db/schema'
 import { eq, and, isNull } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
-import { markEmailVerified } from '@/db/queries/users'
+import { markEmailVerifiedViaGoogle } from '@/db/queries/users'
 
 // The FloraClin schema uses custom column names (fullName instead of name,
 // avatarUrl instead of image) which causes type mismatches with the default
@@ -49,6 +49,16 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         const valid = await bcrypt.compare(password, user.passwordHash)
         if (!valid) return null
 
+        // Double opt-in is enforced here rather than only in middleware.
+        // Signup no longer signs anyone in, so refusing at this point means
+        // an unconfirmed account never obtains a session, and therefore
+        // cannot reach the API either. Gating pages alone would have left
+        // every route callable with a cookie.
+        //
+        // Existing accounts were backfilled by 0023_email_confirmation.sql,
+        // and Google users are stamped on sign-in, so neither is affected.
+        if (!user.emailVerified) return null
+
         return { id: user.id, email: user.email, name: user.fullName }
       },
     }),
@@ -88,7 +98,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       // linking into an existing unconfirmed credentials account, so this one
       // hook covers both cases.
       if (user?.email && account?.provider === 'google') {
-        await markEmailVerified(user.email)
+        await markEmailVerifiedViaGoogle(user.email)
       }
 
       token.v = 3

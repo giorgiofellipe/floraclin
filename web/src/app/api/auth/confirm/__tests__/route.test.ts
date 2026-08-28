@@ -65,9 +65,10 @@ vi.mock('@/db/schema', () => ({
   accounts: {},
 }))
 
-const { consumeConfirmationTokenMock, markEmailVerifiedMock, issueConfirmationTokenMock } = vi.hoisted(() => ({
+const { consumeConfirmationTokenMock, markEmailVerifiedMock, markEmailVerifiedViaGoogleMock, issueConfirmationTokenMock } = vi.hoisted(() => ({
   consumeConfirmationTokenMock: vi.fn(),
   markEmailVerifiedMock: vi.fn(),
+  markEmailVerifiedViaGoogleMock: vi.fn(),
   issueConfirmationTokenMock: vi.fn().mockResolvedValue('raw-token'),
 }))
 
@@ -82,6 +83,7 @@ vi.mock('@/lib/confirm-email', () => ({
 // Runtime where the token module's node:crypto import is unavailable.
 vi.mock('@/db/queries/users', () => ({
   markEmailVerified: markEmailVerifiedMock,
+  markEmailVerifiedViaGoogle: markEmailVerifiedViaGoogleMock,
 }))
 
 const { sendConfirmationEmailMock } = vi.hoisted(() => ({
@@ -205,18 +207,30 @@ describe('POST /api/auth/confirm/resend', () => {
     )
   }
 
-  it('returns 429 when the cooldown has not elapsed', async () => {
-    pushSelect([{ id: 'user-1', emailVerified: null }]) // user lookup: exists, unverified
-    pushUpdate([]) // conditional UPDATE: cooldown gate not met, 0 rows
-    pushSelect([{ identifier: 'confirm:a@b.com' }]) // existence check: a row does exist
+  it('sends nothing, and looks identical, when the cooldown has not elapsed', async () => {
+    // A 429 here would answer "this address has an unconfirmed account",
+    // which is exactly what an anonymous caller must not be able to probe
+    // for. Throttled looks the same as unknown and as already-verified.
+    pushSelect([{ id: 'user-1', emailVerified: null }])
+    issueConfirmationTokenMock.mockResolvedValueOnce(null) // upsert lost the cooldown race
 
     const response = await postResend({ email: 'a@b.com' })
     const data = await response.json()
 
-    expect(response.status).toBe(429)
-    expect(data.error).toBeTruthy()
-    expect(issueConfirmationTokenMock).not.toHaveBeenCalled()
+    expect(response.status).toBe(200)
+    expect(data).toEqual({ success: true })
     expect(sendConfirmationEmailMock).not.toHaveBeenCalled()
+  })
+
+  it('passes the cooldown into the token upsert rather than checking it separately', async () => {
+    // The throttle has to be inside the same statement. Read-then-write left
+    // a window where a second caller saw no row and sent a second email.
+    pushSelect([{ id: 'user-1', emailVerified: null }])
+    pushSelect([{ tenantName: 'Clínica A' }])
+
+    await postResend({ email: 'a@b.com' })
+
+    expect(issueConfirmationTokenMock).toHaveBeenCalledWith('a@b.com', expect.any(Number))
   })
 
   it('sends nothing and responds the same for an unknown address', async () => {
@@ -245,7 +259,6 @@ describe('POST /api/auth/confirm/resend', () => {
 
   it('issues a fresh token and sends the email when not throttled', async () => {
     pushSelect([{ id: 'user-1', emailVerified: null }]) // user lookup
-    pushUpdate([{ identifier: 'confirm:a@b.com' }]) // conditional UPDATE: claimed
     pushSelect([{ tenantName: 'Clinica Teste' }]) // membership lookup for the email copy
 
     const response = await postResend({ email: 'a@b.com' })
@@ -253,7 +266,7 @@ describe('POST /api/auth/confirm/resend', () => {
 
     expect(response.status).toBe(200)
     expect(data).toEqual({ success: true })
-    expect(issueConfirmationTokenMock).toHaveBeenCalledWith('a@b.com')
+    expect(issueConfirmationTokenMock).toHaveBeenCalledWith('a@b.com', expect.any(Number))
     expect(sendConfirmationEmailMock).toHaveBeenCalledWith(
       'a@b.com',
       expect.stringContaining('/api/auth/confirm?email=a%40b.com&token=raw-token'),
@@ -292,7 +305,7 @@ describe('Google sign-in stamps emailVerified (auth-config jwt callback)', () =>
       account: { provider: 'google' },
     })
 
-    expect(markEmailVerifiedMock).toHaveBeenCalledWith('new@floraclin.com.br')
+    expect(markEmailVerifiedViaGoogleMock).toHaveBeenCalledWith('new@floraclin.com.br')
     expect(token.emailVerified).toBe(true)
     expect(token.v).toBe(3)
   })
@@ -315,7 +328,11 @@ describe('Google sign-in stamps emailVerified (auth-config jwt callback)', () =>
       account: { provider: 'google' },
     })
 
-    expect(markEmailVerifiedMock).toHaveBeenCalledWith('existing@floraclin.com.br')
+    expect(markEmailVerifiedViaGoogleMock).toHaveBeenCalledWith('existing@floraclin.com.br')
+    // Not the plain marker: linking into an account that was never confirmed
+    // must also discard whatever password was set on it, or whoever planted
+    // it keeps a working credential on a now-verified account.
+    expect(markEmailVerifiedMock).not.toHaveBeenCalled()
     expect(token.emailVerified).toBe(true)
     expect(token.tenantStatus).toBe('active')
   })

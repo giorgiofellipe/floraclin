@@ -20,6 +20,11 @@ export default auth((req) => {
     pathname.startsWith('/a/') ||
     pathname.startsWith('/sign/') ||
     pathname.startsWith('/verify/') ||
+    // The confirmation link is opened from an inbox, often on a different
+    // device with no session. Without this it falls through to the
+    // unauthenticated /login redirect and the token in the query string is
+    // lost, which defeats the whole point of a 24 hour link.
+    pathname.startsWith('/confirm-email') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/favicon') ||

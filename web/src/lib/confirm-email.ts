@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { verificationTokens } from '@/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, isNull, lt, or } from 'drizzle-orm'
 import crypto from 'crypto'
 
 /**
@@ -28,24 +28,52 @@ export function hashToken(raw: string): string {
   return crypto.createHash('sha256').update(raw).digest('hex')
 }
 
-export async function issueConfirmationToken(email: string): Promise<string> {
+/**
+ * Issues a token, atomically.
+ *
+ * An upsert rather than delete-then-insert: the delete left a window in which
+ * a concurrent resend saw no row, concluded there was nothing to throttle
+ * against, and sent a second email. Keyed on the partial unique index over
+ * `identifier` added in 0023.
+ *
+ * `cooldownMs` makes the throttle part of the same statement. When supplied,
+ * the update only fires if the existing row is older than the cooldown, so
+ * two simultaneous callers cannot both win. Returns null when throttled.
+ * Signup omits it: there is nothing to throttle on a brand new account.
+ */
+export async function issueConfirmationToken(
+  email: string,
+  cooldownMs?: number,
+): Promise<string | null> {
+  const raw = crypto.randomBytes(32).toString('hex')
   const identifier = confirmIdentifier(email)
-  const rawToken = crypto.randomBytes(32).toString('hex')
-  const expires = new Date(Date.now() + CONFIRM_TOKEN_TTL_MS)
+  const now = new Date()
 
-  // Clear any previous confirmation token for this identifier so a
-  // resend invalidates the earlier link instead of leaving two live ones.
-  await db.delete(verificationTokens).where(eq(verificationTokens.identifier, identifier))
+  const rows = await db
+    .insert(verificationTokens)
+    .values({
+      identifier,
+      token: hashToken(raw),
+      expires: new Date(now.getTime() + CONFIRM_TOKEN_TTL_MS),
+      lastSentAt: now,
+    })
+    .onConflictDoUpdate({
+      target: verificationTokens.identifier,
+      set: {
+        token: hashToken(raw),
+        expires: new Date(now.getTime() + CONFIRM_TOKEN_TTL_MS),
+        lastSentAt: now,
+      },
+      setWhere: cooldownMs
+        ? or(
+            isNull(verificationTokens.lastSentAt),
+            lt(verificationTokens.lastSentAt, new Date(now.getTime() - cooldownMs)),
+          )
+        : undefined,
+    })
+    .returning({ identifier: verificationTokens.identifier })
 
-  await db.insert(verificationTokens).values({
-    identifier,
-    token: hashToken(rawToken),
-    expires,
-    lastSentAt: new Date(),
-  })
-
-  // Only the hash is stored; the raw token is returned once, for the email link.
-  return rawToken
+  return rows.length > 0 ? raw : null
 }
 
 /**

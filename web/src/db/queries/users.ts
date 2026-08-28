@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { users, tenantUsers, tenants } from '@/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { sendInviteEmail } from '@/lib/email'
 import type { InviteUserInput } from '@/validations/user'
@@ -207,6 +207,34 @@ export async function deactivateUser(
  * dragged an unsupported module into the middleware bundle.
  */
 export async function markEmailVerified(email: string): Promise<void> {
+  await db
+    .update(users)
+    .set({ emailVerified: new Date() })
+    .where(eq(users.email, email.toLowerCase()))
+}
+
+/**
+ * Marks the address verified via Google, and discards any password that was
+ * set on the account while it was still unconfirmed.
+ *
+ * Without the second half, anyone can register someone else's address with a
+ * password of their choosing. When the real owner later signs in with Google,
+ * account linking attaches their identity and marks the account verified, but
+ * the planted password survives and still works. Clearing it is what makes
+ * Google sign-in prove ownership rather than merely add a second way in.
+ *
+ * Only clears when the account was NOT already confirmed. A user who
+ * legitimately confirmed by email and then adds Google keeps their password.
+ */
+export async function markEmailVerifiedViaGoogle(email: string): Promise<void> {
+  await db
+    .update(users)
+    .set({ emailVerified: new Date(), passwordHash: null })
+    .where(and(eq(users.email, email.toLowerCase()), isNull(users.emailVerified)))
+
+  // Unconditional, so an account that was already confirmed still gets its
+  // stamp refreshed. It keeps its password: the statement above matched
+  // nothing for it.
   await db
     .update(users)
     .set({ emailVerified: new Date() })

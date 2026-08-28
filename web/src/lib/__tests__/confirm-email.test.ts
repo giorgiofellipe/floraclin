@@ -9,20 +9,25 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { deleteMock, whereMock, returningMock, insertMock, valuesMock, updateMock, setMock, updateWhereMock } =
+const { deleteMock, whereMock, returningMock, insertMock, valuesMock, updateMock, setMock, updateWhereMock, onConflictMock, insertReturningMock } =
   vi.hoisted(() => {
     const returningMock = vi.fn()
     const whereMock = vi.fn(() => ({ returning: returningMock }))
     const deleteMock = vi.fn(() => ({ where: whereMock }))
 
-    const valuesMock = vi.fn().mockResolvedValue(undefined)
+    // issueConfirmationToken upserts now: values -> onConflictDoUpdate ->
+    // returning. Returning a row means the write won; an empty array means
+    // the cooldown in setWhere rejected it.
+    const insertReturningMock = vi.fn().mockResolvedValue([{ identifier: 'confirm:x' }])
+    const onConflictMock = vi.fn((_cfg: Record<string, unknown>) => ({ returning: insertReturningMock }))
+    const valuesMock = vi.fn((_row: Record<string, unknown>) => ({ onConflictDoUpdate: onConflictMock }))
     const insertMock = vi.fn(() => ({ values: valuesMock }))
 
     const updateWhereMock = vi.fn().mockResolvedValue(undefined)
     const setMock = vi.fn((_patch: Record<string, unknown>) => ({ where: updateWhereMock }))
     const updateMock = vi.fn(() => ({ set: setMock }))
 
-    return { deleteMock, whereMock, returningMock, insertMock, valuesMock, updateMock, setMock, updateWhereMock }
+    return { deleteMock, whereMock, returningMock, insertMock, valuesMock, updateMock, setMock, updateWhereMock, onConflictMock, insertReturningMock }
   })
 
 vi.mock('@/db/client', () => ({
@@ -56,7 +61,10 @@ import { markEmailVerified } from '@/db/queries/users'
 
 beforeEach(() => {
   vi.clearAllMocks()
-  valuesMock.mockResolvedValue(undefined)
+  // Restore the upsert chain; clearAllMocks wipes return values.
+  valuesMock.mockReturnValue({ onConflictDoUpdate: onConflictMock })
+  onConflictMock.mockReturnValue({ returning: insertReturningMock })
+  insertReturningMock.mockResolvedValue([{ identifier: 'confirm:x' }])
   updateWhereMock.mockResolvedValue(undefined)
 })
 
@@ -83,18 +91,50 @@ describe('issueConfirmationToken', () => {
   it('stores only the hash, keyed by the namespaced identifier, and returns the raw token', async () => {
     const raw = await issueConfirmationToken('New@Patient.com')
 
-    expect(whereMock).toHaveBeenCalled()
+    expect(raw).not.toBeNull()
     expect(valuesMock).toHaveBeenCalledTimes(1)
-    const inserted = valuesMock.mock.calls[0][0]
+    const inserted = valuesMock.mock.calls[0][0]!
 
     expect(inserted.identifier).toBe('confirm:new@patient.com')
     expect(inserted.token).not.toBe(raw)
-    expect(inserted.token).toBe(hashToken(raw))
+    expect(inserted.token).toBe(hashToken(raw!))
     expect(inserted.lastSentAt).toBeInstanceOf(Date)
 
-    const ttl = inserted.expires.getTime() - Date.now()
+    const ttl = (inserted.expires as Date).getTime() - Date.now()
     expect(ttl).toBeGreaterThan(CONFIRM_TOKEN_TTL_MS - 5000)
     expect(ttl).toBeLessThanOrEqual(CONFIRM_TOKEN_TTL_MS)
+  })
+
+  it('upserts rather than deleting first, so a concurrent resend cannot slip through', async () => {
+    // The delete-then-insert it replaced left a window where a second caller
+    // saw no row, found nothing to throttle against, and sent a second email.
+    await issueConfirmationToken('new@patient.com')
+
+    expect(onConflictMock).toHaveBeenCalledTimes(1)
+    expect(deleteMock).not.toHaveBeenCalled()
+  })
+
+  it('applies the cooldown inside the same statement when one is given', async () => {
+    await issueConfirmationToken('new@patient.com', 60_000)
+
+    const conflict = onConflictMock.mock.calls[0][0]! as { setWhere?: unknown }
+    expect(conflict.setWhere).toBeDefined()
+  })
+
+  it('returns null when the cooldown rejected the write', async () => {
+    // No row back from the upsert means setWhere matched nothing, which is
+    // how the caller learns it was throttled.
+    insertReturningMock.mockResolvedValueOnce([])
+
+    expect(await issueConfirmationToken('new@patient.com', 60_000)).toBeNull()
+  })
+
+  it('does not constrain the write when no cooldown is given', async () => {
+    // Signup has nothing to throttle against on a brand new account.
+    await issueConfirmationToken('new@patient.com')
+
+    const conflict = onConflictMock.mock.calls[0][0]! as { setWhere?: unknown }
+    expect(conflict.setWhere).toBeUndefined()
   })
 })
 
