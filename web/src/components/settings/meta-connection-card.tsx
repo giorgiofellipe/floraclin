@@ -25,15 +25,8 @@ import {
   useTestMetaConnection,
   useMetaDatasets,
 } from '@/hooks/queries/use-meta'
+import { ACKNOWLEDGEMENT_TEXT, ACKNOWLEDGEMENT_VERSION } from '@/lib/meta/acknowledgement'
 
-// Mirrors `ACKNOWLEDGEMENT_VERSION` in `web/src/lib/meta/oauth.ts`. Not
-// imported directly: that module also imports `node:crypto` for the OAuth
-// state signing, which cannot be bundled into a client component. Bump both
-// together when the text below changes.
-const ACKNOWLEDGEMENT_VERSION = '2026-08-v1'
-
-const ACKNOWLEDGEMENT_TEXT =
-  'A clínica é a controladora dos dados dos seus pacientes. Ao ativar esta integração, dados de contato (telefone e email) serão enviados de forma criptografada à Meta para medição de anúncios. A clínica é responsável pela base legal do tratamento perante seus pacientes.'
 
 const EVENT_STATUS_LABELS: Record<string, string> = {
   pending: 'Pendente',

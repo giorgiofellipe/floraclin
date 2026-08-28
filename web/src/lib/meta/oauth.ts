@@ -1,12 +1,7 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import { META_GRAPH_VERSION } from './types'
 
-/**
- * Version of the LGPD acknowledgement text. Bump this when the text in the
- * settings card changes; the UI and the connection routes both read it from
- * here so they cannot drift apart.
- */
-export const ACKNOWLEDGEMENT_VERSION = '2026-08-v1'
+export { ACKNOWLEDGEMENT_VERSION, ACKNOWLEDGEMENT_TEXT } from './acknowledgement'
 
 const OAUTH_SCOPES = 'business_management,ads_management'
 
