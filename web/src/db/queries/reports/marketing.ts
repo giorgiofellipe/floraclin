@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
-import { prospects, leadAttributions, financialEntries } from '@/db/schema'
-import { and, eq, gte, lte, inArray } from 'drizzle-orm'
+import { prospects, leadAttributions, financialEntries, installments, paymentRecords } from '@/db/schema'
+import { and, eq, gte, lte, inArray, isNull } from 'drizzle-orm'
 import { startOfBrDay, endOfBrDay } from '@/lib/dates'
 import { directionalCompare, type SortDirection } from '@/lib/reports/sort'
 
@@ -47,9 +47,6 @@ const SORT_ACCESSORS: Record<MarketingReportSortKey, (row: MarketingReportRow) =
 const CONTACTED_STAGES = new Set(['contatado', 'qualificado', 'agendado', 'convertido'])
 const SCHEDULED_STAGES = new Set(['agendado', 'convertido'])
 
-const PAID_STATUSES = ['paid', 'partial'] as const
-
-// Applied after sorting, same precedent as the other reports.
 const MAX_ROWS = 200
 
 /**
@@ -62,6 +59,11 @@ const MAX_ROWS = 200
  * funnel. Grouping key is `campaignId ?? adId ?? channel ?? source`, so a
  * prospect with no attribution row (all three attribution fields null)
  * falls back to its own `source`.
+ *
+ * Revenue is what the patient actually paid inside the reported window
+ * (`payment_records.principal_covered` by `paid_at`), the same "Receita
+ * Recebida" figure `getPractitionerPL` produces, not the patient's lifetime
+ * billing.
  */
 export async function listMarketingReportRows(
   tenantId: string,
@@ -78,7 +80,10 @@ export async function listMarketingReportRows(
       adHeadline: leadAttributions.adHeadline,
     })
     .from(prospects)
-    .leftJoin(leadAttributions, eq(leadAttributions.prospectId, prospects.id))
+    .leftJoin(
+      leadAttributions,
+      and(eq(leadAttributions.prospectId, prospects.id), eq(leadAttributions.tenantId, prospects.tenantId)),
+    )
     .where(
       and(
         eq(prospects.tenantId, tenantId),
@@ -96,23 +101,32 @@ export async function listMarketingReportRows(
     const revenueRows = await db
       .select({
         patientId: financialEntries.patientId,
-        totalAmount: financialEntries.totalAmount,
+        amount: paymentRecords.principalCovered,
       })
-      .from(financialEntries)
+      .from(paymentRecords)
+      .innerJoin(installments, eq(installments.id, paymentRecords.installmentId))
+      .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
       .where(
         and(
           eq(financialEntries.tenantId, tenantId),
           inArray(financialEntries.patientId, convertedPatientIds),
-          inArray(financialEntries.status, [...PAID_STATUSES]),
+          isNull(financialEntries.deletedAt),
+          isNull(paymentRecords.reversedAt),
+          gte(paymentRecords.paidAt, startOfBrDay(dateFrom)),
+          lte(paymentRecords.paidAt, endOfBrDay(dateTo)),
         ),
       )
 
     for (const row of revenueRows) {
-      revenueByPatient.set(row.patientId, (revenueByPatient.get(row.patientId) ?? 0) + Number(row.totalAmount))
+      revenueByPatient.set(row.patientId, (revenueByPatient.get(row.patientId) ?? 0) + Number(row.amount))
     }
   }
 
   const groups = new Map<string, MarketingReportRow>()
+  // `uq_prospects_tenant_phone` excludes `convertido`, so the same patient can
+  // be pointed at by several converted prospect rows. Their revenue belongs to
+  // whichever group claims it first, never to both.
+  const countedPatientIds = new Set<string>()
 
   for (const row of leadRows) {
     const key = row.campaignId ?? row.adId ?? row.channel ?? row.source
@@ -128,7 +142,10 @@ export async function listMarketingReportRows(
     if (CONTACTED_STAGES.has(row.stage)) group.contacted += 1
     if (SCHEDULED_STAGES.has(row.stage)) group.scheduled += 1
     if (row.stage === 'convertido') group.converted += 1
-    if (row.convertedPatientId) group.revenue += revenueByPatient.get(row.convertedPatientId) ?? 0
+    if (row.convertedPatientId && !countedPatientIds.has(row.convertedPatientId)) {
+      countedPatientIds.add(row.convertedPatientId)
+      group.revenue += revenueByPatient.get(row.convertedPatientId) ?? 0
+    }
   }
 
   const rows = Array.from(groups.values()).map((group) => ({

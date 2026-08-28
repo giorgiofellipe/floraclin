@@ -1,20 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { startOfBrDay, endOfBrDay } from '@/lib/dates'
 
-// listMarketingReportRows issues up to two select/from/[leftJoin]/where
-// chains: one for prospects LEFT JOIN lead_attributions, and (only when at
-// least one prospect converted) one for financial_entries. We drive a fake
-// `db` that returns queued row arrays in call order; every chain method is a
-// no-op that returns the same node.
-const { queueRows, shiftRows, whereCalls, clearQueue } = vi.hoisted(() => {
+// listMarketingReportRows issues up to two select/from/[join]/where chains:
+// one for prospects LEFT JOIN lead_attributions, and (only when at least one
+// prospect converted) one for payment_records joined up to financial_entries.
+// We drive a fake `db` that returns queued row arrays in call order; every
+// chain method is a no-op that returns the same node.
+const { queueRows, shiftRows, whereCalls, joinCalls, clearQueue } = vi.hoisted(() => {
   const queue: unknown[][] = []
   const whereCalls: unknown[] = []
+  const joinCalls: unknown[] = []
   return {
     queueRows: (rows: unknown[]) => {
       queue.push(rows)
     },
     shiftRows: () => queue.shift() ?? [],
     whereCalls,
+    joinCalls,
     clearQueue: () => {
       queue.length = 0
     },
@@ -26,7 +28,14 @@ vi.mock('@/db/client', () => ({
     select: vi.fn(() => {
       const node: Record<string, unknown> = {}
       node.from = () => node
-      node.leftJoin = () => node
+      node.leftJoin = (...args: unknown[]) => {
+        joinCalls.push(args)
+        return node
+      }
+      node.innerJoin = (...args: unknown[]) => {
+        joinCalls.push(args)
+        return node
+      }
       node.where = (...args: unknown[]) => {
         whereCalls.push(args)
         return node
@@ -48,6 +57,7 @@ vi.mock('@/db/schema', () => ({
     createdAt: 'created_at',
   },
   leadAttributions: {
+    tenantId: 'attr_tenant_id',
     prospectId: 'prospect_id',
     campaignId: 'campaign_id',
     adId: 'ad_id',
@@ -55,10 +65,20 @@ vi.mock('@/db/schema', () => ({
     adHeadline: 'ad_headline',
   },
   financialEntries: {
-    tenantId: 'tenant_id',
+    id: 'entry_id',
+    tenantId: 'entry_tenant_id',
     patientId: 'patient_id',
-    totalAmount: 'total_amount',
-    status: 'status',
+    deletedAt: 'entry_deleted_at',
+  },
+  installments: {
+    id: 'installment_id',
+    financialEntryId: 'installment_financial_entry_id',
+  },
+  paymentRecords: {
+    installmentId: 'payment_installment_id',
+    principalCovered: 'principal_covered',
+    paidAt: 'paid_at',
+    reversedAt: 'reversed_at',
   },
 }))
 
@@ -68,6 +88,7 @@ vi.mock('drizzle-orm', () => ({
   gte: (a: unknown, b: unknown) => ['gte', a, b],
   lte: (a: unknown, b: unknown) => ['lte', a, b],
   inArray: (a: unknown, b: unknown) => ['inArray', a, b],
+  isNull: (a: unknown) => ['isNull', a],
 }))
 
 import { listMarketingReportRows } from '../marketing'
@@ -93,10 +114,24 @@ function leadRow(overrides: {
   }
 }
 
+/** Flattens the conditions an `and(...)` call collected for one `where`. */
+function conditionsOf(call: unknown): unknown[] {
+  const [andCall] = call as [unknown[]]
+  const [, ...conditions] = andCall
+  return conditions
+}
+
+function findCondition(conditions: unknown[], op: string, column: string) {
+  return conditions.find((c) => Array.isArray(c) && c[0] === op && c[1] === column) as
+    | [string, string, unknown]
+    | undefined
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   clearQueue()
   whereCalls.length = 0
+  joinCalls.length = 0
 })
 
 describe('listMarketingReportRows', () => {
@@ -115,15 +150,22 @@ describe('listMarketingReportRows', () => {
     expect(rows[0].adLabel).toBe('Promo Botox')
   })
 
-  it('sums revenue from the financial_entries rows the status filter returns, and requests only paid/partial', async () => {
+  it('joins lead_attributions on the tenant as well as the prospect', async () => {
+    queueRows([leadRow({ adId: 'ad-1' })])
+
+    await listMarketingReportRows('tenant-1', { dateFrom: '2026-04-01', dateTo: '2026-04-30' })
+
+    const [, joinCondition] = joinCalls[0] as [unknown, unknown[]]
+    const [, ...conditions] = joinCondition
+    expect(conditions).toContainEqual(['eq', 'prospect_id', 'id'])
+    expect(conditions).toContainEqual(['eq', 'attr_tenant_id', 'tenant_id'])
+  })
+
+  it('sums the payments the converted patient made', async () => {
     queueRows([leadRow({ campaignId: 'camp-1', stage: 'convertido', convertedPatientId: 'patient-1' })])
-    // Filtering by status happens in the DB (`inArray` in the where clause,
-    // asserted below), so the fake db here only returns what a real
-    // paid/partial-scoped query would: a pending entry never reaches this
-    // function to sum.
     queueRows([
-      { patientId: 'patient-1', totalAmount: '500.00', status: 'paid' },
-      { patientId: 'patient-1', totalAmount: '100.00', status: 'partial' },
+      { patientId: 'patient-1', amount: '500.00' },
+      { patientId: 'patient-1', amount: '100.00' },
     ])
 
     const rows = await listMarketingReportRows('tenant-1', { dateFrom: '2026-04-01', dateTo: '2026-04-30' })
@@ -131,17 +173,43 @@ describe('listMarketingReportRows', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0].converted).toBe(1)
     expect(rows[0].revenue).toBe(600)
-
-    expect(whereCalls).toHaveLength(2)
-    const [revenueAndCall] = whereCalls[1] as [unknown[]]
-    const [, ...revenueConditions] = revenueAndCall
-    const statusCondition = revenueConditions.find(
-      (c) => Array.isArray(c) && c[0] === 'inArray' && c[1] === 'status',
-    ) as [string, string, string[]] | undefined
-    expect(statusCondition?.[2]).toEqual(['paid', 'partial'])
   })
 
-  it('does not query financial_entries when no prospect converted', async () => {
+  it('bounds revenue to the reported period and drops reversed payments', async () => {
+    queueRows([leadRow({ campaignId: 'camp-1', stage: 'convertido', convertedPatientId: 'patient-1' })])
+    queueRows([{ patientId: 'patient-1', amount: '500.00' }])
+
+    await listMarketingReportRows('tenant-1', { dateFrom: '2026-04-01', dateTo: '2026-04-30' })
+
+    expect(whereCalls).toHaveLength(2)
+    const conditions = conditionsOf(whereCalls[1])
+
+    expect(findCondition(conditions, 'gte', 'paid_at')?.[2]).toEqual(startOfBrDay('2026-04-01'))
+    expect(findCondition(conditions, 'lte', 'paid_at')?.[2]).toEqual(endOfBrDay('2026-04-30'))
+    expect(conditions).toContainEqual(['isNull', 'reversed_at'])
+    expect(conditions).toContainEqual(['isNull', 'entry_deleted_at'])
+    expect(findCondition(conditions, 'inArray', 'patient_id')?.[2]).toEqual(['patient-1'])
+  })
+
+  it('counts a patient reachable from two converted prospects only once', async () => {
+    // `uq_prospects_tenant_phone` excludes `convertido`, so the same patient
+    // can be pointed at by two converted rows sitting in different campaigns.
+    queueRows([
+      leadRow({ campaignId: 'camp-1', stage: 'convertido', convertedPatientId: 'patient-1' }),
+      leadRow({ campaignId: 'camp-2', stage: 'convertido', convertedPatientId: 'patient-1' }),
+    ])
+    queueRows([{ patientId: 'patient-1', amount: '500.00' }])
+
+    const rows = await listMarketingReportRows('tenant-1', { dateFrom: '2026-04-01', dateTo: '2026-04-30' })
+
+    expect(rows).toHaveLength(2)
+    expect(rows.reduce((sum, row) => sum + row.revenue, 0)).toBe(500)
+    // The patient is asked for once, so the second prospect row cannot re-add it.
+    const conditions = conditionsOf(whereCalls[1])
+    expect(findCondition(conditions, 'inArray', 'patient_id')?.[2]).toEqual(['patient-1'])
+  })
+
+  it('does not query payments when no prospect converted', async () => {
     queueRows([leadRow({ adId: 'ad-2' })])
 
     await listMarketingReportRows('tenant-1', { dateFrom: '2026-04-01', dateTo: '2026-04-30' })
@@ -166,8 +234,7 @@ describe('listMarketingReportRows', () => {
     await listMarketingReportRows('tenant-1', { dateFrom: '2026-04-01', dateTo: '2026-04-30' })
 
     expect(whereCalls).toHaveLength(1)
-    const [andCall] = whereCalls[0] as [unknown[]]
-    const [, ...conditions] = andCall
+    const conditions = conditionsOf(whereCalls[0])
     const gteCondition = conditions[1] as [string, unknown, Date]
     const lteCondition = conditions[2] as [string, unknown, Date]
 

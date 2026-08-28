@@ -26,17 +26,13 @@ import {
   useMetaDatasets,
 } from '@/hooks/queries/use-meta'
 import { ACKNOWLEDGEMENT_TEXT, ACKNOWLEDGEMENT_VERSION } from '@/lib/meta/acknowledgement'
-
+import { formatDateTime } from '@/lib/utils'
 
 const EVENT_STATUS_LABELS: Record<string, string> = {
   pending: 'Pendente',
   sent: 'Enviado',
   failed: 'Falhou',
   skipped: 'Ignorado',
-}
-
-function formatEventTime(value: string): string {
-  return new Date(value).toLocaleString('pt-BR')
 }
 
 export function MetaConnectionCard() {
@@ -362,7 +358,7 @@ export function MetaConnectionCard() {
                         <span className="block text-xs text-mid">{event.skipReason}</span>
                       )}
                     </TableCell>
-                    <TableCell>{formatEventTime(event.createdAt)}</TableCell>
+                    <TableCell>{formatDateTime(event.createdAt)}</TableCell>
                     <TableCell className="font-mono text-xs">{event.fbTraceId ?? '-'}</TableCell>
                   </TableRow>
                 ))}
