@@ -70,6 +70,7 @@ export const patients = floraclinSchema.table('patients', {
   occupation: varchar('occupation', { length: 100 }),
   referralSource: varchar('referral_source', { length: 100 }),
   notes: text('notes'),
+  marketingOptOut: boolean('marketing_opt_out').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -671,6 +672,7 @@ export const prospects = floraclinSchema.table('prospects', {
   assignedUserId: uuid('assigned_user_id').references(() => users.id),
   convertedPatientId: uuid('converted_patient_id').references(() => patients.id),
   notes: text('notes'),
+  marketingOptOut: boolean('marketing_opt_out').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -1049,6 +1051,80 @@ export const whatsappCredits = floraclinSchema.table('whatsapp_credits', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex('uq_whatsapp_credits_tenant_period').on(table.tenantId, table.periodStart),
+])
+
+// ─── META CONVERSIONS ───────────────────────────────────────────────
+
+export const leadAttributions = floraclinSchema.table('lead_attributions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  prospectId: uuid('prospect_id').notNull().references(() => prospects.id),
+  channel: varchar('channel', { length: 20 }).notNull(),
+  ctwaClid: text('ctwa_clid'),
+  fbclid: text('fbclid'),
+  fbp: text('fbp'),
+  fbc: text('fbc'),
+  adId: varchar('ad_id', { length: 64 }),
+  adsetId: varchar('adset_id', { length: 64 }),
+  campaignId: varchar('campaign_id', { length: 64 }),
+  adHeadline: text('ad_headline'),
+  sourceUrl: text('source_url'),
+  landingUrl: text('landing_url'),
+  clientIp: varchar('client_ip', { length: 64 }),
+  userAgent: text('user_agent'),
+  capturedAt: timestamp('captured_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('uq_lead_attributions_prospect').on(table.prospectId),
+  index('idx_lead_attributions_tenant_ad').on(table.tenantId, table.adId),
+  index('idx_lead_attributions_tenant_captured').on(table.tenantId, table.capturedAt),
+])
+
+export const metaConversionEvents = floraclinSchema.table('meta_conversion_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  prospectId: uuid('prospect_id').references(() => prospects.id),
+  eventName: varchar('event_name', { length: 30 }).notNull(),
+  eventId: varchar('event_id', { length: 120 }).notNull(),
+  eventTime: timestamp('event_time', { withTimezone: true }).notNull(),
+  value: decimal('value', { precision: 10, scale: 2 }),
+  currency: varchar('currency', { length: 3 }).notNull().default('BRL'),
+  // Nullable on purpose: a `skipped` row is written before any payload is
+  // built, and that row is the evidence an opt-out was honoured.
+  payload: jsonb('payload'),
+  status: varchar('status', { length: 10 }).notNull().default('pending'),
+  skipReason: varchar('skip_reason', { length: 40 }),
+  attempts: integer('attempts').notNull().default(0),
+  lastError: text('last_error'),
+  fbTraceId: varchar('fb_trace_id', { length: 64 }),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('uq_meta_events_tenant_event').on(table.tenantId, table.eventId),
+  index('idx_meta_events_pending').on(table.status, table.createdAt),
+  index('idx_meta_events_tenant_created').on(table.tenantId, table.createdAt),
+])
+
+export const metaConnections = floraclinSchema.table('meta_connections', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  datasetId: varchar('dataset_id', { length: 64 }).notNull(),
+  accessToken: text('access_token').notNull(),
+  businessId: varchar('business_id', { length: 64 }),
+  connectionType: varchar('connection_type', { length: 10 }).notNull().default('manual'),
+  tokenExpiresAt: timestamp('token_expires_at', { withTimezone: true }),
+  testEventCode: varchar('test_event_code', { length: 32 }),
+  advancedMatchingEnabled: boolean('advanced_matching_enabled').notNull().default(true),
+  status: varchar('status', { length: 20 }).notNull().default('active'),
+  acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
+  acknowledgementVersion: varchar('acknowledgement_version', { length: 20 }),
+  acknowledgedBy: uuid('acknowledged_by').references(() => users.id),
+  lastVerifiedAt: timestamp('last_verified_at', { withTimezone: true }),
+  lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+  lastError: text('last_error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('uq_meta_connections_tenant').on(table.tenantId),
 ])
 
 // ─── RELATIONS ───────────────────────────────────────────────────────
