@@ -672,7 +672,6 @@ export const prospects = floraclinSchema.table('prospects', {
   assignedUserId: uuid('assigned_user_id').references(() => users.id),
   convertedPatientId: uuid('converted_patient_id').references(() => patients.id),
   notes: text('notes'),
-  marketingOptOut: boolean('marketing_opt_out').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),

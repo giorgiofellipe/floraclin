@@ -134,6 +134,22 @@ function buildUserData(
   return userData
 }
 
+/**
+ * A missing secret skips every attributed event, so reporting per event would
+ * bury the alert under thousands of copies of itself. One report per process
+ * is enough to notice, and the skipped rows carry the per-event evidence.
+ */
+let missingSecretReported = false
+
+function reportMissingSecretOnce(): void {
+  if (missingSecretReported) return
+  missingSecretReported = true
+  reportSideEffectFailure(
+    new Error('META_EXTERNAL_ID_SECRET is unset; attributed Meta events cannot be built'),
+    { area: 'meta-capi', step: 'external_id_secret' },
+  )
+}
+
 export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<void> {
   try {
     const secret = externalIdSecret()
@@ -142,10 +158,7 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
     // the loss as a skipped row instead of building a payload that throws on
     // the way to the outbox and leaves no trace of the event at all.
     if (input.prospectId && !secret) {
-      reportSideEffectFailure(
-        new Error('META_EXTERNAL_ID_SECRET is unset; attributed Meta events cannot be built'),
-        { area: 'meta-capi', step: 'external_id_secret' },
-      )
+      reportMissingSecretOnce()
       await insertConversionEvent(
         {
           tenantId: input.tenantId,

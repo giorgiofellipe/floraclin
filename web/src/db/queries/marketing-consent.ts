@@ -1,27 +1,18 @@
 import { and, eq } from 'drizzle-orm'
 
 import { db } from '@/db/client'
-import { patients, prospects } from '@/db/schema'
+import { patients } from '@/db/schema'
 
 /**
- * Checks both the prospect and the patient row because the opt-out flag can
- * be set on the patient long after the lead that carries the ad attribution:
- * a receptionist converts a prospect, then the patient opts out weeks later.
- * Either row being flagged is enough to suppress the event.
+ * The flag lives on the patient, not the lead: a lead can opt out only once it
+ * has a patient record, so an emission site with no patient link cannot be
+ * suppressed. Callers therefore have to resolve `convertedPatientId` and pass
+ * it, which is why every call site sends a patient id rather than a lead id.
  */
 export async function isMarketingOptedOut(
   tenantId: string,
-  ref: { prospectId?: string | null; patientId?: string | null },
+  ref: { patientId?: string | null },
 ): Promise<boolean> {
-  if (ref.prospectId) {
-    const [prospect] = await db
-      .select({ marketingOptOut: prospects.marketingOptOut })
-      .from(prospects)
-      .where(and(eq(prospects.tenantId, tenantId), eq(prospects.id, ref.prospectId)))
-      .limit(1)
-    if (prospect?.marketingOptOut) return true
-  }
-
   if (ref.patientId) {
     const [patient] = await db
       .select({ marketingOptOut: patients.marketingOptOut })

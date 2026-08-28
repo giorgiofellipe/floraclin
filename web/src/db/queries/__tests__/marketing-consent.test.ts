@@ -45,50 +45,30 @@ describe('isMarketingOptedOut', () => {
     vi.clearAllMocks()
   })
 
-  it('returns false when neither id is opted out', async () => {
-    dbMock.select
-      .mockReturnValueOnce(makeChain([{ marketingOptOut: false }]))
-      .mockReturnValueOnce(makeChain([{ marketingOptOut: false }]))
+  it('returns false when the patient has not opted out', async () => {
+    dbMock.select.mockReturnValueOnce(makeChain([{ marketingOptOut: false }]))
 
-    const result = await isMarketingOptedOut('tenant-1', {
-      prospectId: 'prospect-1',
-      patientId: 'patient-1',
-    })
+    const result = await isMarketingOptedOut('tenant-1', { patientId: 'patient-1' })
 
     expect(result).toBe(false)
   })
 
-  it('returns true when the prospect row has marketingOptOut set', async () => {
+  it('returns true when the patient flag is set', async () => {
     dbMock.select.mockReturnValueOnce(makeChain([{ marketingOptOut: true }]))
 
-    const result = await isMarketingOptedOut('tenant-1', { prospectId: 'prospect-1' })
+    const result = await isMarketingOptedOut('tenant-1', { patientId: 'patient-1' })
 
     expect(result).toBe(true)
   })
 
-  it('returns true when only the patient flag is set', async () => {
-    // The lead's own prospect row was never opted out; the flag was set
-    // later, directly on the converted patient record.
-    dbMock.select
-      .mockReturnValueOnce(makeChain([{ marketingOptOut: false }]))
-      .mockReturnValueOnce(makeChain([{ marketingOptOut: true }]))
-
-    const result = await isMarketingOptedOut('tenant-1', {
-      prospectId: 'prospect-1',
-      patientId: 'patient-1',
-    })
-
-    expect(result).toBe(true)
-  })
-
-  it('returns false when no ids are supplied', async () => {
+  it('returns false when no patient id is supplied, because a lead with no patient record cannot opt out', async () => {
     const result = await isMarketingOptedOut('tenant-1', {})
 
     expect(result).toBe(false)
     expect(dbMock.select).not.toHaveBeenCalled()
   })
 
-  it('checks only the patient row when prospectId is absent', async () => {
+  it('reads exactly one row, the patient', async () => {
     dbMock.select.mockReturnValueOnce(makeChain([{ marketingOptOut: true }]))
 
     const result = await isMarketingOptedOut('tenant-1', { patientId: 'patient-1' })
@@ -100,7 +80,7 @@ describe('isMarketingOptedOut', () => {
   it('treats a missing row as not opted out', async () => {
     dbMock.select.mockReturnValueOnce(makeChain([]))
 
-    const result = await isMarketingOptedOut('tenant-1', { prospectId: 'prospect-missing' })
+    const result = await isMarketingOptedOut('tenant-1', { patientId: 'patient-missing' })
 
     expect(result).toBe(false)
   })
