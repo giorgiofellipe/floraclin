@@ -348,6 +348,137 @@ describe('enqueueMetaEvent', () => {
     expect(markConnectionInvalidMock).not.toHaveBeenCalled()
   })
 
+  // 13. Errors on the transactional path must not be swallowed.
+  it('re-raises when tx is supplied and the outbox insert fails, so the caller can roll back', async () => {
+    const { enqueueMetaEvent } = await import('../events')
+    const fakeTx = { marker: 'tx' } as never
+    insertConversionEventMock.mockRejectedValue(new Error('current transaction is aborted'))
+
+    await expect(enqueueMetaEvent(baseInput({ tx: fakeTx }))).rejects.toThrow(
+      'current transaction is aborted',
+    )
+    expect(reportSideEffectFailureMock).not.toHaveBeenCalled()
+  })
+
+  it('re-raises a prerequisite failure on the transactional path but swallows it without tx', async () => {
+    const { enqueueMetaEvent } = await import('../events')
+    const fakeTx = { marker: 'tx' } as never
+    isMarketingOptedOutMock.mockRejectedValue(new Error('db is down'))
+
+    await expect(enqueueMetaEvent(baseInput({ tx: fakeTx }))).rejects.toThrow('db is down')
+    await expect(enqueueMetaEvent(baseInput())).resolves.toBeUndefined()
+  })
+
+  // 14. Caller-supplied prerequisites replace every read.
+  it('issues no reads of its own when the caller supplies prerequisites', async () => {
+    const { enqueueMetaEvent } = await import('../events')
+    const fakeTx = { marker: 'tx' } as never
+
+    await enqueueMetaEvent(
+      baseInput({
+        tx: fakeTx,
+        prerequisites: {
+          optedOut: false,
+          connection: CONNECTION,
+          attribution: {
+            ctwaClid: 'clid-tx',
+            fbc: null,
+            fbp: null,
+            clientIp: null,
+            userAgent: null,
+          },
+        },
+      }),
+    )
+
+    expect(isMarketingOptedOutMock).not.toHaveBeenCalled()
+    expect(getMetaConnectionMock).not.toHaveBeenCalled()
+    expect(getAttributionMock).not.toHaveBeenCalled()
+    expect(insertedPayload().user_data.ctwa_clid).toBe('clid-tx')
+  })
+
+  it('honours a supplied opted-out prerequisite without consulting the database', async () => {
+    const { enqueueMetaEvent } = await import('../events')
+
+    await enqueueMetaEvent(
+      baseInput({ prerequisites: { optedOut: true, connection: null, attribution: null } }),
+    )
+
+    expect(isMarketingOptedOutMock).not.toHaveBeenCalled()
+    expect(insertConversionEventMock.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ status: 'skipped', skipReason: 'opted_out' }),
+    )
+    expect(postEventsMock).not.toHaveBeenCalled()
+  })
+
+  describe('resolveMetaEventPrerequisites', () => {
+    it('stops at the opt-out check so an opted-out prospect costs one read', async () => {
+      const { resolveMetaEventPrerequisites } = await import('../events')
+      isMarketingOptedOutMock.mockResolvedValue(true)
+
+      const prerequisites = await resolveMetaEventPrerequisites(TENANT, { prospectId: PROSPECT })
+
+      expect(prerequisites).toEqual({ optedOut: true, connection: null, attribution: null })
+      expect(getMetaConnectionMock).not.toHaveBeenCalled()
+      expect(getAttributionMock).not.toHaveBeenCalled()
+    })
+
+    it('reads the attribution only when there is a prospect', async () => {
+      const { resolveMetaEventPrerequisites } = await import('../events')
+
+      await resolveMetaEventPrerequisites(TENANT, { patientId: 'patient-1', prospectId: null })
+
+      expect(getAttributionMock).not.toHaveBeenCalled()
+    })
+  })
+
+  // 15. A missing external id secret is recorded, never dropped.
+  describe('META_EXTERNAL_ID_SECRET', () => {
+    it('writes a skipped row and reports, rather than losing an attributed event entirely', async () => {
+      const { enqueueMetaEvent } = await import('../events')
+      delete process.env.META_EXTERNAL_ID_SECRET
+
+      await enqueueMetaEvent(baseInput())
+
+      expect(insertConversionEventMock).toHaveBeenCalledTimes(1)
+      expect(insertConversionEventMock.mock.calls[0][0]).toEqual(
+        expect.objectContaining({
+          status: 'skipped',
+          skipReason: 'no_external_id_secret',
+          payload: null,
+        }),
+      )
+      expect(postEventsMock).not.toHaveBeenCalled()
+      expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1)
+      expect(reportSideEffectFailureMock.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ area: 'meta-capi', step: 'external_id_secret' }),
+      )
+    })
+
+    it('writes that skipped row on the caller transaction and does not throw into it', async () => {
+      const { enqueueMetaEvent } = await import('../events')
+      delete process.env.META_EXTERNAL_ID_SECRET
+      const fakeTx = { marker: 'tx' } as never
+
+      await expect(enqueueMetaEvent(baseInput({ tx: fakeTx }))).resolves.toBeUndefined()
+
+      expect(insertConversionEventMock.mock.calls[0][1]).toBe(fakeTx)
+    })
+
+    it('still sends an event with no prospect, since it needs no external_id', async () => {
+      const { enqueueMetaEvent } = await import('../events')
+      delete process.env.META_EXTERNAL_ID_SECRET
+
+      await enqueueMetaEvent(baseInput({ prospectId: null, patientId: 'patient-1' }))
+
+      expect(insertConversionEventMock.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ status: 'pending' }),
+      )
+      expect(insertedPayload().user_data.external_id).toBeUndefined()
+      expect(postEventsMock).toHaveBeenCalledTimes(1)
+    })
+  })
+
   // 12. value only present on Purchase, sent as a number with currency BRL.
   it('sends value as a number with currency BRL only for Purchase', async () => {
     const { enqueueMetaEvent } = await import('../events')

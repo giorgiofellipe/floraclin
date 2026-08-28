@@ -31,8 +31,13 @@ import type { CreateFinancialEntryInput, FinancialFilterInput, RecordPaymentInpu
 import type { PaymentMethod, FinancialStatus } from '@/types'
 import { addDays } from 'date-fns'
 import { verifyTenantOwnership } from './helpers'
-import { enqueueMetaEvent } from '@/lib/meta/events'
+import {
+  enqueueMetaEvent,
+  resolveMetaEventPrerequisites,
+  type MetaEventPrerequisites,
+} from '@/lib/meta/events'
 import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 // ─── CREATE FINANCIAL ENTRY (unchanged) ─────────────────────────────
 
@@ -101,6 +106,77 @@ export async function createFinancialEntry(
 
 // ─── META CONVERSIONS: Purchase on payment ──────────────────────────
 
+/** Everything a Purchase event needs that cannot be read from the payment transaction. */
+interface MetaPurchaseContext {
+  patientId: string
+  contact: { phone: string | null; email: string | null; fullName: string | null }
+  prospectId: string | null
+  prerequisites: MetaEventPrerequisites
+}
+
+/**
+ * Resolved before the payment transaction opens, keyed by financial entry.
+ * Every read here runs on the global pool handle, and the pool holds 5
+ * connections: five concurrent payments each waiting on a sixth checkout
+ * while holding a locked installment row would deadlock the pool outright.
+ */
+async function prepareMetaPurchaseContexts(
+  tenantId: string,
+  installmentIds: string[]
+): Promise<Map<string, MetaPurchaseContext>> {
+  const contexts = new Map<string, MetaPurchaseContext>()
+  if (installmentIds.length === 0) return contexts
+
+  try {
+    const rows = await db
+      .select({
+        financialEntryId: installments.financialEntryId,
+        patientId: financialEntries.patientId,
+        phone: patients.phone,
+        email: patients.email,
+        fullName: patients.fullName,
+      })
+      .from(installments)
+      .innerJoin(
+        financialEntries,
+        and(
+          eq(financialEntries.id, installments.financialEntryId),
+          eq(financialEntries.tenantId, tenantId)
+        )
+      )
+      .innerJoin(
+        patients,
+        and(eq(patients.id, financialEntries.patientId), eq(patients.tenantId, tenantId))
+      )
+      .where(and(inArray(installments.id, installmentIds), eq(installments.tenantId, tenantId)))
+
+    for (const row of rows) {
+      if (contexts.has(row.financialEntryId)) continue
+
+      const prospect = await resolveProspectForPatient(tenantId, {
+        patientId: row.patientId,
+        phone: row.phone,
+      })
+      const prospectId = prospect?.id ?? null
+
+      contexts.set(row.financialEntryId, {
+        patientId: row.patientId,
+        contact: { phone: row.phone ?? null, email: row.email ?? null, fullName: row.fullName ?? null },
+        prospectId,
+        prerequisites: await resolveMetaEventPrerequisites(tenantId, {
+          prospectId,
+          patientId: row.patientId,
+        }),
+      })
+    }
+  } catch (error) {
+    reportSideEffectFailure(error, { area: 'meta-capi', step: 'prepare_purchase_context' })
+    contexts.clear()
+  }
+
+  return contexts
+}
+
 /**
  * Gate 1: only when money actually arrived (entry now paid or partial, not
  * left pending by a short payment). Gate 2: skip a renegotiated entry, since
@@ -112,63 +188,64 @@ async function emitPurchaseEventForEntry(
   tx: typeof db,
   tenantId: string,
   financialEntryId: string,
-  eventTime: Date
+  eventTime: Date,
+  context: MetaPurchaseContext | undefined
 ) {
-  const [entry] = await tx
-    .select({
-      status: financialEntries.status,
-      totalAmount: financialEntries.totalAmount,
-      patientId: financialEntries.patientId,
+  if (!context) return
+
+  try {
+    const [entry] = await tx
+      .select({
+        status: financialEntries.status,
+        totalAmount: financialEntries.totalAmount,
+      })
+      .from(financialEntries)
+      .where(and(eq(financialEntries.id, financialEntryId), eq(financialEntries.tenantId, tenantId)))
+      .limit(1)
+
+    if (!entry || (entry.status !== 'paid' && entry.status !== 'partial')) {
+      return
+    }
+
+    // renegotiation_links has no tenant_id of its own, so the entry it points
+    // at is what scopes the lookup.
+    const [renegotiated] = await tx
+      .select({ id: renegotiationLinks.id })
+      .from(renegotiationLinks)
+      .innerJoin(
+        financialEntries,
+        and(
+          eq(financialEntries.id, renegotiationLinks.newEntryId),
+          eq(financialEntries.tenantId, tenantId)
+        )
+      )
+      .where(eq(renegotiationLinks.newEntryId, financialEntryId))
+      .limit(1)
+
+    if (renegotiated) {
+      return
+    }
+
+    await enqueueMetaEvent({
+      tenantId,
+      eventName: 'Purchase',
+      eventId: `purchase:${financialEntryId}`,
+      eventTime,
+      prospectId: context.prospectId,
+      patientId: context.patientId,
+      contact: context.contact,
+      actionSource: 'system_generated',
+      value: entry.totalAmount,
+      tx,
+      prerequisites: context.prerequisites,
     })
-    .from(financialEntries)
-    .where(eq(financialEntries.id, financialEntryId))
-    .limit(1)
-
-  if (!entry || (entry.status !== 'paid' && entry.status !== 'partial')) {
-    return
+  } catch (error) {
+    // Re-raised on purpose: every statement above ran on the caller's
+    // transaction, so a swallowed failure would let the payment commit as a
+    // silent rollback behind a 201.
+    reportSideEffectFailure(error, { area: 'meta-capi', step: 'purchase_event' })
+    throw error
   }
-
-  const [renegotiated] = await tx
-    .select({ id: renegotiationLinks.id })
-    .from(renegotiationLinks)
-    .where(eq(renegotiationLinks.newEntryId, financialEntryId))
-    .limit(1)
-
-  if (renegotiated) {
-    return
-  }
-
-  const [patient] = await tx
-    .select({
-      phone: patients.phone,
-      email: patients.email,
-      fullName: patients.fullName,
-    })
-    .from(patients)
-    .where(eq(patients.id, entry.patientId))
-    .limit(1)
-
-  const prospect = await resolveProspectForPatient(tenantId, {
-    patientId: entry.patientId,
-    phone: patient?.phone ?? null,
-  })
-
-  await enqueueMetaEvent({
-    tenantId,
-    eventName: 'Purchase',
-    eventId: `purchase:${financialEntryId}`,
-    eventTime,
-    prospectId: prospect?.id ?? null,
-    patientId: entry.patientId,
-    contact: {
-      phone: patient?.phone ?? null,
-      email: patient?.email ?? null,
-      fullName: patient?.fullName ?? null,
-    },
-    actionSource: 'system_generated',
-    value: entry.totalAmount,
-    tx,
-  })
 }
 
 // ─── RECORD PAYMENT (replaces payInstallment) ───────────────────────
@@ -178,6 +255,8 @@ export async function recordPayment(
   userId: string,
   data: RecordPaymentInput
 ) {
+  const metaContexts = await prepareMetaPurchaseContexts(tenantId, [data.installmentId])
+
   return withTransaction(async (tx) => {
     // 1. Lock installment row with FOR UPDATE
     const lockResult = await tx.execute(
@@ -416,7 +495,13 @@ export async function recordPayment(
     // 7. Update parent financial_entries status
     await updateEntryStatus(tx, tenantId, financialEntryId)
 
-    await emitPurchaseEventForEntry(tx, tenantId, financialEntryId, paidAt)
+    await emitPurchaseEventForEntry(
+      tx,
+      tenantId,
+      financialEntryId,
+      paidAt,
+      metaContexts.get(financialEntryId)
+    )
 
     return {
       paymentRecord,
@@ -622,6 +707,8 @@ export async function bulkPayInstallments(
   userId: string,
   data: { installmentIds: string[]; paymentMethod: string; paidAt?: string }
 ) {
+  const metaContexts = await prepareMetaPurchaseContexts(tenantId, data.installmentIds)
+
   return withTransaction(async (tx) => {
     // Lock all target installments
     const installmentIdArray = `{${data.installmentIds.join(',')}}`
@@ -777,7 +864,13 @@ export async function bulkPayInstallments(
       // Update parent entry status
       await updateEntryStatus(tx, tenantId, row.financialEntryId)
 
-      await emitPurchaseEventForEntry(tx, tenantId, row.financialEntryId, paidAt)
+      await emitPurchaseEventForEntry(
+        tx,
+        tenantId,
+        row.financialEntryId,
+        paidAt,
+        metaContexts.get(row.financialEntryId)
+      )
 
       results.push({ installmentId, paymentRecord, allocation })
     }
