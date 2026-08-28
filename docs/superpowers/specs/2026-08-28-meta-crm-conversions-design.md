@@ -219,8 +219,9 @@ New module `src/lib/meta/`, four files with one job each:
 
 ### Delivery
 
-`enqueueMetaEvent()` inserts the outbox row inside the caller's transaction,
-then after commit attempts one immediate POST. Success marks the row `sent`. Any
+`enqueueMetaEvent()` is called right after the mutating write succeeds, in the
+same fire-after-write position the existing `logProspectActivity` calls already
+occupy. It inserts the outbox row, then attempts one immediate POST. Success marks the row `sent`. Any
 failure leaves it `pending` with the error recorded. The function never throws
 into the caller: a conversion must never break a stage change.
 
@@ -228,6 +229,22 @@ A fourth cron, `/api/cron/meta-events`, sweeps `pending` rows older than one
 minute, batched per tenant (CAPI accepts up to 1000 events per request). It
 follows `subscription-expiry` exactly: `Bearer CRON_SECRET`, wrapped in
 `Sentry.withMonitor` with `cronMonitorConfig`, declared in `web/vercel.json`.
+
+**Why not a transaction.** The spec originally called for writing the outbox row
+inside the caller's transaction. That is not achievable: nothing in
+`src/db/queries/prospects.ts` uses `withTransaction`, and `convertProspect` is
+not even atomic across its own two writes. Retrofitting transactions across six
+call sites to protect an analytics side effect is the wrong trade.
+
+The deterministic `event_id` gives a better guarantee than a transaction would.
+Because every id is derived from durable state (`prospectId`, `appointmentId`,
+`financialEntryId`), the cron can *reconcile*: query for prospects past a stage
+with no corresponding `sent` row and enqueue the missing event. A crash between
+the stage write and the outbox insert self-heals on the next sweep, which a
+transaction would only have prevented, never repaired.
+
+Reconciliation runs in the same cron as the retry sweep, scoped to the last 7
+days so it stays cheap.
 
 Schedule: every 5 minutes. The inline send covers the happy path, so the cron
 exists only for outages, and a 5 minute beat is gentler on a Meta incident than
@@ -244,7 +261,18 @@ to `failed` and stops consuming budget.
 | `Purchase` | first installment of a financial entry is paid | `purchase:<financialEntryId>` | `totalAmount`, BRL |
 
 **Purchase fires once per financial entry, at first payment, carrying the full
-entry value rather than the installment amount.** A clinic selling a R$ 3.000
+entry value rather than the installment amount.**
+
+No "is this the first payment" check is written. Every payment that moves an
+entry off `pending` calls `enqueueMetaEvent` with `purchase:<financialEntryId>`,
+and the insert uses `ON CONFLICT (tenant_id, event_id) DO NOTHING`. The unique
+index is the once-only guarantee, so a six-installment plan calls enqueue six
+times and produces exactly one event. Deriving "first payment" in application
+code would be a second source of truth that can disagree with the data.
+
+`recordPayment` and `bulkPayInstallments` both already run inside
+`withTransaction`, so for Purchase (unlike the prospect stage events) the outbox
+insert genuinely can join the caller's transaction. It should. A clinic selling a R$ 3.000
 protocol in 6x shows Meta one R$ 3.000 sale. Six R$ 500 sales would inflate
 purchase count and teach the optimizer the wrong bid.
 
@@ -258,6 +286,38 @@ check for an existing `Schedule` row for the prospect and skip if one is there.
 The hand-moved fallback id exists only so a stage move with no appointment can
 still be recorded; it must not produce a second event when the appointment
 arrives later.
+
+### Verified API contract
+
+Checked against Meta's documentation on 2026-08-28. Implementation must not
+deviate from these without rechecking:
+
+- The webhook `referral` object carries `source_url`, `source_id`, `source_type`,
+  `headline`, `body`, `media_type`, `image_url`, `video_url`, `thumbnail_url`
+  and `ctwa_clid`. It appears inside `messages[0]`, only on the first inbound
+  message of an ad-originated conversation.
+- **`ctwa_clid` is never hashed.** Meta's parameter reference lists it under
+  customer information with an explicit "Do not hash". Hashing it silently
+  destroys the attribution.
+- CTWA events require **both** `action_source: 'business_messaging'` and
+  `messaging_channel: 'whatsapp'`. Sending one without the other is the most
+  common reason events land in Events Manager but attribute to nothing.
+
+**The click id expires before the sale does.** `ctwa_clid` is reported to carry
+a 7 day post-click attribution window, and events tied to it outside that window
+are discarded. An aesthetic clinic routinely closes a lead weeks after first
+contact, so a large share of Purchase events will fall outside it.
+
+This is the strongest argument for the advanced matching decision, and it makes
+one rule non-negotiable: **every event sends advanced matching, including events
+that also carry a click id.** The click id is an optimization when it is fresh,
+never the only identifier. A Purchase that relies on `ctwa_clid` alone is a
+Purchase that will be silently dropped a month after the ad ran.
+
+Note that this window is documented by integration vendors rather than stated on
+Meta's own parameter page. The design does not depend on the exact number: it
+sends both identifiers always, which is correct whatever the window turns out
+to be.
 
 ### action_source
 
