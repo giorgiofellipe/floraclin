@@ -7,6 +7,15 @@
  * mocked -- no network or database access occurs.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { PgDialect } from 'drizzle-orm/pg-core'
+import type { SQL } from 'drizzle-orm'
+
+const dialect = new PgDialect()
+
+/** Renders a real drizzle condition so a test can assert on its SQL. */
+function renderSql(condition: unknown) {
+  return dialect.sqlToQuery(condition as SQL)
+}
 
 // ─── Mocks (hoisted by vitest) ────────────────────────────────────────
 //
@@ -98,18 +107,14 @@ function makeRequest(token?: string): Request {
   return new Request('http://localhost/api/cron/meta-events', { method: 'GET', headers })
 }
 
+const EIGHT_DAYS_MS = 8 * 24 * 60 * 60 * 1000
+
 function makePendingEvent(overrides: Record<string, unknown> = {}) {
   return {
     id: 'evt-1',
     tenantId: TENANT_A,
-    prospectId: 'prospect-1',
-    eventName: 'Lead',
-    eventId: 'lead:prospect-1',
-    eventTime: new Date('2026-08-20T12:00:00Z'),
-    value: null,
-    currency: 'BRL',
     payload: { event_name: 'Lead', event_id: 'lead:prospect-1' },
-    attempts: 1,
+    createdAt: new Date(),
     ...overrides,
   }
 }
@@ -120,6 +125,7 @@ function makeConnection(overrides: Record<string, unknown> = {}) {
     accessToken: 'tok',
     testEventCode: null,
     advancedMatchingEnabled: true,
+    status: 'active',
     ...overrides,
   }
 }
@@ -131,6 +137,7 @@ beforeEach(() => {
   dbMock.select.mockReset().mockReturnValue(chain([]))
   vi.mocked(claimPendingEvents).mockResolvedValue([])
   vi.mocked(hasScheduleForProspect).mockResolvedValue(false)
+  vi.mocked(markEventFailure).mockResolvedValue('failed')
 })
 
 // ─── Tests ───────────────────────────────────────────────────────────
@@ -170,7 +177,7 @@ describe('GET /api/cron/meta-events', () => {
       expect(json.retrySweep.sent).toBe(1)
     })
 
-    it('moves a no-connection tenant\'s pending rows to skipped instead of leaving them pending', async () => {
+    it("leaves a no-connection tenant's rows pending: the connection can come back", async () => {
       const events = [makePendingEvent({ id: 'evt-1' }), makePendingEvent({ id: 'evt-2' })]
       vi.mocked(claimPendingEvents).mockResolvedValue(events)
       vi.mocked(getMetaConnection).mockResolvedValue(null)
@@ -179,9 +186,39 @@ describe('GET /api/cron/meta-events', () => {
       const json = await res.json()
 
       expect(postEvents).not.toHaveBeenCalled()
-      expect(markEventSkipped).toHaveBeenCalledWith(TENANT_A, 'evt-1', 'no_connection')
-      expect(markEventSkipped).toHaveBeenCalledWith(TENANT_A, 'evt-2', 'no_connection')
-      expect(json.retrySweep.skippedNoConnection).toBe(2)
+      expect(markEventSkipped).not.toHaveBeenCalled()
+      expect(json.retrySweep.deferredNoConnection).toBe(2)
+      expect(json.retrySweep.skippedNoConnection).toBe(0)
+    })
+
+    it('leaves rows pending while the token is invalid instead of posting them again', async () => {
+      const events = [makePendingEvent({ id: 'evt-1' })]
+      vi.mocked(claimPendingEvents).mockResolvedValue(events)
+      vi.mocked(getMetaConnection).mockResolvedValue(makeConnection({ status: 'invalid_token' }) as never)
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(postEvents).not.toHaveBeenCalled()
+      expect(markEventSkipped).not.toHaveBeenCalled()
+      expect(json.retrySweep.deferredNoConnection).toBe(1)
+    })
+
+    it('gives up on a row only once it is older than Meta accepts', async () => {
+      const events = [
+        makePendingEvent({ id: 'evt-old', createdAt: new Date(Date.now() - EIGHT_DAYS_MS) }),
+        makePendingEvent({ id: 'evt-new' }),
+      ]
+      vi.mocked(claimPendingEvents).mockResolvedValue(events)
+      vi.mocked(getMetaConnection).mockResolvedValue(null)
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(markEventSkipped).toHaveBeenCalledTimes(1)
+      expect(markEventSkipped).toHaveBeenCalledWith(TENANT_A, 'evt-old', 'no_connection')
+      expect(json.retrySweep.skippedNoConnection).toBe(1)
+      expect(json.retrySweep.deferredNoConnection).toBe(1)
     })
 
     it('an auth failure marks the connection invalid and stops that tenant\'s batch', async () => {
@@ -199,6 +236,33 @@ describe('GET /api/cron/meta-events', () => {
       expect(markConnectionInvalid).toHaveBeenCalledWith(TENANT_A, 'token expired')
       expect(markEventFailure).toHaveBeenCalledTimes(1000)
       expect(markEventSent).not.toHaveBeenCalled()
+    })
+
+    it('an auth failure does not bury the outbox: rows markEventFailure keeps pending are not counted failed', async () => {
+      const events = Array.from({ length: 5 }, (_, i) => makePendingEvent({ id: `evt-${i}` }))
+      vi.mocked(claimPendingEvents).mockResolvedValue(events)
+      vi.mocked(getMetaConnection).mockResolvedValue(makeConnection() as never)
+      vi.mocked(postEvents).mockResolvedValue({ ok: false, kind: 'auth', message: 'token expired' })
+      vi.mocked(markEventFailure).mockResolvedValue('pending')
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(json.retrySweep.failed).toBe(0)
+      expect(captureMessageMock).not.toHaveBeenCalled()
+    })
+
+    it('counts a row as failed only when markEventFailure says it is failed', async () => {
+      const events = [makePendingEvent({ id: 'evt-1' }), makePendingEvent({ id: 'evt-2' })]
+      vi.mocked(claimPendingEvents).mockResolvedValue(events)
+      vi.mocked(getMetaConnection).mockResolvedValue(makeConnection() as never)
+      vi.mocked(postEvents).mockResolvedValue({ ok: false, kind: 'transient', message: '503' })
+      vi.mocked(markEventFailure).mockResolvedValueOnce('pending').mockResolvedValueOnce('failed')
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(json.retrySweep.failed).toBe(1)
     })
 
     it('emits a Sentry warning when a tenant has more than 10 rows fail in one run', async () => {
@@ -357,6 +421,67 @@ describe('GET /api/cron/meta-events', () => {
       await GET(makeRequest(CRON_SECRET))
 
       expect(enqueueMetaEvent).not.toHaveBeenCalled()
+    })
+    it("starts each tenant's window at its own connection date, not just the global env floor", async () => {
+      process.env.META_EVENTS_START_AT = '2026-01-01T00:00:00Z'
+      const leadsChain = chain([])
+      dbMock.select.mockReturnValueOnce(leadsChain).mockReturnValue(chain([]))
+
+      await GET(makeRequest(CRON_SECRET))
+
+      const joined = leadsChain.__calls.innerJoin.map((call) => call[0])
+      expect(joined).toHaveLength(2)
+
+      const { sql: text } = renderSql(leadsChain.__calls.where[0][0])
+      // A clinic that connected today must not backfill leads that predate it.
+      expect(text).toContain('"meta_connections"."created_at"')
+    })
+
+    it('caps every finder with a LIMIT so one run cannot outlast the function', async () => {
+      process.env.META_EVENTS_START_AT = '2026-01-01T00:00:00Z'
+      const chains = [chain([]), chain([]), chain([])]
+      dbMock.select
+        .mockReturnValueOnce(chains[0])
+        .mockReturnValueOnce(chains[1])
+        .mockReturnValueOnce(chains[2])
+
+      await GET(makeRequest(CRON_SECRET))
+
+      for (const c of chains) {
+        expect(c.__calls.limit).toHaveLength(1)
+        expect(c.__calls.limit[0][0]).toBeGreaterThan(0)
+      }
+    })
+
+    it('enqueues in parallel batches instead of one round trip at a time', async () => {
+      process.env.META_EVENTS_START_AT = '2026-01-01T00:00:00Z'
+
+      const rows = Array.from({ length: 25 }, (_, i) => ({
+        tenantId: TENANT_A,
+        prospectId: `prospect-${i}`,
+        createdAt: new Date('2026-08-25T15:00:00Z'),
+        phone: '5511999990000',
+        name: null,
+      }))
+      dbMock.select
+        .mockReturnValueOnce(chain(rows))
+        .mockReturnValueOnce(chain([]))
+        .mockReturnValueOnce(chain([]))
+
+      let inFlight = 0
+      let peak = 0
+      vi.mocked(enqueueMetaEvent).mockImplementation(async () => {
+        inFlight += 1
+        peak = Math.max(peak, inFlight)
+        await Promise.resolve()
+        inFlight -= 1
+      })
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(json.reconciliation.reconciled).toBe(25)
+      expect(peak).toBeGreaterThan(1)
     })
   })
 

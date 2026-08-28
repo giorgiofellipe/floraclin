@@ -1,4 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { PgDialect } from 'drizzle-orm/pg-core'
+import type { SQL } from 'drizzle-orm'
+
+const dialect = new PgDialect()
+
+/** Renders a real drizzle condition so a test can assert on its SQL. */
+function renderSql(condition: unknown) {
+  return dialect.sqlToQuery(condition as SQL)
+}
 
 // A chainable, awaitable stand-in for drizzle's query builders. Every method
 // call is recorded (for assertions) and returns the same proxy so any chain
@@ -156,75 +165,115 @@ describe('meta-events queries', () => {
   })
 
   describe('markEventFailure', () => {
-    it("'invalid' sets status failed on the first attempt", async () => {
+    it("'invalid' fails the row on the first attempt and spends no attempt", async () => {
       const { markEventFailure } = await import('../meta-events')
-      dbMock.select.mockReturnValueOnce(chain([{ attempts: 0 }]))
       const updateChain = chain(undefined)
       dbMock.update.mockReturnValueOnce(updateChain)
 
-      await markEventFailure(TENANT_A, 'evt-1', 'invalid', 'bad payload')
+      const status = await markEventFailure(TENANT_A, 'evt-1', 'invalid', 'bad payload')
 
+      expect(status).toBe('failed')
       const setCall = updateChain.__calls.set[0][0] as Record<string, unknown>
-      expect(setCall).toMatchObject({ attempts: 1, status: 'failed', lastError: 'bad payload' })
+      expect(setCall).toEqual({ status: 'failed', lastError: 'bad payload' })
+      expect(setCall).not.toHaveProperty('attempts')
+      expect(dbMock.select).not.toHaveBeenCalled()
     })
 
-    it("'auth' sets status failed on the first attempt", async () => {
+    it("'auth' keeps the row pending so a re-pasted token can still deliver it", async () => {
       const { markEventFailure } = await import('../meta-events')
-      dbMock.select.mockReturnValueOnce(chain([{ attempts: 0 }]))
       const updateChain = chain(undefined)
       dbMock.update.mockReturnValueOnce(updateChain)
 
-      await markEventFailure(TENANT_A, 'evt-1', 'auth', 'dead token')
+      const status = await markEventFailure(TENANT_A, 'evt-1', 'auth', 'dead token')
 
+      expect(status).toBe('pending')
       const setCall = updateChain.__calls.set[0][0] as Record<string, unknown>
-      expect(setCall).toMatchObject({ attempts: 1, status: 'failed' })
+      expect(setCall).toEqual({ status: 'pending', lastError: 'dead token' })
     })
 
-    it("'transient' stays pending at attempt 1", async () => {
+    it("'auth' never spends an attempt, however many times it repeats", async () => {
+      const { markEventFailure } = await import('../meta-events')
+      dbMock.update.mockReturnValue(chain(undefined))
+
+      for (let i = 0; i < 20; i += 1) {
+        expect(await markEventFailure(TENANT_A, 'evt-1', 'auth', 'dead token')).toBe('pending')
+      }
+
+      // No read of the attempts column at all: the budget is untouched.
+      expect(dbMock.select).not.toHaveBeenCalled()
+    })
+
+    it("'transient' increments attempts exactly once and stays pending at attempt 1", async () => {
       const { markEventFailure } = await import('../meta-events')
       dbMock.select.mockReturnValueOnce(chain([{ attempts: 0 }]))
       const updateChain = chain(undefined)
       dbMock.update.mockReturnValueOnce(updateChain)
 
-      await markEventFailure(TENANT_A, 'evt-1', 'transient', 'timeout')
+      const status = await markEventFailure(TENANT_A, 'evt-1', 'transient', 'timeout')
 
+      expect(status).toBe('pending')
       const setCall = updateChain.__calls.set[0][0] as Record<string, unknown>
       expect(setCall).toMatchObject({ attempts: 1, status: 'pending' })
     })
 
-    it("'transient' flips to failed once attempts reaches 8", async () => {
-      const { markEventFailure } = await import('../meta-events')
-      dbMock.select.mockReturnValueOnce(chain([{ attempts: 7 }]))
+    it("'transient' flips to failed once attempts reaches MAX_ATTEMPTS", async () => {
+      const { markEventFailure, MAX_ATTEMPTS } = await import('../meta-events')
+      dbMock.select.mockReturnValueOnce(chain([{ attempts: MAX_ATTEMPTS - 1 }]))
       const updateChain = chain(undefined)
       dbMock.update.mockReturnValueOnce(updateChain)
 
-      await markEventFailure(TENANT_A, 'evt-1', 'transient', 'timeout')
+      const status = await markEventFailure(TENANT_A, 'evt-1', 'transient', 'timeout')
 
+      expect(status).toBe('failed')
       const setCall = updateChain.__calls.set[0][0] as Record<string, unknown>
-      expect(setCall).toMatchObject({ attempts: 8, status: 'failed' })
+      expect(setCall).toMatchObject({ attempts: MAX_ATTEMPTS, status: 'failed' })
     })
 
-    it("'transient' stays pending at attempt 7", async () => {
-      const { markEventFailure } = await import('../meta-events')
-      dbMock.select.mockReturnValueOnce(chain([{ attempts: 6 }]))
+    it("'transient' still retries one attempt below MAX_ATTEMPTS", async () => {
+      const { markEventFailure, MAX_ATTEMPTS } = await import('../meta-events')
+      dbMock.select.mockReturnValueOnce(chain([{ attempts: MAX_ATTEMPTS - 2 }]))
       const updateChain = chain(undefined)
       dbMock.update.mockReturnValueOnce(updateChain)
 
-      await markEventFailure(TENANT_A, 'evt-1', 'transient', 'timeout')
+      const status = await markEventFailure(TENANT_A, 'evt-1', 'transient', 'timeout')
 
+      expect(status).toBe('pending')
       const setCall = updateChain.__calls.set[0][0] as Record<string, unknown>
-      expect(setCall).toMatchObject({ attempts: 7, status: 'pending' })
+      expect(setCall).toMatchObject({ attempts: MAX_ATTEMPTS - 1, status: 'pending' })
     })
 
-    it('scopes the lookup select to tenantId and id', async () => {
+    it('a full transient budget takes MAX_ATTEMPTS cron cycles, not half of them', async () => {
+      const { markEventFailure, MAX_ATTEMPTS } = await import('../meta-events')
+
+      let attempts = 0
+      let cycles = 0
+      let status: string = 'pending'
+
+      while (status === 'pending' && cycles < 100) {
+        dbMock.select.mockReturnValueOnce(chain([{ attempts }]))
+        const updateChain = chain(undefined)
+        dbMock.update.mockReturnValueOnce(updateChain)
+
+        status = await markEventFailure(TENANT_A, 'evt-1', 'transient', 'timeout')
+        attempts = (updateChain.__calls.set[0][0] as { attempts: number }).attempts
+        cycles += 1
+      }
+
+      expect(status).toBe('failed')
+      expect(cycles).toBe(MAX_ATTEMPTS)
+    })
+
+    it('scopes the update to tenantId and id', async () => {
       const { markEventFailure } = await import('../meta-events')
-      const selectChain = chain([{ attempts: 0 }])
-      dbMock.select.mockReturnValueOnce(selectChain)
-      dbMock.update.mockReturnValueOnce(chain(undefined))
+      const updateChain = chain(undefined)
+      dbMock.update.mockReturnValueOnce(updateChain)
 
       await markEventFailure(TENANT_B, 'evt-9', 'invalid', 'x')
 
-      expect(selectChain.__calls.where).toHaveLength(1)
+      const { sql: text, params } = renderSql(updateChain.__calls.where[0][0])
+      expect(text).toContain('"tenant_id" =')
+      expect(text).toContain('"id" =')
+      expect(params).toEqual([TENANT_B, 'evt-9'])
     })
   })
 
@@ -242,29 +291,20 @@ describe('meta-events queries', () => {
   })
 
   describe('claimPendingEvents', () => {
-    it('runs inside a transaction, selects with FOR UPDATE SKIP LOCKED, and increments attempts', async () => {
+    it('runs inside a transaction with FOR UPDATE SKIP LOCKED and returns the trimmed rows', async () => {
       const { claimPendingEvents } = await import('../meta-events')
 
       const row = {
         id: 'evt-1',
         tenantId: TENANT_A,
-        prospectId: 'prospect-1',
-        eventName: 'Lead',
-        eventId: 'lead:1',
-        eventTime: new Date('2026-08-28T10:00:00Z'),
-        value: null,
-        currency: 'BRL',
-        payload: {},
-        attempts: 0,
-        status: 'pending',
+        payload: { event_name: 'Lead' },
         createdAt: new Date('2026-08-28T09:00:00Z'),
       }
 
       const selectChain = chain([row])
-      const updateChain = chain(undefined)
       const trx = {
         select: vi.fn(() => selectChain),
-        update: vi.fn(() => updateChain),
+        update: vi.fn(() => chain(undefined)),
       }
 
       dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
@@ -275,22 +315,23 @@ describe('meta-events queries', () => {
       expect(selectChain.__calls.for).toEqual([['update', { skipLocked: true }]])
       expect(selectChain.__calls.orderBy).toHaveLength(1)
       expect(selectChain.__calls.limit).toEqual([[10]])
-      expect(trx.update).toHaveBeenCalledTimes(1)
-      // Local `attempts` reflects the increment that happened under the lock.
-      expect(result).toEqual([
-        {
-          id: row.id,
-          tenantId: row.tenantId,
-          prospectId: row.prospectId,
-          eventName: row.eventName,
-          eventId: row.eventId,
-          eventTime: row.eventTime,
-          value: row.value,
-          currency: row.currency,
-          payload: row.payload,
-          attempts: 1,
-        },
-      ])
+      expect(result).toEqual([row])
+    })
+
+    it('does not touch attempts: claiming a row is not a delivery attempt', async () => {
+      const { claimPendingEvents } = await import('../meta-events')
+
+      const trx = {
+        select: vi.fn(() =>
+          chain([{ id: 'evt-1', tenantId: TENANT_A, payload: {}, createdAt: new Date() }]),
+        ),
+        update: vi.fn(() => chain(undefined)),
+      }
+      dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
+
+      await claimPendingEvents(10)
+
+      expect(trx.update).not.toHaveBeenCalled()
     })
 
     it('excludes rows younger than 60 seconds via the createdAt filter', async () => {
@@ -305,20 +346,18 @@ describe('meta-events queries', () => {
 
       const before = Date.now()
       const result = await claimPendingEvents(5)
-      const after = Date.now()
 
       expect(result).toEqual([])
-      expect(trx.update).not.toHaveBeenCalled()
 
-      // The `where` call receives a single SQL condition built from `and(...)`.
-      // We can't easily introspect the SQL tree for the cutoff value here, but
-      // we can assert the query ran within the 60s-ago window by checking the
-      // call happened between test start and end (sanity on our own clock).
-      expect(selectChain.__calls.where).toHaveLength(1)
-      expect(before).toBeLessThanOrEqual(after)
+      const { sql: text, params } = renderSql(selectChain.__calls.where[0][0])
+      expect(text).toContain('"status" =')
+      expect(text).toContain('"created_at" <')
+      expect(params[0]).toBe('pending')
+      // Bound to the driver value (an ISO timestamp), not the Date object.
+      expect(Date.parse(String(params[1]))).toBeLessThanOrEqual(before - 59_000)
     })
 
-    it('returns [] and skips the increment update when nothing is claimable', async () => {
+    it('returns [] when nothing is claimable', async () => {
       const { claimPendingEvents } = await import('../meta-events')
       const trx = {
         select: vi.fn(() => chain([])),
@@ -326,10 +365,7 @@ describe('meta-events queries', () => {
       }
       dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
 
-      const result = await claimPendingEvents(5)
-
-      expect(result).toEqual([])
-      expect(trx.update).not.toHaveBeenCalled()
+      expect(await claimPendingEvents(5)).toEqual([])
     })
   })
 
@@ -344,22 +380,6 @@ describe('meta-events queries', () => {
 
       expect(result).toBe(rows)
       expect(selectChain.__calls.limit).toEqual([[20]])
-    })
-  })
-
-  describe('hasEvent', () => {
-    it('returns true when a row exists for the tenant + eventId', async () => {
-      const { hasEvent } = await import('../meta-events')
-      dbMock.select.mockReturnValueOnce(chain([{ id: 'evt-1' }]))
-
-      expect(await hasEvent(TENANT_A, 'lead:1')).toBe(true)
-    })
-
-    it('returns false when no row exists', async () => {
-      const { hasEvent } = await import('../meta-events')
-      dbMock.select.mockReturnValueOnce(chain([]))
-
-      expect(await hasEvent(TENANT_A, 'lead:missing')).toBe(false)
     })
   })
 
@@ -381,6 +401,18 @@ describe('meta-events queries', () => {
       dbMock.select.mockReturnValueOnce(chain([]))
 
       expect(await hasScheduleForProspect(TENANT_A, 'prospect-2')).toBe(false)
+    })
+
+    it('ignores skipped rows so an unconnected-clinic Schedule does not block the real one', async () => {
+      const { hasScheduleForProspect } = await import('../meta-events')
+      const selectChain = chain([])
+      dbMock.select.mockReturnValueOnce(selectChain)
+
+      await hasScheduleForProspect(TENANT_A, 'prospect-3')
+
+      const { sql: text, params } = renderSql(selectChain.__calls.where[0][0])
+      expect(text).toContain('"status" <>')
+      expect(params).toEqual([TENANT_A, 'prospect-3', 'Schedule', 'skipped'])
     })
   })
 })

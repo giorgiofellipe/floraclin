@@ -1102,6 +1102,7 @@ export const metaConversionEvents = floraclinSchema.table('meta_conversion_event
   uniqueIndex('uq_meta_events_tenant_event').on(table.tenantId, table.eventId),
   index('idx_meta_events_pending').on(table.status, table.createdAt),
   index('idx_meta_events_tenant_created').on(table.tenantId, table.createdAt),
+  index('idx_meta_events_tenant_prospect').on(table.tenantId, table.prospectId),
 ])
 
 export const metaConnections = floraclinSchema.table('meta_connections', {

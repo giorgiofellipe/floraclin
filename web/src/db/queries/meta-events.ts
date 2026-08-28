@@ -1,9 +1,9 @@
 import { db } from '@/db/client'
 import { metaConversionEvents } from '@/db/schema'
-import { and, asc, eq, inArray, lt, sql } from 'drizzle-orm'
+import { and, asc, eq, lt, ne, sql } from 'drizzle-orm'
 import type { MetaEventName } from '@/lib/meta/types'
 
-const MAX_ATTEMPTS = 8
+export const MAX_ATTEMPTS = 8
 const CLAIM_MIN_AGE_MS = 60_000
 
 export interface InsertConversionEventInput {
@@ -21,15 +21,11 @@ export interface InsertConversionEventInput {
 export interface PendingEvent {
   id: string
   tenantId: string
-  prospectId: string | null
-  eventName: string
-  eventId: string
-  eventTime: Date
-  value: string | null
-  currency: string
   payload: unknown
-  attempts: number
+  createdAt: Date
 }
+
+export type EventFailureStatus = 'pending' | 'failed'
 
 export interface RecentEvent {
   id: string
@@ -91,27 +87,40 @@ export async function markEventSent(tenantId: string, id: string, fbTraceId?: st
     .where(and(eq(metaConversionEvents.tenantId, tenantId), eq(metaConversionEvents.id, id)))
 }
 
+/**
+ * The single place that decides whether a failed row retries. `invalid` is
+ * terminal because Meta rejected the payload itself and a retry resends the
+ * same bytes; `auth` stays pending and spends no budget because a re-pasted
+ * token is exactly the fix. Only a transient failure consumes an attempt,
+ * so a row parked while its tenant has no working connection keeps its full
+ * budget.
+ */
 export async function markEventFailure(
   tenantId: string,
   id: string,
   kind: 'transient' | 'invalid' | 'auth',
   message: string,
-): Promise<void> {
+): Promise<EventFailureStatus> {
+  const scope = and(eq(metaConversionEvents.tenantId, tenantId), eq(metaConversionEvents.id, id))
+
+  if (kind !== 'transient') {
+    const status: EventFailureStatus = kind === 'invalid' ? 'failed' : 'pending'
+    await db.update(metaConversionEvents).set({ status, lastError: message }).where(scope)
+    return status
+  }
+
   const [current] = await db
     .select({ attempts: metaConversionEvents.attempts })
     .from(metaConversionEvents)
-    .where(and(eq(metaConversionEvents.tenantId, tenantId), eq(metaConversionEvents.id, id)))
+    .where(scope)
     .limit(1)
 
   const attempts = (current?.attempts ?? 0) + 1
-  // Invalid payloads and dead tokens never recover on retry; only a
-  // transient failure gets the attempt budget below.
-  const status = kind === 'transient' && attempts < MAX_ATTEMPTS ? 'pending' : 'failed'
+  const status: EventFailureStatus = attempts < MAX_ATTEMPTS ? 'pending' : 'failed'
 
-  await db
-    .update(metaConversionEvents)
-    .set({ attempts, status, lastError: message })
-    .where(and(eq(metaConversionEvents.tenantId, tenantId), eq(metaConversionEvents.id, id)))
+  await db.update(metaConversionEvents).set({ attempts, status, lastError: message }).where(scope)
+
+  return status
 }
 
 export async function markEventSkipped(tenantId: string, id: string, reason: string): Promise<void> {
@@ -126,35 +135,19 @@ export async function claimPendingEvents(limit: number): Promise<PendingEvent[]>
     const cutoff = new Date(Date.now() - CLAIM_MIN_AGE_MS)
 
     const rows = await trx
-      .select()
+      .select({
+        id: metaConversionEvents.id,
+        tenantId: metaConversionEvents.tenantId,
+        payload: metaConversionEvents.payload,
+        createdAt: metaConversionEvents.createdAt,
+      })
       .from(metaConversionEvents)
       .where(and(eq(metaConversionEvents.status, 'pending'), lt(metaConversionEvents.createdAt, cutoff)))
       .orderBy(asc(metaConversionEvents.createdAt))
       .limit(limit)
       .for('update', { skipLocked: true })
 
-    if (rows.length === 0) {
-      return []
-    }
-
-    const ids = rows.map((row) => row.id)
-    await trx
-      .update(metaConversionEvents)
-      .set({ attempts: sql`${metaConversionEvents.attempts} + 1` })
-      .where(inArray(metaConversionEvents.id, ids))
-
-    return rows.map((row) => ({
-      id: row.id,
-      tenantId: row.tenantId,
-      prospectId: row.prospectId,
-      eventName: row.eventName,
-      eventId: row.eventId,
-      eventTime: row.eventTime,
-      value: row.value,
-      currency: row.currency,
-      payload: row.payload,
-      attempts: row.attempts + 1,
-    }))
+    return rows
   })
 }
 
@@ -181,16 +174,6 @@ export async function listRecentEvents(tenantId: string, limit: number): Promise
   return rows
 }
 
-export async function hasEvent(tenantId: string, eventId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ id: metaConversionEvents.id })
-    .from(metaConversionEvents)
-    .where(and(eq(metaConversionEvents.tenantId, tenantId), eq(metaConversionEvents.eventId, eventId)))
-    .limit(1)
-
-  return Boolean(row)
-}
-
 export async function hasScheduleForProspect(tenantId: string, prospectId: string): Promise<boolean> {
   const [row] = await db
     .select({ id: metaConversionEvents.id })
@@ -200,6 +183,10 @@ export async function hasScheduleForProspect(tenantId: string, prospectId: strin
         eq(metaConversionEvents.tenantId, tenantId),
         eq(metaConversionEvents.prospectId, prospectId),
         eq(metaConversionEvents.eventName, 'Schedule'),
+        // A Schedule written while the clinic was unconnected is a `skipped`
+        // row with no payload: it never reached Meta, so it must not block
+        // the real one.
+        ne(metaConversionEvents.status, 'skipped'),
       ),
     )
     .limit(1)

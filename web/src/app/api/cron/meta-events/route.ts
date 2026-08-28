@@ -3,7 +3,7 @@ import * as Sentry from '@sentry/nextjs'
 import { and, eq, gte, isNull, sql } from 'drizzle-orm'
 
 import { db } from '@/db/client'
-import { metaConversionEvents, prospectActivities, prospects } from '@/db/schema'
+import { metaConnections, metaConversionEvents, prospectActivities, prospects } from '@/db/schema'
 import {
   claimPendingEvents,
   hasScheduleForProspect,
@@ -31,13 +31,12 @@ const MONITOR_CONFIG = cronMonitorConfig('*/5 * * * *')
 const CLAIM_LIMIT = 500
 const POST_BATCH_SIZE = 1000
 const RECONCILE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+const RECONCILE_LIMIT = 200
+const RECONCILE_CONCURRENCY = 10
 
-// Mirrors MAX_ATTEMPTS in meta-events.ts. markEventFailure re-reads the
-// attempts column from the row claimPendingEvents already incremented, so a
-// transient failure here reaches the cutoff at `event.attempts + 1`. Only
-// used to decide whether a row counts toward the Sentry failure-rate alert;
-// the actual status transition happens inside markEventFailure.
-const MAX_ATTEMPTS = 8
+// Meta rejects events whose event_time is more than 7 days old, so a row
+// that waited this long for a working connection can never be delivered.
+const NO_CONNECTION_GRACE_MS = 7 * 24 * 60 * 60 * 1000
 
 function chunk<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = []
@@ -45,14 +44,10 @@ function chunk<T>(items: T[], size: number): T[][] {
   return chunks
 }
 
-function willBeFailed(kind: 'transient' | 'invalid' | 'auth', attemptsAfterClaim: number): boolean {
-  if (kind !== 'transient') return true
-  return attemptsAfterClaim + 1 >= MAX_ATTEMPTS
-}
-
 interface RetrySweepResult {
   claimed: number
   sent: number
+  deferredNoConnection: number
   skippedNoConnection: number
   failed: number
 }
@@ -65,6 +60,32 @@ interface RetrySweepOutcome {
 }
 
 /**
+ * A tenant with no usable connection keeps its rows `pending`: a disabled
+ * connection, a revoked token and a re-paste are all minutes apart, and a
+ * terminal status here loses events the clinic never agreed to lose. Rows
+ * are only given up once they age past what Meta still accepts.
+ */
+async function deferOrExpire(
+  tenantId: string,
+  events: PendingEvent[],
+  now: Date,
+): Promise<{ deferred: number; expired: number }> {
+  let deferred = 0
+  let expired = 0
+
+  for (const event of events) {
+    if (now.getTime() - event.createdAt.getTime() > NO_CONNECTION_GRACE_MS) {
+      await markEventSkipped(tenantId, event.id, 'no_connection')
+      expired += 1
+      continue
+    }
+    deferred += 1
+  }
+
+  return { deferred, expired }
+}
+
+/**
  * Claims pending outbox rows, resolves each tenant's connection once, and
  * replays them through the Conversions API in batches of up to 1000 (Meta's
  * per-request event cap). A tenant with more than 10 rows moving to `failed`
@@ -72,6 +93,7 @@ interface RetrySweepOutcome {
  */
 async function runRetrySweep(): Promise<RetrySweepOutcome> {
   const claimed = await claimPendingEvents(CLAIM_LIMIT)
+  const now = new Date()
 
   const byTenant = new Map<string, PendingEvent[]>()
   for (const event of claimed) {
@@ -81,6 +103,7 @@ async function runRetrySweep(): Promise<RetrySweepOutcome> {
   }
 
   let sent = 0
+  let deferredNoConnection = 0
   let skippedNoConnection = 0
   let failed = 0
   const failedByTenant = new Map<string, number>()
@@ -88,11 +111,12 @@ async function runRetrySweep(): Promise<RetrySweepOutcome> {
 
   for (const [tenantId, events] of byTenant) {
     const connection = await getMetaConnection(tenantId)
-    if (!connection) {
-      for (const event of events) {
-        await markEventSkipped(tenantId, event.id, 'no_connection')
-      }
-      skippedNoConnection += events.length
+    // `invalid_token` is included on purpose: posting again would only earn
+    // another rejection, and the rows must survive until the token is fixed.
+    if (!connection || connection.status === 'invalid_token') {
+      const outcome = await deferOrExpire(tenantId, events, now)
+      deferredNoConnection += outcome.deferred
+      skippedNoConnection += outcome.expired
       continue
     }
     connections.set(tenantId, connection)
@@ -112,8 +136,8 @@ async function runRetrySweep(): Promise<RetrySweepOutcome> {
       }
 
       for (const event of batch) {
-        await markEventFailure(tenantId, event.id, result.kind, result.message)
-        if (willBeFailed(result.kind, event.attempts)) {
+        const status = await markEventFailure(tenantId, event.id, result.kind, result.message)
+        if (status === 'failed') {
           failed += 1
           failedByTenant.set(tenantId, (failedByTenant.get(tenantId) ?? 0) + 1)
         }
@@ -138,7 +162,10 @@ async function runRetrySweep(): Promise<RetrySweepOutcome> {
     }
   }
 
-  return { result: { claimed: claimed.length, sent, skippedNoConnection, failed }, connections }
+  return {
+    result: { claimed: claimed.length, sent, deferredNoConnection, skippedNoConnection, failed },
+    connections,
+  }
 }
 
 interface AdMetadataBackfillResult {
@@ -170,6 +197,12 @@ interface ReconciledCandidate {
   name: string | null
 }
 
+/**
+ * `meta_connections.created_at` is the per-tenant floor: a clinic that
+ * connects today must not have last week's leads fired as backdated
+ * conversions, because none of them was ad-attributed at the time. The inner
+ * join also keeps unconnected tenants out of the sweep entirely.
+ */
 async function findMissingLeadActivities(windowStart: Date): Promise<ReconciledCandidate[]> {
   return db
     .select({
@@ -184,6 +217,7 @@ async function findMissingLeadActivities(windowStart: Date): Promise<ReconciledC
       prospects,
       and(eq(prospects.id, prospectActivities.prospectId), eq(prospects.tenantId, prospectActivities.tenantId)),
     )
+    .innerJoin(metaConnections, eq(metaConnections.tenantId, prospectActivities.tenantId))
     .leftJoin(
       metaConversionEvents,
       and(
@@ -195,9 +229,11 @@ async function findMissingLeadActivities(windowStart: Date): Promise<ReconciledC
       and(
         eq(prospectActivities.action, 'created'),
         gte(prospectActivities.createdAt, windowStart),
+        gte(prospectActivities.createdAt, metaConnections.createdAt),
         isNull(metaConversionEvents.id),
       ),
     )
+    .limit(RECONCILE_LIMIT)
 }
 
 async function findMissingStageActivities(
@@ -218,6 +254,7 @@ async function findMissingStageActivities(
       prospects,
       and(eq(prospects.id, prospectActivities.prospectId), eq(prospects.tenantId, prospectActivities.tenantId)),
     )
+    .innerJoin(metaConnections, eq(metaConnections.tenantId, prospectActivities.tenantId))
     .leftJoin(
       metaConversionEvents,
       and(
@@ -230,9 +267,45 @@ async function findMissingStageActivities(
         eq(prospectActivities.action, 'stage_changed'),
         sql`${prospectActivities.details}->>'to' = ${toStage}`,
         gte(prospectActivities.createdAt, windowStart),
+        gte(prospectActivities.createdAt, metaConnections.createdAt),
         isNull(metaConversionEvents.id),
       ),
     )
+    .limit(RECONCILE_LIMIT)
+}
+
+async function enqueue(
+  row: ReconciledCandidate,
+  eventName: 'Lead' | 'Contact' | 'Schedule',
+  eventId: string,
+): Promise<boolean> {
+  await enqueueMetaEvent({
+    tenantId: row.tenantId,
+    eventName,
+    eventId,
+    eventTime: row.createdAt,
+    prospectId: row.prospectId,
+    contact: { phone: row.phone, fullName: row.name },
+    actionSource: 'system_generated',
+  })
+  return true
+}
+
+/**
+ * Each enqueue is its own Conversions API round trip, so a serial loop over
+ * a full window burns the function timeout long before the ad metadata
+ * backfill at the end of the run gets to start.
+ */
+async function reconcileBatched(
+  rows: ReconciledCandidate[],
+  run: (row: ReconciledCandidate) => Promise<boolean>,
+): Promise<number> {
+  let reconciled = 0
+  for (const group of chunk(rows, RECONCILE_CONCURRENCY)) {
+    const outcomes = await Promise.all(group.map(run))
+    reconciled += outcomes.filter(Boolean).length
+  }
+  return reconciled
 }
 
 interface ReconciliationResult {
@@ -244,7 +317,9 @@ interface ReconciliationResult {
  * The later of `META_EVENTS_START_AT` and 7 days ago. Using `now()` alone
  * would file a reconciled event's `eventTime` outside the click id window
  * the original event was inside; using `META_EVENTS_START_AT` alone would
- * let the window grow without bound as the deploy ages.
+ * let the window grow without bound as the deploy ages. This is only the
+ * global floor: each tenant's own connection date narrows it further, in
+ * the finders above.
  */
 export function computeReconciliationWindowStart(startAtRaw: string, now: Date): Date {
   const startAt = new Date(startAtRaw)
@@ -272,57 +347,26 @@ async function runReconciliation(): Promise<ReconciliationResult> {
 
   const windowStart = computeReconciliationWindowStart(startAtRaw, new Date())
 
-  let reconciled = 0
-
   const missingLeads = await findMissingLeadActivities(windowStart)
-  for (const row of missingLeads) {
-    await enqueueMetaEvent({
-      tenantId: row.tenantId,
-      eventName: 'Lead',
-      eventId: `lead:${row.prospectId}`,
-      eventTime: row.createdAt,
-      prospectId: row.prospectId,
-      contact: { phone: row.phone, fullName: row.name },
-      actionSource: 'system_generated',
-    })
-    reconciled += 1
-  }
+  const leads = await reconcileBatched(missingLeads, (row) =>
+    enqueue(row, 'Lead', `lead:${row.prospectId}`),
+  )
 
   const missingContacts = await findMissingStageActivities(windowStart, 'contatado', 'contact')
-  for (const row of missingContacts) {
-    await enqueueMetaEvent({
-      tenantId: row.tenantId,
-      eventName: 'Contact',
-      eventId: `contact:${row.prospectId}`,
-      eventTime: row.createdAt,
-      prospectId: row.prospectId,
-      contact: { phone: row.phone, fullName: row.name },
-      actionSource: 'system_generated',
-    })
-    reconciled += 1
-  }
+  const contacts = await reconcileBatched(missingContacts, (row) =>
+    enqueue(row, 'Contact', `contact:${row.prospectId}`),
+  )
 
   const missingSchedules = await findMissingStageActivities(windowStart, 'agendado', 'schedule')
-  for (const row of missingSchedules) {
+  const schedules = await reconcileBatched(missingSchedules, async (row) => {
     // The left join only rules out a `schedule:<prospectId>` row. A real
     // appointment can already have produced a Schedule under the
     // appointment's own event id, which this check catches instead.
-    const alreadyScheduled = await hasScheduleForProspect(row.tenantId, row.prospectId)
-    if (alreadyScheduled) continue
+    if (await hasScheduleForProspect(row.tenantId, row.prospectId)) return false
+    return enqueue(row, 'Schedule', `schedule:${row.prospectId}`)
+  })
 
-    await enqueueMetaEvent({
-      tenantId: row.tenantId,
-      eventName: 'Schedule',
-      eventId: `schedule:${row.prospectId}`,
-      eventTime: row.createdAt,
-      prospectId: row.prospectId,
-      contact: { phone: row.phone, fullName: row.name },
-      actionSource: 'system_generated',
-    })
-    reconciled += 1
-  }
-
-  return { skipped: false, reconciled }
+  return { skipped: false, reconciled: leads + contacts + schedules }
 }
 
 export async function GET(request: Request) {
