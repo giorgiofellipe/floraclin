@@ -31,6 +31,8 @@ import type { CreateFinancialEntryInput, FinancialFilterInput, RecordPaymentInpu
 import type { PaymentMethod, FinancialStatus } from '@/types'
 import { addDays } from 'date-fns'
 import { verifyTenantOwnership } from './helpers'
+import { enqueueMetaEvent } from '@/lib/meta/events'
+import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
 
 // ─── CREATE FINANCIAL ENTRY (unchanged) ─────────────────────────────
 
@@ -95,6 +97,78 @@ export async function createFinancialEntry(
     return execute(txDb)
   }
   return withTransaction(execute)
+}
+
+// ─── META CONVERSIONS: Purchase on payment ──────────────────────────
+
+/**
+ * Gate 1: only when money actually arrived (entry now paid or partial, not
+ * left pending by a short payment). Gate 2: skip a renegotiated entry, since
+ * its balance is money already reported as Purchase on the original entry.
+ * No "first payment" check: eventId is stable per financial entry, and the
+ * outbox's unique index on (tenant_id, event_id) is the once-only guarantee.
+ */
+async function emitPurchaseEventForEntry(
+  tx: typeof db,
+  tenantId: string,
+  financialEntryId: string,
+  eventTime: Date
+) {
+  const [entry] = await tx
+    .select({
+      status: financialEntries.status,
+      totalAmount: financialEntries.totalAmount,
+      patientId: financialEntries.patientId,
+    })
+    .from(financialEntries)
+    .where(eq(financialEntries.id, financialEntryId))
+    .limit(1)
+
+  if (!entry || (entry.status !== 'paid' && entry.status !== 'partial')) {
+    return
+  }
+
+  const [renegotiated] = await tx
+    .select({ id: renegotiationLinks.id })
+    .from(renegotiationLinks)
+    .where(eq(renegotiationLinks.newEntryId, financialEntryId))
+    .limit(1)
+
+  if (renegotiated) {
+    return
+  }
+
+  const [patient] = await tx
+    .select({
+      phone: patients.phone,
+      email: patients.email,
+      fullName: patients.fullName,
+    })
+    .from(patients)
+    .where(eq(patients.id, entry.patientId))
+    .limit(1)
+
+  const prospect = await resolveProspectForPatient(tenantId, {
+    patientId: entry.patientId,
+    phone: patient?.phone ?? null,
+  })
+
+  await enqueueMetaEvent({
+    tenantId,
+    eventName: 'Purchase',
+    eventId: `purchase:${financialEntryId}`,
+    eventTime,
+    prospectId: prospect?.id ?? null,
+    patientId: entry.patientId,
+    contact: {
+      phone: patient?.phone ?? null,
+      email: patient?.email ?? null,
+      fullName: patient?.fullName ?? null,
+    },
+    actionSource: 'system_generated',
+    value: entry.totalAmount,
+    tx,
+  })
 }
 
 // ─── RECORD PAYMENT (replaces payInstallment) ───────────────────────
@@ -341,6 +415,8 @@ export async function recordPayment(
 
     // 7. Update parent financial_entries status
     await updateEntryStatus(tx, tenantId, financialEntryId)
+
+    await emitPurchaseEventForEntry(tx, tenantId, financialEntryId, paidAt)
 
     return {
       paymentRecord,
@@ -700,6 +776,8 @@ export async function bulkPayInstallments(
 
       // Update parent entry status
       await updateEntryStatus(tx, tenantId, row.financialEntryId)
+
+      await emitPurchaseEventForEntry(tx, tenantId, row.financialEntryId, paidAt)
 
       results.push({ installmentId, paymentRecord, allocation })
     }
