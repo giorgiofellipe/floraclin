@@ -218,6 +218,7 @@ async function processInboundMessage(
       eventId: `lead:${prospect.id}`,
       eventTime: timestamp,
       prospectId: prospect.id,
+      patientId: prospect.convertedPatientId,
       actionSource: 'business_messaging',
       contact: { phone: from, fullName: profileName },
     })

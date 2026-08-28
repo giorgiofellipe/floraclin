@@ -6,6 +6,7 @@ import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
 import { brToday, parseBrDate, endOfBrDay, toLocalYmd } from '@/lib/dates'
 import { addDays } from 'date-fns'
 import { verifyTenantOwnership, verifyUserBelongsToTenant } from './helpers'
+import { getPatient } from './patients'
 import { enqueueMetaEvent } from '@/lib/meta/events'
 import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
 import { hasScheduleForProspect } from './meta-events'
@@ -222,7 +223,12 @@ export async function createAppointment(
 async function emitScheduleEvent(
   tenantId: string,
   appointment: typeof appointments.$inferSelect,
-  data: { patientId?: string | null; bookingPhone?: string; bookingName?: string }
+  data: {
+    patientId?: string | null
+    bookingPhone?: string
+    bookingName?: string
+    bookingEmail?: string
+  }
 ) {
   try {
     const prospect = await resolveProspectForPatient(tenantId, {
@@ -237,6 +243,11 @@ async function emitScheduleEvent(
     const alreadyScheduled = await hasScheduleForProspect(tenantId, prospect.id)
     if (alreadyScheduled) return
 
+    // bookingPhone/bookingName exist only on the public booking route, so a
+    // staff-created appointment has to read the identity off the patient row
+    // or the event reaches Meta with nothing to match on.
+    const patient = data.patientId ? await getPatient(tenantId, data.patientId) : null
+
     await enqueueMetaEvent({
       tenantId,
       eventName: 'Schedule',
@@ -244,7 +255,11 @@ async function emitScheduleEvent(
       eventTime: new Date(),
       prospectId: prospect.id,
       patientId: data.patientId ?? null,
-      contact: { phone: data.bookingPhone, fullName: data.bookingName },
+      contact: {
+        phone: patient?.phone ?? data.bookingPhone ?? null,
+        email: patient?.email ?? data.bookingEmail ?? null,
+        fullName: patient?.fullName ?? data.bookingName ?? null,
+      },
       actionSource: appointment.source === 'online_booking' ? 'website' : 'system_generated',
     })
   } catch (error) {

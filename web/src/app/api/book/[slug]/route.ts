@@ -259,6 +259,7 @@ export async function POST(
       eventId: `lead:${prospect.id}`,
       eventTime: new Date(),
       prospectId: prospect.id,
+      patientId: prospect.convertedPatientId,
       contact: { phone, fullName: name, email: email || null },
       actionSource: 'website',
       eventSourceUrl: landingUrl,

@@ -58,6 +58,8 @@ function prospect(overrides: Record<string, unknown> = {}) {
     assignedUserId: null,
     notes: null,
     lostReason: null,
+    convertedPatientId: null,
+    marketingOptOut: false,
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
@@ -107,6 +109,7 @@ describe('POST /api/crm/prospects', () => {
         eventName: 'Lead',
         eventId: 'lead:prospect-1',
         prospectId: 'prospect-1',
+        patientId: null,
         actionSource: 'system_generated',
         contact: { phone: '+5511999999999', fullName: 'Maria Souza' },
       }),
@@ -138,6 +141,7 @@ describe('PATCH /api/crm/prospects/[id] - stage change emission', () => {
         eventName: 'Contact',
         eventId: 'contact:prospect-1',
         prospectId: 'prospect-1',
+        patientId: null,
         actionSource: 'system_generated',
         contact: { phone: '+5511999999999', fullName: 'Maria Souza' },
       }),
@@ -206,9 +210,149 @@ describe('PATCH /api/crm/prospects/[id] - stage change emission', () => {
         eventName: 'Schedule',
         eventId: 'schedule:prospect-1',
         prospectId: 'prospect-1',
+        patientId: null,
         actionSource: 'system_generated',
         contact: { phone: '+5511999999999', fullName: 'Maria Souza' },
       }),
+    )
+  })
+})
+
+describe('converted leads forward the patient id so the opt-out flag is reachable', () => {
+  it('POST forwards convertedPatientId on Lead', async () => {
+    vi.mocked(createProspect).mockResolvedValue(
+      prospect({ convertedPatientId: 'patient-1' }) as never,
+    )
+
+    const request = new Request('https://app.floraclin.com.br/api/crm/prospects', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Maria Souza', phone: '+5511999999999', source: 'manual' }),
+    })
+
+    const res = await createProspectRoute(request)
+    expect(res.status).toBe(201)
+    expect(enqueueMetaEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ eventName: 'Lead', patientId: 'patient-1' }),
+    )
+  })
+
+  it('PATCH forwards convertedPatientId on Contact', async () => {
+    vi.mocked(getProspect).mockResolvedValue(prospect({ stage: 'novo' }) as never)
+    vi.mocked(updateProspect).mockResolvedValue(
+      prospect({ stage: 'contatado', convertedPatientId: 'patient-1' }) as never,
+    )
+
+    const res = await PATCH(patchRequest({ stage: 'contatado' }), {
+      params: Promise.resolve({ id: 'prospect-1' }),
+    })
+    expect(res.status).toBe(200)
+    expect(enqueueMetaEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ eventName: 'Contact', patientId: 'patient-1' }),
+    )
+  })
+
+  it('PATCH forwards convertedPatientId on Schedule', async () => {
+    vi.mocked(getProspect).mockResolvedValue(prospect({ stage: 'qualificado' }) as never)
+    vi.mocked(updateProspect).mockResolvedValue(
+      prospect({ stage: 'agendado', convertedPatientId: 'patient-1' }) as never,
+    )
+
+    const res = await PATCH(patchRequest({ stage: 'agendado' }), {
+      params: Promise.resolve({ id: 'prospect-1' }),
+    })
+    expect(res.status).toBe(200)
+    expect(enqueueMetaEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ eventName: 'Schedule', patientId: 'patient-1' }),
+    )
+  })
+})
+
+describe('an opted-out patient is recorded as skipped, not sent', () => {
+  const insertConversionEventMock = vi.fn()
+  const postEventsMock = vi.fn()
+  const isMarketingOptedOutMock = vi.fn()
+
+  async function loadRealEnqueue() {
+    vi.resetModules()
+    // The file-level vi.mock of this module is what lets the route tests spy on
+    // the call; these two need the real gate underneath it.
+    vi.doUnmock('@/lib/meta/events')
+    vi.doMock('@/db/queries/marketing-consent', () => ({
+      isMarketingOptedOut: isMarketingOptedOutMock,
+    }))
+    vi.doMock('@/db/queries/meta-events', () => ({
+      insertConversionEvent: insertConversionEventMock,
+      markEventSent: vi.fn(),
+      markEventFailure: vi.fn(),
+      hasScheduleForProspect: vi.fn(),
+    }))
+    vi.doMock('@/db/queries/meta-connections', () => ({
+      getMetaConnection: vi.fn(async () => ({
+        datasetId: 'dataset-1',
+        accessToken: 'token',
+        testEventCode: null,
+        advancedMatchingEnabled: true,
+      })),
+      markConnectionInvalid: vi.fn(),
+    }))
+    vi.doMock('@/db/queries/lead-attributions', () => ({ getAttribution: vi.fn(async () => null) }))
+    vi.doMock('@/lib/meta/capi-client', () => ({ postEvents: postEventsMock }))
+    vi.doMock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
+
+    const mod = await import('@/lib/meta/events')
+    return mod.enqueueMetaEvent
+  }
+
+  beforeEach(() => {
+    insertConversionEventMock.mockReset()
+    insertConversionEventMock.mockResolvedValue({ inserted: true, id: 'event-1' })
+    postEventsMock.mockReset()
+    postEventsMock.mockResolvedValue({ ok: true, fbTraceId: 'trace-1' })
+    isMarketingOptedOutMock.mockReset()
+    process.env.META_EXTERNAL_ID_SECRET = 'a'.repeat(64)
+  })
+
+  const contactEvent = {
+    tenantId: 'tenant-1',
+    eventName: 'Contact' as const,
+    eventId: 'contact:prospect-1',
+    eventTime: new Date('2026-08-28T12:00:00Z'),
+    prospectId: 'prospect-1',
+    contact: { phone: '+5511999999999', fullName: 'Maria Souza' },
+    actionSource: 'system_generated' as const,
+  }
+
+  it('writes a skipped row and sends nothing when the patient opted out', async () => {
+    isMarketingOptedOutMock.mockImplementation(
+      async (_tenantId: string, ref: { patientId?: string | null }) => ref.patientId === 'patient-1',
+    )
+    const enqueue = await loadRealEnqueue()
+
+    await enqueue({ ...contactEvent, patientId: 'patient-1' })
+
+    expect(isMarketingOptedOutMock).toHaveBeenCalledWith('tenant-1', {
+      prospectId: 'prospect-1',
+      patientId: 'patient-1',
+    })
+    expect(postEventsMock).not.toHaveBeenCalled()
+    expect(insertConversionEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({ eventName: 'Contact', status: 'skipped', skipReason: 'opted_out' }),
+      undefined,
+    )
+  })
+
+  it('sends the event when the same call omits patientId, which is the defect', async () => {
+    isMarketingOptedOutMock.mockImplementation(
+      async (_tenantId: string, ref: { patientId?: string | null }) => ref.patientId === 'patient-1',
+    )
+    const enqueue = await loadRealEnqueue()
+
+    await enqueue(contactEvent)
+
+    expect(postEventsMock).toHaveBeenCalledTimes(1)
+    expect(insertConversionEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'pending' }),
+      undefined,
     )
   })
 })

@@ -130,6 +130,7 @@ export async function POST(request: Request) {
       eventId: `lead:${prospect.id}`,
       eventTime: new Date(),
       prospectId: prospect.id,
+      patientId: prospect.convertedPatientId,
       contact: { phone: prospect.phone, fullName: prospect.name },
       actionSource: 'system_generated',
     })

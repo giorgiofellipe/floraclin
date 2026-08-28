@@ -304,6 +304,7 @@ export async function POST(
           eventId: `contact:${prospect.id}`,
           eventTime: new Date(),
           prospectId: prospect.id,
+          patientId: prospect.convertedPatientId,
           contact: { phone: prospect.phone, fullName: prospect.name },
           actionSource: 'business_messaging',
         })

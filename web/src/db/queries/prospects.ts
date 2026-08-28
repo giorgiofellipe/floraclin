@@ -56,7 +56,13 @@ export async function getProspect(tenantId: string, prospectId: string): Promise
       whatsappConversationId: whatsappConversations.id,
     })
     .from(prospects)
-    .leftJoin(whatsappConversations, eq(whatsappConversations.prospectId, prospects.id))
+    .leftJoin(
+      whatsappConversations,
+      and(
+        eq(whatsappConversations.prospectId, prospects.id),
+        eq(whatsappConversations.tenantId, prospects.tenantId),
+      ),
+    )
     .where(
       and(
         eq(prospects.id, prospectId),
@@ -147,8 +153,20 @@ export async function listProspects(
       channel: leadAttributions.channel,
     })
     .from(prospects)
-    .leftJoin(whatsappConversations, eq(whatsappConversations.prospectId, prospects.id))
-    .leftJoin(leadAttributions, eq(leadAttributions.prospectId, prospects.id))
+    .leftJoin(
+      whatsappConversations,
+      and(
+        eq(whatsappConversations.prospectId, prospects.id),
+        eq(whatsappConversations.tenantId, prospects.tenantId),
+      ),
+    )
+    .leftJoin(
+      leadAttributions,
+      and(
+        eq(leadAttributions.prospectId, prospects.id),
+        eq(leadAttributions.tenantId, prospects.tenantId),
+      ),
+    )
     .where(whereConditions)
     .orderBy(desc(prospects.createdAt))
 

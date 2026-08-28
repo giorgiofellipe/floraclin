@@ -96,6 +96,7 @@ export async function PATCH(
           eventId: `contact:${id}`,
           eventTime: new Date(),
           prospectId: id,
+          patientId: prospect.convertedPatientId,
           contact: { phone: prospect.phone, fullName: prospect.name },
           actionSource: 'system_generated',
         })
@@ -111,6 +112,7 @@ export async function PATCH(
             eventId: `schedule:${id}`,
             eventTime: new Date(),
             prospectId: id,
+            patientId: prospect.convertedPatientId,
             contact: { phone: prospect.phone, fullName: prospect.name },
             actionSource: 'system_generated',
           })

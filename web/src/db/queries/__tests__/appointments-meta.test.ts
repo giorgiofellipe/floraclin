@@ -66,6 +66,14 @@ vi.mock('@/lib/meta/events', () => ({
   enqueueMetaEvent: enqueueMetaEventMock,
 }))
 
+const { getPatientMock } = vi.hoisted(() => ({
+  getPatientMock: vi.fn(),
+}))
+
+vi.mock('../patients', () => ({
+  getPatient: getPatientMock,
+}))
+
 const { reportSideEffectFailureMock } = vi.hoisted(() => ({
   reportSideEffectFailureMock: vi.fn(),
 }))
@@ -97,6 +105,7 @@ describe('createAppointment: Meta Schedule event', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     hasScheduleForProspectMock.mockResolvedValue(false)
+    getPatientMock.mockResolvedValue(null)
   })
 
   it('emits one Schedule for a matched prospect', async () => {
@@ -121,7 +130,7 @@ describe('createAppointment: Meta Schedule event', () => {
         eventId: 'schedule:appt-1',
         prospectId: PROSPECT,
         patientId: null,
-        contact: { phone: '5511999999999', fullName: 'Jane Doe' },
+        contact: { phone: '5511999999999', email: null, fullName: 'Jane Doe' },
         actionSource: 'system_generated',
       })
     )
@@ -189,6 +198,63 @@ describe('createAppointment: Meta Schedule event', () => {
 
     expect(enqueueMetaEventMock).toHaveBeenCalledWith(
       expect.objectContaining({ actionSource: 'website' })
+    )
+  })
+
+  it('a staff-created appointment carries the patient phone, email and name', async () => {
+    mockInsertedAppointment({ id: 'appt-9', source: 'internal' })
+    resolveProspectForPatientMock.mockResolvedValue({ id: PROSPECT })
+    getPatientMock.mockResolvedValue({
+      id: 'patient-1',
+      phone: '5511988887777',
+      email: 'maria@example.com',
+      fullName: 'Maria Souza',
+    })
+
+    await createAppointment(TENANT, baseAppointmentData({ patientId: 'patient-1' }))
+
+    expect(getPatientMock).toHaveBeenCalledWith(TENANT, 'patient-1')
+    expect(enqueueMetaEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventName: 'Schedule',
+        patientId: 'patient-1',
+        contact: {
+          phone: '5511988887777',
+          email: 'maria@example.com',
+          fullName: 'Maria Souza',
+        },
+      })
+    )
+  })
+
+  it('prefers the patient record over the booking fields when both are present', async () => {
+    mockInsertedAppointment({ id: 'appt-10', source: 'online_booking' })
+    resolveProspectForPatientMock.mockResolvedValue({ id: PROSPECT })
+    getPatientMock.mockResolvedValue({
+      id: 'patient-1',
+      phone: '5511988887777',
+      email: null,
+      fullName: 'Maria Souza',
+    })
+
+    await createAppointment(
+      TENANT,
+      baseAppointmentData({
+        patientId: 'patient-1',
+        bookingPhone: '5511999999999',
+        bookingName: 'Jane Doe',
+        bookingEmail: 'jane@example.com',
+      })
+    )
+
+    expect(enqueueMetaEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contact: {
+          phone: '5511988887777',
+          email: 'jane@example.com',
+          fullName: 'Maria Souza',
+        },
+      })
     )
   })
 
