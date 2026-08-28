@@ -1,5 +1,5 @@
 import { db } from '@/db/client'
-import { prospects, prospectActivities, prospectProcedureTypes, procedureTypes, whatsappConversations, users } from '@/db/schema'
+import { prospects, prospectActivities, prospectProcedureTypes, procedureTypes, whatsappConversations, users, leadAttributions } from '@/db/schema'
 import { eq, and, or, desc, ilike, isNull, sql, inArray } from 'drizzle-orm'
 import { normalizeBrPhone } from '@/lib/phone'
 import type { ProspectStage } from '@/validations/prospect'
@@ -108,7 +108,10 @@ export async function getProspectByPatientId(tenantId: string, patientId: string
 export async function listProspects(
   tenantId: string,
   opts: { stage?: ProspectStage; search?: string; assignedUserId?: string } = {},
-): Promise<(Prospect & { whatsappConversationId: string | null })[]> {
+): Promise<(Prospect & {
+  whatsappConversationId: string | null
+  attribution: { adHeadline: string | null; channel: string } | null
+})[]> {
   const { stage, search, assignedUserId } = opts
 
   const baseConditions = [
@@ -140,13 +143,20 @@ export async function listProspects(
     .select({
       prospect: prospects,
       whatsappConversationId: whatsappConversations.id,
+      adHeadline: leadAttributions.adHeadline,
+      channel: leadAttributions.channel,
     })
     .from(prospects)
     .leftJoin(whatsappConversations, eq(whatsappConversations.prospectId, prospects.id))
+    .leftJoin(leadAttributions, eq(leadAttributions.prospectId, prospects.id))
     .where(whereConditions)
     .orderBy(desc(prospects.createdAt))
 
-  return rows.map((r) => ({ ...r.prospect, whatsappConversationId: r.whatsappConversationId }))
+  return rows.map((r) => ({
+    ...r.prospect,
+    whatsappConversationId: r.whatsappConversationId,
+    attribution: r.channel ? { adHeadline: r.adHeadline, channel: r.channel } : null,
+  }))
 }
 
 export async function updateProspect(
