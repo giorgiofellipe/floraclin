@@ -62,9 +62,13 @@ describe('postEvents', () => {
     global.fetch = fetchMock as unknown as typeof fetch
 
     await postEvents({ ...target, testEventCode: 'TEST123' }, [makeEvent()])
+    await postEvents({ ...target, testEventCode: null }, [makeEvent()])
 
-    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string)
-    expect(body.test_event_code).toBe('TEST123')
+    const withCode = JSON.parse(fetchMock.mock.calls[0][1]?.body as string)
+    expect(withCode.test_event_code).toBe('TEST123')
+
+    const withoutCode = JSON.parse(fetchMock.mock.calls[1][1]?.body as string)
+    expect(withoutCode).not.toHaveProperty('test_event_code')
   })
 
   it('classifies an expired token as auth', async () => {

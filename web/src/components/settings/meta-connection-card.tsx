@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
@@ -49,6 +49,39 @@ const SKIP_REASON_LABELS: Record<string, string> = {
   opted_out: 'Paciente optou por não compartilhar dados',
 }
 
+// Rendered either for an active connection or inside the manual block, never
+// both at once, so the input keeps a single id.
+function TestEventCodeField({
+  value,
+  onChange,
+  action,
+}: {
+  value: string
+  onChange: (value: string) => void
+  action?: ReactNode
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor="meta-test-event-code" className="text-xs font-medium uppercase tracking-wider text-mid">
+        Código de evento de teste (opcional)
+      </Label>
+      <div className="flex items-center gap-2">
+        <Input
+          id="meta-test-event-code"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="TEST12345"
+        />
+        {action}
+      </div>
+      <p className="text-xs text-mid">
+        O código aparece no Gerenciador de Eventos da Meta, na aba &quot;Testar eventos&quot;. Sem ele o evento de
+        teste continua sendo enviado, ele apenas não aparece nessa janela.
+      </p>
+    </div>
+  )
+}
+
 export function MetaConnectionCard() {
   const { data, isLoading } = useMetaConnection()
   const saveMutation = useSaveMetaConnection()
@@ -62,7 +95,8 @@ export function MetaConnectionCard() {
   const [datasetId, setDatasetId] = useState('')
   const [accessToken, setAccessToken] = useState('')
   const [businessId, setBusinessId] = useState('')
-  const [testEventCode, setTestEventCode] = useState('')
+  // Null means the owner has not typed anything, so the stored code shows.
+  const [testEventCodeDraft, setTestEventCodeDraft] = useState<string | null>(null)
   const [pendingAdvancedMatching, setPendingAdvancedMatching] = useState<boolean | null>(null)
 
   const connection = data?.data ?? null
@@ -70,6 +104,7 @@ export function MetaConnectionCard() {
   const isActive = connection?.status === 'active'
   const isPendingDataset = connection?.status === 'pending_dataset'
   const businessesQuery = useMetaBusinesses(isPendingDataset)
+  const testEventCode = testEventCodeDraft ?? connection?.testEventCode ?? ''
 
   async function handleConnect() {
     const params = new URLSearchParams({ acknowledgementVersion: ACKNOWLEDGEMENT_VERSION })
@@ -139,6 +174,20 @@ export function MetaConnectionCard() {
       toast.success('Conjunto de dados salvo')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Erro ao salvar conjunto de dados')
+    }
+  }
+
+  async function handleSaveTestEventCode() {
+    if (!connection?.datasetId) return
+    try {
+      await saveMutation.mutateAsync({
+        datasetId: connection.datasetId,
+        testEventCode: testEventCode || null,
+        acknowledgementVersion: ACKNOWLEDGEMENT_VERSION,
+      })
+      toast.success('Código de evento de teste salvo')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao salvar o código de evento de teste')
     }
   }
 
@@ -303,6 +352,25 @@ export function MetaConnectionCard() {
             </div>
           )}
 
+          {isActive && (
+            <TestEventCodeField
+              value={testEventCode}
+              onChange={setTestEventCodeDraft}
+              action={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSaveTestEventCode}
+                  disabled={saveMutation.isPending}
+                  className="shrink-0"
+                >
+                  {saveMutation.isPending ? <Loader2Icon className="h-3.5 w-3.5 animate-spin" /> : 'Salvar código'}
+                </Button>
+              }
+            />
+          )}
+
           <div className="flex items-center gap-2">
             {!isPendingDataset && (
               <Button
@@ -437,17 +505,7 @@ export function MetaConnectionCard() {
                   />
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="meta-test-event-code" className="text-xs font-medium uppercase tracking-wider text-mid">
-                    Código de evento de teste (opcional)
-                  </Label>
-                  <Input
-                    id="meta-test-event-code"
-                    value={testEventCode}
-                    onChange={(e) => setTestEventCode(e.target.value)}
-                    placeholder="TEST12345"
-                  />
-                </div>
+                <TestEventCodeField value={testEventCode} onChange={setTestEventCodeDraft} />
 
                 <Button
                   type="button"

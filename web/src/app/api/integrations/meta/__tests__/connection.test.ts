@@ -598,6 +598,52 @@ describe('POST /api/integrations/meta/connection/test', () => {
     expect(res.status).toBe(200)
     expect(markConnectionVerified).toHaveBeenCalledWith('tenant-1')
   })
+
+  // The code only decides whether the event shows up in the Test Events
+  // window; Meta ingests it either way, so it can't be a precondition.
+  it('tests a connection that has no test event code stored', async () => {
+    vi.mocked(getMetaConnectionRaw).mockResolvedValue(connection({ testEventCode: null }))
+    vi.mocked(postEvents).mockResolvedValue({ ok: true, eventsReceived: 1, fbTraceId: 'trace-abc' })
+
+    const res = await testConnection(
+      new Request('http://localhost/api/integrations/meta/connection/test', { method: 'POST' }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(postEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ datasetId: 'dataset-1', testEventCode: null }),
+      expect.any(Array),
+    )
+    expect(markConnectionVerified).toHaveBeenCalledWith('tenant-1')
+  })
+
+  it('forwards the stored test event code when there is one', async () => {
+    vi.mocked(getMetaConnectionRaw).mockResolvedValue(connection({ testEventCode: 'TEST12345' }))
+    vi.mocked(postEvents).mockResolvedValue({ ok: true, eventsReceived: 1, fbTraceId: 'trace-abc' })
+
+    await testConnection(
+      new Request('http://localhost/api/integrations/meta/connection/test', { method: 'POST' }),
+    )
+
+    expect(postEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ testEventCode: 'TEST12345' }),
+      expect.any(Array),
+    )
+  })
+
+  it('refuses to test a connection that has no dataset yet', async () => {
+    vi.mocked(getMetaConnectionRaw).mockResolvedValue(
+      connection({ status: 'pending_dataset', datasetId: null, testEventCode: null }),
+    )
+
+    const res = await testConnection(
+      new Request('http://localhost/api/integrations/meta/connection/test', { method: 'POST' }),
+    )
+
+    expect(res.status).toBe(400)
+    expect(postEvents).not.toHaveBeenCalled()
+    expect(markConnectionVerified).not.toHaveBeenCalled()
+  })
 })
 
 describe('GET /api/integrations/meta/auth/callback', () => {

@@ -186,6 +186,49 @@ describe('MetaConnectionCard: testing an active connection', () => {
   })
 })
 
+describe('MetaConnectionCard: test event code on an active connection', () => {
+  function codeFetchMock(stored: string | null) {
+    const connection = { ...BASE_CONNECTION, connectionType: 'oauth' as const, testEventCode: stored }
+    return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        return new Response(JSON.stringify({ data: connection }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ data: connection, events: [] }), { status: 200 })
+    })
+  }
+
+  it('offers the test event code field on an active connection and pre-fills the stored code', async () => {
+    vi.stubGlobal('fetch', codeFetchMock('TEST12345'))
+
+    renderCard()
+
+    const input = await screen.findByLabelText(/código de evento de teste/i)
+    expect(input).toHaveValue('TEST12345')
+    expect(screen.getByText(/testar eventos/i)).toBeInTheDocument()
+  })
+
+  it('saves a typed code on an active connection without asking for an access token', async () => {
+    const fetchMock = codeFetchMock(null)
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderCard()
+
+    const input = await screen.findByLabelText(/código de evento de teste/i)
+    await userEvent.type(input, 'TEST999')
+    await userEvent.click(screen.getByRole('button', { name: /salvar código/i }))
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([, init]) => (init as RequestInit)?.method === 'PUT')).toBe(true),
+    )
+
+    const put = fetchMock.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT')
+    const body = JSON.parse((put?.[1] as RequestInit).body as string)
+    expect(body.testEventCode).toBe('TEST999')
+    expect(body.datasetId).toBe('dataset-1')
+    expect(body).not.toHaveProperty('accessToken')
+  })
+})
+
 describe('MetaConnectionCard: advanced matching toggle', () => {
   function toggleFetchMock(connectionType: 'oauth' | 'manual') {
     const stored = { ...BASE_CONNECTION, connectionType }

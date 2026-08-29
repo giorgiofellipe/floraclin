@@ -18,10 +18,8 @@ export async function POST(request: Request) {
     if (!connection.datasetId) {
       return NextResponse.json({ error: 'Escolha um conjunto de dados antes de testar a conexão.' }, { status: 400 })
     }
-    if (!connection.testEventCode) {
-      return NextResponse.json({ error: 'Configure um código de teste antes de testar a conexão.' }, { status: 400 })
-    }
-
+    // The test event code is optional: Meta ingests the event either way, the
+    // code only makes it show up in the Test Events window.
     const result = await postEvents(
       {
         datasetId: connection.datasetId,
