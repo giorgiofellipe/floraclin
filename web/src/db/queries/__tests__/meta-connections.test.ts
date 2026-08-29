@@ -45,6 +45,7 @@ import {
   getMetaConnection,
   getMetaConnectionRaw,
   upsertMetaConnection,
+  updateMetaConnectionSettings,
   markConnectionInvalid,
   markConnectionVerified,
   deleteMetaConnection,
@@ -106,6 +107,26 @@ describe('meta-connections queries', () => {
       expect(result).toEqual(row)
     })
 
+    // Safety-critical: a pending_dataset connection has no dataset to post to,
+    // so every caller must read it as "no connection".
+    it('returns null when the connection is still waiting for a dataset', async () => {
+      const row = makeConnectionRow({ status: 'pending_dataset', datasetId: null })
+      dbMock.select.mockReturnValue(makeChain([row]))
+
+      const result = await getMetaConnection('tenant-1')
+
+      expect(result).toBeNull()
+    })
+
+    it('returns null when an active row somehow has no dataset', async () => {
+      const row = makeConnectionRow({ status: 'active', datasetId: null })
+      dbMock.select.mockReturnValue(makeChain([row]))
+
+      const result = await getMetaConnection('tenant-1')
+
+      expect(result).toBeNull()
+    })
+
     it('returns null when there is no row for the tenant', async () => {
       dbMock.select.mockReturnValue(makeChain([]))
 
@@ -118,6 +139,16 @@ describe('meta-connections queries', () => {
   describe('getMetaConnectionRaw', () => {
     it('returns a disabled connection unchanged', async () => {
       const row = makeConnectionRow({ status: 'disabled' })
+      dbMock.select.mockReturnValue(makeChain([row]))
+
+      const result = await getMetaConnectionRaw('tenant-1')
+
+      expect(result).toEqual(row)
+    })
+
+    // The settings card needs it to render the dataset picker.
+    it('returns a pending_dataset connection so leg 2 can be rendered', async () => {
+      const row = makeConnectionRow({ status: 'pending_dataset', datasetId: null })
       dbMock.select.mockReturnValue(makeChain([row]))
 
       const result = await getMetaConnectionRaw('tenant-1')
@@ -145,6 +176,24 @@ describe('meta-connections queries', () => {
       expect(setCall.set.lastErrorAt).toBeNull()
     })
 
+    it('parks an OAuth authorization as pending_dataset with no dataset', async () => {
+      const chain = makeChain([makeConnectionRow({ status: 'pending_dataset', datasetId: null })])
+      dbMock.insert.mockReturnValue(chain)
+
+      await upsertMetaConnection('tenant-1', {
+        datasetId: null,
+        accessToken: 'token-2',
+        connectionType: 'oauth',
+        status: 'pending_dataset',
+      })
+
+      const valuesCall = (chain.values as ReturnType<typeof vi.fn>).mock.calls[0][0]
+      expect(valuesCall.status).toBe('pending_dataset')
+      expect(valuesCall.datasetId).toBeNull()
+      const setCall = (chain.onConflictDoUpdate as ReturnType<typeof vi.fn>).mock.calls[0][0]
+      expect(setCall.set.status).toBe('pending_dataset')
+    })
+
     it('scopes the inserted row to the given tenant', async () => {
       const chain = makeChain([makeConnectionRow()])
       dbMock.insert.mockReturnValue(chain)
@@ -157,6 +206,29 @@ describe('meta-connections queries', () => {
 
       const valuesCall = (chain.values as ReturnType<typeof vi.fn>).mock.calls[0][0]
       expect(valuesCall.tenantId).toBe('tenant-1')
+    })
+  })
+
+  describe('updateMetaConnectionSettings', () => {
+    it('leaves the status alone when the caller does not ask for one', async () => {
+      const chain = makeChain([makeConnectionRow()])
+      dbMock.update.mockReturnValue(chain)
+
+      await updateMetaConnectionSettings('tenant-1', { datasetId: 'dataset-2' })
+
+      const setCall = (chain.set as ReturnType<typeof vi.fn>).mock.calls[0][0]
+      expect(setCall).not.toHaveProperty('status')
+      expect(setCall.datasetId).toBe('dataset-2')
+    })
+
+    it('flips the connection to active when leg 2 saves a dataset', async () => {
+      const chain = makeChain([makeConnectionRow({ datasetId: 'dataset-2' })])
+      dbMock.update.mockReturnValue(chain)
+
+      await updateMetaConnectionSettings('tenant-1', { datasetId: 'dataset-2', status: 'active' })
+
+      const setCall = (chain.set as ReturnType<typeof vi.fn>).mock.calls[0][0]
+      expect(setCall.status).toBe('active')
     })
   })
 

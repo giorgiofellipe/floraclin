@@ -15,6 +15,9 @@ export async function POST(request: Request) {
     if (!connection) {
       return NextResponse.json({ error: 'Nenhuma conexão configurada.' }, { status: 404 })
     }
+    if (!connection.datasetId) {
+      return NextResponse.json({ error: 'Escolha um conjunto de dados antes de testar a conexão.' }, { status: 400 })
+    }
     if (!connection.testEventCode) {
       return NextResponse.json({ error: 'Configure um código de teste antes de testar a conexão.' }, { status: 400 })
     }

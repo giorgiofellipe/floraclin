@@ -4,20 +4,35 @@ import { eq } from 'drizzle-orm'
 
 export type MetaConnection = typeof metaConnections.$inferSelect
 
+/** A connection that finished both OAuth legs, so it has a dataset to post to. */
+export type UsableMetaConnection = MetaConnection & { datasetId: string }
+
 export interface UpsertMetaConnectionInput {
-  datasetId: string
+  datasetId: string | null
   accessToken: string
   connectionType: 'oauth' | 'manual'
+  status?: 'active' | 'pending_dataset'
   businessId?: string | null
   tokenExpiresAt?: Date | null
   testEventCode?: string | null
   advancedMatchingEnabled?: boolean
 }
 
-export async function getMetaConnection(tenantId: string): Promise<MetaConnection | null> {
+/**
+ * `pending_dataset` is excluded alongside `disabled`: the OAuth flow stores
+ * the token before the owner picks a dataset, and a connection with no
+ * dataset has nowhere to post. Callers must read this as "no connection" so
+ * events are skipped instead of aimed at an empty id.
+ */
+export async function getMetaConnection(tenantId: string): Promise<UsableMetaConnection | null> {
   const connection = await getMetaConnectionRaw(tenantId)
-  if (!connection || connection.status === 'disabled') return null
-  return connection
+  if (!connection) return null
+  if (connection.status === 'disabled' || connection.status === 'pending_dataset') return null
+
+  const { datasetId } = connection
+  if (!datasetId) return null
+
+  return { ...connection, datasetId }
 }
 
 export async function getMetaConnectionRaw(tenantId: string): Promise<MetaConnection | null> {
@@ -45,6 +60,7 @@ export async function upsertMetaConnection(
       tokenExpiresAt: data.tokenExpiresAt ?? null,
       testEventCode: data.testEventCode ?? null,
       advancedMatchingEnabled: data.advancedMatchingEnabled ?? true,
+      status: data.status ?? 'active',
     })
     .onConflictDoUpdate({
       target: metaConnections.tenantId,
@@ -57,7 +73,7 @@ export async function upsertMetaConnection(
         testEventCode: data.testEventCode ?? null,
         advancedMatchingEnabled: data.advancedMatchingEnabled ?? true,
         // Re-pasting a token is how a clinic recovers from an expired one.
-        status: 'active',
+        status: data.status ?? 'active',
         lastError: null,
         lastErrorAt: null,
         updatedAt: new Date(),
@@ -69,25 +85,34 @@ export async function upsertMetaConnection(
 }
 
 export interface UpdateMetaConnectionSettingsInput {
+  datasetId: string
   advancedMatchingEnabled?: boolean
   testEventCode?: string | null
+  /** Only leg 2 of the OAuth flow sets this, to flip `pending_dataset` to `active`. */
+  status?: 'active'
 }
 
 /**
- * Settings-only update: leaves the stored credentials, the connection type and
- * the status untouched, so an OAuth clinic can change these without pasting a
- * token it does not have.
+ * Settings-only update: leaves the stored credentials and the connection type
+ * untouched, so an OAuth clinic can change these without pasting a token it
+ * does not have. The status moves only when the caller asks for it.
  */
 export async function updateMetaConnectionSettings(
   tenantId: string,
   data: UpdateMetaConnectionSettingsInput,
 ): Promise<MetaConnection | null> {
-  const values: Partial<typeof metaConnections.$inferInsert> = { updatedAt: new Date() }
+  const values: Partial<typeof metaConnections.$inferInsert> = {
+    datasetId: data.datasetId,
+    updatedAt: new Date(),
+  }
   if (data.advancedMatchingEnabled !== undefined) {
     values.advancedMatchingEnabled = data.advancedMatchingEnabled
   }
   if (data.testEventCode !== undefined) {
     values.testEventCode = data.testEventCode
+  }
+  if (data.status !== undefined) {
+    values.status = data.status
   }
 
   const [connection] = await db

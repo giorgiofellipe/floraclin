@@ -85,6 +85,7 @@ export const queryKeys = {
   meta: {
     all: ['meta'] as const,
     connection: ['meta', 'connection'] as const,
+    businesses: ['meta', 'businesses'] as const,
   },
   admin: {
     tenants: {

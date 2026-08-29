@@ -1,6 +1,7 @@
-import { createHmac } from 'crypto'
+import { createHash, createHmac } from 'crypto'
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { NextResponse } from 'next/server'
 
 import { scrubUrl } from '@/lib/observability'
 
@@ -9,6 +10,12 @@ import {
   signOAuthState,
   verifyOAuthState,
   exchangeCodeForLongLivedToken,
+  createOAuthCsrfToken,
+  csrfTokenMatchesHash,
+  readOAuthCsrfCookie,
+  setOAuthCsrfCookie,
+  clearOAuthCsrfCookie,
+  OAUTH_CSRF_COOKIE,
   type MetaOAuthStatePayload,
 } from '../oauth'
 import { META_GRAPH_VERSION } from '../types'
@@ -40,6 +47,7 @@ describe('meta/oauth', () => {
       userId: 'user-1',
       tenantId: 'tenant-1',
       acknowledgementVersion: '2026-08-v1',
+      csrfHash: createHash('sha256').update('a-csrf-token').digest('hex'),
     }
 
     it('round-trips a fresh signed state back to the original payload', () => {
@@ -111,6 +119,134 @@ describe('meta/oauth', () => {
       process.env.META_APP_SECRET = 'a-different-secret'
 
       expect(verifyOAuthState(state)).toBeNull()
+    })
+
+    it('rejects a correctly signed state that carries no csrfHash', () => {
+      const { csrfHash: _csrfHash, ...unbound } = payload
+      const signed = { ...unbound, issuedAt: Date.now() }
+      const encoded = Buffer.from(JSON.stringify(signed)).toString('base64url')
+      const signature = createHmac('sha256', ENV.META_APP_SECRET).update(encoded).digest('base64url')
+
+      expect(verifyOAuthState(`${encoded}.${signature}`)).toBeNull()
+    })
+  })
+
+  describe('csrf binding between the state and the browser cookie', () => {
+    function statePayload(csrfHash: string): MetaOAuthStatePayload {
+      return {
+        userId: 'user-1',
+        tenantId: 'tenant-1',
+        acknowledgementVersion: '2026-08-v1',
+        csrfHash,
+      }
+    }
+
+    it('round-trips a state signed with a token whose cookie is present', () => {
+      const { token, hash } = createOAuthCsrfToken()
+      const state = signOAuthState(statePayload(hash))
+
+      const result = verifyOAuthState(state)
+
+      expect(result).not.toBeNull()
+      expect(csrfTokenMatchesHash(token, result!.csrfHash)).toBe(true)
+    })
+
+    it('never puts the token itself in the state, only its digest', () => {
+      const { token, hash } = createOAuthCsrfToken()
+      const state = signOAuthState(statePayload(hash))
+
+      expect(state).not.toContain(token)
+      expect(Buffer.from(state.split('.')[0], 'base64url').toString('utf-8')).not.toContain(token)
+    })
+
+    it('rejects a valid, correctly signed state when no cookie came with the request', () => {
+      const { hash } = createOAuthCsrfToken()
+      const state = signOAuthState(statePayload(hash))
+      const payload = verifyOAuthState(state)
+
+      const request = new Request('http://localhost/api/integrations/meta/auth/callback')
+
+      expect(payload).not.toBeNull()
+      expect(readOAuthCsrfCookie(request)).toBeNull()
+    })
+
+    // The attack: whoever captured the redirect holds the state, never the
+    // cookie of the browser that started the flow.
+    it('rejects a valid state presented with a different browser cookie', () => {
+      const { hash } = createOAuthCsrfToken()
+      const attacker = createOAuthCsrfToken()
+      const state = signOAuthState(statePayload(hash))
+
+      const payload = verifyOAuthState(state)
+
+      expect(payload).not.toBeNull()
+      expect(csrfTokenMatchesHash(attacker.token, payload!.csrfHash)).toBe(false)
+    })
+
+    it('does not throw on a hash of a different length', () => {
+      expect(csrfTokenMatchesHash('some-token', 'short')).toBe(false)
+      expect(csrfTokenMatchesHash('some-token', '')).toBe(false)
+    })
+
+    it('issues a distinct token per authorization', () => {
+      const first = createOAuthCsrfToken()
+      const second = createOAuthCsrfToken()
+
+      expect(first.token).not.toBe(second.token)
+      expect(first.hash).not.toBe(second.hash)
+      expect(first.hash).toBe(createHash('sha256').update(first.token).digest('hex'))
+    })
+
+    describe('readOAuthCsrfCookie', () => {
+      function requestWithCookie(header: string): Request {
+        return new Request('http://localhost/api/integrations/meta/auth/callback', {
+          headers: { cookie: header },
+        })
+      }
+
+      it('reads the token out of a header holding several cookies', () => {
+        const value = readOAuthCsrfCookie(
+          requestWithCookie(`sb-access-token=abc; ${OAUTH_CSRF_COOKIE}=the-token; tenant_id=t-1`),
+        )
+
+        expect(value).toBe('the-token')
+      })
+
+      it('returns null for an empty value and for an unrelated cookie', () => {
+        expect(readOAuthCsrfCookie(requestWithCookie(`${OAUTH_CSRF_COOKIE}=`))).toBeNull()
+        expect(readOAuthCsrfCookie(requestWithCookie('other=value'))).toBeNull()
+      })
+
+      // A cookie whose name merely ends in the same suffix must not answer.
+      it('matches the cookie name exactly', () => {
+        expect(readOAuthCsrfCookie(requestWithCookie(`not_${OAUTH_CSRF_COOKIE}=nope`))).toBeNull()
+      })
+    })
+
+    describe('cookie attributes', () => {
+      function setCookieHeader(mutate: (response: NextResponse) => void): string {
+        const response = NextResponse.redirect('http://localhost/configuracoes')
+        mutate(response)
+        return response.headers.get('set-cookie') ?? ''
+      }
+
+      it('sets an httpOnly, lax, path-scoped cookie that expires with the state', () => {
+        const header = setCookieHeader((res) => setOAuthCsrfCookie(res, 'the-token'))
+
+        expect(header).toContain(`${OAUTH_CSRF_COOKIE}=the-token`)
+        expect(header).toContain('HttpOnly')
+        expect(header).toContain('SameSite=lax')
+        expect(header).toContain('Path=/api/integrations/meta')
+        expect(header).toContain('Max-Age=600')
+      })
+
+      it('clears the cookie with the same path so the browser drops it', () => {
+        const header = setCookieHeader(clearOAuthCsrfCookie)
+
+        expect(header).toContain(`${OAUTH_CSRF_COOKIE}=;`)
+        expect(header).toContain('Path=/api/integrations/meta')
+        expect(header).toContain('Max-Age=0')
+      })
     })
   })
 

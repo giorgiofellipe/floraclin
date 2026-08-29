@@ -213,6 +213,8 @@ export interface PendingMetaEventRow {
   eventId: string
   eventTime: Date
   value: string | null
+  /** Null on rows written before the column existed. */
+  actionSource: MetaActionSource | null
   payload: unknown | null
 }
 
@@ -255,10 +257,10 @@ async function rebuildPayload(
       eventTime: row.eventTime,
       prospectId: row.prospectId,
       contact,
-      // A row reaches here with no payload only when it was written bare
-      // inside a caller's transaction, and the sole such emission site is
-      // the Purchase on a payment.
-      actionSource: 'system_generated',
+      // The emitting site's own action source. Guessing it costs the event
+      // its attribution: a CTWA lead rebuilt as `system_generated` carries a
+      // ctwa_clid Meta will not read.
+      actionSource: row.actionSource ?? 'system_generated',
       value: row.value,
     },
     connection.advancedMatchingEnabled,
@@ -272,20 +274,10 @@ async function rebuildPayload(
  * reaches graph.facebook.com, so the opt-out re-check below is the last gate
  * every event passes, however long the row sat pending.
  */
-export async function sendPendingEvent(row: {
-  id: string
-  tenantId: string
-  prospectId: string | null
-  patientId: string | null
-  eventName: MetaEventName
-  eventId: string
-  eventTime: Date
-  value: string | null
-  payload: unknown | null
-}): Promise<void> {
+export async function sendPendingEvent(row: PendingMetaEventRow): Promise<void> {
   const connection = await getMetaConnection(row.tenantId)
-  // Left pending on purpose: a re-pasted token is minutes away and the cron
-  // is what decides when a deferred row has aged past what Meta accepts.
+  // Left pending on purpose: the cron is what decides when a deferred row has
+  // aged past what Meta accepts.
   if (!connection) return
 
   const contact = await loadContact(row)
@@ -330,8 +322,7 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
   try {
     // Inside a caller's transaction with nothing pre-resolved there is no read
     // this can safely make, so the row goes in bare and `sendPendingEvent`
-    // enriches it. Anything else would let a failed lookup discard a Purchase
-    // the payment already committed, and Purchase is not reconciled.
+    // enriches it.
     if (input.tx && !input.prerequisites) {
       await insertConversionEvent(
         {
@@ -342,6 +333,7 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
           eventId: input.eventId,
           eventTime: input.eventTime,
           value: input.eventName === 'Purchase' ? input.value ?? null : null,
+          actionSource: input.actionSource,
           payload: null,
           status: 'pending',
         },
@@ -366,6 +358,7 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
           eventId: input.eventId,
           eventTime: input.eventTime,
           value: null,
+          actionSource: input.actionSource,
           payload: null,
           status: 'skipped',
           skipReason: 'no_external_id_secret',
@@ -393,6 +386,7 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
           eventId: input.eventId,
           eventTime: input.eventTime,
           value: null,
+          actionSource: input.actionSource,
           payload: null,
           status: 'skipped',
           skipReason: 'opted_out',
@@ -412,6 +406,7 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
           eventId: input.eventId,
           eventTime: input.eventTime,
           value: null,
+          actionSource: input.actionSource,
           payload: null,
           status: 'skipped',
           skipReason: 'no_connection',
@@ -449,6 +444,7 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
         eventId: input.eventId,
         eventTime: input.eventTime,
         value,
+        actionSource: input.actionSource,
         payload,
         status: 'pending',
       },
@@ -461,8 +457,7 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
 
     // Inside the caller's transaction the row is written but never sent: an
     // HTTP call here would hold recordPayment's row lock across a network
-    // round trip. The caller sends it after commit, and the daily cron is the
-    // net for anything that send misses.
+    // round trip.
     if (input.tx) return
 
     await sendPendingEvent({
@@ -474,13 +469,12 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
       eventId: input.eventId,
       eventTime: input.eventTime,
       value,
+      actionSource: input.actionSource,
       payload,
     })
   } catch (error) {
-    // A failed statement on the caller's transaction has already aborted the
-    // Postgres block. Swallowing it here would let the caller COMMIT, get a
-    // silent ROLLBACK back, and answer 201 for a payment that never landed.
-    // Only the standalone path can absorb a failure without losing a write.
+    // Postgres has already aborted the caller's transaction, so only the
+    // caller can decide what the failure costs.
     if (input.tx) throw error
     reportSideEffectFailure(error, { area: 'meta-capi', step: 'enqueue_meta_event' })
   }

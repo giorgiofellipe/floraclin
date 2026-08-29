@@ -63,12 +63,21 @@ const PREREQUISITES = {
   attribution: null,
 }
 
+/**
+ * `transaction` is drizzle's nested transaction, which the postgres-js driver
+ * issues as SAVEPOINT / ROLLBACK TO SAVEPOINT: a throw inside the callback
+ * comes back out, and the outer handle keeps working afterwards. `savepoint`
+ * is the handle that callback receives.
+ */
 function makeTx() {
+  const savepoint = { insert: vi.fn(), select: vi.fn() }
   return {
     execute: vi.fn(),
     select: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
+    savepoint,
+    transaction: vi.fn(async (cb: (sp: unknown) => unknown) => cb(savepoint)),
   }
 }
 
@@ -163,6 +172,8 @@ function queueGateSelects(
     entryStatus: string
     totalAmount?: string
     renegotiated?: boolean
+    /** The enqueue throws, so the re-read that follows it never runs. */
+    enqueueFails?: boolean
     queued?: Record<string, unknown> | null
   },
 ) {
@@ -172,7 +183,7 @@ function queueGateSelects(
   if (opts.entryStatus !== 'paid' && opts.entryStatus !== 'partial') return
 
   tx.select.mockReturnValueOnce(chain(opts.renegotiated ? [{ id: 'link-1' }] : []))
-  if (opts.renegotiated) return
+  if (opts.renegotiated || opts.enqueueFails) return
 
   const queued = opts.queued === undefined ? queuedPurchaseRow() : opts.queued
   tx.select.mockReturnValueOnce(chain(queued ? [queued] : []))
@@ -219,7 +230,7 @@ describe('financial.ts meta conversions', () => {
       tx.select.mockReturnValueOnce(chain([])) // existingPayments (not backdated)
       tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'Preenchimento labial' }])) // entryInfo
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }])) // updateEntryStatus's installments
-      queueGateSelects(tx, { entryStatus: 'partial', totalAmount: '600.00' })
+      queueGateSelects(tx, { entryStatus: 'partial', totalAmount: '3600.00' })
 
       tx.insert.mockReturnValueOnce(chain([{ id: 'pay-1' }])) // paymentRecords
       tx.insert.mockReturnValueOnce(chain(undefined)) // cashMovements
@@ -238,7 +249,7 @@ describe('financial.ts meta conversions', () => {
       const call = enqueueMetaEventMock.mock.calls[0][0] as Record<string, unknown>
       expect(call.eventName).toBe('Purchase')
       expect(call.eventId).toBe(`purchase:${ENTRY_ID}`)
-      expect(call.value).toBe('600.00')
+      expect(call.value).toBe('3600.00')
       expect(call.actionSource).toBe('system_generated')
       expect(call.prospectId).toBe('prospect-1')
       expect(call.patientId).toBe(PATIENT_ID)
@@ -301,7 +312,7 @@ describe('financial.ts meta conversions', () => {
       await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 600, paymentMethod: 'pix' } as never)
 
       expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
-      expect((enqueueMetaEventMock.mock.calls[0][0] as Record<string, unknown>).tx).toBe(tx)
+      expect((enqueueMetaEventMock.mock.calls[0][0] as Record<string, unknown>).tx).toBe(tx.savepoint)
 
       expect(sendPendingEventMock).toHaveBeenCalledTimes(1)
       expect(enqueueMetaEventMock.mock.invocationCallOrder[0]).toBeLessThan(
@@ -535,8 +546,8 @@ describe('financial.ts meta conversions', () => {
       expect(enqueueMetaEventMock).toHaveBeenCalledTimes(12)
     })
 
-    // Purchase is the one event the cron never reconciles, so a prepare that
-    // never ran must still leave an outbox row behind.
+    // A prepare that never ran must still leave an outbox row behind, so the
+    // payment is not silently dropped before the cron can reconcile it.
     it('a failure while preparing the meta context still writes the Purchase, bare', async () => {
       const { recordPayment } = await import('../financial')
       const tx = makeTx()
@@ -571,7 +582,7 @@ describe('financial.ts meta conversions', () => {
       expect(call.prospectId).toBeNull()
       expect(call.patientId).toBeNull()
       expect(call.prerequisites).toBeUndefined()
-      expect(call.tx).toBe(tx)
+      expect(call.tx).toBe(tx.savepoint)
       expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1)
       expect(reportSideEffectFailureMock.mock.calls[0][1]).toEqual(
         expect.objectContaining({ area: 'meta-capi', step: 'prepare_purchase_context' }),
@@ -693,10 +704,150 @@ describe('financial.ts meta conversions', () => {
     })
   })
 
-  // ─── The transaction must fail loudly, never commit as a silent rollback ───
+  // ─── An outbox failure costs the advertising event, never the money ───
 
   describe('outbox failure inside the payment transaction', () => {
-    it('propagates so the caller rolls back instead of answering 201 for a discarded payment', async () => {
+    it('leaves the payment committed and successful, and reports the failure', async () => {
+      const { recordPayment } = await import('../financial')
+      const tx = makeTx()
+      const commit = vi.fn()
+      dbMock.transaction.mockImplementationOnce(transactionCommittingWith(tx, commit))
+      queuePrepareRows()
+
+      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
+      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([]))
+      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
+      tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
+      queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00', enqueueFails: true })
+
+      tx.insert.mockReturnValueOnce(chain([{ id: 'pay-1' }]))
+      tx.insert.mockReturnValueOnce(chain(undefined))
+      tx.update.mockReturnValueOnce(chain(undefined))
+      tx.update.mockReturnValueOnce(chain(undefined))
+
+      // An oversized event id, a missing migration, a constraint violation:
+      // none of them is a reason to discard a patient's payment.
+      enqueueMetaEventMock.mockRejectedValueOnce(
+        new Error('value too long for type character varying(120)'),
+      )
+
+      const result = await recordPayment(TENANT, USER_ID, {
+        installmentId: INSTALLMENT_ID,
+        amount: 600,
+        paymentMethod: 'pix',
+      } as never)
+
+      expect(result.installmentPaid).toBe(true)
+      expect(result.paymentRecord).toEqual({ id: 'pay-1' })
+      expect(commit).toHaveBeenCalledTimes(1)
+      expect(sendPendingEventMock).not.toHaveBeenCalled()
+      expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1)
+      expect(reportSideEffectFailureMock.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ area: 'meta-capi', step: 'purchase_event_outbox' }),
+      )
+    })
+
+    it('runs the insert in a savepoint, so the outer transaction keeps the payment writes', async () => {
+      const { recordPayment } = await import('../financial')
+      const tx = makeTx()
+      const commit = vi.fn()
+      dbMock.transaction.mockImplementationOnce(transactionCommittingWith(tx, commit))
+      queuePrepareRows()
+
+      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
+      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([]))
+      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
+      tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
+      queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00', enqueueFails: true })
+
+      tx.insert.mockReturnValueOnce(chain([{ id: 'pay-1' }]))
+      tx.insert.mockReturnValueOnce(chain(undefined))
+      tx.update.mockReturnValueOnce(chain(undefined))
+      tx.update.mockReturnValueOnce(chain(undefined))
+
+      enqueueMetaEventMock.mockRejectedValueOnce(new Error('relation does not exist'))
+
+      await recordPayment(TENANT, USER_ID, {
+        installmentId: INSTALLMENT_ID,
+        amount: 600,
+        paymentMethod: 'pix',
+      } as never)
+
+      // The failing statement was handed the savepoint handle, not the
+      // transaction the payment record and the cash movement were written on.
+      expect(tx.transaction).toHaveBeenCalledTimes(1)
+      expect((enqueueMetaEventMock.mock.calls[0][0] as Record<string, unknown>).tx).toBe(tx.savepoint)
+      expect(tx.insert).toHaveBeenCalledTimes(2)
+      expect(tx.update).toHaveBeenCalledTimes(2)
+      expect(commit).toHaveBeenCalledTimes(1)
+    })
+
+    it('costs one entry its Purchase without rolling back the rest of a bulk payment', async () => {
+      const { bulkPayInstallments } = await import('../financial')
+      const tx = makeTx()
+      dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+
+      const ENTRY_A = 'entry-a'
+      const ENTRY_B = 'entry-b'
+
+      queuePrepareRows([
+        { financialEntryId: ENTRY_A, patientId: 'patient-a', ...patientContactRow },
+        { financialEntryId: ENTRY_B, patientId: 'patient-b', ...patientContactRow },
+      ])
+
+      tx.execute.mockResolvedValueOnce([{ id: 'installment-a' }, { id: 'installment-b' }])
+      tx.select.mockReturnValueOnce(chain([financialSettingsRow])) // getGracePeriodDays
+
+      // Entry A: its outbox insert is the one that fails.
+      tx.select.mockReturnValueOnce(
+        chain([typedInstallmentRow({ id: 'installment-a', financialEntryId: ENTRY_A })]),
+      )
+      tx.select.mockReturnValueOnce(chain([{ patientId: 'patient-a', description: 'x' }]))
+      tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
+      queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00', enqueueFails: true })
+
+      tx.insert.mockReturnValueOnce(chain([{ id: 'pay-a' }]))
+      tx.insert.mockReturnValueOnce(chain(undefined))
+      tx.update.mockReturnValueOnce(chain(undefined))
+      tx.update.mockReturnValueOnce(chain(undefined))
+
+      // Entry B: untouched by A's failure.
+      tx.select.mockReturnValueOnce(
+        chain([typedInstallmentRow({ id: 'installment-b', financialEntryId: ENTRY_B })]),
+      )
+      tx.select.mockReturnValueOnce(chain([{ patientId: 'patient-b', description: 'y' }]))
+      tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
+      queueGateSelects(tx, {
+        entryStatus: 'paid',
+        totalAmount: '600.00',
+        queued: queuedPurchaseRow({ id: 'outbox-b', eventId: `purchase:${ENTRY_B}` }),
+      })
+
+      tx.insert.mockReturnValueOnce(chain([{ id: 'pay-b' }]))
+      tx.insert.mockReturnValueOnce(chain(undefined))
+      tx.update.mockReturnValueOnce(chain(undefined))
+      tx.update.mockReturnValueOnce(chain(undefined))
+
+      enqueueMetaEventMock.mockRejectedValueOnce(new Error('unique index does not exist'))
+
+      const results = await bulkPayInstallments(TENANT, USER_ID, {
+        installmentIds: ['installment-a', 'installment-b'],
+        paymentMethod: 'pix',
+      })
+
+      expect(results).toHaveLength(2)
+      expect(results.map((r) => r.paymentRecord)).toEqual([{ id: 'pay-a' }, { id: 'pay-b' }])
+      expect(enqueueMetaEventMock).toHaveBeenCalledTimes(2)
+      expect(sendPendingEventMock).toHaveBeenCalledTimes(1)
+      expect((sendPendingEventMock.mock.calls[0][0] as Record<string, unknown>).eventId).toBe(
+        `purchase:${ENTRY_B}`,
+      )
+      expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('still propagates a failure outside the savepoint, which really has aborted the block', async () => {
       const { recordPayment } = await import('../financial')
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
@@ -707,14 +858,15 @@ describe('financial.ts meta conversions', () => {
       tx.select.mockReturnValueOnce(chain([]))
       tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
-      queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
+      // The entry-status gate, read straight off the caller's transaction.
+      tx.select.mockImplementationOnce(() => {
+        throw new Error('current transaction is aborted')
+      })
 
       tx.insert.mockReturnValueOnce(chain([{ id: 'pay-1' }]))
       tx.insert.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
-
-      enqueueMetaEventMock.mockRejectedValueOnce(new Error('current transaction is aborted'))
 
       await expect(
         recordPayment(TENANT, USER_ID, {
@@ -724,38 +876,11 @@ describe('financial.ts meta conversions', () => {
         } as never),
       ).rejects.toThrow('current transaction is aborted')
 
+      expect(tx.transaction).not.toHaveBeenCalled()
       expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1)
       expect(reportSideEffectFailureMock.mock.calls[0][1]).toEqual(
         expect.objectContaining({ area: 'meta-capi', step: 'purchase_event' }),
       )
-    })
-
-    it('propagates out of bulkPayInstallments as well', async () => {
-      const { bulkPayInstallments } = await import('../financial')
-      const tx = makeTx()
-      dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
-      queuePrepareRows()
-
-      tx.execute.mockResolvedValueOnce([{ id: INSTALLMENT_ID }])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
-      tx.select.mockReturnValueOnce(chain([typedInstallmentRow()]))
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
-      tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
-      queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
-
-      tx.insert.mockReturnValueOnce(chain([{ id: 'pay-1' }]))
-      tx.insert.mockReturnValueOnce(chain(undefined))
-      tx.update.mockReturnValueOnce(chain(undefined))
-      tx.update.mockReturnValueOnce(chain(undefined))
-
-      enqueueMetaEventMock.mockRejectedValueOnce(new Error('current transaction is aborted'))
-
-      await expect(
-        bulkPayInstallments(TENANT, USER_ID, {
-          installmentIds: [INSTALLMENT_ID],
-          paymentMethod: 'pix',
-        }),
-      ).rejects.toThrow('current transaction is aborted')
     })
   })
 
@@ -817,7 +942,7 @@ describe('financial.ts meta conversions', () => {
       expect(calls.map((c) => c.value)).toEqual(['600.00', '400.00'])
       expect(calls.map((c) => c.prospectId)).toEqual(['prospect-a', 'prospect-b'])
       expect(calls.map((c) => c.contact)).toEqual([CONTACT_A, CONTACT_B])
-      expect(calls.every((c) => c.tx === tx)).toBe(true)
+      expect(calls.every((c) => c.tx === tx.savepoint)).toBe(true)
     })
 
     it('sends both Purchase events after the single transaction commits', async () => {
@@ -881,7 +1006,7 @@ describe('financial.ts meta conversions', () => {
     })
   })
 
-  // ─── Tenant scoping: this repo has no RLS ───────────────────────────
+  // ─── Tenant scoping: application filtering is the boundary ──────────
 
   describe('tenant scoping', () => {
     it('scopes every meta lookup by tenant', async () => {

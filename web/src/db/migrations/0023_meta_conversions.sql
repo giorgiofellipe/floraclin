@@ -58,21 +58,49 @@ CREATE TABLE IF NOT EXISTS "floraclin"."meta_connections" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "floraclin"."lead_attributions" ADD CONSTRAINT "lead_attributions_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "floraclin"."tenants"("id") ON DELETE no action ON UPDATE no action;
+DO $$ BEGIN
+	ALTER TABLE "floraclin"."lead_attributions" ADD CONSTRAINT "lead_attributions_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "floraclin"."tenants"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+	WHEN duplicate_object THEN NULL;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "floraclin"."lead_attributions" ADD CONSTRAINT "lead_attributions_prospect_id_prospects_id_fk" FOREIGN KEY ("prospect_id") REFERENCES "floraclin"."prospects"("id") ON DELETE no action ON UPDATE no action;
+DO $$ BEGIN
+	ALTER TABLE "floraclin"."lead_attributions" ADD CONSTRAINT "lead_attributions_prospect_id_prospects_id_fk" FOREIGN KEY ("prospect_id") REFERENCES "floraclin"."prospects"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+	WHEN duplicate_object THEN NULL;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "floraclin"."meta_conversion_events" ADD CONSTRAINT "meta_conversion_events_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "floraclin"."tenants"("id") ON DELETE no action ON UPDATE no action;
+DO $$ BEGIN
+	ALTER TABLE "floraclin"."meta_conversion_events" ADD CONSTRAINT "meta_conversion_events_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "floraclin"."tenants"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+	WHEN duplicate_object THEN NULL;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "floraclin"."meta_conversion_events" ADD CONSTRAINT "meta_conversion_events_prospect_id_prospects_id_fk" FOREIGN KEY ("prospect_id") REFERENCES "floraclin"."prospects"("id") ON DELETE no action ON UPDATE no action;
+DO $$ BEGIN
+	ALTER TABLE "floraclin"."meta_conversion_events" ADD CONSTRAINT "meta_conversion_events_prospect_id_prospects_id_fk" FOREIGN KEY ("prospect_id") REFERENCES "floraclin"."prospects"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+	WHEN duplicate_object THEN NULL;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "floraclin"."meta_connections" ADD CONSTRAINT "meta_connections_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "floraclin"."tenants"("id") ON DELETE no action ON UPDATE no action;
+DO $$ BEGIN
+	ALTER TABLE "floraclin"."meta_connections" ADD CONSTRAINT "meta_connections_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "floraclin"."tenants"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+	WHEN duplicate_object THEN NULL;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "floraclin"."meta_connections" ADD CONSTRAINT "meta_connections_acknowledged_by_users_id_fk" FOREIGN KEY ("acknowledged_by") REFERENCES "floraclin"."users"("id") ON DELETE no action ON UPDATE no action;
+DO $$ BEGIN
+	ALTER TABLE "floraclin"."meta_connections" ADD CONSTRAINT "meta_connections_acknowledged_by_users_id_fk" FOREIGN KEY ("acknowledged_by") REFERENCES "floraclin"."users"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+	WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
+ALTER TABLE "floraclin"."lead_attributions" ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "floraclin"."meta_conversion_events" ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "floraclin"."meta_connections" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 ALTER TABLE "floraclin"."patients" ADD COLUMN IF NOT EXISTS "marketing_opt_out" boolean DEFAULT false NOT NULL;
---> statement-breakpoint
-ALTER TABLE "floraclin"."prospects" ADD COLUMN IF NOT EXISTS "marketing_opt_out" boolean DEFAULT false NOT NULL;
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "uq_lead_attributions_prospect" ON "floraclin"."lead_attributions" ("prospect_id");
 --> statement-breakpoint

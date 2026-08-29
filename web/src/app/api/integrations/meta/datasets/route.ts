@@ -20,12 +20,10 @@ interface DatasetsRequestBody {
 }
 
 /**
- * `/auth/connect` needs a datasetId before it can even start the OAuth
- * redirect (it goes into the signed state). This is what lets the settings
- * card resolve one first: list the business's pixels so the user can pick
- * one instead of typing a raw id blind. Pixel, not ad account, because
- * `capi-client.ts` posts to `/{datasetId}/events`, the pixel events
- * endpoint.
+ * Lists a business portfolio's pixels so the owner can pick one instead of
+ * typing a raw id blind, both in leg 2 of the OAuth flow and in the manual
+ * path. Pixel, not ad account, because `capi-client.ts` posts to
+ * `/{datasetId}/events`, the pixel events endpoint.
  *
  * POST rather than GET because the caller may hand us a token it has not
  * saved yet: Vercel and Sentry both log request URLs, so it travels in the
@@ -43,6 +41,8 @@ export async function POST(request: Request) {
 
     let accessToken = body.accessToken ?? null
     if (!accessToken) {
+      // Raw, not the status-filtered getter: leg 2 runs against a
+      // `pending_dataset` connection, which is what holds the token here.
       const connection = await getMetaConnectionRaw(ctx.tenantId)
       accessToken = connection?.accessToken ?? null
     }

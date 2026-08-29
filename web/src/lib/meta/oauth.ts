@@ -1,4 +1,5 @@
-import { createHmac, timingSafeEqual } from 'crypto'
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto'
+import type { NextResponse } from 'next/server'
 import { META_GRAPH_VERSION } from './types'
 
 const OAUTH_SCOPES = 'business_management,ads_management'
@@ -9,7 +10,7 @@ export interface MetaOAuthStatePayload {
   userId: string
   tenantId: string
   acknowledgementVersion: string
-  datasetId?: string
+  csrfHash: string
 }
 
 interface SignedOAuthState extends MetaOAuthStatePayload {
@@ -69,7 +70,71 @@ export function verifyOAuthState(state: string): MetaOAuthStatePayload | null {
   if (typeof payload.issuedAt !== 'number') return null
   if (Date.now() - payload.issuedAt > STATE_MAX_AGE_MS) return null
 
+  if (typeof payload.csrfHash !== 'string' || payload.csrfHash.length === 0) return null
+
   return payload
+}
+
+export const OAUTH_CSRF_COOKIE = 'meta_oauth_csrf'
+
+// The signature stops the state being edited, not being replayed out of a
+// history entry or a proxy log; this cookie is what binds a state to the one
+// browser that started the flow.
+const CSRF_COOKIE_ATTRIBUTES = {
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: process.env.NODE_ENV === 'production',
+  path: '/api/integrations/meta',
+} as const
+
+const CSRF_COOKIE_MAX_AGE_SECONDS = 600
+
+function hashCsrfToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex')
+}
+
+export function createOAuthCsrfToken(): { token: string; hash: string } {
+  const token = randomBytes(32).toString('base64url')
+  return { token, hash: hashCsrfToken(token) }
+}
+
+export function csrfTokenMatchesHash(token: string, hash: string): boolean {
+  const actual = Buffer.from(hashCsrfToken(token))
+  const expected = Buffer.from(hash)
+  if (actual.length !== expected.length) return false
+  return timingSafeEqual(actual, expected)
+}
+
+export function setOAuthCsrfCookie(response: NextResponse, token: string): void {
+  response.cookies.set({
+    name: OAUTH_CSRF_COOKIE,
+    value: token,
+    maxAge: CSRF_COOKIE_MAX_AGE_SECONDS,
+    ...CSRF_COOKIE_ATTRIBUTES,
+  })
+}
+
+export function clearOAuthCsrfCookie(response: NextResponse): void {
+  response.cookies.set({
+    name: OAUTH_CSRF_COOKIE,
+    value: '',
+    maxAge: 0,
+    ...CSRF_COOKIE_ATTRIBUTES,
+  })
+}
+
+export function readOAuthCsrfCookie(request: Request): string | null {
+  const header = request.headers.get('cookie')
+  if (!header) return null
+
+  for (const pair of header.split(';')) {
+    const separator = pair.indexOf('=')
+    if (separator === -1) continue
+    if (pair.slice(0, separator).trim() !== OAUTH_CSRF_COOKIE) continue
+    return pair.slice(separator + 1).trim() || null
+  }
+
+  return null
 }
 
 interface MetaTokenResponse {

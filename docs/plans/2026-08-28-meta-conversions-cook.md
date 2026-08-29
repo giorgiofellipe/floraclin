@@ -740,10 +740,11 @@ All three tasks depend only on the schema from A1. They own separate files and m
   - `hasEvent(tenantId: string, eventId: string): Promise<boolean>`
   - `hasScheduleForProspect(tenantId: string, prospectId: string): Promise<boolean>`
 
-**Tenant scoping is mandatory on every one of these.** This repo has no row
-level security (grep `ENABLE ROW LEVEL SECURITY` across the migrations returns
-nothing), so the `tenantId` argument is the only thing standing between two
-clinics. A query keyed on a bare uuid is the pattern that leaks.
+**Tenant scoping is mandatory on every one of these.** RLS is enabled with no
+policies on `lead_attributions`, `meta_conversion_events` and `meta_connections`
+only; every other table has none, so the `tenantId` argument is the only thing
+standing between two clinics. A query keyed on a bare uuid is the pattern that
+leaks.
   - `InsertConversionEventInput = { tenantId: string; prospectId: string | null; eventName: MetaEventName; eventId: string; eventTime: Date; value?: string | null; payload: unknown; status: 'pending' | 'skipped'; skipReason?: string | null }`
 
 **Behavioural requirements:**
@@ -1114,7 +1115,7 @@ Two jobs in one run:
 
 - **Drive it from `prospect_activities`, never from the prospect's current stage.** A `stage_changed` activity row (`schema.ts:682-692`) carries `from`, `to` and a real `createdAt`. The current stage does not: a lead that went `novo` → `agendado` never had a Contact, and reconciling from current stage would invent one. The activity's `createdAt` is also the only correct `eventTime`; using `now()` would file the conversion on the wrong day and can push it outside a click id window the original event was inside.
 - **Gate on `META_EVENTS_START_AT`**, an ISO timestamp env var set at deploy. Without it, the first run finds every prospect ever touched, none of which has an outbox row, and fires a backfill of invented conversions at Meta. Add it to `web/.env.example`.
-- **Scope the join by tenant.** The unique index is `(tenant_id, event_id)`, so the left join must equate `meta_conversion_events.tenant_id = prospect_activities.tenant_id` as well as the event id. This repo has no row level security; a join without a tenant predicate is a cross-tenant read.
+- **Scope the join by tenant.** The unique index is `(tenant_id, event_id)`, so the left join must equate `meta_conversion_events.tenant_id = prospect_activities.tenant_id` as well as the event id. These tables have no row level security policies; a join without a tenant predicate is a cross-tenant read.
 
 Reconcile `Contact` (activity `to = 'contatado'`), `Schedule` (`to = 'agendado'`, and only when `hasScheduleForProspect` is false) and `Lead` (prospect created, activity action `'created'`). Window: activities newer than both `META_EVENTS_START_AT` and `now() - 7 days`.
 

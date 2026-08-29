@@ -24,6 +24,7 @@ import {
   useDisconnectMeta,
   useTestMetaConnection,
   useMetaDatasets,
+  useMetaBusinesses,
 } from '@/hooks/queries/use-meta'
 import { ACKNOWLEDGEMENT_TEXT, ACKNOWLEDGEMENT_VERSION } from '@/lib/meta/acknowledgement'
 import { formatDateTime } from '@/lib/utils'
@@ -37,6 +38,7 @@ const EVENT_STATUS_LABELS: Record<string, string> = {
 
 const CONNECTION_STATUS_LABELS: Record<string, string> = {
   active: 'Conectado',
+  pending_dataset: 'Aguardando conjunto de dados',
   invalid_token: 'Token expirado ou revogado',
   disabled: 'Desativado',
 }
@@ -45,7 +47,6 @@ const SKIP_REASON_LABELS: Record<string, string> = {
   no_connection: 'Meta não conectada',
   no_external_id_secret: 'Chave de identificação não configurada',
   opted_out: 'Paciente optou por não compartilhar dados',
-  marketing_opt_out: 'Paciente optou por não compartilhar dados',
 }
 
 export function MetaConnectionCard() {
@@ -67,14 +68,11 @@ export function MetaConnectionCard() {
   const connection = data?.data ?? null
   const events = data?.events ?? []
   const isActive = connection?.status === 'active'
+  const isPendingDataset = connection?.status === 'pending_dataset'
+  const businessesQuery = useMetaBusinesses(isPendingDataset)
 
   async function handleConnect() {
     const params = new URLSearchParams({ acknowledgementVersion: ACKNOWLEDGEMENT_VERSION })
-    // Solves the chicken-and-egg problem for a first-time OAuth connect:
-    // `/auth/connect` requires a datasetId up front to embed in the signed
-    // OAuth state, and cannot ask for one mid-redirect. Whatever the manual
-    // section resolved (typed or picked) travels along.
-    if (datasetId) params.set('datasetId', datasetId)
     window.location.href = `/api/integrations/meta/auth/connect?${params.toString()}`
   }
 
@@ -115,12 +113,45 @@ export function MetaConnectionCard() {
     }
   }
 
+  async function handleSelectBusiness(nextBusinessId: string) {
+    setBusinessId(nextBusinessId)
+    setDatasetId('')
+    if (!nextBusinessId) return
+    try {
+      const datasets = await datasetsMutation.mutateAsync({ businessId: nextBusinessId })
+      if (datasets.length === 0) {
+        toast.error('Nenhum conjunto de dados encontrado neste portfólio.')
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao listar conjuntos de dados')
+    }
+  }
+
+  async function handleSaveDataset() {
+    if (!datasetId) {
+      toast.error('Selecione um conjunto de dados.')
+      return
+    }
+    try {
+      // No acknowledgementVersion: the owner accepted it before authorizing,
+      // and the callback already recorded it.
+      await saveMutation.mutateAsync({ datasetId })
+      toast.success('Conjunto de dados salvo')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao salvar conjunto de dados')
+    }
+  }
+
   async function handleTest() {
-    const result = await testMutation.mutateAsync()
-    if (result.ok) {
-      toast.success('Conexão testada com sucesso')
-    } else {
-      toast.error('Falha ao testar a conexão')
+    try {
+      const result = await testMutation.mutateAsync()
+      if (result.ok) {
+        toast.success('Conexão testada com sucesso')
+      } else {
+        toast.error('Falha ao testar a conexão')
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Falha ao testar a conexão')
     }
   }
 
@@ -140,7 +171,7 @@ export function MetaConnectionCard() {
   }
 
   async function handleConfirmAdvancedMatching() {
-    if (!connection || pendingAdvancedMatching === null) return
+    if (!connection?.datasetId || pendingAdvancedMatching === null) return
     try {
       // No accessToken: this keeps the stored credentials and the connection
       // type, so an OAuth clinic can change the setting without reconnecting.
@@ -186,24 +217,104 @@ export function MetaConnectionCard() {
             </span>
           </div>
 
-          <div className="flex items-center gap-4 rounded-[3px] border border-[#E8ECEF] bg-white p-3">
-            <Switch
-              checked={connection.advancedMatchingEnabled}
-              onCheckedChange={handleToggleAdvancedMatching}
-            />
-            <Label className="text-sm text-charcoal">Correspondência avançada</Label>
-          </div>
+          {isPendingDataset ? (
+            <div className="space-y-3 rounded-[3px] border border-[#E8ECEF] bg-white p-4">
+              <p className="text-sm text-charcoal">Conexão autorizada. Escolha o conjunto de dados.</p>
+
+              <div className="space-y-1.5">
+                <Label
+                  htmlFor="meta-pending-business-select"
+                  className="text-xs font-medium uppercase tracking-wider text-mid"
+                >
+                  Portfólio empresarial
+                </Label>
+                <select
+                  id="meta-pending-business-select"
+                  className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm text-charcoal"
+                  value={businessId}
+                  disabled={businessesQuery.isLoading}
+                  onChange={(e) => handleSelectBusiness(e.target.value)}
+                >
+                  <option value="">
+                    {businessesQuery.isLoading ? 'Carregando portfólios...' : 'Selecione um portfólio'}
+                  </option>
+                  {(businessesQuery.data ?? []).map((business) => (
+                    <option key={business.id} value={business.id}>
+                      {business.name} ({business.id})
+                    </option>
+                  ))}
+                </select>
+                {businessesQuery.isError && (
+                  <p className="text-xs text-red-600">
+                    {businessesQuery.error instanceof Error
+                      ? businessesQuery.error.message
+                      : 'Erro ao listar portfólios'}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label
+                  htmlFor="meta-pending-dataset-select"
+                  className="text-xs font-medium uppercase tracking-wider text-mid"
+                >
+                  Conjunto de dados
+                </Label>
+                <select
+                  id="meta-pending-dataset-select"
+                  className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm text-charcoal"
+                  value={datasetId}
+                  disabled={!businessId || datasetsMutation.isPending}
+                  onChange={(e) => setDatasetId(e.target.value)}
+                >
+                  <option value="">
+                    {datasetsMutation.isPending
+                      ? 'Carregando conjuntos de dados...'
+                      : 'Selecione um conjunto de dados'}
+                  </option>
+                  {(datasetsMutation.data ?? []).map((dataset) => (
+                    <option key={dataset.id} value={dataset.id}>
+                      {dataset.name} ({dataset.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <Button
+                type="button"
+                onClick={handleSaveDataset}
+                disabled={!datasetId || saveMutation.isPending}
+                className="w-full bg-forest text-cream hover:bg-sage transition-colors"
+              >
+                {saveMutation.isPending ? (
+                  <Loader2Icon className="h-4 w-4 animate-spin" />
+                ) : (
+                  'Salvar conjunto de dados'
+                )}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-4 rounded-[3px] border border-[#E8ECEF] bg-white p-3">
+              <Switch
+                checked={connection.advancedMatchingEnabled}
+                onCheckedChange={handleToggleAdvancedMatching}
+              />
+              <Label className="text-sm text-charcoal">Correspondência avançada</Label>
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleTest}
-              disabled={testMutation.isPending}
-              className="flex-1"
-            >
-              {testMutation.isPending ? <Loader2Icon className="h-4 w-4 animate-spin" /> : 'Testar conexão'}
-            </Button>
+            {!isPendingDataset && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleTest}
+                disabled={testMutation.isPending}
+                className="flex-1"
+              >
+                {testMutation.isPending ? <Loader2Icon className="h-4 w-4 animate-spin" /> : 'Testar conexão'}
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -222,7 +333,7 @@ export function MetaConnectionCard() {
         </div>
       )}
 
-      {!isActive && (
+      {!isActive && !isPendingDataset && (
         <div className="space-y-4 rounded-[3px] border border-[#E8ECEF] bg-white p-4">
           <div className="flex items-start gap-2">
             <Checkbox

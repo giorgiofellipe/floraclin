@@ -111,6 +111,43 @@ describe('meta-events queries', () => {
       ).rejects.toThrow()
     })
 
+    it('stores the action source so a later rebuild does not have to guess it', async () => {
+      const { insertConversionEvent } = await import('../meta-events')
+      const insertChain = chain([{ id: 'evt-1' }])
+      dbMock.insert.mockReturnValueOnce(insertChain)
+
+      await insertConversionEvent({
+        tenantId: TENANT_A,
+        prospectId: 'prospect-1',
+        eventName: 'Lead',
+        eventId: 'lead:prospect-1',
+        eventTime: new Date('2026-08-28T12:00:00Z'),
+        actionSource: 'business_messaging',
+        payload: {},
+        status: 'pending',
+      })
+
+      expect(insertChain.__calls.values[0][0]).toMatchObject({ actionSource: 'business_messaging' })
+    })
+
+    it('stores null when the caller passes no action source', async () => {
+      const { insertConversionEvent } = await import('../meta-events')
+      const insertChain = chain([{ id: 'evt-1' }])
+      dbMock.insert.mockReturnValueOnce(insertChain)
+
+      await insertConversionEvent({
+        tenantId: TENANT_A,
+        prospectId: null,
+        eventName: 'Lead',
+        eventId: 'lead:x',
+        eventTime: new Date('2026-08-28T12:00:00Z'),
+        payload: {},
+        status: 'pending',
+      })
+
+      expect(insertChain.__calls.values[0][0]).toMatchObject({ actionSource: null })
+    })
+
     it('accepts an optional tx handle instead of the module db', async () => {
       const { insertConversionEvent } = await import('../meta-events')
       const txMock = { insert: vi.fn(), select: vi.fn() } as unknown as Parameters<
@@ -406,6 +443,60 @@ describe('meta-events queries', () => {
       expect(params[0]).toBe('pending')
       // Bound to the driver value (an ISO timestamp), not the Date object.
       expect(Date.parse(String(params[1]))).toBeLessThanOrEqual(before - 59_000)
+    })
+
+    // Fix 4: without the per-tenant cap a clinic with a revoked token owns
+    // every slot in the run, and no other clinic's rows are ever reached.
+    it('caps how many rows one tenant can take from a single run', async () => {
+      const { selectPendingEvents, MAX_EVENTS_PER_TENANT } = await import('../meta-events')
+
+      const selectChain = chain([])
+      const trx = {
+        select: vi.fn(() => selectChain),
+        update: vi.fn(() => chain(undefined)),
+      }
+      dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
+
+      await selectPendingEvents(500)
+
+      const { sql: text, params } = renderSql(selectChain.__calls.where[0][0])
+      expect(text).toContain('row_number() over')
+      expect(text).toContain('partition by "floraclin"."meta_conversion_events"."tenant_id"')
+      expect(text).toContain('ranked.tenant_rank <=')
+      expect(params).toContain(MAX_EVENTS_PER_TENANT)
+      // The overall cap and the row lock both survive the per-tenant cap.
+      expect(selectChain.__calls.limit).toEqual([[500]])
+      expect(selectChain.__calls.for).toEqual([['update', { skipLocked: true }]])
+    })
+
+    it('returns the stored action source with the row', async () => {
+      const { selectPendingEvents } = await import('../meta-events')
+
+      const trx = {
+        select: vi.fn(() =>
+          chain([
+            {
+              id: 'evt-1',
+              tenantId: TENANT_A,
+              prospectId: 'prospect-1',
+              patientId: 'patient-1',
+              eventName: 'Lead',
+              eventId: 'lead:prospect-1',
+              eventTime: new Date('2026-08-28T09:00:00Z'),
+              value: null,
+              actionSource: 'business_messaging',
+              payload: null,
+              createdAt: new Date('2026-08-28T09:00:00Z'),
+            },
+          ]),
+        ),
+        update: vi.fn(() => chain(undefined)),
+      }
+      dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
+
+      const [event] = await selectPendingEvents(10)
+
+      expect(event.actionSource).toBe('business_messaging')
     })
 
     it('returns [] when nothing is pending', async () => {

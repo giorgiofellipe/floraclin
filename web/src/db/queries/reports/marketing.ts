@@ -116,8 +116,8 @@ export async function listMarketingReportRows(
       .innerJoin(installments, eq(installments.id, paymentRecords.installmentId))
       // Tenant equality is asserted in the join, not just filtered on the
       // entry: the foreign keys allow an installment of one tenant to hang
-      // off another tenant's entry, and there is no row level security to
-      // catch it, so one clinic's payment could land in another's report.
+      // off another tenant's entry, and neither table has a row level
+      // security policy to catch it.
       .innerJoin(
         financialEntries,
         and(

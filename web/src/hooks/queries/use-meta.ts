@@ -6,7 +6,8 @@ import { queryKeys } from './query-keys'
 
 export interface MetaConnectionSummary {
   id: string
-  datasetId: string
+  /** Null while status is 'pending_dataset'. */
+  datasetId: string | null
   businessId: string | null
   connectionType: 'oauth' | 'manual'
   tokenExpiresAt: string | null
@@ -58,7 +59,8 @@ export interface SaveMetaConnectionInput {
   accessToken?: string
   testEventCode?: string | null
   advancedMatchingEnabled?: boolean
-  acknowledgementVersion: string
+  /** Omitted only when completing leg 2 of the OAuth flow. */
+  acknowledgementVersion?: string
 }
 
 export function useSaveMetaConnection() {
@@ -104,6 +106,25 @@ export function useTestMetaConnection() {
       const res = await fetch('/api/integrations/meta/connection/test', { method: 'POST' })
       const body = await res.json().catch(() => ({}))
       return { ok: res.ok, body }
+    },
+  })
+}
+
+export interface MetaBusiness {
+  id: string
+  name: string
+}
+
+/** Leg 2 of the OAuth flow: the portfolios the stored token can read. */
+export function useMetaBusinesses(enabled: boolean) {
+  return useQuery<MetaBusiness[]>({
+    queryKey: queryKeys.meta.businesses,
+    enabled,
+    queryFn: async () => {
+      const res = await fetch('/api/integrations/meta/businesses')
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || 'Erro ao listar portfólios')
+      return (json.data ?? []) as MetaBusiness[]
     },
   })
 }

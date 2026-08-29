@@ -1,10 +1,20 @@
 import { db } from '@/db/client'
 import { metaConversionEvents, prospects } from '@/db/schema'
-import { and, asc, desc, eq, inArray, lt, ne } from 'drizzle-orm'
-import type { MetaEventName } from '@/lib/meta/types'
+import { and, asc, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm'
+import type { MetaActionSource, MetaEventName } from '@/lib/meta/types'
 
-export const MAX_ATTEMPTS = 8
+// The sweep runs once a day and Meta stops accepting an event seven days
+// after its event_time, so a row must run out of attempts before it runs out
+// of window.
+export const MAX_ATTEMPTS = 6
 const CLAIM_MIN_AGE_MS = 60_000
+
+/**
+ * Per tenant, per run. `selectPendingEvents` is global and ordered oldest
+ * first, so without this cap a single clinic with a revoked token owns every
+ * slot in the run and no other clinic's rows are ever reached.
+ */
+export const MAX_EVENTS_PER_TENANT = 50
 
 export interface InsertConversionEventInput {
   tenantId: string
@@ -14,6 +24,7 @@ export interface InsertConversionEventInput {
   eventId: string
   eventTime: Date
   value?: string | null
+  actionSource?: MetaActionSource | null
   payload: unknown
   status: 'pending' | 'skipped'
   skipReason?: string | null
@@ -33,6 +44,7 @@ export interface PendingEvent {
   eventId: string
   eventTime: Date
   value: string | null
+  actionSource: MetaActionSource | null
   payload: unknown
   createdAt: Date
 }
@@ -67,6 +79,7 @@ export async function insertConversionEvent(
       eventId: input.eventId,
       eventTime: input.eventTime,
       value: input.value ?? null,
+      actionSource: input.actionSource ?? null,
       payload: input.payload,
       status: input.status,
       skipReason: input.skipReason ?? null,
@@ -152,6 +165,26 @@ export async function markEventSkipped(tenantId: string, id: string, reason: str
 export async function selectPendingEvents(limit: number): Promise<PendingEvent[]> {
   const rows = await db.transaction(async (trx) => {
     const cutoff = new Date(Date.now() - CLAIM_MIN_AGE_MS)
+    const claimable = and(
+      eq(metaConversionEvents.status, 'pending'),
+      lt(metaConversionEvents.createdAt, cutoff),
+    )
+
+    // The ranking lives in an `IN` subquery rather than this query: Postgres
+    // refuses FOR UPDATE on a select that carries a window function.
+    const withinTenantQuota = sql`(
+      select ranked.id from (
+        select
+          ${metaConversionEvents.id} as id,
+          row_number() over (
+            partition by ${metaConversionEvents.tenantId}
+            order by ${metaConversionEvents.createdAt}
+          ) as tenant_rank
+        from ${metaConversionEvents}
+        where ${claimable}
+      ) ranked
+      where ranked.tenant_rank <= ${MAX_EVENTS_PER_TENANT}
+    )`
 
     return trx
       .select({
@@ -163,11 +196,12 @@ export async function selectPendingEvents(limit: number): Promise<PendingEvent[]
         eventId: metaConversionEvents.eventId,
         eventTime: metaConversionEvents.eventTime,
         value: metaConversionEvents.value,
+        actionSource: metaConversionEvents.actionSource,
         payload: metaConversionEvents.payload,
         createdAt: metaConversionEvents.createdAt,
       })
       .from(metaConversionEvents)
-      .where(and(eq(metaConversionEvents.status, 'pending'), lt(metaConversionEvents.createdAt, cutoff)))
+      .where(and(claimable, inArray(metaConversionEvents.id, withinTenantQuota)))
       .orderBy(asc(metaConversionEvents.createdAt))
       .limit(limit)
       .for('update', { skipLocked: true })
@@ -178,6 +212,7 @@ export async function selectPendingEvents(limit: number): Promise<PendingEvent[]
   return rows.map((row) => ({
     ...row,
     eventName: row.eventName as MetaEventName,
+    actionSource: row.actionSource as MetaActionSource | null,
     patientId:
       row.patientId ??
       (row.prospectId ? patientIds.get(`${row.tenantId}:${row.prospectId}`) ?? null : null),

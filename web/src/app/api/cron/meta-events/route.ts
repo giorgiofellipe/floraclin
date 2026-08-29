@@ -1,12 +1,24 @@
 import { NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
-import { and, eq, gte, isNull, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm'
 
 import { db } from '@/db/client'
-import { metaConnections, metaConversionEvents, prospectActivities, prospects } from '@/db/schema'
+import {
+  financialEntries,
+  installments,
+  leadAttributions,
+  metaConnections,
+  metaConversionEvents,
+  patients,
+  paymentRecords,
+  prospectActivities,
+  prospects,
+  renegotiationLinks,
+} from '@/db/schema'
 import {
   countEventOutcomes,
   hasScheduleForProspect,
+  markEventFailure,
   markEventSkipped,
   selectPendingEvents,
   type PendingEvent,
@@ -14,6 +26,8 @@ import {
 import { getMetaConnection, type MetaConnection } from '@/db/queries/meta-connections'
 import { enqueueMetaEvent, sendPendingEvent } from '@/lib/meta/events'
 import { backfillAdMetadata } from '@/lib/meta/ad-metadata'
+import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
+import type { MetaActionSource } from '@/lib/meta/types'
 import { handleApiError } from '@/lib/api-error'
 import { withCronMonitor } from '@/lib/cron-monitor'
 
@@ -27,10 +41,15 @@ const RECONCILE_LIMIT = 200
 const RECONCILE_CONCURRENCY = 10
 const TENANT_FAILURE_ALERT_THRESHOLD = 10
 
-// Meta rejects events whose event_time is more than 7 days old, so a row
-// that waited this long for a working connection can never be delivered.
-// The sweep runs daily, so a parked row gets about six attempts inside it.
-const NO_CONNECTION_GRACE_MS = 7 * 24 * 60 * 60 * 1000
+// Meta rejects the ENTIRE request when any event in it has an event_time
+// more than 7 days old, and processes none of its events. One stale row in a
+// batch therefore costs every other tenant in that batch its events.
+const META_EVENT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+const STALE_EVENT_ERROR = 'event_time exceeded the 7-day window the Conversions API accepts'
+
+// A row that waited this long for a working connection can never be
+// delivered either, for the same reason.
+const NO_CONNECTION_GRACE_MS = META_EVENT_MAX_AGE_MS
 
 function chunk<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = []
@@ -43,6 +62,7 @@ interface RetrySweepResult {
   sent: number
   deferredNoConnection: number
   skippedNoConnection: number
+  failedStale: number
   failed: number
 }
 
@@ -74,6 +94,29 @@ async function deferOrExpire(
 }
 
 /**
+ * Fails every row Meta would reject on age, before anything is batched. The
+ * status is recorded per row so the reason survives in `last_error`.
+ */
+async function dropStaleEvents(
+  events: PendingEvent[],
+  now: Date,
+): Promise<{ fresh: PendingEvent[]; failedStale: number }> {
+  const fresh: PendingEvent[] = []
+  let failedStale = 0
+
+  for (const event of events) {
+    if (now.getTime() - event.eventTime.getTime() > META_EVENT_MAX_AGE_MS) {
+      await markEventFailure(event.tenantId, event.id, 'invalid', STALE_EVENT_ERROR)
+      failedStale += 1
+      continue
+    }
+    fresh.push(event)
+  }
+
+  return { fresh, failedStale }
+}
+
+/**
  * Replays pending outbox rows through the same sender the inline emission
  * path uses, so a retry re-reads the opt-out flag and rebuilds a payload the
  * original attempt never wrote. A tenant with more than
@@ -84,8 +127,10 @@ async function runRetrySweep(): Promise<RetrySweepResult> {
   const pending = await selectPendingEvents(CLAIM_LIMIT)
   const now = new Date()
 
+  const { fresh, failedStale } = await dropStaleEvents(pending, now)
+
   const byTenant = new Map<string, PendingEvent[]>()
-  for (const event of pending) {
+  for (const event of fresh) {
     const bucket = byTenant.get(event.tenantId) ?? []
     bucket.push(event)
     byTenant.set(event.tenantId, bucket)
@@ -136,7 +181,7 @@ async function runRetrySweep(): Promise<RetrySweepResult> {
     }
   }
 
-  return { claimed: pending.length, sent, deferredNoConnection, skippedNoConnection, failed }
+  return { claimed: pending.length, sent, deferredNoConnection, skippedNoConnection, failedStale, failed }
 }
 
 interface AdMetadataBackfillResult {
@@ -175,6 +220,19 @@ interface ReconciledCandidate {
   phone: string
   name: string | null
   convertedPatientId: string | null
+  ctwaClid: string | null
+  source: string
+}
+
+/**
+ * Meta reads `ctwa_clid` only alongside `business_messaging`, so a reconciled
+ * CTWA lead sent as anything else attributes to nothing. The inline emitters
+ * pick the same three sources from the same signals.
+ */
+function candidateActionSource(row: ReconciledCandidate): MetaActionSource {
+  if (row.ctwaClid) return 'business_messaging'
+  if (row.source === 'booking_page') return 'website'
+  return 'system_generated'
 }
 
 /**
@@ -192,6 +250,8 @@ async function findMissingLeadActivities(windowStart: Date): Promise<ReconciledC
       phone: prospects.phone,
       name: prospects.name,
       convertedPatientId: prospects.convertedPatientId,
+      ctwaClid: leadAttributions.ctwaClid,
+      source: prospects.source,
     })
     .from(prospectActivities)
     .innerJoin(
@@ -199,6 +259,13 @@ async function findMissingLeadActivities(windowStart: Date): Promise<ReconciledC
       and(eq(prospects.id, prospectActivities.prospectId), eq(prospects.tenantId, prospectActivities.tenantId)),
     )
     .innerJoin(metaConnections, eq(metaConnections.tenantId, prospectActivities.tenantId))
+    .leftJoin(
+      leadAttributions,
+      and(
+        eq(leadAttributions.prospectId, prospectActivities.prospectId),
+        eq(leadAttributions.tenantId, prospectActivities.tenantId),
+      ),
+    )
     .leftJoin(
       metaConversionEvents,
       and(
@@ -230,6 +297,8 @@ async function findMissingStageActivities(
       phone: prospects.phone,
       name: prospects.name,
       convertedPatientId: prospects.convertedPatientId,
+      ctwaClid: leadAttributions.ctwaClid,
+      source: prospects.source,
     })
     .from(prospectActivities)
     .innerJoin(
@@ -237,6 +306,13 @@ async function findMissingStageActivities(
       and(eq(prospects.id, prospectActivities.prospectId), eq(prospects.tenantId, prospectActivities.tenantId)),
     )
     .innerJoin(metaConnections, eq(metaConnections.tenantId, prospectActivities.tenantId))
+    .leftJoin(
+      leadAttributions,
+      and(
+        eq(leadAttributions.prospectId, prospectActivities.prospectId),
+        eq(leadAttributions.tenantId, prospectActivities.tenantId),
+      ),
+    )
     .leftJoin(
       metaConversionEvents,
       and(
@@ -256,6 +332,107 @@ async function findMissingStageActivities(
     .limit(RECONCILE_LIMIT)
 }
 
+interface ReconciledPurchase {
+  tenantId: string
+  financialEntryId: string
+  paidAt: Date
+  totalAmount: string
+  patientId: string
+  phone: string | null
+  email: string | null
+  fullName: string | null
+}
+
+/**
+ * A `paid` or `partial` entry is a recorded fact, so unlike the stage events
+ * above this can be read off the domain row itself. The payment instant is
+ * the first non-reversed `payment_records.paid_at` under the entry, the same
+ * definition the marketing report calls revenue. `financial_entries.updated_at`
+ * cannot be used: a reversal or a bulk cancel bumps it, and an entry paid in
+ * June and edited today would be reported to Meta as a sale made today.
+ *
+ * `renegotiation_links` has no tenant_id, so the entry it points at scopes it;
+ * a target of one is money already reported on the original entry.
+ */
+async function findMissingPurchases(windowStart: Date): Promise<ReconciledPurchase[]> {
+  const firstPaidAt = sql<Date>`min(${paymentRecords.paidAt})`
+
+  return db
+    .select({
+      tenantId: financialEntries.tenantId,
+      financialEntryId: financialEntries.id,
+      paidAt: firstPaidAt,
+      totalAmount: financialEntries.totalAmount,
+      patientId: financialEntries.patientId,
+      phone: patients.phone,
+      email: patients.email,
+      fullName: patients.fullName,
+    })
+    .from(paymentRecords)
+    // Tenant equality is asserted in every join, not just filtered on the
+    // entry: the foreign keys allow an installment of one tenant to hang off
+    // another tenant's entry, and neither table has a row level security
+    // policy to catch it.
+    .innerJoin(installments, eq(installments.id, paymentRecords.installmentId))
+    .innerJoin(
+      financialEntries,
+      and(
+        eq(financialEntries.id, installments.financialEntryId),
+        eq(financialEntries.tenantId, installments.tenantId),
+      ),
+    )
+    .innerJoin(
+      patients,
+      and(eq(patients.id, financialEntries.patientId), eq(patients.tenantId, financialEntries.tenantId)),
+    )
+    .innerJoin(metaConnections, eq(metaConnections.tenantId, financialEntries.tenantId))
+    .leftJoin(renegotiationLinks, eq(renegotiationLinks.newEntryId, financialEntries.id))
+    .leftJoin(
+      metaConversionEvents,
+      and(
+        eq(metaConversionEvents.tenantId, financialEntries.tenantId),
+        eq(metaConversionEvents.eventId, sql`'purchase:' || ${financialEntries.id}::text`),
+      ),
+    )
+    .where(
+      and(
+        inArray(financialEntries.status, ['paid', 'partial']),
+        isNull(financialEntries.deletedAt),
+        isNull(paymentRecords.reversedAt),
+        isNull(renegotiationLinks.id),
+        isNull(metaConversionEvents.id),
+      ),
+    )
+    // Both entry and patient are grouped by their primary key, which carries
+    // the rest of their selected columns.
+    .groupBy(financialEntries.id, patients.id, metaConnections.createdAt)
+    // The window gate reads the payment instant, so it can only be applied
+    // once the aggregate exists.
+    .having(and(gte(firstPaidAt, windowStart), gte(firstPaidAt, metaConnections.createdAt)))
+    .limit(RECONCILE_LIMIT)
+}
+
+async function enqueuePurchase(row: ReconciledPurchase): Promise<void> {
+  // The same resolution the payment path runs, so a reconciled Purchase
+  // carries the external_id and click ids that make it attributable.
+  const prospect = await resolveProspectForPatient(row.tenantId, {
+    patientId: row.patientId,
+    phone: row.phone,
+  })
+
+  await enqueueMetaEvent({
+    tenantId: row.tenantId,
+    eventName: 'Purchase',
+    eventId: `purchase:${row.financialEntryId}`,
+    eventTime: row.paidAt,
+    prospectId: prospect?.id ?? null,
+    patientId: row.patientId,
+    contact: { phone: row.phone, email: row.email, fullName: row.fullName },
+    actionSource: 'system_generated',
+    value: row.totalAmount,
+  })
+}
+
 async function enqueue(
   row: ReconciledCandidate,
   eventName: 'Lead' | 'Contact' | 'Schedule',
@@ -271,7 +448,7 @@ async function enqueue(
     // this is delivered for a patient who ticked the box.
     patientId: row.convertedPatientId,
     contact: { phone: row.phone, fullName: row.name },
-    actionSource: 'system_generated',
+    actionSource: candidateActionSource(row),
   })
 }
 
@@ -280,10 +457,7 @@ async function enqueue(
  * a full window burns the function timeout long before the ad metadata
  * backfill at the end of the run gets to start.
  */
-async function reconcileBatched(
-  rows: ReconciledCandidate[],
-  run: (row: ReconciledCandidate) => Promise<void>,
-): Promise<void> {
+async function reconcileBatched<T>(rows: T[], run: (row: T) => Promise<void>): Promise<void> {
   for (const group of chunk(rows, RECONCILE_CONCURRENCY)) {
     await Promise.all(group.map(run))
   }
@@ -333,13 +507,16 @@ export function computeReconciliationWindowStart(startAtRaw: string, now: Date):
 }
 
 /**
- * Repairs a crash between a domain write and its outbox insert. Driven
- * entirely off `prospect_activities`, never the prospect's current stage: a
- * lead that went straight `novo` -> `agendado` never had a Contact, and
- * reconciling from current stage would invent one. `Purchase` is not
- * reconciled here: its outbox insert is atomic with the payment transaction,
- * and the payment itself sends the row once that transaction commits, so only
- * a failed send leaves one for the retry sweep above.
+ * Repairs a crash between a domain write and its outbox insert. The stage
+ * events are driven entirely off `prospect_activities`, never the prospect's
+ * current stage: a lead that went straight `novo` -> `agendado` never had a
+ * Contact, and reconciling from current stage would invent one.
+ *
+ * `Purchase` is driven off `financial_entries` instead, because a `paid` or
+ * `partial` entry is a recorded fact and not an inference. It needs the sweep:
+ * the payment writes its outbox row inside a savepoint that rolls back on its
+ * own rather than taking the money down with it, so a failed insert leaves a
+ * committed payment with no event at all.
  */
 async function runReconciliation(): Promise<ReconciliationResult> {
   const startAtRaw = process.env.META_EVENTS_START_AT
@@ -373,9 +550,13 @@ async function runReconciliation(): Promise<ReconciliationResult> {
   )
   await reconcileBatched(missingSchedules, (row) => enqueue(row, 'Schedule', `schedule:${row.prospectId}`))
 
+  const missingPurchases = await findMissingPurchases(windowStart)
+  await reconcileBatched(missingPurchases, enqueuePurchase)
+
   return {
     skipped: false,
-    reconciled: missingLeads.length + missingContacts.length + missingSchedules.length,
+    reconciled:
+      missingLeads.length + missingContacts.length + missingSchedules.length + missingPurchases.length,
   }
 }
 

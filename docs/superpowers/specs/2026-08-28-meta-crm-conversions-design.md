@@ -100,6 +100,7 @@ Indexes: unique on `prospectId`, plus `(tenantId, adId)` and
 | `id` | uuid pk | |
 | `tenantId` | uuid fk tenants | |
 | `prospectId` | uuid fk prospects | nullable: a walk-in patient who was never a lead still produces a Purchase |
+| `patientId` | uuid fk patients | nullable: the opt-out flag lives on the patient, so a row with no prospect still has something to check |
 | `eventName` | varchar(30) | `Lead`, `Contact`, `Schedule`, `Purchase` |
 | `eventId` | varchar(120) | deterministic, see below |
 | `eventTime` | timestamptz | the real-world instant, not send time |
@@ -107,6 +108,7 @@ Indexes: unique on `prospectId`, plus `(tenantId, adId)` and
 | `currency` | varchar(3) | `BRL` |
 | `payload` | jsonb | exactly what we POST, PII already hashed |
 | `status` | varchar(10) | `pending`, `sent`, `failed`, `skipped` |
+| `skipReason` | varchar(40) | why a `skipped` row never went: `no_connection`, `no_external_id_secret`, `opted_out` |
 | `attempts` | integer default 0 | |
 | `lastError` | text | |
 | `fbTraceId` | varchar(64) | Meta's trace id, for support |
@@ -117,7 +119,9 @@ Indexes: unique on `prospectId`, plus `(tenantId, adId)` and
 
 - `lead:<prospectId>`
 - `contact:<prospectId>`
-- `schedule:<appointmentId>`, or `schedule:<prospectId>` when the stage was moved by hand with no appointment attached
+- `schedule:<prospectId>`, always. The appointment id is never used: the id is
+  keyed on the lead so the unique index enforces one Schedule per lead, whether
+  the stage was dragged by hand or an appointment was booked.
 - `purchase:<financialEntryId>`
 
 A unique index on `(tenantId, eventId)` makes double firing impossible in the
@@ -157,7 +161,10 @@ separately from this work.
 ### Column additions
 
 - `patients.marketingOptOut boolean not null default false`
-- `prospects.marketingOptOut boolean not null default false`
+
+The flag lives on `patients` only. A lead with no patient record cannot opt out;
+suppression for such a lead works by matching the phone against any patient of
+the tenant that carries the flag.
 
 ## Part 2: Capture
 
@@ -208,14 +215,17 @@ New module `src/lib/meta/`, four files with one job each:
   through the existing `toWhatsAppPhone` from `src/lib/phone.ts` so the
   canonical form introduced in #35 is the one that gets hashed. Email is
   lowercased and trimmed. Names are lowercased with accents stripped.
-- **`capi-client.ts`** is the only file in the codebase that talks to
-  `graph.facebook.com`. One exported function, `postEvents(connection, events)`,
-  returning a trace id or a typed error. Everything above it is testable without
-  a network.
+- **`capi-client.ts`** posts the events. One exported function,
+  `postEvents(connection, events)`, returning a trace id or a typed error. It is
+  not the only caller of `graph.facebook.com`: `lib/meta/oauth.ts` exchanges the
+  code for a token, `lib/meta/ad-metadata.ts` resolves adset and campaign ids,
+  and `api/integrations/meta/datasets/route.ts` lists a business's datasets.
 - **`events.ts`** exports `enqueueMetaEvent()`, the single entry point the rest
   of the app calls.
-- **`attribution.ts`** reads and writes `lead_attributions` and owns the
-  first-touch rule.
+- **`attribution.ts`** is pure parsing: it turns a webhook `referral` object and
+  booking-page query parameters into a capture shape and owns the first-touch
+  rule. Reads and writes of `lead_attributions` live in
+  `db/queries/lead-attributions.ts`.
 
 ### Delivery
 
@@ -237,19 +247,25 @@ not even atomic across its own two writes. Retrofitting transactions across six
 call sites to protect an analytics side effect is the wrong trade.
 
 The deterministic `event_id` gives a better guarantee than a transaction would.
-Because every id is derived from durable state (`prospectId`, `appointmentId`,
+Because every id is derived from durable state (`prospectId`,
 `financialEntryId`), the cron can *reconcile*: query for prospects past a stage
-with no corresponding `sent` row and enqueue the missing event. A crash between
-the stage write and the outbox insert self-heals on the next sweep, which a
+with no corresponding row and enqueue the missing event. A crash between the
+stage write and the outbox insert self-heals on the next run, which a
 transaction would only have prevented, never repaired.
+
+Reconciliation covers `Purchase` as well as the three stage events. Purchase is
+driven off `financial_entries` rather than the prospect stage: a `paid` or
+`partial` entry with no `purchase:<id>` row is a lost sale event and gets
+enqueued.
 
 Reconciliation runs in the same cron as the retry sweep, scoped to the last 7
 days so it stays cheap.
 
-Schedule: every 5 minutes. The inline send covers the happy path, so the cron
-exists only for outages, and a 5 minute beat is gentler on a Meta incident than
-a 1 minute one. Backoff is driven by `attempts`; a row reaching 8 attempts flips
-to `failed` and stops consuming budget.
+Schedule: `0 4 * * *`, once a day. Vercel Hobby allows one cron run per day, so
+the retry sweep and the reconciliation share that single run. The inline send
+covers the happy path, so the cron is the outage net rather than the primary
+path. Backoff is driven by `attempts`; a row reaching 8 attempts flips to
+`failed` and stops consuming budget.
 
 ### Emission points
 
@@ -257,7 +273,7 @@ to `failed` and stops consuming budget.
 |---|---|---|---|
 | `Lead` | prospect created, any channel | `lead:<prospectId>` | none |
 | `Contact` | stage moves to `contatado` | `contact:<prospectId>` | none |
-| `Schedule` | stage moves to `agendado`, or an appointment is created for a prospect's patient | `schedule:<appointmentId>`, falling back to `schedule:<prospectId>` | none |
+| `Schedule` | stage moves to `agendado`, or an appointment is created for a prospect's patient | `schedule:<prospectId>` | none |
 | `Purchase` | first installment of a financial entry is paid | `purchase:<financialEntryId>` | `totalAmount`, BRL |
 
 **Purchase fires once per financial entry, at first payment, carrying the full
@@ -281,11 +297,10 @@ Revenue reaches the ad through `financialEntries.patientId` to
 exists; nothing new is needed to join it.
 
 **Schedule fires at most once per lead.** Dragging a card to `agendado` and
-then booking the appointment are two paths to the same fact. Before emitting,
-check for an existing `Schedule` row for the prospect and skip if one is there.
-The hand-moved fallback id exists only so a stage move with no appointment can
-still be recorded; it must not produce a second event when the appointment
-arrives later.
+then booking the appointment are two paths to the same fact. Both emit
+`schedule:<prospectId>`, so the unique index on `(tenant_id, event_id)` is what
+enforces once-per-lead. No appointment id ever appears in the id, which is what
+stops a second appointment producing a second event.
 
 ### Verified API contract
 
@@ -335,12 +350,23 @@ but never attribute:
 Extend the existing Meta app (already in use for WhatsApp, `META_APP_SECRET`)
 with Facebook Login for Business.
 
-- `/api/integrations/meta/connect` starts the flow.
-- `/api/integrations/meta/callback` exchanges the code for a long-lived system
-  user token and lists the business's datasets for the clinic to choose from.
+- `/api/integrations/meta/auth/connect` starts the flow.
+- `/api/integrations/meta/auth/callback` exchanges the code for a long-lived
+  system user token and stores the connection.
+
+The dataset is chosen **before** the redirect, not listed by the callback:
+`auth/connect` takes a `datasetId`, puts it in the signed state, and the
+callback reads it back from there.
 
 This requires App Review for `business_management` and `ads_management`, which
 is the long pole on calendar time for this work.
+
+**Known gap: the first connect is circular.** `auth/connect` requires a
+`datasetId`, and it can only fall back to a stored one when a connection
+already exists. A clinic with no connection at all has to obtain a dataset id
+some other way before it can start OAuth, which defeats the point of the OAuth
+path. Listing the business's datasets before the redirect is the fix and is not
+shipped.
 
 ### Manual paste
 
@@ -367,11 +393,13 @@ FloraClin is the processor. Five concrete obligations:
    measurement, and that the clinic is responsible for its patients' legal
    basis. Recorded in the existing `audit_logs` with user, timestamp and the
    version of the text accepted.
-2. **Patient opt-out.** `marketingOptOut` on `patients` and `prospects`,
-   surfaced as a checkbox on the patient record. When set, `enqueueMetaEvent`
-   writes the row as `skipped` with the reason. The suppression is visible in
-   the event log, which is the point: an audit needs evidence that the opt-out
-   was honoured, not just an absence of rows.
+2. **Patient opt-out.** `marketingOptOut` on `patients`, surfaced as a checkbox
+   on the patient record. There is no flag on `prospects`: a lead with no
+   patient record cannot opt out, and suppression reaches it by matching the
+   phone against any patient of the tenant that carries the flag. When set, the
+   row is written as `skipped` with `skipReason = 'opted_out'`. The suppression
+   is visible in the event log, which is the point: an audit needs evidence
+   that the opt-out was honoured, not just an absence of rows.
 3. **Privacy policy.** A section describing the sharing on
    `site/src/app/privacidade` and `site/src/app/lgpd`.
 4. **Advanced matching toggle.** `advancedMatchingEnabled` on the connection,
@@ -425,8 +453,9 @@ Failures are typed, and only one category retries:
 Sentry gets a breadcrumb per send and an alert when a tenant's failure rate
 crosses a threshold, following the error-reporting pattern from #37.
 
-Tests use no network. `capi-client.ts` is the only file that fetches, so
-everything above it runs against a fake. The cases that matter:
+Tests use no network. Every `fetch` is behind a module boundary
+(`capi-client.ts`, `oauth.ts`, `ad-metadata.ts`, the datasets route), so
+everything above them runs against a fake. The cases that matter:
 
 - `referral` parsing against real Meta webhook payload fixtures
 - first-touch attribution surviving a second ad click

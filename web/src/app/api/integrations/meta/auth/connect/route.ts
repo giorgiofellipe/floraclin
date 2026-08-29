@@ -1,12 +1,20 @@
 import { NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error'
-import { signOAuthState, buildAuthUrl } from '@/lib/meta/oauth'
-import { getMetaConnectionRaw } from '@/db/queries/meta-connections'
+import {
+  signOAuthState,
+  buildAuthUrl,
+  createOAuthCsrfToken,
+  setOAuthCsrfCookie,
+} from '@/lib/meta/oauth'
 import { ACKNOWLEDGEMENT_VERSION } from '@/lib/meta/acknowledgement'
 
-const MAX_DATASET_ID_LENGTH = 64
-
+/**
+ * Leg 1 of two: authorize only. The dataset cannot be asked for here, because
+ * listing a clinic's datasets needs the very token this redirect goes out to
+ * fetch. The callback parks the connection as `pending_dataset` and the
+ * settings card runs leg 2.
+ */
 export async function GET(request: Request) {
   try {
     const ctx = await requireRole('owner')
@@ -21,24 +29,20 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'acknowledgementVersion inválido.' }, { status: 400 })
     }
 
-    // A clinic reconnecting an existing manual connection keeps its dataset
-    // without retyping it; a first-time OAuth connect must pass it explicitly.
-    const datasetId = searchParams.get('datasetId') ?? undefined
-    const existing = datasetId ? null : await getMetaConnectionRaw(ctx.tenantId)
-    const resolvedDatasetId = datasetId ?? existing?.datasetId
-
-    if (!resolvedDatasetId || resolvedDatasetId.length > MAX_DATASET_ID_LENGTH) {
-      return NextResponse.json({ error: 'datasetId é obrigatório.' }, { status: 400 })
-    }
+    // Only the digest goes into the state; the token itself stays in the
+    // cookie, so a captured state cannot be completed from another browser.
+    const { token, hash } = createOAuthCsrfToken()
 
     const state = signOAuthState({
       userId: ctx.userId,
       tenantId: ctx.tenantId,
       acknowledgementVersion,
-      datasetId: resolvedDatasetId,
+      csrfHash: hash,
     })
 
-    return NextResponse.redirect(buildAuthUrl(state))
+    const response = NextResponse.redirect(buildAuthUrl(state))
+    setOAuthCsrfCookie(response, token)
+    return response
   } catch (error) {
     return handleApiError(error, request)
   }

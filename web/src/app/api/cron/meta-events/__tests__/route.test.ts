@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 import { PgDialect } from 'drizzle-orm/pg-core'
-import type { SQL } from 'drizzle-orm'
+import { sql, type SQL } from 'drizzle-orm'
 
 const dialect = new PgDialect()
 
@@ -73,6 +73,7 @@ function chain(result: unknown) {
 vi.mock('@/db/queries/meta-events', () => ({
   selectPendingEvents: vi.fn(),
   countEventOutcomes: vi.fn(),
+  markEventFailure: vi.fn(),
   markEventSkipped: vi.fn(),
   hasScheduleForProspect: vi.fn(),
 }))
@@ -90,18 +91,24 @@ vi.mock('@/lib/meta/ad-metadata', () => ({
   backfillAdMetadata: vi.fn(),
 }))
 
+vi.mock('@/lib/meta/resolve-prospect', () => ({
+  resolveProspectForPatient: vi.fn(),
+}))
+
 // ─── Imports (after mocks) ───────────────────────────────────────────
 
 import {
   countEventOutcomes,
   hasScheduleForProspect,
+  markEventFailure,
   markEventSkipped,
   selectPendingEvents,
   type PendingEvent,
 } from '@/db/queries/meta-events'
-import { getMetaConnection, type MetaConnection } from '@/db/queries/meta-connections'
+import { getMetaConnection, type UsableMetaConnection } from '@/db/queries/meta-connections'
 import { enqueueMetaEvent, sendPendingEvent } from '@/lib/meta/events'
 import { backfillAdMetadata } from '@/lib/meta/ad-metadata'
+import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
 import { GET, MONITOR_SCHEDULE, computeReconciliationWindowStart } from '../route'
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -128,13 +135,14 @@ function makePendingEvent(overrides: Partial<PendingEvent> = {}): PendingEvent {
     eventId: 'lead:prospect-1',
     eventTime: new Date(),
     value: null,
+    actionSource: null,
     payload: { event_name: 'Lead', event_id: 'lead:prospect-1' },
     createdAt: new Date(),
     ...overrides,
   }
 }
 
-function makeConnection(overrides: Record<string, unknown> = {}): MetaConnection {
+function makeConnection(overrides: Record<string, unknown> = {}): UsableMetaConnection {
   return {
     tenantId: TENANT_A,
     datasetId: 'dataset-1',
@@ -144,7 +152,7 @@ function makeConnection(overrides: Record<string, unknown> = {}): MetaConnection
     connectionType: 'oauth',
     status: 'active',
     ...overrides,
-  } as unknown as MetaConnection
+  } as unknown as UsableMetaConnection
 }
 
 beforeEach(() => {
@@ -157,6 +165,8 @@ beforeEach(() => {
   vi.mocked(hasScheduleForProspect).mockResolvedValue(false)
   vi.mocked(sendPendingEvent).mockResolvedValue(undefined)
   vi.mocked(backfillAdMetadata).mockResolvedValue({ resolved: 0 })
+  vi.mocked(resolveProspectForPatient).mockResolvedValue(null)
+  vi.mocked(markEventFailure).mockResolvedValue('failed')
 })
 
 // ─── Tests ───────────────────────────────────────────────────────────
@@ -265,6 +275,46 @@ describe('GET /api/cron/meta-events', () => {
 
       expect(sendPendingEvent).toHaveBeenCalledTimes(1)
       expect(countEventOutcomes).toHaveBeenCalledWith(TENANT_A, ['evt-1'])
+    })
+
+    // Fix 3: Meta rejects the whole request when any event in it is stale, so
+    // one such row would take every other tenant's events down with it.
+    it('fails a row whose event_time is past the acceptance window instead of batching it', async () => {
+      const stale = makePendingEvent({
+        id: 'evt-stale',
+        eventTime: new Date(Date.now() - EIGHT_DAYS_MS),
+      })
+      vi.mocked(selectPendingEvents).mockResolvedValue([stale, makePendingEvent({ id: 'evt-fresh' })])
+      vi.mocked(getMetaConnection).mockResolvedValue(makeConnection())
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(markEventFailure).toHaveBeenCalledTimes(1)
+      expect(markEventFailure).toHaveBeenCalledWith(
+        TENANT_A,
+        'evt-stale',
+        'invalid',
+        expect.stringContaining('7-day'),
+      )
+      expect(sendPendingEvent).toHaveBeenCalledTimes(1)
+      expect(sendPendingEvent).toHaveBeenCalledWith(expect.objectContaining({ id: 'evt-fresh' }))
+      expect(countEventOutcomes).toHaveBeenCalledWith(TENANT_A, ['evt-fresh'])
+      expect(json.retrySweep.failedStale).toBe(1)
+    })
+
+    it('drops a stale row before the tenant connection is even read', async () => {
+      vi.mocked(selectPendingEvents).mockResolvedValue([
+        makePendingEvent({ id: 'evt-stale', eventTime: new Date(Date.now() - EIGHT_DAYS_MS) }),
+      ])
+      vi.mocked(getMetaConnection).mockResolvedValue(makeConnection())
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(getMetaConnection).not.toHaveBeenCalled()
+      expect(sendPendingEvent).not.toHaveBeenCalled()
+      expect(json.retrySweep.failedStale).toBe(1)
     })
 
     it('counts a row as failed only when the stored status says so', async () => {
@@ -411,6 +461,69 @@ describe('GET /api/cron/meta-events', () => {
       )
     })
 
+    // Fix 2: Meta reads ctwa_clid only alongside business_messaging, so a
+    // reconciled CTWA lead sent as system_generated attributes to nothing.
+    it('sends a lead with a ctwa_clid as business_messaging', async () => {
+      process.env.META_EVENTS_START_AT = '2026-01-01T00:00:00Z'
+      dbMock.select.mockReturnValueOnce(
+        chain([
+          {
+            tenantId: TENANT_A,
+            prospectId: 'prospect-7',
+            createdAt: new Date('2026-08-25T15:00:00Z'),
+            phone: '5511999996666',
+            name: 'Veio do Anuncio',
+            convertedPatientId: null,
+            ctwaClid: 'clid-7',
+            source: 'whatsapp',
+          },
+        ]),
+      )
+
+      await GET(makeRequest(CRON_SECRET))
+
+      expect(enqueueMetaEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ eventName: 'Lead', actionSource: 'business_messaging' }),
+      )
+    })
+
+    it('sends a booking-page lead as website and a staff CRM lead as system_generated', async () => {
+      process.env.META_EVENTS_START_AT = '2026-01-01T00:00:00Z'
+      dbMock.select.mockReturnValueOnce(
+        chain([
+          {
+            tenantId: TENANT_A,
+            prospectId: 'prospect-8',
+            createdAt: new Date('2026-08-25T15:00:00Z'),
+            phone: '5511999997777',
+            name: 'Agendou Online',
+            convertedPatientId: null,
+            ctwaClid: null,
+            source: 'booking_page',
+          },
+          {
+            tenantId: TENANT_A,
+            prospectId: 'prospect-9',
+            createdAt: new Date('2026-08-25T15:00:00Z'),
+            phone: '5511999998888',
+            name: 'Cadastro Manual',
+            convertedPatientId: null,
+            ctwaClid: null,
+            source: 'manual',
+          },
+        ]),
+      )
+
+      await GET(makeRequest(CRON_SECRET))
+
+      expect(enqueueMetaEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ eventId: 'lead:prospect-8', actionSource: 'website' }),
+      )
+      expect(enqueueMetaEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ eventId: 'lead:prospect-9', actionSource: 'system_generated' }),
+      )
+    })
+
     it('a lead that went straight novo -> agendado gets a Schedule and no Contact', async () => {
       process.env.META_EVENTS_START_AT = '2026-01-01T00:00:00Z'
       const activityCreatedAt = new Date('2026-08-22T11:00:00Z')
@@ -487,11 +600,12 @@ describe('GET /api/cron/meta-events', () => {
 
     it('caps every finder with a LIMIT so one run cannot outlast the function', async () => {
       process.env.META_EVENTS_START_AT = '2026-01-01T00:00:00Z'
-      const chains = [chain([]), chain([]), chain([])]
+      const chains = [chain([]), chain([]), chain([]), chain([])]
       dbMock.select
         .mockReturnValueOnce(chains[0])
         .mockReturnValueOnce(chains[1])
         .mockReturnValueOnce(chains[2])
+        .mockReturnValueOnce(chains[3])
 
       await GET(makeRequest(CRON_SECRET))
 
@@ -531,6 +645,172 @@ describe('GET /api/cron/meta-events', () => {
 
       expect(json.reconciliation.reconciled).toBe(25)
       expect(peak).toBeGreaterThan(1)
+    })
+  })
+
+  // A paid entry is a durable fact, not an inference from a current stage, so
+  // unlike the prospect events Purchase can be rebuilt from the domain row.
+  describe('Purchase reconciliation', () => {
+    const PAID_AT = new Date('2026-08-26T18:40:00Z')
+
+    function paidEntryRow(overrides: Record<string, unknown> = {}) {
+      return {
+        tenantId: TENANT_A,
+        financialEntryId: 'entry-1',
+        paidAt: PAID_AT,
+        totalAmount: '3000.00',
+        patientId: 'patient-1',
+        phone: '5511999995555',
+        email: 'ana@clinica.com',
+        fullName: 'Ana Souza',
+        ...overrides,
+      }
+    }
+
+    /** Leads, contacts and schedules run first; purchases is the fourth. */
+    function queuePurchaseFinder(result: unknown) {
+      dbMock.select
+        .mockReturnValueOnce(chain([]))
+        .mockReturnValueOnce(chain([]))
+        .mockReturnValueOnce(chain([]))
+        .mockReturnValueOnce(result)
+    }
+
+    it('enqueues a Purchase for a paid entry whose outbox row never landed', async () => {
+      process.env.META_EVENTS_START_AT = '2026-01-01T00:00:00Z'
+      queuePurchaseFinder(chain([paidEntryRow()]))
+      vi.mocked(resolveProspectForPatient).mockResolvedValue({ id: 'prospect-9' })
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(enqueueMetaEvent).toHaveBeenCalledTimes(1)
+      expect(enqueueMetaEvent).toHaveBeenCalledWith({
+        tenantId: TENANT_A,
+        eventName: 'Purchase',
+        eventId: 'purchase:entry-1',
+        eventTime: PAID_AT,
+        prospectId: 'prospect-9',
+        patientId: 'patient-1',
+        contact: { phone: '5511999995555', email: 'ana@clinica.com', fullName: 'Ana Souza' },
+        actionSource: 'system_generated',
+        value: '3000.00',
+      })
+      expect(json.reconciliation.reconciled).toBe(1)
+    })
+
+    it('uses the payment timestamp as eventTime, not now()', async () => {
+      process.env.META_EVENTS_START_AT = '2026-01-01T00:00:00Z'
+      queuePurchaseFinder(chain([paidEntryRow()]))
+
+      await GET(makeRequest(CRON_SECRET))
+
+      expect(enqueueMetaEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ eventName: 'Purchase', eventTime: PAID_AT }),
+      )
+    })
+
+    it('skips an entry that already has its purchase row', async () => {
+      process.env.META_EVENTS_START_AT = '2026-01-01T00:00:00Z'
+      const purchases = chain([])
+      queuePurchaseFinder(purchases)
+
+      await GET(makeRequest(CRON_SECRET))
+
+      // The outbox left join is what excludes it, so assert on the join and
+      // the `is null` that keeps only the rows without one.
+      const [, outboxJoin] = purchases.__calls.leftJoin[1]
+      expect(renderSql(outboxJoin).sql).toContain("'purchase:'")
+
+      const { sql: text } = renderSql(purchases.__calls.where[0][0])
+      expect(text).toContain('"meta_conversion_events"."id" is null')
+      expect(enqueueMetaEvent).not.toHaveBeenCalled()
+    })
+
+    it('skips a renegotiated entry, whose balance was already reported on the original', async () => {
+      process.env.META_EVENTS_START_AT = '2026-01-01T00:00:00Z'
+      const purchases = chain([])
+      queuePurchaseFinder(purchases)
+
+      await GET(makeRequest(CRON_SECRET))
+
+      const { sql: text } = renderSql(purchases.__calls.where[0][0])
+      expect(text).toContain('"renegotiation_links"."id" is null')
+    })
+
+    it('takes only paid or partial entries, inside the window and after the tenant connected', async () => {
+      process.env.META_EVENTS_START_AT = '2026-01-01T00:00:00Z'
+      const purchases = chain([])
+      queuePurchaseFinder(purchases)
+
+      await GET(makeRequest(CRON_SECRET))
+
+      const { sql: text, params } = renderSql(purchases.__calls.where[0][0])
+      expect(params).toContain('paid')
+      expect(params).toContain('partial')
+      expect(text).toContain('"financial_entries"."deleted_at" is null')
+      expect(purchases.__calls.limit[0][0]).toBe(200)
+
+      // The window gate reads min(paid_at), so it lives in HAVING.
+      const having = renderSql(purchases.__calls.having[0][0])
+      expect(having.sql).toContain('"meta_connections"."created_at"')
+      expect(having.sql).toContain('min("floraclin"."payment_records"."paid_at")')
+    })
+
+    // Fix 1: `financial_entries.updated_at` is bumped by a reversal, a bulk
+    // cancel and every other write, so an entry paid in June and edited today
+    // was reported to Meta as a sale made today.
+    it('dates the Purchase off the first payment record, never the entry updated_at', async () => {
+      process.env.META_EVENTS_START_AT = '2026-01-01T00:00:00Z'
+      const purchases = chain([])
+      queuePurchaseFinder(purchases)
+
+      await GET(makeRequest(CRON_SECRET))
+
+      const selection = dbMock.select.mock.calls[3][0] as Record<string, unknown>
+      expect(renderSql(selection.paidAt).sql).toBe('min("floraclin"."payment_records"."paid_at")')
+
+      const { sql: where } = renderSql(purchases.__calls.where[0][0])
+      const { sql: having } = renderSql(purchases.__calls.having[0][0])
+      expect(where).not.toContain('"financial_entries"."updated_at"')
+      expect(having).not.toContain('"financial_entries"."updated_at"')
+    })
+
+    it('leaves a reversed payment record out of the payment instant', async () => {
+      process.env.META_EVENTS_START_AT = '2026-01-01T00:00:00Z'
+      const purchases = chain([])
+      queuePurchaseFinder(purchases)
+
+      await GET(makeRequest(CRON_SECRET))
+
+      const { sql: text } = renderSql(purchases.__calls.where[0][0])
+      expect(text).toContain('"payment_records"."reversed_at" is null')
+    })
+
+    it('keeps every join tenant-scoped, which no row level security would catch', async () => {
+      process.env.META_EVENTS_START_AT = '2026-01-01T00:00:00Z'
+      const purchases = chain([])
+      queuePurchaseFinder(purchases)
+
+      await GET(makeRequest(CRON_SECRET))
+
+      const joined = purchases.__calls.innerJoin.map((call) => renderSql(call[1]).sql).join(' ')
+      expect(joined).toContain(
+        '"financial_entries"."tenant_id" = "floraclin"."installments"."tenant_id"',
+      )
+      expect(joined).toContain('"patients"."tenant_id" = "floraclin"."financial_entries"."tenant_id"')
+      expect(joined).toContain('"meta_connections"."tenant_id" = "floraclin"."financial_entries"."tenant_id"')
+    })
+
+    it('groups by the entry so one entry with several payments yields one event', async () => {
+      process.env.META_EVENTS_START_AT = '2026-01-01T00:00:00Z'
+      const purchases = chain([])
+      queuePurchaseFinder(purchases)
+
+      await GET(makeRequest(CRON_SECRET))
+
+      const grouped = (purchases.__calls.groupBy[0] as unknown[]).map((c) => renderSql(sql`${c}`).sql)
+      expect(grouped).toContain('"floraclin"."financial_entries"."id"')
     })
   })
 

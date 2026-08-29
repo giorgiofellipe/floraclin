@@ -28,7 +28,10 @@ const updateConnectionSchema = z.object({
   accessToken: z.string().min(1).optional(),
   testEventCode: z.string().max(32).nullish(),
   advancedMatchingEnabled: z.boolean().optional(),
-  acknowledgementVersion: z.literal(ACKNOWLEDGEMENT_VERSION),
+  // Optional in the schema, required by the check below on every request
+  // except leg 2 of the OAuth flow, which already recorded the
+  // acknowledgement when the owner authorized.
+  acknowledgementVersion: z.literal(ACKNOWLEDGEMENT_VERSION).optional(),
 })
 
 export async function GET(request: Request) {
@@ -67,6 +70,19 @@ export async function PUT(request: Request) {
     const { datasetId, accessToken, testEventCode, advancedMatchingEnabled, acknowledgementVersion } =
       parsed.data
 
+    const existing = await getMetaConnectionRaw(ctx.tenantId)
+    const completingOAuth = existing?.status === 'pending_dataset' && !accessToken
+
+    if (!acknowledgementVersion && !completingOAuth) {
+      return NextResponse.json(
+        {
+          error: 'Dados inválidos',
+          fieldErrors: { acknowledgementVersion: ['acknowledgementVersion é obrigatório.'] },
+        },
+        { status: 400 },
+      )
+    }
+
     // Pasting a token IS the manual path, so a credential update owns the
     // connection type. A settings-only update must never touch it.
     const connection = accessToken
@@ -78,26 +94,31 @@ export async function PUT(request: Request) {
           advancedMatchingEnabled: advancedMatchingEnabled ?? true,
         })
       : await updateMetaConnectionSettings(ctx.tenantId, {
+          datasetId,
           testEventCode,
           advancedMatchingEnabled,
+          // The dataset is the last thing leg 2 was waiting for.
+          status: completingOAuth ? 'active' : undefined,
         })
 
     if (!connection) {
       return NextResponse.json({ error: 'Conexão com a Meta não encontrada' }, { status: 404 })
     }
 
-    await recordAcknowledgement(ctx.tenantId, ctx.userId, acknowledgementVersion)
-    // The connection row only ever holds the current acknowledgement version;
-    // a later re-paste would overwrite it. The audit_logs row is what proves
-    // which version was accepted at this point in time.
-    await createAuditLog({
-      tenantId: ctx.tenantId,
-      userId: ctx.userId,
-      action: 'consent_accepted',
-      entityType: 'meta_connection',
-      entityId: connection.id,
-      changes: { acknowledgementVersion: { old: null, new: acknowledgementVersion } },
-    })
+    if (acknowledgementVersion) {
+      await recordAcknowledgement(ctx.tenantId, ctx.userId, acknowledgementVersion)
+      // The connection row only ever holds the current acknowledgement
+      // version; a later re-paste would overwrite it. The audit_logs row is
+      // what proves which version was accepted at this point in time.
+      await createAuditLog({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        action: 'consent_accepted',
+        entityType: 'meta_connection',
+        entityId: connection.id,
+        changes: { acknowledgementVersion: { old: null, new: acknowledgementVersion } },
+      })
+    }
 
     const { accessToken: _accessToken, ...safe } = connection
     return NextResponse.json({ data: safe })

@@ -11,7 +11,7 @@ vi.mock('sonner', () => ({
 
 const BASE_CONNECTION: {
   id: string
-  datasetId: string
+  datasetId: string | null
   businessId: string | null
   connectionType: 'oauth' | 'manual'
   tokenExpiresAt: string | null
@@ -237,5 +237,68 @@ describe('MetaConnectionCard: advanced matching toggle', () => {
     expect(body.advancedMatchingEnabled).toBe(false)
     expect(body).not.toHaveProperty('accessToken')
     expect(body).not.toHaveProperty('connectionType')
+  })
+})
+
+describe('MetaConnectionCard: leg 2 of the OAuth flow', () => {
+  const PENDING = { ...BASE_CONNECTION, status: 'pending_dataset', datasetId: null, connectionType: 'oauth' as const }
+
+  function legTwoFetchMock() {
+    return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/businesses')) {
+        return new Response(JSON.stringify({ data: [{ id: 'biz-1', name: 'Portfólio da Clínica' }] }), {
+          status: 200,
+        })
+      }
+      if (url.includes('/datasets')) {
+        return new Response(JSON.stringify({ data: [{ id: 'pixel-1', name: 'Pixel Principal' }] }), {
+          status: 200,
+        })
+      }
+      if (init?.method === 'PUT') {
+        return new Response(JSON.stringify({ data: { ...PENDING, status: 'active', datasetId: 'pixel-1' } }), {
+          status: 200,
+        })
+      }
+      return new Response(JSON.stringify({ data: PENDING, events: [] }), { status: 200 })
+    })
+  }
+
+  it('renders the dataset picker instead of the connect button', async () => {
+    vi.stubGlobal('fetch', legTwoFetchMock())
+
+    renderCard()
+
+    expect(await screen.findByText('Conexão autorizada. Escolha o conjunto de dados.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /conectar meta/i })).not.toBeInTheDocument()
+    expect(await screen.findByLabelText(/portfólio empresarial/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/conjunto de dados/i)).toBeInTheDocument()
+  })
+
+  it('lists the portfolios, then the datasets in the chosen one, then saves the pick', async () => {
+    const fetchMock = legTwoFetchMock()
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderCard()
+
+    const businessSelect = await screen.findByLabelText(/portfólio empresarial/i)
+    await waitFor(() => expect(screen.getByRole('option', { name: /Portfólio da Clínica/ })).toBeInTheDocument())
+
+    await userEvent.selectOptions(businessSelect, 'biz-1')
+
+    const datasetSelect = await screen.findByLabelText(/conjunto de dados/i)
+    await waitFor(() => expect(screen.getByRole('option', { name: /Pixel Principal/ })).toBeInTheDocument())
+
+    await userEvent.selectOptions(datasetSelect, 'pixel-1')
+    await userEvent.click(screen.getByRole('button', { name: /salvar conjunto de dados/i }))
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([, init]) => (init as RequestInit)?.method === 'PUT')).toBe(true),
+    )
+
+    const put = fetchMock.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT')
+    const body = JSON.parse((put?.[1] as RequestInit).body as string)
+    expect(body).toEqual({ datasetId: 'pixel-1' })
   })
 })

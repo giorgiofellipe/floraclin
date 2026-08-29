@@ -40,6 +40,7 @@ import {
   type PendingMetaEventRow,
 } from '@/lib/meta/events'
 import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
+import type { MetaActionSource } from '@/lib/meta/types'
 import { reportSideEffectFailure } from '@/lib/observability'
 
 // ─── CREATE FINANCIAL ENTRY (unchanged) ─────────────────────────────
@@ -212,9 +213,8 @@ async function prepareMetaPurchaseContexts(
  * No "first payment" check: eventId is stable per financial entry, and the
  * outbox's unique index on (tenant_id, event_id) is the once-only guarantee.
  *
- * A missing context is not a reason to skip. Purchase is the one event the
- * cron never reconciles, so a row that is not written here is lost for good;
- * without a context it goes in bare and is enriched when it is sent.
+ * A missing context is not a reason to skip: without one the row goes in bare
+ * and is enriched when it is sent.
  *
  * Returns the outbox row the caller owes a send once its transaction commits,
  * or null when there is nothing to deliver.
@@ -261,19 +261,29 @@ async function emitPurchaseEventForEntry(
 
     const eventId = `purchase:${financialEntryId}`
 
-    await enqueueMetaEvent({
-      tenantId,
-      eventName: 'Purchase',
-      eventId,
-      eventTime,
-      prospectId: context?.prospectId ?? null,
-      patientId: context?.patientId ?? null,
-      contact: context?.contact ?? { phone: null, email: null, fullName: null },
-      actionSource: 'system_generated',
-      value: entry.totalAmount,
-      tx,
-      prerequisites: context?.prerequisites ?? undefined,
-    })
+    // The outbox insert gets a SAVEPOINT of its own: raised on the caller's
+    // transaction instead, a failure here would abort the payment and every
+    // other installment in a bulk payment with it.
+    try {
+      await tx.transaction(async (savepoint) => {
+        await enqueueMetaEvent({
+          tenantId,
+          eventName: 'Purchase',
+          eventId,
+          eventTime,
+          prospectId: context?.prospectId ?? null,
+          patientId: context?.patientId ?? null,
+          contact: context?.contact ?? { phone: null, email: null, fullName: null },
+          actionSource: 'system_generated',
+          value: entry.totalAmount,
+          tx: savepoint as unknown as typeof db,
+          prerequisites: context?.prerequisites ?? undefined,
+        })
+      })
+    } catch (error) {
+      reportSideEffectFailure(error, { area: 'meta-capi', step: 'purchase_event_outbox' })
+      return null
+    }
 
     // Re-read rather than threaded out of the enqueue, which returns nothing:
     // this is either the row just written or the one an earlier installment
@@ -287,6 +297,7 @@ async function emitPurchaseEventForEntry(
         eventId: metaConversionEvents.eventId,
         eventTime: metaConversionEvents.eventTime,
         value: metaConversionEvents.value,
+        actionSource: metaConversionEvents.actionSource,
         payload: metaConversionEvents.payload,
         status: metaConversionEvents.status,
       })
@@ -309,12 +320,12 @@ async function emitPurchaseEventForEntry(
       eventId: queued.eventId,
       eventTime: queued.eventTime,
       value: queued.value,
+      actionSource: queued.actionSource as MetaActionSource | null,
       payload: queued.payload,
     }
   } catch (error) {
-    // Re-raised on purpose: every statement above ran on the caller's
-    // transaction, so Postgres has already aborted the block. Swallowing it
-    // would let the payment commit as a silent rollback behind a 201.
+    // Postgres has already aborted the caller's transaction, so swallowing
+    // this would answer 201 for a payment that silently rolled back.
     reportSideEffectFailure(error, { area: 'meta-capi', step: 'purchase_event' })
     throw error
   }

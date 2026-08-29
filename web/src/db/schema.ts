@@ -1088,6 +1088,9 @@ export const metaConversionEvents = floraclinSchema.table('meta_conversion_event
   eventTime: timestamp('event_time', { withTimezone: true }).notNull(),
   value: decimal('value', { precision: 10, scale: 2 }),
   currency: varchar('currency', { length: 3 }).notNull().default('BRL'),
+  // The emitting site's action_source, kept so a rebuilt payload does not
+  // have to guess it. Null on rows written before this column existed.
+  actionSource: varchar('action_source', { length: 30 }),
   // Nullable on purpose: a `skipped` row is written before any payload is
   // built, and that row is the evidence an opt-out was honoured.
   payload: jsonb('payload'),
@@ -1108,7 +1111,9 @@ export const metaConversionEvents = floraclinSchema.table('meta_conversion_event
 export const metaConnections = floraclinSchema.table('meta_connections', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
-  datasetId: varchar('dataset_id', { length: 64 }).notNull(),
+  // Null while status is 'pending_dataset': OAuth authorizes first and the
+  // owner picks the dataset afterwards, so the token arrives before the id.
+  datasetId: varchar('dataset_id', { length: 64 }),
   accessToken: text('access_token').notNull(),
   businessId: varchar('business_id', { length: 64 }),
   connectionType: varchar('connection_type', { length: 10 }).notNull().default('manual'),

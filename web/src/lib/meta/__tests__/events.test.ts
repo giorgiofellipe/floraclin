@@ -329,6 +329,37 @@ describe('enqueueMetaEvent', () => {
     expect(insertedPayload().user_data.ctwa_clid).toBe('clid-9')
   })
 
+  // Fix 2: the outbox row stores the action source, so a rebuild does not
+  // have to guess it.
+  it('persists the action source on the outbox row', async () => {
+    const { enqueueMetaEvent } = await import('../events')
+
+    await enqueueMetaEvent(baseInput({ actionSource: 'business_messaging' }))
+
+    expect(insertConversionEventMock.mock.calls[0][0]).toMatchObject({
+      actionSource: 'business_messaging',
+    })
+  })
+
+  it('persists the action source even on a bare row written inside a transaction', async () => {
+    const { enqueueMetaEvent } = await import('../events')
+
+    await enqueueMetaEvent(
+      baseInput({
+        eventName: 'Purchase',
+        eventId: 'purchase:entry-1',
+        value: '10.00',
+        actionSource: 'business_messaging',
+        tx: {} as never,
+      }),
+    )
+
+    expect(insertConversionEventMock.mock.calls[0][0]).toMatchObject({
+      payload: null,
+      actionSource: 'business_messaging',
+    })
+  })
+
   it('places ctwa_clid unhashed in user_data', async () => {
     const { enqueueMetaEvent } = await import('../events')
     getAttributionMock.mockResolvedValue({ ctwaClid: 'raw-click-id-not-a-hash' })
@@ -449,8 +480,10 @@ describe('enqueueMetaEvent', () => {
     expect(markConnectionInvalidMock).not.toHaveBeenCalled()
   })
 
-  // 13. Errors on the transactional path must not be swallowed.
-  it('re-raises when tx is supplied and the outbox insert fails, so the caller can roll back', async () => {
+  // 13. Errors on the transactional path must not be swallowed: the caller
+  // owns the transaction and is the only one that knows what the failure
+  // costs. The payment path hands in a savepoint and absorbs the throw there.
+  it('re-raises when tx is supplied and the outbox insert fails, so the caller can decide', async () => {
     const { enqueueMetaEvent } = await import('../events')
     const fakeTx = { marker: 'tx' } as never
     insertConversionEventMock.mockRejectedValue(new Error('current transaction is aborted'))
@@ -607,6 +640,7 @@ describe('sendPendingEvent', () => {
       eventId: 'lead:prospect-1',
       eventTime: new Date('2026-08-20T12:00:00.000Z'),
       value: null,
+      actionSource: null,
       payload: STORED_PAYLOAD as unknown,
       ...overrides,
     }
@@ -695,6 +729,7 @@ describe('sendPendingEvent', () => {
         eventName: 'Purchase' as const,
         eventId: 'purchase:entry-1',
         value: '3000.00',
+        actionSource: 'system_generated' as const,
         payload: null,
         patientId: 'patient-1',
         ...overrides,
@@ -756,6 +791,37 @@ describe('sendPendingEvent', () => {
 
       expect(markEventSkippedMock).toHaveBeenCalledWith(TENANT, 'evt-1', 'no_external_id_secret')
       expect(postEventsMock).not.toHaveBeenCalled()
+    })
+
+    // Fix 2: Meta reads ctwa_clid only alongside business_messaging, so a
+    // rebuilt CTWA row must carry the source the emitting site chose.
+    it('rebuilds with the stored action source and sets messaging_channel with it', async () => {
+      const { sendPendingEvent } = await import('../events')
+      getAttributionMock.mockResolvedValue({ ctwaClid: 'clid-1' })
+
+      await sendPendingEvent(bareRow({ actionSource: 'business_messaging', eventName: 'Lead', eventId: 'lead:1' }))
+
+      expect(postedPayload().action_source).toBe('business_messaging')
+      expect(postedPayload().messaging_channel).toBe('whatsapp')
+      expect(postedPayload().user_data.ctwa_clid).toBe('clid-1')
+    })
+
+    it('never sets messaging_channel for a stored source other than business_messaging', async () => {
+      const { sendPendingEvent } = await import('../events')
+
+      await sendPendingEvent(bareRow({ actionSource: 'website' }))
+
+      expect(postedPayload().action_source).toBe('website')
+      expect(postedPayload().messaging_channel).toBeUndefined()
+    })
+
+    it('falls back to system_generated for a row written before the column existed', async () => {
+      const { sendPendingEvent } = await import('../events')
+
+      await sendPendingEvent(bareRow({ actionSource: null }))
+
+      expect(postedPayload().action_source).toBe('system_generated')
+      expect(postedPayload().messaging_channel).toBeUndefined()
     })
 
     it('sends a row with no prospect even without the secret, since it needs no external_id', async () => {
