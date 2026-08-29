@@ -197,7 +197,7 @@ export function MetaConnectionCard() {
       if (result.ok) {
         toast.success('Conexão testada com sucesso')
       } else {
-        toast.error('Falha ao testar a conexão')
+        toast.error(`Falha ao testar a conexão: ${result.message}`)
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Falha ao testar a conexão')
@@ -394,9 +394,21 @@ export function MetaConnectionCard() {
           </div>
 
           {testMutation.data && (
-            <pre className="whitespace-pre-wrap break-all rounded-[3px] border border-[#E8ECEF] bg-cream p-3 text-xs text-charcoal">
-              {JSON.stringify(testMutation.data.body, null, 2)}
-            </pre>
+            <div className="space-y-1 rounded-[3px] border border-[#E8ECEF] bg-cream p-3 text-xs">
+              {testMutation.data.ok ? (
+                <p className="text-charcoal">A Meta recebeu o evento de teste.</p>
+              ) : (
+                <>
+                  <p className="font-medium text-red-600">
+                    {testMutation.data.errorUserTitle ?? 'A Meta recusou o evento de teste.'}
+                  </p>
+                  <p className="text-charcoal">{testMutation.data.message}</p>
+                </>
+              )}
+              {testMutation.data.fbTraceId && (
+                <p className="font-mono text-mid">Trace ID: {testMutation.data.fbTraceId}</p>
+              )}
+            </div>
           )}
         </div>
       )}

@@ -95,6 +95,50 @@ describe('postEvents', () => {
     expect(result).toEqual(expect.objectContaining({ ok: false, kind: 'invalid' }))
   })
 
+  it('prefers error_user_msg over the generic message and keeps the raw fields', async () => {
+    global.fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 100,
+            message: 'Invalid parameter',
+            error_subcode: 2804003,
+            error_user_title: 'Parâmetro inválido',
+            error_user_msg: 'user_data precisa conter ao menos um parâmetro de identificação.',
+            fbtrace_id: 'A3ip2Ls_KK6lBhQHO3k079_',
+          },
+        }),
+        { status: 400 },
+      ),
+    ) as unknown as typeof fetch
+
+    const result = await postEvents(target, [makeEvent()])
+
+    expect(result).toEqual({
+      ok: false,
+      kind: 'invalid',
+      message: 'user_data precisa conter ao menos um parâmetro de identificação.',
+      errorUserTitle: 'Parâmetro inválido',
+      errorUserMsg: 'user_data precisa conter ao menos um parâmetro de identificação.',
+      errorSubcode: 2804003,
+      fbTraceId: 'A3ip2Ls_KK6lBhQHO3k079_',
+    })
+  })
+
+  it('falls back to the generic message when Meta sends no error_user_msg', async () => {
+    global.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ error: { code: 100, message: 'Invalid parameter' } }), {
+        status: 400,
+      }),
+    ) as unknown as typeof fetch
+
+    const result = await postEvents(target, [makeEvent()])
+
+    expect(result).toEqual(
+      expect.objectContaining({ ok: false, kind: 'invalid', message: 'Invalid parameter' }),
+    )
+  })
+
   it('classifies a 500 as transient', async () => {
     global.fetch = vi.fn(async () =>
       new Response(JSON.stringify({ error: { message: 'oops' } }), { status: 500 }),

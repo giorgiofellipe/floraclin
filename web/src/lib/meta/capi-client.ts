@@ -1,12 +1,20 @@
 import {
   META_GRAPH_VERSION,
+  type MetaCapiFailure,
   type MetaCapiResult,
   type MetaCapiTarget,
   type MetaEventPayload,
 } from './types'
 
 interface GraphErrorBody {
-  error?: { code?: number; message?: string; fbtrace_id?: string }
+  error?: {
+    code?: number
+    message?: string
+    error_subcode?: number
+    error_user_title?: string
+    error_user_msg?: string
+    fbtrace_id?: string
+  }
   events_received?: number
   fbtrace_id?: string
 }
@@ -55,13 +63,22 @@ export async function postEvents(
     return { ok: true, eventsReceived: body.events_received ?? events.length, fbTraceId }
   }
 
-  const message = body.error?.message ?? `HTTP ${response.status}`
+  // `error.message` is almost always the generic "Invalid parameter";
+  // `error_user_msg` is the one that names the field Meta rejected.
+  const failure: MetaCapiFailure = {
+    ok: false,
+    message: body.error?.error_user_msg ?? body.error?.message ?? `HTTP ${response.status}`,
+    errorUserTitle: body.error?.error_user_title,
+    errorUserMsg: body.error?.error_user_msg,
+    errorSubcode: body.error?.error_subcode,
+    fbTraceId,
+  }
 
   if (response.status === 401 || response.status === 403 || body.error?.code === 190) {
-    return { ok: false, kind: 'auth', message, fbTraceId }
+    return { ...failure, kind: 'auth' }
   }
   if (response.status >= 500 || response.status === 429) {
-    return { ok: false, kind: 'transient', message, fbTraceId }
+    return { ...failure, kind: 'transient' }
   }
-  return { ok: false, kind: 'invalid', message, fbTraceId }
+  return { ...failure, kind: 'invalid' }
 }

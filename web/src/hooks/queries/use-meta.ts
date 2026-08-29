@@ -95,17 +95,45 @@ export function useDisconnectMeta() {
   })
 }
 
-export interface MetaTestResult {
-  ok: boolean
-  body: unknown
+/**
+ * Meta's own verdict on the probe event. The route answers 200 with the
+ * verdict in the body, so `ok` here is never the HTTP status: a rejected
+ * event arrives as a 200 whose body says `ok: false`.
+ */
+export type MetaTestResult =
+  | { ok: true; eventsReceived: number; fbTraceId?: string }
+  | { ok: false; message: string; errorUserTitle?: string; fbTraceId?: string }
+
+function readString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
 }
 
 export function useTestMetaConnection() {
   return useMutation<MetaTestResult>({
     mutationFn: async () => {
       const res = await fetch('/api/integrations/meta/connection/test', { method: 'POST' })
-      const body = await res.json().catch(() => ({}))
-      return { ok: res.ok, body }
+      const body = (await res.json().catch(() => ({}))) as Record<string, unknown>
+
+      // A non-2xx is our own route refusing before it called Meta (not the
+      // owner, no connection, no dataset). There is no verdict to read.
+      if (!res.ok) {
+        throw new Error(readString(body.error) ?? 'Falha ao testar a conexão')
+      }
+
+      if (body.ok === true) {
+        return {
+          ok: true,
+          eventsReceived: typeof body.eventsReceived === 'number' ? body.eventsReceived : 0,
+          fbTraceId: readString(body.fbTraceId),
+        }
+      }
+
+      return {
+        ok: false,
+        message: readString(body.message) ?? 'A Meta recusou o evento de teste.',
+        errorUserTitle: readString(body.errorUserTitle),
+        fbTraceId: readString(body.fbTraceId),
+      }
     },
   })
 }

@@ -42,8 +42,23 @@ export interface MetaCapiTarget {
   testEventCode?: string | null
 }
 
+/**
+ * `message` is the line every caller shows or stores. Meta puts the generic
+ * "Invalid parameter" in `error.message` and names the offending field in
+ * `error_user_msg`, so the parser prefers the latter when it is present and
+ * keeps the raw fields here for whoever wants them.
+ */
+export interface MetaCapiFailure {
+  ok: false
+  message: string
+  errorUserTitle?: string
+  errorUserMsg?: string
+  errorSubcode?: number
+  fbTraceId?: string
+}
+
 export type MetaCapiResult =
   | { ok: true; eventsReceived: number; fbTraceId?: string }
-  | { ok: false; kind: 'auth'; message: string; fbTraceId?: string }
-  | { ok: false; kind: 'invalid'; message: string; fbTraceId?: string }
-  | { ok: false; kind: 'transient'; message: string; fbTraceId?: string }
+  | (MetaCapiFailure & { kind: 'auth' })
+  | (MetaCapiFailure & { kind: 'invalid' })
+  | (MetaCapiFailure & { kind: 'transient' })

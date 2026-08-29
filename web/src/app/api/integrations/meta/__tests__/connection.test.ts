@@ -587,6 +587,29 @@ describe('POST /api/integrations/meta/connection/test', () => {
     expect(markConnectionVerified).not.toHaveBeenCalled()
   })
 
+  // The pair Meta answers "Invalid parameter" for: an empty user_data, and a
+  // website event with no event_source_url.
+  it('sends a probe that carries a hashed external_id and an event source url', async () => {
+    vi.mocked(getMetaConnectionRaw).mockResolvedValue(connection({ testEventCode: null }))
+    vi.mocked(postEvents).mockResolvedValue({ ok: true, eventsReceived: 1, fbTraceId: 'trace-abc' })
+
+    await testConnection(
+      new Request('http://localhost/api/integrations/meta/connection/test', { method: 'POST' }),
+    )
+
+    const [, events] = vi.mocked(postEvents).mock.calls[0]
+    expect(events).toHaveLength(1)
+    const [probe] = events
+
+    expect(probe.event_name).toBe('PageView')
+    expect(probe.action_source).toBe('website')
+    expect(probe.event_source_url).toBeTruthy()
+    expect(probe.user_data).not.toEqual({})
+    expect(probe.user_data.external_id).toEqual([
+      createHash('sha256').update('meta-connection-test:conn-1').digest('hex'),
+    ])
+  })
+
   it('marks the connection verified on success', async () => {
     vi.mocked(getMetaConnectionRaw).mockResolvedValue(connection({ testEventCode: 'TEST12345' }))
     vi.mocked(postEvents).mockResolvedValue({ ok: true, eventsReceived: 1, fbTraceId: 'trace-abc' })

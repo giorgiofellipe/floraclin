@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error'
 import { getMetaConnectionRaw, markConnectionVerified } from '@/db/queries/meta-connections'
+import { getAppUrl } from '@/lib/app-url'
 import { postEvents } from '@/lib/meta/capi-client'
+import { sha256Hex } from '@/lib/meta/hashing'
 
 // Owner-only like the rest of the connection routes: this fires a real
 // Conversions API call on the clinic's stored token, so it is a write as far
@@ -32,7 +34,13 @@ export async function POST(request: Request) {
           event_time: Math.floor(Date.now() / 1000),
           event_id: `test-${connection.id}-${Date.now()}`,
           action_source: 'website',
-          user_data: {},
+          // Meta rejects an event with an empty `user_data`, and
+          // `action_source: 'website'` additionally requires an
+          // `event_source_url`. Either omission answers "Invalid parameter".
+          // The id is a digest of the connection, so the probe carries no
+          // real person's data.
+          event_source_url: getAppUrl(),
+          user_data: { external_id: [sha256Hex(`meta-connection-test:${connection.id}`)] },
         },
       ],
     )

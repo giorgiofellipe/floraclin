@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { MetaConnectionCard } from '../meta-connection-card'
 
 vi.mock('sonner', () => ({
@@ -169,7 +170,7 @@ describe('MetaConnectionCard: testing an active connection', () => {
   it('offers the test button while the connection is active', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === 'POST') {
-        return new Response(JSON.stringify({ events_received: 1 }), { status: 200 })
+        return new Response(JSON.stringify({ ok: true, eventsReceived: 1 }), { status: 200 })
       }
       return new Response(JSON.stringify({ data: BASE_CONNECTION, events: [] }), { status: 200 })
     })
@@ -183,6 +184,67 @@ describe('MetaConnectionCard: testing an active connection', () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith('/api/integrations/meta/connection/test', { method: 'POST' }),
     )
+  })
+
+  function testFetchMock(testBody: unknown, status = 200) {
+    return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return new Response(JSON.stringify(testBody), { status })
+      }
+      return new Response(JSON.stringify({ data: BASE_CONNECTION, events: [] }), { status: 200 })
+    })
+  }
+
+  // The route answers 200 with Meta's verdict inside the body, so an HTTP 200
+  // is not by itself a working connection.
+  it("shows Meta's message and never claims success when Meta rejects the event", async () => {
+    vi.stubGlobal(
+      'fetch',
+      testFetchMock({
+        ok: false,
+        kind: 'invalid',
+        message: 'O campo user_data precisa de ao menos um identificador.',
+        errorUserTitle: 'Parâmetro inválido',
+        fbTraceId: 'A3ip2Ls_KK6lBhQHO3k079_',
+      }),
+    )
+
+    renderCard()
+
+    await userEvent.click(await screen.findByRole('button', { name: /testar conexão/i }))
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.stringContaining('O campo user_data precisa de ao menos um identificador.'),
+      ),
+    )
+    expect(toast.success).not.toHaveBeenCalled()
+
+    expect(await screen.findByText('Parâmetro inválido')).toBeInTheDocument()
+    expect(screen.getByText(/A3ip2Ls_KK6lBhQHO3k079_/)).toBeInTheDocument()
+  })
+
+  it('reports a route-level refusal instead of a success', async () => {
+    vi.stubGlobal('fetch', testFetchMock({ error: 'Nenhuma conexão configurada.' }, 404))
+
+    renderCard()
+
+    await userEvent.click(await screen.findByRole('button', { name: /testar conexão/i }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Nenhuma conexão configurada.'))
+    expect(toast.success).not.toHaveBeenCalled()
+  })
+
+  it('reports a success when Meta accepts the event', async () => {
+    vi.stubGlobal('fetch', testFetchMock({ ok: true, eventsReceived: 1, fbTraceId: 'trace-ok' }))
+
+    renderCard()
+
+    await userEvent.click(await screen.findByRole('button', { name: /testar conexão/i }))
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Conexão testada com sucesso'))
+    expect(toast.error).not.toHaveBeenCalled()
+    expect(await screen.findByText('A Meta recebeu o evento de teste.')).toBeInTheDocument()
   })
 })
 
