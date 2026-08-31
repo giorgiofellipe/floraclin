@@ -159,6 +159,101 @@ describe('postEvents', () => {
     expect(result).toEqual(expect.objectContaining({ ok: false, kind: 'transient' }))
   })
 
+  // Fix 4: a 2xx alone is not acceptance. Meta answers 200 with an empty
+  // body, a non-JSON body, or events_received: 0 and none of them means the
+  // events landed.
+  it('fails a 200 that carries no events_received', async () => {
+    global.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ fbtrace_id: 'tr-9' }), { status: 200 }),
+    ) as unknown as typeof fetch
+
+    const result = await postEvents(target, [makeEvent()])
+
+    expect(result).toEqual(
+      expect.objectContaining({ ok: false, kind: 'transient', fbTraceId: 'tr-9' }),
+    )
+  })
+
+  it('fails a 200 with an empty body', async () => {
+    global.fetch = vi.fn(async () => new Response('', { status: 200 })) as unknown as typeof fetch
+
+    const result = await postEvents(target, [makeEvent()])
+
+    expect(result).toEqual(expect.objectContaining({ ok: false, kind: 'transient' }))
+  })
+
+  it('fails a 200 whose body is not JSON', async () => {
+    global.fetch = vi.fn(async () =>
+      new Response('<html>gateway</html>', { status: 200 }),
+    ) as unknown as typeof fetch
+
+    const result = await postEvents(target, [makeEvent()])
+
+    expect(result).toEqual(expect.objectContaining({ ok: false, kind: 'transient' }))
+  })
+
+  it('fails a 200 that reports events_received: 0', async () => {
+    global.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ events_received: 0 }), { status: 200 }),
+    ) as unknown as typeof fetch
+
+    const result = await postEvents(target, [makeEvent()])
+
+    expect(result).toEqual(expect.objectContaining({ ok: false, kind: 'transient' }))
+  })
+
+  it('never invents an events_received from the number submitted', async () => {
+    global.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ events_received: 2 }), { status: 200 }),
+    ) as unknown as typeof fetch
+
+    const result = await postEvents(target, [makeEvent(), makeEvent(), makeEvent()])
+
+    expect(result).toEqual(expect.objectContaining({ ok: true, eventsReceived: 2 }))
+  })
+
+  // Fix 5: Graph flags some 400s as retryable, code 2 among them.
+  it('classifies an is_transient 400 as transient, not as a terminal invalid', async () => {
+    global.fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          error: { code: 2, message: 'An unexpected error has occurred', is_transient: true },
+        }),
+        { status: 400 },
+      ),
+    ) as unknown as typeof fetch
+
+    const result = await postEvents(target, [makeEvent()])
+
+    expect(result).toEqual(expect.objectContaining({ ok: false, kind: 'transient' }))
+  })
+
+  it('still classifies a 400 without is_transient as invalid', async () => {
+    global.fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ error: { code: 100, message: 'bad field', is_transient: false } }),
+        { status: 400 },
+      ),
+    ) as unknown as typeof fetch
+
+    const result = await postEvents(target, [makeEvent()])
+
+    expect(result).toEqual(expect.objectContaining({ ok: false, kind: 'invalid' }))
+  })
+
+  it('keeps an is_transient auth failure classified as auth, so the token is still flagged', async () => {
+    global.fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ error: { code: 190, message: 'expired', is_transient: true } }),
+        { status: 401 },
+      ),
+    ) as unknown as typeof fetch
+
+    const result = await postEvents(target, [makeEvent()])
+
+    expect(result).toEqual(expect.objectContaining({ ok: false, kind: 'auth' }))
+  })
+
   it('classifies a thrown network error as transient', async () => {
     global.fetch = vi.fn(async () => {
       throw new Error('network down')

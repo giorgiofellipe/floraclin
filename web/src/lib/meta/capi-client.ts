@@ -13,6 +13,8 @@ interface GraphErrorBody {
     error_subcode?: number
     error_user_title?: string
     error_user_msg?: string
+    /** Graph sets this on some 400s (code 2, for one) that a retry does clear. */
+    is_transient?: boolean
     fbtrace_id?: string
   }
   events_received?: number
@@ -59,8 +61,19 @@ export async function postEvents(
 
   const fbTraceId = body.fbtrace_id ?? body.error?.fbtrace_id
 
+  // A 2xx alone proves nothing was accepted: an empty body, a body that is
+  // not JSON, and `events_received: 0` all arrive as 200. Only a parsed count
+  // above zero says Meta took the events.
   if (response.ok) {
-    return { ok: true, eventsReceived: body.events_received ?? events.length, fbTraceId }
+    if (typeof body.events_received === 'number' && body.events_received > 0) {
+      return { ok: true, eventsReceived: body.events_received, fbTraceId }
+    }
+    return {
+      ok: false,
+      kind: 'transient',
+      message: `HTTP ${response.status} without an events_received count; the events were not accepted`,
+      fbTraceId,
+    }
   }
 
   // `error.message` is almost always the generic "Invalid parameter";
@@ -77,7 +90,7 @@ export async function postEvents(
   if (response.status === 401 || response.status === 403 || body.error?.code === 190) {
     return { ...failure, kind: 'auth' }
   }
-  if (response.status >= 500 || response.status === 429) {
+  if (response.status >= 500 || response.status === 429 || body.error?.is_transient) {
     return { ...failure, kind: 'transient' }
   }
   return { ...failure, kind: 'invalid' }

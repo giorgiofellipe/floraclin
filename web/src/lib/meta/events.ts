@@ -3,10 +3,12 @@ import { createHmac } from 'node:crypto'
 import type { db } from '@/db/client'
 import { getMetaConnection, markConnectionInvalid } from '@/db/queries/meta-connections'
 import {
+  claimEventForSending,
   insertConversionEvent,
   markEventFailure,
   markEventSent,
   markEventSkipped,
+  releaseEventClaims,
 } from '@/db/queries/meta-events'
 import { getAttribution } from '@/db/queries/lead-attributions'
 import { isMarketingOptedOut } from '@/db/queries/marketing-consent'
@@ -273,12 +275,19 @@ async function rebuildPayload(
  * Delivers one outbox row and records the outcome. The only place an event
  * reaches graph.facebook.com, so the opt-out re-check below is the last gate
  * every event passes, however long the row sat pending.
+ *
+ * The row must already be claimed: every write here is conditional on it
+ * still being `sending`, so an unclaimed row would be delivered and then
+ * silently left pending for the next run to deliver again.
  */
 export async function sendPendingEvent(row: PendingMetaEventRow): Promise<void> {
   const connection = await getMetaConnection(row.tenantId)
-  // Left pending on purpose: the cron is what decides when a deferred row has
-  // aged past what Meta accepts.
-  if (!connection) return
+  // Returned to pending on purpose: the cron is what decides when a deferred
+  // row has aged past what Meta accepts.
+  if (!connection) {
+    await releaseEventClaims([row.id])
+    return
+  }
 
   const contact = await loadContact(row)
 
@@ -318,13 +327,26 @@ export async function sendPendingEvent(row: PendingMetaEventRow): Promise<void> 
   await markEventFailure(row.tenantId, row.id, result.kind, result.message)
 }
 
-export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<void> {
+/**
+ * Claims the row before delivering it, for the inline paths that build a row
+ * and send it in the same breath. A false return means another sender got
+ * there first and this caller owes nothing.
+ */
+export async function claimAndSendPendingEvent(row: PendingMetaEventRow): Promise<boolean> {
+  if (!(await claimEventForSending(row.tenantId, row.id))) return false
+
+  await sendPendingEvent(row)
+  return true
+}
+
+/** `inserted` is false when the row was already in the outbox before this call. */
+export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<{ inserted: boolean }> {
   try {
     // Inside a caller's transaction with nothing pre-resolved there is no read
     // this can safely make, so the row goes in bare and `sendPendingEvent`
     // enriches it.
     if (input.tx && !input.prerequisites) {
-      await insertConversionEvent(
+      return await insertConversionEvent(
         {
           tenantId: input.tenantId,
           prospectId: input.prospectId,
@@ -339,7 +361,6 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
         },
         input.tx,
       )
-      return
     }
 
     const secret = externalIdSecret()
@@ -349,7 +370,7 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
     // the way to the outbox and leaves no trace of the event at all.
     if (input.prospectId && !secret) {
       reportMissingSecretOnce()
-      await insertConversionEvent(
+      return await insertConversionEvent(
         {
           tenantId: input.tenantId,
           prospectId: input.prospectId,
@@ -365,7 +386,6 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
         },
         input.tx,
       )
-      return
     }
 
     const { optedOut, connection, attribution } =
@@ -377,7 +397,7 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
       }))
 
     if (optedOut) {
-      await insertConversionEvent(
+      return await insertConversionEvent(
         {
           tenantId: input.tenantId,
           prospectId: input.prospectId,
@@ -393,11 +413,17 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
         },
         input.tx,
       )
-      return
     }
 
+    // Pending, not skipped. A clinic between the two OAuth legs sits in
+    // `pending_dataset`, which reads here as no connection at all, and a
+    // terminal row would both lose the event and satisfy the cron's
+    // reconciliation join, so nothing would ever repair it once the dataset
+    // is picked. Pending puts the row on the path the cron already has for a
+    // tenant with no usable connection: deferred each run, given up only once
+    // it ages past the window Meta accepts.
     if (!connection) {
-      await insertConversionEvent(
+      return await insertConversionEvent(
         {
           tenantId: input.tenantId,
           prospectId: input.prospectId,
@@ -405,15 +431,13 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
           eventName: input.eventName,
           eventId: input.eventId,
           eventTime: input.eventTime,
-          value: null,
+          value: input.eventName === 'Purchase' ? input.value ?? null : null,
           actionSource: input.actionSource,
           payload: null,
-          status: 'skipped',
-          skipReason: 'no_connection',
+          status: 'pending',
         },
         input.tx,
       )
-      return
     }
 
     const isPurchase = input.eventName === 'Purchase'
@@ -453,14 +477,14 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
 
     // Duplicate: six installment payments call this six times for one
     // Purchase and it must insert once.
-    if (!inserted) return
+    if (!inserted) return { inserted: false }
 
     // Inside the caller's transaction the row is written but never sent: an
     // HTTP call here would hold recordPayment's row lock across a network
     // round trip.
-    if (input.tx) return
+    if (input.tx) return { inserted: true }
 
-    await sendPendingEvent({
+    await claimAndSendPendingEvent({
       id,
       tenantId: input.tenantId,
       prospectId: input.prospectId,
@@ -472,10 +496,13 @@ export async function enqueueMetaEvent(input: EnqueueMetaEventInput): Promise<vo
       actionSource: input.actionSource,
       payload,
     })
+
+    return { inserted: true }
   } catch (error) {
     // Postgres has already aborted the caller's transaction, so only the
     // caller can decide what the failure costs.
     if (input.tx) throw error
     reportSideEffectFailure(error, { area: 'meta-capi', step: 'enqueue_meta_event' })
+    return { inserted: false }
   }
 }

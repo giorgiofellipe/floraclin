@@ -16,14 +16,18 @@ import {
   renegotiationLinks,
 } from '@/db/schema'
 import {
+  claimPendingEvents,
   countEventOutcomes,
   hasScheduleForProspect,
   markEventFailure,
   markEventSkipped,
-  selectPendingEvents,
+  reapStuckClaims,
+  releaseEventClaims,
+  MAX_EVENTS_PER_TENANT,
+  META_EVENT_WINDOW_DAYS,
   type PendingEvent,
 } from '@/db/queries/meta-events'
-import { getMetaConnection, type MetaConnection } from '@/db/queries/meta-connections'
+import { getMetaConnection, listActiveOAuthConnections } from '@/db/queries/meta-connections'
 import { enqueueMetaEvent, sendPendingEvent } from '@/lib/meta/events'
 import { backfillAdMetadata } from '@/lib/meta/ad-metadata'
 import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
@@ -35,7 +39,20 @@ import { withCronMonitor } from '@/lib/cron-monitor'
 const MONITOR_SLUG = 'meta-events'
 export const MONITOR_SCHEDULE = '0 4 * * *'
 
-const CLAIM_LIMIT = 500
+/**
+ * Four tenants can each hand one run a full window's backlog before the claim
+ * itself becomes the limit. What actually ends a long run is
+ * SWEEP_TIME_BUDGET_MS: rows the run does not reach go back to `pending`.
+ */
+const CLAIM_LIMIT = MAX_EVENTS_PER_TENANT * 4
+
+/**
+ * The sweep sends serially, one Conversions API round trip at a time, and the
+ * reconciliation and the ad metadata backfill still have to run after it
+ * inside the same function invocation.
+ */
+const SWEEP_TIME_BUDGET_MS = 120_000
+
 const RECONCILE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 const RECONCILE_LIMIT = 200
 const RECONCILE_CONCURRENCY = 10
@@ -44,7 +61,7 @@ const TENANT_FAILURE_ALERT_THRESHOLD = 10
 // Meta rejects the ENTIRE request when any event in it has an event_time
 // more than 7 days old, and processes none of its events. One stale row in a
 // batch therefore costs every other tenant in that batch its events.
-const META_EVENT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+const META_EVENT_MAX_AGE_MS = META_EVENT_WINDOW_DAYS * 24 * 60 * 60 * 1000
 const STALE_EVENT_ERROR = 'event_time exceeded the 7-day window the Conversions API accepts'
 
 // A row that waited this long for a working connection can never be
@@ -58,12 +75,15 @@ function chunk<T>(items: T[], size: number): T[][] {
 }
 
 interface RetrySweepResult {
+  reaped: number
   claimed: number
   sent: number
   deferredNoConnection: number
   skippedNoConnection: number
   failedStale: number
   failed: number
+  /** Claimed but released unsent, because the run ran out of time budget. */
+  unreached: number
 }
 
 /**
@@ -77,8 +97,8 @@ async function deferOrExpire(
   tenantId: string,
   events: PendingEvent[],
   now: Date,
-): Promise<{ deferred: number; expired: number }> {
-  let deferred = 0
+): Promise<{ deferredIds: string[]; expired: number }> {
+  const deferredIds: string[] = []
   let expired = 0
 
   for (const event of events) {
@@ -87,10 +107,10 @@ async function deferOrExpire(
       expired += 1
       continue
     }
-    deferred += 1
+    deferredIds.push(event.id)
   }
 
-  return { deferred, expired }
+  return { deferredIds, expired }
 }
 
 /**
@@ -124,10 +144,12 @@ async function dropStaleEvents(
  * Sentry warning, tagged with the tenant id.
  */
 async function runRetrySweep(): Promise<RetrySweepResult> {
-  const pending = await selectPendingEvents(CLAIM_LIMIT)
+  const reaped = await reapStuckClaims()
+  const claimed = await claimPendingEvents(CLAIM_LIMIT)
   const now = new Date()
+  const deadline = now.getTime() + SWEEP_TIME_BUDGET_MS
 
-  const { fresh, failedStale } = await dropStaleEvents(pending, now)
+  const { fresh, failedStale } = await dropStaleEvents(claimed, now)
 
   const byTenant = new Map<string, PendingEvent[]>()
   for (const event of fresh) {
@@ -140,21 +162,35 @@ async function runRetrySweep(): Promise<RetrySweepResult> {
   let deferredNoConnection = 0
   let skippedNoConnection = 0
   let failed = 0
+  let unreached = 0
   const failedByTenant = new Map<string, number>()
+  // Every claim this run took and did not resolve. Left as they are they
+  // would sit `sending` until the reaper's timeout, delaying the next run by
+  // that much.
+  const toRelease: string[] = []
 
   for (const [tenantId, events] of byTenant) {
+    if (Date.now() > deadline) {
+      toRelease.push(...events.map((event) => event.id))
+      unreached += events.length
+      continue
+    }
+
     const connection = await getMetaConnection(tenantId)
     // `invalid_token` is included on purpose: posting again would only earn
     // another rejection, and the rows must survive until the token is fixed.
     if (!connection || connection.status === 'invalid_token') {
       const outcome = await deferOrExpire(tenantId, events, now)
-      deferredNoConnection += outcome.deferred
+      toRelease.push(...outcome.deferredIds)
+      deferredNoConnection += outcome.deferredIds.length
       skippedNoConnection += outcome.expired
       continue
     }
 
     const attempted: string[] = []
     for (const event of events) {
+      if (Date.now() > deadline) break
+
       await sendPendingEvent(event)
       attempted.push(event.id)
 
@@ -165,11 +201,18 @@ async function runRetrySweep(): Promise<RetrySweepResult> {
       if (!current || current.status === 'invalid_token') break
     }
 
+    const done = new Set(attempted)
+    const skippedRows = events.filter((event) => !done.has(event.id))
+    toRelease.push(...skippedRows.map((event) => event.id))
+    unreached += skippedRows.length
+
     const outcome = await countEventOutcomes(tenantId, attempted)
     sent += outcome.sent
     failed += outcome.failed
     if (outcome.failed > 0) failedByTenant.set(tenantId, outcome.failed)
   }
+
+  await releaseEventClaims(toRelease)
 
   for (const [tenantId, count] of failedByTenant) {
     if (count > TENANT_FAILURE_ALERT_THRESHOLD) {
@@ -181,23 +224,20 @@ async function runRetrySweep(): Promise<RetrySweepResult> {
     }
   }
 
-  return { claimed: pending.length, sent, deferredNoConnection, skippedNoConnection, failedStale, failed }
+  return {
+    reaped,
+    claimed: claimed.length,
+    sent,
+    deferredNoConnection,
+    skippedNoConnection,
+    failedStale,
+    failed,
+    unreached,
+  }
 }
 
 interface AdMetadataBackfillResult {
   resolved: number
-}
-
-/**
- * Every tenant whose connection can read the Marketing API, not only those
- * the retry sweep happened to touch: in steady state nothing is pending, and
- * a backfill driven off retry traffic would never run at all.
- */
-async function listBackfillConnections(): Promise<MetaConnection[]> {
-  return db
-    .select()
-    .from(metaConnections)
-    .where(and(eq(metaConnections.connectionType, 'oauth'), eq(metaConnections.status, 'active')))
 }
 
 /**
@@ -206,7 +246,7 @@ async function listBackfillConnections(): Promise<MetaConnection[]> {
  */
 async function runAdMetadataBackfill(): Promise<AdMetadataBackfillResult> {
   let resolved = 0
-  for (const connection of await listBackfillConnections()) {
+  for (const connection of await listActiveOAuthConnections()) {
     const outcome = await backfillAdMetadata(connection.tenantId, connection)
     resolved += outcome.resolved
   }

@@ -3,15 +3,11 @@ import { requireRole } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error'
 import { getMetaConnectionRaw } from '@/db/queries/meta-connections'
 import { META_GRAPH_VERSION } from '@/lib/meta/types'
+import { fetchGraphList, GRAPH_PAGE_SIZE } from '@/lib/meta/graph-paging'
 
 interface GraphDataset {
   id: string
   name: string
-}
-
-interface GraphDatasetsResponse {
-  data?: GraphDataset[]
-  error?: { message?: string }
 }
 
 interface DatasetsRequestBody {
@@ -54,25 +50,16 @@ export async function POST(request: Request) {
       )
     }
 
-    const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(businessId)}/adspixels?fields=id,name`
+    const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(businessId)}/adspixels?fields=id,name&limit=${GRAPH_PAGE_SIZE}`
 
-    const response = await fetch(url, {
-      method: 'GET',
-      // Without this a hung Meta socket hangs the settings page.
-      signal: AbortSignal.timeout(10_000),
-      headers: { authorization: `Bearer ${accessToken}` },
-    })
-    const graphBody = (await response.json().catch(() => ({}))) as GraphDatasetsResponse
+    const result = await fetchGraphList<GraphDataset>(url, accessToken)
 
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: graphBody.error?.message ?? `HTTP ${response.status}` },
-        { status: 400 },
-      )
+    if (!result.ok) {
+      return NextResponse.json({ error: result.message }, { status: 400 })
     }
 
-    const datasets = (graphBody.data ?? []).map((item) => ({ id: item.id, name: item.name }))
-    return NextResponse.json({ data: datasets })
+    const datasets = result.items.map((item) => ({ id: item.id, name: item.name }))
+    return NextResponse.json({ data: datasets, truncated: result.truncated })
   } catch (error) {
     return handleApiError(error, request)
   }

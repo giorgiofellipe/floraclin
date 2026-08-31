@@ -43,6 +43,12 @@ const CONNECTION_STATUS_LABELS: Record<string, string> = {
   disabled: 'Desativado',
 }
 
+const TRUNCATED_BUSINESSES_NOTICE =
+  'A lista foi cortada porque a conta tem portfólios demais. Se o seu não aparecer, use a conexão manual.'
+
+const TRUNCATED_DATASETS_NOTICE =
+  'A lista foi cortada porque o portfólio tem conjuntos de dados demais. Se o seu não aparecer, informe o ID manualmente.'
+
 const SKIP_REASON_LABELS: Record<string, string> = {
   no_connection: 'Meta não conectada',
   no_external_id_secret: 'Chave de identificação não configurada',
@@ -140,7 +146,7 @@ export function MetaConnectionCard() {
         businessId,
         accessToken: accessToken || undefined,
       })
-      if (datasets.length === 0) {
+      if (datasets.items.length === 0) {
         toast.error('Nenhum dataset encontrado para este Business ID.')
       }
     } catch (error) {
@@ -154,7 +160,7 @@ export function MetaConnectionCard() {
     if (!nextBusinessId) return
     try {
       const datasets = await datasetsMutation.mutateAsync({ businessId: nextBusinessId })
-      if (datasets.length === 0) {
+      if (datasets.items.length === 0) {
         toast.error('Nenhum conjunto de dados encontrado neste portfólio.')
       }
     } catch (error) {
@@ -287,12 +293,15 @@ export function MetaConnectionCard() {
                   <option value="">
                     {businessesQuery.isLoading ? 'Carregando portfólios...' : 'Selecione um portfólio'}
                   </option>
-                  {(businessesQuery.data ?? []).map((business) => (
+                  {(businessesQuery.data?.items ?? []).map((business) => (
                     <option key={business.id} value={business.id}>
                       {business.name} ({business.id})
                     </option>
                   ))}
                 </select>
+                {businessesQuery.data?.truncated && (
+                  <p className="text-xs text-amber-700">{TRUNCATED_BUSINESSES_NOTICE}</p>
+                )}
                 {businessesQuery.isError && (
                   <p className="text-xs text-red-600">
                     {businessesQuery.error instanceof Error
@@ -321,12 +330,15 @@ export function MetaConnectionCard() {
                       ? 'Carregando conjuntos de dados...'
                       : 'Selecione um conjunto de dados'}
                   </option>
-                  {(datasetsMutation.data ?? []).map((dataset) => (
+                  {(datasetsMutation.data?.items ?? []).map((dataset) => (
                     <option key={dataset.id} value={dataset.id}>
                       {dataset.name} ({dataset.id})
                     </option>
                   ))}
                 </select>
+                {datasetsMutation.data?.truncated && (
+                  <p className="text-xs text-amber-700">{TRUNCATED_DATASETS_NOTICE}</p>
+                )}
               </div>
 
               <Button
@@ -471,7 +483,7 @@ export function MetaConnectionCard() {
                   </div>
                 </div>
 
-                {datasetsMutation.data && datasetsMutation.data.length > 0 && (
+                {datasetsMutation.data && datasetsMutation.data.items.length > 0 && (
                   <div className="space-y-1.5">
                     <Label htmlFor="meta-dataset-select" className="text-xs font-medium uppercase tracking-wider text-mid">
                       Dataset
@@ -483,12 +495,15 @@ export function MetaConnectionCard() {
                       onChange={(e) => setDatasetId(e.target.value)}
                     >
                       <option value="">Selecione um dataset</option>
-                      {datasetsMutation.data.map((dataset) => (
+                      {datasetsMutation.data.items.map((dataset) => (
                         <option key={dataset.id} value={dataset.id}>
                           {dataset.name} ({dataset.id})
                         </option>
                       ))}
                     </select>
+                    {datasetsMutation.data.truncated && (
+                      <p className="text-xs text-amber-700">{TRUNCATED_DATASETS_NOTICE}</p>
+                    )}
                   </div>
                 )}
 

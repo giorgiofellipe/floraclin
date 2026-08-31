@@ -1,8 +1,17 @@
 import { db } from '@/db/client'
 import { metaConnections } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
+import { decryptSecret, encryptSecret } from '@/lib/crypto'
 
 export type MetaConnection = typeof metaConnections.$inferSelect
+
+/**
+ * `access_token` is encrypted at rest. This module is the only boundary that
+ * knows that: every caller reads and writes plaintext.
+ */
+function withPlainToken<T extends { accessToken: string }>(row: T): T {
+  return { ...row, accessToken: decryptSecret(row.accessToken) }
+}
 
 /** A connection that finished both OAuth legs, so it has a dataset to post to. */
 export type UsableMetaConnection = MetaConnection & { datasetId: string }
@@ -42,36 +51,64 @@ export async function getMetaConnectionRaw(tenantId: string): Promise<MetaConnec
     .where(eq(metaConnections.tenantId, tenantId))
     .limit(1)
 
-  return row ?? null
+  return row ? withPlainToken(row) : null
+}
+
+/**
+ * Every connection whose token can read the Marketing API.
+ *
+ * Exists so the ad-metadata backfill in the meta-events cron does not select
+ * the table directly: a raw select hands back the ciphertext, and Meta answers
+ * every request with it as a plain auth failure.
+ */
+export async function listActiveOAuthConnections(): Promise<MetaConnection[]> {
+  const rows = await db
+    .select()
+    .from(metaConnections)
+    .where(and(eq(metaConnections.connectionType, 'oauth'), eq(metaConnections.status, 'active')))
+
+  return rows.map(withPlainToken)
 }
 
 export async function upsertMetaConnection(
   tenantId: string,
   data: UpsertMetaConnectionInput,
 ): Promise<MetaConnection> {
+  const accessToken = encryptSecret(data.accessToken)
+
+  // Only what the caller supplied. An omitted column keeps the value the row
+  // already holds: re-authorizing an expired OAuth token used to reset
+  // `advancedMatchingEnabled` to true and blank `testEventCode` and
+  // `businessId`, so a clinic that had deliberately turned off sending hashed
+  // patient data got it turned back on by reconnecting.
+  const supplied: Partial<typeof metaConnections.$inferInsert> = {}
+  if (data.businessId !== undefined) supplied.businessId = data.businessId
+  if (data.testEventCode !== undefined) supplied.testEventCode = data.testEventCode
+  if (data.advancedMatchingEnabled !== undefined) {
+    supplied.advancedMatchingEnabled = data.advancedMatchingEnabled
+  }
+
   const [connection] = await db
     .insert(metaConnections)
     .values({
       tenantId,
       datasetId: data.datasetId,
-      accessToken: data.accessToken,
+      accessToken,
       connectionType: data.connectionType,
-      businessId: data.businessId ?? null,
+      ...supplied,
+      // Describes the token being written, so it travels with it rather than
+      // surviving from whatever token the row held before.
       tokenExpiresAt: data.tokenExpiresAt ?? null,
-      testEventCode: data.testEventCode ?? null,
-      advancedMatchingEnabled: data.advancedMatchingEnabled ?? true,
       status: data.status ?? 'active',
     })
     .onConflictDoUpdate({
       target: metaConnections.tenantId,
       set: {
         datasetId: data.datasetId,
-        accessToken: data.accessToken,
+        accessToken,
         connectionType: data.connectionType,
-        businessId: data.businessId ?? null,
+        ...supplied,
         tokenExpiresAt: data.tokenExpiresAt ?? null,
-        testEventCode: data.testEventCode ?? null,
-        advancedMatchingEnabled: data.advancedMatchingEnabled ?? true,
         // Re-pasting a token is how a clinic recovers from an expired one.
         status: data.status ?? 'active',
         lastError: null,
@@ -81,7 +118,7 @@ export async function upsertMetaConnection(
     })
     .returning()
 
-  return connection
+  return withPlainToken(connection)
 }
 
 export interface UpdateMetaConnectionSettingsInput {
@@ -121,7 +158,7 @@ export async function updateMetaConnectionSettings(
     .where(eq(metaConnections.tenantId, tenantId))
     .returning()
 
-  return connection ?? null
+  return connection ? withPlainToken(connection) : null
 }
 
 export async function markConnectionInvalid(tenantId: string, message: string): Promise<void> {

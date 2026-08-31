@@ -10,6 +10,8 @@ const insertConversionEventMock = vi.fn()
 const markEventSentMock = vi.fn()
 const markEventFailureMock = vi.fn()
 const markEventSkippedMock = vi.fn()
+const claimEventForSendingMock = vi.fn()
+const releaseEventClaimsMock = vi.fn()
 const getMetaConnectionMock = vi.fn()
 const markConnectionInvalidMock = vi.fn()
 const getAttributionMock = vi.fn()
@@ -27,6 +29,8 @@ vi.mock('@/db/queries/meta-events', () => ({
   markEventSent: (...args: unknown[]) => markEventSentMock(...args),
   markEventFailure: (...args: unknown[]) => markEventFailureMock(...args),
   markEventSkipped: (...args: unknown[]) => markEventSkippedMock(...args),
+  claimEventForSending: (...args: unknown[]) => claimEventForSendingMock(...args),
+  releaseEventClaims: (...args: unknown[]) => releaseEventClaimsMock(...args),
 }))
 
 vi.mock('@/db/queries/meta-connections', () => ({
@@ -98,6 +102,7 @@ describe('enqueueMetaEvent', () => {
     getPatientMock.mockResolvedValue(null)
     getProspectMock.mockResolvedValue(null)
     insertConversionEventMock.mockResolvedValue({ inserted: true, id: 'evt-1' })
+    claimEventForSendingMock.mockResolvedValue(true)
     postEventsMock.mockResolvedValue({ ok: true, eventsReceived: 1, fbTraceId: 'trace-1' })
   })
 
@@ -153,7 +158,7 @@ describe('enqueueMetaEvent', () => {
     const { enqueueMetaEvent } = await import('../events')
     isMarketingOptedOutMock.mockRejectedValue(new Error('db is down'))
 
-    await expect(enqueueMetaEvent(baseInput())).resolves.toBeUndefined()
+    await expect(enqueueMetaEvent(baseInput())).resolves.toEqual({ inserted: false })
 
     expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1)
     const [error, context] = reportSideEffectFailureMock.mock.calls[0]
@@ -165,12 +170,15 @@ describe('enqueueMetaEvent', () => {
     const { enqueueMetaEvent } = await import('../events')
     insertConversionEventMock.mockRejectedValue(new Error('unique violation'))
 
-    await expect(enqueueMetaEvent(baseInput())).resolves.toBeUndefined()
+    await expect(enqueueMetaEvent(baseInput())).resolves.toEqual({ inserted: false })
     expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1)
   })
 
-  // 2. No connection.
-  it('writes a skipped row with reason no_connection and never posts when there is no connection', async () => {
+  // 2. No connection. Fix 3: the row stays recoverable. A clinic between the
+  // two OAuth legs reads here as no connection at all, and a `skipped` row
+  // would be terminal and would also satisfy the cron's reconciliation join,
+  // so every lead in that gap was lost for good.
+  it('writes a pending row and never posts when there is no connection', async () => {
     const { enqueueMetaEvent } = await import('../events')
     getMetaConnectionMock.mockResolvedValue(null)
 
@@ -178,9 +186,24 @@ describe('enqueueMetaEvent', () => {
 
     expect(insertConversionEventMock).toHaveBeenCalledTimes(1)
     expect(insertConversionEventMock.mock.calls[0][0]).toEqual(
-      expect.objectContaining({ status: 'skipped', skipReason: 'no_connection', payload: null }),
+      expect.objectContaining({ status: 'pending', payload: null }),
     )
+    expect(insertConversionEventMock.mock.calls[0][0]).not.toHaveProperty('skipReason')
     expect(postEventsMock).not.toHaveBeenCalled()
+    expect(claimEventForSendingMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps a Purchase value on the pending row written with no connection', async () => {
+    const { enqueueMetaEvent } = await import('../events')
+    getMetaConnectionMock.mockResolvedValue(null)
+
+    await enqueueMetaEvent(
+      baseInput({ eventName: 'Purchase', eventId: 'purchase:entry-1', value: '3000.00' }),
+    )
+
+    expect(insertConversionEventMock.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ status: 'pending', value: '3000.00' }),
+    )
   })
 
   // 3. Opted out.
@@ -276,7 +299,9 @@ describe('enqueueMetaEvent', () => {
       delete process.env.META_EXTERNAL_ID_SECRET
       const fakeTx = { marker: 'tx' } as never
 
-      await expect(enqueueMetaEvent(baseInput({ tx: fakeTx }))).resolves.toBeUndefined()
+      await expect(enqueueMetaEvent(baseInput({ tx: fakeTx }))).resolves.toEqual(
+        expect.objectContaining({ inserted: true }),
+      )
 
       expect(insertConversionEventMock.mock.calls[0][0]).toEqual(
         expect.objectContaining({ status: 'pending', payload: null }),
@@ -450,7 +475,7 @@ describe('enqueueMetaEvent', () => {
     insertConversionEventMock.mockResolvedValue({ inserted: true, id: 'evt-transient' })
     postEventsMock.mockResolvedValue({ ok: false, kind: 'transient', message: 'timeout' })
 
-    await expect(enqueueMetaEvent(baseInput())).resolves.toBeUndefined()
+    await expect(enqueueMetaEvent(baseInput())).resolves.toEqual({ inserted: true })
 
     expect(markEventFailureMock).toHaveBeenCalledWith(TENANT, 'evt-transient', 'transient', 'timeout')
     expect(markConnectionInvalidMock).not.toHaveBeenCalled()
@@ -655,6 +680,7 @@ describe('sendPendingEvent', () => {
     getAttributionMock.mockResolvedValue(null)
     getPatientMock.mockResolvedValue(null)
     getProspectMock.mockResolvedValue(null)
+    claimEventForSendingMock.mockResolvedValue(true)
     postEventsMock.mockResolvedValue({ ok: true, eventsReceived: 1, fbTraceId: 'trace-1' })
   })
 
@@ -668,7 +694,7 @@ describe('sendPendingEvent', () => {
     expect(markEventSentMock).toHaveBeenCalledWith(TENANT, 'evt-1', 'trace-1')
   })
 
-  it('leaves the row pending and posts nothing when the tenant has no connection', async () => {
+  it('returns the claim and posts nothing when the tenant has no connection', async () => {
     const { sendPendingEvent } = await import('../events')
     getMetaConnectionMock.mockResolvedValue(null)
 
@@ -678,6 +704,8 @@ describe('sendPendingEvent', () => {
     expect(markEventSkippedMock).not.toHaveBeenCalled()
     expect(markEventFailureMock).not.toHaveBeenCalled()
     expect(markEventSentMock).not.toHaveBeenCalled()
+    // Left `sending` it would sit there until the reaper's timeout.
+    expect(releaseEventClaimsMock).toHaveBeenCalledWith(['evt-1'])
   })
 
   // Fix 3: a patient who opts out during a Meta outage must not be sent by
@@ -854,5 +882,28 @@ describe('sendPendingEvent', () => {
 
     expect(markEventFailureMock).toHaveBeenCalledWith(TENANT, 'evt-1', 'transient', 'timeout')
     expect(markConnectionInvalidMock).not.toHaveBeenCalled()
+  })
+
+  describe('claimAndSendPendingEvent', () => {
+    it('claims the row before it posts anything', async () => {
+      const { claimAndSendPendingEvent } = await import('../events')
+
+      expect(await claimAndSendPendingEvent(pendingRow())).toBe(true)
+
+      expect(claimEventForSendingMock).toHaveBeenCalledWith(TENANT, 'evt-1')
+      expect(postEventsMock).toHaveBeenCalledTimes(1)
+    })
+
+    // Fix 1: the cron may already own this row.
+    it('posts nothing when another sender already owns the row', async () => {
+      const { claimAndSendPendingEvent } = await import('../events')
+      claimEventForSendingMock.mockResolvedValue(false)
+
+      expect(await claimAndSendPendingEvent(pendingRow())).toBe(false)
+
+      expect(postEventsMock).not.toHaveBeenCalled()
+      expect(markEventSentMock).not.toHaveBeenCalled()
+      expect(markEventFailureMock).not.toHaveBeenCalled()
+    })
   })
 })

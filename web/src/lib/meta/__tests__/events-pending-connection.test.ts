@@ -37,6 +37,8 @@ vi.mock('@/db/queries/meta-events', () => ({
   markEventSent: vi.fn(),
   markEventFailure: vi.fn(),
   markEventSkipped: vi.fn(),
+  claimEventForSending: vi.fn(async () => true),
+  releaseEventClaims: vi.fn(),
 }))
 
 vi.mock('@/db/queries/lead-attributions', () => ({ getAttribution: vi.fn() }))
@@ -92,7 +94,12 @@ beforeEach(() => {
 })
 
 describe('enqueueMetaEvent against a connection that has not picked a dataset', () => {
-  it('writes a skipped no_connection row and never posts to Meta', async () => {
+  // Fix 3: `skipped` here is terminal, and the cron's reconciliation left
+  // join reads a skipped row as proof the event already exists, so every lead
+  // between the two OAuth legs was lost the moment the clinic picked its
+  // dataset. `pending` puts the row on the path the cron already has for a
+  // tenant with no usable connection.
+  it('writes a recoverable pending row and never posts to Meta', async () => {
     selectMock.mockReturnValue(makeChain([connectionRow({ status: 'pending_dataset', datasetId: null })]))
     const { enqueueMetaEvent } = await import('../events')
 
@@ -100,8 +107,9 @@ describe('enqueueMetaEvent against a connection that has not picked a dataset', 
 
     expect(insertConversionEventMock).toHaveBeenCalledTimes(1)
     expect(insertConversionEventMock.mock.calls[0][0]).toEqual(
-      expect.objectContaining({ status: 'skipped', skipReason: 'no_connection', payload: null }),
+      expect.objectContaining({ status: 'pending', payload: null, value: '250.00' }),
     )
+    expect(insertConversionEventMock.mock.calls[0][0]).not.toHaveProperty('skipReason')
     expect(postEventsMock).not.toHaveBeenCalled()
   })
 

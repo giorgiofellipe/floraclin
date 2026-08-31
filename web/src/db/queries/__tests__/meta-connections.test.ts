@@ -35,15 +35,18 @@ vi.mock('@/db/schema', () => ({
   metaConnections: {
     tenantId: 'tenant_id',
     status: 'status',
+    connectionType: 'connection_type',
     lastError: 'last_error',
     lastErrorAt: 'last_error_at',
   },
 }))
 
 import { db } from '@/db/client'
+import { decryptSecret, encryptSecret, isEncryptedSecret } from '@/lib/crypto'
 import {
   getMetaConnection,
   getMetaConnectionRaw,
+  listActiveOAuthConnections,
   upsertMetaConnection,
   updateMetaConnectionSettings,
   markConnectionInvalid,
@@ -155,6 +158,41 @@ describe('meta-connections queries', () => {
 
       expect(result).toEqual(row)
     })
+
+    it('decrypts the stored token', async () => {
+      const row = makeConnectionRow({ accessToken: encryptSecret('token-9') })
+      dbMock.select.mockReturnValue(makeChain([row]))
+
+      const result = await getMetaConnectionRaw('tenant-1')
+
+      expect(result?.accessToken).toBe('token-9')
+    })
+
+    // Rows written before encryption shipped, and rows this deploy reaches
+    // before the backfill does.
+    it('returns a token that is still plaintext unchanged', async () => {
+      const row = makeConnectionRow({ accessToken: 'EAABsbCS1iZAIBAO' })
+      dbMock.select.mockReturnValue(makeChain([row]))
+
+      const result = await getMetaConnectionRaw('tenant-1')
+
+      expect(result?.accessToken).toBe('EAABsbCS1iZAIBAO')
+    })
+  })
+
+  describe('listActiveOAuthConnections', () => {
+    it('decrypts every token, so the ad-metadata backfill can authenticate', async () => {
+      dbMock.select.mockReturnValue(
+        makeChain([
+          makeConnectionRow({ accessToken: encryptSecret('token-a') }),
+          makeConnectionRow({ id: 'conn-2', accessToken: 'still-plaintext' }),
+        ]),
+      )
+
+      const result = await listActiveOAuthConnections()
+
+      expect(result.map((c) => c.accessToken)).toEqual(['token-a', 'still-plaintext'])
+    })
   })
 
   describe('upsertMetaConnection', () => {
@@ -207,6 +245,81 @@ describe('meta-connections queries', () => {
       const valuesCall = (chain.values as ReturnType<typeof vi.fn>).mock.calls[0][0]
       expect(valuesCall.tenantId).toBe('tenant-1')
     })
+
+    it('encrypts the token on the way in and hands the caller plaintext back', async () => {
+      const chain = makeChain([makeConnectionRow({ accessToken: 'stored-cipher' })])
+      dbMock.insert.mockReturnValue(chain)
+
+      const result = await upsertMetaConnection('tenant-1', {
+        datasetId: 'dataset-2',
+        accessToken: 'token-2',
+        connectionType: 'manual',
+      })
+
+      const valuesCall = (chain.values as ReturnType<typeof vi.fn>).mock.calls[0][0]
+      const setCall = (chain.onConflictDoUpdate as ReturnType<typeof vi.fn>).mock.calls[0][0]
+      expect(valuesCall.accessToken).not.toBe('token-2')
+      expect(isEncryptedSecret(valuesCall.accessToken)).toBe(true)
+      expect(decryptSecret(valuesCall.accessToken)).toBe('token-2')
+      expect(setCall.set.accessToken).toBe(valuesCall.accessToken)
+      // A row still holding a plaintext token reads back unchanged, which is
+      // what keeps the app working before the backfill runs.
+      expect(result.accessToken).toBe('stored-cipher')
+    })
+
+    // A clinic that turned advanced matching off must not get it back on by
+    // re-authorizing, and its test event code and business must survive too.
+    it('leaves the settings the caller did not supply alone on conflict', async () => {
+      const chain = makeChain([makeConnectionRow()])
+      dbMock.insert.mockReturnValue(chain)
+
+      await upsertMetaConnection('tenant-1', {
+        datasetId: null,
+        accessToken: 'token-2',
+        connectionType: 'oauth',
+        status: 'pending_dataset',
+      })
+
+      const setCall = (chain.onConflictDoUpdate as ReturnType<typeof vi.fn>).mock.calls[0][0]
+      expect(setCall.set).not.toHaveProperty('advancedMatchingEnabled')
+      expect(setCall.set).not.toHaveProperty('testEventCode')
+      expect(setCall.set).not.toHaveProperty('businessId')
+    })
+
+    it('writes the settings the caller did supply, including a false one', async () => {
+      const chain = makeChain([makeConnectionRow({ advancedMatchingEnabled: false })])
+      dbMock.insert.mockReturnValue(chain)
+
+      await upsertMetaConnection('tenant-1', {
+        datasetId: 'dataset-2',
+        accessToken: 'token-2',
+        connectionType: 'manual',
+        advancedMatchingEnabled: false,
+        testEventCode: null,
+        businessId: 'biz-1',
+      })
+
+      const setCall = (chain.onConflictDoUpdate as ReturnType<typeof vi.fn>).mock.calls[0][0]
+      expect(setCall.set.advancedMatchingEnabled).toBe(false)
+      expect(setCall.set.testEventCode).toBeNull()
+      expect(setCall.set.businessId).toBe('biz-1')
+    })
+
+    // The expiry describes the token being written, so it must not survive
+    // from whatever token the row held before.
+    it('always rewrites tokenExpiresAt alongside the token', async () => {
+      const chain = makeChain([makeConnectionRow()])
+      dbMock.insert.mockReturnValue(chain)
+
+      await upsertMetaConnection('tenant-1', {
+        datasetId: 'dataset-2',
+        accessToken: 'token-2',
+        connectionType: 'manual',
+      })
+
+      const setCall = (chain.onConflictDoUpdate as ReturnType<typeof vi.fn>).mock.calls[0][0]
+      expect(setCall.set.tokenExpiresAt).toBeNull()
+    })
   })
 
   describe('updateMetaConnectionSettings', () => {
@@ -229,6 +342,15 @@ describe('meta-connections queries', () => {
 
       const setCall = (chain.set as ReturnType<typeof vi.fn>).mock.calls[0][0]
       expect(setCall.status).toBe('active')
+    })
+
+    it('hands the caller a plaintext token back', async () => {
+      const chain = makeChain([makeConnectionRow({ accessToken: encryptSecret('token-9') })])
+      dbMock.update.mockReturnValue(chain)
+
+      const result = await updateMetaConnectionSettings('tenant-1', { datasetId: 'dataset-2' })
+
+      expect(result?.accessToken).toBe('token-9')
     })
   })
 

@@ -406,4 +406,26 @@ describe('MetaConnectionCard: leg 2 of the OAuth flow', () => {
     const body = JSON.parse((put?.[1] as RequestInit).body as string)
     expect(body).toEqual({ datasetId: 'pixel-1' })
   })
+
+  // A capped list that looks complete would send the owner hunting for a
+  // portfolio the picker silently dropped.
+  it('warns that the portfolio list was cut when the route says it was truncated', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/businesses')) {
+          return new Response(
+            JSON.stringify({ data: [{ id: 'biz-1', name: 'Portfólio da Clínica' }], truncated: true }),
+            { status: 200 },
+          )
+        }
+        return new Response(JSON.stringify({ data: PENDING, events: [] }), { status: 200 })
+      }),
+    )
+
+    renderCard()
+
+    expect(await screen.findByText(/lista foi cortada/i)).toBeInTheDocument()
+  })
 })

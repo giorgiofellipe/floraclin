@@ -33,9 +33,9 @@ import type { PaymentMethod, FinancialStatus } from '@/types'
 import { addDays } from 'date-fns'
 import { verifyTenantOwnership } from './helpers'
 import {
+  claimAndSendPendingEvent,
   enqueueMetaEvent,
   resolveMetaEventPrerequisites,
-  sendPendingEvent,
   type MetaEventPrerequisites,
   type PendingMetaEventRow,
 } from '@/lib/meta/events'
@@ -264,9 +264,10 @@ async function emitPurchaseEventForEntry(
     // The outbox insert gets a SAVEPOINT of its own: raised on the caller's
     // transaction instead, a failure here would abort the payment and every
     // other installment in a bulk payment with it.
+    let inserted = false
     try {
       await tx.transaction(async (savepoint) => {
-        await enqueueMetaEvent({
+        const outcome = await enqueueMetaEvent({
           tenantId,
           eventName: 'Purchase',
           eventId,
@@ -279,16 +280,23 @@ async function emitPurchaseEventForEntry(
           tx: savepoint as unknown as typeof db,
           prerequisites: context?.prerequisites ?? undefined,
         })
+        inserted = outcome.inserted
       })
     } catch (error) {
       reportSideEffectFailure(error, { area: 'meta-capi', step: 'purchase_event_outbox' })
       return null
     }
 
-    // Re-read rather than threaded out of the enqueue, which returns nothing:
-    // this is either the row just written or the one an earlier installment
-    // on the same entry left behind. Any status but `pending` was already
-    // delivered, skipped or given up on, so only `pending` owes a send.
+    // The row was already there, so it belongs to whoever wrote it: an
+    // earlier installment on the same entry, or the reconciler that may be
+    // sending it right now. Picking it up here posts the same Purchase twice.
+    if (!inserted) {
+      return null
+    }
+
+    // Re-read rather than threaded out of the enqueue, which does not return
+    // the row: `pending` is the only status that owes a send, and anything
+    // else means the insert resolved to skipped on the spot.
     const [queued] = await tx
       .select({
         id: metaConversionEvents.id,
@@ -343,7 +351,7 @@ async function emitPurchaseEventForEntry(
 async function deliverPurchaseEvents(rows: PendingMetaEventRow[]): Promise<void> {
   for (const row of rows) {
     try {
-      await sendPendingEvent(row)
+      await claimAndSendPendingEvent(row)
     } catch (error) {
       reportSideEffectFailure(error, { area: 'meta-capi', step: 'purchase_event_send' })
     }

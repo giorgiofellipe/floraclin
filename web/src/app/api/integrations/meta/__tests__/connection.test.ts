@@ -66,6 +66,8 @@ import {
 } from '@/lib/meta/oauth'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { ACKNOWLEDGEMENT_VERSION } from '@/lib/meta/acknowledgement'
+import { META_GRAPH_VERSION } from '@/lib/meta/types'
+import { MAX_GRAPH_PAGES } from '@/lib/meta/graph-paging'
 import { GET, PUT, DELETE } from '../connection/route'
 import { POST as testConnection } from '../connection/test/route'
 import { GET as callback } from '../auth/callback/route'
@@ -989,6 +991,42 @@ describe('POST /api/integrations/meta/datasets', () => {
     expect(init.signal).toBeInstanceOf(AbortSignal)
     expect(init.signal!.aborted).toBe(false)
   })
+
+  // The dataset picker is the only way to finish an OAuth connection, so a
+  // business with many pixels must not hide the right one behind page one.
+  it('follows paging.next and merges the pages into one list', async () => {
+    const fetchMock = vi.fn(async (url: string, _init: RequestInit) => {
+      if (url.includes('after=cursor-1')) {
+        return new Response(JSON.stringify({ data: [{ id: '222', name: 'Pixel Dois' }] }), {
+          status: 200,
+        })
+      }
+      return new Response(
+        JSON.stringify({
+          data: [{ id: '111', name: 'Pixel Um' }],
+          paging: {
+            next: `https://graph.facebook.com/${META_GRAPH_VERSION}/biz-1/adspixels?after=cursor-1&access_token=token-abc`,
+          },
+        }),
+        { status: 200 },
+      )
+    })
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const res = await listDatasets(datasetsRequest({ businessId: 'biz-1', accessToken: 'token-abc' }))
+    const body = await res.json()
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(body.data).toEqual([
+      { id: '111', name: 'Pixel Um' },
+      { id: '222', name: 'Pixel Dois' },
+    ])
+    expect(body.truncated).toBe(false)
+    for (const [calledUrl] of fetchMock.mock.calls) {
+      expect(calledUrl).not.toContain('token-abc')
+      expect(calledUrl).not.toContain('access_token')
+    }
+  })
 })
 
 describe('GET /api/integrations/meta/auth/connect', () => {
@@ -1177,5 +1215,111 @@ describe('GET /api/integrations/meta/businesses', () => {
     const [, init] = fetchMock.mock.calls[0]
     expect(init.signal).toBeInstanceOf(AbortSignal)
     expect(init.signal!.aborted).toBe(false)
+  })
+
+  // An agency token sees dozens of portfolios. Stopping at page one hides the
+  // clinic's own and leaves the picker unusable.
+  it('follows paging.next and merges the pages into one list', async () => {
+    vi.mocked(getMetaConnectionRaw).mockResolvedValue(connection())
+    const fetchMock = vi.fn(async (url: string, _init: RequestInit) => {
+      if (url.includes('after=cursor-1')) {
+        return new Response(JSON.stringify({ data: [{ id: 'biz-2', name: 'Segundo' }] }), {
+          status: 200,
+        })
+      }
+      return new Response(
+        JSON.stringify({
+          data: [{ id: 'biz-1', name: 'Primeiro' }],
+          paging: {
+            next: `https://graph.facebook.com/${META_GRAPH_VERSION}/me/businesses?after=cursor-1&access_token=secret-token`,
+          },
+        }),
+        { status: 200 },
+      )
+    })
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const res = await listBusinesses(businessesRequest())
+    const body = await res.json()
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(body.data).toEqual([
+      { id: 'biz-1', name: 'Primeiro' },
+      { id: 'biz-2', name: 'Segundo' },
+    ])
+    expect(body.truncated).toBe(false)
+  })
+
+  // Graph echoes the token back inside paging.next; Vercel and Sentry log urls.
+  it('strips the token graph puts in paging.next and keeps it in the header', async () => {
+    vi.mocked(getMetaConnectionRaw).mockResolvedValue(connection())
+    const fetchMock = vi.fn(async (url: string, _init: RequestInit) => {
+      if (url.includes('after=cursor-1')) {
+        return new Response(JSON.stringify({ data: [] }), { status: 200 })
+      }
+      return new Response(
+        JSON.stringify({
+          data: [{ id: 'biz-1', name: 'Primeiro' }],
+          paging: {
+            next: `https://graph.facebook.com/${META_GRAPH_VERSION}/me/businesses?after=cursor-1&access_token=secret-token`,
+          },
+        }),
+        { status: 200 },
+      )
+    })
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await listBusinesses(businessesRequest())
+
+    for (const [calledUrl, init] of fetchMock.mock.calls) {
+      expect(calledUrl).not.toContain('secret-token')
+      expect(calledUrl).not.toContain('access_token')
+      expect((init.headers as Record<string, string>).authorization).toBe('Bearer secret-token')
+    }
+  })
+
+  it('stops at the page cap and says the list is truncated', async () => {
+    vi.mocked(getMetaConnectionRaw).mockResolvedValue(connection())
+    let page = 0
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => {
+      page += 1
+      return new Response(
+        JSON.stringify({
+          data: [{ id: `biz-${page}`, name: `Portfólio ${page}` }],
+          paging: {
+            next: `https://graph.facebook.com/${META_GRAPH_VERSION}/me/businesses?after=cursor-${page}`,
+          },
+        }),
+        { status: 200 },
+      )
+    })
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const res = await listBusinesses(businessesRequest())
+    const body = await res.json()
+
+    expect(fetchMock).toHaveBeenCalledTimes(MAX_GRAPH_PAGES)
+    expect(body.data).toHaveLength(MAX_GRAPH_PAGES)
+    expect(body.truncated).toBe(true)
+  })
+
+  it('refuses a paging.next that points off graph.facebook.com', async () => {
+    vi.mocked(getMetaConnectionRaw).mockResolvedValue(connection())
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
+      new Response(
+        JSON.stringify({
+          data: [{ id: 'biz-1', name: 'Primeiro' }],
+          paging: { next: 'https://evil.example.com/steal?after=cursor-1' },
+        }),
+        { status: 200 },
+      ),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const res = await listBusinesses(businessesRequest())
+    const body = await res.json()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(body.data).toEqual([{ id: 'biz-1', name: 'Primeiro' }])
   })
 })

@@ -55,6 +55,7 @@ vi.mock('@/db/schema', () => ({
     tenantId: 'tenant_id',
     id: 'id',
     phone: 'phone',
+    phoneSecondary: 'phone_secondary',
     deletedAt: 'deleted_at',
     marketingOptOut: 'marketing_opt_out',
   },
@@ -175,6 +176,41 @@ describe('isMarketingOptedOut', () => {
     expect(whereArgs.some((arg) => carriesValue(arg, '47988443635'))).toBe(true)
     expect(whereArgs.some((arg) => carriesValue(arg, '4788443635'))).toBe(true)
     expect(whereArgs.some((arg) => carriesValue(arg, '5547988443635'))).toBe(false)
+  })
+
+  // The leak this closes: an opted-out patient who books or writes in from the
+  // number stored as phoneSecondary was never matched at all.
+  it('suppresses a patient reached only by the secondary number', async () => {
+    const whereArgs: unknown[] = []
+    dbMock.select.mockReturnValueOnce(makeRecordingChain([{ marketingOptOut: true }], whereArgs))
+
+    const result = await isMarketingOptedOut('tenant-1', { phone: '5547988443635' })
+
+    expect(result).toBe(true)
+    expect(whereArgs.some((arg) => carriesValue(arg, 'phone_secondary'))).toBe(true)
+  })
+
+  it('matches the secondary number on the same tails as the primary', async () => {
+    const whereArgs: unknown[] = []
+    dbMock.select.mockReturnValueOnce(makeRecordingChain([], whereArgs))
+
+    await isMarketingOptedOut('tenant-1', { phone: '+55 (47) 98844-3635' })
+
+    // Two columns, two tail variants each.
+    const tailHits = whereArgs.filter((arg) => carriesValue(arg, '47988443635'))
+    expect(tailHits.length).toBeGreaterThan(0)
+    expect(whereArgs.some((arg) => carriesValue(arg, 'phone'))).toBe(true)
+    expect(whereArgs.some((arg) => carriesValue(arg, 'phone_secondary'))).toBe(true)
+  })
+
+  it('suppresses when the primary holder has not opted out but the secondary match has', async () => {
+    dbMock.select.mockReturnValueOnce(
+      makeChain([{ marketingOptOut: false }, { marketingOptOut: true }]),
+    )
+
+    const result = await isMarketingOptedOut('tenant-1', { phone: '5547988443635' })
+
+    expect(result).toBe(true)
   })
 
   it('scopes the phone lookup by tenant', async () => {

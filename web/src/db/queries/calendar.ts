@@ -1,8 +1,24 @@
 import { db } from '@/db/client'
 import { calendarConnections, calendarBlocks, appointments, users } from '@/db/schema'
 import { eq, and, isNull, gte, lte, ne, sql } from 'drizzle-orm'
+import { decryptSecret, encryptSecret } from '@/lib/crypto'
 
 // ─── Calendar Connection Queries ────────────────────────────────────
+
+/**
+ * `access_token` and `refresh_token` are encrypted at rest. This module is the
+ * only boundary that knows that: every caller reads and writes plaintext.
+ *
+ * The `CalendarConnectionRow` selects below never project either column, so
+ * only the full-row reads and the `returning()` rows go through here.
+ */
+function withPlainTokens<T extends { accessToken: string; refreshToken: string }>(row: T): T {
+  return {
+    ...row,
+    accessToken: decryptSecret(row.accessToken),
+    refreshToken: decryptSecret(row.refreshToken),
+  }
+}
 
 export interface CalendarConnectionRow {
   id: string
@@ -134,8 +150,8 @@ export async function upsertConnection(data: {
     const [result] = await db
       .update(calendarConnections)
       .set({
-        accessToken: data.accessToken,
-        refreshToken: data.refreshToken,
+        accessToken: encryptSecret(data.accessToken),
+        refreshToken: encryptSecret(data.refreshToken),
         tokenExpiresAt: data.tokenExpiresAt,
         calendarId: data.calendarId ?? 'primary',
         channelId: data.channelId ?? null,
@@ -148,7 +164,7 @@ export async function upsertConnection(data: {
       .where(eq(calendarConnections.id, existing.id))
       .returning()
 
-    return result
+    return withPlainTokens(result)
   }
 
   const [result] = await db
@@ -156,8 +172,8 @@ export async function upsertConnection(data: {
     .values({
       tenantId: data.tenantId,
       userId: data.userId,
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
+      accessToken: encryptSecret(data.accessToken),
+      refreshToken: encryptSecret(data.refreshToken),
       tokenExpiresAt: data.tokenExpiresAt,
       calendarId: data.calendarId ?? 'primary',
       feedToken: data.feedToken,
@@ -168,7 +184,7 @@ export async function upsertConnection(data: {
     })
     .returning()
 
-  return result
+  return withPlainTokens(result)
 }
 
 export async function updateConnection(
@@ -189,6 +205,8 @@ export async function updateConnection(
     .update(calendarConnections)
     .set({
       ...data,
+      ...(data.accessToken !== undefined && { accessToken: encryptSecret(data.accessToken) }),
+      ...(data.refreshToken !== undefined && { refreshToken: encryptSecret(data.refreshToken) }),
       updatedAt: new Date(),
     })
     .where(
@@ -199,7 +217,7 @@ export async function updateConnection(
     )
     .returning()
 
-  return result ?? null
+  return result ? withPlainTokens(result) : null
 }
 
 export async function deleteConnection(
@@ -216,7 +234,17 @@ export async function deleteConnection(
     )
     .returning()
 
-  return result ?? null
+  return result ? withPlainTokens(result) : null
+}
+
+export async function getConnectionById(connectionId: string) {
+  const [result] = await db
+    .select()
+    .from(calendarConnections)
+    .where(eq(calendarConnections.id, connectionId))
+    .limit(1)
+
+  return result ? withPlainTokens(result) : null
 }
 
 export async function getConnectionByChannelId(
@@ -228,7 +256,7 @@ export async function getConnectionByChannelId(
     .where(eq(calendarConnections.channelId, channelId))
     .limit(1)
 
-  return result ?? null
+  return result ? withPlainTokens(result) : null
 }
 
 export async function getConnectionByFeedToken(
@@ -240,13 +268,13 @@ export async function getConnectionByFeedToken(
     .where(eq(calendarConnections.feedToken, feedToken))
     .limit(1)
 
-  return result ?? null
+  return result ? withPlainTokens(result) : null
 }
 
 export async function getExpiringConnections(withinHours: number = 48) {
   const threshold = new Date(Date.now() + withinHours * 60 * 60 * 1000)
 
-  return db
+  const rows = await db
     .select()
     .from(calendarConnections)
     .where(
@@ -256,6 +284,8 @@ export async function getExpiringConnections(withinHours: number = 48) {
         sql`${calendarConnections.channelId} IS NOT NULL`
       )
     )
+
+  return rows.map(withPlainTokens)
 }
 
 // ─── Calendar Block Queries ─────────────────────────────────────────

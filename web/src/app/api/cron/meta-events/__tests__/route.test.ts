@@ -71,15 +71,20 @@ function chain(result: unknown) {
 }
 
 vi.mock('@/db/queries/meta-events', () => ({
-  selectPendingEvents: vi.fn(),
+  claimPendingEvents: vi.fn(),
   countEventOutcomes: vi.fn(),
   markEventFailure: vi.fn(),
   markEventSkipped: vi.fn(),
+  reapStuckClaims: vi.fn(),
+  releaseEventClaims: vi.fn(),
   hasScheduleForProspect: vi.fn(),
+  MAX_EVENTS_PER_TENANT: 840,
+  META_EVENT_WINDOW_DAYS: 7,
 }))
 
 vi.mock('@/db/queries/meta-connections', () => ({
   getMetaConnection: vi.fn(),
+  listActiveOAuthConnections: vi.fn(async () => []),
 }))
 
 vi.mock('@/lib/meta/events', () => ({
@@ -98,14 +103,20 @@ vi.mock('@/lib/meta/resolve-prospect', () => ({
 // ─── Imports (after mocks) ───────────────────────────────────────────
 
 import {
+  claimPendingEvents,
   countEventOutcomes,
   hasScheduleForProspect,
   markEventFailure,
   markEventSkipped,
-  selectPendingEvents,
+  reapStuckClaims,
+  releaseEventClaims,
   type PendingEvent,
 } from '@/db/queries/meta-events'
-import { getMetaConnection, type UsableMetaConnection } from '@/db/queries/meta-connections'
+import {
+  getMetaConnection,
+  listActiveOAuthConnections,
+  type UsableMetaConnection,
+} from '@/db/queries/meta-connections'
 import { enqueueMetaEvent, sendPendingEvent } from '@/lib/meta/events'
 import { backfillAdMetadata } from '@/lib/meta/ad-metadata'
 import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
@@ -160,7 +171,9 @@ beforeEach(() => {
   process.env.CRON_SECRET = CRON_SECRET
   delete process.env.META_EVENTS_START_AT
   dbMock.select.mockReset().mockReturnValue(chain([]))
-  vi.mocked(selectPendingEvents).mockResolvedValue([])
+  vi.mocked(claimPendingEvents).mockResolvedValue([])
+  vi.mocked(reapStuckClaims).mockResolvedValue(0)
+  vi.mocked(releaseEventClaims).mockResolvedValue(undefined)
   vi.mocked(countEventOutcomes).mockResolvedValue({ sent: 0, failed: 0 })
   vi.mocked(hasScheduleForProspect).mockResolvedValue(false)
   vi.mocked(sendPendingEvent).mockResolvedValue(undefined)
@@ -178,7 +191,7 @@ describe('GET /api/cron/meta-events', () => {
       expect(res.status).toBe(401)
       const json = await res.json()
       expect(json.error).toBe('Unauthorized')
-      expect(selectPendingEvents).not.toHaveBeenCalled()
+      expect(claimPendingEvents).not.toHaveBeenCalled()
     })
 
     it('returns 401 when the bearer token does not match CRON_SECRET', async () => {
@@ -190,7 +203,7 @@ describe('GET /api/cron/meta-events', () => {
   describe('retry sweep', () => {
     it('hands each pending row to the shared sender and reports the outcome', async () => {
       const event = makePendingEvent()
-      vi.mocked(selectPendingEvents).mockResolvedValue([event])
+      vi.mocked(claimPendingEvents).mockResolvedValue([event])
       vi.mocked(getMetaConnection).mockResolvedValue(makeConnection())
       vi.mocked(countEventOutcomes).mockResolvedValue({ sent: 1, failed: 0 })
 
@@ -202,8 +215,60 @@ describe('GET /api/cron/meta-events', () => {
       expect(json.retrySweep).toMatchObject({ claimed: 1, sent: 1, failed: 0 })
     })
 
+    // Fix 1: a run that dies mid-send leaves its rows `sending` with nobody
+    // to finish them.
+    it('reaps stuck claims before it claims anything new', async () => {
+      vi.mocked(reapStuckClaims).mockResolvedValue(3)
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(json.retrySweep.reaped).toBe(3)
+      expect(vi.mocked(reapStuckClaims).mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(claimPendingEvents).mock.invocationCallOrder[0],
+      )
+    })
+
+    it('returns a deferred tenant\'s claims so the next run can take them', async () => {
+      vi.mocked(claimPendingEvents).mockResolvedValue([
+        makePendingEvent({ id: 'evt-1' }),
+        makePendingEvent({ id: 'evt-2' }),
+      ])
+      vi.mocked(getMetaConnection).mockResolvedValue(null)
+
+      await GET(makeRequest(CRON_SECRET))
+
+      expect(releaseEventClaims).toHaveBeenCalledWith(['evt-1', 'evt-2'])
+    })
+
+    it('releases the rows it never reached after the sender flags the token dead', async () => {
+      vi.mocked(claimPendingEvents).mockResolvedValue([
+        makePendingEvent({ id: 'evt-1' }),
+        makePendingEvent({ id: 'evt-2' }),
+      ])
+      vi.mocked(getMetaConnection)
+        .mockResolvedValueOnce(makeConnection())
+        .mockResolvedValue(makeConnection({ status: 'invalid_token' }))
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(sendPendingEvent).toHaveBeenCalledTimes(1)
+      expect(releaseEventClaims).toHaveBeenCalledWith(['evt-2'])
+      expect(json.retrySweep.unreached).toBe(1)
+    })
+
+    it('does not release a row it actually sent', async () => {
+      vi.mocked(claimPendingEvents).mockResolvedValue([makePendingEvent({ id: 'evt-1' })])
+      vi.mocked(getMetaConnection).mockResolvedValue(makeConnection())
+
+      await GET(makeRequest(CRON_SECRET))
+
+      expect(releaseEventClaims).toHaveBeenCalledWith([])
+    })
+
     it('groups rows by tenant and reads each tenant connection separately', async () => {
-      vi.mocked(selectPendingEvents).mockResolvedValue([
+      vi.mocked(claimPendingEvents).mockResolvedValue([
         makePendingEvent({ id: 'evt-a' }),
         makePendingEvent({ id: 'evt-b', tenantId: TENANT_B }),
       ])
@@ -218,7 +283,7 @@ describe('GET /api/cron/meta-events', () => {
     })
 
     it("leaves a no-connection tenant's rows pending: the connection can come back", async () => {
-      vi.mocked(selectPendingEvents).mockResolvedValue([
+      vi.mocked(claimPendingEvents).mockResolvedValue([
         makePendingEvent({ id: 'evt-1' }),
         makePendingEvent({ id: 'evt-2' }),
       ])
@@ -234,7 +299,7 @@ describe('GET /api/cron/meta-events', () => {
     })
 
     it('leaves rows pending while the token is invalid instead of posting them again', async () => {
-      vi.mocked(selectPendingEvents).mockResolvedValue([makePendingEvent({ id: 'evt-1' })])
+      vi.mocked(claimPendingEvents).mockResolvedValue([makePendingEvent({ id: 'evt-1' })])
       vi.mocked(getMetaConnection).mockResolvedValue(makeConnection({ status: 'invalid_token' }))
 
       const res = await GET(makeRequest(CRON_SECRET))
@@ -246,7 +311,7 @@ describe('GET /api/cron/meta-events', () => {
     })
 
     it('gives up on a row only once it is older than Meta accepts', async () => {
-      vi.mocked(selectPendingEvents).mockResolvedValue([
+      vi.mocked(claimPendingEvents).mockResolvedValue([
         makePendingEvent({ id: 'evt-old', createdAt: new Date(Date.now() - EIGHT_DAYS_MS) }),
         makePendingEvent({ id: 'evt-new' }),
       ])
@@ -262,7 +327,7 @@ describe('GET /api/cron/meta-events', () => {
     })
 
     it("stops a tenant's batch as soon as the sender flags the token dead", async () => {
-      vi.mocked(selectPendingEvents).mockResolvedValue([
+      vi.mocked(claimPendingEvents).mockResolvedValue([
         makePendingEvent({ id: 'evt-1' }),
         makePendingEvent({ id: 'evt-2' }),
         makePendingEvent({ id: 'evt-3' }),
@@ -284,7 +349,7 @@ describe('GET /api/cron/meta-events', () => {
         id: 'evt-stale',
         eventTime: new Date(Date.now() - EIGHT_DAYS_MS),
       })
-      vi.mocked(selectPendingEvents).mockResolvedValue([stale, makePendingEvent({ id: 'evt-fresh' })])
+      vi.mocked(claimPendingEvents).mockResolvedValue([stale, makePendingEvent({ id: 'evt-fresh' })])
       vi.mocked(getMetaConnection).mockResolvedValue(makeConnection())
 
       const res = await GET(makeRequest(CRON_SECRET))
@@ -304,7 +369,7 @@ describe('GET /api/cron/meta-events', () => {
     })
 
     it('drops a stale row before the tenant connection is even read', async () => {
-      vi.mocked(selectPendingEvents).mockResolvedValue([
+      vi.mocked(claimPendingEvents).mockResolvedValue([
         makePendingEvent({ id: 'evt-stale', eventTime: new Date(Date.now() - EIGHT_DAYS_MS) }),
       ])
       vi.mocked(getMetaConnection).mockResolvedValue(makeConnection())
@@ -318,7 +383,7 @@ describe('GET /api/cron/meta-events', () => {
     })
 
     it('counts a row as failed only when the stored status says so', async () => {
-      vi.mocked(selectPendingEvents).mockResolvedValue([
+      vi.mocked(claimPendingEvents).mockResolvedValue([
         makePendingEvent({ id: 'evt-1' }),
         makePendingEvent({ id: 'evt-2' }),
       ])
@@ -334,7 +399,7 @@ describe('GET /api/cron/meta-events', () => {
     })
 
     it('emits a Sentry warning when a tenant has more than 10 rows fail in one run', async () => {
-      vi.mocked(selectPendingEvents).mockResolvedValue(
+      vi.mocked(claimPendingEvents).mockResolvedValue(
         Array.from({ length: 11 }, (_, i) => makePendingEvent({ id: `evt-${i}` })),
       )
       vi.mocked(getMetaConnection).mockResolvedValue(makeConnection())
@@ -350,7 +415,7 @@ describe('GET /api/cron/meta-events', () => {
     })
 
     it('does not emit a Sentry warning at or below the 10-row threshold', async () => {
-      vi.mocked(selectPendingEvents).mockResolvedValue(
+      vi.mocked(claimPendingEvents).mockResolvedValue(
         Array.from({ length: 10 }, (_, i) => makePendingEvent({ id: `evt-${i}` })),
       )
       vi.mocked(getMetaConnection).mockResolvedValue(makeConnection())
@@ -638,6 +703,7 @@ describe('GET /api/cron/meta-events', () => {
         peak = Math.max(peak, inFlight)
         await Promise.resolve()
         inFlight -= 1
+        return { inserted: true }
       })
 
       const res = await GET(makeRequest(CRON_SECRET))
@@ -820,7 +886,7 @@ describe('GET /api/cron/meta-events', () => {
         makeConnection({ tenantId: TENANT_A }),
         makeConnection({ tenantId: TENANT_B }),
       ]
-      dbMock.select.mockReturnValueOnce(chain(connections))
+      vi.mocked(listActiveOAuthConnections).mockResolvedValue(connections)
       vi.mocked(backfillAdMetadata).mockResolvedValue({ resolved: 3 })
 
       const res = await GET(makeRequest(CRON_SECRET))
@@ -832,16 +898,17 @@ describe('GET /api/cron/meta-events', () => {
       expect(json.adMetadataBackfill.resolved).toBe(6)
     })
 
-    it('scans only oauth connections that are still active', async () => {
-      const connectionsChain = chain([])
-      dbMock.select.mockReturnValueOnce(connectionsChain)
+    // The oauth-and-active filter is asserted where the query lives, in
+    // db/queries/__tests__/meta-connections.test.ts. What matters here is that
+    // the cron reads through that helper: it decrypts the token, and a raw
+    // select would hand Meta ciphertext as a bearer token and silently
+    // resolve nothing.
+    it('reads connections through the decrypting query, never a raw select', async () => {
+      vi.mocked(listActiveOAuthConnections).mockResolvedValue([])
 
       await GET(makeRequest(CRON_SECRET))
 
-      const { sql: text, params } = renderSql(connectionsChain.__calls.where[0][0])
-      expect(text).toContain('"connection_type" =')
-      expect(text).toContain('"status" =')
-      expect(params).toEqual(['oauth', 'active'])
+      expect(listActiveOAuthConnections).toHaveBeenCalledTimes(1)
     })
   })
 

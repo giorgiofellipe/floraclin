@@ -27,11 +27,11 @@ vi.mock('@/db/client', () => ({ db: dbMock }))
 
 const enqueueMetaEventMock = vi.fn()
 const resolveMetaEventPrerequisitesMock = vi.fn()
-const sendPendingEventMock = vi.fn()
+const claimAndSendPendingEventMock = vi.fn()
 vi.mock('@/lib/meta/events', () => ({
   enqueueMetaEvent: (...args: unknown[]) => enqueueMetaEventMock(...args),
   resolveMetaEventPrerequisites: (...args: unknown[]) => resolveMetaEventPrerequisitesMock(...args),
-  sendPendingEvent: (...args: unknown[]) => sendPendingEventMock(...args),
+  claimAndSendPendingEvent: (...args: unknown[]) => claimAndSendPendingEventMock(...args),
 }))
 
 const resolveProspectForPatientMock = vi.fn()
@@ -216,6 +216,7 @@ describe('financial.ts meta conversions', () => {
     vi.clearAllMocks()
     resolveMetaEventPrerequisitesMock.mockResolvedValue(PREREQUISITES)
     resolveProspectForPatientMock.mockResolvedValue(null)
+    enqueueMetaEventMock.mockResolvedValue({ inserted: true })
   })
 
   describe('recordPayment', () => {
@@ -286,6 +287,42 @@ describe('financial.ts meta conversions', () => {
       expect(eventIds).toEqual([`purchase:${ENTRY_ID}`, `purchase:${ENTRY_ID}`])
     })
 
+    // Fix 2: the re-read finds the row an earlier installment (or the
+    // reconciler, mid-send) left behind, and delivering it here posts the same
+    // Purchase to Meta twice.
+    it('a second payment on the same entry does not deliver the row it did not insert', async () => {
+      const { recordPayment } = await import('../financial')
+
+      for (const installmentId of [INSTALLMENT_ID, 'i-2']) {
+        const tx = makeTx()
+        dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+        queuePrepareRows()
+
+        tx.execute.mockResolvedValueOnce([lockedInstallmentRow({ id: installmentId })])
+        tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+        tx.select.mockReturnValueOnce(chain([]))
+        tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
+        tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
+        queueGateSelects(tx, { entryStatus: 'partial', totalAmount: '600.00' })
+
+        tx.insert.mockReturnValueOnce(chain([{ id: `pay-${installmentId}` }]))
+        tx.insert.mockReturnValueOnce(chain(undefined))
+        tx.update.mockReturnValueOnce(chain(undefined))
+        tx.update.mockReturnValueOnce(chain(undefined))
+
+        // The second call conflicts on (tenant_id, event_id): the row exists
+        // and belongs to whoever wrote it.
+        enqueueMetaEventMock.mockResolvedValueOnce({
+          inserted: installmentId === INSTALLMENT_ID,
+        })
+
+        await recordPayment(TENANT, USER_ID, { installmentId, amount: 600, paymentMethod: 'pix' } as never)
+      }
+
+      expect(enqueueMetaEventMock).toHaveBeenCalledTimes(2)
+      expect(claimAndSendPendingEventMock).toHaveBeenCalledTimes(1)
+    })
+
     // The enqueue holds the caller's tx and deliberately posts nothing, so the
     // send has to happen out here or the daily cron becomes the only delivery.
     it('sends the Purchase after the transaction commits, never inside it', async () => {
@@ -314,15 +351,15 @@ describe('financial.ts meta conversions', () => {
       expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
       expect((enqueueMetaEventMock.mock.calls[0][0] as Record<string, unknown>).tx).toBe(tx.savepoint)
 
-      expect(sendPendingEventMock).toHaveBeenCalledTimes(1)
+      expect(claimAndSendPendingEventMock).toHaveBeenCalledTimes(1)
       expect(enqueueMetaEventMock.mock.invocationCallOrder[0]).toBeLessThan(
         commit.mock.invocationCallOrder[0],
       )
       expect(commit.mock.invocationCallOrder[0]).toBeLessThan(
-        sendPendingEventMock.mock.invocationCallOrder[0],
+        claimAndSendPendingEventMock.mock.invocationCallOrder[0],
       )
 
-      expect(sendPendingEventMock).toHaveBeenCalledWith({
+      expect(claimAndSendPendingEventMock).toHaveBeenCalledWith({
         id: 'outbox-1',
         tenantId: TENANT,
         prospectId: null,
@@ -353,7 +390,7 @@ describe('financial.ts meta conversions', () => {
       tx.update.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
 
-      sendPendingEventMock.mockRejectedValueOnce(new Error('graph.facebook.com unreachable'))
+      claimAndSendPendingEventMock.mockRejectedValueOnce(new Error('graph.facebook.com unreachable'))
 
       const result = await recordPayment(TENANT, USER_ID, {
         installmentId: INSTALLMENT_ID,
@@ -397,7 +434,7 @@ describe('financial.ts meta conversions', () => {
       await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 600, paymentMethod: 'pix' } as never)
 
       expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
-      expect(sendPendingEventMock).not.toHaveBeenCalled()
+      expect(claimAndSendPendingEventMock).not.toHaveBeenCalled()
     })
 
     it('a payment for a patient with no originating prospect still emits, with prospectId null', async () => {
@@ -741,7 +778,7 @@ describe('financial.ts meta conversions', () => {
       expect(result.installmentPaid).toBe(true)
       expect(result.paymentRecord).toEqual({ id: 'pay-1' })
       expect(commit).toHaveBeenCalledTimes(1)
-      expect(sendPendingEventMock).not.toHaveBeenCalled()
+      expect(claimAndSendPendingEventMock).not.toHaveBeenCalled()
       expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1)
       expect(reportSideEffectFailureMock.mock.calls[0][1]).toEqual(
         expect.objectContaining({ area: 'meta-capi', step: 'purchase_event_outbox' }),
@@ -840,8 +877,8 @@ describe('financial.ts meta conversions', () => {
       expect(results).toHaveLength(2)
       expect(results.map((r) => r.paymentRecord)).toEqual([{ id: 'pay-a' }, { id: 'pay-b' }])
       expect(enqueueMetaEventMock).toHaveBeenCalledTimes(2)
-      expect(sendPendingEventMock).toHaveBeenCalledTimes(1)
-      expect((sendPendingEventMock.mock.calls[0][0] as Record<string, unknown>).eventId).toBe(
+      expect(claimAndSendPendingEventMock).toHaveBeenCalledTimes(1)
+      expect((claimAndSendPendingEventMock.mock.calls[0][0] as Record<string, unknown>).eventId).toBe(
         `purchase:${ENTRY_B}`,
       )
       expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1)
@@ -992,15 +1029,15 @@ describe('financial.ts meta conversions', () => {
 
       expect(results).toHaveLength(2)
       expect(dbMock.transaction).toHaveBeenCalledTimes(1)
-      expect(sendPendingEventMock).toHaveBeenCalledTimes(2)
+      expect(claimAndSendPendingEventMock).toHaveBeenCalledTimes(2)
       expect(
-        sendPendingEventMock.mock.calls.map((c) => (c[0] as Record<string, unknown>).id),
+        claimAndSendPendingEventMock.mock.calls.map((c) => (c[0] as Record<string, unknown>).id),
       ).toEqual(['outbox-a', 'outbox-b'])
       expect(
-        sendPendingEventMock.mock.calls.map((c) => (c[0] as Record<string, unknown>).eventId),
+        claimAndSendPendingEventMock.mock.calls.map((c) => (c[0] as Record<string, unknown>).eventId),
       ).toEqual([`purchase:${ENTRY_A}`, `purchase:${ENTRY_B}`])
 
-      for (const order of sendPendingEventMock.mock.invocationCallOrder) {
+      for (const order of claimAndSendPendingEventMock.mock.invocationCallOrder) {
         expect(commit.mock.invocationCallOrder[0]).toBeLessThan(order)
       }
     })
@@ -1061,7 +1098,7 @@ describe('financial.ts meta conversions', () => {
       expect(whereArgs.length).toBeGreaterThanOrEqual(5)
       expect(whereArgs.filter((arg) => carriesValue(arg, TENANT)).length).toBeGreaterThanOrEqual(5)
       expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
-      expect(sendPendingEventMock).toHaveBeenCalledTimes(1)
+      expect(claimAndSendPendingEventMock).toHaveBeenCalledTimes(1)
     })
   })
 })

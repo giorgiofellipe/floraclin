@@ -1094,8 +1094,14 @@ export const metaConversionEvents = floraclinSchema.table('meta_conversion_event
   // Nullable on purpose: a `skipped` row is written before any payload is
   // built, and that row is the evidence an opt-out was honoured.
   payload: jsonb('payload'),
+  // pending -> sending -> sent | failed | skipped. `sending` is a claim: the
+  // row belongs to one sender until it writes a terminal status or the reaper
+  // takes it back.
   status: varchar('status', { length: 10 }).notNull().default('pending'),
   skipReason: varchar('skip_reason', { length: 40 }),
+  // When the current `sending` claim was taken. The reaper reads it; nothing
+  // else does.
+  claimedAt: timestamp('claimed_at', { withTimezone: true }),
   attempts: integer('attempts').notNull().default(0),
   lastError: text('last_error'),
   fbTraceId: varchar('fb_trace_id', { length: 64 }),
@@ -1106,6 +1112,7 @@ export const metaConversionEvents = floraclinSchema.table('meta_conversion_event
   index('idx_meta_events_pending').on(table.status, table.createdAt),
   index('idx_meta_events_tenant_created').on(table.tenantId, table.createdAt),
   index('idx_meta_events_tenant_prospect').on(table.tenantId, table.prospectId),
+  index('idx_meta_events_claimed').on(table.status, table.claimedAt),
 ])
 
 export const metaConnections = floraclinSchema.table('meta_connections', {

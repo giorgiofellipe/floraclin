@@ -143,27 +143,48 @@ export interface MetaBusiness {
   name: string
 }
 
+export interface MetaDataset {
+  id: string
+  name: string
+}
+
+/**
+ * The routes walk Graph's paging up to a cap, so a very large account can come
+ * back short. `truncated` lets the picker say so instead of presenting a
+ * partial list as complete.
+ */
+export interface MetaPickerList<T> {
+  items: T[]
+  truncated: boolean
+}
+
+function readPickerList<T>(json: Record<string, unknown>): MetaPickerList<T> {
+  return {
+    items: (json.data ?? []) as T[],
+    truncated: json.truncated === true,
+  }
+}
+
 /** Leg 2 of the OAuth flow: the portfolios the stored token can read. */
 export function useMetaBusinesses(enabled: boolean) {
-  return useQuery<MetaBusiness[]>({
+  return useQuery<MetaPickerList<MetaBusiness>>({
     queryKey: queryKeys.meta.businesses,
     enabled,
     queryFn: async () => {
       const res = await fetch('/api/integrations/meta/businesses')
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json.error || 'Erro ao listar portfólios')
-      return (json.data ?? []) as MetaBusiness[]
+      return readPickerList<MetaBusiness>(json)
     },
   })
 }
 
-export interface MetaDataset {
-  id: string
-  name: string
-}
-
 export function useMetaDatasets() {
-  return useMutation<MetaDataset[], Error, { businessId: string; accessToken?: string }>({
+  return useMutation<
+    MetaPickerList<MetaDataset>,
+    Error,
+    { businessId: string; accessToken?: string }
+  >({
     mutationFn: async ({ businessId, accessToken }) => {
       const res = await fetch('/api/integrations/meta/datasets', {
         method: 'POST',
@@ -172,7 +193,7 @@ export function useMetaDatasets() {
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json.error || 'Erro ao listar datasets')
-      return (json.data ?? []) as MetaDataset[]
+      return readPickerList<MetaDataset>(json)
     },
   })
 }

@@ -242,6 +242,20 @@ describe('meta-events queries', () => {
       const setCall = updateChain.__calls.set[0][0] as Record<string, unknown>
       expect(setCall.fbTraceId).toBeNull()
     })
+
+    // Fix 1: a slow sender whose claim was reaped must not overwrite the
+    // outcome the row's new owner already recorded.
+    it('only writes a row this sender still owns', async () => {
+      const { markEventSent } = await import('../meta-events')
+      const updateChain = chain(undefined)
+      dbMock.update.mockReturnValueOnce(updateChain)
+
+      await markEventSent(TENANT_A, 'evt-1')
+
+      const { sql: text, params } = renderSql(updateChain.__calls.where[0][0])
+      expect(text).toContain('"status" =')
+      expect(params).toEqual([TENANT_A, 'evt-1', 'sending'])
+    })
   })
 
   describe('markEventFailure', () => {
@@ -254,7 +268,7 @@ describe('meta-events queries', () => {
 
       expect(status).toBe('failed')
       const setCall = updateChain.__calls.set[0][0] as Record<string, unknown>
-      expect(setCall).toEqual({ status: 'failed', lastError: 'bad payload' })
+      expect(setCall).toEqual({ status: 'failed', lastError: 'bad payload', claimedAt: null })
       expect(setCall).not.toHaveProperty('attempts')
       expect(dbMock.select).not.toHaveBeenCalled()
     })
@@ -268,7 +282,7 @@ describe('meta-events queries', () => {
 
       expect(status).toBe('pending')
       const setCall = updateChain.__calls.set[0][0] as Record<string, unknown>
-      expect(setCall).toEqual({ status: 'pending', lastError: 'dead token' })
+      expect(setCall).toEqual({ status: 'pending', lastError: 'dead token', claimedAt: null })
     })
 
     it("'auth' never spends an attempt, however many times it repeats", async () => {
@@ -343,7 +357,7 @@ describe('meta-events queries', () => {
       expect(cycles).toBe(MAX_ATTEMPTS)
     })
 
-    it('scopes the update to tenantId and id', async () => {
+    it('scopes the update to tenantId, id and an unfinished claim', async () => {
       const { markEventFailure } = await import('../meta-events')
       const updateChain = chain(undefined)
       dbMock.update.mockReturnValueOnce(updateChain)
@@ -353,7 +367,25 @@ describe('meta-events queries', () => {
       const { sql: text, params } = renderSql(updateChain.__calls.where[0][0])
       expect(text).toContain('"tenant_id" =')
       expect(text).toContain('"id" =')
-      expect(params).toEqual([TENANT_B, 'evt-9'])
+      expect(text).toContain('"status" =')
+      expect(params).toEqual([TENANT_B, 'evt-9', 'sending'])
+    })
+
+    // Fix 1: the row was already marked `sent` by the sender that beat this
+    // one, so the transient path must not flip it back to `pending`.
+    it("a late transient write cannot reopen a row the winner already closed", async () => {
+      const { markEventFailure } = await import('../meta-events')
+      const updateChain = chain(undefined)
+      dbMock.update.mockReturnValueOnce(updateChain)
+      dbMock.select.mockReturnValueOnce(chain([]))
+
+      await markEventFailure(TENANT_A, 'evt-1', 'transient', 'timeout')
+
+      for (const call of dbMock.update.mock.results) {
+        const built = (call.value as ReturnType<typeof chain>).__calls
+        const { params } = renderSql(built.where[0][0])
+        expect(params).toContain('sending')
+      }
     })
   })
 
@@ -366,13 +398,16 @@ describe('meta-events queries', () => {
       await markEventSkipped(TENANT_A, 'evt-1', 'marketing_opt_out')
 
       const setCall = updateChain.__calls.set[0][0] as Record<string, unknown>
-      expect(setCall).toEqual({ status: 'skipped', skipReason: 'marketing_opt_out' })
+      expect(setCall).toEqual({ status: 'skipped', skipReason: 'marketing_opt_out', claimedAt: null })
+
+      const { params } = renderSql(updateChain.__calls.where[0][0])
+      expect(params).toEqual([TENANT_A, 'evt-1', 'sending'])
     })
   })
 
-  describe('selectPendingEvents', () => {
-    it('runs inside a transaction with FOR UPDATE SKIP LOCKED and returns the trimmed rows', async () => {
-      const { selectPendingEvents } = await import('../meta-events')
+  describe('claimPendingEvents', () => {
+    it('claims with a single UPDATE ... RETURNING instead of a lock that dies with its transaction', async () => {
+      const { claimPendingEvents } = await import('../meta-events')
 
       const row = {
         id: 'evt-1',
@@ -383,158 +418,181 @@ describe('meta-events queries', () => {
         eventId: 'lead:prospect-1',
         eventTime: new Date('2026-08-28T09:00:00Z'),
         value: null,
+        actionSource: null,
         payload: { event_name: 'Lead' },
         createdAt: new Date('2026-08-28T09:00:00Z'),
       }
+      const updateChain = chain([row])
+      dbMock.update.mockReturnValueOnce(updateChain)
 
-      const selectChain = chain([row])
-      const trx = {
-        select: vi.fn(() => selectChain),
-        update: vi.fn(() => chain(undefined)),
-      }
+      const result = await claimPendingEvents(10)
 
-      dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
-
-      const result = await selectPendingEvents(10)
-
-      expect(dbMock.transaction).toHaveBeenCalledTimes(1)
-      expect(selectChain.__calls.for).toEqual([['update', { skipLocked: true }]])
-      expect(selectChain.__calls.orderBy).toHaveLength(1)
-      expect(selectChain.__calls.limit).toEqual([[10]])
       expect(result).toEqual([row])
+      expect(dbMock.transaction).not.toHaveBeenCalled()
+      expect(updateChain.__calls.returning).toHaveLength(1)
+
+      const setCall = updateChain.__calls.set[0][0] as Record<string, unknown>
+      expect(setCall.status).toBe('sending')
+      expect(setCall.claimedAt).toBeInstanceOf(Date)
     })
 
-    it('does not touch attempts: selecting a row is not a delivery attempt', async () => {
-      const { selectPendingEvents } = await import('../meta-events')
+    // Fix 1: the claim is what stops two runs picking the same row.
+    it('does not return a row a second caller already claimed', async () => {
+      const { claimPendingEvents } = await import('../meta-events')
 
-      const trx = {
-        select: vi.fn(() =>
-          chain([
-            { id: 'evt-1', tenantId: TENANT_A, prospectId: null, patientId: null, payload: {}, createdAt: new Date() },
-          ]),
-        ),
-        update: vi.fn(() => chain(undefined)),
-      }
-      dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
+      const first = chain([
+        {
+          id: 'evt-1',
+          tenantId: TENANT_A,
+          prospectId: null,
+          patientId: null,
+          eventName: 'Lead',
+          eventId: 'lead:prospect-1',
+          eventTime: new Date('2026-08-28T09:00:00Z'),
+          value: null,
+          actionSource: null,
+          payload: {},
+          createdAt: new Date('2026-08-28T09:00:00Z'),
+        },
+      ])
+      // The second run's UPDATE matches nothing: the row is no longer pending.
+      const second = chain([])
+      dbMock.update.mockReturnValueOnce(first).mockReturnValueOnce(second)
 
-      await selectPendingEvents(10)
+      expect(await claimPendingEvents(10)).toHaveLength(1)
+      expect(await claimPendingEvents(10)).toEqual([])
 
-      expect(trx.update).not.toHaveBeenCalled()
+      // `status = 'pending'` is on the UPDATE itself, not only in the
+      // subquery, so a concurrent claim is re-checked against the row.
+      const { sql: text, params } = renderSql(second.__calls.where[0][0])
+      expect(text).toContain('"status" =')
+      expect(params[0]).toBe('pending')
     })
 
     it('excludes rows younger than 60 seconds via the createdAt filter', async () => {
-      const { selectPendingEvents } = await import('../meta-events')
+      const { claimPendingEvents } = await import('../meta-events')
 
-      const selectChain = chain([])
-      const trx = {
-        select: vi.fn(() => selectChain),
-        update: vi.fn(() => chain(undefined)),
-      }
-      dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
+      const updateChain = chain([])
+      dbMock.update.mockReturnValueOnce(updateChain)
 
       const before = Date.now()
-      const result = await selectPendingEvents(5)
+      expect(await claimPendingEvents(5)).toEqual([])
 
-      expect(result).toEqual([])
-
-      const { sql: text, params } = renderSql(selectChain.__calls.where[0][0])
-      expect(text).toContain('"status" =')
+      const { sql: text, params } = renderSql(updateChain.__calls.where[0][0])
       expect(text).toContain('"created_at" <')
-      expect(params[0]).toBe('pending')
       // Bound to the driver value (an ISO timestamp), not the Date object.
-      expect(Date.parse(String(params[1]))).toBeLessThanOrEqual(before - 59_000)
+      const cutoff = params.find((value) => Date.parse(String(value)))
+      expect(Date.parse(String(cutoff))).toBeLessThanOrEqual(before - 59_000)
     })
 
-    // Fix 4: without the per-tenant cap a clinic with a revoked token owns
-    // every slot in the run, and no other clinic's rows are ever reached.
     it('caps how many rows one tenant can take from a single run', async () => {
-      const { selectPendingEvents, MAX_EVENTS_PER_TENANT } = await import('../meta-events')
+      const { claimPendingEvents, MAX_EVENTS_PER_TENANT } = await import('../meta-events')
 
-      const selectChain = chain([])
-      const trx = {
-        select: vi.fn(() => selectChain),
-        update: vi.fn(() => chain(undefined)),
-      }
-      dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
+      const updateChain = chain([])
+      dbMock.update.mockReturnValueOnce(updateChain)
 
-      await selectPendingEvents(500)
+      await claimPendingEvents(500)
 
-      const { sql: text, params } = renderSql(selectChain.__calls.where[0][0])
+      const { sql: text, params } = renderSql(updateChain.__calls.where[0][0])
       expect(text).toContain('row_number() over')
       expect(text).toContain('partition by "floraclin"."meta_conversion_events"."tenant_id"')
       expect(text).toContain('ranked.tenant_rank <=')
+      expect(text).toContain('order by ranked.created_at')
       expect(params).toContain(MAX_EVENTS_PER_TENANT)
-      // The overall cap and the row lock both survive the per-tenant cap.
-      expect(selectChain.__calls.limit).toEqual([[500]])
-      expect(selectChain.__calls.for).toEqual([['update', { skipLocked: true }]])
+      expect(params).toContain(500)
+    })
+
+    // Fix 6: a bare 50 against a daily cron drained 350 rows a week, and Meta
+    // rejects whatever is left when the window closes.
+    it('sizes the per-tenant cap off the window Meta accepts, not a bare literal', async () => {
+      const { MAX_EVENTS_PER_TENANT, META_EVENT_WINDOW_DAYS } = await import('../meta-events')
+
+      expect(META_EVENT_WINDOW_DAYS).toBe(7)
+      expect(MAX_EVENTS_PER_TENANT % META_EVENT_WINDOW_DAYS).toBe(0)
+      expect(MAX_EVENTS_PER_TENANT).toBeGreaterThan(500)
+    })
+
+    it('returns claimed rows oldest first, whatever order the UPDATE returned them in', async () => {
+      const { claimPendingEvents } = await import('../meta-events')
+
+      const base = {
+        tenantId: TENANT_A,
+        prospectId: null,
+        patientId: 'patient-1',
+        eventName: 'Lead',
+        eventId: 'lead:x',
+        eventTime: new Date('2026-08-28T09:00:00Z'),
+        value: null,
+        actionSource: null,
+        payload: {},
+      }
+      dbMock.update.mockReturnValueOnce(
+        chain([
+          { ...base, id: 'newer', createdAt: new Date('2026-08-28T10:00:00Z') },
+          { ...base, id: 'older', createdAt: new Date('2026-08-28T08:00:00Z') },
+        ]),
+      )
+
+      const result = await claimPendingEvents(10)
+
+      expect(result.map((row) => row.id)).toEqual(['older', 'newer'])
     })
 
     it('returns the stored action source with the row', async () => {
-      const { selectPendingEvents } = await import('../meta-events')
+      const { claimPendingEvents } = await import('../meta-events')
 
-      const trx = {
-        select: vi.fn(() =>
-          chain([
-            {
-              id: 'evt-1',
-              tenantId: TENANT_A,
-              prospectId: 'prospect-1',
-              patientId: 'patient-1',
-              eventName: 'Lead',
-              eventId: 'lead:prospect-1',
-              eventTime: new Date('2026-08-28T09:00:00Z'),
-              value: null,
-              actionSource: 'business_messaging',
-              payload: null,
-              createdAt: new Date('2026-08-28T09:00:00Z'),
-            },
-          ]),
-        ),
-        update: vi.fn(() => chain(undefined)),
-      }
-      dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
+      dbMock.update.mockReturnValueOnce(
+        chain([
+          {
+            id: 'evt-1',
+            tenantId: TENANT_A,
+            prospectId: 'prospect-1',
+            patientId: 'patient-1',
+            eventName: 'Lead',
+            eventId: 'lead:prospect-1',
+            eventTime: new Date('2026-08-28T09:00:00Z'),
+            value: null,
+            actionSource: 'business_messaging',
+            payload: null,
+            createdAt: new Date('2026-08-28T09:00:00Z'),
+          },
+        ]),
+      )
 
-      const [event] = await selectPendingEvents(10)
+      const [event] = await claimPendingEvents(10)
 
       expect(event.actionSource).toBe('business_messaging')
     })
 
     it('returns [] when nothing is pending', async () => {
-      const { selectPendingEvents } = await import('../meta-events')
-      const trx = {
-        select: vi.fn(() => chain([])),
-        update: vi.fn(() => chain(undefined)),
-      }
-      dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
+      const { claimPendingEvents } = await import('../meta-events')
+      dbMock.update.mockReturnValueOnce(chain([]))
 
-      expect(await selectPendingEvents(5)).toEqual([])
+      expect(await claimPendingEvents(5)).toEqual([])
     })
 
     it('prefers the stored patientId over the prospect fallback', async () => {
-      const { selectPendingEvents } = await import('../meta-events')
+      const { claimPendingEvents } = await import('../meta-events')
 
-      const trx = {
-        select: vi.fn(() =>
-          chain([
-            {
-              id: 'evt-1',
-              tenantId: TENANT_A,
-              prospectId: 'prospect-1',
-              patientId: 'patient-stored',
-              eventName: 'Purchase',
-              eventId: 'purchase:installment-1',
-              eventTime: new Date('2026-08-28T09:00:00Z'),
-              value: '250.00',
-              payload: null,
-              createdAt: new Date('2026-08-28T09:00:00Z'),
-            },
-          ]),
-        ),
-        update: vi.fn(() => chain(undefined)),
-      }
-      dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
+      dbMock.update.mockReturnValueOnce(
+        chain([
+          {
+            id: 'evt-1',
+            tenantId: TENANT_A,
+            prospectId: 'prospect-1',
+            patientId: 'patient-stored',
+            eventName: 'Purchase',
+            eventId: 'purchase:installment-1',
+            eventTime: new Date('2026-08-28T09:00:00Z'),
+            value: '250.00',
+            actionSource: null,
+            payload: null,
+            createdAt: new Date('2026-08-28T09:00:00Z'),
+          },
+        ]),
+      )
 
-      const [event] = await selectPendingEvents(10)
+      const [event] = await claimPendingEvents(10)
 
       expect(event.patientId).toBe('patient-stored')
       // The prospect lookup is skipped entirely for a row that already knows.
@@ -542,67 +600,138 @@ describe('meta-events queries', () => {
     })
 
     it("falls back to the prospect's convertedPatientId when no patientId is stored", async () => {
-      const { selectPendingEvents } = await import('../meta-events')
+      const { claimPendingEvents } = await import('../meta-events')
 
-      const trx = {
-        select: vi.fn(() =>
-          chain([
-            {
-              id: 'evt-1',
-              tenantId: TENANT_A,
-              prospectId: 'prospect-1',
-              patientId: null,
-              eventName: 'Lead',
-              eventId: 'lead:prospect-1',
-              eventTime: new Date('2026-08-28T09:00:00Z'),
-              value: null,
-              payload: {},
-              createdAt: new Date('2026-08-28T09:00:00Z'),
-            },
-          ]),
-        ),
-        update: vi.fn(() => chain(undefined)),
-      }
-      dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
+      dbMock.update.mockReturnValueOnce(
+        chain([
+          {
+            id: 'evt-1',
+            tenantId: TENANT_A,
+            prospectId: 'prospect-1',
+            patientId: null,
+            eventName: 'Lead',
+            eventId: 'lead:prospect-1',
+            eventTime: new Date('2026-08-28T09:00:00Z'),
+            value: null,
+            actionSource: null,
+            payload: {},
+            createdAt: new Date('2026-08-28T09:00:00Z'),
+          },
+        ]),
+      )
       dbMock.select.mockReturnValueOnce(
         chain([{ id: 'prospect-1', tenantId: TENANT_A, convertedPatientId: 'patient-converted' }]),
       )
 
-      const [event] = await selectPendingEvents(10)
+      const [event] = await claimPendingEvents(10)
 
       expect(event.patientId).toBe('patient-converted')
     })
 
-    it('never picks up another tenant\'s patient link for the same prospect id', async () => {
-      const { selectPendingEvents } = await import('../meta-events')
+    it("never picks up another tenant's patient link for the same prospect id", async () => {
+      const { claimPendingEvents } = await import('../meta-events')
 
-      const trx = {
-        select: vi.fn(() =>
-          chain([
-            {
-              id: 'evt-1',
-              tenantId: TENANT_B,
-              prospectId: 'prospect-1',
-              patientId: null,
-              eventName: 'Lead',
-              eventId: 'lead:prospect-1',
-              eventTime: new Date('2026-08-28T09:00:00Z'),
-              value: null,
-              payload: {},
-              createdAt: new Date('2026-08-28T09:00:00Z'),
-            },
-          ]),
-        ),
-        update: vi.fn(() => chain(undefined)),
-      }
-      dbMock.transaction.mockImplementationOnce(async (cb: (trx: unknown) => unknown) => cb(trx))
+      dbMock.update.mockReturnValueOnce(
+        chain([
+          {
+            id: 'evt-1',
+            tenantId: TENANT_B,
+            prospectId: 'prospect-1',
+            patientId: null,
+            eventName: 'Lead',
+            eventId: 'lead:prospect-1',
+            eventTime: new Date('2026-08-28T09:00:00Z'),
+            value: null,
+            actionSource: null,
+            payload: {},
+            createdAt: new Date('2026-08-28T09:00:00Z'),
+          },
+        ]),
+      )
       dbMock.select.mockReturnValueOnce(
         chain([{ id: 'prospect-1', tenantId: TENANT_A, convertedPatientId: 'patient-of-a' }]),
       )
 
-      const [event] = await selectPendingEvents(10)
+      const [event] = await claimPendingEvents(10)
 
       expect(event.patientId).toBeNull()
+    })
+  })
+
+  describe('claimEventForSending', () => {
+    it('claims a pending row and reports it took it', async () => {
+      const { claimEventForSending } = await import('../meta-events')
+      const updateChain = chain([{ id: 'evt-1' }])
+      dbMock.update.mockReturnValueOnce(updateChain)
+
+      expect(await claimEventForSending(TENANT_A, 'evt-1')).toBe(true)
+
+      const setCall = updateChain.__calls.set[0][0] as Record<string, unknown>
+      expect(setCall.status).toBe('sending')
+
+      const { sql: text, params } = renderSql(updateChain.__calls.where[0][0])
+      expect(text).toContain('"status" =')
+      expect(params).toEqual([TENANT_A, 'evt-1', 'pending'])
+    })
+
+    it('reports false when the row is no longer pending, so the caller does not send', async () => {
+      const { claimEventForSending } = await import('../meta-events')
+      dbMock.update.mockReturnValueOnce(chain([]))
+
+      expect(await claimEventForSending(TENANT_A, 'evt-1')).toBe(false)
+    })
+  })
+
+  describe('releaseEventClaims', () => {
+    it('returns claimed rows to pending and clears the claim timestamp', async () => {
+      const { releaseEventClaims } = await import('../meta-events')
+      const updateChain = chain([])
+      dbMock.update.mockReturnValueOnce(updateChain)
+
+      await releaseEventClaims(['evt-1', 'evt-2'])
+
+      const setCall = updateChain.__calls.set[0][0] as Record<string, unknown>
+      expect(setCall).toEqual({ status: 'pending', claimedAt: null })
+
+      const { params } = renderSql(updateChain.__calls.where[0][0])
+      expect(params).toEqual(['sending', 'evt-1', 'evt-2'])
+    })
+
+    it('writes nothing when there is nothing to release', async () => {
+      const { releaseEventClaims } = await import('../meta-events')
+
+      await releaseEventClaims([])
+
+      expect(dbMock.update).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('reapStuckClaims', () => {
+    // Fix 1: a crash between the claim and the outcome would otherwise park
+    // the row in `sending` forever.
+    it('returns a row stuck in sending past the timeout to pending', async () => {
+      const { reapStuckClaims, SENDING_CLAIM_TIMEOUT_MS } = await import('../meta-events')
+      const updateChain = chain([{ id: 'evt-stuck' }])
+      dbMock.update.mockReturnValueOnce(updateChain)
+
+      const now = new Date('2026-08-28T12:00:00Z')
+      expect(await reapStuckClaims(now)).toBe(1)
+
+      const setCall = updateChain.__calls.set[0][0] as Record<string, unknown>
+      expect(setCall).toEqual({ status: 'pending', claimedAt: null })
+
+      const { sql: text, params } = renderSql(updateChain.__calls.where[0][0])
+      expect(text).toContain('"status" =')
+      expect(text).toContain('"claimed_at" <')
+      expect(params[0]).toBe('sending')
+      expect(Date.parse(String(params[1]))).toBe(now.getTime() - SENDING_CLAIM_TIMEOUT_MS)
+    })
+
+    it('leaves a claim that is still inside the timeout alone', async () => {
+      const { reapStuckClaims } = await import('../meta-events')
+      dbMock.update.mockReturnValueOnce(chain([]))
+
+      expect(await reapStuckClaims(new Date('2026-08-28T12:00:00Z'))).toBe(0)
     })
   })
 

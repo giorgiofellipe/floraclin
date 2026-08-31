@@ -1,7 +1,10 @@
 import { db } from '@/db/client'
 import { metaConversionEvents, prospects } from '@/db/schema'
-import { and, asc, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm'
 import type { MetaActionSource, MetaEventName } from '@/lib/meta/types'
+
+/** Meta stops accepting an event this long after its event_time. */
+export const META_EVENT_WINDOW_DAYS = 7
 
 // The sweep runs once a day and Meta stops accepting an event seven days
 // after its event_time, so a row must run out of attempts before it runs out
@@ -10,11 +13,28 @@ export const MAX_ATTEMPTS = 6
 const CLAIM_MIN_AGE_MS = 60_000
 
 /**
- * Per tenant, per run. `selectPendingEvents` is global and ordered oldest
- * first, so without this cap a single clinic with a revoked token owns every
- * slot in the run and no other clinic's rows are ever reached.
+ * A sender that crashes between claiming a row and writing its outcome leaves
+ * the row `sending` with nobody to finish it. Anything still `sending` this
+ * long after its claim is assumed dead and goes back to `pending`. It has to
+ * outlast the longest a single send can take, which is the Conversions API
+ * timeout plus the reads around it.
  */
-export const MAX_EVENTS_PER_TENANT = 50
+export const SENDING_CLAIM_TIMEOUT_MS = 15 * 60 * 1000
+
+/** What the busiest clinic on the platform writes in a single day. */
+const PEAK_EVENTS_PER_TENANT_PER_DAY = 120
+
+/**
+ * Per tenant, per run. The claim is global and ordered oldest first, so
+ * without a cap one clinic with a revoked token owns every slot in the run.
+ *
+ * The cap has to be a whole window's backlog rather than a round number: an
+ * outage that lasts six days leaves its oldest rows one day of window and one
+ * sweep to use it, so a run that cannot take the entire backlog at once
+ * watches the rest expire. The old cap of 50 against a daily cron drained 350
+ * rows a week and lost everything past that.
+ */
+export const MAX_EVENTS_PER_TENANT = PEAK_EVENTS_PER_TENANT_PER_DAY * META_EVENT_WINDOW_DAYS
 
 export interface InsertConversionEventInput {
   tenantId: string
@@ -106,11 +126,25 @@ export async function insertConversionEvent(
   return { inserted: false, id: existing.id }
 }
 
+/**
+ * Every terminal write is scoped to a row this sender still owns. Without the
+ * status predicate a slow sender that lost its claim to the reaper overwrites
+ * whatever the new owner already recorded, and an accepted event flips back
+ * to `pending` and is sent again.
+ */
+function claimedRow(tenantId: string, id: string) {
+  return and(
+    eq(metaConversionEvents.tenantId, tenantId),
+    eq(metaConversionEvents.id, id),
+    eq(metaConversionEvents.status, 'sending'),
+  )
+}
+
 export async function markEventSent(tenantId: string, id: string, fbTraceId?: string): Promise<void> {
   await db
     .update(metaConversionEvents)
-    .set({ status: 'sent', sentAt: new Date(), fbTraceId: fbTraceId ?? null })
-    .where(and(eq(metaConversionEvents.tenantId, tenantId), eq(metaConversionEvents.id, id)))
+    .set({ status: 'sent', sentAt: new Date(), fbTraceId: fbTraceId ?? null, claimedAt: null })
+    .where(claimedRow(tenantId, id))
 }
 
 /**
@@ -127,11 +161,14 @@ export async function markEventFailure(
   kind: 'transient' | 'invalid' | 'auth',
   message: string,
 ): Promise<EventFailureStatus> {
-  const scope = and(eq(metaConversionEvents.tenantId, tenantId), eq(metaConversionEvents.id, id))
+  const scope = claimedRow(tenantId, id)
 
   if (kind !== 'transient') {
     const status: EventFailureStatus = kind === 'invalid' ? 'failed' : 'pending'
-    await db.update(metaConversionEvents).set({ status, lastError: message }).where(scope)
+    await db
+      .update(metaConversionEvents)
+      .set({ status, lastError: message, claimedAt: null })
+      .where(scope)
     return status
   }
 
@@ -144,7 +181,10 @@ export async function markEventFailure(
   const attempts = (current?.attempts ?? 0) + 1
   const status: EventFailureStatus = attempts < MAX_ATTEMPTS ? 'pending' : 'failed'
 
-  await db.update(metaConversionEvents).set({ attempts, status, lastError: message }).where(scope)
+  await db
+    .update(metaConversionEvents)
+    .set({ attempts, status, lastError: message, claimedAt: null })
+    .where(scope)
 
   return status
 }
@@ -152,64 +192,75 @@ export async function markEventFailure(
 export async function markEventSkipped(tenantId: string, id: string, reason: string): Promise<void> {
   await db
     .update(metaConversionEvents)
-    .set({ status: 'skipped', skipReason: reason })
-    .where(and(eq(metaConversionEvents.tenantId, tenantId), eq(metaConversionEvents.id, id)))
+    .set({ status: 'skipped', skipReason: reason, claimedAt: null })
+    .where(claimedRow(tenantId, id))
 }
 
 /**
- * Selects, it does not claim: the row lock dies with the transaction that took
- * it and nothing marks a row in flight, so two overlapping runs can pick the
- * same row and send it twice. Meta dedups on event_id, which is what makes
- * that safe.
+ * Takes ownership of the rows it returns. The `sending` status is the claim
+ * itself: it survives the statement that set it, unlike the row lock this
+ * used to rely on, so a second sender running at the same time sees the rows
+ * as taken and gets none of them.
+ *
+ * One statement, so there is no window where a row is chosen but not yet
+ * claimed. `status = 'pending'` is repeated on the UPDATE and not left to the
+ * subquery alone: Postgres re-checks the outer predicate against the row a
+ * concurrent writer just committed, and that is what makes the claim
+ * exclusive.
  */
-export async function selectPendingEvents(limit: number): Promise<PendingEvent[]> {
-  const rows = await db.transaction(async (trx) => {
-    const cutoff = new Date(Date.now() - CLAIM_MIN_AGE_MS)
-    const claimable = and(
-      eq(metaConversionEvents.status, 'pending'),
-      lt(metaConversionEvents.createdAt, cutoff),
+export async function claimPendingEvents(limit: number): Promise<PendingEvent[]> {
+  const cutoff = new Date(Date.now() - CLAIM_MIN_AGE_MS)
+  const claimable = and(
+    eq(metaConversionEvents.status, 'pending'),
+    lt(metaConversionEvents.createdAt, cutoff),
+  )
+
+  // The ranking lives in an `IN` subquery because an UPDATE cannot carry a
+  // window function in its own WHERE clause.
+  const withinTenantQuota = sql`(
+    select ranked.id from (
+      select
+        ${metaConversionEvents.id} as id,
+        ${metaConversionEvents.createdAt} as created_at,
+        row_number() over (
+          partition by ${metaConversionEvents.tenantId}
+          order by ${metaConversionEvents.createdAt}
+        ) as tenant_rank
+      from ${metaConversionEvents}
+      where ${claimable}
+    ) ranked
+    where ranked.tenant_rank <= ${MAX_EVENTS_PER_TENANT}
+    order by ranked.created_at
+    limit ${limit}
+  )`
+
+  const rows = await db
+    .update(metaConversionEvents)
+    .set({ status: 'sending', claimedAt: new Date() })
+    .where(
+      and(
+        eq(metaConversionEvents.status, 'pending'),
+        inArray(metaConversionEvents.id, withinTenantQuota),
+      ),
     )
+    .returning({
+      id: metaConversionEvents.id,
+      tenantId: metaConversionEvents.tenantId,
+      prospectId: metaConversionEvents.prospectId,
+      patientId: metaConversionEvents.patientId,
+      eventName: metaConversionEvents.eventName,
+      eventId: metaConversionEvents.eventId,
+      eventTime: metaConversionEvents.eventTime,
+      value: metaConversionEvents.value,
+      actionSource: metaConversionEvents.actionSource,
+      payload: metaConversionEvents.payload,
+      createdAt: metaConversionEvents.createdAt,
+    })
 
-    // The ranking lives in an `IN` subquery rather than this query: Postgres
-    // refuses FOR UPDATE on a select that carries a window function.
-    const withinTenantQuota = sql`(
-      select ranked.id from (
-        select
-          ${metaConversionEvents.id} as id,
-          row_number() over (
-            partition by ${metaConversionEvents.tenantId}
-            order by ${metaConversionEvents.createdAt}
-          ) as tenant_rank
-        from ${metaConversionEvents}
-        where ${claimable}
-      ) ranked
-      where ranked.tenant_rank <= ${MAX_EVENTS_PER_TENANT}
-    )`
+  const ordered = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+  const patientIds = await resolveConvertedPatients(ordered.filter((row) => !row.patientId))
 
-    return trx
-      .select({
-        id: metaConversionEvents.id,
-        tenantId: metaConversionEvents.tenantId,
-        prospectId: metaConversionEvents.prospectId,
-        patientId: metaConversionEvents.patientId,
-        eventName: metaConversionEvents.eventName,
-        eventId: metaConversionEvents.eventId,
-        eventTime: metaConversionEvents.eventTime,
-        value: metaConversionEvents.value,
-        actionSource: metaConversionEvents.actionSource,
-        payload: metaConversionEvents.payload,
-        createdAt: metaConversionEvents.createdAt,
-      })
-      .from(metaConversionEvents)
-      .where(and(claimable, inArray(metaConversionEvents.id, withinTenantQuota)))
-      .orderBy(asc(metaConversionEvents.createdAt))
-      .limit(limit)
-      .for('update', { skipLocked: true })
-  })
-
-  const patientIds = await resolveConvertedPatients(rows.filter((row) => !row.patientId))
-
-  return rows.map((row) => ({
+  return ordered.map((row) => ({
     ...row,
     eventName: row.eventName as MetaEventName,
     actionSource: row.actionSource as MetaActionSource | null,
@@ -217,6 +268,55 @@ export async function selectPendingEvents(limit: number): Promise<PendingEvent[]
       row.patientId ??
       (row.prospectId ? patientIds.get(`${row.tenantId}:${row.prospectId}`) ?? null : null),
   }))
+}
+
+/**
+ * Claims one known row, for the inline paths that already hold everything a
+ * send needs. False means another sender owns it, or it is no longer pending
+ * at all, and the caller must not send.
+ */
+export async function claimEventForSending(tenantId: string, id: string): Promise<boolean> {
+  const rows = await db
+    .update(metaConversionEvents)
+    .set({ status: 'sending', claimedAt: new Date() })
+    .where(
+      and(
+        eq(metaConversionEvents.tenantId, tenantId),
+        eq(metaConversionEvents.id, id),
+        eq(metaConversionEvents.status, 'pending'),
+      ),
+    )
+    .returning({ id: metaConversionEvents.id })
+
+  return rows.length > 0
+}
+
+/** Hands a claimed row back unsent, for a sender that decided not to send it. */
+export async function releaseEventClaims(ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+
+  await db
+    .update(metaConversionEvents)
+    .set({ status: 'pending', claimedAt: null })
+    .where(and(eq(metaConversionEvents.status, 'sending'), inArray(metaConversionEvents.id, ids)))
+}
+
+/**
+ * Returns rows whose sender died mid-send. Without this a crashed run parks
+ * its claimed rows in `sending` forever and nothing ever picks them up again.
+ */
+export async function reapStuckClaims(now: Date = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - SENDING_CLAIM_TIMEOUT_MS)
+
+  const rows = await db
+    .update(metaConversionEvents)
+    .set({ status: 'pending', claimedAt: null })
+    .where(
+      and(eq(metaConversionEvents.status, 'sending'), lt(metaConversionEvents.claimedAt, cutoff)),
+    )
+    .returning({ id: metaConversionEvents.id })
+
+  return rows.length
 }
 
 /**
@@ -300,9 +400,9 @@ export async function hasScheduleForProspect(tenantId: string, prospectId: strin
         eq(metaConversionEvents.tenantId, tenantId),
         eq(metaConversionEvents.prospectId, prospectId),
         eq(metaConversionEvents.eventName, 'Schedule'),
-        // A Schedule written while the clinic was unconnected is a `skipped`
-        // row with no payload: it never reached Meta, so it must not block
-        // the real one.
+        // A `skipped` row never reached Meta and never will, so it must not
+        // block the real one. A row parked `pending` for a clinic that has
+        // not finished connecting still will, and does block it.
         ne(metaConversionEvents.status, 'skipped'),
       ),
     )
