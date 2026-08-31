@@ -1,6 +1,7 @@
 import { db } from '@/db/client'
-import { anamneses } from '@/db/schema'
+import { anamneses, patients } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
+import { verifyTenantOwnership } from './helpers'
 import type { AnamnesisFormData } from '@/validations/anamnesis'
 
 export async function getAnamnesis(tenantId: string, patientId: string) {
@@ -32,6 +33,8 @@ export async function upsertAnamnesis(
   data: AnamnesisFormData,
   expectedUpdatedAt?: Date
 ) {
+  await verifyTenantOwnership(tenantId, patients, patientId, 'Patient')
+
   const existing = await getAnamnesis(tenantId, patientId)
 
   if (existing) {
