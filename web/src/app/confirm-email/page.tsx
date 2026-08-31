@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth-config'
 import { redirect } from 'next/navigation'
 import { ConfirmActions } from './confirm-actions'
+import { RequestConfirmationForm } from './request-confirmation-form'
 
 interface ConfirmEmailPageProps {
   searchParams: Promise<{ email?: string; token?: string }>
@@ -16,7 +17,6 @@ export default async function ConfirmEmailPage({ searchParams }: ConfirmEmailPag
   // (clicked from any device) or, failing that, from the session created at
   // signup (this browser, right after signing up, with no link clicked yet).
   const email = emailParam ?? session?.user?.email ?? null
-  if (!email) redirect('/login')
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-cream px-6">
@@ -27,7 +27,17 @@ export default async function ConfirmEmailPage({ searchParams }: ConfirmEmailPag
         </h1>
         <p className="mt-2 text-lg font-medium text-charcoal">Confirme seu e-mail</p>
         <div className="mt-8 rounded-lg bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)] text-left">
-          <ConfirmActions email={email} token={token ?? null} />
+          {/* Signup no longer creates a session, so the address lives only in
+              the link. Someone who closed that tab arrives here with neither,
+              and bouncing them to /login was a dead end: the password they
+              just chose is refused for being unconfirmed, and the error only
+              said the credentials were invalid. They can ask for a new link
+              themselves instead. */}
+          {email ? (
+            <ConfirmActions email={email} token={token ?? null} />
+          ) : (
+            <RequestConfirmationForm />
+          )}
         </div>
       </div>
     </div>

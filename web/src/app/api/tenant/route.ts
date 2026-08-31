@@ -163,6 +163,23 @@ export async function PUT(request: Request) {
       )
     }
 
+    // The same entitlement check as the whatsapp_settings branch above, and
+    // it has to be here too. `tenantSettingsSchema` is `.passthrough()` and
+    // `updateTenant` writes `settings` wholesale, so this branch could set
+    // whatsapp_mode without ever touching the guarded branch. Gating one
+    // entry point and not the other is the same as not gating it.
+    const incomingMode = (parsed.data.settings as Record<string, unknown> | undefined)
+      ?.whatsapp_mode
+    if (incomingMode === 'own') {
+      const allowed = await checkPlanFeature(ctx.tenantId, 'own_whatsapp_number')
+      if (!allowed) {
+        return NextResponse.json(
+          { error: 'Seu plano não inclui número próprio de WhatsApp. Faça upgrade para ativar.' },
+          { status: 402 },
+        )
+      }
+    }
+
     const existing = await getTenant(ctx.tenantId)
     const tenant = await updateTenant(ctx.tenantId, parsed.data)
     if (!tenant) {

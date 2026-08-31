@@ -92,3 +92,21 @@ export type StripeWebhookEvent =
   | InvoicePaymentFailed
   | CustomerSubscriptionUpdated
   | CustomerSubscriptionDeleted
+
+/**
+ * Current state of a subscription, straight from Stripe.
+ *
+ * Webhook payloads are snapshots of the moment the event was created, and a
+ * signed event stays replayable indefinitely, so a delayed or resent
+ * checkout.session.completed can describe a subscription that has since been
+ * cancelled. Returns null rather than throwing: a webhook that cannot reach
+ * Stripe should decline to act, not fail the delivery and invite a retry
+ * that will do the same thing.
+ */
+export async function retrieveSubscription(subscriptionId: string) {
+  try {
+    return await getStripeClient().subscriptions.retrieve(subscriptionId)
+  } catch {
+    return null
+  }
+}

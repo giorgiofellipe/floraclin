@@ -3,7 +3,7 @@ import type Stripe from 'stripe'
 import { db } from '@/db/client'
 import { tenantSubscriptions, plans } from '@/db/schema'
 import { eq } from 'drizzle-orm'
-import { constructWebhookEvent } from '@/lib/stripe'
+import { constructWebhookEvent, retrieveSubscription } from '@/lib/stripe'
 import {
   getPlanBySlug,
   updateSubscriptionPlan,
@@ -66,7 +66,14 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   if (!tenantId || !planSlug) return
 
   const plan = await getPlanBySlug(planSlug)
-  if (!plan) return
+  if (!plan || !plan.active) return
+
+  // The same replay guard /api/billing/confirm carries. A signed
+  // checkout.session.completed stays valid and replayable forever, and Stripe
+  // itself will resend one after a delivery failure. Without these, an event
+  // that arrives after the customer cancelled overwrites `canceled` with
+  // `active` and hands back access they stopped paying for.
+  if (session.payment_status !== 'paid') return
 
   const stripeCustomerId =
     typeof session.customer === 'string' ? session.customer : session.customer?.id
@@ -74,6 +81,16 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     typeof session.subscription === 'string'
       ? session.subscription
       : session.subscription?.id
+
+  // Unlike the confirm route we cannot expand the subscription here, since
+  // the payload is whatever Stripe signed. Ask Stripe for its current state
+  // rather than trusting a snapshot that may be days old.
+  if (stripeSubscriptionId) {
+    const current = await retrieveSubscription(stripeSubscriptionId)
+    if (!current) return
+    if (current.status !== 'active' && current.status !== 'trialing') return
+    if (current.cancel_at_period_end) return
+  }
 
   await updateSubscriptionPlan(tenantId, plan.id, 'stripe', {
     status: 'active',

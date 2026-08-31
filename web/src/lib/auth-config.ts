@@ -50,13 +50,19 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         if (!valid) return null
 
         // Double opt-in is enforced here rather than only in middleware.
-        // Signup no longer signs anyone in, so refusing at this point means
-        // an unconfirmed account never obtains a session, and therefore
-        // cannot reach the API either. Gating pages alone would have left
-        // every route callable with a cookie.
+        // Signup no longer signs anyone in, so refusing here means the
+        // password never yields a session, and middleware lets every /api
+        // request through before it looks at emailVerified: gating pages
+        // alone would have left the whole API callable with a cookie.
+        //
+        // This is not the only door, and deliberately so. Google sign-in and
+        // the Resend magic link both bypass `authorize` entirely, and both
+        // prove the person controls the address, which is the same thing the
+        // confirmation email proves. Auth.js stamps emailVerified on those
+        // paths, so they satisfy the gate rather than sidestep it.
         //
         // Existing accounts were backfilled by 0023_email_confirmation.sql,
-        // and Google users are stamped on sign-in, so neither is affected.
+        // so no current customer is caught by this.
         if (!user.emailVerified) return null
 
         return { id: user.id, email: user.email, name: user.fullName }

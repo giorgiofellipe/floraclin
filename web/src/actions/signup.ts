@@ -143,6 +143,7 @@ export async function signUpWithGoogle() {
 
 export type ClinicDetailsState = {
   error?: { clinicName?: string[]; phone?: string[]; general?: string[] }
+  success?: boolean
 } | null
 
 export async function createClinicForOAuthUser(
@@ -162,7 +163,11 @@ export async function createClinicForOAuthUser(
     .limit(1)
 
   if (existingMembership) {
-    redirect('/dashboard')
+    // Same reason as the success path below: a redirect here would hand
+    // /dashboard a token that still says tenantId: null and get bounced
+    // straight back. This is the retry case, so the clinic already exists and
+    // there is nothing left to do but refresh the token.
+    return { success: true }
   }
 
   const raw = {
@@ -206,8 +211,11 @@ export async function createClinicForOAuthUser(
     }).catch(() => {})
   }
 
-  // Straight in. This is the Google path, and Google has already asserted the
-  // address, so there is nothing to confirm. Only the credentials path stops
-  // at /confirm-email.
-  redirect('/dashboard')
+  // Deliberately no redirect. The JWT was minted at Google sign-in, before
+  // this membership existed, so it still carries tenantId: null. Middleware
+  // sends any authenticated user without a tenant back to this very page, so
+  // redirecting to /dashboard here loops: the client has to refresh the
+  // session first. It reports success and navigates once the token is
+  // current.
+  return { success: true }
 }

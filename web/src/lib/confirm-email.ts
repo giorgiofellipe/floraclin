@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { verificationTokens } from '@/db/schema'
-import { eq, and, isNull, lt, or } from 'drizzle-orm'
+import { eq, and, isNull, lt, or, sql } from 'drizzle-orm'
 import crypto from 'crypto'
 
 /**
@@ -59,6 +59,12 @@ export async function issueConfirmationToken(
     })
     .onConflictDoUpdate({
       target: verificationTokens.identifier,
+      // The unique index behind this is PARTIAL (see 0023). Postgres only
+      // infers a partial index as the ON CONFLICT arbiter when the clause
+      // repeats its predicate; without this it raises 42P10 and every signup
+      // and resend throws. Drizzle emits the predicate only when targetWhere
+      // is passed.
+      targetWhere: sql`${verificationTokens.identifier} like 'confirm:%'`,
       set: {
         token: hashToken(raw),
         expires: new Date(now.getTime() + CONFIRM_TOKEN_TTL_MS),
