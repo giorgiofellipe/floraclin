@@ -14,7 +14,7 @@ export const STAGE_CONFIG: Record<
   { label: string; color: string; bg: string }
 > = {
   novo: { label: 'Novo', color: '#25D366', bg: '#E8F8EE' },
-  contatado: { label: 'Contatado', color: '#42A5F5', bg: '#E3F2FD' },
+  contatado: { label: 'Aguardando retorno', color: '#42A5F5', bg: '#E3F2FD' },
   qualificado: { label: 'Qualificado', color: '#FFA726', bg: '#FFF3E0' },
   agendado: { label: 'Agendado', color: '#AB47BC', bg: '#F3E5F5' },
   convertido: { label: 'Convertido', color: '#66BB6A', bg: '#E8F5E9' },

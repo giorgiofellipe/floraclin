@@ -6,6 +6,7 @@ import { pushSseEvent } from '@/db/queries/whatsapp'
 import { updateProspectSchema } from '@/validations/prospect'
 import type { Role } from '@/types'
 import { handleApiError } from '@/lib/api-error'
+import { enqueueMetaEvent } from '@/lib/meta/events'
 
 async function requireWhatsappAccess() {
   const ctx = await getAuthContext()
@@ -86,6 +87,33 @@ export async function PATCH(
         from: existing.stage,
         to: parsed.data.stage,
       }, ctx.userId)
+
+      if (parsed.data.stage === 'contatado') {
+        await enqueueMetaEvent({
+          tenantId: ctx.tenantId,
+          eventName: 'Contact',
+          eventId: `contact:${id}`,
+          eventTime: new Date(),
+          prospectId: id,
+          patientId: prospect.convertedPatientId,
+          contact: { phone: prospect.phone, fullName: prospect.name },
+          actionSource: 'system_generated',
+        })
+      } else if (parsed.data.stage === 'agendado') {
+        // Same id an appointment-sourced Schedule computes, so the unique
+        // index on (tenant_id, event_id) keeps a lead to one Schedule however
+        // many paths fire it.
+        await enqueueMetaEvent({
+          tenantId: ctx.tenantId,
+          eventName: 'Schedule',
+          eventId: `schedule:${id}`,
+          eventTime: new Date(),
+          prospectId: id,
+          patientId: prospect.convertedPatientId,
+          contact: { phone: prospect.phone, fullName: prospect.name },
+          actionSource: 'system_generated',
+        })
+      }
     }
     if (parsed.data.assignedUserId !== undefined && parsed.data.assignedUserId !== existing.assignedUserId) {
       await logProspectActivity(ctx.tenantId, id, 'assigned', {

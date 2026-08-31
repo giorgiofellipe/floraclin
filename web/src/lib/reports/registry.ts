@@ -113,6 +113,16 @@ export const REPORTS: ReportDefinition[] = [
     emptyHint: 'Amplie o período ou volte para todos os profissionais.',
   },
   {
+    slug: 'marketing',
+    title: 'Desempenho de campanhas',
+    description: 'Leads, agendamentos e receita por anúncio.',
+    group: 'financeiro',
+    filters: ['date-range'],
+    apiPath: '/api/reports/marketing',
+    defaultRangeDays: DEFAULT_RANGE_DAYS,
+    emptyHint: 'Nenhum lead atribuído a anúncios no período. Verifique a integração com a Meta.',
+  },
+  {
     slug: 'procedimentos-realizados',
     title: 'Procedimentos realizados',
     description:

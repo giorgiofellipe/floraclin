@@ -1,7 +1,5 @@
 import { google } from 'googleapis'
-import { db } from '@/db/client'
-import { calendarConnections } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { getConnectionById, updateConnection } from '@/db/queries/calendar'
 import { randomBytes, createHmac, timingSafeEqual } from 'crypto'
 import { reportSideEffectFailure } from '@/lib/observability'
 
@@ -71,11 +69,9 @@ export function generateFeedToken(): string {
 }
 
 export async function getGoogleCalendarClient(connectionId: string) {
-  const [connection] = await db
-    .select()
-    .from(calendarConnections)
-    .where(eq(calendarConnections.id, connectionId))
-    .limit(1)
+  // Through the query module so the stored tokens are decrypted on the way in
+  // and re-encrypted on the way out.
+  const connection = await getConnectionById(connectionId)
 
   if (!connection) {
     throw new Error('Calendar connection not found')
@@ -92,15 +88,11 @@ export async function getGoogleCalendarClient(connectionId: string) {
   if (connection.tokenExpiresAt.getTime() < fiveMinFromNow) {
     const { credentials } = await oauth2Client.refreshAccessToken()
 
-    await db
-      .update(calendarConnections)
-      .set({
-        accessToken: credentials.access_token!,
-        refreshToken: credentials.refresh_token ?? connection.refreshToken,
-        tokenExpiresAt: new Date(credentials.expiry_date!),
-        updatedAt: new Date(),
-      })
-      .where(eq(calendarConnections.id, connectionId))
+    await updateConnection(connectionId, connection.tenantId, {
+      accessToken: credentials.access_token!,
+      refreshToken: credentials.refresh_token ?? connection.refreshToken,
+      tokenExpiresAt: new Date(credentials.expiry_date!),
+    })
 
     oauth2Client.setCredentials(credentials)
   }

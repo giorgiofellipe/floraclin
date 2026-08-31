@@ -69,6 +69,14 @@ vi.mock('@/db/client', () => ({
   },
 }))
 
+// Attribution capture is a side effect of the meta conversions feature and is
+// irrelevant to routing. Mock it so this suite does not need an insert-capable
+// db stub.
+vi.mock('@/db/queries/lead-attributions', () => ({
+  recordAttribution: vi.fn(async () => ({ recorded: true })),
+  getAttribution: vi.fn(async () => null),
+}))
+
 vi.mock('@/db/schema', () => ({
   tenants: { id: 'id', settings: 'settings' },
   tenantUsers: { tenantId: 'tenant_id', userId: 'user_id', role: 'role' },

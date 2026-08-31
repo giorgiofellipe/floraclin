@@ -9,6 +9,7 @@ import { tenantUsers, users, procedureTypes } from '@/db/schema'
 import { eq, and, isNull } from 'drizzle-orm'
 import type { Role } from '@/types'
 import { handleApiError } from '@/lib/api-error'
+import { enqueueMetaEvent } from '@/lib/meta/events'
 
 export async function GET(request: Request) {
   try {
@@ -122,6 +123,17 @@ export async function POST(request: Request) {
     await logProspectActivity(ctx.tenantId, prospect.id, 'created', {
       source: parsed.data.source,
     }, ctx.userId)
+
+    await enqueueMetaEvent({
+      tenantId: ctx.tenantId,
+      eventName: 'Lead',
+      eventId: `lead:${prospect.id}`,
+      eventTime: new Date(),
+      prospectId: prospect.id,
+      patientId: prospect.convertedPatientId,
+      contact: { phone: prospect.phone, fullName: prospect.name },
+      actionSource: 'system_generated',
+    })
 
     return NextResponse.json({ data: prospect }, { status: 201 })
   } catch (error) {

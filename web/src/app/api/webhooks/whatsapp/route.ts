@@ -35,6 +35,9 @@ import { getTenant } from '@/db/queries/tenants'
 import { classifyMessage } from '@/lib/classify-prospect'
 import { toWhatsAppPhone } from '@/lib/phone'
 import { reportSideEffectFailure } from '@/lib/observability'
+import { parseReferral } from '@/lib/meta/attribution'
+import { recordAttribution } from '@/db/queries/lead-attributions'
+import { enqueueMetaEvent } from '@/lib/meta/events'
 
 export const dynamic = 'force-dynamic'
 
@@ -211,8 +214,46 @@ async function processInboundMessage(
     })
   }
 
+  // Every inbound message gets exactly one attribution row, whether or not
+  // this is a new prospect: an existing lead may still be missing its first
+  // observed ad click, and organic WhatsApp leads need a row too so they
+  // appear in the funnel instead of vanishing from it. The unique index on
+  // prospectId makes a repeat call a no-op (first touch wins). Caught locally
+  // like the other side effects in this file: losing an attribution row must
+  // never cost us the message itself.
+  try {
+    const referral = parseReferral(msg.referral)
+    await recordAttribution({
+      tenantId,
+      prospectId: prospect.id,
+      channel: referral?.ctwaClid ? 'ctwa' : 'organic',
+      ctwaClid: referral?.ctwaClid ?? null,
+      adId: referral?.adId ?? null,
+      adHeadline: referral?.adHeadline ?? null,
+      sourceUrl: referral?.sourceUrl ?? null,
+    })
+  } catch (err) {
+    reportWebhookFailure(err, 'lead_attribution', { tenantId })
+  }
+
   // Match to existing patient by phone
   const patient = await getPatientByPhone(tenantId, from)
+
+  // Emitted here and not next to createNewProspect: enqueueMetaEvent reads the
+  // attribution row at call time, so a Lead enqueued before recordAttribution
+  // reaches Meta with no ctwa_clid and no ad id, which is the whole match.
+  if (isNewProspect) {
+    await enqueueMetaEvent({
+      tenantId,
+      eventName: 'Lead',
+      eventId: `lead:${prospect.id}`,
+      eventTime: timestamp,
+      prospectId: prospect.id,
+      patientId: patient?.id ?? null,
+      actionSource: 'business_messaging',
+      contact: { phone: from, fullName: profileName },
+    })
+  }
 
   // Upsert conversation
   const conversation = await upsertConversation(
@@ -836,6 +877,19 @@ interface WhatsAppMessage {
   button?: { text?: string; payload?: string }
   /** Reply to another message. Carries the wamid of the message replied to. */
   context?: { id?: string; from?: string }
+  /** Present only on the first inbound message of an ad-originated conversation. */
+  referral?: {
+    source_url?: string
+    source_id?: string
+    source_type?: string
+    headline?: string
+    body?: string
+    media_type?: string
+    image_url?: string
+    video_url?: string
+    thumbnail_url?: string
+    ctwa_clid?: string
+  }
   image?: WhatsAppMediaPayload
   video?: WhatsAppMediaPayload
   audio?: WhatsAppMediaPayload

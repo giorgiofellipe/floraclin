@@ -10,6 +10,7 @@ import { TeamList } from '@/components/settings/team-list'
 import { ConsentTemplateList } from '@/components/settings/consent-template-list'
 import { BookingSettings } from '@/components/settings/booking-settings'
 import { CalendarConnectionCard } from '@/components/settings/calendar-connection-card'
+import { MetaConnectionCard } from '@/components/settings/meta-connection-card'
 import { AuditLogViewer } from '@/components/audit/audit-log-viewer'
 import { FinancialSettingsForm } from '@/components/financial/settings/financial-settings-form'
 import { ExpenseCategoriesManager } from '@/components/financial/settings/expense-categories-manager'
@@ -39,6 +40,7 @@ import {
   ClipboardSignatureIcon,
   UserCogIcon,
   CreditCardIcon,
+  PlugIcon,
 } from 'lucide-react'
 
 interface Tenant {
@@ -117,7 +119,7 @@ type TabKey =
   | 'clinica' | 'equipe' | 'perfil'
   | 'procedimentos' | 'produtos' | 'pacotes' | 'termos' | 'documentos'
   | 'agendamento' | 'financeiro' | 'whatsapp'
-  | 'assinatura' | 'auditoria'
+  | 'assinatura' | 'auditoria' | 'integracoes'
 
 interface TabItem {
   key: TabKey
@@ -162,6 +164,7 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     items: [
       { key: 'assinatura', label: 'Assinatura', icon: CreditCardIcon },
       { key: 'auditoria', label: 'Auditoria', icon: ShieldCheckIcon },
+      { key: 'integracoes', label: 'Integrações', icon: PlugIcon },
     ],
   },
 ]
@@ -437,6 +440,18 @@ export function SettingsPageClient({
                       helperText="Conecte o Google Calendar da clínica para sincronizar todos os agendamentos."
                     />
                   </div>
+                </div>
+              )}
+
+              {effectiveTab === 'integracoes' && (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-sm font-medium text-charcoal">Meta (Facebook e Instagram)</h3>
+                    <p className="text-xs text-mid mt-1">
+                      Conecte sua conta da Meta para enviar eventos de conversão dos seus leads e pacientes.
+                    </p>
+                  </div>
+                  <MetaConnectionCard />
                 </div>
               )}
 

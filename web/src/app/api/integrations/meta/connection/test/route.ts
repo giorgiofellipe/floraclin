@@ -1,0 +1,56 @@
+import { NextResponse } from 'next/server'
+import { requireRole } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error'
+import { getMetaConnectionRaw, markConnectionVerified } from '@/db/queries/meta-connections'
+import { getAppUrl } from '@/lib/app-url'
+import { postEvents } from '@/lib/meta/capi-client'
+import { sha256Hex } from '@/lib/meta/hashing'
+
+// Owner-only like the rest of the connection routes: this fires a real
+// Conversions API call on the clinic's stored token, so it is a write as far
+// as Meta is concerned, not a read.
+export async function POST(request: Request) {
+  try {
+    const ctx = await requireRole('owner')
+    const connection = await getMetaConnectionRaw(ctx.tenantId)
+
+    if (!connection) {
+      return NextResponse.json({ error: 'Nenhuma conexão configurada.' }, { status: 404 })
+    }
+    if (!connection.datasetId) {
+      return NextResponse.json({ error: 'Escolha um conjunto de dados antes de testar a conexão.' }, { status: 400 })
+    }
+    // The test event code is optional: Meta ingests the event either way, the
+    // code only makes it show up in the Test Events window.
+    const result = await postEvents(
+      {
+        datasetId: connection.datasetId,
+        accessToken: connection.accessToken,
+        testEventCode: connection.testEventCode,
+      },
+      [
+        {
+          event_name: 'PageView',
+          event_time: Math.floor(Date.now() / 1000),
+          event_id: `test-${connection.id}-${Date.now()}`,
+          action_source: 'website',
+          // Meta rejects an event with an empty `user_data`, and
+          // `action_source: 'website'` additionally requires an
+          // `event_source_url`. Either omission answers "Invalid parameter".
+          // The id is a digest of the connection, so the probe carries no
+          // real person's data.
+          event_source_url: getAppUrl(),
+          user_data: { external_id: [sha256Hex(`meta-connection-test:${connection.id}`)] },
+        },
+      ],
+    )
+
+    if (result.ok) {
+      await markConnectionVerified(ctx.tenantId)
+    }
+
+    return NextResponse.json(result)
+  } catch (error) {
+    return handleApiError(error, request)
+  }
+}

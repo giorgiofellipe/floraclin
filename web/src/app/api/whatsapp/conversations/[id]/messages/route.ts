@@ -22,6 +22,7 @@ import { sendTextMessage, sendTemplateMessage, sendMediaMessage, resolveTemplate
 import { isSubscriptionActive, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
 import { getProspect, updateProspect } from '@/db/queries/prospects'
 import { handleApiError } from '@/lib/api-error'
+import { enqueueMetaEvent } from '@/lib/meta/events'
 
 const messageListSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -296,6 +297,16 @@ export async function POST(
         await pushSseEvent(ctx.tenantId, 'prospect_updated', {
           prospectId: prospect.id,
           stage: 'contatado',
+        })
+        await enqueueMetaEvent({
+          tenantId: ctx.tenantId,
+          eventName: 'Contact',
+          eventId: `contact:${prospect.id}`,
+          eventTime: new Date(),
+          prospectId: prospect.id,
+          patientId: prospect.convertedPatientId,
+          contact: { phone: prospect.phone, fullName: prospect.name },
+          actionSource: 'business_messaging',
         })
       }
     }

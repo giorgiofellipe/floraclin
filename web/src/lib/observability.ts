@@ -53,7 +53,8 @@ export function maskPath(pathname: string): string {
 
 // Query parameters that are credentials or contact details in this app:
 // the password-reset and magic-link tokens, the e-mail they are addressed to,
-// and the OAuth exchange code.
+// the OAuth exchange code, and Meta's own parameter names for the app secret
+// and the token being traded up (`client_secret`, `fb_exchange_token`).
 const SENSITIVE_PARAMS = new Set([
   'token',
   'code',
@@ -63,6 +64,8 @@ const SENSITIVE_PARAMS = new Set([
   'signature',
   'password',
   'access_token',
+  'client_secret',
+  'fb_exchange_token',
   'state',
 ])
 

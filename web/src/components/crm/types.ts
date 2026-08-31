@@ -29,6 +29,7 @@ export interface Prospect {
   lostReason: string | null
   createdAt: string
   updatedAt: string
+  attribution: { adHeadline: string | null; channel: string } | null
 }
 
 export interface ProspectStats {

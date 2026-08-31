@@ -12,6 +12,7 @@ import {
   renegotiationLinks,
   expenses,
   expenseInstallments,
+  metaConversionEvents,
 } from '@/db/schema'
 import { eq, and, isNull, sql, count, sum, desc, inArray, or, gte, lte } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
@@ -31,6 +32,16 @@ import type { CreateFinancialEntryInput, FinancialFilterInput, RecordPaymentInpu
 import type { PaymentMethod, FinancialStatus } from '@/types'
 import { addDays } from 'date-fns'
 import { verifyTenantOwnership } from './helpers'
+import {
+  claimAndSendPendingEvent,
+  enqueueMetaEvent,
+  resolveMetaEventPrerequisites,
+  type MetaEventPrerequisites,
+  type PendingMetaEventRow,
+} from '@/lib/meta/events'
+import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
+import type { MetaActionSource } from '@/lib/meta/types'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 // ─── CREATE FINANCIAL ENTRY (unchanged) ─────────────────────────────
 
@@ -97,6 +108,256 @@ export async function createFinancialEntry(
   return withTransaction(execute)
 }
 
+// ─── META CONVERSIONS: Purchase on payment ──────────────────────────
+
+/**
+ * Everything a Purchase event needs that cannot be read from the payment
+ * transaction. `prerequisites` is null when the pre-transaction resolution
+ * failed: the event still goes to the outbox, just without a payload.
+ */
+interface MetaPurchaseContext {
+  patientId: string
+  contact: { phone: string | null; email: string | null; fullName: string | null }
+  prospectId: string | null
+  prerequisites: MetaEventPrerequisites | null
+}
+
+/**
+ * Resolved before the payment transaction opens, keyed by financial entry.
+ * Every read here runs on the global pool handle, and the pool holds 5
+ * connections: five concurrent payments each waiting on a sixth checkout
+ * while holding a locked installment row would deadlock the pool outright.
+ *
+ * Purely an optimisation. Nothing here is allowed to decide whether the event
+ * happens, only how much of it can be built up front.
+ */
+async function prepareMetaPurchaseContexts(
+  tenantId: string,
+  installmentIds: string[]
+): Promise<Map<string, MetaPurchaseContext>> {
+  const contexts = new Map<string, MetaPurchaseContext>()
+  if (installmentIds.length === 0) return contexts
+
+  try {
+    const rows = await db
+      .select({
+        financialEntryId: installments.financialEntryId,
+        patientId: financialEntries.patientId,
+        phone: patients.phone,
+        email: patients.email,
+        fullName: patients.fullName,
+      })
+      .from(installments)
+      .innerJoin(
+        financialEntries,
+        and(
+          eq(financialEntries.id, installments.financialEntryId),
+          eq(financialEntries.tenantId, tenantId)
+        )
+      )
+      .innerJoin(
+        patients,
+        and(eq(patients.id, financialEntries.patientId), eq(patients.tenantId, tenantId))
+      )
+      .where(and(inArray(installments.id, installmentIds), eq(installments.tenantId, tenantId)))
+
+    for (const row of rows) {
+      if (contexts.has(row.financialEntryId)) continue
+
+      const contact = {
+        phone: row.phone ?? null,
+        email: row.email ?? null,
+        fullName: row.fullName ?? null,
+      }
+
+      // Per row, so one unresolvable patient costs its own payload and not
+      // every other entry in the same bulk payment.
+      try {
+        const prospect = await resolveProspectForPatient(tenantId, {
+          patientId: row.patientId,
+          phone: row.phone,
+        })
+        const prospectId = prospect?.id ?? null
+
+        contexts.set(row.financialEntryId, {
+          patientId: row.patientId,
+          contact,
+          prospectId,
+          prerequisites: await resolveMetaEventPrerequisites(tenantId, {
+            prospectId,
+            patientId: row.patientId,
+            phone: row.phone,
+          }),
+        })
+      } catch (error) {
+        reportSideEffectFailure(error, { area: 'meta-capi', step: 'prepare_purchase_context' })
+        contexts.set(row.financialEntryId, {
+          patientId: row.patientId,
+          contact,
+          prospectId: null,
+          prerequisites: null,
+        })
+      }
+    }
+  } catch (error) {
+    reportSideEffectFailure(error, { area: 'meta-capi', step: 'prepare_purchase_context' })
+  }
+
+  return contexts
+}
+
+/**
+ * Gate 1: only when money actually arrived (entry now paid or partial, not
+ * left pending by a short payment). Gate 2: skip a renegotiated entry, since
+ * its balance is money already reported as Purchase on the original entry.
+ * No "first payment" check: eventId is stable per financial entry, and the
+ * outbox's unique index on (tenant_id, event_id) is the once-only guarantee.
+ *
+ * A missing context is not a reason to skip: without one the row goes in bare
+ * and is enriched when it is sent.
+ *
+ * Returns the outbox row the caller owes a send once its transaction commits,
+ * or null when there is nothing to deliver.
+ */
+async function emitPurchaseEventForEntry(
+  tx: typeof db,
+  tenantId: string,
+  financialEntryId: string,
+  eventTime: Date,
+  context: MetaPurchaseContext | undefined
+): Promise<PendingMetaEventRow | null> {
+  try {
+    const [entry] = await tx
+      .select({
+        status: financialEntries.status,
+        totalAmount: financialEntries.totalAmount,
+      })
+      .from(financialEntries)
+      .where(and(eq(financialEntries.id, financialEntryId), eq(financialEntries.tenantId, tenantId)))
+      .limit(1)
+
+    if (!entry || (entry.status !== 'paid' && entry.status !== 'partial')) {
+      return null
+    }
+
+    // renegotiation_links has no tenant_id of its own, so the entry it points
+    // at is what scopes the lookup.
+    const [renegotiated] = await tx
+      .select({ id: renegotiationLinks.id })
+      .from(renegotiationLinks)
+      .innerJoin(
+        financialEntries,
+        and(
+          eq(financialEntries.id, renegotiationLinks.newEntryId),
+          eq(financialEntries.tenantId, tenantId)
+        )
+      )
+      .where(eq(renegotiationLinks.newEntryId, financialEntryId))
+      .limit(1)
+
+    if (renegotiated) {
+      return null
+    }
+
+    const eventId = `purchase:${financialEntryId}`
+
+    // The outbox insert gets a SAVEPOINT of its own: raised on the caller's
+    // transaction instead, a failure here would abort the payment and every
+    // other installment in a bulk payment with it.
+    let inserted = false
+    try {
+      await tx.transaction(async (savepoint) => {
+        const outcome = await enqueueMetaEvent({
+          tenantId,
+          eventName: 'Purchase',
+          eventId,
+          eventTime,
+          prospectId: context?.prospectId ?? null,
+          patientId: context?.patientId ?? null,
+          contact: context?.contact ?? { phone: null, email: null, fullName: null },
+          actionSource: 'system_generated',
+          value: entry.totalAmount,
+          tx: savepoint as unknown as typeof db,
+          prerequisites: context?.prerequisites ?? undefined,
+        })
+        inserted = outcome.inserted
+      })
+    } catch (error) {
+      reportSideEffectFailure(error, { area: 'meta-capi', step: 'purchase_event_outbox' })
+      return null
+    }
+
+    // The row was already there, so it belongs to whoever wrote it: an
+    // earlier installment on the same entry, or the reconciler that may be
+    // sending it right now. Picking it up here posts the same Purchase twice.
+    if (!inserted) {
+      return null
+    }
+
+    // Re-read rather than threaded out of the enqueue, which does not return
+    // the row: `pending` is the only status that owes a send, and anything
+    // else means the insert resolved to skipped on the spot.
+    const [queued] = await tx
+      .select({
+        id: metaConversionEvents.id,
+        prospectId: metaConversionEvents.prospectId,
+        patientId: metaConversionEvents.patientId,
+        eventId: metaConversionEvents.eventId,
+        eventTime: metaConversionEvents.eventTime,
+        value: metaConversionEvents.value,
+        actionSource: metaConversionEvents.actionSource,
+        payload: metaConversionEvents.payload,
+        status: metaConversionEvents.status,
+      })
+      .from(metaConversionEvents)
+      .where(
+        and(eq(metaConversionEvents.tenantId, tenantId), eq(metaConversionEvents.eventId, eventId))
+      )
+      .limit(1)
+
+    if (!queued || queued.status !== 'pending') {
+      return null
+    }
+
+    return {
+      id: queued.id,
+      tenantId,
+      prospectId: queued.prospectId,
+      patientId: queued.patientId,
+      eventName: 'Purchase',
+      eventId: queued.eventId,
+      eventTime: queued.eventTime,
+      value: queued.value,
+      actionSource: queued.actionSource as MetaActionSource | null,
+      payload: queued.payload,
+    }
+  } catch (error) {
+    // Postgres has already aborted the caller's transaction, so swallowing
+    // this would answer 201 for a payment that silently rolled back.
+    reportSideEffectFailure(error, { area: 'meta-capi', step: 'purchase_event' })
+    throw error
+  }
+}
+
+/**
+ * Sends the Purchase rows a payment just wrote, after its transaction has
+ * committed. Inline delivery is what keeps a Purchase off the once-a-day
+ * meta-events cron, and `enqueueMetaEvent` deliberately refuses to post while
+ * it holds the caller's `tx`, so this is the only place the send can happen.
+ *
+ * Nothing here may surface: the money is already durable. A failed send
+ * leaves the row `pending` and the cron delivers it.
+ */
+async function deliverPurchaseEvents(rows: PendingMetaEventRow[]): Promise<void> {
+  for (const row of rows) {
+    try {
+      await claimAndSendPendingEvent(row)
+    } catch (error) {
+      reportSideEffectFailure(error, { area: 'meta-capi', step: 'purchase_event_send' })
+    }
+  }
+}
+
 // ─── RECORD PAYMENT (replaces payInstallment) ───────────────────────
 
 export async function recordPayment(
@@ -104,7 +365,9 @@ export async function recordPayment(
   userId: string,
   data: RecordPaymentInput
 ) {
-  return withTransaction(async (tx) => {
+  const metaContexts = await prepareMetaPurchaseContexts(tenantId, [data.installmentId])
+
+  const { purchase, ...result } = await withTransaction(async (tx) => {
     // 1. Lock installment row with FOR UPDATE
     const lockResult = await tx.execute(
       sql`SELECT * FROM floraclin.installments
@@ -342,12 +605,25 @@ export async function recordPayment(
     // 7. Update parent financial_entries status
     await updateEntryStatus(tx, tenantId, financialEntryId)
 
+    const purchase = await emitPurchaseEventForEntry(
+      tx,
+      tenantId,
+      financialEntryId,
+      paidAt,
+      metaContexts.get(financialEntryId)
+    )
+
     return {
       paymentRecord,
       allocation: paymentAllocation,
       installmentPaid: isPaid,
+      purchase,
     }
   })
+
+  await deliverPurchaseEvents(purchase ? [purchase] : [])
+
+  return result
 }
 
 // ─── REVERSE PAYMENT ───────────────────────────────────────────────
@@ -546,7 +822,9 @@ export async function bulkPayInstallments(
   userId: string,
   data: { installmentIds: string[]; paymentMethod: string; paidAt?: string }
 ) {
-  return withTransaction(async (tx) => {
+  const metaContexts = await prepareMetaPurchaseContexts(tenantId, data.installmentIds)
+
+  const { results, purchases } = await withTransaction(async (tx) => {
     // Lock all target installments
     const installmentIdArray = `{${data.installmentIds.join(',')}}`
     const lockResult = await tx.execute(
@@ -573,6 +851,7 @@ export async function bulkPayInstallments(
 
     // Process each installment through recordPayment logic
     const results = []
+    const purchases: PendingMetaEventRow[] = []
     for (const installmentId of data.installmentIds) {
       // Load the locked row
       const [row] = await tx
@@ -701,11 +980,24 @@ export async function bulkPayInstallments(
       // Update parent entry status
       await updateEntryStatus(tx, tenantId, row.financialEntryId)
 
+      const purchase = await emitPurchaseEventForEntry(
+        tx,
+        tenantId,
+        row.financialEntryId,
+        paidAt,
+        metaContexts.get(row.financialEntryId)
+      )
+      if (purchase) purchases.push(purchase)
+
       results.push({ installmentId, paymentRecord, allocation })
     }
 
-    return results
+    return { results, purchases }
   })
+
+  await deliverPurchaseEvents(purchases)
+
+  return results
 }
 
 // ─── BULK CANCEL ENTRIES ────────────────────────────────────────────

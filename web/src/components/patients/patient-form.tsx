@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { MaskedInput } from '@/components/ui/masked-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import { maskPhone, maskCPF, maskCEP } from '@/lib/masks'
 import { toLocalYmd } from '@/lib/dates'
 import { DatePicker } from '@/components/ui/date-picker'
@@ -81,6 +82,7 @@ export function PatientForm({ open, onOpenChange, patient, inline, prefill }: Pa
     occupation: patient?.occupation ?? '',
     referralSource: patient?.referralSource ?? '',
     notes: patient?.notes ?? '',
+    marketingOptOut: patient?.marketingOptOut ?? false,
     address: {
       street: address?.street ?? '',
       number: address?.number ?? '',
@@ -369,6 +371,25 @@ export function PatientForm({ open, onOpenChange, patient, inline, prefill }: Pa
         <Label htmlFor="notes" className="text-xs uppercase tracking-wider text-mid">Observações</Label>
         <Textarea id="notes" {...form.register('notes')} rows={3} className="border-blush/60 focus:ring-sage/30 transition-shadow" />
       </div>
+
+      {/* LGPD: opt-out de medição de anúncios */}
+      <label className="flex cursor-pointer items-start gap-3 rounded-[3px] border border-[#E8ECEF] p-4 transition-colors duration-150 hover:bg-[#F4F6F8] hover:border-sage/30">
+        <Controller
+          control={form.control}
+          name="marketingOptOut"
+          render={({ field }) => (
+            <Checkbox
+              checked={field.value}
+              onCheckedChange={(val) => field.onChange(val === true)}
+              className="mt-0.5"
+              data-testid="patient-form-marketing-opt-out"
+            />
+          )}
+        />
+        <span className="text-sm text-charcoal">
+          Não usar dados para medição de anúncios
+        </span>
+      </label>
 
       {inline ? (
         <div className="flex justify-end gap-2 pt-2">
