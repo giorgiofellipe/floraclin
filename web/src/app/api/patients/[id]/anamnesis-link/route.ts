@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
+import { getPatient } from '@/db/queries/patients'
 import { createAnamnesisToken } from '@/db/queries/anamnesis-tokens'
+import { getAppUrl } from '@/lib/app-url'
 import { handleApiError } from '@/lib/api-error'
 
 export async function POST(
@@ -14,11 +16,13 @@ export async function POST(
     }
 
     const { id: patientId } = await params
-    const token = await createAnamnesisToken(ctx.tenantId, patientId, ctx.userId)
+    const patient = await getPatient(ctx.tenantId, patientId)
+    if (!patient) {
+      return NextResponse.json({ error: 'Paciente não encontrado' }, { status: 404 })
+    }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL
-      ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
-    const url = `${appUrl}/a/${token.token}`
+    const token = await createAnamnesisToken(ctx.tenantId, patientId, ctx.userId)
+    const url = `${getAppUrl()}/a/${token.token}`
 
     return NextResponse.json({ url, expiresAt: token.expiresAt })
   } catch (error) {
