@@ -11,6 +11,7 @@ import { signLogoPath } from '@/lib/logo'
 import { updateTenantSchema, bookingSettingsSchema } from '@/validations/tenant'
 import { whatsappSettingsSchema } from '@/validations/whatsapp'
 import { handleApiError } from '@/lib/api-error'
+import { checkPlanFeature } from '@/lib/plans'
 
 export async function GET(request: Request) {
   try {
@@ -49,6 +50,22 @@ export async function PUT(request: Request) {
           { error: 'Dados inválidos', fieldErrors: parsed.error.flatten().fieldErrors },
           { status: 400 },
         )
+      }
+
+      // own_whatsapp_number was enforced only by a `disabled` prop on the
+      // radio in whatsapp-settings-form. This route took whatsapp_mode
+      // straight from the body, so one request moved a free tenant onto its
+      // own Meta credentials: getTemplateForTenant branches on this value, so
+      // the tenant leaves the shared FloraClin number entirely. The paid
+      // feature was a greyed-out button.
+      if (parsed.data.whatsapp_mode === 'own') {
+        const allowed = await checkPlanFeature(ctx.tenantId, 'own_whatsapp_number')
+        if (!allowed) {
+          return NextResponse.json(
+            { error: 'Seu plano não inclui número próprio de WhatsApp. Faça upgrade para ativar.' },
+            { status: 402 },
+          )
+        }
       }
 
       const settingsUpdate: Record<string, unknown> = {
