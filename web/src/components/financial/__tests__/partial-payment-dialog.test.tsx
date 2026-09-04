@@ -216,6 +216,33 @@ describe('PartialPaymentDialog', () => {
     expect(screen.getByTestId('partial-payment-amount')).toHaveValue('1.050,00')
   })
 
+  // The edit flag protects a user's amount within one quote. Carrying it across
+  // a date change would submit a figure priced for the previous day, which is
+  // the class of bug this dialog exists to fix.
+  it('reprefills from the new quote when the user changes the date after editing the amount', async () => {
+    const { rerender } = render(
+      <PartialPaymentDialog open={true} onOpenChange={() => {}} installment={defaultInstallment} />,
+      { wrapper: createWrapper() },
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('partial-payment-amount')).toHaveValue('1.030,00')
+    })
+
+    fireEvent.change(screen.getByTestId('partial-payment-amount'), { target: { value: '105000' } })
+    expect(screen.getByTestId('partial-payment-amount')).toHaveValue('1.050,00')
+
+    fireEvent.change(screen.getByTestId('partial-payment-date'), {
+      target: { value: '2026-08-15' },
+    })
+    mockQuote({ data: { ...defaultQuote, totalDue: 900 } })
+    rerender(<PartialPaymentDialog open={true} onOpenChange={() => {}} installment={defaultInstallment} />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('partial-payment-amount')).toHaveValue('900,00')
+    })
+  })
+
   it('shows the error and disables confirm when the hook returns an error', () => {
     mockQuote({ data: undefined, error: new Error('Falha ao calcular a parcela') })
 

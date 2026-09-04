@@ -184,7 +184,13 @@ export function PartialPaymentDialog({
             <Label className="uppercase tracking-wider text-xs font-medium text-mid">Data do pagamento (opcional)</Label>
             <DatePicker
               value={paidAt}
-              onChange={(v) => setPaidAt(v)}
+              onChange={(v) => {
+                setPaidAt(v)
+                // A new date means a new price. Keeping the edit flag here
+                // would suppress the reprice and submit an amount quoted for
+                // the previous day, which is the bug this dialog exists to fix.
+                setAmountTouched(false)
+              }}
               className="w-full"
               data-testid="partial-payment-date"
             />

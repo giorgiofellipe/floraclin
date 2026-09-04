@@ -4,19 +4,13 @@ import { getAuthContext } from '@/lib/auth'
 import { getInstallmentQuote } from '@/db/queries/financial-quote'
 import { BusinessError } from '@/lib/errors'
 import { handleApiError } from '@/lib/api-error'
-import { brToday, endOfBrDay } from '@/lib/dates'
+import { paidAtField } from '@/validations/financial'
 
 const querySchema = z.object({
   // Postgres raises on a malformed uuid, which would answer 500 and page
   // Discord for what is just a bad URL.
   installmentId: z.string().uuid('Parcela inválida'),
-  paidAt: z
-    .string()
-    .datetime({ offset: true })
-    .refine((value) => new Date(value).getTime() <= endOfBrDay(brToday()).getTime(), {
-      message: 'Data do pagamento não pode ser no futuro',
-    })
-    .optional(),
+  paidAt: paidAtField,
 })
 
 export async function GET(

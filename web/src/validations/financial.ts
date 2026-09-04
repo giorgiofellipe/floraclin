@@ -8,7 +8,7 @@ const financialStatuses = ['pending', 'partial', 'paid', 'overdue', 'cancelled',
 // A payment date is a BR calendar day, so the ceiling is the end of today in
 // BR, not `Date.now()`. The UI anchors a picked day to BR noon, which is ahead
 // of the wall clock every morning.
-const paidAtField = z
+export const paidAtField = z
   .string()
   .datetime({ offset: true })
   .refine((value) => new Date(value).getTime() <= endOfBrDay(brToday()).getTime(), {
