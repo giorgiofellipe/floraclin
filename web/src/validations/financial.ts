@@ -1,8 +1,20 @@
 import { z } from 'zod'
 import type { PaymentMethod } from '@/types'
+import { brToday, endOfBrDay } from '@/lib/dates'
 
 const paymentMethods: PaymentMethod[] = ['pix', 'credit_card', 'debit_card', 'cash', 'transfer']
 const financialStatuses = ['pending', 'partial', 'paid', 'overdue', 'cancelled', 'renegotiated'] as const
+
+// A payment date is a BR calendar day, so the ceiling is the end of today in
+// BR, not `Date.now()`. The UI anchors a picked day to BR noon, which is ahead
+// of the wall clock every morning.
+const paidAtField = z
+  .string()
+  .datetime({ offset: true })
+  .refine((value) => new Date(value).getTime() <= endOfBrDay(brToday()).getTime(), {
+    message: 'Data do pagamento não pode ser no futuro',
+  })
+  .optional()
 
 export const createFinancialEntrySchema = z.object({
   patientId: z.string().uuid('Paciente inválido'),
@@ -21,7 +33,7 @@ export const recordPaymentSchema = z.object({
   paymentMethod: z.enum(paymentMethods as [string, ...string[]], {
     message: 'Método de pagamento inválido',
   }),
-  paidAt: z.string().datetime({ offset: true }).optional(), // ISO string, defaults to now
+  paidAt: paidAtField, // ISO string, defaults to now
   notes: z.string().optional(),
 })
 
@@ -40,7 +52,7 @@ export const bulkPaySchema = z.object({
   paymentMethod: z.enum(paymentMethods as [string, ...string[]], {
     message: 'Método de pagamento inválido',
   }),
-  paidAt: z.string().datetime({ offset: true }).optional(),
+  paidAt: paidAtField,
 })
 
 export const bulkCancelSchema = z.object({

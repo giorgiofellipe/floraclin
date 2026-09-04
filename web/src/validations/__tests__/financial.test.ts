@@ -9,6 +9,7 @@ import {
   ledgerFilterSchema,
   financialFilterSchema,
 } from '../financial'
+import { parseBrDate, brToday, endOfBrDay } from '@/lib/dates'
 
 const UUID = '550e8400-e29b-41d4-a716-446655440000'
 const UUID2 = '550e8400-e29b-41d4-a716-446655440001'
@@ -539,5 +540,50 @@ describe('financialFilterSchema', () => {
     if (result.success) {
       expect(result.data.limit).toBe(20)
     }
+  })
+})
+
+describe('paidAt bounds', () => {
+  const base = {
+    installmentId: '00000000-0000-4000-8000-000000000001',
+    amount: 100,
+    paymentMethod: 'pix',
+  }
+
+  it('accepts a past date', () => {
+    expect(
+      recordPaymentSchema.safeParse({ ...base, paidAt: '2020-01-01T12:00:00.000Z' }).success,
+    ).toBe(true)
+  })
+
+  it('accepts an omitted date', () => {
+    expect(recordPaymentSchema.safeParse(base).success).toBe(true)
+  })
+
+  // AR-3: BR noon today is "in the future" every morning before 09:00 UTC-3.
+  it('accepts BR noon of the current BR day', () => {
+    const paidAt = parseBrDate(brToday(), '12:00:00').toISOString()
+    expect(recordPaymentSchema.safeParse({ ...base, paidAt }).success).toBe(true)
+  })
+
+  it('accepts the last instant of the current BR day', () => {
+    const paidAt = endOfBrDay(brToday()).toISOString()
+    expect(recordPaymentSchema.safeParse({ ...base, paidAt }).success).toBe(true)
+  })
+
+  it('rejects tomorrow', () => {
+    const paidAt = new Date(endOfBrDay(brToday()).getTime() + 1000).toISOString()
+    expect(recordPaymentSchema.safeParse({ ...base, paidAt }).success).toBe(false)
+  })
+
+  it('rejects tomorrow on the bulk schema', () => {
+    const paidAt = new Date(endOfBrDay(brToday()).getTime() + 1000).toISOString()
+    expect(
+      bulkPaySchema.safeParse({
+        installmentIds: ['00000000-0000-4000-8000-000000000001'],
+        paymentMethod: 'pix',
+        paidAt,
+      }).success,
+    ).toBe(false)
   })
 })
