@@ -4,6 +4,7 @@ import { createAuditLog } from '@/lib/audit'
 import { recordPayment } from '@/db/queries/financial'
 import { recordPaymentSchema } from '@/validations/financial'
 import { handleApiError } from '@/lib/api-error'
+import { BusinessError } from '@/lib/errors'
 
 export async function PUT(
   request: Request,
@@ -54,9 +55,8 @@ export async function PUT(
 
     return NextResponse.json({ success: true, data: result })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('não encontrada') || msg.includes('já está') || msg.includes('cancelada')) {
-      return NextResponse.json({ error: msg }, { status: 400 })
+    if (error instanceof BusinessError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 409 })
     }
     return handleApiError(error, request)
   }

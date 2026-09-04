@@ -584,7 +584,7 @@ Fixture unless a case says otherwise: R$750, due `2026-05-22`, no prior payments
 4. **[AR-1]** A prior payment of 500 dated `2026-08-01T12:00:00.000Z` exists; a new payment dated `2026-06-22T12:00:00.000Z` of `772.75` succeeds, and the prior record's allocation columns are rewritten.
 5. A payment record with `reversedAt` set is excluded from the replay: `amountPaid` reflects only the live record.
 6. Status `paid` throws `INSTALLMENT_ALREADY_PAID`; status `cancelled` throws `INSTALLMENT_CANCELLED`.
-7. **[AR-2]** A payment of 1 against 25 of accrued interest stores `interest_amount` of 25, not 0.
+7. **[AR-2]** A payment of 1 against 25 of accrued interest stores `interest_amount` of 24, the uncovered remainder. The point is that it is not 0: the old replay forgave it.
 8. `emitPurchaseEventForEntry` does not enqueue when `paidAt` is older than 7 days, and does when it is inside the window. Assert through the `enqueueMetaEvent` mock, as `financial-meta.test.ts` does.
 
 - [ ] **Step 2: Run to verify they fail**
