@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -17,10 +17,12 @@ import { MaskedInput } from '@/components/ui/masked-input'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DatePicker } from '@/components/ui/date-picker'
 import { usePayInstallment } from '@/hooks/mutations/use-financial-mutations'
+import { useInstallmentQuote } from '@/hooks/queries/use-installment-quote'
 import { formatCurrency } from '@/lib/utils'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
-import { allocatePayment, type InstallmentState } from '@/lib/financial/penalties'
+import { allocatePayment } from '@/lib/financial/penalties'
 import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
+import { brToday, parseBrDate } from '@/lib/dates'
 import type { PaymentMethod } from '@/types'
 
 interface PartialPaymentDialogProps {
@@ -29,9 +31,6 @@ interface PartialPaymentDialogProps {
   installment: {
     id: string
     amount: number
-    amountPaid: number
-    fineAmount: number
-    interestAmount: number
   }
   onSuccess?: () => void
 }
@@ -42,32 +41,52 @@ export function PartialPaymentDialog({
   installment,
   onSuccess,
 }: PartialPaymentDialogProps) {
-  const remainingPrincipal = installment.amount - installment.amountPaid
-  const totalDue = remainingPrincipal + installment.fineAmount + installment.interestAmount
-
-  const [amountStr, setAmountStr] = useState(() => maskCurrency(String(Math.round(totalDue * 100))))
+  const [amountStr, setAmountStr] = useState('')
+  const [amountTouched, setAmountTouched] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix')
   const [paidAt, setPaidAt] = useState('')
   const [notes, setNotes] = useState('')
+
+  // A picked day equal to today is sent as "no date" so the server uses the
+  // real instant. BR noon on today is ahead of the wall clock all morning, and
+  // the API rejects a future payment date.
+  const paidAtIso = useMemo(() => {
+    if (!paidAt || paidAt === brToday()) return undefined
+    return parseBrDate(paidAt, '12:00:00').toISOString()
+  }, [paidAt])
+
+  const {
+    data: quote,
+    isFetching: isQuoting,
+    error: quoteError,
+    refetch: refetchQuote,
+  } = useInstallmentQuote(installment.id, paidAtIso, open)
 
   const payInstallment = usePayInstallment()
   const isPending = payInstallment.isPending
 
   const parsedAmount = amountStr ? parseCurrency(amountStr) : 0
 
-  const allocation = useMemo(() => {
-    if (parsedAmount <= 0) return null
-    const state: InstallmentState = {
-      amount: installment.amount,
-      amountPaid: installment.amountPaid,
-      fineAmount: installment.fineAmount,
-      interestAmount: installment.interestAmount,
-    }
-    return allocatePayment(state, parsedAmount)
-  }, [parsedAmount, installment])
+  useEffect(() => {
+    if (!quote || amountTouched) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- prefill from quote unless the user has edited the field
+    setAmountStr(maskCurrency(String(Math.round(quote.totalDue * 100))))
+  }, [quote, amountTouched])
 
-  // Allow small tolerance for rounding differences between client and server
-  const isOverpayment = parsedAmount > totalDue + 0.02
+  const allocation = useMemo(() => {
+    if (!quote || parsedAmount <= 0) return null
+    return allocatePayment(
+      {
+        amount: installment.amount,
+        amountPaid: installment.amount - quote.remainingPrincipal,
+        fineAmount: quote.fineAmount,
+        interestAmount: quote.interestAmount,
+      },
+      parsedAmount,
+    )
+  }, [parsedAmount, quote, installment.amount])
+
+  const isOverpayment = quote != null && parsedAmount > quote.totalDue + 0.01
 
   async function handleConfirm() {
     if (parsedAmount <= 0 || isOverpayment) return
@@ -76,7 +95,7 @@ export function PartialPaymentDialog({
         id: installment.id,
         amount: parsedAmount,
         paymentMethod,
-        paidAt: paidAt ? new Date(paidAt).toISOString() : undefined,
+        paidAt: paidAtIso,
         notes: notes || undefined,
       })
       onOpenChange(false)
@@ -92,13 +111,33 @@ export function PartialPaymentDialog({
         <DialogHeader>
           <DialogTitle className="text-lg font-semibold text-charcoal">Registrar Pagamento</DialogTitle>
           <DialogDescription className="text-mid">
-            Total pendente: {formatCurrency(totalDue)} (Principal {formatCurrency(remainingPrincipal)}
-            {installment.fineAmount > 0 && <> + Multa {formatCurrency(installment.fineAmount)}</>}
-            {installment.interestAmount > 0 && <> + Juros {formatCurrency(installment.interestAmount)}</>})
+            {isQuoting && !quote ? (
+              'Calculando...'
+            ) : quote ? (
+              <>
+                Total pendente: {formatCurrency(quote.totalDue)} (Principal{' '}
+                {formatCurrency(quote.remainingPrincipal)}
+                {quote.fineAmount > 0 && <> + Multa {formatCurrency(quote.fineAmount)}</>}
+                {quote.interestAmount > 0 && <> + Juros {formatCurrency(quote.interestAmount)}</>})
+              </>
+            ) : (
+              'Calculando...'
+            )}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          {quoteError && (
+            <div className="rounded-[3px] border border-red-200 bg-red-50 p-3 space-y-2">
+              <p className="text-xs text-red-600">
+                {quoteError instanceof Error ? quoteError.message : 'Erro ao calcular o valor da parcela'}
+              </p>
+              <Button variant="outline" size="sm" onClick={() => refetchQuote()}>
+                Tentar novamente
+              </Button>
+            </div>
+          )}
+
           {/* Amount */}
           <div className="space-y-2">
             <Label className="uppercase tracking-wider text-xs font-medium text-mid">Valor do pagamento (R$)</Label>
@@ -109,7 +148,10 @@ export function PartialPaymentDialog({
               <MaskedInput
                 mask={maskCurrency}
                 value={amountStr}
-                onChange={(e) => setAmountStr(e.target.value)}
+                onChange={(e) => {
+                  setAmountStr(e.target.value)
+                  setAmountTouched(true)
+                }}
                 placeholder="0,00"
                 className="pl-10 text-lg font-medium"
                 inputMode="numeric"
@@ -118,9 +160,9 @@ export function PartialPaymentDialog({
             </div>
           </div>
 
-          {isOverpayment && (
+          {isOverpayment && quote && (
               <p className="text-xs text-red-600">
-                O valor excede o total pendente de {formatCurrency(totalDue)}.
+                O valor excede o total pendente de {formatCurrency(quote.totalDue)}.
               </p>
             )}
 
@@ -193,7 +235,7 @@ export function PartialPaymentDialog({
           <Button
             className="bg-forest text-cream hover:bg-sage transition-colors"
             onClick={handleConfirm}
-            disabled={isPending || parsedAmount <= 0 || isOverpayment}
+            disabled={isPending || isQuoting || !quote || !!quoteError || parsedAmount <= 0 || isOverpayment}
           >
             {isPending ? 'Salvando...' : 'Confirmar Pagamento'}
           </Button>

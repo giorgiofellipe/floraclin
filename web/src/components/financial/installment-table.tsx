@@ -384,10 +384,6 @@ export function InstallmentTable({
           installment={{
             id: payDialogInstallment.id,
             amount: Number(payDialogInstallment.amount),
-            amountPaid: Number(payDialogInstallment.amountPaid ?? 0),
-            fineAmount: payDialogInstallment.computedFineAmount ?? Number(payDialogInstallment.fineAmount ?? 0),
-            interestAmount:
-              payDialogInstallment.computedInterestAmount ?? Number(payDialogInstallment.interestAmount ?? 0),
           }}
           onSuccess={onPaymentComplete}
         />
