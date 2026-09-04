@@ -13,6 +13,7 @@ import {
   expenses,
   expenseInstallments,
   metaConversionEvents,
+  auditLogs,
 } from '@/db/schema'
 import { eq, and, isNull, sql, count, sum, desc, inArray, or, gte, lte } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
@@ -1159,6 +1160,120 @@ export async function bulkCancelEntries(
       cancelledCount: data.entryIds.length,
       revertedCount: renegLinks.length > 0 ? [...new Set(renegLinks.map((l) => l.originalEntryId))].length : 0,
     }
+  })
+}
+
+/**
+ * Reverses `bulkCancelEntries`. Statuses are recomputed by `updateEntryStatus`
+ * rather than restored from a stored value, so a charge that had a payment
+ * before it was cancelled comes back `partial`, not `pending`.
+ */
+export async function uncancelEntries(
+  tenantId: string,
+  userId: string,
+  data: { entryIds: string[]; reason: string }
+) {
+  return withTransaction(async (tx) => {
+    const entries = await tx
+      .select({ id: financialEntries.id, status: financialEntries.status })
+      .from(financialEntries)
+      .where(
+        and(
+          eq(financialEntries.tenantId, tenantId),
+          inArray(financialEntries.id, data.entryIds),
+          isNull(financialEntries.deletedAt)
+        )
+      )
+
+    if (entries.length !== data.entryIds.length) {
+      const foundIds = entries.map((e) => e.id)
+      const missing = data.entryIds.filter((id) => !foundIds.includes(id))
+      throw new BusinessError(
+        'ENTRY_NOT_FOUND',
+        `Cobranças não encontradas: ${missing.join(', ')}`
+      )
+    }
+
+    if (entries.some((e) => e.status !== 'cancelled')) {
+      throw new BusinessError(
+        'ENTRY_NOT_CANCELLED',
+        'Apenas cobranças canceladas podem ser reativadas'
+      )
+    }
+
+    // Reactivating an original whose replacement is still live would make the
+    // same debt collectible twice.
+    const liveReplacements = await tx
+      .select({ originalEntryId: renegotiationLinks.originalEntryId })
+      .from(renegotiationLinks)
+      .where(inArray(renegotiationLinks.originalEntryId, data.entryIds))
+
+    if (liveReplacements.length > 0) {
+      throw new BusinessError(
+        'ENTRY_HAS_REPLACEMENT',
+        'Esta cobrança foi renegociada e a cobrança substituta continua ativa. Cancele a substituta primeiro.'
+      )
+    }
+
+    // A replacement charge loses its renegotiation_links rows when it is
+    // cancelled, so its own creation log is the only per-entry record that it
+    // was one. The cancel log's `revertedOriginals` is written for the whole
+    // batch and must not be used here.
+    const creationLogs = await tx
+      .select({ entityId: auditLogs.entityId, changes: auditLogs.changes })
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.entityType, 'financial_entry'),
+          eq(auditLogs.action, 'create'),
+          inArray(auditLogs.entityId, data.entryIds)
+        )
+      )
+
+    const isReplacement = creationLogs.some((log) => {
+      const changes = log.changes as { type?: { new?: unknown } } | null
+      return changes?.type?.new === 'renegotiation'
+    })
+    if (isReplacement) {
+      throw new BusinessError(
+        'ENTRY_FROM_RENEGOTIATION',
+        'Esta cobrança veio de uma renegociação cancelada. Refaça a renegociação.'
+      )
+    }
+
+    const now = new Date()
+
+    await tx
+      .update(installments)
+      .set({ status: 'pending', updatedAt: now })
+      .where(
+        and(
+          eq(installments.tenantId, tenantId),
+          inArray(installments.financialEntryId, data.entryIds),
+          eq(installments.status, 'cancelled')
+        )
+      )
+
+    for (const entryId of data.entryIds) {
+      await updateEntryStatus(tx, tenantId, entryId)
+
+      await createAuditLog(
+        {
+          tenantId,
+          userId,
+          action: 'update',
+          entityType: 'financial_entry',
+          entityId: entryId,
+          changes: {
+            status: { old: 'cancelled', new: 'reactivated' },
+            reason: { old: null, new: data.reason },
+          },
+        },
+        tx
+      )
+    }
+
+    return { uncancelledCount: data.entryIds.length }
   })
 }
 
