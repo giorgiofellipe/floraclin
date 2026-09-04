@@ -14,6 +14,7 @@ import { withTransaction } from '@/lib/tenant'
 import { notifyDiscord } from '@/lib/discord'
 import { issueConfirmationToken } from '@/lib/confirm-email'
 import { getAppUrl } from '@/lib/app-url'
+import { isUniqueViolation } from '@/lib/errors'
 
 export type SignUpState = {
   error?: { fullName?: string[]; email?: string[]; password?: string[]; clinicName?: string[]; phone?: string[]; general?: string[] }
@@ -85,7 +86,12 @@ export async function signUp(
       })
     })
   } catch (err) {
-    if (err instanceof Error && err.message.includes('unique')) {
+    // The SELECT above answers the ordinary case; this answers the race it
+    // cannot. Two concurrent signups for one address both read no row, and
+    // uq_users_email_lower is what stops both from inserting. Matched on the
+    // index name so a unique violation somewhere else in the transaction
+    // still surfaces as itself.
+    if (isUniqueViolation(err, 'uq_users_email_lower')) {
       return { error: { email: ['Este e-mail já está cadastrado'] } }
     }
     throw err

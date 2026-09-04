@@ -45,7 +45,6 @@ vi.mock('@/lib/email', () => ({
   sendConfirmationEmail: vi.fn(() => Promise.resolve()),
 }))
 vi.mock('@/lib/confirm-email', () => ({ issueConfirmationToken: vi.fn() }))
-vi.mock('@/lib/auth', () => ({ signIn: vi.fn() }))
 
 import { createClinicForOAuthUser } from '../signup'
 

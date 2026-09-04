@@ -23,7 +23,7 @@ import path from 'node:path'
  *     exempt today: `calendar/auth/callback` and `whatsapp/templates/[id]`,
  *     both of which mutate through query-layer helpers rather than a raw
  *     `db.*` call, so the heuristic in (b) does not even catch them on its
- *     own — they are named explicitly because a human read the code.
+ *     own. They are named explicitly because a human read the code.
  *
  * ── Known limits (by design) ─────────────────────────────────────────────
  *   - Purely syntactic, same as the raw-sql scanner. It does not resolve
@@ -55,7 +55,7 @@ const MUTATING_METHODS = ['POST', 'PATCH', 'PUT', 'DELETE'] as const
 /**
  * Immediate children of `app/api`, hardcoded rather than read live. If one
  * of these is renamed or moved, `countFilesUnder` returns 0 for it and the
- * per-directory assertion below fails loudly — a single total would have
+ * per-directory assertion below fails loudly. A single total would have
  * absorbed the loss silently, the same trap the raw-sql scanner's own
  * `SCAN_DIRS` guards against.
  */
@@ -105,7 +105,7 @@ const TOP_LEVEL_DIRS = [
  */
 const EXEMPT_MUTATING_ROUTES: Record<string, string> = {
   // Webhooks: unauthenticated machine callers. There is no session to check
-  // a role or subscription against — the caller is Stripe, Meta or Google.
+  // a role or subscription against: the caller is Stripe, Meta or Google.
   'webhooks/stripe/route.ts': 'Stripe webhook, unauthenticated machine caller',
   'webhooks/whatsapp/route.ts': 'Meta webhook, unauthenticated machine caller',
   'calendar/webhook/route.ts': 'Google Calendar push notification, unauthenticated machine caller',
@@ -140,9 +140,11 @@ const EXEMPT_MUTATING_ROUTES: Record<string, string> = {
   'billing/cancel/route.ts': 'billing is the way out of an expired subscription',
   'billing/checkout/route.ts': 'billing is the way out of an expired subscription',
   'billing/confirm/route.ts': 'billing is the way out of an expired subscription',
+  'billing/reactivate/route.ts': 'billing is the way out of an expired subscription',
+  'billing/portal/route.ts': 'billing is the way out of an expired subscription',
 
   // Platform-admin only. Gated by requirePlatformAdmin / ctx.isPlatformAdmin,
-  // a strictly stronger check that subscriptionGate already exempts anyway —
+  // a strictly stronger check that subscriptionGate already exempts anyway,
   // a platform admin tenant has no subscription to check against.
   'admin/impersonate/clear/route.ts': 'platform-admin only',
   'admin/impersonate/route.ts': 'platform-admin only',
@@ -163,7 +165,7 @@ const EXEMPT_MUTATING_ROUTES: Record<string, string> = {
 
 /**
  * Routes whose GET handler mutates. Found by reading the code, not by the
- * (a) heuristic — both call a query-layer helper rather than a raw `db.*`
+ * (a) heuristic: both call a query-layer helper rather than a raw `db.*`
  * write, so nothing here would catch them automatically. `it('is exhaustive
  * ...')` below is what stands in for that: it asserts no *other* GET handler
  * contains a raw write, so a third one can't slip in past a method-based
@@ -226,8 +228,8 @@ function stripComments(src: string): string {
 /**
  * Slices out one exported handler's body: from its `export async function
  * METHOD(` line to the next top-level `export async function` or EOF. Not
- * real parsing — the same brace-counting-free approximation the raw-sql
- * scanner uses — but exported handlers in this codebase are always
+ * real parsing (the same brace-counting-free approximation the raw-sql
+ * scanner uses), but exported handlers in this codebase are always
  * top-level, so it holds.
  */
 function extractHandlerBody(source: string, method: string): string {
@@ -272,7 +274,7 @@ describe('write-access coverage: every mutating route is gated', () => {
       expect(file, `${relPath} is in EXEMPT_MUTATING_ROUTES but no such route file exists`).toBeDefined()
       expect(
         file!.methods.some((m) => (MUTATING_METHODS as readonly string[]).includes(m)),
-        `${relPath} is in EXEMPT_MUTATING_ROUTES but exports no mutating method — stale entry`,
+        `${relPath} is in EXEMPT_MUTATING_ROUTES but exports no mutating method: stale entry`,
       ).toBe(true)
     }
   })
@@ -286,13 +288,7 @@ describe('write-access coverage: every mutating route is gated', () => {
     }
   })
 
-  describe(
-    // Un-skipped by Task B1, which converts every route on the worklist at
-    // docs/plans/b1-worklist.txt to call requireWrite. Every assertion below
-    // fails today because that call does not exist anywhere yet — expected,
-    // not a bug in the scanner. See the docblock above.
-    'rule (a): mutating routes call requireWrite',
-    () => {
+  describe('rule (a): mutating routes call requireWrite', () => {
       const mutatingFiles = routeFiles.filter((f) =>
         f.methods.some((m) => (MUTATING_METHODS as readonly string[]).includes(m)),
       )
@@ -313,8 +309,7 @@ describe('write-access coverage: every mutating route is gated', () => {
           ).toBe(true)
         }
       })
-    },
-  )
+  })
 
   describe('exemptions that claim to gate internally actually do', () => {
     // Existence checks alone made the exemption list trusted rather than
@@ -348,8 +343,8 @@ describe('write-access coverage: every mutating route is gated', () => {
       const hit = RAW_WRITE_CALLS.find((call) => body.includes(call))
       expect(
         hit,
-        `${relPath}'s GET handler contains ${hit}. Either it is a genuine mutating GET — add it to ` +
-          'EXEMPT_GET_ROUTES with a reason — or move the write out of GET.',
+        `${relPath}'s GET handler contains ${hit}. Either it is a genuine mutating GET, so add it to ` +
+          'EXEMPT_GET_ROUTES with a reason, or move the write out of GET.',
       ).toBeUndefined()
     })
 

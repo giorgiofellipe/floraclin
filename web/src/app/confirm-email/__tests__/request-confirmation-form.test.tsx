@@ -35,10 +35,11 @@ describe('RequestConfirmationForm', () => {
     })
   })
 
-  it('says the same thing regardless of whether the account exists', async () => {
+  it('never reports whether the address had an account', async () => {
     // The endpoint answers identically for unknown, already-confirmed and
-    // throttled addresses. The form has to match that, or it becomes the
-    // oracle the endpoint refuses to be.
+    // throttled addresses, and the form ignores the response body entirely,
+    // so there is nothing for it to leak. This pins that: the confirmation
+    // is phrased conditionally, not as "sent".
     render(<RequestConfirmationForm />)
 
     fireEvent.change(screen.getByTestId('request-confirmation-email'), {

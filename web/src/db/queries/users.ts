@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { users, tenantUsers, tenants } from '@/db/schema'
-import { eq, and, isNull } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { sendInviteEmail } from '@/lib/email'
 import type { InviteUserInput } from '@/validations/user'
@@ -57,7 +57,7 @@ export async function inviteUser(
     const [existingUser] = await db
       .select()
       .from(users)
-      .where(eq(users.email, data.email))
+      .where(sql`lower(${users.email}) = ${data.email.toLowerCase()}`)
       .limit(1)
 
     let userId: string
@@ -210,7 +210,7 @@ export async function markEmailVerified(email: string): Promise<void> {
   await db
     .update(users)
     .set({ emailVerified: new Date() })
-    .where(eq(users.email, email.toLowerCase()))
+    .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
 }
 
 /**
@@ -224,19 +224,15 @@ export async function markEmailVerified(email: string): Promise<void> {
  * Google sign-in prove ownership rather than merely add a second way in.
  *
  * Only clears when the account was NOT already confirmed. A user who
- * legitimately confirmed by email and then adds Google keeps their password.
+ * legitimately confirmed by email and then adds Google keeps their password,
+ * which is why the password column is a CASE rather than a plain null.
  */
 export async function markEmailVerifiedViaGoogle(email: string): Promise<void> {
   await db
     .update(users)
-    .set({ emailVerified: new Date(), passwordHash: null })
-    .where(and(eq(users.email, email.toLowerCase()), isNull(users.emailVerified)))
-
-  // Unconditional, so an account that was already confirmed still gets its
-  // stamp refreshed. It keeps its password: the statement above matched
-  // nothing for it.
-  await db
-    .update(users)
-    .set({ emailVerified: new Date() })
-    .where(eq(users.email, email.toLowerCase()))
+    .set({
+      emailVerified: new Date(),
+      passwordHash: sql`case when ${users.emailVerified} is null then null else ${users.passwordHash} end`,
+    })
+    .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
 }

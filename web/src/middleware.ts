@@ -33,7 +33,8 @@ export default auth((req) => {
     return NextResponse.next()
   }
 
-  // Stale JWT — token minted before schema changes, clear it and force re-login
+  // Stale JWT: minted before the claims below existed. Clear it and force a
+  // re-login rather than reason about a token that cannot answer.
   if (isAuthenticated) {
     const token = req.auth as any
     if (!token?.v || token.v < 3) {
@@ -48,7 +49,6 @@ export default auth((req) => {
   if (pathname === '/login' || pathname === '/reset-password' || pathname === '/signup') {
     if (isAuthenticated) {
       const session = req.auth as any
-      const tenantStatus = session?.tenantStatus as string | null
       const tenantId = session?.tenantId as string | null
 
       if (!tenantId) return NextResponse.redirect(new URL('/signup/clinic-details', req.url))
@@ -65,7 +65,6 @@ export default auth((req) => {
 
   // Authenticated from here — read tenant info from session
   const session = req.auth as any
-  const tenantStatus = session?.tenantStatus as string | null
   const tenantId = session?.tenantId as string | null
   const isPlatformAdmin = session?.isPlatformAdmin as boolean
   const subscriptionStatus = session?.subscriptionStatus as string | null
@@ -85,12 +84,10 @@ export default auth((req) => {
   // Email not confirmed yet. Replaces the manual approval gate: the wait is
   // now the user's own inbox rather than someone clicking approve.
   //
-  // Gated on an explicit `false`, never on falsy. A token minted before this
-  // claim existed carries `undefined`, and treating that as unverified would
-  // trap every already-logged-in user. Those tokens are re-minted by the
-  // version check above; until then they pass.
+  // Gated on an explicit `false`, never on falsy. Undefined means the token
+  // predates the claim, and those are cleared by the version check above
+  // before they ever reach this line.
   if (session?.emailVerified === false) {
-    if (pathname === '/confirm-email') return NextResponse.next()
     return NextResponse.redirect(new URL('/confirm-email', req.url))
   }
 

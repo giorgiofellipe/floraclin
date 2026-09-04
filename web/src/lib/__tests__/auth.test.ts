@@ -40,14 +40,17 @@ import { getAuthContext, requireRole } from '@/lib/auth'
 import { ForbiddenError } from '@/lib/errors'
 
 function setupDbMemberships(memberships: Array<{ tenantId: string; role: string; fullName: string; email: string }>) {
-  // getAuthContext chains: db.select({...}).from(tenantUsers).innerJoin(users, ...).where(and(...))
-  // The where() is the terminal call and the result is awaited directly
+  // getAuthContext chains:
+  //   db.select({...}).from(tenantUsers).innerJoin(tenants, ...).innerJoin(users, ...).where(and(...))
+  // The where() is the terminal call and the result is awaited directly. The
+  // tenants join is what keeps a suspended clinic out; suspended-tenant-access
+  // covers that against real SQL, since a mock this shape would pass without it.
+  const joins: { innerJoin: unknown; where: unknown } = {
+    innerJoin: vi.fn(() => joins),
+    where: vi.fn().mockResolvedValue(memberships),
+  }
   vi.mocked(db.select).mockReturnValue({
-    from: vi.fn().mockReturnValue({
-      innerJoin: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue(memberships),
-      }),
-    }),
+    from: vi.fn().mockReturnValue(joins),
   } as never)
 }
 

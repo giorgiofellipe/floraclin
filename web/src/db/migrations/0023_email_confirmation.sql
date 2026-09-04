@@ -18,16 +18,26 @@
 -- /confirm-email permanently: they have no confirmation email to click,
 -- because none was ever sent. At time of writing that is 12 of 13 users,
 -- spanning 5 clinics on active or trialing subscriptions.
--- Scoped to accounts that predate this migration. The unconditional form was
--- safe exactly once: rerun after the feature ships and it would confirm every
--- genuine unconfirmed signup sitting in the table, including any address
--- someone registered that they do not own, making the password they set on it
--- immediately usable. `created_at` is the cutoff because it is the only thing
--- that distinguishes a legacy account from a new one.
-UPDATE floraclin.users
-   SET email_verified = now()
- WHERE email_verified IS NULL
-   AND created_at < '2026-08-31T00:00:00Z';
+-- Runs on the first apply only. Migrations here are applied by hand, so
+-- nothing stops this file being run twice; the second run would land in a
+-- world where unconfirmed accounts are ordinary and confirm every one of
+-- them, including any address a stranger registered, making the password
+-- they set on it immediately usable. The guard is the column added by
+-- statement 2 below: it does not exist yet the first time, and does ever
+-- after.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'floraclin'
+       AND table_name = 'verification_tokens'
+       AND column_name = 'last_sent_at'
+  ) THEN
+    UPDATE floraclin.users
+       SET email_verified = now()
+     WHERE email_verified IS NULL;
+  END IF;
+END $$;
 
 -- 2. Durable resend throttling.
 --

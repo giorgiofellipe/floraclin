@@ -41,13 +41,34 @@ const QUERY = path.join(WEB_SRC, 'lib/confirm-email.ts')
 const LIKE_CLAUSE = /like\s+'confirm:%'/i
 const MENTIONS_IDENTIFIER = /identifier/i
 
+/**
+ * The migration is mostly comments explaining why the index is partial, and
+ * those comments quote the predicate. Matching against the raw file therefore
+ * passes on the prose alone: delete the WHERE from the DDL and the assertions
+ * stay green. Strip the comments first so the test reads the statement.
+ */
+function ddlOnly(sql: string): string {
+  return sql
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('--'))
+    .join('\n')
+}
+
+function createIndexStatement(sql: string): string {
+  const stmt = ddlOnly(sql)
+    .split(';')
+    .find((s) => /create\s+unique\s+index/i.test(s))
+  expect(stmt, 'the migration no longer creates a unique index').toBeDefined()
+  return stmt!
+}
+
 describe('confirmation token upsert matches its partial index', () => {
   it('the migration creates the index as partial on that predicate', () => {
-    const sql = fs.readFileSync(MIGRATION, 'utf8')
+    const stmt = createIndexStatement(fs.readFileSync(MIGRATION, 'utf8'))
 
-    expect(sql).toMatch(/create\s+unique\s+index/i)
-    expect(sql).toMatch(LIKE_CLAUSE)
-    expect(sql).toMatch(MENTIONS_IDENTIFIER)
+    expect(stmt).toMatch(LIKE_CLAUSE)
+    expect(stmt).toMatch(MENTIONS_IDENTIFIER)
   })
 
   it('the upsert repeats the predicate via targetWhere', () => {
@@ -70,18 +91,23 @@ describe('confirmation token upsert matches its partial index', () => {
     expect(targetWhereLine).toMatch(MENTIONS_IDENTIFIER)
   })
 
+  it('would fail if the predicate were dropped from the DDL', () => {
+    // The point of stripping comments: this file explains the predicate in
+    // prose several times, and matching the raw text passes on that alone.
+    const withoutPredicate = fs
+      .readFileSync(MIGRATION, 'utf8')
+      .replace(/WHERE identifier LIKE 'confirm:%'/i, '')
+
+    expect(createIndexStatement(withoutPredicate)).not.toMatch(LIKE_CLAUSE)
+  })
+
   it('the index is partial, not plain, so magic links keep working', () => {
     // NextAuth's Resend provider writes this same table keyed by the bare
     // address and may legitimately hold more than one row at a time. A
     // non-partial unique index on identifier would break it, which is why
     // the predicate exists at all and why both sides have to carry it.
-    const sql = fs.readFileSync(MIGRATION, 'utf8')
+    const stmt = createIndexStatement(fs.readFileSync(MIGRATION, 'utf8'))
 
-    const indexStatement = sql
-      .split(';')
-      .find((stmt) => /create\s+unique\s+index/i.test(stmt))
-
-    expect(indexStatement).toBeDefined()
-    expect(indexStatement).toMatch(/where/i)
+    expect(stmt).toMatch(/where/i)
   })
 })

@@ -39,7 +39,9 @@ export const users = floraclinSchema.table('users', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-})
+}, (table) => [
+  uniqueIndex('uq_users_email_lower').on(sql`lower(${table.email})`),
+])
 
 export const tenantUsers = floraclinSchema.table('tenant_users', {
   id: uuid('id').primaryKey().defaultRandom(),

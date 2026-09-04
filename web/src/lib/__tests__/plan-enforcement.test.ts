@@ -79,14 +79,18 @@ describe('seat limit on invite', () => {
     expect(checkPlanLimitMock).toHaveBeenCalledWith('tenant-1', 'users')
   })
 
-  it('does not evict anyone already over the limit', async () => {
-    // Enforcement is on the way in only. A tenant that already has more
-    // members than its plan allows keeps them; it simply cannot add another.
+  it('reports the real usage when a tenant is already over its limit', async () => {
+    // Enforcement is on the way in only, so a tenant that is already over
+    // keeps its members. What the route must not do is clamp the numbers it
+    // reports: the owner needs to see 5 of 2 to understand why.
     checkPlanLimitMock.mockResolvedValue({ allowed: false, used: 5, limit: 2 })
 
     const res = await invite(inviteRequest())
+    const body = await res.json()
 
     expect(res.status).toBe(402)
+    expect(body.used).toBe(5)
+    expect(body.limit).toBe(2)
     expect(inviteUserMock).not.toHaveBeenCalled()
   })
 })

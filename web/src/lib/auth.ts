@@ -4,7 +4,7 @@ import { cookies } from 'next/headers'
 import { auth } from '@/lib/auth-config'
 import { db } from '@/db/client'
 import { tenantUsers, users, tenants } from '@/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, isNull } from 'drizzle-orm'
 import type { AuthContext, Role } from '@/types'
 import { ForbiddenError } from '@/lib/errors'
 
@@ -32,6 +32,13 @@ export async function getAuthContext(): Promise<AuthContext> {
   }
 
   // Get ALL tenants for this user
+  //
+  // Suspension soft-deletes the tenant and leaves memberships and the
+  // subscription untouched, so without the tenant join a suspended clinic
+  // keeps every API it had: the role is still owner and subscriptionGate
+  // still sees an active subscription. The jwt callback already joins this
+  // way; the API path has to agree with it or suspension only takes effect
+  // at the next sign-in.
   const memberships = await db
     .select({
       tenantId: tenantUsers.tenantId,
@@ -41,6 +48,7 @@ export async function getAuthContext(): Promise<AuthContext> {
       isPlatformAdmin: users.isPlatformAdmin,
     })
     .from(tenantUsers)
+    .innerJoin(tenants, and(eq(tenants.id, tenantUsers.tenantId), isNull(tenants.deletedAt)))
     .innerJoin(users, eq(users.id, tenantUsers.userId))
     .where(
       and(
@@ -49,7 +57,21 @@ export async function getAuthContext(): Promise<AuthContext> {
       )
     )
 
-  const isPlatformAdmin = !!memberships[0]?.isPlatformAdmin
+  // Falls back to the user row when the join returns nothing. A platform
+  // admin with no membership, or whose only tenant has just been suspended,
+  // would otherwise lose the flag and be redirected to /login: locked out of
+  // the admin API that exists to undo exactly that. The jwt callback already
+  // resolves it this way; this path has to agree.
+  let isPlatformAdmin = !!memberships[0]?.isPlatformAdmin
+
+  if (!isPlatformAdmin && memberships.length === 0) {
+    const [userRow] = await db
+      .select({ isPlatformAdmin: users.isPlatformAdmin })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1)
+    isPlatformAdmin = !!userRow?.isPlatformAdmin
+  }
 
   if (memberships.length === 0 && !isPlatformAdmin) {
     redirect('/login')
@@ -130,7 +152,7 @@ export async function getUserTenants(userId: string) {
       tenantName: tenants.name,
     })
     .from(tenantUsers)
-    .innerJoin(tenants, eq(tenants.id, tenantUsers.tenantId))
+    .innerJoin(tenants, and(eq(tenants.id, tenantUsers.tenantId), isNull(tenants.deletedAt)))
     .where(
       and(
         eq(tenantUsers.userId, userId),

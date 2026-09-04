@@ -46,9 +46,9 @@ Two spec decisions are also dropped as no longer justified:
 
 ---
 
-## Group A (parallel — independent files)
+## Group A (parallel: independent files)
 
-### Task A0: Migration — backfill and throttling columns
+### Task A0: Migration, backfill and throttling columns
 
 **Files:** Create `src/db/migrations/0023_email_confirmation.sql`
 
@@ -253,7 +253,7 @@ Include a guard-the-guard fixture and per-directory count assertions, in the sty
 
 Both resolve a tenant from a capability token and mutate records while unauthenticated, so no gate reaches them today.
 
-- [ ] **Step 1: Write failing tests** — each returns 403 when its resolved tenant's subscription is inactive.
+- [ ] **Step 1: Write failing tests**: each returns 403 when its resolved tenant's subscription is inactive.
 - [ ] **Step 2: Run, confirm failure.**
 - [ ] **Step 3: Add `isSubscriptionActive(resolvedTenantId)` after token resolution.**
 
@@ -298,7 +298,7 @@ Run: `pnpm --filter @floraclin/web test:run`. This touches ~100 files; existing 
 
 Both tenant-creation sites change: `signup.ts:74` and `createSelfSignupTenant` at `admin-tenants.ts:321`.
 
-- [ ] **Step 1: Write failing tests** — credentials signup creates `status: 'active'`, issues a token, sends the email, and redirects to `/confirm-email`.
+- [ ] **Step 1: Write failing tests**: credentials signup creates `status: 'active'`, issues a token, sends the email, and redirects to `/confirm-email`.
 
 - [ ] **Step 2: Run, confirm failure.**
 
@@ -352,7 +352,7 @@ Shows the address, a resend button, and **"Entrar com Google"** given equal prom
 
 **Files:** Modify `src/components/settings/billing-settings.tsx`; test alongside
 
-- [ ] **Step 1: Write failing test** — mounting with `session_id` present POSTs to `/api/billing/confirm`, then calls `update()`, then clears the parameter.
+- [ ] **Step 1: Write failing test**: mounting with `session_id` present POSTs to `/api/billing/confirm`, then calls `update()`, then clears the parameter.
 - [ ] **Step 2: Run, confirm failure.**
 - [ ] **Step 3: Implement.** Clearing the parameter matters: a refresh would otherwise re-post the same session id.
 - [ ] **Step 4: Run tests, expect PASS. Commit.**

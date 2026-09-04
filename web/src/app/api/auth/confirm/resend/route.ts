@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/db/client'
 import { users, tenantUsers, tenants } from '@/db/schema'
-import { eq, and, or, isNull, lt } from 'drizzle-orm'
+import { eq, and, isNull, sql } from 'drizzle-orm'
 import { issueConfirmationToken } from '@/lib/confirm-email'
 import { sendConfirmationEmail } from '@/lib/email'
 import { getAppUrl } from '@/lib/app-url'
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     const [user] = await db
       .select({ id: users.id, emailVerified: users.emailVerified })
       .from(users)
-      .where(eq(users.email, normalizedEmail))
+      .where(sql`lower(${users.email}) = ${normalizedEmail}`)
       .limit(1)
 
     if (!user || user.emailVerified) {

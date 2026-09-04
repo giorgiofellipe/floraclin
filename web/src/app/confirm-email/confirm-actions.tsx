@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { SessionProvider, useSession } from 'next-auth/react'
+import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { loginWithGoogle } from '@/actions/auth'
@@ -25,20 +25,7 @@ interface ConfirmActionsProps {
   token: string | null
 }
 
-/**
- * `useSession()` needs a `<SessionProvider>` ancestor and this app doesn't
- * have one at the root, so it's scoped locally to this one page instead of
- * added globally.
- */
-export function ConfirmActions(props: ConfirmActionsProps) {
-  return (
-    <SessionProvider>
-      <ConfirmActionsInner {...props} />
-    </SessionProvider>
-  )
-}
-
-function ConfirmActionsInner({ email, token }: ConfirmActionsProps) {
+export function ConfirmActions({ email, token }: ConfirmActionsProps) {
   const router = useRouter()
   const { status, update } = useSession()
   const [confirming, setConfirming] = useState(false)
@@ -79,7 +66,7 @@ function ConfirmActionsInner({ email, token }: ConfirmActionsProps) {
         await update()
         router.push('/dashboard')
       } else {
-        router.push('/login?verified=1')
+        router.push('/login')
       }
     } catch {
       setConfirmError('Não foi possível confirmar agora. Tente novamente.')
@@ -97,17 +84,16 @@ function ConfirmActionsInner({ email, token }: ConfirmActionsProps) {
           body: JSON.stringify({ email }),
         })
 
-        if (res.status === 429) {
-          toast.error('Aguarde um pouco antes de solicitar outro link.')
-          setResendCooldown(RESEND_COOLDOWN_SECONDS)
-          return
-        }
         if (!res.ok) {
           toast.error('Não foi possível reenviar o link agora.')
           return
         }
 
-        toast.success('Link de confirmação reenviado.')
+        // Not "reenviado". The endpoint answers 200 for an unknown address,
+        // an already-confirmed one and a throttled one alike, so it cannot
+        // tell us an email actually went out, and claiming one did sends a
+        // throttled user to wait on an inbox that will stay empty.
+        toast.success('Se houver um link a enviar, ele chega em instantes.')
         setResendCooldown(RESEND_COOLDOWN_SECONDS)
       } catch {
         toast.error('Não foi possível reenviar o link agora.')

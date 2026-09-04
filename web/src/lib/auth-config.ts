@@ -6,20 +6,53 @@ import { DrizzleAdapter } from '@auth/drizzle-adapter'
 import type { Adapter } from 'next-auth/adapters'
 import { db } from '@/db/client'
 import { users, sessions, accounts, verificationTokens, tenantUsers, tenants, tenantSubscriptions, plans } from '@/db/schema'
-import { eq, and, isNull } from 'drizzle-orm'
+import { eq, and, isNull, sql } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { markEmailVerifiedViaGoogle } from '@/db/queries/users'
 
-// The FloraClin schema uses custom column names (fullName instead of name,
-// avatarUrl instead of image) which causes type mismatches with the default
-// DrizzleAdapter types. The runtime behavior is correct since Drizzle maps
-// the snake_case DB columns. Cast via unknown to satisfy the type checker.
-const adapter = DrizzleAdapter(db as any, {
+const baseAdapter = DrizzleAdapter(db as any, {
   usersTable: users as any,
   sessionsTable: sessions as any,
   accountsTable: accounts as any,
   verificationTokensTable: verificationTokens as any,
 } as any) as Adapter
+
+/**
+ * Auth.js hands the adapter a user shaped `{ name, image }`. This schema
+ * calls those columns `full_name` and `avatar_url`, and the casts above only
+ * silence the types: drizzle drops the keys it does not recognise and emits
+ * DEFAULT for `full_name`, which is NOT NULL with no default. So the adapter's
+ * own `createUser` cannot insert anyone, and the very first Google sign-in
+ * for a new person fails on a not-null violation.
+ *
+ * Confirmed by reading the SQL drizzle emits, not inferred from the types.
+ */
+export const adapter: Adapter = {
+  ...baseAdapter,
+  async createUser(data) {
+    const [row] = await db
+      .insert(users)
+      .values({
+        id: data.id ?? crypto.randomUUID(),
+        email: data.email.toLowerCase(),
+        // Google sends a name for any real account. The local part is a
+        // usable stand-in if one ever arrives without, which beats failing
+        // the signup over a display name.
+        fullName: data.name?.trim() || data.email.split('@')[0],
+        avatarUrl: data.image ?? null,
+        emailVerified: data.emailVerified ?? null,
+      })
+      .returning()
+
+    return {
+      id: row.id,
+      email: row.email,
+      emailVerified: row.emailVerified,
+      name: row.fullName,
+      image: row.avatarUrl,
+    }
+  },
+}
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
   adapter,
@@ -38,10 +71,14 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         const password = credentials?.password as string
         if (!email || !password) return null
 
+        // Matched the way uq_users_email_lower indexes it. A row stored with
+        // any uppercase (an invite, an OAuth adapter insert) is invisible to
+        // an equality match on the raw column, so the account exists and can
+        // never be signed into.
         const [user] = await db
           .select()
           .from(users)
-          .where(eq(users.email, email.toLowerCase()))
+          .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
           .limit(1)
 
         if (!user || !user.passwordHash) return null
@@ -107,9 +144,13 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         await markEmailVerifiedViaGoogle(user.email)
       }
 
-      token.v = 3
-
       if (user || trigger === 'update') {
+        // Inside the refresh block, not outside it. Assigned on every callback
+        // run, this stamps the current version onto tokens that never carried
+        // the claims the version is meant to certify, and the middleware check
+        // for an old version can then never fire.
+        token.v = 3
+
         const userId = token.sub
         if (userId) {
           const [membership] = await db
