@@ -6,6 +6,7 @@ import {
   renegotiateSchema,
   bulkPaySchema,
   bulkCancelSchema,
+  bulkUncancelSchema,
   ledgerFilterSchema,
   financialFilterSchema,
 } from '../financial'
@@ -379,6 +380,44 @@ describe('bulkCancelSchema', () => {
 
   it('passes with single entryId', () => {
     const result = bulkCancelSchema.safeParse({ ...validData, entryIds: [UUID] })
+    expect(result.success).toBe(true)
+  })
+})
+
+describe('bulkUncancelSchema', () => {
+  const validData = {
+    entryIds: [UUID, UUID2],
+    reason: 'Cancelamento revertido por engano',
+  }
+
+  it('passes with valid data', () => {
+    const result = bulkUncancelSchema.safeParse(validData)
+    expect(result.success).toBe(true)
+  })
+
+  it('fails when entryIds is empty', () => {
+    const result = bulkUncancelSchema.safeParse({ ...validData, entryIds: [] })
+    expect(result.success).toBe(false)
+  })
+
+  it('fails when entryIds contains invalid uuid', () => {
+    const result = bulkUncancelSchema.safeParse({ ...validData, entryIds: ['not-uuid'] })
+    expect(result.success).toBe(false)
+  })
+
+  it('fails when reason is missing', () => {
+    const { reason, ...rest } = validData
+    const result = bulkUncancelSchema.safeParse(rest)
+    expect(result.success).toBe(false)
+  })
+
+  it('fails when reason is empty', () => {
+    const result = bulkUncancelSchema.safeParse({ ...validData, reason: '' })
+    expect(result.success).toBe(false)
+  })
+
+  it('passes with single entryId', () => {
+    const result = bulkUncancelSchema.safeParse({ ...validData, entryIds: [UUID] })
     expect(result.success).toBe(true)
   })
 })

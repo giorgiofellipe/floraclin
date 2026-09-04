@@ -60,6 +60,11 @@ export const bulkCancelSchema = z.object({
   reason: z.string().min(1, 'Motivo é obrigatório'),
 })
 
+export const bulkUncancelSchema = z.object({
+  entryIds: z.array(z.string().uuid()).min(1, 'Selecione ao menos uma cobrança'),
+  reason: z.string().min(1, 'Motivo é obrigatório'),
+})
+
 // Keep existing for backwards compat
 export const payInstallmentSchema = z.object({
   installmentId: z.string().uuid('Parcela inválida'),
@@ -102,6 +107,7 @@ export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>
 export type RenegotiateInput = z.infer<typeof renegotiateSchema>
 export type BulkPayInput = z.infer<typeof bulkPaySchema>
 export type BulkCancelInput = z.infer<typeof bulkCancelSchema>
+export type BulkUncancelInput = z.infer<typeof bulkUncancelSchema>
 export type PayInstallmentInput = z.infer<typeof payInstallmentSchema>
 export type FinancialFilterInput = z.infer<typeof financialFilterSchema>
 export type RevenueFilterInput = z.infer<typeof revenueFilterSchema>
