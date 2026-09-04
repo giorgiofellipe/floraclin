@@ -243,6 +243,21 @@ describe('PartialPaymentDialog', () => {
     })
   })
 
+  // A cached quote for the previous date must not stay on screen while the
+  // quote for the newly picked date is still in flight.
+  it('hides a stale total while a new quote is being fetched', () => {
+    mockQuote({ data: defaultQuote, isFetching: true })
+
+    render(
+      <PartialPaymentDialog open={true} onOpenChange={() => {}} installment={defaultInstallment} />,
+      { wrapper: createWrapper() },
+    )
+
+    expect(screen.getByText('Calculando...')).toBeInTheDocument()
+    expect(screen.queryByText(/Total pendente:/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirmar Pagamento' })).toBeDisabled()
+  })
+
   it('shows the error and disables confirm when the hook returns an error', () => {
     mockQuote({ data: undefined, error: new Error('Falha ao calcular a parcela') })
 

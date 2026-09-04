@@ -237,9 +237,12 @@ describe('recordPayment', () => {
     expect(result.installmentPaid).toBe(true)
   })
 
-  // AR-1: a payment dated before an existing one re-splits every payment
-  // around it, since Art. 354 allocates each payment against the balance
-  // standing at its own date.
+  // Art. 354 allocates each payment against the balance standing at its own
+  // date, so inserting one re-splits the payments around it.
+  //
+  // This fixture also satisfied the old isBackdated branch, so it passes
+  // against the pre-branch code too. AR-1 itself, that a quote counts only
+  // payments at or before asOf, is pinned in penalties.test.ts.
   it('a payment dated before an existing one rewrites the existing record allocation', async () => {
     const { recordPayment } = await import('../financial')
     const tx = makeTx()
@@ -362,8 +365,12 @@ describe('recordPayment', () => {
     ).rejects.toMatchObject({ code: 'INSTALLMENT_CANCELLED' })
   })
 
-  // AR-2: interest a payment does not cover must be carried forward, not
-  // discarded and recomputed from zero on the next call.
+  // Interest a payment does not cover stays owed.
+  //
+  // The old normal branch stored the same 24 by subtracting what the payment
+  // covered, so this passes against the pre-branch code as well. AR-2 proper,
+  // that replay itself carries the remainder forward rather than forgiving it,
+  // is pinned in penalties.test.ts.
   it('a payment of 1 against 25 of accrued interest carries the uncovered 24, not 0', async () => {
     const paidAt = '2026-08-30T03:00:00.000Z' // exactly 100 days overdue: interest = 25.00
     vi.useFakeTimers()

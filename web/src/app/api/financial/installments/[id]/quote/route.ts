@@ -36,7 +36,7 @@ export async function GET(
     }
 
     const asOf = parsed.data.paidAt ? new Date(parsed.data.paidAt) : new Date()
-    const quote = await getInstallmentQuote(ctx.tenantId, id, asOf)
+    const quote = await getInstallmentQuote(ctx.tenantId, parsed.data.installmentId, asOf)
 
     return NextResponse.json({ success: true, data: quote })
   } catch (error) {

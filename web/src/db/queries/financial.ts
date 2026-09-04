@@ -813,7 +813,8 @@ export async function bulkPayInstallments(
     // Validate all requested installments were found and lockable
     const missingIds = data.installmentIds.filter((id) => !lockedIds.includes(id))
     if (missingIds.length > 0) {
-      throw new Error(
+      throw new BusinessError(
+        'INSTALLMENTS_NOT_PAYABLE',
         `Parcelas não encontradas ou já pagas/canceladas: ${missingIds.join(', ')}`
       )
     }
@@ -907,8 +908,6 @@ export async function bulkPayInstallments(
         principalCovered: newPayment.principalCovered,
       }
 
-      // Art. 354 splits each payment against the interest and fine standing at
-      // its own date, so inserting one payment re-splits the ones around it.
       for (const replayed of replay.payments) {
         if (replayed.id === BULK_PAYMENT_SENTINEL) continue
         const existing = existingPayments.find((ep) => ep.id === replayed.id)

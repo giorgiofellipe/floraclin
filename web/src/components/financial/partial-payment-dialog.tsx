@@ -88,8 +88,9 @@ export function PartialPaymentDialog({
 
   const isOverpayment = quote != null && parsedAmount > quote.totalDue + 0.01
 
-  // Without the error branch a failed quote sits on "Calculando..." forever,
-  // next to the error panel telling the user it already failed.
+  // A cached quote for the previous date must not stay on screen while the new
+  // one is in flight, and a failed quote must not sit on "Calculando..."
+  // forever next to the panel saying it already failed.
   const pendingTotalsLabel = quoteError ? 'Total pendente indisponível' : 'Calculando...'
 
   async function handleConfirm() {
@@ -115,7 +116,7 @@ export function PartialPaymentDialog({
         <DialogHeader>
           <DialogTitle className="text-lg font-semibold text-charcoal">Registrar Pagamento</DialogTitle>
           <DialogDescription className="text-mid">
-            {quote ? (
+            {quote && !isQuoting ? (
               <>
                 Total pendente: {formatCurrency(quote.totalDue)} (Principal{' '}
                 {formatCurrency(quote.remainingPrincipal)}
