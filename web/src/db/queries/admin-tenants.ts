@@ -374,7 +374,10 @@ export async function listTenantsByStatus(status?: string) {
 export async function suspendTenant(tenantId: string) {
   const [updated] = await db
     .update(tenants)
-    .set({ status: 'suspended', deletedAt: new Date(), updatedAt: new Date() })
+    // `deletedAt` alone. Writing `status` too left the two columns able to
+    // disagree: the reactivate toggle only clears `deletedAt`, so a
+    // reinstated clinic kept `status: 'suspended'` for good.
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
     .where(and(eq(tenants.id, tenantId), isNull(tenants.deletedAt)))
     .returning({ id: tenants.id, name: tenants.name })
 

@@ -18,7 +18,6 @@ import {
   BuildingIcon,
   UsersIcon,
   Loader2Icon,
-  CheckIcon,
   XIcon,
 } from 'lucide-react'
 
@@ -115,17 +114,21 @@ export function AdminTenantList() {
   }, [])
 
 
-  const handleSuspend = useCallback(
-    async (tenant: Tenant) => {
-      try {
-        await suspendTenant.mutateAsync(tenant.id)
-        toast.success(`${tenant.name} rejeitada`)
-      } catch {
-        toast.error('Erro ao rejeitar clínica')
-      }
-    },
-    [suspendTenant],
-  )
+  // Confirmed, not one click. This used to reject a clinic that was still
+  // waiting to be let in; it now cuts off a live one, and every user of it
+  // loses access on their next request.
+  const [suspendTarget, setSuspendTarget] = useState<Tenant | null>(null)
+
+  const handleSuspend = useCallback(async () => {
+    if (!suspendTarget) return
+    try {
+      await suspendTenant.mutateAsync(suspendTarget.id)
+      toast.success(`${suspendTarget.name} suspensa`)
+      setSuspendTarget(null)
+    } catch {
+      toast.error('Erro ao suspender clínica')
+    }
+  }, [suspendTarget, suspendTenant])
 
   return (
     <div className="space-y-3">
@@ -220,19 +223,17 @@ export function AdminTenantList() {
                   <span
                     className={cn(
                       'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0',
-                      tenant.status === 'pending_approval'
-                        ? 'bg-amber-50 text-amber-700'
-                        : tenant.isActive
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : 'bg-neutral-100 text-neutral-500',
+                      tenant.isActive
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-neutral-100 text-neutral-500',
                     )}
                   >
-                    {tenant.status === 'pending_approval' ? 'Pendente' : tenant.isActive ? 'Ativo' : 'Inativo'}
+                    {tenant.isActive ? 'Ativo' : 'Inativo'}
                   </span>
 
                   {/* Actions */}
                   <div className="flex items-center gap-1 shrink-0">
-                    {tenant.status === 'active' ? (
+                    {tenant.isActive ? (
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger
@@ -241,7 +242,7 @@ export function AdminTenantList() {
                                 variant="ghost"
                                 size="icon-sm"
                                 className="text-mid hover:text-red-600"
-                                onClick={() => handleSuspend(tenant)}
+                                onClick={() => setSuspendTarget(tenant)}
                                 disabled={suspendTenant.isPending}
                                 data-testid="admin-tenant-suspend"
                               >
@@ -254,6 +255,22 @@ export function AdminTenantList() {
                             }
                           />
                           <TooltipContent>Suspender</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="text-mid hover:text-charcoal"
+                                onClick={() => handleEdit(tenant)}
+                                data-testid="admin-tenant-edit"
+                              >
+                                <PencilIcon className="h-3.5 w-3.5" />
+                              </Button>
+                            }
+                          />
+                          <TooltipContent>Editar</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     ) : (
@@ -390,6 +407,32 @@ export function AdminTenantList() {
                 <Loader2Icon className="h-4 w-4 animate-spin mr-2" />
               ) : null}
               {toggleTarget?.isActive ? 'Desativar' : 'Ativar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Suspend confirmation */}
+      <Dialog open={!!suspendTarget} onOpenChange={(open) => { if (!open) setSuspendTarget(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Suspender clínica</DialogTitle>
+            <DialogDescription>
+              {`Tem certeza que deseja suspender "${suspendTarget?.name}"? A clínica e todos os seus usuários perdem o acesso imediatamente, inclusive quem já está com a sessão aberta.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline">Cancelar</Button>} />
+            <Button
+              variant="destructive"
+              onClick={handleSuspend}
+              disabled={suspendTenant.isPending}
+              data-testid="admin-tenant-suspend-confirm"
+            >
+              {suspendTenant.isPending ? (
+                <Loader2Icon className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
+              Suspender
             </Button>
           </DialogFooter>
         </DialogContent>
