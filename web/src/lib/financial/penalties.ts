@@ -55,6 +55,8 @@ export interface ReplayResult {
     fineAmount: number
     interestAmount: number
     lastFineInterestCalcAt: string | null
+    fineApplied: boolean
+    carriedInterest: number
   }
 }
 
@@ -121,40 +123,67 @@ export function allocatePayment(
   return { interestCovered, fineCovered, principalCovered, excessAmount }
 }
 
+const MS_PER_DAY = 1000 * 60 * 60 * 24
+
+/**
+ * Days of interest owed at `asOf`. The clock starts when the grace period ends
+ * or at the last payment, whichever is later: a payment made before the due
+ * date must not start it early, and must not forfeit the grace period.
+ */
+function daysOfInterest(
+  base: InstallmentBase,
+  lastCalcAt: string | null,
+  asOf: Date,
+): number {
+  const graceEnd =
+    parseOverdueReference(base.dueDate).getTime() + base.gracePeriodDays * MS_PER_DAY
+  const start = Math.max(graceEnd, lastCalcAt ? new Date(lastCalcAt).getTime() : 0)
+  return Math.max(0, Math.floor((asOf.getTime() - start) / MS_PER_DAY))
+}
+
 export function replayPayments(
   base: InstallmentBase,
   payments: PaymentInput[],
 ): ReplayResult {
-  // Sort by paidAt ascending
-  const sorted = [...payments].sort(
-    (a, b) => new Date(a.paidAt).getTime() - new Date(b.paidAt).getTime(),
-  )
+  // Equal timestamps are common: the UI anchors every picked calendar day to
+  // BR noon. Without the id tiebreak, database row order decides which payment
+  // covers the interest.
+  const sorted = [...payments].sort((a, b) => {
+    const byDate = new Date(a.paidAt).getTime() - new Date(b.paidAt).getTime()
+    if (byDate !== 0) return byDate
+    return String(a.id ?? '').localeCompare(String(b.id ?? ''))
+  })
 
   let amountPaid = 0
   let fineAmount = 0
   let fineApplied = false
+  let carriedInterest = 0
   let lastCalcAt: string | null = null
   const replayedPayments: ReplayedPayment[] = []
 
   for (const payment of sorted) {
     const paymentDate = new Date(payment.paidAt)
-    const interestStartDate = lastCalcAt ? lastCalcAt : base.dueDate
-    const daysOverdue = getDaysOverdue(interestStartDate, lastCalcAt ? 0 : base.gracePeriodDays, paymentDate)
+    const daysOverdue = daysOfInterest(base, lastCalcAt, paymentDate)
 
-    // Apply fine once on first overdue payment (regardless of prior on-time payments)
     if (!fineApplied && daysOverdue > 0) {
       fineAmount = calculateFine(base.amount, base.appliedFineType, base.appliedFineValue)
       fineApplied = true
     }
 
-    const remainingPrincipal = base.amount - amountPaid
-    const interestAmount = calculateInterest(remainingPrincipal, daysOverdue, base.appliedInterestRate)
+    const remainingPrincipal = round2(base.amount - amountPaid)
+    // Interest a previous payment could not cover stays owed; it does not
+    // vanish when the clock restarts at that payment's date.
+    const interestAmount = round2(
+      carriedInterest +
+        calculateInterest(remainingPrincipal, daysOverdue, base.appliedInterestRate),
+    )
 
     const allocation = allocatePayment(
       { amount: base.amount, amountPaid, fineAmount, interestAmount },
       payment.amount,
     )
 
+    carriedInterest = round2(interestAmount - allocation.interestCovered)
     fineAmount = round2(fineAmount - allocation.fineCovered)
     amountPaid = round2(amountPaid + allocation.principalCovered)
     lastCalcAt = payment.paidAt
@@ -167,12 +196,14 @@ export function replayPayments(
     })
   }
 
-  // Recalculate current interest for display
-  const currentDaysOverdue = getDaysOverdue(
-    lastCalcAt ?? base.dueDate,
-    lastCalcAt ? 0 : base.gracePeriodDays,
+  const currentInterest = round2(
+    carriedInterest +
+      calculateInterest(
+        round2(base.amount - amountPaid),
+        daysOfInterest(base, lastCalcAt, new Date()),
+        base.appliedInterestRate,
+      ),
   )
-  const currentInterest = calculateInterest(base.amount - amountPaid, currentDaysOverdue, base.appliedInterestRate)
 
   return {
     payments: replayedPayments,
@@ -181,6 +212,53 @@ export function replayPayments(
       fineAmount,
       interestAmount: currentInterest,
       lastFineInterestCalcAt: lastCalcAt,
+      fineApplied,
+      carriedInterest,
     },
+  }
+}
+
+export interface InstallmentQuote {
+  remainingPrincipal: number
+  fineAmount: number
+  interestAmount: number
+  totalDue: number
+}
+
+/**
+ * What one installment owes at a given instant. Only the payments at or before
+ * that instant count: a payment being recorded for a past date is inserted
+ * chronologically by `replayPayments`, so pricing it against later payments
+ * would quote a debt that had not been reduced yet.
+ */
+export function quoteInstallment(
+  base: InstallmentBase,
+  existingPayments: PaymentInput[],
+  asOf: Date,
+): InstallmentQuote {
+  const upToAsOf = existingPayments.filter(
+    (p) => new Date(p.paidAt).getTime() <= asOf.getTime(),
+  )
+  const replay = replayPayments(base, upToAsOf)
+  const { amountPaid, lastFineInterestCalcAt, carriedInterest } = replay.installmentState
+
+  const daysOverdue = daysOfInterest(base, lastFineInterestCalcAt, asOf)
+
+  const fineAmount =
+    !replay.installmentState.fineApplied && daysOverdue > 0
+      ? calculateFine(base.amount, base.appliedFineType, base.appliedFineValue)
+      : replay.installmentState.fineAmount
+
+  const remainingPrincipal = round2(Math.max(base.amount - amountPaid, 0))
+  const interestAmount = round2(
+    carriedInterest +
+      calculateInterest(remainingPrincipal, daysOverdue, base.appliedInterestRate),
+  )
+
+  return {
+    remainingPrincipal,
+    fineAmount,
+    interestAmount,
+    totalDue: round2(remainingPrincipal + fineAmount + interestAmount),
   }
 }
