@@ -8,8 +8,12 @@
  * inactive, and behave normally otherwise.
  *
  * All DB access is mocked -- no network or database access occurs.
+ *
+ * The clock is frozen because the fixtures book a specific day. Without it
+ * the suite passes until that day is in the past, and then fails on a date
+ * nobody chose: the slots route refuses a day that has already been.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
 // ─── Mocks (hoisted by vitest) ────────────────────────────────────────
@@ -108,6 +112,14 @@ const VALID_BOOKING_BODY = {
 beforeEach(() => {
   resetDbQueue()
   vi.mocked(isSubscriptionActive).mockReset()
+})
+
+beforeAll(() => {
+  vi.setSystemTime(new Date('2026-08-31T09:00:00.000Z'))
+})
+
+afterAll(() => {
+  vi.useRealTimers()
 })
 
 describe('POST /api/book/[slug]', () => {
