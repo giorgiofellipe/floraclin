@@ -1,6 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '@/db/client'
-import { installments, paymentRecords, financialSettings } from '@/db/schema'
+import { installments, paymentRecords } from '@/db/schema'
+import { loadFinancialSettings } from '@/db/queries/financial'
 import { BusinessError } from '@/lib/errors'
 import {
   quoteInstallment,
@@ -36,11 +37,10 @@ export async function getInstallmentQuote(
     )
   }
 
-  const [settings] = await db
-    .select()
-    .from(financialSettings)
-    .where(eq(financialSettings.tenantId, tenantId))
-    .limit(1)
+  // The write path resolves settings through this same helper. Duplicating its
+  // fallbacks here is how the quote and the charge drift apart: a tenant with
+  // no settings row would be quoted at 0% and charged at 2%.
+  const settings = await loadFinancialSettings(db, tenantId)
 
   const payments = await db
     .select()
@@ -53,10 +53,10 @@ export async function getInstallmentQuote(
   const base: InstallmentBase = {
     amount: Number(inst.amount),
     dueDate: inst.dueDate,
-    appliedFineValue: Number(inst.appliedFineValue ?? settings?.fineValue ?? 0),
-    appliedFineType: inst.appliedFineType ?? settings?.fineType ?? 'percentage',
-    appliedInterestRate: Number(inst.appliedInterestRate ?? settings?.monthlyInterestPercent ?? 0),
-    gracePeriodDays: settings?.gracePeriodDays ?? 0,
+    appliedFineValue: Number(inst.appliedFineValue ?? settings.fineValue),
+    appliedFineType: inst.appliedFineType ?? settings.fineType,
+    appliedInterestRate: Number(inst.appliedInterestRate ?? settings.monthlyInterestPercent),
+    gracePeriodDays: settings.gracePeriodDays,
   }
 
   const prior: PaymentInput[] = payments.map((p) => ({

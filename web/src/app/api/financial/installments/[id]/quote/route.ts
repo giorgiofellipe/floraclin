@@ -7,6 +7,9 @@ import { handleApiError } from '@/lib/api-error'
 import { brToday, endOfBrDay } from '@/lib/dates'
 
 const querySchema = z.object({
+  // Postgres raises on a malformed uuid, which would answer 500 and page
+  // Discord for what is just a bad URL.
+  installmentId: z.string().uuid('Parcela inválida'),
   paidAt: z
     .string()
     .datetime({ offset: true })
@@ -28,6 +31,7 @@ export async function GET(
 
     const { id } = await params
     const parsed = querySchema.safeParse({
+      installmentId: id,
       paidAt: new URL(request.url).searchParams.get('paidAt') ?? undefined,
     })
     if (!parsed.success) {

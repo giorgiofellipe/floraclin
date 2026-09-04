@@ -17,7 +17,9 @@ function makeRequest(url: string) {
   return new Request(url)
 }
 
-function callGet(url: string, id = 'inst-1') {
+const INSTALLMENT_ID = '00000000-0000-4000-8000-000000000001'
+
+function callGet(url: string, id: string = INSTALLMENT_ID) {
   return GET(makeRequest(url), { params: Promise.resolve({ id }) })
 }
 
@@ -82,7 +84,7 @@ describe('GET /api/financial/installments/[id]/quote', () => {
     expect(res.status).toBe(200)
     expect(getInstallmentQuote).toHaveBeenCalledWith(
       'tenant-1',
-      'inst-1',
+      INSTALLMENT_ID,
       new Date('2026-08-01T12:00:00-03:00')
     )
   })
@@ -95,6 +97,16 @@ describe('GET /api/financial/installments/[id]/quote', () => {
 
     expect(res.status).toBe(400)
     expect(body.error).toBeTruthy()
+    expect(getInstallmentQuote).not.toHaveBeenCalled()
+  })
+
+  it('rejects a malformed installment id with 400 instead of reaching the database', async () => {
+    const res = await callGet(
+      'http://localhost/api/financial/installments/not-a-uuid/quote',
+      'not-a-uuid'
+    )
+
+    expect(res.status).toBe(400)
     expect(getInstallmentQuote).not.toHaveBeenCalled()
   })
 

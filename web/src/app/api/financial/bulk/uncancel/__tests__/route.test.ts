@@ -30,7 +30,7 @@ beforeEach(() => {
     userId: 'user-1',
     role: 'owner',
   } as never)
-  vi.mocked(uncancelEntries).mockResolvedValue({ uncancelled: 1 } as never)
+  vi.mocked(uncancelEntries).mockResolvedValue({ uncancelledCount: 1 })
 })
 
 describe('POST /api/financial/bulk/uncancel', () => {
@@ -91,13 +91,13 @@ describe('POST /api/financial/bulk/uncancel', () => {
   })
 
   it('returns the query result on success', async () => {
-    vi.mocked(uncancelEntries).mockResolvedValue({ uncancelled: 3 } as never)
+    vi.mocked(uncancelEntries).mockResolvedValue({ uncancelledCount: 3 })
 
     const res = await POST(makeRequest(validBody))
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toEqual({ success: true, data: { uncancelled: 3 } })
+    expect(body).toEqual({ success: true, data: { uncancelledCount: 3 } })
     expect(uncancelEntries).toHaveBeenCalledWith('tenant-1', 'user-1', validBody)
   })
 })

@@ -96,6 +96,30 @@ describe('getInstallmentQuote', () => {
     expect(quote.totalDue).toBe(791)
   })
 
+  // Settings rows are created lazily, so a tenant can have none. The write path
+  // falls back to 2% and 1% via loadFinancialSettings; a quote that fell back to
+  // zero would offer R$750 on a debt the server charges R$791 for, and since
+  // underpayment is allowed the charge would silently land short.
+  it('uses the same defaults as the write path when the tenant has no settings row', async () => {
+    const { getInstallmentQuote } = await import('../financial-quote')
+    queueQuoteSelects({
+      installment: [
+        installmentRow({ appliedFineValue: null, appliedInterestRate: null, appliedFineType: null }),
+      ],
+      settings: [],
+    })
+
+    const quote = await getInstallmentQuote(
+      TENANT,
+      INSTALLMENT_ID,
+      new Date('2026-09-03T14:04:50.000Z'),
+    )
+
+    expect(quote.fineAmount).toBe(15)
+    expect(quote.interestAmount).toBe(26)
+    expect(quote.totalDue).toBe(791)
+  })
+
   it('excludes reversed payment records', async () => {
     const { getInstallmentQuote } = await import('../financial-quote')
     // The reversed payment is never returned by the query in the first

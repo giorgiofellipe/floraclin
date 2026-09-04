@@ -625,12 +625,7 @@ export async function reversePayment(
       throw new Error('Parcela não pertence a esta clínica')
     }
 
-    // 2. Check if already reversed
-    if (pr.reversedAt) {
-      throw new Error('Pagamento já foi estornado')
-    }
-
-    // Both recordPayment and reversePayment rewrite payment records after
+    // 2. Both recordPayment and reversePayment rewrite payment records behind
     // this lock, so taking it here too serializes the two paths instead of
     // letting them deadlock on each other's row updates.
     await tx.execute(
@@ -639,6 +634,19 @@ export async function reversePayment(
           AND tenant_id = ${tenantId}
           FOR UPDATE`
     )
+
+    // Re-read behind the lock rather than trusting the copy loaded above: two
+    // concurrent reversals both read an active payment, and the loser would
+    // otherwise go on to write a second outflow for the same money.
+    const [locked] = await tx
+      .select({ reversedAt: paymentRecords.reversedAt })
+      .from(paymentRecords)
+      .where(eq(paymentRecords.id, paymentRecordId))
+      .limit(1)
+
+    if (locked?.reversedAt) {
+      throw new Error('Pagamento já foi estornado')
+    }
 
     // 3. Mark payment as reversed (soft-delete)
     await tx
@@ -1224,6 +1232,7 @@ export async function uncancelEntries(
       .from(auditLogs)
       .where(
         and(
+          eq(auditLogs.tenantId, tenantId),
           eq(auditLogs.entityType, 'financial_entry'),
           eq(auditLogs.action, 'create'),
           inArray(auditLogs.entityId, data.entryIds)
@@ -1801,7 +1810,7 @@ export async function payInstallment(
 
 // ─── HELPERS ────────────────────────────────────────────────────────
 
-async function loadFinancialSettings(tx: typeof db, tenantId: string) {
+export async function loadFinancialSettings(tx: typeof db, tenantId: string) {
   const [settings] = await tx
     .select()
     .from(financialSettings)
