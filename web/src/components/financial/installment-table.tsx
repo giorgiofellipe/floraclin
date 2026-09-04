@@ -16,10 +16,6 @@ import {
 import { cn, formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { PartialPaymentDialog } from './partial-payment-dialog'
 import {
-  calculateInterest,
-  getDaysOverdue,
-} from '@/lib/financial/penalties'
-import {
   BanknoteIcon,
   Undo2Icon,
   Loader2Icon,
@@ -71,18 +67,6 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   debit_card: 'Cartão de Débito',
   cash: 'Dinheiro',
   transfer: 'Transferência',
-}
-
-function getComputedInterest(inst: Installment): number {
-  if (inst.computedInterestAmount != null) return inst.computedInterestAmount
-  const amount = Number(inst.amount)
-  const amountPaid = Number(inst.amountPaid ?? 0)
-  const rate = Number(inst.appliedInterestRate ?? 0)
-  if (rate <= 0 || inst.status === 'paid') return 0
-  const startDate = inst.lastFineInterestCalcAt ?? inst.dueDate
-  const daysOverdue = getDaysOverdue(startDate, inst.lastFineInterestCalcAt ? 0 : 0)
-  if (daysOverdue <= 0) return 0
-  return calculateInterest(amount - amountPaid, daysOverdue, rate)
 }
 
 function getProgressPercent(inst: Installment): number {
@@ -137,7 +121,7 @@ export function InstallmentTable({
       <div className="space-y-2">
         {installments.map((inst) => {
           const fineAmt = inst.computedFineAmount ?? Number(inst.fineAmount ?? 0)
-          const interestAmt = getComputedInterest(inst)
+          const interestAmt = inst.computedInterestAmount ?? Number(inst.interestAmount ?? 0)
           const penaltyTotal = fineAmt + interestAmt
           const isExpanded = expandedInstallmentId === inst.id
           const hasPayments = (inst.paymentRecords?.length ?? 0) > 0
@@ -402,7 +386,8 @@ export function InstallmentTable({
             amount: Number(payDialogInstallment.amount),
             amountPaid: Number(payDialogInstallment.amountPaid ?? 0),
             fineAmount: payDialogInstallment.computedFineAmount ?? Number(payDialogInstallment.fineAmount ?? 0),
-            interestAmount: getComputedInterest(payDialogInstallment),
+            interestAmount:
+              payDialogInstallment.computedInterestAmount ?? Number(payDialogInstallment.interestAmount ?? 0),
           }}
           onSuccess={onPaymentComplete}
         />

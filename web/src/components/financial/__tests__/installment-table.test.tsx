@@ -119,4 +119,41 @@ describe('InstallmentTable', () => {
     const multa = screen.getByText(/^Multa\s*R\$/)
     expect(multa).toBeInTheDocument()
   })
+
+  it('shows the computed penalty, never the raw interestAmount fallback', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        installments: [
+          {
+            id: 'inst-1',
+            installmentNumber: 1,
+            amount: '1000',
+            dueDate: '2026-08-25',
+            status: 'pending',
+            paidAt: null,
+            paymentMethod: null,
+            notes: null,
+            amountPaid: '0',
+            fineAmount: '0',
+            interestAmount: '99.99',
+            computedFineAmount: 20,
+            computedInterestAmount: 1.67,
+            appliedFineValue: '2.00',
+            appliedInterestRate: '1',
+            lastFineInterestCalcAt: null,
+            paymentRecords: [],
+          },
+        ],
+      }),
+    } as Response)
+
+    render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
+
+    await screen.findByText('Parcela 1/1')
+    // fineAmt 20 + interestAmt 1.67 = 21.67, split across two spans.
+    expect(screen.getByText(/^Multa\s*R\$\s*20,00/)).toBeInTheDocument()
+    expect(screen.getByText(/^Juros\s*R\$\s*1,67/)).toBeInTheDocument()
+    expect(screen.queryByText(/99,99/)).not.toBeInTheDocument()
+  })
 })
