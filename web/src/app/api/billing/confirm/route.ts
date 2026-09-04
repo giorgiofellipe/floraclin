@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getPlanBySlug, updateSubscriptionPlan } from '@/db/queries/subscriptions'
-import { retrieveCheckoutSession } from '@/lib/stripe'
+import { retrieveCheckoutSession, subscriptionPeriod } from '@/lib/stripe'
 import { handleApiError } from '@/lib/api-error'
 
 export async function POST(request: Request) {
@@ -58,15 +58,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ activated: false })
     }
 
-    const stripeSubscriptionId =
-      typeof subscription.id === 'string' ? subscription.id : String(subscription.id)
+    const stripeSubscriptionId = subscription.id
     const stripeCustomerId =
       typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id
+
+    // The period rides along. Without it a tenant who buys after their trial
+    // lapsed keeps the expired boundary until an invoice.paid arrives, and
+    // cancelling in that window reads as already ended: blocked immediately,
+    // and reactivation refuses them because the period looks closed.
+    const period = subscriptionPeriod(subscription)
 
     await updateSubscriptionPlan(ctx.tenantId, plan.id, 'stripe', {
       status: 'active',
       stripeSubscriptionId,
       stripeCustomerId,
+      ...(period ?? {}),
     })
 
     return NextResponse.json({ activated: true })

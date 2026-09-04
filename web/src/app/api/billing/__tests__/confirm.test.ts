@@ -6,7 +6,8 @@ vi.mock('@/lib/auth', () => ({
   getAuthContext: vi.fn(),
 }))
 
-vi.mock('@/lib/stripe', () => ({
+vi.mock('@/lib/stripe', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/stripe')>()),
   retrieveCheckoutSession: vi.fn(),
 }))
 
@@ -29,6 +30,9 @@ function makeRequest(body: unknown) {
     body: JSON.stringify(body),
   })
 }
+
+const PERIOD_START = new Date('2026-09-01T00:00:00.000Z')
+const PERIOD_END = new Date('2026-10-01T00:00:00.000Z')
 
 const SAMPLE_PLAN = {
   id: 'plan-1',
@@ -54,7 +58,19 @@ function makeSession(overrides?: {
 }): Stripe.Response<Stripe.Checkout.Session> {
   const subscription =
     overrides?.subscription === undefined
-      ? { id: 'sub_123', status: 'active', customer: 'cus_123' }
+      ? {
+          id: 'sub_123',
+          status: 'active',
+          customer: 'cus_123',
+          items: {
+            data: [
+              {
+                current_period_start: PERIOD_START.getTime() / 1000,
+                current_period_end: PERIOD_END.getTime() / 1000,
+              },
+            ],
+          },
+        }
       : overrides.subscription
 
   return {
@@ -84,6 +100,25 @@ beforeEach(() => {
 })
 
 describe('POST /api/billing/confirm', () => {
+  it('stores the billing period from the subscription', async () => {
+    // Without this the row keeps whatever boundary it had, which for someone
+    // buying after an expired trial is a date in the past: they read as
+    // lapsed the moment they cancel, and reactivation refuses them.
+    vi.mocked(retrieveCheckoutSession).mockResolvedValue(makeSession())
+
+    await POST(makeRequest({ sessionId: 'cs_test_123' }))
+
+    expect(updateSubscriptionPlan).toHaveBeenCalledWith(
+      'tenant-1',
+      'plan-1',
+      'stripe',
+      expect.objectContaining({
+        currentPeriodStart: PERIOD_START,
+        currentPeriodEnd: PERIOD_END,
+      }),
+    )
+  })
+
   it('activates a paid session for the caller tenant with a live subscription', async () => {
     vi.mocked(retrieveCheckoutSession).mockResolvedValue(makeSession())
 
@@ -92,11 +127,16 @@ describe('POST /api/billing/confirm', () => {
 
     expect(res.status).toBe(200)
     expect(json).toEqual({ activated: true })
-    expect(updateSubscriptionPlan).toHaveBeenCalledWith('tenant-1', 'plan-1', 'stripe', {
-      status: 'active',
-      stripeSubscriptionId: 'sub_123',
-      stripeCustomerId: 'cus_123',
-    })
+    expect(updateSubscriptionPlan).toHaveBeenCalledWith(
+      'tenant-1',
+      'plan-1',
+      'stripe',
+      expect.objectContaining({
+        status: 'active',
+        stripeSubscriptionId: 'sub_123',
+        stripeCustomerId: 'cus_123',
+      }),
+    )
   })
 
   it('returns 403 for a non-owner', async () => {
@@ -197,22 +237,34 @@ describe('POST /api/billing/confirm', () => {
     expect(updateSubscriptionPlan).not.toHaveBeenCalled()
   })
 
-  it('calling twice results in one active subscription (idempotent, same args)', async () => {
+  it('writes the same plan and ids on a replay, so a second call cannot change the outcome', async () => {
     vi.mocked(retrieveCheckoutSession).mockResolvedValue(makeSession())
 
     await POST(makeRequest({ sessionId: 'cs_test_123' }))
     await POST(makeRequest({ sessionId: 'cs_test_123' }))
 
     expect(updateSubscriptionPlan).toHaveBeenCalledTimes(2)
-    expect(updateSubscriptionPlan).toHaveBeenNthCalledWith(1, 'tenant-1', 'plan-1', 'stripe', {
-      status: 'active',
-      stripeSubscriptionId: 'sub_123',
-      stripeCustomerId: 'cus_123',
-    })
-    expect(updateSubscriptionPlan).toHaveBeenNthCalledWith(2, 'tenant-1', 'plan-1', 'stripe', {
-      status: 'active',
-      stripeSubscriptionId: 'sub_123',
-      stripeCustomerId: 'cus_123',
-    })
+    expect(updateSubscriptionPlan).toHaveBeenNthCalledWith(
+      1,
+      'tenant-1',
+      'plan-1',
+      'stripe',
+      expect.objectContaining({
+        status: 'active',
+        stripeSubscriptionId: 'sub_123',
+        stripeCustomerId: 'cus_123',
+      }),
+    )
+    expect(updateSubscriptionPlan).toHaveBeenNthCalledWith(
+      2,
+      'tenant-1',
+      'plan-1',
+      'stripe',
+      expect.objectContaining({
+        status: 'active',
+        stripeSubscriptionId: 'sub_123',
+        stripeCustomerId: 'cus_123',
+      }),
+    )
   })
 })

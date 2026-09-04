@@ -32,8 +32,11 @@ vi.mock('next-auth/react', () => ({
 const USAGE_RESPONSE = {
   subscription: {
     status: 'active',
-    currentPeriodEnd: '2026-09-27T00:00:00.000Z',
+    // Far future on purpose: this fixture is shared, and a real date here
+    // would silently become "past" and change what the component renders.
+    currentPeriodEnd: '2999-01-01T00:00:00.000Z',
     stripeSubscriptionId: 'sub_123',
+    hasStripeCustomer: true,
     source: 'stripe',
   },
   plan: { name: 'Pro', slug: 'pro', priceCents: 9900, features: {} },
@@ -175,5 +178,161 @@ describe('BillingSettings payment race', () => {
     expect(screen.queryByText(/erro/i)).not.toBeInTheDocument()
 
     consoleError.mockRestore()
+  })
+})
+
+/**
+ * Cancel and reactivate are the same slot. `canCancel` requires a status that
+ * is not `canceled`; `canReactivate` requires exactly that status with the
+ * period still open, so they cannot both be true. This pins that, and pins
+ * which one shows in each state, because the banner sends people here
+ * expecting to find "Reativar".
+ */
+describe('BillingSettings cancel and reactivate', () => {
+  function renderWith(subscription: Record<string, unknown>) {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/billing/usage') {
+        return {
+          ok: true,
+          json: async () => ({ ...USAGE_RESPONSE, subscription }),
+        } as Response
+      }
+      if (url === '/api/billing/plans') return { ok: true, json: async () => PLANS_RESPONSE } as Response
+      throw new Error(`unexpected fetch: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<BillingSettings />)
+    return fetchMock
+  }
+
+  const FUTURE = '2999-01-01T00:00:00.000Z'
+  const PAST = '2020-01-01T00:00:00.000Z'
+
+  it('offers cancel on a live subscription, and not reactivate', async () => {
+    renderWith({ ...USAGE_RESPONSE.subscription })
+
+    await waitFor(() => expect(screen.getByText('Cancelar assinatura')).toBeInTheDocument())
+    expect(screen.queryByText('Reativar assinatura')).not.toBeInTheDocument()
+  })
+
+  it('offers reactivate while a cancellation is pending, and not cancel', async () => {
+    renderWith({
+      ...USAGE_RESPONSE.subscription,
+      status: 'canceled',
+      currentPeriodEnd: FUTURE,
+    })
+
+    await waitFor(() => expect(screen.getByText('Reativar assinatura')).toBeInTheDocument())
+    expect(screen.queryByText('Cancelar assinatura')).not.toBeInTheDocument()
+  })
+
+  it('offers neither once the cancelled period has closed', async () => {
+    // Stripe has ended it, so there is nothing to resume and nothing to
+    // cancel. The way back is buying a plan again.
+    renderWith({
+      ...USAGE_RESPONSE.subscription,
+      status: 'canceled',
+      currentPeriodEnd: PAST,
+    })
+
+    await waitFor(() => expect(screen.getByText('Pro')).toBeInTheDocument())
+    expect(screen.queryByText('Reativar assinatura')).not.toBeInTheDocument()
+    expect(screen.queryByText('Cancelar assinatura')).not.toBeInTheDocument()
+  })
+
+  it('posts to the reactivate route and refreshes the session', async () => {
+    const fetchMock = renderWith({
+      ...USAGE_RESPONSE.subscription,
+      status: 'canceled',
+      currentPeriodEnd: FUTURE,
+    })
+
+    await waitFor(() => expect(screen.getByText('Reativar assinatura')).toBeInTheDocument())
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/billing/reactivate') return { ok: true, json: async () => ({ success: true }) } as Response
+      if (url === '/api/billing/usage') return { ok: true, json: async () => USAGE_RESPONSE } as Response
+      if (url === '/api/billing/plans') return { ok: true, json: async () => PLANS_RESPONSE } as Response
+      throw new Error(`unexpected fetch: ${url}`)
+    })
+
+    await act(async () => {
+      screen.getByText('Reativar assinatura').click()
+    })
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/billing/reactivate', { method: 'POST' }),
+    )
+    // The gate reads subscriptionStatus off the JWT, so the row alone is not
+    // enough to unblock this browser.
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled())
+  })
+})
+
+/**
+ * A lapsed customer could buy any plan except the one they wanted back.
+ *
+ * The card for the plan on the row renders as "current" and drops its button.
+ * That is right while the subscription is live, and wrong once it has lapsed:
+ * the status stays `canceled` with the old `planId` forever, so a Starter
+ * customer whose period closed was offered Pro and nothing else.
+ */
+describe('BillingSettings plan cards after a lapse', () => {
+  const PLANS = {
+    data: [
+      { id: 'p1', slug: 'starter', name: 'Starter', priceCents: 9900, features: {}, limits: {} },
+      { id: 'p2', slug: 'pro', name: 'Pro', priceCents: 19900, features: {}, limits: {} },
+    ],
+  }
+
+  function renderWith(subscription: Record<string, unknown>, plan: Record<string, unknown>) {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/billing/usage') {
+        return { ok: true, json: async () => ({ ...USAGE_RESPONSE, subscription, plan }) } as Response
+      }
+      if (url === '/api/billing/plans') return { ok: true, json: async () => PLANS } as Response
+      throw new Error(`unexpected fetch: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<BillingSettings />)
+  }
+
+  const STARTER = { name: 'Starter', slug: 'starter', priceCents: 9900, features: {} }
+
+  it('leaves the current plan inert while the subscription is live', async () => {
+    renderWith(
+      { ...USAGE_RESPONSE.subscription, status: 'active' },
+      STARTER,
+    )
+
+    // Only Pro is buyable: Starter is what they are on.
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /assinar|mudar/i })).toHaveLength(1))
+  })
+
+  it('leaves the current plan inert while a charge is being retried', async () => {
+    // past_due still has a live Stripe subscription. Offering "Assinar" on
+    // the plan they are on would open a second one.
+    renderWith(
+      {
+        ...USAGE_RESPONSE.subscription,
+        status: 'past_due',
+        currentPeriodEnd: '2999-01-01T00:00:00.000Z',
+      },
+      STARTER,
+    )
+
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /assinar|mudar/i })).toHaveLength(1))
+  })
+
+  it('makes the old plan buyable again once the subscription has lapsed', async () => {
+    renderWith(
+      {
+        ...USAGE_RESPONSE.subscription,
+        status: 'canceled',
+        currentPeriodEnd: '2020-01-01T00:00:00.000Z',
+      },
+      STARTER,
+    )
+
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /assinar/i })).toHaveLength(2))
   })
 })
