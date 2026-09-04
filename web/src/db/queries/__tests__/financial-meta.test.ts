@@ -565,6 +565,7 @@ describe('financial.ts meta conversions', () => {
 
       for (const id of installmentIds) {
         tx.select.mockReturnValueOnce(chain([typedInstallmentRow({ id })]))
+        tx.select.mockReturnValueOnce(chain([])) // existingPayments
         tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
         tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
         queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
@@ -649,6 +650,7 @@ describe('financial.ts meta conversions', () => {
         ['installment-b', 'entry-b'],
       ]) {
         tx.select.mockReturnValueOnce(chain([typedInstallmentRow({ id, financialEntryId: entryId })]))
+        tx.select.mockReturnValueOnce(chain([])) // existingPayments
         tx.select.mockReturnValueOnce(chain([{ patientId: 'patient-x', description: 'x' }]))
         tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
         queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
@@ -841,6 +843,7 @@ describe('financial.ts meta conversions', () => {
       tx.select.mockReturnValueOnce(
         chain([typedInstallmentRow({ id: 'installment-a', financialEntryId: ENTRY_A })]),
       )
+      tx.select.mockReturnValueOnce(chain([])) // existingPayments
       tx.select.mockReturnValueOnce(chain([{ patientId: 'patient-a', description: 'x' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
       queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00', enqueueFails: true })
@@ -854,6 +857,7 @@ describe('financial.ts meta conversions', () => {
       tx.select.mockReturnValueOnce(
         chain([typedInstallmentRow({ id: 'installment-b', financialEntryId: ENTRY_B })]),
       )
+      tx.select.mockReturnValueOnce(chain([])) // existingPayments
       tx.select.mockReturnValueOnce(chain([{ patientId: 'patient-b', description: 'y' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
       queueGateSelects(tx, {
@@ -948,6 +952,7 @@ describe('financial.ts meta conversions', () => {
 
       // Iteration 1: installment A / entry A
       tx.select.mockReturnValueOnce(chain([typedInstallmentRow({ id: INSTALLMENT_A, financialEntryId: ENTRY_A })])) // row
+      tx.select.mockReturnValueOnce(chain([])) // existingPayments
       tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_A, description: 'x' }])) // entryInfo
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }])) // updateEntryStatus
       queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
@@ -959,6 +964,7 @@ describe('financial.ts meta conversions', () => {
 
       // Iteration 2: installment B / entry B
       tx.select.mockReturnValueOnce(chain([typedInstallmentRow({ id: INSTALLMENT_B, financialEntryId: ENTRY_B })])) // row
+      tx.select.mockReturnValueOnce(chain([])) // existingPayments
       tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_B, description: 'y' }])) // entryInfo
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '400.00' }])) // updateEntryStatus
       queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '400.00' })
@@ -1008,6 +1014,7 @@ describe('financial.ts meta conversions', () => {
         tx.select.mockReturnValueOnce(
           chain([typedInstallmentRow({ id: installmentId, financialEntryId: entryId })]),
         )
+        tx.select.mockReturnValueOnce(chain([])) // existingPayments
         tx.select.mockReturnValueOnce(chain([{ patientId: 'patient-a', description: 'x' }]))
         tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
         queueGateSelects(tx, {

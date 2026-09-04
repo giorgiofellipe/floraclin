@@ -22,10 +22,8 @@ import {
   calculateFine,
   calculateInterest,
   getDaysOverdue,
-  allocatePayment,
   replayPayments,
   quoteInstallment,
-  type InstallmentState,
   type InstallmentBase,
   type PaymentInput,
 } from '@/lib/financial/penalties'
@@ -833,8 +831,6 @@ export async function bulkPayInstallments(
       if (!row) continue
 
       const installmentAmount = Number(row.amount)
-      const currentAmountPaid = Number(row.amountPaid ?? 0)
-      const currentFineAmount = Number(row.fineAmount ?? 0)
       const paidAt = data.paidAt ? new Date(data.paidAt) : new Date()
 
       // Snapshot settings if not yet done
@@ -858,36 +854,72 @@ export async function bulkPayInstallments(
           .where(eq(installments.id, installmentId))
       }
 
-      // Calculate remaining amount including penalties
-      const daysOverdue = getDaysOverdue(
-        row.lastFineInterestCalcAt
-          ? new Date(row.lastFineInterestCalcAt).toISOString()
-          : row.dueDate,
-        row.lastFineInterestCalcAt ? 0 : gracePeriodDays,
-        paidAt
-      )
+      const existingPayments = await tx
+        .select()
+        .from(paymentRecords)
+        .where(
+          and(
+            eq(paymentRecords.installmentId, installmentId),
+            isNull(paymentRecords.reversedAt)
+          )
+        )
+        .orderBy(paymentRecords.paidAt)
 
-      let fineAmount = currentFineAmount
-      if (daysOverdue > 0 && currentAmountPaid === 0 && currentFineAmount === 0) {
-        fineAmount = calculateFine(installmentAmount, appliedFineType!, appliedFineValue!)
-      }
-
-      const remainingPrincipal = installmentAmount - currentAmountPaid
-      const interestAmount = calculateInterest(remainingPrincipal, daysOverdue, appliedInterestRate!)
-
-      // Pay the full remaining amount (principal + fine + interest)
-      const totalDue = remainingPrincipal + fineAmount + interestAmount
-
-      const state: InstallmentState = {
+      const base: InstallmentBase = {
         amount: installmentAmount,
-        amountPaid: currentAmountPaid,
-        fineAmount,
-        interestAmount,
+        dueDate: row.dueDate,
+        appliedFineValue: appliedFineValue!,
+        appliedFineType: appliedFineType!,
+        appliedInterestRate: appliedInterestRate!,
+        gracePeriodDays,
       }
 
-      const allocation = allocatePayment(state, totalDue)
+      const priorPayments: PaymentInput[] = existingPayments.map((p) => ({
+        id: p.id,
+        amount: Number(p.amount),
+        paidAt: new Date(p.paidAt).toISOString(),
+      }))
 
-      const finalAmountPaid = currentAmountPaid + allocation.principalCovered
+      // Bulk pay charges the full quote per installment, so there is no
+      // overpayment guard the way recordPayment has one.
+      const totalDue = quoteInstallment(base, priorPayments, paidAt).totalDue
+      if (totalDue <= 0) continue
+
+      const BULK_PAYMENT_SENTINEL = '__bulk__'
+      const replay = replayPayments(base, [
+        ...priorPayments,
+        { id: BULK_PAYMENT_SENTINEL, amount: totalDue, paidAt: paidAt.toISOString() },
+      ])
+
+      const newPayment = replay.payments.find((p) => p.id === BULK_PAYMENT_SENTINEL)!
+      const allocation = {
+        interestCovered: newPayment.interestCovered,
+        fineCovered: newPayment.fineCovered,
+        principalCovered: newPayment.principalCovered,
+      }
+
+      // Art. 354 splits each payment against the interest and fine standing at
+      // its own date, so inserting one payment re-splits the ones around it.
+      for (const replayed of replay.payments) {
+        if (replayed.id === BULK_PAYMENT_SENTINEL) continue
+        const existing = existingPayments.find((ep) => ep.id === replayed.id)
+        if (!existing) continue
+        await tx
+          .update(paymentRecords)
+          .set({
+            interestCovered: replayed.interestCovered.toFixed(2),
+            fineCovered: replayed.fineCovered.toFixed(2),
+            principalCovered: replayed.principalCovered.toFixed(2),
+          })
+          .where(eq(paymentRecords.id, existing.id))
+      }
+
+      const finalAmountPaid = replay.installmentState.amountPaid
+      const finalFineAmount = replay.installmentState.fineAmount
+      const finalInterestAmount = replay.installmentState.interestAmount
+      const finalLastCalcAt = replay.installmentState.lastFineInterestCalcAt
+        ? new Date(replay.installmentState.lastFineInterestCalcAt)
+        : paidAt
 
       // Create payment record
       const [paymentRecord] = await tx
@@ -927,17 +959,22 @@ export async function bulkPayInstallments(
         recordedBy: userId,
       })
 
-      // Update installment to paid
+      // Update installment
+      const isPaid =
+        finalAmountPaid >= installmentAmount &&
+        finalFineAmount <= 0 &&
+        finalInterestAmount <= 0
+
       await tx
         .update(installments)
         .set({
           amountPaid: finalAmountPaid.toFixed(2),
-          fineAmount: '0',
-          interestAmount: '0',
-          lastFineInterestCalcAt: paidAt,
-          status: 'paid',
-          paidAt,
-          paymentMethod: data.paymentMethod,
+          fineAmount: Math.max(0, finalFineAmount).toFixed(2),
+          interestAmount: Math.max(0, finalInterestAmount).toFixed(2),
+          lastFineInterestCalcAt: finalLastCalcAt,
+          status: isPaid ? 'paid' : 'pending',
+          paidAt: isPaid ? paidAt : undefined,
+          paymentMethod: isPaid ? data.paymentMethod : undefined,
           updatedAt: new Date(),
         })
         .where(eq(installments.id, installmentId))
