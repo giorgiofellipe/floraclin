@@ -20,6 +20,10 @@ vi.mock('@/lib/auth', () => ({
   requireRole: vi.fn(),
 }))
 
+vi.mock('@/lib/write-access', () => ({
+  requireWrite: vi.fn(),
+}))
+
 vi.mock('@/lib/patient-evolutions', () => ({
   createNote: vi.fn(),
   editNote: vi.fn(),
@@ -49,6 +53,7 @@ vi.mock('@/db/queries/patients', () => ({
 // ─── Imports under test (after mocks) ─────────────────────────────────
 
 import { requireRole } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { BusinessError } from '@/lib/errors'
 import {
   createNote,
@@ -92,6 +97,7 @@ function paramsOf<T extends object>(value: T): Promise<T> {
 
 beforeEach(() => {
   vi.mocked(requireRole).mockReset()
+  vi.mocked(requireWrite).mockReset()
   vi.mocked(createNote).mockReset()
   vi.mocked(editNote).mockReset()
   vi.mocked(softDeleteNote).mockReset()
@@ -99,7 +105,11 @@ beforeEach(() => {
   vi.mocked(getPatient).mockReset()
 
   // Default auth passes — individual tests can override.
+  // requireRole backs the GET (revisions) route, which is read-only and was
+  // deliberately left off the write gate.
   vi.mocked(requireRole).mockResolvedValue(AUTH_OK)
+  // requireWrite backs the POST/PATCH/DELETE routes.
+  vi.mocked(requireWrite).mockResolvedValue({ ctx: AUTH_OK, blocked: null })
   // Default patient existence check passes — tests that want a 404 cross-tenant
   // path explicitly override this with `mockResolvedValueOnce(null)`.
   vi.mocked(getPatient).mockResolvedValue({ id: 'p1' } as never)

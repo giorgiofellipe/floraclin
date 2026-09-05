@@ -4,6 +4,7 @@ import { tenants } from '@/db/schema'
 import { eq, and, isNull } from 'drizzle-orm'
 import { getAvailableSlots } from '@/db/queries/appointments'
 import { handleApiError } from '@/lib/api-error'
+import { isSubscriptionActive } from '@/lib/plans'
 
 interface TenantSettings {
   online_booking_enabled?: boolean
@@ -58,6 +59,17 @@ export async function GET(
       return NextResponse.json(
         { error: 'Clínica não encontrada' },
         { status: 404 }
+      )
+    }
+
+    // Unauthenticated route, no middleware or getAuthContext gate reaches
+    // it, so the tenant resolved above has to be checked here. Leaving
+    // slots open for a lapsed clinic would show a patient available times
+    // that the booking POST would then reject.
+    if (!(await isSubscriptionActive(tenant[0].id))) {
+      return NextResponse.json(
+        { error: 'Esta clínica não está aceitando agendamentos online no momento.' },
+        { status: 403 }
       )
     }
 

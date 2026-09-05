@@ -28,6 +28,7 @@ interface BookingPageProps {
   clinic: ClinicInfo
   practitioners: Practitioner[]
   slug: string
+  acceptingBookings: boolean
 }
 
 type Step = 1 | 2 | 3 | 4
@@ -131,7 +132,17 @@ function Stepper({ currentStep }: { currentStep: Step }) {
   )
 }
 
-export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
+export function BookingPage({
+  clinic,
+  practitioners,
+  slug,
+  acceptingBookings,
+}: BookingPageProps) {
+  // Starts from the server-rendered value, but the subscription can also
+  // lapse between page load and submit. handleSubmit flips this to true on
+  // a late 403 from the booking POST, so that case renders the same closed
+  // state instead of a raw error.
+  const [closed, setClosed] = useState(!acceptingBookings)
   const [step, setStep] = useState<Step>(1)
   const [selectedPractitioner, setSelectedPractitioner] = useState<Practitioner | null>(null)
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
@@ -204,6 +215,11 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
 
       if (res.ok) {
         setStep(4)
+      } else if (res.status === 403) {
+        // The subscription lapsed after the page loaded. The patient did
+        // nothing wrong, so this renders the same closed state as a page
+        // load onto an already-inactive clinic, not a raw error.
+        setClosed(true)
       } else if (res.status === 400 && data.details) {
         setFieldErrors(data.details)
       } else {
@@ -240,6 +256,17 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
           <ClinicBrand clinic={clinic} />
         </div>
 
+        {closed ? (
+          <div
+            className="bg-white rounded-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.06)] border border-blush/30 p-6 sm:p-8 text-center"
+            data-testid="booking-closed"
+          >
+            <p className="text-charcoal text-sm sm:text-base">
+              Esta clínica não está aceitando agendamentos online no momento.
+            </p>
+          </div>
+        ) : (
+          <>
         {/* Stepper */}
         <div className="mb-10">
           <Stepper currentStep={step} />
@@ -588,6 +615,8 @@ export function BookingPage({ clinic, practitioners, slug }: BookingPageProps) {
               </button>
             )}
           </div>
+        )}
+          </>
         )}
 
         {/* Footer */}

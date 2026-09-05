@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
-import { requireRole } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { closePackage } from '@/lib/packages'
 import { closePackageSchema } from '@/validations/encerrar-pacote'
 import { handleApiError } from '@/lib/api-error'
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const ctx = await requireRole('owner')
+    const { ctx, blocked } = await requireWrite('owner')
+    if (blocked) return blocked
     const packageId = (await params).id
     const body = closePackageSchema.parse(await request.json())
 

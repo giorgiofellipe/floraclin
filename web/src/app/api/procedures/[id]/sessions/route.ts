@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireRole } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { executeSession } from '@/lib/session-execute'
 import { createSessionWireSchema } from '@/validations/procedure-session'
 import { BusinessError } from '@/lib/errors'
@@ -9,7 +9,8 @@ import { handleApiError } from '@/lib/api-error'
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const ctx = await requireRole('owner', 'practitioner')
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+    if (blocked) return blocked
     const recordId = (await params).id
     const body = createSessionWireSchema.parse(await request.json())
 

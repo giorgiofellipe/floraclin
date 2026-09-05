@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
@@ -10,6 +11,7 @@ import { signLogoPath } from '@/lib/logo'
 import { updateTenantSchema, bookingSettingsSchema } from '@/validations/tenant'
 import { whatsappSettingsSchema } from '@/validations/whatsapp'
 import { handleApiError } from '@/lib/api-error'
+import { checkPlanFeature } from '@/lib/plans'
 
 export async function GET(request: Request) {
   try {
@@ -35,10 +37,8 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const ctx = await getAuthContext()
-    if (ctx.role !== 'owner') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner')
+    if (blocked) return blocked
 
     const body = await request.json()
 
@@ -50,6 +50,22 @@ export async function PUT(request: Request) {
           { error: 'Dados inválidos', fieldErrors: parsed.error.flatten().fieldErrors },
           { status: 400 },
         )
+      }
+
+      // own_whatsapp_number was enforced only by a `disabled` prop on the
+      // radio in whatsapp-settings-form. This route took whatsapp_mode
+      // straight from the body, so one request moved a free tenant onto its
+      // own Meta credentials: getTemplateForTenant branches on this value, so
+      // the tenant leaves the shared FloraClin number entirely. The paid
+      // feature was a greyed-out button.
+      if (parsed.data.whatsapp_mode === 'own') {
+        const allowed = await checkPlanFeature(ctx.tenantId, 'own_whatsapp_number')
+        if (!allowed) {
+          return NextResponse.json(
+            { error: 'Seu plano não inclui número próprio de WhatsApp. Faça upgrade para ativar.' },
+            { status: 402 },
+          )
+        }
       }
 
       const settingsUpdate: Record<string, unknown> = {
@@ -145,6 +161,23 @@ export async function PUT(request: Request) {
         { error: 'Dados inválidos', fieldErrors: parsed.error.flatten().fieldErrors },
         { status: 400 }
       )
+    }
+
+    // The same entitlement check as the whatsapp_settings branch above, and
+    // it has to be here too. `tenantSettingsSchema` is `.passthrough()` and
+    // `updateTenant` writes `settings` wholesale, so this branch could set
+    // whatsapp_mode without ever touching the guarded branch. Gating one
+    // entry point and not the other is the same as not gating it.
+    const incomingMode = (parsed.data.settings as Record<string, unknown> | undefined)
+      ?.whatsapp_mode
+    if (incomingMode === 'own') {
+      const allowed = await checkPlanFeature(ctx.tenantId, 'own_whatsapp_number')
+      if (!allowed) {
+        return NextResponse.json(
+          { error: 'Seu plano não inclui número próprio de WhatsApp. Faça upgrade para ativar.' },
+          { status: 402 },
+        )
+      }
     }
 
     const existing = await getTenant(ctx.tenantId)

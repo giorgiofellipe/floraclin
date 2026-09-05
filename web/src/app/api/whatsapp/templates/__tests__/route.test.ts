@@ -9,6 +9,10 @@ vi.mock('@/lib/auth', () => ({
   getAuthContext: vi.fn(),
 }))
 
+vi.mock('@/lib/write-access', () => ({
+  requireWrite: vi.fn(),
+}))
+
 vi.mock('@/db/queries/tenants', () => ({
   getTenant: vi.fn(),
   updateTenantSettings: vi.fn(),
@@ -31,6 +35,7 @@ vi.mock('@/lib/whatsapp', async () => {
 })
 
 import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { getTenant } from '@/db/queries/tenants'
 import { listTemplates, updateLocalTemplate, createLocalTemplate } from '@/db/queries/whatsapp'
 import { getTemplate as getMetaTemplate, createTemplate as createMetaTemplate } from '@/lib/whatsapp'
@@ -70,6 +75,10 @@ beforeEach(() => {
     name: 'Clínica Flora',
     settings: { whatsapp_mode: 'own', whatsapp_enabled: true },
   } as never)
+  vi.mocked(requireWrite).mockResolvedValue({
+    ctx: { tenantId: 'tenant-1', userId: 'user-1', role: 'owner' },
+    blocked: null,
+  } as ReturnType<typeof requireWrite> extends Promise<infer T> ? T : never)
 })
 
 // Next.js always passes the Request to a route handler; the route reads it

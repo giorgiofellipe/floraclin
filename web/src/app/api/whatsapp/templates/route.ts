@@ -1,5 +1,6 @@
 import { NextResponse, after } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { getTenant } from '@/db/queries/tenants'
 import { listTemplates, createLocalTemplate, updateLocalTemplate } from '@/db/queries/whatsapp'
 import { updateTenantSettings } from '@/db/queries/tenants'
@@ -123,6 +124,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const { ctx, tenant, settings } = await checkWhatsAppAccess(true)
+    const { blocked } = await requireWrite('owner')
+    if (blocked) return blocked
     if (!canManageTemplates(settings)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }

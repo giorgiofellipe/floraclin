@@ -318,7 +318,7 @@ export async function createSelfSignupTenant(data: {
       .values({
         name: data.clinicName,
         slug,
-        status: 'pending_approval',
+        status: 'active',
         phone: data.phone,
       })
       .returning()
@@ -359,37 +359,26 @@ export async function listTenantsByStatus(status?: string) {
     .orderBy(desc(tenants.createdAt))
 }
 
-export async function approveTenant(tenantId: string) {
+/**
+ * Shuts down a tenant that should not exist.
+ *
+ * This was `rejectTenant`, and it only matched `pending_approval`. Since
+ * signup creates tenants active, that filter made it unreachable: the one
+ * lever for removing an abusive signup silently stopped working the moment
+ * the approval gate came out. It now applies to any live tenant, which is the
+ * capability that was actually wanted.
+ *
+ * Soft delete, as before. Nothing is destroyed, and `deletedAt` is what every
+ * tenant-scoped query already filters on.
+ */
+export async function suspendTenant(tenantId: string) {
   const [updated] = await db
     .update(tenants)
-    .set({ status: 'active', updatedAt: new Date() })
-    .where(and(eq(tenants.id, tenantId), eq(tenants.status, 'pending_approval')))
-    .returning({ id: tenants.id, name: tenants.name })
-
-  if (updated) {
-    const [freePlan] = await db.select().from(plans).where(eq(plans.slug, 'free')).limit(1)
-    if (freePlan) {
-      const { created } = await createSubscription(tenantId, freePlan.id)
-      if (created) {
-        await notifyDiscord({
-          kind: 'subscription.created',
-          tenantName: updated.name,
-          planName: freePlan.name,
-          priceCents: freePlan.priceCents,
-          tenantId,
-        })
-      }
-    }
-  }
-
-  return updated
-}
-
-export async function rejectTenant(tenantId: string) {
-  const [updated] = await db
-    .update(tenants)
-    .set({ status: 'rejected', deletedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(tenants.id, tenantId), eq(tenants.status, 'pending_approval')))
+    // `deletedAt` alone. Writing `status` too left the two columns able to
+    // disagree: the reactivate toggle only clears `deletedAt`, so a
+    // reinstated clinic kept `status: 'suspended'` for good.
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(tenants.id, tenantId), isNull(tenants.deletedAt)))
     .returning({ id: tenants.id, name: tenants.name })
 
   return updated

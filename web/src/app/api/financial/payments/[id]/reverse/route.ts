@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { reversePayment } from '@/db/queries/financial'
 import { z } from 'zod'
 import { handleApiError } from '@/lib/api-error'
@@ -13,11 +13,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getAuthContext()
-
-    if (!['owner', 'financial'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner', 'financial')
+    if (blocked) return blocked
 
     const { id: paymentRecordId } = await params
     const body = await request.json().catch(() => ({}))

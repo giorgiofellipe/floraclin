@@ -3,6 +3,7 @@ import { getValidToken, markTokenUsed } from '@/db/queries/anamnesis-tokens'
 import { upsertAnamnesis } from '@/db/queries/anamnesis'
 import { anamnesisSchema } from '@/validations/anamnesis'
 import { handleApiError } from '@/lib/api-error'
+import { isSubscriptionActive } from '@/lib/plans'
 
 export async function GET(
   request: Request,
@@ -16,6 +17,16 @@ export async function GET(
       return NextResponse.json(
         { error: 'Link expirado ou já utilizado' },
         { status: 404 }
+      )
+    }
+
+    // Gate on the tenant the token resolves to, not any session the caller
+    // might hold. The patient may be filling this out while an unrelated
+    // clinic's subscription is inactive; that must not block them.
+    if (!(await isSubscriptionActive(row.tenantId))) {
+      return NextResponse.json(
+        { error: 'Esta clínica não está aceitando envios no momento.' },
+        { status: 403 }
       )
     }
 
@@ -40,6 +51,16 @@ export async function PUT(
       return NextResponse.json(
         { error: 'Link expirado ou já utilizado' },
         { status: 404 }
+      )
+    }
+
+    // Gate on the tenant the token resolves to, not any session the caller
+    // might hold. The patient may be filling this out while an unrelated
+    // clinic's subscription is inactive; that must not block them.
+    if (!(await isSubscriptionActive(row.tenantId))) {
+      return NextResponse.json(
+        { error: 'Esta clínica não está aceitando envios no momento.' },
+        { status: 403 }
       )
     }
 

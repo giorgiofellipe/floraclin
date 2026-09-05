@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
-import { subscriptionGate } from '@/lib/plans'
+import { requireWrite } from '@/lib/write-access'
 import { syncAppointmentToGoogle } from '@/lib/google-calendar-sync'
 import {
   listAppointments,
@@ -42,13 +42,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getAuthContext()
-    if (!['owner', 'practitioner', 'receptionist'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
-    const gate = await subscriptionGate(ctx)
-    if (gate) return gate
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner', 'receptionist')
+    if (blocked) return blocked
 
     const body = await request.json()
     const parsed = createAppointmentSchema.safeParse(body)

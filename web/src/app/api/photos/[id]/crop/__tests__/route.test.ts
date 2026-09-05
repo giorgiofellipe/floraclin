@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/lib/auth', () => ({
-  requireRole: vi.fn(),
+vi.mock('@/lib/write-access', () => ({
+  requireWrite: vi.fn(),
 }))
 
 vi.mock('@/db/queries/photos', () => ({
@@ -9,7 +9,7 @@ vi.mock('@/db/queries/photos', () => ({
   updateCropBox: vi.fn(),
 }))
 
-import { requireRole } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { getPhotoAsset, updateCropBox } from '@/db/queries/photos'
 import { PATCH } from '../route'
 import { ForbiddenError } from '@/lib/errors'
@@ -43,11 +43,14 @@ const context = { params: Promise.resolve({ id: 'photo-1' }) }
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(requireRole).mockResolvedValue({
-    tenantId: 'tenant-1',
-    userId: 'user-1',
-    role: 'owner',
-  } as ReturnType<typeof requireRole> extends Promise<infer T> ? T : never)
+  vi.mocked(requireWrite).mockResolvedValue({
+    ctx: {
+      tenantId: 'tenant-1',
+      userId: 'user-1',
+      role: 'owner',
+    },
+    blocked: null,
+  } as ReturnType<typeof requireWrite> extends Promise<infer T> ? T : never)
   vi.mocked(getPhotoAsset).mockResolvedValue({ id: 'photo-1' } as never)
   vi.mocked(updateCropBox).mockResolvedValue({ id: 'photo-1' } as never)
 })
@@ -83,7 +86,7 @@ describe('PATCH /api/photos/[id]/crop', () => {
   })
 
   it('returns 403 when user lacks permission', async () => {
-    vi.mocked(requireRole).mockRejectedValue(new ForbiddenError('Forbidden'))
+    vi.mocked(requireWrite).mockRejectedValue(new ForbiddenError('Forbidden'))
     const res = await PATCH(makeRequest(validCropBox), context)
     expect(res.status).toBe(403)
   })
