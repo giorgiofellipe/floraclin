@@ -93,6 +93,17 @@ export default function LoginPage() {
           {state?.error?.general && (
             <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
               <p className="text-sm text-red-700" data-testid="login-error">{state.error.general[0]}</p>
+              {/* An unconfirmed account is refused here and looks exactly like
+                  a wrong password, so the message alone leaves a new customer
+                  stuck on the credentials they just chose. The error cannot
+                  say which case it is without revealing whether the address
+                  has an account, so it offers the route out instead. */}
+              <p className="mt-2 text-sm text-red-700">
+                Ainda não confirmou seu e-mail?{' '}
+                <Link href="/confirm-email" className="font-medium underline" data-testid="login-confirm-link">
+                  Reenviar link de confirmação
+                </Link>
+              </p>
             </div>
           )}
           <div className="pt-1">

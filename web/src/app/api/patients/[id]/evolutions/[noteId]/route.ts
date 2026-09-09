@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireRole } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { BusinessError } from '@/lib/errors'
 import { getPatient } from '@/db/queries/patients'
 import { editNote, softDeleteNote } from '@/lib/patient-evolutions'
@@ -14,7 +14,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; noteId: string }> },
 ) {
   try {
-    const { tenantId, userId } = await requireRole('owner', 'practitioner')
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+    if (blocked) return blocked
+    const { tenantId, userId } = ctx
     // RA-1: both patientId and noteId are threaded into the service layer so
     // cross-patient ID guesses get caught by the scoped FOR UPDATE lock and
     // return 404 (not 403/500).
@@ -82,7 +84,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; noteId: string }> },
 ) {
   try {
-    const { tenantId, userId } = await requireRole('owner', 'practitioner')
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+    if (blocked) return blocked
+    const { tenantId, userId } = ctx
     // RA-1: both IDs threaded to the service layer.
     const { id: patientId, noteId } = await params
 

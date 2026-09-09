@@ -19,7 +19,7 @@ import {
   sendMediaSchema,
 } from '@/validations/whatsapp'
 import { sendTextMessage, sendTemplateMessage, sendMediaMessage, resolveTemplateBody, isWhatsAppEnabled } from '@/lib/whatsapp'
-import { isSubscriptionActive, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
+import { requireWrite } from '@/lib/write-access'
 import { getProspect, updateProspect } from '@/db/queries/prospects'
 import { handleApiError } from '@/lib/api-error'
 
@@ -44,14 +44,6 @@ async function checkWhatsAppAccess() {
   const allowedRoles = (settings.whatsapp_allowed_roles as string[]) ?? ['owner']
   if (!allowedRoles.includes(ctx.role) && ctx.role !== 'owner') {
     return { error: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
-  }
-
-  if (!(await isSubscriptionActive(ctx.tenantId))) {
-    return {
-      error: NextResponse.json(SUBSCRIPTION_EXPIRED_RESPONSE.body, {
-        status: SUBSCRIPTION_EXPIRED_RESPONSE.status,
-      }),
-    }
   }
 
   return { ctx }
@@ -107,6 +99,12 @@ export async function POST(
     const result = await checkWhatsAppAccess()
     if ('error' in result) return result.error
     const { ctx } = result
+
+    // Role is already gated dynamically above (whatsapp_allowed_roles ?? ['owner']);
+    // requireWrite here only adds the subscription check, so it is passed every
+    // role to avoid re-narrowing what the dynamic check already allowed.
+    const { blocked } = await requireWrite('owner', 'practitioner', 'receptionist', 'financial')
+    if (blocked) return blocked
 
     const { id: conversationId } = await params
 

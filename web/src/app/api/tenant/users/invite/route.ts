@@ -1,16 +1,15 @@
 import { NextResponse } from 'next/server'
-import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { inviteUser } from '@/db/queries/users'
 import { inviteUserSchema } from '@/validations/user'
 import { handleApiError } from '@/lib/api-error'
+import { checkPlanLimit } from '@/lib/plans'
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getAuthContext()
-    if (ctx.role !== 'owner') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner')
+    if (blocked) return blocked
 
     const body = await request.json()
     const parsed = inviteUserSchema.safeParse(body)
@@ -18,6 +17,22 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'Dados inválidos', fieldErrors: parsed.error.flatten().fieldErrors },
         { status: 400 }
+      )
+    }
+
+    // The seat limit is enforced here and only here. Checked after
+    // validation so a malformed request does not read the plan, and before
+    // the invite so the seat is never consumed. Existing members over the
+    // limit are left alone: this refuses new seats, it does not evict anyone.
+    const seats = await checkPlanLimit(ctx.tenantId, 'users')
+    if (!seats.allowed) {
+      return NextResponse.json(
+        {
+          error: `Seu plano permite ${seats.limit} usuários e você já tem ${seats.used}. Faça upgrade para convidar mais.`,
+          limit: seats.limit,
+          used: seats.used,
+        },
+        { status: 402 },
       )
     }
 

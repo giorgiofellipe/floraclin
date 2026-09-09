@@ -1,0 +1,421 @@
+import { describe, it, expect } from 'vitest'
+import fs from 'node:fs'
+import path from 'node:path'
+
+/**
+ * Guards a failure mode nothing else in the codebase would notice: a route
+ * that mutates tenant data without ever calling `requireWrite`. Every other
+ * check here (types, unit tests, review) is per-route. This one is per-repo,
+ * and it fails *loudly* when the exemption lists that carry it rot, rather
+ * than failing open the way a silently-stale allowlist would.
+ *
+ * Modeled on `src/db/queries/__tests__/no-date-in-raw-sql.test.ts`: read the
+ * raw source of every candidate file off disk and flag it with a static,
+ * best-effort heuristic, rather than trying to execute or type-check it.
+ *
+ * ── What this checks ─────────────────────────────────────────────────────
+ * (a) Every route file exporting POST, PATCH, PUT or DELETE either calls
+ *     `requireWrite(` somewhere in the file, or is named in
+ *     `EXEMPT_MUTATING_ROUTES` with a one-line reason.
+ * (b) Every route file exporting GET either does not contain an "obvious"
+ *     write (`db.insert(`, `db.update(`, `db.delete(`) inside the GET
+ *     handler's own body, or is named in `EXEMPT_GET_ROUTES`. Two routes are
+ *     exempt today: `calendar/auth/callback` and `whatsapp/templates/[id]`,
+ *     both of which mutate through query-layer helpers rather than a raw
+ *     `db.*` call, so the heuristic in (b) does not even catch them on its
+ *     own. They are named explicitly because a human read the code.
+ *
+ * ── Known limits (by design) ─────────────────────────────────────────────
+ *   - Purely syntactic, same as the raw-sql scanner. It does not resolve
+ *     imports, so a route that mutates only by calling a `db/queries`
+ *     helper (as most do) is invisible to rule (b)'s literal `db.*` check.
+ *     Rule (b) exists to catch a *raw* write dropped straight into a GET
+ *     handler in the future, not to enumerate every indirect mutation.
+ *   - Rule (a) only checks that `requireWrite(` appears in the file, not
+ *     that it gates the specific handler or runs before the mutation. A
+ *     route that calls it in the wrong place still passes. That is a job
+ *     for code review, not this scanner.
+ *   - "GET handler's own body" is approximated by slicing from the `export
+ *     async function GET(` line to the next top-level `export async
+ *     function` (or EOF), exactly the same brace-free approximation the
+ *     raw-sql scanner uses for template literals.
+ *
+ * ── Rule (a) is the load-bearing one ────────────────────────────────────
+ * It fails the moment a mutating route lands without `requireWrite` and
+ * without an entry in EXEMPT_MUTATING_ROUTES. Adding an exemption is then a
+ * deliberate act carrying a written reason, which is the point.
+ *
+ */
+
+const SRC = path.resolve(__dirname, '../../..')
+const API_DIR = path.join(SRC, 'app/api')
+
+const MUTATING_METHODS = ['POST', 'PATCH', 'PUT', 'DELETE'] as const
+
+/**
+ * Immediate children of `app/api`, hardcoded rather than read live. If one
+ * of these is renamed or moved, `countFilesUnder` returns 0 for it and the
+ * per-directory assertion below fails loudly. A single total would have
+ * absorbed the loss silently, the same trap the raw-sql scanner's own
+ * `SCAN_DIRS` guards against.
+ */
+const TOP_LEVEL_DIRS = [
+  'admin',
+  'anamnesis',
+  'appointments',
+  'audit',
+  'auth',
+  'billing',
+  'birthdays',
+  'book',
+  'calendar',
+  'clinical-documents',
+  'consent',
+  'crm',
+  'cron',
+  'dashboard',
+  'document-templates',
+  'encounters',
+  'evaluation',
+  'expenses',
+  'face-diagrams',
+  'financial',
+  'onboarding',
+  'package-templates',
+  'patient-packages',
+  'patients',
+  'photos',
+  'planejamentos',
+  'procedure-types',
+  'procedures',
+  'product-applications',
+  'products',
+  'profile',
+  'reports',
+  'slug-check',
+  'tenant',
+  'webhooks',
+  'whatsapp',
+]
+
+/**
+ * Routes that mutate but must not call `requireWrite`, one line each, with
+ * the reason baked in as a comment next to the entry rather than left to
+ * institutional memory. Paths are relative to `app/api`, forward-slashed.
+ */
+const EXEMPT_MUTATING_ROUTES: Record<string, string> = {
+  // Webhooks: unauthenticated machine callers. There is no session to check
+  // a role or subscription against: the caller is Stripe, Meta or Google.
+  'webhooks/stripe/route.ts': 'Stripe webhook, unauthenticated machine caller',
+  'webhooks/whatsapp/route.ts': 'Meta webhook, unauthenticated machine caller',
+  'calendar/webhook/route.ts': 'Google Calendar push notification, unauthenticated machine caller',
+
+  // Public capability-token routes: no session exists to run `requireRole`
+  // against. Each resolves its own tenant from the token and is gated
+  // internally (see Task A6 for consent/sign and anamnesis/token/[token]).
+  'book/[slug]/route.ts': 'public booking form, gated by tenant subscription status internally',
+  'consent/sign/route.ts': 'public capability-token route, gated internally (Task A6)',
+  'anamnesis/token/[token]/route.ts': 'public capability-token route, gated internally (Task A6)',
+  // Hybrid: resolveAuthorizedTenantId accepts either a session or a
+  // capability token, so requireWrite (which needs a session) cannot apply.
+  // Gated internally against the tenant it resolves, like the two above.
+  'consent/[id]/send-whatsapp/route.ts': 'session-or-token route, gated internally on the resolved tenant',
+
+  // Email confirmation. The caller is a brand new owner who has not confirmed
+  // yet, and blocking them would make the account unreachable: they need
+  // these routes precisely to reach a usable state.
+  'auth/confirm/route.ts': 'email confirmation must work before the account is usable',
+  'auth/confirm/resend/route.ts': 'email confirmation must work before the account is usable',
+
+  // Must work while the account is in the exact state requireWrite would
+  // block: reset-request/reset-confirm are unauthenticated, and billing/* is
+  // the only way out of an expired subscription.
+  'profile/reset-request/route.ts': 'password reset must work before login',
+  'profile/reset-confirm/route.ts': 'password reset must work before login',
+  // Your own account, not tenant data, and neither had a role restriction
+  // before the conversion. A lapsed clinic must still be able to rotate a
+  // leaked credential or correct a wrong email.
+  'profile/password/route.ts': 'own password is account hygiene, not tenant data',
+  'profile/route.ts': 'own profile is account hygiene, not tenant data',
+  'billing/cancel/route.ts': 'billing is the way out of an expired subscription',
+  'billing/checkout/route.ts': 'billing is the way out of an expired subscription',
+  'billing/confirm/route.ts': 'billing is the way out of an expired subscription',
+  'billing/reactivate/route.ts': 'billing is the way out of an expired subscription',
+  'billing/portal/route.ts': 'billing is the way out of an expired subscription',
+
+  // Platform-admin only. Gated by requirePlatformAdmin / ctx.isPlatformAdmin,
+  // a strictly stronger check that subscriptionGate already exempts anyway,
+  // a platform admin tenant has no subscription to check against.
+  'admin/impersonate/clear/route.ts': 'platform-admin only',
+  'admin/impersonate/route.ts': 'platform-admin only',
+  'admin/plans/[id]/route.ts': 'platform-admin only',
+  'admin/plans/route.ts': 'platform-admin only',
+  'admin/subscriptions/[tenantId]/extend-trial/route.ts': 'platform-admin only',
+  'admin/subscriptions/[tenantId]/gift/route.ts': 'platform-admin only',
+  'admin/subscriptions/[tenantId]/route.ts': 'platform-admin only',
+  'admin/tenants/[id]/suspend/route.ts': 'platform-admin only',
+  'admin/tenants/[id]/route.ts': 'platform-admin only',
+  'admin/tenants/route.ts': 'platform-admin only',
+  'admin/users/[id]/memberships/[tenantId]/route.ts': 'platform-admin only',
+  'admin/users/[id]/memberships/route.ts': 'platform-admin only',
+  'admin/users/[id]/reset-password/route.ts': 'platform-admin only',
+  'admin/users/[id]/route.ts': 'platform-admin only',
+  'admin/users/route.ts': 'platform-admin only',
+}
+
+/**
+ * Routes whose GET handler mutates. Found by reading the code, not by the
+ * (a) heuristic: both call a query-layer helper rather than a raw `db.*`
+ * write, so nothing here would catch them automatically. `it('is exhaustive
+ * ...')` below is what stands in for that: it asserts no *other* GET handler
+ * contains a raw write, so a third one can't slip in past a method-based
+ * rule the way these two did.
+ */
+const EXEMPT_GET_ROUTES: Record<string, string> = {
+  'calendar/auth/callback/route.ts':
+    'OAuth redirect target; persists the Google Calendar connection via upsertConnection/updateConnection on GET because the provider only supports a GET callback',
+  'whatsapp/templates/[id]/route.ts':
+    'refreshes local template status from Meta via updateLocalTemplate as a read-through side effect on GET',
+}
+
+interface RouteFile {
+  relPath: string
+  absPath: string
+  source: string
+  methods: string[]
+}
+
+function walk(dir: string, out: string[] = []): string[] {
+  if (!fs.existsSync(dir)) return out
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === '__tests__' || entry.name === 'node_modules') continue
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      walk(full, out)
+    } else if (entry.name === 'route.ts') {
+      out.push(full)
+    }
+  }
+  return out
+}
+
+function countFilesUnder(relDir: string): number {
+  return walk(path.join(API_DIR, relDir)).length
+}
+
+// Matches both `export async function POST(` and
+// `export const POST = async (`. Only recognising the first form would let a
+// new route opt out of this whole test by changing its declaration style.
+const METHOD_EXPORT_RE =
+  /^[ \t]*export (?:async function|const) (GET|POST|PATCH|PUT|DELETE)\b/gm
+
+function exportedMethods(source: string): string[] {
+  const methods: string[] = []
+  let m: RegExpExecArray | null
+  METHOD_EXPORT_RE.lastIndex = 0
+  while ((m = METHOD_EXPORT_RE.exec(source)) !== null) {
+    methods.push(m[1])
+  }
+  return methods
+}
+
+/** Removes comments so a `requireWrite(` mentioned in prose cannot satisfy
+ *  the check. Crude but sufficient: these are TypeScript route files. */
+function stripComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '')
+}
+
+/**
+ * Slices out one exported handler's body: from its `export async function
+ * METHOD(` line to the next top-level `export async function` or EOF. Not
+ * real parsing (the same brace-counting-free approximation the raw-sql
+ * scanner uses), but exported handlers in this codebase are always
+ * top-level, so it holds.
+ */
+function extractHandlerBody(source: string, method: string): string {
+  const startRe = new RegExp(`^[ \\t]*export (?:async function|const) ${method}\\b`, 'm')
+  const startMatch = startRe.exec(source)
+  if (!startMatch) return ''
+  const start = startMatch.index
+  const rest = source.slice(start + startMatch[0].length)
+  const nextRe = /^[ \t]*export (?:async function|const) \w+\b/m
+  const nextMatch = nextRe.exec(rest)
+  return nextMatch ? rest.slice(0, nextMatch.index) : rest
+}
+
+const RAW_WRITE_CALLS = ['db.insert(', 'db.update(', 'db.delete(']
+
+function collectRouteFiles(): RouteFile[] {
+  return walk(API_DIR).map((absPath) => {
+    const source = fs.readFileSync(absPath, 'utf8')
+    return {
+      relPath: path.relative(API_DIR, absPath).split(path.sep).join('/'),
+      absPath,
+      source,
+      methods: exportedMethods(source),
+    }
+  })
+}
+
+const routeFiles = collectRouteFiles()
+
+describe('write-access coverage: every mutating route is gated', () => {
+  it.each(TOP_LEVEL_DIRS)('still finds app/api/%s to scan', (dir) => {
+    // Same purpose as the raw-sql scanner's per-directory check: a renamed
+    // or removed feature directory must fail here, not silently vanish from
+    // the scan while the suite stays green.
+    expect(countFilesUnder(dir)).toBeGreaterThan(0)
+  })
+
+  it('EXEMPT_MUTATING_ROUTES only names files that actually exist and actually mutate', () => {
+    const byPath = new Map(routeFiles.map((f) => [f.relPath, f]))
+    for (const relPath of Object.keys(EXEMPT_MUTATING_ROUTES)) {
+      const file = byPath.get(relPath)
+      expect(file, `${relPath} is in EXEMPT_MUTATING_ROUTES but no such route file exists`).toBeDefined()
+      expect(
+        file!.methods.some((m) => (MUTATING_METHODS as readonly string[]).includes(m)),
+        `${relPath} is in EXEMPT_MUTATING_ROUTES but exports no mutating method: stale entry`,
+      ).toBe(true)
+    }
+  })
+
+  it('EXEMPT_GET_ROUTES only names files that actually exist and actually export GET', () => {
+    const byPath = new Map(routeFiles.map((f) => [f.relPath, f]))
+    for (const relPath of Object.keys(EXEMPT_GET_ROUTES)) {
+      const file = byPath.get(relPath)
+      expect(file, `${relPath} is in EXEMPT_GET_ROUTES but no such route file exists`).toBeDefined()
+      expect(file!.methods.includes('GET'), `${relPath} is in EXEMPT_GET_ROUTES but exports no GET`).toBe(true)
+    }
+  })
+
+  describe('rule (a): mutating routes call requireWrite', () => {
+      const mutatingFiles = routeFiles.filter((f) =>
+        f.methods.some((m) => (MUTATING_METHODS as readonly string[]).includes(m)),
+      )
+
+      it.each(mutatingFiles.map((f) => f.relPath))('%s calls requireWrite or is exempt', (relPath) => {
+        if (relPath in EXEMPT_MUTATING_ROUTES) return
+        const file = mutatingFiles.find((f) => f.relPath === relPath)!
+
+        // Per handler, not per file. Checking the whole file would let an
+        // unguarded DELETE ride along in a file whose POST is guarded.
+        for (const method of file.methods) {
+          if (!(MUTATING_METHODS as readonly string[]).includes(method)) continue
+          const body = stripComments(extractHandlerBody(file.source, method))
+          expect(
+            body.includes('requireWrite('),
+            `${relPath} exports ${method} but that handler never calls requireWrite, ` +
+              'and the file is not in EXEMPT_MUTATING_ROUTES',
+          ).toBe(true)
+        }
+      })
+  })
+
+  describe('exemptions that claim to gate internally actually do', () => {
+    // Existence checks alone made the exemption list trusted rather than
+    // verified: deleting the isSubscriptionActive call from any of these
+    // would have left the suite green, which is exactly the fail-open rot
+    // this file exists to prevent.
+    const INTERNALLY_GATED = [
+      'book/[slug]/route.ts',
+      'consent/sign/route.ts',
+      'anamnesis/token/[token]/route.ts',
+      'consent/[id]/send-whatsapp/route.ts',
+    ]
+
+    it.each(INTERNALLY_GATED)('%s still calls isSubscriptionActive', (relPath) => {
+      const file = routeFiles.find((f) => f.relPath === relPath)
+      expect(file, `${relPath} is exempt but no longer exists`).toBeDefined()
+      expect(
+        stripComments(file!.source).includes('isSubscriptionActive('),
+        `${relPath} is exempt from requireWrite because it gates itself, but it no longer calls isSubscriptionActive`,
+      ).toBe(true)
+    })
+  })
+
+  describe('rule (b): GET handlers that mutate are named explicitly', () => {
+    const getFiles = routeFiles.filter((f) => f.methods.includes('GET'))
+
+    it.each(getFiles.map((f) => f.relPath))('%s has no raw write inside GET, or is exempt', (relPath) => {
+      if (relPath in EXEMPT_GET_ROUTES) return
+      const file = getFiles.find((f) => f.relPath === relPath)!
+      const body = extractHandlerBody(file.source, 'GET')
+      const hit = RAW_WRITE_CALLS.find((call) => body.includes(call))
+      expect(
+        hit,
+        `${relPath}'s GET handler contains ${hit}. Either it is a genuine mutating GET, so add it to ` +
+          'EXEMPT_GET_ROUTES with a reason, or move the write out of GET.',
+      ).toBeUndefined()
+    })
+
+    it('EXEMPT_GET_ROUTES is exhaustive: no other GET handler contains a raw write', () => {
+      // Restates the two it.each cases above as one assertion, so a future
+      // reader doesn't have to count green dots to believe the list is
+      // complete.
+      const unexpectedlyMutating = getFiles
+        .filter((f) => !(f.relPath in EXEMPT_GET_ROUTES))
+        .filter((f) => RAW_WRITE_CALLS.some((call) => extractHandlerBody(f.source, 'GET').includes(call)))
+        .map((f) => f.relPath)
+      expect(unexpectedlyMutating).toEqual([])
+    })
+  })
+
+  describe('guard the guard', () => {
+    it('detects a mutating route missing requireWrite (rule a)', () => {
+      const fixture = `
+        import { NextResponse } from 'next/server'
+        import { getAuthContext } from '@/lib/auth'
+
+        export async function POST(request: Request) {
+          const ctx = await getAuthContext()
+          return NextResponse.json({ ok: true })
+        }
+      `
+      expect(fixture.includes('requireWrite(')).toBe(false)
+      expect(exportedMethods(fixture)).toEqual(['POST'])
+    })
+
+    it('does not flag a mutating route that does call requireWrite (rule a)', () => {
+      const fixture = `
+        import { NextResponse } from 'next/server'
+        import { requireWrite } from '@/lib/write-access'
+
+        export async function POST(request: Request) {
+          const { ctx, blocked } = await requireWrite('owner')
+          if (blocked) return blocked
+          return NextResponse.json({ ok: true })
+        }
+      `
+      expect(fixture.includes('requireWrite(')).toBe(true)
+    })
+
+    it('detects a raw write inside a GET handler (rule b)', () => {
+      const fixture = `
+        export async function GET(request: Request) {
+          await db.update(tenants).set({ seen: true })
+          return NextResponse.json({ ok: true })
+        }
+      `
+      const body = extractHandlerBody(fixture, 'GET')
+      expect(RAW_WRITE_CALLS.some((call) => body.includes(call))).toBe(true)
+    })
+
+    it('does not attribute a POST handler write to a neighboring GET (rule b)', () => {
+      // The exact trap rule (b) has to avoid: a file with both GET and POST
+      // where POST legitimately mutates. A whole-file substring check would
+      // flag the GET too; body-slicing must not.
+      const fixture = `
+        export async function GET(request: Request) {
+          return NextResponse.json({ ok: true })
+        }
+
+        export async function POST(request: Request) {
+          await db.insert(tenants).values({})
+          return NextResponse.json({ ok: true })
+        }
+      `
+      const getBody = extractHandlerBody(fixture, 'GET')
+      expect(RAW_WRITE_CALLS.some((call) => getBody.includes(call))).toBe(false)
+    })
+  })
+})

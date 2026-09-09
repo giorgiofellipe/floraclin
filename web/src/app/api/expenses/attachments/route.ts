@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { addExpenseAttachment } from '@/db/queries/expenses'
 import { uploadFile } from '@/lib/storage'
 import { handleApiError } from '@/lib/api-error'
@@ -44,10 +44,8 @@ function getExpenseStoragePath(tenantId: string, expenseId: string, filename: st
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getAuthContext()
-    if (!['owner', 'financial'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner', 'financial')
+    if (blocked) return blocked
 
     const formData = await request.formData()
     const file = formData.get('file') as File | null

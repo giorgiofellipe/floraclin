@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
-import { subscriptionGate } from '@/lib/plans'
+import { requireWrite } from '@/lib/write-access'
 import { getTenant } from '@/db/queries/tenants'
 import { listProspects, getProspectStats, createProspect, logProspectActivity, getProspectProceduresBatch } from '@/db/queries/prospects'
 import { prospectFilterSchema, createProspectSchema } from '@/validations/prospect'
@@ -96,8 +96,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
     }
 
-    const gate = await subscriptionGate(ctx)
-    if (gate) return gate
+    // Role is already gated dynamically above (whatsapp_allowed_roles ?? ['owner']);
+    // requireWrite here only adds the subscription check, so it is passed every
+    // role to avoid re-narrowing what the dynamic check already allowed.
+    const { blocked } = await requireWrite('owner', 'practitioner', 'receptionist', 'financial')
+    if (blocked) return blocked
 
     const body = await request.json()
     const parsed = createProspectSchema.safeParse(body)

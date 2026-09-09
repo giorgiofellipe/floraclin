@@ -37,20 +37,10 @@ export function useUpdateTenant() {
   })
 }
 
-export function useApproveTenant() {
+export function useSuspendTenant() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => mutateJson(`/api/admin/tenants/${id}/approve`, 'POST'),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.admin.tenants.all })
-    },
-  })
-}
-
-export function useRejectTenant() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (id: string) => mutateJson(`/api/admin/tenants/${id}/reject`, 'POST'),
+    mutationFn: (id: string) => mutateJson(`/api/admin/tenants/${id}/suspend`, 'POST'),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.tenants.all })
     },

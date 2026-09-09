@@ -39,7 +39,9 @@ export const users = floraclinSchema.table('users', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-})
+}, (table) => [
+  uniqueIndex('uq_users_email_lower').on(sql`lower(${table.email})`),
+])
 
 export const tenantUsers = floraclinSchema.table('tenant_users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -652,6 +654,10 @@ export const verificationTokens = floraclinSchema.table('verification_tokens', {
   identifier: varchar('identifier', { length: 255 }).notNull(),
   token: varchar('token', { length: 255 }).notNull().unique(),
   expires: timestamp('expires', { withTimezone: true }).notNull(),
+  // Cooldown for the email-confirmation resend endpoint, which an
+  // unauthenticated caller can trigger. Nullable because NextAuth's Resend
+  // provider writes this table for magic links and never sets it.
+  lastSentAt: timestamp('last_sent_at', { withTimezone: true }),
 })
 
 // ─── PROSPECTS (CRM) ────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { getTenant } from '@/db/queries/tenants'
 import { getProspect, updateProspect, softDeleteProspect, logProspectActivity, getProspectActivities, getProspectProcedures, setProspectProcedures } from '@/db/queries/prospects'
 import { pushSseEvent } from '@/db/queries/whatsapp'
@@ -55,6 +56,13 @@ export async function PATCH(
   try {
     const { ctx, error } = await requireWhatsappAccess()
     if (error) return error
+
+    // Role is already gated dynamically inside requireWhatsappAccess
+    // (whatsapp_allowed_roles ?? ['owner']); requireWrite here only adds the
+    // subscription check, so it is passed every role to avoid re-narrowing
+    // what the dynamic check already allowed.
+    const { blocked } = await requireWrite('owner', 'practitioner', 'receptionist', 'financial')
+    if (blocked) return blocked
 
     const { id } = await params
     const body = await request.json()
@@ -117,6 +125,13 @@ export async function DELETE(
   try {
     const { ctx, error } = await requireWhatsappAccess()
     if (error) return error
+
+    // Role is already gated dynamically inside requireWhatsappAccess
+    // (whatsapp_allowed_roles ?? ['owner']); requireWrite here only adds the
+    // subscription check, so it is passed every role to avoid re-narrowing
+    // what the dynamic check already allowed.
+    const { blocked } = await requireWrite('owner', 'practitioner', 'receptionist', 'financial')
+    if (blocked) return blocked
 
     const { id } = await params
     const prospect = await softDeleteProspect(ctx.tenantId, id)

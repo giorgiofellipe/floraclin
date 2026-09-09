@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { checkTimeConflict, createAppointment } from '@/db/queries/appointments'
 import { handleApiError } from '@/lib/api-error'
 import { signLogoPath } from '@/lib/logo'
+import { isSubscriptionActive } from '@/lib/plans'
 
 interface WorkingHoursDay {
   start: string
@@ -132,6 +133,17 @@ export async function POST(
       return NextResponse.json(
         { error: 'Clínica não encontrada' },
         { status: 404 }
+      )
+    }
+
+    // Unauthenticated route, no middleware or getAuthContext gate reaches
+    // it, so the tenant resolved above has to be checked here. A lapsed
+    // clinic keeps its booking link visible but stops accepting new
+    // appointments.
+    if (!(await isSubscriptionActive(tenant.id))) {
+      return NextResponse.json(
+        { error: 'Esta clínica não está aceitando agendamentos online no momento.' },
+        { status: 403 }
       )
     }
 

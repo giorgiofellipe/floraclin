@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { BookingPage } from '@/components/booking/booking-page'
 import { signLogoPath } from '@/lib/logo'
+import { isSubscriptionActive } from '@/lib/plans'
 import type { Metadata } from 'next'
 
 interface ClinicApiResponse {
@@ -11,6 +12,7 @@ interface ClinicApiResponse {
     email: string | null
   }
   practitioners: { id: string; name: string }[]
+  acceptingBookings: boolean
 }
 
 async function getClinicData(slug: string): Promise<ClinicApiResponse | null> {
@@ -71,6 +73,9 @@ async function getClinicData(slug: string): Promise<ClinicApiResponse | null> {
       id: p.id,
       name: p.fullName,
     })),
+    // A lapsed clinic keeps its booking link reachable, so the page never
+    // 404s for the patient, but the form is replaced by a closed state.
+    acceptingBookings: await isSubscriptionActive(t.id),
   }
 }
 
@@ -109,6 +114,7 @@ export default async function PublicBookingPage({
       clinic={data.clinic}
       practitioners={data.practitioners}
       slug={slug}
+      acceptingBookings={data.acceptingBookings}
     />
   )
 }

@@ -20,6 +20,11 @@ export default auth((req) => {
     pathname.startsWith('/a/') ||
     pathname.startsWith('/sign/') ||
     pathname.startsWith('/verify/') ||
+    // The confirmation link is opened from an inbox, often on a different
+    // device with no session. Without this it falls through to the
+    // unauthenticated /login redirect and the token in the query string is
+    // lost, which defeats the whole point of a 24 hour link.
+    pathname.startsWith('/confirm-email') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/favicon') ||
@@ -28,10 +33,11 @@ export default auth((req) => {
     return NextResponse.next()
   }
 
-  // Stale JWT — token minted before schema changes, clear it and force re-login
+  // Stale JWT: minted before the claims below existed. Clear it and force a
+  // re-login rather than reason about a token that cannot answer.
   if (isAuthenticated) {
     const token = req.auth as any
-    if (!token?.v || token.v < 2) {
+    if (!token?.v || token.v < 3) {
       const res = NextResponse.redirect(new URL('/login', req.url))
       res.cookies.delete('authjs.session-token')
       res.cookies.delete('__Secure-authjs.session-token')
@@ -43,11 +49,10 @@ export default auth((req) => {
   if (pathname === '/login' || pathname === '/reset-password' || pathname === '/signup') {
     if (isAuthenticated) {
       const session = req.auth as any
-      const tenantStatus = session?.tenantStatus as string | null
       const tenantId = session?.tenantId as string | null
 
       if (!tenantId) return NextResponse.redirect(new URL('/signup/clinic-details', req.url))
-      if (tenantStatus === 'pending_approval') return NextResponse.redirect(new URL('/pending-approval', req.url))
+      if (session?.emailVerified === false) return NextResponse.redirect(new URL('/confirm-email', req.url))
       return NextResponse.redirect(new URL('/dashboard', req.url))
     }
     return NextResponse.next()
@@ -60,7 +65,6 @@ export default auth((req) => {
 
   // Authenticated from here — read tenant info from session
   const session = req.auth as any
-  const tenantStatus = session?.tenantStatus as string | null
   const tenantId = session?.tenantId as string | null
   const isPlatformAdmin = session?.isPlatformAdmin as boolean
   const subscriptionStatus = session?.subscriptionStatus as string | null
@@ -77,10 +81,14 @@ export default auth((req) => {
     return NextResponse.redirect(new URL('/signup/clinic-details', req.url))
   }
 
-  // Pending approval — only allow pending-approval page
-  if (tenantStatus === 'pending_approval') {
-    if (pathname === '/pending-approval') return NextResponse.next()
-    return NextResponse.redirect(new URL('/pending-approval', req.url))
+  // Email not confirmed yet. Replaces the manual approval gate: the wait is
+  // now the user's own inbox rather than someone clicking approve.
+  //
+  // Gated on an explicit `false`, never on falsy. Undefined means the token
+  // predates the claim, and those are cleared by the version check above
+  // before they ever reach this line.
+  if (session?.emailVerified === false) {
+    return NextResponse.redirect(new URL('/confirm-email', req.url))
   }
 
   return NextResponse.next()

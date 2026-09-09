@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { getPatient } from '@/db/queries/patients'
 import { createAnamnesisToken } from '@/db/queries/anamnesis-tokens'
 import { getAppUrl } from '@/lib/app-url'
@@ -10,10 +10,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getAuthContext()
-    if (!['owner', 'practitioner', 'receptionist'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner', 'receptionist')
+    if (blocked) return blocked
 
     const { id: patientId } = await params
     const patient = await getPatient(ctx.tenantId, patientId)

@@ -3,11 +3,17 @@
  * `createAnamnesisToken` is what makes a cross-tenant token impossible; this
  * preflight is what makes the answer a 404 instead of a 500 plus a Sentry
  * event, matching the sibling send route.
+ *
+ * The guard is `requireWrite`, so the route also refuses a lapsed
+ * subscription. `write-access.test.ts` covers what that guard decides; here it
+ * is mocked, and what matters is that the route returns its response
+ * untouched and mints nothing when it blocks.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { NextResponse } from 'next/server'
 
-vi.mock('@/lib/auth', () => ({
-  getAuthContext: vi.fn(),
+vi.mock('@/lib/write-access', () => ({
+  requireWrite: vi.fn(),
 }))
 
 vi.mock('@/db/queries/patients', () => ({
@@ -18,7 +24,7 @@ vi.mock('@/db/queries/anamnesis-tokens', () => ({
   createAnamnesisToken: vi.fn(),
 }))
 
-import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { getPatient } from '@/db/queries/patients'
 import { createAnamnesisToken } from '@/db/queries/anamnesis-tokens'
 import { POST } from '../route'
@@ -46,11 +52,11 @@ function paramsOf<T extends object>(value: T): Promise<T> {
 
 beforeEach(() => {
   vi.unstubAllEnvs()
-  vi.mocked(getAuthContext).mockReset()
+  vi.mocked(requireWrite).mockReset()
   vi.mocked(getPatient).mockReset()
   vi.mocked(createAnamnesisToken).mockReset()
 
-  vi.mocked(getAuthContext).mockResolvedValue(AUTH_OK)
+  vi.mocked(requireWrite).mockResolvedValue({ ctx: AUTH_OK, blocked: null } as never)
   vi.mocked(getPatient).mockResolvedValue({ id: 'patient-1' } as never)
   vi.mocked(createAnamnesisToken).mockResolvedValue({
     token: 'token-uuid',
@@ -89,11 +95,18 @@ describe('POST /api/patients/[id]/anamnesis-link', () => {
     expect(createAnamnesisToken).toHaveBeenCalledWith('tenant-1', 'patient-1', 'user-1')
   })
 
-  it('returns 403 for a role that may not issue links', async () => {
-    vi.mocked(getAuthContext).mockResolvedValueOnce({
-      ...AUTH_OK,
-      role: 'financial' as const,
-    })
+  it('asks the guard for the roles that may issue links', async () => {
+    await POST(postRequest('patient-1'), { params: paramsOf({ id: 'patient-1' }) })
+
+    expect(requireWrite).toHaveBeenCalledWith('owner', 'practitioner', 'receptionist')
+  })
+
+  it('returns the guard response and mints nothing when it blocks', async () => {
+    // A wrong role and a lapsed subscription both arrive here the same way.
+    vi.mocked(requireWrite).mockResolvedValueOnce({
+      ctx: null,
+      blocked: NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
+    } as never)
 
     const res = await POST(postRequest('patient-1'), { params: paramsOf({ id: 'patient-1' }) })
 

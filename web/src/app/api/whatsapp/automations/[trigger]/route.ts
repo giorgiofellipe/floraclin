@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { getTenant } from '@/db/queries/tenants'
 import { upsertAutomation, getTemplateById } from '@/db/queries/whatsapp'
 import { isWhatsAppEnabled } from '@/lib/whatsapp'
@@ -19,9 +20,8 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp not enabled' }, { status: 400 })
     }
-    if (ctx.role !== 'owner') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { blocked } = await requireWrite('owner')
+    if (blocked) return blocked
 
     if (!VALID_TRIGGERS.includes(trigger)) {
       return NextResponse.json({ error: 'Trigger inválido' }, { status: 400 })
