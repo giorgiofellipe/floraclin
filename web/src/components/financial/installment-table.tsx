@@ -300,7 +300,7 @@ export function InstallmentTable({
                           )}
                           {excessOf(pr) > 0 && (
                             <span className="text-[10px] text-sky-700 tabular-nums">
-                              Pago a mais {formatCurrency(excessOf(pr))}
+                              Excedente {formatCurrency(excessOf(pr))}
                             </span>
                           )}
                         </div>

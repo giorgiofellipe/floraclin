@@ -109,11 +109,17 @@ function lastGraceDayIndex(base: InstallmentBase): number {
 }
 
 /**
+ * True once the due date plus grace has passed, regardless of payments. The
+ * fine is gated on this and not on the interest interval, which restarts at
+ * each payment and can stay under a day forever.
+ */
+function isOverdueAt(base: InstallmentBase, at: Date): boolean {
+  return brDayIndex(at) > lastGraceDayIndex(base)
+}
+
+/**
  * Whole BR calendar days of interest owed at `asOf`. The clock starts the day
- * after grace ends, or at the last payment, whichever is later. With no last
- * payment this is also the absolute overdue count from the due date, which is
- * what gates the fine: an interval that restarts at each payment can stay
- * under a day forever.
+ * after grace ends, or at the last payment, whichever is later.
  */
 function daysOfInterest(
   base: InstallmentBase,
@@ -156,11 +162,7 @@ export function replayPayments(
     const daysOverdue = daysOfInterest(base, lastCalcAt, paymentDate)
 
     const remainingPrincipal = round2(base.amount - amountPaid)
-    if (
-      !fineApplied &&
-      remainingPrincipal > 0 &&
-      daysOfInterest(base, null, paymentDate) > 0
-    ) {
+    if (!fineApplied && remainingPrincipal > 0 && isOverdueAt(base, paymentDate)) {
       fineAmount = calculateFine(base.amount, base.appliedFineType, base.appliedFineValue)
       fineApplied = true
     }
@@ -244,7 +246,7 @@ export function quoteInstallment(
   const fineAmount =
     !replay.installmentState.fineApplied &&
     remainingPrincipal > 0 &&
-    daysOfInterest(base, null, asOf) > 0
+    isOverdueAt(base, asOf)
       ? calculateFine(base.amount, base.appliedFineType, base.appliedFineValue)
       : replay.installmentState.fineAmount
 

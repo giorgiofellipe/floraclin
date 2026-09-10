@@ -130,8 +130,9 @@ describe('renegotiateCharges', () => {
     // Hand-checked: the payment of 1 on Sep 3 covers 1 of the 26 interest then
     // owed, carrying 25 and setting the fine at 15; ten more days on 750 at
     // 1%/month is 2.50, so 25 + 2.50 = 27.50 interest at renegotiation time.
-    // The old inline block, which never loaded payment records, produced
-    // 17.50 (stored fine of 15 plus ten fresh days, the carried 25 dropped).
+    // The old inline block never loaded payment records, so with this row's
+    // null last_fine_interest_calc_at it priced 114 days on the full 750 from
+    // the due date: 15 + 28.50 = 43.50. Neither figure knows about the R$1.
     expect(result.breakdown).toEqual([
       { entryId: ENTRY_ID, remainingPrincipal: 750, penalties: 42.5 },
     ])

@@ -105,10 +105,11 @@ describe('reversePayment', () => {
     vi.clearAllMocks()
   })
 
-  // The stored payment_records.amount is the cash received (recordPayment's
-  // fix), not the cash allocated, so the reversal outflow must match it: a
-  // R$900 overpayment against a R$791 charge writes a R$900 outflow, or the
-  // cash ledger would be short by the excess forever.
+  // payment_records.amount is the cash received, so the reversal outflow must
+  // match it: a R$900 overpayment against a R$791 charge writes a R$900
+  // outflow, or the cash ledger would be short by the excess forever. This
+  // characterises reversePayment, which already wrote pr.amount; what changed
+  // is that recordPayment now stores the full amount there.
   it('reversing a R$900 overpayment writes a R$900 outflow, not the amount it allocated', async () => {
     const { reversePayment } = await import('../financial')
     const tx = makeTx()
@@ -143,7 +144,8 @@ describe('reversePayment', () => {
 
   // The remaining payment absorbs the fine on replay once the one that first
   // triggered it is reversed: fineApplied is recomputed from scratch against
-  // whatever payments are left, not carried over from the reversed payment.
+  // whatever payments are left. This held before this round too; it pins the
+  // shape reversal must keep while the engine underneath it changes.
   it('reversing the payment that triggered the fine leaves the remaining payment covering it', async () => {
     const { reversePayment } = await import('../financial')
     const tx = makeTx()
@@ -188,6 +190,5 @@ describe('reversePayment', () => {
     await reversePayment(TENANT, USER_ID, 'p1')
 
     expect(rewrite.value).toMatchObject({ fineCovered: '14.75' })
-    expect((rewrite.value as { fineCovered: string }).fineCovered).not.toBe('0.00')
   })
 })

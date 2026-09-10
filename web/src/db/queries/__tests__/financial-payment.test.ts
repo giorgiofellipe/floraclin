@@ -319,9 +319,11 @@ describe('recordPayment', () => {
   })
 
   // AR2-1: the persisted state prices the trailing balance as of now, not as
-  // of the backdated payment. Against the v1 bug (asOf = paidAt) this would
-  // store interestAmount '0.00', because June 22 is the payment's own date
-  // and nothing is left overdue from its own point of view.
+  // of the backdated payment. Had the replay been given paidAt as asOf, this
+  // would store '0.00', because nothing is overdue from June 22's own point
+  // of view. The 7.76 also held before this round, since the old engine read
+  // the wall clock and the frozen clock equals the now captured here; what
+  // this test newly pins is the recordedAt written on the payment row.
   it('a backdated partial payment persists interest as of now, not as of the payment date', async () => {
     const now = new Date('2026-09-10T14:04:50.000Z')
     vi.useFakeTimers()

@@ -81,6 +81,9 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000
 
 /** Days since epoch of a `YYYY-MM-DD` calendar day, for whole-day arithmetic. */
 export function ymdDayIndex(ymd: string): number {
+  if (!YMD_ONLY.test(ymd)) {
+    throw new Error(`ymdDayIndex expected YYYY-MM-DD, got ${ymd}`)
+  }
   const [y, m, d] = ymd.split('-').map(Number)
   return Date.UTC(y, m - 1, d) / MS_PER_DAY
 }

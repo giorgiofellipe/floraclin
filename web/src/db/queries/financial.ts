@@ -723,7 +723,9 @@ export async function reversePayment(
       )
       .orderBy(paymentRecords.paidAt, paymentRecords.recordedAt)
 
-    const gracePeriodDays = await getGracePeriodDays(tx, tenantId)
+    const settings = await loadFinancialSettings(tx, tenantId)
+    // Captured behind the lock, the same way the write paths do it.
+    const now = new Date()
 
     if (remainingPayments.length === 0) {
       // No payments left — reset installment
@@ -745,10 +747,10 @@ export async function reversePayment(
       const base: InstallmentBase = {
         amount: Number(inst.amount),
         dueDate: inst.dueDate,
-        appliedFineValue: Number(inst.appliedFineValue ?? 0),
-        appliedFineType: inst.appliedFineType ?? 'percentage',
-        appliedInterestRate: Number(inst.appliedInterestRate ?? 0),
-        gracePeriodDays,
+        appliedFineValue: Number(inst.appliedFineValue ?? settings.fineValue),
+        appliedFineType: inst.appliedFineType ?? settings.fineType,
+        appliedInterestRate: Number(inst.appliedInterestRate ?? settings.monthlyInterestPercent),
+        gracePeriodDays: settings.gracePeriodDays,
       }
 
       const allPayments: PaymentInput[] = remainingPayments.map((p) => ({
@@ -758,7 +760,7 @@ export async function reversePayment(
         recordedAt: new Date(p.recordedAt).toISOString(),
       }))
 
-      const result = replayPayments(base, allPayments, new Date())
+      const result = replayPayments(base, allPayments, now)
 
       // Update each payment record with recalculated allocations
       for (let i = 0; i < result.payments.length; i++) {
@@ -842,6 +844,8 @@ export async function bulkPayInstallments(
   const { results, purchases } = await withTransaction(async (tx) => {
     // Lock all target installments
     const installmentIdArray = `{${data.installmentIds.join(',')}}`
+    // ORDER BY id so this and renegotiation acquire overlapping rows in one
+    // order instead of deadlocking on each other.
     const lockResult = await tx.execute(
       sql`SELECT id FROM floraclin.installments
           WHERE id = ANY(${installmentIdArray}::uuid[])
@@ -866,9 +870,7 @@ export async function bulkPayInstallments(
     // Load grace period once before the loop
     const gracePeriodDays = await getGracePeriodDays(tx, tenantId)
 
-    // Captured once for the whole batch, behind the lock. Reused as every
-    // payment record's recordedAt and as the replay's asOf, so a backdated
-    // paidAt does not freeze an installment's interest at its own date.
+    // One instant for the whole batch, behind the lock; see recordPayment.
     const now = new Date()
 
     // Process each installment through recordPayment logic

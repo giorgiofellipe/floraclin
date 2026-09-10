@@ -114,7 +114,7 @@ describe('InstallmentTable', () => {
     render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
 
     await screen.findByText('Parcela 3/3')
-    // The overdue installment (inst-3) has fineAmount=10 — rendered as a "Multa R$..." span.
+    // The overdue installment (inst-3) has fineAmount=10, rendered as a "Multa R$..." span.
     // It's not wrapped in a PenaltyBadge testid here; look up the text content.
     const multa = screen.getByText(/^Multa\s*R\$/)
     expect(multa).toBeInTheDocument()
@@ -168,7 +168,7 @@ describe('InstallmentTable', () => {
             amount: '791.00',
             dueDate: '2026-08-25',
             status: 'paid',
-            paidAt: new Date('2026-09-01'),
+            paidAt: '2026-09-01T15:00:00.000Z',
             paymentMethod: 'pix',
             notes: null,
             amountPaid: '791.00',
@@ -197,7 +197,7 @@ describe('InstallmentTable', () => {
     await screen.findByText('Parcela 1/1')
     fireEvent.click(screen.getByTestId('installment-expand-payments'))
 
-    expect(await screen.findByText('Pago a mais R$ 9,00')).toBeInTheDocument()
+    expect(await screen.findByText('Excedente R$ 9,00')).toBeInTheDocument()
   })
 
   it('shows no excess label when the covered columns sum to the payment amount', async () => {
@@ -211,7 +211,7 @@ describe('InstallmentTable', () => {
             amount: '750.00',
             dueDate: '2026-08-25',
             status: 'paid',
-            paidAt: new Date('2026-09-01'),
+            paidAt: '2026-09-01T15:00:00.000Z',
             paymentMethod: 'pix',
             notes: null,
             amountPaid: '750.00',
@@ -241,6 +241,6 @@ describe('InstallmentTable', () => {
     fireEvent.click(screen.getByTestId('installment-expand-payments'))
 
     await screen.findByText(/^Principal\s*R\$/)
-    expect(screen.queryByText(/Pago a mais/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Excedente/)).not.toBeInTheDocument()
   })
 })

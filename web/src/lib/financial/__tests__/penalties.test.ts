@@ -156,7 +156,7 @@ describe('replayPayments', () => {
   it('replays single payment correctly', () => {
     const result = replayPayments(
       { amount: 1000, dueDate: '2026-01-01', appliedFineValue: 2, appliedFineType: 'percentage', appliedInterestRate: 1, gracePeriodDays: 0 },
-      // Feb 1 00:00Z is Jan 31 in BR — 30 days after the Jan 1 due date.
+      // Feb 1 00:00Z is Jan 31 in BR, 30 days after the Jan 1 due date.
       [pay('p1', 500, '2026-02-01T00:00:00Z')],
       new Date('2026-09-03T14:04:50.000Z'),
     )
@@ -199,8 +199,8 @@ describe('replayPayments', () => {
     const result = replayPayments(
       { amount: 1000, dueDate: '2026-03-01', appliedFineValue: 2, appliedFineType: 'percentage', appliedInterestRate: 1, gracePeriodDays: 0 },
       [
-        pay('p1', 200, '2026-02-15T00:00:00Z'), // before due date — no fine
-        pay('p2', 300, '2026-04-01T00:00:00Z'), // 31 days after due — should apply fine
+        pay('p1', 200, '2026-02-15T00:00:00Z'), // before due date, no fine
+        pay('p2', 300, '2026-04-01T00:00:00Z'), // 31 days after due, so the fine applies
       ],
       new Date('2026-09-03T14:04:50.000Z'),
     )
@@ -371,7 +371,7 @@ describe('replayPayments ordering', () => {
   it('orders equal timestamps stably by id', () => {
     const a = pay('aaa', 30, '2026-09-03T15:00:00.000Z')
     const b = pay('bbb', 30, '2026-09-03T15:00:00.000Z')
-    const asOf = new Date('2026-09-03T14:04:50.000Z')
+    const asOf = new Date('2026-09-03T15:00:00.000Z')
     const forward = replayPayments(BASE, [a, b], asOf)
     const backward = replayPayments(BASE, [b, a], asOf)
     expect(forward.payments.map((p) => p.id)).toEqual(['aaa', 'bbb'])
@@ -468,9 +468,12 @@ describe('tie-break on recordedAt', () => {
     const inFlight = pay('__new__', 30, t, '2026-09-03T15:00:09.000Z')
     const result = replayPayments(BASE, [inFlight, older], new Date(t))
     expect(result.payments.map((p) => p.id)).toEqual(['zzz', '__new__'])
-    // The older payment takes the interest; the in-flight one hits the fine.
+    // The older payment takes all 26 of interest and 4 of the fine; the
+    // in-flight one meets no interest and covers the remaining 11 of fine.
     expect(result.payments[0].interestCovered).toBe(26)
+    expect(result.payments[0].fineCovered).toBe(4)
     expect(result.payments[1].interestCovered).toBe(0)
+    expect(result.payments[1].fineCovered).toBe(11)
   })
 
   it('is stable when the in-flight id is replaced by a uuid on a later replay', () => {

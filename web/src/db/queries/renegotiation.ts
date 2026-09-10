@@ -65,6 +65,8 @@ export async function renegotiateCharges(
     // Bind the ids as a single Postgres array literal (`{a,b}`); drizzle's `sql`
     // tag flattens a raw JS array into separate params, which breaks `::uuid[]`.
     const entryIdArray = `{${data.entryIds.join(',')}}`
+    // ORDER BY id so this and bulk payment acquire overlapping rows in one
+    // order instead of deadlocking on each other.
     const lockResult = await tx.execute(
       sql`SELECT * FROM floraclin.installments
           WHERE financial_entry_id = ANY(${entryIdArray}::uuid[])

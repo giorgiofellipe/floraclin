@@ -86,8 +86,8 @@ export function PartialPaymentDialog({
     )
   }, [parsedAmount, quote, installment.amount])
 
-  const isOverpayment = quote != null && parsedAmount > quote.totalDue
-  const excess = isOverpayment && quote ? Math.round((parsedAmount - quote.totalDue) * 100) / 100 : 0
+  const excess = allocation?.excessAmount ?? 0
+  const isOverpayment = excess > 0
 
   // A cached quote for the previous date must not stay on screen while the new
   // one is in flight, and a failed quote must not sit on "Calculando..."
@@ -219,6 +219,12 @@ export function PartialPaymentDialog({
                   <span className="text-mid">Principal</span>
                   <span className="font-medium text-charcoal tabular-nums">{formatCurrency(allocation.principalCovered)}</span>
                 </div>
+                {allocation.excessAmount > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-mid">Excedente</span>
+                    <span className="font-medium text-charcoal tabular-nums">{formatCurrency(allocation.excessAmount)}</span>
+                  </div>
+                )}
               </div>
             </div>
           )}

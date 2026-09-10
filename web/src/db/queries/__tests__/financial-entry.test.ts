@@ -109,10 +109,11 @@ describe('getFinancialEntry', () => {
     vi.useRealTimers()
   })
 
-  // AR2-3: the v1 inline block read only the stored interestAmount and a
-  // fresh few days of accrual, dropping whatever a prior payment had not
-  // covered. The engine carries it forward: a tiny R$1 payment on Sep 3
-  // leaves 25 carried, plus ten more days on 750 through Sep 13 = 27.50.
+  // AR2-3: the old inline block never loaded payment records. With this row's
+  // null lastFineInterestCalcAt it priced 114 days on the full 750 from the
+  // due date, 28.50, blind to the R$1. The engine replays that payment: it
+  // covers 1 of the 26 then owed, carrying 25, plus ten more days on 750
+  // through Sep 13 = 27.50.
   it('a pending installment with one live payment reports the engine carried-interest figure, not a fresh one', async () => {
     const { getFinancialEntry } = await import('../financial')
 
