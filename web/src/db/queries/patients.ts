@@ -147,6 +147,7 @@ export async function createPatient(
       occupation: data.occupation || null,
       referralSource: data.referralSource || null,
       notes: data.notes || null,
+      marketingOptOut: data.marketingOptOut ?? false,
     })
     .returning()
 
@@ -171,6 +172,7 @@ export async function updatePatient(
   if (data.occupation !== undefined) updateData.occupation = data.occupation || null
   if (data.referralSource !== undefined) updateData.referralSource = data.referralSource || null
   if (data.notes !== undefined) updateData.notes = data.notes || null
+  if (data.marketingOptOut !== undefined) updateData.marketingOptOut = data.marketingOptOut
 
   const [patient] = await db
     .update(patients)

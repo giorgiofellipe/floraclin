@@ -229,6 +229,27 @@ export default function LgpdPage() {
               </div>
             </section>
 
+            <section>
+              <h2 className="text-xl mb-3">Medição de Anúncios (Meta)</h2>
+              <div className="space-y-3">
+                <p>
+                  A clínica pode ativar, de forma opcional, uma integração com
+                  a Meta (Facebook e Instagram) para medir o resultado de suas
+                  campanhas publicitárias. Quando essa integração está ativa,
+                  dados de contato do paciente, como telefone e e-mail, são
+                  compartilhados com a Meta em formato criptografado (hash),
+                  nunca em texto claro.
+                </p>
+                <p>
+                  Como controladora dos dados dos seus pacientes, a clínica é
+                  responsável pela base legal desse tratamento perante seus
+                  pacientes. O paciente pode se opor a essa medição e
+                  solicitar a exclusão dos seus dados diretamente com a
+                  clínica responsável pelo seu atendimento.
+                </p>
+              </div>
+            </section>
+
             <section className="border-t border-sage/10 pt-8">
               <h2 className="text-xl mb-3">Contato do Encarregado (DPO)</h2>
               <p>

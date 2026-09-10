@@ -6,6 +6,10 @@ import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
 import { brToday, parseBrDate, endOfBrDay, toLocalYmd } from '@/lib/dates'
 import { addDays } from 'date-fns'
 import { verifyTenantOwnership, verifyUserBelongsToTenant } from './helpers'
+import { getPatient } from './patients'
+import { enqueueMetaEvent } from '@/lib/meta/events'
+import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 export interface AppointmentListFilters {
   practitionerId?: string
@@ -205,7 +209,59 @@ export async function createAppointment(
     })
     .returning()
 
+  await emitScheduleEvent(tenantId, result, data)
+
   return result
+}
+
+/**
+ * `createAppointment` is the sole insert point for appointments, so this
+ * covers both the internal booking route and the public booking page with
+ * one hook. Never lets a Meta emission failure surface to the caller.
+ */
+async function emitScheduleEvent(
+  tenantId: string,
+  appointment: typeof appointments.$inferSelect,
+  data: {
+    patientId?: string | null
+    bookingPhone?: string
+    bookingName?: string
+    bookingEmail?: string
+  }
+) {
+  try {
+    const prospect = await resolveProspectForPatient(tenantId, {
+      patientId: data.patientId,
+      phone: data.bookingPhone,
+    })
+    if (!prospect) return
+
+    // bookingPhone/bookingName exist only on the public booking route, so a
+    // staff-created appointment has to read the identity off the patient row
+    // or the event reaches Meta with nothing to match on.
+    const patient = data.patientId ? await getPatient(tenantId, data.patientId) : null
+
+    await enqueueMetaEvent({
+      tenantId,
+      eventName: 'Schedule',
+      // Keyed on the lead, never on the appointment: a second appointment for
+      // the same lead, and a hand-moved CRM card, all compute this id, so the
+      // unique index on (tenant_id, event_id) collapses them into one Schedule
+      // even when two of them race.
+      eventId: `schedule:${prospect.id}`,
+      eventTime: new Date(),
+      prospectId: prospect.id,
+      patientId: data.patientId ?? null,
+      contact: {
+        phone: patient?.phone ?? data.bookingPhone ?? null,
+        email: patient?.email ?? data.bookingEmail ?? null,
+        fullName: patient?.fullName ?? data.bookingName ?? null,
+      },
+      actionSource: appointment.source === 'online_booking' ? 'website' : 'system_generated',
+    })
+  } catch (error) {
+    reportSideEffectFailure(error, { area: 'meta-capi', step: 'appointment_schedule_event' })
+  }
 }
 
 export async function updateAppointment(

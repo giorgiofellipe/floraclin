@@ -82,6 +82,11 @@ export const queryKeys = {
     blocks: (practitionerId: string | undefined, dateFrom: string, dateTo: string) =>
       ['calendar', 'blocks', practitionerId, dateFrom, dateTo] as const,
   },
+  meta: {
+    all: ['meta'] as const,
+    connection: ['meta', 'connection'] as const,
+    businesses: ['meta', 'businesses'] as const,
+  },
   admin: {
     tenants: {
       all: ['admin', 'tenants'] as const,

@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { BookingPage } from '@/components/booking/booking-page'
+import { MetaPixel } from '@/components/booking/meta-pixel'
 import { signLogoPath } from '@/lib/logo'
 import { isSubscriptionActive } from '@/lib/plans'
 import type { Metadata } from 'next'
@@ -12,6 +13,7 @@ interface ClinicApiResponse {
     email: string | null
   }
   practitioners: { id: string; name: string }[]
+  metaDatasetId: string | null
   acceptingBookings: boolean
 }
 
@@ -40,6 +42,9 @@ async function getClinicData(slug: string): Promise<ClinicApiResponse | null> {
   const t = tenant[0]
   const settings = (t.settings as Record<string, unknown>) ?? {}
   if (settings.online_booking_enabled !== true) return null
+
+  const { getMetaConnection } = await import('@/db/queries/meta-connections')
+  const connection = await getMetaConnection(t.id)
 
   const practitioners = await db
     .select({
@@ -73,6 +78,7 @@ async function getClinicData(slug: string): Promise<ClinicApiResponse | null> {
       id: p.id,
       name: p.fullName,
     })),
+    metaDatasetId: connection?.datasetId ?? null,
     // A lapsed clinic keeps its booking link reachable, so the page never
     // 404s for the patient, but the form is replaced by a closed state.
     acceptingBookings: await isSubscriptionActive(t.id),
@@ -110,11 +116,17 @@ export default async function PublicBookingPage({
   }
 
   return (
-    <BookingPage
-      clinic={data.clinic}
-      practitioners={data.practitioners}
-      slug={slug}
-      acceptingBookings={data.acceptingBookings}
-    />
+    <>
+      {/* The booking route refuses a lapsed clinic, so a PageView here could
+          never be followed by a Lead: it would only teach Meta to optimize
+          toward a page that cannot convert. */}
+      {data.acceptingBookings && <MetaPixel datasetId={data.metaDatasetId} />}
+      <BookingPage
+        clinic={data.clinic}
+        practitioners={data.practitioners}
+        slug={slug}
+        acceptingBookings={data.acceptingBookings}
+      />
+    </>
   )
 }

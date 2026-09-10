@@ -64,6 +64,23 @@ vi.mock('@/lib/plans', () => ({
   isSubscriptionActive: vi.fn(),
 }))
 
+// The booking POST also opens a CRM lead, records its attribution and queues
+// the Meta Lead event. Stubbed so this suite stays about the subscription
+// gate; `book/__tests__/attribution.test.ts` is what asserts on them.
+vi.mock('@/db/queries/prospects', () => ({
+  getProspectByPhone: vi.fn().mockResolvedValue(null),
+  createNewProspect: vi.fn().mockResolvedValue({ id: 'prospect-1', stage: 'novo', convertedPatientId: null }),
+  updateProspect: vi.fn().mockResolvedValue({ id: 'prospect-1', stage: 'agendado' }),
+}))
+
+vi.mock('@/db/queries/lead-attributions', () => ({
+  recordAttribution: vi.fn().mockResolvedValue({ recorded: true }),
+}))
+
+vi.mock('@/lib/meta/events', () => ({
+  enqueueMetaEvent: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock('@/lib/api-error', () => ({
   handleApiError: vi.fn(
     async (_error: unknown, _request: unknown, options: { body: unknown }) =>

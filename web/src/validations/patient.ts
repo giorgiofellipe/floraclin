@@ -22,6 +22,7 @@ export const createPatientSchema = z.object({
   occupation: z.string().optional(),
   referralSource: z.string().optional(),
   notes: z.string().optional(),
+  marketingOptOut: z.boolean().optional(),
 })
 
 export const updatePatientSchema = z.object({
@@ -37,6 +38,7 @@ export const updatePatientSchema = z.object({
   occupation: z.string().optional(),
   referralSource: z.string().optional(),
   notes: z.string().optional(),
+  marketingOptOut: z.boolean().optional(),
 })
 
 export const patientSearchSchema = z.object({

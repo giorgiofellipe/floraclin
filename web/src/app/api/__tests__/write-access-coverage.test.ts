@@ -19,11 +19,12 @@ import path from 'node:path'
  *     `EXEMPT_MUTATING_ROUTES` with a one-line reason.
  * (b) Every route file exporting GET either does not contain an "obvious"
  *     write (`db.insert(`, `db.update(`, `db.delete(`) inside the GET
- *     handler's own body, or is named in `EXEMPT_GET_ROUTES`. Two routes are
- *     exempt today: `calendar/auth/callback` and `whatsapp/templates/[id]`,
- *     both of which mutate through query-layer helpers rather than a raw
- *     `db.*` call, so the heuristic in (b) does not even catch them on its
- *     own. They are named explicitly because a human read the code.
+ *     handler's own body, or is named in `EXEMPT_GET_ROUTES`. Three routes
+ *     are exempt today: the two OAuth callbacks (`calendar/auth/callback`,
+ *     `integrations/meta/auth/callback`) and `whatsapp/templates/[id]`, all
+ *     of which mutate through query-layer helpers rather than a raw `db.*`
+ *     call, so the heuristic in (b) does not even catch them on its own.
+ *     They are named explicitly because a human read the code.
  *
  * ── Known limits (by design) ─────────────────────────────────────────────
  *   - Purely syntactic, same as the raw-sql scanner. It does not resolve
@@ -80,6 +81,7 @@ const TOP_LEVEL_DIRS = [
   'expenses',
   'face-diagrams',
   'financial',
+  'integrations',
   'onboarding',
   'package-templates',
   'patient-packages',
@@ -143,6 +145,14 @@ const EXEMPT_MUTATING_ROUTES: Record<string, string> = {
   'billing/reactivate/route.ts': 'billing is the way out of an expired subscription',
   'billing/portal/route.ts': 'billing is the way out of an expired subscription',
 
+  // POST-shaped but mutates nothing: it lists a business portfolio's pixels
+  // from the Graph API. It is a POST only so the caller's access token travels
+  // in the body instead of a URL that Vercel and Sentry both log. The scanner
+  // classifies by HTTP method and cannot see that; its sibling
+  // `integrations/meta/businesses/route.ts` is the same kind of read as a GET
+  // and the rules never reach it at all.
+  'integrations/meta/datasets/route.ts': 'reads the Graph API; POST only to keep the access token out of the URL',
+
   // Platform-admin only. Gated by requirePlatformAdmin / ctx.isPlatformAdmin,
   // a strictly stronger check that subscriptionGate already exempts anyway,
   // a platform admin tenant has no subscription to check against.
@@ -165,15 +175,17 @@ const EXEMPT_MUTATING_ROUTES: Record<string, string> = {
 
 /**
  * Routes whose GET handler mutates. Found by reading the code, not by the
- * (a) heuristic: both call a query-layer helper rather than a raw `db.*`
+ * (a) heuristic: each calls a query-layer helper rather than a raw `db.*`
  * write, so nothing here would catch them automatically. `it('is exhaustive
  * ...')` below is what stands in for that: it asserts no *other* GET handler
- * contains a raw write, so a third one can't slip in past a method-based
- * rule the way these two did.
+ * contains a raw write, so a fourth one can't slip in past a method-based
+ * rule the way these did.
  */
 const EXEMPT_GET_ROUTES: Record<string, string> = {
   'calendar/auth/callback/route.ts':
     'OAuth redirect target; persists the Google Calendar connection via upsertConnection/updateConnection on GET because the provider only supports a GET callback',
+  'integrations/meta/auth/callback/route.ts':
+    'OAuth redirect target; persists the Meta connection via upsertMetaConnection/recordAcknowledgement on GET because the provider only supports a GET callback',
   'whatsapp/templates/[id]/route.ts':
     'refreshes local template status from Meta via updateLocalTemplate as a read-through side effect on GET',
 }

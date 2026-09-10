@@ -16,6 +16,13 @@ interface ProspectCardProps {
   onClick: (prospect: Prospect) => void
 }
 
+const CHANNEL_LABELS: Record<string, string> = {
+  ctwa: 'Anúncio WhatsApp',
+  booking_page: 'Página de agendamento',
+  organic: 'Orgânico',
+  manual: 'Manual',
+}
+
 export function ProspectCard({ prospect, onClick }: ProspectCardProps) {
   const {
     attributes,
@@ -39,6 +46,10 @@ export function ProspectCard({ prospect, onClick }: ProspectCardProps) {
     : undefined
 
   const displayName = prospect.name || formatBrPhone(prospect.phone)
+
+  const attributionLabel = prospect.attribution
+    ? prospect.attribution.adHeadline || CHANNEL_LABELS[prospect.attribution.channel] || prospect.attribution.channel
+    : null
 
   const timeSince = prospect.createdAt
     ? formatDistanceToNow(new Date(prospect.createdAt), {
@@ -119,6 +130,10 @@ export function ProspectCard({ prospect, onClick }: ProspectCardProps) {
           </span>
         )}
       </div>
+
+      {attributionLabel && (
+        <div className="mt-1 truncate text-[10px] text-[#B0B0B0]">{attributionLabel}</div>
+      )}
 
       {/* Footer: value + time since */}
       <div className="mt-2 flex items-center justify-between text-[10px] text-[#B0B0B0]">
