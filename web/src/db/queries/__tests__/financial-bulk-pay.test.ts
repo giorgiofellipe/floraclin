@@ -189,7 +189,7 @@ describe('bulkPayInstallments', () => {
 
     expect(results).toHaveLength(1)
     expect(results[0].allocation).toEqual({ interestCovered: 25.75, fineCovered: 15, principalCovered: 750 })
-    expect(paymentInsert.value).toMatchObject({ amount: '790.75' })
+    expect(paymentInsert.value).toMatchObject({ amount: '790.75', recordedAt: expect.any(Date) })
   })
 
   // AR-5: bulkPayInstallments must not become a second pricer. A prior
@@ -217,7 +217,11 @@ describe('bulkPayInstallments', () => {
     // fineApplied carries over from the prior payment's replay, so no new
     // fine. interest = 750 * 1%/30 * 30 = 7.5. totalDue = 750 + 0 + 7.5 = 757.5.
     const paidAt = '2026-07-22T12:00:00.000Z'
-    const expected = quoteInstallment(BASE, [{ id: 'p1', amount: 22.75, paidAt: priorPaidAt }], new Date(paidAt))
+    const expected = quoteInstallment(
+      BASE,
+      [{ id: 'p1', amount: 22.75, paidAt: priorPaidAt, recordedAt: priorPaidAt }],
+      new Date(paidAt),
+    )
     expect(expected.fineAmount).toBe(0)
     expect(expected.totalDue).toBe(757.5)
 
@@ -225,7 +229,7 @@ describe('bulkPayInstallments', () => {
     tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
     tx.select.mockReturnValueOnce(chain([typedInstallmentRow()])) // row
     tx.select.mockReturnValueOnce(
-      chain([{ id: 'p1', amount: priorAmount, paidAt: priorPaidAt }]),
+      chain([{ id: 'p1', amount: priorAmount, paidAt: priorPaidAt, recordedAt: priorPaidAt }]),
     ) // existingPayments
 
     tx.update.mockReturnValueOnce(chain(undefined)) // rewrite of p1 (unchanged allocation)
@@ -248,7 +252,7 @@ describe('bulkPayInstallments', () => {
     })
 
     expect(results[0].allocation).toEqual({ interestCovered: 7.5, fineCovered: 0, principalCovered: 750 })
-    expect(paymentInsert.value).toMatchObject({ amount: '757.50' })
+    expect(paymentInsert.value).toMatchObject({ amount: '757.50', recordedAt: expect.any(Date) })
     expect(installmentUpdate.value).toMatchObject({ fineAmount: '0.00', amountPaid: '750.00', status: 'paid' })
   })
 
@@ -270,13 +274,19 @@ describe('bulkPayInstallments', () => {
     // totalDue 772.75. The June-22 sentinel then exhausts the installment
     // (750 + 15 + 7.75 = 772.75), so the Aug-1 payment has nothing left to
     // cover once replayed after it.
-    const expected = quoteInstallment(BASE, [{ id: 'p2', amount: 500, paidAt: laterPaidAt }], new Date(paidAt))
+    const expected = quoteInstallment(
+      BASE,
+      [{ id: 'p2', amount: 500, paidAt: laterPaidAt, recordedAt: laterPaidAt }],
+      new Date(paidAt),
+    )
     expect(expected.totalDue).toBe(772.75)
 
     tx.execute.mockResolvedValueOnce([{ id: INSTALLMENT_ID }])
     tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
     tx.select.mockReturnValueOnce(chain([typedInstallmentRow()])) // row
-    tx.select.mockReturnValueOnce(chain([{ id: 'p2', amount: laterAmount, paidAt: laterPaidAt }])) // existingPayments
+    tx.select.mockReturnValueOnce(
+      chain([{ id: 'p2', amount: laterAmount, paidAt: laterPaidAt, recordedAt: laterPaidAt }]),
+    ) // existingPayments
 
     const rewrite: { value?: unknown } = {}
     tx.update.mockReturnValueOnce(chainCapturing(undefined, rewrite)) // rewrite of p2
@@ -297,7 +307,7 @@ describe('bulkPayInstallments', () => {
     })
 
     expect(results[0].allocation).toEqual({ interestCovered: 7.75, fineCovered: 15, principalCovered: 750 })
-    expect(paymentInsert.value).toMatchObject({ amount: '772.75' })
+    expect(paymentInsert.value).toMatchObject({ amount: '772.75', recordedAt: expect.any(Date) })
     // The Aug-1 record is left covering nothing: the June-22 sentinel already
     // exhausted the installment once replayed in chronological order.
     expect(rewrite.value).toEqual({
@@ -333,14 +343,20 @@ describe('bulkPayInstallments', () => {
     // fineApplied carries over: no second fine.
     // totalDue = 667.5 + 0 + 6.68 = 674.18.
     const paidAt = '2026-07-01T12:00:00.000Z'
-    const expected = quoteInstallment(BASE, [{ id: 'p-live', amount: 100, paidAt: livePaidAt }], new Date(paidAt))
+    const expected = quoteInstallment(
+      BASE,
+      [{ id: 'p-live', amount: 100, paidAt: livePaidAt, recordedAt: livePaidAt }],
+      new Date(paidAt),
+    )
     expect(expected.totalDue).toBe(674.18)
 
     tx.execute.mockResolvedValueOnce([{ id: INSTALLMENT_ID }])
     tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
     tx.select.mockReturnValueOnce(chain([typedInstallmentRow()])) // row
     // Only the live record comes back: a reversed sibling never reaches here.
-    tx.select.mockReturnValueOnce(chain([{ id: 'p-live', amount: liveAmount, paidAt: livePaidAt }]))
+    tx.select.mockReturnValueOnce(
+      chain([{ id: 'p-live', amount: liveAmount, paidAt: livePaidAt, recordedAt: livePaidAt }]),
+    )
 
     tx.update.mockReturnValueOnce(chain(undefined)) // rewrite of p-live (unchanged allocation)
 
@@ -365,7 +381,7 @@ describe('bulkPayInstallments', () => {
     // reversed payment leaked into the replay, both the interest and the
     // remaining principal would differ.
     expect(results[0].allocation).toEqual({ interestCovered: 6.68, fineCovered: 0, principalCovered: 667.5 })
-    expect(paymentInsert.value).toMatchObject({ amount: '674.18' })
+    expect(paymentInsert.value).toMatchObject({ amount: '674.18', recordedAt: expect.any(Date) })
     expect(installmentUpdate.value).toMatchObject({ amountPaid: '750.00', status: 'paid' })
   })
 })

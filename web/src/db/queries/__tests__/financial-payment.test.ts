@@ -182,11 +182,20 @@ describe('recordPayment', () => {
       paidAt: '2026-09-03T00:00:00.000Z',
     } as never)
 
-    expect(result.allocation).toEqual({ interestCovered: 25.75, fineCovered: 15, principalCovered: 750 })
+    expect(result.allocation).toEqual({
+      interestCovered: 25.75,
+      fineCovered: 15,
+      principalCovered: 750,
+      excessAmount: 0,
+    })
     expect(result.installmentPaid).toBe(true)
   })
 
-  it('790.77 exceeds the 790.75 total due by more than the 0.01 tolerance and is rejected', async () => {
+  it('790.77 is accepted, recorded at 790.77, and allocated 790.75 with 0.02 excess', async () => {
+    const now = new Date('2026-09-05T10:00:00.000Z')
+    vi.useFakeTimers()
+    vi.setSystemTime(now)
+
     const { recordPayment } = await import('../financial')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
@@ -194,19 +203,41 @@ describe('recordPayment', () => {
 
     tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
     tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
-    tx.select.mockReturnValueOnce(chain([]))
+    tx.select.mockReturnValueOnce(chain([])) // existingPayments, no priors
 
-    await expect(
-      recordPayment(TENANT, USER_ID, {
-        installmentId: INSTALLMENT_ID,
-        amount: 790.77,
-        paymentMethod: 'pix',
-        paidAt: '2026-09-03T00:00:00.000Z',
-      } as never),
-    ).rejects.toMatchObject({ code: 'PAYMENT_EXCEEDS_DUE' })
+    const paymentInsert: { value?: unknown } = {}
+    tx.insert.mockReturnValueOnce(chainCapturing([{ id: 'pay-1' }], paymentInsert))
+    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }])) // entryInfo
+    const cashInsert: { value?: unknown } = {}
+    tx.insert.mockReturnValueOnce(chainCapturing(undefined, cashInsert))
+    tx.update.mockReturnValueOnce(chain(undefined)) // installments final
+    tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '750.00' }])) // updateEntryStatus
+    tx.update.mockReturnValueOnce(chain(undefined)) // financialEntries
+    tx.select.mockReturnValueOnce(chain([{ status: 'pending', totalAmount: '750.00' }])) // meta gate 1 fails
+
+    const result = await recordPayment(TENANT, USER_ID, {
+      installmentId: INSTALLMENT_ID,
+      amount: 790.77,
+      paymentMethod: 'pix',
+      paidAt: '2026-09-03T00:00:00.000Z',
+    } as never)
+
+    expect(result.allocation).toEqual({
+      interestCovered: 25.75,
+      fineCovered: 15,
+      principalCovered: 750,
+      excessAmount: 0.02,
+    })
+    expect(result.installmentPaid).toBe(true)
+    expect(paymentInsert.value).toMatchObject({ amount: '790.77', recordedAt: now })
+    expect(cashInsert.value).toMatchObject({ amount: '790.77' })
   })
 
-  it('790.76 is within the 0.01 tolerance and succeeds, capped at the 790.75 total due', async () => {
+  it('790.76 is recorded at 790.76, allocated 790.75 with 0.01 excess', async () => {
+    const now = new Date('2026-09-05T10:00:00.000Z')
+    vi.useFakeTimers()
+    vi.setSystemTime(now)
+
     const { recordPayment } = await import('../financial')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
@@ -219,7 +250,8 @@ describe('recordPayment', () => {
     tx.select.mockReturnValueOnce(chain([{ status: 'pending', amountPaid: '0' }]))
     tx.select.mockReturnValueOnce(chain([{ status: 'pending', totalAmount: '750.00' }]))
 
-    tx.insert.mockReturnValueOnce(chain([{ id: 'pay-1' }]))
+    const paymentInsert: { value?: unknown } = {}
+    tx.insert.mockReturnValueOnce(chainCapturing([{ id: 'pay-1' }], paymentInsert))
     tx.insert.mockReturnValueOnce(chain(undefined))
     tx.update.mockReturnValueOnce(chain(undefined))
     tx.update.mockReturnValueOnce(chain(undefined))
@@ -232,9 +264,170 @@ describe('recordPayment', () => {
     } as never)
 
     // allocatePayment caps at the real total due (790.75); the extra 0.01 is
-    // absorbed as excessAmount and never reaches the stored allocation.
-    expect(result.allocation).toEqual({ interestCovered: 25.75, fineCovered: 15, principalCovered: 750 })
+    // recorded as excessAmount and never reaches the stored allocation.
+    expect(result.allocation).toEqual({
+      interestCovered: 25.75,
+      fineCovered: 15,
+      principalCovered: 750,
+      excessAmount: 0.01,
+    })
     expect(result.installmentPaid).toBe(true)
+    expect(paymentInsert.value).toMatchObject({ amount: '790.76', recordedAt: now })
+  })
+
+  it('an overpayment still marks the installment paid', async () => {
+    const now = new Date('2026-09-05T10:00:00.000Z')
+    vi.useFakeTimers()
+    vi.setSystemTime(now)
+
+    const { recordPayment } = await import('../financial')
+    const tx = makeTx()
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+    queuePrepareRows()
+
+    tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
+    tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+    tx.select.mockReturnValueOnce(chain([])) // existingPayments, no priors
+
+    const paymentInsert: { value?: unknown } = {}
+    tx.insert.mockReturnValueOnce(chainCapturing([{ id: 'pay-1' }], paymentInsert))
+    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }])) // entryInfo
+    tx.insert.mockReturnValueOnce(chain(undefined)) // cashMovements
+
+    const installmentUpdate: { value?: unknown } = {}
+    tx.update.mockReturnValueOnce(chainCapturing(undefined, installmentUpdate)) // installments final
+    tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '750.00' }])) // updateEntryStatus
+    tx.update.mockReturnValueOnce(chain(undefined)) // financialEntries
+    tx.select.mockReturnValueOnce(chain([{ status: 'pending', totalAmount: '750.00' }])) // meta gate 1 fails
+
+    const result = await recordPayment(TENANT, USER_ID, {
+      installmentId: INSTALLMENT_ID,
+      amount: 900,
+      paymentMethod: 'pix',
+      paidAt: '2026-09-03T00:00:00.000Z',
+    } as never)
+
+    expect(result.allocation).toEqual({
+      interestCovered: 25.75,
+      fineCovered: 15,
+      principalCovered: 750,
+      excessAmount: 109.25,
+    })
+    expect(result.installmentPaid).toBe(true)
+    expect(paymentInsert.value).toMatchObject({ amount: '900.00' })
+    expect(installmentUpdate.value).toMatchObject({ status: 'paid', amountPaid: '750.00' })
+  })
+
+  // AR2-1: the persisted state prices the trailing balance as of now, not as
+  // of the backdated payment. Against the v1 bug (asOf = paidAt) this would
+  // store interestAmount '0.00', because June 22 is the payment's own date
+  // and nothing is left overdue from its own point of view.
+  it('a backdated partial payment persists interest as of now, not as of the payment date', async () => {
+    const now = new Date('2026-09-10T14:04:50.000Z')
+    vi.useFakeTimers()
+    vi.setSystemTime(now)
+
+    const { recordPayment } = await import('../financial')
+    const tx = makeTx()
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+    queuePrepareRows()
+
+    tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
+    tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+    tx.select.mockReturnValueOnce(
+      chain([
+        {
+          id: 'p-aug',
+          amount: '100.00',
+          paidAt: '2026-08-01T12:00:00.000Z',
+          recordedAt: '2026-08-01T12:00:00.000Z',
+        },
+      ]),
+    ) // existingPayments
+
+    tx.update.mockReturnValueOnce(chain(undefined)) // rewrite of p-aug
+
+    const paymentInsert: { value?: unknown } = {}
+    tx.insert.mockReturnValueOnce(chainCapturing([{ id: 'pay-new' }], paymentInsert))
+    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }])) // entryInfo
+    tx.insert.mockReturnValueOnce(chain(undefined)) // cashMovements
+
+    const installmentUpdate: { value?: unknown } = {}
+    tx.update.mockReturnValueOnce(chainCapturing(undefined, installmentUpdate)) // installments final
+    tx.select.mockReturnValueOnce(chain([{ status: 'partial', amountPaid: '200.00' }])) // updateEntryStatus
+    tx.update.mockReturnValueOnce(chain(undefined)) // financialEntries
+    tx.select.mockReturnValueOnce(chain([{ status: 'pending', totalAmount: '750.00' }])) // meta gate 1 fails
+
+    await recordPayment(TENANT, USER_ID, {
+      installmentId: INSTALLMENT_ID,
+      amount: 100,
+      paymentMethod: 'pix',
+      paidAt: '2026-06-22T12:00:00.000Z',
+    } as never)
+
+    // Jun 22 is 31 days overdue: fine 15, interest 7.75, principal covered
+    // 77.25. Aug 1 is 40 days later on 672.75: interest 8.97, principal
+    // covered 91.03. Sep 10 is 40 more days on 581.72: 7.7563, rounds to 7.76.
+    expect(installmentUpdate.value).toMatchObject({
+      interestAmount: '7.76',
+      lastFineInterestCalcAt: new Date('2026-08-01T12:00:00.000Z'),
+    })
+    expect(paymentInsert.value).toMatchObject({ recordedAt: now })
+  })
+
+  // AR2-skep4: the installment's paidAt/paymentMethod belong to whichever
+  // payment completed it in replay order, not to the new one. Here the June
+  // payment only brings the balance closer; the existing August payment is
+  // what settles it once replayed after it.
+  it('a backdated payment that is completed by a later existing payment stamps the later payment\'s date and method', async () => {
+    const now = new Date('2026-09-10T14:04:50.000Z')
+    vi.useFakeTimers()
+    vi.setSystemTime(now)
+
+    const { recordPayment } = await import('../financial')
+    const tx = makeTx()
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+    queuePrepareRows()
+
+    tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
+    tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+    tx.select.mockReturnValueOnce(
+      chain([
+        {
+          id: 'p-aug',
+          amount: '700.00',
+          paidAt: '2026-08-01T12:00:00.000Z',
+          recordedAt: '2026-08-01T12:00:00.000Z',
+          paymentMethod: 'pix',
+        },
+      ]),
+    ) // existingPayments
+
+    tx.update.mockReturnValueOnce(chain(undefined)) // rewrite of p-aug
+
+    const paymentInsert: { value?: unknown } = {}
+    tx.insert.mockReturnValueOnce(chainCapturing([{ id: 'pay-new' }], paymentInsert))
+    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }])) // entryInfo
+    tx.insert.mockReturnValueOnce(chain(undefined)) // cashMovements
+
+    const installmentUpdate: { value?: unknown } = {}
+    tx.update.mockReturnValueOnce(chainCapturing(undefined, installmentUpdate)) // installments final
+    tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '750.00' }])) // updateEntryStatus
+    tx.update.mockReturnValueOnce(chain(undefined)) // financialEntries
+    tx.select.mockReturnValueOnce(chain([{ status: 'pending', totalAmount: '750.00' }])) // meta gate 1 fails
+
+    await recordPayment(TENANT, USER_ID, {
+      installmentId: INSTALLMENT_ID,
+      amount: 109,
+      paymentMethod: 'cash',
+      paidAt: '2026-06-22T12:00:00.000Z',
+    } as never)
+
+    expect(installmentUpdate.value).toMatchObject({
+      status: 'paid',
+      paidAt: new Date('2026-08-01T12:00:00.000Z'),
+      paymentMethod: 'pix',
+    })
   })
 
   // Art. 354 allocates each payment against the balance standing at its own
@@ -252,7 +445,14 @@ describe('recordPayment', () => {
     tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
     tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
     tx.select.mockReturnValueOnce(
-      chain([{ id: 'p1', amount: '500.00', paidAt: '2026-08-01T12:00:00.000Z' }]),
+      chain([
+        {
+          id: 'p1',
+          amount: '500.00',
+          paidAt: '2026-08-01T12:00:00.000Z',
+          recordedAt: '2026-08-01T12:00:00.000Z',
+        },
+      ]),
     )
 
     // The new payment (June 22) sorts before the existing one (Aug 1), so the
@@ -276,7 +476,12 @@ describe('recordPayment', () => {
       paidAt: '2026-06-22T12:00:00.000Z',
     } as never)
 
-    expect(result.allocation).toEqual({ interestCovered: 7.75, fineCovered: 15, principalCovered: 750 })
+    expect(result.allocation).toEqual({
+      interestCovered: 7.75,
+      fineCovered: 15,
+      principalCovered: 750,
+      excessAmount: 0,
+    })
     expect(result.installmentPaid).toBe(true)
     expect(rewrite.value).toEqual({
       interestCovered: '0.00',
@@ -306,7 +511,14 @@ describe('recordPayment', () => {
     tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
     // Only the live record comes back: a reversed sibling never reaches here.
     tx.select.mockReturnValueOnce(
-      chain([{ id: 'p-live', amount: '100.00', paidAt: '2026-06-01T12:00:00.000Z' }]),
+      chain([
+        {
+          id: 'p-live',
+          amount: '100.00',
+          paidAt: '2026-06-01T12:00:00.000Z',
+          recordedAt: '2026-06-01T12:00:00.000Z',
+        },
+      ]),
     )
 
     const installmentUpdate: { value?: unknown } = {}
@@ -328,7 +540,12 @@ describe('recordPayment', () => {
 
     // 82.5 of principal from the live payment plus 43.32 from this one: had a
     // reversed payment leaked into the replay, amountPaid would be higher.
-    expect(result.allocation).toEqual({ interestCovered: 6.68, fineCovered: 0, principalCovered: 43.32 })
+    expect(result.allocation).toEqual({
+      interestCovered: 6.68,
+      fineCovered: 0,
+      principalCovered: 43.32,
+      excessAmount: 0,
+    })
     expect(installmentUpdate.value).toMatchObject({ amountPaid: '125.82' })
     expect(result.installmentPaid).toBe(false)
   })
@@ -402,7 +619,12 @@ describe('recordPayment', () => {
       paidAt,
     } as never)
 
-    expect(result.allocation).toEqual({ interestCovered: 1, fineCovered: 0, principalCovered: 0 })
+    expect(result.allocation).toEqual({
+      interestCovered: 1,
+      fineCovered: 0,
+      principalCovered: 0,
+      excessAmount: 0,
+    })
     expect(installmentUpdate.value).toMatchObject({ interestAmount: '24.00' })
   })
 
