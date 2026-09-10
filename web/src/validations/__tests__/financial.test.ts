@@ -165,6 +165,19 @@ describe('recordPaymentSchema', () => {
     expect(result.success).toBe(false)
   })
 
+  it('fails when amount exceeds what payment_records.amount can hold', () => {
+    const result = recordPaymentSchema.safeParse({ ...validData, amount: 100_000_000 })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe('Valor acima do limite permitido')
+    }
+  })
+
+  it('accepts the maximum amount payment_records.amount can hold', () => {
+    const result = recordPaymentSchema.safeParse({ ...validData, amount: 99_999_999.99 })
+    expect(result.success).toBe(true)
+  })
+
   it('fails when paymentMethod is missing', () => {
     const { paymentMethod, ...rest } = validData
     const result = recordPaymentSchema.safeParse(rest)

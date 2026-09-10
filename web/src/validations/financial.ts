@@ -27,9 +27,13 @@ export const createFinancialEntrySchema = z.object({
   notes: z.string().optional(),
 })
 
+// payment_records.amount is decimal(10,2). Anything larger fails inside the
+// transaction as a numeric overflow, which is a 500 for what is a bad input.
+const MAX_PAYMENT_AMOUNT = 99_999_999.99
+
 export const recordPaymentSchema = z.object({
   installmentId: z.string().uuid('Parcela inválida'),
-  amount: z.number().positive('Valor deve ser positivo'),
+  amount: z.number().positive('Valor deve ser positivo').max(MAX_PAYMENT_AMOUNT, 'Valor acima do limite permitido'),
   paymentMethod: z.enum(paymentMethods as [string, ...string[]], {
     message: 'Método de pagamento inválido',
   }),
