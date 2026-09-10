@@ -77,6 +77,13 @@ function getProgressPercent(inst: Installment): number {
   return Math.min(Math.round(paidFraction * 100), 100)
 }
 
+// Cash received above what the payment could cover. Recorded, never credited.
+function excessOf(pr: PaymentRecord): number {
+  const covered =
+    Number(pr.interestCovered ?? 0) + Number(pr.fineCovered ?? 0) + Number(pr.principalCovered ?? 0)
+  return Math.round((Number(pr.amount ?? 0) - covered) * 100) / 100
+}
+
 export function InstallmentTable({
   entryId,
   onPaymentComplete,
@@ -289,6 +296,11 @@ export function InstallmentTable({
                           {Number(pr.fineCovered ?? 0) > 0 && (
                             <span className="text-[10px] text-amber-700 tabular-nums">
                               Multa {formatCurrency(Number(pr.fineCovered ?? 0))}
+                            </span>
+                          )}
+                          {excessOf(pr) > 0 && (
+                            <span className="text-[10px] text-sky-700 tabular-nums">
+                              Pago a mais {formatCurrency(excessOf(pr))}
                             </span>
                           )}
                         </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { InstallmentTable } from '../installment-table'
 
@@ -155,5 +155,92 @@ describe('InstallmentTable', () => {
     expect(screen.getByText(/^Multa\s*R\$\s*20,00/)).toBeInTheDocument()
     expect(screen.getByText(/^Juros\s*R\$\s*1,67/)).toBeInTheDocument()
     expect(screen.queryByText(/99,99/)).not.toBeInTheDocument()
+  })
+
+  it('shows the excess when a payment record covers more than the installment owed', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        installments: [
+          {
+            id: 'inst-1',
+            installmentNumber: 1,
+            amount: '791.00',
+            dueDate: '2026-08-25',
+            status: 'paid',
+            paidAt: new Date('2026-09-01'),
+            paymentMethod: 'pix',
+            notes: null,
+            amountPaid: '791.00',
+            fineAmount: '15.00',
+            interestAmount: '26.00',
+            paymentRecords: [
+              {
+                id: 'pay-1',
+                amount: '800.00',
+                paymentMethod: 'pix',
+                interestCovered: '26.00',
+                fineCovered: '15.00',
+                principalCovered: '750.00',
+                paidAt: '2026-09-01T12:00:00.000Z',
+                recordedAt: '2026-09-01T12:00:00.000Z',
+                notes: null,
+              },
+            ],
+          },
+        ],
+      }),
+    } as Response)
+
+    render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
+
+    await screen.findByText('Parcela 1/1')
+    fireEvent.click(screen.getByTestId('installment-expand-payments'))
+
+    expect(await screen.findByText('Pago a mais R$ 9,00')).toBeInTheDocument()
+  })
+
+  it('shows no excess label when the covered columns sum to the payment amount', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        installments: [
+          {
+            id: 'inst-1',
+            installmentNumber: 1,
+            amount: '750.00',
+            dueDate: '2026-08-25',
+            status: 'paid',
+            paidAt: new Date('2026-09-01'),
+            paymentMethod: 'pix',
+            notes: null,
+            amountPaid: '750.00',
+            fineAmount: '0',
+            interestAmount: '0',
+            paymentRecords: [
+              {
+                id: 'pay-1',
+                amount: '750.00',
+                paymentMethod: 'pix',
+                interestCovered: '0',
+                fineCovered: '0',
+                principalCovered: '750.00',
+                paidAt: '2026-09-01T12:00:00.000Z',
+                recordedAt: '2026-09-01T12:00:00.000Z',
+                notes: null,
+              },
+            ],
+          },
+        ],
+      }),
+    } as Response)
+
+    render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
+
+    await screen.findByText('Parcela 1/1')
+    fireEvent.click(screen.getByTestId('installment-expand-payments'))
+
+    await screen.findByText(/^Principal\s*R\$/)
+    expect(screen.queryByText(/Pago a mais/)).not.toBeInTheDocument()
   })
 })
