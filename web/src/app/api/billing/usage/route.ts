@@ -47,6 +47,9 @@ export async function GET(request: Request) {
         status: subscription.status,
         currentPeriodEnd: subscription.currentPeriodEnd,
         stripeSubscriptionId: subscription.stripeSubscriptionId,
+        // Drives the billing-portal link. A lapsed tenant still has a
+        // customer record, and their invoices are in it.
+        hasStripeCustomer: Boolean(subscription.stripeCustomerId),
         source: subscription.source,
       },
       plan: {

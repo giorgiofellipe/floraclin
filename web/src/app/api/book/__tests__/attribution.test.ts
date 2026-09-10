@@ -57,6 +57,10 @@ vi.mock('@/lib/meta/events', () => ({
   enqueueMetaEvent: vi.fn(async () => {}),
 }))
 
+vi.mock('@/lib/plans', () => ({
+  isSubscriptionActive: vi.fn(),
+}))
+
 // buildFbc is real: it's a pure function and one of the tests below asserts
 // on its exact output shape.
 
@@ -65,6 +69,7 @@ import { getProspectByPhone, createNewProspect, updateProspect } from '@/db/quer
 import { recordAttribution } from '@/db/queries/lead-attributions'
 import { enqueueMetaEvent } from '@/lib/meta/events'
 import { createAppointment } from '@/db/queries/appointments'
+import { isSubscriptionActive } from '@/lib/plans'
 
 const getProspectByPhoneMock = getProspectByPhone as unknown as ReturnType<typeof vi.fn>
 const createNewProspectMock = createNewProspect as unknown as ReturnType<typeof vi.fn>
@@ -72,6 +77,7 @@ const updateProspectMock = updateProspect as unknown as ReturnType<typeof vi.fn>
 const recordAttributionMock = recordAttribution as unknown as ReturnType<typeof vi.fn>
 const enqueueMetaEventMock = enqueueMetaEvent as unknown as ReturnType<typeof vi.fn>
 const createAppointmentMock = createAppointment as unknown as ReturnType<typeof vi.fn>
+const isSubscriptionActiveMock = isSubscriptionActive as unknown as ReturnType<typeof vi.fn>
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -140,6 +146,7 @@ describe('POST /api/book/[slug] attribution', () => {
     vi.clearAllMocks()
     updateProspectMock.mockResolvedValue({ id: 'prospect-1', stage: 'agendado' })
     recordAttributionMock.mockResolvedValue({ recorded: true })
+    isSubscriptionActiveMock.mockResolvedValue(true)
   })
 
   it('creates a prospect at agendado', async () => {
@@ -263,5 +270,20 @@ describe('POST /api/book/[slug] attribution', () => {
     expect(await recordAttributionMock.mock.results[0].value).toEqual({ recorded: true })
     expect(await recordAttributionMock.mock.results[1].value).toEqual({ recorded: false })
     expect(store.size).toBe(1)
+  })
+
+  it('records nothing at all when the clinic is not accepting bookings', async () => {
+    isSubscriptionActiveMock.mockResolvedValue(false)
+    selectMock.mockReturnValueOnce(makeChain([tenantRow()]))
+
+    const res = await post(bookingBody({ fbclid: 'abc123' }))
+
+    expect(res.status).toBe(403)
+    expect(getProspectByPhoneMock).not.toHaveBeenCalled()
+    expect(createNewProspectMock).not.toHaveBeenCalled()
+    expect(updateProspectMock).not.toHaveBeenCalled()
+    expect(recordAttributionMock).not.toHaveBeenCalled()
+    expect(enqueueMetaEventMock).not.toHaveBeenCalled()
+    expect(createAppointmentMock).not.toHaveBeenCalled()
   })
 })

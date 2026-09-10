@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { getAuthContext } from '@/lib/auth'
+import { requireRole } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import { db } from '@/db/client'
 import { users } from '@/db/schema'
@@ -50,7 +51,10 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const ctx = await getAuthContext()
+    // Your own profile, not tenant data, and unrestricted by role before this
+    // change. Kept out of the billing gate for the same reason as the password
+    // route next door.
+    const ctx = await requireRole('owner', 'practitioner', 'receptionist', 'financial')
     const body = await request.json()
     const parsed = updateProfileSchema.safeParse(body)
 

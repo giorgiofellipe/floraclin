@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
-import { subscriptionGate } from '@/lib/plans'
 import { withTransaction } from '@/lib/tenant'
 import { listProcedures, createProcedure } from '@/db/queries/procedures'
 import { saveFaceDiagram } from '@/db/queries/face-diagrams'
@@ -29,13 +29,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getAuthContext()
-    if (!['owner', 'practitioner'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
-    const gate = await subscriptionGate(ctx)
-    if (gate) return gate
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+    if (blocked) return blocked
 
     const body = await request.json()
     const parsed = createProcedureSchema.safeParse({

@@ -19,7 +19,7 @@ export type SubscriptionListItem = TenantSubscription & {
   planName: string
 }
 
-type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled' | 'expired'
+export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled' | 'expired'
 
 // ─── PLANS ────────────────────────────────────────────────────────
 
@@ -193,20 +193,44 @@ export async function createSubscription(
 export async function updateSubscriptionStatus(
   tenantId: string,
   status: SubscriptionStatus,
-  opts?: { canceledAt?: Date }
+  // `null` clears the timestamp, which is what reactivation needs; omitting
+  // the key leaves whatever is there. A plain optional Date could not express
+  // the difference between the two.
+  opts?: { canceledAt?: Date | null }
 ) {
   const setData: Record<string, unknown> = {
     status,
     updatedAt: new Date(),
   }
 
-  if (opts?.canceledAt) {
+  if (opts && 'canceledAt' in opts) {
     setData.canceledAt = opts.canceledAt
   }
 
   const [result] = await db
     .update(tenantSubscriptions)
     .set(setData)
+    .where(eq(tenantSubscriptions.tenantId, tenantId))
+    .returning()
+
+  return result ?? null
+}
+
+/**
+ * Records the billing period and nothing else.
+ *
+ * `updateSubscriptionPlan` also rewrites `planId` and `source`, so a caller
+ * that only knows the period has to pass the plan it read earlier. Between
+ * that read and the write another path can change the plan, and the period
+ * update then silently puts the old one back.
+ */
+export async function updateSubscriptionPeriod(
+  tenantId: string,
+  period: { currentPeriodStart: Date; currentPeriodEnd: Date },
+) {
+  const [result] = await db
+    .update(tenantSubscriptions)
+    .set({ ...period, updatedAt: new Date() })
     .where(eq(tenantSubscriptions.tenantId, tenantId))
     .returning()
 

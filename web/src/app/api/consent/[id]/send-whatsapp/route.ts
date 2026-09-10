@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createElement } from 'react'
 import { getConsentAcceptanceWithContext } from '@/db/queries/consent'
+import { isSubscriptionActive } from '@/lib/plans'
 import { getRecentlyUsedSigningToken } from '@/db/queries/consent-signing-tokens'
 import { PrintConsent } from '@/components/consent/print-consent'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
@@ -61,6 +62,19 @@ export async function POST(
     const tenantId = await resolveAuthorizedTenantId(req, id)
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Gated here rather than through `requireWrite`, because
+    // `resolveAuthorizedTenantId` accepts either a session or a capability
+    // token and there may be no session at all. Checked against the tenant
+    // the request resolved to, never the caller's own: someone whose own
+    // clinic has lapsed must still be able to act on an active clinic that
+    // sent them a link.
+    if (!(await isSubscriptionActive(tenantId))) {
+      return NextResponse.json(
+        { error: 'Esta clínica não está aceitando envios no momento.' },
+        { status: 403 },
+      )
     }
 
     const acceptance = await getConsentAcceptanceWithContext(tenantId, id)

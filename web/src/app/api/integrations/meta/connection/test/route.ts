@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireRole } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { handleApiError } from '@/lib/api-error'
 import { getMetaConnectionRaw, markConnectionVerified } from '@/db/queries/meta-connections'
 import { getAppUrl } from '@/lib/app-url'
@@ -11,7 +11,8 @@ import { sha256Hex } from '@/lib/meta/hashing'
 // as Meta is concerned, not a read.
 export async function POST(request: Request) {
   try {
-    const ctx = await requireRole('owner')
+    const { ctx, blocked } = await requireWrite('owner')
+    if (blocked) return blocked
     const connection = await getMetaConnectionRaw(ctx.tenantId)
 
     if (!connection) {

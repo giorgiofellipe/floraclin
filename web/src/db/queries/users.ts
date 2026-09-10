@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { users, tenantUsers, tenants } from '@/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { sendInviteEmail } from '@/lib/email'
 import type { InviteUserInput } from '@/validations/user'
@@ -57,7 +57,7 @@ export async function inviteUser(
     const [existingUser] = await db
       .select()
       .from(users)
-      .where(eq(users.email, data.email))
+      .where(sql`lower(${users.email}) = ${data.email.toLowerCase()}`)
       .limit(1)
 
     let userId: string
@@ -195,4 +195,44 @@ export async function deactivateUser(
     .returning()
 
   return !!updated
+}
+
+/**
+ * Stamps the account as email-verified.
+ *
+ * Lives here rather than beside the confirmation tokens because
+ * `auth-config.ts` calls it on Google sign-in, and `auth-config` is imported
+ * by `middleware.ts`, which runs on the Edge Runtime. The token module pulls
+ * in `node:crypto`, which Edge does not provide, so importing it from there
+ * dragged an unsupported module into the middleware bundle.
+ */
+export async function markEmailVerified(email: string): Promise<void> {
+  await db
+    .update(users)
+    .set({ emailVerified: new Date() })
+    .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
+}
+
+/**
+ * Marks the address verified via Google, and discards any password that was
+ * set on the account while it was still unconfirmed.
+ *
+ * Without the second half, anyone can register someone else's address with a
+ * password of their choosing. When the real owner later signs in with Google,
+ * account linking attaches their identity and marks the account verified, but
+ * the planted password survives and still works. Clearing it is what makes
+ * Google sign-in prove ownership rather than merely add a second way in.
+ *
+ * Only clears when the account was NOT already confirmed. A user who
+ * legitimately confirmed by email and then adds Google keeps their password,
+ * which is why the password column is a CASE rather than a plain null.
+ */
+export async function markEmailVerifiedViaGoogle(email: string): Promise<void> {
+  await db
+    .update(users)
+    .set({
+      emailVerified: new Date(),
+      passwordHash: sql`case when ${users.emailVerified} is null then null else ${users.passwordHash} end`,
+    })
+    .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
 }

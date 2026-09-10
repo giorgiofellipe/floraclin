@@ -8,14 +8,12 @@
  * deployment, including previews); falls back to localhost for local dev
  * when neither is set.
  *
- * This is the house pattern already used by
- * `@/app/api/patients/[id]/anamnesis-link/route.ts` and
- * `@/app/api/profile/reset-request/route.ts`, extracted here so every other
- * call site shares one fallback chain instead of drifting. Before this
- * helper existed, `prontuario-pdf.tsx` fell back to the production origin
- * while `pdf.ts` fell back to `''` for the same variable: on a preview
- * deploy with `NEXT_PUBLIC_APP_URL` unset, diagram images loaded from
- * production while the verification link on the same document broke.
+ * Reach for this rather than hand-rolling the chain: the fallbacks have to
+ * agree across call sites. `prontuario-pdf.tsx` once fell back to the
+ * production origin while `pdf.ts` fell back to `''` for the same variable,
+ * so on a preview deploy with `NEXT_PUBLIC_APP_URL` unset the diagram images
+ * loaded from production while the verification link on the same document
+ * broke.
  */
 export function getAppUrl(): string {
   return (

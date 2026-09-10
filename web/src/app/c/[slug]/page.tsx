@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { BookingPage } from '@/components/booking/booking-page'
 import { MetaPixel } from '@/components/booking/meta-pixel'
 import { signLogoPath } from '@/lib/logo'
+import { isSubscriptionActive } from '@/lib/plans'
 import type { Metadata } from 'next'
 
 interface ClinicApiResponse {
@@ -13,6 +14,7 @@ interface ClinicApiResponse {
   }
   practitioners: { id: string; name: string }[]
   metaDatasetId: string | null
+  acceptingBookings: boolean
 }
 
 async function getClinicData(slug: string): Promise<ClinicApiResponse | null> {
@@ -77,6 +79,9 @@ async function getClinicData(slug: string): Promise<ClinicApiResponse | null> {
       name: p.fullName,
     })),
     metaDatasetId: connection?.datasetId ?? null,
+    // A lapsed clinic keeps its booking link reachable, so the page never
+    // 404s for the patient, but the form is replaced by a closed state.
+    acceptingBookings: await isSubscriptionActive(t.id),
   }
 }
 
@@ -112,11 +117,15 @@ export default async function PublicBookingPage({
 
   return (
     <>
-      <MetaPixel datasetId={data.metaDatasetId} />
+      {/* The booking route refuses a lapsed clinic, so a PageView here could
+          never be followed by a Lead: it would only teach Meta to optimize
+          toward a page that cannot convert. */}
+      {data.acceptingBookings && <MetaPixel datasetId={data.metaDatasetId} />}
       <BookingPage
         clinic={data.clinic}
         practitioners={data.practitioners}
         slug={slug}
+        acceptingBookings={data.acceptingBookings}
       />
     </>
   )

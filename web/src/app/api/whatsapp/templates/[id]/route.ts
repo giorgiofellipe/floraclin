@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { getTenant } from '@/db/queries/tenants'
 import {
   getTemplateById,
@@ -73,7 +74,9 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp not enabled' }, { status: 400 })
     }
-    if (ctx.role !== 'owner' || !canManageTemplates(settings)) {
+    const { blocked } = await requireWrite('owner')
+    if (blocked) return blocked
+    if (!canManageTemplates(settings)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -132,7 +135,9 @@ export async function DELETE(request: Request, { params }: RouteParams) {
     if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp not enabled' }, { status: 400 })
     }
-    if (ctx.role !== 'owner' || !canManageTemplates(settings)) {
+    const { blocked } = await requireWrite('owner')
+    if (blocked) return blocked
+    if (!canManageTemplates(settings)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

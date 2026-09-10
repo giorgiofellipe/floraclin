@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
+import { requireWrite } from '@/lib/write-access'
 import { recordPayment } from '@/db/queries/financial'
 import { recordPaymentSchema } from '@/validations/financial'
 import { handleApiError } from '@/lib/api-error'
@@ -10,11 +10,8 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getAuthContext()
-    // Pay installment: owner + receptionist + financial
-    if (!['owner', 'receptionist', 'financial'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner', 'receptionist', 'financial')
+    if (blocked) return blocked
 
     const { id } = await params
     const body = await request.json()

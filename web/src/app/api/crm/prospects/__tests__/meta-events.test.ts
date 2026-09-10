@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/auth', () => ({
   getAuthContext: vi.fn(),
+  requireRole: vi.fn(),
 }))
 
 vi.mock('@/db/queries/tenants', () => ({
@@ -34,7 +35,7 @@ vi.mock('@/lib/meta/events', () => ({
   enqueueMetaEvent: vi.fn(),
 }))
 
-import { getAuthContext } from '@/lib/auth'
+import { getAuthContext, requireRole } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { subscriptionGate } from '@/lib/plans'
 import { createProspect, getProspect, logProspectActivity, updateProspect } from '@/db/queries/prospects'
@@ -62,13 +63,18 @@ function prospect(overrides: Record<string, unknown> = {}) {
   }
 }
 
+const AUTH_CTX = {
+  tenantId: 'tenant-1',
+  userId: 'user-1',
+  role: 'owner',
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(getAuthContext).mockResolvedValue({
-    tenantId: 'tenant-1',
-    userId: 'user-1',
-    role: 'owner',
-  } as never)
+  vi.mocked(getAuthContext).mockResolvedValue(AUTH_CTX as never)
+  // `requireWrite` calls `requireRole` and then `subscriptionGate`; both are
+  // mocked here so these tests stay about Meta event emission.
+  vi.mocked(requireRole).mockResolvedValue(AUTH_CTX as never)
   vi.mocked(getTenant).mockResolvedValue({
     id: 'tenant-1',
     name: 'Clínica Flora',

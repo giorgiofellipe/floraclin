@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
 import { createHash, randomUUID } from 'node:crypto'
-import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
@@ -36,10 +36,8 @@ function mimeToExt(mime: string): string {
  */
 export async function POST(request: Request) {
   try {
-    const ctx = await getAuthContext()
-    if (ctx.role !== 'owner') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner')
+    if (blocked) return blocked
 
     const formData = await request.formData()
     const file = formData.get('file')
@@ -127,10 +125,8 @@ export async function POST(request: Request) {
  */
 export async function DELETE(request: Request) {
   try {
-    const ctx = await getAuthContext()
-    if (ctx.role !== 'owner') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner')
+    if (blocked) return blocked
     await db
       .update(tenants)
       .set({ logoUrl: null, updatedAt: new Date() })
