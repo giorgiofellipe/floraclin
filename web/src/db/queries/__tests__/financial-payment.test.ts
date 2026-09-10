@@ -433,9 +433,10 @@ describe('recordPayment', () => {
   // Art. 354 allocates each payment against the balance standing at its own
   // date, so inserting one re-splits the payments around it.
   //
-  // This fixture also satisfied the old isBackdated branch, so it passes
-  // against the pre-branch code too. AR-1 itself, that a quote counts only
-  // payments at or before asOf, is pinned in penalties.test.ts.
+  // The allocation rewrite also held under the old isBackdated branch. What
+  // this test pins is the settlement metadata at the end: the payment that
+  // completed the debt, not the last one replayed. AR-1 itself, that a quote
+  // counts only payments at or before asOf, is pinned in penalties.test.ts.
   it('a payment dated before an existing one rewrites the existing record allocation', async () => {
     const { recordPayment } = await import('../financial')
     const tx = makeTx()
@@ -449,6 +450,7 @@ describe('recordPayment', () => {
         {
           id: 'p1',
           amount: '500.00',
+          paymentMethod: 'cash',
           paidAt: '2026-08-01T12:00:00.000Z',
           recordedAt: '2026-08-01T12:00:00.000Z',
         },
@@ -464,7 +466,8 @@ describe('recordPayment', () => {
     tx.insert.mockReturnValueOnce(chain([{ id: 'pay-new' }]))
     tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }])) // entryInfo
     tx.insert.mockReturnValueOnce(chain(undefined)) // cashMovements
-    tx.update.mockReturnValueOnce(chain(undefined)) // installments final
+    const finalUpdate: { value?: unknown } = {}
+    tx.update.mockReturnValueOnce(chainCapturing(undefined, finalUpdate)) // installments final
     tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '750.00' }])) // updateEntryStatus
     tx.update.mockReturnValueOnce(chain(undefined)) // financialEntries
     tx.select.mockReturnValueOnce(chain([{ status: 'pending', totalAmount: '750.00' }])) // meta gate 1 fails
@@ -487,6 +490,14 @@ describe('recordPayment', () => {
       interestCovered: '0.00',
       fineCovered: '0.00',
       principalCovered: '0.00',
+    })
+    // The June payment is what settled the debt; the August one allocated
+    // nothing after the replay. Taking the last replayed payment instead
+    // stamped the installment paid in August by cash.
+    expect(finalUpdate.value).toMatchObject({
+      status: 'paid',
+      paidAt: new Date('2026-06-22T12:00:00.000Z'),
+      paymentMethod: 'pix',
     })
   })
 

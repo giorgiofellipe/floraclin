@@ -159,11 +159,10 @@ describe('bulkPayInstallments', () => {
     queuePrepareRows()
 
     const paidAt = '2026-09-03T00:00:00.000Z'
-    // Independently verified: 103 days overdue at BR-anchored UTC midnight
-    // (graceEnd is 2026-05-22T03:00Z, three hours ahead of paidAt's midnight,
-    // so the floor lands one day short of the naive 104-day count).
-    // fine = 750 * 2% = 15 (capped at the 2% ceiling, already there).
-    // interest = 750 * 1%/30 * 103 = 25.75. totalDue = 750 + 15 + 25.75 = 790.75.
+    // 2026-09-03T00:00:00Z is 21:00 BRT on September 2, so in BR calendar days
+    // the installment is 103 days past its May 22 due date.
+    // fine = 750 * 2% = 15. interest = 750 * 1%/30 * 103 = 25.75.
+    // totalDue = 750 + 15 + 25.75 = 790.75.
     const expected = quoteInstallment(BASE, [], new Date(paidAt))
     expect(expected.totalDue).toBe(790.75)
 

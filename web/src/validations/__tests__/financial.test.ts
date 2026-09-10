@@ -173,6 +173,25 @@ describe('recordPaymentSchema', () => {
     }
   })
 
+  // Allocation rounds to cents while persistence truncates with toFixed(2), so
+  // a fractional cent would credit one figure and record another.
+  it('rejects an amount with more than two decimals', () => {
+    for (const amount of [0.001, 2.675, 1.005]) {
+      const result = recordPaymentSchema.safeParse({ ...validData, amount })
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.error.issues.map((i) => i.message)).toContain(
+          'Valor deve ter no máximo duas casas decimais',
+        )
+      }
+    }
+  })
+
+  it('accepts an amount with exactly two decimals', () => {
+    expect(recordPaymentSchema.safeParse({ ...validData, amount: 2.67 }).success).toBe(true)
+    expect(recordPaymentSchema.safeParse({ ...validData, amount: 0.01 }).success).toBe(true)
+  })
+
   it('accepts the maximum amount payment_records.amount can hold', () => {
     const result = recordPaymentSchema.safeParse({ ...validData, amount: 99_999_999.99 })
     expect(result.success).toBe(true)

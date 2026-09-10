@@ -31,9 +31,19 @@ export const createFinancialEntrySchema = z.object({
 // transaction as a numeric overflow, which is a 500 for what is a bad input.
 const MAX_PAYMENT_AMOUNT = 99_999_999.99
 
+// Allocation rounds to cents and the columns are decimal(10,2). A fractional
+// cent would allocate one figure and store another.
+function hasAtMostTwoDecimals(value: number): boolean {
+  return Number(value.toFixed(2)) === value
+}
+
 export const recordPaymentSchema = z.object({
   installmentId: z.string().uuid('Parcela inválida'),
-  amount: z.number().positive('Valor deve ser positivo').max(MAX_PAYMENT_AMOUNT, 'Valor acima do limite permitido'),
+  amount: z
+    .number()
+    .min(0.01, 'Valor deve ser positivo')
+    .max(MAX_PAYMENT_AMOUNT, 'Valor acima do limite permitido')
+    .refine(hasAtMostTwoDecimals, 'Valor deve ter no máximo duas casas decimais'),
   paymentMethod: z.enum(paymentMethods as [string, ...string[]], {
     message: 'Método de pagamento inválido',
   }),

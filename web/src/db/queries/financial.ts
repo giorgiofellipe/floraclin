@@ -405,7 +405,14 @@ export async function recordPayment(
     let appliedFineValue = row.applied_fine_value != null ? Number(row.applied_fine_value) : null
     let appliedInterestRate = row.applied_interest_rate != null ? Number(row.applied_interest_rate) : null
 
-    const paidAt = data.paidAt ? new Date(data.paidAt) : new Date()
+    // Captured behind the lock so recordedAt reflects the order payments were
+    // actually applied in, and reused for the persisted state so a backdated
+    // payment does not freeze the installment's interest at its own date. A
+    // payment cannot have happened after it was recorded, so paidAt is capped.
+    const now = new Date()
+    const paidAt = data.paidAt
+      ? new Date(Math.min(new Date(data.paidAt).getTime(), now.getTime()))
+      : now
     const gracePeriodDays = await getGracePeriodDays(tx, tenantId)
 
     if (appliedFineValue === null) {
@@ -434,7 +441,7 @@ export async function recordPayment(
           isNull(paymentRecords.reversedAt)
         )
       )
-      .orderBy(paymentRecords.paidAt)
+      .orderBy(paymentRecords.paidAt, paymentRecords.recordedAt)
 
     const base: InstallmentBase = {
       amount: installmentAmount,
@@ -451,11 +458,6 @@ export async function recordPayment(
       paidAt: new Date(p.paidAt).toISOString(),
       recordedAt: new Date(p.recordedAt).toISOString(),
     }))
-
-    // Captured behind the lock so recordedAt reflects the order payments were
-    // actually applied in, and reused for the persisted state so a backdated
-    // payment does not freeze the installment's interest at its own date.
-    const now = new Date()
 
     const NEW_PAYMENT_SENTINEL = '__new__'
     const replay = replayPayments(
@@ -551,10 +553,16 @@ export async function recordPayment(
       finalFineAmount <= 0 &&
       finalInterestAmount <= 0
 
-    // The installment's settlement metadata belongs to whichever payment
-    // completed it in replay order, which is not necessarily the new one: a
-    // backdated payment can settle behind an existing later payment.
-    const settledBy = replay.payments[replay.payments.length - 1]
+    // The installment's settlement metadata belongs to the payment that
+    // completed it, which is not necessarily the new one: a backdated payment
+    // can settle behind an existing later payment. Once settled, every later
+    // payment allocates nothing, so the settling one is the last with a
+    // non-zero allocation.
+    const settledBy =
+      [...replay.payments]
+        .reverse()
+        .find((p) => p.interestCovered + p.fineCovered + p.principalCovered > 0) ??
+      replay.payments[replay.payments.length - 1]
     const settledByExisting =
       settledBy.id === NEW_PAYMENT_SENTINEL
         ? null
@@ -644,7 +652,9 @@ export async function reversePayment(
       .limit(1)
 
     if (!inst) {
-      throw new Error('Parcela não pertence a esta clínica')
+      // Same message as a missing record: a distinct one would let a caller
+      // probe whether a payment id exists in another clinic.
+      throw new Error('Pagamento não encontrado')
     }
 
     // 2. Both recordPayment and reversePayment rewrite payment records behind
@@ -772,10 +782,14 @@ export async function reversePayment(
         result.installmentState.fineAmount <= 0 &&
         result.installmentState.interestAmount <= 0
 
-      // The settling payment is the last one in replay order, not the last
-      // element of the raw array: a backdated payment can settle behind one
-      // recorded earlier.
-      const settledBy = result.payments[result.payments.length - 1]
+      // The settling payment is the last one that allocated anything: once
+      // the debt is settled every later payment allocates nothing, and a
+      // backdated payment can settle behind one recorded earlier.
+      const settledBy =
+        [...result.payments]
+          .reverse()
+          .find((p) => p.interestCovered + p.fineCovered + p.principalCovered > 0) ??
+        result.payments[result.payments.length - 1]
       const settledByRecord = remainingPayments.find((p) => p.id === settledBy.id)
 
       await tx
@@ -876,7 +890,9 @@ export async function bulkPayInstallments(
       if (!row) continue
 
       const installmentAmount = Number(row.amount)
-      const paidAt = data.paidAt ? new Date(data.paidAt) : new Date()
+      const paidAt = data.paidAt
+        ? new Date(Math.min(new Date(data.paidAt).getTime(), now.getTime()))
+        : now
 
       // Snapshot settings if not yet done
       let appliedFineType = row.appliedFineType
@@ -908,7 +924,7 @@ export async function bulkPayInstallments(
             isNull(paymentRecords.reversedAt)
           )
         )
-        .orderBy(paymentRecords.paidAt)
+        .orderBy(paymentRecords.paidAt, paymentRecords.recordedAt)
 
       const base: InstallmentBase = {
         amount: installmentAmount,
@@ -1563,7 +1579,7 @@ export async function getFinancialEntry(tenantId: string, entryId: string) {
             isNull(paymentRecords.reversedAt)
           )
         )
-        .orderBy(paymentRecords.paidAt)
+        .orderBy(paymentRecords.paidAt, paymentRecords.recordedAt)
     : []
 
   // Group payment records by installment

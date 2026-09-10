@@ -118,10 +118,6 @@ export async function renegotiateCharges(
         if (status === 'paid' || status === 'cancelled') continue
 
         const amount = Number(inst.amount)
-        const amountPaid = Number(inst.amount_paid ?? 0)
-        const remainingPrincipal = amount - amountPaid
-
-        entryRemainingPrincipal += remainingPrincipal
 
         const base: InstallmentBase = {
           amount,
@@ -139,6 +135,9 @@ export async function renegotiateCharges(
         }))
         const quote = quoteInstallment(base, prior, now)
 
+        // The engine's remaining principal, not the stored column: rows written
+        // before the calendar-day fix can carry a stale amount_paid.
+        entryRemainingPrincipal += quote.remainingPrincipal
         entryPenalties += quote.fineAmount + quote.interestAmount
       }
 
