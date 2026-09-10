@@ -12,9 +12,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  *     every already-logged-in customer to /confirm-email, forever, with no
  *     email to click because none was ever sent to them.
  *
- *   - The stale-token check clears anything below the current version. It has
- *     to move in step with the version the JWT callback mints, or old tokens
- *     survive without the new claim and hit the case above.
+ *   - An old token must still be let through. There was a check here that
+ *     redirected anything below the current version to /login and deleted the
+ *     session cookie. It took production down: the deletion did not stick, so
+ *     every request from an existing session redirected to /login, which
+ *     redirected again, forever. The claims it was protecting are all gated on
+ *     an explicit value, so an old token carrying `undefined` is already safe.
  */
 
 // `auth` is used as a higher-order wrapper: `export default auth((req) => ...)`.
@@ -91,12 +94,26 @@ describe('middleware: email confirmation gate', () => {
   })
 })
 
-describe('middleware: stale tokens', () => {
-  it('clears a token older than the current version', () => {
-    // Must track the version the JWT callback mints. If it lags, old tokens
-    // survive without the new claim and fall into the case above.
+describe('middleware: an old token is not a reason to redirect', () => {
+  it('lets a session minted before the current claims through', () => {
+    // The outage. A version check here sent this token to /login and deleted
+    // the cookie; the deletion missed, so /login redirected to /login without
+    // end. Nothing may bounce an authenticated user on the strength of a
+    // version alone.
     const res = run('/dashboard', session({ v: TOKEN_VERSION - 1 }))
-    expect(locationOf(res)).toContain('/login')
+    expect(locationOf(res)).toBeNull()
+  })
+
+  it('lets a session with no version claim at all through', () => {
+    const res = run('/dashboard', session({ v: undefined }))
+    expect(locationOf(res)).toBeNull()
+  })
+
+  it('does not send an old token to the page it was just redirected from', () => {
+    // The loop, stated directly: whatever /login does with this session, it
+    // must not be "go to /login".
+    const res = run('/login', session({ v: TOKEN_VERSION - 1 }))
+    expect(locationOf(res) ?? '').not.toContain('/login')
   })
 })
 
