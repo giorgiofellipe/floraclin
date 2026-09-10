@@ -37,6 +37,13 @@ export async function getInstallmentQuote(
     )
   }
 
+  if (inst.status === 'paid') {
+    throw new BusinessError('INSTALLMENT_ALREADY_PAID', 'Parcela já está totalmente paga')
+  }
+  if (inst.status === 'cancelled') {
+    throw new BusinessError('INSTALLMENT_CANCELLED', 'Parcela cancelada não pode receber pagamento')
+  }
+
   // The write path resolves settings through this same helper. Duplicating its
   // fallbacks here is how the quote and the charge drift apart: a tenant with
   // no settings row would be quoted at 0% and charged at 2%.
@@ -63,6 +70,7 @@ export async function getInstallmentQuote(
     id: p.id,
     amount: Number(p.amount),
     paidAt: new Date(p.paidAt).toISOString(),
+    recordedAt: new Date(p.recordedAt).toISOString(),
   }))
 
   return { ...quoteInstallment(base, prior, asOf), asOf: asOf.toISOString() }

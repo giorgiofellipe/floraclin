@@ -136,6 +136,32 @@ describe('getInstallmentQuote', () => {
     expect(quote.remainingPrincipal).toBe(750)
   })
 
+  it('throws INSTALLMENT_ALREADY_PAID for a paid installment without reaching the settings or payments selects', async () => {
+    const { getInstallmentQuote } = await import('../financial-quote')
+    const { BusinessError } = await import('@/lib/errors')
+    dbMock.select.mockReturnValueOnce(chain([installmentRow({ status: 'paid' })]))
+
+    await expect(
+      getInstallmentQuote(TENANT, INSTALLMENT_ID, new Date('2026-09-03T14:04:50.000Z')),
+    ).rejects.toMatchObject(
+      new BusinessError('INSTALLMENT_ALREADY_PAID', 'Parcela já está totalmente paga'),
+    )
+    expect(dbMock.select).toHaveBeenCalledTimes(1)
+  })
+
+  it('throws INSTALLMENT_CANCELLED for a cancelled installment without reaching the settings or payments selects', async () => {
+    const { getInstallmentQuote } = await import('../financial-quote')
+    const { BusinessError } = await import('@/lib/errors')
+    dbMock.select.mockReturnValueOnce(chain([installmentRow({ status: 'cancelled' })]))
+
+    await expect(
+      getInstallmentQuote(TENANT, INSTALLMENT_ID, new Date('2026-09-03T14:04:50.000Z')),
+    ).rejects.toMatchObject(
+      new BusinessError('INSTALLMENT_CANCELLED', 'Parcela cancelada não pode receber pagamento'),
+    )
+    expect(dbMock.select).toHaveBeenCalledTimes(1)
+  })
+
   it('throws INSTALLMENT_NOT_FOUND for an installment in another tenant', async () => {
     const { getInstallmentQuote } = await import('../financial-quote')
     const { BusinessError } = await import('@/lib/errors')
