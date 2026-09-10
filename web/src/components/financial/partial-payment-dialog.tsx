@@ -86,7 +86,8 @@ export function PartialPaymentDialog({
     )
   }, [parsedAmount, quote, installment.amount])
 
-  const isOverpayment = quote != null && parsedAmount > quote.totalDue + 0.01
+  const isOverpayment = quote != null && parsedAmount > quote.totalDue
+  const excess = isOverpayment && quote ? Math.round((parsedAmount - quote.totalDue) * 100) / 100 : 0
 
   // A cached quote for the previous date must not stay on screen while the new
   // one is in flight, and a failed quote must not sit on "Calculando..."
@@ -94,7 +95,7 @@ export function PartialPaymentDialog({
   const pendingTotalsLabel = quoteError ? 'Total pendente indisponível' : 'Calculando...'
 
   async function handleConfirm() {
-    if (parsedAmount <= 0 || isOverpayment) return
+    if (parsedAmount <= 0) return
     try {
       await payInstallment.mutateAsync({
         id: installment.id,
@@ -163,11 +164,12 @@ export function PartialPaymentDialog({
             </div>
           </div>
 
-          {isOverpayment && quote && (
-              <p className="text-xs text-red-600">
-                O valor excede o total pendente de {formatCurrency(quote.totalDue)}.
-              </p>
-            )}
+          {isOverpayment && (
+            <p className="text-xs text-amber-700">
+              Valor acima do total pendente. O excedente de {formatCurrency(excess)} será
+              registrado, mas não gera crédito para próximas cobranças.
+            </p>
+          )}
 
           {/* Payment method */}
           <div className="space-y-2">
@@ -244,7 +246,7 @@ export function PartialPaymentDialog({
           <Button
             className="bg-forest text-cream hover:bg-sage transition-colors"
             onClick={handleConfirm}
-            disabled={isPending || isQuoting || !quote || !!quoteError || parsedAmount <= 0 || isOverpayment}
+            disabled={isPending || isQuoting || !quote || !!quoteError || parsedAmount <= 0}
           >
             {isPending ? 'Salvando...' : 'Confirmar Pagamento'}
           </Button>

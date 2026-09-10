@@ -181,7 +181,7 @@ describe('PartialPaymentDialog', () => {
     expect(screen.getByRole('button', { name: 'Confirmar Pagamento' })).not.toBeDisabled()
   })
 
-  it('blocks confirm above quote.totalDue + 0.01', async () => {
+  it('warns above quote.totalDue and keeps confirm enabled', async () => {
     render(
       <PartialPaymentDialog open={true} onOpenChange={() => {}} installment={defaultInstallment} />,
       { wrapper: createWrapper() },
@@ -191,10 +191,34 @@ describe('PartialPaymentDialog', () => {
       expect(screen.getByTestId('partial-payment-amount')).toHaveValue('1.030,00')
     })
 
-    fireEvent.change(screen.getByTestId('partial-payment-amount'), { target: { value: '103002' } })
+    fireEvent.change(screen.getByTestId('partial-payment-amount'), { target: { value: '103100' } })
 
-    expect(screen.getByText(/O valor excede o total pendente/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Confirmar Pagamento' })).toBeDisabled()
+    expect(screen.getByText(/Valor acima do total pendente/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirmar Pagamento' })).not.toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar Pagamento' }))
+
+    await waitFor(() => {
+      expect(mockMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ amount: 1031 }),
+      )
+    })
+  })
+
+  it('shows no warning at exactly quote.totalDue', async () => {
+    render(
+      <PartialPaymentDialog open={true} onOpenChange={() => {}} installment={defaultInstallment} />,
+      { wrapper: createWrapper() },
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('partial-payment-amount')).toHaveValue('1.030,00')
+    })
+
+    fireEvent.change(screen.getByTestId('partial-payment-amount'), { target: { value: '103000' } })
+
+    expect(screen.queryByText(/Valor acima do total pendente/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirmar Pagamento' })).not.toBeDisabled()
   })
 
   it('does not overwrite an amount the user edited when the quote refetches', async () => {
