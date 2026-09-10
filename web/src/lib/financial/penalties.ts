@@ -1,17 +1,8 @@
-import { startOfBrDay } from '@/lib/dates'
+import { brDayIndex, shiftBrYmd, ymdDayIndex } from '@/lib/dates'
 
 const MAX_FINE_PERCENTAGE = 2
 const MAX_INTEREST_MONTHLY = 1
 const DAYS_IN_MONTH = 30
-
-// Accepts either a bare YYYY-MM-DD (a BR calendar day — e.g. installment.dueDate)
-// or a full ISO datetime (e.g. a prior lastFineInterestCalcAt).
-// Bare YYYY-MM-DD is anchored to BR-local midnight so fine/interest day math
-// stays correct on UTC hosts.
-function parseOverdueReference(value: string): Date {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return startOfBrDay(value)
-  return new Date(value)
-}
 
 export interface InstallmentState {
   amount: number
@@ -32,6 +23,7 @@ export interface InstallmentBase {
 export interface PaymentInput {
   amount: number
   paidAt: string
+  recordedAt: string
   id?: string
 }
 
@@ -88,18 +80,6 @@ export function calculateInterest(
   return round2(remainingPrincipal * dailyRate * daysOverdue)
 }
 
-export function getDaysOverdue(
-  dueDate: string,
-  gracePeriodDays: number,
-  asOf?: Date,
-): number {
-  const due = parseOverdueReference(dueDate)
-  const ref = asOf ?? new Date()
-  const diffMs = ref.getTime() - due.getTime()
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-  return Math.max(0, diffDays - gracePeriodDays)
-}
-
 export function allocatePayment(
   state: InstallmentState,
   paymentAmount: number,
@@ -123,34 +103,44 @@ export function allocatePayment(
   return { interestCovered, fineCovered, principalCovered, excessAmount }
 }
 
-const MS_PER_DAY = 1000 * 60 * 60 * 24
+/** Day index of the last day that is NOT overdue: the due date plus grace. */
+function lastGraceDayIndex(base: InstallmentBase): number {
+  return ymdDayIndex(shiftBrYmd(base.dueDate, base.gracePeriodDays))
+}
 
 /**
- * Days of interest owed at `asOf`. The clock starts when the grace period ends
- * or at the last payment, whichever is later: a payment made before the due
- * date must not start it early, and must not forfeit the grace period.
+ * Whole BR calendar days of interest owed at `asOf`. The clock starts the day
+ * after grace ends, or at the last payment, whichever is later. With no last
+ * payment this is also the absolute overdue count from the due date, which is
+ * what gates the fine: an interval that restarts at each payment can stay
+ * under a day forever.
  */
 function daysOfInterest(
   base: InstallmentBase,
   lastCalcAt: string | null,
   asOf: Date,
 ): number {
-  const graceEnd =
-    parseOverdueReference(base.dueDate).getTime() + base.gracePeriodDays * MS_PER_DAY
-  const start = Math.max(graceEnd, lastCalcAt ? new Date(lastCalcAt).getTime() : 0)
-  return Math.max(0, Math.floor((asOf.getTime() - start) / MS_PER_DAY))
+  const start = Math.max(
+    lastGraceDayIndex(base),
+    lastCalcAt ? brDayIndex(new Date(lastCalcAt)) : Number.NEGATIVE_INFINITY,
+  )
+  return Math.max(0, brDayIndex(asOf) - start)
 }
 
 export function replayPayments(
   base: InstallmentBase,
   payments: PaymentInput[],
+  asOf: Date,
 ): ReplayResult {
-  // Equal timestamps are common: the UI anchors every picked calendar day to
-  // BR noon. Without the id tiebreak, database row order decides which payment
-  // covers the interest.
+  // paidAt is what the operator typed and is anchored to BR noon, so ties are
+  // common. recordedAt is when the row was written, so it is the order the
+  // payments actually happened in and it survives the in-flight sentinel being
+  // replaced by a real id.
   const sorted = [...payments].sort((a, b) => {
     const byDate = new Date(a.paidAt).getTime() - new Date(b.paidAt).getTime()
     if (byDate !== 0) return byDate
+    const byRecorded = a.recordedAt.localeCompare(b.recordedAt)
+    if (byRecorded !== 0) return byRecorded
     return String(a.id ?? '').localeCompare(String(b.id ?? ''))
   })
 
@@ -165,12 +155,16 @@ export function replayPayments(
     const paymentDate = new Date(payment.paidAt)
     const daysOverdue = daysOfInterest(base, lastCalcAt, paymentDate)
 
-    if (!fineApplied && daysOverdue > 0) {
+    const remainingPrincipal = round2(base.amount - amountPaid)
+    if (
+      !fineApplied &&
+      remainingPrincipal > 0 &&
+      daysOfInterest(base, null, paymentDate) > 0
+    ) {
       fineAmount = calculateFine(base.amount, base.appliedFineType, base.appliedFineValue)
       fineApplied = true
     }
 
-    const remainingPrincipal = round2(base.amount - amountPaid)
     // Interest a previous payment could not cover stays owed; it does not
     // vanish when the clock restarts at that payment's date.
     const interestAmount = round2(
@@ -200,7 +194,7 @@ export function replayPayments(
     carriedInterest +
       calculateInterest(
         round2(base.amount - amountPaid),
-        daysOfInterest(base, lastCalcAt, new Date()),
+        daysOfInterest(base, lastCalcAt, asOf),
         base.appliedInterestRate,
       ),
   )
@@ -239,17 +233,21 @@ export function quoteInstallment(
   const upToAsOf = existingPayments.filter(
     (p) => new Date(p.paidAt).getTime() <= asOf.getTime(),
   )
-  const replay = replayPayments(base, upToAsOf)
+  const replay = replayPayments(base, upToAsOf, asOf)
   const { amountPaid, lastFineInterestCalcAt, carriedInterest } = replay.installmentState
 
   const daysOverdue = daysOfInterest(base, lastFineInterestCalcAt, asOf)
+  const remainingPrincipal = round2(Math.max(base.amount - amountPaid, 0))
 
+  // No principal outstanding means nothing to be late on. A prepaid
+  // installment must not grow a fine months after it was settled.
   const fineAmount =
-    !replay.installmentState.fineApplied && daysOverdue > 0
+    !replay.installmentState.fineApplied &&
+    remainingPrincipal > 0 &&
+    daysOfInterest(base, null, asOf) > 0
       ? calculateFine(base.amount, base.appliedFineType, base.appliedFineValue)
       : replay.installmentState.fineAmount
 
-  const remainingPrincipal = round2(Math.max(base.amount - amountPaid, 0))
   const interestAmount = round2(
     carriedInterest +
       calculateInterest(remainingPrincipal, daysOverdue, base.appliedInterestRate),
