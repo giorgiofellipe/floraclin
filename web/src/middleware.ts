@@ -33,18 +33,6 @@ export default auth((req) => {
     return NextResponse.next()
   }
 
-  // Stale JWT: minted before the claims below existed. Clear it and force a
-  // re-login rather than reason about a token that cannot answer.
-  if (isAuthenticated) {
-    const token = req.auth as any
-    if (!token?.v || token.v < 3) {
-      const res = NextResponse.redirect(new URL('/login', req.url))
-      res.cookies.delete('authjs.session-token')
-      res.cookies.delete('__Secure-authjs.session-token')
-      return res
-    }
-  }
-
   // Auth pages — redirect authenticated users appropriately
   if (pathname === '/login' || pathname === '/reset-password' || pathname === '/signup') {
     if (isAuthenticated) {
