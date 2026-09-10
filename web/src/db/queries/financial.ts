@@ -13,21 +13,19 @@ import {
   expenses,
   expenseInstallments,
   metaConversionEvents,
+  auditLogs,
 } from '@/db/schema'
 import { eq, and, isNull, sql, count, sum, desc, inArray, or, gte, lte } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { startOfBrDay, endOfBrDay, toLocalYmd } from '@/lib/dates'
 import { createAuditLog } from '@/lib/audit'
 import {
-  calculateFine,
-  calculateInterest,
-  getDaysOverdue,
-  allocatePayment,
   replayPayments,
-  type InstallmentState,
+  quoteInstallment,
   type InstallmentBase,
   type PaymentInput,
 } from '@/lib/financial/penalties'
+import { BusinessError } from '@/lib/errors'
 import type { CreateFinancialEntryInput, FinancialFilterInput, RecordPaymentInput } from '@/validations/financial'
 import type { PaymentMethod, FinancialStatus } from '@/types'
 import { addDays } from 'date-fns'
@@ -39,6 +37,7 @@ import {
   type MetaEventPrerequisites,
   type PendingMetaEventRow,
 } from '@/lib/meta/events'
+import { META_EVENT_WINDOW_DAYS } from '@/db/queries/meta-events'
 import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
 import type { MetaActionSource } from '@/lib/meta/types'
 import { reportSideEffectFailure } from '@/lib/observability'
@@ -259,6 +258,13 @@ async function emitPurchaseEventForEntry(
       return null
     }
 
+    // Meta rejects an event_time outside its window, and eventTime is the
+    // payment's own date. A payment recorded months late has no attribution
+    // left to send, so no row is written rather than one written to fail.
+    if (Date.now() - eventTime.getTime() > META_EVENT_WINDOW_DAYS * 24 * 60 * 60 * 1000) {
+      return null
+    }
+
     const eventId = `purchase:${financialEntryId}`
 
     // The outbox insert gets a SAVEPOINT of its own: raised on the caller's
@@ -379,20 +385,18 @@ export async function recordPayment(
     const rows = (Array.isArray(lockResult) ? lockResult : (lockResult as Record<string, unknown>).rows ?? lockResult) as Record<string, unknown>[]
     const row = rows[0] as Record<string, unknown> | undefined
     if (!row) {
-      throw new Error('Parcela não encontrada ou não pertence a esta clínica')
+      throw new BusinessError('INSTALLMENT_NOT_FOUND', 'Parcela não encontrada ou não pertence a esta clínica')
     }
 
     if (row.status === 'paid') {
-      throw new Error('Parcela já está totalmente paga')
+      throw new BusinessError('INSTALLMENT_ALREADY_PAID', 'Parcela já está totalmente paga')
     }
 
     if (row.status === 'cancelled') {
-      throw new Error('Parcela cancelada não pode receber pagamento')
+      throw new BusinessError('INSTALLMENT_CANCELLED', 'Parcela cancelada não pode receber pagamento')
     }
 
     const installmentAmount = Number(row.amount)
-    const currentAmountPaid = Number(row.amount_paid ?? 0)
-    const currentFineAmount = Number(row.fine_amount ?? 0)
     const dueDate = String(row.due_date)
     const financialEntryId = String(row.financial_entry_id)
 
@@ -401,7 +405,14 @@ export async function recordPayment(
     let appliedFineValue = row.applied_fine_value != null ? Number(row.applied_fine_value) : null
     let appliedInterestRate = row.applied_interest_rate != null ? Number(row.applied_interest_rate) : null
 
-    const paidAt = data.paidAt ? new Date(data.paidAt) : new Date()
+    // Captured behind the lock so recordedAt reflects the order payments were
+    // actually applied in, and reused for the persisted state so a backdated
+    // payment does not freeze the installment's interest at its own date. A
+    // payment cannot have happened after it was recorded, so paidAt is capped.
+    const now = new Date()
+    const paidAt = data.paidAt
+      ? new Date(Math.min(new Date(data.paidAt).getTime(), now.getTime()))
+      : now
     const gracePeriodDays = await getGracePeriodDays(tx, tenantId)
 
     if (appliedFineValue === null) {
@@ -421,139 +432,93 @@ export async function recordPayment(
         .where(eq(installments.id, data.installmentId))
     }
 
-    // 3. Check for backdated payment — if paidAt is before existing payments
     const existingPayments = await tx
       .select()
       .from(paymentRecords)
-      .where(eq(paymentRecords.installmentId, data.installmentId))
-      .orderBy(paymentRecords.paidAt)
-
-    const isBackdated = existingPayments.length > 0 &&
-      paidAt < new Date(existingPayments[0].paidAt)
-
-    let paymentAllocation: { interestCovered: number; fineCovered: number; principalCovered: number }
-    let finalAmountPaid: number
-    let finalFineAmount: number
-    let finalInterestAmount: number
-    let finalLastCalcAt: Date
-
-    if (isBackdated) {
-      // Replay all payments including the new one
-      const NEW_PAYMENT_SENTINEL = '__new__'
-      const allPayments: PaymentInput[] = [
-        ...existingPayments.map((p) => ({
-          id: p.id,
-          amount: Number(p.amount),
-          paidAt: new Date(p.paidAt).toISOString(),
-        })),
-        { id: NEW_PAYMENT_SENTINEL, amount: data.amount, paidAt: paidAt.toISOString() },
-      ]
-
-      const base: InstallmentBase = {
-        amount: installmentAmount,
-        dueDate,
-        appliedFineValue: appliedFineValue!,
-        appliedFineType: appliedFineType!,
-        appliedInterestRate: appliedInterestRate!,
-        gracePeriodDays,
-      }
-
-      const result = replayPayments(base, allPayments)
-
-      // Find this new payment's allocation in the replay
-      const newPaymentIdx = result.payments.findIndex(
-        (p) => p.id === NEW_PAYMENT_SENTINEL
+      .where(
+        and(
+          eq(paymentRecords.installmentId, data.installmentId),
+          isNull(paymentRecords.reversedAt)
+        )
       )
-      paymentAllocation = newPaymentIdx >= 0
-        ? {
-            interestCovered: result.payments[newPaymentIdx].interestCovered,
-            fineCovered: result.payments[newPaymentIdx].fineCovered,
-            principalCovered: result.payments[newPaymentIdx].principalCovered,
-          }
-        : { interestCovered: 0, fineCovered: 0, principalCovered: data.amount }
+      .orderBy(paymentRecords.paidAt, paymentRecords.recordedAt)
 
-      finalAmountPaid = result.installmentState.amountPaid
-      finalFineAmount = result.installmentState.fineAmount
-      finalInterestAmount = result.installmentState.interestAmount
-      finalLastCalcAt = result.installmentState.lastFineInterestCalcAt
-        ? new Date(result.installmentState.lastFineInterestCalcAt)
-        : paidAt
-
-      // Update existing payment records with recalculated allocations
-      for (let i = 0; i < result.payments.length; i++) {
-        const replayedPayment = result.payments[i]
-        if (replayedPayment.id === NEW_PAYMENT_SENTINEL) continue
-        // Find matching existing payment record by ID
-        const existingRecord = replayedPayment.id
-          ? existingPayments.find((ep) => ep.id === replayedPayment.id)
-          : undefined
-        if (existingRecord) {
-          await tx
-            .update(paymentRecords)
-            .set({
-              interestCovered: replayedPayment.interestCovered.toFixed(2),
-              fineCovered: replayedPayment.fineCovered.toFixed(2),
-              principalCovered: replayedPayment.principalCovered.toFixed(2),
-            })
-            .where(eq(paymentRecords.id, existingRecord.id))
-        }
-      }
-    } else {
-      // Normal flow: calculate penalties as of paidAt
-      const daysOverdue = getDaysOverdue(
-        row.last_fine_interest_calc_at
-          ? new Date(row.last_fine_interest_calc_at as string).toISOString()
-          : dueDate,
-        row.last_fine_interest_calc_at ? 0 : gracePeriodDays,
-        paidAt
-      )
-
-      // Apply fine once on first overdue payment if not yet applied
-      let fineAmount = currentFineAmount
-      if (daysOverdue > 0 && currentAmountPaid === 0 && currentFineAmount === 0) {
-        fineAmount = calculateFine(installmentAmount, appliedFineType!, appliedFineValue!)
-      }
-
-      const remainingPrincipal = installmentAmount - currentAmountPaid
-      const interestAmount = calculateInterest(
-        remainingPrincipal,
-        daysOverdue,
-        appliedInterestRate!
-      )
-
-      const state: InstallmentState = {
-        amount: installmentAmount,
-        amountPaid: currentAmountPaid,
-        fineAmount,
-        interestAmount,
-      }
-
-      const totalDue = Math.round(((installmentAmount - currentAmountPaid) + fineAmount + interestAmount) * 100) / 100
-      if (data.amount > totalDue + 0.02) {
-        throw new Error('Valor do pagamento excede o total devido')
-      }
-
-      paymentAllocation = allocatePayment(state, data.amount)
-
-      finalAmountPaid = currentAmountPaid + paymentAllocation.principalCovered
-      finalFineAmount = fineAmount - paymentAllocation.fineCovered
-      finalInterestAmount = interestAmount - paymentAllocation.interestCovered
-      finalLastCalcAt = paidAt
+    const base: InstallmentBase = {
+      amount: installmentAmount,
+      dueDate,
+      appliedFineValue: appliedFineValue!,
+      appliedFineType: appliedFineType!,
+      appliedInterestRate: appliedInterestRate!,
+      gracePeriodDays,
     }
 
-    const actualAmount = paymentAllocation.interestCovered + paymentAllocation.fineCovered + paymentAllocation.principalCovered
+    const priorPayments: PaymentInput[] = existingPayments.map((p) => ({
+      id: p.id,
+      amount: Number(p.amount),
+      paidAt: new Date(p.paidAt).toISOString(),
+      recordedAt: new Date(p.recordedAt).toISOString(),
+    }))
 
-    // 4. Create payment_records row
+    const NEW_PAYMENT_SENTINEL = '__new__'
+    const replay = replayPayments(
+      base,
+      [
+        ...priorPayments,
+        {
+          id: NEW_PAYMENT_SENTINEL,
+          amount: data.amount,
+          paidAt: paidAt.toISOString(),
+          recordedAt: now.toISOString(),
+        },
+      ],
+      now,
+    )
+
+    const newPayment = replay.payments.find((p) => p.id === NEW_PAYMENT_SENTINEL)!
+    const paymentAllocation = {
+      interestCovered: newPayment.interestCovered,
+      fineCovered: newPayment.fineCovered,
+      principalCovered: newPayment.principalCovered,
+      excessAmount: newPayment.excessAmount,
+    }
+
+    // Art. 354 splits each payment against the interest and fine standing at
+    // its own date, so inserting one payment re-splits the ones around it.
+    for (const replayed of replay.payments) {
+      if (replayed.id === NEW_PAYMENT_SENTINEL) continue
+      const existing = existingPayments.find((ep) => ep.id === replayed.id)
+      if (!existing) continue
+      await tx
+        .update(paymentRecords)
+        .set({
+          interestCovered: replayed.interestCovered.toFixed(2),
+          fineCovered: replayed.fineCovered.toFixed(2),
+          principalCovered: replayed.principalCovered.toFixed(2),
+        })
+        .where(eq(paymentRecords.id, existing.id))
+    }
+
+    const finalAmountPaid = replay.installmentState.amountPaid
+    const finalFineAmount = replay.installmentState.fineAmount
+    const finalInterestAmount = replay.installmentState.interestAmount
+    const finalLastCalcAt = replay.installmentState.lastFineInterestCalcAt
+      ? new Date(replay.installmentState.lastFineInterestCalcAt)
+      : paidAt
+
+    // 4. Create payment_records row. The row stores the cash received, not the
+    // cash allocated. Anything above the total due is visible as the gap
+    // between the two and is not applied to any other charge.
     const [paymentRecord] = await tx
       .insert(paymentRecords)
       .values({
         installmentId: data.installmentId,
-        amount: actualAmount.toFixed(2),
+        amount: data.amount.toFixed(2),
         paymentMethod: data.paymentMethod,
         interestCovered: paymentAllocation.interestCovered.toFixed(2),
         fineCovered: paymentAllocation.fineCovered.toFixed(2),
         principalCovered: paymentAllocation.principalCovered.toFixed(2),
         paidAt,
+        recordedAt: now,
         recordedBy: userId,
         notes: data.notes,
       })
@@ -573,7 +538,7 @@ export async function recordPayment(
     await tx.insert(cashMovements).values({
       tenantId,
       type: 'inflow',
-      amount: actualAmount.toFixed(2),
+      amount: data.amount.toFixed(2),
       description: `Pagamento: ${entryInfo?.description ?? 'Cobranca'}`,
       paymentMethod: data.paymentMethod,
       movementDate: paidAt,
@@ -588,6 +553,25 @@ export async function recordPayment(
       finalFineAmount <= 0 &&
       finalInterestAmount <= 0
 
+    // The installment's settlement metadata belongs to the payment that
+    // completed it, which is not necessarily the new one: a backdated payment
+    // can settle behind an existing later payment. Once settled, every later
+    // payment allocates nothing, so the settling one is the last with a
+    // non-zero allocation.
+    const settledBy =
+      [...replay.payments]
+        .reverse()
+        .find((p) => p.interestCovered + p.fineCovered + p.principalCovered > 0) ??
+      replay.payments[replay.payments.length - 1]
+    const settledByExisting =
+      settledBy.id === NEW_PAYMENT_SENTINEL
+        ? null
+        : existingPayments.find((ep) => ep.id === settledBy.id) ?? null
+    const settledAt = settledByExisting ? new Date(settledByExisting.paidAt) : paidAt
+    const settledMethod = settledByExisting
+      ? (settledByExisting.paymentMethod as PaymentMethod)
+      : data.paymentMethod
+
     await tx
       .update(installments)
       .set({
@@ -596,8 +580,8 @@ export async function recordPayment(
         interestAmount: Math.max(0, finalInterestAmount).toFixed(2),
         lastFineInterestCalcAt: finalLastCalcAt,
         status: isPaid ? 'paid' : 'pending',
-        paidAt: isPaid ? paidAt : undefined,
-        paymentMethod: isPaid ? data.paymentMethod : undefined,
+        paidAt: isPaid ? settledAt : undefined,
+        paymentMethod: isPaid ? settledMethod : undefined,
         updatedAt: new Date(),
       })
       .where(eq(installments.id, data.installmentId))
@@ -668,11 +652,31 @@ export async function reversePayment(
       .limit(1)
 
     if (!inst) {
-      throw new Error('Parcela não pertence a esta clínica')
+      // Same message as a missing record: a distinct one would let a caller
+      // probe whether a payment id exists in another clinic.
+      throw new Error('Pagamento não encontrado')
     }
 
-    // 2. Check if already reversed
-    if (pr.reversedAt) {
+    // 2. Both recordPayment and reversePayment rewrite payment records behind
+    // this lock, so taking it here too serializes the two paths instead of
+    // letting them deadlock on each other's row updates.
+    await tx.execute(
+      sql`SELECT 1 FROM floraclin.installments
+          WHERE id = ${pr.installmentId}
+          AND tenant_id = ${tenantId}
+          FOR UPDATE`
+    )
+
+    // Re-read behind the lock rather than trusting the copy loaded above: two
+    // concurrent reversals both read an active payment, and the loser would
+    // otherwise go on to write a second outflow for the same money.
+    const [locked] = await tx
+      .select({ reversedAt: paymentRecords.reversedAt })
+      .from(paymentRecords)
+      .where(eq(paymentRecords.id, paymentRecordId))
+      .limit(1)
+
+    if (locked?.reversedAt) {
       throw new Error('Pagamento já foi estornado')
     }
 
@@ -717,9 +721,11 @@ export async function reversePayment(
           isNull(paymentRecords.reversedAt)
         )
       )
-      .orderBy(paymentRecords.paidAt)
+      .orderBy(paymentRecords.paidAt, paymentRecords.recordedAt)
 
-    const gracePeriodDays = await getGracePeriodDays(tx, tenantId)
+    const settings = await loadFinancialSettings(tx, tenantId)
+    // Captured behind the lock, the same way the write paths do it.
+    const now = new Date()
 
     if (remainingPayments.length === 0) {
       // No payments left — reset installment
@@ -741,19 +747,20 @@ export async function reversePayment(
       const base: InstallmentBase = {
         amount: Number(inst.amount),
         dueDate: inst.dueDate,
-        appliedFineValue: Number(inst.appliedFineValue ?? 0),
-        appliedFineType: inst.appliedFineType ?? 'percentage',
-        appliedInterestRate: Number(inst.appliedInterestRate ?? 0),
-        gracePeriodDays,
+        appliedFineValue: Number(inst.appliedFineValue ?? settings.fineValue),
+        appliedFineType: inst.appliedFineType ?? settings.fineType,
+        appliedInterestRate: Number(inst.appliedInterestRate ?? settings.monthlyInterestPercent),
+        gracePeriodDays: settings.gracePeriodDays,
       }
 
       const allPayments: PaymentInput[] = remainingPayments.map((p) => ({
         id: p.id,
         amount: Number(p.amount),
         paidAt: new Date(p.paidAt).toISOString(),
+        recordedAt: new Date(p.recordedAt).toISOString(),
       }))
 
-      const result = replayPayments(base, allPayments)
+      const result = replayPayments(base, allPayments, now)
 
       // Update each payment record with recalculated allocations
       for (let i = 0; i < result.payments.length; i++) {
@@ -777,6 +784,16 @@ export async function reversePayment(
         result.installmentState.fineAmount <= 0 &&
         result.installmentState.interestAmount <= 0
 
+      // The settling payment is the last one that allocated anything: once
+      // the debt is settled every later payment allocates nothing, and a
+      // backdated payment can settle behind one recorded earlier.
+      const settledBy =
+        [...result.payments]
+          .reverse()
+          .find((p) => p.interestCovered + p.fineCovered + p.principalCovered > 0) ??
+        result.payments[result.payments.length - 1]
+      const settledByRecord = remainingPayments.find((p) => p.id === settledBy.id)
+
       await tx
         .update(installments)
         .set({
@@ -787,8 +804,8 @@ export async function reversePayment(
             ? new Date(result.installmentState.lastFineInterestCalcAt)
             : null,
           status: isPaid ? 'paid' : 'pending',
-          paidAt: isPaid ? new Date(remainingPayments[remainingPayments.length - 1].paidAt) : null,
-          paymentMethod: isPaid ? remainingPayments[remainingPayments.length - 1].paymentMethod as PaymentMethod : null,
+          paidAt: isPaid && settledByRecord ? new Date(settledByRecord.paidAt) : null,
+          paymentMethod: isPaid && settledByRecord ? (settledByRecord.paymentMethod as PaymentMethod) : null,
           updatedAt: new Date(),
         })
         .where(eq(installments.id, inst.id))
@@ -827,11 +844,14 @@ export async function bulkPayInstallments(
   const { results, purchases } = await withTransaction(async (tx) => {
     // Lock all target installments
     const installmentIdArray = `{${data.installmentIds.join(',')}}`
+    // ORDER BY id so this and renegotiation acquire overlapping rows in one
+    // order instead of deadlocking on each other.
     const lockResult = await tx.execute(
       sql`SELECT id FROM floraclin.installments
           WHERE id = ANY(${installmentIdArray}::uuid[])
           AND tenant_id = ${tenantId}
           AND status NOT IN ('paid', 'cancelled')
+          ORDER BY id
           FOR UPDATE`
     )
 
@@ -841,13 +861,17 @@ export async function bulkPayInstallments(
     // Validate all requested installments were found and lockable
     const missingIds = data.installmentIds.filter((id) => !lockedIds.includes(id))
     if (missingIds.length > 0) {
-      throw new Error(
+      throw new BusinessError(
+        'INSTALLMENTS_NOT_PAYABLE',
         `Parcelas não encontradas ou já pagas/canceladas: ${missingIds.join(', ')}`
       )
     }
 
     // Load grace period once before the loop
     const gracePeriodDays = await getGracePeriodDays(tx, tenantId)
+
+    // One instant for the whole batch, behind the lock; see recordPayment.
+    const now = new Date()
 
     // Process each installment through recordPayment logic
     const results = []
@@ -868,9 +892,9 @@ export async function bulkPayInstallments(
       if (!row) continue
 
       const installmentAmount = Number(row.amount)
-      const currentAmountPaid = Number(row.amountPaid ?? 0)
-      const currentFineAmount = Number(row.fineAmount ?? 0)
-      const paidAt = data.paidAt ? new Date(data.paidAt) : new Date()
+      const paidAt = data.paidAt
+        ? new Date(Math.min(new Date(data.paidAt).getTime(), now.getTime()))
+        : now
 
       // Snapshot settings if not yet done
       let appliedFineType = row.appliedFineType
@@ -893,36 +917,78 @@ export async function bulkPayInstallments(
           .where(eq(installments.id, installmentId))
       }
 
-      // Calculate remaining amount including penalties
-      const daysOverdue = getDaysOverdue(
-        row.lastFineInterestCalcAt
-          ? new Date(row.lastFineInterestCalcAt).toISOString()
-          : row.dueDate,
-        row.lastFineInterestCalcAt ? 0 : gracePeriodDays,
-        paidAt
+      const existingPayments = await tx
+        .select()
+        .from(paymentRecords)
+        .where(
+          and(
+            eq(paymentRecords.installmentId, installmentId),
+            isNull(paymentRecords.reversedAt)
+          )
+        )
+        .orderBy(paymentRecords.paidAt, paymentRecords.recordedAt)
+
+      const base: InstallmentBase = {
+        amount: installmentAmount,
+        dueDate: row.dueDate,
+        appliedFineValue: appliedFineValue!,
+        appliedFineType: appliedFineType!,
+        appliedInterestRate: appliedInterestRate!,
+        gracePeriodDays,
+      }
+
+      const priorPayments: PaymentInput[] = existingPayments.map((p) => ({
+        id: p.id,
+        amount: Number(p.amount),
+        paidAt: new Date(p.paidAt).toISOString(),
+        recordedAt: new Date(p.recordedAt).toISOString(),
+      }))
+
+      const totalDue = quoteInstallment(base, priorPayments, paidAt).totalDue
+      if (totalDue <= 0) continue
+
+      const BULK_PAYMENT_SENTINEL = '__bulk__'
+      const replay = replayPayments(
+        base,
+        [
+          ...priorPayments,
+          {
+            id: BULK_PAYMENT_SENTINEL,
+            amount: totalDue,
+            paidAt: paidAt.toISOString(),
+            recordedAt: now.toISOString(),
+          },
+        ],
+        now,
       )
 
-      let fineAmount = currentFineAmount
-      if (daysOverdue > 0 && currentAmountPaid === 0 && currentFineAmount === 0) {
-        fineAmount = calculateFine(installmentAmount, appliedFineType!, appliedFineValue!)
+      const newPayment = replay.payments.find((p) => p.id === BULK_PAYMENT_SENTINEL)!
+      const allocation = {
+        interestCovered: newPayment.interestCovered,
+        fineCovered: newPayment.fineCovered,
+        principalCovered: newPayment.principalCovered,
       }
 
-      const remainingPrincipal = installmentAmount - currentAmountPaid
-      const interestAmount = calculateInterest(remainingPrincipal, daysOverdue, appliedInterestRate!)
-
-      // Pay the full remaining amount (principal + fine + interest)
-      const totalDue = remainingPrincipal + fineAmount + interestAmount
-
-      const state: InstallmentState = {
-        amount: installmentAmount,
-        amountPaid: currentAmountPaid,
-        fineAmount,
-        interestAmount,
+      for (const replayed of replay.payments) {
+        if (replayed.id === BULK_PAYMENT_SENTINEL) continue
+        const existing = existingPayments.find((ep) => ep.id === replayed.id)
+        if (!existing) continue
+        await tx
+          .update(paymentRecords)
+          .set({
+            interestCovered: replayed.interestCovered.toFixed(2),
+            fineCovered: replayed.fineCovered.toFixed(2),
+            principalCovered: replayed.principalCovered.toFixed(2),
+          })
+          .where(eq(paymentRecords.id, existing.id))
       }
 
-      const allocation = allocatePayment(state, totalDue)
-
-      const finalAmountPaid = currentAmountPaid + allocation.principalCovered
+      const finalAmountPaid = replay.installmentState.amountPaid
+      const finalFineAmount = replay.installmentState.fineAmount
+      const finalInterestAmount = replay.installmentState.interestAmount
+      const finalLastCalcAt = replay.installmentState.lastFineInterestCalcAt
+        ? new Date(replay.installmentState.lastFineInterestCalcAt)
+        : paidAt
 
       // Create payment record
       const [paymentRecord] = await tx
@@ -935,6 +1001,7 @@ export async function bulkPayInstallments(
           fineCovered: allocation.fineCovered.toFixed(2),
           principalCovered: allocation.principalCovered.toFixed(2),
           paidAt,
+          recordedAt: now,
           recordedBy: userId,
         })
         .returning()
@@ -962,17 +1029,22 @@ export async function bulkPayInstallments(
         recordedBy: userId,
       })
 
-      // Update installment to paid
+      // Update installment
+      const isPaid =
+        finalAmountPaid >= installmentAmount &&
+        finalFineAmount <= 0 &&
+        finalInterestAmount <= 0
+
       await tx
         .update(installments)
         .set({
           amountPaid: finalAmountPaid.toFixed(2),
-          fineAmount: '0',
-          interestAmount: '0',
-          lastFineInterestCalcAt: paidAt,
-          status: 'paid',
-          paidAt,
-          paymentMethod: data.paymentMethod,
+          fineAmount: Math.max(0, finalFineAmount).toFixed(2),
+          interestAmount: Math.max(0, finalInterestAmount).toFixed(2),
+          lastFineInterestCalcAt: finalLastCalcAt,
+          status: isPaid ? 'paid' : 'pending',
+          paidAt: isPaid ? paidAt : undefined,
+          paymentMethod: isPaid ? data.paymentMethod : undefined,
           updatedAt: new Date(),
         })
         .where(eq(installments.id, installmentId))
@@ -1157,6 +1229,121 @@ export async function bulkCancelEntries(
       cancelledCount: data.entryIds.length,
       revertedCount: renegLinks.length > 0 ? [...new Set(renegLinks.map((l) => l.originalEntryId))].length : 0,
     }
+  })
+}
+
+/**
+ * Reverses `bulkCancelEntries`. Statuses are recomputed by `updateEntryStatus`
+ * rather than restored from a stored value, so a charge that had a payment
+ * before it was cancelled comes back `partial`, not `pending`.
+ */
+export async function uncancelEntries(
+  tenantId: string,
+  userId: string,
+  data: { entryIds: string[]; reason: string }
+) {
+  return withTransaction(async (tx) => {
+    const entries = await tx
+      .select({ id: financialEntries.id, status: financialEntries.status })
+      .from(financialEntries)
+      .where(
+        and(
+          eq(financialEntries.tenantId, tenantId),
+          inArray(financialEntries.id, data.entryIds),
+          isNull(financialEntries.deletedAt)
+        )
+      )
+
+    if (entries.length !== data.entryIds.length) {
+      const foundIds = entries.map((e) => e.id)
+      const missing = data.entryIds.filter((id) => !foundIds.includes(id))
+      throw new BusinessError(
+        'ENTRY_NOT_FOUND',
+        `Cobranças não encontradas: ${missing.join(', ')}`
+      )
+    }
+
+    if (entries.some((e) => e.status !== 'cancelled')) {
+      throw new BusinessError(
+        'ENTRY_NOT_CANCELLED',
+        'Apenas cobranças canceladas podem ser reativadas'
+      )
+    }
+
+    // Reactivating an original whose replacement is still live would make the
+    // same debt collectible twice.
+    const liveReplacements = await tx
+      .select({ originalEntryId: renegotiationLinks.originalEntryId })
+      .from(renegotiationLinks)
+      .where(inArray(renegotiationLinks.originalEntryId, data.entryIds))
+
+    if (liveReplacements.length > 0) {
+      throw new BusinessError(
+        'ENTRY_HAS_REPLACEMENT',
+        'Esta cobrança foi renegociada e a cobrança substituta continua ativa. Cancele a substituta primeiro.'
+      )
+    }
+
+    // A replacement charge loses its renegotiation_links rows when it is
+    // cancelled, so its own creation log is the only per-entry record that it
+    // was one. The cancel log's `revertedOriginals` is written for the whole
+    // batch and must not be used here.
+    const creationLogs = await tx
+      .select({ entityId: auditLogs.entityId, changes: auditLogs.changes })
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.tenantId, tenantId),
+          eq(auditLogs.entityType, 'financial_entry'),
+          eq(auditLogs.action, 'create'),
+          inArray(auditLogs.entityId, data.entryIds)
+        )
+      )
+
+    const isReplacement = creationLogs.some((log) => {
+      const changes = log.changes as { type?: { new?: unknown } } | null
+      return changes?.type?.new === 'renegotiation'
+    })
+    if (isReplacement) {
+      throw new BusinessError(
+        'ENTRY_FROM_RENEGOTIATION',
+        'Esta cobrança veio de uma renegociação cancelada. Refaça a renegociação.'
+      )
+    }
+
+    const now = new Date()
+
+    await tx
+      .update(installments)
+      .set({ status: 'pending', updatedAt: now })
+      .where(
+        and(
+          eq(installments.tenantId, tenantId),
+          inArray(installments.financialEntryId, data.entryIds),
+          eq(installments.status, 'cancelled')
+        )
+      )
+
+    for (const entryId of data.entryIds) {
+      await updateEntryStatus(tx, tenantId, entryId)
+
+      await createAuditLog(
+        {
+          tenantId,
+          userId,
+          action: 'update',
+          entityType: 'financial_entry',
+          entityId: entryId,
+          changes: {
+            status: { old: 'cancelled', new: 'reactivated' },
+            reason: { old: null, new: data.reason },
+          },
+        },
+        tx
+      )
+    }
+
+    return { uncancelledCount: data.entryIds.length }
   })
 }
 
@@ -1394,7 +1581,7 @@ export async function getFinancialEntry(tenantId: string, entryId: string) {
             isNull(paymentRecords.reversedAt)
           )
         )
-        .orderBy(paymentRecords.paidAt)
+        .orderBy(paymentRecords.paidAt, paymentRecords.recordedAt)
     : []
 
   // Group payment records by installment
@@ -1405,58 +1592,43 @@ export async function getFinancialEntry(tenantId: string, entryId: string) {
     paymentsByInstallment.set(pr.installmentId, list)
   }
 
-  // Load settings for penalty calculations
-  const [settings] = await db
-    .select()
-    .from(financialSettings)
-    .where(eq(financialSettings.tenantId, tenantId))
-    .limit(1)
+  const settings = await loadFinancialSettings(db, tenantId)
+  const now = new Date()
 
-  const gracePeriodDays = settings?.gracePeriodDays ?? 0
-
-  // Compute current penalties for each installment
+  // Settled and cancelled rows keep what is stored. Everything else is
+  // priced by the engine, which is the only thing the payment dialog reads.
   const installmentsWithDetails = entryInstallments.map((inst) => {
     const payments = paymentsByInstallment.get(inst.id) ?? []
-    const amount = Number(inst.amount)
-    const amountPaid = Number(inst.amountPaid ?? 0)
-    const storedFine = Number(inst.fineAmount ?? 0)
 
-    // Calculate current interest and fine on the fly for pending installments
-    // Use tenant settings as fallback when penalty rates haven't been snapshotted yet
-    const effectiveInterestRate = Number(inst.appliedInterestRate ?? settings?.monthlyInterestPercent ?? 0)
-    const effectiveFineValue = Number(inst.appliedFineValue ?? settings?.fineValue ?? 0)
-    const effectiveFineType = inst.appliedFineType ?? settings?.fineType ?? 'percentage'
-
-    let currentInterest = Number(inst.interestAmount ?? 0)
-    let currentFine = storedFine
-    if (inst.status === 'pending' && effectiveInterestRate > 0) {
-      const daysOverdue = getDaysOverdue(
-        inst.lastFineInterestCalcAt
-          ? new Date(inst.lastFineInterestCalcAt).toISOString()
-          : inst.dueDate,
-        inst.lastFineInterestCalcAt ? 0 : gracePeriodDays,
-      )
-      if (daysOverdue > 0) {
-        currentInterest = calculateInterest(
-          amount - amountPaid,
-          daysOverdue,
-          effectiveInterestRate
-        )
-        // Compute fine for display if not yet stored (applied on first payment)
-        if (storedFine === 0 && effectiveFineValue > 0) {
-          currentFine = calculateFine(
-            amount,
-            effectiveFineType,
-            effectiveFineValue
-          )
-        }
+    if (inst.status === 'paid' || inst.status === 'cancelled') {
+      return {
+        ...inst,
+        computedInterestAmount: Number(inst.interestAmount ?? 0),
+        computedFineAmount: Number(inst.fineAmount ?? 0),
+        paymentRecords: payments,
       }
     }
 
+    const base: InstallmentBase = {
+      amount: Number(inst.amount),
+      dueDate: inst.dueDate,
+      appliedFineValue: Number(inst.appliedFineValue ?? settings.fineValue),
+      appliedFineType: inst.appliedFineType ?? settings.fineType,
+      appliedInterestRate: Number(inst.appliedInterestRate ?? settings.monthlyInterestPercent),
+      gracePeriodDays: settings.gracePeriodDays,
+    }
+    const prior: PaymentInput[] = payments.map((p) => ({
+      id: p.id,
+      amount: Number(p.amount),
+      paidAt: new Date(p.paidAt).toISOString(),
+      recordedAt: new Date(p.recordedAt).toISOString(),
+    }))
+    const quote = quoteInstallment(base, prior, now)
+
     return {
       ...inst,
-      computedInterestAmount: currentInterest,
-      computedFineAmount: currentFine,
+      computedInterestAmount: quote.interestAmount,
+      computedFineAmount: quote.fineAmount,
       paymentRecords: payments,
     }
   })
@@ -1684,7 +1856,7 @@ export async function payInstallment(
 
 // ─── HELPERS ────────────────────────────────────────────────────────
 
-async function loadFinancialSettings(tx: typeof db, tenantId: string) {
+export async function loadFinancialSettings(tx: typeof db, tenantId: string) {
   const [settings] = await tx
     .select()
     .from(financialSettings)

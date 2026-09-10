@@ -1,11 +1,23 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   calculateFine,
   calculateInterest,
   allocatePayment,
   replayPayments,
-  getDaysOverdue,
+  quoteInstallment,
+  type PaymentInput,
 } from '../penalties'
+
+// recordedAt defaults to paidAt so pre-existing test literals stay short;
+// pass a fourth argument where recordedAt must differ from paidAt.
+function pay(
+  id: string,
+  amount: number,
+  paidAt: string,
+  recordedAt: string = paidAt,
+): PaymentInput {
+  return { id, amount, paidAt, recordedAt }
+}
 
 describe('calculateFine', () => {
   it('calculates percentage fine correctly', () => {
@@ -64,45 +76,6 @@ describe('calculateInterest', () => {
 
   it('rounds to 2 decimal places', () => {
     expect(calculateInterest(333.33, 7, 1)).toBe(0.78)
-  })
-})
-
-describe('getDaysOverdue', () => {
-  it('returns 0 when not yet due', () => {
-    const future = new Date()
-    future.setDate(future.getDate() + 10)
-    expect(getDaysOverdue(future.toISOString(), 0)).toBe(0)
-  })
-
-  it('respects grace period', () => {
-    const past = new Date()
-    past.setDate(past.getDate() - 2)
-    expect(getDaysOverdue(past.toISOString(), 3)).toBe(0) // within grace
-    expect(getDaysOverdue(past.toISOString(), 1)).toBe(1) // 2 days - 1 grace = 1
-  })
-
-  it('counts days after grace period', () => {
-    const past = new Date()
-    past.setDate(past.getDate() - 35)
-    expect(getDaysOverdue(past.toISOString(), 5)).toBe(30)
-  })
-
-  it('treats a bare YYYY-MM-DD dueDate as BR-local midnight (not UTC)', () => {
-    // Regression: old code did `new Date('2026-04-16')` which is UTC midnight
-    // → on a UTC host, comparing against a BR paidAt around midnight would
-    // double-count a day overdue. Anchoring to BR midnight keeps the math
-    // correct regardless of host TZ.
-    //
-    // A payment made at 23:30 BR on 2026-04-16 is 02:30Z on 2026-04-17.
-    // Due date is the same BR day → 0 days overdue.
-    const paidAt = new Date('2026-04-17T02:30:00.000Z')
-    expect(getDaysOverdue('2026-04-16', 0, paidAt)).toBe(0)
-  })
-
-  it('accepts a full ISO datetime and parses it directly', () => {
-    const dueIso = '2026-04-01T12:00:00.000Z'
-    const paidAt = new Date('2026-04-11T12:00:00.000Z')
-    expect(getDaysOverdue(dueIso, 0, paidAt)).toBe(10)
   })
 })
 
@@ -183,7 +156,9 @@ describe('replayPayments', () => {
   it('replays single payment correctly', () => {
     const result = replayPayments(
       { amount: 1000, dueDate: '2026-01-01', appliedFineValue: 2, appliedFineType: 'percentage', appliedInterestRate: 1, gracePeriodDays: 0 },
-      [{ amount: 500, paidAt: '2026-02-01T00:00:00Z' }], // 31 days overdue
+      // Feb 1 00:00Z is Jan 31 in BR, 30 days after the Jan 1 due date.
+      [pay('p1', 500, '2026-02-01T00:00:00Z')],
+      new Date('2026-09-03T14:04:50.000Z'),
     )
     expect(result.payments.length).toBe(1)
     expect(result.payments[0].interestCovered).toBeGreaterThan(0)
@@ -194,9 +169,10 @@ describe('replayPayments', () => {
     const result = replayPayments(
       { amount: 1000, dueDate: '2026-01-01', appliedFineValue: 2, appliedFineType: 'percentage', appliedInterestRate: 1, gracePeriodDays: 0 },
       [
-        { amount: 200, paidAt: '2026-02-01T00:00:00Z' },
-        { amount: 300, paidAt: '2026-03-01T00:00:00Z' },
+        pay('p1', 200, '2026-02-01T00:00:00Z'),
+        pay('p2', 300, '2026-03-01T00:00:00Z'),
       ],
+      new Date('2026-09-03T14:04:50.000Z'),
     )
     expect(result.payments.length).toBe(2)
     // Second payment should have less interest (lower remaining principal)
@@ -208,9 +184,10 @@ describe('replayPayments', () => {
     const result = replayPayments(
       { amount: 1000, dueDate: '2026-01-01', appliedFineValue: 2, appliedFineType: 'percentage', appliedInterestRate: 1, gracePeriodDays: 0 },
       [
-        { amount: 200, paidAt: '2026-02-01T00:00:00Z' }, // backdated
-        { amount: 300, paidAt: '2026-03-01T00:00:00Z' }, // original
+        pay('p1', 200, '2026-02-01T00:00:00Z'), // backdated
+        pay('p2', 300, '2026-03-01T00:00:00Z'), // original
       ],
+      new Date('2026-09-03T14:04:50.000Z'),
     )
     // After replay, both allocations should be correct for their respective dates
     expect(result.payments[0].paidAt).toBe('2026-02-01T00:00:00Z')
@@ -222,9 +199,10 @@ describe('replayPayments', () => {
     const result = replayPayments(
       { amount: 1000, dueDate: '2026-03-01', appliedFineValue: 2, appliedFineType: 'percentage', appliedInterestRate: 1, gracePeriodDays: 0 },
       [
-        { amount: 200, paidAt: '2026-02-15T00:00:00Z' }, // before due date — no fine
-        { amount: 300, paidAt: '2026-04-01T00:00:00Z' }, // 31 days after due — should apply fine
+        pay('p1', 200, '2026-02-15T00:00:00Z'), // before due date, no fine
+        pay('p2', 300, '2026-04-01T00:00:00Z'), // 31 days after due, so the fine applies
       ],
+      new Date('2026-09-03T14:04:50.000Z'),
     )
     // First payment: no penalties (not overdue yet)
     expect(result.payments[0].fineCovered).toBe(0)
@@ -240,13 +218,269 @@ describe('replayPayments', () => {
     const result = replayPayments(
       { amount: 1000, dueDate: '2026-01-01', appliedFineValue: 2, appliedFineType: 'percentage', appliedInterestRate: 1, gracePeriodDays: 0 },
       [
-        { amount: 100, paidAt: '2026-02-01T00:00:00Z' },
-        { amount: 100, paidAt: '2026-03-01T00:00:00Z' },
-        { amount: 100, paidAt: '2026-04-01T00:00:00Z' },
+        pay('p1', 100, '2026-02-01T00:00:00Z'),
+        pay('p2', 100, '2026-03-01T00:00:00Z'),
+        pay('p3', 100, '2026-04-01T00:00:00Z'),
       ],
+      new Date('2026-09-03T14:04:50.000Z'),
     )
     // Total fine covered across all payments should not exceed the original fine (20)
     const totalFineCovered = result.payments.reduce((sum, p) => sum + p.fineCovered, 0)
     expect(totalFineCovered).toBeLessThanOrEqual(20)
+  })
+})
+
+const BASE = {
+  amount: 750,
+  dueDate: '2026-05-22',
+  appliedFineValue: 2,
+  appliedFineType: 'percentage',
+  appliedInterestRate: 1,
+  gracePeriodDays: 0,
+}
+
+describe('quoteInstallment', () => {
+  it('prices an unpaid overdue installment as of now', () => {
+    const q = quoteInstallment(BASE, [], new Date('2026-09-03T14:04:50.000Z'))
+    expect(q.remainingPrincipal).toBe(750)
+    expect(q.fineAmount).toBe(15)
+    expect(q.interestAmount).toBe(26)
+    expect(q.totalDue).toBe(791)
+  })
+
+  it('prices one day cheaper for an instant that is still the previous BR calendar day', () => {
+    // 2026-09-03T00:00:00Z is 21:00 BRT on Sep 2, a different BR calendar
+    // day than 2026-09-03T14:04:50Z (Sep 3 BRT) used above.
+    const q = quoteInstallment(BASE, [], new Date('2026-09-03T00:00:00.000Z'))
+    expect(q.interestAmount).toBe(25.75)
+    expect(q.totalDue).toBe(790.75)
+  })
+
+  it('charges nothing extra before the due date', () => {
+    const q = quoteInstallment(BASE, [], new Date('2026-05-01T12:00:00.000Z'))
+    expect(q.fineAmount).toBe(0)
+    expect(q.interestAmount).toBe(0)
+    expect(q.totalDue).toBe(750)
+  })
+
+  it('honours the grace period', () => {
+    const q = quoteInstallment(
+      { ...BASE, gracePeriodDays: 5 },
+      [],
+      new Date('2026-09-03T14:04:50.000Z'),
+    )
+    expect(q.interestAmount).toBe(24.75)
+  })
+
+  // AR-1: the headline backdating case. A later payment already exists; the
+  // quote must price the earlier date, not the state after that later payment.
+  it('ignores payments dated after the quote instant', () => {
+    const later = pay('p2', 500, '2026-08-01T12:00:00.000Z')
+    const q = quoteInstallment(BASE, [later], new Date('2026-06-22T12:00:00.000Z'))
+    expect(q.remainingPrincipal).toBe(750)
+    expect(q.fineAmount).toBe(15)
+    expect(q.interestAmount).toBe(7.75)
+    expect(q.totalDue).toBe(772.75)
+  })
+
+  it('agrees with replayPayments inserting the same payment chronologically', () => {
+    const later = pay('p2', 500, '2026-08-01T12:00:00.000Z')
+    const asOf = new Date('2026-06-22T12:00:00.000Z')
+    const q = quoteInstallment(BASE, [later], asOf)
+    const replayed = replayPayments(
+      BASE,
+      [later, pay('new', q.totalDue, asOf.toISOString())],
+      asOf,
+    )
+    const inserted = replayed.payments.find((p) => p.id === 'new')!
+    expect(inserted.excessAmount).toBe(0)
+    const covered =
+      inserted.interestCovered + inserted.fineCovered + inserted.principalCovered
+    expect(Math.round(covered * 100) / 100).toBe(q.totalDue)
+  })
+
+  it('does not charge the fine twice when an earlier payment took it', () => {
+    const first = pay('p1', 100, '2026-06-22T12:00:00.000Z')
+    expect(quoteInstallment(BASE, [first], new Date('2026-07-22T12:00:00.000Z')).fineAmount).toBe(0)
+  })
+
+  it('charges the fine when every earlier payment was on time', () => {
+    const onTime = pay('p1', 100, '2026-05-01T12:00:00.000Z')
+    expect(
+      quoteInstallment(BASE, [onTime], new Date('2026-09-03T14:04:50.000Z')).fineAmount,
+    ).toBe(15)
+  })
+
+  it('quotes zero once everything is settled', () => {
+    const settled = pay('p1', 791, '2026-09-03T14:04:50.000Z')
+    const q = quoteInstallment(BASE, [settled], new Date('2026-09-03T14:04:50.000Z'))
+    expect(q.totalDue).toBe(0)
+  })
+})
+
+describe('replayPayments interest origin', () => {
+  // AR-6: an on-time payment must not start the interest clock early.
+  it('starts interest at the due date, not at an earlier on-time payment', () => {
+    const onTime = pay('p1', 10, '2026-05-01T12:00:00.000Z')
+    const q = quoteInstallment(BASE, [onTime], new Date('2026-09-03T14:04:50.000Z'))
+    // 104 days from 2026-05-22, on a principal of 740, not 125 days from 2026-05-01.
+    expect(q.interestAmount).toBe(25.65)
+  })
+
+  it('keeps the grace period after an on-time payment', () => {
+    const onTime = pay('p1', 10, '2026-05-01T12:00:00.000Z')
+    const q = quoteInstallment(
+      { ...BASE, gracePeriodDays: 5 },
+      [onTime],
+      new Date('2026-09-03T14:04:50.000Z'),
+    )
+    expect(q.interestAmount).toBe(24.42)
+  })
+})
+
+describe('replayPayments carried interest', () => {
+  // AR-2: interest a payment does not cover stays owed.
+  it('carries interest a payment could not cover', () => {
+    const tiny = pay('p1', 1, '2026-09-03T14:04:50.000Z')
+    const result = replayPayments(BASE, [tiny], new Date('2026-09-03T14:04:50.000Z'))
+    expect(result.installmentState.carriedInterest).toBe(25)
+    expect(result.installmentState.amountPaid).toBe(0)
+    // 25 carried, plus zero elapsed since the payment instant.
+    expect(result.installmentState.interestAmount).toBe(25)
+  })
+
+  it('a later payment must still cover the carried interest', () => {
+    const tiny = pay('p1', 1, '2026-09-03T14:04:50.000Z')
+    const q = quoteInstallment(BASE, [tiny], new Date('2026-09-03T14:04:50.000Z'))
+    expect(q.interestAmount).toBe(25)
+    expect(q.fineAmount).toBe(15)
+    expect(q.totalDue).toBe(790)
+  })
+
+  it('carries nothing when the payment covers all interest', () => {
+    const big = pay('p1', 100, '2026-09-03T14:04:50.000Z')
+    expect(
+      replayPayments(BASE, [big], new Date('2026-09-03T14:04:50.000Z')).installmentState
+        .carriedInterest,
+    ).toBe(0)
+  })
+})
+
+describe('replayPayments ordering', () => {
+  // AR-medium: BR-noon anchoring makes same-instant payments common.
+  it('orders equal timestamps stably by id', () => {
+    const a = pay('aaa', 30, '2026-09-03T15:00:00.000Z')
+    const b = pay('bbb', 30, '2026-09-03T15:00:00.000Z')
+    const asOf = new Date('2026-09-03T15:00:00.000Z')
+    const forward = replayPayments(BASE, [a, b], asOf)
+    const backward = replayPayments(BASE, [b, a], asOf)
+    expect(forward.payments.map((p) => p.id)).toEqual(['aaa', 'bbb'])
+    expect(backward.payments.map((p) => p.id)).toEqual(['aaa', 'bbb'])
+    expect(forward.installmentState).toEqual(backward.installmentState)
+  })
+})
+
+describe('replayPayments fineApplied', () => {
+  it('is false when no payment was overdue', () => {
+    expect(
+      replayPayments(
+        BASE,
+        [pay('p1', 100, '2026-05-01T12:00:00.000Z')],
+        new Date('2026-09-03T14:04:50.000Z'),
+      ).installmentState.fineApplied,
+    ).toBe(false)
+  })
+
+  it('is true once an overdue payment took the fine', () => {
+    expect(
+      replayPayments(
+        BASE,
+        [pay('p1', 100, '2026-06-22T12:00:00.000Z')],
+        new Date('2026-09-03T14:04:50.000Z'),
+      ).installmentState.fineApplied,
+    ).toBe(true)
+  })
+
+  it('is false with no payments', () => {
+    expect(
+      replayPayments(BASE, [], new Date('2026-09-03T14:04:50.000Z')).installmentState.fineApplied,
+    ).toBe(false)
+  })
+})
+
+describe('replayPayments asOf', () => {
+  // The wall clock is frozen on a different day so this fails against an
+  // implementation that ignores asOf and reads new Date().
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-03T14:04:50.000Z'))
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('prices the trailing interest at asOf, not at the wall clock', () => {
+    const tiny = pay('p1', 1, '2026-09-03T14:04:50.000Z')
+    const later = replayPayments(BASE, [tiny], new Date('2026-09-13T14:04:50.000Z'))
+    // 25 carried plus ten more days on 750 at 1%/month.
+    expect(later.installmentState.interestAmount).toBe(27.5)
+  })
+})
+
+describe('fine gate on the absolute due date', () => {
+  // Two payments under 24h apart used to floor to zero days each and dodge
+  // the fine entirely. Calendar-day arithmetic fixes the count; the gate on
+  // the absolute due date fixes the trigger.
+  it('charges the fine on a payment the day after the due date even if a payment landed on the due date', () => {
+    const onDueDay = pay('p1', 100, '2026-05-22T15:00:00.000Z') // 12:00 BRT May 22
+    const q = quoteInstallment(BASE, [onDueDay], new Date('2026-05-23T13:00:00.000Z')) // 10:00 BRT May 23
+    expect(q.fineAmount).toBe(15)
+    expect(q.interestAmount).toBe(0.22) // 650 * 1%/30 * 1 day
+  })
+
+  // The next two also pass against the pre-change code; they characterise the
+  // boundary so the calendar-day rewrite cannot move it.
+  it('does not charge the fine on the due date itself', () => {
+    const q = quoteInstallment(BASE, [], new Date('2026-05-22T23:00:00.000Z')) // 20:00 BRT May 22
+    expect(q.fineAmount).toBe(0)
+  })
+
+  it('charges the fine the calendar day after grace ends', () => {
+    const withGrace = { ...BASE, gracePeriodDays: 5 }
+    expect(quoteInstallment(withGrace, [], new Date('2026-05-27T20:00:00.000Z')).fineAmount).toBe(0)
+    expect(quoteInstallment(withGrace, [], new Date('2026-05-28T13:00:00.000Z')).fineAmount).toBe(15)
+  })
+})
+
+describe('no fine on a settled balance', () => {
+  it('quotes zero for an installment paid in full before the due date, months later', () => {
+    const early = pay('p1', 750, '2026-05-01T15:00:00.000Z')
+    const q = quoteInstallment(BASE, [early], new Date('2026-09-03T14:04:50.000Z'))
+    expect(q.remainingPrincipal).toBe(0)
+    expect(q.fineAmount).toBe(0)
+    expect(q.interestAmount).toBe(0)
+    expect(q.totalDue).toBe(0)
+  })
+})
+
+describe('tie-break on recordedAt', () => {
+  it('orders equal paidAt by recordedAt, and the in-flight payment last', () => {
+    const t = '2026-09-03T15:00:00.000Z'
+    const older = pay('zzz', 30, t, '2026-09-03T15:00:01.000Z')
+    const inFlight = pay('__new__', 30, t, '2026-09-03T15:00:09.000Z')
+    const result = replayPayments(BASE, [inFlight, older], new Date(t))
+    expect(result.payments.map((p) => p.id)).toEqual(['zzz', '__new__'])
+    // The older payment takes all 26 of interest and 4 of the fine; the
+    // in-flight one meets no interest and covers the remaining 11 of fine.
+    expect(result.payments[0].interestCovered).toBe(26)
+    expect(result.payments[0].fineCovered).toBe(4)
+    expect(result.payments[1].interestCovered).toBe(0)
+    expect(result.payments[1].fineCovered).toBe(11)
+  })
+
+  it('is stable when the in-flight id is replaced by a uuid on a later replay', () => {
+    const t = '2026-09-03T15:00:00.000Z'
+    const a = pay('zzz', 30, t, '2026-09-03T15:00:01.000Z')
+    const b = pay('00000000-0000-4000-8000-000000000001', 30, t, '2026-09-03T15:00:09.000Z')
+    const result = replayPayments(BASE, [b, a], new Date(t))
+    expect(result.payments.map((p) => p.id)).toEqual(['zzz', b.id])
   })
 })

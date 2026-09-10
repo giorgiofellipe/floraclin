@@ -77,6 +77,26 @@ export function toBrYmd(date: Date): string {
   return formatInTimeZone(date, BR_TZ, 'yyyy-MM-dd')
 }
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000
+
+/** Days since epoch of a `YYYY-MM-DD` calendar day, for whole-day arithmetic. */
+export function ymdDayIndex(ymd: string): number {
+  if (!YMD_ONLY.test(ymd)) {
+    throw new Error(`ymdDayIndex expected YYYY-MM-DD, got ${ymd}`)
+  }
+  const [y, m, d] = ymd.split('-').map(Number)
+  return Date.UTC(y, m - 1, d) / MS_PER_DAY
+}
+
+/**
+ * Days since epoch of the BR calendar day containing `date`. Subtracting two
+ * of these counts calendar days the way a person does: 21:00 and 10:00 the
+ * next morning are one day apart, not 0.54 of one.
+ */
+export function brDayIndex(date: Date): number {
+  return ymdDayIndex(toBrYmd(date))
+}
+
 /**
  * True when `ymd` is both shaped like `YYYY-MM-DD` and a real calendar day.
  * The shape check alone lets `2026-02-31` or `2026-13-01` through, which then

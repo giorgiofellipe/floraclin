@@ -218,6 +218,11 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
     return patientIds.size === 1
   }, [renegotiableEntries])
 
+  const canUncancel = useMemo(
+    () => selectedEntries.length > 0 && selectedEntries.every((e) => e.status === 'cancelled'),
+    [selectedEntries],
+  )
+
   const patientFilterItems = useMemo(
     () => {
       const items: Record<string, string> = { all: 'Todos pacientes' }
@@ -585,6 +590,7 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
         selectedInstallmentIds={selectedInstallmentIds}
         selectedEntryIds={selectedEntryIds}
         canRenegotiate={canRenegotiate}
+        canUncancel={canUncancel}
         onClear={() => setSelectedIds(new Set())}
         onRenegotiate={() => setRenegDialogOpen(true)}
         onSuccess={fetchEntries}

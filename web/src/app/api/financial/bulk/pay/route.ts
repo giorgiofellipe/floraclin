@@ -3,6 +3,7 @@ import { createAuditLog } from '@/lib/audit'
 import { requireWrite } from '@/lib/write-access'
 import { bulkPayInstallments } from '@/db/queries/financial'
 import { bulkPaySchema } from '@/validations/financial'
+import { BusinessError } from '@/lib/errors'
 import { handleApiError } from '@/lib/api-error'
 
 export async function POST(request: Request) {
@@ -40,9 +41,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: results })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('não encontradas') || msg.includes('já pagas')) {
-      return NextResponse.json({ error: msg }, { status: 400 })
+    if (error instanceof BusinessError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 409 })
     }
     return handleApiError(error, request)
   }
