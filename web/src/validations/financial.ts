@@ -41,7 +41,7 @@ export const recordPaymentSchema = z.object({
   installmentId: z.string().uuid('Parcela inválida'),
   amount: z
     .number()
-    .min(0.01, 'Valor deve ser positivo')
+    .min(0.01, 'Valor mínimo é R$ 0,01')
     .max(MAX_PAYMENT_AMOUNT, 'Valor acima do limite permitido')
     .refine(hasAtMostTwoDecimals, 'Valor deve ter no máximo duas casas decimais'),
   paymentMethod: z.enum(paymentMethods as [string, ...string[]], {

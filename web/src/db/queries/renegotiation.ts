@@ -137,8 +137,6 @@ export async function renegotiateCharges(
         }))
         const quote = quoteInstallment(base, prior, now)
 
-        // The engine's remaining principal, not the stored column: rows written
-        // before the calendar-day fix can carry a stale amount_paid.
         entryRemainingPrincipal += quote.remainingPrincipal
         entryPenalties += quote.fineAmount + quote.interestAmount
       }
