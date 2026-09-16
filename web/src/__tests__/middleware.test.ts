@@ -141,3 +141,12 @@ describe('middleware: the approval gate is gone', () => {
     }
   })
 })
+
+describe('middleware: the web app manifest is public', () => {
+  it('does not redirect an unauthenticated request for /manifest.webmanifest', () => {
+    // Chrome fetches the manifest without cookies before it decides the app
+    // is installable. A redirect to /login here means no install prompt, ever.
+    const res = run('/manifest.webmanifest', null)
+    expect(locationOf(res)).toBeNull()
+  })
+})

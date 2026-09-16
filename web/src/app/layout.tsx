@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Cormorant_Garamond, Jost } from 'next/font/google'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
@@ -14,9 +14,19 @@ const cormorant = Cormorant_Garamond({
   variable: '--font-display',
 })
 
+export const viewport: Viewport = {
+  themeColor: '#1C2B1E',
+}
+
 export const metadata: Metadata = {
   title: 'FloraClin',
   description: 'Sistema para clínicas de Harmonização Orofacial',
+  applicationName: 'FloraClin',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'FloraClin',
+  },
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
