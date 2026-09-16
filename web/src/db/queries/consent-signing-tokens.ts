@@ -8,7 +8,7 @@ const SIGNING_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
 export async function createSigningToken(
   tenantId: string,
   patientId: string,
-  procedureRecordId: string,
+  procedureRecordId: string | null,
   consentTemplateIds: string[],
   createdBy: string,
   renderedContents?: Record<string, string>,

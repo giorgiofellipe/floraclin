@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, Plus, FileCheck } from 'lucide-react'
+import { Loader2, Plus, FileCheck, PenLine, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -17,9 +17,12 @@ import {
 } from '@/components/ui/select'
 import { ConsentHistory } from '@/components/consent/consent-history'
 import { ConsentViewer } from '@/components/consent/consent-viewer'
+import { SendConsentSigningLink } from '@/components/procedures/approval/send-consent-signing-link'
 import { useConsentTemplates } from '@/hooks/queries/use-consent'
 import { useTenant } from '@/hooks/queries/use-tenant'
 import { useProfile } from '@/hooks/queries/use-profile'
+import { interpolateContract, buildContractData } from '@/lib/contract-interpolation'
+import { cn } from '@/lib/utils'
 
 interface ConsentTemplate {
   id: string
@@ -30,17 +33,27 @@ interface ConsentTemplate {
   isActive: boolean
 }
 
+type SigningMode = 'local' | 'remote'
+
 interface PatientConsentTabProps {
   patientId: string
   patientName?: string
   patientCpf?: string | null
-  patientHasPhone?: boolean
+  patientPhone?: string | null
+  whatsappApiEnabled?: boolean
 }
 
-export function PatientConsentTab({ patientId, patientName, patientCpf, patientHasPhone = false }: PatientConsentTabProps) {
+export function PatientConsentTab({
+  patientId,
+  patientName,
+  patientCpf,
+  patientPhone,
+  whatsappApiEnabled = false,
+}: PatientConsentTabProps) {
   const [showNewConsent, setShowNewConsent] = useState(false)
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [selectedTemplate, setSelectedTemplate] = useState<ConsentTemplate | null>(null)
+  const [mode, setMode] = useState<SigningMode>('local')
 
   const { data: rawTemplates, isLoading: loadingTemplates } = useConsentTemplates()
   const { data: tenant } = useTenant()
@@ -79,10 +92,33 @@ export function PatientConsentTab({ patientId, patientName, patientCpf, patientH
     load()
   }, [selectedTemplateId])
 
-  const handleAccepted = () => {
-    setShowNewConsent(false)
+  // The remote page shows this text verbatim, so it must match what the
+  // local viewer would have shown for the same template.
+  const renderedContents = useMemo(() => {
+    if (!selectedTemplate || selectedTemplate.type !== 'service_contract') return undefined
+    const content = interpolateContract(selectedTemplate.content, buildContractData(
+      [], [], { totalAmount: 0, installmentCount: 1 },
+      { fullName: patientName ?? '', cpf: patientCpf },
+      practitionerName,
+      clinicName,
+    ))
+    return { [selectedTemplate.id]: content }
+  }, [selectedTemplate, patientName, patientCpf, practitionerName, clinicName])
+
+  const resetDialog = () => {
     setSelectedTemplateId('')
     setSelectedTemplate(null)
+    setMode('local')
+  }
+
+  const handleAccepted = () => {
+    setShowNewConsent(false)
+    resetDialog()
+  }
+
+  const handleOpenChange = (open: boolean) => {
+    setShowNewConsent(open)
+    if (!open) resetDialog()
   }
 
   return (
@@ -95,14 +131,13 @@ export function PatientConsentTab({ patientId, patientName, patientCpf, patientH
         </Button>
       </div>
 
-      <ConsentHistory patientId={patientId} patientName={patientName} patientCpf={patientCpf} patientHasPhone={patientHasPhone} />
+      <ConsentHistory patientId={patientId} patientName={patientName} patientCpf={patientCpf} patientHasPhone={!!patientPhone} />
 
-      <Dialog open={showNewConsent} onOpenChange={setShowNewConsent}>
+      <Dialog open={showNewConsent} onOpenChange={handleOpenChange}>
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Novo Termo de Consentimento</DialogTitle>
           </DialogHeader>
-
           {loadingTemplates ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="size-5 animate-spin text-mid" />
@@ -131,24 +166,75 @@ export function PatientConsentTab({ patientId, patientName, patientCpf, patientH
               </div>
 
               {selectedTemplate && (
-                <ConsentViewer
-                  template={selectedTemplate}
-                  patientId={patientId}
-                  patientCpf={patientCpf}
-                  requireSignature
-                  contractContext={{
-                    patientName: patientName ?? '',
-                    patientCpf,
-                    clinicName,
-                    practitionerName,
-                  }}
-                  onAccepted={handleAccepted}
-                />
+                <>
+                  <SigningModeToggle mode={mode} onChange={setMode} />
+
+                  {mode === 'local' ? (
+                    <ConsentViewer
+                      template={selectedTemplate}
+                      patientId={patientId}
+                      patientCpf={patientCpf}
+                      requireSignature
+                      contractContext={{
+                        patientName: patientName ?? '',
+                        patientCpf,
+                        clinicName,
+                        practitionerName,
+                      }}
+                      onAccepted={handleAccepted}
+                    />
+                  ) : (
+                    <div className="space-y-3 rounded-md border border-sage/15 bg-sage/5 p-4">
+                      <p className="text-sm text-mid">
+                        O paciente recebe um link para ler e assinar o termo no próprio celular. O link vale por 24 horas.
+                      </p>
+                      <SendConsentSigningLink
+                        patientId={patientId}
+                        patientName={patientName ?? ''}
+                        patientPhone={patientPhone}
+                        consentTemplateIds={[selectedTemplate.id]}
+                        renderedContents={renderedContents}
+                        whatsappApiEnabled={whatsappApiEnabled}
+                        label="Gerar link de assinatura"
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+function SigningModeToggle({ mode, onChange }: { mode: SigningMode; onChange: (mode: SigningMode) => void }) {
+  const options: { value: SigningMode; label: string; icon: typeof PenLine }[] = [
+    { value: 'local', label: 'Assinar neste dispositivo', icon: PenLine },
+    { value: 'remote', label: 'Enviar por WhatsApp', icon: Send },
+  ]
+
+  return (
+    <div role="radiogroup" aria-label="Forma de assinatura" className="grid grid-cols-2 gap-2">
+      {options.map(({ value, label, icon: Icon }) => (
+        <button
+          key={value}
+          type="button"
+          role="radio"
+          aria-checked={mode === value}
+          onClick={() => onChange(value)}
+          className={cn(
+            'flex items-center justify-center gap-2 rounded-[3px] border px-3 py-2 text-sm font-medium transition-colors',
+            mode === value
+              ? 'border-forest bg-forest text-cream'
+              : 'border-sage/30 text-charcoal hover:bg-sage/5',
+          )}
+        >
+          <Icon className="size-4" />
+          {label}
+        </button>
+      ))}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { consentTemplateSchema, consentAcceptanceSchema, deviceFingerprintSchema, remoteConsentSignatureSchema, CONSENT_SIGNING_TEMPLATE_PURPOSE } from '../consent'
+import { consentTemplateSchema, consentAcceptanceSchema, deviceFingerprintSchema, remoteConsentSignatureSchema, CONSENT_SIGNING_TEMPLATE_PURPOSE, sendSigningLinkSchema } from '../consent'
 
 describe('consentTemplateSchema', () => {
   const validTemplate = {
@@ -189,5 +189,35 @@ describe('remoteConsentSignatureSchema', () => {
 describe('CONSENT_SIGNING_TEMPLATE_PURPOSE', () => {
   it('is defined as consent_signing_link', () => {
     expect(CONSENT_SIGNING_TEMPLATE_PURPOSE).toBe('consent_signing_link')
+  })
+})
+
+describe('sendSigningLinkSchema', () => {
+  const patientId = '11111111-1111-4111-8111-111111111111'
+  const templateId = '33333333-3333-4333-8333-333333333333'
+
+  it('accepts consent types with a procedure', () => {
+    const result = sendSigningLinkSchema.safeParse({
+      patientId,
+      procedureRecordId: '22222222-2222-4222-8222-222222222222',
+      consentTypes: ['botox'],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts explicit template ids without a procedure', () => {
+    const result = sendSigningLinkSchema.safeParse({ patientId, consentTemplateIds: [templateId] })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects both selectors together and neither selector', () => {
+    expect(
+      sendSigningLinkSchema.safeParse({ patientId, consentTypes: ['botox'], consentTemplateIds: [templateId] }).success,
+    ).toBe(false)
+    expect(sendSigningLinkSchema.safeParse({ patientId }).success).toBe(false)
+  })
+
+  it('rejects an empty template id list', () => {
+    expect(sendSigningLinkSchema.safeParse({ patientId, consentTemplateIds: [] }).success).toBe(false)
   })
 })

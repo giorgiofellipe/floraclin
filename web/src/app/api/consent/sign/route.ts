@@ -64,7 +64,7 @@ export async function POST(request: Request) {
           {
             patientId: tokenData.patientId,
             consentTemplateId: sig.consentTemplateId,
-            procedureRecordId: tokenData.procedureRecordId,
+            procedureRecordId: tokenData.procedureRecordId ?? undefined,
             acceptanceMethod: 'signature',
             signatureData: sig.signatureData,
           },

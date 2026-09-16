@@ -378,7 +378,8 @@ export function PatientDetailContent({
               patientId={patient.id}
               patientName={patient.fullName}
               patientCpf={patient.cpf}
-              patientHasPhone={!!patient.phone}
+              patientPhone={patient.phone}
+              whatsappApiEnabled={whatsappApiEnabled}
             />
           )}
           {tab === 'financeiro' && (
