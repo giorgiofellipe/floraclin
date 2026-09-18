@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/auth', () => ({
   getAuthContext: vi.fn(),
+  requireRole: vi.fn(),
 }))
 
 vi.mock('@/db/queries/tenants', () => ({
@@ -35,7 +36,7 @@ vi.mock('@/lib/plans', async () => {
   const actual = await vi.importActual<typeof import('@/lib/plans')>('@/lib/plans')
   return {
     ...actual,
-    isSubscriptionActive: vi.fn(),
+    subscriptionGate: vi.fn(),
   }
 })
 
@@ -48,11 +49,11 @@ vi.mock('@/lib/meta/events', () => ({
   enqueueMetaEvent: vi.fn(),
 }))
 
-import { getAuthContext } from '@/lib/auth'
+import { getAuthContext, requireRole } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { getConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
 import { sendTextMessage } from '@/lib/whatsapp'
-import { isSubscriptionActive } from '@/lib/plans'
+import { subscriptionGate } from '@/lib/plans'
 import { getProspect, updateProspect } from '@/db/queries/prospects'
 import { enqueueMetaEvent } from '@/lib/meta/events'
 import { POST } from '../[id]/messages/route'
@@ -105,19 +106,25 @@ function params() {
   return { params: Promise.resolve({ id: 'conv-1' }) }
 }
 
+const AUTH_CTX = {
+  tenantId: 'tenant-1',
+  userId: 'user-1',
+  role: 'owner',
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(getAuthContext).mockResolvedValue({
-    tenantId: 'tenant-1',
-    userId: 'user-1',
-    role: 'owner',
-  } as never)
+  vi.mocked(getAuthContext).mockResolvedValue(AUTH_CTX as never)
+  // The route gates writes with `requireWrite`, which is `requireRole` plus
+  // `subscriptionGate`. Both resolve to "allowed" so these tests stay about
+  // Meta Contact emission.
+  vi.mocked(requireRole).mockResolvedValue(AUTH_CTX as never)
   vi.mocked(getTenant).mockResolvedValue({
     id: 'tenant-1',
     name: 'Clínica Flora',
     settings: { whatsapp_mode: 'own', whatsapp_enabled: true },
   } as never)
-  vi.mocked(isSubscriptionActive).mockResolvedValue(true)
+  vi.mocked(subscriptionGate).mockResolvedValue(null)
   vi.mocked(sendTextMessage).mockResolvedValue({ metaMessageId: 'wamid-1' } as never)
   vi.mocked(createMessage).mockResolvedValue({ id: 'msg-1' } as never)
 })

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { getConversation, markConversationRead } from '@/db/queries/whatsapp'
+import { requireWrite } from '@/lib/write-access'
 import { isWhatsAppEnabled } from '@/lib/whatsapp'
 import { db } from '@/db/client'
 import { whatsappConversations } from '@/db/schema'
@@ -64,6 +65,12 @@ export async function PATCH(
     if (!allowedRoles.includes(ctx.role) && ctx.role !== 'owner') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+
+    // Role is already gated dynamically above (whatsapp_allowed_roles ?? ['owner']);
+    // requireWrite here only adds the subscription check, so it is passed every
+    // role to avoid re-narrowing what the dynamic check already allowed.
+    const { blocked } = await requireWrite('owner', 'practitioner', 'receptionist', 'financial')
+    if (blocked) return blocked
 
     const body = await request.json()
     const parsed = conversationActionSchema.safeParse(body)

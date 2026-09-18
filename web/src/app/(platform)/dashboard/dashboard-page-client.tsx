@@ -62,7 +62,7 @@ export function DashboardPageClient() {
             {subtitleParts.join(' \u00b7 ')}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <MonthSelector
             month={selectedMonth}
             currentMonth={currentMonth}
@@ -76,20 +76,22 @@ export function DashboardPageClient() {
               </span>
             </div>
           )}
-          <Link
-            href="/pacientes?new=true"
-            className="inline-flex items-center justify-center rounded-lg border border-sage/30 px-4 py-2 text-[13px] font-medium text-charcoal hover:bg-[#F0F7F1] transition-colors"
-          >
-            <UserPlus className="mr-1.5 h-4 w-4" />
-            Novo Paciente
-          </Link>
-          <Link
-            href="/agenda?new=true"
-            className="inline-flex items-center justify-center rounded-lg bg-forest px-4 py-2 text-[13px] font-medium text-cream hover:bg-sage transition-colors"
-          >
-            <CalendarPlus className="mr-1.5 h-4 w-4" />
-            Novo Agendamento
-          </Link>
+          <div className="flex w-full gap-3 sm:w-auto">
+            <Link
+              href="/pacientes?new=true"
+              className="inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-sage/30 px-4 py-2 text-[13px] font-medium text-charcoal hover:bg-[#F0F7F1] transition-colors sm:flex-none"
+            >
+              <UserPlus className="mr-1.5 h-4 w-4" />
+              Novo Paciente
+            </Link>
+            <Link
+              href="/agenda?new=true"
+              className="inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-lg bg-forest px-4 py-2 text-[13px] font-medium text-cream hover:bg-sage transition-colors sm:flex-none"
+            >
+              <CalendarPlus className="mr-1.5 h-4 w-4" />
+              Novo Agendamento
+            </Link>
+          </div>
         </div>
       </div>
 

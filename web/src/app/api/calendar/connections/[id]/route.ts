@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import {
   updateConnection,
   deleteConnection,
@@ -16,12 +16,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getAuthContext()
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+    if (blocked) return blocked
     const { id } = await params
-
-    if (!['owner', 'practitioner'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
 
     if (ctx.role === 'practitioner') {
       const own = await getConnectionByUserId(ctx.tenantId, ctx.userId)
@@ -54,12 +51,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getAuthContext()
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+    if (blocked) return blocked
     const { id } = await params
-
-    if (!['owner', 'practitioner'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
 
     const connection = ctx.role === 'practitioner'
       ? await getConnectionByUserId(ctx.tenantId, ctx.userId)

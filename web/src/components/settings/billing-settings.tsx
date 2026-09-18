@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -38,6 +40,7 @@ interface BillingUsageResponse {
     status: SubscriptionStatus
     currentPeriodEnd: string
     stripeSubscriptionId: string | null
+    hasStripeCustomer: boolean
     source: string
   }
   plan: {
@@ -146,11 +149,13 @@ function UsageBar({ label, icon: Icon, used, limit }: {
 function PlanCard({
   plan,
   isCurrent,
+  isSwitch,
   isCheckingOut,
   onSubscribe,
 }: {
   plan: PlanItem
   isCurrent: boolean
+  isSwitch: boolean
   isCheckingOut: boolean
   onSubscribe: (slug: string) => void
 }) {
@@ -231,12 +236,12 @@ function PlanCard({
           {isCheckingOut ? (
             <>
               <Loader2Icon className="h-4 w-4 animate-spin" />
-              Redirecionando...
+              Aguarde...
             </>
           ) : (
             <>
               <CreditCardIcon className="h-4 w-4" />
-              Assinar
+              {isSwitch ? 'Mudar para este plano' : 'Assinar'}
             </>
           )}
         </Button>
@@ -245,12 +250,85 @@ function PlanCard({
   )
 }
 
+/**
+ * The message to show for a failed billing request.
+ *
+ * A 4xx body carries something written for this user ("Este já é o seu plano
+ * atual"). A 5xx carries whatever handleApiError produced, which is the
+ * English string "Internal Server Error", and putting that in a toast in
+ * front of a clinic owner helps nobody.
+ */
+async function errorMessage(res: Response, fallback: string): Promise<string> {
+  if (res.status >= 500) return fallback
+  const body = await res.json().catch(() => ({}))
+  return typeof body.error === 'string' && body.error ? body.error : fallback
+}
+
 export function BillingSettings() {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [checkingOutSlug, setCheckingOutSlug] = useState<string | null>(null)
   const queryClient = useQueryClient()
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const { update } = useSession()
 
-  const { data: usageData, isLoading: usageLoading } = useQuery<BillingUsageResponse>({
+  // Stripe redirects to success_url as soon as the card clears, before the
+  // webhook arrives. Without this, the customer lands back here and sees a
+  // read-only banner telling them to subscribe to what they just paid for.
+  const sessionId = searchParams.get('session_id')
+  const confirmedRef = useRef(false)
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(() => Boolean(sessionId))
+
+  const confirmMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch('/api/billing/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: id }),
+      })
+      if (!res.ok) {
+        throw new Error('Erro ao confirmar pagamento')
+      }
+      return res.json()
+    },
+    onSuccess: async () => {
+      // Refresh the JWT so it picks up the new subscription status, then
+      // refetch whatever drives this page.
+      await update()
+      queryClient.invalidateQueries({ queryKey: ['billing'] })
+    },
+    onError: (err) => {
+      // The webhook is still the source of truth and will very likely
+      // activate the subscription within seconds. A customer who just paid
+      // should never see a scary error for something that isn't broken.
+      console.error('Falha ao confirmar pagamento pelo retorno do Stripe', err)
+    },
+    onSettled: () => {
+      // Clear session_id regardless of outcome so a refresh does not
+      // re-post the same id.
+      const params = new URLSearchParams(searchParams.toString())
+      params.delete('session_id')
+      const qs = params.toString()
+      router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false })
+      setIsConfirmingPayment(false)
+    },
+  })
+
+  useEffect(() => {
+    if (sessionId && !confirmedRef.current) {
+      confirmedRef.current = true
+      confirmMutation.mutate(sessionId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- confirmedRef guards against re-running; only sessionId should retrigger
+  }, [sessionId])
+
+  const {
+    data: usageData,
+    isLoading: usageLoading,
+    isError: usageFailed,
+    refetch: refetchUsage,
+  } = useQuery<BillingUsageResponse>({
     queryKey: ['billing', 'usage'],
     queryFn: async () => {
       const res = await fetch('/api/billing/usage')
@@ -262,7 +340,12 @@ export function BillingSettings() {
     },
   })
 
-  const { data: plansData, isLoading: plansLoading } = useQuery<PlansResponse>({
+  const {
+    data: plansData,
+    isLoading: plansLoading,
+    isError: plansFailed,
+    refetch: refetchPlans,
+  } = useQuery<PlansResponse>({
     queryKey: ['billing', 'plans'],
     queryFn: async () => {
       const res = await fetch('/api/billing/plans')
@@ -282,12 +365,23 @@ export function BillingSettings() {
         body: JSON.stringify({ planSlug }),
       })
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || 'Erro ao criar sessão de pagamento')
+        throw new Error(await errorMessage(res, 'Erro ao criar sessão de pagamento'))
       }
-      return res.json() as Promise<{ url: string }>
+      return res.json() as Promise<{ url: string | null; updated?: boolean }>
     },
-    onSuccess: ({ url }) => {
+    onSuccess: async ({ url, updated }) => {
+      // A plan switch has no checkout to send them to: the subscription is
+      // already updated at Stripe and here, so stay on the page and reload
+      // what it shows.
+      if (updated || !url) {
+        setCheckingOutSlug(null)
+        // Not "cobrada": create_prorations credits on a downgrade, and this
+        // fires in both directions.
+        toast.success('Plano alterado. A diferença é ajustada proporcionalmente.')
+        await update()
+        queryClient.invalidateQueries({ queryKey: ['billing'] })
+        return
+      }
       window.location.href = url
     },
     onError: (err: Error) => {
@@ -296,12 +390,45 @@ export function BillingSettings() {
     },
   })
 
+  const portalMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/billing/portal', { method: 'POST' })
+      if (!res.ok) {
+        throw new Error(await errorMessage(res, 'Erro ao abrir o portal de pagamento'))
+      }
+      return res.json() as Promise<{ url: string }>
+    },
+    onSuccess: ({ url }) => {
+      window.location.href = url
+    },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    },
+  })
+
+  const reactivateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/billing/reactivate', { method: 'POST' })
+      if (!res.ok) {
+        throw new Error(await errorMessage(res, 'Erro ao reativar assinatura'))
+      }
+      return res.json()
+    },
+    onSuccess: async () => {
+      toast.success('Assinatura reativada.')
+      await update()
+      queryClient.invalidateQueries({ queryKey: ['billing'] })
+    },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    },
+  })
+
   const cancelMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch('/api/billing/cancel', { method: 'POST' })
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || 'Erro ao cancelar assinatura')
+        throw new Error(await errorMessage(res, 'Erro ao cancelar assinatura'))
       }
       return res.json()
     },
@@ -320,7 +447,7 @@ export function BillingSettings() {
     checkoutMutation.mutate(planSlug)
   }
 
-  if (usageLoading || plansLoading) {
+  if (usageLoading || plansLoading || isConfirmingPayment) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-32 w-full" />
@@ -334,7 +461,19 @@ export function BillingSettings() {
     )
   }
 
-  if (!usageData) return null
+  // Every lapsed banner points here, so a blank panel is the worst possible
+  // answer: the owner is told their account is blocked and then shown nothing
+  // to act on.
+  if (usageFailed || !usageData) {
+    return (
+      <div className="rounded-[3px] border border-red-200 bg-red-50 p-5">
+        <p className="text-sm text-red-700">Não foi possível carregar sua assinatura.</p>
+        <Button variant="outline" className="mt-3" onClick={() => refetchUsage()}>
+          Tentar novamente
+        </Button>
+      </div>
+    )
+  }
 
   const { subscription, plan, usage } = usageData
   const statusConfig = STATUS_CONFIG[subscription.status]
@@ -343,6 +482,35 @@ export function BillingSettings() {
     subscription.stripeSubscriptionId &&
     subscription.status !== 'canceled' &&
     subscription.status !== 'expired'
+
+
+  const periodOpen = new Date(subscription.currentPeriodEnd) > new Date()
+
+  // Cancelled but still inside the paid period: Stripe has not ended it yet,
+  // so it can be resumed and it still absorbs a plan change.
+  const cancelPending = subscription.status === 'canceled' && periodOpen
+
+  // Paying already, so picking another plan moves the existing Stripe
+  // subscription rather than opening a checkout. past_due counts: the charge
+  // failed but the subscription is alive and being retried, so buying again
+  // would run a second one alongside it.
+  const isSwitching =
+    Boolean(subscription.stripeSubscriptionId) &&
+    (subscription.status === 'active' ||
+      subscription.status === 'trialing' ||
+      subscription.status === 'past_due' ||
+      cancelPending)
+
+  // Nothing live to keep. Every plan has to be buyable, including the one
+  // they were on: leaving it inert as "current" left a lapsed customer able
+  // to buy any plan except the one they actually wanted back.
+  const isLapsed = !isSwitching && subscription.status !== 'active' && subscription.status !== 'trialing'
+
+  const canReactivate = Boolean(subscription.stripeSubscriptionId) && cancelPending
+
+  // Anyone Stripe has a customer record for, including a lapsed one: their
+  // invoices live there too, not just the card.
+  const canManagePayment = subscription.hasStripeCustomer
 
   let statusLabel = statusConfig.label
   if (subscription.status === 'trialing') {
@@ -376,7 +544,16 @@ export function BillingSettings() {
       </div>
 
       {/* Plan comparison */}
-      {plans.length > 0 && (
+      {plansFailed && (
+        <div className="rounded-[3px] border border-red-200 bg-red-50 p-5">
+          <p className="text-sm text-red-700">Não foi possível carregar os planos.</p>
+          <Button variant="outline" className="mt-3" onClick={() => refetchPlans()}>
+            Tentar novamente
+          </Button>
+        </div>
+      )}
+
+      {!plansFailed && plans.length > 0 && (
         <div>
           <p className="text-sm font-medium text-charcoal mb-4">Planos disponíveis</p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -384,7 +561,8 @@ export function BillingSettings() {
               <PlanCard
                 key={p.id}
                 plan={p}
-                isCurrent={p.slug === plan.slug}
+                isCurrent={p.slug === plan.slug && !isLapsed}
+                isSwitch={isSwitching}
                 isCheckingOut={checkingOutSlug === p.slug}
                 onSubscribe={handleSubscribe}
               />
@@ -393,16 +571,44 @@ export function BillingSettings() {
         </div>
       )}
 
-      {/* Cancel subscription */}
-      {canCancel && (
+      {canManagePayment && (
         <div className="pt-4 border-t border-[#E8ECEF]">
           <button
             type="button"
-            onClick={() => setCancelDialogOpen(true)}
-            className="text-sm text-mid hover:text-red-500 transition-colors underline underline-offset-2"
+            disabled={portalMutation.isPending}
+            onClick={() => portalMutation.mutate()}
+            className="text-sm text-forest hover:opacity-80 transition-opacity underline underline-offset-2 disabled:opacity-50"
           >
-            Cancelar assinatura
+            {portalMutation.isPending ? 'Abrindo...' : 'Gerenciar pagamento e faturas'}
           </button>
+          <p className="mt-1 text-xs text-mid">
+            Atualize o cartão e veja suas faturas no portal seguro do Stripe.
+          </p>
+        </div>
+      )}
+
+      {/* Cancel or undo the cancellation. Never both: canCancel excludes the
+          canceled status that canReactivate requires. */}
+      {(canCancel || canReactivate) && (
+        <div className="pt-4 border-t border-[#E8ECEF]">
+          {canReactivate ? (
+            <button
+              type="button"
+              disabled={reactivateMutation.isPending}
+              onClick={() => reactivateMutation.mutate()}
+              className="text-sm text-forest hover:opacity-80 transition-opacity underline underline-offset-2 disabled:opacity-50"
+            >
+              {reactivateMutation.isPending ? 'Reativando...' : 'Reativar assinatura'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setCancelDialogOpen(true)}
+              className="text-sm text-mid hover:text-red-500 transition-colors underline underline-offset-2"
+            >
+              Cancelar assinatura
+            </button>
+          )}
         </div>
       )}
 
@@ -411,15 +617,16 @@ export function BillingSettings() {
           <DialogHeader>
             <DialogTitle>Cancelar assinatura</DialogTitle>
             <DialogDescription>
-              Tem certeza que deseja cancelar sua assinatura? Você perderá acesso aos recursos
-              do plano atual ao final do período vigente.
+              Tem certeza que deseja cancelar sua assinatura? Você continua com acesso normal
+              até o fim do período já pago.
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-start gap-3 rounded-[3px] bg-amber-50 p-3">
             <AlertTriangleIcon className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
             <p className="text-sm text-amber-800">
-              Esta ação não pode ser desfeita. Após o cancelamento, seu plano será rebaixado
-              ao final do período de cobrança atual.
+              Quando o período terminar, o acesso para criar agendamentos, pacientes,
+              lançamentos e mensagens é bloqueado até você assinar de novo. Seus dados
+              continuam aqui. Você pode reativar a qualquer momento antes disso.
             </p>
           </div>
           <DialogFooter>

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getAuthContext, requireRole } from '@/lib/auth'
+import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import {
   getFinancialSettings,
   updateFinancialSettings,
@@ -25,7 +26,8 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const ctx = await requireRole('owner')
+    const { ctx, blocked } = await requireWrite('owner')
+    if (blocked) return blocked
 
     const body = await request.json()
     const parsed = updateFinancialSettingsSchema.safeParse(body)

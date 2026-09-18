@@ -1,8 +1,11 @@
 import { db } from '@/db/client'
 import { anamnesisTokens, patients } from '@/db/schema'
 import { eq, and, isNull, sql } from 'drizzle-orm'
+import { verifyTenantOwnership } from './helpers'
 
 export async function createAnamnesisToken(tenantId: string, patientId: string, createdBy: string) {
+  await verifyTenantOwnership(tenantId, patients, patientId, 'Patient')
+
   const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000) // 2 hours
 
   const [token] = await db
@@ -26,7 +29,14 @@ export async function getValidToken(token: string) {
       patientName: patients.fullName,
     })
     .from(anamnesisTokens)
-    .innerJoin(patients, eq(patients.id, anamnesisTokens.patientId))
+    .innerJoin(
+      patients,
+      and(
+        eq(patients.id, anamnesisTokens.patientId),
+        eq(patients.tenantId, anamnesisTokens.tenantId),
+        isNull(patients.deletedAt)
+      )
+    )
     .where(
       and(
         eq(anamnesisTokens.token, token),

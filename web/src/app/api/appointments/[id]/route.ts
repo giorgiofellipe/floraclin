@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
+import { requireWrite } from '@/lib/write-access'
 import { syncAppointmentToGoogle } from '@/lib/google-calendar-sync'
 import {
   getAppointmentById,
@@ -17,10 +17,8 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getAuthContext()
-    if (!['owner', 'practitioner', 'receptionist'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner', 'receptionist')
+    if (blocked) return blocked
 
     const { id } = await params
     const body = await request.json()
@@ -102,10 +100,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getAuthContext()
-    if (!['owner', 'practitioner', 'receptionist'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner', 'receptionist')
+    if (blocked) return blocked
 
     const { id } = await params
     const appointment = await deleteAppointment(ctx.tenantId, id)

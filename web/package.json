@@ -29,7 +29,8 @@
     "whatsapp:cleanup-foreign-templates": "pnpm exec dotenv -e .env.local -- tsx scripts/cleanup-foreign-templates.ts",
     "whatsapp:normalize-phones": "pnpm exec dotenv -e .env.local -- tsx scripts/normalize-stored-phones.ts",
     "logo:migrate-paths": "pnpm exec dotenv -e .env.local -- tsx scripts/migrate-logo-urls-to-paths.ts",
-    "tokens:encrypt": "pnpm exec dotenv -e .env.local -- tsx scripts/encrypt-stored-tokens.ts"
+    "tokens:encrypt": "pnpm exec dotenv -e .env.local -- tsx scripts/encrypt-stored-tokens.ts",
+    "icons:generate": "bash scripts/generate-icons.sh"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.1",

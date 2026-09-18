@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { getAnamnesis, upsertAnamnesis, StaleDataError } from '@/db/queries/anamnesis'
 import { anamnesisSchema } from '@/validations/anamnesis'
@@ -28,10 +29,8 @@ export async function PUT(
   { params }: { params: Promise<{ patientId: string }> }
 ) {
   try {
-    const ctx = await getAuthContext()
-    if (!['owner', 'practitioner'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+    if (blocked) return blocked
 
     const { patientId } = await params
     const body = await request.json()

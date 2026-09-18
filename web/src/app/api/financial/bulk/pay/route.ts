@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
+import { requireWrite } from '@/lib/write-access'
 import { bulkPayInstallments } from '@/db/queries/financial'
 import { bulkPaySchema } from '@/validations/financial'
 import { BusinessError } from '@/lib/errors'
@@ -8,11 +8,8 @@ import { handleApiError } from '@/lib/api-error'
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getAuthContext()
-    // Bulk pay: owner + receptionist + financial
-    if (!['owner', 'receptionist', 'financial'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner', 'receptionist', 'financial')
+    if (blocked) return blocked
 
     const body = await request.json()
     const parsed = bulkPaySchema.safeParse(body)

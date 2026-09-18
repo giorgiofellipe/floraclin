@@ -1,15 +1,13 @@
 import { NextResponse } from 'next/server'
-import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { saveEvaluationResponse } from '@/db/queries/evaluation-responses'
 import { handleApiError } from '@/lib/api-error'
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getAuthContext()
-    if (!['owner', 'practitioner'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+    if (blocked) return blocked
 
     const body = await request.json()
     const response = await saveEvaluationResponse(ctx.tenantId, body)

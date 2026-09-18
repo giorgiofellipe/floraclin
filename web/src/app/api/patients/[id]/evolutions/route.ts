@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { BusinessError } from '@/lib/errors'
 import { getPatientEvolutionFeed } from '@/db/queries/patient-evolutions'
 import { getPatient } from '@/db/queries/patients'
@@ -45,7 +46,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { tenantId, userId } = await requireRole('owner', 'practitioner')
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+    if (blocked) return blocked
+    const { tenantId, userId } = ctx
     const { id: patientId } = await params
 
     // Verify the patient belongs to the caller's tenant BEFORE inserting.

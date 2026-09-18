@@ -25,8 +25,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
-import { requireRole } from '@/lib/auth'
-import { subscriptionGate } from '@/lib/plans'
+import { requireWrite } from '@/lib/write-access'
 import { finalizeEncounter } from '@/lib/encounter-finalize'
 import { encounterCartSchema } from '@/validations/encounter-cart'
 import { getDefaultPackageValidityMonths } from '@/lib/tenant-settings'
@@ -60,10 +59,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const ctx = await requireRole('owner', 'practitioner')
-
-    const gate = await subscriptionGate(ctx)
-    if (gate) return gate
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+    if (blocked) return blocked
 
     const { id: encounterIdFromUrl } = await params
 

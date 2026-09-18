@@ -1,10 +1,16 @@
 import { createHash } from 'crypto'
 
+import { NextResponse } from 'next/server'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/auth', () => ({
   getAuthContext: vi.fn(),
   requireRole: vi.fn(),
+}))
+
+vi.mock('@/lib/plans', () => ({
+  subscriptionGate: vi.fn(),
 }))
 
 vi.mock('@/db/queries/meta-connections', () => ({
@@ -44,6 +50,7 @@ vi.mock('@/lib/observability', () => ({
 }))
 
 import { getAuthContext, requireRole } from '@/lib/auth'
+import { subscriptionGate } from '@/lib/plans'
 import { ForbiddenError } from '@/lib/errors'
 import {
   getMetaConnectionRaw,
@@ -118,7 +125,13 @@ beforeEach(() => {
     isPlatformAdmin: false,
   })
   vi.mocked(listRecentEvents).mockResolvedValue([])
+  vi.mocked(subscriptionGate).mockResolvedValue(null)
 })
+
+/** What `subscriptionGate` hands back for a lapsed clinic. */
+function expiredResponse() {
+  return NextResponse.json({ error: 'Assinatura expirada' }, { status: 402 })
+}
 
 describe('GET /api/integrations/meta/connection', () => {
   it('rejects a non-owner with 403 and reads nothing', async () => {
@@ -205,6 +218,22 @@ describe('PUT /api/integrations/meta/connection', () => {
 
     expect(res.status).toBe(403)
     expect(upsertMetaConnection).not.toHaveBeenCalled()
+  })
+
+  it('refuses a lapsed clinic with 402 and writes no connection', async () => {
+    vi.mocked(subscriptionGate).mockResolvedValue(expiredResponse())
+
+    const res = await PUT(
+      new Request('http://localhost/api/integrations/meta/connection', {
+        method: 'PUT',
+        body: JSON.stringify(validBody),
+      }),
+    )
+
+    expect(res.status).toBe(402)
+    expect(upsertMetaConnection).not.toHaveBeenCalled()
+    expect(recordAcknowledgement).not.toHaveBeenCalled()
+    expect(createAuditLog).not.toHaveBeenCalled()
   })
 
   it('returns 400 and writes no connection when acknowledgementVersion is missing', async () => {
@@ -520,6 +549,15 @@ describe('DELETE /api/integrations/meta/connection', () => {
     expect(deleteMetaConnection).not.toHaveBeenCalled()
   })
 
+  it('refuses a lapsed clinic with 402 and deletes nothing', async () => {
+    vi.mocked(subscriptionGate).mockResolvedValue(expiredResponse())
+
+    const res = await DELETE(new Request('http://localhost/api/integrations/meta/connection', { method: 'DELETE' }))
+
+    expect(res.status).toBe(402)
+    expect(deleteMetaConnection).not.toHaveBeenCalled()
+  })
+
   it('scopes the delete to the tenant on the auth context, not to a request value', async () => {
     vi.mocked(requireRole).mockResolvedValue({
       tenantId: 'tenant-2',
@@ -555,6 +593,18 @@ describe('POST /api/integrations/meta/connection/test', () => {
 
     expect(res.status).toBe(403)
     expect(getMetaConnectionRaw).not.toHaveBeenCalled()
+    expect(postEvents).not.toHaveBeenCalled()
+    expect(markConnectionVerified).not.toHaveBeenCalled()
+  })
+
+  it('refuses a lapsed clinic with 402 before firing a Conversions API call', async () => {
+    vi.mocked(subscriptionGate).mockResolvedValue(expiredResponse())
+
+    const res = await testConnection(
+      new Request('http://localhost/api/integrations/meta/connection/test', { method: 'POST' }),
+    )
+
+    expect(res.status).toBe(402)
     expect(postEvents).not.toHaveBeenCalled()
     expect(markConnectionVerified).not.toHaveBeenCalled()
   })

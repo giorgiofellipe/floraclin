@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { handleApiError } from '@/lib/api-error'
 import {
   getMetaConnectionRaw,
@@ -56,7 +57,8 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const ctx = await requireRole('owner')
+    const { ctx, blocked } = await requireWrite('owner')
+    if (blocked) return blocked
     const body = await request.json().catch(() => ({}))
     const parsed = updateConnectionSchema.safeParse(body)
 
@@ -129,7 +131,8 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const ctx = await requireRole('owner')
+    const { ctx, blocked } = await requireWrite('owner')
+    if (blocked) return blocked
     await deleteMetaConnection(ctx.tenantId)
     return NextResponse.json({ success: true })
   } catch (error) {

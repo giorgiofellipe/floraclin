@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import {
   getTenant,
@@ -51,7 +52,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const auth = await requireRole('owner')
+    const { ctx: auth, blocked } = await requireWrite('owner')
+    if (blocked) return blocked
     const body = await request.json()
     const parsed = onboardingCompleteSchema.safeParse(body)
     if (!parsed.success) {

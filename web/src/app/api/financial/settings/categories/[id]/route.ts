@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireRole } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import {
   updateExpenseCategory,
   deleteExpenseCategory,
@@ -12,7 +12,8 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await requireRole('owner')
+    const { ctx, blocked } = await requireWrite('owner')
+    if (blocked) return blocked
     const { id } = await params
 
     const body = await request.json()
@@ -39,7 +40,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await requireRole('owner')
+    const { ctx, blocked } = await requireWrite('owner')
+    if (blocked) return blocked
     const { id } = await params
 
     await deleteExpenseCategory(ctx.tenantId, ctx.userId, id)

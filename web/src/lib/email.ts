@@ -94,25 +94,27 @@ export async function sendPasswordResetEmail(email: string, url: string) {
   })
 }
 
-export async function sendApprovalEmail(email: string, clinicName: string) {
+export async function sendConfirmationEmail(email: string, url: string, clinicName: string) {
   const safeName = escapeHtml(clinicName)
-  const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/login`
   await getResend().emails.send({
     from: FROM,
     to: email,
-    subject: 'Sua clínica foi aprovada — FloraClin',
+    subject: 'Confirme seu e-mail',
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
         <h2 style="color: #1C2B1E; margin-bottom: 24px;">FloraClin</h2>
         <p style="color: #2A2A2A; font-size: 16px; line-height: 1.5;">
-          Sua clínica <strong>${safeName}</strong> foi aprovada!
+          Bem-vindo(a) à <strong>${safeName}</strong>! Falta só confirmar seu e-mail para começar a usar o FloraClin.
         </p>
-        <p style="color: #2A2A2A; font-size: 16px; line-height: 1.5;">
-          Faça login para começar a configurar sua clínica.
-        </p>
-        <a href="${loginUrl}" style="display: inline-block; background: #4A6B52; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 24px 0;">
-          Acessar FloraClin
+        <a href="${url}" style="display: inline-block; background: #4A6B52; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 24px 0;">
+          Confirmar E-mail
         </a>
+        <p style="color: #7A7A7A; font-size: 13px; margin-top: 32px;">
+          Se você não criou esta conta, ignore este e-mail.
+        </p>
+        <p style="color: #7A7A7A; font-size: 13px;">
+          Este link expira em 24 horas.
+        </p>
       </div>
     `,
   })
@@ -153,19 +155,20 @@ export async function sendNewSignupNotification(opts: {
   await getResend().emails.send({
     from: FROM,
     to: opts.adminEmail,
-    subject: `Nova clínica aguardando aprovação — ${opts.clinicName}`,
+    subject: `Nova clínica cadastrada: ${opts.clinicName}`,
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
-        <h2 style="color: #1C2B1E; margin-bottom: 24px;">FloraClin — Nova Solicitação</h2>
+        <h2 style="color: #1C2B1E; margin-bottom: 24px;">FloraClin</h2>
         <p style="color: #2A2A2A; font-size: 16px; line-height: 1.5;">
-          <strong>${safeOwner}</strong> solicitou a criação da clínica <strong>${safeName}</strong>.
+          <strong>${safeOwner}</strong> criou a clínica <strong>${safeName}</strong>.
+          A conta já está ativa; nada precisa ser aprovado.
         </p>
         <p style="color: #2A2A2A; font-size: 14px; line-height: 1.5;">
           E-mail: ${safeEmail}<br/>
           Telefone: ${safePhone}
         </p>
         <a href="${adminUrl}" style="display: inline-block; background: #4A6B52; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 24px 0;">
-          Revisar Solicitação
+          Ver clínica
         </a>
       </div>
     `,

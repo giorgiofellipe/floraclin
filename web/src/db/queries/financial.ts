@@ -37,7 +37,6 @@ import {
   type MetaEventPrerequisites,
   type PendingMetaEventRow,
 } from '@/lib/meta/events'
-import { META_EVENT_WINDOW_DAYS } from '@/db/queries/meta-events'
 import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
 import type { MetaActionSource } from '@/lib/meta/types'
 import { reportSideEffectFailure } from '@/lib/observability'
@@ -255,13 +254,6 @@ async function emitPurchaseEventForEntry(
       .limit(1)
 
     if (renegotiated) {
-      return null
-    }
-
-    // Meta rejects an event_time outside its window, and eventTime is the
-    // payment's own date. A payment recorded months late has no attribution
-    // left to send, so no row is written rather than one written to fail.
-    if (Date.now() - eventTime.getTime() > META_EVENT_WINDOW_DAYS * 24 * 60 * 60 * 1000) {
       return null
     }
 

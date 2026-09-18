@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { and, desc, eq } from 'drizzle-orm'
 import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { recordFollowup } from '@/lib/followups'
 import { recordFollowupSchema } from '@/validations/followup'
@@ -63,10 +64,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const ctx = await getAuthContext()
-    if (!['owner', 'practitioner', 'receptionist'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner', 'receptionist')
+    if (blocked) return blocked
 
     const { id: procedureRecordId } = await params
     const body = await request.json().catch(() => ({}))

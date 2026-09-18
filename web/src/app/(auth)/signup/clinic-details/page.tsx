@@ -1,6 +1,8 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import { createClinicForOAuthUser, type ClinicDetailsState } from '@/actions/signup'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,6 +11,21 @@ import { maskPhone } from '@/lib/masks'
 
 export default function ClinicDetailsPage() {
   const [state, formAction, isPending] = useActionState<ClinicDetailsState, FormData>(createClinicForOAuthUser, null)
+  const router = useRouter()
+  const { update } = useSession()
+
+  // The action deliberately does not redirect. This session's JWT was minted
+  // at Google sign-in, before any membership existed, so it still says
+  // tenantId: null, and middleware sends anyone in that state straight back
+  // here. Navigating without refreshing the token first is an infinite loop
+  // between this page and itself.
+  useEffect(() => {
+    if (!state?.success) return
+    void (async () => {
+      await update()
+      router.replace('/dashboard')
+    })()
+  }, [state?.success, update, router])
 
   return (
     <div>

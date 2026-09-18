@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { getTenant, updateTenantSettings } from '@/db/queries/tenants'
 import { canManageTemplates, isWhatsAppEnabled, syncTemplatesForTenant } from '@/lib/whatsapp'
 import { resolveTemplatePrefix } from '@/lib/whatsapp-blueprints'
@@ -13,7 +14,9 @@ export async function POST(request: Request) {
     if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp not enabled' }, { status: 400 })
     }
-    if (ctx.role !== 'owner' || !canManageTemplates(settings)) {
+    const { blocked } = await requireWrite('owner')
+    if (blocked) return blocked
+    if (!canManageTemplates(settings)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { getTemplatesForProcedureTypes, createTemplate, updateTemplate, resetTemplateToDefault } from '@/db/queries/evaluation-templates'
 import { handleApiError } from '@/lib/api-error'
 
@@ -22,10 +23,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getAuthContext()
-    if (ctx.role !== 'owner') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner')
+    if (blocked) return blocked
 
     const body = await request.json()
     const { action } = body

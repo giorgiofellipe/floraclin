@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireRole } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { deletePhotoAsset } from '@/db/queries/photos'
 import { handleApiError } from '@/lib/api-error'
 
@@ -9,10 +9,11 @@ interface RouteContext {
 
 export async function DELETE(request: Request, context: RouteContext) {
   try {
-    const auth = await requireRole('owner', 'practitioner')
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+    if (blocked) return blocked
     const { id: photoId } = await context.params
 
-    const deleted = await deletePhotoAsset(auth.tenantId, photoId)
+    const deleted = await deletePhotoAsset(ctx.tenantId, photoId)
     if (!deleted) {
       return NextResponse.json(
         { success: false, error: 'Foto não encontrada' },

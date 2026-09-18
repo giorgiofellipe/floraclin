@@ -31,3 +31,27 @@ export class ForbiddenError extends Error {
     this.name = 'ForbiddenError'
   }
 }
+
+/**
+ * True when the driver rejected a write because it violated a unique index.
+ *
+ * Postgres reports this as SQLSTATE 23505 and names the index it hit.
+ * Matching on the name rather than the class keeps an unrelated collision
+ * elsewhere in the same transaction from being mistaken for the one the
+ * caller is prepared to handle.
+ *
+ * Walks the cause chain because drizzle does not rethrow the driver's error:
+ * it wraps it in a `DrizzleQueryError` whose own `code` is undefined and
+ * hangs the real one off `cause`. Reading only the top level silently never
+ * matches, which is a failure mode no mocked test can see.
+ */
+export function isUniqueViolation(err: unknown, constraintName?: string): boolean {
+  for (let current: unknown = err; current != null; current = (current as { cause?: unknown }).cause) {
+    if (typeof current !== 'object') return false
+    const e = current as { code?: unknown; constraint_name?: unknown }
+    if (e.code === '23505') {
+      return constraintName === undefined || e.constraint_name === constraintName
+    }
+  }
+  return false
+}

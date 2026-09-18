@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getAuthContext, requireRole } from '@/lib/auth'
+import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import {
   getExpenseCategories,
   createExpenseCategory,
@@ -21,7 +22,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const ctx = await requireRole('owner')
+    const { ctx, blocked } = await requireWrite('owner')
+    if (blocked) return blocked
 
     const body = await request.json()
     const parsed = expenseCategorySchema.safeParse(body)

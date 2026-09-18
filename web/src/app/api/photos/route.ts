@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { getStoragePath, uploadFile } from '@/lib/storage'
 import { createAuditLog } from '@/lib/audit'
 import {
@@ -20,7 +21,8 @@ import { reportSideEffectFailure } from '@/lib/observability'
 
 export async function POST(request: Request) {
   try {
-    const context = await requireRole('owner', 'practitioner')
+    const { ctx, blocked } = await requireWrite('owner', 'practitioner')
+    if (blocked) return blocked
 
     const formData = await request.formData()
     const file = formData.get('file') as File | null
@@ -67,7 +69,7 @@ export async function POST(request: Request) {
     const fileId = crypto.randomUUID()
     const extension = file.type === 'image/webp' ? 'webp' : file.type === 'image/png' ? 'png' : 'jpg'
     const filename = `${fileId}.${extension}`
-    const storagePath = getStoragePath(context.tenantId, patientId, filename)
+    const storagePath = getStoragePath(ctx.tenantId, patientId, filename)
 
     // Upload to Supabase Storage
     const { error: uploadError } = await uploadFile(storagePath, file)
@@ -79,7 +81,7 @@ export async function POST(request: Request) {
     // Create photo asset record — if DB insert fails, clean up the uploaded file
     let photoAsset
     try {
-      photoAsset = await createPhotoAsset(context.tenantId, {
+      photoAsset = await createPhotoAsset(ctx.tenantId, {
         patientId,
         procedureRecordId,
         procedureSessionId: parsed.data.procedureSessionId ?? null,
@@ -88,7 +90,7 @@ export async function POST(request: Request) {
         mimeType: file.type,
         fileSizeBytes: file.size,
         timelineStage,
-        uploadedBy: context.userId,
+        uploadedBy: ctx.userId,
         notes,
       })
     } catch (dbError) {
@@ -103,8 +105,8 @@ export async function POST(request: Request) {
     }
 
     await createAuditLog({
-      tenantId: context.tenantId,
-      userId: context.userId,
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
       action: 'create',
       entityType: 'photo_asset',
       entityId: photoAsset.id,
