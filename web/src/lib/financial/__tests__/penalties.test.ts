@@ -5,6 +5,7 @@ import {
   allocatePayment,
   replayPayments,
   quoteInstallment,
+  findOverfilledPayment,
   type PaymentInput,
 } from '../penalties'
 
@@ -482,5 +483,53 @@ describe('tie-break on recordedAt', () => {
     const b = pay('00000000-0000-4000-8000-000000000001', 30, t, '2026-09-03T15:00:09.000Z')
     const result = replayPayments(BASE, [b, a], new Date(t))
     expect(result.payments.map((p) => p.id)).toEqual(['zzz', b.id])
+  })
+})
+
+describe('findOverfilledPayment', () => {
+  const base = { amount: 1000, dueDate: '2026-01-01', appliedFineValue: 2, appliedFineType: 'percentage', appliedInterestRate: 1, gracePeriodDays: 0 }
+  const AS_OF = new Date('2026-04-01T15:00:00.000Z')
+  const NEW = '__new__'
+  const later = { id: 'later', amount: 600, paidAt: '2026-03-01T15:00:00.000Z', recordedAt: '2026-03-01T15:00:00.000Z' }
+
+  /** What the row for `later` stored when it was recorded alone. */
+  function storedAlone(payment: { id: string; amount: number; paidAt: string; recordedAt: string }) {
+    const p = replayPayments(base, [payment], AS_OF).payments[0]
+    return { id: payment.id, amount: payment.amount, interestCovered: p.interestCovered, fineCovered: p.fineCovered, principalCovered: p.principalCovered }
+  }
+
+  it('returns null when a payment inserted ahead leaves the later one covering its full amount', () => {
+    const backdated = { id: NEW, amount: 100, paidAt: '2026-02-01T15:00:00.000Z', recordedAt: AS_OF.toISOString() }
+    const replay = replayPayments(base, [later, backdated], AS_OF)
+    expect(findOverfilledPayment([storedAlone(later)], replay.payments, NEW)).toBeNull()
+  })
+
+  it('returns the later payment when the inserted one takes its debt away', () => {
+    const backdated = { id: NEW, amount: 1000, paidAt: '2026-01-15T15:00:00.000Z', recordedAt: AS_OF.toISOString() }
+    const replay = replayPayments(base, [later, backdated], AS_OF)
+    expect(findOverfilledPayment([storedAlone(later)], replay.payments, NEW)).toBe('later')
+  })
+
+  it('ignores excess a later payment already carried, and flags only an increase', () => {
+    const overpaid = { ...later, amount: 1200 }
+    const stored = storedAlone(overpaid)
+    expect(stored.amount - stored.interestCovered - stored.fineCovered - stored.principalCovered).toBeGreaterThan(1)
+
+    const small = { id: NEW, amount: 1, paidAt: '2026-02-01T15:00:00.000Z', recordedAt: AS_OF.toISOString() }
+    // One real ahead of it shrinks the balance, so the excess it carries grows.
+    expect(findOverfilledPayment([stored], replayPayments(base, [overpaid, small], AS_OF).payments, NEW)).toBe('later')
+
+    const sameDayLater = { id: NEW, amount: 1, paidAt: later.paidAt, recordedAt: AS_OF.toISOString() }
+    // Sorted after it by recordedAt, the new payment changes nothing about it.
+    expect(findOverfilledPayment([stored], replayPayments(base, [overpaid, sameDayLater], AS_OF).payments, NEW)).toBeNull()
+  })
+
+  it('never looks at payments sorted before the new one, however they were allocated', () => {
+    // A row written by an older engine version can replay a few cents apart
+    // from what it stores. Nothing about it changes, so it must not block.
+    const legacy = { id: 'legacy', amount: 300, paidAt: '2026-01-20T15:00:00.000Z', recordedAt: '2026-01-20T15:00:00.000Z' }
+    const storedLegacy = { id: 'legacy', amount: 300, interestCovered: 0, fineCovered: 0, principalCovered: 290 }
+    const newer = { id: NEW, amount: 100, paidAt: '2026-03-01T15:00:00.000Z', recordedAt: AS_OF.toISOString() }
+    expect(findOverfilledPayment([storedLegacy], replayPayments(base, [legacy, newer], AS_OF).payments, NEW)).toBeNull()
   })
 })

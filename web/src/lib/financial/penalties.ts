@@ -214,6 +214,36 @@ export function replayPayments(
   }
 }
 
+export interface StoredPaymentAllocation {
+  id: string
+  amount: number
+  interestCovered: number
+  fineCovered: number
+  principalCovered: number
+}
+
+/**
+ * Only payments the replay sorts after the new one are checked: the split of
+ * the earlier ones does not change, and rows allocated by an older version of
+ * this engine can replay a few cents apart from what they store. Excess a
+ * payment already carried was accepted when it was recorded and does not
+ * count; only an increase does.
+ */
+export function findOverfilledPayment(
+  stored: StoredPaymentAllocation[],
+  replayed: ReplayedPayment[],
+  newPaymentId: string,
+): string | null {
+  const after = replayed.slice(replayed.findIndex((p) => p.id === newPaymentId) + 1)
+  for (const r of after) {
+    const s = stored.find((p) => p.id === r.id)
+    if (!s) continue
+    const storedExcess = round2(s.amount - s.interestCovered - s.fineCovered - s.principalCovered)
+    if (round2(r.excessAmount) > storedExcess) return s.id
+  }
+  return null
+}
+
 export interface InstallmentQuote {
   remainingPrincipal: number
   fineAmount: number

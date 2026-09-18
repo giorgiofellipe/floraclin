@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { quoteInstallment, replayPayments, type InstallmentBase } from '@/lib/financial/penalties'
 
 // A chainable, awaitable stand-in for drizzle's query builders, copied from
 // financial-meta.test.ts. Every method call returns the same proxy so any
@@ -135,6 +136,16 @@ const financialSettingsRow = {
   fineType: 'percentage',
   fineValue: '2.00',
   monthlyInterestPercent: '1.00',
+  gracePeriodDays: 0,
+}
+
+/** The same fixture as `lockedInstallmentRow`, in the shape the engine takes. */
+const BASE: InstallmentBase = {
+  amount: 750,
+  dueDate: DUE_DATE,
+  appliedFineValue: 2,
+  appliedFineType: 'percentage',
+  appliedInterestRate: 1,
   gracePeriodDays: 0,
 }
 
@@ -386,6 +397,16 @@ describe('recordPayment', () => {
     vi.useFakeTimers()
     vi.setSystemTime(now)
 
+    // The August payment has to fit the balance exactly once the June payment
+    // sorts ahead of it: anything above that is refused as an overfill.
+    const june = { amount: 109, paidAt: '2026-06-22T12:00:00.000Z', recordedAt: now.toISOString() }
+    const augPaidAt = '2026-08-01T12:00:00.000Z'
+    const augAmount = quoteInstallment(BASE, [june], new Date(augPaidAt)).totalDue
+    expect(augAmount).toBe(672.6)
+    const aug = { id: 'p-aug', amount: augAmount, paidAt: augPaidAt, recordedAt: augPaidAt }
+    const augAllocation = replayPayments(BASE, [june, aug], now).payments.find((p) => p.id === 'p-aug')!
+    expect(augAllocation.excessAmount).toBe(0)
+
     const { recordPayment } = await import('../financial')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
@@ -397,9 +418,12 @@ describe('recordPayment', () => {
       chain([
         {
           id: 'p-aug',
-          amount: '700.00',
-          paidAt: '2026-08-01T12:00:00.000Z',
-          recordedAt: '2026-08-01T12:00:00.000Z',
+          amount: augAmount.toFixed(2),
+          interestCovered: augAllocation.interestCovered.toFixed(2),
+          fineCovered: augAllocation.fineCovered.toFixed(2),
+          principalCovered: augAllocation.principalCovered.toFixed(2),
+          paidAt: augPaidAt,
+          recordedAt: augPaidAt,
           paymentMethod: 'pix',
         },
       ]),
@@ -420,26 +444,23 @@ describe('recordPayment', () => {
 
     await recordPayment(TENANT, USER_ID, {
       installmentId: INSTALLMENT_ID,
-      amount: 109,
+      amount: june.amount,
       paymentMethod: 'cash',
-      paidAt: '2026-06-22T12:00:00.000Z',
+      paidAt: june.paidAt,
     } as never)
 
     expect(installmentUpdate.value).toMatchObject({
       status: 'paid',
-      paidAt: new Date('2026-08-01T12:00:00.000Z'),
+      paidAt: new Date(augPaidAt),
       paymentMethod: 'pix',
     })
   })
 
-  // Art. 354 allocates each payment against the balance standing at its own
-  // date, so inserting one re-splits the payments around it.
-  //
-  // The allocation rewrite also held under the old isBackdated branch. What
-  // this test pins is the settlement metadata at the end: the payment that
-  // completed the debt, not the last one replayed. AR-1 itself, that a quote
-  // counts only payments at or before asOf, is pinned in penalties.test.ts.
-  it('a payment dated before an existing one rewrites the existing record allocation', async () => {
+  // Art. 354 re-splits every payment against the balance standing at its own
+  // date, so a payment inserted ahead of an existing one can take that
+  // payment's whole debt away. That is the case the guard refuses; the
+  // exact-fit case above is the one it lets through.
+  it('a payment dated before an existing one is refused when it would leave that payment covering nothing', async () => {
     const { recordPayment } = await import('../financial')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
@@ -452,6 +473,9 @@ describe('recordPayment', () => {
         {
           id: 'p1',
           amount: '500.00',
+          interestCovered: '10.00',
+          fineCovered: '15.00',
+          principalCovered: '475.00',
           paymentMethod: 'cash',
           paidAt: '2026-08-01T12:00:00.000Z',
           recordedAt: '2026-08-01T12:00:00.000Z',
@@ -459,48 +483,19 @@ describe('recordPayment', () => {
       ]),
     )
 
-    // The new payment (June 22) sorts before the existing one (Aug 1), so the
-    // replay re-splits p1: the new payment already exhausts the principal,
-    // leaving p1 with nothing left to cover.
-    const rewrite: { value?: unknown } = {}
-    tx.update.mockReturnValueOnce(chainCapturing(undefined, rewrite))
+    // The June payment settles the installment on its own, so replayed ahead
+    // of p1 it would leave p1's R$500 with nothing to cover.
+    await expect(
+      recordPayment(TENANT, USER_ID, {
+        installmentId: INSTALLMENT_ID,
+        amount: 772.75,
+        paymentMethod: 'pix',
+        paidAt: '2026-06-22T12:00:00.000Z',
+      } as never),
+    ).rejects.toMatchObject({ code: 'BACKDATED_PAYMENT_OVERFILLS' })
 
-    tx.insert.mockReturnValueOnce(chain([{ id: 'pay-new' }]))
-    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }])) // entryInfo
-    tx.insert.mockReturnValueOnce(chain(undefined)) // cashMovements
-    const finalUpdate: { value?: unknown } = {}
-    tx.update.mockReturnValueOnce(chainCapturing(undefined, finalUpdate)) // installments final
-    tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '750.00' }])) // updateEntryStatus
-    tx.update.mockReturnValueOnce(chain(undefined)) // financialEntries
-    tx.select.mockReturnValueOnce(chain([{ status: 'pending', totalAmount: '750.00' }])) // meta gate 1 fails
-
-    const result = await recordPayment(TENANT, USER_ID, {
-      installmentId: INSTALLMENT_ID,
-      amount: 772.75,
-      paymentMethod: 'pix',
-      paidAt: '2026-06-22T12:00:00.000Z',
-    } as never)
-
-    expect(result.allocation).toEqual({
-      interestCovered: 7.75,
-      fineCovered: 15,
-      principalCovered: 750,
-      excessAmount: 0,
-    })
-    expect(result.installmentPaid).toBe(true)
-    expect(rewrite.value).toEqual({
-      interestCovered: '0.00',
-      fineCovered: '0.00',
-      principalCovered: '0.00',
-    })
-    // The June payment is what settled the debt; the August one allocated
-    // nothing after the replay. Taking the last replayed payment instead
-    // stamped the installment paid in August by cash.
-    expect(finalUpdate.value).toMatchObject({
-      status: 'paid',
-      paidAt: new Date('2026-06-22T12:00:00.000Z'),
-      paymentMethod: 'pix',
-    })
+    expect(tx.update).not.toHaveBeenCalled()
+    expect(tx.insert).not.toHaveBeenCalled()
   })
 
   // AR-exec / step 3: reversed payments must not feed the replay. The

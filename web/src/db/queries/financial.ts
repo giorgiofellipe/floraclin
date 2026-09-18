@@ -17,9 +17,11 @@ import {
 } from '@/db/schema'
 import { eq, and, isNull, sql, count, sum, desc, inArray, or, gte, lte } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
-import { startOfBrDay, endOfBrDay, toLocalYmd } from '@/lib/dates'
+import { startOfBrDay, endOfBrDay, toBrYmd, toLocalYmd } from '@/lib/dates'
+import { formatCurrency } from '@/lib/utils'
 import { createAuditLog } from '@/lib/audit'
 import {
+  findOverfilledPayment,
   replayPayments,
   quoteInstallment,
   type InstallmentBase,
@@ -358,6 +360,27 @@ async function deliverPurchaseEvents(rows: PendingMetaEventRow[]): Promise<void>
 
 // ─── RECORD PAYMENT (replaces payInstallment) ───────────────────────
 
+type StoredPaymentRow = Pick<
+  typeof paymentRecords.$inferSelect,
+  'id' | 'amount' | 'interestCovered' | 'fineCovered' | 'principalCovered' | 'paidAt'
+>
+
+function storedAllocations(rows: StoredPaymentRow[]) {
+  return rows.map((p) => ({
+    id: p.id,
+    amount: Number(p.amount),
+    interestCovered: Number(p.interestCovered),
+    fineCovered: Number(p.fineCovered),
+    principalCovered: Number(p.principalCovered),
+  }))
+}
+
+function backdatedOverfillMessage(rows: StoredPaymentRow[], overfilledId: string) {
+  const later = rows.find((p) => p.id === overfilledId)!
+  const [year, month, day] = toBrYmd(new Date(later.paidAt)).split('-')
+  return `Na data informada, este pagamento deixaria o pagamento de ${formatCurrency(Number(later.amount))} de ${day}/${month}/${year} maior do que a parcela devia naquele dia. Estorne esse pagamento antes de registrar este.`
+}
+
 export async function recordPayment(
   tenantId: string,
   userId: string,
@@ -472,6 +495,18 @@ export async function recordPayment(
       fineCovered: newPayment.fineCovered,
       principalCovered: newPayment.principalCovered,
       excessAmount: newPayment.excessAmount,
+    }
+
+    const overfilled = findOverfilledPayment(
+      storedAllocations(existingPayments),
+      replay.payments,
+      NEW_PAYMENT_SENTINEL,
+    )
+    if (overfilled) {
+      throw new BusinessError(
+        'BACKDATED_PAYMENT_OVERFILLS',
+        backdatedOverfillMessage(existingPayments, overfilled),
+      )
     }
 
     // Art. 354 splits each payment against the interest and fine standing at
@@ -959,6 +994,18 @@ export async function bulkPayInstallments(
         interestCovered: newPayment.interestCovered,
         fineCovered: newPayment.fineCovered,
         principalCovered: newPayment.principalCovered,
+      }
+
+      const overfilled = findOverfilledPayment(
+        storedAllocations(existingPayments),
+        replay.payments,
+        BULK_PAYMENT_SENTINEL,
+      )
+      if (overfilled) {
+        throw new BusinessError(
+          'BACKDATED_PAYMENT_OVERFILLS',
+          backdatedOverfillMessage(existingPayments, overfilled),
+        )
       }
 
       for (const replayed of replay.payments) {

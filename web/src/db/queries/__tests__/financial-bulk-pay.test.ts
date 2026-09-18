@@ -255,65 +255,46 @@ describe('bulkPayInstallments', () => {
     expect(installmentUpdate.value).toMatchObject({ fineAmount: '0.00', amountPaid: '750.00', status: 'paid' })
   })
 
-  // A bulk payment backdated before an existing payment re-splits it: Art.
-  // 354 allocates each payment against the balance standing at its own date,
-  // and the sentinel now sorts first.
-  it('a backdated bulk payment rewrites a later existing record allocation', async () => {
+  // A bulk payment charges the whole balance as of its date, so backdated
+  // ahead of an existing payment it always takes that payment's debt away.
+  it('a backdated bulk payment is refused when it would leave a later record covering nothing', async () => {
     const { bulkPayInstallments } = await import('../financial')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
 
     const laterPaidAt = '2026-08-01T12:00:00.000Z'
-    const laterAmount = '500.00'
     const paidAt = '2026-06-22T12:00:00.000Z' // sorts before the Aug 1 record
-
-    // Matches quoteInstallment's own "ignores payments dated after the quote
-    // instant" fixture: 31 days overdue at June 22, fine 15, interest 7.75,
-    // totalDue 772.75. The June-22 sentinel then exhausts the installment
-    // (750 + 15 + 7.75 = 772.75), so the Aug-1 payment has nothing left to
-    // cover once replayed after it.
-    const expected = quoteInstallment(
-      BASE,
-      [{ id: 'p2', amount: 500, paidAt: laterPaidAt, recordedAt: laterPaidAt }],
-      new Date(paidAt),
-    )
-    expect(expected.totalDue).toBe(772.75)
 
     tx.execute.mockResolvedValueOnce([{ id: INSTALLMENT_ID }])
     tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
     tx.select.mockReturnValueOnce(chain([typedInstallmentRow()])) // row
     tx.select.mockReturnValueOnce(
-      chain([{ id: 'p2', amount: laterAmount, paidAt: laterPaidAt, recordedAt: laterPaidAt }]),
+      chain([
+        {
+          id: 'p2',
+          amount: '500.00',
+          interestCovered: '10.00',
+          fineCovered: '15.00',
+          principalCovered: '475.00',
+          paidAt: laterPaidAt,
+          recordedAt: laterPaidAt,
+        },
+      ]),
     ) // existingPayments
 
-    const rewrite: { value?: unknown } = {}
-    tx.update.mockReturnValueOnce(chainCapturing(undefined, rewrite)) // rewrite of p2
+    // The June-22 charge is the whole balance as of that date, so replayed
+    // ahead of p2 it would leave p2's R$500 with nothing to cover.
+    await expect(
+      bulkPayInstallments(TENANT, USER_ID, {
+        installmentIds: [INSTALLMENT_ID],
+        paymentMethod: 'pix',
+        paidAt,
+      }),
+    ).rejects.toMatchObject({ code: 'BACKDATED_PAYMENT_OVERFILLS' })
 
-    const paymentInsert: { value?: unknown } = {}
-    tx.insert.mockReturnValueOnce(chainCapturing([{ id: 'pay-1' }], paymentInsert))
-    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }])) // entryInfo
-    tx.insert.mockReturnValueOnce(chain(undefined)) // cashMovements
-    tx.update.mockReturnValueOnce(chain(undefined)) // installments final
-    tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '750.00' }])) // updateEntryStatus
-    tx.update.mockReturnValueOnce(chain(undefined)) // financialEntries
-    tx.select.mockReturnValueOnce(chain([{ status: 'pending', totalAmount: '750.00' }])) // meta gate 1 fails
-
-    const results = await bulkPayInstallments(TENANT, USER_ID, {
-      installmentIds: [INSTALLMENT_ID],
-      paymentMethod: 'pix',
-      paidAt,
-    })
-
-    expect(results[0].allocation).toEqual({ interestCovered: 7.75, fineCovered: 15, principalCovered: 750 })
-    expect(paymentInsert.value).toMatchObject({ amount: '772.75', recordedAt: expect.any(Date) })
-    // The Aug-1 record is left covering nothing: the June-22 sentinel already
-    // exhausted the installment once replayed in chronological order.
-    expect(rewrite.value).toEqual({
-      interestCovered: '0.00',
-      fineCovered: '0.00',
-      principalCovered: '0.00',
-    })
+    expect(tx.update).not.toHaveBeenCalled()
+    expect(tx.insert).not.toHaveBeenCalled()
   })
 
   // AR-exec / step 3: a reversed payment record must not feed the replay.
