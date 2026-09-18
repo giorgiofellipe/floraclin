@@ -644,11 +644,25 @@ export const remoteConsentSignatureSchema = z.object({
 export type RemoteConsentSignatureInput = z.infer<typeof remoteConsentSignatureSchema>
 export type DeviceFingerprintInput = z.infer<typeof deviceFingerprintSchema>
 
-export const sendSigningLinkSchema = z.object({
+const signingLinkBase = {
   patientId: z.string().uuid(),
-  procedureRecordId: z.string().uuid(),
-  consentTypes: z.array(z.enum(consentTypes)).min(1, 'Pelo menos um tipo de termo é obrigatório'),
   renderedContents: z.record(z.string(), z.string()).optional(),
-})
+}
+
+export const sendSigningLinkSchema = z.union([
+  z
+    .object({
+      ...signingLinkBase,
+      procedureRecordId: z.string().uuid(),
+      consentTypes: z.array(z.enum(consentTypes)).min(1, 'Pelo menos um tipo de termo é obrigatório'),
+    })
+    .strict(),
+  z
+    .object({
+      ...signingLinkBase,
+      consentTemplateIds: z.array(z.string().uuid()).min(1, 'Pelo menos um modelo de termo é obrigatório'),
+    })
+    .strict(),
+])
 
 export type SendSigningLinkInput = z.infer<typeof sendSigningLinkSchema>

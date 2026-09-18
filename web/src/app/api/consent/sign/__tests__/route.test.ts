@@ -120,3 +120,67 @@ describe('POST /api/consent/sign', () => {
     expect(acceptConsent).toHaveBeenCalled()
   })
 })
+
+describe('POST /api/consent/sign: token consumption', () => {
+  const TEMPLATE_B = '22222222-2222-4222-8222-222222222222'
+
+  it('refuses to consume the token when a template of the link is not signed', async () => {
+    vi.mocked(isSubscriptionActive).mockResolvedValue(true)
+    vi.mocked(getValidSigningToken).mockResolvedValue({
+      ...TOKEN_DATA,
+      consentTemplateIds: [TOKEN_DATA.consentTemplateIds[0], TEMPLATE_B],
+    } as never)
+
+    const res = await POST(makeRequest(makeBody()))
+
+    expect(res.status).toBe(400)
+    expect(markSigningTokenUsed).not.toHaveBeenCalled()
+    expect(acceptConsent).not.toHaveBeenCalled()
+  })
+
+  it('refuses a signature for a template that is not in the link', async () => {
+    vi.mocked(isSubscriptionActive).mockResolvedValue(true)
+
+    const res = await POST(
+      makeRequest(
+        makeBody({
+          signatures: [
+            {
+              consentTemplateId: TEMPLATE_B,
+              signatureData: 'data:image/png;base64,abc',
+              deviceFingerprint: { screen: '1920x1080', timezone: 'America/Sao_Paulo', language: 'pt-BR' },
+            },
+          ],
+        }),
+      ),
+    )
+
+    expect(res.status).toBe(400)
+    expect(markSigningTokenUsed).not.toHaveBeenCalled()
+  })
+
+  it('answers 409 without consuming the token when a pinned template row is gone', async () => {
+    vi.mocked(isSubscriptionActive).mockResolvedValue(true)
+    vi.mocked(getTemplatesForToken).mockResolvedValue([] as never)
+
+    const res = await POST(makeRequest(makeBody()))
+
+    expect(res.status).toBe(409)
+    expect(markSigningTokenUsed).not.toHaveBeenCalled()
+  })
+
+  it('records an acceptance without a procedure for a patient-level link', async () => {
+    vi.mocked(isSubscriptionActive).mockResolvedValue(true)
+    vi.mocked(getValidSigningToken).mockResolvedValue({ ...TOKEN_DATA, procedureRecordId: null } as never)
+
+    const res = await POST(makeRequest(makeBody()))
+
+    expect(res.status).toBe(200)
+    expect(acceptConsent).toHaveBeenCalledWith(
+      TOKEN_TENANT_ID,
+      expect.objectContaining({ patientId: 'patient-1', procedureRecordId: undefined }),
+      expect.anything(),
+      expect.anything(),
+    )
+  })
+})

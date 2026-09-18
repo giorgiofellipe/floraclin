@@ -375,7 +375,7 @@ export const consentSigningTokens = floraclinSchema.table('consent_signing_token
   token: varchar('token', { length: 64 }).notNull().unique(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   patientId: uuid('patient_id').notNull().references(() => patients.id),
-  procedureRecordId: uuid('procedure_record_id').notNull().references(() => procedureRecords.id),
+  procedureRecordId: uuid('procedure_record_id').references(() => procedureRecords.id),
   consentTemplateIds: uuid('consent_template_ids').array().notNull(),
   renderedContents: jsonb('rendered_contents').$type<Record<string, string>>(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
