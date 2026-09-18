@@ -25,6 +25,7 @@ export default auth((req) => {
     // unauthenticated /login redirect and the token in the query string is
     // lost, which defeats the whole point of a 24 hour link.
     pathname.startsWith('/confirm-email') ||
+    pathname === '/manifest.webmanifest' ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/favicon') ||

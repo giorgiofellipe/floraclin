@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
 import { SubscriptionBanner } from '@/components/layout/subscription-banner'
+import { InstallBanner } from '@/components/layout/install-banner'
 import { getAuthContext, getUserTenants } from '@/lib/auth'
 import { getSubscription } from '@/db/queries/subscriptions'
 import { db } from '@/db/client'
@@ -72,6 +73,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           subscriptionStatus={subscription?.status ?? null}
           currentPeriodEnd={subscription?.currentPeriodEnd?.toISOString() ?? null}
         />
+        <InstallBanner />
         <main className="flex-1 p-6">{children}</main>
       </div>
     </div>
