@@ -12,16 +12,15 @@ const IOS_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebK
 const IPADOS_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15'
 const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36'
 
-// jsdom has no matchMedia or navigator.share, and its userAgent lives on
-// Navigator.prototype, so everything is defined as an own configurable
-// property and removed after each test.
+// jsdom has no matchMedia, and its userAgent lives on Navigator.prototype, so
+// everything is defined as an own configurable property and removed after
+// each test.
 function stubEnvironment({
   installed = false,
   mobile = true,
   userAgent = ANDROID_UA,
   touchPoints = 0,
-  share,
-}: { installed?: boolean; mobile?: boolean; userAgent?: string; touchPoints?: number; share?: () => Promise<void> } = {}) {
+}: { installed?: boolean; mobile?: boolean; userAgent?: string; touchPoints?: number } = {}) {
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
     writable: true,
@@ -34,7 +33,6 @@ function stubEnvironment({
   })
   Object.defineProperty(navigator, 'userAgent', { configurable: true, value: userAgent })
   Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, value: touchPoints })
-  if (share) Object.defineProperty(navigator, 'share', { configurable: true, value: share })
 }
 
 function fireInstallPrompt() {
@@ -59,7 +57,6 @@ afterEach(() => {
   delete (navigator as { userAgent?: unknown }).userAgent
   delete (navigator as { maxTouchPoints?: unknown }).maxTouchPoints
   delete (navigator as { standalone?: unknown }).standalone
-  delete (navigator as { share?: unknown }).share
   vi.restoreAllMocks()
 })
 
@@ -95,30 +92,29 @@ describe('InstallBanner', () => {
     expect(banner()).not.toBeInTheDocument()
   })
 
-  it('offers the share sheet on iOS and explains the remaining taps', () => {
-    const share = vi.fn().mockResolvedValue(undefined)
-    stubEnvironment({ userAgent: IOS_UA, share })
+  it('opens the step-by-step sheet from the Instalar button on iOS', async () => {
+    stubEnvironment({ userAgent: IOS_UA })
     render(<InstallBanner />)
 
     expect(banner()).toHaveTextContent('Instale o FloraClin')
-    expect(banner()).toHaveTextContent(/Ver mais e em Adicionar à Tela de Início/)
-    fireEvent.click(screen.getByRole('button', { name: /compartilhar/i }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^instalar$/i }))
 
-    expect(share).toHaveBeenCalledWith({ title: 'FloraClin', url: window.location.href })
-    expect(screen.queryByRole('button', { name: /^instalar$/i })).not.toBeInTheDocument()
-  })
+    const sheet = await screen.findByRole('dialog')
+    expect(sheet).toHaveTextContent('Toque em ⋯ na barra do Safari')
+    expect(sheet).toHaveTextContent('Toque em Compartilhar')
+    expect(sheet).toHaveTextContent('Toque em Ver mais e depois em Adicionar à Tela de Início')
+    expect(sheet).toHaveTextContent('Toque em Adicionar')
 
-  it('spells out the full iOS path when the share sheet is not available', () => {
-    stubEnvironment({ userAgent: IOS_UA })
-    render(<InstallBanner />)
-    expect(banner()).toHaveTextContent('⋯ › Compartilhar › Ver mais › Adicionar à Tela de Início')
-    expect(screen.queryByRole('button', { name: /compartilhar/i })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /entendi/i }))
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(banner()).toBeInTheDocument()
   })
 
   it('treats a touch Macintosh user agent as iPadOS Safari', () => {
     stubEnvironment({ userAgent: IPADOS_UA, touchPoints: 5 })
     render(<InstallBanner />)
-    expect(banner()).toHaveTextContent(/Adicionar à Tela de Início/)
+    expect(banner()).toHaveTextContent(/Quatro toques no Safari/)
   })
 
   it('tells other mobile browsers to use the browser menu until the browser offers to install', () => {

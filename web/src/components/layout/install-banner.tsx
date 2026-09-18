@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { X } from 'lucide-react'
+import { IosInstallSteps } from '@/components/layout/ios-install-steps'
 
 const DISMISSED_KEY = 'floraclin.install-banner.dismissed'
 // The complement of Tailwind's md breakpoint (48rem), where the wrapper's
@@ -48,6 +49,7 @@ function writeDismissed() {
 export function InstallBanner() {
   const [mode, setMode] = useState<Mode>('hidden')
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null)
+  const [showIosSteps, setShowIosSteps] = useState(false)
 
   useEffect(() => {
     if (isInstalled() || readDismissed()) return
@@ -79,8 +81,6 @@ export function InstallBanner() {
 
   if (mode === 'hidden') return null
 
-  const canShare = typeof navigator.share === 'function'
-
   const dismiss = () => {
     writeDismissed()
     setMode('hidden')
@@ -92,21 +92,11 @@ export function InstallBanner() {
     installEvent.prompt().catch(() => undefined)
   }
 
-  // iOS has no install API. The share sheet is the closest thing: it opens on
-  // the page URL and lists "Adicionar à Tela de Início" under "Ver mais".
-  const share = () => {
-    navigator.share({ title: 'FloraClin', url: window.location.href }).catch(() => undefined)
-  }
-
   let action: React.ReactNode = null
   let steps: string
   if (mode === 'ios') {
-    if (canShare) {
-      action = <ActionButton onClick={share}>Compartilhar</ActionButton>
-      steps = 'Depois toque em Ver mais e em Adicionar à Tela de Início.'
-    } else {
-      steps = '⋯ › Compartilhar › Ver mais › Adicionar à Tela de Início'
-    }
+    action = <ActionButton onClick={() => setShowIosSteps(true)}>Instalar</ActionButton>
+    steps = 'Quatro toques no Safari, sem loja de apps.'
   } else if (installEvent) {
     action = <ActionButton onClick={install}>Instalar</ActionButton>
     steps = 'Leva um segundo e não ocupa espaço.'
@@ -119,8 +109,8 @@ export function InstallBanner() {
       data-testid="install-banner"
       className="fixed inset-x-3 bottom-3 z-30 rounded-xl bg-forest p-4 text-white shadow-lg md:hidden"
     >
-      <div className="flex items-start gap-3">
-        <Image src="/icons/icon-192.png" alt="" width={40} height={40} className="size-10 shrink-0 rounded-lg" />
+      <div className="flex items-center gap-3">
+        <Image src="/apple-icon.png" alt="" width={56} height={56} className="size-14 shrink-0 rounded-[22%] shadow-md ring-1 ring-white/25" />
         <div className="min-w-0 flex-1">
           <p className="font-medium">Instale o FloraClin</p>
           <p className="text-sm text-white/80">Abra direto da tela inicial, sem o navegador.</p>
@@ -128,7 +118,7 @@ export function InstallBanner() {
         <button
           type="button"
           onClick={dismiss}
-          className="-mr-1 -mt-1 shrink-0 rounded p-1 text-white/80"
+          className="-mr-1 shrink-0 self-start rounded p-1 text-white/80"
           aria-label="Fechar"
         >
           <X className="size-5" />
@@ -138,6 +128,7 @@ export function InstallBanner() {
         {action}
         <p className="text-xs text-white/80">{steps}</p>
       </div>
+      {mode === 'ios' && <IosInstallSteps open={showIosSteps} onOpenChange={setShowIosSteps} />}
     </div>
   )
 }
