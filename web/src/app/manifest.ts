@@ -6,9 +6,10 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: 'FloraClin',
     description: 'Sistema para clínicas de Harmonização Orofacial',
     lang: 'pt-BR',
+    id: '/',
     start_url: '/dashboard',
     display: 'standalone',
-    background_color: '#FFFFFF',
+    background_color: '#F4F6F8',
     theme_color: '#1C2B1E',
     icons: [
       { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },

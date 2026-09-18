@@ -4,26 +4,29 @@ import { describe, expect, it } from 'vitest'
 import manifest from '../manifest'
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+const RGB = 2
+const RGBA = 6
 
-// Width and height live in the IHDR chunk right after the 8 byte signature and
-// the 8 byte chunk header, so no image library is needed to read them.
-function pngSize(file: string) {
-  const buf = readFileSync(file)
+// Width, height and color type live in the IHDR chunk right after the 8 byte
+// signature and the 8 byte chunk header, so no image library is needed.
+function png(file: string) {
+  const buf = readFileSync(path.join(process.cwd(), file))
   expect(buf.subarray(0, 8).equals(PNG_SIGNATURE)).toBe(true)
-  return `${buf.readUInt32BE(16)}x${buf.readUInt32BE(20)}`
+  return { size: `${buf.readUInt32BE(16)}x${buf.readUInt32BE(20)}`, colorType: buf[25] }
 }
 
 describe('manifest', () => {
   const m = manifest()
 
   it('declares the app identity, colors and a standalone start on the dashboard', () => {
+    expect(m.id).toBe('/')
     expect(m.start_url).toBe('/dashboard')
     expect(m.display).toBe('standalone')
     expect(m.name).toBe('FloraClin')
     expect(m.short_name).toBe('FloraClin')
     expect(m.lang).toBe('pt-BR')
     expect(m.theme_color).toBe('#1C2B1E')
-    expect(m.background_color).toBe('#FFFFFF')
+    expect(m.background_color).toBe('#F4F6F8')
   })
 
   it('declares 192, 512 and a maskable 512 PNG icon', () => {
@@ -36,11 +39,17 @@ describe('manifest', () => {
 
   it('points every icon at a PNG in public/ with the declared size', () => {
     for (const icon of m.icons ?? []) {
-      expect(pngSize(path.join(process.cwd(), 'public', icon.src))).toBe(icon.sizes)
+      expect(png(path.join('public', icon.src)).size).toBe(icon.sizes)
     }
   })
 
-  it('ships a 180x180 PNG touch icon for iOS', () => {
-    expect(pngSize(path.join(process.cwd(), 'src/app/apple-icon.png'))).toBe('180x180')
+  it('keeps the transparent rounded corners on the plain icons', () => {
+    expect(png('public/icons/icon-192.png').colorType).toBe(RGBA)
+    expect(png('public/icons/icon-512.png').colorType).toBe(RGBA)
+  })
+
+  it('renders the launcher-masked icons without an alpha channel, so their corners are opaque', () => {
+    expect(png('public/icons/maskable-512.png').colorType).toBe(RGB)
+    expect(png('src/app/apple-icon.png')).toEqual({ size: '180x180', colorType: RGB })
   })
 })

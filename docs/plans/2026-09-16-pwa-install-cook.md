@@ -10,6 +10,8 @@
 
 **Spec:** Design approved in chat on 2026-09-16 (bounded task, no spec file). Summary: install to home screen for clinic staff only, `start_url` is `/dashboard`, no service worker, no offline, no push. Install prompt is a dismissable banner in the platform layout, mobile only, same look as the trial banner. Public patient pages (`/a`, `/c`, `/sign`) get no banner. The manifest itself is global (a root file convention links it on every page), so Chrome may still show its own install entry on the public booking page; only the custom banner is excluded.
 
+> **Status (2026-09-16):** implemented and reviewed in PR #46. The code blocks below are the pre-review versions and were superseded during self-review (simpler `rsvg-convert` flags in the icon script, `(width < 48rem)` media query, iPadOS via touch points, `navigator.standalone`, listeners scoped to the visible banner, no `role="status"`, IHDR color type checks in the manifest test). The "Behavior" list in Task 3, the File Structure table, and the shipped files are authoritative.
+
 ## Global Constraints
 
 Every task's requirements implicitly include this section.
@@ -323,10 +325,10 @@ Expected: no errors.
 - Produces: `export function InstallBanner(): JSX.Element | null`, no props. Task 4 imports it from `@/components/layout/install-banner`.
 
 Behavior:
-- Wrapper has Tailwind `md:hidden`, so desktop never sees it.
+- Rendered as a fixed card at the bottom of the screen (forest background, app icon, title, one line of steps, X). Wrapper has Tailwind `md:hidden`, so desktop never sees it.
 - Hidden when the page runs as an installed app: `display-mode` is `standalone` or `fullscreen`, or iOS reports `navigator.standalone`.
 - Hidden when `localStorage` has `floraclin.install-banner.dismissed`. Reads and writes are wrapped in try/catch; a throwing storage counts as "not dismissed".
-- iOS (`/iPhone|iPad|iPod/` in `navigator.userAgent`, or a Macintosh user agent with touch points, which is how iPadOS Safari presents itself): shows share sheet instructions.
+- iOS (`/iPhone|iPad|iPod/` in `navigator.userAgent`, or a Macintosh user agent with touch points, which is how iPadOS Safari presents itself): shows a "Compartilhar" button that opens the share sheet through `navigator.share`, and the remaining taps (Ver mais, then Adicionar à Tela de Início). Without `navigator.share` it spells out the full path.
 - Every other mobile browser: shows browser menu instructions. If the browser fires `beforeinstallprompt` while the viewport is under 768px, the handler calls `preventDefault()`, keeps the event, and the banner adds an "Instalar" button. On wider viewports the handler ignores the event so the browser keeps its own install UI where the banner is invisible.
 - The kept event is one-shot. Clicking "Instalar" hides the banner (which unmounts the button) and then calls `prompt()`, so a dismissed native dialog or a double tap never reuses a spent event. If the event fired before the banner mounted, the banner still shows the menu instructions; Chrome fires the event again on the next page load.
 - `appinstalled` hides the banner and writes the dismiss key, so a later visit in a normal tab does not ask again (covers installs started from the browser menu).
