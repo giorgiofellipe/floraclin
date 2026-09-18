@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { NextResponse } from 'next/server'
 
-vi.mock('@/lib/auth', () => ({
-  getAuthContext: vi.fn(),
+vi.mock('@/lib/write-access', () => ({
+  requireWrite: vi.fn(),
 }))
 
 vi.mock('@/lib/audit', () => ({
@@ -12,7 +13,7 @@ vi.mock('@/db/queries/financial', () => ({
   recordPayment: vi.fn(),
 }))
 
-import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { recordPayment } from '@/db/queries/financial'
 import { BusinessError } from '@/lib/errors'
@@ -34,37 +35,28 @@ function callPut(body: unknown, id = installmentId) {
 
 const validBody = { amount: 150, paymentMethod: 'pix' }
 
+const AUTH_OK = { tenantId: 'tenant-1', userId: 'user-1', role: 'owner' }
+
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(getAuthContext).mockResolvedValue({
-    tenantId: 'tenant-1',
-    userId: 'user-1',
-    role: 'owner',
-  } as never)
+  vi.mocked(requireWrite).mockResolvedValue({ ctx: AUTH_OK, blocked: null } as never)
   vi.mocked(recordPayment).mockResolvedValue({ allocation: [{ id: 'inst-1', amount: 150 }] } as never)
   vi.mocked(createAuditLog).mockResolvedValue(undefined as never)
 })
 
 describe('PUT /api/financial/installments/[id]/pay', () => {
-  it('allows owner, receptionist and financial, rejects everyone else', async () => {
-    for (const role of ['owner', 'receptionist', 'financial']) {
-      vi.mocked(getAuthContext).mockResolvedValue({
-        tenantId: 'tenant-1',
-        userId: 'user-1',
-        role,
-      } as never)
+  it('asks the guard for owner, receptionist and financial', async () => {
+    await callPut(validBody)
 
-      const res = await callPut(validBody)
+    expect(requireWrite).toHaveBeenCalledWith('owner', 'receptionist', 'financial')
+  })
 
-      expect(res.status).toBe(200)
-    }
-
-    vi.mocked(getAuthContext).mockResolvedValue({
-      tenantId: 'tenant-1',
-      userId: 'user-1',
-      role: 'practitioner',
+  it('returns the guard response and records nothing when it blocks', async () => {
+    // A wrong role and a lapsed subscription both arrive here the same way.
+    vi.mocked(requireWrite).mockResolvedValueOnce({
+      ctx: null,
+      blocked: NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
     } as never)
-    vi.mocked(recordPayment).mockClear()
 
     const res = await callPut(validBody)
 

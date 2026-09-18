@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { NextResponse } from 'next/server'
 
-vi.mock('@/lib/auth', () => ({
-  getAuthContext: vi.fn(),
+vi.mock('@/lib/write-access', () => ({
+  requireWrite: vi.fn(),
 }))
 
 vi.mock('@/db/queries/financial', () => ({
   uncancelEntries: vi.fn(),
 }))
 
-import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { uncancelEntries } from '@/db/queries/financial'
 import { BusinessError } from '@/lib/errors'
 import { POST } from '../route'
@@ -23,36 +24,27 @@ function makeRequest(body: unknown) {
 
 const validBody = { entryIds: ['11111111-1111-4111-8111-111111111111'], reason: 'Erro no cancelamento' }
 
+const AUTH_OK = { tenantId: 'tenant-1', userId: 'user-1', role: 'owner' }
+
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(getAuthContext).mockResolvedValue({
-    tenantId: 'tenant-1',
-    userId: 'user-1',
-    role: 'owner',
-  } as never)
+  vi.mocked(requireWrite).mockResolvedValue({ ctx: AUTH_OK, blocked: null } as never)
   vi.mocked(uncancelEntries).mockResolvedValue({ uncancelledCount: 1 })
 })
 
 describe('POST /api/financial/bulk/uncancel', () => {
-  it('allows owner and financial, rejects everyone else', async () => {
-    for (const role of ['owner', 'financial']) {
-      vi.mocked(getAuthContext).mockResolvedValue({
-        tenantId: 'tenant-1',
-        userId: 'user-1',
-        role,
-      } as never)
+  it('asks the guard for owner and financial only', async () => {
+    await POST(makeRequest(validBody))
 
-      const res = await POST(makeRequest(validBody))
+    expect(requireWrite).toHaveBeenCalledWith('owner', 'financial')
+  })
 
-      expect(res.status).toBe(200)
-    }
-
-    vi.mocked(getAuthContext).mockResolvedValue({
-      tenantId: 'tenant-1',
-      userId: 'user-1',
-      role: 'receptionist',
+  it('returns the guard response and reactivates nothing when it blocks', async () => {
+    // A wrong role and a lapsed subscription both arrive here the same way.
+    vi.mocked(requireWrite).mockResolvedValueOnce({
+      ctx: null,
+      blocked: NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
     } as never)
-    vi.mocked(uncancelEntries).mockClear()
 
     const res = await POST(makeRequest(validBody))
 

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getAuthContext } from '@/lib/auth'
+import { requireWrite } from '@/lib/write-access'
 import { uncancelEntries } from '@/db/queries/financial'
 import { bulkUncancelSchema } from '@/validations/financial'
 import { handleApiError } from '@/lib/api-error'
@@ -7,11 +7,8 @@ import { BusinessError } from '@/lib/errors'
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getAuthContext()
-    // Bulk uncancel: owner + financial
-    if (!['owner', 'financial'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const { ctx, blocked } = await requireWrite('owner', 'financial')
+    if (blocked) return blocked
 
     const body = await request.json()
     const parsed = bulkUncancelSchema.safeParse(body)
