@@ -1,4 +1,5 @@
 import type { PaymentMethod } from '@/types'
+import { BR_TZ } from '@/lib/dates'
 
 export interface ContractData {
   nomePaciente: string
@@ -85,7 +86,7 @@ function formatCurrency(value: number): string {
  * Formats a date as dd/mm/yyyy.
  */
 function formatDate(date: Date): string {
-  return new Intl.DateTimeFormat('pt-BR').format(date)
+  return new Intl.DateTimeFormat('pt-BR', { timeZone: BR_TZ }).format(date)
 }
 
 interface ProcedurePlanItem {
@@ -151,4 +152,30 @@ export function buildContractData(
     profissional: practitioner,
     clinica: clinicName,
   }
+}
+
+export interface ServiceContractContext {
+  patientName: string
+  patientCpf?: string | null
+  practitionerName: string
+  clinicName: string
+}
+
+/**
+ * Contract text for a template signed outside a procedure plan: no items, no
+ * financial plan. The clinic preview and the remote signing page must both
+ * come from here so the patient signs exactly what the clinic saw.
+ */
+export function renderServiceContract(content: string, context: ServiceContractContext): string {
+  return interpolateContract(
+    content,
+    buildContractData(
+      [],
+      [],
+      { totalAmount: 0, installmentCount: 1 },
+      { fullName: context.patientName, cpf: context.patientCpf },
+      context.practitionerName,
+      context.clinicName,
+    ),
+  )
 }

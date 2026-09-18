@@ -194,25 +194,24 @@ describe('CONSENT_SIGNING_TEMPLATE_PURPOSE', () => {
 
 describe('sendSigningLinkSchema', () => {
   const patientId = '11111111-1111-4111-8111-111111111111'
+  const procedureRecordId = '22222222-2222-4222-8222-222222222222'
   const templateId = '33333333-3333-4333-8333-333333333333'
 
   it('accepts consent types with a procedure', () => {
-    const result = sendSigningLinkSchema.safeParse({
-      patientId,
-      procedureRecordId: '22222222-2222-4222-8222-222222222222',
-      consentTypes: ['botox'],
-    })
-    expect(result.success).toBe(true)
+    expect(sendSigningLinkSchema.safeParse({ patientId, procedureRecordId, consentTypes: ['botox'] }).success).toBe(true)
   })
 
   it('accepts explicit template ids without a procedure', () => {
-    const result = sendSigningLinkSchema.safeParse({ patientId, consentTemplateIds: [templateId] })
-    expect(result.success).toBe(true)
+    expect(sendSigningLinkSchema.safeParse({ patientId, consentTemplateIds: [templateId] }).success).toBe(true)
+  })
+
+  it('rejects consent types without a procedure', () => {
+    expect(sendSigningLinkSchema.safeParse({ patientId, consentTypes: ['botox'] }).success).toBe(false)
   })
 
   it('rejects both selectors together and neither selector', () => {
     expect(
-      sendSigningLinkSchema.safeParse({ patientId, consentTypes: ['botox'], consentTemplateIds: [templateId] }).success,
+      sendSigningLinkSchema.safeParse({ patientId, procedureRecordId, consentTypes: ['botox'], consentTemplateIds: [templateId] }).success,
     ).toBe(false)
     expect(sendSigningLinkSchema.safeParse({ patientId }).success).toBe(false)
   })

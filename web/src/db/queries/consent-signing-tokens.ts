@@ -113,7 +113,6 @@ export async function getTemplatesForToken(tenantId: string, templateIds: string
       and(
         eq(consentTemplates.tenantId, tenantId),
         inArray(consentTemplates.id, templateIds),
-        eq(consentTemplates.isActive, true),
       ),
     )
 }

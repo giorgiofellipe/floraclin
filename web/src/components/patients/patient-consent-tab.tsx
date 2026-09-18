@@ -21,7 +21,7 @@ import { SendConsentSigningLink } from '@/components/procedures/approval/send-co
 import { useConsentTemplates } from '@/hooks/queries/use-consent'
 import { useTenant } from '@/hooks/queries/use-tenant'
 import { useProfile } from '@/hooks/queries/use-profile'
-import { interpolateContract, buildContractData } from '@/lib/contract-interpolation'
+import { renderServiceContract } from '@/lib/contract-interpolation'
 import { cn } from '@/lib/utils'
 
 interface ConsentTemplate {
@@ -73,35 +73,35 @@ export function PatientConsentTab({
   }, [templates])
 
   useEffect(() => {
-    if (!selectedTemplateId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clears derived state when selection is removed
-      setSelectedTemplate(null)
-      return
-    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the loaded template is derived from the selection
+    setSelectedTemplate(null)
+    if (!selectedTemplateId) return
+
+    let stale = false
     async function load() {
       try {
         const res = await fetch(`/api/consent/templates/${selectedTemplateId}`)
-        if (res.ok) {
-          const data = await res.json()
-          setSelectedTemplate(data as ConsentTemplate)
+        if (res.ok && !stale) {
+          setSelectedTemplate((await res.json()) as ConsentTemplate)
         }
       } catch {
         // ignore
       }
     }
     load()
+    return () => {
+      stale = true
+    }
   }, [selectedTemplateId])
 
-  // The remote page shows this text verbatim, so it must match what the
-  // local viewer would have shown for the same template.
   const renderedContents = useMemo(() => {
     if (!selectedTemplate || selectedTemplate.type !== 'service_contract') return undefined
-    const content = interpolateContract(selectedTemplate.content, buildContractData(
-      [], [], { totalAmount: 0, installmentCount: 1 },
-      { fullName: patientName ?? '', cpf: patientCpf },
+    const content = renderServiceContract(selectedTemplate.content, {
+      patientName: patientName ?? '',
+      patientCpf,
       practitionerName,
       clinicName,
-    ))
+    })
     return { [selectedTemplate.id]: content }
   }, [selectedTemplate, patientName, patientCpf, practitionerName, clinicName])
 
@@ -167,7 +167,7 @@ export function PatientConsentTab({
 
               {selectedTemplate && (
                 <>
-                  <SigningModeToggle mode={mode} onChange={setMode} />
+                  <SigningModeToggle mode={mode} onChange={setMode} remoteAvailable={!!patientPhone} />
 
                   {mode === 'local' ? (
                     <ConsentViewer
@@ -189,6 +189,7 @@ export function PatientConsentTab({
                         O paciente recebe um link para ler e assinar o termo no próprio celular. O link vale por 24 horas.
                       </p>
                       <SendConsentSigningLink
+                        key={selectedTemplate.id}
                         patientId={patientId}
                         patientName={patientName ?? ''}
                         patientPhone={patientPhone}
@@ -209,23 +210,30 @@ export function PatientConsentTab({
   )
 }
 
-function SigningModeToggle({ mode, onChange }: { mode: SigningMode; onChange: (mode: SigningMode) => void }) {
-  const options: { value: SigningMode; label: string; icon: typeof PenLine }[] = [
-    { value: 'local', label: 'Assinar neste dispositivo', icon: PenLine },
-    { value: 'remote', label: 'Enviar por WhatsApp', icon: Send },
+interface SigningModeToggleProps {
+  mode: SigningMode
+  remoteAvailable: boolean
+  onChange: (mode: SigningMode) => void
+}
+
+function SigningModeToggle({ mode, remoteAvailable, onChange }: SigningModeToggleProps) {
+  const options = [
+    { value: 'local' as const, label: 'Assinar neste dispositivo', icon: PenLine, disabled: false },
+    { value: 'remote' as const, label: 'Enviar por WhatsApp', icon: Send, disabled: !remoteAvailable },
   ]
 
   return (
-    <div role="radiogroup" aria-label="Forma de assinatura" className="grid grid-cols-2 gap-2">
-      {options.map(({ value, label, icon: Icon }) => (
+    <div role="group" aria-label="Forma de assinatura" className="grid grid-cols-2 gap-2">
+      {options.map(({ value, label, icon: Icon, disabled }) => (
         <button
           key={value}
           type="button"
-          role="radio"
-          aria-checked={mode === value}
+          aria-pressed={mode === value}
+          disabled={disabled}
+          title={disabled ? 'Paciente sem telefone cadastrado' : undefined}
           onClick={() => onChange(value)}
           className={cn(
-            'flex items-center justify-center gap-2 rounded-[3px] border px-3 py-2 text-sm font-medium transition-colors',
+            'flex items-center justify-center gap-2 rounded-[3px] border px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50',
             mode === value
               ? 'border-forest bg-forest text-cream'
               : 'border-sage/30 text-charcoal hover:bg-sage/5',
