@@ -53,7 +53,8 @@ export function PatientConsentTab({
   const [showNewConsent, setShowNewConsent] = useState(false)
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [selectedTemplate, setSelectedTemplate] = useState<ConsentTemplate | null>(null)
-  const [mode, setMode] = useState<SigningMode>('local')
+  const defaultMode: SigningMode = patientPhone ? 'remote' : 'local'
+  const [mode, setMode] = useState<SigningMode>(defaultMode)
 
   const { data: rawTemplates, isLoading: loadingTemplates } = useConsentTemplates()
   const { data: tenant } = useTenant()
@@ -108,7 +109,7 @@ export function PatientConsentTab({
   const resetDialog = () => {
     setSelectedTemplateId('')
     setSelectedTemplate(null)
-    setMode('local')
+    setMode(defaultMode)
   }
 
   const handleAccepted = () => {
@@ -218,8 +219,8 @@ interface SigningModeToggleProps {
 
 function SigningModeToggle({ mode, remoteAvailable, onChange }: SigningModeToggleProps) {
   const options = [
-    { value: 'local' as const, label: 'Assinar neste dispositivo', icon: PenLine, disabled: false },
     { value: 'remote' as const, label: 'Enviar por WhatsApp', icon: Send, disabled: !remoteAvailable },
+    { value: 'local' as const, label: 'Assinar neste dispositivo', icon: PenLine, disabled: false },
   ]
 
   return (

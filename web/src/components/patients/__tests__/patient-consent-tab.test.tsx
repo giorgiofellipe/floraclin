@@ -107,13 +107,22 @@ afterEach(() => {
 })
 
 describe('PatientConsentTab', () => {
-  it('signs on this device by default', async () => {
+  it('sends by WhatsApp by default when the patient has a phone', async () => {
     renderWithProviders(<PatientConsentTab patientId="p1" patientName="Maria Silva" patientPhone="11999990000" />)
     await openAndPick(TEMPLATE_ID)
 
+    expect(screen.getByTestId('send-link')).toBeInTheDocument()
+    expect(screen.queryByTestId('local-viewer')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /enviar por whatsapp/i })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('switches to signing on this device', async () => {
+    renderWithProviders(<PatientConsentTab patientId="p1" patientName="Maria Silva" patientPhone="11999990000" />)
+    await openAndPick(TEMPLATE_ID)
+    fireEvent.click(screen.getByRole('button', { name: /assinar neste dispositivo/i }))
+
     expect(screen.getByTestId('local-viewer')).toBeInTheDocument()
     expect(screen.queryByTestId('send-link')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /assinar neste dispositivo/i })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('sends the selected template as a signing link without a procedure', async () => {
@@ -121,7 +130,6 @@ describe('PatientConsentTab', () => {
       <PatientConsentTab patientId="p1" patientName="Maria Silva" patientPhone="11999990000" whatsappApiEnabled />,
     )
     await openAndPick(TEMPLATE_ID)
-    fireEvent.click(screen.getByRole('button', { name: /enviar por whatsapp/i }))
 
     await waitFor(() => expect(screen.getByTestId('send-link')).toBeInTheDocument())
     expect(screen.queryByTestId('local-viewer')).not.toBeInTheDocument()
@@ -141,7 +149,6 @@ describe('PatientConsentTab', () => {
   it('remounts the link sender when the template changes, so a generated link cannot outlive its template', async () => {
     renderWithProviders(<PatientConsentTab patientId="p1" patientName="Maria Silva" patientPhone="11999990000" />)
     await openAndPick(TEMPLATE_ID)
-    fireEvent.click(screen.getByRole('button', { name: /enviar por whatsapp/i }))
     const first = (await screen.findByTestId('send-link')).getAttribute('data-instance')
 
     await pick(OTHER_ID)
@@ -158,7 +165,6 @@ describe('PatientConsentTab', () => {
       <PatientConsentTab patientId="p1" patientName="Maria Silva" patientCpf="123" patientPhone="11999990000" />,
     )
     await openAndPick(CONTRACT_ID)
-    fireEvent.click(screen.getByRole('button', { name: /enviar por whatsapp/i }))
 
     await waitFor(() =>
       expect(sendLinkProps).toHaveBeenLastCalledWith(
@@ -176,26 +182,27 @@ describe('PatientConsentTab', () => {
     })
   })
 
-  it('disables the WhatsApp option when the patient has no phone', async () => {
+  it('falls back to device signing and disables the WhatsApp option when the patient has no phone', async () => {
     renderWithProviders(<PatientConsentTab patientId="p1" patientName="Maria Silva" patientPhone={null} />)
     await openAndPick(TEMPLATE_ID)
 
+    expect(screen.getByTestId('local-viewer')).toBeInTheDocument()
     const remote = screen.getByRole('button', { name: /enviar por whatsapp/i })
     expect(remote).toBeDisabled()
     expect(remote).toHaveAttribute('title', 'Paciente sem telefone cadastrado')
   })
 
-  it('returns to device signing after the dialog closes', async () => {
+  it('returns to the default mode after the dialog closes', async () => {
     renderWithProviders(<PatientConsentTab patientId="p1" patientName="Maria Silva" patientPhone="11999990000" />)
     await openAndPick(TEMPLATE_ID)
-    fireEvent.click(screen.getByRole('button', { name: /enviar por whatsapp/i }))
-    await screen.findByTestId('send-link')
+    fireEvent.click(screen.getByRole('button', { name: /assinar neste dispositivo/i }))
+    await screen.findByTestId('local-viewer')
 
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByTestId('template-select')).not.toBeInTheDocument())
 
     await openAndPick(TEMPLATE_ID)
-    expect(screen.getByTestId('local-viewer')).toBeInTheDocument()
-    expect(screen.queryByTestId('send-link')).not.toBeInTheDocument()
+    expect(screen.getByTestId('send-link')).toBeInTheDocument()
+    expect(screen.queryByTestId('local-viewer')).not.toBeInTheDocument()
   })
 })
