@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { getConnectionByChannelId } from '@/db/queries/calendar'
 import { incrementalSync } from '@/lib/google-calendar-pull'
 import { handleApiError } from '@/lib/api-error'
@@ -33,8 +33,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, message: 'Connection disabled' })
     }
 
-    incrementalSync(connection.id).catch((err) => {
-      reportCalendarFailure(err, 'incremental_sync', { connectionId: connection.id })
+    after(async () => {
+      try {
+        await incrementalSync(connection.id)
+      } catch (err) {
+        reportCalendarFailure(err, 'incremental_sync', { connectionId: connection.id })
+      }
     })
 
     return NextResponse.json({ ok: true })
