@@ -184,7 +184,14 @@ import {
 } from '@/db/queries/whatsapp'
 import { getProspectByPhone } from '@/db/queries/prospects'
 import { getPatientByPhone } from '@/db/queries/patients'
-import { NextRequest } from 'next/server'
+// The webhook registers its post-response work (classification, queue drain)
+// with after(), which only exists inside a Next request scope.
+vi.mock('next/server', async () => {
+  const actual = await vi.importActual<typeof import('next/server')>('next/server')
+  return { ...actual, after: vi.fn() }
+})
+
+import { NextRequest, after } from 'next/server'
 import { eq } from 'drizzle-orm'
 import { POST } from '../route'
 
@@ -484,6 +491,8 @@ describe('resolveSharedNumberTenant — phone history, ambiguous', () => {
     })
 
     expect(reportSideEffectFailureMock).not.toHaveBeenCalled()
+    // Post-response work must be registered with after(), never left floating.
+    expect(after).toHaveBeenCalled()
   })
 
   it('still refuses when both tenants are active inside the window', async () => {

@@ -357,20 +357,24 @@ async function processInboundMessage(
     )
   }
 
-  // Fire-and-forget: keep reclassifying while the lead is still in "novo" stage
+  // Keep reclassifying while the lead is still in "novo" stage
   if (prospect.stage === 'novo') {
     // Subtract 60s buffer from prospect createdAt to account for clock difference
     // between WhatsApp msg timestamp and DB NOW(). Only matters for new prospects;
     // for existing ones the createdAt is old enough that 60s is irrelevant.
     const classifyAfter = new Date(new Date(prospect.createdAt).getTime() - 60_000)
-    classifyAndUpdateProspect(tenantId, prospect.id, conversation.id, classifyAfter).catch((err) =>
-      reportWebhookFailure(err, 'prospect_classification', { tenantId }),
+    after(
+      classifyAndUpdateProspect(tenantId, prospect.id, conversation.id, classifyAfter).catch((err) =>
+        reportWebhookFailure(err, 'prospect_classification', { tenantId }),
+      ),
     )
   }
 
   // Drain any queued messages now that the window is open
-  drainQueuedMessages(tenantId, conversation.id, from).catch((err) =>
-    reportWebhookFailure(err, 'queue_drain', { tenantId }),
+  after(
+    drainQueuedMessages(tenantId, conversation.id, from).catch((err) =>
+      reportWebhookFailure(err, 'queue_drain', { tenantId }),
+    ),
   )
 }
 
