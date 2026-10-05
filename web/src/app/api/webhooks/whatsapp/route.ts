@@ -74,6 +74,9 @@ export async function GET(request: NextRequest) {
 // ---------------------------------------------------------------------------
 // POST -- Receive messages and status updates
 // ---------------------------------------------------------------------------
+// Budget for the work registered with after(); the response itself is immediate.
+export const maxDuration = 60
+
 export async function POST(request: NextRequest) {
   const rawBody = await request.text()
   const signature = request.headers.get('x-hub-signature-256') ?? ''
@@ -285,16 +288,17 @@ async function processInboundMessage(
       body = media.caption ?? null
       mediaFilename = media.filename ?? `${msgType}_${metaMessageId}`
 
-      // Fire-and-forget media download
       const mediaId = media.id
       if (mediaId) {
-        downloadAndStoreMedia(tenantId, mediaId, mediaFilename)
-          .then((result: { storedUrl: string }) => {
-            updateMessageMedia(tenantId, metaMessageId, result.storedUrl)
-          })
-          .catch((err: unknown) =>
-            reportWebhookFailure(err, 'media_download', { tenantId, mediaId }),
-          )
+        const filename = mediaFilename
+        after(async () => {
+          try {
+            const { storedUrl } = await downloadAndStoreMedia(tenantId, mediaId, filename)
+            await updateMessageMedia(tenantId, metaMessageId, storedUrl)
+          } catch (err) {
+            reportWebhookFailure(err, 'media_download', { tenantId, mediaId })
+          }
+        })
       }
     }
   }
@@ -346,36 +350,44 @@ async function processInboundMessage(
   const contextMessageId = msg.context?.id
 
   if (buttonTitle && contextMessageId) {
-    // Registered with `after` rather than left floating. Meta needs its 200
-    // quickly, but a bare fire-and-forget promise can be cut off when the
-    // serverless invocation freezes after the response, which would leave a
-    // patient who tapped Confirmar still marked as scheduled.
-    after(
-      processConfirmationReply(tenantId, contextMessageId, buttonTitle, from).catch((err) => {
+    // Everything below runs through after(): the invocation is suspended once
+    // Meta has its 200, and a floating promise gets cut off mid-query.
+    after(async () => {
+      try {
+        await processConfirmationReply(tenantId, contextMessageId, buttonTitle, from)
+      } catch (err) {
         reportWebhookFailure(err, 'confirmation_reply', { tenantId })
-      }),
-    )
+      }
+    })
   }
 
-  // Fire-and-forget: keep reclassifying while the lead is still in "novo" stage
+  // Keep reclassifying while the lead is still in "novo" stage
   if (prospect.stage === 'novo') {
     // Subtract 60s buffer from prospect createdAt to account for clock difference
     // between WhatsApp msg timestamp and DB NOW(). Only matters for new prospects;
     // for existing ones the createdAt is old enough that 60s is irrelevant.
     const classifyAfter = new Date(new Date(prospect.createdAt).getTime() - 60_000)
-    classifyAndUpdateProspect(tenantId, prospect.id, conversation.id, classifyAfter).catch((err) =>
-      reportWebhookFailure(err, 'prospect_classification', { tenantId }),
-    )
+    after(async () => {
+      try {
+        await classifyAndUpdateProspect(tenantId, prospect.id, conversation.id, classifyAfter)
+      } catch (err) {
+        reportWebhookFailure(err, 'prospect_classification', { tenantId })
+      }
+    })
   }
 
   // Drain any queued messages now that the window is open
-  drainQueuedMessages(tenantId, conversation.id, from).catch((err) =>
-    reportWebhookFailure(err, 'queue_drain', { tenantId }),
-  )
+  after(async () => {
+    try {
+      await drainQueuedMessages(tenantId, conversation.id, from)
+    } catch (err) {
+      reportWebhookFailure(err, 'queue_drain', { tenantId })
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------
-// AI prospect classification (fire-and-forget)
+// AI prospect classification
 // ---------------------------------------------------------------------------
 async function classifyAndUpdateProspect(
   tenantId: string,

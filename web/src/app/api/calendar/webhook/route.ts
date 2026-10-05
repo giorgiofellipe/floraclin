@@ -4,6 +4,9 @@ import { incrementalSync } from '@/lib/google-calendar-pull'
 import { handleApiError } from '@/lib/api-error'
 import { reportCalendarFailure } from '@/lib/google-calendar'
 
+// Budget for the work registered with after(); the response itself is immediate.
+export const maxDuration = 60
+
 export async function POST(request: Request) {
   try {
     const channelId = request.headers.get('x-goog-channel-id')
