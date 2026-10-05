@@ -27,7 +27,7 @@ const CONNECTION = {
   id: 'conn-1',
   enabled: true,
   channelResourceId: 'resource-1',
-}
+} as NonNullable<Awaited<ReturnType<typeof getConnectionByChannelId>>>
 
 function post(headers: Record<string, string>) {
   return POST(new Request('http://localhost/api/calendar/webhook', { method: 'POST', headers }))
@@ -43,18 +43,19 @@ function notification(overrides: Record<string, string> = {}) {
 }
 
 async function runScheduledWork() {
-  const scheduled = vi.mocked(after).mock.calls.map(([task]) => task as () => Promise<void>)
-  for (const task of scheduled) await task()
+  for (const [task] of vi.mocked(after).mock.calls) {
+    await (typeof task === 'function' ? task() : task)
+  }
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(getConnectionByChannelId).mockResolvedValue(CONNECTION as never)
+  vi.mocked(getConnectionByChannelId).mockResolvedValue(CONNECTION)
   vi.mocked(incrementalSync).mockResolvedValue(undefined)
 })
 
 describe('POST /api/calendar/webhook', () => {
-  it('answers 200 immediately and runs the sync after the response', async () => {
+  it('answers 200 without awaiting the sync and registers it with after()', async () => {
     const res = await notification()
 
     expect(res.status).toBe(200)
@@ -67,12 +68,13 @@ describe('POST /api/calendar/webhook', () => {
     expect(reportCalendarFailure).not.toHaveBeenCalled()
   })
 
-  it('reports a failed sync instead of throwing out of the scheduled task', async () => {
+  it('reports a failed sync from inside the scheduled task', async () => {
     const failure = new Error('Google down')
     vi.mocked(incrementalSync).mockRejectedValue(failure)
 
     const res = await notification()
     expect(res.status).toBe(200)
+    expect(after).toHaveBeenCalledTimes(1)
 
     await expect(runScheduledWork()).resolves.toBeUndefined()
     expect(reportCalendarFailure).toHaveBeenCalledWith(failure, 'incremental_sync', { connectionId: 'conn-1' })
@@ -86,16 +88,29 @@ describe('POST /api/calendar/webhook', () => {
     expect(after).not.toHaveBeenCalled()
   })
 
-  it('refuses an unknown channel, a resource mismatch, and a disabled connection without scheduling work', async () => {
-    vi.mocked(getConnectionByChannelId).mockResolvedValueOnce(null as never)
-    expect((await notification()).status).toBe(404)
+  it('answers 400 when the channel headers are missing', async () => {
+    const res = await post({ 'x-goog-resource-state': 'exists' })
 
-    expect((await notification({ 'x-goog-resource-id': 'other' })).status).toBe(403)
-
-    vi.mocked(getConnectionByChannelId).mockResolvedValueOnce({ ...CONNECTION, enabled: false } as never)
-    expect((await notification()).status).toBe(200)
-
+    expect(res.status).toBe(400)
     expect(after).not.toHaveBeenCalled()
-    expect(incrementalSync).not.toHaveBeenCalled()
+  })
+
+  it('answers 404 for an unknown channel', async () => {
+    vi.mocked(getConnectionByChannelId).mockResolvedValue(null)
+
+    expect((await notification()).status).toBe(404)
+    expect(after).not.toHaveBeenCalled()
+  })
+
+  it('answers 403 when the resource id does not match the channel', async () => {
+    expect((await notification({ 'x-goog-resource-id': 'other' })).status).toBe(403)
+    expect(after).not.toHaveBeenCalled()
+  })
+
+  it('acknowledges a disabled connection without syncing', async () => {
+    vi.mocked(getConnectionByChannelId).mockResolvedValue({ ...CONNECTION, enabled: false })
+
+    expect((await notification()).status).toBe(200)
+    expect(after).not.toHaveBeenCalled()
   })
 })

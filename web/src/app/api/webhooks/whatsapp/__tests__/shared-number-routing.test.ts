@@ -169,6 +169,12 @@ vi.mock('@/lib/classify-prospect', () => ({
 }))
 
 // ---------------------------------------------------------------------------
+// The real after() throws outside a Next request scope.
+vi.mock('next/server', async () => {
+  const actual = await vi.importActual<typeof import('next/server')>('next/server')
+  return { ...actual, after: vi.fn() }
+})
+
 // Imports under test (after mocks)
 // ---------------------------------------------------------------------------
 
@@ -176,6 +182,7 @@ import { db } from '@/db/client'
 import { verifyWebhookSignature } from '@/lib/whatsapp'
 import {
   upsertConversation,
+  getQueuedMessages,
   createMessage,
   incrementUnreadCount,
   updateMessageStatus,
@@ -184,14 +191,8 @@ import {
 } from '@/db/queries/whatsapp'
 import { getProspectByPhone } from '@/db/queries/prospects'
 import { getPatientByPhone } from '@/db/queries/patients'
-// The webhook registers its post-response work (classification, queue drain)
-// with after(), which only exists inside a Next request scope.
-vi.mock('next/server', async () => {
-  const actual = await vi.importActual<typeof import('next/server')>('next/server')
-  return { ...actual, after: vi.fn() }
-})
-
 import { NextRequest, after } from 'next/server'
+import { flushAfter } from './flush-after'
 import { eq } from 'drizzle-orm'
 import { POST } from '../route'
 
@@ -491,8 +492,22 @@ describe('resolveSharedNumberTenant — phone history, ambiguous', () => {
     })
 
     expect(reportSideEffectFailureMock).not.toHaveBeenCalled()
-    // Post-response work must be registered with after(), never left floating.
-    expect(after).toHaveBeenCalled()
+  })
+
+  it('registers the queue drain with after() instead of leaving it floating', async () => {
+    vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([convRow(TENANT_A, 5 * MINUTES)]) as never)
+
+    await POST(makeRequest(makeInboundPayload({})))
+    await vi.waitFor(() => expect(upsertConversation).toHaveBeenCalled())
+
+    // Qualified lead, no button reply: the drain is the only scheduled task.
+    expect(after).toHaveBeenCalledTimes(1)
+    expect(getQueuedMessages).not.toHaveBeenCalled()
+
+    await flushAfter()
+
+    expect(getQueuedMessages).toHaveBeenCalledWith(TENANT_A, expect.any(String))
+    expect(reportSideEffectFailureMock).not.toHaveBeenCalled()
   })
 
   it('still refuses when both tenants are active inside the window', async () => {
