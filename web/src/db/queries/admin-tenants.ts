@@ -289,6 +289,94 @@ export function generateSlug(name: string): string {
   return slug || 'clinica'
 }
 
+export type SelfSignupTenant = Pick<
+  typeof tenants.$inferSelect,
+  | 'id'
+  | 'name'
+  | 'slug'
+  | 'status'
+  | 'logoUrl'
+  | 'phone'
+  | 'email'
+  | 'address'
+  | 'workingHours'
+  | 'settings'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'deletedAt'
+>
+
+type RawTenantRow = {
+  id: string
+  name: string
+  slug: string
+  status: string
+  logo_url: string | null
+  phone: string | null
+  email: string | null
+  address: unknown
+  working_hours: unknown
+  settings: unknown
+  created_at: Date
+  updated_at: Date
+  deleted_at: Date | null
+}
+
+function rowsFromExecuteResult<T>(result: unknown): T[] {
+  if (Array.isArray(result)) return result as T[]
+  return ((result as { rows?: T[] }).rows ?? []) as T[]
+}
+
+export async function insertSelfSignupTenantBase(
+  tx: typeof db,
+  data: {
+    name: string
+    slug: string
+    status: string
+    phone: string
+  },
+): Promise<SelfSignupTenant> {
+  const result = await tx.execute<RawTenantRow>(sql`
+    INSERT INTO floraclin.tenants (name, slug, status, phone)
+    VALUES (${data.name}, ${data.slug}, ${data.status}, ${data.phone})
+    RETURNING
+      id,
+      name,
+      slug,
+      status,
+      logo_url,
+      phone,
+      email,
+      address,
+      working_hours,
+      settings,
+      created_at,
+      updated_at,
+      deleted_at
+  `)
+  const [row] = rowsFromExecuteResult<RawTenantRow>(result)
+
+  if (!row) {
+    throw new Error('Failed to create tenant during signup')
+  }
+
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    status: row.status,
+    logoUrl: row.logo_url,
+    phone: row.phone,
+    email: row.email,
+    address: row.address,
+    workingHours: row.working_hours,
+    settings: row.settings,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    deletedAt: row.deleted_at,
+  }
+}
+
 export async function createSelfSignupTenant(data: {
   userId: string
   clinicName: string
@@ -313,15 +401,12 @@ export async function createSelfSignupTenant(data: {
       slug = `${baseSlug}-${attempt}`
     }
 
-    const [tenant] = await tx
-      .insert(tenants)
-      .values({
-        name: data.clinicName,
-        slug,
-        status: 'active',
-        phone: data.phone,
-      })
-      .returning()
+    const tenant = await insertSelfSignupTenantBase(tx, {
+      name: data.clinicName,
+      slug,
+      status: 'active',
+      phone: data.phone,
+    })
 
     await tx.insert(tenantUsers).values({
       tenantId: tenant.id,
