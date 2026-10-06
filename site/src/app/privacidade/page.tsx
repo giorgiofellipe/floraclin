@@ -17,7 +17,7 @@ export default function PrivacidadePage() {
         <div className="mx-auto max-w-[720px] px-6">
           <h1 className="text-3xl md:text-4xl mb-4">Política de Privacidade</h1>
           <p className="text-charcoal/50 text-sm mb-12">
-            Última atualização: 31 de maio de 2026
+            Última atualização: 6 de outubro de 2026
           </p>
 
           <div className="text-charcoal/80 leading-relaxed space-y-8 text-[15px]">
@@ -69,6 +69,16 @@ export default function PrivacidadePage() {
                     <li>Endereço IP, tipo de navegador, sistema operacional</li>
                     <li>Páginas acessadas e tempo de permanência</li>
                     <li>Cookies essenciais para funcionamento da Plataforma</li>
+                    <li>
+                      Quando você autoriza cookies de marketing: eventos de navegação e conversão
+                      (por exemplo, visualização de página, cadastro concluído e assinatura),
+                      identificadores de campanha e tecnologias similares do Meta Pixel.
+                    </li>
+                    <li>
+                      Dados de atribuição de campanhas capturados no primeiro contato, como
+                      utm_source, utm_medium, utm_campaign, utm_content, utm_term, fbclid,
+                      gclid, página de entrada, referência e data de captura.
+                    </li>
                   </ul>
                 </div>
               </div>
@@ -95,6 +105,11 @@ export default function PrivacidadePage() {
                   experiência.
                 </li>
                 <li>
+                  <strong>Medição de marketing:</strong> quando houver consentimento,
+                  medir a efetividade de anúncios, entender a origem de cadastros
+                  e evitar duplicidade na mensuração de conversões.
+                </li>
+                <li>
                   <strong>Obrigações legais:</strong> cumprir exigências
                   regulatórias e responder a solicitações de autoridades
                   competentes.
@@ -113,7 +128,9 @@ export default function PrivacidadePage() {
                   </li>
                   <li>
                     <strong>Consentimento</strong> (Art. 7º, I): para dados de
-                    pacientes inseridos pelo Usuário na Plataforma.
+                    pacientes inseridos pelo Usuário na Plataforma e para cookies,
+                    identificadores e eventos de marketing não essenciais, incluindo
+                    Meta Pixel e atribuição de campanhas.
                   </li>
                   <li>
                     <strong>Tutela da saúde</strong> (Art. 7º, VIII): para dados
@@ -121,7 +138,8 @@ export default function PrivacidadePage() {
                   </li>
                   <li>
                     <strong>Interesse legítimo</strong> (Art. 7º, IX): para
-                    melhorias do serviço e segurança.
+                    melhorias do serviço, segurança, prevenção a fraudes e métricas
+                    agregadas que não dependam de cookies de marketing.
                   </li>
                   <li>
                     <strong>Obrigação legal</strong> (Art. 7º, II): para
@@ -162,11 +180,22 @@ export default function PrivacidadePage() {
                     publicitárias. A Meta recebe apenas o hash, nunca o dado
                     em texto claro.
                   </li>
+                  <li>
+                    <strong>Marketing próprio da FloraClin (Meta e Google Ads):</strong>
+                    quando você aceita cookies de marketing em floraclin.com.br ou
+                    app.floraclin.com.br, podemos compartilhar eventos de navegação
+                    e conversão, identificadores online e parâmetros de campanha com
+                    a Meta (Facebook/Instagram). Também poderemos usar Google Ads/gtag
+                    no futuro para finalidades equivalentes de mensuração e anúncios,
+                    sempre condicionado à categoria de marketing.
+                  </li>
                 </ul>
                 <p>
-                  O paciente que não deseja ter seus dados usados nessa
-                  medição pode solicitar a exclusão diretamente com a clínica
-                  responsável pelo seu atendimento, a qualquer momento.
+                  A FloraClin não vende dados pessoais. O paciente que não deseja ter seus
+                  dados usados na medição de anúncios da clínica pode solicitar a exclusão
+                  diretamente com a clínica responsável pelo seu atendimento, a qualquer
+                  momento. Visitantes e usuários podem recusar ou revogar cookies de
+                  marketing conforme descrito na seção 9.
                 </p>
               </div>
             </section>
@@ -211,6 +240,14 @@ export default function PrivacidadePage() {
                   permanentemente, exceto quando a retenção for obrigatória por
                   lei.
                 </p>
+                <p>
+                  7.4. Dados de atribuição de campanhas coletados com consentimento
+                  (UTMs, fbclid, gclid, página de entrada, referência e data de captura)
+                  são armazenados por até 90 dias em cookie/localStorage e podem ser
+                  salvos no cadastro da clínica para mensuração do primeiro contato.
+                  A escolha de consentimento fica armazenada até que você a altere ou
+                  limpe os dados do navegador.
+                </p>
               </div>
             </section>
 
@@ -246,9 +283,34 @@ export default function PrivacidadePage() {
               <h2 className="text-xl mb-3">9. Cookies</h2>
               <div className="space-y-3">
                 <p>
-                  A Plataforma utiliza cookies estritamente necessários para o
-                  funcionamento do serviço (autenticação, preferências de
-                  sessão). Não utilizamos cookies de rastreamento publicitário.
+                  Utilizamos cookies e tecnologias similares em duas categorias:
+                </p>
+                <ul className="list-disc pl-6 space-y-2">
+                  <li>
+                    <strong>Necessários:</strong> essenciais para autenticação,
+                    segurança, preferências de sessão e funcionamento do site e da
+                    Plataforma. Esses cookies ficam sempre ativos.
+                  </li>
+                  <li>
+                    <strong>Marketing:</strong> opcionais. Incluem Meta Pixel e
+                    tecnologias similares para medir campanhas, criar relatórios de
+                    conversão, entender a origem de cadastros e apoiar anúncios da
+                    FloraClin. Nesta categoria também capturamos parâmetros de campanha
+                    como UTM, fbclid e gclid no primeiro contato.
+                  </li>
+                </ul>
+                <p>
+                  O Meta Pixel não é carregado e a atribuição de campanha não é gravada
+                  antes do seu aceite da categoria marketing. Você pode aceitar, recusar
+                  ou alterar sua escolha pelo banner de cookies ou pelo link
+                  &quot;Preferências de cookies&quot; no rodapé.
+                </p>
+                <p>
+                  Você também pode limitar anúncios personalizados diretamente nas
+                  configurações da Meta/Facebook e, quando Google Ads estiver em uso,
+                  nas configurações de anúncios do Google. As preferências do navegador
+                  permitem bloquear ou apagar cookies, mas isso pode afetar funcionalidades
+                  necessárias.
                 </p>
               </div>
             </section>

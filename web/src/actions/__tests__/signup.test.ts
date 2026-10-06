@@ -160,6 +160,7 @@ describe('signUp action', () => {
 
   it('persists signup attribution after creating the tenant', async () => {
     const formData = validFormData({ email: 'attribution@test.com' })
+    formData.set('marketingConsent', 'granted')
     formData.set('metaEventId', 'complete_registration:event-1')
     formData.set(
       'marketingAttribution',
@@ -190,6 +191,7 @@ describe('signUp action', () => {
 
   it('still completes signup when the attribution column is not migrated yet', async () => {
     const formData = validFormData({ email: 'missing-column@test.com' })
+    formData.set('marketingConsent', 'granted')
     formData.set('metaEventId', 'complete_registration:event-2')
     vi.mocked(db.update).mockReturnValueOnce({
       set: vi.fn(() => {
@@ -204,6 +206,26 @@ describe('signUp action', () => {
 
     expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
     consoleWarnSpy.mockRestore()
+  })
+
+  it('does not persist signup attribution or carry a Meta event id without marketing consent', async () => {
+    const formData = validFormData({ email: 'no-consent@test.com' })
+    formData.set('metaEventId', 'complete_registration:event-without-consent')
+    formData.set(
+      'marketingAttribution',
+      JSON.stringify({
+        utmSource: 'meta',
+        capturedAt: '2026-10-06T00:00:00.000Z',
+        expiresAt: '2027-01-04T00:00:00.000Z',
+      }),
+    )
+
+    await signUp(null, formData)
+
+    expect(db.update).not.toHaveBeenCalledWith(tenants)
+    const target = vi.mocked(redirect).mock.calls.at(-1)?.[0] as string
+    expect(target).toContain('/confirm-email')
+    expect(target).not.toContain('meta_event_id')
   })
 
   it('issues a confirmation token and sends the confirmation email', async () => {
