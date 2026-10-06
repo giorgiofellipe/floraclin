@@ -821,6 +821,10 @@ describe('GET /api/cron/meta-events', () => {
       const having = renderSql(purchases.__calls.having[0][0])
       expect(having.sql).toContain('"meta_connections"."created_at"')
       expect(having.sql).toContain('min("floraclin"."payment_records"."paid_at")')
+      expect(having.sql).toContain('::timestamptz')
+      expect(having.params).toHaveLength(1)
+      expect(having.params[0]).toEqual(expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/))
+      expect(having.params.some((param) => param instanceof Date)).toBe(false)
     })
 
     // Fix 1: `financial_entries.updated_at` is bumped by a reversal, a bulk
