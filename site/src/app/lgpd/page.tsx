@@ -60,10 +60,10 @@ export default function LgpdPage() {
                     encarregado pelo tratamento de dados pessoais, acessível
                     pelo e-mail{" "}
                     <a
-                      href="mailto:privacidade@floraclin.com.br"
+                      href="mailto:contato@floraclin.com.br"
                       className="text-sage hover:underline"
                     >
-                      privacidade@floraclin.com.br
+                      contato@floraclin.com.br
                     </a>
                     .
                   </li>
@@ -171,10 +171,10 @@ export default function LgpdPage() {
                   Para exercer qualquer desses direitos, envie uma solicitação
                   para{" "}
                   <a
-                    href="mailto:privacidade@floraclin.com.br"
+                    href="mailto:contato@floraclin.com.br"
                     className="text-sage hover:underline"
                   >
-                    privacidade@floraclin.com.br
+                    contato@floraclin.com.br
                   </a>
                   . Responderemos em até 15 dias úteis, conforme o Art. 18, §5º
                   da LGPD.
@@ -267,10 +267,10 @@ export default function LgpdPage() {
                 incidentes relacionados à proteção de dados pessoais, entre em
                 contato com nosso Encarregado de Proteção de Dados pelo e-mail{" "}
                 <a
-                  href="mailto:privacidade@floraclin.com.br"
+                  href="mailto:contato@floraclin.com.br"
                   className="text-sage hover:underline"
                 >
-                  privacidade@floraclin.com.br
+                  contato@floraclin.com.br
                 </a>
                 .
               </p>

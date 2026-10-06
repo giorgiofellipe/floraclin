@@ -269,10 +269,10 @@ export default function PrivacidadePage() {
                 <p>
                   Para exercer esses direitos, entre em contato pelo e-mail{" "}
                   <a
-                    href="mailto:privacidade@floraclin.com.br"
+                    href="mailto:contato@floraclin.com.br"
                     className="text-sage hover:underline"
                   >
-                    privacidade@floraclin.com.br
+                    contato@floraclin.com.br
                   </a>
                   . Responderemos em até 15 dias úteis.
                 </p>
@@ -331,10 +331,10 @@ export default function PrivacidadePage() {
                 Para dúvidas sobre esta Política de Privacidade ou sobre o
                 tratamento dos seus dados, entre em contato pelo e-mail{" "}
                 <a
-                  href="mailto:privacidade@floraclin.com.br"
+                  href="mailto:contato@floraclin.com.br"
                   className="text-sage hover:underline"
                 >
-                  privacidade@floraclin.com.br
+                  contato@floraclin.com.br
                 </a>
                 .
               </p>
