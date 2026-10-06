@@ -2,13 +2,14 @@ import { auth } from '@/lib/auth-config'
 import { redirect } from 'next/navigation'
 import { ConfirmActions } from './confirm-actions'
 import { RequestConfirmationForm } from './request-confirmation-form'
+import { SignupConversionTracker } from './signup-conversion-tracker'
 
 interface ConfirmEmailPageProps {
-  searchParams: Promise<{ email?: string; token?: string }>
+  searchParams: Promise<{ email?: string; token?: string; meta_event_id?: string }>
 }
 
 export default async function ConfirmEmailPage({ searchParams }: ConfirmEmailPageProps) {
-  const { email: emailParam, token } = await searchParams
+  const { email: emailParam, token, meta_event_id: metaEventId } = await searchParams
   const session = await auth()
 
   if ((session as any)?.emailVerified) redirect('/dashboard')
@@ -20,6 +21,7 @@ export default async function ConfirmEmailPage({ searchParams }: ConfirmEmailPag
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-cream px-6">
+      <SignupConversionTracker eventId={metaEventId ?? null} />
       <div className="w-full max-w-md text-center">
         <img src="/brand/logo-mint.svg" alt="" className="size-16 mx-auto mb-6" />
         <h1 className="font-display text-3xl font-semibold text-charcoal">

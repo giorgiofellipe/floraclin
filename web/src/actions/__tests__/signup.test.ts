@@ -156,6 +156,33 @@ describe('signUp action', () => {
     expect(tenantCall?.[0]).toMatchObject({ status: 'active' })
   })
 
+  it('persists signup attribution on the tenant', async () => {
+    const formData = validFormData({ email: 'attribution@test.com' })
+    formData.set('metaEventId', 'complete_registration:event-1')
+    formData.set(
+      'marketingAttribution',
+      JSON.stringify({
+        utmSource: 'meta',
+        utmCampaign: 'hof-trial',
+        fbclid: 'fb-click',
+        capturedAt: '2026-10-06T00:00:00.000Z',
+        expiresAt: '2027-01-04T00:00:00.000Z',
+      }),
+    )
+
+    await signUp(null, formData)
+
+    const tenantCall = tenantInsertSpy.mock.calls.find(([vals]) => 'status' in vals)
+    expect(tenantCall?.[0]).toMatchObject({
+      signupAttribution: expect.objectContaining({
+        utmSource: 'meta',
+        utmCampaign: 'hof-trial',
+        fbclid: 'fb-click',
+        metaEventId: 'complete_registration:event-1',
+      }),
+    })
+  })
+
   it('issues a confirmation token and sends the confirmation email', async () => {
     await signUp(null, validFormData({ email: 'token@test.com', clinicName: 'Clínica Flor' }))
 

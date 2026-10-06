@@ -80,7 +80,11 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
   it('reports success instead of redirecting after creating the clinic', async () => {
     const state = await createClinicForOAuthUser(null, form())
 
-    expect(state).toEqual({ success: true })
+    expect(state).toEqual({
+      success: true,
+      created: true,
+      metaEventId: expect.stringMatching(/^complete_registration:/),
+    })
     // The redirect is the bug. /dashboard with tenantId: null in the token is
     // bounced straight back here by middleware.
     expect(redirectMock).not.toHaveBeenCalledWith('/dashboard')
@@ -93,6 +97,9 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
       userId: 'user-1',
       clinicName: 'Clínica Flora',
       phone: '11988887777',
+      signupAttribution: expect.objectContaining({
+        metaEventId: expect.stringMatching(/^complete_registration:/),
+      }),
     })
   })
 
@@ -104,7 +111,7 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
 
     const state = await createClinicForOAuthUser(null, form())
 
-    expect(state).toEqual({ success: true })
+    expect(state).toEqual({ success: true, created: false })
     expect(redirectMock).not.toHaveBeenCalledWith('/dashboard')
     // Nothing created twice.
     expect(createSelfSignupTenantMock).not.toHaveBeenCalled()
