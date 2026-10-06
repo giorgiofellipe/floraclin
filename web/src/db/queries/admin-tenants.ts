@@ -293,7 +293,6 @@ export async function createSelfSignupTenant(data: {
   userId: string
   clinicName: string
   phone: string
-  signupAttribution?: Record<string, unknown> | null
 }) {
   const baseSlug = generateSlug(data.clinicName)
 
@@ -321,7 +320,6 @@ export async function createSelfSignupTenant(data: {
         slug,
         status: 'active',
         phone: data.phone,
-        signupAttribution: data.signupAttribution ?? null,
       })
       .returning()
 

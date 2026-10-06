@@ -14,8 +14,8 @@ import { withTransaction } from '@/lib/tenant'
 import { notifyDiscord } from '@/lib/discord'
 import { issueConfirmationToken } from '@/lib/confirm-email'
 import { getAppUrl } from '@/lib/app-url'
-import { isUniqueViolation } from '@/lib/errors'
-import { generateMetaEventId, parseSignupAttribution } from '@/lib/marketing-attribution'
+import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
+import { generateMetaEventId, parseSignupAttribution, type SignupAttribution } from '@/lib/marketing-attribution'
 
 export type SignUpState = {
   error?: { fullName?: string[]; email?: string[]; password?: string[]; clinicName?: string[]; phone?: string[]; general?: string[] }
@@ -77,7 +77,7 @@ export async function signUp(
 
       const [tenant] = await tx
         .insert(tenants)
-        .values({ name: clinicName, slug, status: 'active', phone, signupAttribution: tenantAttribution })
+        .values({ name: clinicName, slug, status: 'active', phone })
         .returning()
 
       tenantId = tenant.id
@@ -102,6 +102,7 @@ export async function signUp(
   }
 
   if (tenantId) {
+    await persistSignupAttribution(tenantId, tenantAttribution)
     await notifyDiscord({ kind: 'clinic.created', tenantName: clinicName, city: null, state: null, tenantId })
 
     const [freePlan] = await db.select().from(plans).where(eq(plans.slug, 'free')).limit(1)
@@ -197,7 +198,8 @@ export async function createClinicForOAuthUser(
   const signupAttribution = parseSignupAttribution(formData.get('marketingAttribution'))
   const tenantAttribution = signupAttribution ? { ...signupAttribution, metaEventId } : { metaEventId }
 
-  const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone, signupAttribution: tenantAttribution })
+  const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone })
+  await persistSignupAttribution(tenant.id, tenantAttribution)
 
   await notifyDiscord({ kind: 'clinic.created', tenantName: clinicName, city: null, state: null, tenantId: tenant.id })
 
@@ -233,4 +235,22 @@ export async function createClinicForOAuthUser(
   // session first. It reports success and navigates once the token is
   // current.
   return { success: true, created: true, metaEventId }
+}
+
+async function persistSignupAttribution(
+  tenantId: string,
+  signupAttribution: Partial<SignupAttribution> & { metaEventId: string },
+) {
+  try {
+    await db
+      .update(tenants)
+      .set({ signupAttribution, updatedAt: new Date() })
+      .where(eq(tenants.id, tenantId))
+  } catch (err) {
+    if (isUndefinedColumn(err)) {
+      console.warn('Skipping signup attribution because tenants.signup_attribution is not migrated yet')
+      return
+    }
+    throw err
+  }
 }

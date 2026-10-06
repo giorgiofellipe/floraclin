@@ -26,12 +26,18 @@ const redirectMock = vi.fn((path: string) => {
 
 const authMock = vi.fn()
 const selectMock = vi.fn()
+const updateMock = vi.fn()
 const createSelfSignupTenantMock = vi.fn()
 const createSubscriptionMock = vi.fn()
 
 vi.mock('next/navigation', () => ({ redirect: (p: string) => redirectMock(p) }))
 vi.mock('@/lib/auth-config', () => ({ auth: () => authMock() }))
-vi.mock('@/db/client', () => ({ db: { select: () => selectMock() } }))
+vi.mock('@/db/client', () => ({
+  db: {
+    select: () => selectMock(),
+    update: (...a: unknown[]) => updateMock(...a),
+  },
+}))
 vi.mock('@/db/queries/admin-tenants', () => ({
   createSelfSignupTenant: (...a: unknown[]) => createSelfSignupTenantMock(...a),
   generateSlug: (name: string) => name.toLowerCase().replace(/\s+/g, '-'),
@@ -70,6 +76,11 @@ beforeEach(() => {
   authMock.mockResolvedValue({ user: { id: 'user-1', email: 'a@b.com', name: 'A' } })
   createSelfSignupTenantMock.mockResolvedValue({ id: 'tenant-1' })
   createSubscriptionMock.mockResolvedValue({ created: true })
+  updateMock.mockReturnValue({
+    set: () => ({
+      where: () => Promise.resolve(),
+    }),
+  })
   // No membership, then the free-plan lookup.
   selectMock
     .mockReturnValueOnce(membershipLookup([]))
@@ -97,10 +108,8 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
       userId: 'user-1',
       clinicName: 'Clínica Flora',
       phone: '11988887777',
-      signupAttribution: expect.objectContaining({
-        metaEventId: expect.stringMatching(/^complete_registration:/),
-      }),
     })
+    expect(updateMock).toHaveBeenCalled()
   })
 
   it('reports success on a retry rather than redirecting', async () => {
