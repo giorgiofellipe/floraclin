@@ -32,6 +32,11 @@ export default function PrivacidadePage() {
                 protegemos os dados pessoais, em conformidade com a Lei Geral de
                 Proteção de Dados (LGPD — Lei nº 13.709/2018).
               </p>
+              <p className="mt-3">
+                <strong>TODO Giorgio:</strong> preencher o endereço comercial da
+                pessoa jurídica operadora da FloraClin, caso ele deva constar
+                nesta Política.
+              </p>
             </section>
 
             <section>
