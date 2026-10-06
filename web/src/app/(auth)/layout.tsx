@@ -1,3 +1,6 @@
+import Link from 'next/link'
+import { CookiePreferencesLink } from '@/components/marketing/cookie-consent-banner'
+
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex bg-cream">
@@ -50,9 +53,13 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </div>
 
         {/* Footer */}
-        <p className="mt-12 text-gold/60 text-[11px] tracking-wider">
-          floraclin.com.br
-        </p>
+        <div className="mt-12 flex flex-wrap justify-center gap-x-4 gap-y-2 text-[11px] tracking-wider text-gold/60">
+          <Link href="https://floraclin.com.br/privacidade" className="hover:text-sage">
+            Privacidade
+          </Link>
+          <CookiePreferencesLink className="hover:text-sage" />
+          <span>floraclin.com.br</span>
+        </div>
       </div>
     </div>
   )

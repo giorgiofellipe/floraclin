@@ -64,10 +64,14 @@ function membershipLookup(rows: unknown[]) {
   return chain
 }
 
-function form() {
+function form({ marketingConsent = false } = {}) {
   const fd = new FormData()
   fd.set('clinicName', 'Clínica Flora')
   fd.set('phone', '11988887777')
+  if (marketingConsent) {
+    fd.set('marketingConsent', 'granted')
+    fd.set('metaEventId', 'complete_registration:event-google')
+  }
   return fd
 }
 
@@ -94,7 +98,6 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
     expect(state).toEqual({
       success: true,
       created: true,
-      metaEventId: expect.stringMatching(/^complete_registration:/),
     })
     // The redirect is the bug. /dashboard with tenantId: null in the token is
     // bounced straight back here by middleware.
@@ -108,6 +111,17 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
       userId: 'user-1',
       clinicName: 'Clínica Flora',
       phone: '11988887777',
+    })
+    expect(updateMock).not.toHaveBeenCalled()
+  })
+
+  it('returns and persists the Meta event id when marketing consent was granted', async () => {
+    const state = await createClinicForOAuthUser(null, form({ marketingConsent: true }))
+
+    expect(state).toEqual({
+      success: true,
+      created: true,
+      metaEventId: 'complete_registration:event-google',
     })
     expect(updateMock).toHaveBeenCalled()
   })

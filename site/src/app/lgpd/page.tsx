@@ -19,7 +19,7 @@ export default function LgpdPage() {
             LGPD — Lei Geral de Proteção de Dados
           </h1>
           <p className="text-charcoal/50 text-sm mb-12">
-            Última atualização: 31 de maio de 2026
+            Última atualização: 6 de outubro de 2026
           </p>
 
           <div className="text-charcoal/80 leading-relaxed space-y-8 text-[15px]">
@@ -60,10 +60,10 @@ export default function LgpdPage() {
                     encarregado pelo tratamento de dados pessoais, acessível
                     pelo e-mail{" "}
                     <a
-                      href="mailto:privacidade@floraclin.com.br"
+                      href="mailto:contato@floraclin.com.br"
                       className="text-sage hover:underline"
                     >
-                      privacidade@floraclin.com.br
+                      contato@floraclin.com.br
                     </a>
                     .
                   </li>
@@ -171,10 +171,10 @@ export default function LgpdPage() {
                   Para exercer qualquer desses direitos, envie uma solicitação
                   para{" "}
                   <a
-                    href="mailto:privacidade@floraclin.com.br"
+                    href="mailto:contato@floraclin.com.br"
                     className="text-sage hover:underline"
                   >
-                    privacidade@floraclin.com.br
+                    contato@floraclin.com.br
                   </a>
                   . Responderemos em até 15 dias úteis, conforme o Art. 18, §5º
                   da LGPD.
@@ -247,6 +247,16 @@ export default function LgpdPage() {
                   solicitar a exclusão dos seus dados diretamente com a
                   clínica responsável pelo seu atendimento.
                 </p>
+                <p>
+                  A FloraClin também utiliza, mediante consentimento específico
+                  para cookies de marketing, Meta Pixel e tecnologias similares
+                  para medir campanhas próprias da FloraClin, eventos de cadastro
+                  e assinatura, e parâmetros de atribuição como UTM, fbclid e
+                  gclid. Google Ads/gtag poderá ser utilizado futuramente para
+                  finalidades equivalentes. A base legal para essa categoria é o
+                  consentimento (Art. 7º, I), que pode ser recusado ou revogado
+                  pelo link &quot;Preferências de cookies&quot; no rodapé.
+                </p>
               </div>
             </section>
 
@@ -257,10 +267,10 @@ export default function LgpdPage() {
                 incidentes relacionados à proteção de dados pessoais, entre em
                 contato com nosso Encarregado de Proteção de Dados pelo e-mail{" "}
                 <a
-                  href="mailto:privacidade@floraclin.com.br"
+                  href="mailto:contato@floraclin.com.br"
                   className="text-sage hover:underline"
                 >
-                  privacidade@floraclin.com.br
+                  contato@floraclin.com.br
                 </a>
                 .
               </p>

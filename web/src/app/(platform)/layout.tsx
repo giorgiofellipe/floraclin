@@ -1,8 +1,10 @@
 import { redirect } from 'next/navigation'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
+import { CookiePreferencesLink } from '@/components/marketing/cookie-consent-banner'
 import { SubscriptionBanner } from '@/components/layout/subscription-banner'
 import { InstallBanner } from '@/components/layout/install-banner'
+import Link from 'next/link'
 import { getAuthContext, getUserTenants } from '@/lib/auth'
 import { getSubscription } from '@/db/queries/subscriptions'
 import { db } from '@/db/client'
@@ -75,6 +77,13 @@ export default async function PlatformLayout({ children }: { children: React.Rea
         />
         <InstallBanner />
         <main className="flex-1 p-6">{children}</main>
+        <footer className="px-6 pb-6 text-center text-xs text-mid">
+          <Link href="https://floraclin.com.br/privacidade" className="hover:text-sage">
+            Privacidade
+          </Link>
+          <span className="mx-2 text-mid/50">•</span>
+          <CookiePreferencesLink className="hover:text-sage" />
+        </footer>
       </div>
     </div>
   )

@@ -1,7 +1,21 @@
-import { describe, expect, it } from 'vitest'
-import { buildFbc, parseSignupAttribution } from '../marketing-attribution'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { COOKIE_CONSENT_STORAGE_KEY, saveCookieConsent } from '../cookie-consent'
+import {
+  ATTRIBUTION_STORAGE_KEY,
+  buildFbc,
+  captureFirstTouchAttribution,
+  parseSignupAttribution,
+  trackMetaEvent,
+} from '../marketing-attribution'
 
 describe('marketing attribution utilities', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    document.cookie = 'floraclin_ft=; Max-Age=0; Path=/'
+    window.history.pushState({}, '', '/signup?utm_source=meta&fbclid=click-1')
+    delete window.fbq
+  })
+
   it('builds Meta fbc from a click id and timestamp', () => {
     expect(buildFbc('IwAR123', 1700000000000)).toBe('fb.1.1700000000000.IwAR123')
   })
@@ -27,5 +41,35 @@ describe('marketing attribution utilities', () => {
       expiresAt: '2027-01-04T00:00:00.000Z',
       metaEventId: 'complete_registration:event-1',
     })
+  })
+
+  it('does not capture first-touch attribution before marketing consent', () => {
+    expect(captureFirstTouchAttribution()).toBeNull()
+    expect(window.localStorage.getItem(ATTRIBUTION_STORAGE_KEY)).toBeNull()
+  })
+
+  it('captures first-touch attribution after marketing consent is granted', () => {
+    saveCookieConsent(true)
+
+    const attribution = captureFirstTouchAttribution()
+
+    expect(attribution).toMatchObject({
+      utmSource: 'meta',
+      fbclid: 'click-1',
+      fbc: expect.stringMatching(/^fb\.1\.\d+\.click-1$/),
+    })
+    expect(window.localStorage.getItem(ATTRIBUTION_STORAGE_KEY)).toContain('click-1')
+    expect(window.localStorage.getItem(COOKIE_CONSENT_STORAGE_KEY)).toContain('"marketing":true')
+  })
+
+  it('does not send Meta events after marketing consent is revoked', () => {
+    const fbq = vi.fn()
+    window.fbq = fbq as typeof window.fbq
+
+    saveCookieConsent(false)
+    trackMetaEvent('CompleteRegistration')
+
+    expect(fbq).toHaveBeenCalledWith('consent', 'revoke')
+    expect(fbq).not.toHaveBeenCalledWith('track', 'CompleteRegistration', {}, undefined)
   })
 })

@@ -1,3 +1,5 @@
+import { hasMarketingConsent } from '@/lib/cookie-consent'
+
 export const DEFAULT_META_PIXEL_ID = '1651713926600603'
 
 export const ATTRIBUTION_STORAGE_KEY = 'floraclin_first_touch_attribution'
@@ -74,6 +76,7 @@ export function trackMetaEvent(
   params: Record<string, unknown> = {},
   eventId?: string,
 ): void {
+  if (!hasMarketingConsent()) return
   if (typeof window === 'undefined' || typeof window.fbq !== 'function') return
   window.fbq('track', eventName, params, eventId ? { eventID: eventId } : undefined)
 }
@@ -104,6 +107,7 @@ export function readStoredAttribution(): SignupAttribution | null {
 
 export function captureFirstTouchAttribution(): SignupAttribution | null {
   if (typeof window === 'undefined') return null
+  if (!hasMarketingConsent()) return null
 
   const existing = readStoredAttribution()
   if (existing) return existing

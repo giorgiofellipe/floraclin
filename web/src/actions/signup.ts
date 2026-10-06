@@ -39,9 +39,14 @@ export async function signUp(
   }
 
   const { fullName, email, password, clinicName, phone } = parsed.data
-  const metaEventId = String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
-  const signupAttribution = parseSignupAttribution(formData.get('marketingAttribution'))
-  const tenantAttribution = signupAttribution ? { ...signupAttribution, metaEventId } : { metaEventId }
+  const marketingConsent = formData.get('marketingConsent') === 'granted'
+  const metaEventId = marketingConsent
+    ? String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
+    : null
+  const signupAttribution = marketingConsent ? parseSignupAttribution(formData.get('marketingAttribution')) : null
+  const tenantAttribution = marketingConsent && metaEventId
+    ? { ...(signupAttribution ?? {}), metaEventId }
+    : null
 
   const [existing] = await db
     .select({ id: users.id })
@@ -102,7 +107,9 @@ export async function signUp(
   }
 
   if (tenantId) {
-    await persistSignupAttribution(tenantId, tenantAttribution)
+    if (tenantAttribution) {
+      await persistSignupAttribution(tenantId, tenantAttribution)
+    }
     await notifyDiscord({ kind: 'clinic.created', tenantName: clinicName, city: null, state: null, tenantId })
 
     const [freePlan] = await db.select().from(plans).where(eq(plans.slug, 'free')).limit(1)
@@ -145,7 +152,12 @@ export async function signUp(
   // The first sign-in happens after confirming, and `authorize` refuses until
   // then. The address rides in the query string because there is no session
   // for the page to read it from.
-  redirect(`/confirm-email?email=${encodeURIComponent(email)}&meta_event_id=${encodeURIComponent(metaEventId)}`)
+  const confirmEmailUrl = new URL('/confirm-email', getAppUrl())
+  confirmEmailUrl.searchParams.set('email', email)
+  if (metaEventId) {
+    confirmEmailUrl.searchParams.set('meta_event_id', metaEventId)
+  }
+  redirect(`${confirmEmailUrl.pathname}${confirmEmailUrl.search}`)
 }
 
 export async function signUpWithGoogle() {
@@ -194,12 +206,19 @@ export async function createClinicForOAuthUser(
   }
 
   const { clinicName, phone } = parsed.data
-  const metaEventId = String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
-  const signupAttribution = parseSignupAttribution(formData.get('marketingAttribution'))
-  const tenantAttribution = signupAttribution ? { ...signupAttribution, metaEventId } : { metaEventId }
+  const marketingConsent = formData.get('marketingConsent') === 'granted'
+  const metaEventId = marketingConsent
+    ? String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
+    : null
+  const signupAttribution = marketingConsent ? parseSignupAttribution(formData.get('marketingAttribution')) : null
+  const tenantAttribution = marketingConsent && metaEventId
+    ? { ...(signupAttribution ?? {}), metaEventId }
+    : null
 
   const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone })
-  await persistSignupAttribution(tenant.id, tenantAttribution)
+  if (tenantAttribution) {
+    await persistSignupAttribution(tenant.id, tenantAttribution)
+  }
 
   await notifyDiscord({ kind: 'clinic.created', tenantName: clinicName, city: null, state: null, tenantId: tenant.id })
 
@@ -234,7 +253,7 @@ export async function createClinicForOAuthUser(
   // redirecting to /dashboard here loops: the client has to refresh the
   // session first. It reports success and navigates once the token is
   // current.
-  return { success: true, created: true, metaEventId }
+  return { success: true, created: true, ...(metaEventId ? { metaEventId } : {}) }
 }
 
 async function persistSignupAttribution(

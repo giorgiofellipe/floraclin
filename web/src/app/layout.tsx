@@ -5,6 +5,7 @@ import { getLocale, getMessages } from 'next-intl/server'
 import { Toaster } from '@/components/ui/sonner'
 import { QueryProvider } from '@/components/providers/query-provider'
 import { AttributionCapture } from '@/components/marketing/attribution-capture'
+import { CookieConsentBanner } from '@/components/marketing/cookie-consent-banner'
 import { MetaPixel } from '@/components/marketing/meta-pixel'
 import { metaPixelId } from '@/lib/marketing-attribution'
 import './globals.css'
@@ -58,6 +59,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </QueryProvider>
           </NextIntlClientProvider>
         </SessionProvider>
+        <CookieConsentBanner />
       </body>
     </html>
   )

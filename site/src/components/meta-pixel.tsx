@@ -2,23 +2,27 @@
 
 import Script from "next/script";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
+import { cookieConsentStatus, subscribeCookieConsent } from "@/lib/cookie-consent";
 import { DEFAULT_META_PIXEL_ID, trackMetaEvent } from "@/lib/marketing-attribution";
 
 export function MetaPixel({ pixelId = DEFAULT_META_PIXEL_ID }: { pixelId?: string }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const trackedInitialPageView = useRef(false);
+  const consentStatus = useSyncExternalStore(subscribeCookieConsent, cookieConsentStatus, () => "unset");
+  const canUseMarketing = consentStatus === "granted";
 
   useEffect(() => {
+    if (!canUseMarketing) return;
     if (!trackedInitialPageView.current) {
       trackedInitialPageView.current = true;
       return;
     }
     trackMetaEvent("PageView");
-  }, [pathname, searchParams]);
+  }, [canUseMarketing, pathname, searchParams]);
 
-  if (!pixelId) return null;
+  if (!pixelId || !canUseMarketing) return null;
 
   return (
     <>
@@ -32,6 +36,7 @@ export function MetaPixel({ pixelId = DEFAULT_META_PIXEL_ID }: { pixelId?: strin
           t.src=v;s=b.getElementsByTagName(e)[0];
           s.parentNode.insertBefore(t,s)}(window, document,'script',
           'https://connect.facebook.net/en_US/fbevents.js');
+          fbq('consent', 'grant');
           fbq('init', '${pixelId}');
           fbq('track', 'PageView');
         `}

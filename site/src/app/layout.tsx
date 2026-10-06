@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/react";
 import { Suspense } from "react";
 import { AttributionCapture } from "@/components/attribution-capture";
+import { CookieConsentBanner } from "@/components/cookie-consent-banner";
 import { MetaPixel } from "@/components/meta-pixel";
 import { StructuredData } from "@/components/structured-data";
 import { metaPixelId } from "@/lib/marketing-attribution";
@@ -66,6 +67,7 @@ export default function RootLayout({
         {children}
         <StructuredData />
         <Analytics />
+        <CookieConsentBanner />
       </body>
     </html>
   );
