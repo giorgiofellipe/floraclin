@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { COOKIE_CONSENT_STORAGE_KEY, saveCookieConsent } from '../cookie-consent'
 import {
   ATTRIBUTION_STORAGE_KEY,
@@ -14,6 +14,10 @@ describe('marketing attribution utilities', () => {
     document.cookie = 'floraclin_ft=; Max-Age=0; Path=/'
     window.history.pushState({}, '', '/signup?utm_source=meta&fbclid=click-1')
     delete window.fbq
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('builds Meta fbc from a click id and timestamp', () => {
@@ -71,5 +75,44 @@ describe('marketing attribution utilities', () => {
 
     expect(fbq).toHaveBeenCalledWith('consent', 'revoke')
     expect(fbq).not.toHaveBeenCalledWith('track', 'CompleteRegistration', {}, undefined)
+  })
+
+  it('retries one-shot Meta events until the pixel bootstrap defines fbq', async () => {
+    vi.useFakeTimers()
+    saveCookieConsent(true)
+
+    trackMetaEvent('CompleteRegistration', { status: 'trial_started' }, 'complete-registration:event-1')
+
+    const fbq = vi.fn()
+    window.fbq = fbq as typeof window.fbq
+
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(fbq).toHaveBeenCalledWith(
+      'track',
+      'CompleteRegistration',
+      { status: 'trial_started' },
+      { eventID: 'complete-registration:event-1' },
+    )
+  })
+
+  it('does not retry Meta events after marketing consent is revoked before fbq is ready', async () => {
+    vi.useFakeTimers()
+    saveCookieConsent(true)
+
+    trackMetaEvent('Subscribe', { value: 99, currency: 'BRL' }, 'subscribe:session-1')
+    saveCookieConsent(false)
+
+    const fbq = vi.fn()
+    window.fbq = fbq as typeof window.fbq
+
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(fbq).not.toHaveBeenCalledWith(
+      'track',
+      'Subscribe',
+      { value: 99, currency: 'BRL' },
+      { eventID: 'subscribe:session-1' },
+    )
   })
 })

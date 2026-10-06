@@ -59,6 +59,9 @@ const FIELD_BY_PARAM: Record<AttributionParamKey, keyof SignupAttribution> = {
   gclid: 'gclid',
 }
 
+const META_PIXEL_READY_RETRY_INTERVAL_MS = 100
+const META_PIXEL_READY_RETRY_ATTEMPTS = 50
+
 export function metaPixelId(): string {
   return process.env.NEXT_PUBLIC_META_PIXEL_ID || DEFAULT_META_PIXEL_ID
 }
@@ -76,9 +79,28 @@ export function trackMetaEvent(
   params: Record<string, unknown> = {},
   eventId?: string,
 ): void {
+  trackMetaEventWhenReady(eventName, params, eventId, META_PIXEL_READY_RETRY_ATTEMPTS)
+}
+
+function trackMetaEventWhenReady(
+  eventName: string,
+  params: Record<string, unknown>,
+  eventId: string | undefined,
+  attemptsRemaining: number,
+): void {
   if (!hasMarketingConsent()) return
-  if (typeof window === 'undefined' || typeof window.fbq !== 'function') return
-  window.fbq('track', eventName, params, eventId ? { eventID: eventId } : undefined)
+  if (typeof window === 'undefined') return
+
+  if (typeof window.fbq === 'function') {
+    window.fbq('track', eventName, params, eventId ? { eventID: eventId } : undefined)
+    return
+  }
+
+  if (attemptsRemaining <= 0) return
+
+  window.setTimeout(() => {
+    trackMetaEventWhenReady(eventName, params, eventId, attemptsRemaining - 1)
+  }, META_PIXEL_READY_RETRY_INTERVAL_MS)
 }
 
 export function buildFbc(fbclid: string, clickedAt = Date.now()): string {
