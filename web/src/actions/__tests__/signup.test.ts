@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
 import '@/tests/mocks/db'
 import { db } from '@/db/client'
+import { tenants } from '@/db/schema'
 import { signIn } from '@/lib/auth-config'
 import { redirect } from 'next/navigation'
 
@@ -83,6 +84,7 @@ describe('signUp action', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(db.update).mockReturnValue(db as any)
 
     // The existing-user check and the free-plan lookup share this shape
     // (select -> from -> where -> limit). Resolving to an empty array covers
@@ -154,6 +156,54 @@ describe('signUp action', () => {
 
     const tenantCall = tenantInsertSpy.mock.calls.find(([vals]) => 'status' in vals)
     expect(tenantCall?.[0]).toMatchObject({ status: 'active' })
+  })
+
+  it('persists signup attribution after creating the tenant', async () => {
+    const formData = validFormData({ email: 'attribution@test.com' })
+    formData.set('metaEventId', 'complete_registration:event-1')
+    formData.set(
+      'marketingAttribution',
+      JSON.stringify({
+        utmSource: 'meta',
+        utmCampaign: 'hof-trial',
+        fbclid: 'fb-click',
+        capturedAt: '2026-10-06T00:00:00.000Z',
+        expiresAt: '2027-01-04T00:00:00.000Z',
+      }),
+    )
+
+    await signUp(null, formData)
+
+    const tenantCall = tenantInsertSpy.mock.calls.find(([vals]) => 'status' in vals)
+    expect(tenantCall?.[0]).not.toHaveProperty('signupAttribution')
+    expect(db.update).toHaveBeenCalledWith(tenants)
+    expect((db as any).set).toHaveBeenCalledWith({
+      signupAttribution: expect.objectContaining({
+        utmSource: 'meta',
+        utmCampaign: 'hof-trial',
+        fbclid: 'fb-click',
+        metaEventId: 'complete_registration:event-1',
+      }),
+      updatedAt: expect.any(Date),
+    })
+  })
+
+  it('still completes signup when the attribution column is not migrated yet', async () => {
+    const formData = validFormData({ email: 'missing-column@test.com' })
+    formData.set('metaEventId', 'complete_registration:event-2')
+    vi.mocked(db.update).mockReturnValueOnce({
+      set: vi.fn(() => {
+        throw Object.assign(new Error('column "signup_attribution" does not exist'), {
+          code: '42703',
+        })
+      }),
+    } as any)
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await signUp(null, formData)
+
+    expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
+    consoleWarnSpy.mockRestore()
   })
 
   it('issues a confirmation token and sends the confirmation email', async () => {

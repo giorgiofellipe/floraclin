@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { maskPhone } from '@/lib/masks'
+import { SignupAttributionFields } from '@/components/marketing/signup-attribution-fields'
+import { trackMetaEvent } from '@/lib/marketing-attribution'
 
 export default function ClinicDetailsPage() {
   const [state, formAction, isPending] = useActionState<ClinicDetailsState, FormData>(createClinicForOAuthUser, null)
@@ -22,10 +24,13 @@ export default function ClinicDetailsPage() {
   useEffect(() => {
     if (!state?.success) return
     void (async () => {
+      if (state.created && state.metaEventId) {
+        trackMetaEvent('CompleteRegistration', { status: 'trial_started', signup_method: 'google' }, state.metaEventId)
+      }
       await update()
       router.replace('/dashboard')
     })()
-  }, [state?.success, update, router])
+  }, [state?.success, state?.created, state?.metaEventId, update, router])
 
   return (
     <div>
@@ -46,6 +51,7 @@ export default function ClinicDetailsPage() {
       )}
 
       <form action={formAction} className="space-y-4">
+        <SignupAttributionFields />
         <div>
           <Label htmlFor="clinicName">Nome da clínica</Label>
           <Input id="clinicName" name="clinicName" required />

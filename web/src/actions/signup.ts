@@ -14,7 +14,8 @@ import { withTransaction } from '@/lib/tenant'
 import { notifyDiscord } from '@/lib/discord'
 import { issueConfirmationToken } from '@/lib/confirm-email'
 import { getAppUrl } from '@/lib/app-url'
-import { isUniqueViolation } from '@/lib/errors'
+import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
+import { generateMetaEventId, parseSignupAttribution, type SignupAttribution } from '@/lib/marketing-attribution'
 
 export type SignUpState = {
   error?: { fullName?: string[]; email?: string[]; password?: string[]; clinicName?: string[]; phone?: string[]; general?: string[] }
@@ -38,6 +39,9 @@ export async function signUp(
   }
 
   const { fullName, email, password, clinicName, phone } = parsed.data
+  const metaEventId = String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
+  const signupAttribution = parseSignupAttribution(formData.get('marketingAttribution'))
+  const tenantAttribution = signupAttribution ? { ...signupAttribution, metaEventId } : { metaEventId }
 
   const [existing] = await db
     .select({ id: users.id })
@@ -98,6 +102,7 @@ export async function signUp(
   }
 
   if (tenantId) {
+    await persistSignupAttribution(tenantId, tenantAttribution)
     await notifyDiscord({ kind: 'clinic.created', tenantName: clinicName, city: null, state: null, tenantId })
 
     const [freePlan] = await db.select().from(plans).where(eq(plans.slug, 'free')).limit(1)
@@ -140,7 +145,7 @@ export async function signUp(
   // The first sign-in happens after confirming, and `authorize` refuses until
   // then. The address rides in the query string because there is no session
   // for the page to read it from.
-  redirect(`/confirm-email?email=${encodeURIComponent(email)}`)
+  redirect(`/confirm-email?email=${encodeURIComponent(email)}&meta_event_id=${encodeURIComponent(metaEventId)}`)
 }
 
 export async function signUpWithGoogle() {
@@ -150,6 +155,8 @@ export async function signUpWithGoogle() {
 export type ClinicDetailsState = {
   error?: { clinicName?: string[]; phone?: string[]; general?: string[] }
   success?: boolean
+  created?: boolean
+  metaEventId?: string
 } | null
 
 export async function createClinicForOAuthUser(
@@ -173,7 +180,7 @@ export async function createClinicForOAuthUser(
     // /dashboard a token that still says tenantId: null and get bounced
     // straight back. This is the retry case, so the clinic already exists and
     // there is nothing left to do but refresh the token.
-    return { success: true }
+    return { success: true, created: false }
   }
 
   const raw = {
@@ -187,8 +194,12 @@ export async function createClinicForOAuthUser(
   }
 
   const { clinicName, phone } = parsed.data
+  const metaEventId = String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
+  const signupAttribution = parseSignupAttribution(formData.get('marketingAttribution'))
+  const tenantAttribution = signupAttribution ? { ...signupAttribution, metaEventId } : { metaEventId }
 
   const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone })
+  await persistSignupAttribution(tenant.id, tenantAttribution)
 
   await notifyDiscord({ kind: 'clinic.created', tenantName: clinicName, city: null, state: null, tenantId: tenant.id })
 
@@ -223,5 +234,23 @@ export async function createClinicForOAuthUser(
   // redirecting to /dashboard here loops: the client has to refresh the
   // session first. It reports success and navigates once the token is
   // current.
-  return { success: true }
+  return { success: true, created: true, metaEventId }
+}
+
+async function persistSignupAttribution(
+  tenantId: string,
+  signupAttribution: Partial<SignupAttribution> & { metaEventId: string },
+) {
+  try {
+    await db
+      .update(tenants)
+      .set({ signupAttribution, updatedAt: new Date() })
+      .where(eq(tenants.id, tenantId))
+  } catch (err) {
+    if (isUndefinedColumn(err)) {
+      console.warn('Skipping signup attribution because tenants.signup_attribution is not migrated yet')
+      return
+    }
+    throw err
+  }
 }

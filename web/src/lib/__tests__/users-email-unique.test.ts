@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 import { drizzle } from 'drizzle-orm/pg-proxy'
-import { isUniqueViolation } from '@/lib/errors'
+import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
 import { users } from '@/db/schema'
 
 /**
@@ -143,5 +143,34 @@ describe('isUniqueViolation', () => {
 
     expect(isUniqueViolation(err, INDEX_NAME)).toBe(false)
     expect(isUniqueViolation({ code: '23505', constraint_name: INDEX_NAME }, INDEX_NAME)).toBe(true)
+  })
+})
+
+describe('isUndefinedColumn', () => {
+  it('recognises a Postgres undefined_column error by SQLSTATE', () => {
+    expect(isUndefinedColumn({ code: '42703' })).toBe(true)
+  })
+
+  it('sees through the wrapper drizzle puts around it', async () => {
+    const db = drizzle(async () => {
+      throw Object.assign(new Error('column "signup_attribution" does not exist'), {
+        code: '42703',
+      })
+    })
+
+    let err: unknown
+    try {
+      await db.insert(users).values({ id: 'x', fullName: 'a', email: 'a@b.com' } as never)
+    } catch (caught) {
+      err = caught
+    }
+
+    expect(isUndefinedColumn(err)).toBe(true)
+  })
+
+  it('ignores unrelated errors', () => {
+    expect(isUndefinedColumn({ code: '23505' })).toBe(false)
+    expect(isUndefinedColumn(new Error('column "foo" does not exist'))).toBe(false)
+    expect(isUndefinedColumn(null)).toBe(false)
   })
 })

@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/react";
+import { Suspense } from "react";
+import { AttributionCapture } from "@/components/attribution-capture";
+import { MetaPixel } from "@/components/meta-pixel";
 import { StructuredData } from "@/components/structured-data";
+import { metaPixelId } from "@/lib/marketing-attribution";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -38,6 +42,8 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const pixelId = metaPixelId();
+
   return (
     <html lang="pt-BR">
       <head>
@@ -53,6 +59,10 @@ export default function RootLayout({
         />
       </head>
       <body>
+        <Suspense fallback={null}>
+          <MetaPixel pixelId={pixelId} />
+        </Suspense>
+        <AttributionCapture />
         {children}
         <StructuredData />
         <Analytics />

@@ -26,12 +26,18 @@ const redirectMock = vi.fn((path: string) => {
 
 const authMock = vi.fn()
 const selectMock = vi.fn()
+const updateMock = vi.fn()
 const createSelfSignupTenantMock = vi.fn()
 const createSubscriptionMock = vi.fn()
 
 vi.mock('next/navigation', () => ({ redirect: (p: string) => redirectMock(p) }))
 vi.mock('@/lib/auth-config', () => ({ auth: () => authMock() }))
-vi.mock('@/db/client', () => ({ db: { select: () => selectMock() } }))
+vi.mock('@/db/client', () => ({
+  db: {
+    select: () => selectMock(),
+    update: (...a: unknown[]) => updateMock(...a),
+  },
+}))
 vi.mock('@/db/queries/admin-tenants', () => ({
   createSelfSignupTenant: (...a: unknown[]) => createSelfSignupTenantMock(...a),
   generateSlug: (name: string) => name.toLowerCase().replace(/\s+/g, '-'),
@@ -70,6 +76,11 @@ beforeEach(() => {
   authMock.mockResolvedValue({ user: { id: 'user-1', email: 'a@b.com', name: 'A' } })
   createSelfSignupTenantMock.mockResolvedValue({ id: 'tenant-1' })
   createSubscriptionMock.mockResolvedValue({ created: true })
+  updateMock.mockReturnValue({
+    set: () => ({
+      where: () => Promise.resolve(),
+    }),
+  })
   // No membership, then the free-plan lookup.
   selectMock
     .mockReturnValueOnce(membershipLookup([]))
@@ -80,7 +91,11 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
   it('reports success instead of redirecting after creating the clinic', async () => {
     const state = await createClinicForOAuthUser(null, form())
 
-    expect(state).toEqual({ success: true })
+    expect(state).toEqual({
+      success: true,
+      created: true,
+      metaEventId: expect.stringMatching(/^complete_registration:/),
+    })
     // The redirect is the bug. /dashboard with tenantId: null in the token is
     // bounced straight back here by middleware.
     expect(redirectMock).not.toHaveBeenCalledWith('/dashboard')
@@ -94,6 +109,7 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
       clinicName: 'Clínica Flora',
       phone: '11988887777',
     })
+    expect(updateMock).toHaveBeenCalled()
   })
 
   it('reports success on a retry rather than redirecting', async () => {
@@ -104,7 +120,7 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
 
     const state = await createClinicForOAuthUser(null, form())
 
-    expect(state).toEqual({ success: true })
+    expect(state).toEqual({ success: true, created: false })
     expect(redirectMock).not.toHaveBeenCalledWith('/dashboard')
     // Nothing created twice.
     expect(createSelfSignupTenantMock).not.toHaveBeenCalled()

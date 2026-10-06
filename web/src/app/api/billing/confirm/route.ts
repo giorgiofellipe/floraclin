@@ -75,7 +75,13 @@ export async function POST(request: Request) {
       ...(period ?? {}),
     })
 
-    return NextResponse.json({ activated: true })
+    return NextResponse.json({
+      activated: true,
+      plan: {
+        slug: plan.slug,
+        priceCents: plan.priceCents,
+      },
+    })
   } catch (error) {
     return handleApiError(error, request)
   }
