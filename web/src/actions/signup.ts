@@ -7,7 +7,7 @@ import { db } from '@/db/client'
 import { users, tenants, tenantUsers, plans } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
-import { createSelfSignupTenant, generateSlug } from '@/db/queries/admin-tenants'
+import { createSelfSignupTenant, generateSlug, insertSelfSignupTenantBase } from '@/db/queries/admin-tenants'
 import { createSubscription } from '@/db/queries/subscriptions'
 import { sendNewSignupNotification, sendConfirmationEmail } from '@/lib/email'
 import { withTransaction } from '@/lib/tenant'
@@ -80,10 +80,7 @@ export async function signUp(
         slug = `${baseSlug}-${attempt}`
       }
 
-      const [tenant] = await tx
-        .insert(tenants)
-        .values({ name: clinicName, slug, status: 'active', phone })
-        .returning()
+      const tenant = await insertSelfSignupTenantBase(tx, { name: clinicName, slug, status: 'active', phone })
 
       tenantId = tenant.id
 

@@ -5,8 +5,9 @@ import { tenants } from '@/db/schema'
 import { signIn } from '@/lib/auth-config'
 import { redirect } from 'next/navigation'
 
-const { tenantInsertSpy, issueConfirmationTokenMock, sendConfirmationEmailMock } = vi.hoisted(() => ({
+const { tenantInsertSpy, tenantExecuteSpy, issueConfirmationTokenMock, sendConfirmationEmailMock } = vi.hoisted(() => ({
   tenantInsertSpy: vi.fn(),
+  tenantExecuteSpy: vi.fn(),
   issueConfirmationTokenMock: vi.fn(),
   sendConfirmationEmailMock: vi.fn(),
 }))
@@ -43,13 +44,18 @@ vi.mock('@/lib/tenant', () => ({
         })),
       })),
     })),
+    execute: tenantExecuteSpy,
   })),
 }))
 
-vi.mock('@/db/queries/admin-tenants', () => ({
-  createSelfSignupTenant: vi.fn(() => ({ id: 'tenant-1', name: 'Test Clinic' })),
-  generateSlug: vi.fn((name: string) => name.toLowerCase().replace(/\s+/g, '-')),
-}))
+vi.mock('@/db/queries/admin-tenants', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/db/queries/admin-tenants')>()
+  return {
+    ...actual,
+    createSelfSignupTenant: vi.fn(() => ({ id: 'tenant-1', name: 'Test Clinic' })),
+    generateSlug: vi.fn((name: string) => name.toLowerCase().replace(/\s+/g, '-')),
+  }
+})
 
 vi.mock('@/lib/email', () => ({
   sendNewSignupNotification: vi.fn(),
@@ -85,6 +91,21 @@ describe('signUp action', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(db.update).mockReturnValue(db as any)
+    tenantExecuteSpy.mockResolvedValue([{
+      id: 'tenant-1',
+      name: 'Test Clinic',
+      slug: 'test-clinic',
+      status: 'active',
+      logo_url: null,
+      phone: '11999998888',
+      email: null,
+      address: null,
+      working_hours: null,
+      settings: {},
+      created_at: new Date('2026-10-06T00:00:00.000Z'),
+      updated_at: new Date('2026-10-06T00:00:00.000Z'),
+      deleted_at: null,
+    }])
 
     // The existing-user check and the free-plan lookup share this shape
     // (select -> from -> where -> limit). Resolving to an empty array covers
@@ -154,8 +175,8 @@ describe('signUp action', () => {
   it('creates the tenant with status active', async () => {
     await signUp(null, validFormData({ email: 'active@test.com' }))
 
-    const tenantCall = tenantInsertSpy.mock.calls.find(([vals]) => 'status' in vals)
-    expect(tenantCall?.[0]).toMatchObject({ status: 'active' })
+    expect(tenantExecuteSpy).toHaveBeenCalled()
+    expect(tenantInsertSpy.mock.calls.some(([vals]) => 'status' in vals)).toBe(false)
   })
 
   it('persists signup attribution after creating the tenant', async () => {
@@ -175,8 +196,7 @@ describe('signUp action', () => {
 
     await signUp(null, formData)
 
-    const tenantCall = tenantInsertSpy.mock.calls.find(([vals]) => 'status' in vals)
-    expect(tenantCall?.[0]).not.toHaveProperty('signupAttribution')
+    expect(tenantInsertSpy.mock.calls.some(([vals]) => 'signupAttribution' in vals)).toBe(false)
     expect(db.update).toHaveBeenCalledWith(tenants)
     expect((db as any).set).toHaveBeenCalledWith({
       signupAttribution: expect.objectContaining({
@@ -206,6 +226,22 @@ describe('signUp action', () => {
 
     expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
     consoleWarnSpy.mockRestore()
+  })
+
+  it('does not use Drizzle tenant insert for the base signup row', async () => {
+    const formData = validFormData({ email: 'raw-insert@test.com' })
+    tenantInsertSpy.mockImplementation((vals: Record<string, unknown>) => {
+      if ('status' in vals) {
+        throw Object.assign(new Error('column "signup_attribution" does not exist'), {
+          code: '42703',
+        })
+      }
+    })
+
+    await signUp(null, formData)
+
+    expect(tenantExecuteSpy).toHaveBeenCalled()
+    expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
   })
 
   it('does not persist signup attribution or carry a Meta event id without marketing consent', async () => {
