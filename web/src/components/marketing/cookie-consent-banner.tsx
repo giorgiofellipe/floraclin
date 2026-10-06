@@ -52,7 +52,7 @@ export function CookieConsentBanner() {
           className="fixed inset-x-4 bottom-4 z-50 mx-auto max-w-4xl rounded-2xl border border-sage/20 bg-cream/95 p-4 shadow-2xl backdrop-blur md:flex md:items-center md:gap-5"
         >
           <div className="flex-1 text-sm leading-relaxed text-mid">
-            <p className="font-medium text-charcoal">Cookies e marketing</p>
+            <p className="font-medium text-charcoal">Cookies</p>
             <p className="mt-1">
               Usamos cookies necessários para o app funcionar. Com sua autorização, também usamos Meta Pixel e
               dados de campanha para medir anúncios e melhorar nossas comunicações. Veja a{' '}
@@ -68,7 +68,7 @@ export function CookieConsentBanner() {
               onClick={() => persist(false)}
               className="rounded-full border border-sage/25 px-4 py-2 text-sm text-charcoal transition hover:bg-sage/10"
             >
-              Recusar marketing
+              Recusar
             </button>
             <button
               type="button"
@@ -82,7 +82,7 @@ export function CookieConsentBanner() {
               onClick={() => persist(true)}
               className="rounded-full bg-forest px-4 py-2 text-sm text-cream transition hover:bg-sage"
             >
-              Aceitar marketing
+              Aceitar todos
             </button>
           </div>
         </section>
@@ -123,7 +123,7 @@ export function CookieConsentBanner() {
                   className="mt-1 accent-sage"
                 />
                 <span>
-                  <span className="block text-sm font-medium text-charcoal">Marketing</span>
+                  <span className="block text-sm font-medium text-charcoal">Anúncios e medição</span>
                   <span className="mt-1 block text-sm text-mid">
                     Meta Pixel, medição de campanhas e captura de UTM/fbclid/gclid para atribuição de cadastro.
                   </span>
