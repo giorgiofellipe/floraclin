@@ -33,11 +33,6 @@ export default function LgpdPage() {
                 cumprimos as exigências da lei no tratamento de dados pessoais e
                 dados sensíveis de saúde.
               </p>
-              <p className="mt-3">
-                <strong>TODO Giorgio:</strong> preencher o endereço comercial da
-                pessoa jurídica operadora da FloraClin, caso ele deva constar
-                nesta página.
-              </p>
             </section>
 
             <section>
