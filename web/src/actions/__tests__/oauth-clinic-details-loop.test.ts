@@ -27,6 +27,7 @@ const redirectMock = vi.fn((path: string) => {
 const authMock = vi.fn()
 const selectMock = vi.fn()
 const updateMock = vi.fn()
+const executeMock = vi.fn()
 const createSelfSignupTenantMock = vi.fn()
 const createSubscriptionMock = vi.fn()
 
@@ -36,6 +37,7 @@ vi.mock('@/db/client', () => ({
   db: {
     select: () => selectMock(),
     update: (...a: unknown[]) => updateMock(...a),
+    execute: (...a: unknown[]) => executeMock(...a),
   },
 }))
 vi.mock('@/db/queries/admin-tenants', () => ({
@@ -80,6 +82,7 @@ beforeEach(() => {
   authMock.mockResolvedValue({ user: { id: 'user-1', email: 'a@b.com', name: 'A' } })
   createSelfSignupTenantMock.mockResolvedValue({ id: 'tenant-1' })
   createSubscriptionMock.mockResolvedValue({ created: true })
+  executeMock.mockResolvedValue(undefined)
   updateMock.mockReturnValue({
     set: () => ({
       where: () => Promise.resolve(),
@@ -123,7 +126,8 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
       created: true,
       metaEventId: 'complete_registration:event-google',
     })
-    expect(updateMock).toHaveBeenCalled()
+    expect(executeMock).toHaveBeenCalledTimes(1)
+    expect(updateMock).not.toHaveBeenCalled()
   })
 
   it('reports success on a retry rather than redirecting', async () => {
