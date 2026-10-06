@@ -177,29 +177,21 @@ describe('signUp action', () => {
 
     const tenantCall = tenantInsertSpy.mock.calls.find(([vals]) => 'status' in vals)
     expect(tenantCall?.[0]).not.toHaveProperty('signupAttribution')
-    expect(db.update).toHaveBeenCalledWith(tenants)
-    expect((db as any).set).toHaveBeenCalledWith({
-      signupAttribution: expect.objectContaining({
-        utmSource: 'meta',
-        utmCampaign: 'hof-trial',
-        fbclid: 'fb-click',
-        metaEventId: 'complete_registration:event-1',
-      }),
-      updatedAt: expect.any(Date),
-    })
+    expect('signupAttribution' in tenants).toBe(false)
+    expect(db.update).not.toHaveBeenCalledWith(tenants)
+    expect(db.execute).toHaveBeenCalledTimes(1)
+    expect(String(vi.mocked(db.execute).mock.calls[0]?.[0])).toContain('signup_attribution')
   })
 
   it('still completes signup when the attribution column is not migrated yet', async () => {
     const formData = validFormData({ email: 'missing-column@test.com' })
     formData.set('marketingConsent', 'granted')
     formData.set('metaEventId', 'complete_registration:event-2')
-    vi.mocked(db.update).mockReturnValueOnce({
-      set: vi.fn(() => {
-        throw Object.assign(new Error('column "signup_attribution" does not exist'), {
-          code: '42703',
-        })
+    vi.mocked(db.execute).mockRejectedValueOnce(
+      Object.assign(new Error('column "signup_attribution" does not exist'), {
+        code: '42703',
       }),
-    } as any)
+    )
     const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     await signUp(null, formData)
@@ -223,6 +215,7 @@ describe('signUp action', () => {
     await signUp(null, formData)
 
     expect(db.update).not.toHaveBeenCalledWith(tenants)
+    expect(db.execute).not.toHaveBeenCalled()
     const target = vi.mocked(redirect).mock.calls.at(-1)?.[0] as string
     expect(target).toContain('/confirm-email')
     expect(target).not.toContain('meta_event_id')

@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 import { signUpSchema, clinicDetailsSchema } from '@/validations/signup'
 import { db } from '@/db/client'
 import { users, tenants, tenantUsers, plans } from '@/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { createSelfSignupTenant, generateSlug } from '@/db/queries/admin-tenants'
 import { createSubscription } from '@/db/queries/subscriptions'
@@ -261,10 +261,12 @@ async function persistSignupAttribution(
   signupAttribution: Partial<SignupAttribution> & { metaEventId: string },
 ) {
   try {
-    await db
-      .update(tenants)
-      .set({ signupAttribution, updatedAt: new Date() })
-      .where(eq(tenants.id, tenantId))
+    await db.execute(sql`
+      UPDATE floraclin.tenants
+      SET signup_attribution = ${JSON.stringify(signupAttribution)}::jsonb,
+          updated_at = ${new Date()}
+      WHERE id = ${tenantId}
+    `)
   } catch (err) {
     if (isUndefinedColumn(err)) {
       console.warn('Skipping signup attribution because tenants.signup_attribution is not migrated yet')

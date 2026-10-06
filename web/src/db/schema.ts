@@ -16,7 +16,6 @@ export const tenants = floraclinSchema.table('tenants', {
   address: jsonb('address'),
   workingHours: jsonb('working_hours'),
   settings: jsonb('settings').default({}),
-  signupAttribution: jsonb('signup_attribution'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
