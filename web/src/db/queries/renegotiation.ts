@@ -4,17 +4,13 @@ import {
   installments,
   paymentRecords,
   renegotiationLinks,
-  financialSettings,
   patients,
 } from '@/db/schema'
 import { eq, and, isNull, sql, inArray } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { createAuditLog } from '@/lib/audit'
-import {
-  calculateFine,
-  calculateInterest,
-  getDaysOverdue,
-} from '@/lib/financial/penalties'
+import { quoteInstallment, type InstallmentBase, type PaymentInput } from '@/lib/financial/penalties'
+import { loadFinancialSettings } from './financial'
 import type { RenegotiateInput } from '@/validations/financial'
 import { addDays } from 'date-fns'
 import { toLocalYmd } from '@/lib/dates'
@@ -69,23 +65,38 @@ export async function renegotiateCharges(
     // Bind the ids as a single Postgres array literal (`{a,b}`); drizzle's `sql`
     // tag flattens a raw JS array into separate params, which breaks `::uuid[]`.
     const entryIdArray = `{${data.entryIds.join(',')}}`
+    // ORDER BY id so this and bulk payment acquire overlapping rows in one
+    // order instead of deadlocking on each other.
     const lockResult = await tx.execute(
       sql`SELECT * FROM floraclin.installments
           WHERE financial_entry_id = ANY(${entryIdArray}::uuid[])
           AND tenant_id = ${tenantId}
+          ORDER BY id
           FOR UPDATE`
     )
 
     const lockedInstallments = (Array.isArray(lockResult) ? lockResult : (lockResult as any).rows ?? lockResult) as Array<Record<string, unknown>>
 
-    // 3. Load financial settings for penalty calculations
-    const [settings] = await tx
-      .select()
-      .from(financialSettings)
-      .where(eq(financialSettings.tenantId, tenantId))
-      .limit(1)
+    // 3. Load live payment records for every locked installment, and the
+    // settings that back the engine's defaults, so pricing here matches what
+    // the payment dialog quotes.
+    const lockedIds = lockedInstallments.map((i) => String(i.id))
+    const lockedPayments = lockedIds.length > 0
+      ? await tx
+          .select()
+          .from(paymentRecords)
+          .where(and(inArray(paymentRecords.installmentId, lockedIds), isNull(paymentRecords.reversedAt)))
+          .orderBy(paymentRecords.paidAt, paymentRecords.recordedAt)
+      : []
+    const paymentsByInstallment = new Map<string, typeof lockedPayments>()
+    for (const p of lockedPayments) {
+      const list = paymentsByInstallment.get(p.installmentId) ?? []
+      list.push(p)
+      paymentsByInstallment.set(p.installmentId, list)
+    }
 
-    const gracePeriodDays = settings?.gracePeriodDays ?? 0
+    const settings = await loadFinancialSettings(tx, tenantId)
+    const now = new Date()
 
     // 4. Calculate remaining per entry
     let totalRemainingPrincipal = 0
@@ -109,42 +120,25 @@ export async function renegotiateCharges(
         if (status === 'paid' || status === 'cancelled') continue
 
         const amount = Number(inst.amount)
-        const amountPaid = Number(inst.amount_paid ?? 0)
-        const remainingPrincipal = amount - amountPaid
 
-        entryRemainingPrincipal += remainingPrincipal
-
-        // Calculate penalties as of now
-        const appliedFineType = inst.applied_fine_type as string | null
-        const appliedFineValue = inst.applied_fine_value != null ? Number(inst.applied_fine_value) : null
-        const appliedInterestRate = inst.applied_interest_rate != null ? Number(inst.applied_interest_rate) : null
-
-        const fineType = appliedFineType ?? settings?.fineType ?? 'percentage'
-        const fineValue = appliedFineValue ?? Number(settings?.fineValue ?? 2)
-        const interestRate = appliedInterestRate ?? Number(settings?.monthlyInterestPercent ?? 1)
-
-        const dueDate = String(inst.due_date)
-        const lastCalcAt = inst.last_fine_interest_calc_at
-          ? new Date(inst.last_fine_interest_calc_at as string).toISOString()
-          : null
-
-        const daysOverdue = getDaysOverdue(
-          lastCalcAt ?? dueDate,
-          lastCalcAt ? 0 : gracePeriodDays,
-        )
-
-        // Fine (stored or calculated)
-        let fineAmount = Number(inst.fine_amount ?? 0)
-        if (daysOverdue > 0 && amountPaid === 0 && fineAmount === 0) {
-          fineAmount = calculateFine(amount, fineType, fineValue)
+        const base: InstallmentBase = {
+          amount,
+          dueDate: String(inst.due_date),
+          appliedFineValue: Number(inst.applied_fine_value ?? settings.fineValue),
+          appliedFineType: (inst.applied_fine_type as string | null) ?? settings.fineType,
+          appliedInterestRate: Number(inst.applied_interest_rate ?? settings.monthlyInterestPercent),
+          gracePeriodDays: settings.gracePeriodDays,
         }
+        const prior: PaymentInput[] = (paymentsByInstallment.get(String(inst.id)) ?? []).map((p) => ({
+          id: p.id,
+          amount: Number(p.amount),
+          paidAt: new Date(p.paidAt).toISOString(),
+          recordedAt: new Date(p.recordedAt).toISOString(),
+        }))
+        const quote = quoteInstallment(base, prior, now)
 
-        // Interest (recalculated)
-        const interestAmount = daysOverdue > 0
-          ? calculateInterest(remainingPrincipal, daysOverdue, interestRate)
-          : 0
-
-        entryPenalties += fineAmount + interestAmount
+        entryRemainingPrincipal += quote.remainingPrincipal
+        entryPenalties += quote.fineAmount + quote.interestAmount
       }
 
       totalRemainingPrincipal += entryRemainingPrincipal
@@ -189,7 +183,6 @@ export async function renegotiateCharges(
     }
 
     // 7. Mark original entries as 'renegotiated'
-    const now = new Date()
     await tx
       .update(financialEntries)
       .set({

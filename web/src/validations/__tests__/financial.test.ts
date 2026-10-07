@@ -6,9 +6,11 @@ import {
   renegotiateSchema,
   bulkPaySchema,
   bulkCancelSchema,
+  bulkUncancelSchema,
   ledgerFilterSchema,
   financialFilterSchema,
 } from '../financial'
+import { parseBrDate, brToday, endOfBrDay } from '@/lib/dates'
 
 const UUID = '550e8400-e29b-41d4-a716-446655440000'
 const UUID2 = '550e8400-e29b-41d4-a716-446655440001'
@@ -161,6 +163,38 @@ describe('recordPaymentSchema', () => {
   it('fails when amount is negative', () => {
     const result = recordPaymentSchema.safeParse({ ...validData, amount: -50 })
     expect(result.success).toBe(false)
+  })
+
+  it('fails when amount exceeds what payment_records.amount can hold', () => {
+    const result = recordPaymentSchema.safeParse({ ...validData, amount: 100_000_000 })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe('Valor acima do limite permitido')
+    }
+  })
+
+  // Allocation rounds to cents while persistence truncates with toFixed(2), so
+  // a fractional cent would credit one figure and record another.
+  it('rejects an amount with more than two decimals', () => {
+    for (const amount of [0.001, 2.675, 1.005]) {
+      const result = recordPaymentSchema.safeParse({ ...validData, amount })
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.error.issues.map((i) => i.message)).toContain(
+          'Valor deve ter no máximo duas casas decimais',
+        )
+      }
+    }
+  })
+
+  it('accepts an amount with exactly two decimals', () => {
+    expect(recordPaymentSchema.safeParse({ ...validData, amount: 2.67 }).success).toBe(true)
+    expect(recordPaymentSchema.safeParse({ ...validData, amount: 0.01 }).success).toBe(true)
+  })
+
+  it('accepts the maximum amount payment_records.amount can hold', () => {
+    const result = recordPaymentSchema.safeParse({ ...validData, amount: 99_999_999.99 })
+    expect(result.success).toBe(true)
   })
 
   it('fails when paymentMethod is missing', () => {
@@ -382,6 +416,44 @@ describe('bulkCancelSchema', () => {
   })
 })
 
+describe('bulkUncancelSchema', () => {
+  const validData = {
+    entryIds: [UUID, UUID2],
+    reason: 'Cancelamento revertido por engano',
+  }
+
+  it('passes with valid data', () => {
+    const result = bulkUncancelSchema.safeParse(validData)
+    expect(result.success).toBe(true)
+  })
+
+  it('fails when entryIds is empty', () => {
+    const result = bulkUncancelSchema.safeParse({ ...validData, entryIds: [] })
+    expect(result.success).toBe(false)
+  })
+
+  it('fails when entryIds contains invalid uuid', () => {
+    const result = bulkUncancelSchema.safeParse({ ...validData, entryIds: ['not-uuid'] })
+    expect(result.success).toBe(false)
+  })
+
+  it('fails when reason is missing', () => {
+    const { reason, ...rest } = validData
+    const result = bulkUncancelSchema.safeParse(rest)
+    expect(result.success).toBe(false)
+  })
+
+  it('fails when reason is empty', () => {
+    const result = bulkUncancelSchema.safeParse({ ...validData, reason: '' })
+    expect(result.success).toBe(false)
+  })
+
+  it('passes with single entryId', () => {
+    const result = bulkUncancelSchema.safeParse({ ...validData, entryIds: [UUID] })
+    expect(result.success).toBe(true)
+  })
+})
+
 describe('ledgerFilterSchema', () => {
   const validData = {
     dateFrom: '2026-01-01',
@@ -539,5 +611,50 @@ describe('financialFilterSchema', () => {
     if (result.success) {
       expect(result.data.limit).toBe(20)
     }
+  })
+})
+
+describe('paidAt bounds', () => {
+  const base = {
+    installmentId: '00000000-0000-4000-8000-000000000001',
+    amount: 100,
+    paymentMethod: 'pix',
+  }
+
+  it('accepts a past date', () => {
+    expect(
+      recordPaymentSchema.safeParse({ ...base, paidAt: '2020-01-01T12:00:00.000Z' }).success,
+    ).toBe(true)
+  })
+
+  it('accepts an omitted date', () => {
+    expect(recordPaymentSchema.safeParse(base).success).toBe(true)
+  })
+
+  // AR-3: BR noon today is "in the future" every morning before 09:00 UTC-3.
+  it('accepts BR noon of the current BR day', () => {
+    const paidAt = parseBrDate(brToday(), '12:00:00').toISOString()
+    expect(recordPaymentSchema.safeParse({ ...base, paidAt }).success).toBe(true)
+  })
+
+  it('accepts the last instant of the current BR day', () => {
+    const paidAt = endOfBrDay(brToday()).toISOString()
+    expect(recordPaymentSchema.safeParse({ ...base, paidAt }).success).toBe(true)
+  })
+
+  it('rejects tomorrow', () => {
+    const paidAt = new Date(endOfBrDay(brToday()).getTime() + 1000).toISOString()
+    expect(recordPaymentSchema.safeParse({ ...base, paidAt }).success).toBe(false)
+  })
+
+  it('rejects tomorrow on the bulk schema', () => {
+    const paidAt = new Date(endOfBrDay(brToday()).getTime() + 1000).toISOString()
+    expect(
+      bulkPaySchema.safeParse({
+        installmentIds: ['00000000-0000-4000-8000-000000000001'],
+        paymentMethod: 'pix',
+        paidAt,
+      }).success,
+    ).toBe(false)
   })
 })

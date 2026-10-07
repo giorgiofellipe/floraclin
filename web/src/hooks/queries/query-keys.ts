@@ -27,6 +27,8 @@ export const queryKeys = {
     ledger: (filters?: Record<string, unknown>) => ['financial', 'ledger', filters] as const,
     practitionerPL: (dateFrom: string, dateTo: string, practitionerId?: string) =>
       ['financial', 'practitioner-pl', dateFrom, dateTo, practitionerId] as const,
+    installmentQuote: (id: string, paidAt?: string) =>
+      ['financial', 'installmentQuote', id, paidAt ?? 'now'] as const,
   },
   settings: {
     all: ['settings'] as const,

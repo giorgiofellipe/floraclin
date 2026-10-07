@@ -10,6 +10,8 @@ import {
   toLocalYmd,
   isValidYmd,
   shiftBrYmd,
+  brDayIndex,
+  ymdDayIndex,
 } from '../dates'
 import { formatInTimeZone } from 'date-fns-tz'
 
@@ -148,6 +150,20 @@ describe('dates helpers', () => {
   describe('BR_TZ constant', () => {
     it('is the canonical IANA timezone string', () => {
       expect(BR_TZ).toBe('America/Sao_Paulo')
+    })
+  })
+
+  describe('brDayIndex', () => {
+    it('resolves an instant to the BR calendar day containing it', () => {
+      // 00:30 UTC on Sep 3 is 21:30 BRT on Sep 2.
+      expect(brDayIndex(new Date('2026-09-03T00:30:00.000Z'))).toBe(ymdDayIndex('2026-09-02'))
+      expect(brDayIndex(new Date('2026-09-03T03:30:00.000Z'))).toBe(ymdDayIndex('2026-09-03'))
+    })
+
+    it('counts whole calendar days between two instants regardless of clock time', () => {
+      const noon = new Date('2026-05-22T15:00:00.000Z') // 12:00 BRT May 22
+      const nextMorning = new Date('2026-05-23T13:00:00.000Z') // 10:00 BRT May 23
+      expect(brDayIndex(nextMorning) - brDayIndex(noon)).toBe(1)
     })
   })
 })
