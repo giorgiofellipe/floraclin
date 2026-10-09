@@ -26,6 +26,12 @@ export default auth((req) => {
     // lost, which defeats the whole point of a 24 hour link.
     pathname.startsWith('/confirm-email') ||
     pathname === '/manifest.webmanifest' ||
+    // Sentry's browser SDK posts every client-side event to this tunnel
+    // (tunnelRoute in next.config.ts). Without this an anonymous visitor on
+    // /signup or /login gets a 307 to /login, the POST lands there as a 405,
+    // and their errors never reach Sentry, which is exactly where we look
+    // when the signup funnel breaks.
+    pathname === '/monitoring' ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/favicon') ||

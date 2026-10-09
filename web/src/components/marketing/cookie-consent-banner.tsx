@@ -17,6 +17,24 @@ export function CookieConsentBanner() {
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false)
   const [marketing, setMarketing] = useState(false)
   const choice = consentStatus === 'unset' ? null : readCookieConsent()
+  const shouldShowBanner = consentStatus === 'unset' && !isPreferencesOpen
+
+  useEffect(() => {
+    if (!shouldShowBanner) return
+
+    const previousPadding = document.body.style.paddingBottom
+    const media = window.matchMedia('(max-width: 767px)')
+    const applyPadding = () => {
+      document.body.style.paddingBottom = media.matches ? '7rem' : previousPadding
+    }
+
+    applyPadding()
+    media.addEventListener('change', applyPadding)
+    return () => {
+      media.removeEventListener('change', applyPadding)
+      document.body.style.paddingBottom = previousPadding
+    }
+  }, [shouldShowBanner])
 
   useEffect(() => {
     function handleOpenPreferences() {
@@ -42,18 +60,23 @@ export function CookieConsentBanner() {
     setIsPreferencesOpen(true)
   }
 
-  const shouldShowBanner = consentStatus === 'unset' && !isPreferencesOpen
-
   return (
     <>
       {shouldShowBanner && (
         <section
           aria-label="Aviso de cookies"
-          className="fixed inset-x-4 bottom-4 z-50 mx-auto max-w-4xl rounded-2xl border border-sage/20 bg-cream/95 p-4 shadow-2xl backdrop-blur md:flex md:items-center md:gap-5"
+          className="fixed inset-x-3 bottom-3 z-50 mx-auto max-h-[30svh] max-w-4xl overflow-y-auto rounded-xl border border-sage/20 bg-cream/95 p-3 shadow-2xl backdrop-blur sm:inset-x-4 sm:bottom-4 sm:max-h-none sm:rounded-2xl sm:p-4 md:flex md:items-center md:gap-5"
         >
-          <div className="flex-1 text-sm leading-relaxed text-mid">
+          <div className="flex-1 text-xs leading-snug text-mid sm:text-sm sm:leading-relaxed">
             <p className="font-medium text-charcoal">Cookies</p>
-            <p className="mt-1">
+            <p className="mt-1 sm:hidden">
+              Anúncios e medição só com sua autorização.{' '}
+              <button type="button" onClick={showPreferences} className="text-sage underline underline-offset-2">
+                Ver detalhes
+              </button>
+              .
+            </p>
+            <p className="mt-1 hidden sm:block">
               Usamos cookies necessários para o app funcionar. Com sua autorização, também usamos Meta Pixel e
               dados de campanha para medir anúncios e melhorar nossas comunicações. Veja a{' '}
               <Link href="https://floraclin.com.br/privacidade" className="text-sage underline underline-offset-2">
@@ -62,7 +85,7 @@ export function CookieConsentBanner() {
               .
             </p>
           </div>
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row md:mt-0">
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-4 sm:flex sm:flex-row md:mt-0">
             <button
               type="button"
               onClick={() => persist(false)}
@@ -73,7 +96,7 @@ export function CookieConsentBanner() {
             <button
               type="button"
               onClick={showPreferences}
-              className="rounded-full border border-sage/25 px-4 py-2 text-sm text-charcoal transition hover:bg-sage/10"
+              className="col-span-2 rounded-full border border-sage/25 px-4 py-2 text-sm text-charcoal transition hover:bg-sage/10 sm:col-span-1"
             >
               Preferências
             </button>
@@ -94,7 +117,7 @@ export function CookieConsentBanner() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="cookie-preferences-title"
-            className="w-full max-w-lg rounded-2xl border border-sage/15 bg-cream p-6 shadow-2xl"
+            className="max-h-[calc(100svh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-sage/15 bg-cream p-5 shadow-2xl sm:p-6"
           >
             <h2 id="cookie-preferences-title" className="font-display text-2xl text-charcoal">
               Preferências de cookies

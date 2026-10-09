@@ -134,7 +134,7 @@ beforeEach(() => {
 // ─── GET /api/auth/confirm ──────────────────────────────────────────
 
 describe('GET /api/auth/confirm', () => {
-  it('redirects to /confirm-email carrying email and token, without consuming', async () => {
+  it('redirects to a clean /confirm-email URL and stores email/token in an httpOnly cookie, without consuming', async () => {
     const request = new NextRequest('https://app.floraclin.com.br/api/auth/confirm?email=a%40b.com&token=raw123')
 
     const response = await GET(request)
@@ -142,8 +142,9 @@ describe('GET /api/auth/confirm', () => {
     expect(response.status).toBe(307)
     const location = new URL(response.headers.get('location')!)
     expect(location.pathname).toBe('/confirm-email')
-    expect(location.searchParams.get('email')).toBe('a@b.com')
-    expect(location.searchParams.get('token')).toBe('raw123')
+    expect(location.search).toBe('')
+    expect(response.headers.get('set-cookie')).toContain('floraclin_confirm_email=')
+    expect(response.headers.get('set-cookie')).toContain('HttpOnly')
     expect(consumeConfirmationTokenMock).not.toHaveBeenCalled()
   })
 })

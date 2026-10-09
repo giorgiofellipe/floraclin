@@ -2,6 +2,8 @@
 
 import { signIn } from '@/lib/auth-config'
 import { redirect } from 'next/navigation'
+import { cookies, headers } from 'next/headers'
+import { after } from 'next/server'
 import { signUpSchema, clinicDetailsSchema } from '@/validations/signup'
 import { db } from '@/db/client'
 import { users, tenants, tenantUsers, plans } from '@/db/schema'
@@ -16,6 +18,13 @@ import { issueConfirmationToken } from '@/lib/confirm-email'
 import { getAppUrl } from '@/lib/app-url'
 import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
 import { generateMetaEventId, parseSignupAttribution, type SignupAttribution } from '@/lib/marketing-attribution'
+import { reportSideEffectFailure } from '@/lib/observability'
+import { sendSignupCompleteRegistrationEvent } from '@/lib/meta/events'
+import {
+  CONFIRM_EMAIL_STATE_COOKIE,
+  confirmEmailStateCookieOptions,
+  serializeConfirmEmailPageState,
+} from '@/lib/confirm-email-page-state'
 
 export type SignUpState = {
   error?: { fullName?: string[]; email?: string[]; password?: string[]; clinicName?: string[]; phone?: string[]; general?: string[] }
@@ -25,6 +34,7 @@ export async function signUp(
   _prevState: SignUpState,
   formData: FormData,
 ): Promise<SignUpState> {
+  const requestHeaders = await headers()
   const raw = {
     fullName: formData.get('fullName') as string,
     email: formData.get('email') as string,
@@ -47,6 +57,7 @@ export async function signUp(
   const tenantAttribution = marketingConsent && metaEventId
     ? { ...(signupAttribution ?? {}), metaEventId }
     : null
+  const appUrl = getAppUrl()
 
   const [existing] = await db
     .select({ id: users.id })
@@ -107,6 +118,18 @@ export async function signUp(
     if (tenantAttribution) {
       await persistSignupAttribution(tenantId, tenantAttribution)
     }
+    if (marketingConsent && metaEventId) {
+      scheduleSignupCompleteRegistration({
+        eventId: metaEventId,
+        email,
+        phone,
+        eventSourceUrl: signupAttribution?.landingUrl ?? `${appUrl}/signup`,
+        fbc: signupAttribution?.fbc,
+        fbp: signupAttribution?.fbp,
+        clientIp: clientIpFromHeaders(requestHeaders),
+        userAgent: requestHeaders.get('user-agent'),
+      })
+    }
     await notifyDiscord({ kind: 'clinic.created', tenantName: clinicName, city: null, state: null, tenantId })
 
     const [freePlan] = await db.select().from(plans).where(eq(plans.slug, 'free')).limit(1)
@@ -135,7 +158,6 @@ export async function signUp(
   // taken, and has no session to reach /confirm-email for a resend. Sending
   // must never be allowed to block sign-in.
   try {
-    const appUrl = getAppUrl()
     const rawToken = await issueConfirmationToken(email)
     const confirmUrl = `${appUrl}/api/auth/confirm?email=${encodeURIComponent(email)}&token=${rawToken}`
     await sendConfirmationEmail(email, confirmUrl, clinicName)
@@ -147,10 +169,15 @@ export async function signUp(
   // would hand an unconfirmed account a working session cookie, and the API
   // would accept it: middleware's /api branch returns before any email check.
   // The first sign-in happens after confirming, and `authorize` refuses until
-  // then. The address rides in the query string because there is no session
-  // for the page to read it from.
+  // then. There is no session for the page to read from yet, so the address
+  // rides in a short-lived httpOnly cookie instead of the URL that Meta sees.
+  const cookieStore = await cookies()
+  cookieStore.set(
+    CONFIRM_EMAIL_STATE_COOKIE,
+    serializeConfirmEmailPageState({ email }),
+    confirmEmailStateCookieOptions(),
+  )
   const confirmEmailUrl = new URL('/confirm-email', getAppUrl())
-  confirmEmailUrl.searchParams.set('email', email)
   if (metaEventId) {
     confirmEmailUrl.searchParams.set('meta_event_id', metaEventId)
   }
@@ -172,6 +199,7 @@ export async function createClinicForOAuthUser(
   _prevState: ClinicDetailsState,
   formData: FormData,
 ): Promise<ClinicDetailsState> {
+  const requestHeaders = await headers()
   const { auth } = await import('@/lib/auth-config')
   const session = await auth()
   if (!session?.user?.id) {
@@ -215,6 +243,18 @@ export async function createClinicForOAuthUser(
   const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone })
   if (tenantAttribution) {
     await persistSignupAttribution(tenant.id, tenantAttribution)
+  }
+  if (marketingConsent && metaEventId && session.user.email) {
+    scheduleSignupCompleteRegistration({
+      eventId: metaEventId,
+      email: session.user.email,
+      phone,
+      eventSourceUrl: signupAttribution?.landingUrl ?? `${getAppUrl()}/signup/clinic-details`,
+      fbc: signupAttribution?.fbc,
+      fbp: signupAttribution?.fbp,
+      clientIp: clientIpFromHeaders(requestHeaders),
+      userAgent: requestHeaders.get('user-agent'),
+    })
   }
 
   await notifyDiscord({ kind: 'clinic.created', tenantName: clinicName, city: null, state: null, tenantId: tenant.id })
@@ -268,5 +308,25 @@ async function persistSignupAttribution(
       return
     }
     throw err
+  }
+}
+
+function clientIpFromHeaders(requestHeaders: Pick<Headers, 'get'>): string | null {
+  const forwardedFor = requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim()
+  if (forwardedFor) return forwardedFor
+
+  return requestHeaders.get('x-real-ip')?.trim() || null
+}
+
+function scheduleSignupCompleteRegistration(input: Parameters<typeof sendSignupCompleteRegistrationEvent>[0]): void {
+  try {
+    after(async () => {
+      await sendSignupCompleteRegistrationEvent(input)
+    })
+  } catch (error) {
+    reportSideEffectFailure(error, {
+      area: 'meta-capi',
+      step: 'schedule_signup_complete_registration',
+    })
   }
 }

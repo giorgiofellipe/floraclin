@@ -2,8 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { COOKIE_CONSENT_STORAGE_KEY, saveCookieConsent } from '../cookie-consent'
 import {
   ATTRIBUTION_STORAGE_KEY,
+  PENDING_ATTRIBUTION_SESSION_KEY,
   buildFbc,
   captureFirstTouchAttribution,
+  capturePendingFirstTouchAttribution,
+  discardMarketingAttribution,
   parseSignupAttribution,
   trackMetaEvent,
 } from '../marketing-attribution'
@@ -11,6 +14,7 @@ import {
 describe('marketing attribution utilities', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    window.sessionStorage.clear()
     document.cookie = 'floraclin_ft=; Max-Age=0; Path=/'
     window.history.pushState({}, '', '/signup?utm_source=meta&fbclid=click-1')
     delete window.fbq
@@ -47,12 +51,15 @@ describe('marketing attribution utilities', () => {
     })
   })
 
-  it('does not capture first-touch attribution before marketing consent', () => {
+  it('buffers first-touch attribution in session storage before marketing consent', () => {
     expect(captureFirstTouchAttribution()).toBeNull()
     expect(window.localStorage.getItem(ATTRIBUTION_STORAGE_KEY)).toBeNull()
+    expect(window.sessionStorage.getItem(PENDING_ATTRIBUTION_SESSION_KEY)).toContain('click-1')
   })
 
-  it('captures first-touch attribution after marketing consent is granted', () => {
+  it('persists buffered first-touch attribution after marketing consent is granted', () => {
+    capturePendingFirstTouchAttribution()
+    window.history.pushState({}, '', '/signup')
     saveCookieConsent(true)
 
     const attribution = captureFirstTouchAttribution()
@@ -63,7 +70,17 @@ describe('marketing attribution utilities', () => {
       fbc: expect.stringMatching(/^fb\.1\.\d+\.click-1$/),
     })
     expect(window.localStorage.getItem(ATTRIBUTION_STORAGE_KEY)).toContain('click-1')
+    expect(window.sessionStorage.getItem(PENDING_ATTRIBUTION_SESSION_KEY)).toBeNull()
     expect(window.localStorage.getItem(COOKIE_CONSENT_STORAGE_KEY)).toContain('"marketing":true')
+  })
+
+  it('discards buffered attribution when marketing consent is rejected', () => {
+    capturePendingFirstTouchAttribution()
+
+    discardMarketingAttribution()
+
+    expect(window.sessionStorage.getItem(PENDING_ATTRIBUTION_SESSION_KEY)).toBeNull()
+    expect(window.localStorage.getItem(ATTRIBUTION_STORAGE_KEY)).toBeNull()
   })
 
   it('does not send Meta events after marketing consent is revoked', () => {
