@@ -32,6 +32,7 @@ import { maskPhone } from '@/lib/masks'
 import { STATUS_LABELS, STATUS_SELECT_ITEMS } from '@/components/scheduling/appointment-card'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
 import type { AppointmentStatus } from '@/types'
+import { START_TIMES, END_TIMES, timeItems } from '@/lib/time-options'
 
 interface Practitioner {
   id: string
@@ -64,19 +65,7 @@ interface AppointmentFormProps {
   defaultPatient?: { id: string; fullName: string }
 }
 
-function generateTimeOptions(): string[] {
-  const times: string[] = []
-  for (let h = 7; h <= 20; h++) {
-    for (const m of [0, 30]) {
-      if (h === 20 && m === 30) break
-      times.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
-    }
-  }
-  return times
-}
-
-const TIME_OPTIONS = generateTimeOptions()
-const TIME_ITEMS: Record<string, string> = Object.fromEntries(TIME_OPTIONS.map((t) => [t, t]))
+const TIME_ITEMS = timeItems(START_TIMES)
 
 function getDefaultEndTime(startTime: string, durationMin: number = 30): string {
   const [h, m] = startTime.split(':').map(Number)
@@ -144,7 +133,7 @@ export function AppointmentForm({
     [procedureTypes]
   )
   const endTimeItems = React.useMemo(
-    () => Object.fromEntries(TIME_OPTIONS.filter((t) => t > startTime).map((t) => [t, t])),
+    () => timeItems(END_TIMES.filter((t) => t > startTime)),
     [startTime]
   )
 

@@ -67,7 +67,7 @@ export async function POST(request: Request) {
 
     if (hasConflict) {
       return NextResponse.json(
-        { error: 'Já existe um agendamento neste horário para este profissional.' },
+        { error: 'Horário indisponível para este profissional.' },
         { status: 409 }
       )
     }

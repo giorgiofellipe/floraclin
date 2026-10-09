@@ -37,9 +37,11 @@ export async function PUT(
       return NextResponse.json({ error: 'Agendamento não encontrado.' }, { status: 404 })
     }
 
+    // Stored times carry seconds; the request does not. Normalize before any comparison.
+    const hhmm = (t: string) => t.slice(0, 5)
     const checkDate = data.date ?? current.date
-    const checkStart = data.startTime ?? current.startTime
-    const checkEnd = data.endTime ?? current.endTime
+    const checkStart = hhmm(data.startTime ?? current.startTime)
+    const checkEnd = hhmm(data.endTime ?? current.endTime)
     const checkPractitioner = data.practitionerId ?? current.practitionerId
 
     if (checkStart >= checkEnd) {
@@ -49,7 +51,14 @@ export async function PUT(
       )
     }
 
-    if (data.date || data.startTime || data.endTime || data.practitionerId) {
+    // The form resends the whole slot on every edit; only a moved slot can newly conflict.
+    const slotChanged =
+      checkDate !== current.date ||
+      checkStart !== hhmm(current.startTime) ||
+      checkEnd !== hhmm(current.endTime) ||
+      checkPractitioner !== current.practitionerId
+
+    if (slotChanged) {
       const hasConflict = await checkTimeConflict(
         ctx.tenantId,
         checkPractitioner,
@@ -61,7 +70,7 @@ export async function PUT(
 
       if (hasConflict) {
         return NextResponse.json(
-          { error: 'Já existe um agendamento neste horário para este profissional.' },
+          { error: 'Horário indisponível para este profissional.' },
           { status: 409 }
         )
       }

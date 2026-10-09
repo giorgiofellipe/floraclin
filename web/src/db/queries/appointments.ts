@@ -164,7 +164,28 @@ export async function checkTimeConflict(
     .from(appointments)
     .where(and(...conditions))
 
-  return Number(result[0].count) > 0
+  if (Number(result[0].count) > 0) return true
+
+  const blockRows = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(calendarBlocks)
+    .where(
+      and(
+        eq(calendarBlocks.tenantId, tenantId),
+        or(eq(calendarBlocks.practitionerId, practitionerId), isNull(calendarBlocks.practitionerId)),
+        eq(calendarBlocks.date, date),
+        ne(calendarBlocks.status, 'cancelled'),
+        or(
+          eq(calendarBlocks.allDay, true),
+          and(
+            sql`${calendarBlocks.startTime} < ${endTime}::time`,
+            sql`${calendarBlocks.endTime} > ${startTime}::time`,
+          ),
+        ),
+      ),
+    )
+
+  return Number(blockRows[0].count) > 0
 }
 
 export async function createAppointment(
@@ -452,11 +473,13 @@ export async function getAvailableSlots(
     .where(
       and(
         eq(calendarBlocks.tenantId, tenantId),
-        eq(calendarBlocks.practitionerId, practitionerId),
+        or(eq(calendarBlocks.practitionerId, practitionerId), isNull(calendarBlocks.practitionerId)),
         eq(calendarBlocks.date, date),
         ne(calendarBlocks.status, 'cancelled')
       )
     )
+
+  const hhmm = (t: string) => t.slice(0, 5)
 
   // Generate all possible slots within working hours
   const slots: TimeSlot[] = []
@@ -471,13 +494,13 @@ export async function getAvailableSlots(
     const slotEnd = `${String(Math.floor(slotEndMin / 60)).padStart(2, '0')}:${String(slotEndMin % 60).padStart(2, '0')}`
 
     const hasAppointmentConflict = existing.some((appt) => {
-      return appt.startTime < slotEnd && appt.endTime > slotStart
+      return hhmm(appt.startTime) < slotEnd && hhmm(appt.endTime) > slotStart
     })
 
     const hasBlockConflict = blocks.some((block) => {
       if (block.allDay) return true
       if (!block.startTime || !block.endTime) return false
-      return block.startTime < slotEnd && block.endTime > slotStart
+      return hhmm(block.startTime) < slotEnd && hhmm(block.endTime) > slotStart
     })
 
     if (!hasAppointmentConflict && !hasBlockConflict) {
