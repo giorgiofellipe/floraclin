@@ -3,6 +3,7 @@ import { hasMarketingConsent } from "@/lib/cookie-consent"
 export const DEFAULT_META_PIXEL_ID = '1651713926600603'
 
 const ATTRIBUTION_STORAGE_KEY = 'floraclin_first_touch_attribution'
+const PENDING_ATTRIBUTION_SESSION_KEY = 'floraclin_pending_first_touch_attribution'
 const ATTRIBUTION_COOKIE_NAME = 'floraclin_ft'
 const ATTRIBUTION_TTL_DAYS = 90
 const ATTRIBUTION_PARAM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid', 'gclid'] as const
@@ -58,11 +59,41 @@ export function trackMetaEvent(eventName: string): void {
 }
 
 export function captureFirstTouchAttribution(): void {
-  if (!hasMarketingConsent()) return
-  if (typeof window === 'undefined' || readStoredAttribution()) return
+  if (typeof window === 'undefined') return
+  if (!hasMarketingConsent()) {
+    capturePendingFirstTouchAttribution()
+    return
+  }
+  if (readStoredAttribution()) return
 
+  const attribution = readPendingAttribution() ?? attributionFromCurrentPage()
+  if (!attribution) return
+
+  writeStoredAttribution(attribution)
+  clearPendingAttribution()
+}
+
+export function capturePendingFirstTouchAttribution(): void {
+  if (typeof window === 'undefined' || readStoredAttribution() || readPendingAttribution()) return
+
+  const attribution = attributionFromCurrentPage()
+  if (!attribution) return
+
+  try {
+    window.sessionStorage.setItem(PENDING_ATTRIBUTION_SESSION_KEY, JSON.stringify(attribution))
+  } catch {
+    // Optional storage can be blocked; pre-consent attribution is best effort.
+  }
+}
+
+export function discardMarketingAttribution(): void {
+  clearPendingAttribution()
+  clearStoredAttribution()
+}
+
+function attributionFromCurrentPage(): SignupAttribution | null {
   const params = new URLSearchParams(window.location.search)
-  if (!ATTRIBUTION_PARAM_KEYS.some((key) => params.has(key))) return
+  if (!ATTRIBUTION_PARAM_KEYS.some((key) => params.has(key))) return null
 
   const now = new Date()
   const attribution: SignupAttribution = {
@@ -79,6 +110,10 @@ export function captureFirstTouchAttribution(): void {
   if (document.referrer) attribution.referrer = document.referrer.slice(0, 1000)
   if (attribution.fbclid) attribution.fbc = `fb.1.${now.getTime()}.${attribution.fbclid}`
 
+  return attribution
+}
+
+function writeStoredAttribution(attribution: SignupAttribution): void {
   const value = JSON.stringify(attribution)
   try {
     window.localStorage.setItem(ATTRIBUTION_STORAGE_KEY, value)
@@ -107,6 +142,18 @@ function readStoredAttribution(): SignupAttribution | null {
   }
 }
 
+function readPendingAttribution(): SignupAttribution | null {
+  try {
+    const stored = window.sessionStorage.getItem(PENDING_ATTRIBUTION_SESSION_KEY)
+    if (!stored) return null
+
+    const parsed = JSON.parse(stored) as SignupAttribution
+    return new Date(parsed.expiresAt).getTime() > Date.now() ? parsed : null
+  } catch {
+    return null
+  }
+}
+
 function readCookie(name: string): string | null {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${escaped}=([^;]*)`))
@@ -119,4 +166,25 @@ function safeLocalStorage(): string | null {
   } catch {
     return null
   }
+}
+
+function clearPendingAttribution(): void {
+  try {
+    window.sessionStorage.removeItem(PENDING_ATTRIBUTION_SESSION_KEY)
+  } catch {
+    // Optional storage can be blocked.
+  }
+}
+
+function clearStoredAttribution(): void {
+  try {
+    window.localStorage.removeItem(ATTRIBUTION_STORAGE_KEY)
+  } catch {
+    // Best effort cleanup; an expired cookie is enough to stop server capture.
+  }
+  const domain =
+    window.location.hostname === 'floraclin.com.br' || window.location.hostname.endsWith('.floraclin.com.br')
+      ? '; Domain=.floraclin.com.br'
+      : ''
+  document.cookie = `${ATTRIBUTION_COOKIE_NAME}=; Max-Age=0; Path=/; SameSite=Lax${domain}`
 }

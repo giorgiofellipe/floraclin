@@ -3,6 +3,7 @@ import { hasMarketingConsent } from '@/lib/cookie-consent'
 export const DEFAULT_META_PIXEL_ID = '1651713926600603'
 
 export const ATTRIBUTION_STORAGE_KEY = 'floraclin_first_touch_attribution'
+export const PENDING_ATTRIBUTION_SESSION_KEY = 'floraclin_pending_first_touch_attribution'
 export const ATTRIBUTION_COOKIE_NAME = 'floraclin_ft'
 export const ATTRIBUTION_TTL_DAYS = 90
 
@@ -127,13 +128,55 @@ export function readStoredAttribution(): SignupAttribution | null {
   }
 }
 
+export function capturePendingFirstTouchAttribution(): SignupAttribution | null {
+  if (typeof window === 'undefined') return null
+  if (readStoredAttribution()) return null
+
+  const existing = readPendingAttribution()
+  if (existing) return existing
+
+  const attribution = attributionFromCurrentPage()
+  if (!attribution) return null
+
+  try {
+    window.sessionStorage.setItem(PENDING_ATTRIBUTION_SESSION_KEY, JSON.stringify(attribution))
+  } catch {
+    // Optional storage can be blocked; pre-consent attribution is best effort.
+  }
+
+  return attribution
+}
+
 export function captureFirstTouchAttribution(): SignupAttribution | null {
   if (typeof window === 'undefined') return null
-  if (!hasMarketingConsent()) return null
+  if (!hasMarketingConsent()) {
+    capturePendingFirstTouchAttribution()
+    return null
+  }
 
   const existing = readStoredAttribution()
   if (existing) return existing
 
+  const pending = readPendingAttribution()
+  if (pending) {
+    writeStoredAttribution(pending)
+    clearPendingAttribution()
+    return pending
+  }
+
+  const attribution = attributionFromCurrentPage()
+  if (!attribution) return null
+
+  writeStoredAttribution(attribution)
+  return attribution
+}
+
+export function discardMarketingAttribution(): void {
+  clearPendingAttribution()
+  clearStoredAttribution()
+}
+
+function attributionFromCurrentPage(): SignupAttribution | null {
   const params = new URLSearchParams(window.location.search)
   if (!ATTRIBUTION_PARAM_KEYS.some((key) => params.has(key))) return null
 
@@ -153,12 +196,13 @@ export function captureFirstTouchAttribution(): SignupAttribution | null {
   if (document.referrer) attribution.referrer = document.referrer.slice(0, 1000)
   if (attribution.fbclid) attribution.fbc = buildFbc(attribution.fbclid, now.getTime())
 
-  writeStoredAttribution(attribution)
   return attribution
 }
 
 export function attributionForSignup(metaEventId: string): SignupAttribution | null {
-  const stored = readStoredAttribution()
+  if (!hasMarketingConsent()) return null
+
+  const stored = readStoredAttribution() ?? captureFirstTouchAttribution()
   if (!stored) return null
 
   const fbp = readCookie('_fbp')
@@ -186,6 +230,16 @@ function parseStoredAttribution(value: string | null): SignupAttribution | null 
     return null
   }
   return parsed
+}
+
+function readPendingAttribution(): SignupAttribution | null {
+  if (typeof window === 'undefined') return null
+
+  try {
+    return parseStoredAttribution(window.sessionStorage.getItem(PENDING_ATTRIBUTION_SESSION_KEY))
+  } catch {
+    return null
+  }
 }
 
 function normalizeAttribution(value: string): SignupAttribution | null {
@@ -255,6 +309,15 @@ function clearStoredAttribution(): void {
   }
   const domain = cookieDomain(window.location.hostname)
   document.cookie = `${ATTRIBUTION_COOKIE_NAME}=; Max-Age=0; Path=/; SameSite=Lax${domain}`
+}
+
+function clearPendingAttribution(): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.removeItem(PENDING_ATTRIBUTION_SESSION_KEY)
+  } catch {
+    // Optional storage can be blocked.
+  }
 }
 
 function cookieDomain(hostname: string): string {

@@ -5,11 +5,26 @@ import { tenants } from '@/db/schema'
 import { signIn } from '@/lib/auth-config'
 import { redirect } from 'next/navigation'
 
-const { tenantInsertSpy, tenantExecuteSpy, issueConfirmationTokenMock, sendConfirmationEmailMock } = vi.hoisted(() => ({
+const {
+  tenantInsertSpy,
+  tenantExecuteSpy,
+  issueConfirmationTokenMock,
+  sendConfirmationEmailMock,
+  sendSignupCompleteRegistrationEventMock,
+  headersMock,
+  cookieSetMock,
+  afterMock,
+  reportSideEffectFailureMock,
+} = vi.hoisted(() => ({
   tenantInsertSpy: vi.fn(),
   tenantExecuteSpy: vi.fn(),
   issueConfirmationTokenMock: vi.fn(),
   sendConfirmationEmailMock: vi.fn(),
+  sendSignupCompleteRegistrationEventMock: vi.fn(),
+  headersMock: vi.fn(),
+  cookieSetMock: vi.fn(),
+  afterMock: vi.fn(),
+  reportSideEffectFailureMock: vi.fn(),
 }))
 
 vi.mock('next-auth', () => {
@@ -78,6 +93,26 @@ vi.mock('next/navigation', () => ({
   redirect: vi.fn(),
 }))
 
+vi.mock('next/headers', () => ({
+  headers: () => headersMock(),
+  cookies: async () => ({ set: cookieSetMock }),
+}))
+
+vi.mock('next/server', () => ({
+  after: (task: () => unknown) => {
+    afterMock(task)
+    return task()
+  },
+}))
+
+vi.mock('@/lib/meta/events', () => ({
+  sendSignupCompleteRegistrationEvent: (...args: unknown[]) => sendSignupCompleteRegistrationEventMock(...args),
+}))
+
+vi.mock('@/lib/observability', () => ({
+  reportSideEffectFailure: (...args: unknown[]) => reportSideEffectFailureMock(...args),
+}))
+
 describe('signUp action', () => {
   // The first import of the signup module pulls in db/auth/tenant/email and can take a few
   // seconds. Loading it once here keeps that one-time cost out of any single test's timeout,
@@ -90,6 +125,11 @@ describe('signUp action', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    headersMock.mockResolvedValue(new Headers({
+      'x-forwarded-for': '203.0.113.10, 10.0.0.1',
+      'user-agent': 'Vitest Signup Browser',
+    }))
+    sendSignupCompleteRegistrationEventMock.mockResolvedValue(true)
     vi.mocked(db.update).mockReturnValue(db as any)
     tenantExecuteSpy.mockResolvedValue([{
       id: 'tenant-1',
@@ -189,6 +229,9 @@ describe('signUp action', () => {
         utmSource: 'meta',
         utmCampaign: 'hof-trial',
         fbclid: 'fb-click',
+        fbc: 'fb.1.1700000000000.fb-click',
+        fbp: 'fb.1.1700000000000.browser',
+        landingUrl: 'https://app.floraclin.com.br/signup?utm_source=meta&fbclid=fb-click',
         capturedAt: '2026-10-06T00:00:00.000Z',
         expiresAt: '2027-01-04T00:00:00.000Z',
       }),
@@ -206,6 +249,16 @@ describe('signUp action', () => {
         metaEventId: 'complete_registration:event-1',
       }),
       updatedAt: expect.any(Date),
+    })
+    expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledWith({
+      eventId: 'complete_registration:event-1',
+      email: 'attribution@test.com',
+      phone: '11999998888',
+      eventSourceUrl: 'https://app.floraclin.com.br/signup?utm_source=meta&fbclid=fb-click',
+      fbc: 'fb.1.1700000000000.fb-click',
+      fbp: 'fb.1.1700000000000.browser',
+      clientIp: '203.0.113.10',
+      userAgent: 'Vitest Signup Browser',
     })
   })
 
@@ -259,6 +312,7 @@ describe('signUp action', () => {
     await signUp(null, formData)
 
     expect(db.update).not.toHaveBeenCalledWith(tenants)
+    expect(sendSignupCompleteRegistrationEventMock).not.toHaveBeenCalled()
     const target = vi.mocked(redirect).mock.calls.at(-1)?.[0] as string
     expect(target).toContain('/confirm-email')
     expect(target).not.toContain('meta_event_id')
@@ -301,14 +355,17 @@ describe('signUp action', () => {
     expect(signIn).not.toHaveBeenCalled()
   })
 
-  it('redirects to /confirm-email carrying the address, never to /pending-approval', async () => {
+  it('redirects to /confirm-email without putting the address in the URL', async () => {
     await signUp(null, validFormData({ email: 'redirect@test.com' }))
 
     const target = vi.mocked(redirect).mock.calls.at(-1)?.[0] as string
     expect(target).toContain('/confirm-email')
-    // The page has no session to read the address from now, so it rides in
-    // the query string.
-    expect(target).toContain('redirect%40test.com')
+    expect(target).not.toContain('redirect%40test.com')
     expect(target).not.toContain('/pending-approval')
+    expect(cookieSetMock).toHaveBeenCalledWith(
+      'floraclin_confirm_email',
+      expect.stringContaining('redirect%40test.com'),
+      expect.objectContaining({ httpOnly: true, path: '/confirm-email' }),
+    )
   })
 })

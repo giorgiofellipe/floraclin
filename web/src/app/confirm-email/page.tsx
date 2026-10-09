@@ -1,23 +1,28 @@
 import { auth } from '@/lib/auth-config'
 import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
+import { CONFIRM_EMAIL_STATE_COOKIE, parseConfirmEmailPageState } from '@/lib/confirm-email-page-state'
 import { ConfirmActions } from './confirm-actions'
 import { RequestConfirmationForm } from './request-confirmation-form'
 import { SignupConversionTracker } from './signup-conversion-tracker'
 
 interface ConfirmEmailPageProps {
-  searchParams: Promise<{ email?: string; token?: string; meta_event_id?: string }>
+  searchParams: Promise<{ meta_event_id?: string }>
 }
 
 export default async function ConfirmEmailPage({ searchParams }: ConfirmEmailPageProps) {
-  const { email: emailParam, token, meta_event_id: metaEventId } = await searchParams
+  const { meta_event_id: metaEventId } = await searchParams
   const session = await auth()
+  const cookieStore = await cookies()
+  const pageState = parseConfirmEmailPageState(cookieStore.get(CONFIRM_EMAIL_STATE_COOKIE)?.value)
 
   if ((session as any)?.emailVerified) redirect('/dashboard')
 
-  // The address to show comes from the confirmation link's query string
-  // (clicked from any device) or, failing that, from the session created at
-  // signup (this browser, right after signing up, with no link clicked yet).
-  const email = emailParam ?? session?.user?.email ?? null
+  // The address to show comes from a short-lived httpOnly cookie set by
+  // signup or by the confirmation redirect, never from the page URL that
+  // browser pixels and observability tooling can see.
+  const email = pageState?.email ?? session?.user?.email ?? null
+  const token = pageState?.token ?? null
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-cream px-6">
@@ -36,7 +41,7 @@ export default async function ConfirmEmailPage({ searchParams }: ConfirmEmailPag
               said the credentials were invalid. They can ask for a new link
               themselves instead. */}
           {email ? (
-            <ConfirmActions email={email} token={token ?? null} />
+            <ConfirmActions email={email} token={token} />
           ) : (
             <RequestConfirmationForm />
           )}

@@ -2,10 +2,16 @@
 
 import { useEffect } from "react";
 import { COOKIE_CONSENT_CHANGE_EVENT, hasMarketingConsent, type CookieConsentChoice } from "@/lib/cookie-consent";
-import { captureFirstTouchAttribution } from "@/lib/marketing-attribution";
+import {
+  captureFirstTouchAttribution,
+  capturePendingFirstTouchAttribution,
+  discardMarketingAttribution,
+} from "@/lib/marketing-attribution";
 
 export function AttributionCapture() {
   useEffect(() => {
+    capturePendingFirstTouchAttribution();
+
     if (hasMarketingConsent()) {
       captureFirstTouchAttribution();
     }
@@ -14,6 +20,8 @@ export function AttributionCapture() {
       const next = (event as CustomEvent<CookieConsentChoice>).detail;
       if (next?.marketing) {
         captureFirstTouchAttribution();
+      } else {
+        discardMarketingAttribution();
       }
     }
 
