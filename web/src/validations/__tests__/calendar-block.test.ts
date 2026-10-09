@@ -46,14 +46,9 @@ describe('createCalendarBlockSchema', () => {
 })
 
 describe('time options', () => {
-  it('halfHourTimes is inclusive at both ends', () => {
+  it('builds the shared 07:00 to 21:00 grid, start list without the last slot and end list without the first', () => {
     expect(halfHourTimes(20, 21)).toEqual(['20:00', '20:30', '21:00'])
-  })
-
-  it('start and end ranges match the grid', () => {
-    expect(START_TIMES[0]).toBe('07:00')
-    expect(START_TIMES.at(-1)).toBe('20:30')
-    expect(END_TIMES[0]).toBe('07:30')
-    expect(END_TIMES.at(-1)).toBe('21:00')
+    expect([START_TIMES[0], START_TIMES.at(-1)]).toEqual(['07:00', '20:30'])
+    expect([END_TIMES[0], END_TIMES.at(-1)]).toEqual(['07:30', '21:00'])
   })
 })

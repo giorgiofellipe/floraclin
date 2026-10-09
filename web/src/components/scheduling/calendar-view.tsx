@@ -31,6 +31,7 @@ import { AppointmentForm } from '@/components/scheduling/appointment-form'
 import { CalendarBlockForm } from '@/components/scheduling/calendar-block-form'
 import { CalendarBlockMenu } from '@/components/scheduling/calendar-block-menu'
 import { canDeleteBlock } from '@/lib/calendar-blocks'
+import { toHhMm } from '@/lib/time-options'
 import {
   Dialog,
   DialogContent,
@@ -258,16 +259,24 @@ export function CalendarView({
     })
   }, [])
 
-  const handleBlockDelete = React.useCallback(async () => {
+  const [blockToDelete, setBlockToDelete] = React.useState<CalendarBlockRow | null>(null)
+
+  const handleBlockDelete = React.useCallback(() => {
     if (!blockMenu) return
+    setBlockToDelete(blockMenu.block)
+    setBlockMenu(null)
+  }, [blockMenu])
+
+  const handleConfirmBlockDelete = React.useCallback(async () => {
+    if (!blockToDelete) return
     try {
-      await deleteBlock.mutateAsync(blockMenu.block.id)
+      await deleteBlock.mutateAsync(blockToDelete.id)
       toast.success('Bloqueio removido')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao remover')
     }
-    setBlockMenu(null)
-  }, [blockMenu, deleteBlock])
+    setBlockToDelete(null)
+  }, [blockToDelete, deleteBlock])
 
   const handleContextEdit = React.useCallback(() => {
     if (!contextMenu) return
@@ -569,6 +578,31 @@ export function CalendarView({
         </DialogContent>
       </Dialog>
 
+      <Dialog open={blockToDelete !== null} onOpenChange={(open) => !open && setBlockToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remover bloqueio</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja remover o bloqueio de{' '}
+              <strong>{blockToDelete?.practitionerName ?? 'Toda a clínica'}</strong>
+              {' '}em {blockToDelete?.date ? format(new Date(blockToDelete.date + 'T12:00:00'), "d 'de' MMMM", { locale: ptBR }) : ''}
+              {blockToDelete?.allDay ? ' (dia inteiro)' : ` às ${toHhMm(blockToDelete?.startTime ?? '')}`}?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>Voltar</DialogClose>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmBlockDelete}
+              disabled={deleteBlock.isPending}
+              data-testid="confirm-delete-block"
+            >
+              {deleteBlock.isPending ? 'Removendo...' : 'Remover bloqueio'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Appointment form dialog */}
       <AppointmentForm
         open={formOpen}
@@ -583,15 +617,17 @@ export function CalendarView({
         defaultPatient={defaultPatient}
       />
 
-      <CalendarBlockForm
-        open={blockFormOpen}
-        onOpenChange={setBlockFormOpen}
-        practitioners={practitioners}
-        canBlockClinic={role === 'owner'}
-        lockedPractitionerId={role === 'practitioner' ? userId : undefined}
-        defaultPractitionerId={practitionerId === 'all' ? userId : practitionerId}
-        defaultDate={format(currentDate, 'yyyy-MM-dd')}
-      />
+      {canManageBlocks && (
+        <CalendarBlockForm
+          open={blockFormOpen}
+          onOpenChange={setBlockFormOpen}
+          practitioners={practitioners}
+          canBlockClinic={role === 'owner'}
+          lockedPractitionerId={role === 'practitioner' ? userId : undefined}
+          defaultPractitionerId={practitionerId === 'all' ? userId : practitionerId}
+          defaultDate={format(currentDate, 'yyyy-MM-dd')}
+        />
+      )}
 
       {/* Status legend */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 pb-1">

@@ -2,6 +2,7 @@ import { db } from '@/db/client'
 import { calendarConnections, calendarBlocks, appointments, users, tenantUsers } from '@/db/schema'
 import { eq, and, or, isNull, inArray, gte, lte, ne, sql, type SQL } from 'drizzle-orm'
 import { BusinessError } from '@/lib/errors'
+import { CLINICAL_ROLES } from '@/lib/constants'
 import { decryptSecret, encryptSecret } from '@/lib/crypto'
 
 // ─── Calendar Connection Queries ────────────────────────────────────
@@ -404,7 +405,7 @@ async function assertClinicalMember(tenantId: string, userId: string) {
         eq(tenantUsers.userId, userId),
         eq(tenantUsers.isActive, true),
         isNull(users.deletedAt),
-        inArray(tenantUsers.role, ['practitioner', 'owner'])
+        inArray(tenantUsers.role, CLINICAL_ROLES)
       )
     )
     .limit(1)

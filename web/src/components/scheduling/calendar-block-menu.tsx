@@ -3,6 +3,7 @@
 import type * as React from 'react'
 import { XCircleIcon } from 'lucide-react'
 import type { CalendarBlockRow } from '@/db/queries/calendar'
+import { toHhMm } from '@/lib/time-options'
 
 interface CalendarBlockMenuProps {
   block: CalendarBlockRow
@@ -21,7 +22,7 @@ export function CalendarBlockMenu({ block, position, canDelete, onDelete, menuRe
   const heading = isManual && block.title ? block.title : 'Indisponível'
   const range = block.allDay
     ? 'Dia inteiro'
-    : `${block.startTime?.slice(0, 5)} - ${block.endTime?.slice(0, 5)}`
+    : `${toHhMm(block.startTime ?? '')} - ${toHhMm(block.endTime ?? '')}`
 
   return (
     <div
@@ -33,7 +34,7 @@ export function CalendarBlockMenu({ block, position, canDelete, onDelete, menuRe
       }}
     >
       <div className="px-3 py-1.5 border-b border-topbar-border">
-        <p className="text-xs font-medium text-charcoal truncate">{heading}</p>
+        <p className="text-xs font-medium text-charcoal break-words">{heading}</p>
         <p className="text-[11px] text-mid">
           {range}
           {' · '}

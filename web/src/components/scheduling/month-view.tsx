@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { APPOINTMENT_STATUS_COLORS } from '@/lib/constants'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
 import type { CalendarBlockRow } from '@/db/queries/calendar'
+import { toHhMm } from '@/lib/time-options'
 
 interface MonthViewProps {
   date: Date
@@ -113,7 +114,7 @@ export function MonthView({ date, appointments, calendarBlocks = [], onDayClick,
                       onBlockClick?.(block, e)
                     }}
                   >
-                    <span className="font-semibold">{block.allDay ? 'Dia inteiro' : block.startTime?.slice(0, 5)}</span>{' '}
+                    <span className="font-semibold">{block.allDay ? 'Dia inteiro' : toHhMm(block.startTime ?? '')}</span>{' '}
                     Indisponível
                   </button>
                 ))}

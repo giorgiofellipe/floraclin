@@ -56,6 +56,7 @@ describe('DELETE /api/calendar/blocks/[id]', () => {
     const res = await remove()
 
     expect(res.status).toBe(200)
+    expect(requireWrite).toHaveBeenCalledWith('owner', 'practitioner')
     expect(deleteBlockById).toHaveBeenCalledWith(TENANT, 'block-1')
     expect(createAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ entityType: 'calendar_block', entityId: 'block-1', action: 'delete' }),

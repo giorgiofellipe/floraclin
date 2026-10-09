@@ -10,10 +10,9 @@ vi.mock('@/hooks/queries/use-calendar', () => ({
   useCreateCalendarBlock: () => ({ mutateAsync, isPending: false }),
 }))
 
-const toastError = vi.fn()
-const toastSuccess = vi.fn()
+const { toastError, toastSuccess } = vi.hoisted(() => ({ toastError: vi.fn(), toastSuccess: vi.fn() }))
 vi.mock('sonner', () => ({
-  toast: { error: (...a: unknown[]) => toastError(...a), success: (...a: unknown[]) => toastSuccess(...a) },
+  toast: { error: toastError, success: toastSuccess },
 }))
 
 // The base-ui Select and DatePicker are not drivable from jsdom; native

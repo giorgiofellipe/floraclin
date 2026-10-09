@@ -118,10 +118,11 @@ describe('updateAppointment', () => {
 
   it('leaves the confirmation alone when date and time are resent unchanged', async () => {
     // A form that submits every field on every save is the common case, and
-    // it must not read as a reschedule.
+    // it must not read as a reschedule. The form sends HH:MM; the row holds
+    // HH:MM:SS, so a raw string compare read every save as a move.
     await updateAppointment(TENANT, APPT, {
       date: CURRENT.date,
-      startTime: CURRENT.startTime,
+      startTime: '14:00',
       notes: 'sem alterações',
     })
 

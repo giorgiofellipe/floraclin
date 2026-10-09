@@ -9,6 +9,9 @@ export function halfHourTimes(fromHour: number, toHour: number): string[] {
   return out
 }
 
+/** Postgres `time` columns come back as HH:MM:SS; the app compares HH:MM. */
+export const toHhMm = (t: string) => t.slice(0, 5)
+
 export function timeItems(times: string[]): Record<string, string> {
   return Object.fromEntries(times.map((t) => [t, t]))
 }

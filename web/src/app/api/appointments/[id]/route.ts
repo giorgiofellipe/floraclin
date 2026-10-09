@@ -10,6 +10,7 @@ import {
 } from '@/db/queries/appointments'
 import { updateAppointmentSchema } from '@/validations/appointment'
 import { handleApiError } from '@/lib/api-error'
+import { toHhMm } from '@/lib/time-options'
 import { reportCalendarFailure } from '@/lib/google-calendar'
 
 export async function PUT(
@@ -37,11 +38,9 @@ export async function PUT(
       return NextResponse.json({ error: 'Agendamento não encontrado.' }, { status: 404 })
     }
 
-    // Stored times carry seconds; the request does not. Normalize before any comparison.
-    const hhmm = (t: string) => t.slice(0, 5)
     const checkDate = data.date ?? current.date
-    const checkStart = hhmm(data.startTime ?? current.startTime)
-    const checkEnd = hhmm(data.endTime ?? current.endTime)
+    const checkStart = toHhMm(data.startTime ?? current.startTime)
+    const checkEnd = toHhMm(data.endTime ?? current.endTime)
     const checkPractitioner = data.practitionerId ?? current.practitionerId
 
     if (checkStart >= checkEnd) {
@@ -54,8 +53,8 @@ export async function PUT(
     // The form resends the whole slot on every edit; only a moved slot can newly conflict.
     const slotChanged =
       checkDate !== current.date ||
-      checkStart !== hhmm(current.startTime) ||
-      checkEnd !== hhmm(current.endTime) ||
+      checkStart !== toHhMm(current.startTime) ||
+      checkEnd !== toHhMm(current.endTime) ||
       checkPractitioner !== current.practitionerId
 
     if (slotChanged) {

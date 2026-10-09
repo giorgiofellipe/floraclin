@@ -28,6 +28,10 @@ const CLINIC = 'clinic'
 const START_ITEMS = timeItems(START_TIMES)
 const LABEL_CLASS = 'uppercase tracking-wider text-xs font-medium text-mid'
 
+function FieldError({ message }: { message?: string }) {
+  return message ? <p className="text-xs text-red-600">{message}</p> : null
+}
+
 interface CalendarBlockFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -134,14 +138,14 @@ export function CalendarBlockForm({
                 </SelectTrigger>
                 <SelectContent />
               </Select>
-              {errors.practitionerId && <p className="text-xs text-red-600">{errors.practitionerId}</p>}
+              <FieldError message={errors.practitionerId} />
             </div>
           )}
 
           <div className="grid gap-2">
             <Label className={LABEL_CLASS}>Data</Label>
             <DatePicker value={date} onChange={setDate} />
-            {errors.date && <p className="text-xs text-red-600">{errors.date}</p>}
+            <FieldError message={errors.date} />
           </div>
 
           <div className="flex items-center justify-between">
@@ -159,7 +163,7 @@ export function CalendarBlockForm({
                   </SelectTrigger>
                   <SelectContent />
                 </Select>
-                {errors.startTime && <p className="text-xs text-red-600">{errors.startTime}</p>}
+                <FieldError message={errors.startTime} />
               </div>
               <div className="grid gap-2">
                 <Label className={LABEL_CLASS}>Término</Label>
@@ -169,7 +173,7 @@ export function CalendarBlockForm({
                   </SelectTrigger>
                   <SelectContent />
                 </Select>
-                {errors.endTime && <p className="text-xs text-red-600">{errors.endTime}</p>}
+                <FieldError message={errors.endTime} />
               </div>
             </div>
           )}
@@ -182,7 +186,7 @@ export function CalendarBlockForm({
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Ex.: Consulta médica, feriado"
             />
-            {errors.title && <p className="text-xs text-red-600">{errors.title}</p>}
+            <FieldError message={errors.title} />
           </div>
 
           <DialogFooter className="pt-2 border-t border-sage/10">

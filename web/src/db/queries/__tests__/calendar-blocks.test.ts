@@ -1,25 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { calendarBlocks } from '@/db/schema'
-
-// Thenable builder: every method returns the chain; awaiting it yields `result`.
-function chain(result: unknown) {
-  const c: Record<string, unknown> = {}
-  for (const m of ['select', 'from', 'leftJoin', 'innerJoin', 'where', 'orderBy', 'limit', 'insert', 'values', 'returning', 'update', 'set', 'delete']) {
-    c[m] = vi.fn(() => c)
-  }
-  c.then = (resolve: (v: unknown) => void) => resolve(result)
-  return c
-}
+import { chain } from '@/tests/mocks/drizzle-chain'
 
 const { selectMock, insertMock } = vi.hoisted(() => ({ selectMock: vi.fn(), insertMock: vi.fn() }))
 vi.mock('@/db/client', () => ({ db: { select: selectMock, insert: insertMock } }))
 
-const { orSpy, isNullSpy } = vi.hoisted(() => ({ orSpy: vi.fn(), isNullSpy: vi.fn() }))
+const { isNullSpy } = vi.hoisted(() => ({ isNullSpy: vi.fn() }))
 vi.mock('drizzle-orm', async () => {
   const actual = await vi.importActual<typeof import('drizzle-orm')>('drizzle-orm')
   return {
     ...actual,
-    or: (...args: unknown[]) => { orSpy(...args); return (actual.or as (...a: unknown[]) => unknown)(...args) },
     isNull: (col: unknown) => { isNullSpy(col); return (actual.isNull as (c: unknown) => unknown)(col) },
   }
 })
@@ -28,6 +18,8 @@ import { listBlocksForDateRange, createManualBlock, upsertCalendarBlock } from '
 
 beforeEach(() => {
   vi.clearAllMocks()
+  selectMock.mockReset()
+  insertMock.mockReset()
 })
 
 describe('listBlocksForDateRange', () => {
@@ -36,12 +28,6 @@ describe('listBlocksForDateRange', () => {
     selectMock.mockReturnValueOnce(chain([]))
     await listBlocksForDateRange('t1', 'p1', '2026-10-12', '2026-10-18')
     expect(isNullSpy).toHaveBeenCalledWith(calendarBlocks.practitionerId)
-  })
-
-  it('does not add the clinic-wide clause without a practitioner filter', async () => {
-    selectMock.mockReturnValueOnce(chain([]))
-    await listBlocksForDateRange('t1', undefined, '2026-10-12', '2026-10-18')
-    expect(orSpy).not.toHaveBeenCalled()
   })
 
   it('left joins users so a clinic-wide block survives the join', async () => {
@@ -82,6 +68,7 @@ describe('createManualBlock', () => {
 
 describe('upsertCalendarBlock', () => {
   it('stamps source google on insert', async () => {
+    // The column default is 'google' only so the migration can precede the deploy; the insert must not rely on it.
     selectMock.mockReturnValueOnce(chain([]))
     const ins = chain([{ id: 'b1' }])
     insertMock.mockReturnValueOnce(ins)

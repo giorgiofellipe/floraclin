@@ -50,6 +50,7 @@ describe('POST /api/calendar/blocks', () => {
     const res = await post({ ...clinicWide, title: 'Feriado' })
 
     expect(res.status).toBe(201)
+    expect(requireWrite).toHaveBeenCalledWith('owner', 'practitioner')
     expect(createManualBlock).toHaveBeenCalledWith(TENANT, {
       practitionerId: null,
       title: 'Feriado',

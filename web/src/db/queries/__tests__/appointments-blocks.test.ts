@@ -1,27 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { calendarBlocks } from '@/db/schema'
-
-function chain(result: unknown) {
-  const c: Record<string, unknown> = {}
-  for (const m of ['select', 'from', 'leftJoin', 'innerJoin', 'where', 'orderBy', 'limit', 'insert', 'values', 'returning', 'update', 'set', 'delete']) {
-    c[m] = vi.fn(() => c)
-  }
-  c.then = (resolve: (v: unknown) => void) => resolve(result)
-  return c
-}
+import { chain } from '@/tests/mocks/drizzle-chain'
 
 const { selectMock, insertMock } = vi.hoisted(() => ({ selectMock: vi.fn(), insertMock: vi.fn() }))
 vi.mock('@/db/client', () => ({ db: { select: selectMock, insert: insertMock } }))
 
-const { orSpy, isNullSpy } = vi.hoisted(() => ({ orSpy: vi.fn(), isNullSpy: vi.fn() }))
+const { isNullSpy } = vi.hoisted(() => ({ isNullSpy: vi.fn() }))
 vi.mock('drizzle-orm', async () => {
   const actual = await vi.importActual<typeof import('drizzle-orm')>('drizzle-orm')
   return {
     ...actual,
-    or: (...args: unknown[]) => {
-      orSpy(...args)
-      return (actual.or as (...a: unknown[]) => unknown)(...args)
-    },
     isNull: (col: unknown) => {
       isNullSpy(col)
       return (actual.isNull as (c: unknown) => unknown)(col)
@@ -76,7 +64,8 @@ describe('getAvailableSlots', () => {
   })
 
   it('returns no slots on a clinic-wide all-day block', async () => {
-    // Regression: clinic-wide blocks were filtered out by an equality on the practitioner.
+    // Regression: clinic-wide blocks were filtered out by an equality on the practitioner. The mock returns the
+    // block either way, so the isNull spy is the proof here.
     queue([{ startTime: null, endTime: null, allDay: true }])
     const result = await getAvailableSlots('t1', 'p1', '2026-10-12', 30)
     expect(result).toEqual([])
