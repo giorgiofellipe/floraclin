@@ -829,9 +829,10 @@ export const calendarConnections = floraclinSchema.table('calendar_connections',
 export const calendarBlocks = floraclinSchema.table('calendar_blocks', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
-  practitionerId: uuid('practitioner_id').notNull().references(() => users.id),
-  connectionId: uuid('connection_id').notNull().references(() => calendarConnections.id, { onDelete: 'cascade' }),
-  googleEventId: varchar('google_event_id', { length: 255 }).notNull(),
+  practitionerId: uuid('practitioner_id').references(() => users.id),
+  connectionId: uuid('connection_id').references(() => calendarConnections.id, { onDelete: 'cascade' }),
+  googleEventId: varchar('google_event_id', { length: 255 }),
+  source: varchar('source', { length: 10, enum: ['google', 'manual'] }).notNull().default('google'),
   title: varchar('title', { length: 255 }),
   date: date('date').notNull(),
   startTime: time('start_time'),
@@ -842,6 +843,7 @@ export const calendarBlocks = floraclinSchema.table('calendar_blocks', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('idx_calendar_blocks_practitioner_date').on(table.tenantId, table.practitionerId, table.date),
+  index('idx_calendar_blocks_tenant_date').on(table.tenantId, table.date),
 ])
 
 // ─── SSE EVENTS ─────────────────────────────────────────────────────

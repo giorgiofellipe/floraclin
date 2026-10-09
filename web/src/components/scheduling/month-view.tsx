@@ -16,18 +16,22 @@ import { ptBR } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 import { APPOINTMENT_STATUS_COLORS } from '@/lib/constants'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
+import type { CalendarBlockRow } from '@/db/queries/calendar'
+import { toHhMm } from '@/lib/time-options'
 
 interface MonthViewProps {
   date: Date
   appointments: AppointmentWithDetails[]
+  calendarBlocks?: CalendarBlockRow[]
   onDayClick?: (date: string) => void
   onAppointmentClick?: (appointment: AppointmentWithDetails) => void
+  onBlockClick?: (block: CalendarBlockRow, event: React.MouseEvent) => void
 }
 
 const WEEKDAYS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
 const MAX_VISIBLE_APPOINTMENTS = 3
 
-export function MonthView({ date, appointments, onDayClick, onAppointmentClick }: MonthViewProps) {
+export function MonthView({ date, appointments, calendarBlocks = [], onDayClick, onAppointmentClick, onBlockClick }: MonthViewProps) {
   const monthStart = startOfMonth(date)
   const monthEnd = endOfMonth(date)
   const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 })
@@ -68,6 +72,7 @@ export function MonthView({ date, appointments, onDayClick, onAppointmentClick }
         {weeks.flat().map((day) => {
           const dateStr = format(day, 'yyyy-MM-dd')
           const dayAppointments = appointments.filter((a) => a.date === dateStr)
+          const dayBlocks = calendarBlocks.filter((b) => b.date === dateStr)
           const isCurrentMonth = isSameMonth(day, date)
           const todayFlag = isToday(day)
 
@@ -99,6 +104,20 @@ export function MonthView({ date, appointments, onDayClick, onAppointmentClick }
               </div>
 
               <div className="mt-1 space-y-0.5">
+                {dayBlocks.map((block) => (
+                  <button
+                    key={block.id}
+                    type="button"
+                    className="w-full truncate rounded-[3px] border border-dashed border-gray-300 bg-gray-100/60 px-1.5 py-0.5 text-left text-[10px] leading-tight text-gray-500 transition-colors duration-150 hover:bg-gray-200/60"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onBlockClick?.(block, e)
+                    }}
+                  >
+                    <span className="font-semibold">{block.allDay ? 'Dia inteiro' : toHhMm(block.startTime ?? '')}</span>{' '}
+                    Indisponível
+                  </button>
+                ))}
                 {dayAppointments.slice(0, MAX_VISIBLE_APPOINTMENTS).map((appt) => {
                   const statusColor =
                     APPOINTMENT_STATUS_COLORS[appt.status] ?? 'bg-[#F0F7F1] text-sage'

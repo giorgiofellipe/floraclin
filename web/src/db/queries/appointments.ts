@@ -1,6 +1,8 @@
 import { db } from '@/db/client'
 import { appointments, patients, procedureTypes, users, tenants, calendarBlocks } from '@/db/schema'
-import { eq, and, isNull, gte, lte, sql, or, ne, asc } from 'drizzle-orm'
+import { eq, and, isNull, gte, lte, sql, or, ne, asc, inArray } from 'drizzle-orm'
+import { CLINICAL_ROLES } from '@/lib/constants'
+import { toHhMm } from '@/lib/time-options'
 import type { AppointmentStatus, AppointmentSource } from '@/types'
 import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
 import { brToday, parseBrDate, endOfBrDay, toLocalYmd } from '@/lib/dates'
@@ -164,7 +166,28 @@ export async function checkTimeConflict(
     .from(appointments)
     .where(and(...conditions))
 
-  return Number(result[0].count) > 0
+  if (Number(result[0].count) > 0) return true
+
+  const blockRows = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(calendarBlocks)
+    .where(
+      and(
+        eq(calendarBlocks.tenantId, tenantId),
+        or(eq(calendarBlocks.practitionerId, practitionerId), isNull(calendarBlocks.practitionerId)),
+        eq(calendarBlocks.date, date),
+        ne(calendarBlocks.status, 'cancelled'),
+        or(
+          eq(calendarBlocks.allDay, true),
+          and(
+            sql`${calendarBlocks.startTime} < ${endTime}::time`,
+            sql`${calendarBlocks.endTime} > ${startTime}::time`,
+          ),
+        ),
+      ),
+    )
+
+  return Number(blockRows[0].count) > 0
 }
 
 export async function createAppointment(
@@ -313,7 +336,7 @@ export async function updateAppointment(
   // patient, and this route is also how those edits arrive.
   const reschedules =
     (data.date !== undefined && data.date !== current.date) ||
-    (data.startTime !== undefined && data.startTime !== current.startTime)
+    (data.startTime !== undefined && toHhMm(data.startTime) !== toHhMm(current.startTime))
 
   const [result] = await db
     .update(appointments)
@@ -452,7 +475,7 @@ export async function getAvailableSlots(
     .where(
       and(
         eq(calendarBlocks.tenantId, tenantId),
-        eq(calendarBlocks.practitionerId, practitionerId),
+        or(eq(calendarBlocks.practitionerId, practitionerId), isNull(calendarBlocks.practitionerId)),
         eq(calendarBlocks.date, date),
         ne(calendarBlocks.status, 'cancelled')
       )
@@ -471,13 +494,13 @@ export async function getAvailableSlots(
     const slotEnd = `${String(Math.floor(slotEndMin / 60)).padStart(2, '0')}:${String(slotEndMin % 60).padStart(2, '0')}`
 
     const hasAppointmentConflict = existing.some((appt) => {
-      return appt.startTime < slotEnd && appt.endTime > slotStart
+      return toHhMm(appt.startTime) < slotEnd && toHhMm(appt.endTime) > slotStart
     })
 
     const hasBlockConflict = blocks.some((block) => {
       if (block.allDay) return true
       if (!block.startTime || !block.endTime) return false
-      return block.startTime < slotEnd && block.endTime > slotStart
+      return toHhMm(block.startTime) < slotEnd && toHhMm(block.endTime) > slotStart
     })
 
     if (!hasAppointmentConflict && !hasBlockConflict) {
@@ -740,10 +763,7 @@ export async function listPractitioners(tenantId: string) {
         eq(tenantUsers.userId, users.id),
         eq(tenantUsers.tenantId, tenantId),
         eq(tenantUsers.isActive, true),
-        or(
-          eq(tenantUsers.role, 'practitioner'),
-          eq(tenantUsers.role, 'owner')
-        )
+        inArray(tenantUsers.role, CLINICAL_ROLES)
       )
     )
     .where(isNull(users.deletedAt))
