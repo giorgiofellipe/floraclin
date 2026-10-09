@@ -29,8 +29,21 @@ const selectMock = vi.fn()
 const updateMock = vi.fn()
 const createSelfSignupTenantMock = vi.fn()
 const createSubscriptionMock = vi.fn()
+const sendSignupCompleteRegistrationEventMock = vi.fn()
+const headersMock = vi.fn()
+const afterMock = vi.fn()
 
 vi.mock('next/navigation', () => ({ redirect: (p: string) => redirectMock(p) }))
+vi.mock('next/headers', () => ({
+  headers: () => headersMock(),
+  cookies: async () => ({ set: vi.fn() }),
+}))
+vi.mock('next/server', () => ({
+  after: (task: () => unknown) => {
+    afterMock(task)
+    return task()
+  },
+}))
 vi.mock('@/lib/auth-config', () => ({ auth: () => authMock() }))
 vi.mock('@/db/client', () => ({
   db: {
@@ -51,6 +64,10 @@ vi.mock('@/lib/email', () => ({
   sendConfirmationEmail: vi.fn(() => Promise.resolve()),
 }))
 vi.mock('@/lib/confirm-email', () => ({ issueConfirmationToken: vi.fn() }))
+vi.mock('@/lib/meta/events', () => ({
+  sendSignupCompleteRegistrationEvent: (...args: unknown[]) => sendSignupCompleteRegistrationEventMock(...args),
+}))
+vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 
 import { createClinicForOAuthUser } from '../signup'
 
@@ -77,6 +94,11 @@ function form({ marketingConsent = false } = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  headersMock.mockResolvedValue(new Headers({
+    'x-forwarded-for': '203.0.113.11',
+    'user-agent': 'Vitest OAuth Browser',
+  }))
+  sendSignupCompleteRegistrationEventMock.mockResolvedValue(true)
   authMock.mockResolvedValue({ user: { id: 'user-1', email: 'a@b.com', name: 'A' } })
   createSelfSignupTenantMock.mockResolvedValue({ id: 'tenant-1' })
   createSubscriptionMock.mockResolvedValue({ created: true })
@@ -124,6 +146,13 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
       metaEventId: 'complete_registration:event-google',
     })
     expect(updateMock).toHaveBeenCalled()
+    expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      eventId: 'complete_registration:event-google',
+      email: 'a@b.com',
+      phone: '11988887777',
+      clientIp: '203.0.113.11',
+      userAgent: 'Vitest OAuth Browser',
+    }))
   })
 
   it('reports success on a retry rather than redirecting', async () => {

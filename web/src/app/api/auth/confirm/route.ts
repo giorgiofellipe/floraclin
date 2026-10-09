@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { consumeConfirmationToken } from '@/lib/confirm-email'
 import { markEmailVerified } from '@/db/queries/users'
 import { handleApiError } from '@/lib/api-error'
+import {
+  CONFIRM_EMAIL_STATE_COOKIE,
+  confirmEmailStateCookieOptions,
+  serializeConfirmEmailPageState,
+} from '@/lib/confirm-email-page-state'
 
 /**
  * GET renders, it does not consume.
@@ -22,10 +27,17 @@ export async function GET(request: NextRequest) {
   const target = request.nextUrl.clone()
   target.pathname = '/confirm-email'
   target.search = ''
-  if (email) target.searchParams.set('email', email)
-  if (token) target.searchParams.set('token', token)
 
-  return NextResponse.redirect(target)
+  const response = NextResponse.redirect(target)
+  if (email) {
+    response.cookies.set(
+      CONFIRM_EMAIL_STATE_COOKIE,
+      serializeConfirmEmailPageState({ email, token }),
+      confirmEmailStateCookieOptions(),
+    )
+  }
+
+  return response
 }
 
 /**
