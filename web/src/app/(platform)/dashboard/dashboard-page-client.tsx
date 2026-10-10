@@ -12,6 +12,7 @@ import { FinancialSummary } from '@/components/dashboard/financial-summary'
 import { RecentActivity } from '@/components/dashboard/recent-activity'
 import { UpcomingBirthdaysCard } from '@/components/dashboard/upcoming-birthdays-card'
 import { OpenPlanejamentosCard } from '@/components/dashboard/open-planejamentos-card'
+import { TrialChecklistCard } from '@/components/dashboard/trial-checklist-card'
 import { PendingRescheduleCard } from '@/components/dashboard/pending-reschedule-card'
 import { MonthSelector } from '@/components/dashboard/month-selector'
 import DashboardLoading from './loading'
@@ -94,6 +95,8 @@ export function DashboardPageClient() {
           </div>
         </div>
       </div>
+
+      <TrialChecklistCard activation={data.activation} />
 
       {/* Pending Reschedule Alert */}
       <PendingRescheduleCard count={data.pendingRescheduleCount ?? 0} />

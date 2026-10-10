@@ -3,7 +3,7 @@ import { patients } from '@/db/schema'
 import { eq, and, isNull, ilike, or, sql, asc } from 'drizzle-orm'
 import type { PaginatedResult } from '@/types'
 import type { CreatePatientInput, UpdatePatientInput } from '@/validations/patient'
-import { normalizeBrPhone } from '@/lib/phone'
+import { isCanonicalBrPhone, normalizeBrPhone } from '@/lib/phone'
 
 export type Patient = typeof patients.$inferSelect
 
@@ -92,7 +92,7 @@ export async function getPatient(tenantId: string, patientId: string): Promise<P
  */
 export function phoneTailVariants(phone: string): string[] {
   const canonical = normalizeBrPhone(phone)
-  if (!/^55\d{10,11}$/.test(canonical)) return []
+  if (!isCanonicalBrPhone(canonical)) return []
 
   const local = canonical.slice(2)
   const ddd = local.slice(0, 2)

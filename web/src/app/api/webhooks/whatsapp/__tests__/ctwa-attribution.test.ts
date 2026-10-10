@@ -66,6 +66,11 @@ vi.mock('@/lib/whatsapp', () => ({
   CreditExhaustedError: class CreditExhaustedError extends Error {},
 }))
 
+vi.mock('@/lib/lifecycle-webhook', () => ({
+  captureLifecycleReply: vi.fn().mockResolvedValue(false),
+  handleLifecycleStatus: vi.fn().mockResolvedValue(false),
+}))
+
 vi.mock('@/db/queries/whatsapp', () => ({
   upsertConversation: vi.fn(async () => ({ id: 'conv-1' })),
   createMessage: vi.fn(async () => ({ id: 'msg-1', conversationId: 'conv-1' })),

@@ -93,6 +93,11 @@ vi.mock('@/lib/email', () => ({
   sendConfirmationEmail: sendConfirmationEmailMock,
 }))
 
+const { scheduleLifecycleWelcomeMock } = vi.hoisted(() => ({ scheduleLifecycleWelcomeMock: vi.fn() }))
+vi.mock('@/lib/lifecycle-sender', () => ({
+  scheduleLifecycleWelcome: scheduleLifecycleWelcomeMock,
+}))
+
 vi.mock('@/lib/app-url', () => ({
   getAppUrl: () => 'https://app.floraclin.com.br',
 }))
@@ -171,6 +176,7 @@ describe('POST /api/auth/confirm', () => {
     expect(data).toEqual({ success: true })
     expect(consumeConfirmationTokenMock).toHaveBeenCalledWith('a@b.com', 'raw')
     expect(markEmailVerifiedMock).toHaveBeenCalledWith('a@b.com')
+    expect(scheduleLifecycleWelcomeMock).toHaveBeenCalledWith({ ownerEmail: 'a@b.com' })
   })
 
   it('fails for an expired token, and does not mark verified', async () => {
@@ -182,6 +188,7 @@ describe('POST /api/auth/confirm', () => {
     expect(response.status).toBe(400)
     expect(data.error).toBeTruthy()
     expect(markEmailVerifiedMock).not.toHaveBeenCalled()
+    expect(scheduleLifecycleWelcomeMock).not.toHaveBeenCalled()
   })
 
   it('rejects a replayed token on the second attempt', async () => {
@@ -193,6 +200,7 @@ describe('POST /api/auth/confirm', () => {
     expect(first.status).toBe(200)
     expect(second.status).toBe(400)
     expect(markEmailVerifiedMock).toHaveBeenCalledTimes(1)
+    expect(scheduleLifecycleWelcomeMock).toHaveBeenCalledTimes(1)
   })
 })
 

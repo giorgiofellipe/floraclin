@@ -17,6 +17,8 @@ export const tenants = floraclinSchema.table('tenants', {
   workingHours: jsonb('working_hours'),
   settings: jsonb('settings').default({}),
   signupAttribution: jsonb('signup_attribution'),
+  lifecycleNoticeAt: timestamp('lifecycle_notice_at', { withTimezone: true }),
+  lifecycleOptedOutAt: timestamp('lifecycle_opted_out_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -728,6 +730,7 @@ export const whatsappConversations = floraclinSchema.table('whatsapp_conversatio
 }, (table) => [
   uniqueIndex('uq_whatsapp_conversations_tenant_phone').on(table.tenantId, table.phoneNumber),
   index('idx_whatsapp_conversations_tenant_last_msg').on(table.tenantId, table.lastMessageAt),
+  index('idx_whatsapp_conversations_phone_last_message').on(table.phoneNumber, table.lastMessageAt),
 ])
 
 export const whatsappMessages = floraclinSchema.table('whatsapp_messages', {
@@ -1044,6 +1047,32 @@ export const tenantSubscriptions = floraclinSchema.table('tenant_subscriptions',
   notes: text('notes'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const tenantLifecycleMessages = floraclinSchema.table('tenant_lifecycle_messages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  messageKey: varchar('message_key', { length: 40 }).notNull(),
+  channel: varchar('channel', { length: 10 }).notNull(),
+  status: varchar('status', { length: 10 }).notNull(),
+  recipient: varchar('recipient', { length: 255 }).notNull(),
+  claimedAt: timestamp('claimed_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  metaMessageId: varchar('meta_message_id', { length: 255 }),
+  error: text('error'),
+}, (table) => [
+  uniqueIndex('uq_tenant_lifecycle_message').on(table.tenantId, table.messageKey, table.channel),
+  index('idx_tenant_lifecycle_messages_meta_id').on(table.metaMessageId),
+  index('idx_tenant_lifecycle_messages_recipient').on(table.recipient),
+])
+
+export const tenantLifecycleReplies = floraclinSchema.table('tenant_lifecycle_replies', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  messageKey: varchar('message_key', { length: 40 }).notNull(),
+  body: text('body').notNull(),
+  metaMessageId: varchar('meta_message_id', { length: 255 }).notNull().unique(),
+  receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 export const whatsappCredits = floraclinSchema.table('whatsapp_credits', {

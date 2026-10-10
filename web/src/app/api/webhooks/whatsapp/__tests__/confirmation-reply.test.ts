@@ -62,6 +62,11 @@ vi.mock('@/lib/whatsapp', () => ({
   },
 }))
 
+vi.mock('@/lib/lifecycle-webhook', () => ({
+  captureLifecycleReply: vi.fn().mockResolvedValue(false),
+  handleLifecycleStatus: vi.fn().mockResolvedValue(false),
+}))
+
 vi.mock('@/db/queries/whatsapp', () => ({
   upsertConversation: vi.fn(),
   createMessage: vi.fn(),

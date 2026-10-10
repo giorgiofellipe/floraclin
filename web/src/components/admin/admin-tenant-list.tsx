@@ -8,6 +8,7 @@ import { cn, formatDate } from '@/lib/utils'
 import { useAdminTenants, useAdminTenantDetail } from '@/hooks/queries/use-admin-tenants'
 import { useUpdateTenant, useSuspendTenant } from '@/hooks/mutations/use-admin-tenant-mutations'
 import { AdminTenantDialog } from './admin-tenant-dialog'
+import { TenantLifecycleSection } from './tenant-lifecycle-section'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
 import { toast } from 'sonner'
@@ -514,6 +515,8 @@ function TenantDetail({ tenantId }: { tenantId: string }) {
       ) : (
         <p className="text-xs text-mid">Nenhum usuário cadastrado</p>
       )}
+
+      <TenantLifecycleSection lifecycle={data?.lifecycle} />
     </div>
   )
 }
