@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { consumeConfirmationToken } from '@/lib/confirm-email'
 import { markEmailVerified } from '@/db/queries/users'
+import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
 import { handleApiError } from '@/lib/api-error'
 import {
   CONFIRM_EMAIL_STATE_COOKIE,
@@ -61,6 +62,7 @@ export async function POST(request: NextRequest) {
     }
 
     await markEmailVerified(verifiedEmail)
+    scheduleLifecycleWelcome({ ownerEmail: verifiedEmail })
 
     return NextResponse.json({ success: true })
   } catch (error) {

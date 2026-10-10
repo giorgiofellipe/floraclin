@@ -322,7 +322,7 @@ type RawTenantRow = {
   deleted_at: Date | null
 }
 
-function rowsFromExecuteResult<T>(result: unknown): T[] {
+export function rowsFromExecuteResult<T>(result: unknown): T[] {
   if (Array.isArray(result)) return result as T[]
   return ((result as { rows?: T[] }).rows ?? []) as T[]
 }
@@ -337,8 +337,8 @@ export async function insertSelfSignupTenantBase(
   },
 ): Promise<SelfSignupTenant> {
   const result = await tx.execute<RawTenantRow>(sql`
-    INSERT INTO floraclin.tenants (name, slug, status, phone)
-    VALUES (${data.name}, ${data.slug}, ${data.status}, ${data.phone})
+    INSERT INTO floraclin.tenants (name, slug, status, phone, lifecycle_notice_at)
+    VALUES (${data.name}, ${data.slug}, ${data.status}, ${data.phone}, now())
     RETURNING
       id,
       name,

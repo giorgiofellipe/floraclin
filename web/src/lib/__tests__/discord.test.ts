@@ -113,6 +113,20 @@ describe('buildDiscordPayload', () => {
   })
 })
 
+describe('buildDiscordPayload lifecycle.reply', () => {
+  it('truncates a 5000-char reply to 1000 chars plus an ellipsis so Discord does not reject the 4096-char description limit', () => {
+    const payload = buildDiscordPayload({
+      kind: 'lifecycle.reply',
+      tenantName: 'Clínica Bela Pele',
+      tenantId: 'tenant-1',
+      messageKey: 'trial_feedback',
+      body: 'a'.repeat(5000),
+    })
+
+    expect(payload.embeds[0].description).toBe('a'.repeat(1000) + '...')
+  })
+})
+
 describe('buildDiscordPayload whatsapp_automations.digest', () => {
   it('formats a routine run as a compact one-line totals description, with no tenant list', () => {
     const payload = buildDiscordPayload({

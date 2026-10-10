@@ -128,6 +128,7 @@ const EXEMPT_MUTATING_ROUTES: Record<string, string> = {
   // these routes precisely to reach a usable state.
   'auth/confirm/route.ts': 'email confirmation must work before the account is usable',
   'auth/confirm/resend/route.ts': 'email confirmation must work before the account is usable',
+  'lifecycle/opt-out/route.ts': 'signed opt-out link from a lifecycle email, used without a session',
 
   // Must work while the account is in the exact state requireWrite would
   // block: reset-request/reset-confirm are unauthenticated, and billing/* is

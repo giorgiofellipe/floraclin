@@ -16,7 +16,12 @@ vi.mock('@/db/queries/appointments', () => ({
   countPendingReschedule: vi.fn(),
 }))
 
+vi.mock('@/lib/activation', () => ({
+  getActivationState: vi.fn(),
+}))
+
 import { getAuthContext } from '@/lib/auth'
+import { getActivationState } from '@/lib/activation'
 import {
   getTodayAppointments,
   getQuickStats,
@@ -49,6 +54,7 @@ beforeEach(() => {
   vi.mocked(getUpcomingFollowUps).mockResolvedValue([])
   vi.mocked(getRecentActivity).mockResolvedValue([])
   vi.mocked(countPendingReschedule).mockResolvedValue(0)
+  vi.mocked(getActivationState).mockResolvedValue(null)
 })
 
 describe('GET /api/dashboard', () => {
@@ -116,5 +122,16 @@ describe('GET /api/dashboard', () => {
       totalExpenses: 150,
       totalOverdue: 50,
     })
+  })
+
+  it('returns activation null and still serves the dashboard when the activation query fails', async () => {
+    vi.mocked(getActivationState).mockRejectedValue(new Error('db down'))
+
+    const res = await GET(makeRequest('http://localhost/api/dashboard'))
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(json.activation).toBeNull()
+    expect(json.quickStats.revenueThisMonth).toBe(300)
   })
 })

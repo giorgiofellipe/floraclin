@@ -32,6 +32,7 @@ const createSubscriptionMock = vi.fn()
 const sendSignupCompleteRegistrationEventMock = vi.fn()
 const headersMock = vi.fn()
 const afterMock = vi.fn()
+const scheduleLifecycleWelcomeMock = vi.fn()
 
 vi.mock('next/navigation', () => ({ redirect: (p: string) => redirectMock(p) }))
 vi.mock('next/headers', () => ({
@@ -68,6 +69,9 @@ vi.mock('@/lib/meta/events', () => ({
   sendSignupCompleteRegistrationEvent: (...args: unknown[]) => sendSignupCompleteRegistrationEventMock(...args),
 }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
+vi.mock('@/lib/lifecycle-sender', () => ({
+  scheduleLifecycleWelcome: (...a: unknown[]) => scheduleLifecycleWelcomeMock(...a),
+}))
 
 import { createClinicForOAuthUser } from '../signup'
 
@@ -155,6 +159,21 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
     }))
   })
 
+  it('schedules the welcome once, for the new tenant', async () => {
+    await createClinicForOAuthUser(null, form())
+
+    expect(scheduleLifecycleWelcomeMock).toHaveBeenCalledTimes(1)
+    expect(scheduleLifecycleWelcomeMock).toHaveBeenCalledWith({ tenantId: 'tenant-1' })
+  })
+
+  it('does not schedule the welcome again when the subscription already existed', async () => {
+    createSubscriptionMock.mockResolvedValue({ created: false })
+
+    await createClinicForOAuthUser(null, form())
+
+    expect(scheduleLifecycleWelcomeMock).not.toHaveBeenCalled()
+  })
+
   it('reports success on a retry rather than redirecting', async () => {
     // The user already submitted once. The clinic exists; the token does not
     // know it yet. Redirecting here was the second half of the loop.
@@ -167,6 +186,7 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
     expect(redirectMock).not.toHaveBeenCalledWith('/dashboard')
     // Nothing created twice.
     expect(createSelfSignupTenantMock).not.toHaveBeenCalled()
+    expect(scheduleLifecycleWelcomeMock).not.toHaveBeenCalled()
   })
 
   it('still sends an unauthenticated caller to the login page', async () => {
