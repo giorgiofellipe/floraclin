@@ -2,6 +2,7 @@
 
 import type { Role } from '@/types'
 import { useCallback, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { ClinicSettingsForm } from '@/components/settings/clinic-settings-form'
 import { ProcedureTypeList } from '@/components/settings/procedure-type-list'
@@ -41,6 +42,8 @@ import {
   UserCogIcon,
   CreditCardIcon,
   PlugIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from 'lucide-react'
 
 interface Tenant {
@@ -287,44 +290,57 @@ export function SettingsPageClient({
     items: group.items.filter((item) => visibleKeys.has(item.key)),
   })).filter((group) => group.items.length > 0)
 
+  const showMobileList = resolvedUrlTab === null
+
   return (
     <div className="p-4 sm:p-6">
-      <div className="mb-6">
+      {showMobileList ? null : (
+        <Link
+          href={pathname}
+          className="md:hidden mb-4 inline-flex items-center gap-1 text-sm font-medium text-mid hover:text-charcoal"
+        >
+          <ChevronLeftIcon className="h-4 w-4" />
+          Configurações
+        </Link>
+      )}
+
+      <div className={cn('mb-6', !showMobileList && 'hidden md:block')}>
         <h1 className="text-2xl font-semibold text-[#2A2A2A]">Configurações</h1>
         <p className="text-sm text-mid mt-0.5">
           Gerencie as configurações da sua clínica.
         </p>
       </div>
 
-      {/* Mobile: horizontal scrollable tabs (flat, no group labels) */}
-      <div className="relative md:hidden mb-6 -mx-4 px-4 overflow-x-auto scrollbar-hide">
-        <div className="flex gap-1 min-w-max bg-[#E8ECEF] rounded-[3px] p-1">
-          {visibleTabs.map((tab) => {
-            const Icon = tab.icon
-            const isActive = effectiveTab === tab.key
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setActiveTab(tab.key)}
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-2 rounded-[3px] text-sm font-medium transition-colors whitespace-nowrap',
-                  isActive
-                    ? 'bg-white text-[#2A2A2A] shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
-                    : 'text-mid hover:text-charcoal'
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {tab.label}
-              </button>
-            )
-          })}
-        </div>
-        <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-cream to-transparent" />
-      </div>
+      {showMobileList && (
+        <nav className="md:hidden space-y-6">
+          {visibleGroups.map((group) => (
+            <div key={group.label}>
+              <div className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-wider text-mid/60">
+                {group.label}
+              </div>
+              <div className="bg-white rounded-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.06)] divide-y divide-[#E8ECEF]">
+                {group.items.map((tab) => {
+                  const Icon = tab.icon
+                  return (
+                    <Link
+                      key={tab.key}
+                      href={`${pathname}?tab=${tab.key}`}
+                      className="flex items-center gap-3 px-4 py-3.5 text-sm font-medium text-charcoal"
+                    >
+                      <Icon className="h-4 w-4 text-sage" />
+                      <span className="flex-1">{tab.label}</span>
+                      <ChevronRightIcon className="h-4 w-4 text-mid" />
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+      )}
 
-      {/* Desktop: sidebar + content layout */}
-      <div className="flex gap-6">
+      {/* Sidebar (desktop) + section content */}
+      <div className={cn('flex gap-6', showMobileList && 'hidden md:flex')}>
         {/* Sidebar nav (desktop only) */}
         <nav className="hidden md:block w-56 shrink-0">
           <div className="sticky top-6 space-y-0.5">
