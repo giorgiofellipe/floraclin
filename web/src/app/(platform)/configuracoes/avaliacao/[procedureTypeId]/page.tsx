@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
+import { defaultTemplates } from '@/lib/default-evaluation-templates'
 import { EvaluationTemplatePageClient } from './evaluation-template-page-client'
 
 export const metadata: Metadata = {
@@ -21,7 +22,10 @@ export default async function EvaluationTemplatePage({ params }: PageProps) {
         </div>
       }
     >
-      <EvaluationTemplatePageClient procedureTypeId={procedureTypeId} />
+      <EvaluationTemplatePageClient
+        procedureTypeId={procedureTypeId}
+        defaultCategories={defaultTemplates.map((t) => t.category)}
+      />
     </Suspense>
   )
 }
