@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Analytics } from "@vercel/analytics/react";
+import { Analytics } from "@vercel/analytics/next";
 import { Suspense } from "react";
 import { AttributionCapture } from "@/components/attribution-capture";
 import { CookieConsentBanner } from "@/components/cookie-consent-banner";
