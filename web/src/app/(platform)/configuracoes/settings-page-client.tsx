@@ -1,7 +1,8 @@
 'use client'
 
 import type { Role } from '@/types'
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState, type ReactNode } from 'react'
+import Link from 'next/link'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { ClinicSettingsForm } from '@/components/settings/clinic-settings-form'
 import { ProcedureTypeList } from '@/components/settings/procedure-type-list'
@@ -26,6 +27,7 @@ import { PasswordForm } from '@/components/settings/password-form'
 import { ProfessionalSignatureForm } from '@/components/settings/professional-signature-form'
 import { useCalendarConnections } from '@/hooks/queries/use-calendar'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import {
   BuildingIcon,
   SyringeIcon,
@@ -41,6 +43,8 @@ import {
   UserCogIcon,
   CreditCardIcon,
   PlugIcon,
+  ArrowLeftIcon,
+  ChevronRightIcon,
 } from 'lucide-react'
 
 interface Tenant {
@@ -181,6 +185,14 @@ const TAB_ROLES: Partial<Record<TabKey, Role[]>> = {
 const DEFAULT_OWNER_TAB: TabKey = 'clinica'
 const DEFAULT_NON_OWNER_TAB: TabKey = 'perfil'
 
+function GroupLabel({ className, children }: { className: string; children: ReactNode }) {
+  return (
+    <div className={cn('text-[10px] font-semibold uppercase tracking-wider text-mid/60', className)}>
+      {children}
+    </div>
+  )
+}
+
 function PacotesTabContent() {
   const { data, isLoading } = usePackageTemplates()
   return <PackageTemplateList templates={data ?? []} isLoading={isLoading} />
@@ -287,52 +299,83 @@ export function SettingsPageClient({
     items: group.items.filter((item) => visibleKeys.has(item.key)),
   })).filter((group) => group.items.length > 0)
 
+  const hasSection = resolvedUrlTab !== null
+
+  // A deep link (e.g. sent over WhatsApp) has no list entry behind it, so router.back() would leave the app.
+  const openedFromListRef = useRef(false)
+  const goBackToList = () => {
+    if (openedFromListRef.current) {
+      openedFromListRef.current = false
+      router.back()
+    } else {
+      router.replace(pathname)
+    }
+  }
+
   return (
     <div className="p-4 sm:p-6">
-      <div className="mb-6">
+      {hasSection && (
+        <div className="md:hidden mb-4 flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="icon-lg"
+            className="bg-white"
+            aria-label="Voltar para configurações"
+            onClick={goBackToList}
+          >
+            <ArrowLeftIcon />
+          </Button>
+          <div className="min-w-0">
+            <div className="text-xs text-mid">Configurações</div>
+            <h1 className="text-xl font-semibold text-charcoal truncate">{activeTabConfig.label}</h1>
+          </div>
+        </div>
+      )}
+
+      <div className={cn('mb-6', hasSection && 'hidden md:block')}>
         <h1 className="text-2xl font-semibold text-[#2A2A2A]">Configurações</h1>
         <p className="text-sm text-mid mt-0.5">
           Gerencie as configurações da sua clínica.
         </p>
       </div>
 
-      {/* Mobile: horizontal scrollable tabs (flat, no group labels) */}
-      <div className="relative md:hidden mb-6 -mx-4 px-4 overflow-x-auto scrollbar-hide">
-        <div className="flex gap-1 min-w-max bg-[#E8ECEF] rounded-[3px] p-1">
-          {visibleTabs.map((tab) => {
-            const Icon = tab.icon
-            const isActive = effectiveTab === tab.key
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setActiveTab(tab.key)}
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-2 rounded-[3px] text-sm font-medium transition-colors whitespace-nowrap',
-                  isActive
-                    ? 'bg-white text-[#2A2A2A] shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
-                    : 'text-mid hover:text-charcoal'
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {tab.label}
-              </button>
-            )
-          })}
-        </div>
-        <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-cream to-transparent" />
-      </div>
+      {!hasSection && (
+        <nav className="md:hidden space-y-6">
+          {visibleGroups.map((group) => (
+            <div key={group.label}>
+              <GroupLabel className="px-1 pb-2">{group.label}</GroupLabel>
+              <div className="bg-white rounded-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.06)] divide-y divide-topbar-border">
+                {group.items.map((tab) => {
+                  const Icon = tab.icon
+                  return (
+                    <Link
+                      key={tab.key}
+                      href={`${pathname}?tab=${tab.key}`}
+                      onClick={() => {
+                        openedFromListRef.current = true
+                      }}
+                      className="flex items-center gap-3 px-4 py-3.5 text-sm font-medium text-charcoal outline-none active:bg-[#F4F6F8] focus-visible:bg-[#F4F6F8]"
+                    >
+                      <Icon className="h-4 w-4 text-sage" />
+                      <span className="flex-1">{tab.label}</span>
+                      <ChevronRightIcon className="h-4 w-4 text-mid" />
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+      )}
 
-      {/* Desktop: sidebar + content layout */}
-      <div className="flex gap-6">
+      {/* Sidebar (desktop) + section content */}
+      <div className={cn('flex gap-6', !hasSection && 'hidden md:flex')}>
         {/* Sidebar nav (desktop only) */}
         <nav className="hidden md:block w-56 shrink-0">
           <div className="sticky top-6 space-y-0.5">
             {visibleGroups.map((group, gi) => (
               <div key={group.label} className={gi > 0 ? 'pt-4' : ''}>
-                <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-mid/60">
-                  {group.label}
-                </div>
+                <GroupLabel className="px-3 pb-1.5">{group.label}</GroupLabel>
                 {group.items.map((tab) => {
                   const Icon = tab.icon
                   const isActive = effectiveTab === tab.key
@@ -362,7 +405,7 @@ export function SettingsPageClient({
         <div className="flex-1 min-w-0">
           <div className="bg-white rounded-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
             {/* Section header */}
-            <div className="px-5 sm:px-6 py-4 border-b border-[#E8ECEF]">
+            <div className="hidden md:block px-6 py-4 border-b border-[#E8ECEF]">
               <div className="flex items-center gap-2.5">
                 <div className="flex items-center justify-center w-8 h-8 rounded-[3px] bg-sage/10">
                   <activeTabConfig.icon className="h-4 w-4 text-sage" />
