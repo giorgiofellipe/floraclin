@@ -27,6 +27,7 @@ import { PasswordForm } from '@/components/settings/password-form'
 import { ProfessionalSignatureForm } from '@/components/settings/professional-signature-form'
 import { useCalendarConnections } from '@/hooks/queries/use-calendar'
 import { cn } from '@/lib/utils'
+import { buttonVariants } from '@/components/ui/button'
 import {
   BuildingIcon,
   SyringeIcon,
@@ -42,7 +43,7 @@ import {
   UserCogIcon,
   CreditCardIcon,
   PlugIcon,
-  ChevronLeftIcon,
+  ArrowLeftIcon,
   ChevronRightIcon,
 } from 'lucide-react'
 
@@ -295,13 +296,19 @@ export function SettingsPageClient({
   return (
     <div className="p-4 sm:p-6">
       {showMobileList ? null : (
-        <Link
-          href={pathname}
-          className="md:hidden mb-4 inline-flex items-center gap-1 text-sm font-medium text-mid hover:text-charcoal"
-        >
-          <ChevronLeftIcon className="h-4 w-4" />
-          Configurações
-        </Link>
+        <div className="md:hidden mb-4 flex items-center gap-3">
+          <Link
+            href={pathname}
+            aria-label="Voltar para configurações"
+            className={cn(buttonVariants({ variant: 'outline', size: 'icon-lg' }), 'bg-white')}
+          >
+            <ArrowLeftIcon />
+          </Link>
+          <div className="min-w-0">
+            <div className="text-xs text-mid">Configurações</div>
+            <h1 className="text-xl font-semibold text-[#2A2A2A] truncate">{activeTabConfig.label}</h1>
+          </div>
+        </div>
       )}
 
       <div className={cn('mb-6', !showMobileList && 'hidden md:block')}>
@@ -378,7 +385,7 @@ export function SettingsPageClient({
         <div className="flex-1 min-w-0">
           <div className="bg-white rounded-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
             {/* Section header */}
-            <div className="px-5 sm:px-6 py-4 border-b border-[#E8ECEF]">
+            <div className="hidden md:block px-6 py-4 border-b border-[#E8ECEF]">
               <div className="flex items-center gap-2.5">
                 <div className="flex items-center justify-center w-8 h-8 rounded-[3px] bg-sage/10">
                   <activeTabConfig.icon className="h-4 w-4 text-sage" />
