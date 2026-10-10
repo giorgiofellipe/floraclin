@@ -87,7 +87,6 @@ describe('CopyTemplateDialog', () => {
       'Botox3 perguntas',
       'Preenchimento1 pergunta',
     ])
-    expect(screen.queryByText('Atual')).not.toBeInTheDocument()
     expect(screen.queryByText('Vazio')).not.toBeInTheDocument()
     expect(screen.queryByText('Sem ficha')).not.toBeInTheDocument()
   })
@@ -129,7 +128,7 @@ describe('CopyTemplateDialog', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows the empty state, not loading, when the current type is the only one', () => {
+  it('does not stay on loading when the templates query is disabled (current type is the only one)', () => {
     setup({
       types: { data: [{ id: 'current', name: 'Atual' }] },
       templates: { data: undefined, isLoading: false, isPending: true },
@@ -141,8 +140,11 @@ describe('CopyTemplateDialog', () => {
     expect(screen.queryByText('Carregando...')).not.toBeInTheDocument()
   })
 
-  it('shows the error state when the templates query fails', () => {
-    setup({ templates: { data: undefined, isError: true } })
+  it.each([
+    ['procedure types', { types: { data: undefined, isError: true } }],
+    ['templates', { templates: { data: undefined, isError: true } }],
+  ])('shows the error state when the %s query fails', (_, overrides) => {
+    setup(overrides)
 
     expect(
       screen.getByText('Erro ao carregar as fichas. Tente novamente.'),

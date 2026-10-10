@@ -27,6 +27,7 @@ describe('EvaluationTemplatePageClient', () => {
   it('hides "Restaurar padrão" for a category without a default template', () => {
     renderForCategory('outros')
 
+    expect(screen.getByRole('button', { name: 'Copiar de outro procedimento' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Restaurar padrão' })).not.toBeInTheDocument()
   })
 

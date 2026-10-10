@@ -7,10 +7,17 @@ import { Label } from '@/components/ui/label'
 import { SectionEditor } from './section-editor'
 import { QuestionEditorDialog } from './question-editor-dialog'
 import { CopyTemplateDialog } from './copy-template-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 import {
   ArrowLeftIcon,
   CopyIcon,
+  MoreHorizontalIcon,
   PlusIcon,
   RotateCcwIcon,
   SaveIcon,
@@ -235,9 +242,9 @@ export function TemplateEditor({
     }
   }
 
-  const resetToDefaultControl = resetConfirm ? (
+  const resetConfirmControl = (
     <div className="flex items-center gap-1">
-      <span className="text-xs text-mid hidden sm:inline">Restaurar padrão?</span>
+      <span className="text-xs text-mid">Restaurar padrão?</span>
       <Button
         variant="destructive"
         size="xs"
@@ -258,16 +265,63 @@ export function TemplateEditor({
         Cancelar
       </Button>
     </div>
-  ) : (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={() => setResetConfirm(true)}
-      disabled={isSaving}
-    >
-      <RotateCcwIcon data-icon="inline-start" />
-      <span className="hidden sm:inline">Restaurar padrão</span>
-    </Button>
+  )
+
+  const secondaryActions = (
+    <>
+      <div className="hidden sm:flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setCopyDialogOpen(true)}
+          disabled={isSaving || isResetting}
+        >
+          <CopyIcon data-icon="inline-start" />
+          Copiar de outro procedimento
+        </Button>
+        {hasDefaultTemplate && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setResetConfirm(true)}
+            disabled={isSaving}
+          >
+            <RotateCcwIcon data-icon="inline-start" />
+            Restaurar padrão
+          </Button>
+        )}
+      </div>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="outline"
+              size="icon-sm"
+              className="sm:hidden"
+              aria-label="Mais ações"
+            />
+          }
+        >
+          <MoreHorizontalIcon />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto whitespace-nowrap">
+          <DropdownMenuItem
+            onClick={() => setCopyDialogOpen(true)}
+            disabled={isSaving || isResetting}
+          >
+            <CopyIcon />
+            Copiar de outro procedimento
+          </DropdownMenuItem>
+          {hasDefaultTemplate && (
+            <DropdownMenuItem onClick={() => setResetConfirm(true)} disabled={isSaving}>
+              <RotateCcwIcon />
+              Restaurar padrão
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
   )
 
   const emptyStateHint = hasDefaultTemplate
@@ -294,18 +348,7 @@ export function TemplateEditor({
           </div>
 
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCopyDialogOpen(true)}
-              disabled={isSaving || isResetting}
-              aria-label="Copiar de outro procedimento"
-            >
-              <CopyIcon data-icon="inline-start" />
-              <span className="hidden sm:inline">Copiar de outro procedimento</span>
-            </Button>
-
-            {hasDefaultTemplate && resetToDefaultControl}
+            {resetConfirm ? resetConfirmControl : secondaryActions}
 
             <Button
               size="sm"

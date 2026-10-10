@@ -1,4 +1,4 @@
-# Copy evaluation template from another procedure — cook plan
+# Copy evaluation template from another procedure: cook plan
 
 ## Goal
 
@@ -45,7 +45,7 @@ Behavior:
 - `useProcedureTypes()`; `otherIds = types.filter(t => t.id !== currentProcedureTypeId).map(t => t.id)` (memoized); `useEvaluationTemplates(otherIds)`.
 - Options = templates with `sections.length > 0` whose `procedureTypeId` is in the types list, joined to the type name; show name and "N perguntas" (sum of `questions.length`, singular "1 pergunta"). Sort by name with `localeCompare(…, 'pt-BR')`.
 - Hooks live in an inner `CopyTemplateDialogBody` rendered only inside `DialogContent` while `open`, so nothing is fetched until the dialog opens.
-- Loading: `typesLoading || (otherIds.length > 0 && templatesLoading)` → "Carregando...". (TanStack Query v5: a disabled query reports `isLoading=false`, and `isPending` stays true forever when `otherIds` is empty.)
+- Loading: `typesLoading || templatesLoading` → "Carregando...". (TanStack Query v5: a disabled query reports `isLoading=false`, while `isPending` stays true forever when `otherIds` is empty.)
 - Error (`typesError || templatesError`) → "Erro ao carregar as fichas. Tente novamente."
 - No options → "Nenhum outro procedimento tem ficha de avaliação ainda."
 - Step 1: list of option buttons. Clicking one selects it and shows step 2: "Copiar a ficha de **{name}**? Isso substitui as perguntas atuais desta ficha." with "Cancelar" (back to list) and "Copiar" buttons.
@@ -62,7 +62,7 @@ Test (mock both hooks with `vi.mock`), cases:
 
 ### Task 2: Plumb `defaultCategories` / `hasDefaultTemplate` / `procedureTypeId` (files: `web/src/app/(platform)/configuracoes/avaliacao/[procedureTypeId]/page.tsx`, `.../evaluation-template-page-client.tsx`, `.../template-editor-page.tsx`)
 
-- `page.tsx` (server): `const { defaultTemplates } = await import('@/lib/default-evaluation-templates')`; pass `defaultCategories={defaultTemplates.map((t) => t.category)}` to `EvaluationTemplatePageClient`.
+- `page.tsx` (server): static `import { defaultTemplates } from '@/lib/default-evaluation-templates'`; pass `defaultCategories={defaultTemplates.map((t) => t.category)}` to `EvaluationTemplatePageClient`.
 - `evaluation-template-page-client.tsx`: accept `defaultCategories: string[]`; pass `hasDefaultTemplate={defaultCategories.includes(procedureType.category)}` to `TemplateEditorPage`.
 - `template-editor-page.tsx`: accept `hasDefaultTemplate: boolean`; pass `procedureTypeId={procedureType.id}` (replacing the unused `templateId` prop) and `hasDefaultTemplate` to `TemplateEditor`.
 - Typecheck will fail until Task 3 adds the props; that is expected between groups.

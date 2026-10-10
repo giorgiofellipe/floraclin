@@ -28,14 +28,14 @@ const sourceSections: EvaluationSection[] = [
   },
 ]
 
-function renderEditor(props: { hasDefaultTemplate?: boolean } = {}) {
+function renderEditor() {
   const onSave = vi.fn<(sections: EvaluationSection[]) => Promise<{ success: boolean }>>()
   onSave.mockResolvedValue({ success: true })
   render(
     <TemplateEditor
       procedureTypeName="Peeling"
       procedureTypeId="current"
-      hasDefaultTemplate={props.hasDefaultTemplate ?? true}
+      hasDefaultTemplate
       initialSections={[]}
       onSave={onSave}
       onResetToDefault={vi.fn()}
@@ -80,4 +80,5 @@ describe('TemplateEditor', () => {
     expect(onSave).toHaveBeenCalledTimes(1)
     expect(onSave).toHaveBeenCalledWith(sourceSections)
   })
+
 })

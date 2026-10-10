@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -59,6 +59,10 @@ export function CopyTemplateDialog({
   )
 }
 
+function DialogMessage({ children }: { children: ReactNode }) {
+  return <p className="py-6 text-center text-sm text-mid">{children}</p>
+}
+
 function CopyTemplateDialogBody({
   currentProcedureTypeId,
   onCopy,
@@ -108,24 +112,12 @@ function CopyTemplateDialogBody({
     onOpenChange(false)
   }
 
-  if (loading) {
-    return <p className="py-6 text-center text-sm text-mid">Carregando...</p>
-  }
-
+  if (loading) return <DialogMessage>Carregando...</DialogMessage>
   if (typesError || templatesError) {
-    return (
-      <p className="py-6 text-center text-sm text-mid">
-        Erro ao carregar as fichas. Tente novamente.
-      </p>
-    )
+    return <DialogMessage>Erro ao carregar as fichas. Tente novamente.</DialogMessage>
   }
-
   if (options.length === 0) {
-    return (
-      <p className="py-6 text-center text-sm text-mid">
-        Nenhum outro procedimento tem ficha de avaliação ainda.
-      </p>
-    )
+    return <DialogMessage>Nenhum outro procedimento tem ficha de avaliação ainda.</DialogMessage>
   }
 
   if (selected) {
@@ -139,7 +131,9 @@ function CopyTemplateDialogBody({
           <Button variant="outline" onClick={() => setSelectedId(null)}>
             Cancelar
           </Button>
-          <Button onClick={handleConfirm}>Copiar</Button>
+          <Button onClick={handleConfirm} autoFocus>
+            Copiar
+          </Button>
         </DialogFooter>
       </>
     )
