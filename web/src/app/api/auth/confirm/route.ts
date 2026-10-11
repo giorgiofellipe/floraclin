@@ -4,6 +4,7 @@ import { markEmailVerified } from '@/db/queries/users'
 import { handleApiError } from '@/lib/api-error'
 import {
   CONFIRM_EMAIL_STATE_COOKIE,
+  CONFIRM_EMAIL_STATE_PATH,
   confirmEmailStateCookieOptions,
   serializeConfirmEmailPageState,
 } from '@/lib/confirm-email-page-state'
@@ -16,9 +17,9 @@ import {
  * the token, it would already be spent in transit and the real user would
  * land on "link invalido ou expirado" for a link they never opened.
  *
- * So GET only forwards the email and token to the confirm-email page, which
- * renders a "Confirmar e-mail" button that POSTs them. Consumption only
- * happens from that explicit, human-initiated POST.
+ * So GET only hands the email and token to the confirm-email page in a
+ * cookie, and the page renders a "Confirmar e-mail" button that POSTs them.
+ * Consumption only happens from that explicit, human-initiated POST.
  */
 export async function GET(request: NextRequest) {
   const email = request.nextUrl.searchParams.get('email')
@@ -56,13 +57,13 @@ export async function POST(request: NextRequest) {
     }
 
     const verifiedEmail = await consumeConfirmationToken(email, token)
-    if (!verifiedEmail) {
-      return NextResponse.json({ error: 'Link inválido ou expirado' }, { status: 400 })
-    }
+    if (verifiedEmail) await markEmailVerified(verifiedEmail)
 
-    await markEmailVerified(verifiedEmail)
-
-    return NextResponse.json({ success: true })
+    const response = verifiedEmail
+      ? NextResponse.json({ success: true })
+      : NextResponse.json({ error: 'Link inválido ou expirado' }, { status: 400 })
+    response.cookies.delete({ name: CONFIRM_EMAIL_STATE_COOKIE, path: CONFIRM_EMAIL_STATE_PATH })
+    return response
   } catch (error) {
     return handleApiError(error, request)
   }

@@ -82,7 +82,6 @@ export function PrintConsent({ acceptance }: PrintConsentProps) {
       <div style={{ marginTop: '16rem', display: 'flex', justifyContent: 'space-around', gap: '32px' }}>
         {a.signatureData && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={a.signatureData}
               alt="Assinatura do paciente"
@@ -95,7 +94,6 @@ export function PrintConsent({ acceptance }: PrintConsentProps) {
         )}
         {professional && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={professional.signatureDataUrl}
               alt={`Assinatura de ${professional.name}`}

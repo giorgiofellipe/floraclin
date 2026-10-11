@@ -4,7 +4,7 @@ import { InstallBanner } from '../install-banner'
 
 vi.mock('next/image', () => ({
   __esModule: true,
-  // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text -- plain img stands in for next/image under jsdom
+  // eslint-disable-next-line jsx-a11y/alt-text -- plain img stands in for next/image under jsdom
   default: (props: { src: string; alt: string }) => <img {...props} />,
 }))
 

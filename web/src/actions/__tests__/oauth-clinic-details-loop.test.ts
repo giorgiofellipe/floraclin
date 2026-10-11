@@ -31,18 +31,14 @@ const createSelfSignupTenantMock = vi.fn()
 const createSubscriptionMock = vi.fn()
 const sendSignupCompleteRegistrationEventMock = vi.fn()
 const headersMock = vi.fn()
-const afterMock = vi.fn()
 
 vi.mock('next/navigation', () => ({ redirect: (p: string) => redirectMock(p) }))
 vi.mock('next/headers', () => ({
   headers: () => headersMock(),
-  cookies: async () => ({ set: vi.fn() }),
+  cookies: async () => ({ get: () => undefined }),
 }))
 vi.mock('next/server', () => ({
-  after: (task: () => unknown) => {
-    afterMock(task)
-    return task()
-  },
+  after: (task: () => unknown) => task(),
 }))
 vi.mock('@/lib/auth-config', () => ({ auth: () => authMock() }))
 vi.mock('@/db/client', () => ({
@@ -88,6 +84,12 @@ function form({ marketingConsent = false } = {}) {
   if (marketingConsent) {
     fd.set('marketingConsent', 'granted')
     fd.set('metaEventId', 'complete_registration:event-google')
+    fd.set('marketingAttribution', JSON.stringify({
+      utmSource: 'meta',
+      landingUrl: 'https://app.floraclin.com.br/signup?utm_source=meta',
+      capturedAt: '2026-10-06T00:00:00.000Z',
+      expiresAt: '2027-01-04T00:00:00.000Z',
+    }))
   }
   return fd
 }
@@ -146,13 +148,6 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
       metaEventId: 'complete_registration:event-google',
     })
     expect(updateMock).toHaveBeenCalled()
-    expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledWith(expect.objectContaining({
-      eventId: 'complete_registration:event-google',
-      email: 'a@b.com',
-      phone: '11988887777',
-      clientIp: '203.0.113.11',
-      userAgent: 'Vitest OAuth Browser',
-    }))
   })
 
   it('reports success on a retry rather than redirecting', async () => {
@@ -186,5 +181,26 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
     expect(state?.success).toBeUndefined()
     expect(state?.error).toBeDefined()
     expect(createSelfSignupTenantMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('createClinicForOAuthUser Meta CompleteRegistration', () => {
+  it('sends the server event with the same id the browser pixel uses', async () => {
+    await createClinicForOAuthUser(null, form({ marketingConsent: true }))
+
+    expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      eventId: 'complete_registration:event-google',
+      email: 'a@b.com',
+      phone: '11988887777',
+      eventSourceUrl: expect.stringMatching(/\/signup\/clinic-details$/),
+      clientIp: '203.0.113.11',
+      userAgent: 'Vitest OAuth Browser',
+    }))
+  })
+
+  it('does not send the server event without marketing consent', async () => {
+    await createClinicForOAuthUser(null, form())
+
+    expect(sendSignupCompleteRegistrationEventMock).not.toHaveBeenCalled()
   })
 })

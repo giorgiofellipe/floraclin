@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { SignupLink } from "@/components/signup-link";
 
 export function Hero() {
   return (
@@ -147,9 +148,9 @@ export function Hero() {
 
           {/* CTAs */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-10 animate-fade-up animate-delay-300">
-            <a href="https://app.floraclin.com.br/signup" className="btn-primary text-base px-10 py-4">
+            <SignupLink className="btn-primary text-base px-10 py-4">
               Testar Grátis por 14 Dias
-            </a>
+            </SignupLink>
             <a
               href="https://wa.me/5547936181734?text=Ol%C3%A1%2C%20gostaria%20de%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20da%20FloraClin."
               target="_blank"

@@ -19,7 +19,7 @@ import { getAppUrl } from '@/lib/app-url'
 import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
 import { generateMetaEventId, parseSignupAttribution, type SignupAttribution } from '@/lib/marketing-attribution'
 import { reportSideEffectFailure } from '@/lib/observability'
-import { sendSignupCompleteRegistrationEvent } from '@/lib/meta/events'
+import { sendSignupCompleteRegistrationEvent, type SendSignupCompleteRegistrationInput } from '@/lib/meta/events'
 import {
   CONFIRM_EMAIL_STATE_COOKIE,
   confirmEmailStateCookieOptions,
@@ -123,9 +123,8 @@ export async function signUp(
         eventId: metaEventId,
         email,
         phone,
-        eventSourceUrl: signupAttribution?.landingUrl ?? `${appUrl}/signup`,
-        fbc: signupAttribution?.fbc,
-        fbp: signupAttribution?.fbp,
+        eventSourceUrl: `${appUrl}/signup`,
+        ...(await metaBrowserIds(signupAttribution)),
         clientIp: clientIpFromHeaders(requestHeaders),
         userAgent: requestHeaders.get('user-agent'),
       })
@@ -169,8 +168,8 @@ export async function signUp(
   // would hand an unconfirmed account a working session cookie, and the API
   // would accept it: middleware's /api branch returns before any email check.
   // The first sign-in happens after confirming, and `authorize` refuses until
-  // then. There is no session for the page to read from yet, so the address
-  // rides in a short-lived httpOnly cookie instead of the URL that Meta sees.
+  // then. There is no session for the page to read the address from, so it
+  // rides in an httpOnly cookie instead of the URL that Meta sees.
   const cookieStore = await cookies()
   cookieStore.set(
     CONFIRM_EMAIL_STATE_COOKIE,
@@ -249,9 +248,8 @@ export async function createClinicForOAuthUser(
       eventId: metaEventId,
       email: session.user.email,
       phone,
-      eventSourceUrl: signupAttribution?.landingUrl ?? `${getAppUrl()}/signup/clinic-details`,
-      fbc: signupAttribution?.fbc,
-      fbp: signupAttribution?.fbp,
+      eventSourceUrl: `${getAppUrl()}/signup/clinic-details`,
+      ...(await metaBrowserIds(signupAttribution)),
       clientIp: clientIpFromHeaders(requestHeaders),
       userAgent: requestHeaders.get('user-agent'),
     })
@@ -318,7 +316,15 @@ function clientIpFromHeaders(requestHeaders: Pick<Headers, 'get'>): string | nul
   return requestHeaders.get('x-real-ip')?.trim() || null
 }
 
-function scheduleSignupCompleteRegistration(input: Parameters<typeof sendSignupCompleteRegistrationEvent>[0]): void {
+async function metaBrowserIds(attribution: SignupAttribution | null): Promise<{ fbc?: string; fbp?: string }> {
+  const cookieStore = await cookies()
+  return {
+    fbc: attribution?.fbc ?? cookieStore.get('_fbc')?.value,
+    fbp: attribution?.fbp ?? cookieStore.get('_fbp')?.value,
+  }
+}
+
+function scheduleSignupCompleteRegistration(input: SendSignupCompleteRegistrationInput): void {
   try {
     after(async () => {
       await sendSignupCompleteRegistrationEvent(input)

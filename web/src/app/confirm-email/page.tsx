@@ -18,9 +18,6 @@ export default async function ConfirmEmailPage({ searchParams }: ConfirmEmailPag
 
   if ((session as any)?.emailVerified) redirect('/dashboard')
 
-  // The address to show comes from a short-lived httpOnly cookie set by
-  // signup or by the confirmation redirect, never from the page URL that
-  // browser pixels and observability tooling can see.
   const email = pageState?.email ?? session?.user?.email ?? null
   const token = pageState?.token ?? null
 
@@ -35,7 +32,7 @@ export default async function ConfirmEmailPage({ searchParams }: ConfirmEmailPag
         <p className="mt-2 text-lg font-medium text-charcoal">Confirme seu e-mail</p>
         <div className="mt-8 rounded-lg bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)] text-left">
           {/* Signup no longer creates a session, so the address lives only in
-              the link. Someone who closed that tab arrives here with neither,
+              the confirm-email cookie. Someone who lost it arrives here with no address,
               and bouncing them to /login was a dead end: the password they
               just chose is refused for being unconfirmed, and the error only
               said the credentials were invalid. They can ask for a new link

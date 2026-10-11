@@ -1,6 +1,7 @@
-import { hasMarketingConsent } from "@/lib/cookie-consent"
+import { cookieConsentStatus, hasMarketingConsent } from "@/lib/cookie-consent"
 
 export const DEFAULT_META_PIXEL_ID = '1651713926600603'
+export const SIGNUP_URL = 'https://app.floraclin.com.br/signup'
 
 const ATTRIBUTION_STORAGE_KEY = 'floraclin_first_touch_attribution'
 const PENDING_ATTRIBUTION_SESSION_KEY = 'floraclin_pending_first_touch_attribution'
@@ -60,8 +61,9 @@ export function trackMetaEvent(eventName: string): void {
 
 export function captureFirstTouchAttribution(): void {
   if (typeof window === 'undefined') return
-  if (!hasMarketingConsent()) {
-    capturePendingFirstTouchAttribution()
+  const consent = cookieConsentStatus()
+  if (consent !== 'granted') {
+    if (consent === 'unset') bufferPendingAttribution()
     return
   }
   if (readStoredAttribution()) return
@@ -73,8 +75,8 @@ export function captureFirstTouchAttribution(): void {
   clearPendingAttribution()
 }
 
-export function capturePendingFirstTouchAttribution(): void {
-  if (typeof window === 'undefined' || readStoredAttribution() || readPendingAttribution()) return
+function bufferPendingAttribution(): void {
+  if (readStoredAttribution() || readPendingAttribution()) return
 
   const attribution = attributionFromCurrentPage()
   if (!attribution) return
@@ -84,6 +86,24 @@ export function capturePendingFirstTouchAttribution(): void {
   } catch {
     // Optional storage can be blocked; pre-consent attribution is best effort.
   }
+}
+
+/**
+ * sessionStorage does not cross origins, so attribution buffered here before
+ * consent has to ride the signup link to reach app.floraclin.com.br.
+ */
+export function signupUrlWithPendingAttribution(): string {
+  if (typeof window === 'undefined' || cookieConsentStatus() !== 'unset') return SIGNUP_URL
+
+  const attribution = readPendingAttribution() ?? attributionFromCurrentPage()
+  if (!attribution) return SIGNUP_URL
+
+  const url = new URL(SIGNUP_URL)
+  for (const key of ATTRIBUTION_PARAM_KEYS) {
+    const value = attribution[FIELD_BY_PARAM[key]]
+    if (value) url.searchParams.set(key, value)
+  }
+  return url.toString()
 }
 
 export function discardMarketingAttribution(): void {
