@@ -18,6 +18,7 @@ CREATE TABLE "floraclin"."tenant_lifecycle_messages" (
 CREATE UNIQUE INDEX "uq_tenant_lifecycle_message" ON "floraclin"."tenant_lifecycle_messages" ("tenant_id", "message_key", "channel");
 CREATE INDEX "idx_tenant_lifecycle_messages_meta_id" ON "floraclin"."tenant_lifecycle_messages" ("meta_message_id");
 CREATE INDEX "idx_tenant_lifecycle_messages_recipient" ON "floraclin"."tenant_lifecycle_messages" ("recipient");
+ALTER TABLE "floraclin"."tenant_lifecycle_messages" ENABLE ROW LEVEL SECURITY;
 
 CREATE TABLE "floraclin"."tenant_lifecycle_replies" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -27,5 +28,6 @@ CREATE TABLE "floraclin"."tenant_lifecycle_replies" (
   "meta_message_id" varchar(255) NOT NULL UNIQUE,
   "received_at" timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE "floraclin"."tenant_lifecycle_replies" ENABLE ROW LEVEL SECURITY;
 
 CREATE INDEX IF NOT EXISTS "idx_whatsapp_conversations_phone_last_message" ON "floraclin"."whatsapp_conversations" ("phone_number", "last_message_at");
