@@ -76,7 +76,6 @@ function ClinicBrand({ clinic }: { clinic: ClinicInfo }) {
           loader doesn't fit that, so this matches the plain <img> convention
           used by ClinicHeader for the same field. Height is capped so an
           oversized logo can't blow out the layout on mobile. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={clinic.logoUrl}
         alt={clinic.name}

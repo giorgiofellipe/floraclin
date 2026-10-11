@@ -46,7 +46,6 @@ export function MetaPixel({ pixelId = DEFAULT_META_PIXEL_ID }: MetaPixelProps) {
         `}
       </Script>
       <noscript>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           height="1"
           width="1"

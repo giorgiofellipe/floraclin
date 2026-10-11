@@ -75,7 +75,6 @@ export function ClinicLogoUploader({ initialLogoUrl }: ClinicLogoUploaderProps) 
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
       <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-[3px] border border-dashed border-[#E8ECEF] bg-blush/30">
         {logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element -- logo can be SVG or hosted on Supabase storage, doesn't fit next/image's loader assumptions
           <img
             src={logoUrl}
             alt="Logo da clínica"

@@ -14,4 +14,9 @@ export default [
     ],
   },
   ...nextConfig,
+  {
+    // Logos are SVGs, which next/image serves unoptimized, and photos are
+    // signed URLs or data URLs that editors need as plain <img> elements.
+    rules: { '@next/next/no-img-element': 'off' },
+  },
 ]

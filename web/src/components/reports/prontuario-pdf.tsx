@@ -343,7 +343,6 @@ function FaceDiagramSection({
           ) : (
             <div className="prontuario-diagram-body">
               <div className="prontuario-diagram-canvas">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={faceTemplateUrl(diagram.viewType, gender)}
                   alt={VIEW_LABELS[diagram.viewType as keyof typeof VIEW_LABELS] ?? diagram.viewType}
@@ -588,7 +587,6 @@ function PhotosSection({ photos }: { photos: ProntuarioDossier['photos'] }) {
             {group.visible.map((photo) => (
               <div className="prontuario-photo-card" key={photo.id}>
                 {photo.signedUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={photo.signedUrl} alt={timelineStageLabels[photo.stage as keyof typeof timelineStageLabels] ?? photo.stage} />
                 ) : (
                   <div>(imagem indisponível)</div>
