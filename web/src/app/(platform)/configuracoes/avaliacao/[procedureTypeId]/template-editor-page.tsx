@@ -16,9 +16,10 @@ interface TemplateEditorPageProps {
     sections: EvaluationSection[]
     version: number
   } | null
+  hasDefaultTemplate: boolean
 }
 
-export function TemplateEditorPage({ procedureType, template }: TemplateEditorPageProps) {
+export function TemplateEditorPage({ procedureType, template, hasDefaultTemplate }: TemplateEditorPageProps) {
   const router = useRouter()
   const saveTemplate = useSaveEvaluationTemplate()
 
@@ -68,8 +69,8 @@ export function TemplateEditorPage({ procedureType, template }: TemplateEditorPa
     <div className="-m-6 flex min-h-screen flex-col bg-[#F4F6F8]">
       <TemplateEditor
         procedureTypeName={procedureType.name}
-        procedureTypeCategory={procedureType.category}
-        templateId={template?.id ?? null}
+        procedureTypeId={procedureType.id}
+        hasDefaultTemplate={hasDefaultTemplate}
         initialSections={template?.sections ?? []}
         onSave={handleSave}
         onResetToDefault={handleResetToDefault}

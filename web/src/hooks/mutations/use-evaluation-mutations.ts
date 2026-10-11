@@ -20,10 +20,11 @@ export function useSaveEvaluationTemplate() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (data: Record<string, unknown>) => mutateJson('/api/evaluation/templates', 'POST', data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.evaluation.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.settings.all })
-    },
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.evaluation.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.settings.all }),
+      ]),
   })
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
   cookieConsentStatus,
@@ -19,19 +19,19 @@ export function CookieConsentBanner() {
   const choice = consentStatus === "unset" ? null : readCookieConsent();
   const shouldShowBanner = consentStatus === "unset" && !isPreferencesOpen;
 
+  const bannerRef = useRef<HTMLElement>(null);
+
   useEffect(() => {
-    if (!shouldShowBanner) return;
+    const banner = bannerRef.current;
+    if (!shouldShowBanner || !banner) return;
 
     const previousPadding = document.body.style.paddingBottom;
-    const media = window.matchMedia("(max-width: 767px)");
-    const applyPadding = () => {
-      document.body.style.paddingBottom = media.matches ? "7rem" : previousPadding;
-    };
-
-    applyPadding();
-    media.addEventListener("change", applyPadding);
+    const observer = new ResizeObserver(() => {
+      document.body.style.paddingBottom = `${window.innerHeight - banner.getBoundingClientRect().top}px`;
+    });
+    observer.observe(banner);
     return () => {
-      media.removeEventListener("change", applyPadding);
+      observer.disconnect();
       document.body.style.paddingBottom = previousPadding;
     };
   }, [shouldShowBanner]);
@@ -64,8 +64,9 @@ export function CookieConsentBanner() {
     <>
       {shouldShowBanner && (
         <section
+          ref={bannerRef}
           aria-label="Aviso de cookies"
-          className="fixed inset-x-3 bottom-3 z-50 mx-auto max-h-[30svh] max-w-4xl overflow-y-auto rounded-xl border border-sage/20 bg-cream/95 p-3 shadow-2xl backdrop-blur sm:inset-x-4 sm:bottom-4 sm:max-h-none sm:rounded-2xl sm:p-4 md:flex md:items-center md:gap-5"
+          className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-4xl rounded-xl border border-sage/20 bg-cream/95 p-3 shadow-2xl backdrop-blur sm:inset-x-4 sm:bottom-4 sm:rounded-2xl sm:p-4 md:flex md:items-center md:gap-5"
         >
           <div className="flex-1 text-xs leading-snug text-charcoal/75 sm:text-sm sm:leading-relaxed">
             <p className="font-sans font-medium text-charcoal">Cookies</p>
@@ -74,6 +75,10 @@ export function CookieConsentBanner() {
               <button type="button" onClick={showPreferences} className="text-sage underline underline-offset-2">
                 Ver detalhes
               </button>
+              {" · "}
+              <Link href="/privacidade" className="text-sage underline underline-offset-2">
+                Privacidade
+              </Link>
               .
             </p>
             <p className="mt-1 hidden sm:block">
@@ -85,7 +90,7 @@ export function CookieConsentBanner() {
               .
             </p>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-4 sm:flex sm:flex-row md:mt-0">
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-4 sm:flex md:mt-0">
             <button
               type="button"
               onClick={() => persist(false)}
@@ -96,7 +101,7 @@ export function CookieConsentBanner() {
             <button
               type="button"
               onClick={showPreferences}
-              className="col-span-2 rounded-full border border-sage/25 px-4 py-2 text-sm text-charcoal transition hover:bg-sage/10 sm:col-span-1"
+              className="hidden rounded-full border border-sage/25 px-4 py-2 text-sm text-charcoal transition hover:bg-sage/10 sm:block"
             >
               Preferências
             </button>

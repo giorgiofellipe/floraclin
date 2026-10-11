@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from './query-keys'
 import type { CalendarBlockRow } from '@/db/queries/calendar'
+import type { CreateCalendarBlockInput } from '@/validations/calendar-block'
 
 export function useCalendarBlocks(
   practitionerId: string | undefined,
@@ -32,6 +33,27 @@ export function useCalendarConnections() {
       if (!res.ok) return []
       const json = await res.json()
       return json.data ?? []
+    },
+  })
+}
+
+export function useCreateCalendarBlock() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: CreateCalendarBlockInput) => {
+      const res = await fetch('/api/calendar/blocks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Erro ao bloquear horário')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.calendar.all })
     },
   })
 }
