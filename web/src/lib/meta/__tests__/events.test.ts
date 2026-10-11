@@ -71,7 +71,9 @@ const CONNECTION = {
 
 describe('sendSignupCompleteRegistrationEvent', () => {
   beforeEach(() => {
+    vi.resetModules()
     vi.clearAllMocks()
+    vi.unstubAllEnvs()
     delete process.env.META_CAPI_ACCESS_TOKEN
     delete process.env.META_TEST_EVENT_CODE
     process.env.NEXT_PUBLIC_META_PIXEL_ID = '1651713926600603'
@@ -123,7 +125,11 @@ describe('sendSignupCompleteRegistrationEvent', () => {
     })
   })
 
-  it('skips the send and reports the missing token once per process', async () => {
+  it.each([
+    ['production', 1],
+    ['preview', 0],
+  ])('skips the send without a token and reports it once per process in %s', async (vercelEnv, reports) => {
+    vi.stubEnv('VERCEL_ENV', vercelEnv)
     const { sendSignupCompleteRegistrationEvent } = await import('../events')
     const input = {
       eventId: 'complete_registration:event-1',
@@ -135,11 +141,7 @@ describe('sendSignupCompleteRegistrationEvent', () => {
     expect(await sendSignupCompleteRegistrationEvent(input)).toBe(false)
 
     expect(postEventsMock).not.toHaveBeenCalled()
-    expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1)
-    expect(reportSideEffectFailureMock).toHaveBeenCalledWith(
-      expect.any(Error),
-      expect.objectContaining({ area: 'meta-capi', step: 'signup_capi_token' }),
-    )
+    expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(reports)
   })
 
   it('retries a transient Meta failure once', async () => {
@@ -160,6 +162,7 @@ describe('sendSignupCompleteRegistrationEvent', () => {
 
   it.each([
     ['an invalid rejection', [{ ok: false, kind: 'invalid', message: 'bad payload', fbTraceId: 'trace-3' }], 1],
+    ['a rate limit', [{ ok: false, kind: 'transient', status: 429, message: 'rate limited', fbTraceId: 'trace-6' }], 1],
     ['a second transient failure', [
       { ok: false, kind: 'transient', message: 'timeout', fbTraceId: 'trace-4' },
       { ok: false, kind: 'transient', message: 'timeout', fbTraceId: 'trace-5' },

@@ -57,13 +57,11 @@ export async function POST(request: NextRequest) {
     }
 
     const verifiedEmail = await consumeConfirmationToken(email, token)
-    if (!verifiedEmail) {
-      return NextResponse.json({ error: 'Link inválido ou expirado' }, { status: 400 })
-    }
+    if (verifiedEmail) await markEmailVerified(verifiedEmail)
 
-    await markEmailVerified(verifiedEmail)
-
-    const response = NextResponse.json({ success: true })
+    const response = verifiedEmail
+      ? NextResponse.json({ success: true })
+      : NextResponse.json({ error: 'Link inválido ou expirado' }, { status: 400 })
     response.cookies.delete({ name: CONFIRM_EMAIL_STATE_COOKIE, path: CONFIRM_EMAIL_STATE_PATH })
     return response
   } catch (error) {

@@ -197,7 +197,7 @@ function attributionFromCurrentPage(): SignupAttribution | null {
 export function attributionForSignup(metaEventId: string): SignupAttribution | null {
   if (!hasMarketingConsent()) return null
 
-  const stored = readStoredAttribution() ?? readPendingAttribution()
+  const stored = readStoredAttribution() ?? readPendingAttribution() ?? attributionFromCurrentPage()
   if (!stored) return null
 
   const fbp = readCookie('_fbp')

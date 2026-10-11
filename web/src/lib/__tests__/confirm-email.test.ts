@@ -43,8 +43,8 @@ vi.mock('@/db/schema', () => ({
   users: { email: 'email', emailVerified: 'email_verified' },
 }))
 
+import { CONFIRM_TOKEN_TTL_MS } from '../confirm-email-page-state'
 import {
-  CONFIRM_TOKEN_TTL_MS,
   confirmIdentifier,
   hashToken,
   issueConfirmationToken,

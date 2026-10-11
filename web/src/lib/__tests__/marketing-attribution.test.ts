@@ -3,6 +3,7 @@ import { COOKIE_CONSENT_COOKIE_NAME, COOKIE_CONSENT_STORAGE_KEY, saveCookieConse
 import {
   ATTRIBUTION_STORAGE_KEY,
   PENDING_ATTRIBUTION_SESSION_KEY,
+  attributionForSignup,
   buildFbc,
   captureFirstTouchAttribution,
   discardMarketingAttribution,
@@ -79,6 +80,17 @@ describe('marketing attribution utilities', () => {
     expect(window.localStorage.getItem(ATTRIBUTION_STORAGE_KEY)).toContain('click-1')
     expect(window.sessionStorage.getItem(PENDING_ATTRIBUTION_SESSION_KEY)).toBeNull()
     expect(window.localStorage.getItem(COOKIE_CONSENT_STORAGE_KEY)).toContain('"marketing":true')
+  })
+
+  it('reads attribution from the landing URL when signup runs before the capture effect stored it', () => {
+    saveCookieConsent(true)
+
+    expect(attributionForSignup('complete_registration:event-1')).toMatchObject({
+      utmSource: 'meta',
+      fbclid: 'click-1',
+      metaEventId: 'complete_registration:event-1',
+    })
+    expect(window.localStorage.getItem(ATTRIBUTION_STORAGE_KEY)).toBeNull()
   })
 
   it('discards buffered attribution when marketing consent is rejected', () => {

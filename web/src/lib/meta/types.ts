@@ -52,6 +52,7 @@ export interface MetaCapiTarget {
 export interface MetaCapiFailure {
   ok: false
   message: string
+  status?: number
   errorUserTitle?: string
   errorUserMsg?: string
   errorSubcode?: number

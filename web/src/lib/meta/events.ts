@@ -219,11 +219,13 @@ function reportMissingSecretOnce(): void {
 }
 
 let missingSignupTokenReported = false
+const HTTP_TOO_MANY_REQUESTS = 429
 
 function signupCapiTarget(): MetaCapiTarget | null {
   const accessToken = process.env.META_CAPI_ACCESS_TOKEN
   if (!accessToken) {
-    if (!missingSignupTokenReported) {
+    // Previews and local dev run without the token on purpose.
+    if (!missingSignupTokenReported && process.env.VERCEL_ENV === 'production') {
       missingSignupTokenReported = true
       reportSideEffectFailure(
         new Error('META_CAPI_ACCESS_TOKEN is unset; signup CompleteRegistration events are not sent'),
@@ -278,7 +280,7 @@ export async function sendSignupCompleteRegistrationEvent(
     }
 
     let result = await postEvents(target, [payload])
-    if (!result.ok && result.kind === 'transient') {
+    if (!result.ok && result.kind === 'transient' && result.status !== HTTP_TOO_MANY_REQUESTS) {
       result = await postEvents(target, [payload])
     }
     if (result.ok) return true

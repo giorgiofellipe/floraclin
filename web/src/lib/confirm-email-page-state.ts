@@ -1,4 +1,10 @@
-import { CONFIRM_TOKEN_TTL_MS } from '@/lib/confirm-email'
+/**
+ * A password reset gets 1 hour because the user is actively waiting on
+ * it right after clicking "forgot password". A confirmation link is
+ * first contact after signup and is often read the next morning, not
+ * within minutes, so it gets a longer window.
+ */
+export const CONFIRM_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
 
 export const CONFIRM_EMAIL_STATE_COOKIE = 'floraclin_confirm_email'
 export const CONFIRM_EMAIL_STATE_PATH = '/confirm-email'

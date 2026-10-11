@@ -77,8 +77,7 @@ vi.mock('@/lib/email', () => ({
   sendConfirmationEmail: sendConfirmationEmailMock,
 }))
 
-vi.mock('@/lib/confirm-email', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/confirm-email')>()),
+vi.mock('@/lib/confirm-email', () => ({
   issueConfirmationToken: issueConfirmationTokenMock,
 }))
 
@@ -123,6 +122,7 @@ describe('signUp action', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    cookieGetMock.mockReset()
     headersMock.mockResolvedValue(new Headers({
       'x-forwarded-for': '203.0.113.10, 10.0.0.1',
       'user-agent': 'Vitest Signup Browser',
@@ -260,9 +260,13 @@ describe('signUp action', () => {
     })
   })
 
-  it('sends the _fbp cookie when a consented signup has no campaign attribution', async () => {
+  it('sends the _fbp and _fbc cookies when a consented signup has no campaign attribution', async () => {
+    const metaCookies: Record<string, string> = {
+      _fbp: 'fb.1.1700000000000.organic',
+      _fbc: 'fb.1.1700000000000.pixel-click',
+    }
     cookieGetMock.mockImplementation((name: string) =>
-      name === '_fbp' ? { name, value: 'fb.1.1700000000000.organic' } : undefined,
+      metaCookies[name] ? { name, value: metaCookies[name] } : undefined,
     )
     const formData = validFormData({ email: 'organic@test.com' })
     formData.set('marketingConsent', 'granted')
@@ -271,7 +275,7 @@ describe('signUp action', () => {
     await signUp(null, formData)
 
     expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledWith(
-      expect.objectContaining({ fbp: 'fb.1.1700000000000.organic' }),
+      expect.objectContaining({ fbp: 'fb.1.1700000000000.organic', fbc: 'fb.1.1700000000000.pixel-click' }),
     )
   })
 
