@@ -73,8 +73,6 @@ describe('sendSignupCompleteRegistrationEvent', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     delete process.env.META_CAPI_ACCESS_TOKEN
-    delete process.env.META_CONVERSIONS_API_ACCESS_TOKEN
-    delete process.env.META_ACCESS_TOKEN
     delete process.env.META_TEST_EVENT_CODE
     process.env.NEXT_PUBLIC_META_PIXEL_ID = '1651713926600603'
     postEventsMock.mockResolvedValue({ ok: true, eventsReceived: 1, fbTraceId: 'trace-1' })
@@ -125,21 +123,26 @@ describe('sendSignupCompleteRegistrationEvent', () => {
     })
   })
 
-  it('is a no-op when the signup CAPI token is not configured', async () => {
+  it('skips the send and reports the missing token once per process', async () => {
     const { sendSignupCompleteRegistrationEvent } = await import('../events')
-
-    const sent = await sendSignupCompleteRegistrationEvent({
+    const input = {
       eventId: 'complete_registration:event-1',
       email: 'maria@clinica.com',
       eventSourceUrl: 'https://app.floraclin.com.br/signup',
-    })
+    }
 
-    expect(sent).toBe(false)
+    expect(await sendSignupCompleteRegistrationEvent(input)).toBe(false)
+    expect(await sendSignupCompleteRegistrationEvent(input)).toBe(false)
+
     expect(postEventsMock).not.toHaveBeenCalled()
-    expect(reportSideEffectFailureMock).not.toHaveBeenCalled()
+    expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1)
+    expect(reportSideEffectFailureMock).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ area: 'meta-capi', step: 'signup_capi_token' }),
+    )
   })
 
-  it('reports but swallows Meta failures so signup is not affected', async () => {
+  it('retries a transient Meta failure once', async () => {
     process.env.META_CAPI_ACCESS_TOKEN = 'signup-token'
     postEventsMock.mockResolvedValueOnce({ ok: false, kind: 'transient', message: 'timeout', fbTraceId: 'trace-2' })
     const { sendSignupCompleteRegistrationEvent } = await import('../events')
@@ -150,13 +153,37 @@ describe('sendSignupCompleteRegistrationEvent', () => {
       eventSourceUrl: 'https://app.floraclin.com.br/signup',
     })
 
+    expect(sent).toBe(true)
+    expect(postEventsMock).toHaveBeenCalledTimes(2)
+    expect(reportSideEffectFailureMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an invalid rejection', [{ ok: false, kind: 'invalid', message: 'bad payload', fbTraceId: 'trace-3' }], 1],
+    ['a second transient failure', [
+      { ok: false, kind: 'transient', message: 'timeout', fbTraceId: 'trace-4' },
+      { ok: false, kind: 'transient', message: 'timeout', fbTraceId: 'trace-5' },
+    ], 2],
+  ])('reports and swallows %s so signup is not affected', async (_label, results, attempts) => {
+    process.env.META_CAPI_ACCESS_TOKEN = 'signup-token'
+    for (const result of results) postEventsMock.mockResolvedValueOnce(result)
+    const { sendSignupCompleteRegistrationEvent } = await import('../events')
+    const last = results[results.length - 1]
+
+    const sent = await sendSignupCompleteRegistrationEvent({
+      eventId: 'complete_registration:event-1',
+      email: 'maria@clinica.com',
+      eventSourceUrl: 'https://app.floraclin.com.br/signup',
+    })
+
     expect(sent).toBe(false)
+    expect(postEventsMock).toHaveBeenCalledTimes(attempts)
     expect(reportSideEffectFailureMock).toHaveBeenCalledWith(
       expect.any(Error),
       expect.objectContaining({
         area: 'meta-capi',
         step: 'signup_complete_registration',
-        extra: { kind: 'transient', fbTraceId: 'trace-2' },
+        extra: { kind: last.kind, fbTraceId: last.fbTraceId },
       }),
     )
   })

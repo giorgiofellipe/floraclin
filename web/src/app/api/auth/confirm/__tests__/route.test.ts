@@ -72,7 +72,8 @@ const { consumeConfirmationTokenMock, markEmailVerifiedMock, markEmailVerifiedVi
   issueConfirmationTokenMock: vi.fn().mockResolvedValue('raw-token'),
 }))
 
-vi.mock('@/lib/confirm-email', () => ({
+vi.mock('@/lib/confirm-email', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/confirm-email')>()),
   confirmIdentifier: (email: string) => `confirm:${email.toLowerCase()}`,
   consumeConfirmationToken: consumeConfirmationTokenMock,
   issueConfirmationToken: issueConfirmationTokenMock,
@@ -134,7 +135,7 @@ beforeEach(() => {
 // ─── GET /api/auth/confirm ──────────────────────────────────────────
 
 describe('GET /api/auth/confirm', () => {
-  it('redirects to a clean /confirm-email URL and stores email/token in an httpOnly cookie, without consuming', async () => {
+  it('redirects to a clean /confirm-email URL without consuming', async () => {
     const request = new NextRequest('https://app.floraclin.com.br/api/auth/confirm?email=a%40b.com&token=raw123')
 
     const response = await GET(request)
@@ -171,6 +172,17 @@ describe('POST /api/auth/confirm', () => {
     expect(data).toEqual({ success: true })
     expect(consumeConfirmationTokenMock).toHaveBeenCalledWith('a@b.com', 'raw')
     expect(markEmailVerifiedMock).toHaveBeenCalledWith('a@b.com')
+  })
+
+  it('clears the confirm-email cookie once the token is consumed', async () => {
+    consumeConfirmationTokenMock.mockResolvedValueOnce('a@b.com')
+
+    const response = await postConfirm({ email: 'a@b.com', token: 'raw' })
+
+    const setCookie = response.headers.get('set-cookie') ?? ''
+    expect(setCookie).toContain('floraclin_confirm_email=;')
+    expect(setCookie).toContain('Path=/confirm-email')
+    expect(setCookie).toMatch(/Expires=Thu, 01 Jan 1970|Max-Age=0/)
   })
 
   it('fails for an expired token, and does not mark verified', async () => {

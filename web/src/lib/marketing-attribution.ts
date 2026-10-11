@@ -1,4 +1,4 @@
-import { hasMarketingConsent } from '@/lib/cookie-consent'
+import { cookieConsentStatus, hasMarketingConsent } from '@/lib/cookie-consent'
 
 export const DEFAULT_META_PIXEL_ID = '1651713926600603'
 
@@ -128,29 +128,24 @@ export function readStoredAttribution(): SignupAttribution | null {
   }
 }
 
-export function capturePendingFirstTouchAttribution(): SignupAttribution | null {
-  if (typeof window === 'undefined') return null
-  if (readStoredAttribution()) return null
-
-  const existing = readPendingAttribution()
-  if (existing) return existing
+function bufferPendingAttribution(): void {
+  if (readStoredAttribution() || readPendingAttribution()) return
 
   const attribution = attributionFromCurrentPage()
-  if (!attribution) return null
+  if (!attribution) return
 
   try {
     window.sessionStorage.setItem(PENDING_ATTRIBUTION_SESSION_KEY, JSON.stringify(attribution))
   } catch {
     // Optional storage can be blocked; pre-consent attribution is best effort.
   }
-
-  return attribution
 }
 
 export function captureFirstTouchAttribution(): SignupAttribution | null {
   if (typeof window === 'undefined') return null
-  if (!hasMarketingConsent()) {
-    capturePendingFirstTouchAttribution()
+  const consent = cookieConsentStatus()
+  if (consent !== 'granted') {
+    if (consent === 'unset') bufferPendingAttribution()
     return null
   }
 
@@ -202,7 +197,7 @@ function attributionFromCurrentPage(): SignupAttribution | null {
 export function attributionForSignup(metaEventId: string): SignupAttribution | null {
   if (!hasMarketingConsent()) return null
 
-  const stored = readStoredAttribution() ?? captureFirstTouchAttribution()
+  const stored = readStoredAttribution() ?? readPendingAttribution()
   if (!stored) return null
 
   const fbp = readCookie('_fbp')

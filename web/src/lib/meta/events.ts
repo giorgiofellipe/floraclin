@@ -15,7 +15,7 @@ import { isMarketingOptedOut } from '@/db/queries/marketing-consent'
 import { getPatient } from '@/db/queries/patients'
 import { getProspect } from '@/db/queries/prospects'
 import { reportSideEffectFailure } from '@/lib/observability'
-import { DEFAULT_META_PIXEL_ID } from '@/lib/marketing-attribution'
+import { metaPixelId } from '@/lib/marketing-attribution'
 
 import { postEvents } from './capi-client'
 import { hashEmail, hashName, hashPhone, splitFullName } from './hashing'
@@ -218,21 +218,23 @@ function reportMissingSecretOnce(): void {
   )
 }
 
-function signupCapiAccessToken(): string | null {
-  return (
-    process.env.META_CAPI_ACCESS_TOKEN ||
-    process.env.META_CONVERSIONS_API_ACCESS_TOKEN ||
-    process.env.META_ACCESS_TOKEN ||
-    null
-  )
-}
+let missingSignupTokenReported = false
 
 function signupCapiTarget(): MetaCapiTarget | null {
-  const accessToken = signupCapiAccessToken()
-  if (!accessToken) return null
+  const accessToken = process.env.META_CAPI_ACCESS_TOKEN
+  if (!accessToken) {
+    if (!missingSignupTokenReported) {
+      missingSignupTokenReported = true
+      reportSideEffectFailure(
+        new Error('META_CAPI_ACCESS_TOKEN is unset; signup CompleteRegistration events are not sent'),
+        { area: 'meta-capi', step: 'signup_capi_token' },
+      )
+    }
+    return null
+  }
 
   return {
-    datasetId: process.env.NEXT_PUBLIC_META_PIXEL_ID || DEFAULT_META_PIXEL_ID,
+    datasetId: metaPixelId(),
     accessToken,
     testEventCode: process.env.META_TEST_EVENT_CODE || null,
   }
@@ -275,7 +277,10 @@ export async function sendSignupCompleteRegistrationEvent(
       custom_data: { status: 'trial_started' },
     }
 
-    const result = await postEvents(target, [payload])
+    let result = await postEvents(target, [payload])
+    if (!result.ok && result.kind === 'transient') {
+      result = await postEvents(target, [payload])
+    }
     if (result.ok) return true
 
     reportSideEffectFailure(new Error(`Meta CompleteRegistration rejected: ${result.message}`), {

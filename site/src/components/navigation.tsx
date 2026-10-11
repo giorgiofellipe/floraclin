@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
+import { SignupLink } from "@/components/signup-link";
 
 const NAV_LINKS = [
   { href: "#recursos", label: "Recursos" },
@@ -59,9 +60,9 @@ export function Navigation() {
 
         {/* Desktop CTA */}
         <div className="hidden md:block">
-          <a href="https://app.floraclin.com.br/signup" className="btn-primary text-sm py-2.5 px-6">
+          <SignupLink className="btn-primary text-sm py-2.5 px-6">
             Começar Grátis
-          </a>
+          </SignupLink>
         </div>
 
         {/* Mobile hamburger */}
@@ -88,13 +89,12 @@ export function Navigation() {
                 {link.label}
               </a>
             ))}
-            <a
-              href="https://app.floraclin.com.br/signup"
+            <SignupLink
               className="btn-primary text-center mt-2"
               onClick={() => setMobileOpen(false)}
             >
               Começar Grátis
-            </a>
+            </SignupLink>
           </div>
         </div>
       )}
