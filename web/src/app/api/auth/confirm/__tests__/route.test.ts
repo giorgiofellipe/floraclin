@@ -139,7 +139,7 @@ beforeEach(() => {
 // ─── GET /api/auth/confirm ──────────────────────────────────────────
 
 describe('GET /api/auth/confirm', () => {
-  it('redirects to a clean /confirm-email URL and stores email/token in an httpOnly cookie, without consuming', async () => {
+  it('redirects to a clean /confirm-email URL with the state in an httpOnly cookie, without consuming', async () => {
     const request = new NextRequest('https://app.floraclin.com.br/api/auth/confirm?email=a%40b.com&token=raw123')
 
     const response = await GET(request)
@@ -179,7 +179,18 @@ describe('POST /api/auth/confirm', () => {
     expect(scheduleLifecycleWelcomeMock).toHaveBeenCalledWith({ ownerEmail: 'a@b.com' })
   })
 
-  it('fails for an expired token, and does not mark verified', async () => {
+  it('clears the confirm-email cookie once the token is consumed', async () => {
+    consumeConfirmationTokenMock.mockResolvedValueOnce('a@b.com')
+
+    const response = await postConfirm({ email: 'a@b.com', token: 'raw' })
+
+    const setCookie = response.headers.get('set-cookie') ?? ''
+    expect(setCookie).toContain('floraclin_confirm_email=;')
+    expect(setCookie).toContain('Path=/confirm-email')
+    expect(setCookie).toMatch(/Expires=Thu, 01 Jan 1970|Max-Age=0/)
+  })
+
+  it('fails for an expired token, does not mark verified, and clears the confirm-email cookie', async () => {
     consumeConfirmationTokenMock.mockResolvedValueOnce(null)
 
     const response = await postConfirm({ email: 'a@b.com', token: 'expired' })
@@ -189,6 +200,9 @@ describe('POST /api/auth/confirm', () => {
     expect(data.error).toBeTruthy()
     expect(markEmailVerifiedMock).not.toHaveBeenCalled()
     expect(scheduleLifecycleWelcomeMock).not.toHaveBeenCalled()
+    const setCookie = response.headers.get('set-cookie') ?? ''
+    expect(setCookie).toContain('floraclin_confirm_email=;')
+    expect(setCookie).toContain('Path=/confirm-email')
   })
 
   it('rejects a replayed token on the second attempt', async () => {

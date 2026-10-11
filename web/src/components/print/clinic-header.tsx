@@ -58,7 +58,6 @@ export function ClinicHeader({ tenant }: ClinicHeaderProps) {
   return (
     <header className="flex items-center gap-4 border-b border-gray-300 pb-4">
       {tenant.logoUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
         <img src={tenant.logoUrl} alt={tenant.name} className="h-16 w-16 object-contain" />
       )}
       <div className="flex-1">

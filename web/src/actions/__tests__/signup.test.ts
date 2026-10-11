@@ -13,7 +13,7 @@ const {
   sendSignupCompleteRegistrationEventMock,
   headersMock,
   cookieSetMock,
-  afterMock,
+  cookieGetMock,
   reportSideEffectFailureMock,
 } = vi.hoisted(() => ({
   tenantInsertSpy: vi.fn(),
@@ -23,7 +23,7 @@ const {
   sendSignupCompleteRegistrationEventMock: vi.fn(),
   headersMock: vi.fn(),
   cookieSetMock: vi.fn(),
-  afterMock: vi.fn(),
+  cookieGetMock: vi.fn(),
   reportSideEffectFailureMock: vi.fn(),
 }))
 
@@ -95,14 +95,11 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('next/headers', () => ({
   headers: () => headersMock(),
-  cookies: async () => ({ set: cookieSetMock }),
+  cookies: async () => ({ set: cookieSetMock, get: cookieGetMock }),
 }))
 
 vi.mock('next/server', () => ({
-  after: (task: () => unknown) => {
-    afterMock(task)
-    return task()
-  },
+  after: (task: () => unknown) => task(),
 }))
 
 vi.mock('@/lib/meta/events', () => ({
@@ -125,6 +122,7 @@ describe('signUp action', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    cookieGetMock.mockReset()
     headersMock.mockResolvedValue(new Headers({
       'x-forwarded-for': '203.0.113.10, 10.0.0.1',
       'user-agent': 'Vitest Signup Browser',
@@ -254,12 +252,31 @@ describe('signUp action', () => {
       eventId: 'complete_registration:event-1',
       email: 'attribution@test.com',
       phone: '11999998888',
-      eventSourceUrl: 'https://app.floraclin.com.br/signup?utm_source=meta&fbclid=fb-click',
+      eventSourceUrl: 'https://app.floraclin.com.br/signup',
       fbc: 'fb.1.1700000000000.fb-click',
       fbp: 'fb.1.1700000000000.browser',
       clientIp: '203.0.113.10',
       userAgent: 'Vitest Signup Browser',
     })
+  })
+
+  it('sends the _fbp and _fbc cookies when a consented signup has no campaign attribution', async () => {
+    const metaCookies: Record<string, string> = {
+      _fbp: 'fb.1.1700000000000.organic',
+      _fbc: 'fb.1.1700000000000.pixel-click',
+    }
+    cookieGetMock.mockImplementation((name: string) =>
+      metaCookies[name] ? { name, value: metaCookies[name] } : undefined,
+    )
+    const formData = validFormData({ email: 'organic@test.com' })
+    formData.set('marketingConsent', 'granted')
+    formData.set('metaEventId', 'complete_registration:event-organic')
+
+    await signUp(null, formData)
+
+    expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({ fbp: 'fb.1.1700000000000.organic', fbc: 'fb.1.1700000000000.pixel-click' }),
+    )
   })
 
   it('still completes signup when the attribution column is not migrated yet', async () => {
@@ -364,7 +381,7 @@ describe('signUp action', () => {
     expect(target).not.toContain('/pending-approval')
     expect(cookieSetMock).toHaveBeenCalledWith(
       'floraclin_confirm_email',
-      expect.stringContaining('redirect%40test.com'),
+      expect.stringContaining('redirect@test.com'),
       expect.objectContaining({ httpOnly: true, path: '/confirm-email' }),
     )
   })
