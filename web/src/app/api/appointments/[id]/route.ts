@@ -10,6 +10,7 @@ import {
 } from '@/db/queries/appointments'
 import { updateAppointmentSchema } from '@/validations/appointment'
 import { handleApiError } from '@/lib/api-error'
+import { toHhMm } from '@/lib/time-options'
 import { reportCalendarFailure } from '@/lib/google-calendar'
 
 export async function PUT(
@@ -38,8 +39,8 @@ export async function PUT(
     }
 
     const checkDate = data.date ?? current.date
-    const checkStart = data.startTime ?? current.startTime
-    const checkEnd = data.endTime ?? current.endTime
+    const checkStart = toHhMm(data.startTime ?? current.startTime)
+    const checkEnd = toHhMm(data.endTime ?? current.endTime)
     const checkPractitioner = data.practitionerId ?? current.practitionerId
 
     if (checkStart >= checkEnd) {
@@ -49,7 +50,14 @@ export async function PUT(
       )
     }
 
-    if (data.date || data.startTime || data.endTime || data.practitionerId) {
+    // The form resends the whole slot on every edit; only a moved slot can newly conflict.
+    const slotChanged =
+      checkDate !== current.date ||
+      checkStart !== toHhMm(current.startTime) ||
+      checkEnd !== toHhMm(current.endTime) ||
+      checkPractitioner !== current.practitionerId
+
+    if (slotChanged) {
       const hasConflict = await checkTimeConflict(
         ctx.tenantId,
         checkPractitioner,
@@ -61,7 +69,7 @@ export async function PUT(
 
       if (hasConflict) {
         return NextResponse.json(
-          { error: 'Já existe um agendamento neste horário para este profissional.' },
+          { error: 'Horário indisponível para este profissional.' },
           { status: 409 }
         )
       }
