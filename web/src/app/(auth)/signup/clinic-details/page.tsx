@@ -69,6 +69,7 @@ export default function ClinicDetailsPage() {
             onChange={(e) => { e.target.value = maskPhone(e.target.value) }}
           />
           {state?.error?.phone && <p className="text-xs text-red-600 mt-1">{state.error.phone[0]}</p>}
+          <p className="text-xs text-mid mt-1">Você receberá dicas da FloraClin por WhatsApp e e-mail durante o teste.</p>
         </div>
 
         <Button type="submit" disabled={isPending} className="w-full bg-forest text-cream hover:bg-sage">

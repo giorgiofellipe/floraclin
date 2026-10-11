@@ -38,6 +38,7 @@ import { reportSideEffectFailure } from '@/lib/observability'
 import { parseReferral } from '@/lib/meta/attribution'
 import { recordAttribution } from '@/db/queries/lead-attributions'
 import { enqueueMetaEvent } from '@/lib/meta/events'
+import { captureLifecycleReply, handleLifecycleStatus } from '@/lib/lifecycle-webhook'
 
 export const dynamic = 'force-dynamic'
 
@@ -109,6 +110,12 @@ export async function POST(request: NextRequest) {
       if (isSharedNumber) {
         for (const msg of value.messages ?? []) {
           try {
+            const captured = await captureLifecycleReply(msg).catch((err) => {
+              reportWebhookFailure(err, 'lifecycle_reply')
+              return false
+            })
+            if (captured) continue
+
             const senderPhone = normalizeBrPhone(msg.from)
             const contextMessageId = msg.context?.id
             const tenantId = await resolveSharedNumberTenant(senderPhone, contextMessageId)
@@ -123,6 +130,12 @@ export async function POST(request: NextRequest) {
 
         for (const status of value.statuses ?? []) {
           try {
+            const lifecycleStatus = await handleLifecycleStatus(status).catch((err) => {
+              reportWebhookFailure(err, 'lifecycle_status')
+              return false
+            })
+            if (lifecycleStatus) continue
+
             const recipientPhone = normalizeBrPhone(status.recipient_id)
             // status.id is Meta's id of the outbound message the status refers
             // to -- an exact key into whatsapp_messages, so try it first.

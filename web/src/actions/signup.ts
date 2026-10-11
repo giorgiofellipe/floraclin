@@ -18,6 +18,7 @@ import { issueConfirmationToken } from '@/lib/confirm-email'
 import { getAppUrl } from '@/lib/app-url'
 import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
 import { generateMetaEventId, parseSignupAttribution, type SignupAttribution } from '@/lib/marketing-attribution'
+import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { sendSignupCompleteRegistrationEvent, type SendSignupCompleteRegistrationInput } from '@/lib/meta/events'
 import {
@@ -268,6 +269,7 @@ export async function createClinicForOAuthUser(
         priceCents: freePlan.priceCents,
         tenantId: tenant.id,
       })
+      scheduleLifecycleWelcome({ tenantId: tenant.id })
     }
   }
 

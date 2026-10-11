@@ -148,6 +148,7 @@ export default function SignUpPage() {
               placeholder="(00) 00000-0000"
             />
             {state?.error?.phone && <p className="text-xs text-red-600 mt-1">{state.error.phone[0]}</p>}
+            <p className="text-xs text-mid mt-1">Você receberá dicas da FloraClin por WhatsApp e e-mail durante o teste.</p>
           </div>
 
           <div className="pt-1">

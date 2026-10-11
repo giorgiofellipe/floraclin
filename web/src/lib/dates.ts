@@ -109,6 +109,12 @@ export function shiftBrYmd(ymd: string, days: number): string {
   return toBrYmd(new Date(anchor.getTime() + days * 24 * 60 * 60 * 1000))
 }
 
+export function brCalendarDaysBetween(from: Date, to: Date): number {
+  return Math.round(
+    (parseBrDate(toBrYmd(to)).getTime() - parseBrDate(toBrYmd(from)).getTime()) / 86_400_000,
+  )
+}
+
 /**
  * Format a `Date` as a `YYYY-MM-DD` string using **local** getters.
  * Prefer `toBrYmd` on the server. Use this only when you're formatting a

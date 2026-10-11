@@ -10,6 +10,7 @@ import {
   toLocalYmd,
   isValidYmd,
   shiftBrYmd,
+  brCalendarDaysBetween,
 } from '../dates'
 import { formatInTimeZone } from 'date-fns-tz'
 
@@ -149,5 +150,25 @@ describe('dates helpers', () => {
     it('is the canonical IANA timezone string', () => {
       expect(BR_TZ).toBe('America/Sao_Paulo')
     })
+  })
+})
+
+describe('brCalendarDaysBetween', () => {
+  it('counts a signup at 23:30 BRT and a check at 00:30 BRT next day as 1 day', () => {
+    const signup = parseBrDate('2026-10-09', '23:30:00')
+    const now = parseBrDate('2026-10-10', '00:30:00')
+    expect(brCalendarDaysBetween(signup, now)).toBe(1)
+  })
+
+  it('counts two instants on the same BR day as 0, even across 21:00 BRT', () => {
+    const early = parseBrDate('2026-10-09', '00:10:00')
+    const late = parseBrDate('2026-10-09', '23:50:00')
+    expect(brCalendarDaysBetween(early, late)).toBe(0)
+  })
+
+  it('returns a negative count when the end is before the start', () => {
+    const from = parseBrDate('2026-10-12', '10:00:00')
+    const to = parseBrDate('2026-10-09', '10:00:00')
+    expect(brCalendarDaysBetween(from, to)).toBe(-3)
   })
 })

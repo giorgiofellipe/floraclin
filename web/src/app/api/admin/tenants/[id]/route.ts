@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requirePlatformAdmin } from '@/lib/auth'
 import { updateTenantSchema } from '@/validations/admin'
 import { getTenantDetail, updateTenantAdmin } from '@/db/queries/admin-tenants'
+import { getLifecycleHistory } from '@/db/queries/lifecycle'
 import { handleApiError } from '@/lib/api-error'
 
 export async function GET(
@@ -18,7 +19,7 @@ export async function GET(
       return NextResponse.json({ error: 'Clínica não encontrada' }, { status: 404 })
     }
 
-    return NextResponse.json(tenant)
+    return NextResponse.json({ ...tenant, lifecycle: await getLifecycleHistory(id) })
   } catch (error) {
     return handleApiError(error, request)
   }

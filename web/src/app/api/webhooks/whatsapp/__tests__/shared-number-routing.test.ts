@@ -119,6 +119,11 @@ vi.mock('@/lib/whatsapp', async () => {
   }
 })
 
+vi.mock('@/lib/lifecycle-webhook', () => ({
+  captureLifecycleReply: vi.fn().mockResolvedValue(false),
+  handleLifecycleStatus: vi.fn().mockResolvedValue(false),
+}))
+
 vi.mock('@/db/queries/whatsapp', () => ({
   upsertConversation: vi.fn(),
   createMessage: vi.fn(),
@@ -189,6 +194,7 @@ import {
   pushSseEvent,
   getMessageByMetaId,
 } from '@/db/queries/whatsapp'
+import { captureLifecycleReply, handleLifecycleStatus } from '@/lib/lifecycle-webhook'
 import { getProspectByPhone } from '@/db/queries/prospects'
 import { getPatientByPhone } from '@/db/queries/patients'
 import { NextRequest, after } from 'next/server'
@@ -320,6 +326,8 @@ beforeEach(() => {
   // fallback deliberately never reached) cannot leak into the next test's
   // FIFO queue and shift its results.
   vi.resetAllMocks()
+  vi.mocked(captureLifecycleReply).mockResolvedValue(false)
+  vi.mocked(handleLifecycleStatus).mockResolvedValue(false)
   process.env.META_APP_SECRET = TEST_APP_SECRET
   process.env.NEXT_PUBLIC_APP_URL = 'https://app.floraclin.com.br'
   process.env.FLORACLIN_WA_PHONE_NUMBER_ID = SHARED_PHONE_NUMBER_ID
@@ -651,6 +659,56 @@ describe('resolveSharedNumberTenant — status updates', () => {
     await POST(makeRequest(payload))
 
     await vi.waitFor(() => expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1))
+    expect(updateMessageStatus).not.toHaveBeenCalled()
+  })
+})
+
+describe('lifecycle hooks on the shared number', () => {
+  // Regression: owner feedback on a lifecycle message became a prospect in a
+  // clinic inbox.
+  it('does not store or route a message that the lifecycle module captured', async () => {
+    vi.mocked(captureLifecycleReply).mockResolvedValue(true)
+
+    await POST(makeRequest(makeInboundPayload({ contextId: CONTEXT_MSG_ID })))
+    await flushAfter()
+
+    expect(captureLifecycleReply).toHaveBeenCalledTimes(1)
+    expect(db.select).not.toHaveBeenCalled()
+    expect(createMessage).not.toHaveBeenCalled()
+  })
+
+  // Regression: a lifecycle bug dropped patient messages.
+  it('reports a capture failure and still routes the message to its clinic', async () => {
+    vi.mocked(captureLifecycleReply).mockRejectedValue(new Error('lifecycle down'))
+    vi.mocked(db.select).mockReturnValueOnce(
+      makeSelectChain([convRow(TENANT_B, 1 * HOURS)]) as never,
+    )
+
+    await POST(makeRequest(makeInboundPayload({})))
+
+    await vi.waitFor(() => {
+      expect(upsertConversation).toHaveBeenCalledWith(
+        TENANT_B,
+        CANONICAL,
+        'Maria',
+        'prospect-1',
+        null,
+      )
+    })
+    expect(reportSideEffectFailureMock).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ step: 'lifecycle_reply' }),
+    )
+  })
+
+  // Regression: a Meta status for a lifecycle message reached patient routing.
+  it('does not route a status update that the lifecycle module consumed', async () => {
+    vi.mocked(handleLifecycleStatus).mockResolvedValue(true)
+
+    await POST(makeRequest(makeStatusPayload('wamid.lifecycle')))
+    await flushAfter()
+
+    expect(db.select).not.toHaveBeenCalled()
     expect(updateMessageStatus).not.toHaveBeenCalled()
   })
 })
