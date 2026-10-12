@@ -3,7 +3,9 @@ import { getAuthContext } from '@/lib/auth'
 import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { getAnamnesis, upsertAnamnesis, StaleDataError } from '@/db/queries/anamnesis'
-import { anamnesisSchema } from '@/validations/anamnesis'
+import { getCurrentAnamnesisTemplate } from '@/db/queries/anamnesis-templates'
+import { anamnesisSaveBodySchema } from '@/lib/anamnesis/schemas'
+import { prepareAnamnesisSave } from '@/lib/anamnesis/prepare-save'
 import { handleApiError } from '@/lib/api-error'
 
 export async function GET(
@@ -33,26 +35,33 @@ export async function PUT(
     if (blocked) return blocked
 
     const { patientId } = await params
-    const body = await request.json()
-    const { formData, expectedUpdatedAt } = body
+    const body = anamnesisSaveBodySchema.safeParse(await request.json())
+    if (!body.success) return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
 
-    const parsed = anamnesisSchema.safeParse(formData)
-    if (!parsed.success) {
+    const [existing, current] = await Promise.all([
+      getAnamnesis(ctx.tenantId, patientId),
+      getCurrentAnamnesisTemplate(ctx.tenantId),
+    ])
+    const prepared = prepareAnamnesisSave({
+      mode: body.data.applyCurrentTemplate ? 'staff_apply_current' : 'staff',
+      existing,
+      current,
+      body: body.data,
+    })
+    if (!prepared.ok) {
       return NextResponse.json(
-        { error: 'Dados inválidos: ' + parsed.error.issues.map((i: { message: string }) => i.message).join(', ') },
-        { status: 400 }
+        prepared.status === 409 ? { error: prepared.error, code: prepared.code } : { error: prepared.error },
+        { status: prepared.status },
       )
     }
 
-    const existing = await getAnamnesis(ctx.tenantId, patientId)
     const isCreate = !existing
-
     const result = await upsertAnamnesis(
       ctx.tenantId,
       patientId,
       ctx.userId,
-      parsed.data,
-      expectedUpdatedAt ? new Date(expectedUpdatedAt) : undefined
+      prepared.write,
+      body.data.expectedUpdatedAt ? new Date(body.data.expectedUpdatedAt) : undefined,
     )
 
     await createAuditLog({
@@ -64,17 +73,10 @@ export async function PUT(
       changes: isCreate ? { created: { old: null, new: 'anamnesis' } } : undefined,
     })
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        id: result.id,
-        updatedAt: result.updatedAt,
-        updatedBy: result.updatedBy,
-      },
-    })
+    return NextResponse.json({ success: true, data: result })
   } catch (error) {
     if (error instanceof StaleDataError) {
-      return NextResponse.json({ error: error.message }, { status: 409 })
+      return NextResponse.json({ error: error.message, code: 'stale' }, { status: 409 })
     }
     return handleApiError(error, request)
   }

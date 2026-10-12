@@ -71,11 +71,7 @@ function procedureRecord(overrides: Partial<Record<string, unknown>> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  // `getAnamnesis`'s own inferred return type drops the `| null` its `result[0]
-  // ?? null` body actually returns (see the comment on `AnamnesisRecord` in
-  // `../prontuario.ts`); `as never` sidesteps that quirk here rather than
-  // changing the real function's signature as a side effect of this test.
-  vi.mocked(getAnamnesis).mockResolvedValue(null as never)
+  vi.mocked(getAnamnesis).mockResolvedValue(null)
   vi.mocked(listProcedures).mockResolvedValue([])
   vi.mocked(listPhotos).mockResolvedValue(EMPTY_PHOTOS_BY_STAGE)
   vi.mocked(getConsentHistory).mockResolvedValue([])
@@ -201,8 +197,10 @@ describe('toProntuarioSummary', () => {
         id: 'an-1',
         tenantId: TENANT_A,
         patientId: PATIENT_ID,
-        mainComplaint: 'Rugas de expressão',
-        patientGoals: 'Objetivos sensíveis do paciente',
+        templateVersion: 2,
+        templateSnapshot: [],
+        responses: { goals: 'Objetivos sensíveis do paciente' },
+        updatedAt: new Date('2026-04-10T15:00:00Z'),
       } as never,
       procedures: [
         {
@@ -264,7 +262,7 @@ describe('toProntuarioSummary', () => {
     const summary = toProntuarioSummary(fullDossier())
 
     expect(summary.patient.fullName).toBe('Ana Souza')
-    expect(summary.anamnesis).toEqual({ mainComplaint: 'Rugas de expressão' })
+    expect(summary.anamnesis).toEqual({ updatedAt: new Date('2026-04-10T15:00:00Z') })
     expect(summary.procedures).toHaveLength(1)
     expect(summary.procedures[0].procedureTypeName).toBe('Botox')
     expect(summary.consents).toHaveLength(1)

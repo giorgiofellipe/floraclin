@@ -1,6 +1,6 @@
-import type { EvaluationSection } from '@/types/evaluation'
+import type { FormSection } from '@/lib/forms/types'
 
-export const preenchimentosSections: EvaluationSection[] = [
+export const preenchimentosSections: FormSection[] = [
   {
     id: 'filler-s1',
     title: 'Histórico com Preenchedores',

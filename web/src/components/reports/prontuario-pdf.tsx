@@ -19,7 +19,9 @@ import {
   resolveGenderKey,
 } from '@/components/face-diagram/face-template-data'
 import type { ProntuarioDossier } from '@/db/queries/reports/prontuario'
-import type { AnamnesisFormData } from '@/validations/anamnesis'
+import { isQuestionAnswered } from '@/lib/forms/answers'
+import type { FormListResponse, FormQuestion, FormResponseValue } from '@/lib/forms/types'
+import { ListAnswerTable } from '@/components/forms/list-answer-table'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 
 /**
@@ -32,6 +34,7 @@ import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 export const PRONTUARIO_PDF_CSS = `
   h2.prontuario-section-title { font-size: 15px; margin: 1.75rem 0 0.5rem 0; border-bottom: 1px solid #ccc; padding-bottom: 0.25rem; }
   h3.prontuario-subsection-title { font-size: 13px; margin: 1rem 0 0.35rem 0; }
+  .prontuario-answer { font-size: 12px; margin: 0.2rem 0; }
   .prontuario-identification { display: flex; flex-wrap: wrap; gap: 0.25rem 2rem; font-size: 13px; }
   .prontuario-identification div { min-width: 200px; }
   .prontuario-identification .label { color: #666; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -75,20 +78,6 @@ function formatBrTimestamp(date: Date): string {
  *  `web/src/lib/pdf.ts`), same reasoning as `PROCEDURE_APPLICATION_COLUMNS`. */
 function formatInstantAsBrDate(date: Date): string {
   return formatDate(toBrYmd(date))
-}
-
-const MEDICAL_HISTORY_LABELS: Record<string, string> = {
-  diabetes: 'Diabetes',
-  hipertensao: 'Hipertensão',
-  autoimune: 'Doença autoimune',
-  cardiovascular: 'Doença cardiovascular',
-  hepatite: 'Hepatite',
-  hiv: 'HIV',
-  cancer: 'Câncer',
-  epilepsia: 'Epilepsia',
-  disturbioCoagulacao: 'Distúrbio de coagulação',
-  queloides: 'Queloides',
-  herpes: 'Herpes',
 }
 
 interface AddressShape {
@@ -391,61 +380,51 @@ function FaceDiagramSection({
   )
 }
 
-function AnamnesisSection({ anamnesis }: { anamnesis: ProntuarioDossier['anamnesis'] }) {
-  if (!anamnesis) {
-    return <div className="prontuario-empty">Anamnese não preenchida.</div>
+function formatAnswerText(question: FormQuestion, value: FormResponseValue | undefined): string {
+  if (Array.isArray(value)) return value.join(', ')
+  if (typeof value === 'number') {
+    return question.scaleMax !== undefined ? `${value} / ${question.scaleMax}` : String(value)
   }
+  if (value && typeof value === 'object' && 'other' in value) {
+    const selected = Array.isArray(value.selected) ? value.selected : [value.selected]
+    return [...selected, value.other].filter(Boolean).join(', ')
+  }
+  return typeof value === 'string' ? value : ''
+}
 
-  const medicalHistory = (anamnesis.medicalHistory ?? {}) as Partial<AnamnesisFormData['medicalHistory']>
-  const activeConditions = Object.entries(MEDICAL_HISTORY_LABELS)
-    .filter(([key]) => medicalHistory[key as keyof Omit<AnamnesisFormData['medicalHistory'], 'outros'>])
-    .map(([, label]) => label)
-  if (medicalHistory.outros) activeConditions.push(medicalHistory.outros)
-
-  const medications = (anamnesis.medications ?? []) as AnamnesisFormData['medications']
-  const allergies = (anamnesis.allergies ?? []) as AnamnesisFormData['allergies']
-
-  return (
-    <div>
-      {anamnesis.mainComplaint && (
-        <div>
-          <h3 className="prontuario-subsection-title">Queixa principal</h3>
-          <div>{anamnesis.mainComplaint}</div>
-        </div>
-      )}
-      {anamnesis.patientGoals && (
-        <div>
-          <h3 className="prontuario-subsection-title">Objetivos do paciente</h3>
-          <div>{anamnesis.patientGoals}</div>
-        </div>
-      )}
-
-      <h3 className="prontuario-subsection-title">Histórico médico</h3>
-      <div className="prontuario-tag-list">
-        {activeConditions.length > 0 ? activeConditions.join(', ') : 'Nenhuma condição relatada.'}
-        {(anamnesis.isPregnant || anamnesis.isBreastfeeding) && (
-          <div>
-            {anamnesis.isPregnant ? 'Gestante. ' : ''}
-            {anamnesis.isBreastfeeding ? 'Amamentando.' : ''}
-          </div>
-        )}
-      </div>
-
-      <h3 className="prontuario-subsection-title">Medicações em uso</h3>
-      <div className="prontuario-tag-list">
-        {medications.length > 0
-          ? medications.map((m) => `${m.name}${m.dosage ? ` (${m.dosage})` : ''}`).join(', ')
-          : 'Nenhuma medicação relatada.'}
-      </div>
-
-      <h3 className="prontuario-subsection-title">Alergias</h3>
-      <div className="prontuario-tag-list">
-        {allergies.length > 0
-          ? allergies.map((a) => `${a.substance}${a.reaction ? ` (${a.reaction})` : ''}`).join(', ')
-          : 'Nenhuma alergia relatada.'}
-      </div>
-    </div>
-  )
+function AnamnesisSection({ anamnesis }: { anamnesis: ProntuarioDossier['anamnesis'] }) {
+  if (!anamnesis) return <div className="prontuario-empty">Anamnese não preenchida.</div>
+  const blocks = [...anamnesis.templateSnapshot]
+    .sort((a, b) => a.order - b.order)
+    .flatMap((section) => {
+      const answered = [...section.questions]
+        .sort((a, b) => a.order - b.order)
+        .filter((q) => isQuestionAnswered(q, anamnesis.responses[q.id]))
+      if (answered.length === 0) return []
+      return [
+        <div key={section.id}>
+          <h3 className="prontuario-subsection-title">{section.title}</h3>
+          {answered.map((q) =>
+            q.type === 'list' ? (
+              <div key={q.id} className="prontuario-answer">
+                <strong>{q.label}</strong>
+                <ListAnswerTable
+                  question={q}
+                  rows={anamnesis.responses[q.id] as FormListResponse}
+                  className="prontuario-table"
+                />
+              </div>
+            ) : (
+              <div key={q.id} className="prontuario-answer">
+                <strong>{/[?:]$/.test(q.label) ? q.label : `${q.label}:`}</strong> {formatAnswerText(q, anamnesis.responses[q.id])}
+              </div>
+            ),
+          )}
+        </div>,
+      ]
+    })
+  if (blocks.length === 0) return <div className="prontuario-empty">Anamnese sem respostas registradas.</div>
+  return <div>{blocks}</div>
 }
 
 // Every photo is embedded as a thumbnail, grouped by PROCEDURE, newest

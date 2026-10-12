@@ -20,40 +20,28 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { PlusIcon, XIcon } from 'lucide-react'
-import type { EvaluationQuestion, EvaluationQuestionType } from '@/types/evaluation'
+import { QUESTION_TYPE_LABELS, CHOICE_QUESTION_TYPES } from '@/lib/forms/constants'
+import { formQuestionSchema } from '@/lib/forms/sections-schema'
+import type { FormListColumn, FormQuestion, FormQuestionType } from '@/lib/forms/types'
+import { ListColumnsEditor } from './list-columns-editor'
 
-const QUESTION_TYPE_LABELS: Record<EvaluationQuestionType, string> = {
-  radio: 'Escolha única',
-  checkbox: 'Múltipla escolha',
-  scale: 'Escala',
-  text: 'Texto livre',
-  checkbox_with_other: 'Múltipla escolha com "Outro"',
-  radio_with_other: 'Escolha única com "Outro"',
-  face_diagram: 'Diagrama facial',
-}
-
-const TYPES_WITH_OPTIONS: EvaluationQuestionType[] = [
-  'radio',
-  'checkbox',
-  'radio_with_other',
-  'checkbox_with_other',
-]
-
-interface QuestionEditorDialogProps {
+export interface QuestionEditorDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  question?: EvaluationQuestion | null
-  onSave: (question: Omit<EvaluationQuestion, 'id' | 'order'>) => void
+  question?: FormQuestion | null
+  allowedTypes: readonly FormQuestionType[]
+  onSave: (question: Omit<FormQuestion, 'id' | 'order'>) => void
 }
 
 export function QuestionEditorDialog({
   open,
   onOpenChange,
   question,
+  allowedTypes,
   onSave,
 }: QuestionEditorDialogProps) {
   const [label, setLabel] = useState('')
-  const [type, setType] = useState<EvaluationQuestionType>('radio')
+  const [type, setType] = useState<FormQuestionType>(allowedTypes[0])
   const [required, setRequired] = useState(true)
   const [options, setOptions] = useState<string[]>([''])
   const [scaleMin, setScaleMin] = useState(1)
@@ -62,6 +50,7 @@ export function QuestionEditorDialog({
   const [scaleMaxLabel, setScaleMaxLabel] = useState('')
   const [helpText, setHelpText] = useState('')
   const [warningText, setWarningText] = useState('')
+  const [columns, setColumns] = useState<FormListColumn[]>([])
 
   useEffect(() => {
     if (open) {
@@ -77,9 +66,10 @@ export function QuestionEditorDialog({
         setScaleMaxLabel(question.scaleMaxLabel ?? '')
         setHelpText(question.helpText ?? '')
         setWarningText(question.warningText ?? '')
+        setColumns(question.columns ? question.columns.map((c) => ({ ...c })) : [])
       } else {
         setLabel('')
-        setType('radio')
+        setType(allowedTypes[0])
         setRequired(true)
         setOptions([''])
         setScaleMin(1)
@@ -88,15 +78,15 @@ export function QuestionEditorDialog({
         setScaleMaxLabel('')
         setHelpText('')
         setWarningText('')
+        setColumns([])
       }
     }
-  }, [open, question])
+  }, [open, question, allowedTypes])
 
-  const showOptions = TYPES_WITH_OPTIONS.includes(type)
+  const showOptions = CHOICE_QUESTION_TYPES.includes(type)
   const showScale = type === 'scale'
-  const isValid = label.trim().length > 0 && (
-    !showOptions || options.filter((o) => o.trim()).length >= 2
-  )
+  const showList = type === 'list'
+  const typeItems = Object.fromEntries(allowedTypes.map((t) => [t, QUESTION_TYPE_LABELS[t]]))
 
   function handleAddOption() {
     setOptions([...options, ''])
@@ -112,10 +102,8 @@ export function QuestionEditorDialog({
     setOptions(newOptions)
   }
 
-  function handleSave() {
-    if (!isValid) return
-
-    const data: Omit<EvaluationQuestion, 'id' | 'order'> = {
+  function buildData(): Omit<FormQuestion, 'id' | 'order'> {
+    const data: Omit<FormQuestion, 'id' | 'order'> = {
       label: label.trim(),
       type,
       required,
@@ -135,7 +123,17 @@ export function QuestionEditorDialog({
     if (helpText.trim()) data.helpText = helpText.trim()
     if (warningText.trim()) data.warningText = warningText.trim()
 
-    onSave(data)
+    if (showList) data.columns = columns
+
+    return data
+  }
+
+  const validation = formQuestionSchema.safeParse({ ...buildData(), id: 'draft', order: 0 })
+  const isValid = validation.success
+
+  function handleSave() {
+    if (!isValid) return
+    onSave(buildData())
     onOpenChange(false)
   }
 
@@ -167,7 +165,7 @@ export function QuestionEditorDialog({
             <Label className="uppercase tracking-wider text-xs text-mid">
               Tipo
             </Label>
-            <Select items={QUESTION_TYPE_LABELS} value={type} onValueChange={(v) => setType(v as EvaluationQuestionType)}>
+            <Select items={typeItems} value={type} onValueChange={(v) => setType(v as FormQuestionType)}>
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -223,6 +221,15 @@ export function QuestionEditorDialog({
                   Adicionar opção
                 </Button>
               </div>
+            </div>
+          )}
+
+          {showList && (
+            <div className="space-y-1.5">
+              <Label className="uppercase tracking-wider text-xs text-mid">
+                Colunas
+              </Label>
+              <ListColumnsEditor columns={columns} onChange={setColumns} />
             </div>
           )}
 
@@ -306,6 +313,12 @@ export function QuestionEditorDialog({
               rows={2}
             />
           </div>
+
+          {!validation.success && (
+            <p role="alert" className="text-xs font-medium text-red-600">
+              {validation.error.issues[0]?.message}
+            </p>
+          )}
         </div>
 
         <DialogFooter>

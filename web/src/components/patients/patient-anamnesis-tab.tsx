@@ -1,11 +1,9 @@
 'use client'
 
-import { useMemo } from 'react'
 import { Loader2 } from 'lucide-react'
 import { AnamnesisForm } from '@/components/anamnesis/anamnesis-form'
 import { SendAnamnesisDialog } from '@/components/patients/send-anamnesis-dialog'
-import { useAnamnesis } from '@/hooks/queries/use-anamnesis'
-import type { AnamnesisFormData } from '@/validations/anamnesis'
+import { useAnamnesis, useAnamnesisTemplate } from '@/hooks/queries/use-anamnesis'
 
 interface PatientAnamnesisTabProps {
   patientId: string
@@ -15,37 +13,20 @@ interface PatientAnamnesisTabProps {
 }
 
 export function PatientAnamnesisTab({ patientId, patientName, patientPhone, whatsappApiEnabled }: PatientAnamnesisTabProps) {
-  const { data: rawData, isLoading } = useAnamnesis(patientId)
+  const { data: record, isLoading: recordLoading } = useAnamnesis(patientId)
+  const { data: template, isLoading: templateLoading, isError: templateError } = useAnamnesisTemplate()
 
-  const initialData = useMemo(() => {
-    if (!rawData) return undefined
-    return {
-      ...rawData,
-      id: rawData.id,
-      updatedAt: rawData.updatedAt,
-      updatedBy: rawData.updatedBy,
-      mainComplaint: rawData.mainComplaint ?? '',
-      patientGoals: rawData.patientGoals ?? '',
-      medicalHistory: (rawData.medicalHistory as AnamnesisFormData['medicalHistory']) ?? {},
-      medications: (rawData.medications as AnamnesisFormData['medications']) ?? [],
-      allergies: (rawData.allergies as AnamnesisFormData['allergies']) ?? [],
-      previousSurgeries: (rawData.previousSurgeries as AnamnesisFormData['previousSurgeries']) ?? [],
-      chronicConditions: (rawData.chronicConditions as string[]) ?? [],
-      isPregnant: rawData.isPregnant ?? false,
-      isBreastfeeding: rawData.isBreastfeeding ?? false,
-      lifestyle: (rawData.lifestyle as AnamnesisFormData['lifestyle']) ?? {},
-      skincareRoutine: (rawData.skincareRoutine as AnamnesisFormData['skincareRoutine']) ?? [],
-      previousAestheticTreatments: (rawData.previousAestheticTreatments as AnamnesisFormData['previousAestheticTreatments']) ?? [],
-    } as AnamnesisFormData & { id?: string; updatedAt?: Date | string; updatedBy?: string | null }
-  }, [rawData])
-
-  if (isLoading) {
+  if (recordLoading || templateLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="size-6 animate-spin text-mid" />
         <span className="ml-2 text-sm text-mid">Carregando anamnese...</span>
       </div>
     )
+  }
+
+  if (templateError || !template) {
+    return <div className="py-12 text-center text-sm text-mid">Erro ao carregar a anamnese.</div>
   }
 
   return (
@@ -67,8 +48,8 @@ export function PatientAnamnesisTab({ patientId, patientName, patientPhone, what
 
       <AnamnesisForm
         patientId={patientId}
-        initialData={initialData}
-        updatedByName={undefined}
+        record={record ?? null}
+        currentTemplate={template}
       />
     </div>
   )

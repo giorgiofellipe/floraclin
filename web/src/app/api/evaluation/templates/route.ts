@@ -3,6 +3,7 @@ import { getAuthContext } from '@/lib/auth'
 import { requireWrite } from '@/lib/write-access'
 import { getTemplatesForProcedureTypes, createTemplate, updateTemplate, resetTemplateToDefault } from '@/db/queries/evaluation-templates'
 import { handleApiError } from '@/lib/api-error'
+import { formSectionsSchema } from '@/lib/forms/sections-schema'
 
 export async function GET(request: Request) {
   try {
@@ -29,13 +30,17 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { action } = body
 
-    if (action === 'create') {
-      const template = await createTemplate(ctx.tenantId, body.procedureTypeId, body.name, body.sections)
-      return NextResponse.json({ success: true, data: template })
-    }
-
-    if (action === 'update') {
-      await updateTemplate(ctx.tenantId, body.templateId, body.sections)
+    if (action === 'create' || action === 'update') {
+      const parsed = formSectionsSchema.safeParse(body.sections)
+      if (!parsed.success) {
+        const message = [...new Set(parsed.error.issues.map((i) => i.message))].join('; ')
+        return NextResponse.json({ error: `Dados inválidos: ${message}` }, { status: 400 })
+      }
+      if (action === 'create') {
+        const template = await createTemplate(ctx.tenantId, body.procedureTypeId, body.name, parsed.data)
+        return NextResponse.json({ success: true, data: template })
+      }
+      await updateTemplate(ctx.tenantId, body.templateId, parsed.data)
       return NextResponse.json({ success: true })
     }
 

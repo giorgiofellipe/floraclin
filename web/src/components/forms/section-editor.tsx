@@ -12,20 +12,11 @@ import {
   ArrowDownIcon,
   GripVerticalIcon,
 } from 'lucide-react'
-import type { EvaluationQuestion, EvaluationSection } from '@/types/evaluation'
-
-const QUESTION_TYPE_LABELS: Record<string, string> = {
-  radio: 'Escolha única',
-  checkbox: 'Múltipla escolha',
-  scale: 'Escala',
-  text: 'Texto livre',
-  checkbox_with_other: 'Múltipla escolha + Outro',
-  radio_with_other: 'Escolha única + Outro',
-  face_diagram: 'Diagrama facial',
-}
+import { QUESTION_TYPE_LABELS } from '@/lib/forms/constants'
+import type { FormQuestion, FormSection } from '@/lib/forms/types'
 
 interface SectionEditorProps {
-  section: EvaluationSection
+  section: FormSection
   sectionIndex: number
   totalSections: number
   onMoveUp: () => void
@@ -33,7 +24,7 @@ interface SectionEditorProps {
   onDelete: () => void
   onUpdateTitle: (title: string) => void
   onAddQuestion: () => void
-  onEditQuestion: (question: EvaluationQuestion) => void
+  onEditQuestion: (question: FormQuestion) => void
   onDeleteQuestion: (questionId: string) => void
   onMoveQuestionUp: (questionId: string) => void
   onMoveQuestionDown: (questionId: string) => void

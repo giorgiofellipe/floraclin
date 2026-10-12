@@ -19,6 +19,7 @@ import { WhatsAppSettingsForm } from '@/components/settings/whatsapp-settings-fo
 import { BillingSettings } from '@/components/settings/billing-settings'
 import { PackageTemplateList } from '@/components/packages/package-template-list'
 import { usePackageTemplates } from '@/hooks/queries/use-packages'
+import { AnamnesisTemplateSettings } from '@/components/settings/anamnesis-template-settings'
 import { DocumentTemplateList } from '@/components/settings/document-template-list'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useProfile } from '@/hooks/queries/use-profile'
@@ -40,6 +41,7 @@ import {
   MessageCircleIcon,
   Package2Icon,
   ClipboardSignatureIcon,
+  ClipboardListIcon,
   UserCogIcon,
   CreditCardIcon,
   PlugIcon,
@@ -121,7 +123,7 @@ interface SettingsPageClientProps {
 
 type TabKey =
   | 'clinica' | 'equipe' | 'perfil'
-  | 'procedimentos' | 'produtos' | 'pacotes' | 'termos' | 'documentos'
+  | 'procedimentos' | 'anamnese' | 'produtos' | 'pacotes' | 'termos' | 'documentos'
   | 'agendamento' | 'financeiro' | 'whatsapp'
   | 'assinatura' | 'auditoria' | 'integracoes'
 
@@ -149,6 +151,7 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     label: 'Clínico',
     items: [
       { key: 'procedimentos', label: 'Procedimentos', icon: SyringeIcon },
+      { key: 'anamnese', label: 'Anamnese', icon: ClipboardListIcon },
       { key: 'pacotes', label: 'Pacotes', icon: Package2Icon },
       { key: 'produtos', label: 'Produtos', icon: PackageIcon },
       { key: 'termos', label: 'Contratos e Termos', icon: FileTextIcon },
@@ -433,6 +436,8 @@ export function SettingsPageClient({
               {effectiveTab === 'procedimentos' && (
                 <ProcedureTypeList procedureTypes={procedureTypes} templateStatusMap={templateStatusMap} />
               )}
+
+              {effectiveTab === 'anamnese' && <AnamnesisTemplateSettings />}
 
               {effectiveTab === 'produtos' && (
                 <ProductList products={products} />

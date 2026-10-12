@@ -1,25 +1,26 @@
 'use client'
 
 import * as React from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, PlusIcon, Trash2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
-import { FaceDiagramEditor } from '@/components/face-diagram/face-diagram-editor'
-import type { EvaluationQuestion } from '@/types/evaluation'
-import type { DiagramPointData, CatalogProduct } from '@/components/face-diagram/types'
+import { isQuestionAnswered } from '@/lib/forms/answers'
+import type { FormQuestion } from '@/lib/forms/types'
 
 // ─── Shared wrapper ────────────────────────────────────────────────
 
 interface QuestionWrapperProps {
-  question: EvaluationQuestion
+  question: FormQuestion
   children: React.ReactNode
   hasError?: boolean
 }
 
-function QuestionWrapper({ question, children, hasError }: QuestionWrapperProps) {
+export function QuestionWrapper({ question, children, hasError }: QuestionWrapperProps) {
   return (
     <div
       aria-invalid={hasError || undefined}
@@ -64,7 +65,7 @@ function QuestionWrapper({ question, children, hasError }: QuestionWrapperProps)
 // ─── Radio ─────────────────────────────────────────────────────────
 
 interface RadioQuestionProps {
-  question: EvaluationQuestion
+  question: FormQuestion
   value: string | undefined
   onChange: (value: string) => void
   readOnly?: boolean
@@ -112,7 +113,7 @@ export function RadioQuestion({ question, value, onChange, readOnly, showErrors 
 // ─── Checkbox ──────────────────────────────────────────────────────
 
 interface CheckboxQuestionProps {
-  question: EvaluationQuestion
+  question: FormQuestion
   value: string[] | undefined
   onChange: (value: string[]) => void
   readOnly?: boolean
@@ -169,7 +170,7 @@ export function CheckboxQuestion({ question, value = [], onChange, readOnly, sho
 // ─── Scale ─────────────────────────────────────────────────────────
 
 interface ScaleQuestionProps {
-  question: EvaluationQuestion
+  question: FormQuestion
   value: number | undefined
   onChange: (value: number) => void
   readOnly?: boolean
@@ -184,11 +185,11 @@ export function ScaleQuestion({ question, value, onChange, readOnly, showErrors 
   const hasError = showErrors && question.required && value === undefined
   return (
     <QuestionWrapper question={question} hasError={hasError}>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {question.scaleMinLabel && (
           <span className="text-[11px] text-mid whitespace-nowrap">{question.scaleMinLabel}</span>
         )}
-        <div className="flex gap-1.5">
+        <div className="flex flex-wrap gap-1.5">
           {range.map((n) => {
             const selected = value === n
             return (
@@ -221,7 +222,7 @@ export function ScaleQuestion({ question, value, onChange, readOnly, showErrors 
 // ─── Text ──────────────────────────────────────────────────────────
 
 interface TextQuestionProps {
-  question: EvaluationQuestion
+  question: FormQuestion
   value: string | undefined
   onChange: (value: string) => void
   readOnly?: boolean
@@ -246,7 +247,7 @@ export function TextQuestion({ question, value, onChange, readOnly, showErrors }
 // ─── Checkbox with Other ───────────────────────────────────────────
 
 interface CheckboxWithOtherQuestionProps {
-  question: EvaluationQuestion
+  question: FormQuestion
   value: { selected: string[]; other: string } | undefined
   onChange: (value: { selected: string[]; other: string }) => void
   readOnly?: boolean
@@ -318,7 +319,7 @@ export function CheckboxWithOtherQuestion({
 // ─── Radio with Other ──────────────────────────────────────────────
 
 interface RadioWithOtherQuestionProps {
-  question: EvaluationQuestion
+  question: FormQuestion
   value: { selected: string; other: string } | undefined
   onChange: (value: { selected: string; other: string }) => void
   readOnly?: boolean
@@ -381,44 +382,125 @@ export function RadioWithOtherQuestion({
   )
 }
 
-// ─── Face Diagram ──────────────────────────────────────────────────
+// ─── List ──────────────────────────────────────────────────────────
 
-interface FaceDiagramQuestionProps {
-  question: EvaluationQuestion
-  diagramRendered?: boolean
-  diagramPoints?: DiagramPointData[]
-  onDiagramChange?: (points: DiagramPointData[]) => void
-  patientGender?: string | null
-  products?: CatalogProduct[]
+interface ListQuestionProps {
+  question: FormQuestion
+  value: Record<string, string>[] | undefined
+  onChange: (value: Record<string, string>[]) => void
   readOnly?: boolean
+  showErrors?: boolean
 }
 
-export function FaceDiagramQuestion({
-  question,
-  diagramRendered,
-  diagramPoints = [],
-  onDiagramChange,
-  patientGender,
-  products,
-  readOnly,
-}: FaceDiagramQuestionProps) {
+export function ListQuestion({ question, value = [], onChange, readOnly, showErrors }: ListQuestionProps) {
+  const columns = question.columns ?? []
+  const hasError = showErrors && question.required && !isQuestionAnswered(question, value)
+
+  function setCell(rowIndex: number, columnId: string, cell: string | null) {
+    onChange(
+      value.map((row, i) => {
+        if (i !== rowIndex) return row
+        if (cell === null || cell === '') {
+          const { [columnId]: _removed, ...rest } = row
+          return rest
+        }
+        return { ...row, [columnId]: cell }
+      }),
+    )
+  }
+
   return (
-    <QuestionWrapper question={question}>
-      {diagramRendered ? (
-        <div className="flex items-center gap-2 rounded-[3px] bg-sage/10 px-3 py-2.5">
-          <span className="text-sm text-sage">
-            Preencha o diagrama facial na seção &quot;Diagrama Facial&quot; abaixo.
-          </span>
-        </div>
-      ) : (
-        <FaceDiagramEditor
-          points={diagramPoints}
-          onChange={onDiagramChange ?? (() => {})}
-          readOnly={readOnly}
-          gender={patientGender}
-          products={products}
-        />
-      )}
+    <QuestionWrapper question={question} hasError={hasError}>
+      <div className="flex flex-col gap-2">
+        {value.length > 0 && (
+          <div
+            className="hidden gap-2 text-xs font-medium text-mid sm:flex"
+            aria-hidden="true"
+          >
+            {columns.map((column) => (
+              <span key={column.id} className="flex-1">
+                {column.label}
+                {column.required && <span className="ml-0.5 text-amber">*</span>}
+              </span>
+            ))}
+            {!readOnly && <span className="size-8 shrink-0" />}
+          </div>
+        )}
+        {value.map((row, rowIndex) => {
+          // Rows with every cell blank are dropped on save, so only partly filled rows need their required cells.
+          const rowStarted = Object.values(row).some((cell) => cell.trim() !== '')
+          return (
+            <div
+              key={rowIndex}
+              className="flex flex-col gap-2 rounded-[3px] border border-topbar-border bg-white p-3 sm:flex-row sm:items-start sm:border-0 sm:bg-transparent sm:p-0"
+            >
+              <div className={cn('flex items-center justify-between sm:order-last', readOnly && 'sm:hidden')}>
+                <span className="text-xs font-medium text-mid sm:hidden">Item {rowIndex + 1}</span>
+                {!readOnly && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Remover item ${rowIndex + 1}`}
+                    onClick={() => onChange(value.filter((_, i) => i !== rowIndex))}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                )}
+              </div>
+              {columns.map((column) => {
+                const cellError =
+                  showErrors && column.required && rowStarted && (row[column.id] ?? '').trim() === ''
+                return (
+                  <div key={column.id} className="flex flex-1 flex-col gap-1">
+                    <span className="text-xs font-medium text-mid sm:hidden" aria-hidden="true">
+                      {column.label}
+                      {column.required && <span className="ml-0.5 text-amber">*</span>}
+                    </span>
+                    {column.kind === 'select' ? (
+                      <Select
+                        items={Object.fromEntries((column.options ?? []).map((o) => [o, o]))}
+                        value={row[column.id] ?? null}
+                        onValueChange={(v) => setCell(rowIndex, column.id, v as string | null)}
+                        disabled={readOnly}
+                      >
+                        <SelectTrigger className="w-full" aria-label={column.label} aria-invalid={cellError || undefined}>
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent />
+                      </Select>
+                    ) : (
+                      <Input
+                        value={row[column.id] ?? ''}
+                        onChange={(e) => setCell(rowIndex, column.id, e.target.value)}
+                        readOnly={readOnly}
+                        disabled={readOnly}
+                        placeholder={column.label}
+                        aria-label={column.label}
+                        aria-invalid={cellError || undefined}
+                        className="h-8 rounded-[3px] border-topbar-border text-sm"
+                      />
+                    )}
+                    {cellError && <p className="text-xs font-medium text-red-600">Preencha este campo</p>}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })}
+        {!readOnly && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="self-start"
+            onClick={() => onChange([...value, {}])}
+          >
+            <PlusIcon data-icon="inline-start" />
+            Adicionar item
+          </Button>
+        )}
+      </div>
     </QuestionWrapper>
   )
 }

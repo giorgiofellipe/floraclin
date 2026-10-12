@@ -1,423 +1,326 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
-import { useForm, useFieldArray, Controller } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { Plus, Trash2, Loader2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import isEqual from 'fast-deep-equal'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { Accordion } from '@/components/ui/accordion'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Switch } from '@/components/ui/switch'
-import {
-  Select,
-  SelectContent,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
-import { cn } from '@/lib/utils'
-import { AnamnesisSection } from './anamnesis-section'
-import {
-  anamnesisSchema,
-  type AnamnesisFormData,
-  type MedicalHistory,
-} from '@/validations/anamnesis'
-import { useUpsertAnamnesis } from '@/hooks/mutations/use-anamnesis-mutations'
+import { FormRenderer } from '@/components/forms/form-renderer'
 import { formatDateTime } from '@/lib/utils'
+import { carryResponses } from '@/lib/forms/carry-responses'
+import { buildFormResponseSchema } from '@/lib/forms/response-schema'
+import type { FormResponses } from '@/lib/forms/types'
+import type { AnamnesisRecord, AnamnesisTemplate } from '@/lib/anamnesis/types'
+import { AnamnesisSaveError, useUpsertAnamnesis } from '@/hooks/mutations/use-anamnesis-mutations'
+import { fetchAnamnesis, fetchAnamnesisTemplate } from '@/hooks/queries/use-anamnesis'
+import { queryKeys } from '@/hooks/queries/query-keys'
 import type { WizardOverrides } from '@/components/service-wizard/types'
 
-// ─── Types ──────────────────────────────────────────────────────────
-
-interface AnamnesisFormProps {
+export interface AnamnesisFormProps {
   patientId: string
-  initialData?: AnamnesisFormData & {
-    id?: string
-    updatedAt?: Date | string
-    updatedBy?: string | null
-  }
+  currentTemplate: AnamnesisTemplate
+  record?: AnamnesisRecord | null
   updatedByName?: string
   wizardOverrides?: WizardOverrides
+  readOnly?: boolean
   publicMode?: boolean
-  onPublicSubmit?: (data: Record<string, unknown>) => Promise<void>
+  onPublicSubmit?: (payload: { templateVersion: number; responses: FormResponses }) => Promise<void>
 }
 
-// ─── Constants ──────────────────────────────────────────────────────
+type SaveOutcome = 'ok' | 'conflict' | 'error'
 
-const MEDICAL_HISTORY_LABELS: Record<keyof Omit<MedicalHistory, 'outros'>, string> = {
-  diabetes: 'Diabetes',
-  hipertensao: 'Hipertensão',
-  autoimune: 'Doença autoimune',
-  cardiovascular: 'Doença cardiovascular',
-  hepatite: 'Hepatite',
-  hiv: 'HIV/AIDS',
-  cancer: 'Câncer',
-  epilepsia: 'Epilepsia',
-  disturbioCoagulacao: 'Distúrbio de coagulação',
-  queloides: 'Queloides',
-  herpes: 'Herpes',
+interface QueuedSave {
+  applyCurrentTemplate: boolean
+  waiters: Array<(ok: boolean) => void>
 }
 
-const SEVERITY_OPTIONS = [
-  { value: 'leve', label: 'Leve' },
-  { value: 'moderada', label: 'Moderada' },
-  { value: 'grave', label: 'Grave' },
-]
+const AUTOSAVE_DELAY_MS = 1000
+const STALE_RELOADED_MESSAGE = 'Outro usuário alterou esta anamnese. Os dados foram atualizados.'
 
-const SATISFACTION_OPTIONS = [
-  { value: 'muito_insatisfeito', label: 'Muito insatisfeito' },
-  { value: 'insatisfeito', label: 'Insatisfeito' },
-  { value: 'neutro', label: 'Neutro' },
-  { value: 'satisfeito', label: 'Satisfeito' },
-  { value: 'muito_satisfeito', label: 'Muito satisfeito' },
-]
+export function AnamnesisForm({
+  patientId,
+  currentTemplate,
+  record,
+  updatedByName,
+  wizardOverrides,
+  readOnly = false,
+  publicMode = false,
+  onPublicSubmit,
+}: AnamnesisFormProps) {
+  const upsert = useUpsertAnamnesis()
+  const queryClient = useQueryClient()
 
-const SMOKING_OPTIONS = [
-  { value: 'nao', label: 'Não' },
-  { value: 'ex_fumante', label: 'Ex-fumante' },
-  { value: 'sim_ocasional', label: 'Sim, ocasional' },
-  { value: 'sim_diario', label: 'Sim, diário' },
-]
-
-const ALCOHOL_OPTIONS = [
-  { value: 'nao', label: 'Não' },
-  { value: 'ocasional', label: 'Ocasional' },
-  { value: 'moderado', label: 'Moderado' },
-  { value: 'frequente', label: 'Frequente' },
-]
-
-const EXERCISE_OPTIONS = [
-  { value: 'sedentario', label: 'Sedentário' },
-  { value: 'leve', label: 'Leve' },
-  { value: 'moderado', label: 'Moderado' },
-  { value: 'intenso', label: 'Intenso' },
-]
-
-const SLEEP_OPTIONS = [
-  { value: 'ruim', label: 'Ruim' },
-  { value: 'regular', label: 'Regular' },
-  { value: 'bom', label: 'Bom' },
-  { value: 'excelente', label: 'Excelente' },
-]
-
-const DIET_OPTIONS = [
-  { value: 'desequilibrada', label: 'Desequilibrada' },
-  { value: 'regular', label: 'Regular' },
-  { value: 'equilibrada', label: 'Equilibrada' },
-  { value: 'restritiva', label: 'Restritiva' },
-]
-
-const SUN_EXPOSURE_OPTIONS = [
-  { value: 'minima', label: 'Mínima' },
-  { value: 'moderada', label: 'Moderada' },
-  { value: 'alta', label: 'Alta' },
-  { value: 'muito_alta', label: 'Muito alta' },
-]
-
-// ─── Tag Input Component ────────────────────────────────────────────
-
-function TagInput({
-  value = [],
-  onChange,
-  placeholder,
-}: {
-  value: string[]
-  onChange: (tags: string[]) => void
-  placeholder: string
-}) {
-  const [inputValue, setInputValue] = useState('')
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault()
-      const tag = inputValue.trim()
-      if (tag && !value.includes(tag)) {
-        onChange([...value, tag])
-      }
-      setInputValue('')
-    } else if (e.key === 'Backspace' && !inputValue && value.length > 0) {
-      onChange(value.slice(0, -1))
-    }
-  }
-
-  const removeTag = (index: number) => {
-    onChange(value.filter((_, i) => i !== index))
-  }
-
-  return (
-    <div className="flex flex-wrap gap-1.5 rounded-[3px] border border-sage/20 p-2.5 min-h-[42px] focus-within:border-sage/40 focus-within:ring-2 focus-within:ring-sage/10 transition-all duration-150">
-      {value.map((tag, i) => (
-        <Badge
-          key={i}
-          variant="secondary"
-          className="gap-1 text-xs rounded-full bg-mint/15 text-forest border-0 px-2.5 py-0.5"
-        >
-          {tag}
-          <button
-            type="button"
-            onClick={() => removeTag(i)}
-            className="ml-0.5 hover:text-red-600 transition-colors"
-          >
-            &times;
-          </button>
-        </Badge>
-      ))}
-      <input
-        type="text"
-        value={inputValue}
-        onChange={(e) => setInputValue(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder={value.length === 0 ? placeholder : ''}
-        className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-mid/50"
-      />
-    </div>
+  const [template, setTemplate] = useState<AnamnesisTemplate>(() =>
+    record ? { version: record.templateVersion, sections: record.templateSnapshot } : currentTemplate,
   )
-}
-
-// ─── SelectField helper (wraps base-ui Select for react-hook-form) ──
-
-function SelectField({
-  value,
-  onValueChange,
-  options,
-  placeholder,
-}: {
-  value: string | undefined
-  onValueChange: (val: string) => void
-  options: { value: string; label: string }[]
-  placeholder: string
-}) {
-  const items = Object.fromEntries(options.map((opt) => [opt.value, opt.label]))
-  return (
-    <Select
-      items={items}
-      value={value ?? ''}
-      onValueChange={(val) => {
-        if (val !== null) onValueChange(val)
-      }}
-    >
-      <SelectTrigger className="w-full">
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent />
-    </Select>
-  )
-}
-
-// ─── Main Component ─────────────────────────────────────────────────
-
-export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOverrides, publicMode, onPublicSubmit }: AnamnesisFormProps) {
-  const upsertAnamnesis = useUpsertAnamnesis()
-  const [isPublicSubmitting, setIsPublicSubmitting] = useState(false)
-  const isPending = publicMode ? isPublicSubmitting : upsertAnamnesis.isPending
-  const [lastSaved, setLastSaved] = useState<Date | null>(
-    initialData?.updatedAt ? new Date(initialData.updatedAt) : null
-  )
+  const [responses, setResponses] = useState<FormResponses>(() => record?.responses ?? {})
+  const [rowExists, setRowExists] = useState(!!record)
+  const [errorScrollRequest, setErrorScrollRequest] = useState(0)
+  const formRef = useRef<HTMLFormElement>(null)
+  const [lastSaved, setLastSaved] = useState<Date | null>(record ? new Date(record.updatedAt) : null)
   const [lastSavedBy, setLastSavedBy] = useState<string | null>(updatedByName ?? null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isApplying, setIsApplying] = useState(false)
+  const [isPublicSubmitting, setIsPublicSubmitting] = useState(false)
+  const [showErrors, setShowErrors] = useState(false)
+
+  const templateRef = useRef(template)
+  const responsesRef = useRef(responses)
+  const rowExistsRef = useRef(!!record)
   const expectedUpdatedAtRef = useRef<string | undefined>(
-    initialData?.updatedAt ? new Date(initialData.updatedAt).toISOString() : undefined
+    record ? new Date(record.updatedAt).toISOString() : undefined,
   )
-
-  // Dirty epoch — bumped on every user edit. Save paths capture the epoch
-  // at start and only clear hasUnsavedChanges if no new edit happened during
-  // the save. Prevents a keystroke landing mid-save from being marked clean.
-  const dirtyEpochRef = useRef(0)
-
-  // Stable ref so save/propagate effects don't re-fire when wizard re-renders
+  const currentTemplateRef = useRef(currentTemplate)
+  currentTemplateRef.current = currentTemplate
   const wizardOverridesRef = useRef(wizardOverrides)
   wizardOverridesRef.current = wizardOverrides
 
-  const form = useForm<AnamnesisFormData>({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(anamnesisSchema) as any,
-    defaultValues: {
-      mainComplaint: initialData?.mainComplaint ?? '',
-      patientGoals: initialData?.patientGoals ?? '',
-      medicalHistory: {
-        diabetes: false,
-        hipertensao: false,
-        autoimune: false,
-        cardiovascular: false,
-        hepatite: false,
-        hiv: false,
-        cancer: false,
-        epilepsia: false,
-        disturbioCoagulacao: false,
-        queloides: false,
-        herpes: false,
-        outros: '',
-        ...(initialData?.medicalHistory as Record<string, unknown> ?? {}),
-      },
-      medications: initialData?.medications ?? [],
-      allergies: initialData?.allergies ?? [],
-      previousSurgeries: initialData?.previousSurgeries ?? [],
-      chronicConditions: (initialData?.chronicConditions ?? []) as string[],
-      isPregnant: initialData?.isPregnant ?? false,
-      isBreastfeeding: initialData?.isBreastfeeding ?? false,
-      lifestyle: {
-        smoking: undefined,
-        alcohol: undefined,
-        exercise: undefined,
-        sleep: undefined,
-        diet: undefined,
-        sunExposure: undefined,
-        ...(initialData?.lifestyle as Record<string, unknown> ?? {}),
-      },
-      skincareRoutine: initialData?.skincareRoutine ?? [],
-      previousAestheticTreatments: initialData?.previousAestheticTreatments ?? [],
-    },
-  })
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inFlightRef = useRef(false)
+  const queuedRef = useRef<QueuedSave | null>(null)
+  const dirtyRef = useRef(false)
+  // Bumped on every edit: a save only clears the dirty flag if no edit landed while it ran.
+  const dirtyEpochRef = useRef(0)
+  const mutateRef = useRef(upsert.mutateAsync)
+  mutateRef.current = upsert.mutateAsync
 
-  const { control, watch, getValues, handleSubmit } = form
+  const isPending = publicMode ? isPublicSubmitting : isSaving
 
-  // Field arrays
-  const medications = useFieldArray({ control, name: 'medications' })
-  const allergies = useFieldArray({ control, name: 'allergies' })
-  const previousSurgeries = useFieldArray({ control, name: 'previousSurgeries' })
-  const skincareRoutine = useFieldArray({ control, name: 'skincareRoutine' })
-  const previousTreatments = useFieldArray({ control, name: 'previousAestheticTreatments' })
+  function adoptTemplate(next: AnamnesisTemplate) {
+    templateRef.current = next
+    setTemplate(next)
+  }
 
-  // ─── Auto-save ──────────────────────────────────────────────────
+  function adoptResponses(next: FormResponses) {
+    responsesRef.current = next
+    setResponses(next)
+  }
 
-  const saveForm = useCallback(async () => {
-    const data = getValues()
-    // Capture the dirty epoch at save start. If it's still the same when save
-    // completes, we can safely mark clean. If it bumped (user typed during
-    // the await), preserve the dirty flag.
-    const epochAtStart = dirtyEpochRef.current
-    try {
-      const result = await upsertAnamnesis.mutateAsync({
-        patientId,
-        formData: data as Record<string, unknown>,
-        expectedUpdatedAt: expectedUpdatedAtRef.current,
-      })
-      if (result?.updatedAt) {
-        const savedAt = new Date(result.updatedAt)
-        expectedUpdatedAtRef.current = savedAt.toISOString()
-        setLastSaved(savedAt)
-        setLastSavedBy(null)
-        if (dirtyEpochRef.current === epochAtStart) {
-          setHasUnsavedChanges(false)
-        }
-        wizardOverridesRef.current?.onAutoSaved?.(savedAt)
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao salvar anamnese')
-    }
-  }, [patientId, getValues, upsertAnamnesis])
+  function adoptRow(updatedAt: string | undefined) {
+    rowExistsRef.current = updatedAt !== undefined
+    setRowExists(updatedAt !== undefined)
+    expectedUpdatedAtRef.current = updatedAt
+  }
 
-  const debouncedSave = useCallback(() => {
+  function setDirty(value: boolean) {
+    dirtyRef.current = value
+    setHasUnsavedChanges(value)
+  }
+
+  function clearDebounce() {
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current)
+      debounceTimerRef.current = null
     }
+  }
+
+  function markDirtyAndSchedule() {
+    dirtyEpochRef.current += 1
+    setDirty(true)
+    clearDebounce()
     debounceTimerRef.current = setTimeout(() => {
-      saveForm()
-    }, 1000)
-  }, [saveForm])
+      debounceTimerRef.current = null
+      void enqueueSave(false)
+    }, AUTOSAVE_DELAY_MS)
+  }
 
-  // Watch all form fields and auto-save on change (disabled in public mode)
-  useEffect(() => {
-    if (publicMode) return
-    const subscription = watch(() => {
-      dirtyEpochRef.current += 1
-      setHasUnsavedChanges(true)
-      debouncedSave()
-    })
-    return () => {
-      subscription.unsubscribe()
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current)
+  async function reloadFromServer() {
+    try {
+      const [serverRecord, serverTemplate] = await Promise.all([
+        queryClient.fetchQuery({
+          queryKey: queryKeys.anamnesis(patientId),
+          queryFn: () => fetchAnamnesis(patientId),
+          staleTime: 0,
+        }),
+        queryClient.fetchQuery({
+          queryKey: queryKeys.anamnesisTemplate,
+          queryFn: fetchAnamnesisTemplate,
+          staleTime: 0,
+        }),
+      ])
+      if (serverRecord) {
+        clearDebounce()
+        adoptTemplate({ version: serverRecord.templateVersion, sections: serverRecord.templateSnapshot })
+        adoptResponses(serverRecord.responses)
+        adoptRow(new Date(serverRecord.updatedAt).toISOString())
+        setLastSaved(new Date(serverRecord.updatedAt))
+        setLastSavedBy(null)
+        setDirty(false)
+      } else {
+        const carried = carryResponses(responsesRef.current, serverTemplate.sections)
+        adoptTemplate(serverTemplate)
+        adoptResponses(carried)
+        adoptRow(undefined)
+        if (dirtyRef.current && Object.keys(carried).length > 0) markDirtyAndSchedule()
+        else setDirty(false)
       }
+    } catch {
+      // The conflict toast already told the user.
     }
-  }, [watch, debouncedSave, publicMode])
+  }
 
-  // Propagate unsaved-changes state to the wizard save indicator
+  async function performSave(applyCurrentTemplate: boolean): Promise<SaveOutcome> {
+    const epochAtStart = dirtyEpochRef.current
+    const current = currentTemplateRef.current
+    const sent = applyCurrentTemplate
+      ? carryResponses(responsesRef.current, current.sections)
+      : responsesRef.current
+    try {
+      const result = await mutateRef.current({
+        patientId,
+        templateVersion: applyCurrentTemplate ? current.version : templateRef.current.version,
+        responses: sent,
+        expectedUpdatedAt: expectedUpdatedAtRef.current,
+        ...(rowExistsRef.current ? {} : { expectNoRow: true }),
+        ...(applyCurrentTemplate ? { applyCurrentTemplate: true } : {}),
+      })
+      const { updatedAt, templateVersion, templateSnapshot } = result.data
+      const savedAt = new Date(updatedAt)
+      adoptRow(updatedAt)
+      adoptTemplate({ version: templateVersion, sections: templateSnapshot })
+      setLastSaved(savedAt)
+      setLastSavedBy(null)
+      if (applyCurrentTemplate) {
+        const carried = carryResponses(responsesRef.current, templateSnapshot)
+        adoptResponses(carried)
+        if (!isEqual(carried, sent)) {
+          markDirtyAndSchedule()
+        } else if (dirtyEpochRef.current === epochAtStart) {
+          setDirty(false)
+        }
+      } else if (dirtyEpochRef.current === epochAtStart) {
+        setDirty(false)
+      }
+      wizardOverridesRef.current?.onAutoSaved?.(savedAt)
+      return 'ok'
+    } catch (err) {
+      if (err instanceof AnamnesisSaveError && err.status === 409) {
+        toast.error(err.code === 'stale' ? STALE_RELOADED_MESSAGE : err.message)
+        await reloadFromServer()
+        return 'conflict'
+      }
+      toast.error(err instanceof Error ? err.message : 'Erro ao salvar anamnese')
+      return 'error'
+    }
+  }
+
+  async function drainQueue() {
+    inFlightRef.current = true
+    setIsSaving(true)
+    try {
+      while (queuedRef.current) {
+        const job = queuedRef.current
+        queuedRef.current = null
+        const outcome = await performSave(job.applyCurrentTemplate)
+        job.waiters.forEach((resolve) => resolve(outcome === 'ok'))
+        if (outcome === 'conflict' && queuedRef.current) {
+          const dropped: QueuedSave = queuedRef.current
+          queuedRef.current = null
+          dropped.waiters.forEach((resolve) => resolve(false))
+        }
+      }
+    } finally {
+      inFlightRef.current = false
+      setIsSaving(false)
+    }
+  }
+
+  function enqueueSave(applyCurrentTemplate: boolean): Promise<boolean> {
+    return new Promise((resolve) => {
+      const job = queuedRef.current ?? (queuedRef.current = { applyCurrentTemplate: false, waiters: [] })
+      job.applyCurrentTemplate = job.applyCurrentTemplate || applyCurrentTemplate
+      job.waiters.push(resolve)
+      if (!inFlightRef.current) void drainQueue()
+    })
+  }
+
+  function handleChange(next: Record<string, unknown>) {
+    adoptResponses(next as FormResponses)
+    if (publicMode || readOnly) return
+    wizardOverridesRef.current?.onUserEdit?.()
+    markDirtyAndSchedule()
+  }
+
+  async function handleApplyCurrent() {
+    setIsApplying(true)
+    try {
+      clearDebounce()
+      await enqueueSave(true)
+    } finally {
+      setIsApplying(false)
+    }
+  }
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    if (readOnly) return
+    if (publicMode) {
+      const parsed = buildFormResponseSchema(template.sections, { enforceRequired: true }).safeParse(responses)
+      if (!parsed.success) {
+        setShowErrors(true)
+        setErrorScrollRequest((n) => n + 1)
+        toast.error('Preencha os campos obrigatórios.')
+        return
+      }
+      if (!onPublicSubmit) return
+      setIsPublicSubmitting(true)
+      try {
+        await onPublicSubmit({ templateVersion: template.version, responses: parsed.data as FormResponses })
+      } finally {
+        setIsPublicSubmitting(false)
+      }
+      return
+    }
+    clearDebounce()
+    await enqueueSave(false)
+  }
+
+  useEffect(() => {
+    if (errorScrollRequest === 0) return
+    formRef.current?.querySelector('[aria-invalid="true"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [errorScrollRequest])
+
   useEffect(() => {
     wizardOverridesRef.current?.onDirtyChange?.(hasUnsavedChanges)
   }, [hasUnsavedChanges])
 
-  // ─── Wizard triggerSave: flush debounce and await save (disabled in public mode) ──
-  const prevTriggerSaveRef = useRef(wizardOverrides?.triggerSave ?? 0)
-
+  const triggerSave = wizardOverrides?.triggerSave ?? 0
+  const prevTriggerSaveRef = useRef(triggerSave)
   useEffect(() => {
     if (publicMode) return
-    const current = wizardOverrides?.triggerSave ?? 0
-    // When the wizard resets triggerSave to 0 after SAVE_COMPLETE, reset
-    // our "seen" marker too — otherwise the next press (which also lands
-    // at 1) is skipped as a duplicate.
-    if (current === 0) {
+    // The wizard resets triggerSave to 0 after SAVE_COMPLETE, so the next press (also 1) is not a duplicate.
+    if (triggerSave === 0) {
       prevTriggerSaveRef.current = 0
       return
     }
-    if (current === prevTriggerSaveRef.current) return
-    prevTriggerSaveRef.current = current
-    async function doSave() {
-      // Flush any pending debounce timer
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current)
-        debounceTimerRef.current = null
-      }
-      // Use handleSubmit to capture ALL form fields (including any that
-      // might be missed by getValues alone, e.g. controlled fields still
-      // mid-update). On validation failure, still attempt to save raw values.
-      try {
-        await handleSubmit(async () => {
-          await saveForm()
-          wizardOverrides?.onSaveComplete?.({ success: true })
-        }, async () => {
-          // Validation failed — save anyway with current values
-          await saveForm()
-          wizardOverrides?.onSaveComplete?.({ success: true })
-        })()
-      } catch {
-        wizardOverrides?.onSaveComplete?.({
-          success: false,
-          error: 'Erro inesperado ao salvar anamnese',
-          errorType: 'server',
-        })
-      }
+    if (triggerSave === prevTriggerSaveRef.current) return
+    prevTriggerSaveRef.current = triggerSave
+    if (readOnly) {
+      wizardOverridesRef.current?.onSaveComplete?.({ success: true })
+      return
     }
-    doSave()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wizardOverrides?.triggerSave])
+    clearDebounce()
+    void enqueueSave(false).then((ok) => {
+      wizardOverridesRef.current?.onSaveComplete?.(
+        ok ? { success: true } : { success: false, error: 'Erro ao salvar anamnese', errorType: 'server' },
+      )
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [triggerSave])
 
-  // ─── Section completeness checks ─────────────────────────────
+  useEffect(() => clearDebounce, [])
 
-  const formValues = watch()
-
-  const isComplaintComplete = Boolean(formValues.mainComplaint?.trim())
-  const isMedicalHistoryComplete = Boolean(
-    formValues.medicalHistory &&
-    Object.entries(formValues.medicalHistory).some(
-      ([key, val]) => key !== 'outros' && val === true
-    ) ||
-    formValues.medicalHistory?.outros?.trim()
-  )
-  const isMedicationsComplete = (formValues.medications?.length ?? 0) > 0
-  const isAllergiesComplete = (formValues.allergies?.length ?? 0) > 0
-  const isSurgeriesComplete = (formValues.previousSurgeries?.length ?? 0) > 0
-  const isChronicComplete = (formValues.chronicConditions?.length ?? 0) > 0
-  const isPregnancyComplete = formValues.isPregnant === true || formValues.isBreastfeeding === true
-  const isLifestyleComplete = Boolean(
-    formValues.lifestyle &&
-    Object.values(formValues.lifestyle).some(v => v != null && String(v) !== '')
-  )
-  const isSkincareComplete = (formValues.skincareRoutine?.length ?? 0) > 0
-  const isTreatmentsComplete = (formValues.previousAestheticTreatments?.length ?? 0) > 0
-
-  // ─── Render ───────────────────────────────────────────────────
+  const showBanner =
+    !publicMode && !readOnly && rowExists && !isEqual(template.sections, currentTemplate.sections)
 
   return (
     <div className="space-y-5">
       {!wizardOverrides?.hideTitle && (
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-[#2A2A2A]">Anamnese</h2>
+          <h2 className="text-xl font-semibold text-charcoal">Anamnese</h2>
           {!publicMode && (
             <div className="flex items-center gap-3">
               {isPending && (
@@ -427,617 +330,50 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
                 </div>
               )}
               {lastSaved && !isPending && (
-                <span className="text-xs text-mid/60">
-                  Salvo {formatDateTime(lastSaved)}
-                </span>
+                <span className="text-xs text-mid/60">Salvo {formatDateTime(lastSaved)}</span>
               )}
             </div>
           )}
         </div>
       )}
 
-      <form onSubmit={handleSubmit(publicMode ? async () => {
-        if (!onPublicSubmit) return
-        setIsPublicSubmitting(true)
-        try {
-          await onPublicSubmit(getValues() as unknown as Record<string, unknown>)
-        } finally {
-          setIsPublicSubmitting(false)
-        }
-      } : saveForm)}>
-        <Accordion defaultValue={['complaint']}>
-          {/* ── Queixa principal e objetivos ── */}
-          <AnamnesisSection
-            value="complaint"
-            title="Queixa principal e objetivos"
-            isComplete={isComplaintComplete}
+      {showBanner && (
+        <div className="flex flex-col gap-3 rounded-lg border border-amber-mid bg-amber-light px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-amber-dark">O modelo de anamnese mudou. Usar o modelo atual?</p>
+            <p className="text-xs text-amber-dark">Respostas de perguntas removidas serão descartadas.</p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isApplying}
+            onClick={handleApplyCurrent}
           >
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="mainComplaint" className="uppercase tracking-wider text-xs text-mid">Queixa principal</Label>
-                <Controller
-                  control={control}
-                  name="mainComplaint"
-                  render={({ field }) => (
-                    <Textarea
-                      id="mainComplaint"
-                      placeholder="Descreva a queixa principal do paciente..."
-                      rows={3}
-                      className="min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
-                      {...field}
-                    />
-                  )}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="patientGoals" className="uppercase tracking-wider text-xs text-mid">Objetivos do paciente</Label>
-                <Controller
-                  control={control}
-                  name="patientGoals"
-                  render={({ field }) => (
-                    <Textarea
-                      id="patientGoals"
-                      placeholder="O que o paciente espera alcançar..."
-                      rows={3}
-                      className="min-h-[80px] resize-none border-sage/20 focus:border-sage/40"
-                      {...field}
-                    />
-                  )}
-                />
-              </div>
-            </div>
-          </AnamnesisSection>
+            {isApplying ? 'Aplicando...' : 'Usar modelo atual'}
+          </Button>
+        </div>
+      )}
 
-          {/* ── Histórico médico ── */}
-          <AnamnesisSection
-            value="medicalHistory"
-            title="Histórico médico"
-            isComplete={isMedicalHistoryComplete}
-          >
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                {(Object.entries(MEDICAL_HISTORY_LABELS) as [keyof Omit<MedicalHistory, 'outros'>, string][]).map(
-                  ([key, label]) => (
-                    <Controller
-                      key={key}
-                      control={control}
-                      name={`medicalHistory.${key}`}
-                      render={({ field }) => (
-                        <label className={cn(
-                          'flex items-center gap-2.5 text-sm cursor-pointer rounded-lg border px-3 py-2.5 transition-all duration-150',
-                          field.value
-                            ? 'border-sage/30 bg-sage/5 text-forest'
-                            : 'border-sage/10 hover:border-sage/20 hover:bg-petal/20 text-charcoal'
-                        )}>
-                          <Checkbox
-                            checked={field.value ?? false}
-                            onCheckedChange={field.onChange}
-                            className="border-sage data-[state=checked]:bg-forest data-[state=checked]:border-forest"
-                          />
-                          {label}
-                        </label>
-                      )}
-                    />
-                  )
-                )}
-              </div>
-              <div className="space-y-1.5 pt-2 border-t border-petal">
-                <Label htmlFor="medicalHistoryOutros" className="uppercase tracking-wider text-xs text-mid">Outros</Label>
-                <Controller
-                  control={control}
-                  name="medicalHistory.outros"
-                  render={({ field }) => (
-                    <Input
-                      id="medicalHistoryOutros"
-                      placeholder="Especifique..."
-                      {...field}
-                    />
-                  )}
-                />
-              </div>
-            </div>
-          </AnamnesisSection>
+      <form ref={formRef} onSubmit={handleSubmit}>
+        <FormRenderer
+          sections={template.sections}
+          responses={responses}
+          onChange={handleChange}
+          readOnly={readOnly}
+          showErrors={showErrors}
+        />
 
-          {/* ── Medicamentos ── */}
-          <AnamnesisSection
-            value="medications"
-            title="Medicamentos em uso"
-            isComplete={isMedicationsComplete}
-          >
-            <div className="space-y-3">
-              {medications.fields.map((field, index) => (
-                <div key={field.id} className="flex gap-2 items-start">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 flex-1">
-                    <Controller
-                      control={control}
-                      name={`medications.${index}.name`}
-                      render={({ field }) => (
-                        <Input placeholder="Nome" {...field} />
-                      )}
-                    />
-                    <Controller
-                      control={control}
-                      name={`medications.${index}.dosage`}
-                      render={({ field }) => (
-                        <Input placeholder="Dosagem" {...field} />
-                      )}
-                    />
-                    <Controller
-                      control={control}
-                      name={`medications.${index}.frequency`}
-                      render={({ field }) => (
-                        <Input placeholder="Frequência" {...field} />
-                      )}
-                    />
-                    <Controller
-                      control={control}
-                      name={`medications.${index}.reason`}
-                      render={({ field }) => (
-                        <Input placeholder="Motivo" {...field} />
-                      )}
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => medications.remove(index)}
-                    className="shrink-0 text-destructive hover:text-destructive"
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
-              ))}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  medications.append({ name: '', dosage: '', frequency: '', reason: '' })
-                }
-                className="border-sage/30 text-forest hover:bg-petal/30 hover:border-sage/50 transition-all duration-150"
-              >
-                <Plus className="size-4 mr-1" />
-                Adicionar medicamento
-              </Button>
-            </div>
-          </AnamnesisSection>
-
-          {/* ── Alergias ── */}
-          <AnamnesisSection
-            value="allergies"
-            title="Alergias"
-            isComplete={isAllergiesComplete}
-          >
-            <div className="space-y-3">
-              {allergies.fields.map((field, index) => (
-                <div key={field.id} className="flex gap-2 items-start">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1">
-                    <Controller
-                      control={control}
-                      name={`allergies.${index}.substance`}
-                      render={({ field }) => (
-                        <Input placeholder="Substância" {...field} />
-                      )}
-                    />
-                    <Controller
-                      control={control}
-                      name={`allergies.${index}.reaction`}
-                      render={({ field }) => (
-                        <Input placeholder="Reação" {...field} />
-                      )}
-                    />
-                    <Controller
-                      control={control}
-                      name={`allergies.${index}.severity`}
-                      render={({ field }) => (
-                        <SelectField
-                          value={field.value}
-                          onValueChange={field.onChange}
-                          options={SEVERITY_OPTIONS}
-                          placeholder="Gravidade"
-                        />
-                      )}
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => allergies.remove(index)}
-                    className="shrink-0 text-destructive hover:text-destructive"
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
-              ))}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  allergies.append({ substance: '', reaction: '', severity: undefined })
-                }
-                className="border-sage/30 text-forest hover:bg-petal/30 hover:border-sage/50 transition-all duration-150"
-              >
-                <Plus className="size-4 mr-1" />
-                Adicionar alergia
-              </Button>
-            </div>
-          </AnamnesisSection>
-
-          {/* ── Cirurgias anteriores ── */}
-          <AnamnesisSection
-            value="surgeries"
-            title="Cirurgias anteriores"
-            isComplete={isSurgeriesComplete}
-          >
-            <div className="space-y-3">
-              {previousSurgeries.fields.map((field, index) => (
-                <div key={field.id} className="flex gap-2 items-start">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1">
-                    <Controller
-                      control={control}
-                      name={`previousSurgeries.${index}.procedure`}
-                      render={({ field }) => (
-                        <Input placeholder="Procedimento" {...field} />
-                      )}
-                    />
-                    <Controller
-                      control={control}
-                      name={`previousSurgeries.${index}.year`}
-                      render={({ field }) => (
-                        <Input placeholder="Ano" {...field} />
-                      )}
-                    />
-                    <Controller
-                      control={control}
-                      name={`previousSurgeries.${index}.notes`}
-                      render={({ field }) => (
-                        <Input placeholder="Observações" {...field} />
-                      )}
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => previousSurgeries.remove(index)}
-                    className="shrink-0 text-destructive hover:text-destructive"
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
-              ))}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  previousSurgeries.append({ procedure: '', year: '', notes: '' })
-                }
-                className="border-sage/30 text-forest hover:bg-petal/30 hover:border-sage/50 transition-all duration-150"
-              >
-                <Plus className="size-4 mr-1" />
-                Adicionar cirurgia
-              </Button>
-            </div>
-          </AnamnesisSection>
-
-          {/* ── Condições crônicas ── */}
-          <AnamnesisSection
-            value="chronicConditions"
-            title="Condições crônicas"
-            isComplete={isChronicComplete}
-          >
-            <Controller
-              control={control}
-              name="chronicConditions"
-              render={({ field }) => (
-                <TagInput
-                  value={field.value ?? []}
-                  onChange={field.onChange}
-                  placeholder="Digite e pressione Enter para adicionar..."
-                />
-              )}
-            />
-          </AnamnesisSection>
-
-          {/* ── Gestação / Amamentação ── */}
-          <AnamnesisSection
-            value="pregnancy"
-            title="Gestação / Amamentação"
-            isComplete={isPregnancyComplete}
-          >
-            <div className="flex flex-col sm:flex-row gap-6">
-              <Controller
-                control={control}
-                name="isPregnant"
-                render={({ field }) => (
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <Switch
-                      checked={field.value ?? false}
-                      onCheckedChange={field.onChange}
-                    />
-                    <span className="text-sm">Gestante</span>
-                  </label>
-                )}
-              />
-              <Controller
-                control={control}
-                name="isBreastfeeding"
-                render={({ field }) => (
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <Switch
-                      checked={field.value ?? false}
-                      onCheckedChange={field.onChange}
-                    />
-                    <span className="text-sm">Amamentando</span>
-                  </label>
-                )}
-              />
-            </div>
-          </AnamnesisSection>
-
-          {/* ── Estilo de vida ── */}
-          <AnamnesisSection
-            value="lifestyle"
-            title="Estilo de vida"
-            isComplete={isLifestyleComplete}
-          >
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <Label className="uppercase tracking-wider text-xs text-mid">Tabagismo</Label>
-                <Controller
-                  control={control}
-                  name="lifestyle.smoking"
-                  render={({ field }) => (
-                    <SelectField
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      options={SMOKING_OPTIONS}
-                      placeholder="Selecione..."
-                    />
-                  )}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="uppercase tracking-wider text-xs text-mid">Álcool</Label>
-                <Controller
-                  control={control}
-                  name="lifestyle.alcohol"
-                  render={({ field }) => (
-                    <SelectField
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      options={ALCOHOL_OPTIONS}
-                      placeholder="Selecione..."
-                    />
-                  )}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="uppercase tracking-wider text-xs text-mid">Exercício físico</Label>
-                <Controller
-                  control={control}
-                  name="lifestyle.exercise"
-                  render={({ field }) => (
-                    <SelectField
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      options={EXERCISE_OPTIONS}
-                      placeholder="Selecione..."
-                    />
-                  )}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="uppercase tracking-wider text-xs text-mid">Qualidade do sono</Label>
-                <Controller
-                  control={control}
-                  name="lifestyle.sleep"
-                  render={({ field }) => (
-                    <SelectField
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      options={SLEEP_OPTIONS}
-                      placeholder="Selecione..."
-                    />
-                  )}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="uppercase tracking-wider text-xs text-mid">Alimentação</Label>
-                <Controller
-                  control={control}
-                  name="lifestyle.diet"
-                  render={({ field }) => (
-                    <SelectField
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      options={DIET_OPTIONS}
-                      placeholder="Selecione..."
-                    />
-                  )}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="uppercase tracking-wider text-xs text-mid">Exposição solar</Label>
-                <Controller
-                  control={control}
-                  name="lifestyle.sunExposure"
-                  render={({ field }) => (
-                    <SelectField
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      options={SUN_EXPOSURE_OPTIONS}
-                      placeholder="Selecione..."
-                    />
-                  )}
-                />
-              </div>
-            </div>
-          </AnamnesisSection>
-
-          {/* ── Rotina de cuidados ── */}
-          <AnamnesisSection
-            value="skincareRoutine"
-            title="Rotina de cuidados com a pele"
-            isComplete={isSkincareComplete}
-          >
-            <div className="space-y-3">
-              {skincareRoutine.fields.map((field, index) => (
-                <div key={field.id} className="flex gap-2 items-start">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1">
-                    <Controller
-                      control={control}
-                      name={`skincareRoutine.${index}.product`}
-                      render={({ field }) => (
-                        <Input placeholder="Produto" {...field} />
-                      )}
-                    />
-                    <Controller
-                      control={control}
-                      name={`skincareRoutine.${index}.frequency`}
-                      render={({ field }) => (
-                        <Input placeholder="Frequência" {...field} />
-                      )}
-                    />
-                    <Controller
-                      control={control}
-                      name={`skincareRoutine.${index}.notes`}
-                      render={({ field }) => (
-                        <Input placeholder="Observações" {...field} />
-                      )}
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => skincareRoutine.remove(index)}
-                    className="shrink-0 text-destructive hover:text-destructive"
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
-              ))}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  skincareRoutine.append({ product: '', frequency: '', notes: '' })
-                }
-                className="border-sage/30 text-forest hover:bg-petal/30 hover:border-sage/50 transition-all duration-150"
-              >
-                <Plus className="size-4 mr-1" />
-                Adicionar produto
-              </Button>
-            </div>
-          </AnamnesisSection>
-
-          {/* ── Tratamentos estéticos anteriores ── */}
-          <AnamnesisSection
-            value="previousTreatments"
-            title="Tratamentos estéticos anteriores"
-            isComplete={isTreatmentsComplete}
-          >
-            <div className="space-y-3">
-              {previousTreatments.fields.map((field, index) => (
-                <div key={field.id} className="space-y-2.5 rounded-[3px] border border-[#E8ECEF] bg-white p-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-medium text-mid uppercase tracking-wider">
-                      Tratamento {index + 1}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => previousTreatments.remove(index)}
-                      className="text-destructive hover:text-destructive h-7"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <Controller
-                      control={control}
-                      name={`previousAestheticTreatments.${index}.procedure`}
-                      render={({ field }) => (
-                        <Input placeholder="Procedimento" {...field} />
-                      )}
-                    />
-                    <Controller
-                      control={control}
-                      name={`previousAestheticTreatments.${index}.date`}
-                      render={({ field }) => (
-                        <Input placeholder="Data (ex: Jan 2025)" {...field} />
-                      )}
-                    />
-                    <Controller
-                      control={control}
-                      name={`previousAestheticTreatments.${index}.professional`}
-                      render={({ field }) => (
-                        <Input placeholder="Profissional" {...field} />
-                      )}
-                    />
-                    <Controller
-                      control={control}
-                      name={`previousAestheticTreatments.${index}.satisfaction`}
-                      render={({ field }) => (
-                        <SelectField
-                          value={field.value}
-                          onValueChange={field.onChange}
-                          options={SATISFACTION_OPTIONS}
-                          placeholder="Satisfação"
-                        />
-                      )}
-                    />
-                  </div>
-                  <Controller
-                    control={control}
-                    name={`previousAestheticTreatments.${index}.notes`}
-                    render={({ field }) => (
-                      <Input placeholder="Observações" {...field} />
-                    )}
-                  />
-                </div>
-              ))}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  previousTreatments.append({
-                    procedure: '',
-                    date: '',
-                    professional: '',
-                    notes: '',
-                    satisfaction: undefined,
-                  })
-                }
-                className="border-sage/30 text-forest hover:bg-petal/30 hover:border-sage/50 transition-all duration-150"
-              >
-                <Plus className="size-4 mr-1" />
-                Adicionar tratamento
-              </Button>
-            </div>
-          </AnamnesisSection>
-
-        </Accordion>
-
-        {/* ── Footer: save button + last saved info ── */}
         {publicMode ? (
-          <div className="flex justify-center pt-6 mt-4 border-t border-petal">
+          <div className="mt-4 flex justify-center border-t border-petal pt-6">
             <Button
               type="submit"
               disabled={isPending}
-              className="bg-forest text-cream hover:bg-sage transition-colors px-8 py-2.5 text-base"
+              className="bg-forest px-8 py-2.5 text-base text-cream transition-colors hover:bg-sage"
             >
               {isPending ? (
                 <>
-                  <Loader2 className="size-4 animate-spin mr-1.5" />
+                  <Loader2 className="mr-1.5 size-4 animate-spin" />
                   Enviando...
                 </>
               ) : (
@@ -1045,8 +381,8 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
               )}
             </Button>
           </div>
-        ) : (
-          <div className="flex items-center justify-between pt-4 mt-4 border-t border-petal">
+        ) : readOnly ? null : (
+          <div className="mt-4 flex items-center justify-between border-t border-petal pt-4">
             <div className="flex items-center gap-2">
               {isPending ? (
                 <div className="flex items-center gap-1.5 text-sm text-sage">
@@ -1063,11 +399,11 @@ export function AnamnesisForm({ patientId, initialData, updatedByName, wizardOve
             <Button
               type="submit"
               disabled={isPending}
-              className="bg-forest text-cream hover:bg-sage transition-colors"
+              className="bg-forest text-cream transition-colors hover:bg-sage"
             >
               {isPending ? (
                 <>
-                  <Loader2 className="size-4 animate-spin mr-1.5" />
+                  <Loader2 className="mr-1.5 size-4 animate-spin" />
                   Salvando...
                 </>
               ) : (

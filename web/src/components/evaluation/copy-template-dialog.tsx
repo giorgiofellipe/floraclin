@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { useProcedureTypes } from '@/hooks/queries/use-procedure-types'
 import { useEvaluationTemplates } from '@/hooks/queries/use-evaluation'
-import type { EvaluationSection } from '@/types/evaluation'
+import type { FormSection } from '@/lib/forms/types'
 
 interface ProcedureTypeSummary {
   id: string
@@ -20,21 +20,21 @@ interface ProcedureTypeSummary {
 
 interface TemplateSummary {
   procedureTypeId: string
-  sections: EvaluationSection[]
+  sections: FormSection[]
 }
 
 interface CopyOption {
   procedureTypeId: string
   name: string
   questionCount: number
-  sections: EvaluationSection[]
+  sections: FormSection[]
 }
 
 interface CopyTemplateDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   currentProcedureTypeId: string
-  onCopy: (sections: EvaluationSection[]) => void
+  onCopy: (sections: FormSection[]) => void
 }
 
 export function CopyTemplateDialog({

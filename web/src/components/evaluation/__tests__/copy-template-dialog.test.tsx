@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CopyTemplateDialog } from '../copy-template-dialog'
-import type { EvaluationSection } from '@/types/evaluation'
+import type { FormSection } from '@/lib/forms/types'
 
 const mocks = vi.hoisted(() => ({
   useProcedureTypes: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock('@/hooks/queries/use-evaluation', () => ({
   useEvaluationTemplates: mocks.useEvaluationTemplates,
 }))
 
-function makeSections(title: string, questionCount: number): EvaluationSection[] {
+function makeSections(title: string, questionCount: number): FormSection[] {
   return [
     {
       id: `${title}-s1`,
@@ -41,7 +41,7 @@ const types = [
   { id: 'none', name: 'Sem ficha' },
 ]
 
-let botoxSections: EvaluationSection[]
+let botoxSections: FormSection[]
 
 function setup(overrides: { types?: unknown; templates?: unknown } = {}) {
   mocks.useProcedureTypes.mockReturnValue({
@@ -99,7 +99,7 @@ describe('CopyTemplateDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Copiar' }))
 
     expect(onCopy).toHaveBeenCalledTimes(1)
-    const copied = onCopy.mock.calls[0][0] as EvaluationSection[]
+    const copied = onCopy.mock.calls[0][0] as FormSection[]
     expect(copied).toEqual(makeSections('Botox', 3))
     copied[0].title = 'Mutado'
     copied[0].questions.pop()

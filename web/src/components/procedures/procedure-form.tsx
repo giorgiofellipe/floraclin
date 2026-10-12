@@ -31,7 +31,7 @@ import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
 import type { CatalogProduct, DiagramPointData } from '@/components/face-diagram/types'
 import type { WizardOverrides } from '@/components/service-wizard/types'
-import type { EvaluationSection, EvaluationResponses } from '@/types/evaluation'
+import type { FormSection, FormResponses } from '@/lib/forms/types'
 import type { EncounterCart } from '@/validations/encounter-cart'
 import { FinancialPlanField } from './planning/financial-plan-field'
 import { WizardCart } from '@/components/service-wizard/wizard-cart'
@@ -48,14 +48,14 @@ export interface EvaluationTemplateForForm {
   id: string
   procedureTypeId: string
   procedureTypeName: string
-  sections: EvaluationSection[]
+  sections: FormSection[]
   version: number
 }
 
 export interface ExistingEvaluationResponse {
   templateId: string
-  responses: EvaluationResponses
-  templateSnapshot: EvaluationSection[]
+  responses: FormResponses
+  templateSnapshot: FormSection[]
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -705,7 +705,7 @@ export function ProcedureForm({
                 templateId: t.id,
                 responses: (values.evaluationResponses as Record<string, unknown>)[
                   t.id
-                ] as EvaluationResponses,
+                ] as FormResponses,
               }),
             )
           if (responsePromises.length > 0) {

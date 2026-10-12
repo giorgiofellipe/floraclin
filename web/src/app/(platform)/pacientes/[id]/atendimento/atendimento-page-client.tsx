@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { notFound, useSearchParams } from 'next/navigation'
 import { usePatient } from '@/hooks/queries/use-patients'
-import { useAnamnesis } from '@/hooks/queries/use-anamnesis'
+import { useAnamnesis, useAnamnesisTemplate } from '@/hooks/queries/use-anamnesis'
 import { useLatestNonExecutedProcedure, useProcedure } from '@/hooks/queries/use-procedures'
 import { useTenant } from '@/hooks/queries/use-tenant'
 import { ServiceWizard } from '@/components/service-wizard/service-wizard'
@@ -11,7 +11,6 @@ import type { ProcedureStatus } from '@/types'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
-import type { AnamnesisFormData } from '@/validations/anamnesis'
 import AtendimentoLoading from './loading'
 
 interface AtendimentoPageClientProps {
@@ -33,6 +32,7 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
   const { data: patient, isLoading: patientLoading } = usePatient(patientId)
   const { data: tenant, isLoading: tenantLoading } = useTenant()
   const { data: anamnesis, isLoading: anamnesisLoading } = useAnamnesis(patientId)
+  const { data: anamnesisTemplate, isLoading: templateLoading } = useAnamnesisTemplate()
   const { data: resumedProcedure, isLoading: procedureLoading } = useLatestNonExecutedProcedure(patientId)
 
   // When the page is opened via the executeNext deep link we need to look up
@@ -58,7 +58,7 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
     : (procedure?.id ?? '')
   const { data: procedureDetail, isLoading: detailLoading } = useProcedure(procedureDetailQueryId)
 
-  const isLoading = patientLoading || tenantLoading || anamnesisLoading ||
+  const isLoading = patientLoading || tenantLoading || anamnesisLoading || templateLoading ||
     (!forceNew && !hasDeepLink && procedureLoading) ||
     (hasDeepLink && deepLinkLoading) ||
     (!!procedure?.id && !hasDeepLink && detailLoading)
@@ -86,6 +86,7 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
 
   if (!patient) notFound()
   if (!tenant) notFound()
+  if (!anamnesisTemplate) throw new Error('Erro ao carregar o modelo de anamnese')
 
   // Extract diagrams and applications from full procedure detail. When we are
   // in deep-link mode the deep-link query already returned the full detail; in
@@ -109,27 +110,6 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
       ? new Date(procedure.performedAt)
       : null,
   }
-
-  // Transform anamnesis for AnamnesisForm
-  const anamnesisData = anamnesis
-    ? {
-        id: anamnesis.id,
-        updatedAt: anamnesis.updatedAt,
-        updatedBy: anamnesis.updatedBy,
-        mainComplaint: anamnesis.mainComplaint ?? '',
-        patientGoals: anamnesis.patientGoals ?? '',
-        medicalHistory: (anamnesis.medicalHistory as AnamnesisFormData['medicalHistory']) ?? {},
-        medications: (anamnesis.medications as AnamnesisFormData['medications']) ?? [],
-        allergies: (anamnesis.allergies as AnamnesisFormData['allergies']) ?? [],
-        previousSurgeries: (anamnesis.previousSurgeries as AnamnesisFormData['previousSurgeries']) ?? [],
-        chronicConditions: (anamnesis.chronicConditions as string[]) ?? [],
-        isPregnant: anamnesis.isPregnant ?? false,
-        isBreastfeeding: anamnesis.isBreastfeeding ?? false,
-        lifestyle: (anamnesis.lifestyle as AnamnesisFormData['lifestyle']) ?? {},
-        skincareRoutine: (anamnesis.skincareRoutine as AnamnesisFormData['skincareRoutine']) ?? [],
-        previousAestheticTreatments: (anamnesis.previousAestheticTreatments as AnamnesisFormData['previousAestheticTreatments']) ?? [],
-      }
-    : null
 
   const stepParam = step ? parseInt(step, 10) : undefined
   // Deep-link `?procedure=...&action=executeNext` forces step 5 (execution).
@@ -160,7 +140,8 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
       procedure={procedure ?? null}
       diagrams={diagrams}
       existingApplications={applications}
-      anamnesis={anamnesisData}
+      anamnesis={anamnesis ?? null}
+      anamnesisTemplate={anamnesisTemplate}
       stepTimestamps={stepTimestamps}
       deepLinkProcedureId={hasDeepLink ? deepLinkProcedureId : null}
       autoStartNext={hasDeepLink ? autoStartNext : false}

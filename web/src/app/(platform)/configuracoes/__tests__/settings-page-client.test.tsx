@@ -44,6 +44,7 @@ vi.mock('@/components/financial/settings/expense-categories-manager', () => ({ E
 vi.mock('@/components/settings/whatsapp-settings-form', () => ({ WhatsAppSettingsForm: stub }))
 vi.mock('@/components/settings/billing-settings', () => ({ BillingSettings: stub }))
 vi.mock('@/components/packages/package-template-list', () => ({ PackageTemplateList: stub }))
+vi.mock('@/components/settings/anamnesis-template-settings', () => ({ AnamnesisTemplateSettings: stub }))
 vi.mock('@/components/settings/document-template-list', () => ({ DocumentTemplateList: stub }))
 vi.mock('@/components/settings/account-info-form', () => ({ AccountInfoForm: stub }))
 vi.mock('@/components/settings/password-form', () => ({ PasswordForm: stub }))

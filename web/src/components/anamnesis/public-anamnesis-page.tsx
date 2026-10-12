@@ -3,24 +3,27 @@
 import { useState } from 'react'
 import { AnamnesisForm } from './anamnesis-form'
 import { CheckCircle2Icon } from 'lucide-react'
+import type { AnamnesisTemplate } from '@/lib/anamnesis/types'
+import type { FormResponses } from '@/lib/forms/types'
 
 interface Props {
   firstName: string
   token: string
   patientId: string
+  template: AnamnesisTemplate
 }
 
-export function PublicAnamnesisPage({ firstName, token, patientId }: Props) {
+export function PublicAnamnesisPage({ firstName, token, patientId, template }: Props) {
   const [status, setStatus] = useState<'form' | 'submitting' | 'success' | 'error'>('form')
   const [errorMessage, setErrorMessage] = useState('')
 
-  async function handleSubmit(data: Record<string, unknown>) {
+  async function handleSubmit(payload: { templateVersion: number; responses: FormResponses }) {
     setStatus('submitting')
     try {
       const res = await fetch(`/api/anamnesis/token/${token}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
@@ -61,6 +64,7 @@ export function PublicAnamnesisPage({ firstName, token, patientId }: Props) {
 
       <AnamnesisForm
         patientId={patientId}
+        currentTemplate={template}
         publicMode
         onPublicSubmit={handleSubmit}
       />

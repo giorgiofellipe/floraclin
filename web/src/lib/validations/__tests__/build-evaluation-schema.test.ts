@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { buildEvaluationResponseSchema } from '../build-evaluation-schema'
-import type { EvaluationSection } from '@/types/evaluation'
+import type { FormSection } from '@/lib/forms/types'
 
-const sections: EvaluationSection[] = [
+const sections: FormSection[] = [
   {
     id: 'section-a',
     title: 'Avaliação',

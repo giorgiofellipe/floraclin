@@ -6,13 +6,13 @@ import { TemplateRenderer } from '@/components/evaluation/template-renderer'
 import { FormFieldError } from '@/components/forms/form-field-error'
 import type { ProcedurePlanningFormData } from '@/validations/procedure'
 import type { DiagramPointData, CatalogProduct } from '@/components/face-diagram/types'
-import type { EvaluationSection } from '@/types/evaluation'
+import type { FormSection } from '@/lib/forms/types'
 
 export interface EvaluationTemplateForForm {
   id: string
   procedureTypeId: string
   procedureTypeName: string
-  sections: EvaluationSection[]
+  sections: FormSection[]
   version: number
 }
 

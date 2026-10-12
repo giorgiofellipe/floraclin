@@ -39,6 +39,7 @@ export const queryKeys = {
       ['settings', 'evaluationTemplates', procedureTypeIds] as const,
   },
   anamnesis: (patientId: string) => ['anamnesis', patientId] as const,
+  anamnesisTemplate: ['anamnesisTemplate'] as const,
   procedures: {
     all: ['procedures'] as const,
     list: (patientId: string) => ['procedures', 'list', patientId] as const,
