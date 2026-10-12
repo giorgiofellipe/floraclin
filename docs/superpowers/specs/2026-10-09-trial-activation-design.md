@@ -87,14 +87,14 @@ export interface LifecycleMessage {
 | trial_first_patient | 2 | trialing and not hasPatient | MARKETING | `/pacientes?new=true` |
 | trial_first_record | 4 | trialing and not hasProcedureRecord | MARKETING | `/pacientes` |
 | trial_first_appointment | 7 | trialing and (not hasAppointment or not hasWhatsappSend) | MARKETING | `/agenda` |
-| trial_ending | 12 | trialing | UTILITY | `/configuracoes?tab=assinatura` |
+| trial_ending | 12 | trialing | MARKETING | `/configuracoes?tab=assinatura` |
 | trial_feedback | 16 | status expired and source trial | MARKETING | none, text asks for a reply |
 
 Rules:
 
 - A message fires at most once per tenant per channel. The `tenant_lifecycle_messages` row is the lock.
 - A message fires when `trialDay >= minDay` and `shouldSend(state)` is true at run time. A clinic that skipped day 2 and still has no patient on day 3 gets `trial_first_patient` on day 3. A clinic that added a patient on day 1 never gets it.
-- `optedOut` suppresses every MARKETING message on both channels. UTILITY messages (welcome, trial_ending) still go out.
+- `optedOut` suppresses every MARKETING message on both channels. The UTILITY welcome still goes out. Meta approved trial_ending as MARKETING, so opt-out suppresses it too.
 - Missing or invalid owner phone skips WhatsApp for that tenant and still sends the email.
 - Owner phone is `tenants.phone` (collected at signup). Owner email is the user with role `owner` in `tenant_users`. If a tenant has several owners, the earliest `tenant_users.created_at` wins.
 - First name for `{{1}}` is the first word of the owner's `full_name`.

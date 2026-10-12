@@ -59,10 +59,16 @@ describe('selectDueMessages', () => {
       ],
     },
     {
-      name: 'opted out keeps only the UTILITY deadline message. Regression: opt-out suppresses UTILITY, or nothing',
-      state: baseState({ trialDay: 5, daysLeft: 2, optedOut: true }),
+      name: 'opted out on day 12 gets no trial_ending. Regression: trial_ending goes back to UTILITY, but Meta approved it as MARKETING',
+      state: baseState({ trialDay: 12, daysLeft: 2, optedOut: true }),
       completed: WELCOME_DONE,
-      expected: ['trial_ending'],
+      expected: [],
+    },
+    {
+      name: 'opted out still gets the UTILITY welcome. Regression: opt-out suppresses UTILITY',
+      state: baseState({ optedOut: true }),
+      completed: [],
+      expected: ['trial_welcome'],
     },
     {
       name: 'extended trial at day 13 with 9 days left has no trial_ending. Regression: ending keyed to trial day',
