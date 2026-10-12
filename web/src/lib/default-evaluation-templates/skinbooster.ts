@@ -1,6 +1,6 @@
-import type { EvaluationSection } from '@/types/evaluation'
+import type { FormSection } from '@/lib/forms/types'
 
-export const skinboosterSections: EvaluationSection[] = [
+export const skinboosterSections: FormSection[] = [
   {
     id: 'skb-s1',
     title: 'Queixa Principal e Estado de Hidratação da Pele',

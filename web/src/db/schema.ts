@@ -92,22 +92,9 @@ export const anamneses = floraclinSchema.table('anamneses', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   patientId: uuid('patient_id').notNull().references(() => patients.id).unique(),
-  mainComplaint: text('main_complaint'),
-  patientGoals: text('patient_goals'),
-  medicalHistory: jsonb('medical_history').default({}),
-  medications: jsonb('medications').default([]),
-  allergies: jsonb('allergies').default([]),
-  previousSurgeries: jsonb('previous_surgeries').default([]),
-  chronicConditions: jsonb('chronic_conditions').default([]),
-  isPregnant: boolean('is_pregnant').default(false),
-  isBreastfeeding: boolean('is_breastfeeding').default(false),
-  lifestyle: jsonb('lifestyle').default({}),
-  skinType: varchar('skin_type', { length: 20 }),
-  skinConditions: jsonb('skin_conditions').default([]),
-  skincareRoutine: jsonb('skincare_routine').default([]),
-  previousAestheticTreatments: jsonb('previous_aesthetic_treatments').default([]),
-  contraindications: jsonb('contraindications').default([]),
-  facialEvaluationNotes: text('facial_evaluation_notes'),
+  templateVersion: integer('template_version'),
+  templateSnapshot: jsonb('template_snapshot'),
+  responses: jsonb('responses'),
   updatedBy: uuid('updated_by').references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -127,6 +114,15 @@ export const anamnesisTokens = floraclinSchema.table('anamnesis_tokens', {
 }, (table) => [
   index('idx_anamnesis_tokens_token').on(table.token),
 ])
+
+export const anamnesisTemplates = floraclinSchema.table('anamnesis_templates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id).unique(),
+  sections: jsonb('sections').notNull(),
+  version: integer('version').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
 
 // ─── PRODUCTS CATALOG ───────────────────────────────────────────────
 
@@ -1218,6 +1214,10 @@ export const anamnesesRelations = relations(anamneses, ({ one }) => ({
   tenant: one(tenants, { fields: [anamneses.tenantId], references: [tenants.id] }),
   patient: one(patients, { fields: [anamneses.patientId], references: [patients.id] }),
   updatedByUser: one(users, { fields: [anamneses.updatedBy], references: [users.id] }),
+}))
+
+export const anamnesisTemplatesRelations = relations(anamnesisTemplates, ({ one }) => ({
+  tenant: one(tenants, { fields: [anamnesisTemplates.tenantId], references: [tenants.id] }),
 }))
 
 export const procedureTypesRelations = relations(procedureTypes, ({ one }) => ({

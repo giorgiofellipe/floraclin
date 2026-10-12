@@ -30,9 +30,9 @@ import type { ProcedureStatus } from '@/types'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
-import type { AnamnesisFormData } from '@/validations/anamnesis'
+import type { AnamnesisRecord, AnamnesisTemplate } from '@/lib/anamnesis/types'
 import type { EvaluationTemplateForForm, ExistingEvaluationResponse } from '@/components/procedures/procedure-form'
-import type { EvaluationSection, EvaluationResponses } from '@/types/evaluation'
+import type { FormSection, FormResponses } from '@/lib/forms/types'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -60,11 +60,8 @@ interface ServiceWizardProps {
   procedure?: ProcedureWithDetails | null
   diagrams?: DiagramWithPoints[] | null
   existingApplications?: ProductApplicationRecord[] | null
-  anamnesis?: (AnamnesisFormData & {
-    id?: string
-    updatedAt?: Date | string
-    updatedBy?: string | null
-  }) | null
+  anamnesis?: AnamnesisRecord | null
+  anamnesisTemplate: AnamnesisTemplate
   anamnesisUpdatedByName?: string
   stepTimestamps?: {
     anamnesis: Date | null
@@ -107,6 +104,7 @@ export function ServiceWizard({
   diagrams,
   existingApplications,
   anamnesis,
+  anamnesisTemplate,
   anamnesisUpdatedByName,
   stepTimestamps,
   deepLinkProcedureId,
@@ -222,7 +220,7 @@ export function ServiceWizard({
             id: t.id,
             procedureTypeId: t.procedureTypeId,
             procedureTypeName: typeNameMap.get(t.procedureTypeId) ?? 'Procedimento',
-            sections: t.sections as EvaluationSection[],
+            sections: t.sections as FormSection[],
             version: t.version,
           }))
           // Preserve the order from selectedTypeIds
@@ -251,10 +249,10 @@ export function ServiceWizard({
         const responses = evalRes.ok ? await evalRes.json() : []
         if (responses && responses.length > 0) {
           setExistingEvalResponses(
-            (responses as { templateId: string; responses: EvaluationResponses; templateSnapshot: unknown }[]).map((r) => ({
+            (responses as { templateId: string; responses: FormResponses; templateSnapshot: unknown }[]).map((r) => ({
               templateId: r.templateId,
-              responses: r.responses as EvaluationResponses,
-              templateSnapshot: r.templateSnapshot as EvaluationSection[],
+              responses: r.responses as FormResponses,
+              templateSnapshot: r.templateSnapshot as FormSection[],
             }))
           )
         }
@@ -854,14 +852,14 @@ export function ServiceWizard({
                   />
                 </div>
               )}
-              <div className={isReadOnlyAfterApproval ? 'pointer-events-none opacity-75' : undefined}>
-                <AnamnesisForm
-                  patientId={patient.id}
-                  initialData={anamnesis ?? undefined}
-                  updatedByName={anamnesisUpdatedByName}
-                  wizardOverrides={getOverridesForStep(1)}
-                />
-              </div>
+              <AnamnesisForm
+                patientId={patient.id}
+                record={anamnesis ?? null}
+                currentTemplate={anamnesisTemplate}
+                updatedByName={anamnesisUpdatedByName}
+                wizardOverrides={getOverridesForStep(1)}
+                readOnly={isReadOnlyAfterApproval}
+              />
             </WizardStepWrapper>
           </div>
 

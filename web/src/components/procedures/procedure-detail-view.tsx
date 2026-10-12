@@ -30,7 +30,8 @@ import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
 import type { DiagramPointData } from '@/components/face-diagram/types'
 import type { PaymentMethod } from '@/types'
-import type { EvaluationSection, EvaluationResponses, EvaluationQuestion } from '@/types/evaluation'
+import { ListAnswerTable } from '@/components/forms/list-answer-table'
+import type { FormSection, FormResponses, FormQuestion, FormListResponse } from '@/lib/forms/types'
 import {
   FollowupTimeline,
   type FollowupEntry,
@@ -242,8 +243,8 @@ export function ProcedureDetailView({
   interface EvalResponseRecord {
     templateId: string
     templateName: string | null
-    templateSnapshot: EvaluationSection[]
-    responses: EvaluationResponses
+    templateSnapshot: FormSection[]
+    responses: FormResponses
   }
   const [evalResponses, setEvalResponses] = useState<EvalResponseRecord[]>([])
   const [expandedEvals, setExpandedEvals] = useState<Set<string>>(new Set())
@@ -259,8 +260,8 @@ export function ProcedureDetailView({
               data.map((r: { templateId: string; templateName: string | null; templateSnapshot: unknown; responses: unknown }) => ({
                 templateId: r.templateId,
                 templateName: r.templateName,
-                templateSnapshot: r.templateSnapshot as EvaluationSection[],
-                responses: r.responses as EvaluationResponses,
+                templateSnapshot: r.templateSnapshot as FormSection[],
+                responses: r.responses as FormResponses,
               }))
             )
           }
@@ -656,7 +657,7 @@ export function ProcedureDetailView({
 
 // ─── Evaluation answer renderer ─────────────────────────────────────
 
-function EvalAnswerDisplay({ question, answer }: { question: EvaluationQuestion; answer: unknown }) {
+function EvalAnswerDisplay({ question, answer }: { question: FormQuestion; answer: unknown }) {
   if (answer === undefined || answer === null) return <span className="text-mid/40">—</span>
 
   switch (question.type) {
@@ -684,6 +685,14 @@ function EvalAnswerDisplay({ question, answer }: { question: EvaluationQuestion;
       const val = answer as { selected?: string; other?: string }
       return <span>{val.other || val.selected || '—'}</span>
     }
+    case 'list':
+      return (
+        <ListAnswerTable
+          question={question}
+          rows={answer as FormListResponse}
+          className="text-xs [&_th]:pr-3 [&_th]:text-left [&_th]:font-medium [&_th]:text-mid [&_td]:pr-3"
+        />
+      )
     case 'face_diagram':
       return <span className="text-sage">Diagrama preenchido</span>
     default:

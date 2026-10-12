@@ -3,7 +3,8 @@
 import { useRouter } from 'next/navigation'
 import { TemplateEditor } from '@/components/evaluation/template-editor'
 import { useSaveEvaluationTemplate } from '@/hooks/mutations/use-evaluation-mutations'
-import type { EvaluationSection, ProcedureCategory } from '@/types/evaluation'
+import type { ProcedureCategory } from '@/types/evaluation'
+import type { FormSection } from '@/lib/forms/types'
 
 interface TemplateEditorPageProps {
   procedureType: {
@@ -13,7 +14,7 @@ interface TemplateEditorPageProps {
   }
   template: {
     id: string
-    sections: EvaluationSection[]
+    sections: FormSection[]
     version: number
   } | null
   hasDefaultTemplate: boolean
@@ -23,7 +24,7 @@ export function TemplateEditorPage({ procedureType, template, hasDefaultTemplate
   const router = useRouter()
   const saveTemplate = useSaveEvaluationTemplate()
 
-  async function handleSave(sections: EvaluationSection[]) {
+  async function handleSave(sections: FormSection[]) {
     if (template) {
       return await saveTemplate.mutateAsync({
         action: 'update',

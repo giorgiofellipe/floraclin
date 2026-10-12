@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ProntuarioPdf } from '../prontuario-pdf'
+import type { FormQuestionType } from '@/lib/forms/types'
 import type { ProntuarioDossier } from '@/db/queries/reports/prontuario'
 
 const BASE_PATIENT = {
@@ -153,42 +154,74 @@ describe('ProntuarioPdf', () => {
     expect(screen.getByText('Nenhum termo assinado.')).toBeInTheDocument()
   })
 
-  it('renders the anamnese summary when present', () => {
+  it('renders only answered questions, grouped by section, from the record snapshot', () => {
+    const q = (id: string, label: string, type: FormQuestionType, order: number, extra = {}) => ({
+      id, label, type, required: false, order, ...extra,
+    })
     const dossier = emptyDossier({
       anamnesis: {
         id: 'an-1',
-        tenantId: 'tenant-1',
         patientId: 'patient-1',
-        mainComplaint: 'Rugas de expressão',
-        patientGoals: 'Rejuvenescimento',
-        medicalHistory: { diabetes: true, outros: 'Enxaqueca crônica' },
-        medications: [{ name: 'Losartana', dosage: '50mg', frequency: '', reason: '' }],
-        allergies: [{ substance: 'Dipirona', reaction: 'Urticária' }],
-        previousSurgeries: [],
-        chronicConditions: [],
-        isPregnant: false,
-        isBreastfeeding: false,
-        lifestyle: {},
-        skinType: null,
-        skinConditions: [],
-        skincareRoutine: [],
-        previousAestheticTreatments: [],
-        contraindications: [],
-        facialEvaluationNotes: null,
+        templateVersion: 3,
+        templateSnapshot: [
+          {
+            id: 's1',
+            title: 'Histórico',
+            order: 0,
+            questions: [
+              q('complaint', 'Queixa', 'text', 0),
+              q('meds', 'Medicações', 'list', 1, {
+                columns: [
+                  { id: 'name', label: 'Nome', kind: 'text' },
+                  { id: 'dose', label: 'Dose', kind: 'text' },
+                ],
+              }),
+              q('conditions', 'Condições', 'checkbox_with_other', 2, { options: ['Diabetes', 'Herpes'] }),
+              q('pain', 'Dor', 'scale', 3, { scaleMin: 0, scaleMax: 10 }),
+              q('referral', 'Indicação', 'radio_with_other', 4, { options: ['Instagram', 'Amigo'] }),
+              q('unanswered', 'Pergunta sem resposta', 'text', 5),
+              q('smoker', 'Fuma?', 'radio', 6, { options: ['Sim', 'Não'] }),
+            ],
+          },
+          {
+            id: 's2',
+            title: 'Seção vazia',
+            order: 1,
+            questions: [q('empty', 'Outra sem resposta', 'text', 0)],
+          },
+        ],
+        responses: {
+          complaint: 'Rugas de expressão',
+          meds: [{ name: 'Losartana', dose: '50mg' }],
+          conditions: { selected: ['Diabetes'], other: 'Enxaqueca crônica' },
+          pain: 7,
+          referral: { selected: 'Amigo', other: 'Indicada pela Maria' },
+          smoker: 'Não',
+        },
         updatedBy: null,
         createdAt: new Date(),
         updatedAt: new Date(),
-      } as never,
+      },
     })
 
-    render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
+    const { container } = render(<ProntuarioPdf tenant={TENANT} dossier={dossier} generatedAt={new Date()} />)
 
-    expect(screen.getByText('Rugas de expressão')).toBeInTheDocument()
-    expect(screen.getByText('Rejuvenescimento')).toBeInTheDocument()
-    expect(screen.getByText(/Diabetes/)).toBeInTheDocument()
-    expect(screen.getByText(/Enxaqueca crônica/)).toBeInTheDocument()
-    expect(screen.getByText(/Losartana/)).toBeInTheDocument()
-    expect(screen.getByText(/Dipirona/)).toBeInTheDocument()
+    expect(screen.getByText('Histórico')).toBeInTheDocument()
+    expect(container).toHaveTextContent('Queixa: Rugas de expressão')
+    expect(screen.getByRole('columnheader', { name: 'Nome' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Dose' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Losartana' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: '50mg' })).toBeInTheDocument()
+    expect(container).toHaveTextContent('Condições: Diabetes, Enxaqueca crônica')
+    expect(container).toHaveTextContent('Dor: 7 / 10')
+    // Regression: radio_with_other printed only the free text and dropped the picked option.
+    expect(container).toHaveTextContent('Indicação: Amigo, Indicada pela Maria')
+    // Regression: a label ending in "?" printed as "Fuma?:".
+    expect(container).toHaveTextContent('Fuma? Não')
+    expect(container).not.toHaveTextContent('Fuma?:')
+    // Regression: unanswered questions and empty sections clutter the legal record.
+    expect(screen.queryByText(/Pergunta sem resposta/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Seção vazia')).not.toBeInTheDocument()
   })
 
   it('renders a procedure with its product applications and face diagram points', () => {

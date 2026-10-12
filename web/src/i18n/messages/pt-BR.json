@@ -58,25 +58,6 @@
       "timeline": "Timeline"
     }
   },
-  "anamnesis": {
-    "title": "Anamnese",
-    "mainComplaint": "Queixa principal",
-    "patientGoals": "Objetivos do paciente",
-    "medicalHistory": "Histórico médico",
-    "medications": "Medicamentos em uso",
-    "allergies": "Alergias",
-    "previousSurgeries": "Cirurgias anteriores",
-    "chronicConditions": "Condições crônicas",
-    "pregnant": "Gestante",
-    "breastfeeding": "Amamentando",
-    "lifestyle": "Estilo de vida",
-    "skinType": "Tipo de pele (Fitzpatrick)",
-    "skinConditions": "Condições da pele",
-    "skincareRoutine": "Rotina de cuidados com a pele",
-    "previousTreatments": "Tratamentos estéticos anteriores",
-    "contraindications": "Contraindicações",
-    "facialEvaluation": "Avaliação facial"
-  },
   "procedures": {
     "title": "Procedimentos",
     "newProcedure": "Novo Procedimento",

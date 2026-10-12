@@ -1,9 +1,10 @@
 import { z } from 'zod'
-import type { EvaluationSection, EvaluationQuestionType } from '@/types/evaluation'
+import { questionResponseSchema } from '@/lib/forms/response-schema'
+import type { FormQuestion, FormSection } from '@/lib/forms/types'
 
 interface Template {
   id: string
-  sections: EvaluationSection[]
+  sections: FormSection[]
 }
 
 /**
@@ -11,7 +12,8 @@ interface Template {
  * Required questions must have a non-empty answer; optional questions
  * accept undefined or any value (to match the stored-responses shape).
  */
-function questionSchema(type: EvaluationQuestionType, required: boolean): z.ZodTypeAny {
+function questionSchema(question: FormQuestion): z.ZodTypeAny {
+  const { type, required } = question
   if (!required) {
     return z.unknown().optional()
   }
@@ -51,6 +53,9 @@ function questionSchema(type: EvaluationQuestionType, required: boolean): z.ZodT
         )
       )
 
+    case 'list':
+      return questionResponseSchema(question, { enforceRequired: true })
+
     case 'face_diagram':
       // Diagram data is stored in the separate `diagramPoints` form field
       // and validated by procedurePlanningFinalSchema — not here.
@@ -78,7 +83,7 @@ export function buildEvaluationResponseSchema(
     const questionShapes: Record<string, z.ZodTypeAny> = {}
     for (const section of template.sections ?? []) {
       for (const question of section.questions ?? []) {
-        questionShapes[question.id] = questionSchema(question.type, question.required)
+        questionShapes[question.id] = questionSchema(question)
       }
     }
     templateShapes[template.id] = z.object(questionShapes)

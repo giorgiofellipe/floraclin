@@ -1,6 +1,6 @@
-import type { EvaluationSection } from '@/types/evaluation'
+import type { FormSection } from '@/lib/forms/types'
 
-export const bioestimuladorSections: EvaluationSection[] = [
+export const bioestimuladorSections: FormSection[] = [
   {
     id: 'bio-s1',
     title: 'Queixa Principal e Motivação',

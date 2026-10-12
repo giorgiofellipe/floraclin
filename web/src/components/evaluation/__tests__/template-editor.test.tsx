@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TemplateEditor } from '../template-editor'
-import type { EvaluationSection } from '@/types/evaluation'
+import type { FormSection } from '@/lib/forms/types'
 
 const mocks = vi.hoisted(() => ({
   useProcedureTypes: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock('@/hooks/queries/use-evaluation', () => ({
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
-const sourceSections: EvaluationSection[] = [
+const sourceSections: FormSection[] = [
   {
     id: 'src-s1',
     title: 'Histórico do Botox',
@@ -29,7 +29,7 @@ const sourceSections: EvaluationSection[] = [
 ]
 
 function renderEditor() {
-  const onSave = vi.fn<(sections: EvaluationSection[]) => Promise<{ success: boolean }>>()
+  const onSave = vi.fn<(sections: FormSection[]) => Promise<{ success: boolean }>>()
   onSave.mockResolvedValue({ success: true })
   render(
     <TemplateEditor
@@ -81,4 +81,19 @@ describe('TemplateEditor', () => {
     expect(onSave).toHaveBeenCalledWith(sourceSections)
   })
 
+  it('disables "Copiar de outro procedimento" while a save runs (previously a copy could replace the sections while the save still sent the old ones)', async () => {
+    const user = userEvent.setup()
+    const { onSave } = renderEditor()
+    let finishSave!: (value: { success: boolean }) => void
+    onSave.mockReturnValueOnce(new Promise((resolve) => { finishSave = resolve }))
+
+    await user.click(screen.getByRole('button', { name: 'Copiar de outro procedimento' }))
+    await user.click(await screen.findByText('Botox'))
+    await user.click(screen.getByRole('button', { name: 'Copiar' }))
+    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    expect(screen.getByRole('button', { name: 'Copiar de outro procedimento' })).toBeDisabled()
+    await act(async () => finishSave({ success: true }))
+    expect(screen.getByRole('button', { name: 'Copiar de outro procedimento' })).toBeEnabled()
+  })
 })

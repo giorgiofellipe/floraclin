@@ -1,6 +1,6 @@
-import type { EvaluationSection } from '@/types/evaluation'
+import type { FormSection } from '@/lib/forms/types'
 
-export const microagulhamentoSections: EvaluationSection[] = [
+export const microagulhamentoSections: FormSection[] = [
   {
     id: 'micro-s1',
     title: 'Objetivo do Tratamento e Queixa Principal',

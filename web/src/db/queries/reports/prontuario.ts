@@ -1,5 +1,6 @@
 import { getPatient, type Patient } from '@/db/queries/patients'
 import { getAnamnesis } from '@/db/queries/anamnesis'
+import type { AnamnesisRecord } from '@/lib/anamnesis/types'
 import { listProcedures, type ProcedureListItem, type ProcedureSessionSummary } from '@/db/queries/procedures'
 import { getProductApplications, type ProductApplicationRecord } from '@/db/queries/product-applications'
 import { getFaceDiagram, type DiagramWithPoints } from '@/db/queries/face-diagrams'
@@ -29,14 +30,6 @@ import { getConsentHistory } from '@/db/queries/consent'
 // any real aesthetic-clinic patient accumulates.
 const MAX_PROCEDURES = 100
 
-// `getAnamnesis`'s own return statement is `result[0] ?? null`, but with
-// `noUncheckedIndexedAccess` off (this project's default), TypeScript treats
-// `result[0]` as non-nullable and therefore drops the `?? null` branch from
-// the *inferred* return type entirely — `Awaited<ReturnType<...>>` alone
-// resolves to the row type only, not `Row | null`. The `| null` here is
-// added back explicitly so this type matches what the function actually
-// returns at runtime (verified: a patient with no anamnese row).
-export type AnamnesisRecord = Awaited<ReturnType<typeof getAnamnesis>> | null
 export type ConsentHistoryEntry = Awaited<ReturnType<typeof getConsentHistory>>[number]
 
 export interface ProntuarioProcedure {
@@ -57,7 +50,7 @@ export interface ProntuarioProcedure {
 
 export interface ProntuarioDossier {
   patient: Patient
-  anamnesis: AnamnesisRecord
+  anamnesis: AnamnesisRecord | null
   procedures: ProntuarioProcedure[]
   /** `true` when `procedures` was truncated to `MAX_PROCEDURES`, so the PDF
    *  can say so instead of silently presenting a partial history as complete. */
@@ -83,7 +76,7 @@ export interface ProntuarioSummary {
     gender: string | null
     email: string | null
   }
-  anamnesis: { mainComplaint: string | null } | null
+  anamnesis: { updatedAt: Date } | null
   procedures: Array<{
     id: string
     procedureTypeName: string
@@ -126,7 +119,7 @@ export function toProntuarioSummary(dossier: ProntuarioDossier): ProntuarioSumma
       gender: patient.gender,
       email: patient.email,
     },
-    anamnesis: anamnesis ? { mainComplaint: anamnesis.mainComplaint } : null,
+    anamnesis: anamnesis ? { updatedAt: new Date(anamnesis.updatedAt) } : null,
     procedures: procedures.map((procedure) => ({
       id: procedure.id,
       procedureTypeName: procedure.procedureTypeName,

@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useProcedureTypes } from '@/hooks/queries/use-procedure-types'
 import { useEvaluationTemplates } from '@/hooks/queries/use-evaluation'
 import { TemplateEditorPage } from './template-editor-page'
-import type { EvaluationSection } from '@/types/evaluation'
+import type { FormSection } from '@/lib/forms/types'
 
 interface EvaluationTemplatePageClientProps {
   procedureTypeId: string
@@ -46,7 +46,7 @@ export function EvaluationTemplatePageClient({ procedureTypeId, defaultCategorie
         template
           ? {
               id: template.id,
-              sections: template.sections as EvaluationSection[],
+              sections: template.sections as FormSection[],
               version: template.version,
             }
           : null
