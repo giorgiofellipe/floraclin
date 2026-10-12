@@ -36,7 +36,7 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
   {
     key: 'trial_ending',
     templateName: 'trial_ending',
-    category: 'UTILITY',
+    category: 'MARKETING',
     emailSubject: 'Seu teste termina em 2 dias',
     body: 'Olá, {{1}}! Seu teste gratuito da FloraClin termina em 2 dias. Para manter a agenda, os pacientes e o WhatsApp funcionando, escolha um plano.',
     button: { label: 'Ver planos', path: '/configuracoes?tab=assinatura' },
