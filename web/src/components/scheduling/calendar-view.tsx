@@ -366,8 +366,8 @@ export function CalendarView({
   return (
     <div className="flex h-full flex-col gap-4">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex min-w-0 items-center gap-2 md:gap-3">
           <Button variant="outline" size="sm" className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors" onClick={goToToday}>
             Hoje
           </Button>
@@ -379,7 +379,7 @@ export function CalendarView({
               <ChevronRight className="size-4" />
             </Button>
           </div>
-          <h2 className="text-lg font-semibold capitalize text-[#2A2A2A] tracking-tight">
+          <h2 className="truncate text-base font-semibold capitalize text-[#2A2A2A] tracking-tight md:text-lg">
             {view === 'day' && format(currentDate, "d 'de' MMMM 'de' yyyy", { locale: ptBR })}
             {view === 'week' &&
               `${format(startOfWeek(currentDate, { weekStartsOn: 1 }), "d 'de' MMM", { locale: ptBR })} - ${format(endOfWeek(currentDate, { weekStartsOn: 1 }), "d 'de' MMM", { locale: ptBR })}`}
@@ -387,17 +387,17 @@ export function CalendarView({
           </h2>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex w-full items-center gap-2 md:w-auto md:gap-3">
           {/* Practitioner filter */}
           <Select items={practitionerFilterItems} value={practitionerId} onValueChange={(v) => v && changePractitioner(v)}>
-            <SelectTrigger className="w-auto min-w-[140px] border-sage/20">
+            <SelectTrigger className="min-w-0 flex-1 border-sage/20 md:w-auto md:min-w-[140px] md:flex-none">
               <SelectValue placeholder="Profissional" />
             </SelectTrigger>
             <SelectContent />
           </Select>
 
           {/* View toggle - pill style */}
-          <div className="flex rounded-full bg-[#E8ECEF] p-0.5" data-testid="calendar-view-toggle">
+          <div className="flex shrink-0 rounded-full bg-[#E8ECEF] p-0.5" data-testid="calendar-view-toggle">
             {([
               ['day', 'Dia'],
               ['week', 'Semana'],
@@ -406,7 +406,7 @@ export function CalendarView({
               <button
                 key={v}
                 type="button"
-                className={`rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200 ${
+                className={`rounded-full px-2.5 py-1.5 text-xs font-medium md:px-4 md:text-sm transition-all duration-200 ${
                   view === v
                     ? 'bg-white text-forest shadow-sm'
                     : 'text-mid hover:text-forest'
@@ -422,17 +422,18 @@ export function CalendarView({
             <Button
               variant="outline"
               size="sm"
-              className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
+              className="shrink-0 border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
               onClick={() => setBlockFormOpen(true)}
               data-testid="calendar-new-block"
+              aria-label="Bloquear"
             >
               <BanIcon className="size-4" />
-              Bloquear
+              <span className="hidden md:inline">Bloquear</span>
             </Button>
           )}
-          <Button size="sm" className="bg-forest text-cream hover:bg-sage transition-colors" onClick={handleNewAppointment} data-testid="calendar-new-appointment">
+          <Button size="sm" className="shrink-0 bg-forest text-cream hover:bg-sage transition-colors" onClick={handleNewAppointment} data-testid="calendar-new-appointment" aria-label="Agendar">
             <Plus className="size-4" />
-            Agendar
+            <span className="hidden md:inline">Agendar</span>
           </Button>
         </div>
       </div>
@@ -440,7 +441,7 @@ export function CalendarView({
       {/* Calendar content */}
       <div className="relative min-h-0 flex-1 overflow-auto rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         {isLoading && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center bg-white/60 backdrop-blur-sm">
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/60 backdrop-blur-sm">
             <div className="flex items-center gap-2 rounded-full bg-white px-5 py-2.5 shadow-sm">
               <div className="size-2 animate-pulse rounded-full bg-sage" />
               <p className="text-sm font-medium text-forest">Carregando...</p>
@@ -449,7 +450,7 @@ export function CalendarView({
         )}
 
         {!isLoading && appointments.length === 0 && (
-          <div className="absolute inset-x-0 top-6 z-20 flex justify-center pointer-events-none">
+          <div className="absolute inset-x-0 top-6 z-[45] flex justify-center pointer-events-none">
             <div className="flex items-center gap-2 rounded-full bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm">
               <span className="text-sm text-mid">Nenhum agendamento para este periodo.</span>
             </div>
@@ -630,9 +631,9 @@ export function CalendarView({
       )}
 
       {/* Status legend */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 pb-1">
+      <div className="flex items-center gap-x-4 gap-y-1 overflow-x-auto px-1 pb-1 md:flex-wrap">
         {STATUS_LEGEND.map(([status, label, dotColor]) => (
-          <span key={status} className="flex items-center gap-1.5 text-[11px] text-mid">
+          <span key={status} className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] text-mid">
             <span className={`inline-block size-2.5 rounded-full ${dotColor}`} />
             {label}
           </span>

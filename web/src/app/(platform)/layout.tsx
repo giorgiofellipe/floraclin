@@ -76,7 +76,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           currentPeriodEnd={subscription?.currentPeriodEnd?.toISOString() ?? null}
         />
         <InstallBanner />
-        <main className="flex-1 p-6">{children}</main>
+        <main className="flex-1 p-4 md:p-6">{children}</main>
         <footer className="px-6 pb-6 text-center text-xs text-mid">
           <Link href="https://floraclin.com.br/privacidade" className="hover:text-sage">
             Privacidade
