@@ -45,6 +45,8 @@ describe('OnboardingWizard', () => {
       wrap(
         <OnboardingWizard
           tenantName="My Clinic"
+          tenantPhone={null}
+          tenantEmail={null}
           existingProcedureTypes={[]}
           existingProducts={[]}
         />,
@@ -58,6 +60,8 @@ describe('OnboardingWizard', () => {
       wrap(
         <OnboardingWizard
           tenantName="My Clinic"
+          tenantPhone={null}
+          tenantEmail={null}
           existingProcedureTypes={[]}
           existingProducts={[]}
         />,
@@ -76,6 +80,8 @@ describe('OnboardingWizard', () => {
         wrap(
           <OnboardingWizard
             tenantName="My Clinic"
+            tenantPhone={null}
+            tenantEmail={null}
             existingProcedureTypes={[]}
             existingProducts={[]}
           />,
@@ -90,6 +96,8 @@ describe('OnboardingWizard', () => {
       wrap(
         <OnboardingWizard
           tenantName="My Clinic"
+          tenantPhone={null}
+          tenantEmail={null}
           existingProcedureTypes={[]}
           existingProducts={[]}
         />,
@@ -125,6 +133,8 @@ describe('OnboardingWizard', () => {
       wrap(
         <OnboardingWizard
           tenantName="My Clinic"
+          tenantPhone={null}
+          tenantEmail={null}
           existingProcedureTypes={[]}
           existingProducts={[]}
         />,
@@ -160,5 +170,39 @@ describe('OnboardingWizard', () => {
       expect(p).not.toHaveProperty('origin')
       expect(p).not.toHaveProperty('isCustom')
     }
+  })
+
+  // Regression: finishing onboarding erased the signup phone, so lifecycle WhatsApp messages were skipped.
+  it('keeps the tenant phone and email when the owner finishes without editing them', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    render(
+      wrap(
+        <OnboardingWizard
+          tenantName="My Clinic"
+          tenantPhone="(47) 98844-3635"
+          tenantEmail="contato@clinica.com.br"
+          existingProcedureTypes={[]}
+          existingProducts={[]}
+        />,
+      ),
+    )
+
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-complete'))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const [, init] = fetchMock.mock.calls[0]!
+    const body = JSON.parse((init as RequestInit).body as string)
+
+    expect(body.clinic).toMatchObject({ phone: '(47) 98844-3635', email: 'contato@clinica.com.br' })
   })
 })

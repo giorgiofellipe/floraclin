@@ -47,6 +47,8 @@ export default async function OnboardingPage() {
   return (
     <OnboardingWizard
       tenantName={tenant.name}
+      tenantPhone={tenant.phone}
+      tenantEmail={tenant.email}
       existingProcedureTypes={procedureTypesForWizard}
       existingProducts={existingProducts}
     />

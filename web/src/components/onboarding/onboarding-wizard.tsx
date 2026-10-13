@@ -49,12 +49,16 @@ const STEPS = [
 
 interface OnboardingWizardProps {
   tenantName: string
+  tenantPhone: string | null
+  tenantEmail: string | null
   existingProcedureTypes: ProcedureTypeItem[]
   existingProducts?: Product[]
 }
 
 export function OnboardingWizard({
   tenantName,
+  tenantPhone,
+  tenantEmail,
   existingProcedureTypes,
   existingProducts = [],
 }: OnboardingWizardProps) {
@@ -65,8 +69,8 @@ export function OnboardingWizard({
   // Step 1 state: clinic info
   const [clinicData, setClinicData] = useState<Record<string, unknown>>({
     name: tenantName || '',
-    phone: '',
-    email: '',
+    phone: tenantPhone ?? '',
+    email: tenantEmail ?? '',
     address: {},
     workingHours: DEFAULT_WORKING_HOURS,
   })
