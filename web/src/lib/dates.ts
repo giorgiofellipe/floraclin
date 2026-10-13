@@ -70,6 +70,17 @@ export function brToday(): string {
 }
 
 /**
+ * The `paidAt` to send for a payment day the user picked: BR noon of that day,
+ * or undefined for no pick or today, so the server stamps the real instant.
+ * BR noon on today would sort before a payment recorded later today, leaving
+ * it out of the quote, and the replay would then refuse the new payment.
+ */
+export function toPaidAtIso(ymd: string): string | undefined {
+  if (!ymd || ymd === brToday()) return undefined
+  return parseBrDate(ymd, '12:00:00').toISOString()
+}
+
+/**
  * Format a `Date` instant as a `YYYY-MM-DD` string in BR time. Use when the
  * semantic answer is "which BR calendar day did this instant fall on".
  */

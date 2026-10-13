@@ -3,8 +3,6 @@ import {
   cashMovements,
   patients,
   expenseCategories,
-  installments,
-  financialEntries,
   procedureRecords,
   procedureTypes,
   paymentRecords,
@@ -14,6 +12,13 @@ import {
 import { eq, and, sql, count, sum, desc, asc, gte, lte } from 'drizzle-orm'
 import type { LedgerFilterInput } from '@/validations/financial'
 import { startOfBrDay, endOfBrDay } from '@/lib/dates'
+import { quoteInstallment, round2 } from '@/lib/financial/penalties'
+import {
+  loadLivePaymentsByInstallment,
+  loadOverdueInstallments,
+  toInstallmentBase,
+  toPaymentInputs,
+} from './financial'
 
 export async function listCashMovements(
   tenantId: string,
@@ -116,7 +121,8 @@ export async function getLedgerSummary(
     conditions.push(eq(cashMovements.expenseCategoryId, filters.categoryId))
   }
 
-  const [summaryResult, overdueResult] = await Promise.all([
+  const now = new Date()
+  const [summaryResult, overdueInstallments] = await Promise.all([
     db
       .select({
         totalInflows: sql<number>`COALESCE(SUM(CASE WHEN ${cashMovements.type} = 'inflow' THEN ${cashMovements.amount}::numeric ELSE 0 END), 0)`,
@@ -125,29 +131,32 @@ export async function getLedgerSummary(
       })
       .from(cashMovements)
       .where(and(...conditions)),
-    db
-      .select({
-        overdueReceivables: sql<number>`COALESCE(SUM((${installments.amount}::numeric + ${installments.fineAmount}::numeric + ${installments.interestAmount}::numeric) - ${installments.amountPaid}::numeric), 0)`,
-      })
-      .from(installments)
-      .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
-      .where(
-        and(
-          eq(installments.tenantId, tenantId),
-          sql`${installments.dueDate} < CURRENT_DATE`,
-          eq(installments.status, 'pending')
-        )
-      ),
+    loadOverdueInstallments(tenantId, now),
   ])
 
+  // The stored fine and interest are snapshots from the last payment; what is
+  // owed today comes from the engine.
+  const paymentsByInstallment = await loadLivePaymentsByInstallment(
+    db,
+    overdueInstallments.map((i) => i.id),
+  )
+  let overdueReceivables = 0
+  for (const inst of overdueInstallments) {
+    const quote = quoteInstallment(
+      toInstallmentBase(inst),
+      toPaymentInputs(paymentsByInstallment.get(inst.id) ?? []),
+      now,
+    )
+    overdueReceivables = round2(overdueReceivables + quote.totalDue)
+  }
+
   const summary = summaryResult[0] ?? { totalInflows: 0, totalOutflows: 0, netResult: 0 }
-  const overdue = overdueResult[0] ?? { overdueReceivables: 0 }
 
   return {
     totalInflows: summary.totalInflows,
     totalOutflows: summary.totalOutflows,
     netResult: summary.netResult,
-    overdueReceivables: overdue.overdueReceivables,
+    overdueReceivables,
   }
 }
 

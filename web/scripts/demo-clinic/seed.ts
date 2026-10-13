@@ -107,6 +107,7 @@ import {
   whatsappConversations,
   whatsappMessages,
 } from '@/db/schema'
+import { loadInstallmentTerms } from '@/db/queries/financial'
 import { brToday, parseBrDate } from '@/lib/dates'
 import { getStoragePath } from '@/lib/storage'
 import {
@@ -709,6 +710,7 @@ async function writeFinancials(tx: Tx, ctx: WriteContext, pastRecords: PastRecor
     }
   })
 
+  const terms = await loadInstallmentTerms(tx as unknown as typeof db, DEMO_TENANT_ID)
   const installmentRows = pastRecords.flatMap(({ entry, financialEntryId }) =>
     entry.installments.map((installment) => {
       const paidAt = installment.paidAt ? brInstant(installment.paidAt, '12:00') : null
@@ -725,6 +727,7 @@ async function writeFinancials(tx: Tx, ctx: WriteContext, pastRecords: PastRecor
         paidAt,
         paymentMethod: installment.paymentMethod ?? null,
         amountPaid: installment.status === 'paid' ? money(installment.amount) : '0',
+        ...terms,
         createdAt: brInstant(entry.procedure.date, '12:00'),
         updatedAt: paidAt ?? brInstant(entry.procedure.date, '12:00'),
       }

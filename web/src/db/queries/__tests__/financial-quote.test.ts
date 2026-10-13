@@ -32,14 +32,23 @@ function installmentRow(overrides: Record<string, unknown> = {}) {
   return {
     id: INSTALLMENT_ID,
     tenantId: TENANT,
+    financialEntryId: '00000000-0000-0000-0000-00000000e001',
+    installmentNumber: 2,
     amount: '750.00',
     dueDate: '2026-05-22',
     status: 'pending',
     appliedFineType: 'percentage',
     appliedFineValue: '2.00',
     appliedInterestRate: '1.00',
+    appliedGracePeriodDays: 0,
+    penaltyPauses: [],
+    cancelledAt: null,
     ...overrides,
   }
+}
+
+function livePayment(paidAt: string) {
+  return { id: 'p1', amount: '100.00', paidAt, recordedAt: paidAt }
 }
 
 const financialSettingsRow = {
@@ -49,20 +58,19 @@ const financialSettingsRow = {
   gracePeriodDays: 0,
 }
 
-/** Queues the three selects `getInstallmentQuote` issues, in order. */
+/** Queues the two selects `getInstallmentQuote` issues, in order. */
 function queueQuoteSelects(opts: {
   installment: Record<string, unknown>[]
-  settings?: Record<string, unknown>[]
   payments?: Record<string, unknown>[]
 }) {
   dbMock.select.mockReturnValueOnce(chain(opts.installment))
-  dbMock.select.mockReturnValueOnce(chain(opts.settings ?? [financialSettingsRow]))
   dbMock.select.mockReturnValueOnce(chain(opts.payments ?? []))
 }
 
 describe('getInstallmentQuote', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    dbMock.select.mockReset()
   })
 
   it('prices an unpaid overdue installment as of the given instant', async () => {
@@ -79,90 +87,89 @@ describe('getInstallmentQuote', () => {
     expect(quote.asOf).toBe('2026-09-03T14:04:50.000Z')
   })
 
-  it('falls back to tenant settings when the row has not snapshotted fine and interest yet', async () => {
+  // CDC art. 51 X: the clinic changing its settings must not reprice a charge
+  // already issued. Rows are served by table so a settings read anywhere in
+  // the path would see the new, harsher terms.
+  it('prices with the terms written at creation, not the tenant settings changed since', async () => {
+    const { getInstallmentQuote } = await import('../financial-quote')
+    const { financialSettings, installments, paymentRecords } = await import('@/db/schema')
+    const byTable = new Map<unknown, unknown[]>([
+      [installments, [installmentRow({ appliedGracePeriodDays: 0 })]],
+      [financialSettings, [{ ...financialSettingsRow, fineValue: '1.00', gracePeriodDays: 10 }]],
+      [paymentRecords, []],
+    ])
+    dbMock.select.mockImplementation(() => ({ from: (table: unknown) => chain(byTable.get(table)) }))
+
+    const quote = await getInstallmentQuote(
+      TENANT,
+      INSTALLMENT_ID,
+      new Date('2026-05-25T15:00:00.000Z'),
+    )
+
+    // Fine 2% of 750 and three days of 1%/month, both from the row.
+    expect([quote.fineAmount, quote.interestAmount]).toEqual([15, 0.75])
+  })
+
+  it('refuses to price an installment that has no terms written, naming it', async () => {
+    const { getInstallmentQuote } = await import('../financial-quote')
+    queueQuoteSelects({ installment: [installmentRow({ appliedGracePeriodDays: null })] })
+
+    await expect(
+      getInstallmentQuote(TENANT, INSTALLMENT_ID, new Date('2026-09-03T14:04:50.000Z')),
+    ).rejects.toThrow(INSTALLMENT_ID)
+  })
+
+  it('refuses a date before an existing payment and names the installment and the later date', async () => {
     const { getInstallmentQuote } = await import('../financial-quote')
     queueQuoteSelects({
-      installment: [
-        installmentRow({ appliedFineValue: null, appliedInterestRate: null, appliedFineType: null }),
-      ],
+      installment: [installmentRow()],
+      payments: [livePayment('2026-08-01T15:00:00.000Z')],
+    })
+    dbMock.select.mockReturnValueOnce(chain([{ description: 'Botox', patientName: 'Maria Silva' }]))
+
+    await expect(
+      getInstallmentQuote(TENANT, INSTALLMENT_ID, new Date('2026-06-22T15:00:00.000Z')),
+    ).rejects.toMatchObject({
+      code: 'PAYMENT_BEFORE_LATER_PAYMENT',
+      message:
+        'Já existe um pagamento em 01/08/2026 na parcela 2 de Botox (Maria Silva). Registre pagamentos a partir dessa data.',
+    })
+  })
+
+  // A date picked in the UI is anchored to BR noon, so on the morning of a day
+  // that already has a payment it sorts before it.
+  it('prices an earlier instant on the latest payment\'s own BR day after that payment', async () => {
+    const { getInstallmentQuote } = await import('../financial-quote')
+    queueQuoteSelects({
+      installment: [installmentRow()],
+      payments: [livePayment('2026-09-03T15:00:00.000Z')],
     })
 
     const quote = await getInstallmentQuote(
       TENANT,
       INSTALLMENT_ID,
-      new Date('2026-09-03T14:04:50.000Z'),
+      new Date('2026-09-03T13:00:00.000Z'),
     )
 
-    expect(quote.totalDue).toBe(791)
+    // The R$100 covers 26 of interest and the 15 fine, leaving 691 of principal.
+    expect(quote.totalDue).toBe(691)
   })
 
-  // Settings rows are created lazily, so a tenant can have none. The write path
-  // falls back to 2% and 1% via loadFinancialSettings; a quote that fell back to
-  // zero would offer R$750 on a debt the server charges R$791 for, and since
-  // underpayment is allowed the charge would silently land short.
-  it('uses the same defaults as the write path when the tenant has no settings row', async () => {
-    const { getInstallmentQuote } = await import('../financial-quote')
-    queueQuoteSelects({
-      installment: [
-        installmentRow({ appliedFineValue: null, appliedInterestRate: null, appliedFineType: null }),
-      ],
-      settings: [],
-    })
-
-    const quote = await getInstallmentQuote(
-      TENANT,
-      INSTALLMENT_ID,
-      new Date('2026-09-03T14:04:50.000Z'),
-    )
-
-    expect(quote.fineAmount).toBe(15)
-    expect(quote.interestAmount).toBe(26)
-    expect(quote.totalDue).toBe(791)
-  })
-
-  it('excludes reversed payment records', async () => {
-    const { getInstallmentQuote } = await import('../financial-quote')
-    // The reversed payment is never returned by the query in the first
-    // place (it filters on `isNull(reversedAt)`), so the quote prices the
-    // installment as if it had never been paid.
-    queueQuoteSelects({ installment: [installmentRow()], payments: [] })
-
-    const quote = await getInstallmentQuote(
-      TENANT,
-      INSTALLMENT_ID,
-      new Date('2026-09-03T14:04:50.000Z'),
-    )
-
-    expect(quote.remainingPrincipal).toBe(750)
-  })
-
-  it('throws INSTALLMENT_ALREADY_PAID for a paid installment without reaching the settings or payments selects', async () => {
+  it.each([
+    { status: 'paid', error: ['INSTALLMENT_ALREADY_PAID', 'Parcela já está totalmente paga'] },
+    { status: 'cancelled', error: ['INSTALLMENT_CANCELLED', 'Parcela cancelada não pode receber pagamento'] },
+  ])('throws $error.0 for a $status installment without reaching the payments select', async ({ status, error }) => {
     const { getInstallmentQuote } = await import('../financial-quote')
     const { BusinessError } = await import('@/lib/errors')
-    dbMock.select.mockReturnValueOnce(chain([installmentRow({ status: 'paid' })]))
+    dbMock.select.mockReturnValueOnce(chain([installmentRow({ status })]))
 
     await expect(
       getInstallmentQuote(TENANT, INSTALLMENT_ID, new Date('2026-09-03T14:04:50.000Z')),
-    ).rejects.toMatchObject(
-      new BusinessError('INSTALLMENT_ALREADY_PAID', 'Parcela já está totalmente paga'),
-    )
+    ).rejects.toMatchObject(new BusinessError(error[0], error[1]))
     expect(dbMock.select).toHaveBeenCalledTimes(1)
   })
 
-  it('throws INSTALLMENT_CANCELLED for a cancelled installment without reaching the settings or payments selects', async () => {
-    const { getInstallmentQuote } = await import('../financial-quote')
-    const { BusinessError } = await import('@/lib/errors')
-    dbMock.select.mockReturnValueOnce(chain([installmentRow({ status: 'cancelled' })]))
-
-    await expect(
-      getInstallmentQuote(TENANT, INSTALLMENT_ID, new Date('2026-09-03T14:04:50.000Z')),
-    ).rejects.toMatchObject(
-      new BusinessError('INSTALLMENT_CANCELLED', 'Parcela cancelada não pode receber pagamento'),
-    )
-    expect(dbMock.select).toHaveBeenCalledTimes(1)
-  })
-
-  it('throws INSTALLMENT_NOT_FOUND for an installment in another tenant', async () => {
+  it('throws INSTALLMENT_NOT_FOUND when the installment is not found', async () => {
     const { getInstallmentQuote } = await import('../financial-quote')
     const { BusinessError } = await import('@/lib/errors')
     dbMock.select.mockReturnValueOnce(chain([]))

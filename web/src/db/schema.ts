@@ -401,6 +401,7 @@ export const financialEntries = floraclinSchema.table('financial_entries', {
   status: varchar('status', { length: 20 }).notNull().default('pending'), // CHECK in migration
   notes: text('notes'),
   renegotiatedAt: timestamp('renegotiated_at', { withTimezone: true }),
+  createdFromRenegotiation: boolean('created_from_renegotiation').notNull().default(false),
   createdBy: uuid('created_by').notNull().references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -428,6 +429,9 @@ export const installments = floraclinSchema.table('installments', {
   appliedFineType: varchar('applied_fine_type', { length: 20 }),
   appliedFineValue: decimal('applied_fine_value', { precision: 5, scale: 2 }),
   appliedInterestRate: decimal('applied_interest_rate', { precision: 5, scale: 2 }),
+  appliedGracePeriodDays: integer('applied_grace_period_days'),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  penaltyPauses: jsonb('penalty_pauses').$type<{ from: string; to: string }[]>().notNull().default([]),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

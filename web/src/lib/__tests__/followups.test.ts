@@ -22,6 +22,7 @@ const { txState, TABLE_TOKENS } = vi.hoisted(() => {
   interface UpdateCall {
     table: 'procedureRecords' | 'financialEntries' | 'installments' | 'unknown'
     values: Record<string, unknown>
+    where?: unknown
   }
   interface TxState {
     selectResult: Array<{ id: string; tenantId: string; status: string }>
@@ -89,9 +90,10 @@ vi.mock('@/db/client', () => {
       update: (table: unknown) => ({
         set: (vals: Record<string, unknown>) => {
           const tableTag = tagTable(table)
-          const call = { table: tableTag, values: vals }
+          const call: { table: UpdateCallTable; values: Record<string, unknown>; where?: unknown } = { table: tableTag, values: vals }
           return {
-            where: () => {
+            where: (condition: unknown) => {
+              call.where = condition
               // financialEntries updates use .returning() — installments and
               // procedureRecords don't. We mimic both shapes by returning a
               // thenable that also exposes .returning(). Only one of these
@@ -154,14 +156,14 @@ vi.mock('@/db/schema', () => ({
     id: 'id',
     tenantId: 'tenant_id',
     financialEntryId: 'financial_entry_id',
+    status: 'status',
   }),
 }))
 
-// drizzle-orm operators are passed straight through to our stub `where`
-// clauses (which we never inspect), so the simplest stub is fine.
 vi.mock('drizzle-orm', () => ({
   and: (...args: unknown[]) => args,
   eq: (a: unknown, b: unknown) => ['eq', a, b],
+  ne: (a: unknown, b: unknown) => ['ne', a, b],
   isNull: (a: unknown) => ['isNull', a],
 }))
 
@@ -263,8 +265,25 @@ describe('recordFollowup', () => {
       status: 'cancelled',
       updatedAt: expect.any(Date),
     })
-    expect(txState.updates[2].values).toMatchObject({ status: 'cancelled' })
-    expect(txState.updates[3].values).toMatchObject({ status: 'cancelled' })
+    expect(txState.updates[2].values).toMatchObject({ status: 'cancelled', cancelledAt: expect.any(Date) })
+    expect(txState.updates[3].values).toMatchObject({ status: 'cancelled', cancelledAt: expect.any(Date) })
+  })
+
+  it('leaves paid installments alone when desistiu cancels an approved procedure (previously Reativar turned received money back into debt)', async () => {
+    resetTx([{ id: 'proc-1', tenantId: 'tenant-1', status: 'approved' }], {
+      cancelledEntryIds: [{ id: 'entry-1' }],
+    })
+
+    await recordFollowup({
+      tenantId: 'tenant-1',
+      contactedBy: 'user-1',
+      procedureRecordId: 'proc-1',
+      channel: 'call',
+      outcome: 'desistiu',
+    })
+
+    const installmentUpdate = txState.updates.find((u) => u.table === 'installments')
+    expect(installmentUpdate?.where).toContainEqual(['ne', 'status', 'paid'])
   })
 
   it('does not touch installments when desistiu on approved with no financial entries', async () => {

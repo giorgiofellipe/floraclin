@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { PgDialect } from 'drizzle-orm/pg-core'
+import type { SQL } from 'drizzle-orm'
 import { quoteInstallment } from '@/lib/financial/penalties'
 
 // A chainable, awaitable stand-in for drizzle's query builders, copied from
@@ -90,6 +92,7 @@ const BASE = {
   appliedFineType: 'percentage',
   appliedInterestRate: 1,
   gracePeriodDays: 0,
+  penaltyPauses: [],
 }
 
 /**
@@ -110,9 +113,7 @@ function makeTx() {
   }
 }
 
-// Typed drizzle select row used inside bulkPayInstallments' loop: camelCase,
-// already fine/interest-snapshotted so the settings-snapshot branch is
-// skipped (fewer calls to mock).
+// Typed drizzle select row used inside bulkPayInstallments' loop: camelCase.
 function typedInstallmentRow(overrides: Record<string, unknown> = {}) {
   return {
     id: INSTALLMENT_ID,
@@ -125,17 +126,14 @@ function typedInstallmentRow(overrides: Record<string, unknown> = {}) {
     appliedFineType: 'percentage',
     appliedFineValue: '2.00',
     appliedInterestRate: '1.00',
+    appliedGracePeriodDays: 0,
+    penaltyPauses: [],
+    cancelledAt: null,
     lastFineInterestCalcAt: null,
     ...overrides,
   }
 }
 
-const financialSettingsRow = {
-  fineType: 'percentage',
-  fineValue: '2.00',
-  monthlyInterestPercent: '1.00',
-  gracePeriodDays: 0,
-}
 
 /** The single pre-transaction join bulkPayInstallments issues via `db.select`. */
 function queuePrepareRows() {
@@ -150,6 +148,35 @@ describe('bulkPayInstallments', () => {
     resolveMetaEventPrerequisitesMock.mockResolvedValue(null)
     resolveProspectForPatientMock.mockResolvedValue(null)
     enqueueMetaEventMock.mockResolvedValue({ inserted: true })
+  })
+
+  it('a failed audit insert rejects the whole batch', async () => {
+    const { bulkPayInstallments } = await import('../financial')
+    const tx = makeTx()
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+    queuePrepareRows()
+
+    tx.execute.mockResolvedValueOnce([{ id: INSTALLMENT_ID }]) // FOR UPDATE lock
+    tx.select.mockReturnValueOnce(chain([typedInstallmentRow()])) // row
+    tx.select.mockReturnValueOnce(chain([])) // existingPayments, no priors
+    tx.insert.mockReturnValueOnce(chain([{ id: 'pay-1' }]))
+    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }])) // entryInfo
+    tx.insert.mockReturnValueOnce(chain(undefined)) // cashMovements
+    tx.update.mockReturnValueOnce(chain(undefined)) // installments final
+    tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '790.75' }])) // updateEntryStatus
+    tx.update.mockReturnValueOnce(chain(undefined)) // financialEntries
+    tx.select.mockReturnValueOnce(chain([{ status: 'pending', totalAmount: '790.75' }])) // meta gate 1 fails
+    tx.insert.mockImplementationOnce(() => chain(Promise.reject(new Error('audit down')))) // auditLogs
+
+    await expect(
+      bulkPayInstallments(TENANT, USER_ID, {
+        installmentIds: [INSTALLMENT_ID],
+        paymentMethod: 'pix',
+        paidAt: '2026-09-03T00:00:00.000Z',
+      }),
+    ).rejects.toThrow('audit down')
+
+    expect(tx.insert).toHaveBeenCalledTimes(3)
   })
 
   it('charges a single unpaid overdue installment exactly quoteInstallment(base, [], paidAt).totalDue', async () => {
@@ -167,7 +194,6 @@ describe('bulkPayInstallments', () => {
     expect(expected.totalDue).toBe(790.75)
 
     tx.execute.mockResolvedValueOnce([{ id: INSTALLMENT_ID }]) // FOR UPDATE lock
-    tx.select.mockReturnValueOnce(chain([financialSettingsRow])) // getGracePeriodDays, before the loop
     tx.select.mockReturnValueOnce(chain([typedInstallmentRow()])) // row
     tx.select.mockReturnValueOnce(chain([])) // existingPayments, no priors
 
@@ -180,6 +206,8 @@ describe('bulkPayInstallments', () => {
     tx.update.mockReturnValueOnce(chain(undefined)) // financialEntries
     tx.select.mockReturnValueOnce(chain([{ status: 'pending', totalAmount: '790.75' }])) // meta gate 1 fails
 
+    const auditInsert: { value?: unknown } = {}
+    tx.insert.mockReturnValueOnce(chainCapturing(undefined, auditInsert)) // auditLogs
     const results = await bulkPayInstallments(TENANT, USER_ID, {
       installmentIds: [INSTALLMENT_ID],
       paymentMethod: 'pix',
@@ -189,15 +217,24 @@ describe('bulkPayInstallments', () => {
     expect(results).toHaveLength(1)
     expect(results[0].allocation).toEqual({ interestCovered: 25.75, fineCovered: 15, principalCovered: 750 })
     expect(paymentInsert.value).toMatchObject({ amount: '790.75', recordedAt: expect.any(Date) })
+    // One audit row for the whole batch, on the same transaction as the payments.
+    expect(tx.insert).toHaveBeenCalledTimes(3)
+    expect(auditInsert.value).toMatchObject({
+      tenantId: TENANT,
+      userId: USER_ID,
+      action: 'update',
+      entityType: 'installment',
+      changes: {
+        bulkPay: {
+          old: null,
+          new: { installmentIds: [INSTALLMENT_ID], paymentMethod: 'pix', count: 1 },
+        },
+      },
+    })
   })
 
-  // AR-5: bulkPayInstallments must not become a second pricer. A prior
-  // payment (recorded through recordPayment) exactly covered the fine and
-  // interest standing at its own date but touched no principal, so the
-  // installment row is left with fineAmount=0, amountPaid=0. The old ad-hoc
-  // block read those two zeros as "never charged" and billed the fine again;
-  // quoteInstallment replays the prior payment and knows fineApplied is
-  // already true.
+  // A prior payment that covered exactly the fine and interest leaves the row
+  // at fineAmount=0, amountPaid=0, which reads as "never charged".
   it('does not charge the fine a second time after a prior payment covered it without touching principal', async () => {
     const { bulkPayInstallments } = await import('../financial')
     const tx = makeTx()
@@ -225,13 +262,10 @@ describe('bulkPayInstallments', () => {
     expect(expected.totalDue).toBe(757.5)
 
     tx.execute.mockResolvedValueOnce([{ id: INSTALLMENT_ID }])
-    tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
     tx.select.mockReturnValueOnce(chain([typedInstallmentRow()])) // row
     tx.select.mockReturnValueOnce(
       chain([{ id: 'p1', amount: priorAmount, paidAt: priorPaidAt, recordedAt: priorPaidAt }]),
     ) // existingPayments
-
-    tx.update.mockReturnValueOnce(chain(undefined)) // rewrite of p1 (unchanged allocation)
 
     const paymentInsert: { value?: unknown } = {}
     tx.insert.mockReturnValueOnce(chainCapturing([{ id: 'pay-1' }], paymentInsert))
@@ -244,6 +278,7 @@ describe('bulkPayInstallments', () => {
     tx.update.mockReturnValueOnce(chain(undefined)) // financialEntries
     tx.select.mockReturnValueOnce(chain([{ status: 'pending', totalAmount: '750.00' }])) // meta gate 1 fails
 
+    tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
     const results = await bulkPayInstallments(TENANT, USER_ID, {
       installmentIds: [INSTALLMENT_ID],
       paymentMethod: 'pix',
@@ -255,113 +290,84 @@ describe('bulkPayInstallments', () => {
     expect(installmentUpdate.value).toMatchObject({ fineAmount: '0.00', amountPaid: '750.00', status: 'paid' })
   })
 
-  // A bulk payment charges the whole balance as of its date, so backdated
-  // ahead of an existing payment it always takes that payment's debt away.
-  it('a backdated bulk payment is refused when it would leave a later record covering nothing', async () => {
+  it('refuses a batch dated before an existing payment and names the installment that blocked it', async () => {
     const { bulkPayInstallments } = await import('../financial')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
 
-    const laterPaidAt = '2026-08-01T12:00:00.000Z'
-    const paidAt = '2026-06-22T12:00:00.000Z' // sorts before the Aug 1 record
-
-    tx.execute.mockResolvedValueOnce([{ id: INSTALLMENT_ID }])
-    tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
-    tx.select.mockReturnValueOnce(chain([typedInstallmentRow()])) // row
+    tx.execute.mockResolvedValueOnce([{ id: INSTALLMENT_ID, financial_entry_id: ENTRY_ID }])
+    tx.select.mockReturnValueOnce(chain([typedInstallmentRow({ installmentNumber: 3 })])) // row
     tx.select.mockReturnValueOnce(
       chain([
         {
           id: 'p2',
-          amount: '500.00',
-          interestCovered: '10.00',
-          fineCovered: '15.00',
-          principalCovered: '475.00',
-          paidAt: laterPaidAt,
-          recordedAt: laterPaidAt,
+          amount: '100.00',
+          paidAt: '2026-08-01T15:00:00.000Z',
+          recordedAt: '2026-08-01T15:00:00.000Z',
         },
       ]),
-    ) // existingPayments
+    ) // live payments
+    tx.select.mockReturnValueOnce(chain([{ description: 'Botox', patientName: 'Maria Silva' }]))
 
-    // The June-22 charge is the whole balance as of that date, so replayed
-    // ahead of p2 it would leave p2's R$500 with nothing to cover.
     await expect(
       bulkPayInstallments(TENANT, USER_ID, {
         installmentIds: [INSTALLMENT_ID],
         paymentMethod: 'pix',
-        paidAt,
+        paidAt: '2026-06-22T12:00:00.000Z',
       }),
-    ).rejects.toMatchObject({ code: 'BACKDATED_PAYMENT_OVERFILLS' })
+    ).rejects.toMatchObject({
+      code: 'PAYMENT_BEFORE_LATER_PAYMENT',
+      message:
+        'Já existe um pagamento em 01/08/2026 na parcela 3 de Botox (Maria Silva). Registre pagamentos a partir dessa data.',
+    })
 
     expect(tx.update).not.toHaveBeenCalled()
     expect(tx.insert).not.toHaveBeenCalled()
   })
 
-  // AR-exec / step 3: a reversed payment record must not feed the replay.
-  // The `isNull(paymentRecords.reversedAt)` clause on the existingPayments
-  // query (financial.ts) is what keeps a reversed record out of what this
-  // select returns; the generic chain() proxy discards .where() arguments, so
-  // exercising the SQL predicate itself is impractical against this mock
-  // harness. This test instead pins the arithmetic to what only the live
-  // record (never a reversed one) would produce, mirroring what Postgres
-  // hands back once that clause is applied.
-  it('a reversed payment record is excluded: the charge reflects only the live record', async () => {
+  it('locks the entries it writes in id order before the first write, whatever order the installments were listed in', async () => {
     const { bulkPayInstallments } = await import('../financial')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+    const ENTRY_A = '00000000-0000-0000-0000-00000000e00a'
+    const ENTRY_B = '00000000-0000-0000-0000-00000000e00b'
+    const INSTALLMENT_A = '00000000-0000-0000-0000-00000000i00a'
+    const INSTALLMENT_B = '00000000-0000-0000-0000-00000000i00b'
     queuePrepareRows()
 
-    // Live payment: 2026-06-01T12:00Z, 10 days overdue.
-    // fine = 15. interest = 750 * 1%/30 * 10 = 2.5.
-    // 100 covers interest (2.5) then fine (15), leaving 82.5 of principal.
-    const livePaidAt = '2026-06-01T12:00:00.000Z'
-    const liveAmount = '100.00'
+    tx.execute.mockResolvedValueOnce([
+      { id: INSTALLMENT_A, financial_entry_id: ENTRY_A },
+      { id: INSTALLMENT_B, financial_entry_id: ENTRY_B },
+    ])
+    for (const [installmentId, entryId] of [
+      [INSTALLMENT_B, ENTRY_B],
+      [INSTALLMENT_A, ENTRY_A],
+    ]) {
+      tx.select.mockReturnValueOnce(chain([typedInstallmentRow({ id: installmentId, financialEntryId: entryId })]))
+      tx.select.mockReturnValueOnce(chain([])) // live payments
+      tx.insert.mockReturnValueOnce(chain([{ id: `pay-${installmentId}` }]))
+      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }])) // entryInfo
+      tx.insert.mockReturnValueOnce(chain(undefined)) // cashMovements
+      tx.update.mockReturnValueOnce(chain(undefined)) // installments final
+      tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '750.00' }])) // updateEntryStatus
+      tx.update.mockReturnValueOnce(chain(undefined)) // financialEntries
+      tx.select.mockReturnValueOnce(chain([{ status: 'pending', totalAmount: '750.00' }])) // meta gate 1 fails
+    }
+    tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
 
-    // Bulk pay 30 days later, 2026-07-01T12:00Z.
-    // remainingPrincipal = 750 - 82.5 = 667.5.
-    // interest = 667.5 * 1%/30 * 30 = 6.675, rounds to 6.68 (half rounds up).
-    // fineApplied carries over: no second fine.
-    // totalDue = 667.5 + 0 + 6.68 = 674.18.
-    const paidAt = '2026-07-01T12:00:00.000Z'
-    const expected = quoteInstallment(
-      BASE,
-      [{ id: 'p-live', amount: 100, paidAt: livePaidAt, recordedAt: livePaidAt }],
-      new Date(paidAt),
-    )
-    expect(expected.totalDue).toBe(674.18)
-
-    tx.execute.mockResolvedValueOnce([{ id: INSTALLMENT_ID }])
-    tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
-    tx.select.mockReturnValueOnce(chain([typedInstallmentRow()])) // row
-    // Only the live record comes back: a reversed sibling never reaches here.
-    tx.select.mockReturnValueOnce(
-      chain([{ id: 'p-live', amount: liveAmount, paidAt: livePaidAt, recordedAt: livePaidAt }]),
-    )
-
-    tx.update.mockReturnValueOnce(chain(undefined)) // rewrite of p-live (unchanged allocation)
-
-    const paymentInsert: { value?: unknown } = {}
-    tx.insert.mockReturnValueOnce(chainCapturing([{ id: 'pay-1' }], paymentInsert))
-    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }])) // entryInfo
-    tx.insert.mockReturnValueOnce(chain(undefined)) // cashMovements
-
-    const installmentUpdate: { value?: unknown } = {}
-    tx.update.mockReturnValueOnce(chainCapturing(undefined, installmentUpdate)) // installments final
-    tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '750.00' }])) // updateEntryStatus
-    tx.update.mockReturnValueOnce(chain(undefined)) // financialEntries
-    tx.select.mockReturnValueOnce(chain([{ status: 'pending', totalAmount: '750.00' }])) // meta gate 1 fails
-
-    const results = await bulkPayInstallments(TENANT, USER_ID, {
-      installmentIds: [INSTALLMENT_ID],
+    await bulkPayInstallments(TENANT, USER_ID, {
+      installmentIds: [INSTALLMENT_B, INSTALLMENT_A],
       paymentMethod: 'pix',
-      paidAt,
+      paidAt: '2026-09-03T00:00:00.000Z',
     })
 
-    // 82.5 of principal from the live payment plus 667.5 from this one: had a
-    // reversed payment leaked into the replay, both the interest and the
-    // remaining principal would differ.
-    expect(results[0].allocation).toEqual({ interestCovered: 6.68, fineCovered: 0, principalCovered: 667.5 })
-    expect(paymentInsert.value).toMatchObject({ amount: '674.18', recordedAt: expect.any(Date) })
-    expect(installmentUpdate.value).toMatchObject({ amountPaid: '750.00', status: 'paid' })
+    const entryLock = tx.execute.mock.calls
+      .map(([query]) => new PgDialect().sqlToQuery(query as SQL))
+      .find((q) => q.sql.includes('financial_entries'))
+    expect(entryLock?.sql).toMatch(/ORDER BY id\s+FOR UPDATE/)
+    expect(String(entryLock?.params)).toContain(ENTRY_A)
+    expect(String(entryLock?.params)).toContain(ENTRY_B)
+    expect(tx.execute.mock.invocationCallOrder[1]).toBeLessThan(tx.update.mock.invocationCallOrder[0])
   })
 })

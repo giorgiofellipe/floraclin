@@ -74,16 +74,13 @@ function installmentRow(overrides: Record<string, unknown> = {}) {
     appliedFineType: 'percentage',
     appliedFineValue: '2.00',
     appliedInterestRate: '1.00',
+    appliedGracePeriodDays: 0,
+    penaltyPauses: [],
+    cancelledAt: null,
     ...overrides,
   }
 }
 
-const financialSettingsRow = {
-  fineType: 'percentage',
-  fineValue: '2.00',
-  monthlyInterestPercent: '1.00',
-  gracePeriodDays: 0,
-}
 
 /**
  * `transaction` is drizzle's nested transaction, which the postgres-js driver
@@ -107,9 +104,7 @@ describe('reversePayment', () => {
 
   // payment_records.amount is the cash received, so the reversal outflow must
   // match it: a R$900 overpayment against a R$791 charge writes a R$900
-  // outflow, or the cash ledger would be short by the excess forever. This
-  // characterises reversePayment, which already wrote pr.amount; what changed
-  // is that recordPayment now stores the full amount there.
+  // outflow, or the cash ledger would be short by the excess forever.
   it('reversing a R$900 overpayment writes a R$900 outflow, not the amount it allocated', async () => {
     const { reversePayment } = await import('../financial')
     const tx = makeTx()
@@ -119,16 +114,15 @@ describe('reversePayment', () => {
       chain([{ id: PAYMENT_RECORD_ID, installmentId: INSTALLMENT_ID, amount: '900.00', paymentMethod: 'pix' }]),
     ) // pr
     tx.select.mockReturnValueOnce(chain([installmentRow()])) // inst (ownership)
-    tx.execute.mockResolvedValueOnce(undefined) // FOR UPDATE lock
+    tx.execute.mockResolvedValueOnce([{ status: 'pending' }]) // FOR UPDATE lock
     tx.select.mockReturnValueOnce(chain([{ reversedAt: null }])) // locked re-read
     tx.update.mockReturnValueOnce(chain(undefined)) // mark payment reversed
-    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }])) // entryInfo
+    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x', status: 'partial' }])) // entryInfo
 
     const cashInsert: { value?: unknown } = {}
     tx.insert.mockReturnValueOnce(chainCapturing(undefined, cashInsert)) // cashMovements outflow
 
     tx.select.mockReturnValueOnce(chain([])) // remainingPayments, none left
-    tx.select.mockReturnValueOnce(chain([financialSettingsRow])) // getGracePeriodDays
     tx.update.mockReturnValueOnce(chain(undefined)) // reset installment
 
     tx.select.mockReturnValueOnce(chain([{ status: 'pending', amountPaid: '0' }])) // updateEntryStatus select
@@ -144,8 +138,7 @@ describe('reversePayment', () => {
 
   // The remaining payment absorbs the fine on replay once the one that first
   // triggered it is reversed: fineApplied is recomputed from scratch against
-  // whatever payments are left. This held before this round too; it pins the
-  // shape reversal must keep while the engine underneath it changes.
+  // whatever payments are left.
   it('reversing the payment that triggered the fine leaves the remaining payment covering it', async () => {
     const { reversePayment } = await import('../financial')
     const tx = makeTx()
@@ -155,10 +148,10 @@ describe('reversePayment', () => {
       chain([{ id: 'p1', installmentId: INSTALLMENT_ID, amount: '30.00', paymentMethod: 'pix' }]),
     ) // pr (p1, being reversed)
     tx.select.mockReturnValueOnce(chain([installmentRow()])) // inst (ownership)
-    tx.execute.mockResolvedValueOnce(undefined) // FOR UPDATE lock
+    tx.execute.mockResolvedValueOnce([{ status: 'pending' }]) // FOR UPDATE lock
     tx.select.mockReturnValueOnce(chain([{ reversedAt: null }])) // locked re-read
     tx.update.mockReturnValueOnce(chain(undefined)) // mark p1 reversed
-    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }])) // entryInfo
+    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x', status: 'partial' }])) // entryInfo
     tx.insert.mockReturnValueOnce(chain(undefined)) // cashMovements outflow
 
     // p2 is what is left once p1 is reversed: due May 22, paid Jul 22 is 61
@@ -176,7 +169,6 @@ describe('reversePayment', () => {
         },
       ]),
     ) // remainingPayments
-    tx.select.mockReturnValueOnce(chain([financialSettingsRow])) // getGracePeriodDays
 
     const rewrite: { value?: unknown } = {}
     tx.update.mockReturnValueOnce(chainCapturing(undefined, rewrite)) // rewrite of p2
@@ -190,5 +182,36 @@ describe('reversePayment', () => {
     await reversePayment(TENANT, USER_ID, 'p1')
 
     expect(rewrite.value).toMatchObject({ fineCovered: '14.75' })
+  })
+
+  it('keeps a renegotiated original renegotiated and its cancelled installment cancelled when its payment is reversed', async () => {
+    const { reversePayment } = await import('../financial')
+    const tx = makeTx()
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+
+    tx.select.mockReturnValueOnce(
+      chain([{ id: PAYMENT_RECORD_ID, installmentId: INSTALLMENT_ID, amount: '100.00', paymentMethod: 'pix' }]),
+    ) // pr
+    tx.select.mockReturnValueOnce(chain([installmentRow()])) // inst (ownership)
+    tx.execute.mockResolvedValueOnce([{ status: 'cancelled' }]) // FOR UPDATE lock
+    tx.select.mockReturnValueOnce(chain([{ reversedAt: null }])) // locked re-read
+    tx.update.mockReturnValueOnce(chain(undefined)) // mark payment reversed
+    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x', status: 'renegotiated' }])) // entryInfo
+    const cashInsert: { value?: unknown } = {}
+    tx.insert.mockReturnValueOnce(chainCapturing(undefined, cashInsert)) // cashMovements outflow
+    tx.select.mockReturnValueOnce(chain([])) // live payments, none left
+    const installmentUpdate: { value?: unknown } = {}
+    tx.update.mockReturnValueOnce(chainCapturing(undefined, installmentUpdate)) // reset installment
+    // A recompute here would read the installments and write the entry.
+    tx.select.mockReturnValueOnce(chain([{ status: 'cancelled', amountPaid: '0' }]))
+    const entryUpdate: { value?: unknown } = {}
+    tx.update.mockReturnValueOnce(chainCapturing(undefined, entryUpdate))
+    tx.insert.mockReturnValueOnce(chain(undefined)) // createAuditLog
+
+    await reversePayment(TENANT, USER_ID, PAYMENT_RECORD_ID)
+
+    expect(cashInsert.value).toMatchObject({ type: 'outflow', amount: '100.00' })
+    expect(installmentUpdate.value).toMatchObject({ status: 'cancelled', amountPaid: '0' })
+    expect(entryUpdate.value).toBeUndefined()
   })
 })

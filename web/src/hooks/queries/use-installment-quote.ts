@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from './query-keys'
+import { ApiError } from '@/hooks/mutations/use-financial-mutations'
 import type { InstallmentQuoteResult } from '@/db/queries/financial-quote'
 
 export function useInstallmentQuote(installmentId: string, paidAt?: string, enabled = true) {
@@ -15,7 +16,7 @@ export function useInstallmentQuote(installmentId: string, paidAt?: string, enab
       const res = await fetch(url)
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
-        throw new Error(body.error || `HTTP ${res.status}`)
+        throw new ApiError(body.error || `HTTP ${res.status}`, body.code)
       }
       return (await res.json()).data
     },

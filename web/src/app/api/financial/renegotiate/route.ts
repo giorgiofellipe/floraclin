@@ -3,6 +3,7 @@ import { requireWrite } from '@/lib/write-access'
 import { renegotiateCharges } from '@/db/queries/renegotiation'
 import { renegotiateSchema } from '@/validations/financial'
 import { handleApiError } from '@/lib/api-error'
+import { BusinessError } from '@/lib/errors'
 
 export async function POST(request: Request) {
   try {
@@ -22,14 +23,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: result })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (
-      msg.includes('não encontradas') ||
-      msg.includes('mesmo paciente') ||
-      msg.includes('renegociadas') ||
-      msg.includes('positivo')
-    ) {
-      return NextResponse.json({ error: msg }, { status: 400 })
+    if (error instanceof BusinessError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 409 })
     }
     return handleApiError(error, request)
   }

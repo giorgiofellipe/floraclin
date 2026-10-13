@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { createAuditLog } from '@/lib/audit'
 import { requireWrite } from '@/lib/write-access'
 import { bulkPayInstallments } from '@/db/queries/financial'
 import { bulkPaySchema } from '@/validations/financial'
@@ -21,23 +20,6 @@ export async function POST(request: Request) {
     }
 
     const results = await bulkPayInstallments(ctx.tenantId, ctx.userId, parsed.data)
-
-    await createAuditLog({
-      tenantId: ctx.tenantId,
-      userId: ctx.userId,
-      action: 'update',
-      entityType: 'installment',
-      changes: {
-        bulkPay: {
-          old: null,
-          new: {
-            installmentIds: parsed.data.installmentIds,
-            paymentMethod: parsed.data.paymentMethod,
-            count: results.length,
-          },
-        },
-      },
-    })
 
     return NextResponse.json({ success: true, data: results })
   } catch (error) {

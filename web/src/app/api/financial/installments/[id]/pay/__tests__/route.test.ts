@@ -5,16 +5,11 @@ vi.mock('@/lib/write-access', () => ({
   requireWrite: vi.fn(),
 }))
 
-vi.mock('@/lib/audit', () => ({
-  createAuditLog: vi.fn(),
-}))
-
 vi.mock('@/db/queries/financial', () => ({
   recordPayment: vi.fn(),
 }))
 
 import { requireWrite } from '@/lib/write-access'
-import { createAuditLog } from '@/lib/audit'
 import { recordPayment } from '@/db/queries/financial'
 import { BusinessError } from '@/lib/errors'
 import { PUT } from '../route'
@@ -33,7 +28,7 @@ function callPut(body: unknown, id = installmentId) {
   return PUT(makeRequest(body), { params: Promise.resolve({ id }) })
 }
 
-const validBody = { amount: 150, paymentMethod: 'pix' }
+const validBody = { amount: 150, paymentMethod: 'pix', expectedTotalDue: 150 }
 
 const AUTH_OK = { tenantId: 'tenant-1', userId: 'user-1', role: 'owner' }
 
@@ -41,7 +36,6 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(requireWrite).mockResolvedValue({ ctx: AUTH_OK, blocked: null } as never)
   vi.mocked(recordPayment).mockResolvedValue({ allocation: [{ id: 'inst-1', amount: 150 }] } as never)
-  vi.mocked(createAuditLog).mockResolvedValue(undefined as never)
 })
 
 describe('PUT /api/financial/installments/[id]/pay', () => {
@@ -65,7 +59,7 @@ describe('PUT /api/financial/installments/[id]/pay', () => {
   })
 
   it('rejects an invalid body with 400', async () => {
-    const res = await callPut({ amount: 150, paymentMethod: 'bitcoin' })
+    const res = await callPut({ amount: 150, paymentMethod: 'bitcoin', expectedTotalDue: 150 })
     const body = await res.json()
 
     expect(res.status).toBe(400)
@@ -86,11 +80,10 @@ describe('PUT /api/financial/installments/[id]/pay', () => {
       error: 'Parcela não encontrada ou não pertence a esta clínica',
       code: 'INSTALLMENT_NOT_FOUND',
     })
-    expect(createAuditLog).not.toHaveBeenCalled()
   })
 
-  it('records the payment, writes an audit log and returns the result on success', async () => {
-    const res = await callPut(validBody)
+  it('records the payment and returns the result on success', async () => {
+    const res = await callPut({ ...validBody, acceptOverpayment: true })
     const body = await res.json()
 
     expect(res.status).toBe(200)
@@ -101,15 +94,8 @@ describe('PUT /api/financial/installments/[id]/pay', () => {
       paymentMethod: 'pix',
       paidAt: undefined,
       notes: undefined,
+      expectedTotalDue: 150,
+      acceptOverpayment: true,
     })
-    expect(createAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tenantId: 'tenant-1',
-        userId: 'user-1',
-        action: 'update',
-        entityType: 'installment',
-        entityId: installmentId,
-      })
-    )
   })
 })

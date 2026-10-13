@@ -49,6 +49,14 @@ export const recordPaymentSchema = z.object({
   }),
   paidAt: paidAtField, // ISO string, defaults to now
   notes: z.string().optional(),
+  // The total the dialog prefilled from. The write is refused when the
+  // balance priced behind the lock no longer matches it, so a client that
+  // does not send it cannot pay against a balance it never saw.
+  expectedTotalDue: z
+    .number({ message: 'Total pendente é obrigatório' })
+    .min(0)
+    .refine(hasAtMostTwoDecimals, 'Valor deve ter no máximo duas casas decimais'),
+  acceptOverpayment: z.boolean().optional(),
 })
 
 export const renegotiateSchema = z.object({
@@ -77,14 +85,6 @@ export const bulkCancelSchema = z.object({
 export const bulkUncancelSchema = z.object({
   entryIds: z.array(z.string().uuid()).min(1, 'Selecione ao menos uma cobrança'),
   reason: z.string().min(1, 'Motivo é obrigatório'),
-})
-
-// Keep existing for backwards compat
-export const payInstallmentSchema = z.object({
-  installmentId: z.string().uuid('Parcela inválida'),
-  paymentMethod: z.enum(paymentMethods as [string, ...string[]], {
-    message: 'Método de pagamento inválido',
-  }),
 })
 
 export const financialFilterSchema = z.object({
@@ -122,7 +122,6 @@ export type RenegotiateInput = z.infer<typeof renegotiateSchema>
 export type BulkPayInput = z.infer<typeof bulkPaySchema>
 export type BulkCancelInput = z.infer<typeof bulkCancelSchema>
 export type BulkUncancelInput = z.infer<typeof bulkUncancelSchema>
-export type PayInstallmentInput = z.infer<typeof payInstallmentSchema>
 export type FinancialFilterInput = z.infer<typeof financialFilterSchema>
 export type RevenueFilterInput = z.infer<typeof revenueFilterSchema>
 export type LedgerFilterInput = z.infer<typeof ledgerFilterSchema>

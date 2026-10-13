@@ -100,13 +100,16 @@ This is the only answer to "how much is owed on this installment at this
 instant". The guard, the endpoint and the tests all read it.
 
 `recordPayment` drops the `isBackdated` branch and always calls
-`replayPayments(base, [...existing, new])`. The guard becomes:
+`replayPayments(base, [...existing, new])`. The guards are:
 
-```ts
-if (data.amount > quote.totalDue + 0.01) {
-  throw new BusinessError('PAYMENT_EXCEEDS_DUE', 'Valor do pagamento excede o total devido')
-}
-```
+- `expectedTotalDue` is required. When it differs from the total priced behind
+  the lock, the write is refused with `QUOTE_CHANGED`.
+- A `paidAt` earlier than an existing live payment on the installment is
+  refused with `PAYMENT_BEFORE_LATER_PAYMENT`, in the quote and in both write
+  paths. The message names the installment and the later payment date.
+- An amount above the total due is refused with `OVERPAYMENT_NOT_CONFIRMED`
+  unless the body sends `acceptOverpayment: true`. A confirmed overpayment is
+  recorded at the amount received, with the allocation capped at what was owed.
 
 Replaying rewrites the `interest_covered` / `fine_covered` / `principal_covered`
 split on every prior `payment_record` for that installment. The backdated
@@ -139,7 +142,8 @@ now. Response:
 - sends `parseBrDate(paidAt, '12:00:00').toISOString()` for both the quote and
   the pay call, so the two agree by construction
 
-`isOverpayment` stays as a client guard but reads the server's `totalDue`.
+`isOverpayment` reads the server's `totalDue`. It shows a warning, and the
+confirm then sends `acceptOverpayment: true`.
 
 The `installment` prop keeps feeding the dialog's identity and the initial
 render; the quote replaces it as the source of the numbers.
@@ -174,11 +178,12 @@ Order of work inside the transaction:
 
 1. Load the entries, scoped to the tenant and not soft-deleted. Refuse any that
    are not `cancelled`.
-2. Refuse any entry whose cancel wrote `changes.revertedOriginals`. Cancel
-   deletes the `renegotiation_links` rows (`financial.ts:1105-1106`), so the
-   audit log is the only durable trace. `audit_logs` is indexed on
-   `(entity_type, entity_id)`. Message: the charge came from a cancelled
-   renegotiation and the renegotiation has to be redone.
+2. Refuse an original whose replacement is still live (a
+   `renegotiation_links` row exists): `ENTRY_HAS_REPLACEMENT`.
+   Refuse a replacement charge: `ENTRY_FROM_RENEGOTIATION`. Cancel deletes the
+   `renegotiation_links` rows, so the entry's own `create` audit log
+   (`changes.type.new === 'renegotiation'`) is the only per-entry trace. The
+   cancel log's `revertedOriginals` covers the whole batch and is not used.
 3. Restore that entry's installments from `cancelled` to `pending`. Paid ones
    were never cancelled, so they need no filter beyond the status match.
 4. Call the existing `updateEntryStatus` (`financial.ts:1708`), which already

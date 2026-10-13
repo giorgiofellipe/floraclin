@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/auth', () => ({
-  getAuthContext: vi.fn(),
+  requireRole: vi.fn(),
 }))
 
 vi.mock('@/db/queries/financial-quote', () => ({
   getInstallmentQuote: vi.fn(),
 }))
 
-import { getAuthContext } from '@/lib/auth'
+import { requireRole } from '@/lib/auth'
 import { getInstallmentQuote } from '@/db/queries/financial-quote'
-import { BusinessError } from '@/lib/errors'
+import { BusinessError, ForbiddenError } from '@/lib/errors'
 import { GET } from '../route'
 
 function makeRequest(url: string) {
@@ -28,7 +28,7 @@ beforeEach(() => {
   // BR noon on 2026-08-03 (15:00 UTC), so brToday() is deterministic.
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-08-03T15:00:00Z'))
-  vi.mocked(getAuthContext).mockResolvedValue({
+  vi.mocked(requireRole).mockResolvedValue({
     tenantId: 'tenant-1',
     userId: 'user-1',
     role: 'owner',
@@ -41,28 +41,12 @@ afterEach(() => {
 })
 
 describe('GET /api/financial/installments/[id]/quote', () => {
-  it('allows owner, receptionist and financial, rejects everyone else', async () => {
-    for (const role of ['owner', 'receptionist', 'financial']) {
-      vi.mocked(getAuthContext).mockResolvedValue({
-        tenantId: 'tenant-1',
-        userId: 'user-1',
-        role,
-      } as never)
-
-      const res = await callGet('http://localhost/api/financial/installments/inst-1/quote')
-
-      expect(res.status).toBe(200)
-    }
-
-    vi.mocked(getAuthContext).mockResolvedValue({
-      tenantId: 'tenant-1',
-      userId: 'user-1',
-      role: 'practitioner',
-    } as never)
-    vi.mocked(getInstallmentQuote).mockClear()
+  it('asks requireRole for owner, receptionist and financial and answers 403 when it refuses', async () => {
+    vi.mocked(requireRole).mockRejectedValueOnce(new ForbiddenError())
 
     const res = await callGet('http://localhost/api/financial/installments/inst-1/quote')
 
+    expect(requireRole).toHaveBeenCalledWith('owner', 'receptionist', 'financial')
     expect(res.status).toBe(403)
     expect(getInstallmentQuote).not.toHaveBeenCalled()
   })
@@ -112,7 +96,7 @@ describe('GET /api/financial/installments/[id]/quote', () => {
 
   it('maps a BusinessError from the query to 409 with error and code', async () => {
     vi.mocked(getInstallmentQuote).mockRejectedValue(
-      new BusinessError('INSTALLMENT_NOT_FOUND', 'Parcela não encontrada ou não pertence a esta clínica')
+      new BusinessError('PAYMENT_BEFORE_LATER_PAYMENT', 'Já existe um pagamento em 01/08/2026 na parcela 1.')
     )
 
     const res = await callGet('http://localhost/api/financial/installments/inst-1/quote')
@@ -120,8 +104,8 @@ describe('GET /api/financial/installments/[id]/quote', () => {
 
     expect(res.status).toBe(409)
     expect(body).toEqual({
-      error: 'Parcela não encontrada ou não pertence a esta clínica',
-      code: 'INSTALLMENT_NOT_FOUND',
+      error: 'Já existe um pagamento em 01/08/2026 na parcela 1.',
+      code: 'PAYMENT_BEFORE_LATER_PAYMENT',
     })
   })
 })

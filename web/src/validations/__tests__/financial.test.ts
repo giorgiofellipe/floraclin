@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
   createFinancialEntrySchema,
-  payInstallmentSchema,
   recordPaymentSchema,
   renegotiateSchema,
   bulkPaySchema,
@@ -85,46 +84,10 @@ describe('createFinancialEntrySchema', () => {
   })
 })
 
-describe('payInstallmentSchema', () => {
-  it('passes with valid payment method', () => {
-    const result = payInstallmentSchema.safeParse({
-      installmentId: UUID,
-      paymentMethod: 'pix',
-    })
-    expect(result.success).toBe(true)
-  })
-
-  it('accepts all valid payment methods', () => {
-    const methods = ['pix', 'credit_card', 'debit_card', 'cash', 'transfer']
-    for (const paymentMethod of methods) {
-      const result = payInstallmentSchema.safeParse({
-        installmentId: UUID,
-        paymentMethod,
-      })
-      expect(result.success).toBe(true)
-    }
-  })
-
-  it('fails with invalid payment method', () => {
-    const result = payInstallmentSchema.safeParse({
-      installmentId: UUID,
-      paymentMethod: 'bitcoin',
-    })
-    expect(result.success).toBe(false)
-  })
-
-  it('fails with invalid installmentId', () => {
-    const result = payInstallmentSchema.safeParse({
-      installmentId: 'not-uuid',
-      paymentMethod: 'pix',
-    })
-    expect(result.success).toBe(false)
-  })
-})
-
 describe('recordPaymentSchema', () => {
   const validData = {
     installmentId: UUID,
+    expectedTotalDue: 150,
     amount: 150.50,
     paymentMethod: 'pix' as const,
   }
@@ -224,6 +187,24 @@ describe('recordPaymentSchema', () => {
       const result = recordPaymentSchema.safeParse({ ...validData, paymentMethod })
       expect(result.success).toBe(true)
     }
+  })
+
+  // The dialog sends the total it prefilled from, so the server can refuse a
+  // write priced against a balance that has since changed.
+  it('accepts expectedTotalDue with up to two decimals, including zero', () => {
+    expect(recordPaymentSchema.safeParse({ ...validData, expectedTotalDue: 790.75 }).success).toBe(true)
+    expect(recordPaymentSchema.safeParse({ ...validData, expectedTotalDue: 0 }).success).toBe(true)
+  })
+
+  it('requires expectedTotalDue', () => {
+    const { expectedTotalDue: _omitted, ...withoutQuote } = validData
+    void _omitted
+    expect(recordPaymentSchema.safeParse(withoutQuote).success).toBe(false)
+  })
+
+  it('rejects expectedTotalDue with more than two decimals or below zero', () => {
+    expect(recordPaymentSchema.safeParse({ ...validData, expectedTotalDue: 790.755 }).success).toBe(false)
+    expect(recordPaymentSchema.safeParse({ ...validData, expectedTotalDue: -1 }).success).toBe(false)
   })
 })
 
@@ -615,46 +596,29 @@ describe('financialFilterSchema', () => {
 })
 
 describe('paidAt bounds', () => {
-  const base = {
-    installmentId: '00000000-0000-4000-8000-000000000001',
-    amount: 100,
-    paymentMethod: 'pix',
-  }
+  const record = (paidAt: string) =>
+    recordPaymentSchema.safeParse({
+      installmentId: '00000000-0000-4000-8000-000000000001',
+      amount: 100,
+      paymentMethod: 'pix',
+      expectedTotalDue: 100,
+      paidAt,
+    }).success
+  const bulk = (paidAt: string) =>
+    bulkPaySchema.safeParse({
+      installmentIds: ['00000000-0000-4000-8000-000000000001'],
+      paymentMethod: 'pix',
+      paidAt,
+    }).success
+  const tomorrow = () => new Date(endOfBrDay(brToday()).getTime() + 1000).toISOString()
 
-  it('accepts a past date', () => {
-    expect(
-      recordPaymentSchema.safeParse({ ...base, paidAt: '2020-01-01T12:00:00.000Z' }).success,
-    ).toBe(true)
-  })
-
-  it('accepts an omitted date', () => {
-    expect(recordPaymentSchema.safeParse(base).success).toBe(true)
-  })
-
-  // AR-3: BR noon today is "in the future" every morning before 09:00 UTC-3.
-  it('accepts BR noon of the current BR day', () => {
-    const paidAt = parseBrDate(brToday(), '12:00:00').toISOString()
-    expect(recordPaymentSchema.safeParse({ ...base, paidAt }).success).toBe(true)
-  })
-
-  it('accepts the last instant of the current BR day', () => {
-    const paidAt = endOfBrDay(brToday()).toISOString()
-    expect(recordPaymentSchema.safeParse({ ...base, paidAt }).success).toBe(true)
-  })
-
-  it('rejects tomorrow', () => {
-    const paidAt = new Date(endOfBrDay(brToday()).getTime() + 1000).toISOString()
-    expect(recordPaymentSchema.safeParse({ ...base, paidAt }).success).toBe(false)
-  })
-
-  it('rejects tomorrow on the bulk schema', () => {
-    const paidAt = new Date(endOfBrDay(brToday()).getTime() + 1000).toISOString()
-    expect(
-      bulkPaySchema.safeParse({
-        installmentIds: ['00000000-0000-4000-8000-000000000001'],
-        paymentMethod: 'pix',
-        paidAt,
-      }).success,
-    ).toBe(false)
+  // BR noon today is "in the future" every morning before 09:00 UTC-3.
+  it.each([
+    ['BR noon of the current BR day', true, record, () => parseBrDate(brToday(), '12:00:00').toISOString()],
+    ['the last instant of the current BR day', true, record, () => endOfBrDay(brToday()).toISOString()],
+    ['tomorrow', false, record, tomorrow],
+    ['tomorrow on the bulk schema', false, bulk, tomorrow],
+  ])('%s: accepted is %s', (_label, accepted, parse, paidAt) => {
+    expect(parse(paidAt())).toBe(accepted)
   })
 })

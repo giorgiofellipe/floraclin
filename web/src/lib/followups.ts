@@ -5,7 +5,7 @@ import {
   procedureFollowups,
   procedureRecords,
 } from '@/db/schema'
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, ne } from 'drizzle-orm'
 import type { FollowupChannel, FollowupOutcome } from '@/validations/followup'
 
 export interface RecordFollowupArgs {
@@ -30,12 +30,10 @@ export interface RecordFollowupResult {
 const DESISTIU_ALLOWED_FROM_STATUSES = new Set(['planned', 'approved'])
 
 /**
- * Cancels every linked financial entry (and its installments) for an approved
- * procedure that is being cancelled via the followup path. Mirrors the cleanup
- * done by `web/src/app/api/procedures/[id]/cancel/route.ts` so the two flows
- * stay in sync.
+ * Cancels every linked financial entry and its unpaid installments for an
+ * approved procedure. Used by the followup path and the procedure cancel route.
  */
-async function cancelLinkedFinancials(
+export async function cancelLinkedFinancials(
   // The transaction object — drizzle infers the same shape as `db` for query
   // builders, so a minimal typing here keeps callers honest without leaking
   // internal types.
@@ -59,11 +57,12 @@ async function cancelLinkedFinancials(
   for (const entry of cancelledEntries) {
     await tx
       .update(installments)
-      .set({ status: 'cancelled', updatedAt: now })
+      .set({ status: 'cancelled', cancelledAt: now, updatedAt: now })
       .where(
         and(
           eq(installments.financialEntryId, entry.id),
           eq(installments.tenantId, tenantId),
+          ne(installments.status, 'paid'),
         ),
       )
   }

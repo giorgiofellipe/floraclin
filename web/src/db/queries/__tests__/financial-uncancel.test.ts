@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { PgDialect } from 'drizzle-orm/pg-core'
+import type { SQL } from 'drizzle-orm'
 
 // A chainable, awaitable stand-in for drizzle's query builders, copied from
 // financial-meta.test.ts. Every method call returns the same proxy so any
@@ -78,9 +80,11 @@ const TENANT = '00000000-0000-0000-0000-00000000a001'
 const USER_ID = '00000000-0000-0000-0000-0000000000u1'
 const ENTRY_ID = '00000000-0000-0000-0000-00000000e001'
 const ENTRY_ID_2 = '00000000-0000-0000-0000-00000000e002'
+const INSTALLMENT_ID = '00000000-0000-0000-0000-00000000i001'
+const ORIGINAL_ENTRY_ID = '00000000-0000-0000-0000-00000000e0aa'
 
 function makeTx() {
-  return { select: vi.fn(), insert: vi.fn(), update: vi.fn() }
+  return { execute: vi.fn(), select: vi.fn(), insert: vi.fn(), update: vi.fn(), delete: vi.fn() }
 }
 
 describe('uncancelEntries', () => {
@@ -88,17 +92,22 @@ describe('uncancelEntries', () => {
     vi.clearAllMocks()
   })
 
-  it('restores a cancelled entry: its cancelled installments go to pending and the status is recomputed', async () => {
+  it('restores a cancelled entry: its cancelled installments go to pending, the time spent cancelled becomes a penalty pause, and the status is recomputed', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-03T15:00:00.000Z'))
     const { uncancelEntries } = await import('../financial')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
-    tx.select.mockReturnValueOnce(chain([{ id: ENTRY_ID, status: 'cancelled' }])) // entries
+    const earlierPause = { from: '2026-04-01T15:00:00.000Z', to: '2026-04-05T15:00:00.000Z' }
+    tx.select.mockReturnValueOnce(chain([{ id: ENTRY_ID, status: 'cancelled', createdFromRenegotiation: false }])) // entries
     tx.select.mockReturnValueOnce(chain([])) // liveReplacements
-    tx.select.mockReturnValueOnce(chain([])) // creationLogs
+    tx.select.mockReturnValueOnce(
+      chain([{ id: INSTALLMENT_ID, cancelledAt: new Date('2026-05-25T15:00:00.000Z'), penaltyPauses: [earlierPause] }]),
+    ) // cancelled installments
 
     const installmentsUpdate: { value?: unknown } = {}
-    tx.update.mockReturnValueOnce(chainCapturing(undefined, installmentsUpdate)) // installments cancelled -> pending
+    tx.update.mockReturnValueOnce(chainCapturing(undefined, installmentsUpdate)) // installment cancelled -> pending
 
     tx.select.mockReturnValueOnce(chain([{ status: 'pending', amountPaid: '0' }])) // updateEntryStatus
     const entryUpdate: { value?: unknown } = {}
@@ -110,9 +119,14 @@ describe('uncancelEntries', () => {
       entryIds: [ENTRY_ID],
       reason: 'Cobrança cancelada por engano',
     })
+    vi.useRealTimers()
 
     expect(result).toEqual({ uncancelledCount: 1 })
-    expect(installmentsUpdate.value).toMatchObject({ status: 'pending' })
+    expect(installmentsUpdate.value).toMatchObject({
+      status: 'pending',
+      cancelledAt: null,
+      penaltyPauses: [earlierPause, { from: '2026-05-25T15:00:00.000Z', to: '2026-09-03T15:00:00.000Z' }],
+    })
     expect(entryUpdate.value).toMatchObject({ status: 'pending' })
   })
 
@@ -128,7 +142,7 @@ describe('uncancelEntries', () => {
     ).rejects.toMatchObject({ code: 'ENTRY_NOT_CANCELLED' })
   })
 
-  it('throws ENTRY_NOT_FOUND when an id belongs to another tenant', async () => {
+  it('throws ENTRY_NOT_FOUND when an entry is not found', async () => {
     const { uncancelEntries } = await import('../financial')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
@@ -140,26 +154,25 @@ describe('uncancelEntries', () => {
     ).rejects.toMatchObject({ code: 'ENTRY_NOT_FOUND' })
   })
 
-  // [AR-5] The replacement side of a cancelled renegotiation loses its
-  // renegotiation_links rows on cancel, so its own creation log (written once,
-  // in renegotiation.ts) is the only per-entry record that it was one.
-  it('throws ENTRY_FROM_RENEGOTIATION when the entry is a renegotiation replacement', async () => {
+  // A replacement loses its renegotiation_links rows when it is cancelled, so
+  // the entry's own flag is the record that it was one. Anything else the
+  // path reads comes back empty, so only that flag can refuse it.
+  it('throws ENTRY_FROM_RENEGOTIATION for a renegotiation replacement that has no audit row', async () => {
     const { uncancelEntries } = await import('../financial')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
-    tx.select.mockReturnValueOnce(chain([{ id: ENTRY_ID, status: 'cancelled' }])) // entries
-    tx.select.mockReturnValueOnce(chain([])) // liveReplacements
-    tx.select.mockReturnValueOnce(
-      chain([{ entityId: ENTRY_ID, changes: { type: { old: null, new: 'renegotiation' } } }])
-    ) // creationLogs
+    tx.select.mockReturnValueOnce(chain([{ id: ENTRY_ID, status: 'cancelled', createdFromRenegotiation: true }]))
+    tx.select.mockReturnValue(chain([]))
+    tx.update.mockReturnValue(chain(undefined))
+    tx.insert.mockReturnValue(chain(undefined))
 
     await expect(
       uncancelEntries(TENANT, USER_ID, { entryIds: [ENTRY_ID], reason: 'x' })
     ).rejects.toMatchObject({ code: 'ENTRY_FROM_RENEGOTIATION' })
   })
 
-  // [AR-5] Reactivating the original side of a still-live renegotiation would
+  // Reactivating the original side of a still-live renegotiation would
   // make the same debt collectible twice, through both the original and its
   // replacement.
   it('throws ENTRY_HAS_REPLACEMENT when a renegotiation_links row has the entry as originalEntryId', async () => {
@@ -173,48 +186,6 @@ describe('uncancelEntries', () => {
     await expect(
       uncancelEntries(TENANT, USER_ID, { entryIds: [ENTRY_ID], reason: 'x' })
     ).rejects.toMatchObject({ code: 'ENTRY_HAS_REPLACEMENT' })
-  })
-
-  // [AR-5] Regression guard for the v1 mistake: bulkCancelEntries writes
-  // `revertedOriginals` into every selected entry's own cancel log for the
-  // whole batch, not per entry, so an ordinary charge cancelled beside a
-  // renegotiated one must not be blocked by it. The generic chain() proxy
-  // discards .where() arguments, so exercising the
-  // `eq(auditLogs.action, 'create')` filter itself is impractical against
-  // this mock harness; this test instead pins the decision logic to require
-  // `changes.type.new === 'renegotiation'` and to ignore a `revertedOriginals`
-  // field sitting alongside it, which is what keeps that filter meaningful.
-  it('allows reactivating an ordinary entry whose audit trail carries a batch-wide revertedOriginals marker', async () => {
-    const { uncancelEntries } = await import('../financial')
-    const tx = makeTx()
-    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
-
-    tx.select.mockReturnValueOnce(chain([{ id: ENTRY_ID, status: 'cancelled' }])) // entries
-    tx.select.mockReturnValueOnce(chain([])) // liveReplacements
-    tx.select.mockReturnValueOnce(
-      chain([
-        {
-          entityId: ENTRY_ID,
-          changes: {
-            status: { old: 'pending', new: 'cancelled' },
-            reason: { old: null, new: 'Cancelamento em lote' },
-            revertedOriginals: { old: null, new: ['00000000-0000-0000-0000-00000000e999'] },
-          },
-        },
-      ])
-    ) // creationLogs
-
-    tx.update.mockReturnValueOnce(chain(undefined)) // installments cancelled -> pending
-    tx.select.mockReturnValueOnce(chain([{ status: 'pending', amountPaid: '0' }])) // updateEntryStatus
-    tx.update.mockReturnValueOnce(chain(undefined)) // financialEntries status
-    tx.insert.mockReturnValueOnce(chain(undefined)) // audit log
-
-    const result = await uncancelEntries(TENANT, USER_ID, {
-      entryIds: [ENTRY_ID],
-      reason: 'Cobrança cancelada por engano',
-    })
-
-    expect(result).toEqual({ uncancelledCount: 1 })
   })
 
   it('writes one audit log per entry, carrying the reason', async () => {
@@ -257,6 +228,87 @@ describe('uncancelEntries', () => {
     expect(audit2.value).toMatchObject({
       entityId: ENTRY_ID_2,
       changes: { reason: { old: null, new: 'Engano do financeiro' } },
+    })
+  })
+
+  it('reads entry status only behind the installment lock bulkCancelEntries takes, in id order', async () => {
+    const { uncancelEntries } = await import('../financial')
+    const tx = makeTx()
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+
+    tx.select.mockReturnValueOnce(chain([{ id: ENTRY_ID, status: 'cancelled' }])) // entries
+    tx.select.mockReturnValueOnce(chain([])) // liveReplacements
+    tx.select.mockReturnValueOnce(chain([])) // creationLogs
+    tx.update.mockReturnValueOnce(chain(undefined)) // installments cancelled -> pending
+    tx.select.mockReturnValueOnce(chain([{ status: 'pending', amountPaid: '0' }])) // updateEntryStatus
+    tx.update.mockReturnValueOnce(chain(undefined)) // financialEntries status
+    tx.insert.mockReturnValueOnce(chain(undefined)) // audit log
+
+    await uncancelEntries(TENANT, USER_ID, { entryIds: [ENTRY_ID], reason: 'x' })
+
+    expect(tx.execute).toHaveBeenCalledTimes(1)
+    const lock = new PgDialect().sqlToQuery(tx.execute.mock.calls[0][0] as SQL)
+    expect(lock.sql).toMatch(/floraclin\.installments[\s\S]*ORDER BY id\s+FOR UPDATE/)
+    expect(tx.execute.mock.invocationCallOrder[0]).toBeLessThan(tx.select.mock.invocationCallOrder[0])
+  })
+})
+
+describe('bulkCancelEntries', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-25T15:00:00.000Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('stamps cancelledAt on the installments it cancels, so the pause can start there', async () => {
+    const { bulkCancelEntries } = await import('../financial')
+    const tx = makeTx()
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+
+    tx.select.mockReturnValueOnce(chain([{ id: ENTRY_ID, status: 'pending' }])) // entries
+    tx.select.mockReturnValueOnce(chain([])) // renegotiation links
+    tx.update.mockReturnValueOnce(chain(undefined)) // entries cancelled
+    const installmentsUpdate: { value?: unknown } = {}
+    tx.update.mockReturnValueOnce(chainCapturing(undefined, installmentsUpdate)) // installments cancelled
+    tx.insert.mockReturnValueOnce(chain(undefined)) // audit log
+
+    await bulkCancelEntries(TENANT, USER_ID, { entryIds: [ENTRY_ID], reason: 'x' })
+
+    expect(installmentsUpdate.value).toMatchObject({
+      status: 'cancelled',
+      cancelledAt: new Date('2026-05-25T15:00:00.000Z'),
+    })
+  })
+
+  it('turns the time a renegotiated original spent cancelled into a penalty pause when its replacement is cancelled', async () => {
+    const { bulkCancelEntries } = await import('../financial')
+    const tx = makeTx()
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+
+    tx.select.mockReturnValueOnce(chain([{ id: ENTRY_ID, status: 'pending' }])) // entries
+    tx.select.mockReturnValueOnce(
+      chain([{ originalEntryId: ORIGINAL_ENTRY_ID, newEntryId: ENTRY_ID }]),
+    ) // renegotiation links
+    tx.select.mockReturnValueOnce(chain([{ status: 'cancelled', amountPaid: '0' }])) // original installments
+    tx.select.mockReturnValueOnce(
+      chain([{ id: INSTALLMENT_ID, cancelledAt: new Date('2026-05-10T15:00:00.000Z'), penaltyPauses: [] }]),
+    ) // original cancelled installments
+    const restore: { value?: unknown } = {}
+    tx.update.mockReturnValueOnce(chainCapturing(undefined, restore)) // original installment -> pending
+    tx.update.mockReturnValue(chain(undefined))
+    tx.insert.mockReturnValue(chain(undefined))
+    tx.delete = vi.fn().mockReturnValue(chain(undefined))
+
+    await bulkCancelEntries(TENANT, USER_ID, { entryIds: [ENTRY_ID], reason: 'x' })
+
+    expect(restore.value).toMatchObject({
+      status: 'pending',
+      cancelledAt: null,
+      penaltyPauses: [{ from: '2026-05-10T15:00:00.000Z', to: '2026-05-25T15:00:00.000Z' }],
     })
   })
 })

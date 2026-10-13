@@ -13,7 +13,7 @@ import { addDays } from 'date-fns'
 import { verifyTenantOwnership } from './helpers'
 import type { CreateExpenseInput, ExpenseFilterInput } from '@/validations/expenses'
 import type { PaymentMethod } from '@/types'
-import { startOfBrDay, endOfBrDay, toLocalYmd } from '@/lib/dates'
+import { brToday, startOfBrDay, endOfBrDay, toLocalYmd } from '@/lib/dates'
 
 export async function createExpense(
   tenantId: string,
@@ -121,15 +121,15 @@ export async function listExpenses(
     )
   }
 
+  const hasOverdueInstallment = sql<boolean>`EXISTS (
+    SELECT 1 FROM floraclin.expense_installments ei
+    WHERE ei.expense_id = ${expenses.id}
+    AND ei.status = 'pending'
+    AND ei.due_date < ${brToday()}::date
+  )`
+
   if (filters.isOverdue) {
-    conditions.push(
-      sql`EXISTS (
-        SELECT 1 FROM floraclin.expense_installments ei
-        WHERE ei.expense_id = ${expenses.id}
-        AND ei.status = 'pending'
-        AND ei.due_date < CURRENT_DATE
-      )`
-    )
+    conditions.push(hasOverdueInstallment)
   }
 
   const offset = ((filters.page ?? 1) - 1) * (filters.limit ?? 20)
@@ -156,12 +156,7 @@ export async function listExpenses(
           WHERE ei.expense_id = ${expenses.id}
           AND ei.status = 'paid'
         )`,
-        isOverdue: sql<boolean>`EXISTS (
-          SELECT 1 FROM floraclin.expense_installments ei
-          WHERE ei.expense_id = ${expenses.id}
-          AND ei.status = 'pending'
-          AND ei.due_date < CURRENT_DATE
-        )`,
+        isOverdue: hasOverdueInstallment,
       })
       .from(expenses)
       .leftJoin(expenseCategories, eq(expenseCategories.id, expenses.categoryId))

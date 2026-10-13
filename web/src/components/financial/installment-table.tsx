@@ -260,68 +260,71 @@ export function InstallmentTable({
                       Histórico de pagamentos
                     </span>
                   </div>
-                  {inst.paymentRecords!.map((pr) => (
-                    <div
-                      key={pr.id}
-                      className="flex items-center gap-3 px-3 py-2 border-t border-[#E8ECEF]/50 group"
-                    >
-                      {/* Payment dot */}
-                      <div className="w-7 flex justify-center shrink-0">
-                        <div className="w-1.5 h-1.5 rounded-full bg-sage/50" />
-                      </div>
-
-                      {/* Payment info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-xs font-medium text-charcoal tabular-nums">
-                            {formatCurrency(Number(pr.amount ?? 0))}
-                          </span>
-                          <span className="text-[10px] text-mid">
-                            {formatDateTime(pr.paidAt)}
-                          </span>
-                          <span className="text-[10px] text-mid">
-                            {pr.paymentMethod ? PAYMENT_METHOD_LABELS[pr.paymentMethod] ?? pr.paymentMethod : ''}
-                          </span>
-                        </div>
-                        {/* Allocation breakdown */}
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[10px] text-emerald-700 tabular-nums">
-                            Principal {formatCurrency(Number(pr.principalCovered ?? 0))}
-                          </span>
-                          {Number(pr.interestCovered ?? 0) > 0 && (
-                            <span className="text-[10px] text-amber-700 tabular-nums">
-                              Juros {formatCurrency(Number(pr.interestCovered ?? 0))}
-                            </span>
-                          )}
-                          {Number(pr.fineCovered ?? 0) > 0 && (
-                            <span className="text-[10px] text-amber-700 tabular-nums">
-                              Multa {formatCurrency(Number(pr.fineCovered ?? 0))}
-                            </span>
-                          )}
-                          {excessOf(pr) > 0 && (
-                            <span className="text-[10px] text-sky-700 tabular-nums">
-                              Excedente {formatCurrency(excessOf(pr))}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Reverse button */}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 px-2 text-[10px] text-red-600 hover:bg-red-50 hover:text-red-700"
-                        data-testid="payment-reverse"
-                        onClick={() => {
-                          setReverseDialogPayment(pr)
-                          setReversalReason('')
-                        }}
+                  {inst.paymentRecords!.map((pr) => {
+                    const excess = excessOf(pr)
+                    return (
+                      <div
+                        key={pr.id}
+                        className="flex items-center gap-3 px-3 py-2 border-t border-[#E8ECEF]/50 group"
                       >
-                        <Undo2Icon className="h-3 w-3" />
-                        Estornar
-                      </Button>
-                    </div>
-                  ))}
+                        {/* Payment dot */}
+                        <div className="w-7 flex justify-center shrink-0">
+                          <div className="w-1.5 h-1.5 rounded-full bg-sage/50" />
+                        </div>
+
+                        {/* Payment info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-xs font-medium text-charcoal tabular-nums">
+                              {formatCurrency(Number(pr.amount ?? 0))}
+                            </span>
+                            <span className="text-[10px] text-mid">
+                              {formatDateTime(pr.paidAt)}
+                            </span>
+                            <span className="text-[10px] text-mid">
+                              {pr.paymentMethod ? PAYMENT_METHOD_LABELS[pr.paymentMethod] ?? pr.paymentMethod : ''}
+                            </span>
+                          </div>
+                          {/* Allocation breakdown */}
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] text-emerald-700 tabular-nums">
+                              Principal {formatCurrency(Number(pr.principalCovered ?? 0))}
+                            </span>
+                            {Number(pr.interestCovered ?? 0) > 0 && (
+                              <span className="text-[10px] text-amber-700 tabular-nums">
+                                Juros {formatCurrency(Number(pr.interestCovered ?? 0))}
+                              </span>
+                            )}
+                            {Number(pr.fineCovered ?? 0) > 0 && (
+                              <span className="text-[10px] text-amber-700 tabular-nums">
+                                Multa {formatCurrency(Number(pr.fineCovered ?? 0))}
+                              </span>
+                            )}
+                            {excess > 0 && (
+                              <span className="text-[10px] text-sky-700 tabular-nums">
+                                Excedente {formatCurrency(excess)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Reverse button */}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2 text-[10px] text-red-600 hover:bg-red-50 hover:text-red-700"
+                          data-testid="payment-reverse"
+                          onClick={() => {
+                            setReverseDialogPayment(pr)
+                            setReversalReason('')
+                          }}
+                        >
+                          <Undo2Icon className="h-3 w-3" />
+                          Estornar
+                        </Button>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>

@@ -8,9 +8,16 @@ import {
 } from '@/db/schema'
 import { eq, and, isNull, sql, inArray } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
+import { BusinessError } from '@/lib/errors'
 import { createAuditLog } from '@/lib/audit'
-import { quoteInstallment, type InstallmentBase, type PaymentInput } from '@/lib/financial/penalties'
-import { loadFinancialSettings } from './financial'
+import { quoteInstallment } from '@/lib/financial/penalties'
+import {
+  loadInstallmentTerms,
+  loadLivePaymentsByInstallment,
+  pricingRowFromRaw,
+  toInstallmentBase,
+  toPaymentInputs,
+} from './financial'
 import type { RenegotiateInput } from '@/validations/financial'
 import { addDays } from 'date-fns'
 import { toLocalYmd } from '@/lib/dates'
@@ -21,7 +28,7 @@ export async function renegotiateCharges(
   data: RenegotiateInput
 ) {
   return withTransaction(async (tx) => {
-    // 1. Verify all entries belong to tenant and are eligible
+    // 1. Verify all entries belong to the tenant and the same patient
     const entries = await tx
       .select({
         id: financialEntries.id,
@@ -42,24 +49,16 @@ export async function renegotiateCharges(
     if (entries.length !== data.entryIds.length) {
       const foundIds = entries.map((e) => e.id)
       const missing = data.entryIds.filter((id) => !foundIds.includes(id))
-      throw new Error(`Cobranças não encontradas: ${missing.join(', ')}`)
+      throw new BusinessError('ENTRIES_NOT_FOUND', `Cobranças não encontradas: ${missing.join(', ')}`)
     }
 
     // All entries must belong to the same patient
     const patientIds = [...new Set(entries.map((e) => e.patientId))]
     if (patientIds.length > 1) {
-      throw new Error('Renegociação só pode consolidar cobranças do mesmo paciente')
+      throw new BusinessError('MIXED_PATIENTS', 'Renegociação só pode consolidar cobranças do mesmo paciente')
     }
 
     const patientId = patientIds[0]
-
-    // Entries cannot already be renegotiated or cancelled
-    const ineligible = entries.filter((e) => e.status === 'renegotiated' || e.status === 'cancelled')
-    if (ineligible.length > 0) {
-      throw new Error(
-        `Cobranças já renegociadas ou canceladas: ${ineligible.map((e) => e.id).join(', ')}`
-      )
-    }
 
     // 2. Lock all installments of selected entries with FOR UPDATE.
     // Bind the ids as a single Postgres array literal (`{a,b}`); drizzle's `sql`
@@ -77,25 +76,33 @@ export async function renegotiateCharges(
 
     const lockedInstallments = (Array.isArray(lockResult) ? lockResult : (lockResult as any).rows ?? lockResult) as Array<Record<string, unknown>>
 
-    // 3. Load live payment records for every locked installment, and the
-    // settings that back the engine's defaults, so pricing here matches what
-    // the payment dialog quotes.
-    const lockedIds = lockedInstallments.map((i) => String(i.id))
-    const lockedPayments = lockedIds.length > 0
-      ? await tx
-          .select()
-          .from(paymentRecords)
-          .where(and(inArray(paymentRecords.installmentId, lockedIds), isNull(paymentRecords.reversedAt)))
-          .orderBy(paymentRecords.paidAt, paymentRecords.recordedAt)
-      : []
-    const paymentsByInstallment = new Map<string, typeof lockedPayments>()
-    for (const p of lockedPayments) {
-      const list = paymentsByInstallment.get(p.installmentId) ?? []
-      list.push(p)
-      paymentsByInstallment.set(p.installmentId, list)
+    // Eligibility is checked only now, on a read taken after the lock: a
+    // payment committing between the first select and the lock can settle the
+    // entry, and the pre-lock status would let it through.
+    const lockedEntries = await tx
+      .select({ id: financialEntries.id, status: financialEntries.status })
+      .from(financialEntries)
+      .where(and(eq(financialEntries.tenantId, tenantId), inArray(financialEntries.id, data.entryIds)))
+    const statusById = new Map(lockedEntries.map((e) => [e.id, e.status]))
+
+    const alreadyPaid = lockedEntries.filter((e) => e.status === 'paid')
+    if (alreadyPaid.length > 0) {
+      throw new BusinessError('ENTRY_ALREADY_PAID', 'Cobrança já quitada, não há o que renegociar.')
+    }
+    const ineligible = lockedEntries.filter((e) => e.status === 'renegotiated' || e.status === 'cancelled')
+    if (ineligible.length > 0) {
+      throw new BusinessError('ENTRY_NOT_ELIGIBLE', 'Uma das cobranças já foi renegociada ou cancelada.')
     }
 
-    const settings = await loadFinancialSettings(tx, tenantId)
+    // 3. Live payment records for every locked installment, so pricing here
+    // matches what the payment dialog quotes, and the terms the replacement's
+    // installments are created with.
+    const paymentsByInstallment = await loadLivePaymentsByInstallment(
+      tx,
+      lockedInstallments.map((i) => String(i.id)),
+    )
+
+    const terms = await loadInstallmentTerms(tx, tenantId)
     const now = new Date()
 
     // 4. Calculate remaining per entry
@@ -119,22 +126,8 @@ export async function renegotiateCharges(
         const status = String(inst.status)
         if (status === 'paid' || status === 'cancelled') continue
 
-        const amount = Number(inst.amount)
-
-        const base: InstallmentBase = {
-          amount,
-          dueDate: String(inst.due_date),
-          appliedFineValue: Number(inst.applied_fine_value ?? settings.fineValue),
-          appliedFineType: (inst.applied_fine_type as string | null) ?? settings.fineType,
-          appliedInterestRate: Number(inst.applied_interest_rate ?? settings.monthlyInterestPercent),
-          gracePeriodDays: settings.gracePeriodDays,
-        }
-        const prior: PaymentInput[] = (paymentsByInstallment.get(String(inst.id)) ?? []).map((p) => ({
-          id: p.id,
-          amount: Number(p.amount),
-          paidAt: new Date(p.paidAt).toISOString(),
-          recordedAt: new Date(p.recordedAt).toISOString(),
-        }))
+        const base = toInstallmentBase(pricingRowFromRaw(inst))
+        const prior = toPaymentInputs(paymentsByInstallment.get(String(inst.id)) ?? [])
         const quote = quoteInstallment(base, prior, now)
 
         entryRemainingPrincipal += quote.remainingPrincipal
@@ -164,23 +157,22 @@ export async function renegotiateCharges(
     }
 
     const calculatedTotal = totalRemainingPrincipal + penaltiesIncluded
-    const newTotalAmount = data.newTotalAmount ?? calculatedTotal
 
-    if (newTotalAmount <= 0) {
-      throw new Error('Valor total da renegociação deve ser positivo')
-    }
-
-    // 6. Cancel all unpaid installments
     const unpaidInstallmentIds = lockedInstallments
       .filter((i) => String(i.status) !== 'paid')
       .map((i) => String(i.id))
 
-    if (unpaidInstallmentIds.length > 0) {
-      await tx
-        .update(installments)
-        .set({ status: 'cancelled', updatedAt: new Date() })
-        .where(inArray(installments.id, unpaidInstallmentIds))
+    if (unpaidInstallmentIds.length === 0 || calculatedTotal <= 0) {
+      throw new BusinessError('NOTHING_TO_RENEGOTIATE', 'Não há saldo pendente para renegociar.')
     }
+
+    const newTotalAmount = data.newTotalAmount ?? calculatedTotal
+
+    // 6. Cancel all unpaid installments
+    await tx
+      .update(installments)
+      .set({ status: 'cancelled', cancelledAt: now, updatedAt: now })
+      .where(inArray(installments.id, unpaidInstallmentIds))
 
     // 7. Mark original entries as 'renegotiated'
     await tx
@@ -202,6 +194,7 @@ export async function renegotiateCharges(
         totalAmount: newTotalAmount.toFixed(2),
         installmentCount: data.newInstallmentCount,
         status: 'pending',
+        createdFromRenegotiation: true,
         createdBy: userId,
       })
       .returning()
@@ -236,6 +229,7 @@ export async function renegotiateCharges(
         amount: amount.toFixed(2),
         dueDate,
         status: 'pending' as const,
+        ...terms,
       }
     })
 
@@ -252,7 +246,7 @@ export async function renegotiateCharges(
           entityId: entryId,
           changes: {
             status: {
-              old: entries.find((e) => e.id === entryId)?.status ?? 'pending',
+              old: statusById.get(entryId) ?? 'pending',
               new: 'renegotiated',
             },
             renegotiatedTo: { old: null, new: newEntry.id },

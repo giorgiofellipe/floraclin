@@ -4,6 +4,7 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import { useInstallmentQuote } from '../use-installment-quote'
+import { ApiError } from '@/hooks/mutations/use-financial-mutations'
 
 const fetchMock = vi.fn()
 global.fetch = fetchMock as unknown as typeof fetch
@@ -20,34 +21,23 @@ describe('useInstallmentQuote', () => {
     fetchMock.mockReset()
   })
 
-  it('fetches with no query string when paidAt is undefined', async () => {
+  it.each([
+    { paidAt: undefined, url: '/api/financial/installments/inst-1/quote' },
+    {
+      paidAt: '2026-05-01T12:00:00.000Z',
+      url: '/api/financial/installments/inst-1/quote?paidAt=2026-05-01T12%3A00%3A00.000Z',
+    },
+  ])('fetches $url for paidAt $paidAt', async ({ paidAt, url }) => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ success: true, data: { amount: 100 } }),
     })
 
-    const { result } = renderHook(() => useInstallmentQuote('inst-1'), { wrapper: wrap() })
+    const { result } = renderHook(() => useInstallmentQuote('inst-1', paidAt), { wrapper: wrap() })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/financial/installments/inst-1/quote')
-  })
-
-  it('appends an encoded paidAt query string when given', async () => {
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ success: true, data: { amount: 100 } }),
-    })
-
-    const { result } = renderHook(() => useInstallmentQuote('inst-1', '2026-05-01T12:00:00.000Z'), {
-      wrapper: wrap(),
-    })
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true))
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/financial/installments/inst-1/quote?paidAt=2026-05-01T12%3A00%3A00.000Z',
-    )
+    expect(fetchMock).toHaveBeenCalledWith(url)
   })
 
   it('returns body.data on success, not the whole envelope', async () => {
@@ -63,18 +53,19 @@ describe('useInstallmentQuote', () => {
     expect(result.current.data).toEqual({ amount: 250, penalty: 10 })
   })
 
-  it('throws with the server error message on a non-ok response', async () => {
+  it('throws an ApiError carrying the server message and code, so the dialog can branch on it', async () => {
     fetchMock.mockResolvedValueOnce({
       ok: false,
       status: 404,
-      json: async () => ({ error: 'Parcela não encontrada' }),
+      json: async () => ({ error: 'Parcela não encontrada', code: 'INSTALLMENT_NOT_FOUND' }),
     })
 
     const { result } = renderHook(() => useInstallmentQuote('inst-1'), { wrapper: wrap() })
 
     await waitFor(() => expect(result.current.isError).toBe(true))
 
-    expect(result.current.error?.message).toBe('Parcela não encontrada')
+    expect(result.current.error).toBeInstanceOf(ApiError)
+    expect(result.current.error).toMatchObject({ message: 'Parcela não encontrada', code: 'INSTALLMENT_NOT_FOUND' })
   })
 
   it('falls back to HTTP <status> when the body has no error field', async () => {

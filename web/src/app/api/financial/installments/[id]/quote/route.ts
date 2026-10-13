@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthContext } from '@/lib/auth'
+import { requireRole } from '@/lib/auth'
 import { getInstallmentQuote } from '@/db/queries/financial-quote'
 import { BusinessError } from '@/lib/errors'
 import { handleApiError } from '@/lib/api-error'
@@ -18,10 +18,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getAuthContext()
-    if (!['owner', 'receptionist', 'financial'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const ctx = await requireRole('owner', 'receptionist', 'financial')
 
     const { id } = await params
     const parsed = querySchema.safeParse({

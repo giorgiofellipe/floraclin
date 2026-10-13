@@ -1,4 +1,4 @@
-import { brDayIndex, shiftBrYmd, ymdDayIndex } from '@/lib/dates'
+import { brDayIndex, ymdDayIndex } from '@/lib/dates'
 
 const MAX_FINE_PERCENTAGE = 2
 const MAX_INTEREST_MONTHLY = 1
@@ -11,6 +11,12 @@ export interface InstallmentState {
   interestAmount: number
 }
 
+/** A stretch the installment spent cancelled. `to` is null while it still is. */
+export interface PenaltyPause {
+  from: string
+  to: string | null
+}
+
 export interface InstallmentBase {
   amount: number
   dueDate: string
@@ -18,6 +24,7 @@ export interface InstallmentBase {
   appliedFineType: string
   appliedInterestRate: number
   gracePeriodDays: number
+  penaltyPauses: PenaltyPause[]
 }
 
 export interface PaymentInput {
@@ -52,8 +59,18 @@ export interface ReplayResult {
   }
 }
 
-function round2(n: number): number {
-  return Math.round(n * 100) / 100
+export function round2(n: number): number {
+  // Fifteen significant digits is what a double carries reliably, so rounding
+  // to that recovers the decimal the arithmetic meant (0.135, not
+  // 0.13499999999999998) for any amount the money columns can hold, before
+  // the third decimal decides the cent, half up.
+  const sign = n < 0 ? -1 : 1
+  const text = Math.abs(n).toPrecision(15)
+  if (text.includes('e')) return 0
+  const [whole, frac = ''] = text.split('.')
+  let cents = Number(whole) * 100 + Number(frac.slice(0, 2).padEnd(2, '0'))
+  if (Number(frac[2] ?? '0') >= 5) cents += 1
+  return (sign * cents) / 100
 }
 
 export function calculateFine(amount: number, fineType: string, fineValue: number): number {
@@ -103,34 +120,88 @@ export function allocatePayment(
   return { interestCovered, fineCovered, principalCovered, excessAmount }
 }
 
-/** Day index of the last day that is NOT overdue: the due date plus grace. */
-function lastGraceDayIndex(base: InstallmentBase): number {
-  return ymdDayIndex(shiftBrYmd(base.dueDate, base.gracePeriodDays))
+/** BR day indices in (start, end]: the same half-open count interest uses. */
+interface DaySpan {
+  start: number
+  end: number
+}
+
+/** Pauses as merged, sorted day spans, so overlapping pauses count once. */
+function pausedSpans(base: InstallmentBase): DaySpan[] {
+  const spans = base.penaltyPauses
+    .map((p) => ({
+      start: brDayIndex(new Date(p.from)),
+      end: p.to === null ? Number.POSITIVE_INFINITY : brDayIndex(new Date(p.to)),
+    }))
+    .filter((span) => span.end > span.start)
+    .sort((a, b) => a.start - b.start)
+
+  const merged: DaySpan[] = []
+  for (const span of spans) {
+    const last = merged[merged.length - 1]
+    if (last && span.start <= last.end) last.end = Math.max(last.end, span.end)
+    else merged.push({ ...span })
+  }
+  return merged
+}
+
+/** Days in (start, end] that fall outside every pause. */
+function unpausedDays(paused: DaySpan[], start: number, end: number): number {
+  if (end <= start) return 0
+  let days = end - start
+  for (const span of paused) {
+    const overlap = Math.min(end, span.end) - Math.max(start, span.start)
+    if (overlap > 0) days -= overlap
+  }
+  return days
 }
 
 /**
- * True once the due date plus grace has passed, regardless of payments. The
- * fine is gated on this and not on the interest interval, which restarts at
- * each payment and can stay under a day forever.
+ * Day index of the last day that is NOT overdue: the due date plus grace,
+ * where grace is spent only on days the installment was not paused.
  */
-function isOverdueAt(base: InstallmentBase, at: Date): boolean {
-  return brDayIndex(at) > lastGraceDayIndex(base)
+function lastGraceDayIndex(base: InstallmentBase, paused: DaySpan[]): number {
+  let day = ymdDayIndex(base.dueDate)
+  let graceLeft = base.gracePeriodDays
+  for (const span of paused) {
+    if (span.end <= day) continue
+    const gap = Math.max(0, span.start - day)
+    if (gap >= graceLeft) break
+    graceLeft -= gap
+    day = span.end
+  }
+  return day + graceLeft
 }
 
 /**
- * Whole BR calendar days of interest owed at `asOf`. The clock starts the day
- * after grace ends, or at the last payment, whichever is later.
+ * True once more unpaused days than grace have passed since the due date,
+ * regardless of payments. The fine is gated on this and not on the interest
+ * interval, which restarts at each payment and can stay under a day forever.
+ */
+function isOverdueAt(base: InstallmentBase, paused: DaySpan[], at: Date): boolean {
+  return unpausedDays(paused, ymdDayIndex(base.dueDate), brDayIndex(at)) > base.gracePeriodDays
+}
+
+/** Whether the installment is late at `at`, net of grace and pauses. */
+export function isInstallmentOverdue(base: InstallmentBase, at: Date): boolean {
+  return isOverdueAt(base, pausedSpans(base), at)
+}
+
+/**
+ * Whole unpaused BR calendar days of interest owed at `asOf`. The clock starts
+ * the day after grace ends, or at the last payment, whichever is later.
  */
 function daysOfInterest(
   base: InstallmentBase,
+  paused: DaySpan[],
   lastCalcAt: string | null,
   asOf: Date,
 ): number {
   const start = Math.max(
-    lastGraceDayIndex(base),
+    lastGraceDayIndex(base, paused),
     lastCalcAt ? brDayIndex(new Date(lastCalcAt)) : Number.NEGATIVE_INFINITY,
   )
-  return Math.max(0, brDayIndex(asOf) - start)
+  return unpausedDays(paused, start, brDayIndex(asOf))
 }
 
 export function replayPayments(
@@ -140,8 +211,7 @@ export function replayPayments(
 ): ReplayResult {
   // paidAt is what the operator typed and is anchored to BR noon, so ties are
   // common. recordedAt is when the row was written, so it is the order the
-  // payments actually happened in and it survives the in-flight sentinel being
-  // replaced by a real id.
+  // payments actually happened in.
   const sorted = [...payments].sort((a, b) => {
     const byDate = new Date(a.paidAt).getTime() - new Date(b.paidAt).getTime()
     if (byDate !== 0) return byDate
@@ -150,6 +220,7 @@ export function replayPayments(
     return String(a.id ?? '').localeCompare(String(b.id ?? ''))
   })
 
+  const paused = pausedSpans(base)
   let amountPaid = 0
   let fineAmount = 0
   let fineApplied = false
@@ -159,10 +230,10 @@ export function replayPayments(
 
   for (const payment of sorted) {
     const paymentDate = new Date(payment.paidAt)
-    const daysOverdue = daysOfInterest(base, lastCalcAt, paymentDate)
+    const daysOverdue = daysOfInterest(base, paused, lastCalcAt, paymentDate)
 
     const remainingPrincipal = round2(base.amount - amountPaid)
-    if (!fineApplied && remainingPrincipal > 0 && isOverdueAt(base, paymentDate)) {
+    if (!fineApplied && remainingPrincipal > 0 && isOverdueAt(base, paused, paymentDate)) {
       fineAmount = calculateFine(base.amount, base.appliedFineType, base.appliedFineValue)
       fineApplied = true
     }
@@ -196,7 +267,7 @@ export function replayPayments(
     carriedInterest +
       calculateInterest(
         round2(base.amount - amountPaid),
-        daysOfInterest(base, lastCalcAt, asOf),
+        daysOfInterest(base, paused, lastCalcAt, asOf),
         base.appliedInterestRate,
       ),
   )
@@ -212,36 +283,6 @@ export function replayPayments(
       carriedInterest,
     },
   }
-}
-
-export interface StoredPaymentAllocation {
-  id: string
-  amount: number
-  interestCovered: number
-  fineCovered: number
-  principalCovered: number
-}
-
-/**
- * Only payments the replay sorts after the new one are checked: the split of
- * the earlier ones does not change, and rows allocated by an older version of
- * this engine can replay a few cents apart from what they store. Excess a
- * payment already carried was accepted when it was recorded and does not
- * count; only an increase does.
- */
-export function findOverfilledPayment(
-  stored: StoredPaymentAllocation[],
-  replayed: ReplayedPayment[],
-  newPaymentId: string,
-): string | null {
-  const after = replayed.slice(replayed.findIndex((p) => p.id === newPaymentId) + 1)
-  for (const r of after) {
-    const s = stored.find((p) => p.id === r.id)
-    if (!s) continue
-    const storedExcess = round2(s.amount - s.interestCovered - s.fineCovered - s.principalCovered)
-    if (round2(r.excessAmount) > storedExcess) return s.id
-  }
-  return null
 }
 
 export interface InstallmentQuote {
@@ -268,7 +309,8 @@ export function quoteInstallment(
   const replay = replayPayments(base, upToAsOf, asOf)
   const { amountPaid, lastFineInterestCalcAt, carriedInterest } = replay.installmentState
 
-  const daysOverdue = daysOfInterest(base, lastFineInterestCalcAt, asOf)
+  const paused = pausedSpans(base)
+  const daysOverdue = daysOfInterest(base, paused, lastFineInterestCalcAt, asOf)
   const remainingPrincipal = round2(Math.max(base.amount - amountPaid, 0))
 
   // No principal outstanding means nothing to be late on. A prepaid
@@ -276,7 +318,7 @@ export function quoteInstallment(
   const fineAmount =
     !replay.installmentState.fineApplied &&
     remainingPrincipal > 0 &&
-    isOverdueAt(base, asOf)
+    isOverdueAt(base, paused, asOf)
       ? calculateFine(base.amount, base.appliedFineType, base.appliedFineValue)
       : replay.installmentState.fineAmount
 

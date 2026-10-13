@@ -1,14 +1,13 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '@/db/client'
-import { installments, paymentRecords } from '@/db/schema'
-import { loadFinancialSettings } from '@/db/queries/financial'
-import { BusinessError } from '@/lib/errors'
+import { installments } from '@/db/schema'
 import {
-  quoteInstallment,
-  type InstallmentBase,
-  type InstallmentQuote,
-  type PaymentInput,
-} from '@/lib/financial/penalties'
+  loadLivePayments,
+  paymentDateAfterLivePayments,
+  toInstallmentBase,
+} from '@/db/queries/financial'
+import { BusinessError } from '@/lib/errors'
+import { quoteInstallment, type InstallmentQuote } from '@/lib/financial/penalties'
 
 export interface InstallmentQuoteResult extends InstallmentQuote {
   asOf: string
@@ -44,34 +43,11 @@ export async function getInstallmentQuote(
     throw new BusinessError('INSTALLMENT_CANCELLED', 'Parcela cancelada não pode receber pagamento')
   }
 
-  // The write path resolves settings through this same helper. Duplicating its
-  // fallbacks here is how the quote and the charge drift apart: a tenant with
-  // no settings row would be quoted at 0% and charged at 2%.
-  const settings = await loadFinancialSettings(db, tenantId)
+  const livePayments = await loadLivePayments(db, installmentId)
+  const pricedAt = await paymentDateAfterLivePayments(db, tenantId, inst, livePayments.rows, asOf)
 
-  const payments = await db
-    .select()
-    .from(paymentRecords)
-    .where(
-      and(eq(paymentRecords.installmentId, installmentId), isNull(paymentRecords.reversedAt)),
-    )
-    .orderBy(paymentRecords.paidAt)
-
-  const base: InstallmentBase = {
-    amount: Number(inst.amount),
-    dueDate: inst.dueDate,
-    appliedFineValue: Number(inst.appliedFineValue ?? settings.fineValue),
-    appliedFineType: inst.appliedFineType ?? settings.fineType,
-    appliedInterestRate: Number(inst.appliedInterestRate ?? settings.monthlyInterestPercent),
-    gracePeriodDays: settings.gracePeriodDays,
+  return {
+    ...quoteInstallment(toInstallmentBase(inst), livePayments.inputs, pricedAt),
+    asOf: asOf.toISOString(),
   }
-
-  const prior: PaymentInput[] = payments.map((p) => ({
-    id: p.id,
-    amount: Number(p.amount),
-    paidAt: new Date(p.paidAt).toISOString(),
-    recordedAt: new Date(p.recordedAt).toISOString(),
-  }))
-
-  return { ...quoteInstallment(base, prior, asOf), asOf: asOf.toISOString() }
 }

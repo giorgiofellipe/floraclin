@@ -3,9 +3,7 @@ import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { withTransaction } from '@/lib/tenant'
 import { getProcedure, cancelProcedure } from '@/db/queries/procedures'
-import { financialEntries, installments } from '@/db/schema'
-import { eq, and, isNull } from 'drizzle-orm'
-import { db } from '@/db/client'
+import { cancelLinkedFinancials } from '@/lib/followups'
 import { handleApiError } from '@/lib/api-error'
 
 export async function POST(
@@ -42,29 +40,7 @@ export async function POST(
       if (!updated) throw new Error('Falha ao cancelar procedimento')
 
       if (procedure.status === 'approved') {
-        const cancelledEntries = await (tx as unknown as typeof db)
-          .update(financialEntries)
-          .set({ status: 'cancelled', updatedAt: new Date() })
-          .where(
-            and(
-              eq(financialEntries.procedureRecordId, procedureId),
-              eq(financialEntries.tenantId, ctx.tenantId),
-              isNull(financialEntries.deletedAt)
-            )
-          )
-          .returning({ id: financialEntries.id })
-
-        for (const entry of cancelledEntries) {
-          await (tx as unknown as typeof db)
-            .update(installments)
-            .set({ status: 'cancelled', updatedAt: new Date() })
-            .where(
-              and(
-                eq(installments.financialEntryId, entry.id),
-                eq(installments.tenantId, ctx.tenantId)
-              )
-            )
-        }
+        await cancelLinkedFinancials(tx as unknown as Parameters<typeof cancelLinkedFinancials>[0], ctx.tenantId, procedureId)
       }
 
       return updated

@@ -120,7 +120,7 @@ describe('InstallmentTable', () => {
     expect(multa).toBeInTheDocument()
   })
 
-  it('shows the computed penalty, never the raw interestAmount fallback', async () => {
+  it('shows the engine-priced penalty over a stale stored interestAmount', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({
