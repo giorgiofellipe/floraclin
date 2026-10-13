@@ -13,9 +13,7 @@ import { sendLifecycleEmail } from '../email'
 const base = {
   to: 'owner@clinic.com',
   subject: 'Oi',
-  body: 'Corpo',
-  button: null,
-  optOutUrl: null,
+  content: { preheader: 'Resumo', heading: 'Título', paragraphs: ['Corpo'], button: null, optOutUrl: null },
 }
 
 beforeEach(() => {
@@ -38,8 +36,11 @@ describe('sendLifecycleEmail', () => {
     expect(sendMock.mock.calls[0][0].replyTo).toBe('contato@floraclin.com.br')
   })
 
-  it('escapes HTML in the body', async () => {
-    await sendLifecycleEmail({ ...base, body: '<script>alert(1)</script>' })
+  it('escapes HTML in paragraphs', async () => {
+    await sendLifecycleEmail({
+      ...base,
+      content: { ...base.content, paragraphs: ['Olá, <script>alert(1)</script>!'] },
+    })
     const html = sendMock.mock.calls[0][0].html as string
     expect(html).not.toContain('<script>')
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
@@ -49,7 +50,7 @@ describe('sendLifecycleEmail', () => {
     await sendLifecycleEmail(base)
     expect(sendMock.mock.calls[0][0].html).not.toContain('Não quer mais receber')
 
-    await sendLifecycleEmail({ ...base, optOutUrl: 'https://app.test/optout?t=abc' })
+    await sendLifecycleEmail({ ...base, content: { ...base.content, optOutUrl: 'https://app.test/optout?t=abc' } })
     const html = sendMock.mock.calls[1][0].html as string
     expect(html).toContain('Não quer mais receber dicas da FloraClin?')
     expect(html).toContain('href="https://app.test/optout?t=abc"')
@@ -59,7 +60,10 @@ describe('sendLifecycleEmail', () => {
     await sendLifecycleEmail(base)
     expect(sendMock.mock.calls[0][0].html).not.toContain('background: #4A6B52')
 
-    await sendLifecycleEmail({ ...base, button: { label: 'Abrir', url: 'https://app.test/x' } })
+    await sendLifecycleEmail({
+      ...base,
+      content: { ...base.content, button: { label: 'Abrir', url: 'https://app.test/x' } },
+    })
     const html = sendMock.mock.calls[1][0].html as string
     expect(html).toContain('href="https://app.test/x"')
     expect(html).toContain('Abrir')

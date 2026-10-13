@@ -15,7 +15,7 @@ import { lifecycleOptOutUrl } from '@/lib/lifecycle-opt-out'
 import {
   LIFECYCLE_WELCOME,
   ownerFirstName,
-  renderLifecycleBody,
+  renderLifecycleEmail,
   type LifecycleMessage,
 } from '@/lib/lifecycle-messages'
 import { reportSideEffectFailure } from '@/lib/observability'
@@ -69,7 +69,6 @@ export async function deliverLifecycleMessage(
     return { whatsapp: 'skipped', email: 'skipped' }
   }
   const firstName = ownerFirstName(recipient.ownerName)
-  const body = renderLifecycleBody(message, firstName)
 
   const phone = recipient.tenantPhone ? normalizeBrPhone(recipient.tenantPhone) : ''
   let whatsapp: ChannelOutcome
@@ -92,11 +91,13 @@ export async function deliverLifecycleMessage(
     await sendLifecycleEmail({
       to: recipient.ownerEmail,
       subject: message.emailSubject,
-      body,
-      button: message.button
-        ? { label: message.button.label, url: getAppUrl() + message.button.path }
-        : null,
-      optOutUrl: message.category === 'MARKETING' ? lifecycleOptOutUrl(recipient.tenantId) : null,
+      content: {
+        ...renderLifecycleEmail(message, firstName),
+        button: message.button
+          ? { label: message.button.label, url: getAppUrl() + message.button.path }
+          : null,
+        optOutUrl: message.category === 'MARKETING' ? lifecycleOptOutUrl(recipient.tenantId) : null,
+      },
     })
     return {}
   })

@@ -122,7 +122,7 @@ export async function inviteUser(
       .limit(1)
 
     const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.floraclin.com.br'}/login`
-    await sendInviteEmail(data.email, loginUrl, tenant?.name)
+    await sendInviteEmail(data.email, loginUrl, tenant.name)
 
     return { success: true }
   } catch (error) {
