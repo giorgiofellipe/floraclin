@@ -10,12 +10,14 @@ import { isSubscriptionActive } from '@/lib/plans'
 import { notifyDiscord, type WhatsappDigestFailingTenant } from '@/lib/discord'
 import { withCronMonitor } from '@/lib/cron-monitor'
 import { buildConfirmationParams } from '@/lib/whatsapp-confirmation'
+import { brToday, parseBrDate } from '@/lib/dates'
+import { maybeAutoSendAnamnesisLink } from '@/lib/whatsapp-anamnesis'
 
 // Schedule mirrors `vercel.json`; see withCronMonitor for the rest. This is
 // the cron a clinic notices first when it stops running, so it gets the same
 // dead-man's switch as the other two.
 const MONITOR_SLUG = 'whatsapp-automations'
-const MONITOR_SCHEDULE = '0 11 * * *'
+const MONITOR_SCHEDULE = '30 9 * * *'
 
 // Vercel invokes this route and discards the response body, so nothing in
 // here can rely on a human reading `NextResponse.json(...)`. Every tenant
@@ -30,6 +32,7 @@ type TenantOutcomeReason =
   | 'template_missing'
   | 'template_not_approved'
   | 'no_pending_appointments'
+  | 'no_messages_due'
   | 'no_valid_phone'
   | 'sent'
   | 'send_failed'
@@ -42,7 +45,14 @@ interface TenantOutcome {
   reason: TenantOutcomeReason
   appointmentsSent: number
   appointmentsFailed: number
+  anamnesisSent: number
+  anamnesisFailed: number
 }
+
+type PendingAppointment = Awaited<ReturnType<typeof getAppointmentsPendingConfirmationUntil>>[number]
+type PendingSend =
+  | { kind: 'confirmation'; appt: PendingAppointment; template: NonNullable<Awaited<ReturnType<typeof getTemplateForTenant>>> }
+  | { kind: 'anamnesis'; appt: PendingAppointment }
 
 // Reasons that represent a real problem rather than an expected skip. Used
 // both to decide whether the Discord digest is "routine" or "abnormal" and
@@ -72,6 +82,8 @@ function skipOutcome(
     reason,
     appointmentsSent: 0,
     appointmentsFailed: 0,
+    anamnesisSent: 0,
+    anamnesisFailed: 0,
   }
 }
 
@@ -93,6 +105,7 @@ export async function GET(request: Request) {
  * `withCronMonitor` whole. Nothing in here touches the request.
  */
 async function runAutomations() {
+  const todayYmd = brToday()
   const allTenants = await db
     .select({ id: tenants.id, name: tenants.name, settings: tenants.settings })
     .from(tenants)
@@ -109,6 +122,7 @@ async function runAutomations() {
   })
 
   let sent = 0
+  let anamnesisSent = 0
 
   for (const tenant of waEnabled) {
     try {
@@ -126,16 +140,6 @@ async function runAutomations() {
         continue
       }
 
-      const template = await getTemplateForTenant(tenant.id, 'appointment_confirmation')
-      if (!template) {
-        outcomes.push(skipOutcome(tenant.id, tenant.name, 'template_missing'))
-        continue
-      }
-      if (template.status !== 'APPROVED') {
-        outcomes.push(skipOutcome(tenant.id, tenant.name, 'template_not_approved'))
-        continue
-      }
-
       const pendingAppointments = await getAppointmentsPendingConfirmationUntil(
         tenant.id,
       )
@@ -145,20 +149,60 @@ async function runAutomations() {
         continue
       }
 
+      const sameDayAppointments = pendingAppointments.filter((appt) => appt.date === todayYmd)
+      const nextDayAppointments = pendingAppointments.filter((appt) => appt.date !== todayYmd)
+
+      let confirmationBlockedReason: 'template_missing' | 'template_not_approved' | null = null
+      let template: Awaited<ReturnType<typeof getTemplateForTenant>> = null
+      if (nextDayAppointments.length > 0) {
+        template = await getTemplateForTenant(tenant.id, 'appointment_confirmation')
+        if (!template) {
+          confirmationBlockedReason = 'template_missing'
+        } else if (template.status !== 'APPROVED') {
+          confirmationBlockedReason = 'template_not_approved'
+        }
+      }
+      const confirmationTemplate = confirmationBlockedReason ? null : template
+
+      // Confirmations go first so same-day anamnesis links never spend the
+      // credits that next-day confirmations need.
+      const sends: PendingSend[] = [
+        ...(confirmationTemplate
+          ? nextDayAppointments.map((appt) => ({ kind: 'confirmation' as const, appt, template: confirmationTemplate }))
+          : []),
+        ...sameDayAppointments.map((appt) => ({ kind: 'anamnesis' as const, appt })),
+      ]
+
       let tenantSent = 0
       let tenantFailed = 0
+      let tenantAnamnesisSent = 0
+      let tenantAnamnesisFailed = 0
       let tenantHadPhone = false
       let creditExhausted = false
 
-      for (const appt of pendingAppointments) {
+      for (const send of sends) {
+        const { kind, appt } = send
         try {
           const phone = appt.patientPhone ?? appt.bookingPhone
           if (!phone) continue
           tenantHadPhone = true
-
           const normalizedPhone = normalizeBrPhoneForWhatsApp(phone)
-          const name = appt.patientName ?? appt.bookingName ?? ''
 
+          if (send.kind === 'anamnesis') {
+            if (!appt.patientId) continue
+            const result = await maybeAutoSendAnamnesisLink({
+              tenantId: tenant.id,
+              patientId: appt.patientId,
+              phone: normalizedPhone,
+              automation: confirmationAuto,
+              linkExpiresAt: parseBrDate(appt.date, appt.startTime),
+            })
+            if (result.status === 'sent') tenantAnamnesisSent++
+            continue
+          }
+
+          const { template } = send
+          const name = appt.patientName ?? appt.bookingName ?? ''
           const params = buildConfirmationParams(appt, tenant.name)
 
           const result = await sendTemplateMessage(
@@ -211,6 +255,7 @@ async function runAutomations() {
                 creditsUsed: err.creditsUsed,
                 creditsTotal: err.creditsTotal,
                 appointmentsSentBeforeExhaustion: tenantSent,
+                anamnesisSentBeforeExhaustion: tenantAnamnesisSent,
               },
             })
             creditExhausted = true
@@ -220,39 +265,46 @@ async function runAutomations() {
             console.warn(`[cron] Skipping appointment ${appt.id}: ${err.message}`)
             continue
           }
-          console.error(`[cron] Failed to send confirmation for appointment ${appt.id}:`, err)
+          console.error(`[cron] Failed to send ${kind} for appointment ${appt.id}:`, err)
           Sentry.captureException(err, {
             extra: {
               tenantId: tenant.id,
               tenantName: tenant.name,
               appointmentId: appt.id,
+              messageKind: kind,
             },
           })
-          tenantFailed++
+          if (kind === 'anamnesis') tenantAnamnesisFailed++
+          else tenantFailed++
         }
       }
 
-      // Every pending appointment with a valid phone either sends, fails, or
-      // trips creditExhausted (which breaks the loop). Missing and invalid
-      // phones are skipped, so if none of the first three branches match, no
-      // appointment had a usable phone.
+      // A blocked confirmation template outranks anamnesis sends: otherwise
+      // a clinic whose confirmations all stopped would read as 'sent'.
       let reason: TenantOutcomeReason
       if (creditExhausted) {
         reason = 'credit_exhausted'
       } else if (tenantSent > 0) {
         reason = 'sent'
-      } else if (tenantFailed > 0) {
+      } else if (confirmationBlockedReason) {
+        reason = confirmationBlockedReason
+      } else if (tenantAnamnesisSent > 0) {
+        reason = 'sent'
+      } else if (tenantFailed + tenantAnamnesisFailed > 0) {
         reason = 'send_failed'
       } else {
-        reason = 'no_valid_phone'
+        reason = tenantHadPhone ? 'no_messages_due' : 'no_valid_phone'
       }
 
+      anamnesisSent += tenantAnamnesisSent
       outcomes.push({
         tenantId: tenant.id,
         tenantName: tenant.name,
         reason,
         appointmentsSent: tenantSent,
         appointmentsFailed: tenantFailed,
+        anamnesisSent: tenantAnamnesisSent,
+        anamnesisFailed: tenantAnamnesisFailed,
       })
     } catch (err) {
       // A gate itself blew up (DB error, etc). This is a bug, not an
@@ -290,6 +342,7 @@ async function runAutomations() {
   console.log('[cron] whatsapp-automations run summary', JSON.stringify({
     tenantsProcessed: allTenants.length,
     sent,
+    anamnesisSent,
     summary,
   }))
 
@@ -307,6 +360,7 @@ async function runAutomations() {
       tenantName: o.tenantName,
       reason: o.reason,
       appointmentsFailed: o.appointmentsFailed,
+      anamnesisFailed: o.anamnesisFailed,
     }))
 
   // notifyDiscord already never throws by contract (see web/src/lib/discord.ts),
@@ -318,6 +372,7 @@ async function runAutomations() {
       kind: 'whatsapp_automations.digest',
       tenantsProcessed: allTenants.length,
       sent,
+      anamnesisSent,
       summary,
       failingTenants,
     })
@@ -325,5 +380,5 @@ async function runAutomations() {
     console.error('[cron] Failed to post whatsapp-automations digest to Discord:', err)
   }
 
-  return { ok: true, sent, outcomes, summary }
+  return { ok: true, sent, anamnesisSent, outcomes, summary }
 }

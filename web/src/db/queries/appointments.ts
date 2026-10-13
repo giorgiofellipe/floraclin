@@ -5,8 +5,7 @@ import { CLINICAL_ROLES } from '@/lib/constants'
 import { toHhMm } from '@/lib/time-options'
 import type { AppointmentStatus, AppointmentSource } from '@/types'
 import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
-import { brToday, parseBrDate, endOfBrDay, toLocalYmd } from '@/lib/dates'
-import { addDays } from 'date-fns'
+import { brToday, parseBrDate, endOfBrDay, shiftBrYmd } from '@/lib/dates'
 import { verifyTenantOwnership, verifyUserBelongsToTenant } from './helpers'
 import { getPatient } from './patients'
 import { enqueueMetaEvent } from '@/lib/meta/events'
@@ -548,7 +547,7 @@ export async function getAppointmentsPendingConfirmation(
 }
 
 export async function getAppointmentsPendingConfirmationUntil(tenantId: string) {
-  const tomorrowStr = toLocalYmd(addDays(new Date(), 1))
+  const tomorrowStr = shiftBrYmd(brToday(), 1)
   const windowEnd = endOfBrDay(tomorrowStr)
 
   const results = await db

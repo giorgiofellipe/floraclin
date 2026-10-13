@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/whatsapp-automations",
-      "schedule": "0 11 * * *"
+      "schedule": "30 9 * * *"
     },
     {
       "path": "/api/cron/subscription-expiry",

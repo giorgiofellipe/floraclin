@@ -444,7 +444,7 @@ Guard rails, all three required before a single delete runs:
 - Create: `web/scripts/demo-clinic/verify.ts`
 
 > **Review finding HIGH-2.** `web/vercel.json` schedules
-> `/api/cron/whatsapp-automations` at `0 11 * * *`, i.e. **08:00 BRT every day**.
+> `/api/cron/whatsapp-automations` at `30 9 * * *`, i.e. **06:30 BRT every day**.
 > The exclusion is not theoretical: it gets exercised the morning after any seed.
 > So `--safety-only` runs **before** seeding and again **after**, and it is the
 > gate on the whole operation.

@@ -19,6 +19,7 @@ export type WhatsappDigestFailingTenant = {
   tenantName: string
   reason: 'send_failed' | 'tenant_error' | 'credit_exhausted'
   appointmentsFailed: number
+  anamnesisFailed: number
 }
 
 export type DiscordEvent =
@@ -30,6 +31,7 @@ export type DiscordEvent =
       kind: 'whatsapp_automations.digest'
       tenantsProcessed: number
       sent: number
+      anamnesisSent: number
       summary: Record<string, number>
       failingTenants: WhatsappDigestFailingTenant[]
     }
@@ -163,7 +165,7 @@ export function buildDiscordPayload(event: DiscordEvent): DiscordPayload {
       // same totals plus the failing clinics, so the digest itself answers
       // "which ones" without anyone needing to go dig through logs.
       const abnormal = event.failingTenants.length > 0
-      const totals = `${event.tenantsProcessed} clínicas processadas, ${event.sent} confirmações enviadas.`
+      const totals = `${event.tenantsProcessed} clínicas processadas, ${event.sent} confirmações e ${event.anamnesisSent} links de anamnese enviados.`
 
       if (!abnormal) {
         return {
@@ -181,7 +183,9 @@ export function buildDiscordPayload(event: DiscordEvent): DiscordPayload {
       }
 
       const failureLines = event.failingTenants.map((t) => {
-        const detail = t.reason === 'send_failed' ? ` (${t.appointmentsFailed} confirmações)` : ''
+        const detail = t.reason === 'send_failed'
+          ? ` (${t.appointmentsFailed} confirmações, ${t.anamnesisFailed} links de anamnese)`
+          : ''
         return `- ${t.tenantName}: ${digestReasonLabel(t.reason)}${detail}`
       })
 

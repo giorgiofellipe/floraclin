@@ -150,6 +150,7 @@ vi.mock('@/db/queries/anamnesis', () => ({
 
 vi.mock('@/db/queries/anamnesis-tokens', () => ({
   createAnamnesisToken: vi.fn(),
+  hasAnamnesisTokenCreatedOnBrDay: vi.fn(async () => false),
 }))
 
 vi.mock('@/db/queries/prospects', () => ({

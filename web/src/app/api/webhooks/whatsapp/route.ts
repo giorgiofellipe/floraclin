@@ -3,7 +3,7 @@ import * as Sentry from '@sentry/nextjs'
 import { db } from '@/db/client'
 import { tenants, procedureTypes, whatsappMessages, whatsappConversations } from '@/db/schema'
 import { eq, and, sql } from 'drizzle-orm'
-import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage, sendTemplateMessage, sendMediaMessage, normalizeBrPhone, getTemplateForTenant } from '@/lib/whatsapp'
+import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage, sendTemplateMessage, sendMediaMessage, normalizeBrPhone } from '@/lib/whatsapp'
 import {
   upsertConversation,
   createMessage,
@@ -15,15 +15,12 @@ import {
   getQueuedMessages,
   updateQueuedMessageStatus,
   expireStaleQueuedMessages,
-  listAutomations,
 } from '@/db/queries/whatsapp'
 import {
   getAppointmentByConfirmationMessageId,
   confirmAppointment,
   requestReschedule,
 } from '@/db/queries/appointments'
-import { getAnamnesis } from '@/db/queries/anamnesis'
-import { createAnamnesisToken } from '@/db/queries/anamnesis-tokens'
 import {
   createNewProspect,
   getProspectByPhone,
@@ -31,8 +28,7 @@ import {
   logProspectActivity,
   setProspectProcedures,
 } from '@/db/queries/prospects'
-import { getPatientByPhone, getPatient } from '@/db/queries/patients'
-import { getTenant } from '@/db/queries/tenants'
+import { getPatientByPhone } from '@/db/queries/patients'
 import { classifyMessage } from '@/lib/classify-prospect'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { parseReferral } from '@/lib/meta/attribution'
@@ -40,6 +36,7 @@ import { recordAttribution } from '@/db/queries/lead-attributions'
 import { enqueueMetaEvent } from '@/lib/meta/events'
 import { captureLifecycleReply, handleLifecycleStatus } from '@/lib/lifecycle-webhook'
 import { getWhatsAppErrorLabel, isKnownWhatsAppErrorCode } from '@/lib/whatsapp-errors'
+import { maybeAutoSendAnamnesisLink } from '@/lib/whatsapp-anamnesis'
 
 export const dynamic = 'force-dynamic'
 
@@ -787,103 +784,11 @@ async function processConfirmationReply(
     if (!confirmed) return
 
     if (appointment.patientId) {
-      await maybeAutoSendAnamnesis(tenantId, appointment.patientId, fromPhone)
+      await maybeAutoSendAnamnesisLink({ tenantId, patientId: appointment.patientId, phone: fromPhone })
     }
   } else if (buttonTitle === 'Reagendar') {
     await requestReschedule(tenantId, appointment.id)
   }
-}
-
-// ---------------------------------------------------------------------------
-// Auto-send anamnesis link after confirmation (if enabled and stale)
-// ---------------------------------------------------------------------------
-async function maybeAutoSendAnamnesis(
-  tenantId: string,
-  patientId: string,
-  phone: string,
-) {
-  const automations = await listAutomations(tenantId)
-  const confirmationAuto = automations.find(
-    (a) => a.trigger === 'appointment_confirmation' && a.enabled
-  )
-  if (!confirmationAuto) return
-
-  const config = (confirmationAuto.config ?? {}) as Record<string, unknown>
-  if (!config.autoAnamnesisEnabled) return
-
-  const staleDays = (config.anamnesisStaleDays as number) ?? 60
-  const anamnesis = await getAnamnesis(tenantId, patientId)
-  if (anamnesis?.updatedAt) {
-    const daysSince = (Date.now() - new Date(anamnesis.updatedAt).getTime()) / (1000 * 60 * 60 * 24)
-    if (daysSince < staleDays) return
-  }
-
-  const template = await getTemplateForTenant(tenantId, 'anamnese_link')
-  if (!template || template.status !== 'APPROVED') return
-
-  const patient = await getPatient(tenantId, patientId)
-  if (!patient) return
-
-  // Create anamnesis token
-  const tenant = await getTenant(tenantId)
-  if (!tenant) return
-
-  // Use a tenant owner as createdBy since the FK requires a valid user UUID
-  const { db: dbClient } = await import('@/db/client')
-  const { tenantUsers } = await import('@/db/schema')
-  const [owner] = await dbClient
-    .select({ userId: tenantUsers.userId })
-    .from(tenantUsers)
-    .where(and(eq(tenantUsers.tenantId, tenantId), eq(tenantUsers.role, 'owner')))
-    .limit(1)
-  if (!owner) return
-
-  const token = await createAnamnesisToken(tenantId, patientId, owner.userId)
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.floraclin.com.br'
-  const link = `${appUrl}/a/${token.token}`
-
-  const firstName = patient.fullName.split(' ')[0] || patient.fullName
-
-  const params: Record<string, string> = {
-    '1': firstName,
-    '2': tenant.name,
-  }
-
-  const buttonParams = [{
-    index: 0,
-    subType: 'url',
-    parameters: [{ type: 'text', text: token.token }],
-  }]
-
-  const result = await sendTemplateMessage(
-    tenantId,
-    phone,
-    template.name,
-    template.language,
-    params,
-    buttonParams,
-  )
-
-  const conversation = await upsertConversation(
-    tenantId,
-    phone,
-    patient.fullName,
-    undefined,
-    patientId,
-  )
-
-  const message = await createMessage(tenantId, conversation.id, {
-    direction: 'outbound',
-    metaMessageId: result.metaMessageId,
-    body: `Olá, ${firstName}! Para agilizar seu atendimento na ${tenant.name}, pedimos que preencha sua ficha de anamnese pelo link abaixo:\n\n${link}\n\nQualquer dúvida, estamos à disposição.`,
-    templateName: template.name,
-    deliveryStatus: 'sent',
-  })
-
-  await pushSseEvent(tenantId, 'new_message', {
-    conversationId: conversation.id,
-    message,
-  })
 }
 
 // ---------------------------------------------------------------------------

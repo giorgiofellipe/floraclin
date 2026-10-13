@@ -26,7 +26,7 @@
  *   other than 'floraclin' AND `whatsapp_enabled` is falsy. An unset mode
  *   defaults to 'floraclin' and is therefore INCLUDED -- which is why the
  *   check below requires the mode to be present, not merely different.
- *   `web/vercel.json` runs that cron at `0 11 * * *` (08:00 BRT) every day,
+ *   `web/vercel.json` runs that cron at `30 9 * * *` (06:30 BRT) every day,
  *   so this is exercised the morning after any seed.
  * - `whatsapp_automations` / `whatsapp_credits` / `whatsapp_queued_messages`
  *   must be empty: the cron needs an enabled automation row to send anything,

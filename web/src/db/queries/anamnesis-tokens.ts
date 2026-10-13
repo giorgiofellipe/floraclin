@@ -1,12 +1,18 @@
 import { db } from '@/db/client'
 import { anamnesisTokens, patients } from '@/db/schema'
-import { eq, and, isNull, sql } from 'drizzle-orm'
+import { eq, and, isNull, sql, gte, lte } from 'drizzle-orm'
+import { startOfBrDay, endOfBrDay } from '@/lib/dates'
 import { verifyTenantOwnership } from './helpers'
 
-export async function createAnamnesisToken(tenantId: string, patientId: string, createdBy: string) {
-  await verifyTenantOwnership(tenantId, patients, patientId, 'Patient')
+const DEFAULT_TOKEN_TTL_MS = 2 * 60 * 60 * 1000
 
-  const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000) // 2 hours
+export async function createAnamnesisToken(
+  tenantId: string,
+  patientId: string,
+  createdBy: string,
+  expiresAt: Date = new Date(Date.now() + DEFAULT_TOKEN_TTL_MS),
+) {
+  await verifyTenantOwnership(tenantId, patients, patientId, 'Patient')
 
   const [token] = await db
     .insert(anamnesisTokens)
@@ -63,4 +69,21 @@ export async function markTokenUsed(token: string) {
     .returning()
 
   return row ?? null
+}
+
+export async function hasAnamnesisTokenCreatedOnBrDay(tenantId: string, patientId: string, ymd: string) {
+  const [row] = await db
+    .select({ id: anamnesisTokens.id })
+    .from(anamnesisTokens)
+    .where(
+      and(
+        eq(anamnesisTokens.tenantId, tenantId),
+        eq(anamnesisTokens.patientId, patientId),
+        gte(anamnesisTokens.createdAt, startOfBrDay(ymd)),
+        lte(anamnesisTokens.createdAt, endOfBrDay(ymd)),
+      ),
+    )
+    .limit(1)
+
+  return Boolean(row)
 }

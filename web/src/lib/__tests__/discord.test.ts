@@ -133,13 +133,14 @@ describe('buildDiscordPayload whatsapp_automations.digest', () => {
       kind: 'whatsapp_automations.digest',
       tenantsProcessed: 10,
       sent: 4,
+      anamnesisSent: 2,
       summary: { sent: 3, no_pending_appointments: 7 },
       failingTenants: [],
     })
 
     const embed = payload.embeds[0]
     expect(embed.title).toBe('WhatsApp automations: execução diária')
-    expect(embed.description).toBe('10 clínicas processadas, 4 confirmações enviadas.')
+    expect(embed.description).toBe('10 clínicas processadas, 4 confirmações e 2 links de anamnese enviados.')
     expect(embed.description).not.toContain('\n')
   })
 
@@ -148,17 +149,18 @@ describe('buildDiscordPayload whatsapp_automations.digest', () => {
       kind: 'whatsapp_automations.digest',
       tenantsProcessed: 10,
       sent: 2,
+      anamnesisSent: 0,
       summary: { sent: 2, send_failed: 1, credit_exhausted: 1 },
       failingTenants: [
-        { tenantName: 'Clínica Bela Pele', reason: 'send_failed', appointmentsFailed: 3 },
-        { tenantName: 'Clínica Sem Créditos', reason: 'credit_exhausted', appointmentsFailed: 0 },
+        { tenantName: 'Clínica Bela Pele', reason: 'send_failed', appointmentsFailed: 3, anamnesisFailed: 1 },
+        { tenantName: 'Clínica Sem Créditos', reason: 'credit_exhausted', appointmentsFailed: 0, anamnesisFailed: 0 },
       ],
     })
 
     const embed = payload.embeds[0]
     expect(embed.title).toBe('WhatsApp automations: falhas na execução')
-    expect(embed.description).toContain('10 clínicas processadas, 2 confirmações enviadas.')
-    expect(embed.description).toContain('Clínica Bela Pele: falha ao enviar (3 confirmações)')
+    expect(embed.description).toContain('10 clínicas processadas, 2 confirmações e 0 links de anamnese enviados.')
+    expect(embed.description).toContain('Clínica Bela Pele: falha ao enviar (3 confirmações, 1 links de anamnese)')
     expect(embed.description).toContain('Clínica Sem Créditos: créditos esgotados')
   })
 
@@ -167,9 +169,10 @@ describe('buildDiscordPayload whatsapp_automations.digest', () => {
       kind: 'whatsapp_automations.digest',
       tenantsProcessed: 1,
       sent: 0,
+      anamnesisSent: 0,
       summary: { send_failed: 1 },
       failingTenants: [
-        { tenantName: 'Clínica Bela Pele', reason: 'send_failed', appointmentsFailed: 1 },
+        { tenantName: 'Clínica Bela Pele', reason: 'send_failed', appointmentsFailed: 1, anamnesisFailed: 0 },
       ],
     })
 
@@ -256,6 +259,7 @@ describe('notifyDiscord', () => {
       kind: 'whatsapp_automations.digest',
       tenantsProcessed: 10,
       sent: 4,
+      anamnesisSent: 0,
       summary: { sent: 4 },
       failingTenants: [],
     }
