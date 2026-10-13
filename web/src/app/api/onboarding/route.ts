@@ -9,6 +9,7 @@ import {
   createProcedureType,
   listProcedureTypes,
 } from '@/db/queries/tenants'
+import { findAvailableSlug, generateSlug } from '@/db/queries/admin-tenants'
 import { createConsentTemplate } from '@/db/queries/consent'
 import { DEFAULT_CONSENT_TEMPLATES } from '@/validations/consent'
 import { createProduct, listProducts } from '@/db/queries/products'
@@ -21,17 +22,9 @@ import { eq } from 'drizzle-orm'
 // withTransaction removed — helper functions use global db which deadlocks in transactions
 import { onboardingCompleteSchema } from '@/validations/onboarding'
 import { handleApiError } from '@/lib/api-error'
-import { ForbiddenError } from '@/lib/errors'
+import { ForbiddenError, isUniqueViolation } from '@/lib/errors'
 
-function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // remove diacritics
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .substring(0, 80)
-}
+const SLUG_TAKEN_MESSAGE = 'Este link já está em uso. Escolha outro.'
 
 export async function GET(request: Request) {
   try {
@@ -75,7 +68,20 @@ export async function POST(request: Request) {
 
     {
       // 1. Update tenant with clinic info, working hours, and slug
-      const slug = data.clinic.slug || generateSlug(data.clinic.name)
+      const slug = data.clinic.slug
+        || await findAvailableSlug(db, generateSlug(data.clinic.name), auth.tenantId)
+
+      try {
+        await db
+          .update(tenants)
+          .set({ slug, updatedAt: new Date() })
+          .where(eq(tenants.id, auth.tenantId))
+      } catch (err) {
+        if (isUniqueViolation(err, 'tenants_slug_unique')) {
+          return NextResponse.json({ error: SLUG_TAKEN_MESSAGE }, { status: 409 })
+        }
+        throw err
+      }
 
       await updateTenant(auth.tenantId, {
         name: data.clinic.name,
@@ -84,11 +90,6 @@ export async function POST(request: Request) {
         address: Object.values(data.clinic.address || {}).some(v => v) ? data.clinic.address : undefined,
         workingHours: data.clinic.workingHours,
       })
-
-      await db
-        .update(tenants)
-        .set({ slug, updatedAt: new Date() })
-        .where(eq(tenants.id, auth.tenantId))
 
       // 2. Create selected procedure types (only if none exist yet)
       if (existingTypes.length === 0 && data.procedureTypes.length > 0) {
