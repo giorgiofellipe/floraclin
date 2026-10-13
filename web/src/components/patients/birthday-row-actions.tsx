@@ -10,7 +10,7 @@ import {
   useToggleGreeting,
 } from '@/hooks/queries/use-birthdays'
 import { useTenant } from '@/hooks/queries/use-tenant'
-import { tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
+import { toWaMeUrl, tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
 
 /** First word of the full name, sentence-cased — used in the WhatsApp template. */
 function firstName(fullName: string): string {
@@ -58,10 +58,8 @@ export function BirthdayRowActions({
 
   const greeted = greetedAt != null
   const hasPhone = !!(patientPhone && patientPhone.trim())
-  const normalizedPhone = hasPhone ? tryNormalizeBrPhoneForWhatsApp(patientPhone!) : null
-  const waHref = normalizedPhone?.ok
-    ? `https://wa.me/${normalizedPhone.phone}`
-    : undefined
+  const hasValidPhone = !!patientPhone && tryNormalizeBrPhoneForWhatsApp(patientPhone).ok
+  const waHref = patientPhone ? toWaMeUrl(patientPhone) : null
 
   const tenantName: string =
     (tenantData?.data?.name as string | undefined) ??
@@ -69,7 +67,7 @@ export function BirthdayRowActions({
     'nossa clínica'
 
   const canSendTemplate =
-    !!template && template.status === 'APPROVED' && hasPhone && !sendBirthday.isPending
+    !!template && template.status === 'APPROVED' && hasValidPhone && !sendBirthday.isPending
 
   async function handleSendMessage() {
     if (!template) return
@@ -126,6 +124,16 @@ export function BirthdayRowActions({
     }
   }
 
+  function sendButtonTitle(): string {
+    if (!template) return 'Modelo de aniversário indisponível ou WhatsApp desativado'
+    if (template.status !== 'APPROVED') {
+      return `Modelo aguardando aprovação no WhatsApp (${template.status})`
+    }
+    if (!hasPhone) return 'Paciente sem telefone cadastrado'
+    if (!hasValidPhone) return 'Telefone inválido para WhatsApp'
+    return 'Enviar mensagem de aniversário via WhatsApp'
+  }
+
   const btnSize = size === 'sm' ? 'icon-sm' : 'sm'
   const iconClass = size === 'sm' ? 'size-3.5' : 'size-4'
 
@@ -136,15 +144,7 @@ export function BirthdayRowActions({
       size={btnSize}
       disabled={!canSendTemplate}
       onClick={handleSendMessage}
-      title={
-        !template
-          ? 'Modelo de aniversário indisponível ou WhatsApp desativado'
-          : template.status !== 'APPROVED'
-            ? `Modelo aguardando aprovação no WhatsApp (${template.status})`
-            : !hasPhone
-              ? 'Paciente sem telefone cadastrado'
-              : 'Enviar mensagem de aniversário via WhatsApp'
-      }
+      title={sendButtonTitle()}
       className="bg-[#25D366] text-white hover:bg-[#1DA851] disabled:opacity-50"
     >
       <Send className={iconClass} />

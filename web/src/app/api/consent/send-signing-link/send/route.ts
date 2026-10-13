@@ -7,7 +7,7 @@ import { getTemplateByPurpose, upsertConversation, createMessage, pushSseEvent }
 import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
 import { SubscriptionExpiredError, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
 import { CONSENT_SIGNING_TEMPLATE_PURPOSE } from '@/validations/consent'
-import { toWhatsAppPhone } from '@/lib/phone'
+import { InvalidWhatsAppPhoneError, normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { handleApiError } from '@/lib/api-error'
 import { BusinessError } from '@/lib/errors'
 
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const normalizedPhone = toWhatsAppPhone(patient.phone)
+    const normalizedPhone = normalizeBrPhoneForWhatsApp(patient.phone)
     const firstName = patient.fullName.split(' ')[0]
 
     const templateParams = { '1': firstName, '2': tenant.name, '3': parsed.data.url }
@@ -95,6 +95,9 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof SubscriptionExpiredError) {
       return NextResponse.json(SUBSCRIPTION_EXPIRED_RESPONSE.body, { status: SUBSCRIPTION_EXPIRED_RESPONSE.status })
+    }
+    if (error instanceof InvalidWhatsAppPhoneError) {
+      return handleApiError(error, request)
     }
     if (error instanceof BusinessError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 503 })

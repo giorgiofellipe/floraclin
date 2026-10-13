@@ -5,10 +5,11 @@ import { tenants } from '@/db/schema'
 import { getAppointmentsPendingConfirmationUntil, markConfirmationSent } from '@/db/queries/appointments'
 import { listAutomations, upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
 import { sendTemplateMessage, resolveTemplateBody, CreditExhaustedError, getTemplateForTenant } from '@/lib/whatsapp'
-import { normalizeBrPhone } from '@/lib/phone'
+import { InvalidWhatsAppPhoneError, normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { isSubscriptionActive } from '@/lib/plans'
 import { notifyDiscord, type WhatsappDigestFailingTenant } from '@/lib/discord'
 import { withCronMonitor } from '@/lib/cron-monitor'
+import { buildConfirmationParams } from '@/lib/whatsapp-confirmation'
 
 // Schedule mirrors `vercel.json`; see withCronMonitor for the rest. This is
 // the cron a clinic notices first when it stops running, so it gets the same
@@ -155,15 +156,10 @@ async function runAutomations() {
           if (!phone) continue
           tenantHadPhone = true
 
-          const normalizedPhone = normalizeBrPhone(phone)
+          const normalizedPhone = normalizeBrPhoneForWhatsApp(phone)
           const name = appt.patientName ?? appt.bookingName ?? ''
 
-          const params: Record<string, string> = {
-            '1': name.split(' ')[0] || name,
-            '2': tenant.name,
-            '3': formatDateBr(appt.date),
-            '4': appt.startTime.slice(0, 5),
-          }
+          const params = buildConfirmationParams(appt, tenant.name)
 
           const result = await sendTemplateMessage(
             tenant.id,
@@ -220,6 +216,10 @@ async function runAutomations() {
             creditExhausted = true
             break
           }
+          if (err instanceof InvalidWhatsAppPhoneError) {
+            console.warn(`[cron] Skipping appointment ${appt.id}: ${err.message}`)
+            continue
+          }
           console.error(`[cron] Failed to send confirmation for appointment ${appt.id}:`, err)
           Sentry.captureException(err, {
             extra: {
@@ -232,9 +232,10 @@ async function runAutomations() {
         }
       }
 
-      // Every pending appointment with a phone either sends, fails, or
-      // trips creditExhausted (which breaks the loop), so if none of the
-      // first three branches match, no appointment had a usable phone.
+      // Every pending appointment with a valid phone either sends, fails, or
+      // trips creditExhausted (which breaks the loop). Missing and invalid
+      // phones are skipped, so if none of the first three branches match, no
+      // appointment had a usable phone.
       let reason: TenantOutcomeReason
       if (creditExhausted) {
         reason = 'credit_exhausted'
@@ -325,9 +326,4 @@ async function runAutomations() {
   }
 
   return { ok: true, sent, outcomes, summary }
-}
-
-function formatDateBr(dateStr: string): string {
-  const [y, m, d] = dateStr.split('-')
-  return `${d}/${m}/${y}`
 }

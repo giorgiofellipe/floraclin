@@ -39,15 +39,14 @@ const VALID_BR_DDDS = new Set([
 ])
 
 export class InvalidWhatsAppPhoneError extends BusinessError {
-  constructor(message = 'Telefone inválido para WhatsApp. Use DDD + número do Brasil.') {
+  constructor(message: string) {
     super('WHATSAPP_INVALID_PHONE', message)
     this.name = 'InvalidWhatsAppPhoneError'
   }
 }
 
 export function isCanonicalBrPhone(phone: string): boolean {
-  const result = tryNormalizeBrPhoneForWhatsApp(phone)
-  return result.ok && result.phone === phone
+  return /^55\d{10,11}$/.test(phone)
 }
 
 export function normalizeBrPhone(phone: string): string {
@@ -63,9 +62,9 @@ export function normalizeBrPhone(phone: string): string {
   const subscriber = local.slice(2)
 
   // Real DDDs run 11 to 99 with no zero in either position. The check is what
-  // keeps non-geographic numbers out: 0800 1234 567 is also 11 digits, and
-  // without this it would be read as DDD 08 and rewritten into a geographic
-  // number that does not exist.
+  // keeps non-geographic numbers out: 0800 1234 567 loses its leading 0 as a
+  // trunk prefix and reads as DDD 80, which would otherwise be rewritten into a
+  // geographic number that does not exist.
   if (!/^[1-9][1-9]$/.test(ddd)) return digits
 
   // 8-digit subscribers starting 6-9 are mobiles from before the 9th digit.
@@ -88,12 +87,11 @@ function stripBrazilOutboundPrefix(digits: string): string {
 
   // National long-distance forms: 0 + DDD + number, or 0 + carrier + DDD + number.
   // Examples: 047988443635 and 04147988443635 both become 47988443635.
-  if ((candidate.length === 11 || candidate.length === 12) && candidate.startsWith('0')) {
-    return candidate.slice(1)
-  }
-  if ((candidate.length === 13 || candidate.length === 14) && candidate.startsWith('0')) {
-    return candidate.slice(3)
-  }
+  // Neither a DDD nor a carrier code starts with 0, so a remaining 00 is the
+  // international prefix of another country (0044..., 001...).
+  if (!/^0[1-9]/.test(candidate)) return candidate
+  if (candidate.length === 11 || candidate.length === 12) return candidate.slice(1)
+  if (candidate.length === 13 || candidate.length === 14) return candidate.slice(3)
 
   return candidate
 }
@@ -137,11 +135,14 @@ export function normalizeBrPhoneForWhatsApp(phone: string): string {
 }
 
 /**
- * What Meta and wa.me expect. Identical to the canonical form, kept as its own
- * name so call sites reading as "about to send this somewhere" stay obvious.
+ * wa.me accepts any country, so this uses the lenient normalizer: a foreign
+ * patient still gets a link with their digits as typed.
  */
-export function toWhatsAppPhone(phone: string): string {
-  return normalizeBrPhoneForWhatsApp(phone)
+export function toWaMeUrl(phone: string, text?: string): string | null {
+  const digits = normalizeBrPhone(phone)
+  if (!digits) return null
+  const query = text ? `?text=${encodeURIComponent(text)}` : ''
+  return `https://wa.me/${digits}${query}`
 }
 
 export function formatBrPhone(phone: string): string {

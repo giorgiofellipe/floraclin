@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { createPatientSchema } from './patient'
 
 export const PROSPECT_STAGES = ['novo', 'contatado', 'qualificado', 'agendado', 'convertido', 'perdido'] as const
 export type ProspectStage = (typeof PROSPECT_STAGES)[number]
@@ -17,7 +18,7 @@ export const convertProspectSchema = z.object({
   patientId: z.string().uuid().optional(),
   createPatient: z.object({
     fullName: z.string().min(1),
-    phone: z.string().min(1),
+    phone: createPatientSchema.shape.phone,
   }).optional(),
 }).refine(
   (data) => data.patientId || data.createPatient,

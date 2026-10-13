@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { ClinicHeader, type ClinicHeaderProps } from '@/components/print/clinic-header'
 import { PrintStylesheet } from '@/components/print/print-stylesheet'
 import { BR_TZ, startOfBrDay } from '@/lib/dates'
+import { formatBrPhone } from '@/lib/phone'
 import type { EvolutionFeedEntry } from '@/db/queries/patient-evolutions'
 
 export interface PrintEvolucoesPageClientProps {
@@ -244,7 +245,7 @@ export function PrintEvolucoesPageClient({
             <Field label="Nome" value={patient.fullName} />
             {age !== null && <Field label="Idade" value={`${age} anos`} />}
             {patient.cpf && <Field label="CPF" value={patient.cpf} />}
-            {patient.phone && <Field label="Telefone" value={patient.phone} />}
+            {patient.phone && <Field label="Telefone" value={formatBrPhone(patient.phone)} />}
 
             <SectionTitle>Histórico clínico</SectionTitle>
             {entries.length === 0 ? (

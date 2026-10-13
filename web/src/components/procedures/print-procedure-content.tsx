@@ -3,6 +3,7 @@ import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { ProfessionalSignatureBlock } from '@/components/professional/professional-signature-block'
 import { startOfBrDay } from '@/lib/dates'
+import { formatBrPhone } from '@/lib/phone'
 import type { SignatureBlock } from '@/lib/professional'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
 
@@ -88,7 +89,7 @@ export function PrintProcedureContent({
       {patient.birthDate && (
         <Field label="Data de nascimento" value={formatShortDate(patient.birthDate)} />
       )}
-      {patient.phone && <Field label="Telefone" value={patient.phone} />}
+      {patient.phone && <Field label="Telefone" value={formatBrPhone(patient.phone)} />}
 
       {/* Procedure */}
       <SectionTitle>Procedimento</SectionTitle>

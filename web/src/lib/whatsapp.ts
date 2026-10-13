@@ -1,7 +1,6 @@
 import crypto from 'crypto'
 import { BusinessError } from '@/lib/errors'
 import { getTenant } from '@/db/queries/tenants'
-import { normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 
 export { normalizeBrPhone } from '@/lib/phone'
 
@@ -121,13 +120,12 @@ async function requireSendAllowed(tenantId: string) {
 
 export async function sendTextMessage(tenantId: string, to: string, body: string) {
   await requireSendAllowed(tenantId)
-  const recipient = normalizeBrPhoneForWhatsApp(to)
   const creds = await getCredentials(tenantId)
   const data = await graphFetch(`/${creds.phoneNumberId}/messages`, creds.accessToken, {
     method: 'POST',
     body: JSON.stringify({
       messaging_product: 'whatsapp',
-      to: recipient,
+      to,
       type: 'text',
       text: { body },
     }),
@@ -144,12 +142,11 @@ export async function sendTemplateMessage(
   buttonParams?: { index: number; subType: string; parameters: { type: string; text: string }[] }[],
 ) {
   await requireSendAllowed(tenantId)
-  const recipient = normalizeBrPhoneForWhatsApp(to)
   const mode = await getWhatsAppMode(tenantId)
 
   if (mode === 'floraclin') {
     const { consumeCredit } = await import('@/db/queries/whatsapp-credits')
-    const result = await consumeCredit(tenantId, recipient)
+    const result = await consumeCredit(tenantId, to)
     if (!result.allowed) {
       throw new CreditExhaustedError(result.creditsUsed, result.creditsTotal)
     }
@@ -177,7 +174,7 @@ export async function sendTemplateMessage(
     method: 'POST',
     body: JSON.stringify({
       messaging_product: 'whatsapp',
-      to: recipient,
+      to,
       type: 'template',
       template: {
         name: templateName,
@@ -198,7 +195,6 @@ export async function sendMediaMessage(
   filename?: string,
 ) {
   await requireSendAllowed(tenantId)
-  const recipient = normalizeBrPhoneForWhatsApp(to)
   const creds = await getCredentials(tenantId)
   const mediaPayload: Record<string, string> = { link: mediaUrl }
   if (caption) mediaPayload.caption = caption
@@ -209,7 +205,7 @@ export async function sendMediaMessage(
     method: 'POST',
     body: JSON.stringify({
       messaging_product: 'whatsapp',
-      to: recipient,
+      to,
       type: mediaType,
       [mediaType]: mediaPayload,
     }),

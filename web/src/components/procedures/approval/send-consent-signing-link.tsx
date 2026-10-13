@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
+import { toWaMeUrl, tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
 
 interface CommonProps {
   patientId: string
@@ -121,11 +121,9 @@ export function SendConsentSigningLink(props: SendConsentSigningLinkProps) {
 
   function getWhatsAppUrl() {
     if (!url || !patientPhone) return null
-    const normalized = tryNormalizeBrPhoneForWhatsApp(patientPhone)
-    if (!normalized.ok) return null
     const firstName = patientName.split(' ')[0]
     const message = `Olá ${firstName}! Acesse o link abaixo para revisar e assinar seus termos: ${url}`
-    return `https://wa.me/${normalized.phone}?text=${encodeURIComponent(message)}`
+    return toWaMeUrl(patientPhone, message)
   }
 
   if (!url) {
@@ -147,6 +145,7 @@ export function SendConsentSigningLink(props: SendConsentSigningLinkProps) {
   }
 
   const whatsAppUrl = getWhatsAppUrl()
+  const phoneValidForApi = !!patientPhone && tryNormalizeBrPhoneForWhatsApp(patientPhone).ok
 
   return (
     <div className="flex flex-wrap items-center gap-2 animate-in fade-in duration-300 w-full overflow-hidden">
@@ -168,7 +167,7 @@ export function SendConsentSigningLink(props: SendConsentSigningLinkProps) {
         {copied ? 'Copiado' : 'Copiar'}
       </button>
 
-      {whatsAppUrl && whatsappApiEnabled ? (
+      {whatsAppUrl && whatsappApiEnabled && phoneValidForApi ? (
         <div className="flex items-stretch">
           <button
             type="button"
@@ -210,6 +209,10 @@ export function SendConsentSigningLink(props: SendConsentSigningLinkProps) {
           WhatsApp
         </a>
       ) : null}
+
+      {whatsAppUrl && whatsappApiEnabled && !phoneValidForApi && (
+        <span className="text-[10px] text-mid whitespace-nowrap">Telefone inválido para WhatsApp</span>
+      )}
 
       <span className="text-[10px] text-mid/50 whitespace-nowrap">24h</span>
     </div>

@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
+import { toWaMeUrl, tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
 
 interface SendAnamnesisDialogProps {
   patientId: string
@@ -82,10 +82,8 @@ export function SendAnamnesisDialog({
 
   function getWhatsAppUrl() {
     if (!url || !patientPhone) return null
-    const normalized = tryNormalizeBrPhoneForWhatsApp(patientPhone)
-    if (!normalized.ok) return null
     const message = `Olá ${patientName.split(' ')[0]}! Preencha seu formulário de anamnese antes da consulta: ${url}`
-    return `https://wa.me/${normalized.phone}?text=${encodeURIComponent(message)}`
+    return toWaMeUrl(patientPhone, message)
   }
 
   // Not generated yet — show the generate button
@@ -110,6 +108,7 @@ export function SendAnamnesisDialog({
 
   // Link generated — show inline result
   const whatsAppUrl = getWhatsAppUrl()
+  const phoneValidForApi = !!patientPhone && tryNormalizeBrPhoneForWhatsApp(patientPhone).ok
 
   return (
     <div className="flex flex-wrap items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-300">
@@ -134,7 +133,7 @@ export function SendAnamnesisDialog({
       </button>
 
       {/* WhatsApp button(s) */}
-      {whatsAppUrl && whatsappApiEnabled ? (
+      {whatsAppUrl && whatsappApiEnabled && phoneValidForApi ? (
         <div className="flex items-stretch">
           <button
             type="button"
@@ -184,6 +183,10 @@ export function SendAnamnesisDialog({
           WhatsApp
         </a>
       ) : null}
+
+      {whatsAppUrl && whatsappApiEnabled && !phoneValidForApi && (
+        <span className="text-[10px] text-mid whitespace-nowrap">Telefone inválido para WhatsApp</span>
+      )}
 
       {/* Expiry note */}
       <span className="text-[10px] text-mid/50 whitespace-nowrap">2h</span>

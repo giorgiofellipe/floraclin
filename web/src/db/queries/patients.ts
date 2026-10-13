@@ -3,7 +3,7 @@ import { patients } from '@/db/schema'
 import { eq, and, isNull, ilike, or, sql, asc } from 'drizzle-orm'
 import type { PaginatedResult } from '@/types'
 import type { CreatePatientInput, UpdatePatientInput } from '@/validations/patient'
-import { isCanonicalBrPhone, normalizeBrPhone, tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
+import { isCanonicalBrPhone, normalizeBrPhone, normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 
 export type Patient = typeof patients.$inferSelect
 
@@ -83,12 +83,11 @@ export async function getPatient(tenantId: string, patientId: string): Promise<P
 /**
  * Match on the tail of the number, country code and 9th digit agnostic.
  *
- * `patients.phone` holds whatever the clinic typed and is never normalized, so
- * the same person can be stored as `(47) 98844-3635`, `+55 47 98844-3635` or
- * `(47) 8844-3635`. Callers, meanwhile, now pass the canonical
- * `5547988443635`. Comparing a canonicalized input against a raw column finds
- * only one of those shapes, and a miss is not harmless: the webhook then calls
- * `upsertConversation` with `patientId: null`, which clears an existing link.
+ * Writes store `patients.phone` canonical, but rows that predate the backfill
+ * (scripts/normalize-stored-phones.ts) or could not be placed by it may still
+ * hold `(47) 98844-3635`, `+55 47 98844-3635` or `(47) 8844-3635`. A miss is
+ * not harmless: the webhook then calls `upsertConversation` with
+ * `patientId: null`, which clears an existing link.
  */
 export function phoneTailVariants(phone: string): string[] {
   const canonical = normalizeBrPhone(phone)
@@ -131,9 +130,9 @@ export async function createPatient(
   data: CreatePatientInput,
   responsibleUserId?: string
 ): Promise<Patient> {
-  const primaryPhone = normalizePatientPhoneForStorage(data.phone)
+  const primaryPhone = normalizeBrPhoneForWhatsApp(data.phone)
   const secondaryPhone = data.phoneSecondary
-    ? normalizePatientPhoneForStorage(data.phoneSecondary)
+    ? normalizeBrPhoneForWhatsApp(data.phoneSecondary)
     : null
 
   const [patient] = await db
@@ -167,14 +166,14 @@ export async function updatePatient(
   const updateData: Record<string, unknown> = { updatedAt: new Date() }
 
   if (data.fullName !== undefined) updateData.fullName = data.fullName
-  if (data.phone !== undefined) updateData.phone = normalizePatientPhoneForStorage(data.phone)
+  if (data.phone !== undefined) updateData.phone = normalizeBrPhoneForWhatsApp(data.phone)
   if (data.cpf !== undefined) updateData.cpf = data.cpf || null
   if (data.birthDate !== undefined) updateData.birthDate = data.birthDate || null
   if (data.gender !== undefined) updateData.gender = data.gender || null
   if (data.email !== undefined) updateData.email = data.email || null
   if (data.phoneSecondary !== undefined) {
     updateData.phoneSecondary = data.phoneSecondary
-      ? normalizePatientPhoneForStorage(data.phoneSecondary)
+      ? normalizeBrPhoneForWhatsApp(data.phoneSecondary)
       : null
   }
   if (data.address !== undefined) updateData.address = data.address || null
@@ -196,11 +195,6 @@ export async function updatePatient(
     .returning()
 
   return patient ?? null
-}
-
-function normalizePatientPhoneForStorage(phone: string): string {
-  const result = tryNormalizeBrPhoneForWhatsApp(phone)
-  return result.ok ? result.phone : phone
 }
 
 export async function deletePatient(tenantId: string, patientId: string): Promise<Patient | null> {

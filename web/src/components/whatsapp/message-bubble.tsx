@@ -50,6 +50,12 @@ function StatusIcon({ status }: { status: string }) {
   if (status === 'failed') {
     return <span className="text-[10px] text-destructive">Falhou</span>
   }
+  if (status === 'retrying') {
+    return <Loader2 className="size-3.5 animate-spin text-[#8696A0]" />
+  }
+  if (status === 'retried') {
+    return <span className="text-[10px] text-muted-foreground">Reenviada</span>
+  }
   return null
 }
 
@@ -57,9 +63,8 @@ export function MessageBubble({ message, onRetry, retrying = false }: MessageBub
   const isOutbound = message.direction === 'outbound'
   const isQueued = message.deliveryStatus === 'queued'
   const isExpired = message.deliveryStatus === 'expired'
-  const failedReason = message.deliveryStatus === 'failed'
-    ? getWhatsAppErrorLabel(message.errorCode)
-    : null
+  const isFailed = message.deliveryStatus === 'failed'
+  const failedReason = isFailed ? getWhatsAppErrorLabel(message.errorCode) : null
   const displayText = message.body || (message.templateName ? `[Template: ${message.templateName}]` : '[Mensagem sem texto]')
 
   return (
@@ -102,9 +107,9 @@ export function MessageBubble({ message, onRetry, retrying = false }: MessageBub
           </div>
         )}
 
-        {failedReason && (
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-destructive">
-            <span>{failedReason}</span>
+        {isFailed && (failedReason || onRetry) && (
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-destructive">
+            {failedReason && <span>{failedReason}</span>}
             {onRetry && (
               <button
                 type="button"

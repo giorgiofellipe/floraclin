@@ -33,6 +33,7 @@ import { STATUS_LABELS, STATUS_SELECT_ITEMS } from '@/components/scheduling/appo
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
 import type { AppointmentStatus } from '@/types'
 import { START_TIMES, END_TIMES, timeItems } from '@/lib/time-options'
+import { formatBrPhone } from '@/lib/phone'
 
 interface Practitioner {
   id: string
@@ -380,7 +381,7 @@ export function AppointmentForm({
                         }}
                       >
                         <span className="flex-1 text-left">{p.fullName}</span>
-                        <span className="text-xs text-muted-foreground">{p.phone}</span>
+                        <span className="text-xs text-muted-foreground">{p.phone && formatBrPhone(p.phone)}</span>
                         {p.cpf && <span className="text-xs text-muted-foreground">{p.cpf}</span>}
                       </button>
                     ))}

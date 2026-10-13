@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { maskPhone, maskCPF, maskCEP } from '@/lib/masks'
+import { formatBrPhone } from '@/lib/phone'
 import { toLocalYmd } from '@/lib/dates'
 import { DatePicker } from '@/components/ui/date-picker'
 import {
@@ -73,12 +74,12 @@ export function PatientForm({ open, onOpenChange, patient, inline, prefill }: Pa
 
   const patientDefaults = useMemo<CreatePatientInput>(() => ({
     fullName: patient?.fullName ?? prefill?.fullName ?? '',
-    phone: patient?.phone ?? prefill?.phone ?? '',
+    phone: formatBrPhone(patient?.phone ?? prefill?.phone ?? ''),
     cpf: patient?.cpf ?? '',
     birthDate: patient?.birthDate ?? '',
     gender: patient?.gender ?? '',
     email: patient?.email ?? '',
-    phoneSecondary: patient?.phoneSecondary ?? '',
+    phoneSecondary: formatBrPhone(patient?.phoneSecondary ?? ''),
     occupation: patient?.occupation ?? '',
     referralSource: patient?.referralSource ?? '',
     notes: patient?.notes ?? '',

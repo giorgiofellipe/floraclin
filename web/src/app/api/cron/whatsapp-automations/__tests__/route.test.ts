@@ -71,13 +71,6 @@ vi.mock('@/lib/plans', () => ({
   isSubscriptionActive: vi.fn().mockResolvedValue(true),
 }))
 
-vi.mock('@/lib/phone', () => ({
-  normalizeBrPhone: vi.fn((phone: string) => {
-    const digits = phone.replace(/\D/g, '')
-    return digits.startsWith('55') ? digits : `55${digits}`
-  }),
-}))
-
 vi.mock('@/lib/discord', () => ({
   notifyDiscord: vi.fn().mockResolvedValue(undefined),
 }))
@@ -542,6 +535,20 @@ describe('GET /api/cron/whatsapp-automations', () => {
       expect(json.sent).toBe(1)
       expect(sendTemplateMessage).toHaveBeenCalledTimes(1)
       expect(findOutcome(json, 'tenant-1')?.reason).toBe('sent')
+    })
+
+    it('skips an invalid phone without reporting to Sentry, alongside others that send', async () => {
+      setupHappyPath([
+        makeAppointment({ id: 'appt-invalid', patientPhone: '12345' }),
+        makeAppointment({ id: 'appt-ok', patientPhone: '11999990000' }),
+      ])
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(sendTemplateMessage).toHaveBeenCalledTimes(1)
+      expect(findOutcome(json, 'tenant-1')?.appointmentsFailed).toBe(0)
+      expect(captureExceptionMock).not.toHaveBeenCalled()
     })
 
     it('uses the full name as firstName when name has no spaces', async () => {

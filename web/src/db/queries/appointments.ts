@@ -605,9 +605,10 @@ export async function markConfirmationSent(
   return result
 }
 
-export async function updateConfirmationMessageId(
+export async function relinkConfirmationMessageId(
   tenantId: string,
   appointmentId: string,
+  previousMessageId: string,
   confirmationMessageId: string,
 ) {
   const [result] = await db
@@ -620,6 +621,7 @@ export async function updateConfirmationMessageId(
       and(
         eq(appointments.tenantId, tenantId),
         eq(appointments.id, appointmentId),
+        eq(appointments.confirmationMessageId, previousMessageId),
         isNull(appointments.deletedAt),
       )
     )
@@ -693,6 +695,7 @@ export async function getAppointmentByConfirmationMessageId(
       bookingPhone: appointments.bookingPhone,
       patientName: patients.fullName,
       patientPhone: patients.phone,
+      patientDeletedAt: patients.deletedAt,
     })
     .from(appointments)
     .leftJoin(patients, eq(patients.id, appointments.patientId))

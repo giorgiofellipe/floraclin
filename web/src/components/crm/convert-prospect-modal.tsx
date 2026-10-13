@@ -213,7 +213,7 @@ export function ConvertProspectModal({
                       </div>
                       {patient.phone && (
                         <div className="text-xs text-[#7A7A7A]">
-                          {patient.phone}
+                          {formatBrPhone(patient.phone)}
                         </div>
                       )}
                     </div>

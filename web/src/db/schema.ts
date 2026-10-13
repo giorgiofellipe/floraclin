@@ -742,6 +742,7 @@ export const whatsappMessages = floraclinSchema.table('whatsapp_messages', {
   templateName: varchar('template_name', { length: 255 }),
   deliveryStatus: varchar('delivery_status', { length: 20 }).notNull().default('sent'),
   errorCode: varchar('error_code', { length: 50 }),
+  retryClaimedAt: timestamp('retry_claimed_at', { withTimezone: true }),
   timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

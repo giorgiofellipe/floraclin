@@ -10,6 +10,7 @@ import { MessageBubble, type Message } from './message-bubble'
 import { TemplatePicker } from './template-picker'
 import type { Conversation } from './conversation-list'
 import { formatBrPhone } from '@/lib/phone'
+import { findBlueprintForTemplateName } from '@/lib/whatsapp-blueprints'
 import { toast } from 'sonner'
 import {
   Send,
@@ -71,6 +72,10 @@ function groupMessagesByDate(messages: Message[]): { dateKey: string; messages: 
     dateKey,
     messages: msgs,
   }))
+}
+
+function isConfirmationTemplate(templateName: string | null): boolean {
+  return !!templateName && findBlueprintForTemplateName(templateName)?.purposeKey === 'appointment_confirmation'
 }
 
 export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
@@ -248,12 +253,17 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
           return
         }
 
-        const newMsg: Message = data.data
-        const targetConversationId = newMsg.conversationId
-        if (targetConversationId === conversation.id) {
-          setMessages((prev) => prev.some((m) => m.id === newMsg.id) ? prev : [...prev, newMsg])
-          setTimeout(() => scrollToBottom(), 100)
-        } else {
+        const newMsg: Message | null = data.data
+        const appendHere = newMsg?.conversationId === conversation.id
+        setMessages((prev) => {
+          const updated = prev.map((m) => m.id === message.id ? { ...m, deliveryStatus: 'retried' } : m)
+          if (!newMsg || !appendHere || updated.some((m) => m.id === newMsg.id)) return updated
+          return [...updated, newMsg]
+        })
+        if (appendHere) setTimeout(() => scrollToBottom(), 100)
+        if (data.warning) {
+          toast.warning(data.warning)
+        } else if (!appendHere) {
           toast.success('Mensagem reenviada para o telefone atual do paciente.')
         }
       } catch {
@@ -463,7 +473,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                     <MessageBubble
                       key={msg.id}
                       message={msg}
-                      onRetry={msg.deliveryStatus === 'failed' ? handleRetryMessage : undefined}
+                      onRetry={isConfirmationTemplate(msg.templateName) ? handleRetryMessage : undefined}
                       retrying={retryingMessageId === msg.id}
                     />
                   ))}

@@ -8,9 +8,10 @@ import { patients } from '@/db/schema'
 import { phoneTailVariants } from './patients'
 
 /**
- * `patients.phone` and `patients.phoneSecondary` hold whatever the clinic
- * typed, so a canonical string compared with `eq` matches almost nothing. Same
- * tail match as `getPatientByPhone`, over one column.
+ * Rows written before the phone backfill, or that it could not place, still
+ * hold `patients.phone` and `patients.phoneSecondary` as the clinic typed them,
+ * so `eq` against a canonical string would miss them. Same tail match as
+ * `getPatientByPhone`, over one column.
  */
 function columnMatchesPhone(
   column: AnyPgColumn,

@@ -12,7 +12,7 @@ import { auth } from '@/lib/auth-config'
 import { db } from '@/db/client'
 import { consentAcceptances, tenantUsers } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
-import { toWhatsAppPhone } from '@/lib/phone'
+import { normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { handleApiError } from '@/lib/api-error'
 
 export const runtime = 'nodejs'
@@ -84,6 +84,7 @@ export async function POST(
     if (!acceptance.patientPhone) {
       return NextResponse.json({ error: 'Paciente sem telefone cadastrado' }, { status: 400 })
     }
+    const whatsappPhone = normalizeBrPhoneForWhatsApp(acceptance.patientPhone)
 
     // Inline the logo so headless Chromium makes no network request while
     // rendering; see `fetchLogoDataUri` (`@/lib/logo`).
@@ -103,7 +104,6 @@ export async function POST(
       visibility: 'signed',
     })
 
-    const whatsappPhone = toWhatsAppPhone(acceptance.patientPhone)
     const firstName = acceptance.patientName.split(' ')[0]
     const whatsappFilename = `${slugifyForFile(acceptance.templateTitle)}.pdf`
     await sendOrEnqueueDocument(
