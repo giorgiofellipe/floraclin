@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import { BusinessError } from '@/lib/errors'
 import { getTenant } from '@/db/queries/tenants'
+import { templateCreditCost } from '@/lib/whatsapp-credit-cost'
 
 export { normalizeBrPhone } from '@/lib/phone'
 
@@ -145,8 +146,10 @@ export async function sendTemplateMessage(
   const mode = await getWhatsAppMode(tenantId)
 
   if (mode === 'floraclin') {
-    const { consumeCredit } = await import('@/db/queries/whatsapp-credits')
-    const result = await consumeCredit(tenantId, to)
+    const { consumeCredits } = await import('@/db/queries/whatsapp-credits')
+    const { getTemplateByName } = await import('@/db/queries/whatsapp')
+    const template = await getTemplateByName(tenantId, templateName, language)
+    const result = await consumeCredits(tenantId, templateCreditCost(template?.category))
     if (!result.allowed) {
       throw new CreditExhaustedError(result.creditsUsed, result.creditsTotal)
     }

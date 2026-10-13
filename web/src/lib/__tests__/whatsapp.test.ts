@@ -21,12 +21,27 @@ vi.mock('@/lib/plans', () => ({
 const upsertTemplateMock = vi.fn(async (_tenantId: string, _template: { name: string }) => ({}))
 const markStaleTemplatesMock = vi.fn(async (_tenantId: string, _metaTemplateIds: string[]) => 0)
 
+const getTemplateByNameMock = vi.fn()
+
 vi.mock('@/db/queries/whatsapp', () => ({
   upsertTemplate: upsertTemplateMock,
   markStaleTemplates: markStaleTemplatesMock,
+  getTemplateByName: getTemplateByNameMock,
 }))
 
-import { verifyWebhookSignature, sendMediaMessage, syncTemplatesForTenant } from '../whatsapp'
+const consumeCreditsMock = vi.fn(async () => ({ allowed: true, creditsUsed: 0, creditsTotal: 300 }))
+
+vi.mock('@/db/queries/whatsapp-credits', () => ({
+  consumeCredits: consumeCreditsMock,
+}))
+
+import { getTenant } from '@/db/queries/tenants'
+import {
+  verifyWebhookSignature,
+  sendMediaMessage,
+  sendTemplateMessage,
+  syncTemplatesForTenant,
+} from '../whatsapp'
 
 describe('verifyWebhookSignature', () => {
   it('returns true for valid signature', () => {
@@ -110,6 +125,41 @@ describe('sendMediaMessage', () => {
     const call = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
     const body = JSON.parse((call[1] as RequestInit).body as string)
     expect(body.document).toEqual({ link: 'https://example.com/doc.pdf' })
+  })
+})
+
+describe('sendTemplateMessage credit cost', () => {
+  const originalFetch = global.fetch
+
+  beforeEach(() => {
+    vi.stubEnv('FLORACLIN_WA_PHONE_NUMBER_ID', 'fc-phone')
+    vi.stubEnv('FLORACLIN_WA_ACCESS_TOKEN', 'fc-token')
+    vi.stubEnv('FLORACLIN_WA_BUSINESS_ACCOUNT_ID', 'fc-biz')
+    vi.mocked(getTenant).mockResolvedValue({
+      id: 'tenant-1',
+      settings: { whatsapp_mode: 'floraclin' },
+    } as Awaited<ReturnType<typeof getTenant>>)
+    global.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ messages: [{ id: 'wamid.123' }] }), { status: 200 }),
+    ) as unknown as typeof fetch
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
+    vi.unstubAllEnvs()
+    vi.mocked(getTenant).mockReset()
+    vi.clearAllMocks()
+  })
+
+  it.each([
+    ['MARKETING', 3],
+    ['UTILITY', 1],
+  ])('charges a %s template %i credits on the shared number', async (category, cost) => {
+    getTemplateByNameMock.mockResolvedValue({ name: 'tpl', language: 'pt_BR', category })
+
+    await sendTemplateMessage('tenant-1', '5511999999999', 'tpl', 'pt_BR')
+
+    expect(consumeCreditsMock).toHaveBeenCalledWith('tenant-1', cost)
   })
 })
 

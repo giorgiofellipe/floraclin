@@ -1,6 +1,7 @@
 'use client'
 
 import { ArrowUpRight } from 'lucide-react'
+import { MARKETING_CREDIT_COST } from '@/lib/whatsapp-credit-cost'
 
 interface WhatsAppCreditBarProps {
   used: number
@@ -50,6 +51,10 @@ export function WhatsAppCreditBar({ used, total, periodEnd }: WhatsAppCreditBarP
           style={{ width: `${percentage}%` }}
         />
       </div>
+
+      <p className="text-xs text-mid">
+        Cada mensagem de modelo usa 1 crédito, e as de marketing (aniversário, reativação) usam {MARKETING_CREDIT_COST}. Respostas em conversas abertas não usam créditos.
+      </p>
 
       {exhausted && (
         <div className="flex items-center gap-2 rounded-[3px] bg-red-50 border border-red-200 px-3 py-2">

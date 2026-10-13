@@ -1,13 +1,10 @@
 import { db } from '@/db/client'
 import {
   whatsappCredits,
-  whatsappConversations,
-  whatsappMessages,
   tenantSubscriptions,
   plans,
 } from '@/db/schema'
-import { eq, and, gt, lt, sql } from 'drizzle-orm'
-import { normalizeBrPhone } from '@/lib/phone'
+import { eq, and, lte, sql } from 'drizzle-orm'
 import { brToday, parseBrDate } from '@/lib/dates'
 import { addMonths } from 'date-fns'
 
@@ -124,48 +121,12 @@ export async function getOrCreateCurrentPeriod(tenantId: string): Promise<Credit
   }
 }
 
-// ─── OPEN CONVERSATION CHECK ─────────────────────────────────────
-
-export async function findOpenConversation(tenantId: string, phone: string): Promise<boolean> {
-  const normalized = normalizeBrPhone(phone)
-  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
-
-  const [row] = await db
-    .select({ id: whatsappMessages.id })
-    .from(whatsappMessages)
-    .innerJoin(
-      whatsappConversations,
-      eq(whatsappMessages.conversationId, whatsappConversations.id)
-    )
-    .where(
-      and(
-        eq(whatsappConversations.tenantId, tenantId),
-        eq(whatsappConversations.phoneNumber, normalized),
-        eq(whatsappMessages.direction, 'outbound'),
-        gt(whatsappMessages.createdAt, twentyFourHoursAgo)
-      )
-    )
-    .limit(1)
-
-  return !!row
-}
-
 // ─── CREDIT CONSUMPTION ──────────────────────────────────────────
 
-export async function consumeCredit(tenantId: string, recipientPhone: string): Promise<ConsumeResult> {
-  const hasOpen = await findOpenConversation(tenantId, recipientPhone)
-
+export async function consumeCredits(tenantId: string, cost: number): Promise<ConsumeResult> {
   const credits = await getOrCreateCurrentPeriod(tenantId)
 
-  if (hasOpen) {
-    return {
-      allowed: true,
-      creditsUsed: credits.creditsUsed,
-      creditsTotal: credits.creditsTotal,
-    }
-  }
-
-  if (credits.creditsUsed >= credits.creditsTotal) {
+  if (credits.creditsUsed + cost > credits.creditsTotal) {
     return {
       allowed: false,
       creditsUsed: credits.creditsUsed,
@@ -176,13 +137,13 @@ export async function consumeCredit(tenantId: string, recipientPhone: string): P
   const [updated] = await db
     .update(whatsappCredits)
     .set({
-      creditsUsed: sql`${whatsappCredits.creditsUsed} + 1`,
+      creditsUsed: sql`${whatsappCredits.creditsUsed} + ${cost}`,
       updatedAt: new Date(),
     })
     .where(
       and(
         eq(whatsappCredits.id, credits.id),
-        lt(whatsappCredits.creditsUsed, whatsappCredits.creditsTotal)
+        lte(sql`${whatsappCredits.creditsUsed} + ${cost}`, whatsappCredits.creditsTotal)
       )
     )
     .returning()
