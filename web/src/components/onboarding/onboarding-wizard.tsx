@@ -49,8 +49,8 @@ const STEPS = [
 
 interface OnboardingWizardProps {
   tenantName: string
-  tenantPhone?: string | null
-  tenantEmail?: string | null
+  tenantPhone: string | null
+  tenantEmail: string | null
   existingProcedureTypes: ProcedureTypeItem[]
   existingProducts?: Product[]
 }
