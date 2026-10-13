@@ -132,8 +132,12 @@ export async function createUserWithMembership(data: {
       phone: data.phone ?? null,
     })
 
-    // Send invite email
-    await sendInviteEmail(data.email, loginUrl)
+    const [tenant] = await db
+      .select({ name: tenants.name })
+      .from(tenants)
+      .where(eq(tenants.id, data.tenantId))
+      .limit(1)
+    await sendInviteEmail(data.email, loginUrl, tenant.name)
   }
 
   // Upsert user row (update name/phone if user already existed)

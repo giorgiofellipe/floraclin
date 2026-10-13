@@ -144,8 +144,8 @@ describe('deliverLifecycleMessage', () => {
     await deliverLifecycleMessage(recipient, utility)
 
     const [marketingCall, utilityCall] = vi.mocked(sendLifecycleEmail).mock.calls
-    expect(marketingCall[0].optOutUrl).toBe('https://opt-out.test/tenant-1')
-    expect(utilityCall[0].optOutUrl).toBeNull()
+    expect(marketingCall[0].content.optOutUrl).toBe('https://opt-out.test/tenant-1')
+    expect(utilityCall[0].content.optOutUrl).toBeNull()
   })
 
   it('builds the email button URL from the app URL and the button path', async () => {
@@ -153,7 +153,7 @@ describe('deliverLifecycleMessage', () => {
 
     await deliverLifecycleMessage(recipient, withButton)
 
-    expect(vi.mocked(sendLifecycleEmail).mock.calls[0][0].button).toEqual({
+    expect(vi.mocked(sendLifecycleEmail).mock.calls[0][0].content.button).toEqual({
       label: withButton.button!.label,
       url: `https://app.test${withButton.button!.path}`,
     })

@@ -4,7 +4,7 @@ import {
   LIFECYCLE_MESSAGES,
   LIFECYCLE_WELCOME,
   ownerFirstName,
-  renderLifecycleBody,
+  renderLifecycleEmail,
   selectDueMessages,
 } from '@/lib/lifecycle-messages'
 
@@ -108,6 +108,14 @@ describe('LIFECYCLE_MESSAGES copy', () => {
       expect(message.body.endsWith('{{1}}')).toBe(false)
     }
   })
+
+  it('puts {{1}} only in the email intro, once. Regression: a literal {{1}} ships in the email', () => {
+    for (const { email } of LIFECYCLE_MESSAGES) {
+      expect(email.intro.split('{{1}}')).toHaveLength(2)
+      const { intro: _intro, ...rest } = email
+      expect(JSON.stringify(rest)).not.toContain('{{1}}')
+    }
+  })
 })
 
 describe('greeting', () => {
@@ -116,6 +124,6 @@ describe('greeting', () => {
     { name: 'empty name still reads naturally. Regression: "Olá, !" goes out to owners', fullName: '', greeting: 'Olá, tudo bem!' },
     { name: 'missing name falls back too', fullName: null, greeting: 'Olá, tudo bem!' },
   ])('$name', ({ fullName, greeting }) => {
-    expect(renderLifecycleBody(LIFECYCLE_WELCOME, ownerFirstName(fullName)).startsWith(greeting)).toBe(true)
+    expect(renderLifecycleEmail(LIFECYCLE_WELCOME, ownerFirstName(fullName)).paragraphs[0].startsWith(greeting)).toBe(true)
   })
 })
