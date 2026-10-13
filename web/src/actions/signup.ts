@@ -9,7 +9,7 @@ import { db } from '@/db/client'
 import { users, tenants, tenantUsers, plans } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
-import { createSelfSignupTenant, generateSlug, insertSelfSignupTenantBase } from '@/db/queries/admin-tenants'
+import { createSelfSignupTenant, findAvailableSlug, generateSlug, insertSelfSignupTenantBase } from '@/db/queries/admin-tenants'
 import { createSubscription } from '@/db/queries/subscriptions'
 import { sendNewSignupNotification, sendConfirmationEmail } from '@/lib/email'
 import { withTransaction } from '@/lib/tenant'
@@ -78,19 +78,7 @@ export async function signUp(
     await withTransaction(async (tx) => {
       await tx.insert(users).values({ id: userId, fullName, email, passwordHash })
 
-      const baseSlug = generateSlug(clinicName)
-      let slug = baseSlug
-      let attempt = 0
-      for (;;) {
-        const [dup] = await tx
-          .select({ id: tenants.id })
-          .from(tenants)
-          .where(eq(tenants.slug, slug))
-          .limit(1)
-        if (!dup) break
-        attempt++
-        slug = `${baseSlug}-${attempt}`
-      }
+      const slug = await findAvailableSlug(tx, generateSlug(clinicName))
 
       const tenant = await insertSelfSignupTenantBase(tx, { name: clinicName, slug, status: 'active', phone })
 

@@ -230,4 +230,37 @@ describe('OnboardingWizard', () => {
     expect(await screen.findByDisplayValue('my-clinic-1')).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith('/api/slug-check?name=My%20Clinic')
   })
+
+  // Regression: the owner could finish with a custom link another clinic held, and onboarding failed.
+  it('blocks finishing while the custom booking link is taken', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      const body = url.includes('slug=') ? { available: false } : { available: true, slug: 'my-clinic' }
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
+
+    render(
+      wrap(
+        <OnboardingWizard
+          tenantName="My Clinic"
+          tenantPhone={null}
+          tenantEmail={null}
+          existingProcedureTypes={[]}
+          existingProducts={[]}
+        />,
+      ),
+    )
+
+    const slugInput = await screen.findByDisplayValue('my-clinic')
+    await user.clear(slugInput)
+    await user.type(slugInput, 'taken-link')
+    expect(await screen.findByText('Este link já está em uso. Escolha outro.')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-next'))
+
+    expect(screen.getByTestId('onboarding-complete')).toBeDisabled()
+  })
 })

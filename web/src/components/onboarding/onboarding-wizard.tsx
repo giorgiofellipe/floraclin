@@ -117,6 +117,7 @@ export function OnboardingWizard({
   const [suggestedSlug, setSuggestedSlug] = useState('')
   const clinicName = ((clinicData.name as string) || '').trim()
   const displayedSlug = customSlug || suggestedSlug
+  const customSlugTaken = Boolean(customSlug) && slugAvailable === false
 
   // Step 4 state: track sent invites count
   const [invitesSent, setInvitesSent] = useState(0)
@@ -187,30 +188,33 @@ export function OnboardingWizard({
   // Debounced slug check. Without a custom slug the server suggests the
   // name-based slug with the same -N suffix it will save on completion.
   useEffect(() => {
-    const query = customSlug
-      ? `slug=${encodeURIComponent(customSlug)}`
-      : clinicName
-        ? `name=${encodeURIComponent(clinicName)}`
-        : null
+    let query: string | null = null
+    if (customSlug) query = `slug=${encodeURIComponent(customSlug)}`
+    else if (clinicName) query = `name=${encodeURIComponent(clinicName)}`
     if (!query) {
       setSuggestedSlug('')
       setSlugAvailable(null)
       return
     }
+    let cancelled = false
     setSlugChecking(true)
     const timer = setTimeout(async () => {
       try {
         const res = await fetch(`/api/slug-check?${query}`)
         const data = await res.json()
+        if (cancelled) return
         if (!customSlug) setSuggestedSlug(data.slug ?? '')
         setSlugAvailable(data.available)
       } catch {
-        setSlugAvailable(null)
+        if (!cancelled) setSlugAvailable(null)
       } finally {
-        setSlugChecking(false)
+        if (!cancelled) setSlugChecking(false)
       }
     }, 400)
-    return () => clearTimeout(timer)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
   }, [customSlug, clinicName])
 
   function handleNext() {
@@ -685,12 +689,18 @@ export function OnboardingWizard({
                 type="button"
                 variant="ghost"
                 onClick={handleComplete}
-                disabled={isPending}
+                disabled={isPending || customSlugTaken}
                 className="text-mid hover:text-sage transition-colors duration-200"
                 data-testid="onboarding-skip"
               >
                 {invitesSent > 0 ? 'Continuar sem mais convites' : 'Pular por enquanto'}
               </Button>
+            )}
+
+            {currentStep === STEPS.length - 1 && customSlugTaken && (
+              <p className="text-xs text-red-600">
+                O link de agendamento já está em uso. Volte à etapa Clínica e escolha outro.
+              </p>
             )}
 
             {currentStep < STEPS.length - 1 ? (
@@ -706,7 +716,7 @@ export function OnboardingWizard({
               <Button
                 type="button"
                 onClick={handleComplete}
-                disabled={isPending}
+                disabled={isPending || customSlugTaken}
                 data-testid="onboarding-complete"
                 className={`bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium transition-all duration-300 shadow-md hover:shadow-lg px-8 ${
                   !isPending ? 'animate-subtle-pulse' : ''

@@ -277,6 +277,9 @@ export async function getTenantDetail(
 
 // ─── Self-signup & approval ────────────────────────────────────────
 
+// tenants.slug is varchar(100); the cap leaves room for findAvailableSlug's -N suffix.
+const MAX_BASE_SLUG_LENGTH = 80
+
 export function generateSlug(name: string): string {
   const slug = name
     .toLowerCase()
@@ -285,6 +288,7 @@ export function generateSlug(name: string): string {
     .replace(/\s+/g, '-')
     .replace(/[^a-z0-9-]/g, '')
     .replace(/-+/g, '-')
+    .slice(0, MAX_BASE_SLUG_LENGTH)
     .replace(/^-|-$/g, '')
   return slug || 'clinica'
 }
