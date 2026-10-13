@@ -11,6 +11,7 @@ import { PatientForm } from './patient-form'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { formatBrPhone } from '@/lib/phone'
 import {
   Table,
   TableBody,
@@ -183,7 +184,7 @@ export function PatientList({ result, search: initialSearch = '', isFetching = f
                       </span>
                     </Link>
                   </TableCell>
-                  <TableCell className="text-mid">{patient.phone}</TableCell>
+                  <TableCell className="text-mid">{formatBrPhone(patient.phone)}</TableCell>
                   <TableCell className="hidden md:table-cell text-mid">
                     {patient.email || '—'}
                   </TableCell>

@@ -352,6 +352,55 @@ export async function getMessageByMetaId(
   return msg ?? null
 }
 
+const STALE_RETRY_CLAIM = sql`interval '5 minutes'`
+
+// A 'retrying' claim older than STALE_RETRY_CLAIM belongs to a request that
+// died before releasing it, so it is claimable again.
+export async function claimFailedMessageForRetry(
+  tenantId: string,
+  conversationId: string,
+  messageId: string,
+): Promise<WhatsappMessage | null> {
+  const [msg] = await db
+    .update(whatsappMessages)
+    .set({ deliveryStatus: 'retrying', retryClaimedAt: sql`now()` })
+    .where(
+      and(
+        eq(whatsappMessages.tenantId, tenantId),
+        eq(whatsappMessages.conversationId, conversationId),
+        eq(whatsappMessages.id, messageId),
+        eq(whatsappMessages.direction, 'outbound'),
+        or(
+          eq(whatsappMessages.deliveryStatus, 'failed'),
+          and(
+            eq(whatsappMessages.deliveryStatus, 'retrying'),
+            lt(whatsappMessages.retryClaimedAt, sql`now() - ${STALE_RETRY_CLAIM}`),
+          ),
+        ),
+      )
+    )
+    .returning()
+
+  return msg ?? null
+}
+
+export async function releaseRetryClaim(
+  tenantId: string,
+  messageId: string,
+  status: 'failed' | 'retried',
+) {
+  await db
+    .update(whatsappMessages)
+    .set({ deliveryStatus: status, retryClaimedAt: null })
+    .where(
+      and(
+        eq(whatsappMessages.tenantId, tenantId),
+        eq(whatsappMessages.id, messageId),
+        eq(whatsappMessages.deliveryStatus, 'retrying'),
+      )
+    )
+}
+
 export async function updateMessageStatus(
   tenantId: string,
   metaMessageId: string,
@@ -367,7 +416,10 @@ export async function updateMessageStatus(
     .where(
       and(
         eq(whatsappMessages.tenantId, tenantId),
-        eq(whatsappMessages.metaMessageId, metaMessageId)
+        eq(whatsappMessages.metaMessageId, metaMessageId),
+        // A late or duplicate Meta webhook must not turn a retried message back
+        // into 'failed', or it becomes retryable again.
+        notInArray(whatsappMessages.deliveryStatus, ['retrying', 'retried']),
       )
     )
     .returning()

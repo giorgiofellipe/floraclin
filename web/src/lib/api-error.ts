@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { ForbiddenError } from './errors'
+import { InvalidWhatsAppPhoneError } from './phone'
 import { maskPath } from './observability'
 
 // Next 16.2.3 (the version installed here, see `web/package.json`) no
@@ -74,6 +75,8 @@ export function handleApiError(
 ): NextResponse {
   if (error instanceof ForbiddenError)
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (error instanceof InvalidWhatsAppPhoneError)
+    return NextResponse.json({ error: error.message }, { status: 400 })
   if (isNextRedirectError(error))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

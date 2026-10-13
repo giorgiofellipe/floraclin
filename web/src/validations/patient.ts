@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
 
 const addressSchema = z.object({
   street: z.string().optional(),
@@ -10,14 +11,18 @@ const addressSchema = z.object({
   zip: z.string().optional(),
 }).optional()
 
+const INVALID_PHONE_MESSAGE = 'Telefone inválido. Use DDD + número do Brasil.'
+const isPlaceableBrPhone = (phone: string) => tryNormalizeBrPhoneForWhatsApp(phone).ok
+const isEmptyOrPlaceableBrPhone = (phone: string) => phone === '' || isPlaceableBrPhone(phone)
+
 export const createPatientSchema = z.object({
   fullName: z.string().min(1, 'Nome completo é obrigatório'),
-  phone: z.string().min(1, 'Telefone é obrigatório'),
+  phone: z.string().min(1, 'Telefone é obrigatório').refine(isPlaceableBrPhone, INVALID_PHONE_MESSAGE),
   cpf: z.string().optional(),
   birthDate: z.string().optional(),
   gender: z.string().optional(),
   email: z.string().email('E-mail inválido').optional().or(z.literal('')),
-  phoneSecondary: z.string().optional(),
+  phoneSecondary: z.string().refine(isEmptyOrPlaceableBrPhone, INVALID_PHONE_MESSAGE).optional(),
   address: addressSchema,
   occupation: z.string().optional(),
   referralSource: z.string().optional(),
@@ -28,12 +33,12 @@ export const createPatientSchema = z.object({
 export const updatePatientSchema = z.object({
   id: z.string().uuid('ID inválido'),
   fullName: z.string().min(1, 'Nome completo é obrigatório').optional(),
-  phone: z.string().min(1, 'Telefone é obrigatório').optional(),
+  phone: z.string().min(1, 'Telefone é obrigatório').refine(isPlaceableBrPhone, INVALID_PHONE_MESSAGE).optional(),
   cpf: z.string().optional(),
   birthDate: z.string().optional(),
   gender: z.string().optional(),
   email: z.string().email('E-mail inválido').optional().or(z.literal('')),
-  phoneSecondary: z.string().optional(),
+  phoneSecondary: z.string().refine(isEmptyOrPlaceableBrPhone, INVALID_PHONE_MESSAGE).optional(),
   address: addressSchema,
   occupation: z.string().optional(),
   referralSource: z.string().optional(),

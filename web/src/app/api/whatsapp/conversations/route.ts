@@ -7,7 +7,7 @@ import { listConversations, upsertConversation, createMessage, pushSseEvent, get
 import { conversationFilterSchema } from '@/validations/whatsapp'
 import { sendTemplateMessage, resolveTemplateBody, isWhatsAppEnabled } from '@/lib/whatsapp'
 import { requireWrite } from '@/lib/write-access'
-import { toWhatsAppPhone } from '@/lib/phone'
+import { normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { handleApiError } from '@/lib/api-error'
 
 async function checkWhatsAppAccess() {
@@ -95,7 +95,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Paciente sem telefone cadastrado' }, { status: 400 })
     }
 
-    const normalizedPhone = toWhatsAppPhone(patient.phone)
+    const normalizedPhone = normalizeBrPhoneForWhatsApp(patient.phone)
 
     const conversation = await upsertConversation(
       ctx.tenantId,

@@ -1,22 +1,14 @@
 import { ExternalLink } from 'lucide-react'
-import { toWhatsAppPhone } from '@/lib/phone'
+import { toWaMeUrl } from '@/lib/phone'
 
 interface ReportWhatsAppActionProps {
   phone: string
   fullName: string
 }
 
-/**
- * Opens a WhatsApp Web conversation for the patient, mirroring the
- * "Abrir no WhatsApp Web" action already used on the Aniversariantes screen
- * (`@/components/patients/birthday-row-actions.tsx`): the same `wa.me` link
- * pattern, built from the shared `toWhatsAppPhone` helper rather than a new
- * one-off digit-cleaning function. Shared by every recall report's
- * `rowAction` (pacientes inativos, retornos, faltas) so the send affordance
- * stays identical across all three.
- */
 export function ReportWhatsAppAction({ phone, fullName }: ReportWhatsAppActionProps) {
-  if (!phone.trim()) {
+  const waHref = toWaMeUrl(phone)
+  if (!waHref) {
     return (
       <span className="text-xs text-mid" title="Paciente sem telefone cadastrado">
         -
@@ -26,7 +18,7 @@ export function ReportWhatsAppAction({ phone, fullName }: ReportWhatsAppActionPr
 
   return (
     <a
-      href={`https://wa.me/${toWhatsAppPhone(phone)}`}
+      href={waHref}
       target="_blank"
       rel="noopener noreferrer"
       title={`Abrir conversa no WhatsApp Web com ${fullName}`}

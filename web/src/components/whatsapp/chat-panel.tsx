@@ -10,6 +10,7 @@ import { MessageBubble, type Message } from './message-bubble'
 import { TemplatePicker } from './template-picker'
 import type { Conversation } from './conversation-list'
 import { formatBrPhone } from '@/lib/phone'
+import { findBlueprintForTemplateName } from '@/lib/whatsapp-blueprints'
 import { toast } from 'sonner'
 import {
   Send,
@@ -24,7 +25,7 @@ import {
 
 export interface ChatPanelHandle {
   addMessage: (msg: Message) => void
-  updateMessageStatus: (data: { messageId: string; status: string; metaMessageId?: string }) => void
+  updateMessageStatus: (data: { messageId: string; status: string; metaMessageId?: string; errorCode?: string | null }) => void
   removeMessages: (ids: string[]) => void
 }
 
@@ -73,6 +74,10 @@ function groupMessagesByDate(messages: Message[]): { dateKey: string; messages: 
   }))
 }
 
+function isConfirmationTemplate(templateName: string | null): boolean {
+  return !!templateName && findBlueprintForTemplateName(templateName)?.purposeKey === 'appointment_confirmation'
+}
+
 export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
   function ChatPanel({ conversation, onMarkRead, draft }, ref) {
     const [messages, setMessages] = useState<Message[]>([])
@@ -84,6 +89,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
     const [sending, setSending] = useState(false)
     const [templateOpen, setTemplateOpen] = useState(false)
     const [markingRead, setMarkingRead] = useState(false)
+    const [retryingMessageId, setRetryingMessageId] = useState<string | null>(null)
     const [fetchError, setFetchError] = useState<string | null>(null)
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const prevConvIdRef = useRef<string | null>(null)
@@ -168,11 +174,16 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
     )
 
     const updateMessageStatus = useCallback(
-      (data: { messageId: string; status: string; metaMessageId?: string }) => {
+      (data: { messageId: string; status: string; metaMessageId?: string; errorCode?: string | null }) => {
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === data.messageId
-              ? { ...m, deliveryStatus: data.status, ...(data.metaMessageId ? { metaMessageId: data.metaMessageId } : {}) }
+            m.id === data.messageId || m.metaMessageId === data.messageId
+              ? {
+                  ...m,
+                  deliveryStatus: data.status,
+                  ...(data.metaMessageId ? { metaMessageId: data.metaMessageId } : {}),
+                  ...(data.errorCode !== undefined ? { errorCode: data.errorCode } : {}),
+                }
               : m
           )
         )
@@ -228,6 +239,40 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
       }
     }
 
+    const handleRetryMessage = async (message: Message) => {
+      if (!conversation || retryingMessageId) return
+      setRetryingMessageId(message.id)
+      try {
+        const res = await fetch(
+          `/api/whatsapp/conversations/${conversation.id}/messages/${message.id}/retry`,
+          { method: 'POST' },
+        )
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          toast.error(data.error || 'Erro ao reenviar mensagem')
+          return
+        }
+
+        const newMsg: Message | null = data.data
+        const appendHere = newMsg?.conversationId === conversation.id
+        setMessages((prev) => {
+          const updated = prev.map((m) => m.id === message.id ? { ...m, deliveryStatus: 'retried' } : m)
+          if (!newMsg || !appendHere || updated.some((m) => m.id === newMsg.id)) return updated
+          return [...updated, newMsg]
+        })
+        if (appendHere) setTimeout(() => scrollToBottom(), 100)
+        if (data.warning) {
+          toast.warning(data.warning)
+        } else if (!appendHere) {
+          toast.success('Mensagem reenviada para o telefone atual do paciente.')
+        }
+      } catch {
+        toast.error('Erro ao reenviar mensagem')
+      } finally {
+        setRetryingMessageId(null)
+      }
+    }
+
     const handleSendTemplate = async (templateName: string, language: string, params?: Record<string, string>) => {
       if (!conversation || sending) return
       setSending(true)
@@ -240,14 +285,18 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
             body: JSON.stringify({ templateName, language, params }),
           }
         )
-        if (!res.ok) throw new Error('Erro ao enviar template')
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: 'Erro ao enviar template' }))
+          toast.error(err.error || 'Erro ao enviar template')
+          return
+        }
         const data = await res.json()
         const newMsg: Message = data.data ?? data
         setMessages((prev) => [...prev, newMsg])
         setTemplateOpen(false)
         setTimeout(() => scrollToBottom(), 100)
       } catch {
-        // Could show toast error
+        toast.error('Erro ao enviar template')
       } finally {
         setSending(false)
       }
@@ -421,7 +470,12 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                 </div>
                 <div className="space-y-1">
                   {group.messages.map((msg) => (
-                    <MessageBubble key={msg.id} message={msg} />
+                    <MessageBubble
+                      key={msg.id}
+                      message={msg}
+                      onRetry={isConfirmationTemplate(msg.templateName) ? handleRetryMessage : undefined}
+                      retrying={retryingMessageId === msg.id}
+                    />
                   ))}
                 </div>
               </div>

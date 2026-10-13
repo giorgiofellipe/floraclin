@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatBrPhone,
+  InvalidWhatsAppPhoneError,
   normalizeBrPhone,
+  normalizeBrPhoneForWhatsApp,
   stripCountryCode,
-  toWhatsAppPhone,
+  toWaMeUrl,
+  tryNormalizeBrPhoneForWhatsApp,
 } from '@/lib/phone'
 
 /**
@@ -55,15 +58,23 @@ describe('normalizeBrPhone', () => {
     expect(normalizeBrPhone('55 47 9 8844 3635')).toBe('5547988443635')
   })
 
+  it('handles national trunk and carrier prefixes', () => {
+    expect(normalizeBrPhone('047988443635')).toBe('5547988443635')
+    expect(normalizeBrPhone('04147988443635')).toBe('5547988443635')
+    expect(normalizeBrPhone('00 55 47 98844-3635')).toBe('5547988443635')
+    expect(normalizeBrPhone('01987654321')).toBe('5519987654321')
+  })
+
   it('leaves non-geographic numbers alone', () => {
-    // 0800 numbers are also 11 digits. Read as DDD 08 they would be rewritten
-    // into a geographic number that does not exist, and the migration would
-    // have written that corruption to the database.
+    // 0800 numbers are also 11 digits. With the trunk 0 removed they read as
+    // DDD 80 and would be rewritten into a geographic number that does not
+    // exist, and the migration would have written that corruption to the
+    // database.
     expect(normalizeBrPhone('08001234567')).toBe('08001234567')
     expect(normalizeBrPhone('0800123456')).toBe('0800123456')
-    // No valid DDD has a zero in either position.
+    // No valid DDD has a zero in either position after removing a trunk prefix.
     expect(normalizeBrPhone('10987654321')).toBe('10987654321')
-    expect(normalizeBrPhone('01987654321')).toBe('01987654321')
+    expect(normalizeBrPhone('001987654321')).toBe('001987654321')
   })
 
   it('returns unrecognized input as plain digits rather than inventing a prefix', () => {
@@ -73,16 +84,60 @@ describe('normalizeBrPhone', () => {
     expect(normalizeBrPhone('447911123456')).toBe('447911123456')
     expect(normalizeBrPhone('')).toBe('')
   })
+
+  it('leaves foreign numbers dialed with the 00 international prefix alone', () => {
+    // 00 + country code must not be read as a trunk 0 plus carrier code.
+    expect(normalizeBrPhone('0044 7911 123456')).toBe('00447911123456')
+    expect(normalizeBrPhone('00351912345678')).toBe('00351912345678')
+    expect(normalizeBrPhone('001 212 555 1234')).toBe('0012125551234')
+  })
 })
 
-describe('toWhatsAppPhone', () => {
-  it('produces the wire format Meta and wa.me expect', () => {
-    expect(toWhatsAppPhone('(47) 98844-3635')).toBe('5547988443635')
-    expect(toWhatsAppPhone('554788443635')).toBe('5547988443635')
+describe('normalizeBrPhoneForWhatsApp', () => {
+  it('normalizes mobile numbers missing the 9th digit to the dialable E.164 form', () => {
+    expect(normalizeBrPhoneForWhatsApp('554788443635')).toBe('5547988443635')
+    expect(normalizeBrPhoneForWhatsApp('4788443635')).toBe('5547988443635')
+    expect(normalizeBrPhoneForWhatsApp('5547988443635')).toBe('5547988443635')
   })
 
-  it('does not double the country code on an already-canonical number', () => {
-    expect(toWhatsAppPhone('5547988443635')).toBe('5547988443635')
+  it('accepts landlines because WhatsApp Business numbers can be landline-based', () => {
+    expect(normalizeBrPhoneForWhatsApp('(47) 3333-4444')).toBe('554733334444')
+  })
+
+  it('rejects invalid Brazilian numbers', () => {
+    expect(tryNormalizeBrPhoneForWhatsApp('0800 123 4567')).toEqual({
+      ok: false,
+      reason: 'DDD brasileiro inválido.',
+    })
+    expect(() => normalizeBrPhoneForWhatsApp('12345')).toThrow(InvalidWhatsAppPhoneError)
+    expect(() => normalizeBrPhoneForWhatsApp('(10) 98765-4321')).toThrow('DDD brasileiro inválido.')
+    expect(() => normalizeBrPhoneForWhatsApp('(47) 12345-6789')).toThrow('Celular brasileiro deve começar com 9 após o DDD.')
+  })
+
+  it.each(['0044 7911 123456', '00351912345678', '001 212 555 1234'])(
+    'rejects the foreign number %s instead of reading it as Brazilian',
+    (phone) => {
+      expect(tryNormalizeBrPhoneForWhatsApp(phone).ok).toBe(false)
+    },
+  )
+})
+
+describe('toWaMeUrl', () => {
+  it('links a Brazilian number in canonical form', () => {
+    expect(toWaMeUrl('(47) 8844-3635')).toBe('https://wa.me/5547988443635')
+  })
+
+  it('keeps a link for a foreign number, since wa.me dials any country', () => {
+    expect(toWaMeUrl('+44 7911 123456')).toBe('https://wa.me/447911123456')
+  })
+
+  it('keeps the 55 on a national number the strict check rejects', () => {
+    // Raw digits would link 47123456789, which wa.me dials as Norway.
+    expect(toWaMeUrl('(47) 12345-6789')).toBe('https://wa.me/5547123456789')
+  })
+
+  it('returns null for an empty phone', () => {
+    expect(toWaMeUrl('')).toBeNull()
   })
 })
 

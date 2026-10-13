@@ -19,7 +19,7 @@ describe('createPatientSchema', () => {
       birthDate: '1990-01-15',
       gender: 'female',
       email: 'maria@example.com',
-      phoneSecondary: '(11) 88888-7777',
+      phoneSecondary: '(11) 98888-7777',
       address: {
         street: 'Rua das Flores',
         number: '123',
@@ -56,6 +56,13 @@ describe('createPatientSchema', () => {
     expect(result.success).toBe(false)
   })
 
+  it.each([
+    ['phone', { ...validData, phone: '12345' }],
+    ['phoneSecondary', { ...validData, phoneSecondary: '(11) 88888-7777' }],
+  ])('rejects a %s that cannot be placed as a Brazilian number', (_, data) => {
+    expect(createPatientSchema.safeParse(data).success).toBe(false)
+  })
+
   it('fails with invalid email format', () => {
     const result = createPatientSchema.safeParse({
       ...validData,
@@ -90,5 +97,13 @@ describe('updatePatientSchema', () => {
       fullName: 'Maria Updated',
     })
     expect(result.success).toBe(true)
+  })
+
+  it('rejects a phone that cannot be placed as a Brazilian number', () => {
+    const result = updatePatientSchema.safeParse({
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      phone: '12345',
+    })
+    expect(result.success).toBe(false)
   })
 })

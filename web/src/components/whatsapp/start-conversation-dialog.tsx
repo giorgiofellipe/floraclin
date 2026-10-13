@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Search, User, Phone, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatBrPhone } from '@/lib/phone'
 
 interface Patient {
   id: string
@@ -186,7 +187,7 @@ export function StartConversationDialog({
                 <p className="truncate text-sm font-medium text-charcoal">{patient.fullName}</p>
                 <p className="flex items-center gap-1 text-xs text-mid">
                   <Phone className="size-3" />
-                  {patient.phone}
+                  {patient.phone && formatBrPhone(patient.phone)}
                 </p>
               </div>
             </button>

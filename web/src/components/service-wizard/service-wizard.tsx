@@ -33,6 +33,7 @@ import type { ProductApplicationRecord } from '@/db/queries/product-applications
 import type { AnamnesisRecord, AnamnesisTemplate } from '@/lib/anamnesis/types'
 import type { EvaluationTemplateForForm, ExistingEvaluationResponse } from '@/components/procedures/procedure-form'
 import type { FormSection, FormResponses } from '@/lib/forms/types'
+import { formatBrPhone } from '@/lib/phone'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -770,7 +771,7 @@ export function ServiceWizard({
               <p className="text-[11px] text-mid leading-tight">
                 {age !== null && <>{age} anos</>}
                 {age !== null && patient.phone && <> · </>}
-                {patient.phone}
+                {patient.phone && formatBrPhone(patient.phone)}
               </p>
             </div>
             {/* Mobile: just name */}

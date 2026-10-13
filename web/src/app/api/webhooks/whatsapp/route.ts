@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import { db } from '@/db/client'
 import { tenants, procedureTypes, whatsappMessages, whatsappConversations } from '@/db/schema'
 import { eq, and, sql } from 'drizzle-orm'
@@ -33,12 +34,12 @@ import {
 import { getPatientByPhone, getPatient } from '@/db/queries/patients'
 import { getTenant } from '@/db/queries/tenants'
 import { classifyMessage } from '@/lib/classify-prospect'
-import { toWhatsAppPhone } from '@/lib/phone'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { parseReferral } from '@/lib/meta/attribution'
 import { recordAttribution } from '@/db/queries/lead-attributions'
 import { enqueueMetaEvent } from '@/lib/meta/events'
 import { captureLifecycleReply, handleLifecycleStatus } from '@/lib/lifecycle-webhook'
+import { getWhatsAppErrorLabel, isKnownWhatsAppErrorCode } from '@/lib/whatsapp-errors'
 
 export const dynamic = 'force-dynamic'
 
@@ -565,10 +566,8 @@ async function processStatusUpdate(
   const mappedStatus = statusMap[statusValue]
   if (!mappedStatus || !metaMessageId) return
 
-  const errorCode =
-    statusValue === 'failed'
-      ? (status.errors?.[0]?.code ?? null)
-      : null
+  const failure = mappedStatus === 'failed' ? status.errors?.[0] : undefined
+  const errorCode = failure?.code != null ? String(failure.code) : null
 
   const updated = await updateMessageStatus(
     tenantId,
@@ -577,13 +576,38 @@ async function processStatusUpdate(
     errorCode,
   )
 
-  if (updated) {
-    await pushSseEvent(tenantId, 'status_update', {
+  if (!updated) return
+
+  if (mappedStatus === 'failed') {
+    const failureDetails = {
+      tenantId,
       metaMessageId,
-      status: mappedStatus,
-      conversationId: updated.conversationId,
-    })
+      errorCode,
+      errorTitle: failure?.title ?? null,
+      errorLabel: getWhatsAppErrorLabel(errorCode),
+    }
+    if (!errorCode || !isKnownWhatsAppErrorCode(errorCode)) {
+      Sentry.captureMessage('WhatsApp message delivery failed', {
+        level: 'warning',
+        tags: { whatsappErrorCode: errorCode ?? 'none' },
+        extra: failureDetails,
+      })
+    } else {
+      Sentry.addBreadcrumb({
+        category: 'whatsapp',
+        level: 'warning',
+        message: 'WhatsApp message delivery failed',
+        data: failureDetails,
+      })
+    }
   }
+
+  await pushSseEvent(tenantId, 'status_update', {
+    metaMessageId,
+    status: mappedStatus,
+    conversationId: updated.conversationId,
+    errorCode: updated.errorCode,
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -818,7 +842,6 @@ async function maybeAutoSendAnamnesis(
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.floraclin.com.br'
   const link = `${appUrl}/a/${token.token}`
 
-  const normalizedPhone = toWhatsAppPhone(phone)
   const firstName = patient.fullName.split(' ')[0] || patient.fullName
 
   const params: Record<string, string> = {
@@ -834,7 +857,7 @@ async function maybeAutoSendAnamnesis(
 
   const result = await sendTemplateMessage(
     tenantId,
-    normalizedPhone,
+    phone,
     template.name,
     template.language,
     params,
@@ -843,7 +866,7 @@ async function maybeAutoSendAnamnesis(
 
   const conversation = await upsertConversation(
     tenantId,
-    normalizedPhone,
+    phone,
     patient.fullName,
     undefined,
     patientId,

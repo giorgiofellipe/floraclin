@@ -6,7 +6,7 @@ import { getPatient } from '@/db/queries/patients'
 import { getTemplateByPurpose, upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
 import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
 import { SubscriptionExpiredError, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
-import { toWhatsAppPhone } from '@/lib/phone'
+import { normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { handleApiError } from '@/lib/api-error'
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
@@ -58,7 +58,7 @@ export async function POST(
       return NextResponse.json({ error: 'Template de anamnese aguardando aprovação da Meta. Use a opção "WhatsApp Web" enquanto isso.' }, { status: 400 })
     }
 
-    const normalizedPhone = toWhatsAppPhone(patient.phone)
+    const normalizedPhone = normalizeBrPhoneForWhatsApp(patient.phone)
     const firstName = patient.fullName.split(' ')[0]
 
     // Extract token from the URL (last path segment after /a/)

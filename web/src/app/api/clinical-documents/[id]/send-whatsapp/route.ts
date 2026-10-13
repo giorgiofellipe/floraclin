@@ -11,7 +11,7 @@ import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
 import { fetchLogoDataUri } from '@/lib/logo'
 import { uploadPdfBuffer } from '@/lib/storage'
 import { sendOrEnqueueDocument } from '@/lib/whatsapp'
-import { toWhatsAppPhone } from '@/lib/phone'
+import { normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { handleApiError } from '@/lib/api-error'
 
 export const runtime = 'nodejs'
@@ -48,6 +48,7 @@ export async function POST(
         { status: 400 },
       )
     }
+    const whatsappPhone = normalizeBrPhoneForWhatsApp(doc.patient.phone)
 
     // 1. Render PDF
     // Inline the logo so headless Chromium makes no network request while
@@ -74,7 +75,6 @@ export async function POST(
     // 3. Send via WhatsApp
     // Use a sanitized filename so the patient sees a clean ".pdf" attachment
     // name in WhatsApp instead of the raw storage path.
-    const whatsappPhone = toWhatsAppPhone(doc.patient.phone)
     const firstName = doc.patient.fullName.split(' ')[0]
     const whatsappFilename = `${slugifyForFile(doc.title)}.pdf`
     const sendResult = await sendOrEnqueueDocument(
