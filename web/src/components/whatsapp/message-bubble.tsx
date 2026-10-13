@@ -1,7 +1,8 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import { Check, CheckCheck, Clock } from 'lucide-react'
+import { getWhatsAppErrorLabel } from '@/lib/whatsapp-errors'
+import { Check, CheckCheck, Clock, Loader2, RotateCcw } from 'lucide-react'
 
 export interface Message {
   id: string
@@ -21,6 +22,8 @@ export interface Message {
 
 interface MessageBubbleProps {
   message: Message
+  onRetry?: (message: Message) => void
+  retrying?: boolean
 }
 
 function formatTime(dateStr: string): string {
@@ -50,10 +53,13 @@ function StatusIcon({ status }: { status: string }) {
   return null
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, onRetry, retrying = false }: MessageBubbleProps) {
   const isOutbound = message.direction === 'outbound'
   const isQueued = message.deliveryStatus === 'queued'
   const isExpired = message.deliveryStatus === 'expired'
+  const failedReason = message.deliveryStatus === 'failed'
+    ? getWhatsAppErrorLabel(message.errorCode)
+    : null
   const displayText = message.body || (message.templateName ? `[Template: ${message.templateName}]` : '[Mensagem sem texto]')
 
   return (
@@ -93,6 +99,27 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         {isQueued && (
           <div className="mt-1 text-[10px] text-amber-600">
             Na fila — aguardando resposta
+          </div>
+        )}
+
+        {failedReason && (
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-destructive">
+            <span>{failedReason}</span>
+            {onRetry && (
+              <button
+                type="button"
+                onClick={() => onRetry(message)}
+                disabled={retrying}
+                className="inline-flex items-center gap-1 rounded px-1 py-0.5 font-medium underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {retrying ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <RotateCcw className="size-3" />
+                )}
+                Tentar novamente
+              </button>
+            )}
           </div>
         )}
 

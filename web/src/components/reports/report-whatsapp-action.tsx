@@ -1,5 +1,5 @@
 import { ExternalLink } from 'lucide-react'
-import { toWhatsAppPhone } from '@/lib/phone'
+import { tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
 
 interface ReportWhatsAppActionProps {
   phone: string
@@ -16,9 +16,10 @@ interface ReportWhatsAppActionProps {
  * stays identical across all three.
  */
 export function ReportWhatsAppAction({ phone, fullName }: ReportWhatsAppActionProps) {
-  if (!phone.trim()) {
+  const normalized = tryNormalizeBrPhoneForWhatsApp(phone)
+  if (!phone.trim() || !normalized.ok) {
     return (
-      <span className="text-xs text-mid" title="Paciente sem telefone cadastrado">
+      <span className="text-xs text-mid" title="Paciente sem telefone válido para WhatsApp">
         -
       </span>
     )
@@ -26,7 +27,7 @@ export function ReportWhatsAppAction({ phone, fullName }: ReportWhatsAppActionPr
 
   return (
     <a
-      href={`https://wa.me/${toWhatsAppPhone(phone)}`}
+      href={`https://wa.me/${normalized.phone}`}
       target="_blank"
       rel="noopener noreferrer"
       title={`Abrir conversa no WhatsApp Web com ${fullName}`}

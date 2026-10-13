@@ -10,9 +10,7 @@ import {
   useToggleGreeting,
 } from '@/hooks/queries/use-birthdays'
 import { useTenant } from '@/hooks/queries/use-tenant'
-import { toWhatsAppPhone } from '@/lib/phone'
-
-const phoneToWhatsappDigits = toWhatsAppPhone
+import { tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
 
 /** First word of the full name, sentence-cased — used in the WhatsApp template. */
 function firstName(fullName: string): string {
@@ -60,8 +58,9 @@ export function BirthdayRowActions({
 
   const greeted = greetedAt != null
   const hasPhone = !!(patientPhone && patientPhone.trim())
-  const waHref = hasPhone
-    ? `https://wa.me/${phoneToWhatsappDigits(patientPhone!)}`
+  const normalizedPhone = hasPhone ? tryNormalizeBrPhoneForWhatsApp(patientPhone!) : null
+  const waHref = normalizedPhone?.ok
+    ? `https://wa.me/${normalizedPhone.phone}`
     : undefined
 
   const tenantName: string =

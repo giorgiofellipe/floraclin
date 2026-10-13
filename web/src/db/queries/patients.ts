@@ -3,7 +3,7 @@ import { patients } from '@/db/schema'
 import { eq, and, isNull, ilike, or, sql, asc } from 'drizzle-orm'
 import type { PaginatedResult } from '@/types'
 import type { CreatePatientInput, UpdatePatientInput } from '@/validations/patient'
-import { isCanonicalBrPhone, normalizeBrPhone } from '@/lib/phone'
+import { isCanonicalBrPhone, normalizeBrPhone, tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
 
 export type Patient = typeof patients.$inferSelect
 
@@ -131,18 +131,23 @@ export async function createPatient(
   data: CreatePatientInput,
   responsibleUserId?: string
 ): Promise<Patient> {
+  const primaryPhone = normalizePatientPhoneForStorage(data.phone)
+  const secondaryPhone = data.phoneSecondary
+    ? normalizePatientPhoneForStorage(data.phoneSecondary)
+    : null
+
   const [patient] = await db
     .insert(patients)
     .values({
       tenantId,
       responsibleUserId: responsibleUserId ?? null,
       fullName: data.fullName,
-      phone: data.phone,
+      phone: primaryPhone,
       cpf: data.cpf || null,
       birthDate: data.birthDate || null,
       gender: data.gender || null,
       email: data.email || null,
-      phoneSecondary: data.phoneSecondary || null,
+      phoneSecondary: secondaryPhone,
       address: data.address || null,
       occupation: data.occupation || null,
       referralSource: data.referralSource || null,
@@ -162,12 +167,16 @@ export async function updatePatient(
   const updateData: Record<string, unknown> = { updatedAt: new Date() }
 
   if (data.fullName !== undefined) updateData.fullName = data.fullName
-  if (data.phone !== undefined) updateData.phone = data.phone
+  if (data.phone !== undefined) updateData.phone = normalizePatientPhoneForStorage(data.phone)
   if (data.cpf !== undefined) updateData.cpf = data.cpf || null
   if (data.birthDate !== undefined) updateData.birthDate = data.birthDate || null
   if (data.gender !== undefined) updateData.gender = data.gender || null
   if (data.email !== undefined) updateData.email = data.email || null
-  if (data.phoneSecondary !== undefined) updateData.phoneSecondary = data.phoneSecondary || null
+  if (data.phoneSecondary !== undefined) {
+    updateData.phoneSecondary = data.phoneSecondary
+      ? normalizePatientPhoneForStorage(data.phoneSecondary)
+      : null
+  }
   if (data.address !== undefined) updateData.address = data.address || null
   if (data.occupation !== undefined) updateData.occupation = data.occupation || null
   if (data.referralSource !== undefined) updateData.referralSource = data.referralSource || null
@@ -187,6 +196,11 @@ export async function updatePatient(
     .returning()
 
   return patient ?? null
+}
+
+function normalizePatientPhoneForStorage(phone: string): string {
+  const result = tryNormalizeBrPhoneForWhatsApp(phone)
+  return result.ok ? result.phone : phone
 }
 
 export async function deletePatient(tenantId: string, patientId: string): Promise<Patient | null> {

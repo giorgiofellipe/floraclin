@@ -352,6 +352,26 @@ export async function getMessageByMetaId(
   return msg ?? null
 }
 
+export async function getMessage(
+  tenantId: string,
+  conversationId: string,
+  messageId: string,
+): Promise<WhatsappMessage | null> {
+  const [msg] = await db
+    .select()
+    .from(whatsappMessages)
+    .where(
+      and(
+        eq(whatsappMessages.tenantId, tenantId),
+        eq(whatsappMessages.conversationId, conversationId),
+        eq(whatsappMessages.id, messageId),
+      )
+    )
+    .limit(1)
+
+  return msg ?? null
+}
+
 export async function updateMessageStatus(
   tenantId: string,
   metaMessageId: string,

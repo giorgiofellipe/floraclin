@@ -605,6 +605,29 @@ export async function markConfirmationSent(
   return result
 }
 
+export async function updateConfirmationMessageId(
+  tenantId: string,
+  appointmentId: string,
+  confirmationMessageId: string,
+) {
+  const [result] = await db
+    .update(appointments)
+    .set({
+      confirmationMessageId,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(appointments.tenantId, tenantId),
+        eq(appointments.id, appointmentId),
+        isNull(appointments.deletedAt),
+      )
+    )
+    .returning()
+
+  return result ?? null
+}
+
 export async function confirmAppointment(
   tenantId: string,
   appointmentId: string,

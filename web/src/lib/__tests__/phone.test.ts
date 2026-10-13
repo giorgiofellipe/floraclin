@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatBrPhone,
+  InvalidWhatsAppPhoneError,
   normalizeBrPhone,
+  normalizeBrPhoneForWhatsApp,
   stripCountryCode,
   toWhatsAppPhone,
+  tryNormalizeBrPhoneForWhatsApp,
 } from '@/lib/phone'
 
 /**
@@ -55,15 +58,21 @@ describe('normalizeBrPhone', () => {
     expect(normalizeBrPhone('55 47 9 8844 3635')).toBe('5547988443635')
   })
 
+  it('handles national trunk and carrier prefixes', () => {
+    expect(normalizeBrPhone('047988443635')).toBe('5547988443635')
+    expect(normalizeBrPhone('04147988443635')).toBe('5547988443635')
+    expect(normalizeBrPhone('00 55 47 98844-3635')).toBe('5547988443635')
+  })
+
   it('leaves non-geographic numbers alone', () => {
     // 0800 numbers are also 11 digits. Read as DDD 08 they would be rewritten
     // into a geographic number that does not exist, and the migration would
     // have written that corruption to the database.
     expect(normalizeBrPhone('08001234567')).toBe('08001234567')
     expect(normalizeBrPhone('0800123456')).toBe('0800123456')
-    // No valid DDD has a zero in either position.
+    // No valid DDD has a zero in either position after removing a trunk prefix.
     expect(normalizeBrPhone('10987654321')).toBe('10987654321')
-    expect(normalizeBrPhone('01987654321')).toBe('01987654321')
+    expect(normalizeBrPhone('001987654321')).toBe('001987654321')
   })
 
   it('returns unrecognized input as plain digits rather than inventing a prefix', () => {
@@ -83,6 +92,27 @@ describe('toWhatsAppPhone', () => {
 
   it('does not double the country code on an already-canonical number', () => {
     expect(toWhatsAppPhone('5547988443635')).toBe('5547988443635')
+  })
+})
+
+describe('normalizeBrPhoneForWhatsApp', () => {
+  it('normalizes mobile numbers missing the 9th digit to the dialable E.164 form', () => {
+    expect(normalizeBrPhoneForWhatsApp('554788443635')).toBe('5547988443635')
+    expect(normalizeBrPhoneForWhatsApp('4788443635')).toBe('5547988443635')
+  })
+
+  it('accepts landlines because WhatsApp Business numbers can be landline-based', () => {
+    expect(normalizeBrPhoneForWhatsApp('(47) 3333-4444')).toBe('554733334444')
+  })
+
+  it('rejects invalid or ambiguous Brazilian numbers before Meta is called', () => {
+    expect(tryNormalizeBrPhoneForWhatsApp('0800 123 4567')).toEqual({
+      ok: false,
+      reason: 'DDD brasileiro inválido.',
+    })
+    expect(() => normalizeBrPhoneForWhatsApp('12345')).toThrow(InvalidWhatsAppPhoneError)
+    expect(() => normalizeBrPhoneForWhatsApp('(10) 98765-4321')).toThrow('DDD brasileiro inválido.')
+    expect(() => normalizeBrPhoneForWhatsApp('(47) 12345-6789')).toThrow('Celular brasileiro deve começar com 9 após o DDD.')
   })
 })
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import { db } from '@/db/client'
 import { tenants, procedureTypes, whatsappMessages, whatsappConversations } from '@/db/schema'
 import { eq, and, sql } from 'drizzle-orm'
@@ -39,6 +40,7 @@ import { parseReferral } from '@/lib/meta/attribution'
 import { recordAttribution } from '@/db/queries/lead-attributions'
 import { enqueueMetaEvent } from '@/lib/meta/events'
 import { captureLifecycleReply, handleLifecycleStatus } from '@/lib/lifecycle-webhook'
+import { getWhatsAppErrorLabel } from '@/lib/whatsapp-errors'
 
 export const dynamic = 'force-dynamic'
 
@@ -567,8 +569,22 @@ async function processStatusUpdate(
 
   const errorCode =
     statusValue === 'failed'
-      ? (status.errors?.[0]?.code ?? null)
+      ? (status.errors?.[0]?.code != null ? String(status.errors[0].code) : null)
       : null
+  const errorTitle = statusValue === 'failed' ? status.errors?.[0]?.title ?? null : null
+
+  if (mappedStatus === 'failed') {
+    Sentry.captureMessage('WhatsApp message delivery failed', {
+      level: 'warning',
+      extra: {
+        tenantId,
+        metaMessageId,
+        errorCode,
+        errorTitle,
+        errorLabel: getWhatsAppErrorLabel(errorCode),
+      },
+    })
+  }
 
   const updated = await updateMessageStatus(
     tenantId,
@@ -582,6 +598,7 @@ async function processStatusUpdate(
       metaMessageId,
       status: mappedStatus,
       conversationId: updated.conversationId,
+      errorCode: updated.errorCode,
     })
   }
 }

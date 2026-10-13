@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { toWhatsAppPhone } from '@/lib/phone'
+import { tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
 
 interface CommonProps {
   patientId: string
@@ -121,10 +121,11 @@ export function SendConsentSigningLink(props: SendConsentSigningLinkProps) {
 
   function getWhatsAppUrl() {
     if (!url || !patientPhone) return null
-    const phone = toWhatsAppPhone(patientPhone)
+    const normalized = tryNormalizeBrPhoneForWhatsApp(patientPhone)
+    if (!normalized.ok) return null
     const firstName = patientName.split(' ')[0]
     const message = `Olá ${firstName}! Acesse o link abaixo para revisar e assinar seus termos: ${url}`
-    return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
+    return `https://wa.me/${normalized.phone}?text=${encodeURIComponent(message)}`
   }
 
   if (!url) {

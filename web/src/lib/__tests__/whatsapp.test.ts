@@ -26,7 +26,8 @@ vi.mock('@/db/queries/whatsapp', () => ({
   markStaleTemplates: markStaleTemplatesMock,
 }))
 
-import { verifyWebhookSignature, sendMediaMessage, syncTemplatesForTenant } from '../whatsapp'
+import { verifyWebhookSignature, sendMediaMessage, sendTextMessage, syncTemplatesForTenant } from '../whatsapp'
+import { InvalidWhatsAppPhoneError } from '../phone'
 
 describe('verifyWebhookSignature', () => {
   it('returns true for valid signature', () => {
@@ -70,7 +71,7 @@ describe('sendMediaMessage', () => {
   it('includes filename in document payload when provided', async () => {
     await sendMediaMessage(
       'tenant-1',
-      '+5511999999999',
+      '(11) 99999-9999',
       'document',
       'https://example.com/doc.pdf',
       'Receita - João',
@@ -78,6 +79,7 @@ describe('sendMediaMessage', () => {
     )
     const call = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
     const body = JSON.parse((call[1] as RequestInit).body as string)
+    expect(body.to).toBe('5511999999999')
     expect(body.document).toEqual({
       link: 'https://example.com/doc.pdf',
       caption: 'Receita - João',
@@ -110,6 +112,14 @@ describe('sendMediaMessage', () => {
     const call = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
     const body = JSON.parse((call[1] as RequestInit).body as string)
     expect(body.document).toEqual({ link: 'https://example.com/doc.pdf' })
+  })
+
+  it('rejects invalid recipient phones before calling Meta', async () => {
+    await expect(
+      sendTextMessage('tenant-1', '12345', 'Olá'),
+    ).rejects.toBeInstanceOf(InvalidWhatsAppPhoneError)
+
+    expect(global.fetch).not.toHaveBeenCalled()
   })
 })
 

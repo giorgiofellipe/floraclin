@@ -50,7 +50,7 @@ import { FileText } from 'lucide-react'
 import { usePractitioners, useAppointmentProcedureTypes } from '@/hooks/queries/use-appointments'
 import type { Patient } from '@/db/queries/patients'
 import type { Role } from '@/types'
-import { toWhatsAppPhone } from '@/lib/phone'
+import { tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -73,9 +73,6 @@ function formatBirthDate(birthDate: string): string {
     year: 'numeric',
   }).format(date)
 }
-
-/** Strip non-digit chars to build tel: / whatsapp links */
-const phoneToDigits = toWhatsAppPhone
 
 const VALID_TABS: PatientTabKey[] = [
   'dados',
@@ -143,6 +140,7 @@ export function PatientDetailContent({
   }, [router, pathname, searchParams])
 
   const age = patient.birthDate ? calculateAge(patient.birthDate) : null
+  const normalizedPhone = tryNormalizeBrPhoneForWhatsApp(patient.phone)
 
   async function handleOpenWhatsapp() {
     setOpeningWhatsapp(true)
@@ -226,7 +224,7 @@ export function PatientDetailContent({
                     <PopoverContent className="w-auto p-1.5" align="start">
                       <div className="flex flex-col gap-0.5">
                         <a
-                          href={`tel:+${phoneToDigits(patient.phone)}`}
+                          href={normalizedPhone.ok ? `tel:+${normalizedPhone.phone}` : `tel:${patient.phone.replace(/\D/g, '')}`}
                           className="flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-[#F4F6F8] transition-colors"
                         >
                           <Phone className="size-3.5 text-sage" />
@@ -243,15 +241,17 @@ export function PatientDetailContent({
                             {openingWhatsapp ? 'Abrindo...' : 'Iniciar conversa'}
                           </button>
                         )}
-                        <a
-                          href={`https://wa.me/${phoneToDigits(patient.phone)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-[#F4F6F8] transition-colors"
-                        >
-                          <ExternalLink className="size-3.5 text-[#25D366]" />
-                          Abrir no WhatsApp Web
-                        </a>
+                        {normalizedPhone.ok && (
+                          <a
+                            href={`https://wa.me/${normalizedPhone.phone}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-[#F4F6F8] transition-colors"
+                          >
+                            <ExternalLink className="size-3.5 text-[#25D366]" />
+                            Abrir no WhatsApp Web
+                          </a>
+                        )}
                       </div>
                     </PopoverContent>
                   </Popover>

@@ -1,3 +1,5 @@
+import { BusinessError } from '@/lib/errors'
+
 // One canonical form for every phone number we store or compare:
 // 55 + DDD + subscriber, with the 9th digit present on mobiles.
 //
@@ -23,13 +25,34 @@ function stripLeading55(digits: string): string {
   return hasCountryCode ? digits.slice(2) : digits
 }
 
+const VALID_BR_DDDS = new Set([
+  '11', '12', '13', '14', '15', '16', '17', '18', '19',
+  '21', '22', '24', '27', '28',
+  '31', '32', '33', '34', '35', '37', '38',
+  '41', '42', '43', '44', '45', '46',
+  '47', '48', '49',
+  '51', '53', '54', '55',
+  '61', '62', '63', '64', '65', '66', '67', '68', '69',
+  '71', '73', '74', '75', '77', '79',
+  '81', '82', '83', '84', '85', '86', '87', '88', '89',
+  '91', '92', '93', '94', '95', '96', '97', '98', '99',
+])
+
+export class InvalidWhatsAppPhoneError extends BusinessError {
+  constructor(message = 'Telefone inválido para WhatsApp. Use DDD + número do Brasil.') {
+    super('WHATSAPP_INVALID_PHONE', message)
+    this.name = 'InvalidWhatsAppPhoneError'
+  }
+}
+
 export function isCanonicalBrPhone(phone: string): boolean {
-  return /^55\d{10,11}$/.test(phone)
+  const result = tryNormalizeBrPhoneForWhatsApp(phone)
+  return result.ok && result.phone === phone
 }
 
 export function normalizeBrPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '')
-  const local = stripLeading55(digits)
+  const local = stripLeading55(stripBrazilOutboundPrefix(digits))
 
   // DDD plus 8 or 9 subscriber digits is the only shape we can canonicalize.
   // Anything else (a foreign number, a half-typed entry) is returned as the
@@ -55,12 +78,70 @@ export function normalizeBrPhone(phone: string): string {
   return `55${ddd}${withNinthDigit}`
 }
 
+function stripBrazilOutboundPrefix(digits: string): string {
+  let candidate = digits
+
+  // Some exports include the international call prefix: 00 55 DDD number.
+  if ((candidate.length === 14 || candidate.length === 15) && candidate.startsWith('0055')) {
+    candidate = candidate.slice(2)
+  }
+
+  // National long-distance forms: 0 + DDD + number, or 0 + carrier + DDD + number.
+  // Examples: 047988443635 and 04147988443635 both become 47988443635.
+  if ((candidate.length === 11 || candidate.length === 12) && candidate.startsWith('0')) {
+    return candidate.slice(1)
+  }
+  if ((candidate.length === 13 || candidate.length === 14) && candidate.startsWith('0')) {
+    return candidate.slice(3)
+  }
+
+  return candidate
+}
+
+type PhoneNormalizationResult =
+  | { ok: true; phone: string }
+  | { ok: false; reason: string }
+
+export function tryNormalizeBrPhoneForWhatsApp(phone: string): PhoneNormalizationResult {
+  const digits = phone.replace(/\D/g, '')
+  if (!digits) return { ok: false, reason: 'Telefone vazio.' }
+
+  const local = stripLeading55(stripBrazilOutboundPrefix(digits))
+  if (local.length !== 10 && local.length !== 11) {
+    return { ok: false, reason: 'Telefone deve ter DDD e 8 ou 9 dígitos.' }
+  }
+
+  const ddd = local.slice(0, 2)
+  if (!VALID_BR_DDDS.has(ddd)) {
+    return { ok: false, reason: 'DDD brasileiro inválido.' }
+  }
+
+  const subscriber = local.slice(2)
+  if (subscriber.length === 8) {
+    if (/^[2-5]/.test(subscriber)) return { ok: true, phone: `55${ddd}${subscriber}` }
+    if (/^[6-9]/.test(subscriber)) return { ok: true, phone: `55${ddd}9${subscriber}` }
+    return { ok: false, reason: 'Número local inválido.' }
+  }
+
+  if (/^9\d{8}$/.test(subscriber)) return { ok: true, phone: `55${local}` }
+
+  return { ok: false, reason: 'Celular brasileiro deve começar com 9 após o DDD.' }
+}
+
+export function normalizeBrPhoneForWhatsApp(phone: string): string {
+  const result = tryNormalizeBrPhoneForWhatsApp(phone)
+  if (!result.ok) {
+    throw new InvalidWhatsAppPhoneError(result.reason)
+  }
+  return result.phone
+}
+
 /**
  * What Meta and wa.me expect. Identical to the canonical form, kept as its own
  * name so call sites reading as "about to send this somewhere" stay obvious.
  */
 export function toWhatsAppPhone(phone: string): string {
-  return normalizeBrPhone(phone)
+  return normalizeBrPhoneForWhatsApp(phone)
 }
 
 export function formatBrPhone(phone: string): string {

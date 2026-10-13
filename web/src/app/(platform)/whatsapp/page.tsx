@@ -170,10 +170,11 @@ export default function WhatsAppPage() {
   )
 
   const handleStatusUpdate = useCallback((data: unknown) => {
-    const payload = data as { metaMessageId?: string; messageId?: string; status: string; conversationId?: string }
+    const payload = data as { metaMessageId?: string; messageId?: string; status: string; conversationId?: string; errorCode?: string | null }
     chatPanelRef.current?.updateMessageStatus({
       messageId: payload.metaMessageId ?? payload.messageId ?? '',
       status: payload.status,
+      errorCode: payload.errorCode,
     })
     if (payload.conversationId) {
       conversationListRef.current?.updateConversation({
