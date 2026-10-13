@@ -14,6 +14,7 @@ import {
   DialogClose,
 } from '@/components/ui/dialog'
 import { cn, formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
+import { round2 } from '@/lib/financial/penalties'
 import { PartialPaymentDialog } from './partial-payment-dialog'
 import {
   BanknoteIcon,
@@ -50,10 +51,8 @@ interface Installment {
   paymentMethod: string | null
   notes: string | null
   amountPaid?: string | null
-  fineAmount?: string | null
-  interestAmount?: string | null
-  computedFineAmount?: number | null
-  computedInterestAmount?: number | null
+  computedFineAmount: number
+  computedInterestAmount: number
   appliedFineType?: string | null
   appliedFineValue?: string | null
   appliedInterestRate?: string | null
@@ -81,7 +80,7 @@ function getProgressPercent(inst: Installment): number {
 function excessOf(pr: PaymentRecord): number {
   const covered =
     Number(pr.interestCovered ?? 0) + Number(pr.fineCovered ?? 0) + Number(pr.principalCovered ?? 0)
-  return Math.round((Number(pr.amount ?? 0) - covered) * 100) / 100
+  return round2(Number(pr.amount ?? 0) - covered)
 }
 
 export function InstallmentTable({
@@ -127,8 +126,8 @@ export function InstallmentTable({
     <>
       <div className="space-y-2">
         {installments.map((inst) => {
-          const fineAmt = inst.computedFineAmount ?? Number(inst.fineAmount ?? 0)
-          const interestAmt = inst.computedInterestAmount ?? Number(inst.interestAmount ?? 0)
+          const fineAmt = inst.computedFineAmount
+          const interestAmt = inst.computedInterestAmount
           const penaltyTotal = fineAmt + interestAmt
           const isExpanded = expandedInstallmentId === inst.id
           const hasPayments = (inst.paymentRecords?.length ?? 0) > 0

@@ -110,15 +110,6 @@ describe('getInstallmentQuote', () => {
     expect([quote.fineAmount, quote.interestAmount]).toEqual([15, 0.75])
   })
 
-  it('refuses to price an installment that has no terms written, naming it', async () => {
-    const { getInstallmentQuote } = await import('../financial-quote')
-    queueQuoteSelects({ installment: [installmentRow({ appliedGracePeriodDays: null })] })
-
-    await expect(
-      getInstallmentQuote(TENANT, INSTALLMENT_ID, new Date('2026-09-03T14:04:50.000Z')),
-    ).rejects.toThrow(INSTALLMENT_ID)
-  })
-
   it('refuses a date before an existing payment and names the installment and the later date', async () => {
     const { getInstallmentQuote } = await import('../financial-quote')
     queueQuoteSelects({

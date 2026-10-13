@@ -9,7 +9,7 @@ vi.mock('@/db/queries/financial-quote', () => ({
 }))
 
 import { requireRole } from '@/lib/auth'
-import { getInstallmentQuote } from '@/db/queries/financial-quote'
+import { getInstallmentQuote, type InstallmentQuoteResult } from '@/db/queries/financial-quote'
 import { BusinessError, ForbiddenError } from '@/lib/errors'
 import { GET } from '../route'
 
@@ -33,7 +33,14 @@ beforeEach(() => {
     userId: 'user-1',
     role: 'owner',
   } as never)
-  vi.mocked(getInstallmentQuote).mockResolvedValue({ total: 100 } as never)
+  const quote: InstallmentQuoteResult = {
+    remainingPrincipal: 100,
+    fineAmount: 0,
+    interestAmount: 0,
+    totalDue: 100,
+    asOf: '2026-08-03T15:00:00.000Z',
+  }
+  vi.mocked(getInstallmentQuote).mockResolvedValue(quote)
 })
 
 afterEach(() => {

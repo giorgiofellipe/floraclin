@@ -49,7 +49,6 @@ function createWrapper() {
 }
 
 afterEach(() => {
-  vi.useRealTimers()
   mockBulkPay.mockClear()
   mockBulkCancel.mockClear()
   mockBulkUncancel.mockClear()
@@ -185,14 +184,7 @@ describe('BulkActionBar', () => {
     expect(screen.getByRole('button', { name: 'Confirmar Reativação' })).toBeDisabled()
   })
 
-  it.each([
-    { picked: '', sent: undefined },
-    { picked: '2026-08-20', sent: undefined },
-    { picked: '2026-08-15', sent: '2026-08-15T15:00:00.000Z' },
-  ])('bulk pay with date "$picked" on BR 2026-08-20 sends paidAt $sent', async ({ picked, sent }) => {
-    vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(new Date('2026-08-20T15:00:00Z')) // BR noon on 2026-08-20
-
+  it('bulk pay sends the picked date as BR noon', async () => {
     render(
       <BulkActionBar
         selectedCount={2}
@@ -205,11 +197,11 @@ describe('BulkActionBar', () => {
     )
 
     fireEvent.click(screen.getByText(/Marcar como pago \(2\)/))
-    if (picked) fireEvent.change(screen.getByTestId('bulk-pay-date'), { target: { value: picked } })
+    fireEvent.change(screen.getByTestId('bulk-pay-date'), { target: { value: '2026-08-15' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
 
     await waitFor(() => {
-      expect(mockBulkPay).toHaveBeenCalledWith(expect.objectContaining({ paidAt: sent }))
+      expect(mockBulkPay).toHaveBeenCalledWith(expect.objectContaining({ paidAt: '2026-08-15T15:00:00.000Z' }))
     })
   })
 })

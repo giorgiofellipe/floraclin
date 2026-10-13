@@ -142,9 +142,6 @@ export function useBulkUncancel() {
     }) => mutateJson('/api/financial/bulk/uncancel', 'POST', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
-      queryClient.invalidateQueries({ queryKey: ['financial', 'revenue'] })
-      queryClient.invalidateQueries({ queryKey: ['financial', 'ledger'] })
-      queryClient.invalidateQueries({ queryKey: ['financial', 'practitioner-pl'] })
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
     },
   })

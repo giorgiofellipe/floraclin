@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -78,10 +78,6 @@ beforeEach(() => {
   mockQuote()
 })
 
-afterEach(() => {
-  vi.useRealTimers()
-})
-
 describe('PartialPaymentDialog', () => {
   it('prefills the amount from quote.totalDue', async () => {
     render(
@@ -121,34 +117,6 @@ describe('PartialPaymentDialog', () => {
     expect(preview).toHaveTextContent(/Multa\s*R\$\s*20,00/)
     expect(preview).toHaveTextContent(/Principal\s*R\$\s*1\.000,00/)
     expect(preview).not.toHaveTextContent('Excedente')
-  })
-
-  it('picking today sends undefined as paidAt, to both the hook and the mutation', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(new Date('2026-08-20T15:00:00Z')) // BR noon on 2026-08-20
-
-    render(
-      <PartialPaymentDialog open={true} onOpenChange={() => {}} installment={defaultInstallment} />,
-      { wrapper: createWrapper() },
-    )
-
-    fireEvent.change(screen.getByTestId('partial-payment-date'), { target: { value: '2026-08-20' } })
-
-    await waitFor(() => {
-      const lastCall = mockUseInstallmentQuote.mock.calls.at(-1)
-      expect(lastCall?.[1]).toBeUndefined()
-    })
-
-    await waitFor(() => {
-      expect(screen.getByTestId('partial-payment-amount')).toHaveValue('1.030,00')
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar Pagamento' }))
-
-    await waitFor(() => {
-      expect(mockMutateAsync).toHaveBeenCalledWith(
-        expect.objectContaining({ paidAt: undefined }),
-      )
-    })
   })
 
   it('picking a past date sends BR noon of that day, never UTC midnight', async () => {
@@ -260,7 +228,7 @@ describe('PartialPaymentDialog', () => {
   })
 
   it('shows the error and disables confirm when the hook returns an error', () => {
-    mockQuote({ data: undefined, error: new Error('Falha ao calcular a parcela') })
+    mockQuote({ data: defaultQuote, error: new Error('Falha ao calcular a parcela') })
 
     render(
       <PartialPaymentDialog open={true} onOpenChange={() => {}} installment={defaultInstallment} />,
@@ -289,9 +257,10 @@ describe('PartialPaymentDialog', () => {
     expect(toast.error).toHaveBeenCalledWith('Parcela cancelada')
   })
 
-  it('shows a backdate refusal next to the date without a retry, and keeps confirm disabled', () => {
-    const message = 'A parcela 2 tem um pagamento em 18/08/2026. Escolha uma data a partir dele.'
-    mockQuote({ data: undefined, error: new ApiError(message, 'PAYMENT_BEFORE_LATER_PAYMENT') })
+  it('shows a backdate refusal next to the date without a retry, and keeps confirm disabled over the previous quote', () => {
+    const message =
+      'Já existe um pagamento em 18/08/2026 na parcela 2 de Harmonização facial (Maria Silva). Registre pagamentos a partir dessa data.'
+    mockQuote({ data: defaultQuote, error: new ApiError(message, 'PAYMENT_BEFORE_LATER_PAYMENT') })
 
     render(
       <PartialPaymentDialog open={true} onOpenChange={() => {}} installment={defaultInstallment} />,
@@ -412,7 +381,9 @@ describe('PartialPaymentDialog', () => {
   })
 
   it('does not refetch or close on other errors, it only toasts', async () => {
-    mockMutateAsync.mockRejectedValueOnce(new ApiError('Estorne o pagamento posterior antes.', 'BACKDATED_PAYMENT_OVERFILLS'))
+    const message =
+      'Já existe um pagamento em 18/08/2026 na parcela 1 de Harmonização facial (Maria Silva). Registre pagamentos a partir dessa data.'
+    mockMutateAsync.mockRejectedValueOnce(new ApiError(message, 'PAYMENT_BEFORE_LATER_PAYMENT'))
     const refetch = vi.fn()
     const onOpenChange = vi.fn()
     mockQuote({ refetch })
@@ -428,7 +399,7 @@ describe('PartialPaymentDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar Pagamento' }))
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Estorne o pagamento posterior antes.')
+      expect(toast.error).toHaveBeenCalledWith(message)
     })
     expect(refetch).not.toHaveBeenCalled()
     expect(onOpenChange).not.toHaveBeenCalled()

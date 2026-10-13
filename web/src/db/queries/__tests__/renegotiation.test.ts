@@ -1,34 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { BusinessError } from '@/lib/errors'
-
-// A chainable, awaitable stand-in for drizzle's query builders, copied from
-// financial-meta.test.ts. Every method call returns the same proxy so any
-// chain shape resolves to `result` when awaited.
-function chain(result: unknown) {
-  const proxy: unknown = new Proxy(
-    {},
-    {
-      get(_target, prop: string) {
-        if (prop === 'then') {
-          return (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
-            Promise.resolve(result).then(resolve, reject)
-        }
-        if (prop === 'catch') {
-          return (reject: (e: unknown) => unknown) => Promise.resolve(result).catch(reject)
-        }
-        return () => proxy
-      },
-    },
-  )
-  return proxy
-}
+import { chain, chainCapturing, whereParams, type Capture } from '@/tests/mocks/drizzle-tx'
 
 const dbMock = { transaction: vi.fn(), select: vi.fn() }
 vi.mock('@/db/client', () => ({ db: dbMock }))
 
 function makeTx() {
   return {
-    execute: vi.fn(),
     select: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
@@ -47,27 +25,6 @@ const financialSettingsRow = {
   fineValue: '2.00',
   monthlyInterestPercent: '1.00',
   gracePeriodDays: 0,
-}
-
-function chainCapturing(result: unknown, capture: { value?: unknown }) {
-  const proxy: unknown = new Proxy(
-    {},
-    {
-      get(_target, prop: string) {
-        if (prop === 'then') {
-          return (resolve: (v: unknown) => unknown) => Promise.resolve(result).then(resolve)
-        }
-        if (prop === 'set' || prop === 'values') {
-          return (payload: unknown) => {
-            capture.value = payload
-            return proxy
-          }
-        }
-        return () => proxy
-      },
-    },
-  )
-  return proxy
 }
 
 describe('renegotiateCharges', () => {
@@ -99,25 +56,23 @@ describe('renegotiateCharges', () => {
       ]),
     )
 
-    // 2. FOR UPDATE lock, raw SQL result: snake_case column names
-    tx.execute.mockResolvedValueOnce([
+    // 2. Installment lock
+    tx.select.mockReturnValueOnce(chain([
       {
         id: INSTALLMENT_ID,
-        financial_entry_id: ENTRY_ID,
+        financialEntryId: ENTRY_ID,
         status: 'pending',
         amount: '750.00',
-        amount_paid: '0',
-        fine_amount: '0',
-        due_date: '2026-05-22',
-        applied_fine_type: 'percentage',
-        applied_fine_value: '2.00',
-        applied_interest_rate: '1.00',
-        applied_grace_period_days: 0,
-        penalty_pauses: [],
-        cancelled_at: null,
-        last_fine_interest_calc_at: null,
+        amountPaid: '0',
+        dueDate: '2026-05-22',
+        appliedFineType: 'percentage',
+        appliedFineValue: '2.00',
+        appliedInterestRate: '1.00',
+        appliedGracePeriodDays: 0,
+        penaltyPauses: [],
+        cancelledAt: null,
       },
-    ])
+    ]))
 
     // 3. Post-lock status re-read
     tx.select.mockReturnValueOnce(chain([{ id: ENTRY_ID, status: 'pending' }]))
@@ -182,19 +137,19 @@ describe('renegotiateCharges', () => {
       ]),
     )
 
-    // 2. FOR UPDATE lock: the payment that won the race already settled the row
-    tx.execute.mockResolvedValueOnce([
+    // 2. Installment lock: the payment that won the race already settled the row
+    tx.select.mockReturnValueOnce(chain([
       {
         id: INSTALLMENT_ID,
-        financial_entry_id: ENTRY_ID,
+        financialEntryId: ENTRY_ID,
         status: 'paid',
         amount: '750.00',
-        due_date: '2026-05-22',
-        applied_fine_type: 'percentage',
-        applied_fine_value: '2.00',
-        applied_interest_rate: '1.00',
+        dueDate: '2026-05-22',
+        appliedFineType: 'percentage',
+        appliedFineValue: '2.00',
+        appliedInterestRate: '1.00',
       },
-    ])
+    ]))
 
     // 3. Post-lock status re-read sees the committed payment
     tx.select.mockReturnValueOnce(chain([{ id: ENTRY_ID, status: 'paid' }]))
@@ -234,19 +189,19 @@ describe('renegotiateCharges', () => {
       ]),
     )
 
-    // 2. FOR UPDATE lock: nothing left unpaid
-    tx.execute.mockResolvedValueOnce([
+    // 2. Installment lock: nothing left unpaid
+    tx.select.mockReturnValueOnce(chain([
       {
         id: INSTALLMENT_ID,
-        financial_entry_id: ENTRY_ID,
+        financialEntryId: ENTRY_ID,
         status: 'paid',
         amount: '750.00',
-        due_date: '2026-05-22',
-        applied_fine_type: 'percentage',
-        applied_fine_value: '2.00',
-        applied_interest_rate: '1.00',
+        dueDate: '2026-05-22',
+        appliedFineType: 'percentage',
+        appliedFineValue: '2.00',
+        appliedInterestRate: '1.00',
       },
-    ])
+    ]))
 
     // 3. Post-lock status re-read
     tx.select.mockReturnValueOnce(chain([{ id: ENTRY_ID, status: 'pending' }]))
@@ -283,21 +238,21 @@ describe('renegotiateCharges', () => {
     tx.select.mockReturnValueOnce(
       chain([{ id: ENTRY_ID, patientId: PATIENT_ID, description: 'X', totalAmount: '750.00', status: 'pending' }]),
     )
-    tx.execute.mockResolvedValueOnce([
+    tx.select.mockReturnValueOnce(chain([
       {
         id: INSTALLMENT_ID,
-        financial_entry_id: ENTRY_ID,
+        financialEntryId: ENTRY_ID,
         status: 'pending',
         amount: '750.00',
-        due_date: '2026-10-01',
-        applied_fine_type: 'percentage',
-        applied_fine_value: '2.00',
-        applied_interest_rate: '1.00',
-        applied_grace_period_days: 0,
-        penalty_pauses: [],
-        cancelled_at: null,
+        dueDate: '2026-10-01',
+        appliedFineType: 'percentage',
+        appliedFineValue: '2.00',
+        appliedInterestRate: '1.00',
+        appliedGracePeriodDays: 0,
+        penaltyPauses: [],
+        cancelledAt: null,
       },
-    ])
+    ]))
     tx.select.mockReturnValueOnce(chain([{ id: ENTRY_ID, status: 'pending' }]))
     tx.select.mockReturnValueOnce(chain([])) // live payments
     tx.select.mockReturnValueOnce(
@@ -335,5 +290,51 @@ describe('renegotiateCharges', () => {
         appliedGracePeriodDays: 3,
       }),
     ])
+  })
+  it('cancels only the pending installments of the originals and leaves an already cancelled one, and its cancelled_at, alone', async () => {
+    const { renegotiateCharges } = await import('../renegotiation')
+    const { installments } = await import('@/db/schema')
+    const tx = makeTx()
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+    const CANCELLED_ID = '00000000-0000-0000-0000-00000000i0cc'
+
+    const installmentCancel: Capture = {}
+    tx.update.mockImplementation((table: unknown) =>
+      table === installments ? chainCapturing(undefined, installmentCancel) : chain(undefined),
+    )
+    tx.insert.mockReturnValueOnce(chain([{ id: NEW_ENTRY_ID }]))
+    tx.insert.mockReturnValue(chain(undefined))
+
+    tx.select.mockReturnValueOnce(
+      chain([{ id: ENTRY_ID, patientId: PATIENT_ID, description: 'X', totalAmount: '1500.00', status: 'partial' }]),
+    )
+    const pricing = {
+      financialEntryId: ENTRY_ID,
+      amount: '750.00',
+      dueDate: '2026-10-01',
+      appliedFineType: 'percentage',
+      appliedFineValue: '2.00',
+      appliedInterestRate: '1.00',
+      appliedGracePeriodDays: 0,
+      penaltyPauses: [],
+    }
+    tx.select.mockReturnValueOnce(chain([
+      { ...pricing, id: CANCELLED_ID, status: 'cancelled', cancelledAt: '2026-08-01T15:00:00.000Z' },
+      { ...pricing, id: INSTALLMENT_ID, status: 'pending', cancelledAt: null },
+    ]))
+    tx.select.mockReturnValueOnce(chain([{ id: ENTRY_ID, status: 'partial' }]))
+    tx.select.mockReturnValueOnce(chain([])) // live payments
+    tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+
+    await renegotiateCharges(TENANT, USER_ID, {
+      entryIds: [ENTRY_ID],
+      newInstallmentCount: 1,
+      description: 'Renegociação',
+      waivePenalties: false,
+      waiveAmount: 0,
+    } as never)
+
+    expect(whereParams(installmentCancel)).toContain(INSTALLMENT_ID)
+    expect(whereParams(installmentCancel)).not.toContain(CANCELLED_ID)
   })
 })

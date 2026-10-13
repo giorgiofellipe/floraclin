@@ -134,8 +134,6 @@ export async function getLedgerSummary(
     loadOverdueInstallments(tenantId, now),
   ])
 
-  // The stored fine and interest are snapshots from the last payment; what is
-  // owed today comes from the engine.
   const paymentsByInstallment = await loadLivePaymentsByInstallment(
     db,
     overdueInstallments.map((i) => i.id),

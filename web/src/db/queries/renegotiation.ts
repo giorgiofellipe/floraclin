@@ -6,7 +6,7 @@ import {
   renegotiationLinks,
   patients,
 } from '@/db/schema'
-import { eq, and, isNull, sql, inArray } from 'drizzle-orm'
+import { eq, and, isNull, inArray } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { BusinessError } from '@/lib/errors'
 import { createAuditLog } from '@/lib/audit'
@@ -14,7 +14,6 @@ import { quoteInstallment } from '@/lib/financial/penalties'
 import {
   loadInstallmentTerms,
   loadLivePaymentsByInstallment,
-  pricingRowFromRaw,
   toInstallmentBase,
   toPaymentInputs,
 } from './financial'
@@ -60,21 +59,15 @@ export async function renegotiateCharges(
 
     const patientId = patientIds[0]
 
-    // 2. Lock all installments of selected entries with FOR UPDATE.
-    // Bind the ids as a single Postgres array literal (`{a,b}`); drizzle's `sql`
-    // tag flattens a raw JS array into separate params, which breaks `::uuid[]`.
-    const entryIdArray = `{${data.entryIds.join(',')}}`
-    // ORDER BY id so this and bulk payment acquire overlapping rows in one
-    // order instead of deadlocking on each other.
-    const lockResult = await tx.execute(
-      sql`SELECT * FROM floraclin.installments
-          WHERE financial_entry_id = ANY(${entryIdArray}::uuid[])
-          AND tenant_id = ${tenantId}
-          ORDER BY id
-          FOR UPDATE`
-    )
-
-    const lockedInstallments = (Array.isArray(lockResult) ? lockResult : (lockResult as any).rows ?? lockResult) as Array<Record<string, unknown>>
+    // 2. Lock all installments of the selected entries. ORDER BY id so this
+    // and bulk payment acquire overlapping rows in one order instead of
+    // deadlocking on each other.
+    const lockedInstallments = await tx
+      .select()
+      .from(installments)
+      .where(and(inArray(installments.financialEntryId, data.entryIds), eq(installments.tenantId, tenantId)))
+      .orderBy(installments.id)
+      .for('update')
 
     // Eligibility is checked only now, on a read taken after the lock: a
     // payment committing between the first select and the lock can settle the
@@ -99,7 +92,7 @@ export async function renegotiateCharges(
     // installments are created with.
     const paymentsByInstallment = await loadLivePaymentsByInstallment(
       tx,
-      lockedInstallments.map((i) => String(i.id)),
+      lockedInstallments.map((i) => i.id),
     )
 
     const terms = await loadInstallmentTerms(tx, tenantId)
@@ -115,19 +108,16 @@ export async function renegotiateCharges(
     }> = []
 
     for (const entry of entries) {
-      const entryInstallments = lockedInstallments.filter(
-        (i) => String(i.financial_entry_id) === entry.id
-      )
+      const entryInstallments = lockedInstallments.filter((i) => i.financialEntryId === entry.id)
 
       let entryRemainingPrincipal = 0
       let entryPenalties = 0
 
       for (const inst of entryInstallments) {
-        const status = String(inst.status)
-        if (status === 'paid' || status === 'cancelled') continue
+        if (inst.status === 'paid' || inst.status === 'cancelled') continue
 
-        const base = toInstallmentBase(pricingRowFromRaw(inst))
-        const prior = toPaymentInputs(paymentsByInstallment.get(String(inst.id)) ?? [])
+        const base = toInstallmentBase(inst)
+        const prior = toPaymentInputs(paymentsByInstallment.get(inst.id) ?? [])
         const quote = quoteInstallment(base, prior, now)
 
         entryRemainingPrincipal += quote.remainingPrincipal
@@ -158,21 +148,23 @@ export async function renegotiateCharges(
 
     const calculatedTotal = totalRemainingPrincipal + penaltiesIncluded
 
-    const unpaidInstallmentIds = lockedInstallments
-      .filter((i) => String(i.status) !== 'paid')
-      .map((i) => String(i.id))
+    // A row already cancelled keeps its cancelled_at, which its penalty pause
+    // starts from.
+    const pendingInstallmentIds = lockedInstallments
+      .filter((i) => i.status === 'pending')
+      .map((i) => i.id)
 
-    if (unpaidInstallmentIds.length === 0 || calculatedTotal <= 0) {
+    if (pendingInstallmentIds.length === 0 || calculatedTotal <= 0) {
       throw new BusinessError('NOTHING_TO_RENEGOTIATE', 'Não há saldo pendente para renegociar.')
     }
 
     const newTotalAmount = data.newTotalAmount ?? calculatedTotal
 
-    // 6. Cancel all unpaid installments
+    // 6. Cancel the pending installments
     await tx
       .update(installments)
       .set({ status: 'cancelled', cancelledAt: now, updatedAt: now })
-      .where(inArray(installments.id, unpaidInstallmentIds))
+      .where(inArray(installments.id, pendingInstallmentIds))
 
     // 7. Mark original entries as 'renegotiated'
     await tx

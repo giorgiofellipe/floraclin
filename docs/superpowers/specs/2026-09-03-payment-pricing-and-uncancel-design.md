@@ -66,7 +66,10 @@ out of scope.
 |---|---|---|
 | Who prices a payment | The server, through a quote endpoint | One pricer cannot disagree with itself. Removes the bug class rather than the instance. |
 | The `isBackdated` fork | Deleted; always replay | `replayPayments` is the general form and the fork is a drifting specialization of it. |
-| Backdate range | Any past date, future rejected | She forgot to record it. Future dates are always a mistake and are accepted today. |
+| Backdate range | Any past date up to the end of today, not earlier than a live payment on the installment | She forgot to record it. A date on the BR day of the latest payment takes that payment's instant. |
+| Pricing terms | Fine, interest and grace stored on the installment at creation | CDC art. 51, X: a later settings change must not reprice existing debt. |
+| Time spent cancelled | Paused: no fine or interest accrues | A reactivated charge is owed as it stood when it was cancelled. |
+| Renegotiated or cancelled entries | A payment or reversal keeps the entry status | Otherwise the original could be collected again next to its replacement. |
 | Un-cancel scope | Entry level, mirroring bulk cancel | There is no per-installment cancel to mirror, so a row-level un-cancel would be a one-way pair. |
 | Renegotiation-derived charges | Refused, with a message | Cancel deletes the `renegotiation_links` rows, so the renegotiation cannot be rebuilt. |
 | Payment allocations | Recomputed on every write | Art. 354 ordering depends on the full sequence. Reversal already does this. |
@@ -111,10 +114,11 @@ instant". The guard, the endpoint and the tests all read it.
   unless the body sends `acceptOverpayment: true`. A confirmed overpayment is
   recorded at the amount received, with the allocation capped at what was owed.
 
-Replaying rewrites the `interest_covered` / `fine_covered` / `principal_covered`
-split on every prior `payment_record` for that installment. The backdated
-branch and `reversePayment` already do exactly this; the change makes it
-uniform, not new.
+Every payment and reversal replays the installment and rewrites the
+`interest_covered` / `fine_covered` / `principal_covered` split of each live
+`payment_record` whose split changed. The audit row of that write records the
+old and new split of each rewritten row. `persistReplay` is the one helper
+both paths use.
 
 ## Part 2: the quote endpoint and the dialog
 
@@ -139,8 +143,12 @@ now. Response:
 - renders the breakdown from the response
 - keeps `allocatePayment` for the Art. 354 preview only, fed by the server's
   state, so the preview cannot disagree with the charge
-- sends `parseBrDate(paidAt, '12:00:00').toISOString()` for both the quote and
-  the pay call, so the two agree by construction
+- sends `toPaidAtIso(ymd)` for both the quote and the pay call: no date for
+  today (the server uses now), BR noon for any other day, so the two agree by
+  construction
+- closes on a terminal quote error (`INSTALLMENT_ALREADY_PAID`,
+  `INSTALLMENT_CANCELLED`, `INSTALLMENT_NOT_FOUND`) and shows
+  `PAYMENT_BEFORE_LATER_PAYMENT` next to the date
 
 `isOverpayment` reads the server's `totalDue`. It shows a warning, and the
 confirm then sends `acceptOverpayment: true`.
@@ -151,8 +159,8 @@ render; the quote replaces it as the source of the numbers.
 ## Part 3: backdate rules and the Meta side effect
 
 - `recordPaymentSchema` and `bulkPaySchema`
-  (`web/src/validations/financial.ts`) reject a `paidAt` in the future. Today
-  neither bounds it.
+  (`web/src/validations/financial.ts`) reject a `paidAt` after the end of the
+  current BR day.
 - No lower bound.
 - `emitPurchaseEventForEntry` (`financial.ts:222`) returns `null` when
   `eventTime` is older than `META_EVENT_WINDOW_DAYS`
@@ -176,24 +184,24 @@ cancel.
 
 Order of work inside the transaction:
 
-1. Load the entries, scoped to the tenant and not soft-deleted. Refuse any that
-   are not `cancelled`.
+1. Lock the entries' installments `ORDER BY id FOR UPDATE`, then load the
+   entries, scoped to the tenant and not soft-deleted. Refuse any that are not
+   `cancelled`.
 2. Refuse an original whose replacement is still live (a
    `renegotiation_links` row exists): `ENTRY_HAS_REPLACEMENT`.
-   Refuse a replacement charge: `ENTRY_FROM_RENEGOTIATION`. Cancel deletes the
-   `renegotiation_links` rows, so the entry's own `create` audit log
-   (`changes.type.new === 'renegotiation'`) is the only per-entry trace. The
-   cancel log's `revertedOriginals` covers the whole batch and is not used.
-3. Restore that entry's installments from `cancelled` to `pending`. Paid ones
-   were never cancelled, so they need no filter beyond the status match.
+   Refuse a replacement charge (`financial_entries.created_from_renegotiation`):
+   `ENTRY_FROM_RENEGOTIATION`.
+3. Restore that entry's cancelled installments: `paid` when the replayed live
+   payments cover the principal, otherwise `pending`. Append
+   `{ from: cancelled_at, to: now }` to `penalty_pauses` and clear
+   `cancelled_at`.
 4. Call the existing `updateEntryStatus` (`financial.ts:1708`), which already
    derives `pending` / `partial` / `paid` / `cancelled` from the installments.
    No new status logic.
-5. Write one audit log per entry, with the reason.
+5. Write one audit log per entry, with the reason, the status written and each
+   installment's pause.
 
-No migration. `pg_constraint` has no CHECK on `financial_entries.status` or
-`installments.status` in production, and no new status value is introduced
-regardless.
+Migration 0034 adds the columns this needs; see Part 6.
 
 UI: a "Reativar" action in `bulk-action-bar.tsx`, enabled when every selected
 entry is `cancelled`, with a reason field matching the cancel dialog. The list
@@ -211,6 +219,33 @@ cancel dialog's "Esta ação não pode ser desfeita" is corrected.
    `ForbiddenError` was introduced to remove.
 4. The grace typo at `installment-table.tsx:83`.
 
+## Part 6: terms, pauses and the readers
+
+Migration `0034_installment_terms_snapshot.sql`:
+
+- `installments.applied_grace_period_days`; the four `applied_*` terms are
+  backfilled from tenant settings (or the defaults) and set NOT NULL. A
+  `BEFORE INSERT` trigger fills them for rows the old code writes during the
+  deploy. New code writes them at creation.
+- `installments.cancelled_at` and `installments.penalty_pauses`. Every cancel
+  path stamps `cancelled_at`; only `pending` installments are cancelled.
+  Backfill: the first cancel or renegotiation log after the entry's last
+  reactivation, else the entry's `updated_at`. Cancelled rows that were fully
+  paid go back to `paid`.
+- `financial_entries.created_from_renegotiation`, backfilled from
+  `renegotiation_links` and the creation audit log.
+
+The engine excludes paused BR days from interest, and the fine applies only
+when the unpaused overdue days exceed grace. A still-cancelled row has an open
+pause from `cancelled_at`.
+
+The list, the entry detail, the revenue overview and the ledger price through
+the engine on the BR day. "Em atraso" is the engine's total due in both the
+overview and the ledger. The stored `fine_amount`, `interest_amount` and
+`last_fine_interest_calc_at` are no longer read or written.
+
+A follow-up migration drops the trigger and those three columns.
+
 ## Testing
 
 Unit tests only. No Supabase, per the project rule.
@@ -221,7 +256,7 @@ Unit tests only. No Supabase, per the project rule.
   succeeds in both cases.
 - Always-replay parity: a single on-time payment and a single overdue payment
   produce the same installment state the old normal flow produced.
-- A `paidAt` in the future is rejected by both schemas.
+- A `paidAt` after the end of the current BR day is rejected by both schemas.
 - The Purchase event is skipped when `paidAt` is older than the Meta window,
   and emitted when it is inside it.
 - `uncancelEntries` restores entry and installment statuses, refuses an entry
@@ -234,4 +269,3 @@ Unit tests only. No Supabase, per the project rule.
 - Expense installment payments.
 - Rebuilding a renegotiation after its replacement charge was cancelled.
 - Per-installment cancel and un-cancel.
-- Freezing `payment_records` allocations once written.

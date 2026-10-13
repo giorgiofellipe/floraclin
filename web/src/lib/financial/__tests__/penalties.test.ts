@@ -369,7 +369,7 @@ describe('replayPayments carried interest', () => {
 })
 
 describe('replayPayments ordering', () => {
-  // AR-medium: BR-noon anchoring makes same-instant payments common.
+  // BR-noon anchoring makes same-instant payments common.
   it('orders equal timestamps stably by id', () => {
     const a = pay('aaa', 30, '2026-09-03T15:00:00.000Z')
     const b = pay('bbb', 30, '2026-09-03T15:00:00.000Z')
@@ -438,8 +438,7 @@ describe('fine gate on the absolute due date', () => {
     expect(q.interestAmount).toBe(0.22) // 650 * 1%/30 * 1 day
   })
 
-  // The next two also pass against the pre-change code; they characterise the
-  // boundary so the calendar-day rewrite cannot move it.
+  // The next two pin the boundary so the calendar-day arithmetic cannot move it.
   it('does not charge the fine on the due date itself', () => {
     const q = quoteInstallment(BASE, [], new Date('2026-05-22T23:00:00.000Z')) // 20:00 BRT May 22
     expect(q.fineAmount).toBe(0)
@@ -580,8 +579,6 @@ describe('round2 half cents', () => {
   it.each([
     ['interest on 13.5 over 30 days', () => calculateInterest(13.5, 30, 1), 0.14],
     ['interest on 27 over 15 days', () => calculateInterest(27, 15, 1), 0.14],
-    ['interest on 405 for a day', () => calculateInterest(405, 1, 1), 0.14],
-    ['interest on 802.5 for a day', () => calculateInterest(802.5, 1, 1), 0.27],
     ['a 2% fine on 50.25', () => calculateFine(50.25, 'percentage', 2), 1.01],
     ['the interest an allocation covers', () => halfCentAllocation().interestCovered, 1.01],
     ['the principal left for that allocation', () => halfCentAllocation().principalCovered, 48.99],

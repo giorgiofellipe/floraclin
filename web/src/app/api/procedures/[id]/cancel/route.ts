@@ -3,7 +3,7 @@ import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { withTransaction } from '@/lib/tenant'
 import { getProcedure, cancelProcedure } from '@/db/queries/procedures'
-import { cancelLinkedFinancials } from '@/lib/followups'
+import { cancelLinkedFinancials } from '@/db/queries/financial'
 import { handleApiError } from '@/lib/api-error'
 
 export async function POST(
@@ -40,7 +40,7 @@ export async function POST(
       if (!updated) throw new Error('Falha ao cancelar procedimento')
 
       if (procedure.status === 'approved') {
-        await cancelLinkedFinancials(tx as unknown as Parameters<typeof cancelLinkedFinancials>[0], ctx.tenantId, procedureId)
+        await cancelLinkedFinancials(tx, ctx.tenantId, ctx.userId, procedureId, reason.trim())
       }
 
       return updated

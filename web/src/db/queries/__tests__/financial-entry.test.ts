@@ -68,9 +68,6 @@ function installmentRow(overrides: Record<string, unknown> = {}) {
     appliedGracePeriodDays: 0,
     penaltyPauses: [],
     cancelledAt: null,
-    fineAmount: '0',
-    interestAmount: '0',
-    lastFineInterestCalcAt: null,
     ...overrides,
   }
 }
@@ -148,6 +145,46 @@ describe('getFinancialEntry', () => {
     // 750 * 0.01/30 * 114 = 28.5
     expect(result?.installments[0].computedInterestAmount).toBe(28.5)
     expect(result?.installments[0].computedFineAmount).toBe(15)
+  })
+})
+
+describe('getFinancialEntry on rows out of collection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-13T14:04:50.000Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  // Cancelled Jul 1, 40 days after the May 22 due date: interest 750 * 1%/30 * 40
+  // = 10 and the fine of 15, frozen there. A paid row owes nothing.
+  it('prices a cancelled installment through the engine up to its cancel date and a paid one at zero, whatever is stored', async () => {
+    const { getFinancialEntry } = await import('../financial')
+
+    queueEntrySelects({
+      entry: [entryRow({ status: 'cancelled' })],
+      installments: [
+        installmentRow({
+          status: 'cancelled',
+          cancelledAt: new Date('2026-07-01T15:00:00.000Z'),
+          fineAmount: '999.00',
+          interestAmount: '888.00',
+        }),
+        installmentRow({ id: 'i-paid', installmentNumber: 2, status: 'paid', amountPaid: '750.00', fineAmount: '5.00', interestAmount: '3.00' }),
+      ],
+    })
+
+    const result = await getFinancialEntry(TENANT, ENTRY_ID)
+
+    expect(
+      result?.installments.map((i) => [i.status, i.computedFineAmount, i.computedInterestAmount]),
+    ).toEqual([
+      ['cancelled', 15, 10],
+      ['paid', 0, 0],
+    ])
   })
 })
 
@@ -274,8 +311,8 @@ describe('listFinancialEntries overdue flag', () => {
     vi.useRealTimers()
   })
 
-  // isOverdue: true is what Postgres computed with CURRENT_DATE on a UTC host
-  // and with no grace; the flag has to come from the BR day and the grace.
+  // The flag comes from the engine, on the BR day and net of grace, whatever
+  // the row says.
   it.each([
     {
       name: 'an installment due today is not overdue at 22:00 BRT, already the next day in UTC',
@@ -300,7 +337,7 @@ describe('listFinancialEntries overdue flag', () => {
     const { listFinancialEntries } = await import('../financial')
 
     dbMock.select.mockReturnValueOnce(chain([{ count: 1 }]))
-    dbMock.select.mockReturnValueOnce(chain([entryRow({ isOverdue: true })]))
+    dbMock.select.mockReturnValueOnce(chain([entryRow({ isOverdue: false })]))
     dbMock.select.mockReturnValueOnce(chain([installmentRow(installment)])) // open installments
     dbMock.select.mockReturnValueOnce(chain([])) // live payments
 
@@ -341,5 +378,45 @@ describe('getRevenueOverview pending and overdue', () => {
     const result = await getRevenueOverview(TENANT, '2026-05-01', '2026-05-31')
 
     expect([result.summary.totalPending, result.summary.totalOverdue]).toEqual([1500, 0])
+  })
+})
+
+describe('getRevenueOverview overdue amount', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-13T14:04:50.000Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  // p1 paid 100 of principal on the due date. 650 left, 114 days late on Sep
+  // 13: fine 15 on the installment, interest 650 * 1%/30 * 114 = 24.70.
+  it('counts a partly paid overdue installment at what the engine says is owed, as the ledger does', async () => {
+    const { getRevenueOverview } = await import('../financial')
+
+    dbMock.select.mockReturnValueOnce(chain([{ totalReceived: 0 }]))
+    dbMock.select.mockReturnValueOnce(chain([])) // monthly
+    dbMock.select.mockReturnValueOnce(chain([])) // by procedure type
+    dbMock.select.mockReturnValueOnce(chain([])) // by payment method
+    dbMock.select.mockReturnValueOnce(chain([{ totalExpenses: 0, totalPendingExpenses: 0 }]))
+    dbMock.select.mockReturnValueOnce(chain([installmentRow({ amountPaid: '100.00' })])) // pending installments
+    dbMock.select.mockReturnValueOnce(
+      chain([
+        {
+          id: 'p1',
+          installmentId: INSTALLMENT_ID,
+          amount: '100.00',
+          paidAt: '2026-05-22T15:00:00.000Z',
+          recordedAt: '2026-05-22T15:00:00.000Z',
+        },
+      ]),
+    ) // live payments
+
+    const result = await getRevenueOverview(TENANT, '2026-05-01', '2026-09-30')
+
+    expect(result.summary.totalOverdue).toBe(689.7)
   })
 })

@@ -1,8 +1,8 @@
 /**
- * Reruns the 0034 backfill for rows the previous deploy wrote while 0034 was
- * already applied: installments without fine, interest or grace terms,
- * cancelled installments without cancelled_at, and renegotiation replacements
- * without created_from_renegotiation. Idempotent.
+ * Reruns the parts of the 0034 backfill the previous deploy can still need
+ * while 0034 is already applied: cancelled installments without cancelled_at,
+ * and renegotiation replacements without created_from_renegotiation.
+ * Idempotent.
  *
  * Exits 1 while any row is left (with --dry-run, while any row needs it).
  *
@@ -12,13 +12,6 @@ import { sql } from 'drizzle-orm'
 import { db } from '../../client'
 
 const dryRun = process.argv.includes('--dry-run')
-
-const MISSING_TERMS = sql`(
-  i.applied_fine_type IS NULL
-  OR i.applied_fine_value IS NULL
-  OR i.applied_interest_rate IS NULL
-  OR i.applied_grace_period_days IS NULL
-)`
 
 const MISSING_CANCELLED_AT = sql`(i.status = 'cancelled' AND i.cancelled_at IS NULL)`
 
@@ -38,18 +31,17 @@ const UNFLAGGED_REPLACEMENT = sql`(
 )`
 
 async function countRemaining() {
-  const [row] = await db.execute<{ terms: number; cancelled_at: number; replacements: number }>(sql`
+  const [row] = await db.execute<{ cancelled_at: number; replacements: number }>(sql`
     SELECT
-      (SELECT count(*)::int FROM floraclin.installments i WHERE ${MISSING_TERMS}) AS terms,
       (SELECT count(*)::int FROM floraclin.installments i WHERE ${MISSING_CANCELLED_AT}) AS cancelled_at,
       (SELECT count(*)::int FROM floraclin.financial_entries fe WHERE ${UNFLAGGED_REPLACEMENT}) AS replacements
   `)
-  return { terms: Number(row.terms), cancelledAt: Number(row.cancelled_at), replacements: Number(row.replacements) }
+  return { cancelledAt: Number(row.cancelled_at), replacements: Number(row.replacements) }
 }
 
 function report(label: string, counts: Awaited<ReturnType<typeof countRemaining>>) {
   console.log(
-    `${label}: ${counts.terms} installments without terms, ${counts.cancelledAt} cancelled without cancelled_at, ${counts.replacements} replacements unflagged`,
+    `${label}: ${counts.cancelledAt} cancelled without cancelled_at, ${counts.replacements} replacements unflagged`,
   )
 }
 
@@ -58,32 +50,35 @@ async function main() {
   report('Before', before)
 
   if (dryRun) {
-    process.exit(before.terms + before.cancelledAt + before.replacements > 0 ? 1 : 0)
+    process.exit(before.cancelledAt + before.replacements > 0 ? 1 : 0)
   }
 
   await db.transaction(async (tx) => {
-    // Defaults match loadInstallmentTerms for a tenant without a settings row.
-    await tx.execute(sql`
-      UPDATE floraclin.installments i
-      SET
-        applied_fine_type = COALESCE(i.applied_fine_type, (SELECT fs.fine_type FROM floraclin.financial_settings fs WHERE fs.tenant_id = i.tenant_id), 'percentage'),
-        applied_fine_value = COALESCE(i.applied_fine_value, (SELECT fs.fine_value FROM floraclin.financial_settings fs WHERE fs.tenant_id = i.tenant_id), 2.00),
-        applied_interest_rate = COALESCE(i.applied_interest_rate, (SELECT fs.monthly_interest_percent FROM floraclin.financial_settings fs WHERE fs.tenant_id = i.tenant_id), 1.00),
-        applied_grace_period_days = COALESCE(i.applied_grace_period_days, (SELECT fs.grace_period_days FROM floraclin.financial_settings fs WHERE fs.tenant_id = i.tenant_id), 0)
-      WHERE ${MISSING_TERMS}
-    `)
-
+    // Same expression as the cancelled_at backfill in 0034.
     await tx.execute(sql`
       UPDATE floraclin.installments i
       SET cancelled_at = COALESCE(
         (
-          SELECT max(al.created_at)
+          SELECT min(al.created_at)
           FROM floraclin.audit_logs al
           WHERE al.tenant_id = i.tenant_id
             AND al.entity_type = 'financial_entry'
             AND al.action = 'update'
             AND al.entity_id = i.financial_entry_id
             AND al.changes->'status'->>'new' IN ('cancelled', 'renegotiated')
+            AND al.created_at > COALESCE(
+              (
+                SELECT max(act.created_at)
+                FROM floraclin.audit_logs act
+                WHERE act.tenant_id = i.tenant_id
+                  AND act.entity_type = 'financial_entry'
+                  AND act.action = 'update'
+                  AND act.entity_id = i.financial_entry_id
+                  AND act.changes->'status'->>'old' IN ('cancelled', 'renegotiated')
+                  AND act.changes->'status'->>'new' NOT IN ('cancelled', 'renegotiated')
+              ),
+              '-infinity'::timestamptz
+            )
         ),
         fe.updated_at
       )
@@ -100,7 +95,7 @@ async function main() {
 
   const after = await countRemaining()
   report('After', after)
-  process.exit(after.terms + after.cancelledAt + after.replacements > 0 ? 1 : 0)
+  process.exit(after.cancelledAt + after.replacements > 0 ? 1 : 0)
 }
 
 main().catch((err) => {

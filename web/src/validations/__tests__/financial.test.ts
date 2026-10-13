@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   createFinancialEntrySchema,
   recordPaymentSchema,
@@ -9,7 +9,6 @@ import {
   ledgerFilterSchema,
   financialFilterSchema,
 } from '../financial'
-import { parseBrDate, brToday, endOfBrDay } from '@/lib/dates'
 
 const UUID = '550e8400-e29b-41d4-a716-446655440000'
 const UUID2 = '550e8400-e29b-41d4-a716-446655440001'
@@ -136,8 +135,9 @@ describe('recordPaymentSchema', () => {
     }
   })
 
-  // Allocation rounds to cents while persistence truncates with toFixed(2), so
-  // a fractional cent would credit one figure and record another.
+  // Allocation rounds to cents with round2 while persistence rounds with
+  // toFixed(2), and the two disagree on some half cents, so a fractional cent
+  // would credit one figure and record another.
   it('rejects an amount with more than two decimals', () => {
     for (const amount of [0.001, 2.675, 1.005]) {
       const result = recordPaymentSchema.safeParse({ ...validData, amount })
@@ -298,6 +298,16 @@ describe('renegotiateSchema', () => {
     const result = renegotiateSchema.safeParse({ ...validData, newInstallmentCount: 3.5 })
     expect(result.success).toBe(false)
   })
+
+  it.each(['newTotalAmount', 'waiveAmount'])('rejects a %s with a fractional cent', (field) => {
+    const result = renegotiateSchema.safeParse({ ...validData, [field]: 769.995 })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues.map((i) => i.message)).toContain(
+        'Valor deve ter no máximo duas casas decimais',
+      )
+    }
+  })
 })
 
 describe('bulkPaySchema', () => {
@@ -359,79 +369,30 @@ describe('bulkPaySchema', () => {
   })
 })
 
-describe('bulkCancelSchema', () => {
+describe.each([
+  ['bulkCancelSchema', bulkCancelSchema],
+  ['bulkUncancelSchema', bulkUncancelSchema],
+])('%s', (_name, schema) => {
   const validData = {
     entryIds: [UUID, UUID2],
     reason: 'Paciente desistiu do tratamento',
   }
 
   it('passes with valid data', () => {
-    const result = bulkCancelSchema.safeParse(validData)
-    expect(result.success).toBe(true)
-  })
-
-  it('fails when entryIds is empty', () => {
-    const result = bulkCancelSchema.safeParse({ ...validData, entryIds: [] })
-    expect(result.success).toBe(false)
-  })
-
-  it('fails when entryIds contains invalid uuid', () => {
-    const result = bulkCancelSchema.safeParse({ ...validData, entryIds: ['not-uuid'] })
-    expect(result.success).toBe(false)
-  })
-
-  it('fails when reason is missing', () => {
-    const { reason, ...rest } = validData
-    const result = bulkCancelSchema.safeParse(rest)
-    expect(result.success).toBe(false)
-  })
-
-  it('fails when reason is empty', () => {
-    const result = bulkCancelSchema.safeParse({ ...validData, reason: '' })
-    expect(result.success).toBe(false)
+    expect(schema.safeParse(validData).success).toBe(true)
   })
 
   it('passes with single entryId', () => {
-    const result = bulkCancelSchema.safeParse({ ...validData, entryIds: [UUID] })
-    expect(result.success).toBe(true)
-  })
-})
-
-describe('bulkUncancelSchema', () => {
-  const validData = {
-    entryIds: [UUID, UUID2],
-    reason: 'Cancelamento revertido por engano',
-  }
-
-  it('passes with valid data', () => {
-    const result = bulkUncancelSchema.safeParse(validData)
-    expect(result.success).toBe(true)
+    expect(schema.safeParse({ ...validData, entryIds: [UUID] }).success).toBe(true)
   })
 
-  it('fails when entryIds is empty', () => {
-    const result = bulkUncancelSchema.safeParse({ ...validData, entryIds: [] })
-    expect(result.success).toBe(false)
-  })
-
-  it('fails when entryIds contains invalid uuid', () => {
-    const result = bulkUncancelSchema.safeParse({ ...validData, entryIds: ['not-uuid'] })
-    expect(result.success).toBe(false)
-  })
-
-  it('fails when reason is missing', () => {
-    const { reason, ...rest } = validData
-    const result = bulkUncancelSchema.safeParse(rest)
-    expect(result.success).toBe(false)
-  })
-
-  it('fails when reason is empty', () => {
-    const result = bulkUncancelSchema.safeParse({ ...validData, reason: '' })
-    expect(result.success).toBe(false)
-  })
-
-  it('passes with single entryId', () => {
-    const result = bulkUncancelSchema.safeParse({ ...validData, entryIds: [UUID] })
-    expect(result.success).toBe(true)
+  it.each([
+    ['entryIds is empty', { entryIds: [] }],
+    ['entryIds contains invalid uuid', { entryIds: ['not-uuid'] }],
+    ['reason is missing', { reason: undefined }],
+    ['reason is empty', { reason: '' }],
+  ])('fails when %s', (_label, overrides) => {
+    expect(schema.safeParse({ ...validData, ...overrides }).success).toBe(false)
   })
 })
 
@@ -596,6 +557,13 @@ describe('financialFilterSchema', () => {
 })
 
 describe('paidAt bounds', () => {
+  // 08:00 in BR on 2026-09-03.
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-03T11:00:00.000Z'))
+  })
+  afterEach(() => vi.useRealTimers())
+
   const record = (paidAt: string) =>
     recordPaymentSchema.safeParse({
       installmentId: '00000000-0000-4000-8000-000000000001',
@@ -610,15 +578,15 @@ describe('paidAt bounds', () => {
       paymentMethod: 'pix',
       paidAt,
     }).success
-  const tomorrow = () => new Date(endOfBrDay(brToday()).getTime() + 1000).toISOString()
 
-  // BR noon today is "in the future" every morning before 09:00 UTC-3.
+  // BR noon of the current day is ahead of the wall clock every morning
+  // before 12:00 in BR.
   it.each([
-    ['BR noon of the current BR day', true, record, () => parseBrDate(brToday(), '12:00:00').toISOString()],
-    ['the last instant of the current BR day', true, record, () => endOfBrDay(brToday()).toISOString()],
-    ['tomorrow', false, record, tomorrow],
-    ['tomorrow on the bulk schema', false, bulk, tomorrow],
+    ['BR noon of the current BR day', true, record, '2026-09-03T15:00:00.000Z'],
+    ['the last instant of the current BR day', true, record, '2026-09-04T02:59:59.999Z'],
+    ['the first instant of the next BR day', false, record, '2026-09-04T03:00:00.000Z'],
+    ['the next BR day on the bulk schema', false, bulk, '2026-09-04T03:00:00.000Z'],
   ])('%s: accepted is %s', (_label, accepted, parse, paidAt) => {
-    expect(parse(paidAt())).toBe(accepted)
+    expect(parse(paidAt)).toBe(accepted)
   })
 })

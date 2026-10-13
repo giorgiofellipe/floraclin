@@ -1,55 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-
-// A chainable, awaitable stand-in for drizzle's query builders, copied from
-// financial-meta.test.ts. Every method call returns the same proxy so any
-// chain shape resolves to `result` when awaited.
-function chain(result: unknown) {
-  const proxy: unknown = new Proxy(
-    {},
-    {
-      get(_target, prop: string) {
-        if (prop === 'then') {
-          return (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
-            Promise.resolve(result).then(resolve, reject)
-        }
-        if (prop === 'catch') {
-          return (reject: (e: unknown) => unknown) => Promise.resolve(result).catch(reject)
-        }
-        return () => proxy
-      },
-    },
-  )
-  return proxy
-}
-
-// Like chain(), but also records the payload passed to .set() or .values(),
-// so a test can assert on the write itself and not just that a write
-// happened. chain() alone discards chained-call arguments, which is not
-// enough to check what recordPayment actually persists.
-function chainCapturing(result: unknown, capture: { value?: unknown }) {
-  const proxy: unknown = new Proxy(
-    {},
-    {
-      get(_target, prop: string) {
-        if (prop === 'then') {
-          return (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
-            Promise.resolve(result).then(resolve, reject)
-        }
-        if (prop === 'catch') {
-          return (reject: (e: unknown) => unknown) => Promise.resolve(result).catch(reject)
-        }
-        if (prop === 'set' || prop === 'values') {
-          return (payload: unknown) => {
-            capture.value = payload
-            return proxy
-          }
-        }
-        return () => proxy
-      },
-    },
-  )
-  return proxy
-}
+import { chain, chainCapturing, isLock, routedTx, tableOf } from '@/tests/mocks/drizzle-tx'
 
 const dbMock = { transaction: vi.fn(), select: vi.fn() }
 vi.mock('@/db/client', () => ({ db: dbMock }))
@@ -99,7 +49,6 @@ const PREREQUISITES = {
 function makeTx() {
   const savepoint = { insert: vi.fn(), select: vi.fn() }
   return {
-    execute: vi.fn(),
     select: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
@@ -112,28 +61,27 @@ function makeTx() {
 // payments, fine 2% percentage, interest 1%/month, grace 0.
 const DUE_DATE = '2026-05-22'
 
-// Raw SQL FOR UPDATE lock result: snake_case.
+// The installment row recordPayment locks.
 function lockedInstallmentRow(overrides: Record<string, unknown> = {}) {
   return {
     id: INSTALLMENT_ID,
-    installment_number: 1,
+    installmentNumber: 1,
     status: 'pending',
     amount: '750.00',
-    amount_paid: '0',
-    fine_amount: '0',
-    due_date: DUE_DATE,
-    financial_entry_id: ENTRY_ID,
-    applied_fine_type: 'percentage',
-    applied_fine_value: '2.00',
-    applied_interest_rate: '1.00',
-    applied_grace_period_days: 0,
-    penalty_pauses: [],
-    cancelled_at: null,
-    last_fine_interest_calc_at: null,
+    amountPaid: '0',
+    dueDate: DUE_DATE,
+    financialEntryId: ENTRY_ID,
+    appliedFineType: 'percentage',
+    appliedFineValue: '2.00',
+    appliedInterestRate: '1.00',
+    appliedGracePeriodDays: 0,
+    penaltyPauses: [],
+    cancelledAt: null,
     ...overrides,
   }
 }
 
+const ENTRY = { patientId: PATIENT_ID, description: 'x', status: 'pending' }
 
 /** The single pre-transaction join recordPayment issues via `db.select`. */
 function queuePrepareRows() {
@@ -160,9 +108,9 @@ describe('recordPayment', () => {
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
 
-    tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
+    tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+    tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
     tx.select.mockReturnValueOnce(chain([])) // live payments, no priors
-    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }])) // entryInfo
     tx.select.mockReturnValueOnce(chain([{ status: 'pending', amountPaid: '0' }])) // updateEntryStatus
     tx.select.mockReturnValueOnce(chain([{ status: 'pending', totalAmount: '750.00' }])) // meta gate 1 fails
 
@@ -194,9 +142,9 @@ describe('recordPayment', () => {
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
 
-    tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
+    tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+    tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
     tx.select.mockReturnValueOnce(chain([])) // live payments, no priors
-    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }])) // entryInfo
     tx.select.mockReturnValueOnce(chain([{ status: 'pending', amountPaid: '0' }])) // updateEntryStatus
     tx.select.mockReturnValueOnce(chain([{ status: 'pending', totalAmount: '750.00' }])) // meta gate 1 fails: entry still pending
 
@@ -238,6 +186,8 @@ describe('recordPayment', () => {
           new: {
             amount: 790.75,
             paymentMethod: 'pix',
+            requestedPaidAt: '2026-09-03T00:00:00.000Z',
+            paidAt: '2026-09-03T00:00:00.000Z',
             allocation: { interestCovered: 25.75, fineCovered: 15, principalCovered: 750, excessAmount: 0 },
           },
         },
@@ -264,12 +214,12 @@ describe('recordPayment', () => {
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
 
-      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
+      tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+    tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
       tx.select.mockReturnValueOnce(chain([])) // live payments, no priors
 
       const paymentInsert: { value?: unknown } = {}
       tx.insert.mockReturnValueOnce(chainCapturing([{ id: 'pay-1' }], paymentInsert))
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }])) // entryInfo
       const cashInsert: { value?: unknown } = {}
       tx.insert.mockReturnValueOnce(chainCapturing(undefined, cashInsert))
 
@@ -308,7 +258,8 @@ describe('recordPayment', () => {
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
 
-    tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
+    tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+    tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
     tx.select.mockReturnValueOnce(chain([])) // live payments, no priors
 
     await expect(
@@ -325,56 +276,14 @@ describe('recordPayment', () => {
     expect(tx.update).not.toHaveBeenCalled()
   })
 
-  it('a backdated partial payment persists interest as of now, not as of the payment date', async () => {
-    const now = new Date('2026-09-10T14:04:50.000Z')
-    vi.useFakeTimers()
-    vi.setSystemTime(now)
-
-    const { recordPayment } = await import('../financial')
-    const tx = makeTx()
-    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
-    queuePrepareRows()
-
-    tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
-    tx.select.mockReturnValueOnce(chain([])) // live payments, no priors
-
-    const paymentInsert: { value?: unknown } = {}
-    tx.insert.mockReturnValueOnce(chainCapturing([{ id: 'pay-new' }], paymentInsert))
-    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }])) // entryInfo
-    tx.insert.mockReturnValueOnce(chain(undefined)) // cashMovements
-
-    const installmentUpdate: { value?: unknown } = {}
-    tx.update.mockReturnValueOnce(chainCapturing(undefined, installmentUpdate)) // installments final
-    tx.select.mockReturnValueOnce(chain([{ status: 'partial', amountPaid: '77.25' }])) // updateEntryStatus
-    tx.update.mockReturnValueOnce(chain(undefined)) // financialEntries
-    tx.select.mockReturnValueOnce(chain([{ status: 'pending', totalAmount: '750.00' }])) // meta gate 1 fails
-
-    tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
-    await recordPayment(TENANT, USER_ID, {
-      installmentId: INSTALLMENT_ID,
-      amount: 100,
-      paymentMethod: 'pix',
-      paidAt: '2026-06-22T12:00:00.000Z',
-      expectedTotalDue: 772.75,
-    })
-
-    // Jun 22 is 31 days overdue: fine 15, interest 7.75, principal covered
-    // 77.25. Sep 10 is 80 days later on 672.75: 17.94. Priced as of Jun 22 it
-    // would be 0.
-    expect(installmentUpdate.value).toMatchObject({
-      interestAmount: '17.94',
-      lastFineInterestCalcAt: new Date('2026-06-22T12:00:00.000Z'),
-    })
-    expect(paymentInsert.value).toMatchObject({ recordedAt: now })
-  })
-
   it('refuses a payment dated before an existing one and names the installment and the later date', async () => {
     const { recordPayment } = await import('../financial')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
 
-    tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
+    tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+    tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
     tx.select.mockReturnValueOnce(
       chain([
         {
@@ -417,7 +326,8 @@ describe('recordPayment', () => {
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
-    tx.execute.mockResolvedValueOnce([lockedInstallmentRow({ status })])
+    tx.select.mockReturnValueOnce(chain([lockedInstallmentRow({ status })])) // installment lock
+    tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
 
     await expect(
       recordPayment(TENANT, USER_ID, {
@@ -435,7 +345,8 @@ describe('recordPayment', () => {
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
 
-    tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
+    tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+    tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
     tx.select.mockReturnValueOnce(chain([])) // live payments, no priors
 
     await expect(
@@ -453,5 +364,201 @@ describe('recordPayment', () => {
 
     expect(tx.insert).not.toHaveBeenCalled()
     expect(tx.update).not.toHaveBeenCalled()
+  })
+})
+
+describe('recordPayment on an entry out of collection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resolveMetaEventPrerequisitesMock.mockResolvedValue(PREREQUISITES)
+    resolveProspectForPatientMock.mockResolvedValue(null)
+    enqueueMetaEventMock.mockResolvedValue({ inserted: true })
+  })
+
+  // The installment was paid, its payment reversed, and now paid again: the
+  // renegotiation that replaced the entry still stands.
+  it('repaying a reversed installment of a renegotiated entry leaves the entry renegotiated and sends no Purchase', async () => {
+    const { recordPayment } = await import('../financial')
+    const tx = makeTx()
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+    queuePrepareRows()
+
+    tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+    tx.select.mockReturnValueOnce(chain([{ ...ENTRY, status: 'renegotiated' }])) // entry lock
+    tx.select.mockReturnValueOnce(chain([])) // live payments: the earlier one is reversed
+    tx.insert.mockReturnValueOnce(chain([{ id: 'pay-1' }])) // payment record
+    tx.insert.mockReturnValueOnce(chain(undefined)) // cashMovements
+    const installmentUpdate: { value?: unknown } = {}
+    tx.update.mockReturnValueOnce(chainCapturing(undefined, installmentUpdate))
+    // A recompute would read the installments here and then write the entry.
+    const entryUpdate: { value?: unknown } = {}
+    tx.update.mockReturnValueOnce(chainCapturing(undefined, entryUpdate))
+    tx.select.mockReturnValueOnce(chain([{ status: 'renegotiated', totalAmount: '750.00' }])) // meta gate
+    tx.insert.mockReturnValue(chain(undefined)) // audit log
+
+    const result = await recordPayment(TENANT, USER_ID, {
+      installmentId: INSTALLMENT_ID,
+      amount: 750,
+      paymentMethod: 'pix',
+      paidAt: '2026-05-20T15:00:00.000Z',
+      expectedTotalDue: 750,
+    })
+
+    expect(result.installmentPaid).toBe(true)
+    expect(installmentUpdate.value).toMatchObject({ status: 'paid', amountPaid: '750.00' })
+    expect(entryUpdate.value).toBeUndefined()
+    expect(enqueueMetaEventMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('recordPayment on an installment with legacy payment splits', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resolveMetaEventPrerequisitesMock.mockResolvedValue(PREREQUISITES)
+    resolveProspectForPatientMock.mockResolvedValue(null)
+    enqueueMetaEventMock.mockResolvedValue({ inserted: true })
+  })
+
+  // p1 was stored as all principal by code that predates the engine. Replayed,
+  // Jun 22 is 31 days late: interest 7.75, fine 15, principal 77.25.
+  it('rewrites the stored split of an earlier payment to the replay and lists the change in the audit row', async () => {
+    const { recordPayment } = await import('../financial')
+    const { paymentRecords, auditLogs } = await import('@/db/schema')
+    const tx = makeTx()
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+    queuePrepareRows()
+
+    const splitUpdates: { value?: unknown; where?: unknown }[] = []
+    tx.update.mockImplementation((table: unknown) => {
+      const capture: { value?: unknown } = {}
+      if (table === paymentRecords) splitUpdates.push(capture)
+      return chainCapturing(undefined, capture)
+    })
+    const audit: { value?: unknown } = {}
+    tx.insert.mockImplementation((table: unknown) =>
+      table === auditLogs ? chainCapturing(undefined, audit) : chain([{ id: 'pay-new' }]),
+    )
+
+    tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+    tx.select.mockReturnValueOnce(chain([{ ...ENTRY, status: 'partial' }])) // entry lock
+    tx.select.mockReturnValueOnce(
+      chain([
+        {
+          id: 'p1',
+          amount: '100.00',
+          interestCovered: '0.00',
+          fineCovered: '0.00',
+          principalCovered: '100.00',
+          paymentMethod: 'cash',
+          paidAt: '2026-06-22T12:00:00.000Z',
+          recordedAt: '2026-06-22T12:00:00.000Z',
+        },
+      ]),
+    ) // live payments
+    tx.select.mockReturnValueOnce(chain([{ status: 'pending', amountPaid: '127.25' }])) // siblings
+    tx.select.mockReturnValueOnce(chain([{ status: 'partial', totalAmount: '750.00' }])) // meta gate
+    tx.select.mockReturnValue(chain([]))
+
+    // 672.75 left from Jun 22 to Jul 22, 30 days: 6.73 interest.
+    await recordPayment(TENANT, USER_ID, {
+      installmentId: INSTALLMENT_ID,
+      amount: 50,
+      paymentMethod: 'pix',
+      paidAt: '2026-07-22T12:00:00.000Z',
+      expectedTotalDue: 679.48,
+    })
+
+    expect(splitUpdates.map((u) => u.value)).toEqual([
+      { interestCovered: '7.75', fineCovered: '15.00', principalCovered: '77.25' },
+    ])
+    expect(audit.value).toMatchObject({
+      changes: {
+        paymentSplits: {
+          old: [{ id: 'p1', interestCovered: 0, fineCovered: 0, principalCovered: 100 }],
+          new: [{ id: 'p1', interestCovered: 7.75, fineCovered: 15, principalCovered: 77.25 }],
+        },
+      },
+    })
+  })
+})
+
+describe('recordPayment locking and audit', () => {
+  // Not yet due, so no fine or interest: p1 left 650 to pay.
+  const P1 = {
+    id: 'p1',
+    installmentId: INSTALLMENT_ID,
+    amount: '100.00',
+    interestCovered: '0.00',
+    fineCovered: '0.00',
+    principalCovered: '100.00',
+    paymentMethod: 'cash',
+    paidAt: '2026-08-01T15:00:00.000Z',
+    recordedAt: '2026-08-01T15:00:00.000Z',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resolveMetaEventPrerequisitesMock.mockResolvedValue(PREREQUISITES)
+    resolveProspectForPatientMock.mockResolvedValue(null)
+    enqueueMetaEventMock.mockResolvedValue({ inserted: true })
+  })
+
+  async function pay(paidAt: string) {
+    const { recordPayment } = await import('../financial')
+    const { financialEntries, installments, paymentRecords } = await import('@/db/schema')
+    const { tx, log } = routedTx((q) => {
+      const table = tableOf(q)
+      if (q.op === 'insert') return table === paymentRecords ? [{ id: 'pay-new' }] : undefined
+      if (q.op !== 'select') return undefined
+      if (table === paymentRecords) return [P1]
+      if (table === installments) {
+        const fields = Object.keys((q.fields as object | undefined) ?? {})
+        if (fields.includes('amountPaid')) return [{ status: 'pending', amountPaid: '150.00' }]
+        return [lockedInstallmentRow({ dueDate: '2026-09-30' })]
+      }
+      if (table === financialEntries) return [{ patientId: PATIENT_ID, description: 'x', status: 'partial', totalAmount: '750.00' }]
+      return []
+    })
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+    queuePrepareRows()
+    await recordPayment(TENANT, USER_ID, {
+      installmentId: INSTALLMENT_ID,
+      amount: 50,
+      paymentMethod: 'pix',
+      paidAt,
+      expectedTotalDue: 650,
+    })
+    return { log, financialEntries, installments, paymentRecords }
+  }
+
+  it('locks the entry after the installment and before the entry status is recomputed', async () => {
+    const { log, installments, financialEntries } = await pay('2026-08-02T12:00:00.000Z')
+
+    const entryLock = log.findIndex((q) => isLock(q) && tableOf(q) === financialEntries)
+    const installmentLock = log.findIndex((q) => isLock(q) && tableOf(q) === installments)
+    const siblingsRead = log.findIndex(
+      (q) => q.op === 'select' && tableOf(q) === installments && Object.keys((q.fields as object | undefined) ?? {}).includes('amountPaid'),
+    )
+    expect(entryLock).toBeGreaterThan(-1)
+    expect(installmentLock).toBeLessThan(entryLock)
+    expect(entryLock).toBeLessThan(siblingsRead)
+  })
+
+  // Earlier on p1's own BR day: the payment moves to p1's instant and replays
+  // after it.
+  it('records a payment dated earlier on the latest payment\'s BR day at that payment\'s instant, and audits both dates', async () => {
+    const { log, paymentRecords } = await pay('2026-08-01T12:00:00.000Z')
+    const { auditLogs } = await import('@/db/schema')
+
+    const paymentInsert = log.find((q) => q.op === 'insert' && tableOf(q) === paymentRecords)
+    expect(paymentInsert?.capture.value).toMatchObject({ paidAt: new Date('2026-08-01T15:00:00.000Z') })
+    const audit = log.find((q) => q.op === 'insert' && tableOf(q) === auditLogs)
+    expect(audit?.capture.value).toMatchObject({
+      changes: {
+        payment: {
+          new: { requestedPaidAt: '2026-08-01T12:00:00.000Z', paidAt: '2026-08-01T15:00:00.000Z' },
+        },
+      },
+    })
   })
 })

@@ -226,7 +226,7 @@ export function PartialPaymentDialog({
 
           {/* Art. 354 allocation preview */}
           {allocation && (
-            <div className="rounded-[3px] border border-sage/20 bg-[#F0F7F1]/50 p-3 space-y-2" data-testid="allocation-preview">
+            <div className="rounded-[3px] border border-sage/20 bg-confirmed-bg/50 p-3 space-y-2" data-testid="allocation-preview">
               <p className="text-[10px] uppercase tracking-[0.15em] font-medium text-[#7A7A7A]">
                 Prévia da alocação (Art. 354 CC)
               </p>
@@ -268,7 +268,7 @@ export function PartialPaymentDialog({
         <DialogFooter className="pt-2">
           <Button
             variant="outline"
-            className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
+            className="border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors"
             onClick={() => onOpenChange(false)}
             disabled={isPending}
           >

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import {
   BR_TZ,
   parseBrDate,
@@ -12,6 +12,7 @@ import {
   shiftBrYmd,
   brDayIndex,
   ymdDayIndex,
+  toPaidAtIso,
 } from '../dates'
 import { formatInTimeZone } from 'date-fns-tz'
 
@@ -164,6 +165,24 @@ describe('dates helpers', () => {
       const noon = new Date('2026-05-22T15:00:00.000Z') // 12:00 BRT May 22
       const nextMorning = new Date('2026-05-23T13:00:00.000Z') // 10:00 BRT May 23
       expect(brDayIndex(nextMorning) - brDayIndex(noon)).toBe(1)
+    })
+  })
+  describe('toPaidAtIso', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it.each([
+      { name: 'no date', now: '2026-08-20T15:00:00.000Z', ymd: '', expected: undefined },
+      { name: 'today', now: '2026-08-20T15:00:00.000Z', ymd: '2026-08-20', expected: undefined },
+      { name: 'a past day', now: '2026-08-20T15:00:00.000Z', ymd: '2026-08-15', expected: '2026-08-15T15:00:00.000Z' },
+      // 23:30 BRT on Aug 20 is already Aug 21 in UTC.
+      { name: 'BR today after UTC midnight', now: '2026-08-21T02:30:00.000Z', ymd: '2026-08-20', expected: undefined },
+      { name: 'UTC today before BR midnight', now: '2026-08-21T02:30:00.000Z', ymd: '2026-08-21', expected: '2026-08-21T15:00:00.000Z' },
+    ])('$name: $ymd at $now -> $expected', ({ now, ymd, expected }) => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date(now))
+      expect(toPaidAtIso(ymd)).toBe(expected)
     })
   })
 })

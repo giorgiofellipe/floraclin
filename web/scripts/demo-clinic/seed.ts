@@ -710,7 +710,7 @@ async function writeFinancials(tx: Tx, ctx: WriteContext, pastRecords: PastRecor
     }
   })
 
-  const terms = await loadInstallmentTerms(tx as unknown as typeof db, DEMO_TENANT_ID)
+  const terms = await loadInstallmentTerms(tx, DEMO_TENANT_ID)
   const installmentRows = pastRecords.flatMap(({ entry, financialEntryId }) =>
     entry.installments.map((installment) => {
       const paidAt = installment.paidAt ? brInstant(installment.paidAt, '12:00') : null

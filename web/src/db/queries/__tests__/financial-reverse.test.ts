@@ -1,54 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-
-// A chainable, awaitable stand-in for drizzle's query builders, copied from
-// financial-meta.test.ts. Every method call returns the same proxy so any
-// chain shape resolves to `result` when awaited.
-function chain(result: unknown) {
-  const proxy: unknown = new Proxy(
-    {},
-    {
-      get(_target, prop: string) {
-        if (prop === 'then') {
-          return (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
-            Promise.resolve(result).then(resolve, reject)
-        }
-        if (prop === 'catch') {
-          return (reject: (e: unknown) => unknown) => Promise.resolve(result).catch(reject)
-        }
-        return () => proxy
-      },
-    },
-  )
-  return proxy
-}
-
-// Like chain(), but also records the payload passed to .set() or .values(),
-// copied from financial-payment.test.ts, so a test can assert on the write
-// itself rather than just that a write happened.
-function chainCapturing(result: unknown, capture: { value?: unknown }) {
-  const proxy: unknown = new Proxy(
-    {},
-    {
-      get(_target, prop: string) {
-        if (prop === 'then') {
-          return (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
-            Promise.resolve(result).then(resolve, reject)
-        }
-        if (prop === 'catch') {
-          return (reject: (e: unknown) => unknown) => Promise.resolve(result).catch(reject)
-        }
-        if (prop === 'set' || prop === 'values') {
-          return (payload: unknown) => {
-            capture.value = payload
-            return proxy
-          }
-        }
-        return () => proxy
-      },
-    },
-  )
-  return proxy
-}
+import { chain, chainCapturing, isLock, routedTx, tableOf } from '@/tests/mocks/drizzle-tx'
 
 const dbMock = { transaction: vi.fn(), select: vi.fn() }
 vi.mock('@/db/client', () => ({ db: dbMock }))
@@ -90,7 +41,6 @@ function installmentRow(overrides: Record<string, unknown> = {}) {
  */
 function makeTx() {
   return {
-    execute: vi.fn(),
     select: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
@@ -113,11 +63,10 @@ describe('reversePayment', () => {
     tx.select.mockReturnValueOnce(
       chain([{ id: PAYMENT_RECORD_ID, installmentId: INSTALLMENT_ID, amount: '900.00', paymentMethod: 'pix' }]),
     ) // pr
-    tx.select.mockReturnValueOnce(chain([installmentRow()])) // inst (ownership)
-    tx.execute.mockResolvedValueOnce([{ status: 'pending' }]) // FOR UPDATE lock
+    tx.select.mockReturnValueOnce(chain([installmentRow({ status: 'pending' })])) // installment lock
+    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x', status: 'partial' }])) // entry lock
     tx.select.mockReturnValueOnce(chain([{ reversedAt: null }])) // locked re-read
     tx.update.mockReturnValueOnce(chain(undefined)) // mark payment reversed
-    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x', status: 'partial' }])) // entryInfo
 
     const cashInsert: { value?: unknown } = {}
     tx.insert.mockReturnValueOnce(chainCapturing(undefined, cashInsert)) // cashMovements outflow
@@ -147,11 +96,10 @@ describe('reversePayment', () => {
     tx.select.mockReturnValueOnce(
       chain([{ id: 'p1', installmentId: INSTALLMENT_ID, amount: '30.00', paymentMethod: 'pix' }]),
     ) // pr (p1, being reversed)
-    tx.select.mockReturnValueOnce(chain([installmentRow()])) // inst (ownership)
-    tx.execute.mockResolvedValueOnce([{ status: 'pending' }]) // FOR UPDATE lock
+    tx.select.mockReturnValueOnce(chain([installmentRow({ status: 'pending' })])) // installment lock
+    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x', status: 'partial' }])) // entry lock
     tx.select.mockReturnValueOnce(chain([{ reversedAt: null }])) // locked re-read
     tx.update.mockReturnValueOnce(chain(undefined)) // mark p1 reversed
-    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x', status: 'partial' }])) // entryInfo
     tx.insert.mockReturnValueOnce(chain(undefined)) // cashMovements outflow
 
     // p2 is what is left once p1 is reversed: due May 22, paid Jul 22 is 61
@@ -192,11 +140,10 @@ describe('reversePayment', () => {
     tx.select.mockReturnValueOnce(
       chain([{ id: PAYMENT_RECORD_ID, installmentId: INSTALLMENT_ID, amount: '100.00', paymentMethod: 'pix' }]),
     ) // pr
-    tx.select.mockReturnValueOnce(chain([installmentRow()])) // inst (ownership)
-    tx.execute.mockResolvedValueOnce([{ status: 'cancelled' }]) // FOR UPDATE lock
+    tx.select.mockReturnValueOnce(chain([installmentRow({ status: 'cancelled' })])) // installment lock
+    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x', status: 'renegotiated' }])) // entry lock
     tx.select.mockReturnValueOnce(chain([{ reversedAt: null }])) // locked re-read
     tx.update.mockReturnValueOnce(chain(undefined)) // mark payment reversed
-    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x', status: 'renegotiated' }])) // entryInfo
     const cashInsert: { value?: unknown } = {}
     tx.insert.mockReturnValueOnce(chainCapturing(undefined, cashInsert)) // cashMovements outflow
     tx.select.mockReturnValueOnce(chain([])) // live payments, none left
@@ -213,5 +160,93 @@ describe('reversePayment', () => {
     expect(cashInsert.value).toMatchObject({ type: 'outflow', amount: '100.00' })
     expect(installmentUpdate.value).toMatchObject({ status: 'cancelled', amountPaid: '0' })
     expect(entryUpdate.value).toBeUndefined()
+  })
+})
+
+describe('reversePayment locking', () => {
+  const STALE = installmentRow()
+  // Uncancelled between the unlocked read and the lock: the pause from May 25
+  // to Aug 25 is now on the row.
+  const LOCKED = installmentRow({
+    status: 'pending',
+    penaltyPauses: [{ from: '2026-05-25T15:00:00.000Z', to: '2026-08-25T15:00:00.000Z' }],
+  })
+  const P2 = {
+    id: 'p2',
+    installmentId: INSTALLMENT_ID,
+    amount: '30.00',
+    interestCovered: '15.25',
+    fineCovered: '14.75',
+    principalCovered: '0.00',
+    paidAt: '2026-07-22T12:00:00.000Z',
+    recordedAt: '2026-07-22T12:00:00.000Z',
+    paymentMethod: 'pix',
+    reversedAt: null,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  async function reverse(opts: { entryStatus?: string; locked?: Record<string, unknown>; live?: unknown[] } = {}) {
+    const locked = { ...LOCKED, ...opts.locked }
+    const { reversePayment } = await import('../financial')
+    const { financialEntries, installments, paymentRecords } = await import('@/db/schema')
+    const { tx, log } = routedTx((q) => {
+      const table = tableOf(q)
+      if (q.op !== 'select') return undefined
+      if (table === paymentRecords) {
+        const live = (q.capture.calls ?? []).some(([method]) => method === 'orderBy')
+        return live ? (opts.live ?? [P2]) : [{ ...P2, id: PAYMENT_RECORD_ID, amount: '100.00' }]
+      }
+      if (table === installments) {
+        if (isLock(q)) return [locked]
+        const fields = Object.keys((q.fields as object | undefined) ?? {})
+        return fields.includes('amountPaid') ? [{ status: 'pending', amountPaid: '14.25' }] : [STALE]
+      }
+      if (table === financialEntries) {
+        return [{ patientId: PATIENT_ID, description: 'x', status: opts.entryStatus ?? 'partial' }]
+      }
+      return []
+    })
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+    await reversePayment(TENANT, USER_ID, PAYMENT_RECORD_ID)
+    return { log, paymentRecords, installments, financialEntries }
+  }
+
+  // Priced with the pause, p2 on Jul 22 is three days late: interest 0.75,
+  // fine 15, principal 14.25. Without it, 61 days: 15.25 and 14.75.
+  it('prices the remaining payments from the installment row read under the lock', async () => {
+    const { log, paymentRecords } = await reverse()
+
+    const rewrites = log.filter((q) => q.op === 'update' && tableOf(q) === paymentRecords && q.capture.value && 'fineCovered' in (q.capture.value as object))
+    expect(rewrites.map((q) => q.capture.value)).toEqual([
+      { interestCovered: '0.75', fineCovered: '15.00', principalCovered: '14.25' },
+    ])
+  })
+
+  it('locks the entry after the installment and before the entry status is recomputed', async () => {
+    const { log, installments, financialEntries } = await reverse()
+
+    const installmentLock = log.findIndex((q) => isLock(q) && tableOf(q) === installments)
+    const entryLock = log.findIndex((q) => isLock(q) && tableOf(q) === financialEntries)
+    const siblingsRead = log.findIndex(
+      (q) => q.op === 'select' && tableOf(q) === installments && Object.keys((q.fields as object | undefined) ?? {}).includes('amountPaid'),
+    )
+    expect(entryLock).toBeGreaterThan(-1)
+    expect(installmentLock).toBeLessThan(entryLock)
+    expect(entryLock).toBeLessThan(siblingsRead)
+  })
+
+  it('reversing the only payment of a paid installment of a renegotiated entry reopens the installment and leaves the entry renegotiated', async () => {
+    const { log, installments, financialEntries } = await reverse({
+      entryStatus: 'renegotiated',
+      locked: { status: 'paid' },
+      live: [],
+    })
+
+    const installmentUpdate = log.find((q) => q.op === 'update' && tableOf(q) === installments)
+    expect(installmentUpdate?.capture.value).toMatchObject({ status: 'pending', amountPaid: '0', paidAt: null })
+    expect(log.some((q) => q.op === 'update' && tableOf(q) === financialEntries)).toBe(false)
   })
 })

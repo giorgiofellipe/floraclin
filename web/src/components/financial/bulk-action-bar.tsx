@@ -217,7 +217,7 @@ export function BulkActionBar({
         open={cancelDialogOpen}
         onOpenChange={setCancelDialogOpen}
         title="Cancelar Cobranças"
-        description={`Cancelar ${selectedEntryIds.length} cobrança(s). Cobranças canceladas podem ser reativadas depois.`}
+        description={`Cancelar ${selectedEntryIds.length} cobrança(s). Cobranças canceladas podem ser reativadas depois, exceto as que vieram de uma renegociação.`}
         reasonLabel="Motivo do cancelamento"
         reason={cancelReason}
         onReasonChange={setCancelReason}

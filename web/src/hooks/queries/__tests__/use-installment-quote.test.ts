@@ -1,16 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createElement, type ReactNode } from 'react'
 import { renderHook, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 
 import { useInstallmentQuote } from '../use-installment-quote'
 import { ApiError } from '@/hooks/mutations/use-financial-mutations'
+import { makeQueryClient } from '@/lib/react-query'
 
 const fetchMock = vi.fn()
 global.fetch = fetchMock as unknown as typeof fetch
 
 function wrap() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const qc = makeQueryClient()
+  qc.setDefaultOptions({ queries: { ...qc.getDefaultOptions().queries, retryDelay: 0 } })
   // eslint-disable-next-line react/display-name -- test-only wrapper, no display name needed
   return ({ children }: { children: ReactNode }) =>
     createElement(QueryClientProvider, { client: qc }, children)
@@ -69,7 +71,7 @@ describe('useInstallmentQuote', () => {
   })
 
   it('falls back to HTTP <status> when the body has no error field', async () => {
-    fetchMock.mockResolvedValueOnce({
+    fetchMock.mockResolvedValue({
       ok: false,
       status: 500,
       json: async () => ({}),
@@ -80,6 +82,18 @@ describe('useInstallmentQuote', () => {
     await waitFor(() => expect(result.current.isError).toBe(true))
 
     expect(result.current.error?.message).toBe('HTTP 500')
+  })
+
+  it.each([
+    { kind: 'coded business', body: { error: 'Parcela já paga', code: 'INSTALLMENT_ALREADY_PAID' }, calls: 1 },
+    { kind: 'uncoded', body: {}, calls: 4 },
+  ])('with the app retry policy, a $kind error fetches $calls time(s)', async ({ body, calls }) => {
+    fetchMock.mockResolvedValue({ ok: false, status: 409, json: async () => body })
+
+    const { result } = renderHook(() => useInstallmentQuote('inst-1'), { wrapper: wrap() })
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(fetchMock).toHaveBeenCalledTimes(calls)
   })
 
   it('does not fetch when enabled is false', async () => {

@@ -16,8 +16,8 @@ const mockInstallments = [
     paymentMethod: 'pix',
     notes: null,
     amountPaid: '500.00',
-    fineAmount: '0',
-    interestAmount: '0',
+    computedFineAmount: 0,
+    computedInterestAmount: 0,
     paymentRecords: [],
   },
   {
@@ -30,8 +30,8 @@ const mockInstallments = [
     paymentMethod: null,
     notes: null,
     amountPaid: '0',
-    fineAmount: '0',
-    interestAmount: '0',
+    computedFineAmount: 0,
+    computedInterestAmount: 0,
     paymentRecords: [],
   },
   {
@@ -44,8 +44,7 @@ const mockInstallments = [
     paymentMethod: null,
     notes: null,
     amountPaid: '0',
-    fineAmount: '10.00',
-    interestAmount: '0',
+    computedFineAmount: 10,
     computedInterestAmount: 5,
     appliedFineValue: '2.00',
     appliedInterestRate: '1.00',
@@ -114,47 +113,10 @@ describe('InstallmentTable', () => {
     render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
 
     await screen.findByText('Parcela 3/3')
-    // The overdue installment (inst-3) has fineAmount=10, rendered as a "Multa R$..." span.
+    // The overdue installment (inst-3) has computedFineAmount=10, rendered as a "Multa R$..." span.
     // It's not wrapped in a PenaltyBadge testid here; look up the text content.
     const multa = screen.getByText(/^Multa\s*R\$/)
     expect(multa).toBeInTheDocument()
-  })
-
-  it('shows the engine-priced penalty over a stale stored interestAmount', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        installments: [
-          {
-            id: 'inst-1',
-            installmentNumber: 1,
-            amount: '1000',
-            dueDate: '2026-08-25',
-            status: 'pending',
-            paidAt: null,
-            paymentMethod: null,
-            notes: null,
-            amountPaid: '0',
-            fineAmount: '0',
-            interestAmount: '99.99',
-            computedFineAmount: 20,
-            computedInterestAmount: 1.67,
-            appliedFineValue: '2.00',
-            appliedInterestRate: '1',
-            lastFineInterestCalcAt: null,
-            paymentRecords: [],
-          },
-        ],
-      }),
-    } as Response)
-
-    render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
-
-    await screen.findByText('Parcela 1/1')
-    // fineAmt 20 + interestAmt 1.67 = 21.67, split across two spans.
-    expect(screen.getByText(/^Multa\s*R\$\s*20,00/)).toBeInTheDocument()
-    expect(screen.getByText(/^Juros\s*R\$\s*1,67/)).toBeInTheDocument()
-    expect(screen.queryByText(/99,99/)).not.toBeInTheDocument()
   })
 
   it('shows the excess when a payment record covers more than the installment owed', async () => {
@@ -172,8 +134,8 @@ describe('InstallmentTable', () => {
             paymentMethod: 'pix',
             notes: null,
             amountPaid: '791.00',
-            fineAmount: '15.00',
-            interestAmount: '26.00',
+            computedFineAmount: 0,
+            computedInterestAmount: 0,
             paymentRecords: [
               {
                 id: 'pay-1',
@@ -215,8 +177,8 @@ describe('InstallmentTable', () => {
             paymentMethod: 'pix',
             notes: null,
             amountPaid: '750.00',
-            fineAmount: '0',
-            interestAmount: '0',
+            computedFineAmount: 0,
+            computedInterestAmount: 0,
             paymentRecords: [
               {
                 id: 'pay-1',

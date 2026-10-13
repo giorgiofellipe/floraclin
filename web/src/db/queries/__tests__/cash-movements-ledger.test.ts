@@ -35,9 +35,6 @@ function installmentRow(overrides: Record<string, unknown> = {}) {
     appliedGracePeriodDays: 0,
     penaltyPauses: [],
     cancelledAt: null,
-    // Snapshots last written at a payment, long stale by now.
-    fineAmount: '0',
-    interestAmount: '0',
     amountPaid: '0',
     ...overrides,
   }

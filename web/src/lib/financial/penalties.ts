@@ -294,9 +294,8 @@ export interface InstallmentQuote {
 
 /**
  * What one installment owes at a given instant. Only the payments at or before
- * that instant count: a payment being recorded for a past date is inserted
- * chronologically by `replayPayments`, so pricing it against later payments
- * would quote a debt that had not been reduced yet.
+ * that instant count: payments recorded before paidAt was capped at now can
+ * carry a future paidAt, and they must not reduce today's debt.
  */
 export function quoteInstallment(
   base: InstallmentBase,

@@ -9,6 +9,8 @@ export function useInstallmentQuote(installmentId: string, paidAt?: string, enab
   return useQuery({
     queryKey: queryKeys.financial.installmentQuote(installmentId, paidAt),
     enabled,
+    retry: (failureCount, error) =>
+      !(error instanceof ApiError && error.code) && failureCount < 3,
     queryFn: async (): Promise<InstallmentQuoteResult> => {
       const url = paidAt
         ? `/api/financial/installments/${installmentId}/quote?paidAt=${encodeURIComponent(paidAt)}`

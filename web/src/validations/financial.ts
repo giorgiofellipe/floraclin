@@ -62,10 +62,19 @@ export const recordPaymentSchema = z.object({
 export const renegotiateSchema = z.object({
   entryIds: z.array(z.string().uuid()).min(1, 'Selecione ao menos uma cobrança'),
   newInstallmentCount: z.number().int().min(1).max(24),
-  newTotalAmount: z.number().positive().optional(),
+  newTotalAmount: z
+    .number()
+    .positive()
+    .refine(hasAtMostTwoDecimals, 'Valor deve ter no máximo duas casas decimais')
+    .optional(),
   description: z.string().min(1, 'Descrição é obrigatória'),
   waivePenalties: z.boolean().optional().default(false),
-  waiveAmount: z.number().min(0).optional().default(0),
+  waiveAmount: z
+    .number()
+    .min(0)
+    .refine(hasAtMostTwoDecimals, 'Valor deve ter no máximo duas casas decimais')
+    .optional()
+    .default(0),
   customDueDates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida')).optional(),
 })
 
