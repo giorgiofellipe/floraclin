@@ -98,7 +98,7 @@ import {
 import { sendTemplateMessage, resolveTemplateBody, getTemplateForTenant, CreditExhaustedError } from '@/lib/whatsapp'
 import { isSubscriptionActive } from '@/lib/plans'
 import { notifyDiscord } from '@/lib/discord'
-import { brToday, shiftBrYmd } from '@/lib/dates'
+import { brToday, parseBrDate, shiftBrYmd } from '@/lib/dates'
 import { maybeAutoSendAnamnesisLink } from '@/lib/whatsapp-anamnesis'
 import { GET } from '../route'
 
@@ -643,7 +643,8 @@ describe('GET /api/cron/whatsapp-automations', () => {
           trigger: 'appointment_confirmation',
           config: { autoAnamnesisEnabled: true, anamnesisStaleDays: 60 },
         }),
-        dedupeDateYmd: today,
+        // Regression: the default 2h token expired hours before a same-day appointment.
+        linkExpiresAt: parseBrDate(today, '14:30:00'),
       })
       expect(findOutcome(json, 'tenant-1')).toMatchObject({
         reason: 'sent',
@@ -686,6 +687,79 @@ describe('GET /api/cron/whatsapp-automations', () => {
         reason: 'sent',
         appointmentsSent: 1,
         anamnesisSent: 1,
+      })
+    })
+
+    // Regression: same-day anamnesis links ran first and spent the credits next-day confirmations needed.
+    it('sends next-day confirmations before same-day anamnesis links', async () => {
+      const today = brToday()
+      dbMock.from.mockResolvedValue([
+        makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([
+        makeAutomation({ config: { autoAnamnesisEnabled: true } }),
+      ])
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
+        makeAppointment({ id: 'same-day', date: today }),
+        makeAppointment({ id: 'next-day', date: shiftBrYmd(today, 1) }),
+      ])
+      vi.mocked(sendTemplateMessage).mockRejectedValue(new CreditExhaustedError(100, 100))
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(sendTemplateMessage).toHaveBeenCalledTimes(1)
+      expect(maybeAutoSendAnamnesisLink).not.toHaveBeenCalled()
+      expect(findOutcome(json, 'tenant-1')).toMatchObject({ reason: 'credit_exhausted' })
+    })
+
+    // Regression: one anamnesis link marked the tenant 'sent' and hid a missing confirmation template.
+    it('reports the blocked confirmation template even when an anamnesis link went out', async () => {
+      const today = brToday()
+      dbMock.from.mockResolvedValue([
+        makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([
+        makeAutomation({ config: { autoAnamnesisEnabled: true } }),
+      ])
+      vi.mocked(getTemplateForTenant).mockResolvedValue(null)
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
+        makeAppointment({ id: 'same-day', date: today }),
+        makeAppointment({ id: 'next-day', date: shiftBrYmd(today, 1) }),
+      ])
+      vi.mocked(maybeAutoSendAnamnesisLink).mockResolvedValue({ status: 'sent', metaMessageId: 'wamid.anamnesis' })
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(findOutcome(json, 'tenant-1')).toMatchObject({
+        reason: 'template_missing',
+        appointmentsSent: 0,
+        anamnesisSent: 1,
+      })
+    })
+
+    // Regression: anamnesis failures were reported in the digest as failed confirmations.
+    it('counts a failed anamnesis link apart from failed confirmations', async () => {
+      dbMock.from.mockResolvedValue([
+        makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([
+        makeAutomation({ config: { autoAnamnesisEnabled: true } }),
+      ])
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
+        makeAppointment({ date: brToday() }),
+      ])
+      vi.mocked(maybeAutoSendAnamnesisLink).mockRejectedValue(new Error('Meta 500'))
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(findOutcome(json, 'tenant-1')).toMatchObject({
+        reason: 'send_failed',
+        appointmentsFailed: 0,
+        anamnesisFailed: 1,
       })
     })
   })
@@ -1205,7 +1279,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
       expect(notifyDiscord).toHaveBeenCalledWith(
         expect.objectContaining({
           failingTenants: [
-            { tenantName: 'Failing Clinic', reason: 'send_failed', appointmentsFailed: 1 },
+            { tenantName: 'Failing Clinic', reason: 'send_failed', appointmentsFailed: 1, anamnesisFailed: 0 },
           ],
         }),
       )

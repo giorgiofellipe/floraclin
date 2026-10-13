@@ -27,6 +27,7 @@ vi.mock('@/db/queries/anamnesis', () => ({
 
 vi.mock('@/db/queries/anamnesis-tokens', () => ({
   createAnamnesisToken: vi.fn(),
+  hasAnamnesisTokenCreatedOnBrDay: vi.fn(),
 }))
 
 vi.mock('@/db/queries/patients', () => ({
@@ -39,7 +40,6 @@ vi.mock('@/db/queries/tenants', () => ({
 
 vi.mock('@/db/queries/whatsapp', () => ({
   createMessage: vi.fn(),
-  hasOutboundTemplateMessageForPatientOnDay: vi.fn(),
   listAutomations: vi.fn(),
   pushSseEvent: vi.fn(),
   upsertConversation: vi.fn(),
@@ -51,11 +51,11 @@ vi.mock('@/lib/whatsapp', () => ({
 }))
 
 import { getAnamnesis } from '@/db/queries/anamnesis'
-import { createAnamnesisToken } from '@/db/queries/anamnesis-tokens'
-import {
-  hasOutboundTemplateMessageForPatientOnDay,
-  listAutomations,
-} from '@/db/queries/whatsapp'
+import { createAnamnesisToken, hasAnamnesisTokenCreatedOnBrDay } from '@/db/queries/anamnesis-tokens'
+import { getPatient } from '@/db/queries/patients'
+import { getTenant } from '@/db/queries/tenants'
+import { createMessage, listAutomations, upsertConversation } from '@/db/queries/whatsapp'
+import { brToday } from '@/lib/dates'
 import { getTemplateForTenant, sendTemplateMessage } from '@/lib/whatsapp'
 import { maybeAutoSendAnamnesisLink } from '../whatsapp-anamnesis'
 
@@ -74,45 +74,44 @@ beforeEach(() => {
     status: 'APPROVED',
     language: 'pt_BR',
   } as never)
-  vi.mocked(hasOutboundTemplateMessageForPatientOnDay).mockResolvedValue(false)
+  vi.mocked(hasAnamnesisTokenCreatedOnBrDay).mockResolvedValue(false)
 })
 
 describe('maybeAutoSendAnamnesisLink', () => {
-  it('skips when an anamnesis link was already sent for that patient/template/day', async () => {
-    vi.mocked(hasOutboundTemplateMessageForPatientOnDay).mockResolvedValue(true)
+  // Regression: the cron and the confirm-reply webhook both sent a link to the same patient on one day.
+  it('skips when a link token was already created for the patient today', async () => {
+    vi.mocked(hasAnamnesisTokenCreatedOnBrDay).mockResolvedValue(true)
 
     const result = await maybeAutoSendAnamnesisLink({
       tenantId: 'tenant-1',
       patientId: 'patient-1',
       phone: '5511999990000',
-      dedupeDateYmd: '2026-10-13',
     })
 
     expect(result).toEqual({ status: 'skipped', reason: 'already_sent' })
-    expect(hasOutboundTemplateMessageForPatientOnDay).toHaveBeenCalledWith(
-      'tenant-1',
-      'patient-1',
-      'anamnese_link_v1',
-      '2026-10-13',
-    )
+    expect(hasAnamnesisTokenCreatedOnBrDay).toHaveBeenCalledWith('tenant-1', 'patient-1', brToday())
     expect(createAnamnesisToken).not.toHaveBeenCalled()
     expect(sendTemplateMessage).not.toHaveBeenCalled()
   })
 
-  it('keeps the existing stale-anamnesis dedupe before checking templates', async () => {
-    vi.mocked(getAnamnesis).mockResolvedValue({
-      updatedAt: new Date().toISOString(),
-    } as never)
+  // Regression: the cron link used the 2h default and was dead before the patient opened it.
+  it('creates the token with the expiry the caller passes', async () => {
+    const linkExpiresAt = new Date('2026-10-13T17:00:00.000Z')
+    vi.mocked(getPatient).mockResolvedValue({ fullName: 'Maria Silva' } as never)
+    vi.mocked(getTenant).mockResolvedValue({ name: 'Flora' } as never)
+    vi.mocked(createAnamnesisToken).mockResolvedValue({ token: 'tok-1' } as never)
+    vi.mocked(sendTemplateMessage).mockResolvedValue({ metaMessageId: 'wamid.1' } as never)
+    vi.mocked(upsertConversation).mockResolvedValue({ id: 'conv-1' } as never)
+    vi.mocked(createMessage).mockResolvedValue({ id: 'msg-1' } as never)
 
     const result = await maybeAutoSendAnamnesisLink({
       tenantId: 'tenant-1',
       patientId: 'patient-1',
       phone: '5511999990000',
-      dedupeDateYmd: '2026-10-13',
+      linkExpiresAt,
     })
 
-    expect(result).toEqual({ status: 'skipped', reason: 'fresh_anamnesis' })
-    expect(getTemplateForTenant).not.toHaveBeenCalled()
-    expect(hasOutboundTemplateMessageForPatientOnDay).not.toHaveBeenCalled()
+    expect(result).toEqual({ status: 'sent', metaMessageId: 'wamid.1' })
+    expect(createAnamnesisToken).toHaveBeenCalledWith('tenant-1', 'patient-1', 'owner-1', linkExpiresAt)
   })
 })

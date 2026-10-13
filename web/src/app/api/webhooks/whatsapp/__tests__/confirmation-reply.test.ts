@@ -79,7 +79,6 @@ vi.mock('@/db/queries/whatsapp', () => ({
   updateQueuedMessageStatus: vi.fn(),
   expireStaleQueuedMessages: vi.fn(() => []),
   listAutomations: vi.fn(() => []),
-  hasOutboundTemplateMessageForPatientOnDay: vi.fn(() => false),
 }))
 
 vi.mock('@/db/queries/appointments', () => ({
@@ -94,6 +93,7 @@ vi.mock('@/db/queries/anamnesis', () => ({
 
 vi.mock('@/db/queries/anamnesis-tokens', () => ({
   createAnamnesisToken: vi.fn(),
+  hasAnamnesisTokenCreatedOnBrDay: vi.fn(async () => false),
 }))
 
 vi.mock('@/db/queries/prospects', () => ({
