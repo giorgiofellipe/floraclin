@@ -6,7 +6,9 @@ import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-f
 import { useAppointments, usePractitioners, useAppointmentProcedureTypes } from '@/hooks/queries/use-appointments'
 import { useCalendarBlocks } from '@/hooks/queries/use-calendar'
 import { CalendarView } from '@/components/scheduling/calendar-view'
+import { useIsMobile } from '@/hooks/use-is-mobile'
 import ScheduleLoading from './loading'
+import { AGENDA_FRAME } from './agenda-frame'
 import type { Role } from '@/types'
 
 type ViewType = 'day' | 'week' | 'month'
@@ -41,10 +43,11 @@ function getDateRange(date: Date, view: ViewType) {
 
 export function AgendaPageClient({ role, userId }: { role: Role; userId: string }) {
   const searchParams = useSearchParams()
+  const isMobile = useIsMobile()
 
   const view = (['day', 'week', 'month'].includes(searchParams.get('view') ?? '')
     ? searchParams.get('view')
-    : 'week') as ViewType
+    : isMobile ? 'day' : 'week') as ViewType
 
   const dateStr = searchParams.get('date') ?? format(new Date(), 'yyyy-MM-dd')
   const currentDate = new Date(dateStr + 'T12:00:00')
@@ -78,7 +81,7 @@ export function AgendaPageClient({ role, userId }: { role: Role; userId: string 
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col gap-3 p-4 lg:p-6">
+    <div className={AGENDA_FRAME}>
       <CalendarView
         initialDate={dateStr}
         initialView={view}

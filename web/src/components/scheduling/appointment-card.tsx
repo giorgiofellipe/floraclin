@@ -104,7 +104,7 @@ export function AppointmentCard({ appointment, compact = false, onClick }: Appoi
             </p>
           )}
         </div>
-        <Badge className={cn('shrink-0 rounded-full text-[11px] px-2 py-0.5', statusBadge)}>
+        <Badge className={cn('hidden shrink-0 rounded-full sm:inline-flex text-[11px] px-2 py-0.5', statusBadge)}>
           {STATUS_LABELS[appointment.status] ?? appointment.status}
         </Badge>
       </div>
@@ -132,4 +132,4 @@ const STATUS_SELECT_ITEMS: Record<string, React.ReactNode> = Object.fromEntries(
   ])
 )
 
-export { STATUS_LABELS, STATUS_SELECT_ITEMS }
+export { STATUS_LABELS, STATUS_DOT_COLORS, STATUS_SELECT_ITEMS }

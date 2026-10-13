@@ -18,6 +18,7 @@ import { APPOINTMENT_STATUS_COLORS } from '@/lib/constants'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
 import type { CalendarBlockRow } from '@/db/queries/calendar'
 import { toHhMm } from '@/lib/time-options'
+import { STATUS_DOT_COLORS } from './appointment-card'
 
 interface MonthViewProps {
   date: Date
@@ -61,7 +62,7 @@ export function MonthView({ date, appointments, calendarBlocks = [], onDayClick,
       {/* Weekday headers */}
       <div className="grid grid-cols-7 border-b border-[#E8ECEF] bg-white">
         {WEEKDAYS.map((day) => (
-          <div key={day} className="px-2 py-2 text-center text-[11px] uppercase tracking-wider font-medium text-mid">
+          <div key={day} className="px-1 py-2 text-center md:px-2 text-[11px] uppercase tracking-wider font-medium text-mid">
             {day}
           </div>
         ))}
@@ -80,12 +81,12 @@ export function MonthView({ date, appointments, calendarBlocks = [], onDayClick,
             <div
               key={dateStr}
               className={cn(
-                'min-h-24 cursor-pointer border-b border-r border-sage/8 p-1.5 transition-colors duration-150 hover:bg-[#F0F7F1]/30',
+                'min-h-14 min-w-0 cursor-pointer border-b border-r border-sage/8 p-1 transition-colors md:min-h-24 md:p-1.5 duration-150 hover:bg-[#F0F7F1]/30',
                 !isCurrentMonth && 'bg-[#F4F6F8] text-mid/60'
               )}
               onClick={() => onDayClick?.(dateStr)}
             >
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-center md:justify-between">
                 <span
                   className={cn(
                     'inline-flex size-7 items-center justify-center rounded-full text-xs font-medium',
@@ -97,13 +98,26 @@ export function MonthView({ date, appointments, calendarBlocks = [], onDayClick,
                   {format(day, 'd')}
                 </span>
                 {dayAppointments.length > MAX_VISIBLE_APPOINTMENTS && (
-                  <span className="text-[10px] font-medium text-mid rounded-full bg-white px-1.5 py-0.5">
+                  <span className="hidden text-[10px] font-medium text-mid rounded-full bg-white px-1.5 py-0.5 md:inline">
                     +{dayAppointments.length - MAX_VISIBLE_APPOINTMENTS}
                   </span>
                 )}
               </div>
 
-              <div className="mt-1 space-y-0.5">
+              {/* Cells are too narrow for names on phones; tapping the day opens the day view. */}
+              {(dayBlocks.length > 0 || dayAppointments.length > 0) && (
+                <div className="mt-1 flex flex-wrap justify-center gap-0.5 md:hidden">
+                  {dayBlocks.length > 0 && <span className="size-1.5 rounded-full bg-gray-300" />}
+                  {dayAppointments.slice(0, MAX_VISIBLE_APPOINTMENTS).map((appt) => (
+                    <span key={appt.id} className={cn('size-1.5 rounded-full', STATUS_DOT_COLORS[appt.status] ?? 'bg-slate-300')} />
+                  ))}
+                  {dayAppointments.length > MAX_VISIBLE_APPOINTMENTS && (
+                    <span className="text-[9px] leading-none text-mid">+{dayAppointments.length - MAX_VISIBLE_APPOINTMENTS}</span>
+                  )}
+                </div>
+              )}
+
+              <div className="mt-1 hidden space-y-0.5 md:block">
                 {dayBlocks.map((block) => (
                   <button
                     key={block.id}

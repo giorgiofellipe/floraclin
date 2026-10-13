@@ -161,14 +161,14 @@ export function DayView({ date, appointments, calendarBlocks = [], onSlotClick, 
 
       <div className="relative flex flex-1 overflow-auto">
         {/* Time labels */}
-        <div className="sticky left-0 z-10 w-16 flex-shrink-0 bg-white">
+        <div className="sticky left-0 z-10 w-12 flex-shrink-0 bg-white md:w-16">
           {HOURS.map((hour) => (
             <div
               key={hour}
               className="flex items-start"
               style={{ height: SLOT_HEIGHT_PX * 2 }}
             >
-              <span className="pr-3 text-right text-[11px] font-medium text-mid w-full -mt-2 select-none">
+              <span className="pr-2 text-right md:pr-3 text-[11px] font-medium text-mid w-full -mt-2 select-none">
                 {String(hour).padStart(2, '0')}:00
               </span>
             </div>

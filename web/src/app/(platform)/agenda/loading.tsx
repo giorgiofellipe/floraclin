@@ -1,16 +1,17 @@
 import { Skeleton } from '@/components/ui/skeleton'
+import { AGENDA_FRAME } from './agenda-frame'
 
 export default function ScheduleLoading() {
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col gap-3 p-4 lg:p-6">
+    <div className={AGENDA_FRAME}>
       {/* Controls bar (no title — it's in the header) */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Skeleton className="h-9 w-9 rounded-md" />
           <Skeleton className="h-9 w-9 rounded-md" />
           <Skeleton className="h-5 w-40" />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Skeleton className="h-8 w-20 rounded-md" />
           <Skeleton className="h-8 w-20 rounded-md" />
           <Skeleton className="h-8 w-20 rounded-md" />

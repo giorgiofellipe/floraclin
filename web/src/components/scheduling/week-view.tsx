@@ -116,15 +116,16 @@ export function WeekView({ date, appointments, calendarBlocks = [], onSlotClick,
   const currentTimeTop = ((currentMinutes - START_HOUR * 60) / 30) * SLOT_HEIGHT_PX
 
   return (
-    <div className="flex flex-col overflow-auto">
+    // Below md the grid keeps a readable column width and the calendar container scrolls sideways.
+    <div className="flex min-w-[720px] flex-col md:min-w-0">
       {/* Day headers */}
-      <div className="sticky top-0 z-20 flex border-b border-[#E8ECEF] bg-white">
-        <div className="w-16 flex-shrink-0" />
+      <div className="sticky top-0 z-40 flex border-b border-[#E8ECEF] bg-white">
+        <div className="sticky left-0 z-10 w-12 flex-shrink-0 bg-white md:w-16" />
         {days.map((day) => (
           <div
             key={day.toISOString()}
             className={cn(
-              'flex-1 border-l border-sage/10 px-1 py-2.5 text-center',
+              'min-w-0 flex-1 border-l border-sage/10 px-1 py-2.5 text-center',
               isSameDay(day, today) && 'bg-sage/5'
             )}
           >
@@ -147,14 +148,14 @@ export function WeekView({ date, appointments, calendarBlocks = [], onSlotClick,
       {/* Time grid */}
       <div className="relative flex flex-1">
         {/* Time labels */}
-        <div className="sticky left-0 z-10 w-16 flex-shrink-0 bg-white">
+        <div className="sticky left-0 z-[35] w-12 flex-shrink-0 bg-white md:w-16">
           {HOURS.map((hour) => (
             <div
               key={hour}
               className="flex items-start"
               style={{ height: SLOT_HEIGHT_PX * 2 }}
             >
-              <span className="w-full pr-3 text-right text-[11px] font-medium text-mid -mt-2 select-none">
+              <span className="w-full pr-2 text-right md:pr-3 text-[11px] font-medium text-mid -mt-2 select-none">
                 {String(hour).padStart(2, '0')}:00
               </span>
             </div>
@@ -172,7 +173,7 @@ export function WeekView({ date, appointments, calendarBlocks = [], onSlotClick,
             <div
               key={day.toISOString()}
               className={cn(
-                'relative flex-1 border-l border-sage/10',
+                'relative min-w-0 flex-1 border-l border-sage/10',
                 isDayToday && 'bg-sage/[0.03]'
               )}
             >
