@@ -10,12 +10,14 @@ import { isSubscriptionActive } from '@/lib/plans'
 import { notifyDiscord, type WhatsappDigestFailingTenant } from '@/lib/discord'
 import { withCronMonitor } from '@/lib/cron-monitor'
 import { buildConfirmationParams } from '@/lib/whatsapp-confirmation'
+import { brToday } from '@/lib/dates'
+import { maybeAutoSendAnamnesisLink } from '@/lib/whatsapp-anamnesis'
 
 // Schedule mirrors `vercel.json`; see withCronMonitor for the rest. This is
 // the cron a clinic notices first when it stops running, so it gets the same
 // dead-man's switch as the other two.
 const MONITOR_SLUG = 'whatsapp-automations'
-const MONITOR_SCHEDULE = '0 11 * * *'
+const MONITOR_SCHEDULE = '30 9 * * *'
 
 // Vercel invokes this route and discards the response body, so nothing in
 // here can rely on a human reading `NextResponse.json(...)`. Every tenant
@@ -30,6 +32,7 @@ type TenantOutcomeReason =
   | 'template_missing'
   | 'template_not_approved'
   | 'no_pending_appointments'
+  | 'no_messages_due'
   | 'no_valid_phone'
   | 'sent'
   | 'send_failed'
@@ -42,6 +45,7 @@ interface TenantOutcome {
   reason: TenantOutcomeReason
   appointmentsSent: number
   appointmentsFailed: number
+  anamnesisSent: number
 }
 
 // Reasons that represent a real problem rather than an expected skip. Used
@@ -72,6 +76,7 @@ function skipOutcome(
     reason,
     appointmentsSent: 0,
     appointmentsFailed: 0,
+    anamnesisSent: 0,
   }
 }
 
@@ -93,6 +98,7 @@ export async function GET(request: Request) {
  * `withCronMonitor` whole. Nothing in here touches the request.
  */
 async function runAutomations() {
+  const todayYmd = brToday()
   const allTenants = await db
     .select({ id: tenants.id, name: tenants.name, settings: tenants.settings })
     .from(tenants)
@@ -126,16 +132,6 @@ async function runAutomations() {
         continue
       }
 
-      const template = await getTemplateForTenant(tenant.id, 'appointment_confirmation')
-      if (!template) {
-        outcomes.push(skipOutcome(tenant.id, tenant.name, 'template_missing'))
-        continue
-      }
-      if (template.status !== 'APPROVED') {
-        outcomes.push(skipOutcome(tenant.id, tenant.name, 'template_not_approved'))
-        continue
-      }
-
       const pendingAppointments = await getAppointmentsPendingConfirmationUntil(
         tenant.id,
       )
@@ -145,71 +141,45 @@ async function runAutomations() {
         continue
       }
 
+      const sameDayAppointments = pendingAppointments.filter((appt) => appt.date === todayYmd)
+      const confirmationAppointments = pendingAppointments.filter((appt) => appt.date !== todayYmd)
+
       let tenantSent = 0
       let tenantFailed = 0
+      let tenantAnamnesisSent = 0
       let tenantHadPhone = false
       let creditExhausted = false
+      let confirmationBlockedReason: Extract<TenantOutcomeReason, 'template_missing' | 'template_not_approved'> | null = null
 
-      for (const appt of pendingAppointments) {
+      for (const appt of sameDayAppointments) {
         try {
           const phone = appt.patientPhone ?? appt.bookingPhone
           if (!phone) continue
           tenantHadPhone = true
+          if (!appt.patientId) continue
 
           const normalizedPhone = normalizeBrPhoneForWhatsApp(phone)
-          const name = appt.patientName ?? appt.bookingName ?? ''
-
-          const params = buildConfirmationParams(appt, tenant.name)
-
-          const result = await sendTemplateMessage(
-            tenant.id,
-            normalizedPhone,
-            template.name,
-            template.language,
-            params,
-          )
-
-          await markConfirmationSent(tenant.id, appt.id, result.metaMessageId)
-
-          const conversation = await upsertConversation(
-            tenant.id,
-            normalizedPhone,
-            name,
-            undefined,
-            appt.patientId ?? undefined,
-          )
-
-          const resolvedBody = resolveTemplateBody(template.components, params)
-
-          const message = await createMessage(tenant.id, conversation.id, {
-            direction: 'outbound',
-            metaMessageId: result.metaMessageId,
-            body: resolvedBody,
-            templateName: template.name,
-            deliveryStatus: 'sent',
+          const result = await maybeAutoSendAnamnesisLink({
+            tenantId: tenant.id,
+            patientId: appt.patientId,
+            phone: normalizedPhone,
+            automation: confirmationAuto,
+            dedupeDateYmd: appt.date,
           })
-
-          await pushSseEvent(tenant.id, 'new_message', {
-            conversationId: conversation.id,
-            message,
-          })
-
-          sent++
-          tenantSent++
+          if (result.status === 'sent') {
+            tenantAnamnesisSent++
+          }
         } catch (err) {
           if (err instanceof CreditExhaustedError) {
-            // Not a bug: the clinic ran out of WhatsApp credits. Reported as
-            // a warning message (not captureException) so it doesn't read as
-            // a code defect, but it still creates a Sentry issue and reaches
-            // the floraclin-logs Discord alert so a human buys more credits.
-            console.warn(`[cron] Credits exhausted for tenant ${tenant.name}, skipping remaining appointments`)
-            Sentry.captureMessage('WhatsApp credits exhausted during appointment-confirmation cron', {
+            console.warn(`[cron] Credits exhausted for tenant ${tenant.name}, skipping remaining same-day anamnesis and confirmations`)
+            Sentry.captureMessage('WhatsApp credits exhausted during appointment-anamnesis cron', {
               level: 'warning',
               extra: {
                 tenantId: tenant.id,
                 tenantName: tenant.name,
                 creditsUsed: err.creditsUsed,
                 creditsTotal: err.creditsTotal,
+                anamnesisSentBeforeExhaustion: tenantAnamnesisSent,
                 appointmentsSentBeforeExhaustion: tenantSent,
               },
             })
@@ -217,34 +187,130 @@ async function runAutomations() {
             break
           }
           if (err instanceof InvalidWhatsAppPhoneError) {
-            console.warn(`[cron] Skipping appointment ${appt.id}: ${err.message}`)
+            console.warn(`[cron] Skipping same-day appointment ${appt.id}: ${err.message}`)
             continue
           }
-          console.error(`[cron] Failed to send confirmation for appointment ${appt.id}:`, err)
+          console.error(`[cron] Failed to send anamnesis for same-day appointment ${appt.id}:`, err)
           Sentry.captureException(err, {
             extra: {
               tenantId: tenant.id,
               tenantName: tenant.name,
               appointmentId: appt.id,
+              messageKind: 'anamnesis_link',
             },
           })
           tenantFailed++
         }
       }
 
-      // Every pending appointment with a valid phone either sends, fails, or
-      // trips creditExhausted (which breaks the loop). Missing and invalid
-      // phones are skipped, so if none of the first three branches match, no
-      // appointment had a usable phone.
+      let template: Awaited<ReturnType<typeof getTemplateForTenant>> | null = null
+      if (!creditExhausted && confirmationAppointments.length > 0) {
+        template = await getTemplateForTenant(tenant.id, 'appointment_confirmation')
+        if (!template) {
+          confirmationBlockedReason = 'template_missing'
+        } else if (template.status !== 'APPROVED') {
+          confirmationBlockedReason = 'template_not_approved'
+        }
+      }
+
+      if (template && template.status === 'APPROVED') {
+        for (const appt of confirmationAppointments) {
+          try {
+            const phone = appt.patientPhone ?? appt.bookingPhone
+            if (!phone) continue
+            tenantHadPhone = true
+
+            const normalizedPhone = normalizeBrPhoneForWhatsApp(phone)
+            const name = appt.patientName ?? appt.bookingName ?? ''
+
+            const params = buildConfirmationParams(appt, tenant.name)
+
+            const result = await sendTemplateMessage(
+              tenant.id,
+              normalizedPhone,
+              template.name,
+              template.language,
+              params,
+            )
+
+            await markConfirmationSent(tenant.id, appt.id, result.metaMessageId)
+
+            const conversation = await upsertConversation(
+              tenant.id,
+              normalizedPhone,
+              name,
+              undefined,
+              appt.patientId ?? undefined,
+            )
+
+            const resolvedBody = resolveTemplateBody(template.components, params)
+
+            const message = await createMessage(tenant.id, conversation.id, {
+              direction: 'outbound',
+              metaMessageId: result.metaMessageId,
+              body: resolvedBody,
+              templateName: template.name,
+              deliveryStatus: 'sent',
+            })
+
+            await pushSseEvent(tenant.id, 'new_message', {
+              conversationId: conversation.id,
+              message,
+            })
+
+            sent++
+            tenantSent++
+          } catch (err) {
+            if (err instanceof CreditExhaustedError) {
+              // Not a bug: the clinic ran out of WhatsApp credits. Reported as
+              // a warning message (not captureException) so it doesn't read as
+              // a code defect, but it still creates a Sentry issue and reaches
+              // the floraclin-logs Discord alert so a human buys more credits.
+              console.warn(`[cron] Credits exhausted for tenant ${tenant.name}, skipping remaining appointments`)
+              Sentry.captureMessage('WhatsApp credits exhausted during appointment-confirmation cron', {
+                level: 'warning',
+                extra: {
+                  tenantId: tenant.id,
+                  tenantName: tenant.name,
+                  creditsUsed: err.creditsUsed,
+                  creditsTotal: err.creditsTotal,
+                  appointmentsSentBeforeExhaustion: tenantSent,
+                },
+              })
+              creditExhausted = true
+              break
+            }
+            if (err instanceof InvalidWhatsAppPhoneError) {
+              console.warn(`[cron] Skipping appointment ${appt.id}: ${err.message}`)
+              continue
+            }
+            console.error(`[cron] Failed to send confirmation for appointment ${appt.id}:`, err)
+            Sentry.captureException(err, {
+              extra: {
+                tenantId: tenant.id,
+                tenantName: tenant.name,
+                appointmentId: appt.id,
+              },
+            })
+            tenantFailed++
+          }
+        }
+      }
+
+      // A same-day appointment can legitimately produce no confirmation and
+      // no anamnesis (for example, a fresh anamnesis), so keep that distinct
+      // from "we could not contact anyone".
       let reason: TenantOutcomeReason
       if (creditExhausted) {
         reason = 'credit_exhausted'
-      } else if (tenantSent > 0) {
+      } else if (tenantSent > 0 || tenantAnamnesisSent > 0) {
         reason = 'sent'
       } else if (tenantFailed > 0) {
         reason = 'send_failed'
+      } else if (confirmationBlockedReason) {
+        reason = confirmationBlockedReason
       } else {
-        reason = 'no_valid_phone'
+        reason = tenantHadPhone ? 'no_messages_due' : 'no_valid_phone'
       }
 
       outcomes.push({
@@ -253,6 +319,7 @@ async function runAutomations() {
         reason,
         appointmentsSent: tenantSent,
         appointmentsFailed: tenantFailed,
+        anamnesisSent: tenantAnamnesisSent,
       })
     } catch (err) {
       // A gate itself blew up (DB error, etc). This is a bug, not an

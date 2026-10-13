@@ -34,7 +34,7 @@ const TRIGGERS = [
   {
     key: 'appointment_confirmation',
     label: 'Confirmação de consulta',
-    description: 'Envia confirmação automática diariamente às 8h para consultas de amanhã (e de hoje, caso ainda não tenham sido enviadas). O paciente confirma ou solicita reagendamento pelo WhatsApp.',
+    description: 'Envia confirmação automática diariamente às 6h30 para consultas do dia seguinte. Consultas do próprio dia recebem apenas o link de anamnese, quando essa opção estiver ativada.',
     icon: CalendarCheck,
     purposeKey: 'appointment_confirmation',
     configFields: [

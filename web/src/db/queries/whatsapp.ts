@@ -7,9 +7,10 @@ import {
   whatsappQueuedMessages,
   sseEvents,
 } from '@/db/schema'
-import { eq, and, or, desc, gt, gte, lt, ilike, sql, notInArray, inArray } from 'drizzle-orm'
+import { eq, and, or, desc, gt, gte, lte, lt, ilike, sql, notInArray, inArray } from 'drizzle-orm'
 import { normalizeBrPhone } from '@/lib/phone'
 import { getTenant } from '@/db/queries/tenants'
+import { startOfBrDay, endOfBrDay } from '@/lib/dates'
 import { resolveTemplatePrefix, belongsToTemplatePrefix } from '@/lib/whatsapp-blueprints'
 import type { PaginatedResult } from '@/types'
 
@@ -462,6 +463,38 @@ export async function listMessages(
     limit,
     totalPages: Math.ceil(total / limit),
   }
+}
+
+export async function hasOutboundTemplateMessageForPatientOnDay(
+  tenantId: string,
+  patientId: string,
+  templateName: string,
+  ymd: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: whatsappMessages.id })
+    .from(whatsappMessages)
+    .innerJoin(
+      whatsappConversations,
+      and(
+        eq(whatsappConversations.id, whatsappMessages.conversationId),
+        eq(whatsappConversations.tenantId, whatsappMessages.tenantId),
+      ),
+    )
+    .where(
+      and(
+        eq(whatsappMessages.tenantId, tenantId),
+        eq(whatsappMessages.direction, 'outbound'),
+        eq(whatsappMessages.templateName, templateName),
+        notInArray(whatsappMessages.deliveryStatus, ['failed']),
+        eq(whatsappConversations.patientId, patientId),
+        gte(whatsappMessages.timestamp, startOfBrDay(ymd)),
+        lte(whatsappMessages.timestamp, endOfBrDay(ymd)),
+      ),
+    )
+    .limit(1)
+
+  return Boolean(row)
 }
 
 // ─── TEMPLATES ─────────────────────────────────────────────────────

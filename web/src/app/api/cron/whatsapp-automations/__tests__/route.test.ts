@@ -1,8 +1,9 @@
 /**
  * Unit tests for the WhatsApp automations cron job.
  *
- * The cron runs daily at 08:00 BRT, iterates WhatsApp-enabled tenants, and
- * sends appointment-confirmation templates for upcoming appointments.
+ * The cron runs daily at 06:30 BRT, iterates WhatsApp-enabled tenants, sends
+ * appointment-confirmation templates for next-day appointments, and sends only
+ * anamnesis links for same-day appointments when that automation is enabled.
  *
  * Because Vercel invokes this route and discards the response body, the
  * route records a structured outcome reason per tenant and reports real
@@ -75,6 +76,10 @@ vi.mock('@/lib/discord', () => ({
   notifyDiscord: vi.fn().mockResolvedValue(undefined),
 }))
 
+vi.mock('@/lib/whatsapp-anamnesis', () => ({
+  maybeAutoSendAnamnesisLink: vi.fn(),
+}))
+
 // ─── Imports (after mocks) ───────────────────────────────────────────
 
 import { db } from '@/db/client'
@@ -93,6 +98,8 @@ import {
 import { sendTemplateMessage, resolveTemplateBody, getTemplateForTenant, CreditExhaustedError } from '@/lib/whatsapp'
 import { isSubscriptionActive } from '@/lib/plans'
 import { notifyDiscord } from '@/lib/discord'
+import { brToday, shiftBrYmd } from '@/lib/dates'
+import { maybeAutoSendAnamnesisLink } from '@/lib/whatsapp-anamnesis'
 import { GET } from '../route'
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -203,6 +210,7 @@ beforeEach(() => {
   process.env.CRON_SECRET = CRON_SECRET
   vi.mocked(isSubscriptionActive).mockResolvedValue(true)
   vi.mocked(notifyDiscord).mockResolvedValue(undefined)
+  vi.mocked(maybeAutoSendAnamnesisLink).mockResolvedValue({ status: 'skipped', reason: 'automation_disabled' })
 
   // Default: db.select().from() returns empty tenants list
   dbMock.from.mockResolvedValue([])
@@ -324,6 +332,9 @@ describe('GET /api/cron/whatsapp-automations', () => {
         makeTenant('t1', 'Clinic A', { whatsapp_enabled: true }),
       ])
       vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
+        makeAppointment({ date: shiftBrYmd(brToday(), 1) }),
+      ])
       vi.mocked(getTemplateForTenant).mockResolvedValue(null)
 
       const res = await GET(makeRequest(CRON_SECRET))
@@ -338,6 +349,9 @@ describe('GET /api/cron/whatsapp-automations', () => {
         makeTenant('t1', 'Clinic A', { whatsapp_enabled: true }),
       ])
       vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
+        makeAppointment({ date: shiftBrYmd(brToday(), 1) }),
+      ])
       vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate({ status: 'PENDING' }))
 
       const res = await GET(makeRequest(CRON_SECRET))
@@ -600,6 +614,79 @@ describe('GET /api/cron/whatsapp-automations', () => {
       expect(getAppointmentsPendingConfirmationUntil).toHaveBeenCalledWith(
         'tenant-1',
       )
+    })
+
+    it('does not send appointment confirmations for same-day appointments', async () => {
+      const today = brToday()
+      dbMock.from.mockResolvedValue([
+        makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([
+        makeAutomation({ config: { autoAnamnesisEnabled: true, anamnesisStaleDays: 60 } }),
+      ])
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
+        makeAppointment({ date: today, patientId: 'patient-1', patientPhone: '11999990000' }),
+      ])
+      vi.mocked(maybeAutoSendAnamnesisLink).mockResolvedValue({ status: 'sent', metaMessageId: 'wamid.anamnesis' })
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(sendTemplateMessage).not.toHaveBeenCalled()
+      expect(markConfirmationSent).not.toHaveBeenCalled()
+      expect(getTemplateForTenant).not.toHaveBeenCalledWith('tenant-1', 'appointment_confirmation')
+      expect(maybeAutoSendAnamnesisLink).toHaveBeenCalledWith({
+        tenantId: 'tenant-1',
+        patientId: 'patient-1',
+        phone: '5511999990000',
+        automation: expect.objectContaining({
+          trigger: 'appointment_confirmation',
+          config: { autoAnamnesisEnabled: true, anamnesisStaleDays: 60 },
+        }),
+        dedupeDateYmd: today,
+      })
+      expect(findOutcome(json, 'tenant-1')).toMatchObject({
+        reason: 'sent',
+        appointmentsSent: 0,
+        anamnesisSent: 1,
+      })
+    })
+
+    it('keeps next-day confirmation behavior while same-day appointments only get anamnesis', async () => {
+      const today = brToday()
+      const tomorrow = shiftBrYmd(today, 1)
+      dbMock.from.mockResolvedValue([
+        makeTenant('tenant-1', 'Flora Clinic', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([
+        makeAutomation({ config: { autoAnamnesisEnabled: true } }),
+      ])
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate())
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
+        makeAppointment({ id: 'same-day', date: today, patientId: 'patient-1', patientPhone: '11999990000' }),
+        makeAppointment({ id: 'next-day', date: tomorrow, patientPhone: '11999990001' }),
+      ])
+      vi.mocked(maybeAutoSendAnamnesisLink).mockResolvedValue({ status: 'sent', metaMessageId: 'wamid.anamnesis' })
+      vi.mocked(sendTemplateMessage).mockResolvedValue({ metaMessageId: 'wamid.confirmation' })
+      vi.mocked(markConfirmationSent).mockResolvedValue(undefined as never)
+      vi.mocked(upsertConversation).mockResolvedValue({ id: 'conv-1' } as never)
+      vi.mocked(resolveTemplateBody).mockReturnValue('Olá Maria, sua consulta...')
+      vi.mocked(createMessage).mockResolvedValue({ id: 'msg-1' } as never)
+      vi.mocked(pushSseEvent).mockResolvedValue(undefined as never)
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(maybeAutoSendAnamnesisLink).toHaveBeenCalledTimes(1)
+      expect(sendTemplateMessage).toHaveBeenCalledTimes(1)
+      expect(markConfirmationSent).toHaveBeenCalledWith('tenant-1', 'next-day', 'wamid.confirmation')
+      expect(markConfirmationSent).not.toHaveBeenCalledWith('tenant-1', 'same-day', expect.any(String))
+      expect(json.sent).toBe(1)
+      expect(findOutcome(json, 'tenant-1')).toMatchObject({
+        reason: 'sent',
+        appointmentsSent: 1,
+        anamnesisSent: 1,
+      })
     })
   })
 

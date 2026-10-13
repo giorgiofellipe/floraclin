@@ -56,7 +56,7 @@ describe('withCronMonitor', () => {
   it('flushes only after the job has finished', async () => {
     const order: string[] = []
 
-    await withCronMonitor('whatsapp-automations', '0 11 * * *', async () => {
+    await withCronMonitor('whatsapp-automations', '30 9 * * *', async () => {
       order.push('job')
       return null
     })

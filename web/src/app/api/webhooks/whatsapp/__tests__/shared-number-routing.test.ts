@@ -136,6 +136,7 @@ vi.mock('@/db/queries/whatsapp', () => ({
   updateQueuedMessageStatus: vi.fn(),
   expireStaleQueuedMessages: vi.fn(() => []),
   listAutomations: vi.fn(() => []),
+  hasOutboundTemplateMessageForPatientOnDay: vi.fn(() => false),
 }))
 
 vi.mock('@/db/queries/appointments', () => ({
