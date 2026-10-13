@@ -161,4 +161,39 @@ describe('OnboardingWizard', () => {
       expect(p).not.toHaveProperty('isCustom')
     }
   })
+
+  // Regression: the phone field started empty, so finishing onboarding erased the signup phone
+  // and every later lifecycle WhatsApp message was skipped.
+  it('keeps the signup phone and email when the owner finishes without editing them', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    render(
+      wrap(
+        <OnboardingWizard
+          tenantName="My Clinic"
+          tenantPhone="47988443635"
+          tenantEmail="contato@clinica.com.br"
+          existingProcedureTypes={[]}
+          existingProducts={[]}
+        />,
+      ),
+    )
+
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-complete'))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const [, init] = fetchMock.mock.calls[0]!
+    const body = JSON.parse((init as RequestInit).body as string)
+
+    expect(body.clinic).toMatchObject({ phone: '47988443635', email: 'contato@clinica.com.br' })
+  })
 })
