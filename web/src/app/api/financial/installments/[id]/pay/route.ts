@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { createAuditLog } from '@/lib/audit'
 import { requireWrite } from '@/lib/write-access'
 import { recordPayment } from '@/db/queries/financial'
 import { recordPaymentSchema } from '@/validations/financial'
 import { handleApiError } from '@/lib/api-error'
+import { BusinessError } from '@/lib/errors'
 
 export async function PUT(
   request: Request,
@@ -21,6 +21,8 @@ export async function PUT(
       paymentMethod: body.paymentMethod,
       paidAt: body.paidAt,
       notes: body.notes,
+      expectedTotalDue: body.expectedTotalDue,
+      acceptOverpayment: body.acceptOverpayment,
     })
     if (!parsed.success) {
       return NextResponse.json(
@@ -31,29 +33,10 @@ export async function PUT(
 
     const result = await recordPayment(ctx.tenantId, ctx.userId, parsed.data)
 
-    await createAuditLog({
-      tenantId: ctx.tenantId,
-      userId: ctx.userId,
-      action: 'update',
-      entityType: 'installment',
-      entityId: id,
-      changes: {
-        payment: {
-          old: null,
-          new: {
-            amount: parsed.data.amount,
-            paymentMethod: parsed.data.paymentMethod,
-            allocation: result.allocation,
-          },
-        },
-      },
-    })
-
     return NextResponse.json({ success: true, data: result })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('não encontrada') || msg.includes('já está') || msg.includes('cancelada')) {
-      return NextResponse.json({ error: msg }, { status: 400 })
+    if (error instanceof BusinessError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 409 })
     }
     return handleApiError(error, request)
   }

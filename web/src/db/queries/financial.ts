@@ -14,20 +14,22 @@ import {
   expenseInstallments,
   metaConversionEvents,
 } from '@/db/schema'
-import { eq, and, isNull, sql, count, sum, desc, inArray, or, gte, lte } from 'drizzle-orm'
+import { eq, and, isNull, sql, count, sum, desc, inArray, notInArray, or, gte, lte } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
-import { startOfBrDay, endOfBrDay, toLocalYmd } from '@/lib/dates'
+import { startOfBrDay, endOfBrDay, toBrYmd, toLocalYmd } from '@/lib/dates'
+import { formatCurrency, formatDate } from '@/lib/utils'
 import { createAuditLog } from '@/lib/audit'
 import {
-  calculateFine,
-  calculateInterest,
-  getDaysOverdue,
-  allocatePayment,
   replayPayments,
-  type InstallmentState,
+  quoteInstallment,
+  isInstallmentOverdue,
+  round2,
   type InstallmentBase,
+  type ReplayResult,
+  type PaymentAllocation,
   type PaymentInput,
 } from '@/lib/financial/penalties'
+import { BusinessError } from '@/lib/errors'
 import type { CreateFinancialEntryInput, FinancialFilterInput, RecordPaymentInput } from '@/validations/financial'
 import type { PaymentMethod, FinancialStatus } from '@/types'
 import { addDays } from 'date-fns'
@@ -39,11 +41,12 @@ import {
   type MetaEventPrerequisites,
   type PendingMetaEventRow,
 } from '@/lib/meta/events'
+import { META_EVENT_MAX_AGE_MS } from '@/db/queries/meta-events'
 import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
 import type { MetaActionSource } from '@/lib/meta/types'
 import { reportSideEffectFailure } from '@/lib/observability'
 
-// ─── CREATE FINANCIAL ENTRY (unchanged) ─────────────────────────────
+// ─── CREATE FINANCIAL ENTRY ─────────────────────────────────────────
 
 export async function createFinancialEntry(
   tenantId: string,
@@ -79,6 +82,7 @@ export async function createFinancialEntry(
       })
       .returning()
 
+    const terms = await loadInstallmentTerms(tx, tenantId)
     const installmentAmount = Math.floor((data.totalAmount * 100) / data.installmentCount) / 100
     const remainder = Math.round((data.totalAmount - installmentAmount * data.installmentCount) * 100) / 100
     const today = new Date()
@@ -94,6 +98,7 @@ export async function createFinancialEntry(
         amount: amount.toFixed(2),
         dueDate,
         status: 'pending' as const,
+        ...terms,
       }
     })
 
@@ -259,6 +264,13 @@ async function emitPurchaseEventForEntry(
       return null
     }
 
+    // eventTime is the payment's own date, and the outbox holds one Purchase
+    // per entry: a row Meta will refuse on age would take the slot from the
+    // next on-time payment on the same entry.
+    if (Date.now() - eventTime.getTime() > META_EVENT_MAX_AGE_MS) {
+      return null
+    }
+
     const eventId = `purchase:${financialEntryId}`
 
     // The outbox insert gets a SAVEPOINT of its own: raised on the caller's
@@ -358,7 +370,229 @@ async function deliverPurchaseEvents(rows: PendingMetaEventRow[]): Promise<void>
   }
 }
 
-// ─── RECORD PAYMENT (replaces payInstallment) ───────────────────────
+// ─── RECORD PAYMENT ────────────────────────────────────────────────
+
+type LivePaymentRow = typeof paymentRecords.$inferSelect
+type LivePayments = Awaited<ReturnType<typeof loadLivePayments>>
+
+export async function loadLivePayments(tx: typeof db, installmentId: string) {
+  const rows = await tx
+    .select()
+    .from(paymentRecords)
+    .where(
+      and(
+        eq(paymentRecords.installmentId, installmentId),
+        isNull(paymentRecords.reversedAt)
+      )
+    )
+    .orderBy(paymentRecords.paidAt, paymentRecords.recordedAt)
+
+  return { rows, inputs: toPaymentInputs(rows) }
+}
+
+/**
+ * Payments on an installment are recorded in date order: one dated before a
+ * later payment would re-split what that payment already settled. Interest
+ * accrues per BR day, so a payment on the latest payment's own day is moved to
+ * that payment's instant and replays after it.
+ */
+export async function paymentDateAfterLivePayments(
+  tx: typeof db,
+  tenantId: string,
+  installment: { installmentNumber: number; financialEntryId: string },
+  rows: Pick<LivePaymentRow, 'paidAt'>[],
+  paidAt: Date,
+): Promise<Date> {
+  const latest = rows[rows.length - 1]
+  if (!latest) return paidAt
+
+  const latestPaidAt = new Date(latest.paidAt)
+  if (paidAt.getTime() >= latestPaidAt.getTime()) return paidAt
+  if (toBrYmd(paidAt) === toBrYmd(latestPaidAt)) return latestPaidAt
+
+  const [entry] = await tx
+    .select({ description: financialEntries.description, patientName: patients.fullName })
+    .from(financialEntries)
+    .innerJoin(patients, eq(patients.id, financialEntries.patientId))
+    .where(
+      and(
+        eq(financialEntries.id, installment.financialEntryId),
+        eq(financialEntries.tenantId, tenantId)
+      )
+    )
+    .limit(1)
+
+  const which = entry
+    ? `parcela ${installment.installmentNumber} de ${entry.description} (${entry.patientName})`
+    : `parcela ${installment.installmentNumber}`
+  throw new BusinessError(
+    'PAYMENT_BEFORE_LATER_PAYMENT',
+    `Já existe um pagamento em ${formatDate(toBrYmd(latestPaidAt))} na ${which}. Registre pagamentos a partir dessa data.`,
+  )
+}
+
+const NEW_PAYMENT_ID = '__new__'
+
+/** Replays the installment with the new payment last. */
+function priceNewPayment(input: {
+  base: InstallmentBase
+  livePayments: LivePayments
+  amount: number
+  paidAt: Date
+  now: Date
+}) {
+  const { base, livePayments, amount, paidAt, now } = input
+
+  const replay = replayPayments(
+    base,
+    [
+      ...livePayments.inputs,
+      { id: NEW_PAYMENT_ID, amount, paidAt: paidAt.toISOString(), recordedAt: now.toISOString() },
+    ],
+    now,
+  )
+
+  const newPayment = replay.payments.find((p) => p.id === NEW_PAYMENT_ID)!
+  const allocation: PaymentAllocation = {
+    interestCovered: newPayment.interestCovered,
+    fineCovered: newPayment.fineCovered,
+    principalCovered: newPayment.principalCovered,
+    excessAmount: newPayment.excessAmount,
+  }
+
+  return { allocation, replay }
+}
+
+interface PaymentSplit {
+  interestCovered: number
+  fineCovered: number
+  principalCovered: number
+}
+
+interface SplitChange {
+  id: string
+  old: PaymentSplit
+  new: PaymentSplit
+}
+
+type PersistCause =
+  | { cause: 'payment'; newPayment: { paidAt: Date; paymentMethod: string } }
+  | { cause: 'reversal'; keepCancelled: boolean }
+
+function sameSplit(a: PaymentSplit, b: PaymentSplit): boolean {
+  return (
+    toCents(a.interestCovered) === toCents(b.interestCovered) &&
+    toCents(a.fineCovered) === toCents(b.fineCovered) &&
+    toCents(a.principalCovered) === toCents(b.principalCovered)
+  )
+}
+
+/** The audit entry for the stored splits a write changed, if it changed any. */
+function splitChangesAudit(changes: SplitChange[]): Record<string, { old: unknown; new: unknown }> {
+  if (changes.length === 0) return {}
+  return {
+    paymentSplits: {
+      old: changes.map((c) => ({ id: c.id, ...c.old })),
+      new: changes.map((c) => ({ id: c.id, ...c.new })),
+    },
+  }
+}
+
+/**
+ * A renegotiation or a cancel took the entry out of collection. A payment or a
+ * reversal on one of its installments corrects the cash record, not that
+ * decision, so the entry status is left alone.
+ */
+function isOutOfCollection(entryStatus: string | undefined): boolean {
+  return entryStatus === 'renegotiated' || entryStatus === 'cancelled'
+}
+
+/**
+ * Writes what a replay of an installment's live payments concluded: the split
+ * of every stored payment the replay disagrees with, the installment, then the
+ * entry status. A new payment leaves an open installment's settlement fields
+ * alone; a reversal clears them and keeps a cancel in place.
+ */
+async function persistReplay(
+  tx: typeof db,
+  tenantId: string,
+  input: {
+    installment: { id: string; financialEntryId: string; amount: number }
+    replay: ReplayResult
+    storedPayments: LivePaymentRow[]
+    updateEntryStatus: boolean
+  } & PersistCause,
+): Promise<{ isPaid: boolean; splitChanges: SplitChange[] }> {
+  const { installment, replay, storedPayments } = input
+
+  const splitChanges: SplitChange[] = []
+  for (const replayed of replay.payments) {
+    const stored = storedPayments.find((p) => p.id === replayed.id)
+    if (!stored) continue
+    const before: PaymentSplit = {
+      interestCovered: Number(stored.interestCovered),
+      fineCovered: Number(stored.fineCovered),
+      principalCovered: Number(stored.principalCovered),
+    }
+    const after: PaymentSplit = {
+      interestCovered: replayed.interestCovered,
+      fineCovered: replayed.fineCovered,
+      principalCovered: replayed.principalCovered,
+    }
+    if (sameSplit(before, after)) continue
+    await tx
+      .update(paymentRecords)
+      .set({
+        interestCovered: after.interestCovered.toFixed(2),
+        fineCovered: after.fineCovered.toFixed(2),
+        principalCovered: after.principalCovered.toFixed(2),
+      })
+      .where(eq(paymentRecords.id, stored.id))
+    splitChanges.push({ id: stored.id, old: before, new: after })
+  }
+
+  const state = replay.installmentState
+  const isPaid =
+    replay.payments.length > 0 &&
+    state.amountPaid >= installment.amount &&
+    state.fineAmount <= 0 &&
+    state.interestAmount <= 0
+
+  // The settling payment is the last one that allocated anything: once the
+  // debt is settled every later payment allocates nothing.
+  const settledBy = isPaid
+    ? ([...replay.payments]
+        .reverse()
+        .find((p) => p.interestCovered + p.fineCovered + p.principalCovered > 0) ??
+      replay.payments[replay.payments.length - 1])
+    : undefined
+  const settledByRow =
+    settledBy &&
+    (settledBy.id === NEW_PAYMENT_ID && input.cause === 'payment'
+      ? input.newPayment
+      : storedPayments.find((p) => p.id === settledBy.id))
+  const openSettlement = input.cause === 'reversal' ? null : undefined
+
+  const keepCancelled = input.cause === 'reversal' && input.keepCancelled
+  const status = keepCancelled ? 'cancelled' : isPaid ? 'paid' : 'pending'
+
+  await tx
+    .update(installments)
+    .set({
+      amountPaid: replay.payments.length === 0 ? '0' : state.amountPaid.toFixed(2),
+      status,
+      paidAt: settledByRow ? new Date(settledByRow.paidAt) : openSettlement,
+      paymentMethod: settledByRow ? (settledByRow.paymentMethod as PaymentMethod) : openSettlement,
+      updatedAt: new Date(),
+    })
+    .where(eq(installments.id, installment.id))
+
+  if (input.updateEntryStatus) {
+    await updateEntryStatus(tx, tenantId, installment.financialEntryId)
+  }
+
+  return { isPaid, splitChanges }
+}
 
 export async function recordPayment(
   tenantId: string,
@@ -368,242 +602,117 @@ export async function recordPayment(
   const metaContexts = await prepareMetaPurchaseContexts(tenantId, [data.installmentId])
 
   const { purchase, ...result } = await withTransaction(async (tx) => {
-    // 1. Lock installment row with FOR UPDATE
-    const lockResult = await tx.execute(
-      sql`SELECT * FROM floraclin.installments
-          WHERE id = ${data.installmentId}
-          AND tenant_id = ${tenantId}
-          FOR UPDATE`
-    )
+    const [row] = await tx
+      .select()
+      .from(installments)
+      .where(and(eq(installments.id, data.installmentId), eq(installments.tenantId, tenantId)))
+      .for('update')
 
-    const rows = (Array.isArray(lockResult) ? lockResult : (lockResult as Record<string, unknown>).rows ?? lockResult) as Record<string, unknown>[]
-    const row = rows[0] as Record<string, unknown> | undefined
     if (!row) {
-      throw new Error('Parcela não encontrada ou não pertence a esta clínica')
+      throw new BusinessError('INSTALLMENT_NOT_FOUND', 'Parcela não encontrada ou não pertence a esta clínica')
     }
 
     if (row.status === 'paid') {
-      throw new Error('Parcela já está totalmente paga')
+      throw new BusinessError('INSTALLMENT_ALREADY_PAID', 'Parcela já está totalmente paga')
     }
 
     if (row.status === 'cancelled') {
-      throw new Error('Parcela cancelada não pode receber pagamento')
+      throw new BusinessError('INSTALLMENT_CANCELLED', 'Parcela cancelada não pode receber pagamento')
     }
 
-    const installmentAmount = Number(row.amount)
-    const currentAmountPaid = Number(row.amount_paid ?? 0)
-    const currentFineAmount = Number(row.fine_amount ?? 0)
-    const dueDate = String(row.due_date)
-    const financialEntryId = String(row.financial_entry_id)
+    const financialEntryId = row.financialEntryId
+    const [entry] = await tx
+      .select({
+        status: financialEntries.status,
+        patientId: financialEntries.patientId,
+        description: financialEntries.description,
+      })
+      .from(financialEntries)
+      .where(and(eq(financialEntries.id, financialEntryId), eq(financialEntries.tenantId, tenantId)))
+      .for('update')
 
-    // 2. If first delinquency (appliedFineValue is null), snapshot settings
-    let appliedFineType = row.applied_fine_type as string | null
-    let appliedFineValue = row.applied_fine_value != null ? Number(row.applied_fine_value) : null
-    let appliedInterestRate = row.applied_interest_rate != null ? Number(row.applied_interest_rate) : null
+    // Captured behind the lock so recordedAt reflects the order payments were
+    // actually applied in, and reused for the persisted state so a backdated
+    // payment does not freeze the installment's interest at its own date. A
+    // payment cannot have happened after it was recorded, so paidAt is capped.
+    const now = new Date()
+    const requestedPaidAt = data.paidAt
+      ? new Date(Math.min(new Date(data.paidAt).getTime(), now.getTime()))
+      : now
+    const livePayments = await loadLivePayments(tx, data.installmentId)
+    const paidAt = await paymentDateAfterLivePayments(
+      tx,
+      tenantId,
+      row,
+      livePayments.rows,
+      requestedPaidAt,
+    )
 
-    const paidAt = data.paidAt ? new Date(data.paidAt) : new Date()
-    const gracePeriodDays = await getGracePeriodDays(tx, tenantId)
+    const base = toInstallmentBase(row)
 
-    if (appliedFineValue === null) {
-      // Load settings and snapshot
-      const settings = await loadFinancialSettings(tx, tenantId)
-      appliedFineType = settings.fineType
-      appliedFineValue = Number(settings.fineValue)
-      appliedInterestRate = Number(settings.monthlyInterestPercent)
-
-      await tx
-        .update(installments)
-        .set({
-          appliedFineType,
-          appliedFineValue: String(appliedFineValue),
-          appliedInterestRate: String(appliedInterestRate),
-        })
-        .where(eq(installments.id, data.installmentId))
+    // Same pricer as the quote endpoint, so an unchanged balance always
+    // matches what the dialog prefilled from.
+    const totalDue = quoteInstallment(base, livePayments.inputs, paidAt).totalDue
+    if (toCents(totalDue) !== toCents(data.expectedTotalDue)) {
+      throw new BusinessError(
+        'QUOTE_CHANGED',
+        'O total pendente mudou desde que a tela foi aberta. Confira o novo valor e confirme novamente.',
+      )
+    }
+    if (toCents(data.amount) > toCents(totalDue) && data.acceptOverpayment !== true) {
+      throw new BusinessError(
+        'OVERPAYMENT_NOT_CONFIRMED',
+        `O valor informado é maior que o total pendente de ${formatCurrency(totalDue)}. Confirme o pagamento acima do devido para registrá-lo.`,
+      )
     }
 
-    // 3. Check for backdated payment — if paidAt is before existing payments
-    const existingPayments = await tx
-      .select()
-      .from(paymentRecords)
-      .where(eq(paymentRecords.installmentId, data.installmentId))
-      .orderBy(paymentRecords.paidAt)
+    const { allocation: paymentAllocation, replay } = priceNewPayment({
+      base,
+      livePayments,
+      amount: data.amount,
+      paidAt,
+      now,
+    })
 
-    const isBackdated = existingPayments.length > 0 &&
-      paidAt < new Date(existingPayments[0].paidAt)
-
-    let paymentAllocation: { interestCovered: number; fineCovered: number; principalCovered: number }
-    let finalAmountPaid: number
-    let finalFineAmount: number
-    let finalInterestAmount: number
-    let finalLastCalcAt: Date
-
-    if (isBackdated) {
-      // Replay all payments including the new one
-      const NEW_PAYMENT_SENTINEL = '__new__'
-      const allPayments: PaymentInput[] = [
-        ...existingPayments.map((p) => ({
-          id: p.id,
-          amount: Number(p.amount),
-          paidAt: new Date(p.paidAt).toISOString(),
-        })),
-        { id: NEW_PAYMENT_SENTINEL, amount: data.amount, paidAt: paidAt.toISOString() },
-      ]
-
-      const base: InstallmentBase = {
-        amount: installmentAmount,
-        dueDate,
-        appliedFineValue: appliedFineValue!,
-        appliedFineType: appliedFineType!,
-        appliedInterestRate: appliedInterestRate!,
-        gracePeriodDays,
-      }
-
-      const result = replayPayments(base, allPayments)
-
-      // Find this new payment's allocation in the replay
-      const newPaymentIdx = result.payments.findIndex(
-        (p) => p.id === NEW_PAYMENT_SENTINEL
-      )
-      paymentAllocation = newPaymentIdx >= 0
-        ? {
-            interestCovered: result.payments[newPaymentIdx].interestCovered,
-            fineCovered: result.payments[newPaymentIdx].fineCovered,
-            principalCovered: result.payments[newPaymentIdx].principalCovered,
-          }
-        : { interestCovered: 0, fineCovered: 0, principalCovered: data.amount }
-
-      finalAmountPaid = result.installmentState.amountPaid
-      finalFineAmount = result.installmentState.fineAmount
-      finalInterestAmount = result.installmentState.interestAmount
-      finalLastCalcAt = result.installmentState.lastFineInterestCalcAt
-        ? new Date(result.installmentState.lastFineInterestCalcAt)
-        : paidAt
-
-      // Update existing payment records with recalculated allocations
-      for (let i = 0; i < result.payments.length; i++) {
-        const replayedPayment = result.payments[i]
-        if (replayedPayment.id === NEW_PAYMENT_SENTINEL) continue
-        // Find matching existing payment record by ID
-        const existingRecord = replayedPayment.id
-          ? existingPayments.find((ep) => ep.id === replayedPayment.id)
-          : undefined
-        if (existingRecord) {
-          await tx
-            .update(paymentRecords)
-            .set({
-              interestCovered: replayedPayment.interestCovered.toFixed(2),
-              fineCovered: replayedPayment.fineCovered.toFixed(2),
-              principalCovered: replayedPayment.principalCovered.toFixed(2),
-            })
-            .where(eq(paymentRecords.id, existingRecord.id))
-        }
-      }
-    } else {
-      // Normal flow: calculate penalties as of paidAt
-      const daysOverdue = getDaysOverdue(
-        row.last_fine_interest_calc_at
-          ? new Date(row.last_fine_interest_calc_at as string).toISOString()
-          : dueDate,
-        row.last_fine_interest_calc_at ? 0 : gracePeriodDays,
-        paidAt
-      )
-
-      // Apply fine once on first overdue payment if not yet applied
-      let fineAmount = currentFineAmount
-      if (daysOverdue > 0 && currentAmountPaid === 0 && currentFineAmount === 0) {
-        fineAmount = calculateFine(installmentAmount, appliedFineType!, appliedFineValue!)
-      }
-
-      const remainingPrincipal = installmentAmount - currentAmountPaid
-      const interestAmount = calculateInterest(
-        remainingPrincipal,
-        daysOverdue,
-        appliedInterestRate!
-      )
-
-      const state: InstallmentState = {
-        amount: installmentAmount,
-        amountPaid: currentAmountPaid,
-        fineAmount,
-        interestAmount,
-      }
-
-      const totalDue = Math.round(((installmentAmount - currentAmountPaid) + fineAmount + interestAmount) * 100) / 100
-      if (data.amount > totalDue + 0.02) {
-        throw new Error('Valor do pagamento excede o total devido')
-      }
-
-      paymentAllocation = allocatePayment(state, data.amount)
-
-      finalAmountPaid = currentAmountPaid + paymentAllocation.principalCovered
-      finalFineAmount = fineAmount - paymentAllocation.fineCovered
-      finalInterestAmount = interestAmount - paymentAllocation.interestCovered
-      finalLastCalcAt = paidAt
-    }
-
-    const actualAmount = paymentAllocation.interestCovered + paymentAllocation.fineCovered + paymentAllocation.principalCovered
-
-    // 4. Create payment_records row
+    // The row stores the cash received, not the cash allocated. Anything above
+    // the total due is visible as the gap between the two and is not applied
+    // to any other charge.
     const [paymentRecord] = await tx
       .insert(paymentRecords)
       .values({
         installmentId: data.installmentId,
-        amount: actualAmount.toFixed(2),
+        amount: data.amount.toFixed(2),
         paymentMethod: data.paymentMethod,
         interestCovered: paymentAllocation.interestCovered.toFixed(2),
         fineCovered: paymentAllocation.fineCovered.toFixed(2),
         principalCovered: paymentAllocation.principalCovered.toFixed(2),
         paidAt,
+        recordedAt: now,
         recordedBy: userId,
         notes: data.notes,
       })
       .returning()
 
-    // 5. Create cash_movements inflow row
-    // Get patient from financial entry
-    const [entryInfo] = await tx
-      .select({
-        patientId: financialEntries.patientId,
-        description: financialEntries.description,
-      })
-      .from(financialEntries)
-      .where(eq(financialEntries.id, financialEntryId))
-      .limit(1)
-
     await tx.insert(cashMovements).values({
       tenantId,
       type: 'inflow',
-      amount: actualAmount.toFixed(2),
-      description: `Pagamento: ${entryInfo?.description ?? 'Cobranca'}`,
+      amount: data.amount.toFixed(2),
+      description: `Pagamento: ${entry?.description ?? 'Cobranca'}`,
       paymentMethod: data.paymentMethod,
       movementDate: paidAt,
       paymentRecordId: paymentRecord.id,
-      patientId: entryInfo?.patientId,
+      patientId: entry?.patientId,
       recordedBy: userId,
     })
 
-    // 6. Update installment
-    const isPaid =
-      finalAmountPaid >= installmentAmount &&
-      finalFineAmount <= 0 &&
-      finalInterestAmount <= 0
-
-    await tx
-      .update(installments)
-      .set({
-        amountPaid: finalAmountPaid.toFixed(2),
-        fineAmount: Math.max(0, finalFineAmount).toFixed(2),
-        interestAmount: Math.max(0, finalInterestAmount).toFixed(2),
-        lastFineInterestCalcAt: finalLastCalcAt,
-        status: isPaid ? 'paid' : 'pending',
-        paidAt: isPaid ? paidAt : undefined,
-        paymentMethod: isPaid ? data.paymentMethod : undefined,
-        updatedAt: new Date(),
-      })
-      .where(eq(installments.id, data.installmentId))
-
-    // 7. Update parent financial_entries status
-    await updateEntryStatus(tx, tenantId, financialEntryId)
+    const { isPaid, splitChanges } = await persistReplay(tx, tenantId, {
+      cause: 'payment',
+      newPayment: { paidAt, paymentMethod: data.paymentMethod },
+      installment: { id: data.installmentId, financialEntryId, amount: base.amount },
+      replay,
+      storedPayments: livePayments.rows,
+      updateEntryStatus: !isOutOfCollection(entry?.status),
+    })
 
     const purchase = await emitPurchaseEventForEntry(
       tx,
@@ -612,6 +721,27 @@ export async function recordPayment(
       paidAt,
       metaContexts.get(financialEntryId)
     )
+
+    await createAuditLog({
+      tenantId,
+      userId,
+      action: 'update',
+      entityType: 'installment',
+      entityId: data.installmentId,
+      changes: {
+        payment: {
+          old: null,
+          new: {
+            amount: data.amount,
+            paymentMethod: data.paymentMethod,
+            requestedPaidAt: data.paidAt ?? null,
+            paidAt: paidAt.toISOString(),
+            allocation: paymentAllocation,
+          },
+        },
+        ...splitChangesAudit(splitChanges),
+      },
+    }, tx)
 
     return {
       paymentRecord,
@@ -635,7 +765,6 @@ export async function reversePayment(
   reason?: string
 ) {
   return withTransaction(async (tx) => {
-    // 1. Load payment record + verify ownership via installment → financial_entry
     const [pr] = await tx
       .select()
       .from(paymentRecords)
@@ -643,40 +772,60 @@ export async function reversePayment(
       .limit(1)
 
     if (!pr) {
-      throw new Error('Pagamento não encontrado')
+      throw new BusinessError('PAYMENT_NOT_FOUND', 'Pagamento não encontrado')
     }
 
-    // Verify tenant ownership through installment chain
+    // Both recordPayment and reversePayment rewrite payment records behind
+    // this lock, so taking it here too serializes the two paths instead of
+    // letting them deadlock on each other's row updates. It is also the
+    // tenant check: the payment record carries no tenant of its own.
     const [inst] = await tx
       .select({
         id: installments.id,
-        tenantId: installments.tenantId,
         financialEntryId: installments.financialEntryId,
+        status: installments.status,
         amount: installments.amount,
         dueDate: installments.dueDate,
         appliedFineType: installments.appliedFineType,
         appliedFineValue: installments.appliedFineValue,
         appliedInterestRate: installments.appliedInterestRate,
+        appliedGracePeriodDays: installments.appliedGracePeriodDays,
+        penaltyPauses: installments.penaltyPauses,
+        cancelledAt: installments.cancelledAt,
       })
       .from(installments)
-      .where(
-        and(
-          eq(installments.id, pr.installmentId),
-          eq(installments.tenantId, tenantId)
-        )
-      )
-      .limit(1)
+      .where(and(eq(installments.id, pr.installmentId), eq(installments.tenantId, tenantId)))
+      .for('update')
 
     if (!inst) {
-      throw new Error('Parcela não pertence a esta clínica')
+      // Same message as a missing record: a distinct one would let a caller
+      // probe whether a payment id exists in another clinic.
+      throw new BusinessError('PAYMENT_NOT_FOUND', 'Pagamento não encontrado')
     }
 
-    // 2. Check if already reversed
-    if (pr.reversedAt) {
-      throw new Error('Pagamento já foi estornado')
+    const [entry] = await tx
+      .select({
+        status: financialEntries.status,
+        patientId: financialEntries.patientId,
+        description: financialEntries.description,
+      })
+      .from(financialEntries)
+      .where(and(eq(financialEntries.id, inst.financialEntryId), eq(financialEntries.tenantId, tenantId)))
+      .for('update')
+
+    // Re-read behind the lock rather than trusting the copy loaded above: two
+    // concurrent reversals both read an active payment, and the loser would
+    // otherwise go on to write a second outflow for the same money.
+    const [locked] = await tx
+      .select({ reversedAt: paymentRecords.reversedAt })
+      .from(paymentRecords)
+      .where(eq(paymentRecords.id, paymentRecordId))
+      .limit(1)
+
+    if (locked?.reversedAt) {
+      throw new BusinessError('PAYMENT_ALREADY_REVERSED', 'Pagamento já foi estornado')
     }
 
-    // 3. Mark payment as reversed (soft-delete)
     await tx
       .update(paymentRecords)
       .set({
@@ -686,118 +835,33 @@ export async function reversePayment(
       })
       .where(eq(paymentRecords.id, paymentRecordId))
 
-    // 4. Create reversal cash_movement (outflow)
-    const [entryInfo] = await tx
-      .select({
-        patientId: financialEntries.patientId,
-        description: financialEntries.description,
-      })
-      .from(financialEntries)
-      .where(eq(financialEntries.id, inst.financialEntryId))
-      .limit(1)
-
     await tx.insert(cashMovements).values({
       tenantId,
       type: 'outflow',
       amount: pr.amount,
-      description: `Estorno: ${entryInfo?.description ?? 'Pagamento'}${reason ? ` — ${reason}` : ''}`,
+      description: `Estorno: ${entry?.description ?? 'Pagamento'}${reason ? ` — ${reason}` : ''}`,
       paymentMethod: pr.paymentMethod as PaymentMethod,
       movementDate: new Date(),
-      patientId: entryInfo?.patientId,
+      patientId: entry?.patientId,
       recordedBy: userId,
     })
 
-    // 5. Replay remaining (non-reversed) payments to recalculate installment state
-    const remainingPayments = await tx
-      .select()
-      .from(paymentRecords)
-      .where(
-        and(
-          eq(paymentRecords.installmentId, inst.id),
-          isNull(paymentRecords.reversedAt)
-        )
-      )
-      .orderBy(paymentRecords.paidAt)
+    const remaining = await loadLivePayments(tx, inst.id)
+    // Captured behind the lock, the same way the write paths do it.
+    const now = new Date()
+    const base = toInstallmentBase(inst)
 
-    const gracePeriodDays = await getGracePeriodDays(tx, tenantId)
+    const { splitChanges } = await persistReplay(tx, tenantId, {
+      cause: 'reversal',
+      // A renegotiation or a cancel already took this installment out of
+      // collection. Reversing corrects the cash record, not that decision.
+      keepCancelled: inst.status === 'cancelled',
+      updateEntryStatus: !isOutOfCollection(entry?.status),
+      installment: { id: inst.id, financialEntryId: inst.financialEntryId, amount: base.amount },
+      replay: replayPayments(base, remaining.inputs, now),
+      storedPayments: remaining.rows,
+    })
 
-    if (remainingPayments.length === 0) {
-      // No payments left — reset installment
-      await tx
-        .update(installments)
-        .set({
-          amountPaid: '0',
-          fineAmount: '0',
-          interestAmount: '0',
-          lastFineInterestCalcAt: null,
-          status: 'pending',
-          paidAt: null,
-          paymentMethod: null,
-          updatedAt: new Date(),
-        })
-        .where(eq(installments.id, inst.id))
-    } else {
-      // Replay remaining payments
-      const base: InstallmentBase = {
-        amount: Number(inst.amount),
-        dueDate: inst.dueDate,
-        appliedFineValue: Number(inst.appliedFineValue ?? 0),
-        appliedFineType: inst.appliedFineType ?? 'percentage',
-        appliedInterestRate: Number(inst.appliedInterestRate ?? 0),
-        gracePeriodDays,
-      }
-
-      const allPayments: PaymentInput[] = remainingPayments.map((p) => ({
-        id: p.id,
-        amount: Number(p.amount),
-        paidAt: new Date(p.paidAt).toISOString(),
-      }))
-
-      const result = replayPayments(base, allPayments)
-
-      // Update each payment record with recalculated allocations
-      for (let i = 0; i < result.payments.length; i++) {
-        const replayed = result.payments[i]
-        const existing = replayed.id
-          ? remainingPayments.find((ep) => ep.id === replayed.id)
-          : undefined
-        if (existing) {
-          await tx
-            .update(paymentRecords)
-            .set({
-              interestCovered: replayed.interestCovered.toFixed(2),
-              fineCovered: replayed.fineCovered.toFixed(2),
-              principalCovered: replayed.principalCovered.toFixed(2),
-            })
-            .where(eq(paymentRecords.id, existing.id))
-        }
-      }
-
-      const isPaid = result.installmentState.amountPaid >= Number(inst.amount) &&
-        result.installmentState.fineAmount <= 0 &&
-        result.installmentState.interestAmount <= 0
-
-      await tx
-        .update(installments)
-        .set({
-          amountPaid: result.installmentState.amountPaid.toFixed(2),
-          fineAmount: Math.max(0, result.installmentState.fineAmount).toFixed(2),
-          interestAmount: Math.max(0, result.installmentState.interestAmount).toFixed(2),
-          lastFineInterestCalcAt: result.installmentState.lastFineInterestCalcAt
-            ? new Date(result.installmentState.lastFineInterestCalcAt)
-            : null,
-          status: isPaid ? 'paid' : 'pending',
-          paidAt: isPaid ? new Date(remainingPayments[remainingPayments.length - 1].paidAt) : null,
-          paymentMethod: isPaid ? remainingPayments[remainingPayments.length - 1].paymentMethod as PaymentMethod : null,
-          updatedAt: new Date(),
-        })
-        .where(eq(installments.id, inst.id))
-    }
-
-    // 6. Update parent entry status
-    await updateEntryStatus(tx, tenantId, inst.financialEntryId)
-
-    // 7. Audit log
     await createAuditLog({
       tenantId,
       userId,
@@ -808,6 +872,7 @@ export async function reversePayment(
         action: { old: 'active', new: 'reversed' },
         amount: { old: pr.amount, new: '0' },
         reason: { old: null, new: reason ?? null },
+        ...splitChangesAudit(splitChanges),
       },
     }, tx)
 
@@ -825,35 +890,60 @@ export async function bulkPayInstallments(
   const metaContexts = await prepareMetaPurchaseContexts(tenantId, data.installmentIds)
 
   const { results, purchases } = await withTransaction(async (tx) => {
-    // Lock all target installments
-    const installmentIdArray = `{${data.installmentIds.join(',')}}`
-    const lockResult = await tx.execute(
-      sql`SELECT id FROM floraclin.installments
-          WHERE id = ANY(${installmentIdArray}::uuid[])
-          AND tenant_id = ${tenantId}
-          AND status NOT IN ('paid', 'cancelled')
-          FOR UPDATE`
-    )
+    // ORDER BY id so this and renegotiation acquire overlapping rows in one
+    // order instead of deadlocking on each other.
+    const lockedRows = await tx
+      .select({ id: installments.id, financialEntryId: installments.financialEntryId })
+      .from(installments)
+      .where(
+        and(
+          inArray(installments.id, data.installmentIds),
+          eq(installments.tenantId, tenantId),
+          notInArray(installments.status, ['paid', 'cancelled'])
+        )
+      )
+      .orderBy(installments.id)
+      .for('update')
 
-    const lockedRows = (Array.isArray(lockResult) ? lockResult : (lockResult as Record<string, unknown>).rows ?? lockResult) as Record<string, unknown>[]
-    const lockedIds = lockedRows.map((r) => String(r.id))
-
-    // Validate all requested installments were found and lockable
+    const lockedIds = lockedRows.map((r) => r.id)
     const missingIds = data.installmentIds.filter((id) => !lockedIds.includes(id))
     if (missingIds.length > 0) {
-      throw new Error(
+      throw new BusinessError(
+        'INSTALLMENTS_NOT_PAYABLE',
         `Parcelas não encontradas ou já pagas/canceladas: ${missingIds.join(', ')}`
       )
     }
 
-    // Load grace period once before the loop
-    const gracePeriodDays = await getGracePeriodDays(tx, tenantId)
+    // The loop writes each entry once per installment, in the order the
+    // caller listed them. Two batches over the same entries in different
+    // orders would each hold one entry row while waiting for the other.
+    const entries = await tx
+      .select({
+        id: financialEntries.id,
+        status: financialEntries.status,
+        patientId: financialEntries.patientId,
+        description: financialEntries.description,
+      })
+      .from(financialEntries)
+      .where(
+        and(
+          inArray(financialEntries.id, [...new Set(lockedRows.map((r) => r.financialEntryId))]),
+          eq(financialEntries.tenantId, tenantId)
+        )
+      )
+      .orderBy(financialEntries.id)
+      .for('update')
+    const entryById = new Map(entries.map((e) => [e.id, e]))
 
-    // Process each installment through recordPayment logic
+    // One instant for the whole batch, behind the lock; see recordPayment.
+    const now = new Date()
+    const requestedPaidAt = data.paidAt
+      ? new Date(Math.min(new Date(data.paidAt).getTime(), now.getTime()))
+      : now
+
     const results = []
     const purchases: PendingMetaEventRow[] = []
     for (const installmentId of data.installmentIds) {
-      // Load the locked row
       const [row] = await tx
         .select()
         .from(installments)
@@ -867,64 +957,28 @@ export async function bulkPayInstallments(
 
       if (!row) continue
 
-      const installmentAmount = Number(row.amount)
-      const currentAmountPaid = Number(row.amountPaid ?? 0)
-      const currentFineAmount = Number(row.fineAmount ?? 0)
-      const paidAt = data.paidAt ? new Date(data.paidAt) : new Date()
-
-      // Snapshot settings if not yet done
-      let appliedFineType = row.appliedFineType
-      let appliedFineValue = row.appliedFineValue != null ? Number(row.appliedFineValue) : null
-      let appliedInterestRate = row.appliedInterestRate != null ? Number(row.appliedInterestRate) : null
-
-      if (appliedFineValue === null) {
-        const settings = await loadFinancialSettings(tx, tenantId)
-        appliedFineType = settings.fineType
-        appliedFineValue = Number(settings.fineValue)
-        appliedInterestRate = Number(settings.monthlyInterestPercent)
-
-        await tx
-          .update(installments)
-          .set({
-            appliedFineType,
-            appliedFineValue: String(appliedFineValue),
-            appliedInterestRate: String(appliedInterestRate),
-          })
-          .where(eq(installments.id, installmentId))
-      }
-
-      // Calculate remaining amount including penalties
-      const daysOverdue = getDaysOverdue(
-        row.lastFineInterestCalcAt
-          ? new Date(row.lastFineInterestCalcAt).toISOString()
-          : row.dueDate,
-        row.lastFineInterestCalcAt ? 0 : gracePeriodDays,
-        paidAt
+      const livePayments = await loadLivePayments(tx, installmentId)
+      const paidAt = await paymentDateAfterLivePayments(
+        tx,
+        tenantId,
+        row,
+        livePayments.rows,
+        requestedPaidAt,
       )
 
-      let fineAmount = currentFineAmount
-      if (daysOverdue > 0 && currentAmountPaid === 0 && currentFineAmount === 0) {
-        fineAmount = calculateFine(installmentAmount, appliedFineType!, appliedFineValue!)
-      }
+      const base = toInstallmentBase(row)
+      const totalDue = quoteInstallment(base, livePayments.inputs, paidAt).totalDue
+      if (totalDue <= 0) continue
 
-      const remainingPrincipal = installmentAmount - currentAmountPaid
-      const interestAmount = calculateInterest(remainingPrincipal, daysOverdue, appliedInterestRate!)
+      const { allocation: applied, replay } = priceNewPayment({
+        base,
+        livePayments,
+        amount: totalDue,
+        paidAt,
+        now,
+      })
+      const { excessAmount: _excess, ...allocation } = applied
 
-      // Pay the full remaining amount (principal + fine + interest)
-      const totalDue = remainingPrincipal + fineAmount + interestAmount
-
-      const state: InstallmentState = {
-        amount: installmentAmount,
-        amountPaid: currentAmountPaid,
-        fineAmount,
-        interestAmount,
-      }
-
-      const allocation = allocatePayment(state, totalDue)
-
-      const finalAmountPaid = currentAmountPaid + allocation.principalCovered
-
-      // Create payment record
       const [paymentRecord] = await tx
         .insert(paymentRecords)
         .values({
@@ -935,50 +989,32 @@ export async function bulkPayInstallments(
           fineCovered: allocation.fineCovered.toFixed(2),
           principalCovered: allocation.principalCovered.toFixed(2),
           paidAt,
+          recordedAt: now,
           recordedBy: userId,
         })
         .returning()
 
-      // Get entry info for cash movement
-      const [entryInfo] = await tx
-        .select({
-          patientId: financialEntries.patientId,
-          description: financialEntries.description,
-        })
-        .from(financialEntries)
-        .where(eq(financialEntries.id, row.financialEntryId))
-        .limit(1)
-
-      // Create cash movement
+      const entry = entryById.get(row.financialEntryId)
       await tx.insert(cashMovements).values({
         tenantId,
         type: 'inflow',
         amount: totalDue.toFixed(2),
-        description: `Pagamento: ${entryInfo?.description ?? 'Cobranca'}`,
+        description: `Pagamento: ${entry?.description ?? 'Cobranca'}`,
         paymentMethod: data.paymentMethod,
         movementDate: paidAt,
         paymentRecordId: paymentRecord.id,
-        patientId: entryInfo?.patientId,
+        patientId: entry?.patientId,
         recordedBy: userId,
       })
 
-      // Update installment to paid
-      await tx
-        .update(installments)
-        .set({
-          amountPaid: finalAmountPaid.toFixed(2),
-          fineAmount: '0',
-          interestAmount: '0',
-          lastFineInterestCalcAt: paidAt,
-          status: 'paid',
-          paidAt,
-          paymentMethod: data.paymentMethod,
-          updatedAt: new Date(),
-        })
-        .where(eq(installments.id, installmentId))
-
-      // Update parent entry status
-      await updateEntryStatus(tx, tenantId, row.financialEntryId)
+      const { splitChanges } = await persistReplay(tx, tenantId, {
+        cause: 'payment',
+        newPayment: { paidAt, paymentMethod: data.paymentMethod },
+        installment: { id: installmentId, financialEntryId: row.financialEntryId, amount: base.amount },
+        replay,
+        storedPayments: livePayments.rows,
+        updateEntryStatus: !isOutOfCollection(entry?.status),
+      })
 
       const purchase = await emitPurchaseEventForEntry(
         tx,
@@ -988,6 +1024,28 @@ export async function bulkPayInstallments(
         metaContexts.get(row.financialEntryId)
       )
       if (purchase) purchases.push(purchase)
+
+      await createAuditLog({
+        tenantId,
+        userId,
+        action: 'update',
+        entityType: 'installment',
+        entityId: installmentId,
+        changes: {
+          payment: {
+            old: null,
+            new: {
+              amount: totalDue,
+              paymentMethod: data.paymentMethod,
+              requestedPaidAt: data.paidAt ?? null,
+              paidAt: paidAt.toISOString(),
+              allocation,
+            },
+          },
+          bulkPay: { old: null, new: { installmentIds: data.installmentIds } },
+          ...splitChangesAudit(splitChanges),
+        },
+      }, tx)
 
       results.push({ installmentId, paymentRecord, allocation })
     }
@@ -1023,7 +1081,7 @@ export async function bulkCancelEntries(
     if (entries.length !== data.entryIds.length) {
       const foundIds = entries.map((e) => e.id)
       const missing = data.entryIds.filter((id) => !foundIds.includes(id))
-      throw new Error(`Cobranças não encontradas: ${missing.join(', ')}`)
+      throw new BusinessError('ENTRY_NOT_FOUND', `Cobranças não encontradas: ${missing.join(', ')}`)
     }
 
     const now = new Date()
@@ -1042,6 +1100,14 @@ export async function bulkCancelEntries(
       linksByNewEntry.set(link.newEntryId, list)
     }
 
+    // Installments first, ORDER BY id: the order recordPayment and
+    // renegotiateCharges lock in. Taking the entry rows first here would let a
+    // concurrent payment and this cancel each hold one row while waiting for
+    // the other. The originals' installments are restored below, so they are
+    // part of the same lock.
+    const lockedEntryIds = [...new Set([...data.entryIds, ...renegLinks.map((l) => l.originalEntryId)])]
+    await lockInstallmentsOfEntries(tx, tenantId, lockedEntryIds)
+
     // Revert original entries that were renegotiated into the entries being cancelled
     if (renegLinks.length > 0) {
       const originalEntryIds = [...new Set(renegLinks.map((l) => l.originalEntryId))]
@@ -1057,16 +1123,7 @@ export async function bulkCancelEntries(
         const hasPaidInstallments = originalInstallments.some((i) => i.status === 'paid')
         const hasPartialPayments = originalInstallments.some((i) => Number(i.amountPaid ?? 0) > 0)
 
-        // Restore cancelled installments back to pending
-        await tx
-          .update(installments)
-          .set({ status: 'pending', updatedAt: now })
-          .where(
-            and(
-              eq(installments.financialEntryId, originalId),
-              eq(installments.status, 'cancelled')
-            )
-          )
+        await reactivateCancelledInstallments(tx, tenantId, [originalId], now)
 
         // Determine correct status for original entry
         let restoredStatus: string = 'pending'
@@ -1120,7 +1177,7 @@ export async function bulkCancelEntries(
     // Cancel only unpaid installments (preserve paid ones)
     await tx
       .update(installments)
-      .set({ status: 'cancelled', updatedAt: now })
+      .set({ status: 'cancelled', cancelledAt: now, updatedAt: now })
       .where(
         and(
           eq(installments.tenantId, tenantId),
@@ -1158,6 +1215,262 @@ export async function bulkCancelEntries(
       revertedCount: renegLinks.length > 0 ? [...new Set(renegLinks.map((l) => l.originalEntryId))].length : 0,
     }
   })
+}
+
+/**
+ * Cancels the live financial entries of a procedure and their pending
+ * installments. An entry already cancelled or renegotiated is left as it is.
+ */
+export async function cancelLinkedFinancials(
+  tx: typeof db,
+  tenantId: string,
+  userId: string,
+  procedureRecordId: string,
+  reason: string,
+): Promise<void> {
+  const linked = await tx
+    .select({ id: financialEntries.id })
+    .from(financialEntries)
+    .where(
+      and(
+        eq(financialEntries.procedureRecordId, procedureRecordId),
+        eq(financialEntries.tenantId, tenantId),
+        isNull(financialEntries.deletedAt),
+      ),
+    )
+  if (linked.length === 0) return
+  const linkedIds = linked.map((e) => e.id)
+
+  // Installments first, then the entry status read: a payment or renegotiation
+  // committing in between would otherwise be overwritten from a stale read.
+  const lockedInstallments = await lockInstallmentsOfEntries(tx, tenantId, linkedIds)
+
+  const entries = await tx
+    .select({ id: financialEntries.id, status: financialEntries.status })
+    .from(financialEntries)
+    .where(and(inArray(financialEntries.id, linkedIds), eq(financialEntries.tenantId, tenantId)))
+
+  const cancelled = entries.filter((e) => !isOutOfCollection(e.status))
+  if (cancelled.length === 0) return
+
+  const cancelledIds = new Set(cancelled.map((e) => e.id))
+  const pendingInstallmentIds = lockedInstallments
+    .filter((i) => cancelledIds.has(i.financialEntryId) && i.status === 'pending')
+    .map((i) => i.id)
+  const now = new Date()
+
+  await tx
+    .update(financialEntries)
+    .set({ status: 'cancelled', updatedAt: now })
+    .where(and(inArray(financialEntries.id, [...cancelledIds]), eq(financialEntries.tenantId, tenantId)))
+
+  if (pendingInstallmentIds.length > 0) {
+    await tx
+      .update(installments)
+      .set({ status: 'cancelled', cancelledAt: now, updatedAt: now })
+      .where(and(inArray(installments.id, pendingInstallmentIds), eq(installments.tenantId, tenantId)))
+  }
+
+  for (const entry of cancelled) {
+    await createAuditLog(
+      {
+        tenantId,
+        userId,
+        action: 'update',
+        entityType: 'financial_entry',
+        entityId: entry.id,
+        changes: {
+          status: { old: entry.status, new: 'cancelled' },
+          reason: { old: null, new: reason },
+        },
+      },
+      tx
+    )
+  }
+}
+
+/**
+ * Reverses `bulkCancelEntries`. Statuses are recomputed by `updateEntryStatus`
+ * rather than restored from a stored value, so a charge that had a payment
+ * before it was cancelled comes back `partial`, not `pending`.
+ */
+export async function uncancelEntries(
+  tenantId: string,
+  userId: string,
+  data: { entryIds: string[]; reason: string }
+) {
+  return withTransaction(async (tx) => {
+    // The same installment lock, in the same order, as bulkCancelEntries and
+    // the payment paths, taken before the status read: a cancel or payment
+    // committing in between would otherwise be overwritten from a stale read.
+    await lockInstallmentsOfEntries(tx, tenantId, data.entryIds)
+
+    const entries = await tx
+      .select({
+        id: financialEntries.id,
+        status: financialEntries.status,
+        createdFromRenegotiation: financialEntries.createdFromRenegotiation,
+      })
+      .from(financialEntries)
+      .where(
+        and(
+          eq(financialEntries.tenantId, tenantId),
+          inArray(financialEntries.id, data.entryIds),
+          isNull(financialEntries.deletedAt)
+        )
+      )
+
+    if (entries.length !== data.entryIds.length) {
+      const foundIds = entries.map((e) => e.id)
+      const missing = data.entryIds.filter((id) => !foundIds.includes(id))
+      throw new BusinessError(
+        'ENTRY_NOT_FOUND',
+        `Cobranças não encontradas: ${missing.join(', ')}`
+      )
+    }
+
+    if (entries.some((e) => e.status !== 'cancelled')) {
+      throw new BusinessError(
+        'ENTRY_NOT_CANCELLED',
+        'Apenas cobranças canceladas podem ser reativadas'
+      )
+    }
+
+    // Reactivating an original whose replacement is still live would make the
+    // same debt collectible twice.
+    const liveReplacements = await tx
+      .select({ originalEntryId: renegotiationLinks.originalEntryId })
+      .from(renegotiationLinks)
+      .where(inArray(renegotiationLinks.originalEntryId, data.entryIds))
+
+    if (liveReplacements.length > 0) {
+      throw new BusinessError(
+        'ENTRY_HAS_REPLACEMENT',
+        'Esta cobrança foi renegociada e a cobrança substituta continua ativa. Cancele a substituta primeiro.'
+      )
+    }
+
+    if (entries.some((e) => e.createdFromRenegotiation)) {
+      throw new BusinessError(
+        'ENTRY_FROM_RENEGOTIATION',
+        'Esta cobrança veio de uma renegociação cancelada. Refaça a renegociação.'
+      )
+    }
+
+    const pausesByEntry = await reactivateCancelledInstallments(tx, tenantId, data.entryIds, new Date())
+
+    for (const entryId of data.entryIds) {
+      const status = await updateEntryStatus(tx, tenantId, entryId)
+
+      await createAuditLog(
+        {
+          tenantId,
+          userId,
+          action: 'update',
+          entityType: 'financial_entry',
+          entityId: entryId,
+          changes: {
+            status: { old: 'cancelled', new: status },
+            reason: { old: null, new: data.reason },
+            penaltyPauses: { old: null, new: pausesByEntry.get(entryId) ?? [] },
+          },
+        },
+        tx
+      )
+    }
+
+    return { uncancelledCount: data.entryIds.length }
+  })
+}
+
+/**
+ * Back to collection, with the time spent cancelled kept as a penalty pause so
+ * no fine or interest accrues for it. A row whose live payments already settle
+ * its principal goes back to paid, not pending. Returns each entry's restored
+ * installments with the pause they got.
+ */
+async function reactivateCancelledInstallments(
+  tx: typeof db,
+  tenantId: string,
+  entryIds: string[],
+  now: Date
+) {
+  const cancelled = await tx
+    .select({
+      id: installments.id,
+      financialEntryId: installments.financialEntryId,
+      amount: installments.amount,
+      dueDate: installments.dueDate,
+      appliedFineType: installments.appliedFineType,
+      appliedFineValue: installments.appliedFineValue,
+      appliedInterestRate: installments.appliedInterestRate,
+      appliedGracePeriodDays: installments.appliedGracePeriodDays,
+      cancelledAt: installments.cancelledAt,
+      penaltyPauses: installments.penaltyPauses,
+    })
+    .from(installments)
+    .where(
+      and(
+        eq(installments.tenantId, tenantId),
+        inArray(installments.financialEntryId, entryIds),
+        eq(installments.status, 'cancelled')
+      )
+    )
+
+  const paymentsByInstallment = await loadLivePaymentsByInstallment(
+    tx,
+    cancelled.map((row) => row.id),
+  )
+
+  const pausesByEntry = new Map<string, { installmentId: string; from: string; to: string }[]>()
+  for (const row of cancelled) {
+    if (!row.cancelledAt) {
+      throw new Error(
+        `Installment ${row.id} is cancelled without cancelled_at; run the 0034 manual backfill`,
+      )
+    }
+    const pause = { from: new Date(row.cancelledAt).toISOString(), to: now.toISOString() }
+    const penaltyPauses = [...row.penaltyPauses, pause]
+    const base = toInstallmentBase({ ...row, penaltyPauses, cancelledAt: null })
+    const replay = replayPayments(
+      base,
+      toPaymentInputs(paymentsByInstallment.get(row.id) ?? []),
+      now,
+    )
+
+    await tx
+      .update(installments)
+      .set({
+        status: replay.installmentState.amountPaid >= base.amount ? 'paid' : 'pending',
+        cancelledAt: null,
+        penaltyPauses,
+        updatedAt: now,
+      })
+      .where(eq(installments.id, row.id))
+
+    const pauses = pausesByEntry.get(row.financialEntryId) ?? []
+    pauses.push({ installmentId: row.id, ...pause })
+    pausesByEntry.set(row.financialEntryId, pauses)
+  }
+  return pausesByEntry
+}
+
+/**
+ * Locks the installments of the given entries in id order, the order every
+ * write path takes them in, so two paths over overlapping rows queue instead
+ * of deadlocking.
+ */
+async function lockInstallmentsOfEntries(tx: typeof db, tenantId: string, entryIds: string[]) {
+  return tx
+    .select({
+      id: installments.id,
+      financialEntryId: installments.financialEntryId,
+      status: installments.status,
+    })
+    .from(installments)
+    .where(and(inArray(installments.financialEntryId, entryIds), eq(installments.tenantId, tenantId)))
+    .orderBy(installments.id)
+    .for('update')
 }
 
 // ─── LIST FINANCIAL ENTRIES (enhanced) ──────────────────────────────
@@ -1203,16 +1516,12 @@ export async function listFinancialEntries(
   // Build having clauses for computed filters
   const havingClause = sql`1=1`
 
+  const now = new Date()
+
   if (filters.isOverdue) {
-    // Has at least one overdue installment
-    conditions.push(
-      sql`EXISTS (
-        SELECT 1 FROM floraclin.installments i
-        WHERE i.financial_entry_id = ${financialEntries.id}
-        AND i.status = 'pending'
-        AND i.due_date < CURRENT_DATE
-      )`
-    )
+    const overdue = await loadOverdueInstallments(tenantId, now)
+    const overdueEntryIds = [...new Set(overdue.map((i) => i.financialEntryId))]
+    conditions.push(overdueEntryIds.length > 0 ? inArray(financialEntries.id, overdueEntryIds) : sql`false`)
   }
 
   if (filters.isPartial) {
@@ -1249,12 +1558,6 @@ export async function listFinancialEntries(
           WHERE i.financial_entry_id = ${financialEntries.id}
           AND i.status = 'paid'
         )`,
-        isOverdue: sql<boolean>`EXISTS (
-          SELECT 1 FROM floraclin.installments i
-          WHERE i.financial_entry_id = ${financialEntries.id}
-          AND i.status = 'pending'
-          AND i.due_date < CURRENT_DATE
-        )`,
         isPartial: sql<boolean>`(
           ${financialEntries.status} != 'paid'
           AND EXISTS (
@@ -1263,34 +1566,6 @@ export async function listFinancialEntries(
             AND i.amount_paid::numeric > 0
           )
         )`,
-        totalFineAmount: sql<number>`COALESCE((
-          SELECT SUM(
-            CASE
-              WHEN i.status = 'pending' AND i.due_date < CURRENT_DATE
-                AND i.fine_amount::numeric = 0
-              THEN i.amount::numeric * COALESCE(i.applied_fine_value, fs.fine_value, 2)::numeric / 100
-              ELSE i.fine_amount::numeric
-            END
-          )
-          FROM floraclin.installments i
-          LEFT JOIN floraclin.financial_settings fs ON fs.tenant_id = ${financialEntries.tenantId}
-          WHERE i.financial_entry_id = ${financialEntries.id}
-        ), 0)`,
-        totalInterestAmount: sql<number>`COALESCE((
-          SELECT SUM(
-            CASE
-              WHEN i.status = 'pending' AND i.due_date < CURRENT_DATE
-              THEN (i.amount::numeric - i.amount_paid::numeric)
-                * COALESCE(i.applied_interest_rate, fs.monthly_interest_percent, 1)::numeric / 100
-                * GREATEST(0, (CURRENT_DATE - i.due_date::date))
-                / 30
-              ELSE i.interest_amount::numeric
-            END
-          )
-          FROM floraclin.installments i
-          LEFT JOIN floraclin.financial_settings fs ON fs.tenant_id = ${financialEntries.tenantId}
-          WHERE i.financial_entry_id = ${financialEntries.id}
-        ), 0)`,
         totalAmountPaid: sql<number>`COALESCE((
           SELECT SUM(i.amount_paid::numeric)
           FROM floraclin.installments i
@@ -1329,14 +1604,91 @@ export async function listFinancialEntries(
 
   const total = totalResult[0]?.count ?? 0
   const limit = filters.limit ?? 20
+  const open = await priceOpenInstallmentsByEntry(tenantId, entries.map((e) => e.id), now)
 
   return {
-    data: entries,
+    data: entries.map((entry) => ({
+      ...entry,
+      isOverdue: open.get(entry.id)?.isOverdue ?? false,
+      totalFineAmount: open.get(entry.id)?.fine ?? 0,
+      totalInterestAmount: open.get(entry.id)?.interest ?? 0,
+    })),
     total,
     page: filters.page ?? 1,
     limit,
     totalPages: Math.ceil(total / limit),
   }
+}
+
+/**
+ * Pending installments late at `now`, net of grace and penalty pauses. The SQL
+ * bound only narrows the rows: a pause can move the real limit later, never
+ * earlier.
+ */
+export async function loadOverdueInstallments(tenantId: string, now: Date) {
+  const rows = await db
+    .select()
+    .from(installments)
+    .where(
+      and(
+        eq(installments.tenantId, tenantId),
+        eq(installments.status, 'pending'),
+        sql`${installments.dueDate} + ${installments.appliedGracePeriodDays} < ${toBrYmd(now)}::date`
+      )
+    )
+  return rows.filter((row) => isInstallmentOverdue(toInstallmentBase(row), now))
+}
+
+/** Fine and interest due at `now` on each entry's open installments, and whether any is late. */
+async function priceOpenInstallmentsByEntry(tenantId: string, entryIds: string[], now: Date) {
+  const byEntry = new Map<string, { fine: number; interest: number; isOverdue: boolean }>()
+  if (entryIds.length === 0) return byEntry
+
+  const openInstallments = await db
+    .select({
+      id: installments.id,
+      financialEntryId: installments.financialEntryId,
+      status: installments.status,
+      amount: installments.amount,
+      dueDate: installments.dueDate,
+      appliedFineType: installments.appliedFineType,
+      appliedFineValue: installments.appliedFineValue,
+      appliedInterestRate: installments.appliedInterestRate,
+      appliedGracePeriodDays: installments.appliedGracePeriodDays,
+      penaltyPauses: installments.penaltyPauses,
+      cancelledAt: installments.cancelledAt,
+    })
+    .from(installments)
+    .where(
+      and(
+        eq(installments.tenantId, tenantId),
+        inArray(installments.financialEntryId, entryIds),
+        notInArray(installments.status, ['paid', 'cancelled'])
+      )
+    )
+  if (openInstallments.length === 0) return byEntry
+
+  const paymentsByInstallment = await loadLivePaymentsByInstallment(
+    db,
+    openInstallments.map((i) => i.id),
+  )
+
+  for (const inst of openInstallments) {
+    const base = toInstallmentBase(inst)
+    const quote = quoteInstallment(
+      base,
+      toPaymentInputs(paymentsByInstallment.get(inst.id) ?? []),
+      now,
+    )
+    const sums = byEntry.get(inst.financialEntryId) ?? { fine: 0, interest: 0, isOverdue: false }
+    byEntry.set(inst.financialEntryId, {
+      fine: round2(sums.fine + quote.fineAmount),
+      interest: round2(sums.interest + quote.interestAmount),
+      isOverdue:
+        sums.isOverdue || (inst.status === 'pending' && isInstallmentOverdue(base, now)),
+    })
+  }
+  return byEntry
 }
 
 // ─── GET FINANCIAL ENTRY (enhanced) ─────────────────────────────────
@@ -1382,81 +1734,33 @@ export async function getFinancialEntry(tenantId: string, entryId: string) {
     )
     .orderBy(installments.installmentNumber)
 
-  // Get payment records for each installment
-  const installmentIds = entryInstallments.map((i) => i.id)
-  const allPaymentRecords = installmentIds.length > 0
-    ? await db
-        .select()
-        .from(paymentRecords)
-        .where(
-          and(
-            inArray(paymentRecords.installmentId, installmentIds),
-            isNull(paymentRecords.reversedAt)
-          )
-        )
-        .orderBy(paymentRecords.paidAt)
-    : []
+  const paymentsByInstallment = await loadLivePaymentsByInstallment(
+    db,
+    entryInstallments.map((i) => i.id),
+  )
 
-  // Group payment records by installment
-  const paymentsByInstallment = new Map<string, typeof allPaymentRecords>()
-  for (const pr of allPaymentRecords) {
-    const list = paymentsByInstallment.get(pr.installmentId) ?? []
-    list.push(pr)
-    paymentsByInstallment.set(pr.installmentId, list)
-  }
+  const now = new Date()
 
-  // Load settings for penalty calculations
-  const [settings] = await db
-    .select()
-    .from(financialSettings)
-    .where(eq(financialSettings.tenantId, tenantId))
-    .limit(1)
-
-  const gracePeriodDays = settings?.gracePeriodDays ?? 0
-
-  // Compute current penalties for each installment
+  // A paid row owes nothing. A cancelled one is frozen by the open pause from
+  // its cancel instant, so the engine prices it as of then.
   const installmentsWithDetails = entryInstallments.map((inst) => {
     const payments = paymentsByInstallment.get(inst.id) ?? []
-    const amount = Number(inst.amount)
-    const amountPaid = Number(inst.amountPaid ?? 0)
-    const storedFine = Number(inst.fineAmount ?? 0)
 
-    // Calculate current interest and fine on the fly for pending installments
-    // Use tenant settings as fallback when penalty rates haven't been snapshotted yet
-    const effectiveInterestRate = Number(inst.appliedInterestRate ?? settings?.monthlyInterestPercent ?? 0)
-    const effectiveFineValue = Number(inst.appliedFineValue ?? settings?.fineValue ?? 0)
-    const effectiveFineType = inst.appliedFineType ?? settings?.fineType ?? 'percentage'
-
-    let currentInterest = Number(inst.interestAmount ?? 0)
-    let currentFine = storedFine
-    if (inst.status === 'pending' && effectiveInterestRate > 0) {
-      const daysOverdue = getDaysOverdue(
-        inst.lastFineInterestCalcAt
-          ? new Date(inst.lastFineInterestCalcAt).toISOString()
-          : inst.dueDate,
-        inst.lastFineInterestCalcAt ? 0 : gracePeriodDays,
-      )
-      if (daysOverdue > 0) {
-        currentInterest = calculateInterest(
-          amount - amountPaid,
-          daysOverdue,
-          effectiveInterestRate
-        )
-        // Compute fine for display if not yet stored (applied on first payment)
-        if (storedFine === 0 && effectiveFineValue > 0) {
-          currentFine = calculateFine(
-            amount,
-            effectiveFineType,
-            effectiveFineValue
-          )
-        }
+    if (inst.status === 'paid') {
+      return {
+        ...inst,
+        computedInterestAmount: 0,
+        computedFineAmount: 0,
+        paymentRecords: payments,
       }
     }
 
+    const quote = quoteInstallment(toInstallmentBase(inst), toPaymentInputs(payments), now)
+
     return {
       ...inst,
-      computedInterestAmount: currentInterest,
-      computedFineAmount: currentFine,
+      computedInterestAmount: quote.interestAmount,
+      computedFineAmount: quote.fineAmount,
       paymentRecords: payments,
     }
   })
@@ -1512,8 +1816,6 @@ export async function getRevenueOverview(
   const summaryQuery = db
     .select({
       totalReceived: sql<number>`COALESCE(SUM(CASE WHEN ${installments.status} = 'paid' THEN ${installments.amount}::numeric ELSE 0 END), 0)`,
-      totalPending: sql<number>`COALESCE(SUM(CASE WHEN ${installments.status} = 'pending' AND ${installments.dueDate} >= CURRENT_DATE THEN ${installments.amount}::numeric ELSE 0 END), 0)`,
-      totalOverdue: sql<number>`COALESCE(SUM(CASE WHEN ${installments.status} = 'pending' AND ${installments.dueDate} < CURRENT_DATE THEN ${installments.amount}::numeric ELSE 0 END), 0)`,
     })
     .from(installments)
     .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
@@ -1589,15 +1891,70 @@ export async function getRevenueOverview(
       )
     )
 
-  const [summaryResult, monthlyResult, byProcedureTypeResult, byPaymentMethodResult, expenseTotalsResult] =
-    await Promise.all([summaryQuery, monthlyQuery, byProcedureTypeQuery, byPaymentMethodQuery, expenseTotalsQuery])
+  // Overdue is the engine's call, net of each installment's grace and pauses.
+  const pendingQuery = db
+    .select({
+      id: installments.id,
+      amount: installments.amount,
+      dueDate: installments.dueDate,
+      appliedFineType: installments.appliedFineType,
+      appliedFineValue: installments.appliedFineValue,
+      appliedInterestRate: installments.appliedInterestRate,
+      appliedGracePeriodDays: installments.appliedGracePeriodDays,
+      penaltyPauses: installments.penaltyPauses,
+      cancelledAt: installments.cancelledAt,
+    })
+    .from(installments)
+    .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
+    .where(and(...entryConditions, ...installmentConditions, eq(installments.status, 'pending')))
+
+  const [
+    summaryResult,
+    monthlyResult,
+    byProcedureTypeResult,
+    byPaymentMethodResult,
+    expenseTotalsResult,
+    pendingInstallments,
+  ] = await Promise.all([
+    summaryQuery,
+    monthlyQuery,
+    byProcedureTypeQuery,
+    byPaymentMethodQuery,
+    expenseTotalsQuery,
+    pendingQuery,
+  ])
+
+  const now = new Date()
+  let totalPending = 0
+  const overdue = []
+  for (const inst of pendingInstallments) {
+    if (isInstallmentOverdue(toInstallmentBase(inst), now)) {
+      overdue.push(inst)
+    } else {
+      totalPending = round2(totalPending + Number(inst.amount))
+    }
+  }
+
+  // What is owed today, as the ledger's overdueReceivables counts it.
+  const overduePayments = await loadLivePaymentsByInstallment(db, overdue.map((i) => i.id))
+  let totalOverdue = 0
+  for (const inst of overdue) {
+    const quote = quoteInstallment(
+      toInstallmentBase(inst),
+      toPaymentInputs(overduePayments.get(inst.id) ?? []),
+      now,
+    )
+    totalOverdue = round2(totalOverdue + quote.totalDue)
+  }
 
   const totalReceived = Number(summaryResult[0]?.totalReceived ?? 0)
   const totalExpenses = Number(expenseTotalsResult[0]?.totalExpenses ?? 0)
 
   return {
     summary: {
-      ...(summaryResult[0] ?? { totalReceived: 0, totalPending: 0, totalOverdue: 0 }),
+      totalReceived,
+      totalPending,
+      totalOverdue,
       totalExpenses,
       totalPendingExpenses: Number(expenseTotalsResult[0]?.totalPendingExpenses ?? 0),
       netProfit: totalReceived - totalExpenses,
@@ -1608,108 +1965,112 @@ export async function getRevenueOverview(
   }
 }
 
-// ─── KEEP LEGACY payInstallment (for backwards compat) ──────────────
-
-export async function payInstallment(
-  tenantId: string,
-  installmentId: string,
-  paymentMethod: PaymentMethod,
-  txDb?: typeof db
-) {
-  const execute = async (tx: typeof db) => {
-    const [updated] = await tx
-      .update(installments)
-      .set({
-        status: 'paid',
-        paidAt: new Date(),
-        paymentMethod,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(installments.tenantId, tenantId),
-          eq(installments.id, installmentId),
-          inArray(installments.status, ['pending', 'overdue'])
-        )
-      )
-      .returning()
-
-    if (!updated) {
-      throw new Error('Parcela não encontrada ou já paga')
-    }
-
-    // Check all installments for this entry to update parent status
-    const allInstallments = await tx
-      .select({ status: installments.status })
-      .from(installments)
-      .where(
-        and(
-          eq(installments.tenantId, tenantId),
-          eq(installments.financialEntryId, updated.financialEntryId)
-        )
-      )
-
-    const allPaid = allInstallments.every((i) => i.status === 'paid')
-    const somePaid = allInstallments.some((i) => i.status === 'paid')
-
-    let newStatus: FinancialStatus = 'pending'
-    if (allPaid) {
-      newStatus = 'paid'
-    } else if (somePaid) {
-      newStatus = 'partial'
-    }
-
-    await tx
-      .update(financialEntries)
-      .set({
-        status: newStatus,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(financialEntries.tenantId, tenantId),
-          eq(financialEntries.id, updated.financialEntryId),
-          isNull(financialEntries.deletedAt)
-        )
-      )
-
-    return updated
-  }
-
-  if (txDb) {
-    return execute(txDb)
-  }
-  return withTransaction(execute)
-}
-
 // ─── HELPERS ────────────────────────────────────────────────────────
 
-async function loadFinancialSettings(tx: typeof db, tenantId: string) {
+/** Terms for a tenant without a financial_settings row. */
+export const DEFAULT_INSTALLMENT_TERMS = {
+  appliedFineType: 'percentage',
+  appliedFineValue: '2.00',
+  appliedInterestRate: '1.00',
+  appliedGracePeriodDays: 0,
+}
+
+/**
+ * The fine, interest and grace an installment is priced with for its whole
+ * life, read from the tenant's settings when it is created. CDC art. 51 X
+ * forbids pricing an issued charge at terms changed afterwards.
+ */
+export async function loadInstallmentTerms(tx: Pick<typeof db, 'select'>, tenantId: string) {
   const [settings] = await tx
     .select()
     .from(financialSettings)
     .where(eq(financialSettings.tenantId, tenantId))
     .limit(1)
 
-  // Return defaults if no settings exist
   return {
-    fineType: settings?.fineType ?? 'percentage',
-    fineValue: settings?.fineValue ?? '2.00',
-    monthlyInterestPercent: settings?.monthlyInterestPercent ?? '1.00',
-    gracePeriodDays: settings?.gracePeriodDays ?? 0,
+    appliedFineType: settings?.fineType ?? DEFAULT_INSTALLMENT_TERMS.appliedFineType,
+    appliedFineValue: settings?.fineValue ?? DEFAULT_INSTALLMENT_TERMS.appliedFineValue,
+    appliedInterestRate: settings?.monthlyInterestPercent ?? DEFAULT_INSTALLMENT_TERMS.appliedInterestRate,
+    appliedGracePeriodDays: settings?.gracePeriodDays ?? DEFAULT_INSTALLMENT_TERMS.appliedGracePeriodDays,
   }
 }
 
-async function getGracePeriodDays(tx: typeof db, tenantId: string): Promise<number> {
-  const settings = await loadFinancialSettings(tx, tenantId)
-  return settings.gracePeriodDays
+type InstallmentPricingRow = Pick<
+  typeof installments.$inferSelect,
+  | 'amount'
+  | 'dueDate'
+  | 'appliedFineType'
+  | 'appliedFineValue'
+  | 'appliedInterestRate'
+  | 'appliedGracePeriodDays'
+  | 'penaltyPauses'
+  | 'cancelledAt'
+>
+
+/**
+ * The engine's view of an installment, priced only with the terms written on
+ * the row. A row still cancelled has an open pause from its cancel instant.
+ */
+export function toInstallmentBase(row: InstallmentPricingRow): InstallmentBase {
+  return {
+    amount: Number(row.amount),
+    dueDate: row.dueDate,
+    appliedFineValue: Number(row.appliedFineValue),
+    appliedFineType: row.appliedFineType,
+    appliedInterestRate: Number(row.appliedInterestRate),
+    gracePeriodDays: row.appliedGracePeriodDays,
+    penaltyPauses: [
+      ...row.penaltyPauses,
+      ...(row.cancelledAt ? [{ from: new Date(row.cancelledAt).toISOString(), to: null }] : []),
+    ],
+  }
 }
 
+export function toPaymentInputs(
+  rows: Pick<typeof paymentRecords.$inferSelect, 'id' | 'amount' | 'paidAt' | 'recordedAt'>[],
+): PaymentInput[] {
+  return rows.map((p) => ({
+    id: p.id,
+    amount: Number(p.amount),
+    paidAt: new Date(p.paidAt).toISOString(),
+    recordedAt: new Date(p.recordedAt).toISOString(),
+  }))
+}
+
+/** Live payments of every given installment, grouped by installment id. */
+export async function loadLivePaymentsByInstallment(tx: typeof db, installmentIds: string[]) {
+  const byInstallment = new Map<string, (typeof paymentRecords.$inferSelect)[]>()
+  if (installmentIds.length === 0) return byInstallment
+
+  const rows = await tx
+    .select()
+    .from(paymentRecords)
+    .where(
+      and(
+        inArray(paymentRecords.installmentId, installmentIds),
+        isNull(paymentRecords.reversedAt)
+      )
+    )
+    .orderBy(paymentRecords.paidAt, paymentRecords.recordedAt)
+
+  for (const row of rows) {
+    const list = byInstallment.get(row.installmentId) ?? []
+    list.push(row)
+    byInstallment.set(row.installmentId, list)
+  }
+  return byInstallment
+}
+
+function toCents(value: number): number {
+  return Math.round(value * 100)
+}
+
+/** Recomputes the entry status from its installments and returns what it wrote. */
 async function updateEntryStatus(
   tx: typeof db,
   tenantId: string,
   financialEntryId: string
-) {
+): Promise<FinancialStatus> {
   const allInstallments = await tx
     .select({ status: installments.status, amountPaid: installments.amountPaid })
     .from(installments)
@@ -1735,7 +2096,7 @@ async function updateEntryStatus(
           isNull(financialEntries.deletedAt)
         )
       )
-    return
+    return 'cancelled'
   }
 
   const allPaid = payable.every((i) => i.status === 'paid')
@@ -1763,4 +2124,6 @@ async function updateEntryStatus(
         isNull(financialEntries.deletedAt)
       )
     )
+
+  return newStatus
 }

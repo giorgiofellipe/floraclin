@@ -1,0 +1,108 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { createElement, type ReactNode } from 'react'
+import { renderHook, waitFor } from '@testing-library/react'
+import { QueryClientProvider } from '@tanstack/react-query'
+
+import { useInstallmentQuote } from '../use-installment-quote'
+import { ApiError } from '@/hooks/mutations/use-financial-mutations'
+import { makeQueryClient } from '@/lib/react-query'
+
+const fetchMock = vi.fn()
+global.fetch = fetchMock as unknown as typeof fetch
+
+function wrap() {
+  const qc = makeQueryClient()
+  qc.setDefaultOptions({ queries: { ...qc.getDefaultOptions().queries, retryDelay: 0 } })
+  // eslint-disable-next-line react/display-name -- test-only wrapper, no display name needed
+  return ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client: qc }, children)
+}
+
+describe('useInstallmentQuote', () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+  })
+
+  it.each([
+    { paidAt: undefined, url: '/api/financial/installments/inst-1/quote' },
+    {
+      paidAt: '2026-05-01T12:00:00.000Z',
+      url: '/api/financial/installments/inst-1/quote?paidAt=2026-05-01T12%3A00%3A00.000Z',
+    },
+  ])('fetches $url for paidAt $paidAt', async ({ paidAt, url }) => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ success: true, data: { amount: 100 } }),
+    })
+
+    const { result } = renderHook(() => useInstallmentQuote('inst-1', paidAt), { wrapper: wrap() })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(fetchMock).toHaveBeenCalledWith(url)
+  })
+
+  it('returns body.data on success, not the whole envelope', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ success: true, data: { amount: 250, penalty: 10 } }),
+    })
+
+    const { result } = renderHook(() => useInstallmentQuote('inst-1'), { wrapper: wrap() })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(result.current.data).toEqual({ amount: 250, penalty: 10 })
+  })
+
+  it('throws an ApiError carrying the server message and code, so the dialog can branch on it', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: async () => ({ error: 'Parcela não encontrada', code: 'INSTALLMENT_NOT_FOUND' }),
+    })
+
+    const { result } = renderHook(() => useInstallmentQuote('inst-1'), { wrapper: wrap() })
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    expect(result.current.error).toBeInstanceOf(ApiError)
+    expect(result.current.error).toMatchObject({ message: 'Parcela não encontrada', code: 'INSTALLMENT_NOT_FOUND' })
+  })
+
+  it('falls back to HTTP <status> when the body has no error field', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+    })
+
+    const { result } = renderHook(() => useInstallmentQuote('inst-1'), { wrapper: wrap() })
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    expect(result.current.error?.message).toBe('HTTP 500')
+  })
+
+  it.each([
+    { kind: 'coded business', body: { error: 'Parcela já paga', code: 'INSTALLMENT_ALREADY_PAID' }, calls: 1 },
+    { kind: 'uncoded', body: {}, calls: 4 },
+  ])('with the app retry policy, a $kind error fetches $calls time(s)', async ({ body, calls }) => {
+    fetchMock.mockResolvedValue({ ok: false, status: 409, json: async () => body })
+
+    const { result } = renderHook(() => useInstallmentQuote('inst-1'), { wrapper: wrap() })
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(fetchMock).toHaveBeenCalledTimes(calls)
+  })
+
+  it('does not fetch when enabled is false', async () => {
+    const { result } = renderHook(() => useInstallmentQuote('inst-1', undefined, false), {
+      wrapper: wrap(),
+    })
+
+    expect(result.current.isFetching).toBe(false)
+    expect(result.current.fetchStatus).toBe('idle')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})

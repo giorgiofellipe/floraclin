@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // A chainable, awaitable stand-in for drizzle's query builders, copied from
 // meta-events.test.ts. Every method call returns the same proxy so any chain
@@ -72,7 +72,6 @@ const PREREQUISITES = {
 function makeTx() {
   const savepoint = { insert: vi.fn(), select: vi.fn() }
   return {
-    execute: vi.fn(),
     select: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
@@ -81,49 +80,33 @@ function makeTx() {
   }
 }
 
-// Raw SQL FOR UPDATE lock result: snake_case, already fine/interest-snapshotted
-// so recordPayment skips the settings-snapshot branch (fewer calls to mock).
+// The installment row recordPayment locks.
 function lockedInstallmentRow(overrides: Record<string, unknown> = {}) {
-  return {
-    id: INSTALLMENT_ID,
-    status: 'pending',
-    amount: '600.00',
-    amount_paid: '0',
-    fine_amount: '0',
-    due_date: FUTURE_DUE_DATE,
-    financial_entry_id: ENTRY_ID,
-    applied_fine_type: 'percentage',
-    applied_fine_value: '2.00',
-    applied_interest_rate: '1.00',
-    last_fine_interest_calc_at: null,
-    ...overrides,
-  }
+  return typedInstallmentRow(overrides)
 }
 
-// Typed drizzle select row used inside bulkPayInstallments' loop: camelCase.
+// The entry row the payment paths lock after the installment.
+const ENTRY = { id: ENTRY_ID, patientId: PATIENT_ID, description: 'x', status: 'pending' }
+
+// Typed drizzle installment row.
 function typedInstallmentRow(overrides: Record<string, unknown> = {}) {
   return {
     id: INSTALLMENT_ID,
     status: 'pending',
     amount: '600.00',
     amountPaid: '0',
-    fineAmount: '0',
     dueDate: FUTURE_DUE_DATE,
     financialEntryId: ENTRY_ID,
     appliedFineType: 'percentage',
     appliedFineValue: '2.00',
     appliedInterestRate: '1.00',
-    lastFineInterestCalcAt: null,
+    appliedGracePeriodDays: 0,
+    penaltyPauses: [],
+    cancelledAt: null,
     ...overrides,
   }
 }
 
-const financialSettingsRow = {
-  fineType: 'percentage',
-  fineValue: '2.00',
-  monthlyInterestPercent: '1.00',
-  gracePeriodDays: 0,
-}
 
 const patientContactRow = {
   phone: '+5511999999999',
@@ -219,6 +202,10 @@ describe('financial.ts meta conversions', () => {
     enqueueMetaEventMock.mockResolvedValue({ inserted: true })
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   describe('recordPayment', () => {
     it('paying installment 1 of 6 emits one Purchase carrying the full totalAmount, not the installment amount', async () => {
       const { recordPayment } = await import('../financial')
@@ -226,10 +213,9 @@ describe('financial.ts meta conversions', () => {
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
 
-      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow])) // getGracePeriodDays
+      tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+      tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
       tx.select.mockReturnValueOnce(chain([])) // existingPayments (not backdated)
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'Preenchimento labial' }])) // entryInfo
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }])) // updateEntryStatus's installments
       queueGateSelects(tx, { entryStatus: 'partial', totalAmount: '3600.00' })
 
@@ -240,11 +226,13 @@ describe('financial.ts meta conversions', () => {
 
       resolveProspectForPatientMock.mockResolvedValueOnce({ id: 'prospect-1' })
 
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
       await recordPayment(TENANT, USER_ID, {
         installmentId: INSTALLMENT_ID,
         amount: 600,
         paymentMethod: 'pix',
-      } as never)
+        expectedTotalDue: 600,
+      })
 
       expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
       const call = enqueueMetaEventMock.mock.calls[0][0] as Record<string, unknown>
@@ -265,10 +253,9 @@ describe('financial.ts meta conversions', () => {
         dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
         queuePrepareRows()
 
-        tx.execute.mockResolvedValueOnce([lockedInstallmentRow({ id: installmentId })])
-        tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+        tx.select.mockReturnValueOnce(chain([lockedInstallmentRow({ id: installmentId })])) // installment lock
+        tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
         tx.select.mockReturnValueOnce(chain([]))
-        tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'Preenchimento labial' }]))
         tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
         queueGateSelects(tx, { entryStatus: 'partial', totalAmount: '600.00' })
 
@@ -279,7 +266,8 @@ describe('financial.ts meta conversions', () => {
 
         resolveProspectForPatientMock.mockResolvedValueOnce({ id: 'prospect-1' })
 
-        await recordPayment(TENANT, USER_ID, { installmentId, amount: 600, paymentMethod: 'pix' } as never)
+        tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
+        await recordPayment(TENANT, USER_ID, { installmentId, amount: 600, paymentMethod: 'pix', expectedTotalDue: 600 })
       }
 
       expect(enqueueMetaEventMock).toHaveBeenCalledTimes(2)
@@ -298,10 +286,9 @@ describe('financial.ts meta conversions', () => {
         dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
         queuePrepareRows()
 
-        tx.execute.mockResolvedValueOnce([lockedInstallmentRow({ id: installmentId })])
-        tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+        tx.select.mockReturnValueOnce(chain([lockedInstallmentRow({ id: installmentId })])) // installment lock
+        tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
         tx.select.mockReturnValueOnce(chain([]))
-        tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
         tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
         queueGateSelects(tx, { entryStatus: 'partial', totalAmount: '600.00' })
 
@@ -316,7 +303,8 @@ describe('financial.ts meta conversions', () => {
           inserted: installmentId === INSTALLMENT_ID,
         })
 
-        await recordPayment(TENANT, USER_ID, { installmentId, amount: 600, paymentMethod: 'pix' } as never)
+        tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
+        await recordPayment(TENANT, USER_ID, { installmentId, amount: 600, paymentMethod: 'pix', expectedTotalDue: 600 })
       }
 
       expect(enqueueMetaEventMock).toHaveBeenCalledTimes(2)
@@ -332,10 +320,9 @@ describe('financial.ts meta conversions', () => {
       dbMock.transaction.mockImplementationOnce(transactionCommittingWith(tx, commit))
       queuePrepareRows()
 
-      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+      tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
       tx.select.mockReturnValueOnce(chain([]))
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
       queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
 
@@ -346,7 +333,8 @@ describe('financial.ts meta conversions', () => {
 
       resolveProspectForPatientMock.mockResolvedValueOnce({ id: 'prospect-1' })
 
-      await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 600, paymentMethod: 'pix' } as never)
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
+      await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 600, paymentMethod: 'pix', expectedTotalDue: 600 })
 
       expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
       expect((enqueueMetaEventMock.mock.calls[0][0] as Record<string, unknown>).tx).toBe(tx.savepoint)
@@ -378,10 +366,9 @@ describe('financial.ts meta conversions', () => {
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
 
-      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+      tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
       tx.select.mockReturnValueOnce(chain([]))
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
       queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
 
@@ -392,11 +379,13 @@ describe('financial.ts meta conversions', () => {
 
       claimAndSendPendingEventMock.mockRejectedValueOnce(new Error('graph.facebook.com unreachable'))
 
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
       const result = await recordPayment(TENANT, USER_ID, {
         installmentId: INSTALLMENT_ID,
         amount: 600,
         paymentMethod: 'pix',
-      } as never)
+        expectedTotalDue: 600,
+      })
 
       expect(result.installmentPaid).toBe(true)
       expect(result.paymentRecord).toEqual({ id: 'pay-1' })
@@ -415,10 +404,9 @@ describe('financial.ts meta conversions', () => {
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
 
-      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+      tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
       tx.select.mockReturnValueOnce(chain([]))
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
       queueGateSelects(tx, {
         entryStatus: 'paid',
@@ -431,7 +419,8 @@ describe('financial.ts meta conversions', () => {
       tx.update.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
 
-      await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 600, paymentMethod: 'pix' } as never)
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
+      await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 600, paymentMethod: 'pix', expectedTotalDue: 600 })
 
       expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
       expect(claimAndSendPendingEventMock).not.toHaveBeenCalled()
@@ -443,10 +432,9 @@ describe('financial.ts meta conversions', () => {
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
 
-      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+      tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
       tx.select.mockReturnValueOnce(chain([]))
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
       queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
 
@@ -457,12 +445,64 @@ describe('financial.ts meta conversions', () => {
 
       resolveProspectForPatientMock.mockResolvedValueOnce(null) // walk-in, never a lead
 
-      await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 600, paymentMethod: 'pix' } as never)
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
+      await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 600, paymentMethod: 'pix', expectedTotalDue: 600 })
 
       expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
       const call = enqueueMetaEventMock.mock.calls[0][0] as Record<string, unknown>
       expect(call.prospectId).toBeNull()
       expect(call.contact).toEqual(patientContactRow)
+    })
+
+    // The outbox keeps one Purchase per entry. A row Meta will refuse on age
+    // would take that slot from the on-time payment that follows.
+    it('a payment older than the Meta window enqueues nothing, so a later on-time payment on the entry still emits', async () => {
+      const now = new Date('2026-09-10T12:00:00.000Z')
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(now)
+      const outbox = new Set<string>()
+      enqueueMetaEventMock.mockImplementation(async ({ eventId }: { eventId: string }) => {
+        const inserted = !outbox.has(eventId)
+        outbox.add(eventId)
+        return { inserted }
+      })
+
+      const { recordPayment } = await import('../financial')
+      for (const [installmentId, paidAt] of [
+        [INSTALLMENT_ID, '2026-06-10T15:00:00.000Z'],
+        ['i-2', now.toISOString()],
+      ]) {
+        const tx = makeTx()
+        dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+        queuePrepareRows()
+
+        tx.select.mockReturnValueOnce(chain([lockedInstallmentRow({ id: installmentId })])) // installment lock
+        tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
+        tx.select.mockReturnValueOnce(chain([])) // live payments
+        tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }])) // updateEntryStatus
+        queueGateSelects(tx, {
+          entryStatus: 'partial',
+          queued: queuedPurchaseRow({ eventTime: new Date(paidAt) }),
+        })
+
+        tx.insert.mockReturnValueOnce(chain([{ id: `pay-${installmentId}` }]))
+        tx.insert.mockReturnValueOnce(chain(undefined))
+        tx.update.mockReturnValueOnce(chain(undefined))
+        tx.update.mockReturnValueOnce(chain(undefined))
+        tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
+
+        await recordPayment(TENANT, USER_ID, {
+          installmentId,
+          amount: 600,
+          paymentMethod: 'pix',
+          paidAt,
+          expectedTotalDue: 600,
+        })
+      }
+
+      expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
+      expect(enqueueMetaEventMock.mock.calls[0][0]).toMatchObject({ eventTime: now })
+      expect(claimAndSendPendingEventMock).toHaveBeenCalledTimes(1)
     })
 
     it('a short payment that leaves the entry pending emits nothing', async () => {
@@ -471,10 +511,9 @@ describe('financial.ts meta conversions', () => {
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
 
-      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+      tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
       tx.select.mockReturnValueOnce(chain([]))
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'pending', amountPaid: '0' }])) // updateEntryStatus's installments
       queueGateSelects(tx, { entryStatus: 'pending' }) // gate 1 fails: only this one select is issued
 
@@ -483,7 +522,8 @@ describe('financial.ts meta conversions', () => {
       tx.update.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
 
-      await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 1, paymentMethod: 'pix' } as never)
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
+      await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 1, paymentMethod: 'pix', expectedTotalDue: 600 })
 
       expect(enqueueMetaEventMock).not.toHaveBeenCalled()
     })
@@ -494,10 +534,9 @@ describe('financial.ts meta conversions', () => {
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
 
-      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+      tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
       tx.select.mockReturnValueOnce(chain([]))
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
       queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00', renegotiated: true })
 
@@ -506,7 +545,8 @@ describe('financial.ts meta conversions', () => {
       tx.update.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
 
-      await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 600, paymentMethod: 'pix' } as never)
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
+      await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 600, paymentMethod: 'pix', expectedTotalDue: 600 })
 
       expect(enqueueMetaEventMock).not.toHaveBeenCalled()
     })
@@ -521,10 +561,9 @@ describe('financial.ts meta conversions', () => {
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
 
-      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+      tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
       tx.select.mockReturnValueOnce(chain([]))
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
       queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
 
@@ -535,7 +574,8 @@ describe('financial.ts meta conversions', () => {
 
       resolveProspectForPatientMock.mockResolvedValueOnce({ id: 'prospect-1' })
 
-      await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 600, paymentMethod: 'pix' } as never)
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
+      await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 600, paymentMethod: 'pix', expectedTotalDue: 600 })
 
       const transactionOrder = dbMock.transaction.mock.invocationCallOrder[0]
       expect(dbMock.select.mock.invocationCallOrder[0]).toBeLessThan(transactionOrder)
@@ -560,12 +600,12 @@ describe('financial.ts meta conversions', () => {
         })),
       )
 
-      tx.execute.mockResolvedValueOnce(installmentIds.map((id) => ({ id })))
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow])) // getGracePeriodDays
+      tx.select.mockReturnValueOnce(chain(installmentIds.map((id) => ({ id, financialEntryId: ENTRY_ID })))) // installment lock
+      tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
 
       for (const id of installmentIds) {
         tx.select.mockReturnValueOnce(chain([typedInstallmentRow({ id })]))
-        tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
+        tx.select.mockReturnValueOnce(chain([])) // existingPayments
         tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
         queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
 
@@ -573,6 +613,7 @@ describe('financial.ts meta conversions', () => {
         tx.insert.mockReturnValueOnce(chain(undefined))
         tx.update.mockReturnValueOnce(chain(undefined))
         tx.update.mockReturnValueOnce(chain(undefined))
+        tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
       }
 
       await bulkPayInstallments(TENANT, USER_ID, { installmentIds, paymentMethod: 'pix' })
@@ -593,10 +634,9 @@ describe('financial.ts meta conversions', () => {
         throw new Error('pool exhausted')
       })
 
-      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+      tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
       tx.select.mockReturnValueOnce(chain([]))
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
       queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
 
@@ -605,11 +645,13 @@ describe('financial.ts meta conversions', () => {
       tx.update.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
 
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
       const result = await recordPayment(TENANT, USER_ID, {
         installmentId: INSTALLMENT_ID,
         amount: 600,
         paymentMethod: 'pix',
-      } as never)
+        expectedTotalDue: 600,
+      })
 
       expect(result.installmentPaid).toBe(true)
       expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
@@ -641,15 +683,15 @@ describe('financial.ts meta conversions', () => {
       resolveProspectForPatientMock.mockRejectedValueOnce(new Error('prospect lookup failed'))
       resolveProspectForPatientMock.mockResolvedValueOnce({ id: 'prospect-b' })
 
-      tx.execute.mockResolvedValueOnce([{ id: 'installment-a' }, { id: 'installment-b' }])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([{ id: 'installment-a', financialEntryId: 'entry-a' }, { id: 'installment-b', financialEntryId: 'entry-b' }])) // installment lock
+      tx.select.mockReturnValueOnce(chain([{ ...ENTRY, id: 'entry-a' }, { ...ENTRY, id: 'entry-b' }])) // entry lock
 
       for (const [id, entryId] of [
         ['installment-a', 'entry-a'],
         ['installment-b', 'entry-b'],
       ]) {
         tx.select.mockReturnValueOnce(chain([typedInstallmentRow({ id, financialEntryId: entryId })]))
-        tx.select.mockReturnValueOnce(chain([{ patientId: 'patient-x', description: 'x' }]))
+        tx.select.mockReturnValueOnce(chain([])) // existingPayments
         tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
         queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
 
@@ -657,6 +699,7 @@ describe('financial.ts meta conversions', () => {
         tx.insert.mockReturnValueOnce(chain(undefined))
         tx.update.mockReturnValueOnce(chain(undefined))
         tx.update.mockReturnValueOnce(chain(undefined))
+        tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
       }
 
       await bulkPayInstallments(TENANT, USER_ID, {
@@ -684,10 +727,9 @@ describe('financial.ts meta conversions', () => {
       queuePrepareRows()
       resolveMetaEventPrerequisitesMock.mockRejectedValueOnce(new Error('connection read failed'))
 
-      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+      tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
       tx.select.mockReturnValueOnce(chain([]))
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
       queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
 
@@ -696,11 +738,13 @@ describe('financial.ts meta conversions', () => {
       tx.update.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
 
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
       await recordPayment(TENANT, USER_ID, {
         installmentId: INSTALLMENT_ID,
         amount: 600,
         paymentMethod: 'pix',
-      } as never)
+        expectedTotalDue: 600,
+      })
 
       expect(enqueueMetaEventMock).toHaveBeenCalledTimes(1)
       const call = enqueueMetaEventMock.mock.calls[0][0] as Record<string, unknown>
@@ -715,10 +759,9 @@ describe('financial.ts meta conversions', () => {
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
 
-      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+      tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
       tx.select.mockReturnValueOnce(chain([]))
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
       queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
 
@@ -727,11 +770,13 @@ describe('financial.ts meta conversions', () => {
       tx.update.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
 
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
       await recordPayment(TENANT, USER_ID, {
         installmentId: INSTALLMENT_ID,
         amount: 600,
         paymentMethod: 'pix',
-      } as never)
+        expectedTotalDue: 600,
+      })
 
       expect(resolveMetaEventPrerequisitesMock).toHaveBeenCalledWith(TENANT, {
         prospectId: null,
@@ -751,10 +796,9 @@ describe('financial.ts meta conversions', () => {
       dbMock.transaction.mockImplementationOnce(transactionCommittingWith(tx, commit))
       queuePrepareRows()
 
-      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+      tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
       tx.select.mockReturnValueOnce(chain([]))
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
       queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00', enqueueFails: true })
 
@@ -769,11 +813,13 @@ describe('financial.ts meta conversions', () => {
         new Error('value too long for type character varying(120)'),
       )
 
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
       const result = await recordPayment(TENANT, USER_ID, {
         installmentId: INSTALLMENT_ID,
         amount: 600,
         paymentMethod: 'pix',
-      } as never)
+        expectedTotalDue: 600,
+      })
 
       expect(result.installmentPaid).toBe(true)
       expect(result.paymentRecord).toEqual({ id: 'pay-1' })
@@ -792,10 +838,9 @@ describe('financial.ts meta conversions', () => {
       dbMock.transaction.mockImplementationOnce(transactionCommittingWith(tx, commit))
       queuePrepareRows()
 
-      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+      tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
       tx.select.mockReturnValueOnce(chain([]))
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
       queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00', enqueueFails: true })
 
@@ -806,17 +851,19 @@ describe('financial.ts meta conversions', () => {
 
       enqueueMetaEventMock.mockRejectedValueOnce(new Error('relation does not exist'))
 
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
       await recordPayment(TENANT, USER_ID, {
         installmentId: INSTALLMENT_ID,
         amount: 600,
         paymentMethod: 'pix',
-      } as never)
+        expectedTotalDue: 600,
+      })
 
       // The failing statement was handed the savepoint handle, not the
       // transaction the payment record and the cash movement were written on.
       expect(tx.transaction).toHaveBeenCalledTimes(1)
       expect((enqueueMetaEventMock.mock.calls[0][0] as Record<string, unknown>).tx).toBe(tx.savepoint)
-      expect(tx.insert).toHaveBeenCalledTimes(2)
+      expect(tx.insert).toHaveBeenCalledTimes(3) // paymentRecords, cashMovements, auditLogs
       expect(tx.update).toHaveBeenCalledTimes(2)
       expect(commit).toHaveBeenCalledTimes(1)
     })
@@ -834,14 +881,14 @@ describe('financial.ts meta conversions', () => {
         { financialEntryId: ENTRY_B, patientId: 'patient-b', ...patientContactRow },
       ])
 
-      tx.execute.mockResolvedValueOnce([{ id: 'installment-a' }, { id: 'installment-b' }])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow])) // getGracePeriodDays
+      tx.select.mockReturnValueOnce(chain([{ id: 'installment-a', financialEntryId: ENTRY_A }, { id: 'installment-b', financialEntryId: ENTRY_B }])) // installment lock
+      tx.select.mockReturnValueOnce(chain([{ ...ENTRY, id: ENTRY_A }, { ...ENTRY, id: ENTRY_B }])) // entry lock
 
       // Entry A: its outbox insert is the one that fails.
       tx.select.mockReturnValueOnce(
         chain([typedInstallmentRow({ id: 'installment-a', financialEntryId: ENTRY_A })]),
       )
-      tx.select.mockReturnValueOnce(chain([{ patientId: 'patient-a', description: 'x' }]))
+      tx.select.mockReturnValueOnce(chain([])) // existingPayments
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
       queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00', enqueueFails: true })
 
@@ -849,12 +896,13 @@ describe('financial.ts meta conversions', () => {
       tx.insert.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
 
       // Entry B: untouched by A's failure.
       tx.select.mockReturnValueOnce(
         chain([typedInstallmentRow({ id: 'installment-b', financialEntryId: ENTRY_B })]),
       )
-      tx.select.mockReturnValueOnce(chain([{ patientId: 'patient-b', description: 'y' }]))
+      tx.select.mockReturnValueOnce(chain([])) // existingPayments
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
       queueGateSelects(tx, {
         entryStatus: 'paid',
@@ -866,6 +914,7 @@ describe('financial.ts meta conversions', () => {
       tx.insert.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
 
       enqueueMetaEventMock.mockRejectedValueOnce(new Error('unique index does not exist'))
 
@@ -890,10 +939,9 @@ describe('financial.ts meta conversions', () => {
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
 
-      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+      tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
       tx.select.mockReturnValueOnce(chain([]))
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
       // The entry-status gate, read straight off the caller's transaction.
       tx.select.mockImplementationOnce(() => {
@@ -910,7 +958,8 @@ describe('financial.ts meta conversions', () => {
           installmentId: INSTALLMENT_ID,
           amount: 600,
           paymentMethod: 'pix',
-        } as never),
+          expectedTotalDue: 600,
+        }),
       ).rejects.toThrow('current transaction is aborted')
 
       expect(tx.transaction).not.toHaveBeenCalled()
@@ -943,12 +992,12 @@ describe('financial.ts meta conversions', () => {
       resolveProspectForPatientMock.mockResolvedValueOnce({ id: 'prospect-a' })
       resolveProspectForPatientMock.mockResolvedValueOnce({ id: 'prospect-b' })
 
-      tx.execute.mockResolvedValueOnce([{ id: INSTALLMENT_A }, { id: INSTALLMENT_B }]) // FOR UPDATE lock
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow])) // getGracePeriodDays, before the loop
+      tx.select.mockReturnValueOnce(chain([{ id: INSTALLMENT_A, financialEntryId: ENTRY_A }, { id: INSTALLMENT_B, financialEntryId: ENTRY_B }])) // installment lock
+      tx.select.mockReturnValueOnce(chain([{ ...ENTRY, id: ENTRY_A }, { ...ENTRY, id: ENTRY_B }])) // entry lock
 
       // Iteration 1: installment A / entry A
       tx.select.mockReturnValueOnce(chain([typedInstallmentRow({ id: INSTALLMENT_A, financialEntryId: ENTRY_A })])) // row
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_A, description: 'x' }])) // entryInfo
+      tx.select.mockReturnValueOnce(chain([])) // existingPayments
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }])) // updateEntryStatus
       queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '600.00' })
 
@@ -956,10 +1005,11 @@ describe('financial.ts meta conversions', () => {
       tx.insert.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
 
       // Iteration 2: installment B / entry B
       tx.select.mockReturnValueOnce(chain([typedInstallmentRow({ id: INSTALLMENT_B, financialEntryId: ENTRY_B })])) // row
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_B, description: 'y' }])) // entryInfo
+      tx.select.mockReturnValueOnce(chain([])) // existingPayments
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '400.00' }])) // updateEntryStatus
       queueGateSelects(tx, { entryStatus: 'paid', totalAmount: '400.00' })
 
@@ -967,6 +1017,7 @@ describe('financial.ts meta conversions', () => {
       tx.insert.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
 
       await bulkPayInstallments(TENANT, USER_ID, {
         installmentIds: [INSTALLMENT_A, INSTALLMENT_B],
@@ -998,8 +1049,8 @@ describe('financial.ts meta conversions', () => {
         { financialEntryId: ENTRY_B, patientId: 'patient-b', ...patientContactRow },
       ])
 
-      tx.execute.mockResolvedValueOnce([{ id: INSTALLMENT_A }, { id: INSTALLMENT_B }])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow])) // getGracePeriodDays
+      tx.select.mockReturnValueOnce(chain([{ id: INSTALLMENT_A, financialEntryId: ENTRY_A }, { id: INSTALLMENT_B, financialEntryId: ENTRY_B }])) // installment lock
+      tx.select.mockReturnValueOnce(chain([{ ...ENTRY, id: ENTRY_A }, { ...ENTRY, id: ENTRY_B }])) // entry lock
 
       for (const [installmentId, entryId, outboxId] of [
         [INSTALLMENT_A, ENTRY_A, 'outbox-a'],
@@ -1008,7 +1059,7 @@ describe('financial.ts meta conversions', () => {
         tx.select.mockReturnValueOnce(
           chain([typedInstallmentRow({ id: installmentId, financialEntryId: entryId })]),
         )
-        tx.select.mockReturnValueOnce(chain([{ patientId: 'patient-a', description: 'x' }]))
+        tx.select.mockReturnValueOnce(chain([])) // existingPayments
         tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
         queueGateSelects(tx, {
           entryStatus: 'paid',
@@ -1020,6 +1071,7 @@ describe('financial.ts meta conversions', () => {
         tx.insert.mockReturnValueOnce(chain(undefined))
         tx.update.mockReturnValueOnce(chain(undefined))
         tx.update.mockReturnValueOnce(chain(undefined))
+        tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
       }
 
       const results = await bulkPayInstallments(TENANT, USER_ID, {
@@ -1074,10 +1126,9 @@ describe('financial.ts meta conversions', () => {
         recordingChain([{ financialEntryId: ENTRY_ID, patientId: PATIENT_ID, ...patientContactRow }]),
       )
 
-      tx.execute.mockResolvedValueOnce([lockedInstallmentRow()])
-      tx.select.mockReturnValueOnce(chain([financialSettingsRow]))
+      tx.select.mockReturnValueOnce(chain([lockedInstallmentRow()])) // installment lock
+      tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
       tx.select.mockReturnValueOnce(chain([]))
-      tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x' }]))
       tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '600.00' }]))
       tx.select.mockReturnValueOnce(
         recordingChain([{ status: 'paid', totalAmount: '600.00' }]),
@@ -1090,7 +1141,8 @@ describe('financial.ts meta conversions', () => {
       tx.update.mockReturnValueOnce(chain(undefined))
       tx.update.mockReturnValueOnce(chain(undefined))
 
-      await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 600, paymentMethod: 'pix' } as never)
+      tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
+      await recordPayment(TENANT, USER_ID, { installmentId: INSTALLMENT_ID, amount: 600, paymentMethod: 'pix', expectedTotalDue: 600 })
 
       // Five scoped predicates: the prepare join (installments, entries,
       // patients), both gate selects inside the transaction, and the outbox

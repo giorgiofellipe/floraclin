@@ -1,10 +1,7 @@
 import { db } from '@/db/client'
-import {
-  financialEntries,
-  installments,
-  procedureFollowups,
-  procedureRecords,
-} from '@/db/schema'
+import { procedureFollowups, procedureRecords } from '@/db/schema'
+import { cancelLinkedFinancials } from '@/db/queries/financial'
+import { withTransaction } from '@/lib/tenant'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { FollowupChannel, FollowupOutcome } from '@/validations/followup'
 
@@ -30,46 +27,6 @@ export interface RecordFollowupResult {
 const DESISTIU_ALLOWED_FROM_STATUSES = new Set(['planned', 'approved'])
 
 /**
- * Cancels every linked financial entry (and its installments) for an approved
- * procedure that is being cancelled via the followup path. Mirrors the cleanup
- * done by `web/src/app/api/procedures/[id]/cancel/route.ts` so the two flows
- * stay in sync.
- */
-async function cancelLinkedFinancials(
-  // The transaction object — drizzle infers the same shape as `db` for query
-  // builders, so a minimal typing here keeps callers honest without leaking
-  // internal types.
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-  tenantId: string,
-  procedureRecordId: string,
-): Promise<void> {
-  const now = new Date()
-  const cancelledEntries = await tx
-    .update(financialEntries)
-    .set({ status: 'cancelled', updatedAt: now })
-    .where(
-      and(
-        eq(financialEntries.procedureRecordId, procedureRecordId),
-        eq(financialEntries.tenantId, tenantId),
-        isNull(financialEntries.deletedAt),
-      ),
-    )
-    .returning({ id: financialEntries.id })
-
-  for (const entry of cancelledEntries) {
-    await tx
-      .update(installments)
-      .set({ status: 'cancelled', updatedAt: now })
-      .where(
-        and(
-          eq(installments.financialEntryId, entry.id),
-          eq(installments.tenantId, tenantId),
-        ),
-      )
-  }
-}
-
-/**
  * Records a followup contact attempt on a procedure_records row.
  *
  * Always:
@@ -80,8 +37,8 @@ async function cancelLinkedFinancials(
  *  - Sets procedure_records.status = 'cancelled'
  *  - Sets procedure_records.cancellation_reason = 'patient_declined'
  *  - Sets procedure_records.cancelled_at = now()
- *  - If previous status was 'approved', cancels all linked financial entries
- *    and their installments (mirrors the /cancel route).
+ *  - If previous status was 'approved', cancels the live linked financial
+ *    entries and their pending installments (mirrors the /cancel route).
  *
  * Throws:
  *  - 'Procedure not found' if the procedure record does not belong to the
@@ -92,7 +49,7 @@ async function cancelLinkedFinancials(
 export async function recordFollowup(
   args: RecordFollowupArgs,
 ): Promise<RecordFollowupResult> {
-  return db.transaction(async (tx) => {
+  return withTransaction(async (tx) => {
     const [proc] = await tx
       .select({
         id: procedureRecords.id,
@@ -151,7 +108,13 @@ export async function recordFollowup(
       // Mirror the dedicated /cancel route: approved procedures have live
       // financial entries that must also be cancelled.
       if (proc.status === 'approved') {
-        await cancelLinkedFinancials(tx, args.tenantId, args.procedureRecordId)
+        await cancelLinkedFinancials(
+          tx,
+          args.tenantId,
+          args.contactedBy,
+          args.procedureRecordId,
+          'Paciente desistiu do procedimento',
+        )
       }
 
       return {

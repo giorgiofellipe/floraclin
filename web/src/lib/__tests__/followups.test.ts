@@ -9,8 +9,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 //   3. When outcome === 'desistiu' (and status is allowed), the procedure
 //      record is cancelled (status='cancelled', cancellationReason='patient_declined',
 //      cancelledAt set).
-//   4. When outcome === 'desistiu' AND previous status was 'approved', linked
-//      financial entries and their installments are also cancelled.
+//   4. When outcome === 'desistiu' AND previous status was 'approved', the
+//      linked financials are cancelled through cancelLinkedFinancials.
 //   5. When outcome === 'desistiu' and the procedure status is NOT in
 //      ('planned', 'approved'), we throw and write nothing.
 //   6. When the procedure does not belong to the caller's tenant, we throw.
@@ -20,52 +20,47 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const { txState, TABLE_TOKENS } = vi.hoisted(() => {
   interface UpdateCall {
-    table: 'procedureRecords' | 'financialEntries' | 'installments' | 'unknown'
+    table: 'procedureRecords' | 'unknown'
     values: Record<string, unknown>
+    where?: unknown
   }
   interface TxState {
     selectResult: Array<{ id: string; tenantId: string; status: string }>
     insertedFollowups: Array<Record<string, unknown>>
     updates: UpdateCall[]
-    // Returned from update(financialEntries).returning() — used to drive the
-    // installment-cleanup loop. Defaults to empty.
-    cancelledEntryIds: Array<{ id: string }>
   }
   const txState: TxState = {
     selectResult: [],
     insertedFollowups: [],
     updates: [],
-    cancelledEntryIds: [],
   }
   const TABLE_TOKENS = {
     procedureRecords: { __table: 'procedureRecords' },
-    financialEntries: { __table: 'financialEntries' },
-    installments: { __table: 'installments' },
   } as const
   return { txState, TABLE_TOKENS }
 })
 
-type UpdateCallTable =
-  | 'procedureRecords'
-  | 'financialEntries'
-  | 'installments'
-  | 'unknown'
+type UpdateCallTable = 'procedureRecords' | 'unknown'
 
-function resetTx(
-  initial: typeof txState.selectResult,
-  opts: { cancelledEntryIds?: Array<{ id: string }> } = {},
-) {
+function resetTx(initial: typeof txState.selectResult) {
   txState.selectResult = initial
   txState.insertedFollowups = []
   txState.updates = []
-  txState.cancelledEntryIds = opts.cancelledEntryIds ?? []
 }
+
+const cancelLinkedFinancialsMock = vi.fn()
+vi.mock('@/db/queries/financial', () => ({
+  cancelLinkedFinancials: (...args: unknown[]) => cancelLinkedFinancialsMock(...args),
+}))
+
+vi.mock('@/lib/tenant', async () => {
+  const { db } = await import('@/db/client')
+  return { withTransaction: (fn: (tx: unknown) => unknown) => db.transaction(fn as never) }
+})
 
 vi.mock('@/db/client', () => {
   function tagTable(token: unknown): UpdateCallTable {
     if (token === TABLE_TOKENS.procedureRecords) return 'procedureRecords'
-    if (token === TABLE_TOKENS.financialEntries) return 'financialEntries'
-    if (token === TABLE_TOKENS.installments) return 'installments'
     return 'unknown'
   }
 
@@ -89,14 +84,10 @@ vi.mock('@/db/client', () => {
       update: (table: unknown) => ({
         set: (vals: Record<string, unknown>) => {
           const tableTag = tagTable(table)
-          const call = { table: tableTag, values: vals }
+          const call: { table: UpdateCallTable; values: Record<string, unknown>; where?: unknown } = { table: tableTag, values: vals }
           return {
-            where: () => {
-              // financialEntries updates use .returning() — installments and
-              // procedureRecords don't. We mimic both shapes by returning a
-              // thenable that also exposes .returning(). Only one of these
-              // fires per call: .returning() is invoked for financialEntries,
-              // otherwise `await` triggers .then for the other two.
+            where: (condition: unknown) => {
+              call.where = condition
               return {
                 then: (
                   resolve: (value: unknown) => unknown,
@@ -104,13 +95,6 @@ vi.mock('@/db/client', () => {
                 ) => {
                   txState.updates.push(call)
                   return Promise.resolve(undefined).then(resolve, reject)
-                },
-                returning: () => {
-                  txState.updates.push(call)
-                  if (tableTag === 'financialEntries') {
-                    return Promise.resolve(txState.cancelledEntryIds)
-                  }
-                  return Promise.resolve([])
                 },
               }
             },
@@ -144,21 +128,8 @@ vi.mock('@/db/schema', () => ({
     status: 'status',
     deletedAt: 'deleted_at',
   }),
-  financialEntries: Object.assign(TABLE_TOKENS.financialEntries, {
-    id: 'id',
-    tenantId: 'tenant_id',
-    procedureRecordId: 'procedure_record_id',
-    deletedAt: 'deleted_at',
-  }),
-  installments: Object.assign(TABLE_TOKENS.installments, {
-    id: 'id',
-    tenantId: 'tenant_id',
-    financialEntryId: 'financial_entry_id',
-  }),
 }))
 
-// drizzle-orm operators are passed straight through to our stub `where`
-// clauses (which we never inspect), so the simplest stub is fine.
 vi.mock('drizzle-orm', () => ({
   and: (...args: unknown[]) => args,
   eq: (a: unknown, b: unknown) => ['eq', a, b],
@@ -169,6 +140,7 @@ import { recordFollowup, snoozeProcedure } from '../followups'
 
 describe('recordFollowup', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     resetTx([{ id: 'proc-1', tenantId: 'tenant-1', status: 'planned' }])
   })
 
@@ -224,6 +196,7 @@ describe('recordFollowup', () => {
 
     // Single update on procedure_records (cancellation fields + last_contacted_at).
     // No financial cleanup because previous status was 'planned' (no entries yet).
+    expect(cancelLinkedFinancialsMock).not.toHaveBeenCalled()
     expect(txState.updates).toHaveLength(1)
     expect(txState.updates[0].table).toBe('procedureRecords')
     expect(txState.updates[0].values).toMatchObject({
@@ -235,10 +208,8 @@ describe('recordFollowup', () => {
     expect(txState.updates[0].values.cancelledAt).toBeInstanceOf(Date)
   })
 
-  it('cancels linked financial entries and installments when desistiu on an approved procedure', async () => {
-    resetTx([{ id: 'proc-1', tenantId: 'tenant-1', status: 'approved' }], {
-      cancelledEntryIds: [{ id: 'entry-1' }, { id: 'entry-2' }],
-    })
+  it('cancels the linked financials through cancelLinkedFinancials, on the same transaction, when desistiu on an approved procedure', async () => {
+    resetTx([{ id: 'proc-1', tenantId: 'tenant-1', status: 'approved' }])
 
     const result = await recordFollowup({
       tenantId: 'tenant-1',
@@ -250,42 +221,14 @@ describe('recordFollowup', () => {
 
     expect(result.cancelledProcedure).toBe(true)
     expect(result.previousStatus).toBe('approved')
-
-    // Expect updates in order: procedureRecords (cancel), financialEntries
-    // (cancel + returning ids), then one installments update per returned id.
-    expect(txState.updates.map((u) => u.table)).toEqual([
-      'procedureRecords',
-      'financialEntries',
-      'installments',
-      'installments',
-    ])
-    expect(txState.updates[1].values).toMatchObject({
-      status: 'cancelled',
-      updatedAt: expect.any(Date),
-    })
-    expect(txState.updates[2].values).toMatchObject({ status: 'cancelled' })
-    expect(txState.updates[3].values).toMatchObject({ status: 'cancelled' })
-  })
-
-  it('does not touch installments when desistiu on approved with no financial entries', async () => {
-    resetTx([{ id: 'proc-1', tenantId: 'tenant-1', status: 'approved' }], {
-      cancelledEntryIds: [],
-    })
-
-    const result = await recordFollowup({
-      tenantId: 'tenant-1',
-      contactedBy: 'user-1',
-      procedureRecordId: 'proc-1',
-      channel: 'call',
-      outcome: 'desistiu',
-    })
-
-    expect(result.cancelledProcedure).toBe(true)
-    // procedureRecords update + financialEntries update (returning empty) + no installments.
-    expect(txState.updates.map((u) => u.table)).toEqual([
-      'procedureRecords',
-      'financialEntries',
-    ])
+    expect(txState.updates.map((u) => u.table)).toEqual(['procedureRecords'])
+    expect(cancelLinkedFinancialsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ update: expect.any(Function) }),
+      'tenant-1',
+      'user-1',
+      'proc-1',
+      'Paciente desistiu do procedimento',
+    )
   })
 
   it.each(['cancelled', 'executed', 'draft'] as const)(

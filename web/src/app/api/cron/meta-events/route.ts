@@ -24,7 +24,7 @@ import {
   reapStuckClaims,
   releaseEventClaims,
   MAX_EVENTS_PER_TENANT,
-  META_EVENT_WINDOW_DAYS,
+  META_EVENT_MAX_AGE_MS,
   type PendingEvent,
 } from '@/db/queries/meta-events'
 import { getMetaConnection, listActiveOAuthConnections } from '@/db/queries/meta-connections'
@@ -59,9 +59,9 @@ const RECONCILE_CONCURRENCY = 10
 const TENANT_FAILURE_ALERT_THRESHOLD = 10
 
 // Meta rejects the ENTIRE request when any event in it has an event_time
-// more than 7 days old, and processes none of its events. One stale row in a
-// batch therefore costs every other tenant in that batch its events.
-const META_EVENT_MAX_AGE_MS = META_EVENT_WINDOW_DAYS * 24 * 60 * 60 * 1000
+// older than META_EVENT_MAX_AGE_MS, and processes none of its events. One
+// stale row in a batch therefore costs every other tenant in that batch its
+// events.
 const STALE_EVENT_ERROR = 'event_time exceeded the 7-day window the Conversions API accepts'
 
 // A row that waited this long for a working connection can never be

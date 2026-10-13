@@ -12,13 +12,14 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { DatePicker } from '@/components/ui/date-picker'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useBulkPay, useBulkCancel } from '@/hooks/mutations/use-financial-mutations'
+import { useBulkPay, useBulkCancel, useBulkUncancel } from '@/hooks/mutations/use-financial-mutations'
 import { cn } from '@/lib/utils'
+import { ReasonDialog } from './reason-dialog'
 import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
-import { CheckCircleIcon, XCircleIcon, RefreshCwIcon } from 'lucide-react'
+import { toPaidAtIso } from '@/lib/dates'
+import { CheckCircleIcon, XCircleIcon, RefreshCwIcon, Undo2Icon } from 'lucide-react'
 import type { PaymentMethod } from '@/types'
 
 interface BulkActionBarProps {
@@ -26,6 +27,7 @@ interface BulkActionBarProps {
   selectedInstallmentIds: string[]
   selectedEntryIds: string[]
   canRenegotiate?: boolean
+  canUncancel?: boolean
   onClear: () => void
   onRenegotiate: () => void
   onSuccess?: () => void
@@ -36,25 +38,29 @@ export function BulkActionBar({
   selectedInstallmentIds,
   selectedEntryIds,
   canRenegotiate = true,
+  canUncancel = false,
   onClear,
   onRenegotiate,
   onSuccess,
 }: BulkActionBarProps) {
   const [payDialogOpen, setPayDialogOpen] = useState(false)
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
+  const [uncancelDialogOpen, setUncancelDialogOpen] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix')
   const [paidAt, setPaidAt] = useState('')
   const [cancelReason, setCancelReason] = useState('')
+  const [uncancelReason, setUncancelReason] = useState('')
 
   const bulkPay = useBulkPay()
   const bulkCancel = useBulkCancel()
+  const bulkUncancel = useBulkUncancel()
 
   async function handleBulkPay() {
     try {
       await bulkPay.mutateAsync({
         installmentIds: selectedInstallmentIds,
         paymentMethod,
-        paidAt: paidAt ? new Date(paidAt).toISOString() : undefined,
+        paidAt: toPaidAtIso(paidAt),
       })
       setPayDialogOpen(false)
       onClear()
@@ -73,6 +79,22 @@ export function BulkActionBar({
       })
       setCancelDialogOpen(false)
       setCancelReason('')
+      onClear()
+      onSuccess?.()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao processar')
+    }
+  }
+
+  async function handleBulkUncancel() {
+    if (!uncancelReason.trim()) return
+    try {
+      await bulkUncancel.mutateAsync({
+        entryIds: selectedEntryIds,
+        reason: uncancelReason,
+      })
+      setUncancelDialogOpen(false)
+      setUncancelReason('')
       onClear()
       onSuccess?.()
     } catch (err) {
@@ -129,7 +151,7 @@ export function BulkActionBar({
           <Button
             size="sm"
             variant="outline"
-            className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
+            className="border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors"
             onClick={onRenegotiate}
             disabled={!canRenegotiate}
             title={!canRenegotiate && selectedEntryIds.length > 0 ? 'Selecione cobranças do mesmo paciente' : undefined}
@@ -137,6 +159,17 @@ export function BulkActionBar({
             <RefreshCwIcon data-icon="inline-start" />
             Renegociar ({selectedEntryIds.length})
           </Button>
+          {canUncancel && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors"
+              onClick={() => setUncancelDialogOpen(true)}
+            >
+              <Undo2Icon data-icon="inline-start" />
+              Reativar ({selectedEntryIds.length})
+            </Button>
+          )}
         </div>
       </div>
 
@@ -165,11 +198,12 @@ export function BulkActionBar({
                 value={paidAt}
                 onChange={(v) => setPaidAt(v)}
                 className="w-full"
+                data-testid="bulk-pay-date"
               />
             </div>
           </div>
           <DialogFooter className="pt-2">
-            <Button variant="outline" className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors" onClick={() => setPayDialogOpen(false)}>
+            <Button variant="outline" className="border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors" onClick={() => setPayDialogOpen(false)}>
               Cancelar
             </Button>
             <Button className="bg-forest text-cream hover:bg-sage transition-colors" onClick={handleBulkPay} disabled={bulkPay.isPending}>
@@ -179,37 +213,36 @@ export function BulkActionBar({
         </DialogContent>
       </Dialog>
 
-      {/* Bulk Cancel Dialog */}
-      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-semibold text-charcoal">Cancelar Cobranças</DialogTitle>
-            <DialogDescription className="text-mid">
-              Cancelar {selectedEntryIds.length} cobrança(s). Esta ação não pode ser desfeita.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-2">
-              <Label className="uppercase tracking-wider text-xs font-medium text-mid">Motivo do cancelamento</Label>
-              <Textarea
-                value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
-                placeholder="Informe o motivo..."
-                rows={3}
-                data-testid="cancel-reason"
-              />
-            </div>
-          </div>
-          <DialogFooter className="pt-2">
-            <Button variant="outline" className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors" onClick={() => setCancelDialogOpen(false)}>
-              Voltar
-            </Button>
-            <Button variant="destructive" onClick={handleBulkCancel} disabled={bulkCancel.isPending || !cancelReason.trim()}>
-              {bulkCancel.isPending ? 'Cancelando...' : 'Confirmar Cancelamento'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ReasonDialog
+        open={cancelDialogOpen}
+        onOpenChange={setCancelDialogOpen}
+        title="Cancelar Cobranças"
+        description={`Cancelar ${selectedEntryIds.length} cobrança(s). Cobranças canceladas podem ser reativadas depois, exceto as que vieram de uma renegociação.`}
+        reasonLabel="Motivo do cancelamento"
+        reason={cancelReason}
+        onReasonChange={setCancelReason}
+        reasonTestId="cancel-reason"
+        confirmLabel="Confirmar Cancelamento"
+        pendingLabel="Cancelando..."
+        isPending={bulkCancel.isPending}
+        destructive
+        onConfirm={handleBulkCancel}
+      />
+
+      <ReasonDialog
+        open={uncancelDialogOpen}
+        onOpenChange={setUncancelDialogOpen}
+        title="Reativar Cobranças"
+        description={`Reativar ${selectedEntryIds.length} cobrança(s).`}
+        reasonLabel="Motivo da reativação"
+        reason={uncancelReason}
+        onReasonChange={setUncancelReason}
+        reasonTestId="uncancel-reason"
+        confirmLabel="Confirmar Reativação"
+        pendingLabel="Reativando..."
+        isPending={bulkUncancel.isPending}
+        onConfirm={handleBulkUncancel}
+      />
     </>
   )
 }

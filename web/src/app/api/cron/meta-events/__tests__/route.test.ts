@@ -79,7 +79,7 @@ vi.mock('@/db/queries/meta-events', () => ({
   releaseEventClaims: vi.fn(),
   hasScheduleForProspect: vi.fn(),
   MAX_EVENTS_PER_TENANT: 840,
-  META_EVENT_WINDOW_DAYS: 7,
+  META_EVENT_MAX_AGE_MS: 7 * 24 * 60 * 60 * 1000,
 }))
 
 vi.mock('@/db/queries/meta-connections', () => ({

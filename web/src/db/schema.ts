@@ -400,6 +400,7 @@ export const financialEntries = floraclinSchema.table('financial_entries', {
   status: varchar('status', { length: 20 }).notNull().default('pending'), // CHECK in migration
   notes: text('notes'),
   renegotiatedAt: timestamp('renegotiated_at', { withTimezone: true }),
+  createdFromRenegotiation: boolean('created_from_renegotiation').notNull().default(false),
   createdBy: uuid('created_by').notNull().references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -420,13 +421,13 @@ export const installments = floraclinSchema.table('installments', {
   paidAt: timestamp('paid_at', { withTimezone: true }),
   paymentMethod: varchar('payment_method', { length: 20 }), // CHECK in migration
   notes: text('notes'),
-  fineAmount: decimal('fine_amount', { precision: 10, scale: 2 }).notNull().default('0'),
-  interestAmount: decimal('interest_amount', { precision: 10, scale: 2 }).notNull().default('0'),
   amountPaid: decimal('amount_paid', { precision: 10, scale: 2 }).notNull().default('0'),
-  lastFineInterestCalcAt: timestamp('last_fine_interest_calc_at', { withTimezone: true }),
-  appliedFineType: varchar('applied_fine_type', { length: 20 }),
-  appliedFineValue: decimal('applied_fine_value', { precision: 5, scale: 2 }),
-  appliedInterestRate: decimal('applied_interest_rate', { precision: 5, scale: 2 }),
+  appliedFineType: varchar('applied_fine_type', { length: 20 }).notNull(),
+  appliedFineValue: decimal('applied_fine_value', { precision: 5, scale: 2 }).notNull(),
+  appliedInterestRate: decimal('applied_interest_rate', { precision: 5, scale: 2 }).notNull(),
+  appliedGracePeriodDays: integer('applied_grace_period_days').notNull(),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  penaltyPauses: jsonb('penalty_pauses').$type<{ from: string; to: string }[]>().notNull().default([]),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

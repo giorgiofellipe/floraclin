@@ -3,6 +3,7 @@ import { requireWrite } from '@/lib/write-access'
 import { reversePayment } from '@/db/queries/financial'
 import { z } from 'zod'
 import { handleApiError } from '@/lib/api-error'
+import { BusinessError } from '@/lib/errors'
 
 const reversePaymentSchema = z.object({
   reason: z.string().optional(),
@@ -29,9 +30,8 @@ export async function POST(
 
     return NextResponse.json(result)
   } catch (error) {
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('não encontrado') || msg.includes('não pertence') || msg.includes('já foi estornado')) {
-      return NextResponse.json({ error: msg }, { status: 400 })
+    if (error instanceof BusinessError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 409 })
     }
     return handleApiError(error, request)
   }

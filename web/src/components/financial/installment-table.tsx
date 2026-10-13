@@ -14,11 +14,8 @@ import {
   DialogClose,
 } from '@/components/ui/dialog'
 import { cn, formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
+import { round2 } from '@/lib/financial/penalties'
 import { PartialPaymentDialog } from './partial-payment-dialog'
-import {
-  calculateInterest,
-  getDaysOverdue,
-} from '@/lib/financial/penalties'
 import {
   BanknoteIcon,
   Undo2Icon,
@@ -54,10 +51,8 @@ interface Installment {
   paymentMethod: string | null
   notes: string | null
   amountPaid?: string | null
-  fineAmount?: string | null
-  interestAmount?: string | null
-  computedFineAmount?: number | null
-  computedInterestAmount?: number | null
+  computedFineAmount: number
+  computedInterestAmount: number
   appliedFineType?: string | null
   appliedFineValue?: string | null
   appliedInterestRate?: string | null
@@ -73,24 +68,19 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   transfer: 'Transferência',
 }
 
-function getComputedInterest(inst: Installment): number {
-  if (inst.computedInterestAmount != null) return inst.computedInterestAmount
-  const amount = Number(inst.amount)
-  const amountPaid = Number(inst.amountPaid ?? 0)
-  const rate = Number(inst.appliedInterestRate ?? 0)
-  if (rate <= 0 || inst.status === 'paid') return 0
-  const startDate = inst.lastFineInterestCalcAt ?? inst.dueDate
-  const daysOverdue = getDaysOverdue(startDate, inst.lastFineInterestCalcAt ? 0 : 0)
-  if (daysOverdue <= 0) return 0
-  return calculateInterest(amount - amountPaid, daysOverdue, rate)
-}
-
 function getProgressPercent(inst: Installment): number {
   const amount = Number(inst.amount)
   if (amount <= 0) return 0
   const paid = Number(inst.amountPaid ?? 0)
   const paidFraction = inst.status === 'paid' ? 1 : paid / amount
   return Math.min(Math.round(paidFraction * 100), 100)
+}
+
+// Cash received above what the payment could cover. Recorded, never credited.
+function excessOf(pr: PaymentRecord): number {
+  const covered =
+    Number(pr.interestCovered ?? 0) + Number(pr.fineCovered ?? 0) + Number(pr.principalCovered ?? 0)
+  return round2(Number(pr.amount ?? 0) - covered)
 }
 
 export function InstallmentTable({
@@ -136,8 +126,8 @@ export function InstallmentTable({
     <>
       <div className="space-y-2">
         {installments.map((inst) => {
-          const fineAmt = inst.computedFineAmount ?? Number(inst.fineAmount ?? 0)
-          const interestAmt = getComputedInterest(inst)
+          const fineAmt = inst.computedFineAmount
+          const interestAmt = inst.computedInterestAmount
           const penaltyTotal = fineAmt + interestAmt
           const isExpanded = expandedInstallmentId === inst.id
           const hasPayments = (inst.paymentRecords?.length ?? 0) > 0
@@ -269,63 +259,71 @@ export function InstallmentTable({
                       Histórico de pagamentos
                     </span>
                   </div>
-                  {inst.paymentRecords!.map((pr) => (
-                    <div
-                      key={pr.id}
-                      className="flex items-center gap-3 px-3 py-2 border-t border-[#E8ECEF]/50 group"
-                    >
-                      {/* Payment dot */}
-                      <div className="w-7 flex justify-center shrink-0">
-                        <div className="w-1.5 h-1.5 rounded-full bg-sage/50" />
-                      </div>
-
-                      {/* Payment info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-xs font-medium text-charcoal tabular-nums">
-                            {formatCurrency(Number(pr.amount ?? 0))}
-                          </span>
-                          <span className="text-[10px] text-mid">
-                            {formatDateTime(pr.paidAt)}
-                          </span>
-                          <span className="text-[10px] text-mid">
-                            {pr.paymentMethod ? PAYMENT_METHOD_LABELS[pr.paymentMethod] ?? pr.paymentMethod : ''}
-                          </span>
-                        </div>
-                        {/* Allocation breakdown */}
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[10px] text-emerald-700 tabular-nums">
-                            Principal {formatCurrency(Number(pr.principalCovered ?? 0))}
-                          </span>
-                          {Number(pr.interestCovered ?? 0) > 0 && (
-                            <span className="text-[10px] text-amber-700 tabular-nums">
-                              Juros {formatCurrency(Number(pr.interestCovered ?? 0))}
-                            </span>
-                          )}
-                          {Number(pr.fineCovered ?? 0) > 0 && (
-                            <span className="text-[10px] text-amber-700 tabular-nums">
-                              Multa {formatCurrency(Number(pr.fineCovered ?? 0))}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Reverse button */}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 px-2 text-[10px] text-red-600 hover:bg-red-50 hover:text-red-700"
-                        data-testid="payment-reverse"
-                        onClick={() => {
-                          setReverseDialogPayment(pr)
-                          setReversalReason('')
-                        }}
+                  {inst.paymentRecords!.map((pr) => {
+                    const excess = excessOf(pr)
+                    return (
+                      <div
+                        key={pr.id}
+                        className="flex items-center gap-3 px-3 py-2 border-t border-[#E8ECEF]/50 group"
                       >
-                        <Undo2Icon className="h-3 w-3" />
-                        Estornar
-                      </Button>
-                    </div>
-                  ))}
+                        {/* Payment dot */}
+                        <div className="w-7 flex justify-center shrink-0">
+                          <div className="w-1.5 h-1.5 rounded-full bg-sage/50" />
+                        </div>
+
+                        {/* Payment info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-xs font-medium text-charcoal tabular-nums">
+                              {formatCurrency(Number(pr.amount ?? 0))}
+                            </span>
+                            <span className="text-[10px] text-mid">
+                              {formatDateTime(pr.paidAt)}
+                            </span>
+                            <span className="text-[10px] text-mid">
+                              {pr.paymentMethod ? PAYMENT_METHOD_LABELS[pr.paymentMethod] ?? pr.paymentMethod : ''}
+                            </span>
+                          </div>
+                          {/* Allocation breakdown */}
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] text-emerald-700 tabular-nums">
+                              Principal {formatCurrency(Number(pr.principalCovered ?? 0))}
+                            </span>
+                            {Number(pr.interestCovered ?? 0) > 0 && (
+                              <span className="text-[10px] text-amber-700 tabular-nums">
+                                Juros {formatCurrency(Number(pr.interestCovered ?? 0))}
+                              </span>
+                            )}
+                            {Number(pr.fineCovered ?? 0) > 0 && (
+                              <span className="text-[10px] text-amber-700 tabular-nums">
+                                Multa {formatCurrency(Number(pr.fineCovered ?? 0))}
+                              </span>
+                            )}
+                            {excess > 0 && (
+                              <span className="text-[10px] text-sky-700 tabular-nums">
+                                Excedente {formatCurrency(excess)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Reverse button */}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2 text-[10px] text-red-600 hover:bg-red-50 hover:text-red-700"
+                          data-testid="payment-reverse"
+                          onClick={() => {
+                            setReverseDialogPayment(pr)
+                            setReversalReason('')
+                          }}
+                        >
+                          <Undo2Icon className="h-3 w-3" />
+                          Estornar
+                        </Button>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -400,9 +398,6 @@ export function InstallmentTable({
           installment={{
             id: payDialogInstallment.id,
             amount: Number(payDialogInstallment.amount),
-            amountPaid: Number(payDialogInstallment.amountPaid ?? 0),
-            fineAmount: payDialogInstallment.computedFineAmount ?? Number(payDialogInstallment.fineAmount ?? 0),
-            interestAmount: getComputedInterest(payDialogInstallment),
           }}
           onSuccess={onPaymentComplete}
         />

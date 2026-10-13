@@ -5,6 +5,7 @@ import type { MetaActionSource, MetaEventName } from '@/lib/meta/types'
 
 /** Meta stops accepting an event this long after its event_time. */
 export const META_EVENT_WINDOW_DAYS = 7
+export const META_EVENT_MAX_AGE_MS = META_EVENT_WINDOW_DAYS * 24 * 60 * 60 * 1000
 
 // The sweep runs once a day and Meta stops accepting an event seven days
 // after its event_time, so a row must run out of attempts before it runs out

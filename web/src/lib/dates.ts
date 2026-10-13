@@ -70,11 +70,42 @@ export function brToday(): string {
 }
 
 /**
+ * The `paidAt` to send for a payment day the user picked: BR noon of that day,
+ * or undefined for no pick or today, so the server stamps the real instant.
+ * BR noon on today would sort before a payment recorded later today, leaving
+ * it out of the quote, and the replay would then refuse the new payment.
+ */
+export function toPaidAtIso(ymd: string): string | undefined {
+  if (!ymd || ymd === brToday()) return undefined
+  return parseBrDate(ymd, '12:00:00').toISOString()
+}
+
+/**
  * Format a `Date` instant as a `YYYY-MM-DD` string in BR time. Use when the
  * semantic answer is "which BR calendar day did this instant fall on".
  */
 export function toBrYmd(date: Date): string {
   return formatInTimeZone(date, BR_TZ, 'yyyy-MM-dd')
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000
+
+/** Days since epoch of a `YYYY-MM-DD` calendar day, for whole-day arithmetic. */
+export function ymdDayIndex(ymd: string): number {
+  if (!YMD_ONLY.test(ymd)) {
+    throw new Error(`ymdDayIndex expected YYYY-MM-DD, got ${ymd}`)
+  }
+  const [y, m, d] = ymd.split('-').map(Number)
+  return Date.UTC(y, m - 1, d) / MS_PER_DAY
+}
+
+/**
+ * Days since epoch of the BR calendar day containing `date`. Subtracting two
+ * of these counts calendar days the way a person does: 21:00 and 10:00 the
+ * next morning are one day apart, not 0.54 of one.
+ */
+export function brDayIndex(date: Date): number {
+  return ymdDayIndex(toBrYmd(date))
 }
 
 /**
@@ -110,9 +141,7 @@ export function shiftBrYmd(ymd: string, days: number): string {
 }
 
 export function brCalendarDaysBetween(from: Date, to: Date): number {
-  return Math.round(
-    (parseBrDate(toBrYmd(to)).getTime() - parseBrDate(toBrYmd(from)).getTime()) / 86_400_000,
-  )
+  return brDayIndex(to) - brDayIndex(from)
 }
 
 /**
