@@ -114,12 +114,9 @@ export function OnboardingWizard({
   const [customSlug, setCustomSlug] = useState('')
   const [slugAvailable, setSlugAvailable] = useState<boolean | null>(null)
   const [slugChecking, setSlugChecking] = useState(false)
-  const slug = (clinicData.name as string || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
+  const [suggestedSlug, setSuggestedSlug] = useState('')
+  const clinicName = ((clinicData.name as string) || '').trim()
+  const displayedSlug = customSlug || suggestedSlug
 
   // Step 4 state: track sent invites count
   const [invitesSent, setInvitesSent] = useState(0)
@@ -187,18 +184,25 @@ export function OnboardingWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [procedureOverrides, productsTouched])
 
-  // Debounced slug availability check
-  const effectiveSlug = customSlug || slug
+  // Debounced slug check. Without a custom slug the server suggests the
+  // name-based slug with the same -N suffix it will save on completion.
   useEffect(() => {
-    if (!effectiveSlug) {
+    const query = customSlug
+      ? `slug=${encodeURIComponent(customSlug)}`
+      : clinicName
+        ? `name=${encodeURIComponent(clinicName)}`
+        : null
+    if (!query) {
+      setSuggestedSlug('')
       setSlugAvailable(null)
       return
     }
     setSlugChecking(true)
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/slug-check?slug=${encodeURIComponent(effectiveSlug)}`)
+        const res = await fetch(`/api/slug-check?${query}`)
         const data = await res.json()
+        if (!customSlug) setSuggestedSlug(data.slug ?? '')
         setSlugAvailable(data.available)
       } catch {
         setSlugAvailable(null)
@@ -207,7 +211,7 @@ export function OnboardingWizard({
       }
     }, 400)
     return () => clearTimeout(timer)
-  }, [effectiveSlug])
+  }, [customSlug, clinicName])
 
   function handleNext() {
     if (currentStep === 0) {
@@ -392,7 +396,7 @@ export function OnboardingWizard({
                 onChange={handleClinicChange}
               />
 
-              {slug && (
+              {displayedSlug && (
                 <div className="mt-6 rounded-[3px] bg-[#F0F7F1] border border-sage/20 p-4 space-y-3">
                   <div>
                     <p className="text-xs text-mid uppercase tracking-wider mb-0.5">
@@ -406,7 +410,7 @@ export function OnboardingWizard({
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-mid shrink-0">floraclin.com.br/c/</span>
                     <Input
-                      value={customSlug || slug}
+                      value={displayedSlug}
                       onChange={(e) => {
                         const v = e.target.value
                           .toLowerCase()

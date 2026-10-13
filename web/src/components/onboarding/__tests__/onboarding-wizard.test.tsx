@@ -205,4 +205,29 @@ describe('OnboardingWizard', () => {
 
     expect(body.clinic).toMatchObject({ phone: '(47) 98844-3635', email: 'contato@clinica.com.br' })
   })
+
+  // Regression: the link field showed the plain name slug another clinic held, and finishing onboarding failed.
+  it('shows the free booking slug the server suggests for the clinic name', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+      new Response(
+        JSON.stringify(String(input).startsWith('/api/slug-check') ? { available: true, slug: 'my-clinic-1' } : {}),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+
+    render(
+      wrap(
+        <OnboardingWizard
+          tenantName="My Clinic"
+          tenantPhone={null}
+          tenantEmail={null}
+          existingProcedureTypes={[]}
+          existingProducts={[]}
+        />,
+      ),
+    )
+
+    expect(await screen.findByDisplayValue('my-clinic-1')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith('/api/slug-check?name=My%20Clinic')
+  })
 })

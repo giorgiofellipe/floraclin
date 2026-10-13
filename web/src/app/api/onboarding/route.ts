@@ -9,6 +9,7 @@ import {
   createProcedureType,
   listProcedureTypes,
 } from '@/db/queries/tenants'
+import { findAvailableSlug, generateSlug } from '@/db/queries/admin-tenants'
 import { createConsentTemplate } from '@/db/queries/consent'
 import { DEFAULT_CONSENT_TEMPLATES } from '@/validations/consent'
 import { createProduct, listProducts } from '@/db/queries/products'
@@ -22,16 +23,6 @@ import { eq } from 'drizzle-orm'
 import { onboardingCompleteSchema } from '@/validations/onboarding'
 import { handleApiError } from '@/lib/api-error'
 import { ForbiddenError } from '@/lib/errors'
-
-function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // remove diacritics
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .substring(0, 80)
-}
 
 export async function GET(request: Request) {
   try {
@@ -75,7 +66,8 @@ export async function POST(request: Request) {
 
     {
       // 1. Update tenant with clinic info, working hours, and slug
-      const slug = data.clinic.slug || generateSlug(data.clinic.name)
+      const slug = data.clinic.slug
+        || await findAvailableSlug(db, generateSlug(data.clinic.name), auth.tenantId)
 
       await updateTenant(auth.tenantId, {
         name: data.clinic.name,

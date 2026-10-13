@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { tenants, users, tenantUsers, patients, financialEntries, plans } from '@/db/schema'
-import { eq, and, ilike, or, sql, desc, isNull } from 'drizzle-orm'
+import { eq, and, ne, ilike, or, sql, desc, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { sendInviteEmail } from '@/lib/email'
 import { createSubscription } from '@/db/queries/subscriptions'
@@ -289,6 +289,24 @@ export function generateSlug(name: string): string {
   return slug || 'clinica'
 }
 
+export async function findAvailableSlug(
+  executor: typeof db,
+  baseSlug: string,
+  excludeTenantId?: string,
+): Promise<string> {
+  for (let attempt = 0; ; attempt++) {
+    const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt}`
+    const conditions = [eq(tenants.slug, slug)]
+    if (excludeTenantId) conditions.push(ne(tenants.id, excludeTenantId))
+    const [existing] = await executor
+      .select({ id: tenants.id })
+      .from(tenants)
+      .where(and(...conditions))
+      .limit(1)
+    if (!existing) return slug
+  }
+}
+
 export type SelfSignupTenant = Pick<
   typeof tenants.$inferSelect,
   | 'id'
@@ -382,24 +400,8 @@ export async function createSelfSignupTenant(data: {
   clinicName: string
   phone: string
 }) {
-  const baseSlug = generateSlug(data.clinicName)
-
   return withTransaction(async (tx) => {
-    let slug = baseSlug
-    let attempt = 0
-
-    for (;;) {
-      const [existing] = await tx
-        .select({ id: tenants.id })
-        .from(tenants)
-        .where(eq(tenants.slug, slug))
-        .limit(1)
-
-      if (!existing) break
-
-      attempt++
-      slug = `${baseSlug}-${attempt}`
-    }
+    const slug = await findAvailableSlug(tx, generateSlug(data.clinicName))
 
     const tenant = await insertSelfSignupTenantBase(tx, {
       name: data.clinicName,
