@@ -8,8 +8,8 @@
  * seed against the same inputs produces identical content.
  *
  * Shapes are matched against `web/src/db/schema.ts`:
- * - `anamneses.allergies` / `anamneses.medications` are `jsonb` arrays, so
- *   `DemoAnamnesis` returns them as `string[]`.
+ * - `DemoAnamnesis` allergies / medications are `string[]`; the seed turns
+ *   them into `anam-allergies` / `anam-medications` list rows.
  * - `diagram_points` stores `x`/`y` as `decimal(5,2)` in the 0-100 relative
  *   range the editor uses (`web/src/components/face-diagram/types.ts`),
  *   `quantity_unit` as a free-text column that the app only ever writes 'U'
@@ -33,10 +33,10 @@ import type { SeededPatient } from './types'
 export const FEATURED_PATIENT_COUNT = 6
 
 export interface DemoAnamnesis {
-  /** Maps onto `anamneses.allergies` (jsonb array). Never empty -- "nenhuma
+  /** Becomes `anam-allergies` list rows. Never empty: "nenhuma
    * alergia conhecida" is itself a value, not an omission. */
   allergies: string[]
-  /** Maps onto `anamneses.medications` (jsonb array). */
+  /** Becomes `anam-medications` list rows. */
   medications: string[]
   /** A short clinical-history paragraph in Portuguese, unique per patient. */
   history: string

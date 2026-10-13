@@ -17,6 +17,7 @@ import {
   DialogClose,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
+import { trackMetaEvent } from '@/lib/marketing-attribution'
 import {
   Loader2Icon,
   CheckIcon,
@@ -290,9 +291,21 @@ export function BillingSettings() {
       if (!res.ok) {
         throw new Error('Erro ao confirmar pagamento')
       }
-      return res.json()
+      return res.json() as Promise<{ activated: boolean; plan?: { slug: string; priceCents: number } }>
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      if (result.activated && result.plan) {
+        trackMetaEvent(
+          'Subscribe',
+          {
+            value: result.plan.priceCents / 100,
+            currency: 'BRL',
+            predicted_ltv: result.plan.priceCents / 100,
+            plan: result.plan.slug,
+          },
+          `subscribe:${sessionId}`,
+        )
+      }
       // Refresh the JWT so it picks up the new subscription status, then
       // refetch whatever drives this page.
       await update()

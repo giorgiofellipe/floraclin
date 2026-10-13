@@ -2,19 +2,30 @@
 
 import { signIn } from '@/lib/auth-config'
 import { redirect } from 'next/navigation'
+import { cookies, headers } from 'next/headers'
+import { after } from 'next/server'
 import { signUpSchema, clinicDetailsSchema } from '@/validations/signup'
 import { db } from '@/db/client'
 import { users, tenants, tenantUsers, plans } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
-import { createSelfSignupTenant, generateSlug } from '@/db/queries/admin-tenants'
+import { createSelfSignupTenant, generateSlug, insertSelfSignupTenantBase } from '@/db/queries/admin-tenants'
 import { createSubscription } from '@/db/queries/subscriptions'
 import { sendNewSignupNotification, sendConfirmationEmail } from '@/lib/email'
 import { withTransaction } from '@/lib/tenant'
 import { notifyDiscord } from '@/lib/discord'
 import { issueConfirmationToken } from '@/lib/confirm-email'
 import { getAppUrl } from '@/lib/app-url'
-import { isUniqueViolation } from '@/lib/errors'
+import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
+import { generateMetaEventId, parseSignupAttribution, type SignupAttribution } from '@/lib/marketing-attribution'
+import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
+import { reportSideEffectFailure } from '@/lib/observability'
+import { sendSignupCompleteRegistrationEvent, type SendSignupCompleteRegistrationInput } from '@/lib/meta/events'
+import {
+  CONFIRM_EMAIL_STATE_COOKIE,
+  confirmEmailStateCookieOptions,
+  serializeConfirmEmailPageState,
+} from '@/lib/confirm-email-page-state'
 
 export type SignUpState = {
   error?: { fullName?: string[]; email?: string[]; password?: string[]; clinicName?: string[]; phone?: string[]; general?: string[] }
@@ -24,6 +35,7 @@ export async function signUp(
   _prevState: SignUpState,
   formData: FormData,
 ): Promise<SignUpState> {
+  const requestHeaders = await headers()
   const raw = {
     fullName: formData.get('fullName') as string,
     email: formData.get('email') as string,
@@ -38,6 +50,15 @@ export async function signUp(
   }
 
   const { fullName, email, password, clinicName, phone } = parsed.data
+  const marketingConsent = formData.get('marketingConsent') === 'granted'
+  const metaEventId = marketingConsent
+    ? String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
+    : null
+  const signupAttribution = marketingConsent ? parseSignupAttribution(formData.get('marketingAttribution')) : null
+  const tenantAttribution = marketingConsent && metaEventId
+    ? { ...(signupAttribution ?? {}), metaEventId }
+    : null
+  const appUrl = getAppUrl()
 
   const [existing] = await db
     .select({ id: users.id })
@@ -71,10 +92,7 @@ export async function signUp(
         slug = `${baseSlug}-${attempt}`
       }
 
-      const [tenant] = await tx
-        .insert(tenants)
-        .values({ name: clinicName, slug, status: 'active', phone })
-        .returning()
+      const tenant = await insertSelfSignupTenantBase(tx, { name: clinicName, slug, status: 'active', phone })
 
       tenantId = tenant.id
 
@@ -98,6 +116,20 @@ export async function signUp(
   }
 
   if (tenantId) {
+    if (tenantAttribution) {
+      await persistSignupAttribution(tenantId, tenantAttribution)
+    }
+    if (marketingConsent && metaEventId) {
+      scheduleSignupCompleteRegistration({
+        eventId: metaEventId,
+        email,
+        phone,
+        eventSourceUrl: `${appUrl}/signup`,
+        ...(await metaBrowserIds(signupAttribution)),
+        clientIp: clientIpFromHeaders(requestHeaders),
+        userAgent: requestHeaders.get('user-agent'),
+      })
+    }
     await notifyDiscord({ kind: 'clinic.created', tenantName: clinicName, city: null, state: null, tenantId })
 
     const [freePlan] = await db.select().from(plans).where(eq(plans.slug, 'free')).limit(1)
@@ -126,7 +158,6 @@ export async function signUp(
   // taken, and has no session to reach /confirm-email for a resend. Sending
   // must never be allowed to block sign-in.
   try {
-    const appUrl = getAppUrl()
     const rawToken = await issueConfirmationToken(email)
     const confirmUrl = `${appUrl}/api/auth/confirm?email=${encodeURIComponent(email)}&token=${rawToken}`
     await sendConfirmationEmail(email, confirmUrl, clinicName)
@@ -138,9 +169,19 @@ export async function signUp(
   // would hand an unconfirmed account a working session cookie, and the API
   // would accept it: middleware's /api branch returns before any email check.
   // The first sign-in happens after confirming, and `authorize` refuses until
-  // then. The address rides in the query string because there is no session
-  // for the page to read it from.
-  redirect(`/confirm-email?email=${encodeURIComponent(email)}`)
+  // then. There is no session for the page to read the address from, so it
+  // rides in an httpOnly cookie instead of the URL that Meta sees.
+  const cookieStore = await cookies()
+  cookieStore.set(
+    CONFIRM_EMAIL_STATE_COOKIE,
+    serializeConfirmEmailPageState({ email }),
+    confirmEmailStateCookieOptions(),
+  )
+  const confirmEmailUrl = new URL('/confirm-email', getAppUrl())
+  if (metaEventId) {
+    confirmEmailUrl.searchParams.set('meta_event_id', metaEventId)
+  }
+  redirect(`${confirmEmailUrl.pathname}${confirmEmailUrl.search}`)
 }
 
 export async function signUpWithGoogle() {
@@ -150,12 +191,15 @@ export async function signUpWithGoogle() {
 export type ClinicDetailsState = {
   error?: { clinicName?: string[]; phone?: string[]; general?: string[] }
   success?: boolean
+  created?: boolean
+  metaEventId?: string
 } | null
 
 export async function createClinicForOAuthUser(
   _prevState: ClinicDetailsState,
   formData: FormData,
 ): Promise<ClinicDetailsState> {
+  const requestHeaders = await headers()
   const { auth } = await import('@/lib/auth-config')
   const session = await auth()
   if (!session?.user?.id) {
@@ -173,7 +217,7 @@ export async function createClinicForOAuthUser(
     // /dashboard a token that still says tenantId: null and get bounced
     // straight back. This is the retry case, so the clinic already exists and
     // there is nothing left to do but refresh the token.
-    return { success: true }
+    return { success: true, created: false }
   }
 
   const raw = {
@@ -187,8 +231,30 @@ export async function createClinicForOAuthUser(
   }
 
   const { clinicName, phone } = parsed.data
+  const marketingConsent = formData.get('marketingConsent') === 'granted'
+  const metaEventId = marketingConsent
+    ? String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
+    : null
+  const signupAttribution = marketingConsent ? parseSignupAttribution(formData.get('marketingAttribution')) : null
+  const tenantAttribution = marketingConsent && metaEventId
+    ? { ...(signupAttribution ?? {}), metaEventId }
+    : null
 
   const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone })
+  if (tenantAttribution) {
+    await persistSignupAttribution(tenant.id, tenantAttribution)
+  }
+  if (marketingConsent && metaEventId && session.user.email) {
+    scheduleSignupCompleteRegistration({
+      eventId: metaEventId,
+      email: session.user.email,
+      phone,
+      eventSourceUrl: `${getAppUrl()}/signup/clinic-details`,
+      ...(await metaBrowserIds(signupAttribution)),
+      clientIp: clientIpFromHeaders(requestHeaders),
+      userAgent: requestHeaders.get('user-agent'),
+    })
+  }
 
   await notifyDiscord({ kind: 'clinic.created', tenantName: clinicName, city: null, state: null, tenantId: tenant.id })
 
@@ -203,6 +269,7 @@ export async function createClinicForOAuthUser(
         priceCents: freePlan.priceCents,
         tenantId: tenant.id,
       })
+      scheduleLifecycleWelcome({ tenantId: tenant.id })
     }
   }
 
@@ -223,5 +290,51 @@ export async function createClinicForOAuthUser(
   // redirecting to /dashboard here loops: the client has to refresh the
   // session first. It reports success and navigates once the token is
   // current.
-  return { success: true }
+  return { success: true, created: true, ...(metaEventId ? { metaEventId } : {}) }
+}
+
+async function persistSignupAttribution(
+  tenantId: string,
+  signupAttribution: Partial<SignupAttribution> & { metaEventId: string },
+) {
+  try {
+    await db
+      .update(tenants)
+      .set({ signupAttribution, updatedAt: new Date() })
+      .where(eq(tenants.id, tenantId))
+  } catch (err) {
+    if (isUndefinedColumn(err)) {
+      console.warn('Skipping signup attribution because tenants.signup_attribution is not migrated yet')
+      return
+    }
+    throw err
+  }
+}
+
+function clientIpFromHeaders(requestHeaders: Pick<Headers, 'get'>): string | null {
+  const forwardedFor = requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim()
+  if (forwardedFor) return forwardedFor
+
+  return requestHeaders.get('x-real-ip')?.trim() || null
+}
+
+async function metaBrowserIds(attribution: SignupAttribution | null): Promise<{ fbc?: string; fbp?: string }> {
+  const cookieStore = await cookies()
+  return {
+    fbc: attribution?.fbc ?? cookieStore.get('_fbc')?.value,
+    fbp: attribution?.fbp ?? cookieStore.get('_fbp')?.value,
+  }
+}
+
+function scheduleSignupCompleteRegistration(input: SendSignupCompleteRegistrationInput): void {
+  try {
+    after(async () => {
+      await sendSignupCompleteRegistrationEvent(input)
+    })
+  } catch (error) {
+    reportSideEffectFailure(error, {
+      area: 'meta-capi',
+      step: 'schedule_signup_complete_registration',
+    })
+  }
 }

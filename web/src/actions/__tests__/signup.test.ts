@@ -1,13 +1,30 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
 import '@/tests/mocks/db'
 import { db } from '@/db/client'
+import { tenants } from '@/db/schema'
 import { signIn } from '@/lib/auth-config'
 import { redirect } from 'next/navigation'
 
-const { tenantInsertSpy, issueConfirmationTokenMock, sendConfirmationEmailMock } = vi.hoisted(() => ({
+const {
+  tenantInsertSpy,
+  tenantExecuteSpy,
+  issueConfirmationTokenMock,
+  sendConfirmationEmailMock,
+  sendSignupCompleteRegistrationEventMock,
+  headersMock,
+  cookieSetMock,
+  cookieGetMock,
+  reportSideEffectFailureMock,
+} = vi.hoisted(() => ({
   tenantInsertSpy: vi.fn(),
+  tenantExecuteSpy: vi.fn(),
   issueConfirmationTokenMock: vi.fn(),
   sendConfirmationEmailMock: vi.fn(),
+  sendSignupCompleteRegistrationEventMock: vi.fn(),
+  headersMock: vi.fn(),
+  cookieSetMock: vi.fn(),
+  cookieGetMock: vi.fn(),
+  reportSideEffectFailureMock: vi.fn(),
 }))
 
 vi.mock('next-auth', () => {
@@ -42,13 +59,18 @@ vi.mock('@/lib/tenant', () => ({
         })),
       })),
     })),
+    execute: tenantExecuteSpy,
   })),
 }))
 
-vi.mock('@/db/queries/admin-tenants', () => ({
-  createSelfSignupTenant: vi.fn(() => ({ id: 'tenant-1', name: 'Test Clinic' })),
-  generateSlug: vi.fn((name: string) => name.toLowerCase().replace(/\s+/g, '-')),
-}))
+vi.mock('@/db/queries/admin-tenants', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/db/queries/admin-tenants')>()
+  return {
+    ...actual,
+    createSelfSignupTenant: vi.fn(() => ({ id: 'tenant-1', name: 'Test Clinic' })),
+    generateSlug: vi.fn((name: string) => name.toLowerCase().replace(/\s+/g, '-')),
+  }
+})
 
 vi.mock('@/lib/email', () => ({
   sendNewSignupNotification: vi.fn(),
@@ -71,6 +93,23 @@ vi.mock('next/navigation', () => ({
   redirect: vi.fn(),
 }))
 
+vi.mock('next/headers', () => ({
+  headers: () => headersMock(),
+  cookies: async () => ({ set: cookieSetMock, get: cookieGetMock }),
+}))
+
+vi.mock('next/server', () => ({
+  after: (task: () => unknown) => task(),
+}))
+
+vi.mock('@/lib/meta/events', () => ({
+  sendSignupCompleteRegistrationEvent: (...args: unknown[]) => sendSignupCompleteRegistrationEventMock(...args),
+}))
+
+vi.mock('@/lib/observability', () => ({
+  reportSideEffectFailure: (...args: unknown[]) => reportSideEffectFailureMock(...args),
+}))
+
 describe('signUp action', () => {
   // The first import of the signup module pulls in db/auth/tenant/email and can take a few
   // seconds. Loading it once here keeps that one-time cost out of any single test's timeout,
@@ -83,6 +122,28 @@ describe('signUp action', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    cookieGetMock.mockReset()
+    headersMock.mockResolvedValue(new Headers({
+      'x-forwarded-for': '203.0.113.10, 10.0.0.1',
+      'user-agent': 'Vitest Signup Browser',
+    }))
+    sendSignupCompleteRegistrationEventMock.mockResolvedValue(true)
+    vi.mocked(db.update).mockReturnValue(db as any)
+    tenantExecuteSpy.mockResolvedValue([{
+      id: 'tenant-1',
+      name: 'Test Clinic',
+      slug: 'test-clinic',
+      status: 'active',
+      logo_url: null,
+      phone: '11999998888',
+      email: null,
+      address: null,
+      working_hours: null,
+      settings: {},
+      created_at: new Date('2026-10-06T00:00:00.000Z'),
+      updated_at: new Date('2026-10-06T00:00:00.000Z'),
+      deleted_at: null,
+    }])
 
     // The existing-user check and the free-plan lookup share this shape
     // (select -> from -> where -> limit). Resolving to an empty array covers
@@ -152,8 +213,126 @@ describe('signUp action', () => {
   it('creates the tenant with status active', async () => {
     await signUp(null, validFormData({ email: 'active@test.com' }))
 
-    const tenantCall = tenantInsertSpy.mock.calls.find(([vals]) => 'status' in vals)
-    expect(tenantCall?.[0]).toMatchObject({ status: 'active' })
+    expect(tenantExecuteSpy).toHaveBeenCalled()
+    expect(tenantInsertSpy.mock.calls.some(([vals]) => 'status' in vals)).toBe(false)
+  })
+
+  it('persists signup attribution after creating the tenant', async () => {
+    const formData = validFormData({ email: 'attribution@test.com' })
+    formData.set('marketingConsent', 'granted')
+    formData.set('metaEventId', 'complete_registration:event-1')
+    formData.set(
+      'marketingAttribution',
+      JSON.stringify({
+        utmSource: 'meta',
+        utmCampaign: 'hof-trial',
+        fbclid: 'fb-click',
+        fbc: 'fb.1.1700000000000.fb-click',
+        fbp: 'fb.1.1700000000000.browser',
+        landingUrl: 'https://app.floraclin.com.br/signup?utm_source=meta&fbclid=fb-click',
+        capturedAt: '2026-10-06T00:00:00.000Z',
+        expiresAt: '2027-01-04T00:00:00.000Z',
+      }),
+    )
+
+    await signUp(null, formData)
+
+    expect(tenantInsertSpy.mock.calls.some(([vals]) => 'signupAttribution' in vals)).toBe(false)
+    expect(db.update).toHaveBeenCalledWith(tenants)
+    expect((db as any).set).toHaveBeenCalledWith({
+      signupAttribution: expect.objectContaining({
+        utmSource: 'meta',
+        utmCampaign: 'hof-trial',
+        fbclid: 'fb-click',
+        metaEventId: 'complete_registration:event-1',
+      }),
+      updatedAt: expect.any(Date),
+    })
+    expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledWith({
+      eventId: 'complete_registration:event-1',
+      email: 'attribution@test.com',
+      phone: '11999998888',
+      eventSourceUrl: 'https://app.floraclin.com.br/signup',
+      fbc: 'fb.1.1700000000000.fb-click',
+      fbp: 'fb.1.1700000000000.browser',
+      clientIp: '203.0.113.10',
+      userAgent: 'Vitest Signup Browser',
+    })
+  })
+
+  it('sends the _fbp and _fbc cookies when a consented signup has no campaign attribution', async () => {
+    const metaCookies: Record<string, string> = {
+      _fbp: 'fb.1.1700000000000.organic',
+      _fbc: 'fb.1.1700000000000.pixel-click',
+    }
+    cookieGetMock.mockImplementation((name: string) =>
+      metaCookies[name] ? { name, value: metaCookies[name] } : undefined,
+    )
+    const formData = validFormData({ email: 'organic@test.com' })
+    formData.set('marketingConsent', 'granted')
+    formData.set('metaEventId', 'complete_registration:event-organic')
+
+    await signUp(null, formData)
+
+    expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({ fbp: 'fb.1.1700000000000.organic', fbc: 'fb.1.1700000000000.pixel-click' }),
+    )
+  })
+
+  it('still completes signup when the attribution column is not migrated yet', async () => {
+    const formData = validFormData({ email: 'missing-column@test.com' })
+    formData.set('marketingConsent', 'granted')
+    formData.set('metaEventId', 'complete_registration:event-2')
+    vi.mocked(db.update).mockReturnValueOnce({
+      set: vi.fn(() => {
+        throw Object.assign(new Error('column "signup_attribution" does not exist'), {
+          code: '42703',
+        })
+      }),
+    } as any)
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await signUp(null, formData)
+
+    expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
+    consoleWarnSpy.mockRestore()
+  })
+
+  it('does not use Drizzle tenant insert for the base signup row', async () => {
+    const formData = validFormData({ email: 'raw-insert@test.com' })
+    tenantInsertSpy.mockImplementation((vals: Record<string, unknown>) => {
+      if ('status' in vals) {
+        throw Object.assign(new Error('column "signup_attribution" does not exist'), {
+          code: '42703',
+        })
+      }
+    })
+
+    await signUp(null, formData)
+
+    expect(tenantExecuteSpy).toHaveBeenCalled()
+    expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
+  })
+
+  it('does not persist signup attribution or carry a Meta event id without marketing consent', async () => {
+    const formData = validFormData({ email: 'no-consent@test.com' })
+    formData.set('metaEventId', 'complete_registration:event-without-consent')
+    formData.set(
+      'marketingAttribution',
+      JSON.stringify({
+        utmSource: 'meta',
+        capturedAt: '2026-10-06T00:00:00.000Z',
+        expiresAt: '2027-01-04T00:00:00.000Z',
+      }),
+    )
+
+    await signUp(null, formData)
+
+    expect(db.update).not.toHaveBeenCalledWith(tenants)
+    expect(sendSignupCompleteRegistrationEventMock).not.toHaveBeenCalled()
+    const target = vi.mocked(redirect).mock.calls.at(-1)?.[0] as string
+    expect(target).toContain('/confirm-email')
+    expect(target).not.toContain('meta_event_id')
   })
 
   it('issues a confirmation token and sends the confirmation email', async () => {
@@ -193,14 +372,17 @@ describe('signUp action', () => {
     expect(signIn).not.toHaveBeenCalled()
   })
 
-  it('redirects to /confirm-email carrying the address, never to /pending-approval', async () => {
+  it('redirects to /confirm-email without putting the address in the URL', async () => {
     await signUp(null, validFormData({ email: 'redirect@test.com' }))
 
     const target = vi.mocked(redirect).mock.calls.at(-1)?.[0] as string
     expect(target).toContain('/confirm-email')
-    // The page has no session to read the address from now, so it rides in
-    // the query string.
-    expect(target).toContain('redirect%40test.com')
+    expect(target).not.toContain('redirect%40test.com')
     expect(target).not.toContain('/pending-approval')
+    expect(cookieSetMock).toHaveBeenCalledWith(
+      'floraclin_confirm_email',
+      expect.stringContaining('redirect@test.com'),
+      expect.objectContaining({ httpOnly: true, path: '/confirm-email' }),
+    )
   })
 })

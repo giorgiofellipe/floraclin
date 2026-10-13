@@ -5,6 +5,7 @@ import { Calendar } from '@/components/ui/calendar'
 import { SlotPicker } from '@/components/booking/slot-picker'
 import { cn, formatDate } from '@/lib/utils'
 import { maskPhone } from '@/lib/masks'
+import { hasMarketingConsent } from '@/lib/cookie-consent'
 import { ptBR } from 'date-fns/locale'
 import { format, addDays, isBefore, startOfDay } from 'date-fns'
 
@@ -35,11 +36,13 @@ type Step = 1 | 2 | 3 | 4
 
 function readFbclid(): string | undefined {
   if (typeof window === 'undefined') return undefined
+  if (!hasMarketingConsent()) return undefined
   return new URLSearchParams(window.location.search).get('fbclid') ?? undefined
 }
 
 function readFbp(): string | undefined {
   if (typeof document === 'undefined') return undefined
+  if (!hasMarketingConsent()) return undefined
   const match = document.cookie.match(/(?:^|;\s*)_fbp=([^;]+)/)
   return match ? decodeURIComponent(match[1]) : undefined
 }
@@ -73,7 +76,6 @@ function ClinicBrand({ clinic }: { clinic: ClinicInfo }) {
           loader doesn't fit that, so this matches the plain <img> convention
           used by ClinicHeader for the same field. Height is capped so an
           oversized logo can't blow out the layout on mobile. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={clinic.logoUrl}
         alt={clinic.name}

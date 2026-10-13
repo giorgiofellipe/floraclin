@@ -3,7 +3,8 @@
 import { useRouter } from 'next/navigation'
 import { TemplateEditor } from '@/components/evaluation/template-editor'
 import { useSaveEvaluationTemplate } from '@/hooks/mutations/use-evaluation-mutations'
-import type { EvaluationSection, ProcedureCategory } from '@/types/evaluation'
+import type { ProcedureCategory } from '@/types/evaluation'
+import type { FormSection } from '@/lib/forms/types'
 
 interface TemplateEditorPageProps {
   procedureType: {
@@ -13,16 +14,17 @@ interface TemplateEditorPageProps {
   }
   template: {
     id: string
-    sections: EvaluationSection[]
+    sections: FormSection[]
     version: number
   } | null
+  hasDefaultTemplate: boolean
 }
 
-export function TemplateEditorPage({ procedureType, template }: TemplateEditorPageProps) {
+export function TemplateEditorPage({ procedureType, template, hasDefaultTemplate }: TemplateEditorPageProps) {
   const router = useRouter()
   const saveTemplate = useSaveEvaluationTemplate()
 
-  async function handleSave(sections: EvaluationSection[]) {
+  async function handleSave(sections: FormSection[]) {
     if (template) {
       return await saveTemplate.mutateAsync({
         action: 'update',
@@ -68,8 +70,8 @@ export function TemplateEditorPage({ procedureType, template }: TemplateEditorPa
     <div className="-m-6 flex min-h-screen flex-col bg-[#F4F6F8]">
       <TemplateEditor
         procedureTypeName={procedureType.name}
-        procedureTypeCategory={procedureType.category}
-        templateId={template?.id ?? null}
+        procedureTypeId={procedureType.id}
+        hasDefaultTemplate={hasDefaultTemplate}
         initialSections={template?.sections ?? []}
         onSave={handleSave}
         onResetToDefault={handleResetToDefault}

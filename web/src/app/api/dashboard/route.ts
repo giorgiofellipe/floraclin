@@ -9,6 +9,7 @@ import {
 } from '@/db/queries/dashboard'
 import { countPendingReschedule } from '@/db/queries/appointments'
 import { brToday } from '@/lib/dates'
+import { getActivationState } from '@/lib/activation'
 import { handleApiError } from '@/lib/api-error'
 
 export async function GET(request: Request) {
@@ -37,7 +38,7 @@ export async function GET(request: Request) {
     // Practitioners see only their data, owners/others see all
     const practitionerId = ctx.role === 'practitioner' ? ctx.userId : undefined
 
-    const [todayAppointments, quickStats, upcomingFollowUps, recentActivity, pendingRescheduleCount] =
+    const [todayAppointments, quickStats, upcomingFollowUps, recentActivity, pendingRescheduleCount, activation] =
       await Promise.all([
         getTodayAppointments(ctx.tenantId, practitionerId).catch(() => []),
         getQuickStats(ctx.tenantId, practitionerId, month).catch(() => ({
@@ -51,6 +52,7 @@ export async function GET(request: Request) {
         getUpcomingFollowUps(ctx.tenantId, practitionerId).catch(() => []),
         getRecentActivity(ctx.tenantId, 10).catch(() => []),
         countPendingReschedule(ctx.tenantId, practitionerId).catch(() => 0),
+        getActivationState(ctx.tenantId).catch(() => null),
       ])
 
     return NextResponse.json({
@@ -59,6 +61,7 @@ export async function GET(request: Request) {
       upcomingFollowUps,
       recentActivity,
       pendingRescheduleCount,
+      activation,
     })
   } catch (error) {
     return handleApiError(error, request)

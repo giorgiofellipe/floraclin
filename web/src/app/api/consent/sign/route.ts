@@ -43,8 +43,17 @@ export async function POST(request: Request) {
       ?? undefined
     const userAgent = request.headers.get('user-agent') ?? undefined
 
-    const templates = await getTemplatesForToken(tokenData.tenantId, tokenData.consentTemplateIds as string[])
-    const templateMap = new Map(templates.map((t) => [t.id, t]))
+    const requiredIds = new Set(tokenData.consentTemplateIds as string[])
+    const signedIds = new Set(parsed.data.signatures.map((s) => s.consentTemplateId))
+    const complete = signedIds.size === requiredIds.size && [...signedIds].every((id) => requiredIds.has(id))
+    if (!complete) {
+      return NextResponse.json({ error: 'Assine todos os termos do link antes de enviar' }, { status: 400 })
+    }
+
+    const templates = await getTemplatesForToken(tokenData.tenantId, [...requiredIds])
+    if (templates.length !== requiredIds.size) {
+      return NextResponse.json({ error: 'Um dos termos deste link não está mais disponível' }, { status: 409 })
+    }
     const renderedContents = (tokenData.renderedContents ?? {}) as Record<string, string>
 
     const acceptanceIds: string[] = []
@@ -56,15 +65,12 @@ export async function POST(request: Request) {
       }
 
       for (const sig of parsed.data.signatures) {
-        const template = templateMap.get(sig.consentTemplateId)
-        if (!template) continue
-
         const acceptance = await acceptConsent(
           tokenData.tenantId,
           {
             patientId: tokenData.patientId,
             consentTemplateId: sig.consentTemplateId,
-            procedureRecordId: tokenData.procedureRecordId,
+            procedureRecordId: tokenData.procedureRecordId ?? undefined,
             acceptanceMethod: 'signature',
             signatureData: sig.signatureData,
           },

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, Plus, FileCheck } from 'lucide-react'
+import { Loader2, Plus, FileCheck, PenLine, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -17,9 +17,12 @@ import {
 } from '@/components/ui/select'
 import { ConsentHistory } from '@/components/consent/consent-history'
 import { ConsentViewer } from '@/components/consent/consent-viewer'
+import { SendConsentSigningLink } from '@/components/procedures/approval/send-consent-signing-link'
 import { useConsentTemplates } from '@/hooks/queries/use-consent'
 import { useTenant } from '@/hooks/queries/use-tenant'
 import { useProfile } from '@/hooks/queries/use-profile'
+import { renderServiceContract } from '@/lib/contract-interpolation'
+import { cn } from '@/lib/utils'
 
 interface ConsentTemplate {
   id: string
@@ -30,17 +33,28 @@ interface ConsentTemplate {
   isActive: boolean
 }
 
+type SigningMode = 'local' | 'remote'
+
 interface PatientConsentTabProps {
   patientId: string
   patientName?: string
   patientCpf?: string | null
-  patientHasPhone?: boolean
+  patientPhone?: string | null
+  whatsappApiEnabled?: boolean
 }
 
-export function PatientConsentTab({ patientId, patientName, patientCpf, patientHasPhone = false }: PatientConsentTabProps) {
+export function PatientConsentTab({
+  patientId,
+  patientName,
+  patientCpf,
+  patientPhone,
+  whatsappApiEnabled = false,
+}: PatientConsentTabProps) {
   const [showNewConsent, setShowNewConsent] = useState(false)
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [selectedTemplate, setSelectedTemplate] = useState<ConsentTemplate | null>(null)
+  const defaultMode: SigningMode = patientPhone ? 'remote' : 'local'
+  const [mode, setMode] = useState<SigningMode>(defaultMode)
 
   const { data: rawTemplates, isLoading: loadingTemplates } = useConsentTemplates()
   const { data: tenant } = useTenant()
@@ -60,29 +74,52 @@ export function PatientConsentTab({ patientId, patientName, patientCpf, patientH
   }, [templates])
 
   useEffect(() => {
-    if (!selectedTemplateId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clears derived state when selection is removed
-      setSelectedTemplate(null)
-      return
-    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the loaded template is derived from the selection
+    setSelectedTemplate(null)
+    if (!selectedTemplateId) return
+
+    let stale = false
     async function load() {
       try {
         const res = await fetch(`/api/consent/templates/${selectedTemplateId}`)
-        if (res.ok) {
-          const data = await res.json()
-          setSelectedTemplate(data as ConsentTemplate)
+        if (res.ok && !stale) {
+          setSelectedTemplate((await res.json()) as ConsentTemplate)
         }
       } catch {
         // ignore
       }
     }
     load()
+    return () => {
+      stale = true
+    }
   }, [selectedTemplateId])
+
+  const renderedContents = useMemo(() => {
+    if (!selectedTemplate || selectedTemplate.type !== 'service_contract') return undefined
+    const content = renderServiceContract(selectedTemplate.content, {
+      patientName: patientName ?? '',
+      patientCpf,
+      practitionerName,
+      clinicName,
+    })
+    return { [selectedTemplate.id]: content }
+  }, [selectedTemplate, patientName, patientCpf, practitionerName, clinicName])
+
+  const resetDialog = () => {
+    setSelectedTemplateId('')
+    setSelectedTemplate(null)
+    setMode(defaultMode)
+  }
 
   const handleAccepted = () => {
     setShowNewConsent(false)
-    setSelectedTemplateId('')
-    setSelectedTemplate(null)
+    resetDialog()
+  }
+
+  const handleOpenChange = (open: boolean) => {
+    setShowNewConsent(open)
+    if (!open) resetDialog()
   }
 
   return (
@@ -95,14 +132,13 @@ export function PatientConsentTab({ patientId, patientName, patientCpf, patientH
         </Button>
       </div>
 
-      <ConsentHistory patientId={patientId} patientName={patientName} patientCpf={patientCpf} patientHasPhone={patientHasPhone} />
+      <ConsentHistory patientId={patientId} patientName={patientName} patientCpf={patientCpf} patientHasPhone={!!patientPhone} />
 
-      <Dialog open={showNewConsent} onOpenChange={setShowNewConsent}>
+      <Dialog open={showNewConsent} onOpenChange={handleOpenChange}>
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Novo Termo de Consentimento</DialogTitle>
           </DialogHeader>
-
           {loadingTemplates ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="size-5 animate-spin text-mid" />
@@ -131,24 +167,83 @@ export function PatientConsentTab({ patientId, patientName, patientCpf, patientH
               </div>
 
               {selectedTemplate && (
-                <ConsentViewer
-                  template={selectedTemplate}
-                  patientId={patientId}
-                  patientCpf={patientCpf}
-                  requireSignature
-                  contractContext={{
-                    patientName: patientName ?? '',
-                    patientCpf,
-                    clinicName,
-                    practitionerName,
-                  }}
-                  onAccepted={handleAccepted}
-                />
+                <>
+                  <SigningModeToggle mode={mode} onChange={setMode} remoteAvailable={!!patientPhone} />
+
+                  {mode === 'local' ? (
+                    <ConsentViewer
+                      template={selectedTemplate}
+                      patientId={patientId}
+                      patientCpf={patientCpf}
+                      requireSignature
+                      contractContext={{
+                        patientName: patientName ?? '',
+                        patientCpf,
+                        clinicName,
+                        practitionerName,
+                      }}
+                      onAccepted={handleAccepted}
+                    />
+                  ) : (
+                    <div className="space-y-3 rounded-md border border-sage/15 bg-sage/5 p-4">
+                      <p className="text-sm text-mid">
+                        O paciente recebe um link para ler e assinar o termo no próprio celular. O link vale por 24 horas.
+                      </p>
+                      <SendConsentSigningLink
+                        key={selectedTemplate.id}
+                        patientId={patientId}
+                        patientName={patientName ?? ''}
+                        patientPhone={patientPhone}
+                        consentTemplateIds={[selectedTemplate.id]}
+                        renderedContents={renderedContents}
+                        whatsappApiEnabled={whatsappApiEnabled}
+                        label="Gerar link de assinatura"
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+interface SigningModeToggleProps {
+  mode: SigningMode
+  remoteAvailable: boolean
+  onChange: (mode: SigningMode) => void
+}
+
+function SigningModeToggle({ mode, remoteAvailable, onChange }: SigningModeToggleProps) {
+  const options = [
+    { value: 'remote' as const, label: 'Enviar por WhatsApp', icon: Send, disabled: !remoteAvailable },
+    { value: 'local' as const, label: 'Assinar neste dispositivo', icon: PenLine, disabled: false },
+  ]
+
+  return (
+    <div role="group" aria-label="Forma de assinatura" className="grid grid-cols-2 gap-2">
+      {options.map(({ value, label, icon: Icon, disabled }) => (
+        <button
+          key={value}
+          type="button"
+          aria-pressed={mode === value}
+          disabled={disabled}
+          title={disabled ? 'Paciente sem telefone cadastrado' : undefined}
+          onClick={() => onChange(value)}
+          className={cn(
+            'flex items-center justify-center gap-2 rounded-[3px] border px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50',
+            mode === value
+              ? 'border-forest bg-forest text-cream'
+              : 'border-sage/30 text-charcoal hover:bg-sage/5',
+          )}
+        >
+          <Icon className="size-4" />
+          {label}
+        </button>
+      ))}
     </div>
   )
 }

@@ -16,7 +16,6 @@ export function ProfessionalSignatureBlock({
 }: ProfessionalSignatureBlockProps) {
   return (
     <div className={cn('flex flex-col items-center text-center', className)}>
-      {/* eslint-disable-next-line @next/next/no-img-element -- dataURL, no remote fetch */}
       <img
         src={signatureDataUrl}
         alt={`Assinatura de ${displayName}`}

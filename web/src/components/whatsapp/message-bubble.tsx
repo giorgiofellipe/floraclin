@@ -70,7 +70,6 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         {message.mediaType && message.mediaUrl && (
           <div className="mb-1">
             {message.mediaType === 'image' ? (
-              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={message.mediaUrl}
                 alt="Imagem"

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { maskPhone } from '@/lib/masks'
+import { SignupAttributionFields } from '@/components/marketing/signup-attribution-fields'
 
 function GoogleIcon() {
   return (
@@ -69,6 +70,7 @@ export default function SignUpPage() {
 
         {/* Signup form */}
         <form action={formAction} className="space-y-5">
+          <SignupAttributionFields />
           <div className="space-y-1.5">
             <Label htmlFor="fullName" className="uppercase tracking-wider text-xs text-mid">
               Nome completo
@@ -146,6 +148,7 @@ export default function SignUpPage() {
               placeholder="(00) 00000-0000"
             />
             {state?.error?.phone && <p className="text-xs text-red-600 mt-1">{state.error.phone[0]}</p>}
+            <p className="text-xs text-mid mt-1">Você receberá dicas da FloraClin por WhatsApp e e-mail durante o teste.</p>
           </div>
 
           <div className="pt-1">

@@ -150,3 +150,17 @@ describe('middleware: the web app manifest is public', () => {
     expect(locationOf(res)).toBeNull()
   })
 })
+
+describe('middleware: the Sentry tunnel is public', () => {
+  it('does not redirect an unauthenticated POST to /monitoring', () => {
+    // An anonymous visitor's client-side errors go through this tunnel. A
+    // redirect to /login turned every one of them into a 405 and dropped it.
+    const res = run('/monitoring?o=1&p=2&r=us', null)
+    expect(locationOf(res)).toBeNull()
+  })
+
+  it('still sends unauthenticated requests for other pages to /login', () => {
+    const res = run('/monitoring-dashboard', null)
+    expect(locationOf(res)).toContain('/login')
+  })
+})

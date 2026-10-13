@@ -16,7 +16,7 @@ import {
 } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, ChevronRight, Plus, PencilIcon, CalendarPlusIcon, XCircleIcon } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, PencilIcon, CalendarPlusIcon, XCircleIcon, BanIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -28,6 +28,10 @@ import { DayView } from '@/components/scheduling/day-view'
 import { WeekView } from '@/components/scheduling/week-view'
 import { MonthView } from '@/components/scheduling/month-view'
 import { AppointmentForm } from '@/components/scheduling/appointment-form'
+import { CalendarBlockForm } from '@/components/scheduling/calendar-block-form'
+import { CalendarBlockMenu } from '@/components/scheduling/calendar-block-menu'
+import { canDeleteBlock } from '@/lib/calendar-blocks'
+import { toHhMm } from '@/lib/time-options'
 import {
   Dialog,
   DialogContent,
@@ -43,6 +47,7 @@ import { toast } from 'sonner'
 import { useAppointments } from '@/hooks/queries/use-appointments'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
 import type { CalendarBlockRow } from '@/db/queries/calendar'
+import type { Role } from '@/types'
 
 type ViewType = 'day' | 'week' | 'month'
 
@@ -77,6 +82,8 @@ interface CalendarViewProps {
   calendarBlocks?: CalendarBlockRow[]
   autoOpenNew?: boolean
   defaultPatient?: { id: string; fullName: string }
+  role: Role
+  userId: string
 }
 
 function getDateRange(date: Date, view: ViewType) {
@@ -118,6 +125,8 @@ export function CalendarView({
   calendarBlocks = [],
   autoOpenNew,
   defaultPatient,
+  role,
+  userId,
 }: CalendarViewProps) {
   const router = useRouter()
   const cancelAppointment = useUpdateAppointmentStatus()
@@ -148,6 +157,8 @@ export function CalendarView({
     y: number
   } | null>(null)
   const blockMenuRef = React.useRef<HTMLDivElement>(null)
+  const [blockFormOpen, setBlockFormOpen] = React.useState(false)
+  const canManageBlocks = role === 'owner' || role === 'practitioner'
 
   const practitionerFilterItems = React.useMemo(
     () => ({ all: 'Todos', ...Object.fromEntries(practitioners.map((p) => [p.id, p.fullName])) }),
@@ -248,16 +259,24 @@ export function CalendarView({
     })
   }, [])
 
-  const handleBlockDelete = React.useCallback(async () => {
+  const [blockToDelete, setBlockToDelete] = React.useState<CalendarBlockRow | null>(null)
+
+  const handleBlockDelete = React.useCallback(() => {
     if (!blockMenu) return
+    setBlockToDelete(blockMenu.block)
+    setBlockMenu(null)
+  }, [blockMenu])
+
+  const handleConfirmBlockDelete = React.useCallback(async () => {
+    if (!blockToDelete) return
     try {
-      await deleteBlock.mutateAsync(blockMenu.block.id)
+      await deleteBlock.mutateAsync(blockToDelete.id)
       toast.success('Bloqueio removido')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao remover')
     }
-    setBlockMenu(null)
-  }, [blockMenu, deleteBlock])
+    setBlockToDelete(null)
+  }, [blockToDelete, deleteBlock])
 
   const handleContextEdit = React.useCallback(() => {
     if (!contextMenu) return
@@ -399,6 +418,18 @@ export function CalendarView({
             ))}
           </div>
 
+          {canManageBlocks && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
+              onClick={() => setBlockFormOpen(true)}
+              data-testid="calendar-new-block"
+            >
+              <BanIcon className="size-4" />
+              Bloquear
+            </Button>
+          )}
           <Button size="sm" className="bg-forest text-cream hover:bg-sage transition-colors" onClick={handleNewAppointment} data-testid="calendar-new-appointment">
             <Plus className="size-4" />
             Agendar
@@ -451,8 +482,10 @@ export function CalendarView({
           <MonthView
             date={currentDate}
             appointments={appointments}
+            calendarBlocks={calendarBlocks}
             onDayClick={handleDayClick}
             onAppointmentClick={handleAppointmentClick}
+            onBlockClick={handleBlockClick}
           />
         )}
       </div>
@@ -509,36 +542,14 @@ export function CalendarView({
         </div>
       )}
 
-      {/* Block context menu */}
       {blockMenu && (
-        <div
-          ref={blockMenuRef}
-          className="fixed z-50 min-w-[200px] rounded-lg border border-[#E8ECEF] bg-white py-1 shadow-lg"
-          style={{
-            left: Math.min(blockMenu.x, window.innerWidth - 220),
-            top: Math.min(blockMenu.y, window.innerHeight - 100),
-          }}
-        >
-          <div className="px-3 py-1.5 border-b border-[#E8ECEF]">
-            <p className="text-xs font-medium text-[#2A2A2A] truncate">
-              Indisponível
-            </p>
-            <p className="text-[11px] text-mid">
-              {blockMenu.block.allDay
-                ? 'Dia inteiro'
-                : `${blockMenu.block.startTime?.slice(0, 5)} - ${blockMenu.block.endTime?.slice(0, 5)}`}
-              {' · '}{blockMenu.block.practitionerName}
-            </p>
-          </div>
-          <button
-            type="button"
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-            onClick={handleBlockDelete}
-          >
-            <XCircleIcon className="h-3.5 w-3.5" />
-            Remover bloqueio
-          </button>
-        </div>
+        <CalendarBlockMenu
+          block={blockMenu.block}
+          position={{ x: blockMenu.x, y: blockMenu.y }}
+          canDelete={canDeleteBlock(blockMenu.block, role, userId)}
+          onDelete={handleBlockDelete}
+          menuRef={blockMenuRef}
+        />
       )}
 
       {/* Cancel confirmation dialog */}
@@ -567,6 +578,31 @@ export function CalendarView({
         </DialogContent>
       </Dialog>
 
+      <Dialog open={blockToDelete !== null} onOpenChange={(open) => !open && setBlockToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remover bloqueio</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja remover o bloqueio de{' '}
+              <strong>{blockToDelete?.practitionerName ?? 'Toda a clínica'}</strong>
+              {' '}em {blockToDelete?.date ? format(new Date(blockToDelete.date + 'T12:00:00'), "d 'de' MMMM", { locale: ptBR }) : ''}
+              {blockToDelete?.allDay ? ' (dia inteiro)' : ` às ${toHhMm(blockToDelete?.startTime ?? '')}`}?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>Voltar</DialogClose>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmBlockDelete}
+              disabled={deleteBlock.isPending}
+              data-testid="confirm-delete-block"
+            >
+              {deleteBlock.isPending ? 'Removendo...' : 'Remover bloqueio'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Appointment form dialog */}
       <AppointmentForm
         open={formOpen}
@@ -580,6 +616,18 @@ export function CalendarView({
         defaultPractitionerId={practitionerId !== 'all' ? practitionerId : undefined}
         defaultPatient={defaultPatient}
       />
+
+      {canManageBlocks && (
+        <CalendarBlockForm
+          open={blockFormOpen}
+          onOpenChange={setBlockFormOpen}
+          practitioners={practitioners}
+          canBlockClinic={role === 'owner'}
+          lockedPractitionerId={role === 'practitioner' ? userId : undefined}
+          defaultPractitionerId={practitionerId === 'all' ? userId : practitionerId}
+          defaultDate={format(currentDate, 'yyyy-MM-dd')}
+        />
+      )}
 
       {/* Status legend */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 pb-1">

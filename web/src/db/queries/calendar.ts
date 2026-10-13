@@ -1,6 +1,8 @@
 import { db } from '@/db/client'
-import { calendarConnections, calendarBlocks, appointments, users } from '@/db/schema'
-import { eq, and, isNull, gte, lte, ne, sql } from 'drizzle-orm'
+import { calendarConnections, calendarBlocks, appointments, users, tenantUsers } from '@/db/schema'
+import { eq, and, or, isNull, inArray, gte, lte, ne, sql, type SQL } from 'drizzle-orm'
+import { BusinessError } from '@/lib/errors'
+import { CLINICAL_ROLES } from '@/lib/constants'
 import { decryptSecret, encryptSecret } from '@/lib/crypto'
 
 // ─── Calendar Connection Queries ────────────────────────────────────
@@ -290,13 +292,14 @@ export async function getExpiringConnections(withinHours: number = 48) {
 
 // ─── Calendar Block Queries ─────────────────────────────────────────
 
+export type CalendarBlockSource = 'google' | 'manual'
+
 export interface CalendarBlockRow {
   id: string
   tenantId: string
-  practitionerId: string
-  practitionerName: string
-  connectionId: string
-  googleEventId: string
+  practitionerId: string | null
+  practitionerName: string | null
+  source: CalendarBlockSource
   title: string | null
   date: string
   startTime: string | null
@@ -311,7 +314,7 @@ export async function listBlocksForDateRange(
   dateFrom: string,
   dateTo: string
 ): Promise<CalendarBlockRow[]> {
-  const conditions = [
+  const conditions: (SQL | undefined)[] = [
     eq(calendarBlocks.tenantId, tenantId),
     gte(calendarBlocks.date, dateFrom),
     lte(calendarBlocks.date, dateTo),
@@ -319,7 +322,7 @@ export async function listBlocksForDateRange(
   ]
 
   if (practitionerId) {
-    conditions.push(eq(calendarBlocks.practitionerId, practitionerId))
+    conditions.push(or(eq(calendarBlocks.practitionerId, practitionerId), isNull(calendarBlocks.practitionerId)))
   }
 
   return db
@@ -328,8 +331,7 @@ export async function listBlocksForDateRange(
       tenantId: calendarBlocks.tenantId,
       practitionerId: calendarBlocks.practitionerId,
       practitionerName: users.fullName,
-      connectionId: calendarBlocks.connectionId,
-      googleEventId: calendarBlocks.googleEventId,
+      source: calendarBlocks.source,
       title: calendarBlocks.title,
       date: calendarBlocks.date,
       startTime: calendarBlocks.startTime,
@@ -338,7 +340,7 @@ export async function listBlocksForDateRange(
       status: calendarBlocks.status,
     })
     .from(calendarBlocks)
-    .innerJoin(users, eq(calendarBlocks.practitionerId, users.id))
+    .leftJoin(users, eq(calendarBlocks.practitionerId, users.id))
     .where(and(...conditions))
     .orderBy(calendarBlocks.date, calendarBlocks.startTime)
 }
@@ -386,10 +388,72 @@ export async function upsertCalendarBlock(data: {
 
   const [result] = await db
     .insert(calendarBlocks)
-    .values(data)
+    .values({ ...data, source: 'google' })
     .returning()
 
   return result
+}
+
+async function assertClinicalMember(tenantId: string, userId: string) {
+  const [member] = await db
+    .select({ id: tenantUsers.userId })
+    .from(tenantUsers)
+    .innerJoin(users, eq(users.id, tenantUsers.userId))
+    .where(
+      and(
+        eq(tenantUsers.tenantId, tenantId),
+        eq(tenantUsers.userId, userId),
+        eq(tenantUsers.isActive, true),
+        isNull(users.deletedAt),
+        inArray(tenantUsers.role, CLINICAL_ROLES)
+      )
+    )
+    .limit(1)
+
+  if (!member) throw new BusinessError('PRACTITIONER_NOT_FOUND', 'Profissional não encontrado')
+}
+
+export async function createManualBlock(
+  tenantId: string,
+  data: {
+    practitionerId: string | null
+    title: string | null
+    date: string
+    startTime: string | null
+    endTime: string | null
+    allDay: boolean
+  }
+): Promise<{ id: string }> {
+  if (data.practitionerId) await assertClinicalMember(tenantId, data.practitionerId)
+
+  const [row] = await db
+    .insert(calendarBlocks)
+    .values({ tenantId, source: 'manual', connectionId: null, googleEventId: null, ...data })
+    .returning({ id: calendarBlocks.id })
+
+  return row
+}
+
+export async function getBlockById(
+  tenantId: string,
+  blockId: string
+) {
+  const [row] = await db
+    .select({
+      id: calendarBlocks.id,
+      practitionerId: calendarBlocks.practitionerId,
+      source: calendarBlocks.source,
+      title: calendarBlocks.title,
+      date: calendarBlocks.date,
+      startTime: calendarBlocks.startTime,
+      endTime: calendarBlocks.endTime,
+      allDay: calendarBlocks.allDay,
+    })
+    .from(calendarBlocks)
+    .where(and(eq(calendarBlocks.id, blockId), eq(calendarBlocks.tenantId, tenantId)))
+    .limit(1)
+
+  return row ?? null
 }
 
 export async function deleteCalendarBlock(

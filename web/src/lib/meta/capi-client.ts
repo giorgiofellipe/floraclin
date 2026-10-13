@@ -80,6 +80,7 @@ export async function postEvents(
   // `error_user_msg` is the one that names the field Meta rejected.
   const failure: MetaCapiFailure = {
     ok: false,
+    status: response.status,
     message: body.error?.error_user_msg ?? body.error?.message ?? `HTTP ${response.status}`,
     errorUserTitle: body.error?.error_user_title,
     errorUserMsg: body.error?.error_user_msg,

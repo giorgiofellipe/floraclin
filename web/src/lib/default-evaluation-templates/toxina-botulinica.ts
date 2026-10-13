@@ -1,6 +1,6 @@
-import type { EvaluationSection } from '@/types/evaluation'
+import type { FormSection } from '@/lib/forms/types'
 
-export const toxinaBotulinicaSections: EvaluationSection[] = [
+export const toxinaBotulinicaSections: FormSection[] = [
   {
     id: 'botox-s1',
     title: 'Histórico com Toxina Botulínica',

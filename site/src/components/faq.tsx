@@ -39,7 +39,7 @@ const FAQS = [
   {
     question: "Quanto custa?",
     answer:
-      "14 dias grátis, sem cartão. Depois, R$ 99/mês no plano Starter ou R$ 199/mês no Pro, que traz mais créditos de WhatsApp, usuários ilimitados e número próprio de WhatsApp.",
+      "14 dias grátis, sem cartão. Depois, R$ 99/mês no plano Starter ou R$ 199/mês no Pro. Os dois planos pagos incluem número próprio de WhatsApp; o Pro traz mais créditos de WhatsApp e usuários ilimitados.",
   },
 ];
 

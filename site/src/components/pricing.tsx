@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import { SignupLink } from "@/components/signup-link";
 
 const SHARED_FEATURES = [
   "Diagrama facial interativo",
@@ -126,8 +127,7 @@ export function Pricing() {
                 ))}
               </ul>
 
-              <a
-                href="https://app.floraclin.com.br/signup"
+              <SignupLink
                 className={`block w-full text-center font-sans font-medium text-sm uppercase tracking-wider py-3.5 rounded-lg transition-colors no-underline ${
                   plan.featured
                     ? "bg-forest text-cream hover:bg-sage"
@@ -135,7 +135,7 @@ export function Pricing() {
                 }`}
               >
                 {plan.cta}
-              </a>
+              </SignupLink>
             </div>
           ))}
         </div>

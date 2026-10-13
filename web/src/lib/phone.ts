@@ -23,6 +23,10 @@ function stripLeading55(digits: string): string {
   return hasCountryCode ? digits.slice(2) : digits
 }
 
+export function isCanonicalBrPhone(phone: string): boolean {
+  return /^55\d{10,11}$/.test(phone)
+}
+
 export function normalizeBrPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '')
   const local = stripLeading55(digits)

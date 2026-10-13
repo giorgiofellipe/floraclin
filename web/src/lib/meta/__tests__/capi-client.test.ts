@@ -116,6 +116,7 @@ describe('postEvents', () => {
 
     expect(result).toEqual({
       ok: false,
+      status: 400,
       kind: 'invalid',
       message: 'user_data precisa conter ao menos um parâmetro de identificação.',
       errorUserTitle: 'Parâmetro inválido',

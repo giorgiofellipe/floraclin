@@ -69,6 +69,129 @@ const CONNECTION = {
   advancedMatchingEnabled: true,
 }
 
+describe('sendSignupCompleteRegistrationEvent', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.clearAllMocks()
+    vi.unstubAllEnvs()
+    delete process.env.META_CAPI_ACCESS_TOKEN
+    delete process.env.META_TEST_EVENT_CODE
+    process.env.NEXT_PUBLIC_META_PIXEL_ID = '1651713926600603'
+    postEventsMock.mockResolvedValue({ ok: true, eventsReceived: 1, fbTraceId: 'trace-1' })
+  })
+
+  it('posts a deduplicated CompleteRegistration event with hashed user data and trial status', async () => {
+    process.env.META_CAPI_ACCESS_TOKEN = 'signup-token'
+    process.env.META_TEST_EVENT_CODE = 'TEST123'
+    const { sendSignupCompleteRegistrationEvent } = await import('../events')
+
+    const sent = await sendSignupCompleteRegistrationEvent({
+      eventId: 'complete_registration:event-1',
+      eventTime: new Date('2026-10-09T12:00:00.000Z'),
+      email: ' Maria@Clinica.com ',
+      phone: '(11) 99999-8888',
+      eventSourceUrl: 'https://app.floraclin.com.br/signup?utm_source=meta',
+      fbc: 'fb.1.1700000000000.click',
+      fbp: 'fb.1.1700000000000.browser',
+      clientIp: '203.0.113.10',
+      userAgent: 'Vitest Browser',
+    })
+
+    expect(sent).toBe(true)
+    expect(postEventsMock).toHaveBeenCalledWith(
+      {
+        datasetId: '1651713926600603',
+        accessToken: 'signup-token',
+        testEventCode: 'TEST123',
+      },
+      [expect.any(Object)],
+    )
+    const payload = postedPayload()
+    expect(payload).toMatchObject({
+      event_name: 'CompleteRegistration',
+      event_id: 'complete_registration:event-1',
+      event_time: Math.floor(new Date('2026-10-09T12:00:00.000Z').getTime() / 1000),
+      action_source: 'website',
+      event_source_url: 'https://app.floraclin.com.br/signup?utm_source=meta',
+      custom_data: { status: 'trial_started' },
+    })
+    expect(payload.user_data).toMatchObject({
+      em: [hashEmail('maria@clinica.com')],
+      ph: [hashPhone('(11) 99999-8888')],
+      fbc: 'fb.1.1700000000000.click',
+      fbp: 'fb.1.1700000000000.browser',
+      client_ip_address: '203.0.113.10',
+      client_user_agent: 'Vitest Browser',
+    })
+  })
+
+  it.each([
+    ['production', 1],
+    ['preview', 0],
+  ])('skips the send without a token and reports it once per process in %s', async (vercelEnv, reports) => {
+    vi.stubEnv('VERCEL_ENV', vercelEnv)
+    const { sendSignupCompleteRegistrationEvent } = await import('../events')
+    const input = {
+      eventId: 'complete_registration:event-1',
+      email: 'maria@clinica.com',
+      eventSourceUrl: 'https://app.floraclin.com.br/signup',
+    }
+
+    expect(await sendSignupCompleteRegistrationEvent(input)).toBe(false)
+    expect(await sendSignupCompleteRegistrationEvent(input)).toBe(false)
+
+    expect(postEventsMock).not.toHaveBeenCalled()
+    expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(reports)
+  })
+
+  it('retries a transient Meta failure once', async () => {
+    process.env.META_CAPI_ACCESS_TOKEN = 'signup-token'
+    postEventsMock.mockResolvedValueOnce({ ok: false, kind: 'transient', message: 'timeout', fbTraceId: 'trace-2' })
+    const { sendSignupCompleteRegistrationEvent } = await import('../events')
+
+    const sent = await sendSignupCompleteRegistrationEvent({
+      eventId: 'complete_registration:event-1',
+      email: 'maria@clinica.com',
+      eventSourceUrl: 'https://app.floraclin.com.br/signup',
+    })
+
+    expect(sent).toBe(true)
+    expect(postEventsMock).toHaveBeenCalledTimes(2)
+    expect(reportSideEffectFailureMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an invalid rejection', [{ ok: false, kind: 'invalid', message: 'bad payload', fbTraceId: 'trace-3' }], 1],
+    ['a rate limit', [{ ok: false, kind: 'transient', status: 429, message: 'rate limited', fbTraceId: 'trace-6' }], 1],
+    ['a second transient failure', [
+      { ok: false, kind: 'transient', message: 'timeout', fbTraceId: 'trace-4' },
+      { ok: false, kind: 'transient', message: 'timeout', fbTraceId: 'trace-5' },
+    ], 2],
+  ])('reports and swallows %s so signup is not affected', async (_label, results, attempts) => {
+    process.env.META_CAPI_ACCESS_TOKEN = 'signup-token'
+    for (const result of results) postEventsMock.mockResolvedValueOnce(result)
+    const { sendSignupCompleteRegistrationEvent } = await import('../events')
+    const last = results[results.length - 1]
+
+    const sent = await sendSignupCompleteRegistrationEvent({
+      eventId: 'complete_registration:event-1',
+      email: 'maria@clinica.com',
+      eventSourceUrl: 'https://app.floraclin.com.br/signup',
+    })
+
+    expect(sent).toBe(false)
+    expect(postEventsMock).toHaveBeenCalledTimes(attempts)
+    expect(reportSideEffectFailureMock).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        area: 'meta-capi',
+        step: 'signup_complete_registration',
+        extra: { kind: last.kind, fbTraceId: last.fbTraceId },
+      }),
+    )
+  })
+})
+
 function baseInput(overrides: Record<string, unknown> = {}) {
   return {
     tenantId: TENANT,

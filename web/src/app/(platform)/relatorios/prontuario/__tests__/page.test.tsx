@@ -28,7 +28,7 @@ const SUMMARY_RESPONSE = {
       gender: 'feminino',
       email: 'ana@example.com',
     },
-    anamnesis: { mainComplaint: 'Rugas de expressão' },
+    anamnesis: { updatedAt: '2026-04-10T15:00:00.000Z' },
     procedures: [
       {
         id: 'proc-1',
@@ -106,7 +106,7 @@ describe('ProntuarioPage', () => {
     expect(url).not.toContain('format=')
 
     expect((await screen.findAllByText('Ana Souza')).length).toBeGreaterThan(0)
-    expect(screen.getByText(/Rugas de expressão/)).toBeInTheDocument()
+    expect(screen.getByText('Preenchida em 10/04/2026')).toBeInTheDocument()
     expect(screen.getByText(/1 procedimento\(s\)/)).toBeInTheDocument()
   })
 

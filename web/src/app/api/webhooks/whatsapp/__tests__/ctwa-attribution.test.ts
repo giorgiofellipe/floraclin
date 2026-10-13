@@ -66,6 +66,11 @@ vi.mock('@/lib/whatsapp', () => ({
   CreditExhaustedError: class CreditExhaustedError extends Error {},
 }))
 
+vi.mock('@/lib/lifecycle-webhook', () => ({
+  captureLifecycleReply: vi.fn().mockResolvedValue(false),
+  handleLifecycleStatus: vi.fn().mockResolvedValue(false),
+}))
+
 vi.mock('@/db/queries/whatsapp', () => ({
   upsertConversation: vi.fn(async () => ({ id: 'conv-1' })),
   createMessage: vi.fn(async () => ({ id: 'msg-1', conversationId: 'conv-1' })),
@@ -117,6 +122,13 @@ vi.mock('@/lib/meta/events', () => ({
 }))
 
 // ---------------------------------------------------------------------------
+// The real after() throws outside a Next request scope. Run the registered
+// work right away: these suites assert on what it does, not on when.
+vi.mock('next/server', async () => {
+  const actual = await vi.importActual<typeof import('next/server')>('next/server')
+  return { ...actual, after: vi.fn((task: unknown) => (typeof task === 'function' ? task() : task)) }
+})
+
 // Imports under test (after mocks)
 // ---------------------------------------------------------------------------
 

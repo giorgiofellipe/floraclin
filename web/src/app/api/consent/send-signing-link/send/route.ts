@@ -9,6 +9,7 @@ import { SubscriptionExpiredError, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/p
 import { CONSENT_SIGNING_TEMPLATE_PURPOSE } from '@/validations/consent'
 import { toWhatsAppPhone } from '@/lib/phone'
 import { handleApiError } from '@/lib/api-error'
+import { BusinessError } from '@/lib/errors'
 
 const sendSchema = z.object({
   url: z.string().url(),
@@ -94,6 +95,9 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof SubscriptionExpiredError) {
       return NextResponse.json(SUBSCRIPTION_EXPIRED_RESPONSE.body, { status: SUBSCRIPTION_EXPIRED_RESPONSE.status })
+    }
+    if (error instanceof BusinessError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 503 })
     }
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('Meta API error')) {

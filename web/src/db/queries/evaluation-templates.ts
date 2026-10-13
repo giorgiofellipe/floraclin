@@ -1,7 +1,7 @@
 import { db } from '@/db/client'
 import { evaluationTemplates, procedureTypes } from '@/db/schema'
 import { eq, and, isNull, inArray, sql } from 'drizzle-orm'
-import type { EvaluationSection } from '@/types/evaluation'
+import type { FormSection } from '@/lib/forms/types'
 import type { ProcedureCategory } from '@/types/evaluation'
 
 export async function getTemplateForProcedureType(tenantId: string, procedureTypeId: string) {
@@ -41,7 +41,7 @@ export async function createTemplate(
   tenantId: string,
   procedureTypeId: string,
   name: string,
-  sections: EvaluationSection[]
+  sections: FormSection[]
 ) {
   const [template] = await db
     .insert(evaluationTemplates)
@@ -61,7 +61,7 @@ export async function createTemplate(
 export async function updateTemplate(
   tenantId: string,
   templateId: string,
-  sections: EvaluationSection[]
+  sections: FormSection[]
 ) {
   const [updated] = await db
     .update(evaluationTemplates)

@@ -222,7 +222,7 @@ export function DayView({ date, appointments, calendarBlocks = [], onSlotClick, 
                 Indisponível
               </span>
               <span className="text-[10px] text-gray-400 truncate block">
-                {block.practitionerName}
+                {block.practitionerName ?? 'Toda a clínica'}
               </span>
             </div>
           ))}

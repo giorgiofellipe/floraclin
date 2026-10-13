@@ -28,7 +28,7 @@ interface ProntuarioSummary {
     gender: string | null
     email: string | null
   }
-  anamnesis: { mainComplaint: string | null } | null
+  anamnesis: { updatedAt: string } | null
   procedures: Array<{
     id: string
     procedureTypeName: string
@@ -96,11 +96,7 @@ function ProntuarioSummaryView({ patientId, data }: { patientId: string; data: P
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard title="Anamnese">
-          {data.anamnesis ? (
-            data.anamnesis.mainComplaint || 'Preenchida, sem queixa principal registrada.'
-          ) : (
-            'Não preenchida.'
-          )}
+          {data.anamnesis ? `Preenchida em ${formatDate(data.anamnesis.updatedAt)}` : 'Não preenchida.'}
         </SummaryCard>
 
         <SummaryCard title="Procedimentos">

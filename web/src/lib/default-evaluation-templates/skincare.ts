@@ -1,6 +1,6 @@
-import type { EvaluationSection } from '@/types/evaluation'
+import type { FormSection } from '@/lib/forms/types'
 
-export const skincareSections: EvaluationSection[] = [
+export const skincareSections: FormSection[] = [
   {
     id: 'sc-s1',
     title: 'Tipo e Características da Pele',

@@ -396,6 +396,7 @@ interface ReconciledPurchase {
  */
 async function findMissingPurchases(windowStart: Date): Promise<ReconciledPurchase[]> {
   const firstPaidAt = sql<Date>`min(${paymentRecords.paidAt})`
+  const windowStartIso = windowStart.toISOString()
 
   return db
     .select({
@@ -448,7 +449,12 @@ async function findMissingPurchases(windowStart: Date): Promise<ReconciledPurcha
     .groupBy(financialEntries.id, patients.id, metaConnections.createdAt)
     // The window gate reads the payment instant, so it can only be applied
     // once the aggregate exists.
-    .having(and(gte(firstPaidAt, windowStart), gte(firstPaidAt, metaConnections.createdAt)))
+    .having(
+      and(
+        sql`${firstPaidAt} >= ${windowStartIso}::timestamptz`,
+        gte(firstPaidAt, metaConnections.createdAt),
+      ),
+    )
     .limit(RECONCILE_LIMIT)
 }
 

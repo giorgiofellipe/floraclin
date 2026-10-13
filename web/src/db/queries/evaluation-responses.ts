@@ -2,12 +2,12 @@ import { db } from '@/db/client'
 import { evaluationResponses, evaluationTemplates } from '@/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { getTemplateById } from './evaluation-templates'
-import type { EvaluationResponses, EvaluationSection } from '@/types/evaluation'
+import type { FormResponses, FormSection } from '@/lib/forms/types'
 
 interface SaveEvaluationResponseData {
   procedureRecordId: string
   templateId: string
-  responses: EvaluationResponses
+  responses: FormResponses
 }
 
 export async function saveEvaluationResponse(

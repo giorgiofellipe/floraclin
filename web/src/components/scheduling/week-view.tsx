@@ -238,7 +238,7 @@ export function WeekView({ date, appointments, calendarBlocks = [], onSlotClick,
                       Indisponível
                     </span>
                     <span className="text-[9px] text-gray-400 truncate block">
-                      {block.practitionerName}
+                      {block.practitionerName ?? 'Toda a clínica'}
                     </span>
                   </div>
                 )

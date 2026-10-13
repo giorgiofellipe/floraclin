@@ -1,6 +1,8 @@
 'use client'
 
 import Script from 'next/script'
+import { useSyncExternalStore } from 'react'
+import { cookieConsentStatus, subscribeCookieConsent } from '@/lib/cookie-consent'
 
 interface MetaPixelProps {
   datasetId: string | null
@@ -12,9 +14,12 @@ interface MetaPixelProps {
  * would double-count since there is no dedup coordination with the browser.
  */
 export function MetaPixel({ datasetId }: MetaPixelProps) {
+  const consentStatus = useSyncExternalStore(subscribeCookieConsent, cookieConsentStatus, () => 'unset')
+  const canUseMarketing = consentStatus === 'granted'
+
   // The booking page is public and unauthenticated, and this id is inlined
   // into a script tag, so anything but a Meta numeric id is refused.
-  if (!datasetId || !/^\d+$/.test(datasetId)) return null
+  if (!datasetId || !/^\d+$/.test(datasetId) || !canUseMarketing) return null
 
   return (
     <Script id="meta-pixel" strategy="afterInteractive">
@@ -27,6 +32,7 @@ export function MetaPixel({ datasetId }: MetaPixelProps) {
         t.src=v;s=b.getElementsByTagName(e)[0];
         s.parentNode.insertBefore(t,s)}(window, document,'script',
         'https://connect.facebook.net/en_US/fbevents.js');
+        fbq('consent', 'grant');
         fbq('init', ${JSON.stringify(datasetId)});
         fbq('track', 'PageView');
       `}

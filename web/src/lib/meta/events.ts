@@ -15,10 +15,11 @@ import { isMarketingOptedOut } from '@/db/queries/marketing-consent'
 import { getPatient } from '@/db/queries/patients'
 import { getProspect } from '@/db/queries/prospects'
 import { reportSideEffectFailure } from '@/lib/observability'
+import { metaPixelId } from '@/lib/marketing-attribution'
 
 import { postEvents } from './capi-client'
 import { hashEmail, hashName, hashPhone, splitFullName } from './hashing'
-import type { MetaActionSource, MetaEventName, MetaEventPayload, MetaUserData } from './types'
+import type { MetaActionSource, MetaCapiTarget, MetaEventName, MetaEventPayload, MetaUserData } from './types'
 
 /** The attribution columns an event payload reads. */
 export interface MetaAttributionSignals {
@@ -40,6 +41,18 @@ export interface MetaEventContact {
   phone?: string | null
   email?: string | null
   fullName?: string | null
+}
+
+export interface SendSignupCompleteRegistrationInput {
+  eventId: string
+  eventTime?: Date
+  email: string
+  phone?: string | null
+  eventSourceUrl: string
+  fbc?: string | null
+  fbp?: string | null
+  clientIp?: string | null
+  userAgent?: string | null
 }
 
 /**
@@ -203,6 +216,85 @@ function reportMissingSecretOnce(): void {
     new Error('META_EXTERNAL_ID_SECRET is unset; attributed Meta events cannot be built'),
     { area: 'meta-capi', step: 'external_id_secret' },
   )
+}
+
+let missingSignupTokenReported = false
+const HTTP_TOO_MANY_REQUESTS = 429
+
+function signupCapiTarget(): MetaCapiTarget | null {
+  const accessToken = process.env.META_CAPI_ACCESS_TOKEN
+  if (!accessToken) {
+    // Previews and local dev run without the token on purpose.
+    if (!missingSignupTokenReported && process.env.VERCEL_ENV === 'production') {
+      missingSignupTokenReported = true
+      reportSideEffectFailure(
+        new Error('META_CAPI_ACCESS_TOKEN is unset; signup CompleteRegistration events are not sent'),
+        { area: 'meta-capi', step: 'signup_capi_token' },
+      )
+    }
+    return null
+  }
+
+  return {
+    datasetId: metaPixelId(),
+    accessToken,
+    testEventCode: process.env.META_TEST_EVENT_CODE || null,
+  }
+}
+
+function trimMetaSignal(value: string | null | undefined, max: number): string | undefined {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed.slice(0, max) : undefined
+}
+
+export async function sendSignupCompleteRegistrationEvent(
+  input: SendSignupCompleteRegistrationInput,
+): Promise<boolean> {
+  const target = signupCapiTarget()
+  if (!target) return false
+
+  try {
+    const userData: MetaUserData = {}
+    const em = hashEmail(input.email)
+    if (em) userData.em = [em]
+    const ph = hashPhone(input.phone)
+    if (ph) userData.ph = [ph]
+
+    const fbc = trimMetaSignal(input.fbc, 500)
+    if (fbc) userData.fbc = fbc
+    const fbp = trimMetaSignal(input.fbp, 500)
+    if (fbp) userData.fbp = fbp
+    const clientIp = trimMetaSignal(input.clientIp, 100)
+    if (clientIp) userData.client_ip_address = clientIp
+    const userAgent = trimMetaSignal(input.userAgent, 500)
+    if (userAgent) userData.client_user_agent = userAgent
+
+    const payload: MetaEventPayload = {
+      event_name: 'CompleteRegistration',
+      event_time: Math.floor((input.eventTime ?? new Date()).getTime() / 1000),
+      event_id: input.eventId,
+      action_source: 'website',
+      event_source_url: input.eventSourceUrl,
+      user_data: userData,
+      custom_data: { status: 'trial_started' },
+    }
+
+    let result = await postEvents(target, [payload])
+    if (!result.ok && result.kind === 'transient' && result.status !== HTTP_TOO_MANY_REQUESTS) {
+      result = await postEvents(target, [payload])
+    }
+    if (result.ok) return true
+
+    reportSideEffectFailure(new Error(`Meta CompleteRegistration rejected: ${result.message}`), {
+      area: 'meta-capi',
+      step: 'signup_complete_registration',
+      extra: { kind: result.kind, fbTraceId: result.fbTraceId },
+    })
+    return false
+  } catch (error) {
+    reportSideEffectFailure(error, { area: 'meta-capi', step: 'signup_complete_registration' })
+    return false
+  }
 }
 
 /** The outbox row `sendPendingEvent` delivers. */

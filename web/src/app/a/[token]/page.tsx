@@ -1,4 +1,5 @@
 import { getValidToken } from '@/db/queries/anamnesis-tokens'
+import { getCurrentAnamnesisTemplate } from '@/db/queries/anamnesis-templates'
 import { PublicAnamnesisPage } from '@/components/anamnesis/public-anamnesis-page'
 
 export default async function AnamnesisTokenPage({ params }: { params: Promise<{ token: string }> }) {
@@ -14,7 +15,8 @@ export default async function AnamnesisTokenPage({ params }: { params: Promise<{
     )
   }
 
+  const template = await getCurrentAnamnesisTemplate(tokenData.tenantId)
   const firstName = tokenData.patientName?.split(' ')[0] ?? 'Paciente'
 
-  return <PublicAnamnesisPage firstName={firstName} token={token} patientId={tokenData.patientId} />
+  return <PublicAnamnesisPage firstName={firstName} token={token} patientId={tokenData.patientId} template={template} />
 }

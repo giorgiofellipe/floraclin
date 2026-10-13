@@ -5,7 +5,7 @@ import { formatCurrency } from '@/lib/utils'
 // Notifier for two Discord channels:
 //
 // - "floraclin" (DISCORD_WEBHOOK_EVENTS): business events -- the business
-//   grew. clinic.created / clinic.approved / subscription.created.
+//   grew. clinic.created / clinic.approved / subscription.created / lifecycle.reply.
 // - "floraclin-logs" (DISCORD_WEBHOOK_LOGS): operational digests -- code
 //   reporting on itself, e.g. the daily whatsapp-automations cron digest.
 //   Distinct from Sentry, which also posts to "floraclin-logs" but via its
@@ -25,6 +25,7 @@ export type DiscordEvent =
   | { kind: 'clinic.created'; tenantName: string; city: string | null; state: string | null; tenantId: string }
   | { kind: 'clinic.approved'; tenantName: string; tenantId: string }
   | { kind: 'subscription.created'; tenantName: string; planName: string; priceCents: number; tenantId: string }
+  | { kind: 'lifecycle.reply'; tenantName: string; tenantId: string; messageKey: string; body: string }
   | {
       kind: 'whatsapp_automations.digest'
       tenantsProcessed: number
@@ -53,6 +54,8 @@ const COLOR_APPROVED = 0x3b82f6
 const COLOR_SUBSCRIPTION = 0xf59e0b
 const COLOR_DIGEST_OK = 0x4a9d5f
 const COLOR_DIGEST_ALERT = 0xef4444
+const COLOR_REPLY = 0x8b5cf6
+const REPLY_BODY_MAX = 1000
 
 function digestReasonLabel(reason: WhatsappDigestFailingTenant['reason']): string {
   switch (reason) {
@@ -133,6 +136,26 @@ export function buildDiscordPayload(event: DiscordEvent): DiscordPayload {
         ],
       }
     }
+    case 'lifecycle.reply': {
+      const body =
+        event.body.length > REPLY_BODY_MAX ? `${event.body.slice(0, REPLY_BODY_MAX)}...` : event.body
+      return {
+        username: 'FloraClin',
+        embeds: [
+          {
+            title: 'Resposta de clínica em teste',
+            color: COLOR_REPLY,
+            description: body,
+            fields: [
+              { name: 'Clínica', value: event.tenantName, inline: true },
+              { name: 'Mensagem', value: event.messageKey, inline: true },
+              { name: 'Admin', value: adminLink },
+            ],
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      }
+    }
     case 'whatsapp_automations.digest': {
       // Routine run: one compact line, totals only. Abnormal run (at least
       // one tenant with send_failed / tenant_error / credit_exhausted, the
@@ -196,9 +219,9 @@ function webhookForEvent(kind: DiscordEvent['kind']): string | undefined {
  *    destination means an immediate return, before building a payload or
  *    touching fetch. This is what keeps local dev and the test suite from
  *    posting to a real channel.
- * 3. It never posts personal data — enforced by DiscordEvent's shape, not by
- *    this function, since none of the event variants carry owner name,
- *    email, phone or patient data.
+ * 3. It never posts contact data or patient data, enforced by DiscordEvent's
+ *    shape, not by this function. lifecycle.reply carries the reply text a
+ *    clinic owner chose to send FloraClin.
  */
 export async function notifyDiscord(event: DiscordEvent): Promise<void> {
   const webhookUrl = webhookForEvent(event.kind)

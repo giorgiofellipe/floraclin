@@ -7,6 +7,7 @@ import { useAppointments, usePractitioners, useAppointmentProcedureTypes } from 
 import { useCalendarBlocks } from '@/hooks/queries/use-calendar'
 import { CalendarView } from '@/components/scheduling/calendar-view'
 import ScheduleLoading from './loading'
+import type { Role } from '@/types'
 
 type ViewType = 'day' | 'week' | 'month'
 
@@ -38,7 +39,7 @@ function getDateRange(date: Date, view: ViewType) {
   }
 }
 
-export function AgendaPageClient() {
+export function AgendaPageClient({ role, userId }: { role: Role; userId: string }) {
   const searchParams = useSearchParams()
 
   const view = (['day', 'week', 'month'].includes(searchParams.get('view') ?? '')
@@ -87,6 +88,8 @@ export function AgendaPageClient() {
         initialAppointments={appointments ?? []}
         calendarBlocks={calendarBlocks ?? []}
         autoOpenNew={autoOpenNew}
+        role={role}
+        userId={userId}
         defaultPatient={patientId ? { id: patientId, fullName: patientName ?? '' } : undefined}
       />
     </div>

@@ -1,6 +1,6 @@
-import type { EvaluationSection } from '@/types/evaluation'
+import type { FormSection } from '@/lib/forms/types'
 
-export const enzimaSections: EvaluationSection[] = [
+export const enzimaSections: FormSection[] = [
   {
     id: 'enz-s1',
     title: 'Queixa e Histórico da Região Submentoniana',

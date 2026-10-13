@@ -1,4 +1,5 @@
 import crypto from 'crypto'
+import { BusinessError } from '@/lib/errors'
 import { getTenant } from '@/db/queries/tenants'
 
 export { normalizeBrPhone } from '@/lib/phone'
@@ -65,7 +66,10 @@ async function getCredentials(tenantId: string): Promise<WhatsAppCredentials> {
     const accessToken = settings.whatsapp_access_token as string
     const businessAccountId = settings.whatsapp_business_account_id as string
     if (!phoneNumberId || !accessToken || !businessAccountId)
-      throw new Error('WhatsApp credentials missing (phoneNumberId, accessToken, or businessAccountId)')
+      throw new BusinessError(
+        'WHATSAPP_NOT_CONFIGURED',
+        'Credenciais do WhatsApp incompletas. Revise Configurações > WhatsApp.',
+      )
     return { phoneNumberId, accessToken, businessAccountId }
   }
 
@@ -73,7 +77,10 @@ async function getCredentials(tenantId: string): Promise<WhatsAppCredentials> {
   const accessToken = process.env.FLORACLIN_WA_ACCESS_TOKEN
   const businessAccountId = process.env.FLORACLIN_WA_BUSINESS_ACCOUNT_ID
   if (!phoneNumberId || !accessToken || !businessAccountId)
-    throw new Error('FloraClin shared WhatsApp credentials not configured (FLORACLIN_WA_* env vars)')
+    throw new BusinessError(
+      'WHATSAPP_NOT_CONFIGURED',
+      'WhatsApp da FloraClin não configurado neste ambiente (FLORACLIN_WA_*).',
+    )
   return { phoneNumberId, accessToken, businessAccountId }
 }
 

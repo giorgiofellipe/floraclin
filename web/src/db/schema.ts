@@ -16,6 +16,9 @@ export const tenants = floraclinSchema.table('tenants', {
   address: jsonb('address'),
   workingHours: jsonb('working_hours'),
   settings: jsonb('settings').default({}),
+  signupAttribution: jsonb('signup_attribution'),
+  lifecycleNoticeAt: timestamp('lifecycle_notice_at', { withTimezone: true }),
+  lifecycleOptedOutAt: timestamp('lifecycle_opted_out_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -89,22 +92,9 @@ export const anamneses = floraclinSchema.table('anamneses', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   patientId: uuid('patient_id').notNull().references(() => patients.id).unique(),
-  mainComplaint: text('main_complaint'),
-  patientGoals: text('patient_goals'),
-  medicalHistory: jsonb('medical_history').default({}),
-  medications: jsonb('medications').default([]),
-  allergies: jsonb('allergies').default([]),
-  previousSurgeries: jsonb('previous_surgeries').default([]),
-  chronicConditions: jsonb('chronic_conditions').default([]),
-  isPregnant: boolean('is_pregnant').default(false),
-  isBreastfeeding: boolean('is_breastfeeding').default(false),
-  lifestyle: jsonb('lifestyle').default({}),
-  skinType: varchar('skin_type', { length: 20 }),
-  skinConditions: jsonb('skin_conditions').default([]),
-  skincareRoutine: jsonb('skincare_routine').default([]),
-  previousAestheticTreatments: jsonb('previous_aesthetic_treatments').default([]),
-  contraindications: jsonb('contraindications').default([]),
-  facialEvaluationNotes: text('facial_evaluation_notes'),
+  templateVersion: integer('template_version'),
+  templateSnapshot: jsonb('template_snapshot'),
+  responses: jsonb('responses'),
   updatedBy: uuid('updated_by').references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -124,6 +114,15 @@ export const anamnesisTokens = floraclinSchema.table('anamnesis_tokens', {
 }, (table) => [
   index('idx_anamnesis_tokens_token').on(table.token),
 ])
+
+export const anamnesisTemplates = floraclinSchema.table('anamnesis_templates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id).unique(),
+  sections: jsonb('sections').notNull(),
+  version: integer('version').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
 
 // ─── PRODUCTS CATALOG ───────────────────────────────────────────────
 
@@ -375,7 +374,7 @@ export const consentSigningTokens = floraclinSchema.table('consent_signing_token
   token: varchar('token', { length: 64 }).notNull().unique(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   patientId: uuid('patient_id').notNull().references(() => patients.id),
-  procedureRecordId: uuid('procedure_record_id').notNull().references(() => procedureRecords.id),
+  procedureRecordId: uuid('procedure_record_id').references(() => procedureRecords.id),
   consentTemplateIds: uuid('consent_template_ids').array().notNull(),
   renderedContents: jsonb('rendered_contents').$type<Record<string, string>>(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -728,6 +727,7 @@ export const whatsappConversations = floraclinSchema.table('whatsapp_conversatio
 }, (table) => [
   uniqueIndex('uq_whatsapp_conversations_tenant_phone').on(table.tenantId, table.phoneNumber),
   index('idx_whatsapp_conversations_tenant_last_msg').on(table.tenantId, table.lastMessageAt),
+  index('idx_whatsapp_conversations_phone_last_message').on(table.phoneNumber, table.lastMessageAt),
 ])
 
 export const whatsappMessages = floraclinSchema.table('whatsapp_messages', {
@@ -829,9 +829,10 @@ export const calendarConnections = floraclinSchema.table('calendar_connections',
 export const calendarBlocks = floraclinSchema.table('calendar_blocks', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
-  practitionerId: uuid('practitioner_id').notNull().references(() => users.id),
-  connectionId: uuid('connection_id').notNull().references(() => calendarConnections.id, { onDelete: 'cascade' }),
-  googleEventId: varchar('google_event_id', { length: 255 }).notNull(),
+  practitionerId: uuid('practitioner_id').references(() => users.id),
+  connectionId: uuid('connection_id').references(() => calendarConnections.id, { onDelete: 'cascade' }),
+  googleEventId: varchar('google_event_id', { length: 255 }),
+  source: varchar('source', { length: 10, enum: ['google', 'manual'] }).notNull().default('google'),
   title: varchar('title', { length: 255 }),
   date: date('date').notNull(),
   startTime: time('start_time'),
@@ -842,6 +843,7 @@ export const calendarBlocks = floraclinSchema.table('calendar_blocks', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('idx_calendar_blocks_practitioner_date').on(table.tenantId, table.practitionerId, table.date),
+  index('idx_calendar_blocks_tenant_date').on(table.tenantId, table.date),
 ])
 
 // ─── SSE EVENTS ─────────────────────────────────────────────────────
@@ -1046,6 +1048,32 @@ export const tenantSubscriptions = floraclinSchema.table('tenant_subscriptions',
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+export const tenantLifecycleMessages = floraclinSchema.table('tenant_lifecycle_messages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  messageKey: varchar('message_key', { length: 40 }).notNull(),
+  channel: varchar('channel', { length: 10 }).notNull(),
+  status: varchar('status', { length: 10 }).notNull(),
+  recipient: varchar('recipient', { length: 255 }).notNull(),
+  claimedAt: timestamp('claimed_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  metaMessageId: varchar('meta_message_id', { length: 255 }),
+  error: text('error'),
+}, (table) => [
+  uniqueIndex('uq_tenant_lifecycle_message').on(table.tenantId, table.messageKey, table.channel),
+  index('idx_tenant_lifecycle_messages_meta_id').on(table.metaMessageId),
+  index('idx_tenant_lifecycle_messages_recipient').on(table.recipient),
+])
+
+export const tenantLifecycleReplies = floraclinSchema.table('tenant_lifecycle_replies', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  messageKey: varchar('message_key', { length: 40 }).notNull(),
+  body: text('body').notNull(),
+  metaMessageId: varchar('meta_message_id', { length: 255 }).notNull().unique(),
+  receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 export const whatsappCredits = floraclinSchema.table('whatsapp_credits', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
@@ -1187,6 +1215,10 @@ export const anamnesesRelations = relations(anamneses, ({ one }) => ({
   tenant: one(tenants, { fields: [anamneses.tenantId], references: [tenants.id] }),
   patient: one(patients, { fields: [anamneses.patientId], references: [patients.id] }),
   updatedByUser: one(users, { fields: [anamneses.updatedBy], references: [users.id] }),
+}))
+
+export const anamnesisTemplatesRelations = relations(anamnesisTemplates, ({ one }) => ({
+  tenant: one(tenants, { fields: [anamnesisTemplates.tenantId], references: [tenants.id] }),
 }))
 
 export const procedureTypesRelations = relations(procedureTypes, ({ one }) => ({

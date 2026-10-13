@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { CookiePreferencesLink } from "@/components/cookie-consent-banner";
 
 const COLUMNS = [
   {
@@ -97,6 +98,11 @@ export function Footer() {
                     )}
                   </li>
                 ))}
+                {column.title === "Legal" && (
+                  <li>
+                    <CookiePreferencesLink className="text-left text-cream/50 hover:text-cream text-sm transition-colors" />
+                  </li>
+                )}
               </ul>
             </div>
           ))}

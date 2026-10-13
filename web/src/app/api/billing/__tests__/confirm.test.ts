@@ -126,7 +126,7 @@ describe('POST /api/billing/confirm', () => {
     const json = await res.json()
 
     expect(res.status).toBe(200)
-    expect(json).toEqual({ activated: true })
+    expect(json).toEqual({ activated: true, plan: { slug: 'pro', priceCents: 9900 } })
     expect(updateSubscriptionPlan).toHaveBeenCalledWith(
       'tenant-1',
       'plan-1',

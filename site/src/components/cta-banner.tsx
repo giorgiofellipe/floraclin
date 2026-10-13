@@ -1,3 +1,5 @@
+import { SignupLink } from "@/components/signup-link";
+
 export function CtaBanner() {
   return (
     <section className="relative bg-gradient-to-br from-forest to-sage/90 py-16 md:py-32 overflow-hidden">
@@ -72,12 +74,11 @@ export function CtaBanner() {
           14 dias grátis. Sem cartão. Sem compromisso.
         </p>
 
-        <a
-          href="https://app.floraclin.com.br/signup"
+        <SignupLink
           className="btn-primary bg-cream text-forest hover:bg-blush inline-flex text-base px-10 py-4"
         >
           Começar Agora
-        </a>
+        </SignupLink>
       </div>
     </section>
   );

@@ -4,13 +4,14 @@ import { useRouter } from 'next/navigation'
 import { useProcedureTypes } from '@/hooks/queries/use-procedure-types'
 import { useEvaluationTemplates } from '@/hooks/queries/use-evaluation'
 import { TemplateEditorPage } from './template-editor-page'
-import type { EvaluationSection } from '@/types/evaluation'
+import type { FormSection } from '@/lib/forms/types'
 
 interface EvaluationTemplatePageClientProps {
   procedureTypeId: string
+  defaultCategories: string[]
 }
 
-export function EvaluationTemplatePageClient({ procedureTypeId }: EvaluationTemplatePageClientProps) {
+export function EvaluationTemplatePageClient({ procedureTypeId, defaultCategories }: EvaluationTemplatePageClientProps) {
   const router = useRouter()
   const { data: procedureTypes, isLoading: typesLoading } = useProcedureTypes()
   const { data: templates, isLoading: templatesLoading } = useEvaluationTemplates([procedureTypeId])
@@ -40,11 +41,12 @@ export function EvaluationTemplatePageClient({ procedureTypeId }: EvaluationTemp
         name: procedureType.name,
         category: procedureType.category,
       }}
+      hasDefaultTemplate={defaultCategories.includes(procedureType.category)}
       template={
         template
           ? {
               id: template.id,
-              sections: template.sections as EvaluationSection[],
+              sections: template.sections as FormSection[],
               version: template.version,
             }
           : null

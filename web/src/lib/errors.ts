@@ -55,3 +55,19 @@ export function isUniqueViolation(err: unknown, constraintName?: string): boolea
   }
   return false
 }
+
+/**
+ * True when Postgres reports SQLSTATE 42703 (`undefined_column`).
+ *
+ * Useful for deploy-order tolerant writes: the feature can skip an optional
+ * column while the migration is being applied, without swallowing unrelated
+ * database errors.
+ */
+export function isUndefinedColumn(err: unknown): boolean {
+  for (let current: unknown = err; current != null; current = (current as { cause?: unknown }).cause) {
+    if (typeof current !== 'object') return false
+    const e = current as { code?: unknown }
+    if (e.code === '42703') return true
+  }
+  return false
+}

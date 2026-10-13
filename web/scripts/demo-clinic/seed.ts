@@ -108,6 +108,7 @@ import {
   whatsappMessages,
 } from '@/db/schema'
 import { loadInstallmentTerms } from '@/db/queries/financial'
+import { DEFAULT_ANAMNESIS_TEMPLATE } from '@/lib/anamnesis/default-template'
 import { brToday, parseBrDate } from '@/lib/dates'
 import { getStoragePath } from '@/lib/storage'
 import {
@@ -864,24 +865,6 @@ async function writeCashMovements(
   return rows.length
 }
 
-/** Empty booleans plus the generated history paragraph in the free-text slot. */
-function medicalHistoryFor(history: string) {
-  return {
-    diabetes: false,
-    hipertensao: false,
-    autoimune: false,
-    cardiovascular: false,
-    hepatite: false,
-    hiv: false,
-    cancer: false,
-    epilepsia: false,
-    disturbioCoagulacao: false,
-    queloides: false,
-    herpes: false,
-    outros: history,
-  }
-}
-
 async function writeClinicalRecords(tx: Tx, ctx: WriteContext, pastRecords: PastRecord[]): Promise<number> {
   const featured = ctx.plan.patients.slice(0, FEATURED_PATIENT_COUNT)
   const recordIdByEntry = new Map<PlannedEntry, string>(
@@ -894,11 +877,13 @@ async function writeClinicalRecords(tx: Tx, ctx: WriteContext, pastRecords: Past
     return {
       tenantId: DEMO_TENANT_ID,
       patientId: patient.id,
-      // The zod schema in @/validations/anamnesis shapes these jsonb columns
-      // as arrays of objects, not arrays of strings.
-      allergies: demo.allergies.map((substance) => ({ substance, reaction: '' })),
-      medications: demo.medications.map((name) => ({ name, dosage: '', frequency: '', reason: '' })),
-      medicalHistory: medicalHistoryFor(demo.history),
+      templateVersion: DEFAULT_ANAMNESIS_TEMPLATE.version,
+      templateSnapshot: DEFAULT_ANAMNESIS_TEMPLATE.sections,
+      responses: {
+        'anam-medical-history': { selected: [], other: demo.history },
+        'anam-allergies': demo.allergies.map((substance) => ({ substance })),
+        'anam-medications': demo.medications.map((name) => ({ name })),
+      },
       updatedBy: ctx.practitionerId,
       createdAt: recordedAt,
       updatedAt: recordedAt,

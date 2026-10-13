@@ -62,6 +62,11 @@ vi.mock('@/lib/whatsapp', () => ({
   },
 }))
 
+vi.mock('@/lib/lifecycle-webhook', () => ({
+  captureLifecycleReply: vi.fn().mockResolvedValue(false),
+  handleLifecycleStatus: vi.fn().mockResolvedValue(false),
+}))
+
 vi.mock('@/db/queries/whatsapp', () => ({
   upsertConversation: vi.fn(),
   createMessage: vi.fn(),
@@ -112,6 +117,13 @@ vi.mock('@/lib/classify-prospect', () => ({
 }))
 
 // ---------------------------------------------------------------------------
+// The real after() throws outside a Next request scope. Run the registered
+// work right away: these suites assert on what it does, not on when.
+vi.mock('next/server', async () => {
+  const actual = await vi.importActual<typeof import('next/server')>('next/server')
+  return { ...actual, after: vi.fn((task: unknown) => (typeof task === 'function' ? task() : task)) }
+})
+
 // Imports under test (after mocks)
 // ---------------------------------------------------------------------------
 

@@ -26,12 +26,29 @@ const redirectMock = vi.fn((path: string) => {
 
 const authMock = vi.fn()
 const selectMock = vi.fn()
+const updateMock = vi.fn()
 const createSelfSignupTenantMock = vi.fn()
 const createSubscriptionMock = vi.fn()
+const sendSignupCompleteRegistrationEventMock = vi.fn()
+const headersMock = vi.fn()
+const afterMock = vi.fn()
+const scheduleLifecycleWelcomeMock = vi.fn()
 
 vi.mock('next/navigation', () => ({ redirect: (p: string) => redirectMock(p) }))
+vi.mock('next/headers', () => ({
+  headers: () => headersMock(),
+  cookies: async () => ({ get: () => undefined }),
+}))
+vi.mock('next/server', () => ({
+  after: (task: () => unknown) => task(),
+}))
 vi.mock('@/lib/auth-config', () => ({ auth: () => authMock() }))
-vi.mock('@/db/client', () => ({ db: { select: () => selectMock() } }))
+vi.mock('@/db/client', () => ({
+  db: {
+    select: () => selectMock(),
+    update: (...a: unknown[]) => updateMock(...a),
+  },
+}))
 vi.mock('@/db/queries/admin-tenants', () => ({
   createSelfSignupTenant: (...a: unknown[]) => createSelfSignupTenantMock(...a),
   generateSlug: (name: string) => name.toLowerCase().replace(/\s+/g, '-'),
@@ -45,6 +62,13 @@ vi.mock('@/lib/email', () => ({
   sendConfirmationEmail: vi.fn(() => Promise.resolve()),
 }))
 vi.mock('@/lib/confirm-email', () => ({ issueConfirmationToken: vi.fn() }))
+vi.mock('@/lib/meta/events', () => ({
+  sendSignupCompleteRegistrationEvent: (...args: unknown[]) => sendSignupCompleteRegistrationEventMock(...args),
+}))
+vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
+vi.mock('@/lib/lifecycle-sender', () => ({
+  scheduleLifecycleWelcome: (...a: unknown[]) => scheduleLifecycleWelcomeMock(...a),
+}))
 
 import { createClinicForOAuthUser } from '../signup'
 
@@ -58,18 +82,38 @@ function membershipLookup(rows: unknown[]) {
   return chain
 }
 
-function form() {
+function form({ marketingConsent = false } = {}) {
   const fd = new FormData()
   fd.set('clinicName', 'Clínica Flora')
   fd.set('phone', '11988887777')
+  if (marketingConsent) {
+    fd.set('marketingConsent', 'granted')
+    fd.set('metaEventId', 'complete_registration:event-google')
+    fd.set('marketingAttribution', JSON.stringify({
+      utmSource: 'meta',
+      landingUrl: 'https://app.floraclin.com.br/signup?utm_source=meta',
+      capturedAt: '2026-10-06T00:00:00.000Z',
+      expiresAt: '2027-01-04T00:00:00.000Z',
+    }))
+  }
   return fd
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  headersMock.mockResolvedValue(new Headers({
+    'x-forwarded-for': '203.0.113.11',
+    'user-agent': 'Vitest OAuth Browser',
+  }))
+  sendSignupCompleteRegistrationEventMock.mockResolvedValue(true)
   authMock.mockResolvedValue({ user: { id: 'user-1', email: 'a@b.com', name: 'A' } })
   createSelfSignupTenantMock.mockResolvedValue({ id: 'tenant-1' })
   createSubscriptionMock.mockResolvedValue({ created: true })
+  updateMock.mockReturnValue({
+    set: () => ({
+      where: () => Promise.resolve(),
+    }),
+  })
   // No membership, then the free-plan lookup.
   selectMock
     .mockReturnValueOnce(membershipLookup([]))
@@ -80,7 +124,10 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
   it('reports success instead of redirecting after creating the clinic', async () => {
     const state = await createClinicForOAuthUser(null, form())
 
-    expect(state).toEqual({ success: true })
+    expect(state).toEqual({
+      success: true,
+      created: true,
+    })
     // The redirect is the bug. /dashboard with tenantId: null in the token is
     // bounced straight back here by middleware.
     expect(redirectMock).not.toHaveBeenCalledWith('/dashboard')
@@ -94,6 +141,33 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
       clinicName: 'Clínica Flora',
       phone: '11988887777',
     })
+    expect(updateMock).not.toHaveBeenCalled()
+  })
+
+  it('returns and persists the Meta event id when marketing consent was granted', async () => {
+    const state = await createClinicForOAuthUser(null, form({ marketingConsent: true }))
+
+    expect(state).toEqual({
+      success: true,
+      created: true,
+      metaEventId: 'complete_registration:event-google',
+    })
+    expect(updateMock).toHaveBeenCalled()
+  })
+
+  it('schedules the welcome once, for the new tenant', async () => {
+    await createClinicForOAuthUser(null, form())
+
+    expect(scheduleLifecycleWelcomeMock).toHaveBeenCalledTimes(1)
+    expect(scheduleLifecycleWelcomeMock).toHaveBeenCalledWith({ tenantId: 'tenant-1' })
+  })
+
+  it('does not schedule the welcome again when the subscription already existed', async () => {
+    createSubscriptionMock.mockResolvedValue({ created: false })
+
+    await createClinicForOAuthUser(null, form())
+
+    expect(scheduleLifecycleWelcomeMock).not.toHaveBeenCalled()
   })
 
   it('reports success on a retry rather than redirecting', async () => {
@@ -104,10 +178,11 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
 
     const state = await createClinicForOAuthUser(null, form())
 
-    expect(state).toEqual({ success: true })
+    expect(state).toEqual({ success: true, created: false })
     expect(redirectMock).not.toHaveBeenCalledWith('/dashboard')
     // Nothing created twice.
     expect(createSelfSignupTenantMock).not.toHaveBeenCalled()
+    expect(scheduleLifecycleWelcomeMock).not.toHaveBeenCalled()
   })
 
   it('still sends an unauthenticated caller to the login page', async () => {
@@ -127,5 +202,26 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
     expect(state?.success).toBeUndefined()
     expect(state?.error).toBeDefined()
     expect(createSelfSignupTenantMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('createClinicForOAuthUser Meta CompleteRegistration', () => {
+  it('sends the server event with the same id the browser pixel uses', async () => {
+    await createClinicForOAuthUser(null, form({ marketingConsent: true }))
+
+    expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      eventId: 'complete_registration:event-google',
+      email: 'a@b.com',
+      phone: '11988887777',
+      eventSourceUrl: expect.stringMatching(/\/signup\/clinic-details$/),
+      clientIp: '203.0.113.11',
+      userAgent: 'Vitest OAuth Browser',
+    }))
+  })
+
+  it('does not send the server event without marketing consent', async () => {
+    await createClinicForOAuthUser(null, form())
+
+    expect(sendSignupCompleteRegistrationEventMock).not.toHaveBeenCalled()
   })
 })

@@ -17,6 +17,7 @@ function getResend() {
   return _resend
 }
 const FROM = process.env.EMAIL_FROM ?? 'FloraClin <contato@floraclin.com.br>'
+const LIFECYCLE_REPLY_TO = 'contato@floraclin.com.br'
 
 export async function sendMagicLinkEmail(email: string, url: string) {
   await getResend().emails.send({
@@ -173,4 +174,41 @@ export async function sendNewSignupNotification(opts: {
       </div>
     `,
   })
+}
+
+export async function sendLifecycleEmail(opts: {
+  to: string
+  subject: string
+  body: string
+  button: { label: string; url: string } | null
+  optOutUrl: string | null
+}): Promise<{ id: string }> {
+  const button = opts.button
+    ? `<a href="${escapeHtml(opts.button.url)}" style="display: inline-block; background: #4A6B52; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 24px 0;">
+          ${escapeHtml(opts.button.label)}
+        </a>`
+    : ''
+  const footer = opts.optOutUrl
+    ? `<p style="color: #7A7A7A; font-size: 13px; margin-top: 32px;">
+          Não quer mais receber dicas da FloraClin? <a href="${escapeHtml(opts.optOutUrl)}">Clique aqui</a>.
+        </p>`
+    : ''
+  const { data, error } = await getResend().emails.send({
+    from: FROM,
+    to: opts.to,
+    replyTo: LIFECYCLE_REPLY_TO,
+    subject: opts.subject,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+        <h2 style="color: #1C2B1E; margin-bottom: 24px;">FloraClin</h2>
+        <p style="color: #2A2A2A; font-size: 16px; line-height: 1.5;">
+          ${escapeHtml(opts.body)}
+        </p>
+        ${button}
+        ${footer}
+      </div>
+    `,
+  })
+  if (error) throw new Error(error.message)
+  return { id: data.id }
 }
