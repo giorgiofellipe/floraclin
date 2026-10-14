@@ -1,7 +1,7 @@
 'use client'
 
 import { ArrowUpRight } from 'lucide-react'
-import { MARKETING_CREDIT_COST, UNLIMITED_CREDITS } from '@/lib/whatsapp-credits'
+import { DEFAULT_CREDIT_COST, MARKETING_CREDIT_COST, UNLIMITED_CREDITS } from '@/lib/whatsapp-credits'
 
 interface WhatsAppCreditBarProps {
   used: number
@@ -50,19 +50,21 @@ export function WhatsAppCreditBar({ used, total, periodEnd }: WhatsAppCreditBarP
         )}
       </div>
 
-      <div className="h-2 w-full rounded-full bg-[#F4F6F8] overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all duration-500 ${barColor}`}
-          style={{ width: `${percentage}%` }}
-        />
-      </div>
+      {!unlimited && (
+        <div className="h-2 w-full rounded-full bg-[#F4F6F8] overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+            style={{ width: `${percentage}%` }}
+          />
+        </div>
+      )}
 
       <p className="text-xs text-mid">
-        Cada mensagem enviada usa 1 crédito. Templates de marketing, como aniversário e reativação, usam {MARKETING_CREDIT_COST}.
+        Cada mensagem enviada usa {DEFAULT_CREDIT_COST} crédito. Templates de marketing, como aniversário e reativação, usam {MARKETING_CREDIT_COST}.
       </p>
 
       {marketingBlocked && (
-        <p className="text-xs text-amber-700">
+        <p className="text-xs text-amber-dark">
           Créditos insuficientes para templates de marketing.
         </p>
       )}

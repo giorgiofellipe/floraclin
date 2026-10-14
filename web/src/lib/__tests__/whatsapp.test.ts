@@ -30,11 +30,15 @@ vi.mock('@/db/queries/whatsapp', () => ({
 }))
 
 const consumeCreditsMock = vi.fn()
-const refundCreditsMock = vi.fn()
+const refundCreditsMock = vi.fn(async () => undefined)
+const recordChargeMock = vi.fn(async () => undefined)
+const getOrCreateCurrentPeriodMock = vi.fn()
 
 vi.mock('@/db/queries/whatsapp-credits', () => ({
   consumeCredits: consumeCreditsMock,
   refundCredits: refundCreditsMock,
+  recordCharge: recordChargeMock,
+  getOrCreateCurrentPeriod: getOrCreateCurrentPeriodMock,
 }))
 
 import { getTenant } from '@/db/queries/tenants'
@@ -43,9 +47,11 @@ import {
   sendMediaMessage,
   sendTemplateMessage,
   sendTextMessage,
+  requireCredits,
+  pendingQueueCost,
   syncTemplatesForTenant,
 } from '../whatsapp'
-import { WhatsAppTemplateNotFoundError } from '../whatsapp-credits'
+import { CreditExhaustedError, WhatsAppTemplateNotFoundError } from '../whatsapp-credits'
 
 describe('verifyWebhookSignature', () => {
   it('returns true for valid signature', () => {
@@ -132,7 +138,7 @@ describe('sendMediaMessage', () => {
   })
 })
 
-describe('sendTemplateMessage credits on the shared number', () => {
+describe('credits on the shared number', () => {
   const originalFetch = global.fetch
 
   beforeEach(() => {
@@ -164,18 +170,41 @@ describe('sendTemplateMessage credits on the shared number', () => {
   it.each([
     ['MARKETING', 3],
     ['UTILITY', 1],
-  ])('charges a %s template %i credits', async (category, cost) => {
+  ])('charges a %s template %i credits and records the charge', async (category, cost) => {
     getSendableTemplateMock.mockResolvedValue({ name: 'tpl', language: 'pt_BR', category })
 
     await sendTemplateMessage('tenant-1', '5511999999999', 'tpl', 'pt_BR')
 
     expect(consumeCreditsMock).toHaveBeenCalledWith('tenant-1', cost)
+    expect(recordChargeMock).toHaveBeenCalledWith('tenant-1', 'period-1', 'wamid.123', cost)
   })
 
-  it('charges a free-form text 1 credit', async () => {
-    await sendTextMessage('tenant-1', '5511999999999', 'Olá')
+  it.each([
+    ['text', () => sendTextMessage('tenant-1', '5511999999999', 'Olá')],
+    ['media', () => sendMediaMessage('tenant-1', '5511999999999', 'image', 'https://example.com/a.jpg')],
+  ])('charges a free-form %s message 1 credit', async (_kind, send) => {
+    await send()
 
     expect(consumeCreditsMock).toHaveBeenCalledWith('tenant-1', 1)
+  })
+
+  it('never charges a tenant on its own number', async () => {
+    vi.mocked(getTenant).mockResolvedValue({
+      id: 'tenant-1',
+      settings: {
+        whatsapp_mode: 'own',
+        whatsapp_enabled: true,
+        whatsapp_phone_number_id: 'own-phone',
+        whatsapp_access_token: 'own-token',
+        whatsapp_business_account_id: 'own-biz',
+      },
+    } as Awaited<ReturnType<typeof getTenant>>)
+
+    await sendTemplateMessage('tenant-1', '5511999999999', 'tpl', 'pt_BR')
+    await sendTextMessage('tenant-1', '5511999999999', 'Olá')
+
+    expect(consumeCreditsMock).not.toHaveBeenCalled()
+    expect(global.fetch).toHaveBeenCalledTimes(2)
   })
 
   it('blocks a template that is neither the tenant\'s nor a system one', async () => {
@@ -189,10 +218,13 @@ describe('sendTemplateMessage credits on the shared number', () => {
     expect(global.fetch).not.toHaveBeenCalled()
   })
 
-  it('refunds the credits when Meta rejects the send', async () => {
+  it.each([
+    ['rejects the send', { error: { message: 'paused' } }, 400],
+    ['returns no message id', { messages: [] }, 200],
+  ])('refunds the credits when Meta %s', async (_label, response, status) => {
     getSendableTemplateMock.mockResolvedValue({ name: 'tpl', language: 'pt_BR', category: 'MARKETING' })
     global.fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ error: { message: 'paused' } }), { status: 400 }),
+      new Response(JSON.stringify(response), { status }),
     ) as unknown as typeof fetch
 
     await expect(
@@ -200,6 +232,44 @@ describe('sendTemplateMessage credits on the shared number', () => {
     ).rejects.toThrow('Meta API error')
 
     expect(refundCreditsMock).toHaveBeenCalledWith('period-1', 3)
+    expect(recordChargeMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps the Meta error when the refund itself fails', async () => {
+    getSendableTemplateMock.mockResolvedValue({ name: 'tpl', language: 'pt_BR', category: 'UTILITY' })
+    refundCreditsMock.mockRejectedValueOnce(new Error('db down'))
+    global.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ error: { message: 'paused' } }), { status: 400 }),
+    ) as unknown as typeof fetch
+
+    await expect(
+      sendTemplateMessage('tenant-1', '5511999999999', 'tpl', 'pt_BR'),
+    ).rejects.toThrow('Meta API error')
+  })
+
+  // The first queued message also pays the resume template: 2 credits.
+  it.each([
+    [298, 0],
+    [297, 2],
+  ])('allows a new queued message at %i/300 with %i queued', async (used, queued) => {
+    getOrCreateCurrentPeriodMock.mockResolvedValue({ creditsUsed: used, creditsTotal: 300 })
+
+    await expect(requireCredits('tenant-1', pendingQueueCost(queued))).resolves.toBeUndefined()
+  })
+
+  it.each([
+    [299, 0],
+    [298, 2],
+  ])('blocks a new queued message at %i/300 with %i queued', async (used, queued) => {
+    getOrCreateCurrentPeriodMock.mockResolvedValue({ creditsUsed: used, creditsTotal: 300 })
+
+    await expect(requireCredits('tenant-1', pendingQueueCost(queued))).rejects.toBeInstanceOf(CreditExhaustedError)
+  })
+
+  it('never blocks the queue on an unlimited plan', async () => {
+    getOrCreateCurrentPeriodMock.mockResolvedValue({ creditsUsed: 5000, creditsTotal: -1 })
+
+    await expect(requireCredits('tenant-1', pendingQueueCost(19))).resolves.toBeUndefined()
   })
 })
 

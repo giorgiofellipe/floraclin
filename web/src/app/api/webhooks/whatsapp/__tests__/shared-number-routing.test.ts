@@ -110,14 +110,12 @@ vi.mock('@/lib/whatsapp', async () => {
   sendTemplateMessage: vi.fn(),
   sendMediaMessage: vi.fn(),
   getTemplateForTenant: vi.fn(),
-  CreditExhaustedError: class CreditExhaustedError extends Error {
-    constructor(public creditsUsed: number, public creditsTotal: number) {
-      super(`Credits exhausted`)
-      this.name = 'CreditExhaustedError'
-    }
-  },
   }
 })
+
+vi.mock('@/db/queries/whatsapp-credits', () => ({
+  refundFailedCharge: vi.fn(async () => undefined),
+}))
 
 vi.mock('@/lib/lifecycle-webhook', () => ({
   captureLifecycleReply: vi.fn().mockResolvedValue(false),
@@ -185,7 +183,9 @@ vi.mock('next/server', async () => {
 // ---------------------------------------------------------------------------
 
 import { db } from '@/db/client'
-import { verifyWebhookSignature } from '@/lib/whatsapp'
+import { verifyWebhookSignature, sendTextMessage } from '@/lib/whatsapp'
+import { refundFailedCharge } from '@/db/queries/whatsapp-credits'
+import { CreditExhaustedError } from '@/lib/whatsapp-credits'
 import {
   upsertConversation,
   getQueuedMessages,
@@ -270,7 +270,11 @@ function makeInboundPayload(opts: { contextId?: string }) {
   }
 }
 
-function makeStatusPayload(statusId: string, pricing?: { category: string; type: string }) {
+function makeStatusPayload(
+  statusId: string,
+  pricing?: { category: string; type: string },
+  statusValue = 'delivered',
+) {
   return {
     object: 'whatsapp_business_account',
     entry: [
@@ -285,7 +289,7 @@ function makeStatusPayload(statusId: string, pricing?: { category: string; type:
               statuses: [
                 {
                   id: statusId,
-                  status: 'delivered',
+                  status: statusValue,
                   timestamp: String(Math.floor(Date.now() / 1000)),
                   recipient_id: PATIENT_PHONE,
                   ...(pricing ? { pricing } : {}),
@@ -520,6 +524,22 @@ describe('resolveSharedNumberTenant — phone history, ambiguous', () => {
     expect(reportSideEffectFailureMock).not.toHaveBeenCalled()
   })
 
+  it('stops draining the queue once credits run out', async () => {
+    vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([convRow(TENANT_A, 5 * MINUTES)]) as never)
+    vi.mocked(getQueuedMessages).mockResolvedValueOnce([
+      { id: 'q-1', body: 'primeira' },
+      { id: 'q-2', body: 'segunda' },
+    ] as never)
+    vi.mocked(sendTextMessage).mockRejectedValue(new CreditExhaustedError(300, 300, 1))
+
+    await POST(makeRequest(makeInboundPayload({})))
+    await vi.waitFor(() => expect(upsertConversation).toHaveBeenCalled())
+    await flushAfter()
+
+    expect(sendTextMessage).toHaveBeenCalledTimes(1)
+    expect(reportSideEffectFailureMock).not.toHaveBeenCalled()
+  })
+
   it('still refuses when both tenants are active inside the window', async () => {
     // Recency cannot separate them, so guessing would cross a clinic boundary.
     vi.mocked(db.select).mockReturnValueOnce(
@@ -627,6 +647,21 @@ describe('resolveSharedNumberTenant — status updates', () => {
 
     // The status id resolved, so phone history was never consulted.
     expect(db.select).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks for a refund when Meta reports the send failed', async () => {
+    vi.mocked(db.select).mockReturnValueOnce(
+      makeSelectChain([
+        { tenantId: TENANT_A, direction: 'outbound', conversationPhone: PATIENT_PHONE },
+      ]) as never,
+    )
+    vi.mocked(updateMessageStatus).mockResolvedValue({ conversationId: CONVERSATION_ID } as never)
+
+    await POST(makeRequest(makeStatusPayload('wamid.failed', undefined, 'failed')))
+
+    await vi.waitFor(() => {
+      expect(refundFailedCharge).toHaveBeenCalledWith('wamid.failed')
+    })
   })
 
   it('falls back to phone history for a status update when the message id is unknown', async () => {

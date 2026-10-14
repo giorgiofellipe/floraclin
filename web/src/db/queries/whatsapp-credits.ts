@@ -1,10 +1,11 @@
 import { db } from '@/db/client'
 import {
   whatsappCredits,
+  whatsappCreditCharges,
   tenantSubscriptions,
   plans,
 } from '@/db/schema'
-import { eq, and, lte, sql } from 'drizzle-orm'
+import { eq, and, lte, isNull, sql } from 'drizzle-orm'
 import { brToday, parseBrDate } from '@/lib/dates'
 import { addMonths } from 'date-fns'
 import { UNLIMITED_CREDITS } from '@/lib/whatsapp-credits'
@@ -59,7 +60,7 @@ export async function getOrCreateCurrentPeriod(tenantId: string): Promise<Credit
     .limit(1)
 
   const limits = (sub?.limits ?? {}) as Record<string, number>
-  const creditsTotal = limits.whatsapp_conversations ?? 0
+  const creditsTotal = limits.whatsapp_credits ?? 0
 
   if (existing) {
     if (existing.creditsTotal !== creditsTotal) {
@@ -167,6 +168,42 @@ export async function refundCredits(periodId: string, cost: number): Promise<voi
       updatedAt: new Date(),
     })
     .where(eq(whatsappCredits.id, periodId))
+}
+
+export async function recordCharge(
+  tenantId: string,
+  creditPeriodId: string,
+  metaMessageId: string,
+  cost: number,
+): Promise<void> {
+  await db
+    .insert(whatsappCreditCharges)
+    .values({ tenantId, creditPeriodId, metaMessageId, cost })
+    .onConflictDoNothing()
+}
+
+export async function refundFailedCharge(metaMessageId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [charge] = await tx
+      .update(whatsappCreditCharges)
+      .set({ refundedAt: new Date() })
+      .where(
+        and(
+          eq(whatsappCreditCharges.metaMessageId, metaMessageId),
+          isNull(whatsappCreditCharges.refundedAt),
+        )
+      )
+      .returning()
+    if (!charge) return
+
+    await tx
+      .update(whatsappCredits)
+      .set({
+        creditsUsed: sql`greatest(${whatsappCredits.creditsUsed} - ${charge.cost}, 0)`,
+        updatedAt: new Date(),
+      })
+      .where(eq(whatsappCredits.id, charge.creditPeriodId))
+  })
 }
 
 // ─── USAGE QUERY ─────────────────────────────────────────────────

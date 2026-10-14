@@ -37,6 +37,7 @@ import { enqueueMetaEvent } from '@/lib/meta/events'
 import { captureLifecycleReply, handleLifecycleStatus } from '@/lib/lifecycle-webhook'
 import { getWhatsAppErrorLabel, isKnownWhatsAppErrorCode } from '@/lib/whatsapp-errors'
 import { CreditExhaustedError } from '@/lib/whatsapp-credits'
+import { refundFailedCharge } from '@/db/queries/whatsapp-credits'
 import { maybeAutoSendAnamnesisLink } from '@/lib/whatsapp-anamnesis'
 
 export const dynamic = 'force-dynamic'
@@ -532,8 +533,13 @@ async function drainQueuedMessages(
         message: sentMessage,
       })
     } catch (err) {
-      // Out of credits: the rest stay queued instead of each failing the same way.
-      if (err instanceof CreditExhaustedError) break
+      if (err instanceof CreditExhaustedError) {
+        Sentry.captureMessage('WhatsApp credits exhausted while draining queued messages', {
+          level: 'warning',
+          extra: { tenantId, conversationId, creditsUsed: err.creditsUsed, creditsTotal: err.creditsTotal },
+        })
+        break
+      }
       reportWebhookFailure(err, 'queue_drain_message', { tenantId, queuedMessageId: qm.id })
     }
   }
@@ -568,6 +574,12 @@ async function processStatusUpdate(
 
   const failure = mappedStatus === 'failed' ? status.errors?.[0] : undefined
   const errorCode = failure?.code != null ? String(failure.code) : null
+
+  if (mappedStatus === 'failed') {
+    await refundFailedCharge(metaMessageId).catch((err) =>
+      reportWebhookFailure(err, 'refund_failed_charge', { tenantId, metaMessageId }),
+    )
+  }
 
   const pricing = status.pricing
     ? { category: status.pricing.category ?? null, type: status.pricing.type ?? null }

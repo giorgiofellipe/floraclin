@@ -123,7 +123,7 @@ async function countUsage(tenantId: string, limitKey: string): Promise<number> {
       return countActiveUsers(tenantId)
     case 'patients':
       return countActivePatients(tenantId)
-    case 'whatsapp_conversations':
+    case 'whatsapp_credits':
       return countWhatsappCreditsUsed(tenantId)
     default:
       return 0

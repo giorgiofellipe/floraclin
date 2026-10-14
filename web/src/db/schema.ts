@@ -1090,6 +1090,20 @@ export const whatsappCredits = floraclinSchema.table('whatsapp_credits', {
   uniqueIndex('uq_whatsapp_credits_tenant_period').on(table.tenantId, table.periodStart),
 ])
 
+// One row per message sent on the shared number, so a send Meta later reports
+// as failed (and does not bill) can be refunded exactly once.
+export const whatsappCreditCharges = floraclinSchema.table('whatsapp_credit_charges', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  creditPeriodId: uuid('credit_period_id').notNull().references(() => whatsappCredits.id),
+  metaMessageId: varchar('meta_message_id', { length: 255 }).notNull(),
+  cost: integer('cost').notNull(),
+  refundedAt: timestamp('refunded_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('uq_whatsapp_credit_charges_meta_message').on(table.metaMessageId),
+])
+
 // ─── META CONVERSIONS ───────────────────────────────────────────────
 
 export const leadAttributions = floraclinSchema.table('lead_attributions', {

@@ -1,8 +1,10 @@
 import crypto from 'crypto'
 import { BusinessError } from '@/lib/errors'
 import { getTenant } from '@/db/queries/tenants'
+import { reportSideEffectFailure } from '@/lib/observability'
 import {
   DEFAULT_CREDIT_COST,
+  UNLIMITED_CREDITS,
   templateCreditCost,
   CreditExhaustedError,
   WhatsAppTemplateNotFoundError,
@@ -112,9 +114,15 @@ async function requireSendAllowed(tenantId: string) {
   await requireActiveSubscription(tenantId)
 }
 
-// Every message on the shared number is billed to FloraClin by Meta, so each
-// one is charged to the tenant's credits and refunded if Meta rejects it.
-async function sendWithCredits<T>(
+function sentMessageId(data: { messages?: { id?: string }[] }): string {
+  const id = data.messages?.[0]?.id
+  if (!id) throw new Error('Meta API error: response has no message id')
+  return id
+}
+
+// Every message on the shared number is charged to the tenant, including ones
+// Meta may not bill (free-form, open-window utility): its rules keep changing.
+async function sendWithCredits<T extends { metaMessageId: string }>(
   tenantId: string,
   resolveCost: () => Promise<number>,
   send: () => Promise<T>,
@@ -122,22 +130,44 @@ async function sendWithCredits<T>(
   await requireSendAllowed(tenantId)
   if ((await getWhatsAppMode(tenantId)) !== 'floraclin') return send()
 
-  const { consumeCredits, refundCredits } = await import('@/db/queries/whatsapp-credits')
+  const { consumeCredits, refundCredits, recordCharge } = await import('@/db/queries/whatsapp-credits')
   const cost = await resolveCost()
   const charge = await consumeCredits(tenantId, cost)
   if (!charge.allowed) {
     throw new CreditExhaustedError(charge.creditsUsed, charge.creditsTotal, cost)
   }
 
+  let sent: T
   try {
-    return await send()
+    sent = await send()
   } catch (err) {
-    await refundCredits(charge.periodId, cost)
+    await refundCredits(charge.periodId, cost).catch((refundErr) =>
+      reportSideEffectFailure(refundErr, { area: 'whatsapp_credits', step: 'refund', extra: { tenantId, cost } }),
+    )
     throw err
   }
+
+  // The message is already out; a failed bookkeeping write must not make the
+  // caller treat it as unsent and send it again.
+  await recordCharge(tenantId, charge.periodId, sent.metaMessageId, cost).catch((recordErr) =>
+    reportSideEffectFailure(recordErr, { area: 'whatsapp_credits', step: 'record_charge', extra: { tenantId } }),
+  )
+  return sent
 }
 
 const flatCost = async () => DEFAULT_CREDIT_COST
+
+// Queued messages are charged when they drain, so a clinic must not queue
+// what its credits cannot pay for.
+export async function requireCredits(tenantId: string, cost: number) {
+  if ((await getWhatsAppMode(tenantId)) !== 'floraclin') return
+  const { getOrCreateCurrentPeriod } = await import('@/db/queries/whatsapp-credits')
+  const credits = await getOrCreateCurrentPeriod(tenantId)
+  if (credits.creditsTotal === UNLIMITED_CREDITS) return
+  if (credits.creditsUsed + cost > credits.creditsTotal) {
+    throw new CreditExhaustedError(credits.creditsUsed, credits.creditsTotal, cost)
+  }
+}
 
 export async function sendTextMessage(tenantId: string, to: string, body: string) {
   return sendWithCredits(tenantId, flatCost, () => postTextMessage(tenantId, to, body))
@@ -154,7 +184,7 @@ async function postTextMessage(tenantId: string, to: string, body: string) {
       text: { body },
     }),
   })
-  return { metaMessageId: data.messages?.[0]?.id as string }
+  return { metaMessageId: sentMessageId(data) }
 }
 
 type TemplateButtonParam = {
@@ -222,7 +252,7 @@ async function postTemplateMessage(
       },
     }),
   })
-  return { metaMessageId: data.messages?.[0]?.id as string }
+  return { metaMessageId: sentMessageId(data) }
 }
 
 export async function sendMediaMessage(
@@ -261,7 +291,14 @@ async function postMediaMessage(
       [mediaType]: mediaPayload,
     }),
   })
-  return { metaMessageId: data.messages?.[0]?.id as string }
+  return { metaMessageId: sentMessageId(data) }
+}
+
+// Credits a new queued message commits the clinic to: every message already
+// queued plus this one, and the resume template that reopens the window.
+export function pendingQueueCost(queueCount: number): number {
+  const resume = queueCount === 0 ? DEFAULT_CREDIT_COST : 0
+  return (queueCount + 1) * DEFAULT_CREDIT_COST + resume
 }
 
 export async function sendOrEnqueueDocument(
@@ -313,6 +350,7 @@ export async function sendOrEnqueueDocument(
 
   // Window closed — check queue
   const queueCount = await getQueuedCount(tenantId, conversation.id)
+  await requireCredits(tenantId, pendingQueueCost(queueCount))
 
   if (queueCount === 0) {
     // First message when window is closed → send resume template

@@ -8,6 +8,7 @@ vi.mock('@sentry/nextjs', () => ({
 
 import { handleApiError } from '../api-error'
 import { ForbiddenError } from '../errors'
+import { CreditExhaustedError, WhatsAppTemplateNotFoundError } from '../whatsapp-credits'
 
 const URL_PATIENTS = 'https://app.floraclin.com.br/api/patients?q=ana'
 
@@ -30,6 +31,17 @@ describe('handleApiError', () => {
     expect(captureExceptionMock).toHaveBeenCalledWith(boom, {
       tags: { route: '/api/patients', method: 'POST' },
     })
+  })
+
+  it.each([
+    [new CreditExhaustedError(299, 300, 3), 402, 'Créditos de WhatsApp insuficientes para este envio. Faça upgrade do plano para mais créditos.'],
+    [new WhatsAppTemplateNotFoundError('promo', 'pt_BR'), 400, 'Template de WhatsApp não encontrado.'],
+  ])('maps %s to a client error without reporting it', async (error, status, message) => {
+    const res = handleApiError(error, new Request(URL_PATIENTS, { method: 'POST' }))
+
+    expect(res.status).toBe(status)
+    await expect(res.json()).resolves.toEqual({ error: message })
+    expect(captureExceptionMock).not.toHaveBeenCalled()
   })
 
   it('does not report an authorization outcome', async () => {
