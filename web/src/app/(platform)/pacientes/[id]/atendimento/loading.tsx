@@ -2,7 +2,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 export default function AtendimentoLoading() {
   return (
-    <div className="-m-6 flex min-h-screen flex-col bg-[#F4F6F8]">
+    <div className="-m-4 md:-m-6 flex min-h-screen flex-col bg-[#F4F6F8]">
       {/* Patient compact bar skeleton */}
       <header className="sticky top-0 z-30 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         <div className="mx-auto flex items-center justify-between px-4 py-3">

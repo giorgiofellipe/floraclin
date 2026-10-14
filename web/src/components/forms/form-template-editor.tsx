@@ -301,14 +301,14 @@ export function FormTemplateEditor({
       {onBack ? (
         // z-30 so it overlays the platform layout header
         <div className="sticky top-0 z-30 bg-white border-b border-[#E8ECEF] shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 min-w-0">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-2 sm:gap-4">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <Button variant="ghost" size="icon-sm" onClick={onBack} aria-label="Voltar">
                 <ArrowLeftIcon className="h-4 w-4" />
               </Button>
               {title && (
                 <div className="min-w-0">
-                  <h1 className="text-base font-medium text-charcoal truncate">{title}</h1>
+                  <h1 className="text-base font-medium leading-tight text-charcoal line-clamp-2 sm:truncate">{title}</h1>
                   {subtitle && <p className="text-xs text-mid truncate">{subtitle}</p>}
                 </div>
               )}

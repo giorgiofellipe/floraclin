@@ -67,7 +67,7 @@ export function TemplateEditorPage({ procedureType, template, hasDefaultTemplate
   // sticky header sits at viewport top:0 and visually replaces the platform
   // header (same approach as the atendimento wizard page).
   return (
-    <div className="-m-6 flex min-h-screen flex-col bg-[#F4F6F8]">
+    <div className="-m-4 md:-m-6 flex min-h-screen flex-col bg-[#F4F6F8]">
       <TemplateEditor
         procedureTypeName={procedureType.name}
         procedureTypeId={procedureType.id}

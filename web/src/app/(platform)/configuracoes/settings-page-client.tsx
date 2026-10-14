@@ -316,7 +316,7 @@ export function SettingsPageClient({
   }
 
   return (
-    <div className="p-4 sm:p-6">
+    <div className="sm:p-6">
       {hasSection && (
         <div className="md:hidden mb-4 flex items-center gap-3">
           <Button
@@ -418,7 +418,7 @@ export function SettingsPageClient({
             </div>
 
             {/* Section content */}
-            <div className="p-5 sm:p-6">
+            <div className="p-4 sm:p-6">
               {effectiveTab === 'clinica' && (
                 <ClinicSettingsForm
                   initialData={{
