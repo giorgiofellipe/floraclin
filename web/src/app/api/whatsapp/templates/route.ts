@@ -8,9 +8,9 @@ import {
   canManageTemplates,
   createTemplate as createMetaTemplate,
   getTemplate as getMetaTemplate,
-  isWhatsAppEnabled,
   syncTemplatesForTenant,
 } from '@/lib/whatsapp'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { resolveTemplatePrefix } from '@/lib/whatsapp-blueprints'
 import { createTemplateSchema } from '@/validations/whatsapp'
 import { ForbiddenError } from '@/lib/errors'

@@ -13,13 +13,13 @@ vi.mock('@/db/queries/patients', () => ({
 }))
 
 vi.mock('@/db/queries/whatsapp', () => ({
-  getTemplateByPurpose: vi.fn(),
   upsertConversation: vi.fn(),
   createMessage: vi.fn(),
   pushSseEvent: vi.fn(),
 }))
 
 vi.mock('@/lib/whatsapp', () => ({
+  getTemplateForTenant: vi.fn(),
   sendTemplateMessage: vi.fn(),
   resolveTemplateBody: vi.fn(() => 'body'),
 }))
@@ -32,8 +32,8 @@ vi.mock('@/lib/plans', () => ({
 import { requireWrite } from '@/lib/write-access'
 import { getTenant } from '@/db/queries/tenants'
 import { getPatient } from '@/db/queries/patients'
-import { getTemplateByPurpose, upsertConversation, createMessage } from '@/db/queries/whatsapp'
-import { sendTemplateMessage } from '@/lib/whatsapp'
+import { upsertConversation, createMessage } from '@/db/queries/whatsapp'
+import { getTemplateForTenant, sendTemplateMessage } from '@/lib/whatsapp'
 import { BusinessError } from '@/lib/errors'
 import { POST } from '../route'
 
@@ -59,10 +59,10 @@ beforeEach(() => {
   vi.mocked(getTenant).mockResolvedValue({
     id: 'tenant-1',
     name: 'Clínica',
-    settings: { whatsapp_enabled: true },
+    settings: {},
   } as never)
   vi.mocked(getPatient).mockResolvedValue({ id: PATIENT_ID, fullName: 'Maria Silva', phone: '11999990000' } as never)
-  vi.mocked(getTemplateByPurpose).mockResolvedValue({
+  vi.mocked(getTemplateForTenant).mockResolvedValue({
     name: 'consent_link',
     language: 'pt_BR',
     status: 'APPROVED',
@@ -85,6 +85,28 @@ describe('POST /api/consent/send-signing-link/send', () => {
       'pt_BR',
       { '1': 'Maria', '2': 'Clínica', '3': URL },
     )
+  })
+
+  // Shared-number clinics never save the WhatsApp settings form, so the flag stays unset.
+  it('sends for a shared-number clinic without the whatsapp_enabled flag', async () => {
+    const res = await post({ patientId: PATIENT_ID, url: URL })
+
+    expect(res.status).toBe(200)
+    expect(getTemplateForTenant).toHaveBeenCalledWith('tenant-1', 'consent_signing_link')
+    expect(sendTemplateMessage).toHaveBeenCalled()
+  })
+
+  it('refuses an own-number clinic that has not enabled WhatsApp', async () => {
+    vi.mocked(getTenant).mockResolvedValue({
+      id: 'tenant-1',
+      name: 'Clínica',
+      settings: { whatsapp_mode: 'own' },
+    } as never)
+
+    const res = await post({ patientId: PATIENT_ID, url: URL })
+
+    expect(res.status).toBe(403)
+    expect(sendTemplateMessage).not.toHaveBeenCalled()
   })
 
   it('answers 503 with the reason when WhatsApp is not configured', async () => {

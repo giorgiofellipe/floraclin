@@ -18,7 +18,8 @@ import {
   sendTemplateSchema,
   sendMediaSchema,
 } from '@/validations/whatsapp'
-import { sendTextMessage, sendTemplateMessage, sendMediaMessage, resolveTemplateBody, isWhatsAppEnabled, requireCredits, pendingQueueCost } from '@/lib/whatsapp'
+import { sendTextMessage, sendTemplateMessage, sendMediaMessage, resolveTemplateBody, requireCredits, pendingQueueCost } from '@/lib/whatsapp'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { requireWrite } from '@/lib/write-access'
 import { getProspect, updateProspect } from '@/db/queries/prospects'
 import { handleApiError } from '@/lib/api-error'

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { pollSseEvents, cleanupSseEvents, getLatestSseEventId } from '@/db/queries/whatsapp'
-import { isWhatsAppEnabled } from '@/lib/whatsapp'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 
 export const dynamic = 'force-dynamic'
 

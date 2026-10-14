@@ -3,8 +3,9 @@ import { z } from 'zod'
 import { requireWrite } from '@/lib/write-access'
 import { getTenant } from '@/db/queries/tenants'
 import { getPatient } from '@/db/queries/patients'
-import { getTemplateByPurpose, upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
-import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
+import { upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
+import { getTemplateForTenant, sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { SubscriptionExpiredError, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
 import { normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { handleApiError } from '@/lib/api-error'
@@ -28,7 +29,7 @@ export async function POST(
 
     const tenant = await getTenant(ctx.tenantId)
     const settings = (tenant?.settings ?? {}) as Record<string, unknown>
-    if (!settings.whatsapp_enabled) {
+    if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp não habilitado' }, { status: 403 })
     }
 
@@ -50,7 +51,7 @@ export async function POST(
       )
     }
 
-    const template = await getTemplateByPurpose(ctx.tenantId, 'anamnese_link')
+    const template = await getTemplateForTenant(ctx.tenantId, 'anamnese_link')
     if (!template) {
       return NextResponse.json({ error: 'Template de anamnese não cadastrado. Cadastre um template com finalidade "anamnese_link".' }, { status: 400 })
     }

@@ -34,7 +34,6 @@ vi.mock('@/lib/whatsapp', async () => {
   return {
     sendTemplateMessage: vi.fn(),
     resolveTemplateBody: vi.fn(),
-    isWhatsAppEnabled: vi.fn(() => true),
     getTemplateForTenant: vi.fn(),
   }
 })

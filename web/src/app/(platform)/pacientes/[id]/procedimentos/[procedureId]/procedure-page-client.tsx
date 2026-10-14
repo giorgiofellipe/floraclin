@@ -6,6 +6,7 @@ import { Printer, Package as PackageIcon } from 'lucide-react'
 import { usePatient } from '@/hooks/queries/use-patients'
 import { useProcedure } from '@/hooks/queries/use-procedures'
 import { useTenant } from '@/hooks/queries/use-tenant'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { usePatientPackages } from '@/hooks/queries/use-packages'
 import { ProcedureForm } from '@/components/procedures/procedure-form'
 import { ProcedureExecution } from '@/components/procedures/procedure-execution'
@@ -118,7 +119,7 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
           tenant={{
             id: tenant.id,
             name: tenant.name,
-            whatsappApiEnabled: !!(tenant.settings as Record<string, unknown> | null)?.whatsapp_enabled,
+            whatsappApiEnabled: isWhatsAppEnabled(tenant.settings as Record<string, unknown> | null),
           }}
           additionalTypeIds={additionalTypeIds}
         />
