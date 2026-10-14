@@ -21,7 +21,15 @@ import {
   MessageSquare,
   Loader2,
   ChevronUp,
+  InfoIcon,
 } from 'lucide-react'
+import { InfoPopover } from '@/components/ui/info-popover'
+
+const WINDOW_CLOSED_HELP =
+  'O WhatsApp só permite mensagens livres até 24h após a última mensagem do paciente. ' +
+  'Fora desse prazo, enviamos um template pedindo que ele responda. Quando ele responder, ' +
+  'as mensagens da fila são enviadas. Se ele não responder em 24h, elas expiram. ' +
+  'Cada mensagem enviada usa créditos.'
 
 export interface ChatPanelHandle {
   addMessage: (msg: Message) => void
@@ -487,8 +495,11 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
         {/* Input area */}
         <div className="border-t bg-[#F0F2F5]">
           {!windowOpen && (
-            <div className="bg-amber-50 px-4 py-2 text-xs text-amber-700 border-b border-amber-100">
-              Janela de 24h expirada — mensagens serão enfileiradas
+            <div className="flex items-center gap-1.5 bg-amber-50 px-4 py-2 text-xs text-amber-700 border-b border-amber-100">
+              Janela de 24h fechada: novas mensagens ficam na fila
+              <InfoPopover content={WINDOW_CLOSED_HELP} className="cursor-help">
+                <InfoIcon className="size-3.5" aria-label="Entenda a janela de 24h" />
+              </InfoPopover>
             </div>
           )}
           <div className="px-4 py-3">
