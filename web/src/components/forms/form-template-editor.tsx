@@ -297,8 +297,7 @@ export function FormTemplateEditor({
   const totalQuestions = sections.reduce((sum, s) => sum + s.questions.length, 0)
 
   return (
-    // Full-page mode cancels the platform <main> padding so the sticky bar spans edge to edge.
-    <div className={onBack ? 'min-h-screen -m-4 md:-m-6' : 'space-y-4'}>
+    <div className={onBack ? 'min-h-screen' : 'space-y-4'}>
       {onBack ? (
         // z-30 so it overlays the platform layout header
         <div className="sticky top-0 z-30 bg-white border-b border-[#E8ECEF] shadow-[0_1px_4px_rgba(0,0,0,0.06)]">

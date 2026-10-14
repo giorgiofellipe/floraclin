@@ -319,7 +319,7 @@ export default function WhatsAppPage() {
 
   // Full inbox layout
   return (
-    <div className="-m-6 flex h-[calc(100vh-64px)] overflow-hidden bg-white">
+    <div className="-m-4 md:-m-6 flex h-[calc(100vh-64px)] overflow-hidden bg-white">
       {/* Left sidebar -- conversation list */}
       <div className="w-[350px] shrink-0">
         <ConversationList

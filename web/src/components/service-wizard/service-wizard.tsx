@@ -757,7 +757,7 @@ export function ServiceWizard({
   const age = patient.birthDate ? calculateAge(patient.birthDate) : null
 
   return (
-    <div className="-m-6 flex min-h-screen flex-col bg-[#F4F6F8]">
+    <div className="-m-4 md:-m-6 flex min-h-screen flex-col bg-[#F4F6F8]">
       {/* ─── Unified header: patient + stepper ─────────────────────── */}
       <header className="sticky top-0 z-30 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         <div className="flex items-center justify-between px-6 py-2.5">
