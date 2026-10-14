@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS "floraclin"."whatsapp_credit_charges" (
 ALTER TABLE "floraclin"."whatsapp_credit_charges" ADD CONSTRAINT "whatsapp_credit_charges_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "floraclin"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "floraclin"."whatsapp_credit_charges" ADD CONSTRAINT "whatsapp_credit_charges_credit_period_id_whatsapp_credits_id_fk" FOREIGN KEY ("credit_period_id") REFERENCES "floraclin"."whatsapp_credits"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "uq_whatsapp_credit_charges_meta_message" ON "floraclin"."whatsapp_credit_charges" USING btree ("meta_message_id");--> statement-breakpoint
+ALTER TABLE "floraclin"."whatsapp_credit_charges" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 UPDATE "floraclin"."plans"
 SET "limits" = ("limits" - 'whatsapp_conversations') || jsonb_build_object('whatsapp_credits', "limits"->'whatsapp_conversations')
 WHERE "limits" ? 'whatsapp_conversations';
