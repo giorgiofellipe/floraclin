@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { InfoPopover } from '@/components/ui/info-popover'
 import {
   Dialog,
   DialogContent,
@@ -191,20 +192,21 @@ function ConsentHistoryItem({ item, patientName, patientCpf, patientHasPhone }: 
                 <Download className="size-3.5" />
                 Baixar PDF
               </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={handleSendWhatsapp}
-                disabled={sendingWhatsapp || !patientHasPhone}
-                title={!patientHasPhone ? 'Paciente sem telefone cadastrado' : undefined}
-              >
-                {sendingWhatsapp ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <MessageCircle className="size-3.5" />
-                )}
-                Enviar WhatsApp
-              </Button>
+              <InfoPopover content={patientHasPhone ? null : 'Paciente sem telefone cadastrado'}>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleSendWhatsapp}
+                  disabled={sendingWhatsapp || !patientHasPhone}
+                >
+                  {sendingWhatsapp ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <MessageCircle className="size-3.5" />
+                  )}
+                  Enviar WhatsApp
+                </Button>
+              </InfoPopover>
             </div>
           </DialogContent>
         </Dialog>

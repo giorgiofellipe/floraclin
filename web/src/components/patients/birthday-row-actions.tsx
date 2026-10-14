@@ -4,6 +4,7 @@ import { Check, ExternalLink, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { InfoPopover } from '@/components/ui/info-popover'
 import {
   useBirthdayTemplate,
   useSendBirthdayMessage,
@@ -124,32 +125,36 @@ export function BirthdayRowActions({
     }
   }
 
-  function sendButtonTitle(): string {
+  function sendBlockedReason(): string | null {
     if (!template) return 'Modelo de aniversário indisponível ou WhatsApp desativado'
     if (template.status !== 'APPROVED') {
       return `Modelo aguardando aprovação no WhatsApp (${template.status})`
     }
     if (!hasPhone) return 'Paciente sem telefone cadastrado'
     if (!hasValidPhone) return 'Telefone inválido para WhatsApp'
-    return 'Enviar mensagem de aniversário via WhatsApp'
+    return null
   }
 
   const btnSize = size === 'sm' ? 'icon-sm' : 'sm'
   const iconClass = size === 'sm' ? 'size-3.5' : 'size-4'
 
+  const blockedReason = sendBlockedReason()
+
   const sendButton = (
-    <Button
-      type="button"
-      variant="default"
-      size={btnSize}
-      disabled={!canSendTemplate}
-      onClick={handleSendMessage}
-      title={sendButtonTitle()}
-      className="bg-[#25D366] text-white hover:bg-[#1DA851] disabled:opacity-50"
-    >
-      <Send className={iconClass} />
-      {size === 'default' && <span>Enviar mensagem</span>}
-    </Button>
+    <InfoPopover content={blockedReason}>
+      <Button
+        type="button"
+        variant="default"
+        size={btnSize}
+        disabled={!canSendTemplate}
+        onClick={handleSendMessage}
+        title={blockedReason ? undefined : 'Enviar mensagem de aniversário via WhatsApp'}
+        className="bg-[#25D366] text-white hover:bg-[#1DA851] disabled:opacity-50"
+      >
+        <Send className={iconClass} />
+        {size === 'default' && <span>Enviar mensagem</span>}
+      </Button>
+    </InfoPopover>
   )
 
   const waButton = waHref ? (
@@ -169,16 +174,12 @@ export function BirthdayRowActions({
       {size === 'default' && <span>Abrir no WhatsApp Web</span>}
     </a>
   ) : (
-    <Button
-      type="button"
-      variant="outline"
-      size={btnSize}
-      disabled
-      title="Paciente sem telefone cadastrado"
-    >
-      <ExternalLink className={cn(iconClass, 'text-mid')} />
-      {size === 'default' && <span>Abrir no WhatsApp Web</span>}
-    </Button>
+    <InfoPopover content="Paciente sem telefone cadastrado">
+      <Button type="button" variant="outline" size={btnSize} disabled>
+        <ExternalLink className={cn(iconClass, 'text-mid')} />
+        {size === 'default' && <span>Abrir no WhatsApp Web</span>}
+      </Button>
+    </InfoPopover>
   )
 
   return (

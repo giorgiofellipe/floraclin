@@ -11,6 +11,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { InfoPopover } from '@/components/ui/info-popover'
 import { Label } from '@/components/ui/label'
 import { DatePicker } from '@/components/ui/date-picker'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -148,17 +149,18 @@ export function BulkActionBar({
             <XCircleIcon data-icon="inline-start" />
             Cancelar ({selectedEntryIds.length})
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors"
-            onClick={onRenegotiate}
-            disabled={!canRenegotiate}
-            title={!canRenegotiate && selectedEntryIds.length > 0 ? 'Selecione cobranças do mesmo paciente' : undefined}
-          >
-            <RefreshCwIcon data-icon="inline-start" />
-            Renegociar ({selectedEntryIds.length})
-          </Button>
+          <InfoPopover content={!canRenegotiate && selectedEntryIds.length > 0 ? 'Selecione cobranças do mesmo paciente' : null}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors"
+              onClick={onRenegotiate}
+              disabled={!canRenegotiate}
+            >
+              <RefreshCwIcon data-icon="inline-start" />
+              Renegociar ({selectedEntryIds.length})
+            </Button>
+          </InfoPopover>
           {canUncancel && (
             <Button
               size="sm"

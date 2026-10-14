@@ -23,6 +23,7 @@ import { useTenant } from '@/hooks/queries/use-tenant'
 import { useProfile } from '@/hooks/queries/use-profile'
 import { renderServiceContract } from '@/lib/contract-interpolation'
 import { cn } from '@/lib/utils'
+import { InfoPopover } from '@/components/ui/info-popover'
 
 interface ConsentTemplate {
   id: string
@@ -226,23 +227,23 @@ function SigningModeToggle({ mode, remoteAvailable, onChange }: SigningModeToggl
   return (
     <div role="group" aria-label="Forma de assinatura" className="grid grid-cols-2 gap-2">
       {options.map(({ value, label, icon: Icon, disabled }) => (
-        <button
-          key={value}
-          type="button"
-          aria-pressed={mode === value}
-          disabled={disabled}
-          title={disabled ? 'Paciente sem telefone cadastrado' : undefined}
-          onClick={() => onChange(value)}
-          className={cn(
-            'flex items-center justify-center gap-2 rounded-[3px] border px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50',
-            mode === value
-              ? 'border-forest bg-forest text-cream'
-              : 'border-sage/30 text-charcoal hover:bg-sage/5',
-          )}
-        >
-          <Icon className="size-4" />
-          {label}
-        </button>
+        <InfoPopover key={value} content={disabled ? 'Paciente sem telefone cadastrado' : null}>
+          <button
+            type="button"
+            aria-pressed={mode === value}
+            disabled={disabled}
+            onClick={() => onChange(value)}
+            className={cn(
+              'flex flex-1 items-center justify-center gap-2 rounded-[3px] border px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50',
+              mode === value
+                ? 'border-forest bg-forest text-cream'
+                : 'border-sage/30 text-charcoal hover:bg-sage/5',
+            )}
+          >
+            <Icon className="size-4" />
+            {label}
+          </button>
+        </InfoPopover>
       ))}
     </div>
   )
