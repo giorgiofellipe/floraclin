@@ -27,6 +27,7 @@ vi.mock('@/db/queries/anamnesis', () => ({
 
 vi.mock('@/db/queries/anamnesis-tokens', () => ({
   createAnamnesisToken: vi.fn(),
+  deleteAnamnesisToken: vi.fn(async () => undefined),
   hasAnamnesisTokenCreatedOnBrDay: vi.fn(),
 }))
 
@@ -51,7 +52,7 @@ vi.mock('@/lib/whatsapp', () => ({
 }))
 
 import { getAnamnesis } from '@/db/queries/anamnesis'
-import { createAnamnesisToken, hasAnamnesisTokenCreatedOnBrDay } from '@/db/queries/anamnesis-tokens'
+import { createAnamnesisToken, deleteAnamnesisToken, hasAnamnesisTokenCreatedOnBrDay } from '@/db/queries/anamnesis-tokens'
 import { getPatient } from '@/db/queries/patients'
 import { getTenant } from '@/db/queries/tenants'
 import { createMessage, listAutomations, upsertConversation } from '@/db/queries/whatsapp'
@@ -113,5 +114,20 @@ describe('maybeAutoSendAnamnesisLink', () => {
 
     expect(result).toEqual({ status: 'sent', metaMessageId: 'wamid.1' })
     expect(createAnamnesisToken).toHaveBeenCalledWith('tenant-1', 'patient-1', 'owner-1', linkExpiresAt)
+  })
+
+  // Regression: an unsent link left its token behind, so the day read as already sent.
+  it('deletes the token when the send fails', async () => {
+    const sendError = new Error('Meta API error: paused')
+    vi.mocked(getPatient).mockResolvedValue({ fullName: 'Maria Silva' } as never)
+    vi.mocked(getTenant).mockResolvedValue({ name: 'Flora' } as never)
+    vi.mocked(createAnamnesisToken).mockResolvedValue({ id: 'token-1', token: 'tok-1' } as never)
+    vi.mocked(sendTemplateMessage).mockRejectedValue(sendError)
+
+    await expect(
+      maybeAutoSendAnamnesisLink({ tenantId: 'tenant-1', patientId: 'patient-1', phone: '5511999990000' }),
+    ).rejects.toBe(sendError)
+
+    expect(deleteAnamnesisToken).toHaveBeenCalledWith('tenant-1', 'token-1')
   })
 })

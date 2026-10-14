@@ -199,9 +199,9 @@ function PlanCard({
           </li>
           <li className="flex items-center gap-2">
             <MessageCircleIcon className="h-3.5 w-3.5 text-mid" />
-            {(limits.whatsapp_conversations ?? 0) === -1
-              ? 'Conversas ilimitadas'
-              : `${limits.whatsapp_conversations ?? 0} créditos de WhatsApp/mês`}
+            {(limits.whatsapp_credits ?? 0) === -1
+              ? 'Créditos de WhatsApp ilimitados'
+              : `${limits.whatsapp_credits ?? 0} créditos de WhatsApp/mês`}
           </li>
         </ul>
 

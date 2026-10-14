@@ -22,6 +22,12 @@ export async function createAnamnesisToken(
   return token
 }
 
+export async function deleteAnamnesisToken(tenantId: string, tokenId: string) {
+  await db
+    .delete(anamnesisTokens)
+    .where(and(eq(anamnesisTokens.tenantId, tenantId), eq(anamnesisTokens.id, tokenId)))
+}
+
 export async function getValidToken(token: string) {
   const [row] = await db
     .select({

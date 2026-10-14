@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { ForbiddenError } from './errors'
 import { InvalidWhatsAppPhoneError } from './phone'
+import { CreditExhaustedError, WhatsAppTemplateNotFoundError } from './whatsapp-credits'
 import { maskPath } from './observability'
 
 // Next 16.2.3 (the version installed here, see `web/package.json`) no
@@ -77,6 +78,13 @@ export function handleApiError(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   if (error instanceof InvalidWhatsAppPhoneError)
     return NextResponse.json({ error: error.message }, { status: 400 })
+  if (error instanceof CreditExhaustedError)
+    return NextResponse.json(
+      { error: 'Créditos de WhatsApp insuficientes para este envio. Faça upgrade do plano para mais créditos.' },
+      { status: 402 },
+    )
+  if (error instanceof WhatsAppTemplateNotFoundError)
+    return NextResponse.json({ error: 'Template de WhatsApp não encontrado.' }, { status: 400 })
   if (isNextRedirectError(error))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

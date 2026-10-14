@@ -743,6 +743,8 @@ export const whatsappMessages = floraclinSchema.table('whatsapp_messages', {
   templateName: varchar('template_name', { length: 255 }),
   deliveryStatus: varchar('delivery_status', { length: 20 }).notNull().default('sent'),
   errorCode: varchar('error_code', { length: 50 }),
+  pricingCategory: varchar('pricing_category', { length: 30 }),
+  pricingType: varchar('pricing_type', { length: 40 }),
   retryClaimedAt: timestamp('retry_claimed_at', { withTimezone: true }),
   timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1086,6 +1088,20 @@ export const whatsappCredits = floraclinSchema.table('whatsapp_credits', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex('uq_whatsapp_credits_tenant_period').on(table.tenantId, table.periodStart),
+])
+
+// One row per message sent on the shared number, so a send Meta later reports
+// as failed (and does not bill) can be refunded exactly once.
+export const whatsappCreditCharges = floraclinSchema.table('whatsapp_credit_charges', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  creditPeriodId: uuid('credit_period_id').notNull().references(() => whatsappCredits.id),
+  metaMessageId: varchar('meta_message_id', { length: 255 }).notNull(),
+  cost: integer('cost').notNull(),
+  refundedAt: timestamp('refunded_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('uq_whatsapp_credit_charges_meta_message').on(table.metaMessageId),
 ])
 
 // ─── META CONVERSIONS ───────────────────────────────────────────────

@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { tenantUsers } from '@/db/schema'
 import { getAnamnesis } from '@/db/queries/anamnesis'
-import { createAnamnesisToken, hasAnamnesisTokenCreatedOnBrDay } from '@/db/queries/anamnesis-tokens'
+import { createAnamnesisToken, deleteAnamnesisToken, hasAnamnesisTokenCreatedOnBrDay } from '@/db/queries/anamnesis-tokens'
 import { getPatient } from '@/db/queries/patients'
 import { getTenant } from '@/db/queries/tenants'
 import {
@@ -14,6 +14,7 @@ import {
 } from '@/db/queries/whatsapp'
 import { getTemplateForTenant, sendTemplateMessage } from '@/lib/whatsapp'
 import { brToday } from '@/lib/dates'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 const DEFAULT_ANAMNESIS_STALE_DAYS = 60
 
@@ -116,6 +117,7 @@ export async function maybeAutoSendAnamnesisLink({
     parameters: [{ type: 'text' as const, text: token.token }],
   }]
 
+  // The token marks the day as sent, so an unsent link must not leave one behind.
   const result = await sendTemplateMessage(
     tenantId,
     phone,
@@ -123,7 +125,12 @@ export async function maybeAutoSendAnamnesisLink({
     template.language,
     params,
     buttonParams,
-  )
+  ).catch(async (err) => {
+    await deleteAnamnesisToken(tenantId, token.id).catch((deleteErr) =>
+      reportSideEffectFailure(deleteErr, { area: 'anamnesis', step: 'delete_token', extra: { tenantId } }),
+    )
+    throw err
+  })
 
   const conversation = await upsertConversation(
     tenantId,

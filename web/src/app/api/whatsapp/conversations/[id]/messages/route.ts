@@ -18,7 +18,7 @@ import {
   sendTemplateSchema,
   sendMediaSchema,
 } from '@/validations/whatsapp'
-import { sendTextMessage, sendTemplateMessage, sendMediaMessage, resolveTemplateBody, isWhatsAppEnabled } from '@/lib/whatsapp'
+import { sendTextMessage, sendTemplateMessage, sendMediaMessage, resolveTemplateBody, isWhatsAppEnabled, requireCredits, pendingQueueCost } from '@/lib/whatsapp'
 import { requireWrite } from '@/lib/write-access'
 import { getProspect, updateProspect } from '@/db/queries/prospects'
 import { handleApiError } from '@/lib/api-error'
@@ -195,6 +195,8 @@ export async function POST(
             { status: 429 },
           )
         }
+
+        await requireCredits(ctx.tenantId, pendingQueueCost(queueCount))
 
         let resumeMetaMessageId: string | null = null
         if (queueCount === 0) {

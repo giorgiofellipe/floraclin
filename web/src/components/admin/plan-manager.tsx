@@ -38,7 +38,7 @@ type PlanFormData = {
   trialDays: number | null
   stripePriceId: string
   limits: {
-    whatsapp_conversations: number
+    whatsapp_credits: number
     users: number
     patients: number
   }
@@ -55,7 +55,7 @@ const EMPTY_FORM: PlanFormData = {
   priceCents: 0,
   trialDays: null,
   stripePriceId: '',
-  limits: { whatsapp_conversations: 50, users: 2, patients: 100 },
+  limits: { whatsapp_credits: 50, users: 2, patients: 100 },
   features: { own_whatsapp_number: false },
   displayOrder: 0,
   active: true,
@@ -69,7 +69,7 @@ function planToForm(plan: Plan): PlanFormData {
     trialDays: plan.trialDays,
     stripePriceId: plan.stripePriceId ?? '',
     limits: {
-      whatsapp_conversations: (plan.limits as Record<string, number>).whatsapp_conversations ?? 0,
+      whatsapp_credits: (plan.limits as Record<string, number>).whatsapp_credits ?? 0,
       users: (plan.limits as Record<string, number>).users ?? 0,
       patients: (plan.limits as Record<string, number>).patients ?? 0,
     },
@@ -220,7 +220,7 @@ export function PlanManager() {
             <div className="space-y-1.5 text-xs text-mid">
               <div className="flex justify-between">
                 <span>Créditos WhatsApp</span>
-                <span className="font-medium text-charcoal">{formatLimit(plan.limits.whatsapp_conversations ?? 0)}</span>
+                <span className="font-medium text-charcoal">{formatLimit(plan.limits.whatsapp_credits ?? 0)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Usuários</span>
@@ -319,8 +319,8 @@ export function PlanManager() {
                   <Label className="text-xs">Créditos WA</Label>
                   <Input
                     type="number"
-                    value={form.limits.whatsapp_conversations}
-                    onChange={(e) => setForm({ ...form, limits: { ...form.limits, whatsapp_conversations: parseInt(e.target.value) || 0 } })}
+                    value={form.limits.whatsapp_credits}
+                    onChange={(e) => setForm({ ...form, limits: { ...form.limits, whatsapp_credits: parseInt(e.target.value) || 0 } })}
                   />
                   <p className="text-[10px] text-mid">-1 = ilimitado</p>
                 </div>

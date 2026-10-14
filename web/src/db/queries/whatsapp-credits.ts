@@ -1,15 +1,14 @@
 import { db } from '@/db/client'
 import {
   whatsappCredits,
-  whatsappConversations,
-  whatsappMessages,
+  whatsappCreditCharges,
   tenantSubscriptions,
   plans,
 } from '@/db/schema'
-import { eq, and, gt, lt, sql } from 'drizzle-orm'
-import { normalizeBrPhone } from '@/lib/phone'
+import { eq, and, lte, isNull, sql } from 'drizzle-orm'
 import { brToday, parseBrDate } from '@/lib/dates'
 import { addMonths } from 'date-fns'
+import { UNLIMITED_CREDITS } from '@/lib/whatsapp-credits'
 
 // ─── TYPES ────────────────────────────────────────────────────────
 
@@ -21,11 +20,9 @@ type CreditPeriod = {
   periodEnd: Date
 }
 
-type ConsumeResult = {
-  allowed: boolean
-  creditsUsed: number
-  creditsTotal: number
-}
+type ConsumeResult =
+  | { allowed: true; periodId: string; creditsUsed: number; creditsTotal: number }
+  | { allowed: false; creditsUsed: number; creditsTotal: number }
 
 type CreditUsage = {
   used: number
@@ -63,7 +60,7 @@ export async function getOrCreateCurrentPeriod(tenantId: string): Promise<Credit
     .limit(1)
 
   const limits = (sub?.limits ?? {}) as Record<string, number>
-  const creditsTotal = limits.whatsapp_conversations ?? 0
+  const creditsTotal = limits.whatsapp_credits ?? 0
 
   if (existing) {
     if (existing.creditsTotal !== creditsTotal) {
@@ -124,82 +121,89 @@ export async function getOrCreateCurrentPeriod(tenantId: string): Promise<Credit
   }
 }
 
-// ─── OPEN CONVERSATION CHECK ─────────────────────────────────────
-
-export async function findOpenConversation(tenantId: string, phone: string): Promise<boolean> {
-  const normalized = normalizeBrPhone(phone)
-  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
-
-  const [row] = await db
-    .select({ id: whatsappMessages.id })
-    .from(whatsappMessages)
-    .innerJoin(
-      whatsappConversations,
-      eq(whatsappMessages.conversationId, whatsappConversations.id)
-    )
-    .where(
-      and(
-        eq(whatsappConversations.tenantId, tenantId),
-        eq(whatsappConversations.phoneNumber, normalized),
-        eq(whatsappMessages.direction, 'outbound'),
-        gt(whatsappMessages.createdAt, twentyFourHoursAgo)
-      )
-    )
-    .limit(1)
-
-  return !!row
-}
-
 // ─── CREDIT CONSUMPTION ──────────────────────────────────────────
 
-export async function consumeCredit(tenantId: string, recipientPhone: string): Promise<ConsumeResult> {
-  const hasOpen = await findOpenConversation(tenantId, recipientPhone)
-
+export async function consumeCredits(tenantId: string, cost: number): Promise<ConsumeResult> {
   const credits = await getOrCreateCurrentPeriod(tenantId)
-
-  if (hasOpen) {
-    return {
-      allowed: true,
-      creditsUsed: credits.creditsUsed,
-      creditsTotal: credits.creditsTotal,
-    }
+  const unlimited = credits.creditsTotal === UNLIMITED_CREDITS
+  const denied = {
+    allowed: false as const,
+    creditsUsed: credits.creditsUsed,
+    creditsTotal: credits.creditsTotal,
   }
 
-  if (credits.creditsUsed >= credits.creditsTotal) {
-    return {
-      allowed: false,
-      creditsUsed: credits.creditsUsed,
-      creditsTotal: credits.creditsTotal,
-    }
-  }
+  if (!unlimited && credits.creditsUsed + cost > credits.creditsTotal) return denied
 
   const [updated] = await db
     .update(whatsappCredits)
     .set({
-      creditsUsed: sql`${whatsappCredits.creditsUsed} + 1`,
+      creditsUsed: sql`${whatsappCredits.creditsUsed} + ${cost}`,
       updatedAt: new Date(),
     })
     .where(
       and(
         eq(whatsappCredits.id, credits.id),
-        lt(whatsappCredits.creditsUsed, whatsappCredits.creditsTotal)
+        unlimited
+          ? undefined
+          : lte(sql`${whatsappCredits.creditsUsed} + ${cost}`, whatsappCredits.creditsTotal)
       )
     )
     .returning()
 
-  if (!updated) {
-    return {
-      allowed: false,
-      creditsUsed: credits.creditsTotal,
-      creditsTotal: credits.creditsTotal,
-    }
-  }
+  if (!updated) return denied
 
   return {
     allowed: true,
+    periodId: updated.id,
     creditsUsed: updated.creditsUsed,
     creditsTotal: updated.creditsTotal,
   }
+}
+
+export async function refundCredits(periodId: string, cost: number): Promise<void> {
+  await db
+    .update(whatsappCredits)
+    .set({
+      creditsUsed: sql`greatest(${whatsappCredits.creditsUsed} - ${cost}, 0)`,
+      updatedAt: new Date(),
+    })
+    .where(eq(whatsappCredits.id, periodId))
+}
+
+export async function recordCharge(
+  tenantId: string,
+  creditPeriodId: string,
+  metaMessageId: string,
+  cost: number,
+): Promise<void> {
+  await db
+    .insert(whatsappCreditCharges)
+    .values({ tenantId, creditPeriodId, metaMessageId, cost })
+    .onConflictDoNothing()
+}
+
+export async function refundFailedCharge(metaMessageId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [charge] = await tx
+      .update(whatsappCreditCharges)
+      .set({ refundedAt: new Date() })
+      .where(
+        and(
+          eq(whatsappCreditCharges.metaMessageId, metaMessageId),
+          isNull(whatsappCreditCharges.refundedAt),
+        )
+      )
+      .returning()
+    if (!charge) return
+
+    await tx
+      .update(whatsappCredits)
+      .set({
+        creditsUsed: sql`greatest(${whatsappCredits.creditsUsed} - ${charge.cost}, 0)`,
+        updatedAt: new Date(),
+      })
+      .where(eq(whatsappCredits.id, charge.creditPeriodId))
+  })
 }
 
 // ─── USAGE QUERY ─────────────────────────────────────────────────

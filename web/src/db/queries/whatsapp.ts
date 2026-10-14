@@ -405,13 +405,15 @@ export async function updateMessageStatus(
   tenantId: string,
   metaMessageId: string,
   status: string,
-  errorCode?: string | null
+  errorCode?: string | null,
+  pricing?: { category: string | null; type: string | null },
 ): Promise<WhatsappMessage | null> {
   const [updated] = await db
     .update(whatsappMessages)
     .set({
       deliveryStatus: status,
       ...(errorCode !== undefined ? { errorCode } : {}),
+      ...(pricing ? { pricingCategory: pricing.category, pricingType: pricing.type } : {}),
     })
     .where(
       and(
@@ -596,7 +598,11 @@ export async function listTemplates(
   const templates = await loadTemplates(tenantId)
   const prefix = await resolveTenantTemplatePrefix(tenantId)
   if (!prefix) return templates
-  return templates.filter((t) => t.systemTemplate || belongsToTemplatePrefix(t.name, prefix))
+  return templates.filter((t) => isTenantTemplate(t, prefix))
+}
+
+function isTenantTemplate(template: WhatsappTemplate, prefix: string | null): boolean {
+  return template.systemTemplate || !prefix || belongsToTemplatePrefix(template.name, prefix)
 }
 
 export interface SystemTemplate {
@@ -650,6 +656,31 @@ export async function getTemplateByName(
 ): Promise<WhatsappTemplate | null> {
   const templates = await loadTemplates(tenantId)
   return templates.find((t) => t.name === name && t.language === language) ?? null
+}
+
+// System templates are stored under the tenant that seeded them but sent by
+// every clinic on the shared number, so they are matched across tenants. Own
+// rows must carry the clinic's prefix: older unfiltered syncs left other
+// clinics' templates under this tenant's id.
+export async function getSendableTemplate(
+  tenantId: string,
+  name: string,
+  language: string,
+): Promise<WhatsappTemplate | null> {
+  const candidates = await db
+    .select()
+    .from(whatsappTemplates)
+    .where(
+      and(
+        or(eq(whatsappTemplates.tenantId, tenantId), eq(whatsappTemplates.systemTemplate, true)),
+        eq(whatsappTemplates.name, name),
+        eq(whatsappTemplates.language, language),
+        eq(whatsappTemplates.status, 'APPROVED'),
+      ),
+    )
+    .orderBy(desc(whatsappTemplates.systemTemplate))
+  const prefix = await resolveTenantTemplatePrefix(tenantId)
+  return candidates.find((t) => isTenantTemplate(t, prefix)) ?? null
 }
 
 export async function getTemplateByPurpose(
