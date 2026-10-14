@@ -17,7 +17,14 @@ import { notifyDiscord } from '@/lib/discord'
 import { issueConfirmationToken } from '@/lib/confirm-email'
 import { getAppUrl } from '@/lib/app-url'
 import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
-import { generateMetaEventId, parseSignupAttribution, type SignupAttribution } from '@/lib/marketing-attribution'
+import {
+  ATTRIBUTION_COOKIE_NAME,
+  buildFbc,
+  generateMetaEventId,
+  parseSignupAttribution,
+  parseStoredAttribution,
+  type SignupAttribution,
+} from '@/lib/marketing-attribution'
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { sendSignupCompleteRegistrationEvent, type SendSignupCompleteRegistrationInput } from '@/lib/meta/events'
@@ -36,6 +43,7 @@ export async function signUp(
   formData: FormData,
 ): Promise<SignUpState> {
   const requestHeaders = await headers()
+  const cookieStore = await cookies()
   const raw = {
     fullName: formData.get('fullName') as string,
     email: formData.get('email') as string,
@@ -54,10 +62,10 @@ export async function signUp(
   const metaEventId = marketingConsent
     ? String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
     : null
-  const signupAttribution = marketingConsent ? parseSignupAttribution(formData.get('marketingAttribution')) : null
-  const tenantAttribution = marketingConsent && metaEventId
-    ? { ...(signupAttribution ?? {}), metaEventId }
-    : null
+  const signupAttribution =
+    parseSignupAttribution(formData.get('marketingAttribution')) ??
+    parseStoredAttribution(cookieStore.get(ATTRIBUTION_COOKIE_NAME)?.value)
+  const tenantAttribution = attributionForTenant(signupAttribution, marketingConsent, metaEventId)
   const appUrl = getAppUrl()
 
   const [existing] = await db
@@ -118,7 +126,14 @@ export async function signUp(
         userAgent: requestHeaders.get('user-agent'),
       })
     }
-    await notifyDiscord({ kind: 'clinic.created', tenantName: clinicName, city: null, state: null, tenantId })
+    await notifyDiscord({
+      kind: 'clinic.created',
+      tenantName: clinicName,
+      city: null,
+      state: null,
+      tenantId,
+      attribution: tenantAttribution,
+    })
 
     const [freePlan] = await db.select().from(plans).where(eq(plans.slug, 'free')).limit(1)
     if (freePlan) {
@@ -159,7 +174,6 @@ export async function signUp(
   // The first sign-in happens after confirming, and `authorize` refuses until
   // then. There is no session for the page to read the address from, so it
   // rides in an httpOnly cookie instead of the URL that Meta sees.
-  const cookieStore = await cookies()
   cookieStore.set(
     CONFIRM_EMAIL_STATE_COOKIE,
     serializeConfirmEmailPageState({ email }),
@@ -188,6 +202,7 @@ export async function createClinicForOAuthUser(
   formData: FormData,
 ): Promise<ClinicDetailsState> {
   const requestHeaders = await headers()
+  const cookieStore = await cookies()
   const { auth } = await import('@/lib/auth-config')
   const session = await auth()
   if (!session?.user?.id) {
@@ -223,10 +238,10 @@ export async function createClinicForOAuthUser(
   const metaEventId = marketingConsent
     ? String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
     : null
-  const signupAttribution = marketingConsent ? parseSignupAttribution(formData.get('marketingAttribution')) : null
-  const tenantAttribution = marketingConsent && metaEventId
-    ? { ...(signupAttribution ?? {}), metaEventId }
-    : null
+  const signupAttribution =
+    parseSignupAttribution(formData.get('marketingAttribution')) ??
+    parseStoredAttribution(cookieStore.get(ATTRIBUTION_COOKIE_NAME)?.value)
+  const tenantAttribution = attributionForTenant(signupAttribution, marketingConsent, metaEventId)
 
   const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone })
   if (tenantAttribution) {
@@ -244,7 +259,14 @@ export async function createClinicForOAuthUser(
     })
   }
 
-  await notifyDiscord({ kind: 'clinic.created', tenantName: clinicName, city: null, state: null, tenantId: tenant.id })
+  await notifyDiscord({
+    kind: 'clinic.created',
+    tenantName: clinicName,
+    city: null,
+    state: null,
+    tenantId: tenant.id,
+    attribution: tenantAttribution,
+  })
 
   const [freePlan] = await db.select().from(plans).where(eq(plans.slug, 'free')).limit(1)
   if (freePlan) {
@@ -283,7 +305,7 @@ export async function createClinicForOAuthUser(
 
 async function persistSignupAttribution(
   tenantId: string,
-  signupAttribution: Partial<SignupAttribution> & { metaEventId: string },
+  signupAttribution: Partial<SignupAttribution>,
 ) {
   try {
     await db
@@ -299,6 +321,21 @@ async function persistSignupAttribution(
   }
 }
 
+function attributionForTenant(
+  signupAttribution: SignupAttribution | null,
+  marketingConsent: boolean,
+  metaEventId: string | null,
+): Partial<SignupAttribution> | null {
+  if (!signupAttribution) return null
+  if (marketingConsent && metaEventId) return { ...signupAttribution, metaEventId }
+
+  const internalAttribution: Partial<SignupAttribution> = { ...signupAttribution }
+  delete internalAttribution.fbc
+  delete internalAttribution.fbp
+  delete internalAttribution.metaEventId
+  return internalAttribution
+}
+
 function clientIpFromHeaders(requestHeaders: Pick<Headers, 'get'>): string | null {
   const forwardedFor = requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim()
   if (forwardedFor) return forwardedFor
@@ -308,8 +345,9 @@ function clientIpFromHeaders(requestHeaders: Pick<Headers, 'get'>): string | nul
 
 async function metaBrowserIds(attribution: SignupAttribution | null): Promise<{ fbc?: string; fbp?: string }> {
   const cookieStore = await cookies()
+  const builtFbc = attribution?.fbclid ? buildFbc(attribution.fbclid, new Date(attribution.capturedAt).getTime()) : undefined
   return {
-    fbc: attribution?.fbc ?? cookieStore.get('_fbc')?.value,
+    fbc: attribution?.fbc ?? cookieStore.get('_fbc')?.value ?? builtFbc,
     fbp: attribution?.fbp ?? cookieStore.get('_fbp')?.value,
   }
 }

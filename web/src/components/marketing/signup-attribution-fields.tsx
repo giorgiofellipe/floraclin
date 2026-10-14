@@ -13,7 +13,7 @@ export function SignupAttributionFields({ eventPrefix = 'complete_registration' 
   const [, setRefreshKey] = useState(0)
   const consentStatus = useSyncExternalStore(subscribeCookieConsent, cookieConsentStatus, () => 'unset')
   const canUseMarketing = consentStatus === 'granted'
-  const attribution = canUseMarketing ? attributionForSignup(metaEventId) : null
+  const attribution = attributionForSignup(canUseMarketing ? metaEventId : undefined)
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setRefreshKey((key) => key + 1), 300)

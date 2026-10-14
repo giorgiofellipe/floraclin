@@ -1,13 +1,13 @@
-import { cookieConsentStatus, hasMarketingConsent } from '@/lib/cookie-consent'
+import { hasMarketingConsent } from '@/lib/cookie-consent'
 
 export const DEFAULT_META_PIXEL_ID = '1651713926600603'
 
 export const ATTRIBUTION_STORAGE_KEY = 'floraclin_first_touch_attribution'
-export const PENDING_ATTRIBUTION_SESSION_KEY = 'floraclin_pending_first_touch_attribution'
 export const ATTRIBUTION_COOKIE_NAME = 'floraclin_ft'
+export const ATTRIBUTION_CLIENT_COOKIE_NAME = 'floraclin_ft_client'
 export const ATTRIBUTION_TTL_DAYS = 90
 
-const ATTRIBUTION_PARAM_KEYS = [
+export const ATTRIBUTION_PARAM_KEYS = [
   'utm_source',
   'utm_medium',
   'utm_campaign',
@@ -31,6 +31,7 @@ export interface SignupAttribution {
   fbp?: string
   fbc?: string
   landingUrl?: string
+  landingPath?: string
   referrer?: string
   capturedAt: string
   expiresAt: string
@@ -118,7 +119,7 @@ export function readCookie(name: string): string | null {
 export function readStoredAttribution(): SignupAttribution | null {
   if (typeof window === 'undefined') return null
 
-  const fromCookie = parseStoredAttribution(readCookie(ATTRIBUTION_COOKIE_NAME))
+  const fromCookie = parseStoredAttribution(readCookie(ATTRIBUTION_CLIENT_COOKIE_NAME))
   if (fromCookie) return fromCookie
 
   try {
@@ -128,59 +129,33 @@ export function readStoredAttribution(): SignupAttribution | null {
   }
 }
 
-function bufferPendingAttribution(): void {
-  if (readStoredAttribution() || readPendingAttribution()) return
-
-  const attribution = attributionFromCurrentPage()
-  if (!attribution) return
-
-  try {
-    window.sessionStorage.setItem(PENDING_ATTRIBUTION_SESSION_KEY, JSON.stringify(attribution))
-  } catch {
-    // Optional storage can be blocked; pre-consent attribution is best effort.
-  }
-}
-
 export function captureFirstTouchAttribution(): SignupAttribution | null {
   if (typeof window === 'undefined') return null
-  const consent = cookieConsentStatus()
-  if (consent !== 'granted') {
-    if (consent === 'unset') bufferPendingAttribution()
-    return null
-  }
-
-  const existing = readStoredAttribution()
-  if (existing) return existing
-
-  const pending = readPendingAttribution()
-  if (pending) {
-    writeStoredAttribution(pending)
-    clearPendingAttribution()
-    return pending
-  }
 
   const attribution = attributionFromCurrentPage()
   if (!attribution) return null
 
-  writeStoredAttribution(attribution)
-  return attribution
+  const merged = mergeFirstTouchAttribution(readStoredAttribution(), attribution)
+  writeStoredAttribution(merged)
+  return merged
 }
 
 export function discardMarketingAttribution(): void {
-  clearPendingAttribution()
-  clearStoredAttribution()
+  // First-party signup attribution is strictly necessary for signup reporting
+  // and remains available when optional marketing storage is declined.
 }
 
 function attributionFromCurrentPage(): SignupAttribution | null {
-  const params = new URLSearchParams(window.location.search)
-  if (!ATTRIBUTION_PARAM_KEYS.some((key) => params.has(key))) return null
+  return attributionFromUrl(new URL(window.location.href), document.referrer)
+}
 
-  const now = new Date()
-  const expiresAt = new Date(now.getTime() + ATTRIBUTION_TTL_DAYS * 24 * 60 * 60 * 1000)
+export function attributionFromUrl(url: URL, referrer?: string | null, capturedAt = new Date()): SignupAttribution | null {
+  const params = url.searchParams
   const attribution: SignupAttribution = {
-    capturedAt: now.toISOString(),
-    expiresAt: expiresAt.toISOString(),
-    landingUrl: window.location.href,
+    capturedAt: capturedAt.toISOString(),
+    expiresAt: new Date(capturedAt.getTime() + ATTRIBUTION_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString(),
+    landingUrl: url.toString(),
+    landingPath: url.pathname,
   }
 
   for (const key of ATTRIBUTION_PARAM_KEYS) {
@@ -188,20 +163,21 @@ function attributionFromCurrentPage(): SignupAttribution | null {
     if (value) attribution[FIELD_BY_PARAM[key]] = value.slice(0, 500)
   }
 
-  if (document.referrer) attribution.referrer = document.referrer.slice(0, 1000)
-  if (attribution.fbclid) attribution.fbc = buildFbc(attribution.fbclid, now.getTime())
+  const landingPathParam = params.get('landing_path')?.trim()
+  const referrerParam = params.get('referrer')?.trim()
+  if (landingPathParam) attribution.landingPath = landingPathParam.slice(0, 1000)
+  if (referrerParam || referrer) attribution.referrer = (referrerParam || referrer || '').slice(0, 1000)
 
   return attribution
 }
 
-export function attributionForSignup(metaEventId: string): SignupAttribution | null {
-  if (!hasMarketingConsent()) return null
-
-  const stored = readStoredAttribution() ?? readPendingAttribution() ?? attributionFromCurrentPage()
+export function attributionForSignup(metaEventId?: string): SignupAttribution | null {
+  const stored = readStoredAttribution() ?? attributionFromCurrentPage()
   if (!stored) return null
+  if (!hasMarketingConsent() || !metaEventId) return stored
 
   const fbp = readCookie('_fbp')
-  const fbc = readCookie('_fbc') ?? stored.fbc
+  const fbc = readCookie('_fbc') ?? (stored.fbclid ? buildFbc(stored.fbclid, new Date(stored.capturedAt).getTime()) : undefined)
 
   return {
     ...stored,
@@ -216,7 +192,7 @@ export function parseSignupAttribution(value: FormDataEntryValue | null): Signup
   return normalizeAttribution(value)
 }
 
-function parseStoredAttribution(value: string | null): SignupAttribution | null {
+export function parseStoredAttribution(value: string | null | undefined): SignupAttribution | null {
   if (!value) return null
   const parsed = normalizeAttribution(value)
   if (!parsed) return null
@@ -227,17 +203,11 @@ function parseStoredAttribution(value: string | null): SignupAttribution | null 
   return parsed
 }
 
-function readPendingAttribution(): SignupAttribution | null {
-  if (typeof window === 'undefined') return null
-
-  try {
-    return parseStoredAttribution(window.sessionStorage.getItem(PENDING_ATTRIBUTION_SESSION_KEY))
-  } catch {
-    return null
-  }
+function normalizeAttribution(value: string): SignupAttribution | null {
+  return normalizeAttributionJson(value) ?? normalizeAttributionJson(safeDecodeURIComponent(value))
 }
 
-function normalizeAttribution(value: string): SignupAttribution | null {
+function normalizeAttributionJson(value: string): SignupAttribution | null {
   try {
     const raw = JSON.parse(value) as Partial<SignupAttribution>
     if (!raw.capturedAt || !raw.expiresAt) return null
@@ -257,6 +227,7 @@ function normalizeAttribution(value: string): SignupAttribution | null {
     copyString(raw, attribution, 'fbp', 500)
     copyString(raw, attribution, 'fbc', 500)
     copyString(raw, attribution, 'landingUrl', 1000)
+    copyString(raw, attribution, 'landingPath', 1000)
     copyString(raw, attribution, 'referrer', 1000)
     copyString(raw, attribution, 'metaEventId', 120)
 
@@ -264,6 +235,34 @@ function normalizeAttribution(value: string): SignupAttribution | null {
   } catch {
     return null
   }
+}
+
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+export function mergeFirstTouchAttribution(
+  existing: SignupAttribution | null,
+  incoming: SignupAttribution,
+): SignupAttribution {
+  if (!existing) return incoming
+
+  const merged: SignupAttribution = { ...existing }
+  copyMissing(incoming, merged, 'utmSource')
+  copyMissing(incoming, merged, 'utmMedium')
+  copyMissing(incoming, merged, 'utmCampaign')
+  copyMissing(incoming, merged, 'utmContent')
+  copyMissing(incoming, merged, 'utmTerm')
+  copyMissing(incoming, merged, 'fbclid')
+  copyMissing(incoming, merged, 'gclid')
+  copyMissing(incoming, merged, 'landingUrl')
+  copyMissing(incoming, merged, 'landingPath')
+  copyMissing(incoming, merged, 'referrer')
+  return merged
 }
 
 function copyString(
@@ -292,7 +291,7 @@ function writeStoredAttribution(attribution: SignupAttribution): void {
 
   const secure = window.location.protocol === 'https:' ? '; Secure' : ''
   const domain = cookieDomain(window.location.hostname)
-  document.cookie = `${ATTRIBUTION_COOKIE_NAME}=${encodeURIComponent(value)}; Max-Age=${ATTRIBUTION_TTL_DAYS * 24 * 60 * 60}; Path=/; SameSite=Lax${secure}${domain}`
+  document.cookie = `${ATTRIBUTION_CLIENT_COOKIE_NAME}=${encodeURIComponent(value)}; Max-Age=${ATTRIBUTION_TTL_DAYS * 24 * 60 * 60}; Path=/; SameSite=Lax${secure}${domain}`
 }
 
 function clearStoredAttribution(): void {
@@ -303,16 +302,7 @@ function clearStoredAttribution(): void {
     // Best effort cleanup; an expired cookie is enough to stop server capture.
   }
   const domain = cookieDomain(window.location.hostname)
-  document.cookie = `${ATTRIBUTION_COOKIE_NAME}=; Max-Age=0; Path=/; SameSite=Lax${domain}`
-}
-
-function clearPendingAttribution(): void {
-  if (typeof window === 'undefined') return
-  try {
-    window.sessionStorage.removeItem(PENDING_ATTRIBUTION_SESSION_KEY)
-  } catch {
-    // Optional storage can be blocked.
-  }
+  document.cookie = `${ATTRIBUTION_CLIENT_COOKIE_NAME}=; Max-Age=0; Path=/; SameSite=Lax${domain}`
 }
 
 function cookieDomain(hostname: string): string {
@@ -320,4 +310,8 @@ function cookieDomain(hostname: string): string {
     return '; Domain=.floraclin.com.br'
   }
   return ''
+}
+
+function copyMissing(source: SignupAttribution, target: SignupAttribution, key: SignupAttributionStringKey): void {
+  if (!target[key] && source[key]) target[key] = source[key]
 }

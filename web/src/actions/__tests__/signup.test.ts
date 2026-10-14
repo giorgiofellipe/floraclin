@@ -15,6 +15,7 @@ const {
   cookieSetMock,
   cookieGetMock,
   reportSideEffectFailureMock,
+  notifyDiscordMock,
 } = vi.hoisted(() => ({
   tenantInsertSpy: vi.fn(),
   tenantExecuteSpy: vi.fn(),
@@ -25,6 +26,7 @@ const {
   cookieSetMock: vi.fn(),
   cookieGetMock: vi.fn(),
   reportSideEffectFailureMock: vi.fn(),
+  notifyDiscordMock: vi.fn(),
 }))
 
 vi.mock('next-auth', () => {
@@ -108,6 +110,10 @@ vi.mock('@/lib/meta/events', () => ({
 
 vi.mock('@/lib/observability', () => ({
   reportSideEffectFailure: (...args: unknown[]) => reportSideEffectFailureMock(...args),
+}))
+
+vi.mock('@/lib/discord', () => ({
+  notifyDiscord: (...args: unknown[]) => notifyDiscordMock(...args),
 }))
 
 describe('signUp action', () => {
@@ -226,10 +232,13 @@ describe('signUp action', () => {
       JSON.stringify({
         utmSource: 'meta',
         utmCampaign: 'hof-trial',
+        utmContent: 'headline-a',
         fbclid: 'fb-click',
         fbc: 'fb.1.1700000000000.fb-click',
         fbp: 'fb.1.1700000000000.browser',
         landingUrl: 'https://app.floraclin.com.br/signup?utm_source=meta&fbclid=fb-click',
+        landingPath: '/signup',
+        referrer: 'https://floraclin.com.br/',
         capturedAt: '2026-10-06T00:00:00.000Z',
         expiresAt: '2027-01-04T00:00:00.000Z',
       }),
@@ -243,7 +252,10 @@ describe('signUp action', () => {
       signupAttribution: expect.objectContaining({
         utmSource: 'meta',
         utmCampaign: 'hof-trial',
+        utmContent: 'headline-a',
         fbclid: 'fb-click',
+        landingPath: '/signup',
+        referrer: 'https://floraclin.com.br/',
         metaEventId: 'complete_registration:event-1',
       }),
       updatedAt: expect.any(Date),
@@ -258,6 +270,13 @@ describe('signUp action', () => {
       clientIp: '203.0.113.10',
       userAgent: 'Vitest Signup Browser',
     })
+    expect(notifyDiscordMock).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'clinic.created',
+      attribution: expect.objectContaining({
+        utmCampaign: 'hof-trial',
+        utmContent: 'headline-a',
+      }),
+    }))
   })
 
   it('sends the _fbp and _fbc cookies when a consented signup has no campaign attribution', async () => {
@@ -283,6 +302,14 @@ describe('signUp action', () => {
     const formData = validFormData({ email: 'missing-column@test.com' })
     formData.set('marketingConsent', 'granted')
     formData.set('metaEventId', 'complete_registration:event-2')
+    formData.set(
+      'marketingAttribution',
+      JSON.stringify({
+        utmSource: 'meta',
+        capturedAt: '2026-10-06T00:00:00.000Z',
+        expiresAt: '2027-01-04T00:00:00.000Z',
+      }),
+    )
     vi.mocked(db.update).mockReturnValueOnce({
       set: vi.fn(() => {
         throw Object.assign(new Error('column "signup_attribution" does not exist'), {
@@ -314,13 +341,18 @@ describe('signUp action', () => {
     expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
   })
 
-  it('does not persist signup attribution or carry a Meta event id without marketing consent', async () => {
+  it('persists internal signup attribution but carries no Meta event id without marketing consent', async () => {
     const formData = validFormData({ email: 'no-consent@test.com' })
     formData.set('metaEventId', 'complete_registration:event-without-consent')
     formData.set(
       'marketingAttribution',
       JSON.stringify({
         utmSource: 'meta',
+        utmCampaign: 'hof-trial',
+        utmContent: 'headline-b',
+        fbc: 'fb.1.1700000000000.fb-click',
+        fbp: 'fb.1.1700000000000.browser',
+        landingPath: '/signup',
         capturedAt: '2026-10-06T00:00:00.000Z',
         expiresAt: '2027-01-04T00:00:00.000Z',
       }),
@@ -328,11 +360,56 @@ describe('signUp action', () => {
 
     await signUp(null, formData)
 
-    expect(db.update).not.toHaveBeenCalledWith(tenants)
+    expect(db.update).toHaveBeenCalledWith(tenants)
+    expect((db as any).set).toHaveBeenCalledWith({
+      signupAttribution: expect.objectContaining({
+        utmSource: 'meta',
+        utmCampaign: 'hof-trial',
+        utmContent: 'headline-b',
+        landingPath: '/signup',
+      }),
+      updatedAt: expect.any(Date),
+    })
+    const persisted = (db as any).set.mock.calls.at(-1)?.[0]?.signupAttribution
+    expect(persisted).not.toHaveProperty('fbc')
+    expect(persisted).not.toHaveProperty('fbp')
+    expect(persisted).not.toHaveProperty('metaEventId')
+    expect((db as any).set).not.toHaveBeenCalledWith(expect.objectContaining({
+      signupAttribution: expect.objectContaining({
+        metaEventId: 'complete_registration:event-without-consent',
+      }),
+    }))
     expect(sendSignupCompleteRegistrationEventMock).not.toHaveBeenCalled()
     const target = vi.mocked(redirect).mock.calls.at(-1)?.[0] as string
     expect(target).toContain('/confirm-email')
     expect(target).not.toContain('meta_event_id')
+  })
+
+  it('falls back to the first-party attribution cookie when hidden fields are missing', async () => {
+    const cookieAttribution = {
+      utmSource: 'google',
+      gclid: 'g-click',
+      landingUrl: 'https://app.floraclin.com.br/signup?gclid=g-click',
+      landingPath: '/signup',
+      referrer: 'https://floraclin.com.br/precos',
+      capturedAt: '2026-10-06T00:00:00.000Z',
+      expiresAt: '2027-01-04T00:00:00.000Z',
+    }
+    cookieGetMock.mockImplementation((name: string) =>
+      name === 'floraclin_ft' ? { name, value: JSON.stringify(cookieAttribution) } : undefined,
+    )
+
+    await signUp(null, validFormData({ email: 'cookie-attribution@test.com' }))
+
+    expect((db as any).set).toHaveBeenCalledWith({
+      signupAttribution: expect.objectContaining({
+        utmSource: 'google',
+        gclid: 'g-click',
+        landingPath: '/signup',
+        referrer: 'https://floraclin.com.br/precos',
+      }),
+      updatedAt: expect.any(Date),
+    })
   })
 
   it('issues a confirmation token and sends the confirmation email', async () => {

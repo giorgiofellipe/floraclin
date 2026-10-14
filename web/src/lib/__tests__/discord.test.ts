@@ -45,6 +45,21 @@ describe('buildDiscordPayload', () => {
     expect(embed.fields).toContainEqual({ name: 'Localização', value: 'Não informado', inline: true })
   })
 
+  it('formats clinic.created campaign and content attribution when present', () => {
+    const payload = buildDiscordPayload({
+      kind: 'clinic.created',
+      tenantName: 'Clínica Bela Pele',
+      city: null,
+      state: null,
+      tenantId: 'tenant-1',
+      attribution: { utmCampaign: 'hof-trial', utmContent: 'headline-a' },
+    })
+
+    const embed = payload.embeds[0]
+    expect(embed.fields).toContainEqual({ name: 'UTM Campaign', value: 'hof-trial', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'UTM Content', value: 'headline-a', inline: true })
+  })
+
   it('formats clinic.approved with title and clinic field', () => {
     const payload = buildDiscordPayload({
       kind: 'clinic.approved',
