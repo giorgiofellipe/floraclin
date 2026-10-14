@@ -7,6 +7,7 @@ import {
 import { eq, and, lte, sql } from 'drizzle-orm'
 import { brToday, parseBrDate } from '@/lib/dates'
 import { addMonths } from 'date-fns'
+import { UNLIMITED_CREDITS } from '@/lib/whatsapp-credits'
 
 // ─── TYPES ────────────────────────────────────────────────────────
 
@@ -18,11 +19,9 @@ type CreditPeriod = {
   periodEnd: Date
 }
 
-type ConsumeResult = {
-  allowed: boolean
-  creditsUsed: number
-  creditsTotal: number
-}
+type ConsumeResult =
+  | { allowed: true; periodId: string; creditsUsed: number; creditsTotal: number }
+  | { allowed: false; creditsUsed: number; creditsTotal: number }
 
 type CreditUsage = {
   used: number
@@ -125,14 +124,14 @@ export async function getOrCreateCurrentPeriod(tenantId: string): Promise<Credit
 
 export async function consumeCredits(tenantId: string, cost: number): Promise<ConsumeResult> {
   const credits = await getOrCreateCurrentPeriod(tenantId)
-
-  if (credits.creditsUsed + cost > credits.creditsTotal) {
-    return {
-      allowed: false,
-      creditsUsed: credits.creditsUsed,
-      creditsTotal: credits.creditsTotal,
-    }
+  const unlimited = credits.creditsTotal === UNLIMITED_CREDITS
+  const denied = {
+    allowed: false as const,
+    creditsUsed: credits.creditsUsed,
+    creditsTotal: credits.creditsTotal,
   }
+
+  if (!unlimited && credits.creditsUsed + cost > credits.creditsTotal) return denied
 
   const [updated] = await db
     .update(whatsappCredits)
@@ -143,24 +142,31 @@ export async function consumeCredits(tenantId: string, cost: number): Promise<Co
     .where(
       and(
         eq(whatsappCredits.id, credits.id),
-        lte(sql`${whatsappCredits.creditsUsed} + ${cost}`, whatsappCredits.creditsTotal)
+        unlimited
+          ? undefined
+          : lte(sql`${whatsappCredits.creditsUsed} + ${cost}`, whatsappCredits.creditsTotal)
       )
     )
     .returning()
 
-  if (!updated) {
-    return {
-      allowed: false,
-      creditsUsed: credits.creditsTotal,
-      creditsTotal: credits.creditsTotal,
-    }
-  }
+  if (!updated) return denied
 
   return {
     allowed: true,
+    periodId: updated.id,
     creditsUsed: updated.creditsUsed,
     creditsTotal: updated.creditsTotal,
   }
+}
+
+export async function refundCredits(periodId: string, cost: number): Promise<void> {
+  await db
+    .update(whatsappCredits)
+    .set({
+      creditsUsed: sql`greatest(${whatsappCredits.creditsUsed} - ${cost}, 0)`,
+      updatedAt: new Date(),
+    })
+    .where(eq(whatsappCredits.id, periodId))
 }
 
 // ─── USAGE QUERY ─────────────────────────────────────────────────

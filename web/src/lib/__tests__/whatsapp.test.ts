@@ -21,18 +21,20 @@ vi.mock('@/lib/plans', () => ({
 const upsertTemplateMock = vi.fn(async (_tenantId: string, _template: { name: string }) => ({}))
 const markStaleTemplatesMock = vi.fn(async (_tenantId: string, _metaTemplateIds: string[]) => 0)
 
-const getTemplateByNameMock = vi.fn()
+const getSendableTemplateMock = vi.fn()
 
 vi.mock('@/db/queries/whatsapp', () => ({
   upsertTemplate: upsertTemplateMock,
   markStaleTemplates: markStaleTemplatesMock,
-  getTemplateByName: getTemplateByNameMock,
+  getSendableTemplate: getSendableTemplateMock,
 }))
 
-const consumeCreditsMock = vi.fn(async () => ({ allowed: true, creditsUsed: 0, creditsTotal: 300 }))
+const consumeCreditsMock = vi.fn()
+const refundCreditsMock = vi.fn()
 
 vi.mock('@/db/queries/whatsapp-credits', () => ({
   consumeCredits: consumeCreditsMock,
+  refundCredits: refundCreditsMock,
 }))
 
 import { getTenant } from '@/db/queries/tenants'
@@ -40,8 +42,10 @@ import {
   verifyWebhookSignature,
   sendMediaMessage,
   sendTemplateMessage,
+  sendTextMessage,
   syncTemplatesForTenant,
 } from '../whatsapp'
+import { WhatsAppTemplateNotFoundError } from '../whatsapp-credits'
 
 describe('verifyWebhookSignature', () => {
   it('returns true for valid signature', () => {
@@ -128,7 +132,7 @@ describe('sendMediaMessage', () => {
   })
 })
 
-describe('sendTemplateMessage credit cost', () => {
+describe('sendTemplateMessage credits on the shared number', () => {
   const originalFetch = global.fetch
 
   beforeEach(() => {
@@ -142,6 +146,12 @@ describe('sendTemplateMessage credit cost', () => {
     global.fetch = vi.fn(async () =>
       new Response(JSON.stringify({ messages: [{ id: 'wamid.123' }] }), { status: 200 }),
     ) as unknown as typeof fetch
+    consumeCreditsMock.mockResolvedValue({
+      allowed: true,
+      periodId: 'period-1',
+      creditsUsed: 1,
+      creditsTotal: 300,
+    })
   })
 
   afterEach(() => {
@@ -154,12 +164,42 @@ describe('sendTemplateMessage credit cost', () => {
   it.each([
     ['MARKETING', 3],
     ['UTILITY', 1],
-  ])('charges a %s template %i credits on the shared number', async (category, cost) => {
-    getTemplateByNameMock.mockResolvedValue({ name: 'tpl', language: 'pt_BR', category })
+  ])('charges a %s template %i credits', async (category, cost) => {
+    getSendableTemplateMock.mockResolvedValue({ name: 'tpl', language: 'pt_BR', category })
 
     await sendTemplateMessage('tenant-1', '5511999999999', 'tpl', 'pt_BR')
 
     expect(consumeCreditsMock).toHaveBeenCalledWith('tenant-1', cost)
+  })
+
+  it('charges a free-form text 1 credit', async () => {
+    await sendTextMessage('tenant-1', '5511999999999', 'Olá')
+
+    expect(consumeCreditsMock).toHaveBeenCalledWith('tenant-1', 1)
+  })
+
+  it('blocks a template that is neither the tenant\'s nor a system one', async () => {
+    getSendableTemplateMock.mockResolvedValue(null)
+
+    await expect(
+      sendTemplateMessage('tenant-1', '5511999999999', 'other_clinic_promo', 'pt_BR'),
+    ).rejects.toBeInstanceOf(WhatsAppTemplateNotFoundError)
+
+    expect(consumeCreditsMock).not.toHaveBeenCalled()
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('refunds the credits when Meta rejects the send', async () => {
+    getSendableTemplateMock.mockResolvedValue({ name: 'tpl', language: 'pt_BR', category: 'MARKETING' })
+    global.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ error: { message: 'paused' } }), { status: 400 }),
+    ) as unknown as typeof fetch
+
+    await expect(
+      sendTemplateMessage('tenant-1', '5511999999999', 'tpl', 'pt_BR'),
+    ).rejects.toThrow('Meta API error')
+
+    expect(refundCreditsMock).toHaveBeenCalledWith('period-1', 3)
   })
 })
 

@@ -1,7 +1,12 @@
 import crypto from 'crypto'
 import { BusinessError } from '@/lib/errors'
 import { getTenant } from '@/db/queries/tenants'
-import { templateCreditCost } from '@/lib/whatsapp-credit-cost'
+import {
+  DEFAULT_CREDIT_COST,
+  templateCreditCost,
+  CreditExhaustedError,
+  WhatsAppTemplateNotFoundError,
+} from '@/lib/whatsapp-credits'
 
 export { normalizeBrPhone } from '@/lib/phone'
 
@@ -9,18 +14,6 @@ const GRAPH_API_VERSION = 'v21.0'
 const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`
 
 export type WhatsAppMode = 'floraclin' | 'own'
-
-export class CreditExhaustedError extends Error {
-  creditsUsed: number
-  creditsTotal: number
-
-  constructor(creditsUsed: number, creditsTotal: number) {
-    super(`WhatsApp credits exhausted (${creditsUsed}/${creditsTotal})`)
-    this.name = 'CreditExhaustedError'
-    this.creditsUsed = creditsUsed
-    this.creditsTotal = creditsTotal
-  }
-}
 
 interface WhatsAppCredentials {
   phoneNumberId: string
@@ -119,8 +112,38 @@ async function requireSendAllowed(tenantId: string) {
   await requireActiveSubscription(tenantId)
 }
 
-export async function sendTextMessage(tenantId: string, to: string, body: string) {
+// Every message on the shared number is billed to FloraClin by Meta, so each
+// one is charged to the tenant's credits and refunded if Meta rejects it.
+async function sendWithCredits<T>(
+  tenantId: string,
+  resolveCost: () => Promise<number>,
+  send: () => Promise<T>,
+): Promise<T> {
   await requireSendAllowed(tenantId)
+  if ((await getWhatsAppMode(tenantId)) !== 'floraclin') return send()
+
+  const { consumeCredits, refundCredits } = await import('@/db/queries/whatsapp-credits')
+  const cost = await resolveCost()
+  const charge = await consumeCredits(tenantId, cost)
+  if (!charge.allowed) {
+    throw new CreditExhaustedError(charge.creditsUsed, charge.creditsTotal, cost)
+  }
+
+  try {
+    return await send()
+  } catch (err) {
+    await refundCredits(charge.periodId, cost)
+    throw err
+  }
+}
+
+const flatCost = async () => DEFAULT_CREDIT_COST
+
+export async function sendTextMessage(tenantId: string, to: string, body: string) {
+  return sendWithCredits(tenantId, flatCost, () => postTextMessage(tenantId, to, body))
+}
+
+async function postTextMessage(tenantId: string, to: string, body: string) {
   const creds = await getCredentials(tenantId)
   const data = await graphFetch(`/${creds.phoneNumberId}/messages`, creds.accessToken, {
     method: 'POST',
@@ -134,27 +157,40 @@ export async function sendTextMessage(tenantId: string, to: string, body: string
   return { metaMessageId: data.messages?.[0]?.id as string }
 }
 
+type TemplateButtonParam = {
+  index: number
+  subType: string
+  parameters: { type: string; text: string }[]
+}
+
 export async function sendTemplateMessage(
   tenantId: string,
   to: string,
   templateName: string,
   language: string,
   params?: Record<string, string>,
-  buttonParams?: { index: number; subType: string; parameters: { type: string; text: string }[] }[],
+  buttonParams?: TemplateButtonParam[],
 ) {
-  await requireSendAllowed(tenantId)
-  const mode = await getWhatsAppMode(tenantId)
+  return sendWithCredits(
+    tenantId,
+    async () => {
+      const { getSendableTemplate } = await import('@/db/queries/whatsapp')
+      const template = await getSendableTemplate(tenantId, templateName, language)
+      if (!template) throw new WhatsAppTemplateNotFoundError(templateName, language)
+      return templateCreditCost(template.category)
+    },
+    () => postTemplateMessage(tenantId, to, templateName, language, params, buttonParams),
+  )
+}
 
-  if (mode === 'floraclin') {
-    const { consumeCredits } = await import('@/db/queries/whatsapp-credits')
-    const { getTemplateByName } = await import('@/db/queries/whatsapp')
-    const template = await getTemplateByName(tenantId, templateName, language)
-    const result = await consumeCredits(tenantId, templateCreditCost(template?.category))
-    if (!result.allowed) {
-      throw new CreditExhaustedError(result.creditsUsed, result.creditsTotal)
-    }
-  }
-
+async function postTemplateMessage(
+  tenantId: string,
+  to: string,
+  templateName: string,
+  language: string,
+  params?: Record<string, string>,
+  buttonParams?: TemplateButtonParam[],
+) {
   const creds = await getCredentials(tenantId)
   const components: Record<string, unknown>[] = []
   if (params && Object.keys(params).length > 0) {
@@ -197,7 +233,19 @@ export async function sendMediaMessage(
   caption?: string,
   filename?: string,
 ) {
-  await requireSendAllowed(tenantId)
+  return sendWithCredits(tenantId, flatCost, () =>
+    postMediaMessage(tenantId, to, mediaType, mediaUrl, caption, filename),
+  )
+}
+
+async function postMediaMessage(
+  tenantId: string,
+  to: string,
+  mediaType: 'image' | 'document' | 'audio' | 'video',
+  mediaUrl: string,
+  caption?: string,
+  filename?: string,
+) {
   const creds = await getCredentials(tenantId)
   const mediaPayload: Record<string, string> = { link: mediaUrl }
   if (caption) mediaPayload.caption = caption

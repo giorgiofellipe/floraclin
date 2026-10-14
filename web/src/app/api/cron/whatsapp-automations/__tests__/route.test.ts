@@ -95,7 +95,8 @@ import {
   createMessage,
   pushSseEvent,
 } from '@/db/queries/whatsapp'
-import { sendTemplateMessage, resolveTemplateBody, getTemplateForTenant, CreditExhaustedError } from '@/lib/whatsapp'
+import { sendTemplateMessage, resolveTemplateBody, getTemplateForTenant } from '@/lib/whatsapp'
+import { CreditExhaustedError } from '@/lib/whatsapp-credits'
 import { isSubscriptionActive } from '@/lib/plans'
 import { notifyDiscord } from '@/lib/discord'
 import { brToday, parseBrDate, shiftBrYmd } from '@/lib/dates'
@@ -704,7 +705,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         makeAppointment({ id: 'same-day', date: today }),
         makeAppointment({ id: 'next-day', date: shiftBrYmd(today, 1) }),
       ])
-      vi.mocked(sendTemplateMessage).mockRejectedValue(new CreditExhaustedError(100, 100))
+      vi.mocked(sendTemplateMessage).mockRejectedValue(new CreditExhaustedError(100, 100, 1))
 
       const res = await GET(makeRequest(CRON_SECRET))
       const json = await res.json()
@@ -1007,7 +1008,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         makeAppointment({ id: 'appt-1', patientPhone: '11999990001' }),
         makeAppointment({ id: 'appt-2', patientPhone: '11999990002' }),
       ])
-      vi.mocked(sendTemplateMessage).mockRejectedValue(new CreditExhaustedError(100, 100))
+      vi.mocked(sendTemplateMessage).mockRejectedValue(new CreditExhaustedError(100, 100, 1))
 
       const res = await GET(makeRequest(CRON_SECRET))
       const json = await res.json()
@@ -1028,7 +1029,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         makeAppointment({ id: 'appt-1', patientPhone: '11999990001' }),
         makeAppointment({ id: 'appt-2', patientPhone: '11999990002' }),
       ])
-      vi.mocked(sendTemplateMessage).mockRejectedValue(new CreditExhaustedError(50, 50))
+      vi.mocked(sendTemplateMessage).mockRejectedValue(new CreditExhaustedError(50, 50, 1))
 
       await GET(makeRequest(CRON_SECRET))
 
@@ -1044,7 +1045,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
       vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
         makeAppointment({ id: 'appt-1', patientPhone: '11999990001' }),
       ])
-      vi.mocked(sendTemplateMessage).mockRejectedValue(new CreditExhaustedError(20, 20))
+      vi.mocked(sendTemplateMessage).mockRejectedValue(new CreditExhaustedError(20, 20, 1))
 
       await GET(makeRequest(CRON_SECRET))
 
@@ -1070,7 +1071,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         .mockResolvedValueOnce([makeAppointment({ id: 'a1', patientPhone: '11999990005' })])
         .mockResolvedValueOnce([makeAppointment({ id: 'a2', patientPhone: '11999990006' })])
       vi.mocked(sendTemplateMessage)
-        .mockRejectedValueOnce(new CreditExhaustedError(10, 10))
+        .mockRejectedValueOnce(new CreditExhaustedError(10, 10, 1))
         .mockResolvedValueOnce({ metaMessageId: 'wamid.z' })
       vi.mocked(markConfirmationSent).mockResolvedValue(undefined as never)
       vi.mocked(upsertConversation).mockResolvedValue({ id: 'conv-1' } as never)

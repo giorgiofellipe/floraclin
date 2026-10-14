@@ -1,7 +1,7 @@
 'use client'
 
 import { ArrowUpRight } from 'lucide-react'
-import { MARKETING_CREDIT_COST } from '@/lib/whatsapp-credit-cost'
+import { MARKETING_CREDIT_COST, UNLIMITED_CREDITS } from '@/lib/whatsapp-credits'
 
 interface WhatsAppCreditBarProps {
   used: number
@@ -17,8 +17,13 @@ function daysUntil(dateStr: string): number {
 }
 
 export function WhatsAppCreditBar({ used, total, periodEnd }: WhatsAppCreditBarProps) {
+  const unlimited = total === UNLIMITED_CREDITS
   const percentage = total > 0 ? Math.min((used / total) * 100, 100) : 0
   const exhausted = total > 0 && used >= total
+  const marketingBlocked = total > 0 && !exhausted && total - used < MARKETING_CREDIT_COST
+  const usageLabel = unlimited
+    ? `${used} créditos usados (ilimitado)`
+    : `${used} de ${total} créditos usados`
   const daysLeft = daysUntil(periodEnd)
 
   const barColor =
@@ -34,7 +39,7 @@ export function WhatsAppCreditBar({ used, total, periodEnd }: WhatsAppCreditBarP
     <div className="rounded-[3px] border border-[#E8ECEF] bg-white p-4 space-y-3">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-charcoal">
-          {exhausted ? 'Créditos esgotados' : `${used} de ${total} créditos usados`}
+          {exhausted ? 'Créditos esgotados' : usageLabel}
         </span>
         {periodEnd && (
           <span className="text-xs text-mid">
@@ -53,8 +58,14 @@ export function WhatsAppCreditBar({ used, total, periodEnd }: WhatsAppCreditBarP
       </div>
 
       <p className="text-xs text-mid">
-        Cada mensagem de modelo usa 1 crédito, e as de marketing (aniversário, reativação) usam {MARKETING_CREDIT_COST}. Respostas em conversas abertas não usam créditos.
+        Cada mensagem enviada usa 1 crédito. Templates de marketing, como aniversário e reativação, usam {MARKETING_CREDIT_COST}.
       </p>
+
+      {marketingBlocked && (
+        <p className="text-xs text-amber-700">
+          Créditos insuficientes para templates de marketing.
+        </p>
+      )}
 
       {exhausted && (
         <div className="flex items-center gap-2 rounded-[3px] bg-red-50 border border-red-200 px-3 py-2">

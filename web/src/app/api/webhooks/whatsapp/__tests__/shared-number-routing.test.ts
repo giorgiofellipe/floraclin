@@ -270,7 +270,7 @@ function makeInboundPayload(opts: { contextId?: string }) {
   }
 }
 
-function makeStatusPayload(statusId: string) {
+function makeStatusPayload(statusId: string, pricing?: { category: string; type: string }) {
   return {
     object: 'whatsapp_business_account',
     entry: [
@@ -288,6 +288,7 @@ function makeStatusPayload(statusId: string) {
                   status: 'delivered',
                   timestamp: String(Math.floor(Date.now() / 1000)),
                   recipient_id: PATIENT_PHONE,
+                  ...(pricing ? { pricing } : {}),
                 },
               ],
             },
@@ -600,7 +601,7 @@ describe('resolveSharedNumberTenant — unknown context id falls through to phon
 })
 
 describe('resolveSharedNumberTenant — status updates', () => {
-  it('resolves the owning tenant from the status message id and processes the update', async () => {
+  it('resolves the owning tenant from the status message id and stores the update with its pricing', async () => {
     vi.mocked(db.select).mockReturnValueOnce(
       makeSelectChain([
         { tenantId: TENANT_A, direction: 'outbound', conversationPhone: PATIENT_PHONE },
@@ -611,7 +612,7 @@ describe('resolveSharedNumberTenant — status updates', () => {
     } as never)
 
     const statusMsgId = 'wamid.status-target'
-    const payload = makeStatusPayload(statusMsgId)
+    const payload = makeStatusPayload(statusMsgId, { category: 'utility', type: 'regular' })
     await POST(makeRequest(payload))
 
     await vi.waitFor(() => {
@@ -620,6 +621,7 @@ describe('resolveSharedNumberTenant — status updates', () => {
         statusMsgId,
         'delivered',
         null,
+        { category: 'utility', type: 'regular' },
       )
     })
 
@@ -646,6 +648,7 @@ describe('resolveSharedNumberTenant — status updates', () => {
         statusMsgId,
         'delivered',
         null,
+        undefined,
       )
     })
   })

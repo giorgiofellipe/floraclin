@@ -32,7 +32,6 @@ vi.mock('@sentry/nextjs', () => ({
 vi.mock('@/lib/whatsapp', async () => {
   const actual = await vi.importActual<typeof import('@/lib/whatsapp')>('@/lib/whatsapp')
   return {
-    CreditExhaustedError: actual.CreditExhaustedError,
     sendTemplateMessage: vi.fn(),
     resolveTemplateBody: vi.fn(),
     isWhatsAppEnabled: vi.fn(() => true),
@@ -52,8 +51,8 @@ import {
   upsertConversation,
 } from '@/db/queries/whatsapp'
 import { getAppointmentByConfirmationMessageId, relinkConfirmationMessageId } from '@/db/queries/appointments'
+import { CreditExhaustedError } from '@/lib/whatsapp-credits'
 import {
-  CreditExhaustedError,
   getTemplateForTenant,
   resolveTemplateBody,
   sendTemplateMessage,
@@ -252,7 +251,7 @@ describe('POST /api/whatsapp/conversations/[id]/messages/[messageId]/retry', () 
   // hides the retry button forever.
   it.each([
     ['Meta rejects the send', new Error('Meta API error: (#131026) Message undeliverable'), 502],
-    ['credits are exhausted', new CreditExhaustedError(100, 100), 402],
+    ['credits are exhausted', new CreditExhaustedError(100, 100, 1), 402],
   ])('reverts the claim to failed when %s', async (_label, error, status) => {
     vi.mocked(sendTemplateMessage).mockRejectedValue(error)
 

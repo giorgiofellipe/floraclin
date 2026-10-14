@@ -280,7 +280,7 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
                 </span>
               </div>
               <p className="text-xs text-mid">
-                Use o WhatsApp compartilhado do FloraClin. Incluso no seu plano com créditos mensais de conversas.
+                Use o WhatsApp compartilhado do FloraClin. Incluso no seu plano com créditos mensais de WhatsApp.
               </p>
             </div>
           </button>
@@ -337,7 +337,7 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
         <div className="space-y-4">
           <div className="flex items-center gap-2 mb-1">
             <h3 className="uppercase tracking-wider text-xs font-medium text-mid">
-              Uso de conversas
+              Uso de créditos
             </h3>
             <div className="flex-1 h-px bg-blush/60" />
           </div>

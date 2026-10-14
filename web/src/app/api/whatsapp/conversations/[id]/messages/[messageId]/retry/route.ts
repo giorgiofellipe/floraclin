@@ -16,7 +16,6 @@ import {
   resolveTemplateBody,
   isWhatsAppEnabled,
   getTemplateForTenant,
-  CreditExhaustedError,
 } from '@/lib/whatsapp'
 import { buildConfirmationParams } from '@/lib/whatsapp-confirmation'
 import { normalizeBrPhoneForWhatsApp } from '@/lib/phone'
@@ -188,12 +187,6 @@ export async function POST(
       if (!sent) await releaseRetryClaim(ctx.tenantId, message.id, 'failed')
     }
   } catch (error) {
-    if (error instanceof CreditExhaustedError) {
-      return NextResponse.json(
-        { error: 'Créditos de WhatsApp esgotados. Adquira mais créditos para reenviar.' },
-        { status: 402 },
-      )
-    }
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('Meta API error')) {
       const detail = msg.replace('Meta API error: ', '')

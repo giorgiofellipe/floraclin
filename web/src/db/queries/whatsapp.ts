@@ -405,13 +405,15 @@ export async function updateMessageStatus(
   tenantId: string,
   metaMessageId: string,
   status: string,
-  errorCode?: string | null
+  errorCode?: string | null,
+  pricing?: { category: string | null; type: string | null },
 ): Promise<WhatsappMessage | null> {
   const [updated] = await db
     .update(whatsappMessages)
     .set({
       deliveryStatus: status,
       ...(errorCode !== undefined ? { errorCode } : {}),
+      ...(pricing ? { pricingCategory: pricing.category, pricingType: pricing.type } : {}),
     })
     .where(
       and(
@@ -650,6 +652,27 @@ export async function getTemplateByName(
 ): Promise<WhatsappTemplate | null> {
   const templates = await loadTemplates(tenantId)
   return templates.find((t) => t.name === name && t.language === language) ?? null
+}
+
+// System templates are stored under the tenant that seeded them but sent by
+// every clinic on the shared number, so they are matched across tenants.
+export async function getSendableTemplate(
+  tenantId: string,
+  name: string,
+  language: string,
+): Promise<WhatsappTemplate | null> {
+  const [template] = await db
+    .select()
+    .from(whatsappTemplates)
+    .where(
+      and(
+        or(eq(whatsappTemplates.tenantId, tenantId), eq(whatsappTemplates.systemTemplate, true)),
+        eq(whatsappTemplates.name, name),
+        eq(whatsappTemplates.language, language),
+      ),
+    )
+    .limit(1)
+  return template ?? null
 }
 
 export async function getTemplateByPurpose(
