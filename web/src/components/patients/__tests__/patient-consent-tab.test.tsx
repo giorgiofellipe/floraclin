@@ -187,9 +187,10 @@ describe('PatientConsentTab', () => {
     await openAndPick(TEMPLATE_ID)
 
     expect(screen.getByTestId('local-viewer')).toBeInTheDocument()
-    const remote = screen.getByRole('button', { name: /enviar por whatsapp/i })
-    expect(remote).toBeDisabled()
-    expect(remote).toHaveAttribute('title', 'Paciente sem telefone cadastrado')
+    const remoteTargets = screen.getAllByRole('button', { name: /enviar por whatsapp/i })
+    expect(remoteTargets.at(-1)).toBeDisabled()
+    fireEvent.click(remoteTargets[0])
+    expect(await screen.findByText('Paciente sem telefone cadastrado')).toBeInTheDocument()
   })
 
   it('returns to the default mode after the dialog closes', async () => {

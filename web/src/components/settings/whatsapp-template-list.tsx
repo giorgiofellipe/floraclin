@@ -12,12 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { InfoPopover } from '@/components/ui/info-popover'
 import {
   Dialog,
   DialogContent,
@@ -370,121 +365,104 @@ export function WhatsAppTemplateList({ onProvision, configured = false }: WhatsA
 
       {/* Template cards */}
       {!loading && filtered.length > 0 && (
-        <TooltipProvider>
-          <div className="space-y-3">
-            {filtered.map((t) => {
-              const statusInfo = STATUS_BADGE[t.status] ?? {
-                label: t.status,
-                className: 'bg-[#F4F6F8] text-mid border-[#E8ECEF]',
-              }
-              const displayLabel = getTemplateDisplayLabel(t)
+        <div className="space-y-3">
+          {filtered.map((t) => {
+            const statusInfo = STATUS_BADGE[t.status] ?? {
+              label: t.status,
+              className: 'bg-[#F4F6F8] text-mid border-[#E8ECEF]',
+            }
+            const displayLabel = getTemplateDisplayLabel(t)
 
-              return (
-                <div
-                  key={t.id}
-                  className="rounded-[3px] border border-[#E8ECEF] bg-white p-4"
-                >
-                  <div className="flex items-start gap-3">
-                    {/* Template info */}
-                    <div className="flex-1 min-w-0 space-y-1.5">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="text-sm font-medium text-charcoal truncate">
-                          {displayLabel}
-                        </h4>
+            return (
+              <div
+                key={t.id}
+                className="rounded-[3px] border border-[#E8ECEF] bg-white p-4"
+              >
+                <div className="flex items-start gap-3">
+                  {/* Template info */}
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-sm font-medium text-charcoal truncate">
+                        {displayLabel}
+                      </h4>
 
-                        {/* Category badge */}
-                        <Badge variant="outline" className="text-[10px]">
-                          {CATEGORY_LABELS[t.category] || t.category}
-                        </Badge>
+                      {/* Category badge */}
+                      <Badge variant="outline" className="text-[10px]">
+                        {CATEGORY_LABELS[t.category] || t.category}
+                      </Badge>
 
-                        {/* Status badge */}
-                        {t.status === 'REJECTED' && t.rejectedReason ? (
-                          <Tooltip>
-                            <TooltipTrigger
-                              render={
-                                <span
-                                  className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium cursor-help ${statusInfo.className}`}
-                                />
-                              }
-                            >
-                              {statusInfo.label}
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {t.rejectedReason}
-                            </TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          <span
-                            className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${statusInfo.className}`}
-                          >
-                            {statusInfo.label}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-3 text-xs text-mid">
-                        {displayLabel !== t.name && (
-                          <span className="text-mid/60">{t.name}</span>
-                        )}
-                        <span>
-                          Sincronizado em{' '}
-                          {formatDateTime(t.syncedAt)}
-                        </span>
-                      </div>
-
-                      {(() => {
-                        const comps = t.components as Array<Record<string, unknown>> | undefined
-                        const bodyText = comps?.find((c) => c.type === 'BODY')?.text as string | undefined
-                        return bodyText ? (
-                          <p className="text-xs text-mid/80 line-clamp-2 whitespace-pre-wrap">
-                            {bodyText}
-                          </p>
-                        ) : null
-                      })()}
-                    </div>
-
-                    {/* Action buttons */}
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => handleRefreshSingle(t.id)}
-                        disabled={refreshingId === t.id}
-                        title="Atualizar"
-                      >
-                        {refreshingId === t.id ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                          <RefreshCw className="size-4" />
-                        )}
-                      </Button>
-
-                      {t.status === 'APPROVED' && (
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => handleOpenEdit(t)}
-                          title="Editar"
+                      {/* Status badge */}
+                      <InfoPopover content={t.status === 'REJECTED' ? t.rejectedReason : null} className="cursor-help">
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${statusInfo.className}`}
                         >
-                          <Pencil className="size-4" />
-                        </Button>
-                      )}
+                          {statusInfo.label}
+                        </span>
+                      </InfoPopover>
+                    </div>
 
+                    <div className="flex items-center gap-3 text-xs text-mid">
+                      {displayLabel !== t.name && (
+                        <span className="text-mid/60">{t.name}</span>
+                      )}
+                      <span>
+                        Sincronizado em{' '}
+                        {formatDateTime(t.syncedAt)}
+                      </span>
+                    </div>
+
+                    {(() => {
+                      const comps = t.components as Array<Record<string, unknown>> | undefined
+                      const bodyText = comps?.find((c) => c.type === 'BODY')?.text as string | undefined
+                      return bodyText ? (
+                        <p className="text-xs text-mid/80 line-clamp-2 whitespace-pre-wrap">
+                          {bodyText}
+                        </p>
+                      ) : null
+                    })()}
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => handleRefreshSingle(t.id)}
+                      disabled={refreshingId === t.id}
+                      title="Atualizar"
+                    >
+                      {refreshingId === t.id ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="size-4" />
+                      )}
+                    </Button>
+
+                    {t.status === 'APPROVED' && (
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        onClick={() => handleDelete(t.id, t.name)}
-                        title="Excluir"
+                        onClick={() => handleOpenEdit(t)}
+                        title="Editar"
                       >
-                        <Trash2 className="size-4" />
+                        <Pencil className="size-4" />
                       </Button>
-                    </div>
+                    )}
+
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => handleDelete(t.id, t.name)}
+                      title="Excluir"
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
                   </div>
                 </div>
-              )
-            })}
-          </div>
-        </TooltipProvider>
+              </div>
+            )
+          })}
+        </div>
       )}
 
       {/* Provision confirmation */}

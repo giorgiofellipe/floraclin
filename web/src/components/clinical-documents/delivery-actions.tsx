@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { InfoPopover } from '@/components/ui/info-popover'
 import {
   Dialog,
   DialogClose,
@@ -82,20 +83,21 @@ export function DeliveryActions({
           Baixar PDF
         </Button>
 
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => setConfirmOpen(true)}
-          disabled={sendWhatsapp.isPending || !patientHasPhone}
-          title={!patientHasPhone ? 'Paciente sem telefone cadastrado' : undefined}
-        >
-          {sendWhatsapp.isPending ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <MessageCircle className="size-3.5" />
-          )}
-          Enviar WhatsApp
-        </Button>
+        <InfoPopover content={patientHasPhone ? null : 'Paciente sem telefone cadastrado'}>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => setConfirmOpen(true)}
+            disabled={sendWhatsapp.isPending || !patientHasPhone}
+          >
+            {sendWhatsapp.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <MessageCircle className="size-3.5" />
+            )}
+            Enviar WhatsApp
+          </Button>
+        </InfoPopover>
       </div>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>

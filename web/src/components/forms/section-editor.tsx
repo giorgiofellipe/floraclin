@@ -15,6 +15,10 @@ import {
 import { QUESTION_TYPE_LABELS } from '@/lib/forms/constants'
 import type { FormQuestion, FormSection } from '@/lib/forms/types'
 
+// `enabled:` keeps the button's disabled:opacity-50, which a media variant would otherwise override.
+const ROW_ACTION_CLASS =
+  'pointer-fine:opacity-0 pointer-fine:group-hover:enabled:opacity-100 pointer-fine:group-focus-within:enabled:opacity-100 transition-opacity'
+
 interface SectionEditorProps {
   section: FormSection
   sectionIndex: number
@@ -93,7 +97,7 @@ export function SectionEditor({
           </Button>
         </div>
 
-        <GripVerticalIcon className="h-4 w-4 text-mid/40" />
+        <GripVerticalIcon className="hidden sm:block h-4 w-4 text-mid/40" />
 
         {isEditingTitle ? (
           <input
@@ -102,13 +106,13 @@ export function SectionEditor({
             onChange={(e) => setTitleValue(e.target.value)}
             onBlur={handleTitleSave}
             onKeyDown={handleTitleKeyDown}
-            className="flex-1 text-sm font-medium text-charcoal bg-transparent border-b border-sage/40 outline-none py-0.5"
+            className="flex-1 min-w-0 text-sm font-medium text-charcoal bg-transparent border-b border-sage/40 outline-none py-0.5"
             autoFocus
           />
         ) : (
           <button
             type="button"
-            className="flex-1 text-left text-sm font-medium text-charcoal hover:text-sage transition-colors"
+            className="flex-1 min-w-0 text-left text-sm font-medium text-charcoal hover:text-sage transition-colors"
             onClick={() => setIsEditingTitle(true)}
             title="Clique para editar o título"
           >
@@ -116,7 +120,7 @@ export function SectionEditor({
           </button>
         )}
 
-        <span className="text-xs text-mid">
+        <span className="hidden sm:inline text-xs text-mid">
           {section.questions.length} {section.questions.length === 1 ? 'pergunta' : 'perguntas'}
         </span>
 
@@ -184,8 +188,9 @@ export function SectionEditor({
                     variant="ghost"
                     size="icon-xs"
                     onClick={() => onMoveQuestionUp(question.id)}
+                    aria-label="Mover pergunta para cima"
                     disabled={qIndex === 0}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                    className={ROW_ACTION_CLASS}
                   >
                     <ArrowUpIcon className="h-3 w-3" />
                   </Button>
@@ -193,8 +198,9 @@ export function SectionEditor({
                     variant="ghost"
                     size="icon-xs"
                     onClick={() => onMoveQuestionDown(question.id)}
+                    aria-label="Mover pergunta para baixo"
                     disabled={qIndex === section.questions.length - 1}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                    className={ROW_ACTION_CLASS}
                   >
                     <ArrowDownIcon className="h-3 w-3" />
                   </Button>
@@ -218,12 +224,12 @@ export function SectionEditor({
                         ({question.options.length} opções)
                       </span>
                     )}
-                    {question.warningText && (
-                      <span className="text-xs text-amber-dark" title={question.warningText}>
-                        Alerta
-                      </span>
-                    )}
                   </div>
+                  {question.warningText && (
+                    <p className="text-xs text-amber-dark mt-0.5 line-clamp-2">
+                      Alerta: {question.warningText}
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-1">
@@ -231,7 +237,8 @@ export function SectionEditor({
                     variant="ghost"
                     size="icon-xs"
                     onClick={() => onEditQuestion(question)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label="Editar pergunta"
+                    className={ROW_ACTION_CLASS}
                   >
                     <PencilIcon className="h-3.5 w-3.5" />
                   </Button>
@@ -261,7 +268,8 @@ export function SectionEditor({
                       variant="ghost"
                       size="icon-xs"
                       onClick={() => setDeleteQuestionConfirm(question.id)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                      aria-label="Excluir pergunta"
+                      className={ROW_ACTION_CLASS}
                     >
                       <Trash2Icon className="h-3.5 w-3.5 text-red-500" />
                     </Button>

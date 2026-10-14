@@ -1,5 +1,6 @@
 import { ExternalLink } from 'lucide-react'
 import { toWaMeUrl } from '@/lib/phone'
+import { InfoPopover } from '@/components/ui/info-popover'
 
 interface ReportWhatsAppActionProps {
   phone: string
@@ -10,9 +11,9 @@ export function ReportWhatsAppAction({ phone, fullName }: ReportWhatsAppActionPr
   const waHref = toWaMeUrl(phone)
   if (!waHref) {
     return (
-      <span className="text-xs text-mid" title="Paciente sem telefone cadastrado">
-        -
-      </span>
+      <InfoPopover content="Paciente sem telefone cadastrado">
+        <span className="text-xs text-mid">-</span>
+      </InfoPopover>
     )
   }
 
