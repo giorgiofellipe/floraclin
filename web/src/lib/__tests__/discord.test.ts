@@ -45,19 +45,32 @@ describe('buildDiscordPayload', () => {
     expect(embed.fields).toContainEqual({ name: 'Localização', value: 'Não informado', inline: true })
   })
 
-  it('formats clinic.created campaign and content attribution when present', () => {
+  it('shows clinic.created UTM campaign and content as inline code, so a crafted value cannot render a link', () => {
     const payload = buildDiscordPayload({
       kind: 'clinic.created',
       tenantName: 'Clínica Bela Pele',
       city: null,
       state: null,
       tenantId: 'tenant-1',
-      attribution: { utmCampaign: 'hof-trial', utmContent: 'headline-a' },
+      attribution: { utmCampaign: '[promo](https://evil.example)', utmContent: 'headline`a' },
     })
 
     const embed = payload.embeds[0]
-    expect(embed.fields).toContainEqual({ name: 'UTM Campaign', value: 'hof-trial', inline: true })
-    expect(embed.fields).toContainEqual({ name: 'UTM Content', value: 'headline-a', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'UTM Campaign', value: '`[promo](https://evil.example)`', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'UTM Content', value: '`headlinea`', inline: true })
+  })
+
+  it('omits UTM fields for an organic clinic.created', () => {
+    const payload = buildDiscordPayload({
+      kind: 'clinic.created',
+      tenantName: 'Clínica Bela Pele',
+      city: null,
+      state: null,
+      tenantId: 'tenant-1',
+      attribution: {},
+    })
+
+    expect(payload.embeds[0].fields.map((field) => field.name)).toEqual(['Clínica', 'Localização', 'Admin'])
   })
 
   it('formats clinic.approved with title and clinic field', () => {

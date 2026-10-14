@@ -17,14 +17,8 @@ import { notifyDiscord } from '@/lib/discord'
 import { issueConfirmationToken } from '@/lib/confirm-email'
 import { getAppUrl } from '@/lib/app-url'
 import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
-import {
-  ATTRIBUTION_COOKIE_NAME,
-  buildFbc,
-  generateMetaEventId,
-  parseSignupAttribution,
-  parseStoredAttribution,
-  type SignupAttribution,
-} from '@/lib/marketing-attribution'
+import { buildFbc, generateMetaEventId } from '@/lib/marketing-attribution'
+import { FIRST_TOUCH_COOKIE, parseFirstTouch, withoutClickIds, type FirstTouch } from '@/lib/first-touch'
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { sendSignupCompleteRegistrationEvent, type SendSignupCompleteRegistrationInput } from '@/lib/meta/events'
@@ -62,10 +56,8 @@ export async function signUp(
   const metaEventId = marketingConsent
     ? String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
     : null
-  const signupAttribution =
-    parseSignupAttribution(formData.get('marketingAttribution')) ??
-    parseStoredAttribution(cookieStore.get(ATTRIBUTION_COOKIE_NAME)?.value)
-  const tenantAttribution = attributionForTenant(signupAttribution, marketingConsent, metaEventId)
+  const firstTouch = parseFirstTouch(cookieStore.get(FIRST_TOUCH_COOKIE)?.value)
+  const tenantAttribution = attributionForTenant(firstTouch, metaEventId)
   const appUrl = getAppUrl()
 
   const [existing] = await db
@@ -121,7 +113,7 @@ export async function signUp(
         email,
         phone,
         eventSourceUrl: `${appUrl}/signup`,
-        ...(await metaBrowserIds(signupAttribution)),
+        ...(await metaBrowserIds(firstTouch)),
         clientIp: clientIpFromHeaders(requestHeaders),
         userAgent: requestHeaders.get('user-agent'),
       })
@@ -238,10 +230,8 @@ export async function createClinicForOAuthUser(
   const metaEventId = marketingConsent
     ? String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
     : null
-  const signupAttribution =
-    parseSignupAttribution(formData.get('marketingAttribution')) ??
-    parseStoredAttribution(cookieStore.get(ATTRIBUTION_COOKIE_NAME)?.value)
-  const tenantAttribution = attributionForTenant(signupAttribution, marketingConsent, metaEventId)
+  const firstTouch = parseFirstTouch(cookieStore.get(FIRST_TOUCH_COOKIE)?.value)
+  const tenantAttribution = attributionForTenant(firstTouch, metaEventId)
 
   const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone })
   if (tenantAttribution) {
@@ -253,7 +243,7 @@ export async function createClinicForOAuthUser(
       email: session.user.email,
       phone,
       eventSourceUrl: `${getAppUrl()}/signup/clinic-details`,
-      ...(await metaBrowserIds(signupAttribution)),
+      ...(await metaBrowserIds(firstTouch)),
       clientIp: clientIpFromHeaders(requestHeaders),
       userAgent: requestHeaders.get('user-agent'),
     })
@@ -303,9 +293,11 @@ export async function createClinicForOAuthUser(
   return { success: true, created: true, ...(metaEventId ? { metaEventId } : {}) }
 }
 
+type TenantAttribution = Partial<FirstTouch> & { metaEventId?: string }
+
 async function persistSignupAttribution(
   tenantId: string,
-  signupAttribution: Partial<SignupAttribution>,
+  signupAttribution: TenantAttribution,
 ) {
   try {
     await db
@@ -321,19 +313,10 @@ async function persistSignupAttribution(
   }
 }
 
-function attributionForTenant(
-  signupAttribution: SignupAttribution | null,
-  marketingConsent: boolean,
-  metaEventId: string | null,
-): Partial<SignupAttribution> | null {
-  if (!signupAttribution) return null
-  if (marketingConsent && metaEventId) return { ...signupAttribution, metaEventId }
-
-  const internalAttribution: Partial<SignupAttribution> = { ...signupAttribution }
-  delete internalAttribution.fbc
-  delete internalAttribution.fbp
-  delete internalAttribution.metaEventId
-  return internalAttribution
+// metaEventId is only issued with marketing consent, so it doubles as the consent check.
+function attributionForTenant(firstTouch: FirstTouch | null, metaEventId: string | null): TenantAttribution | null {
+  if (metaEventId) return { ...firstTouch, metaEventId }
+  return firstTouch && withoutClickIds(firstTouch)
 }
 
 function clientIpFromHeaders(requestHeaders: Pick<Headers, 'get'>): string | null {
@@ -343,12 +326,12 @@ function clientIpFromHeaders(requestHeaders: Pick<Headers, 'get'>): string | nul
   return requestHeaders.get('x-real-ip')?.trim() || null
 }
 
-async function metaBrowserIds(attribution: SignupAttribution | null): Promise<{ fbc?: string; fbp?: string }> {
+async function metaBrowserIds(firstTouch: FirstTouch | null): Promise<{ fbc?: string; fbp?: string }> {
   const cookieStore = await cookies()
-  const builtFbc = attribution?.fbclid ? buildFbc(attribution.fbclid, new Date(attribution.capturedAt).getTime()) : undefined
+  const builtFbc = firstTouch?.fbclid ? buildFbc(firstTouch.fbclid, Date.parse(firstTouch.capturedAt)) : undefined
   return {
-    fbc: attribution?.fbc ?? cookieStore.get('_fbc')?.value ?? builtFbc,
-    fbp: attribution?.fbp ?? cookieStore.get('_fbp')?.value,
+    fbc: cookieStore.get('_fbc')?.value ?? builtFbc,
+    fbp: cookieStore.get('_fbp')?.value,
   }
 }
 

@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { Suspense } from "react";
-import { AttributionCapture } from "@/components/attribution-capture";
 import { CookieConsentBanner } from "@/components/cookie-consent-banner";
 import { MetaPixel } from "@/components/meta-pixel";
 import { StructuredData } from "@/components/structured-data";
@@ -68,7 +67,6 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <MetaPixel pixelId={pixelId} />
         </Suspense>
-        <AttributionCapture />
         {children}
         <StructuredData />
         <Analytics />

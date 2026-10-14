@@ -1,13 +1,6 @@
 import { auth } from '@/lib/auth-config'
-import { NextResponse, type NextRequest } from 'next/server'
-import {
-  ATTRIBUTION_COOKIE_NAME,
-  ATTRIBUTION_PARAM_KEYS,
-  ATTRIBUTION_TTL_DAYS,
-  attributionFromUrl,
-  mergeFirstTouchAttribution,
-  parseStoredAttribution,
-} from '@/lib/marketing-attribution'
+import { NextResponse } from 'next/server'
+import { captureFirstTouch } from '@/lib/first-touch'
 
 export default auth((req) => {
   const { pathname } = req.nextUrl
@@ -19,7 +12,7 @@ export default auth((req) => {
     process.env.NODE_ENV !== 'production'
   ) {
     const testUserId = req.headers.get('x-test-user-id')
-    if (testUserId) return withSignupAttribution(req, NextResponse.next())
+    if (testUserId) return NextResponse.next()
   }
 
   // Public routes — always allow
@@ -45,7 +38,7 @@ export default auth((req) => {
     pathname.startsWith('/favicon') ||
     pathname.match(/\.(svg|png|jpg|jpeg|gif|webp)$/)
   ) {
-    return withSignupAttribution(req, NextResponse.next())
+    return NextResponse.next()
   }
 
   // Auth pages — redirect authenticated users appropriately
@@ -54,33 +47,36 @@ export default auth((req) => {
       const session = req.auth as any
       const tenantId = session?.tenantId as string | null
 
-      if (!tenantId) return withSignupAttribution(req, NextResponse.redirect(new URL('/signup/clinic-details', req.url)))
-      if (session?.emailVerified === false) return withSignupAttribution(req, NextResponse.redirect(new URL('/confirm-email', req.url)))
-      return withSignupAttribution(req, NextResponse.redirect(new URL('/dashboard', req.url)))
+      if (!tenantId) return NextResponse.redirect(new URL('/signup/clinic-details', req.url))
+      if (session?.emailVerified === false) return NextResponse.redirect(new URL('/confirm-email', req.url))
+      return NextResponse.redirect(new URL('/dashboard', req.url))
     }
-    return withSignupAttribution(req, NextResponse.next())
+    const response = NextResponse.next()
+    if (pathname === '/signup') captureFirstTouch(req, response)
+    return response
   }
 
   // Not authenticated — redirect to login
   if (!isAuthenticated) {
-    return withSignupAttribution(req, NextResponse.redirect(new URL('/login', req.url)))
+    return NextResponse.redirect(new URL('/login', req.url))
   }
 
   // Authenticated from here — read tenant info from session
   const session = req.auth as any
   const tenantId = session?.tenantId as string | null
   const isPlatformAdmin = session?.isPlatformAdmin as boolean
+  const subscriptionStatus = session?.subscriptionStatus as string | null
 
   // Platform admins can always access /admin routes regardless of tenant status
   if (pathname.startsWith('/admin')) {
-    if (isPlatformAdmin) return withSignupAttribution(req, NextResponse.next())
-    return withSignupAttribution(req, NextResponse.redirect(new URL('/dashboard', req.url)))
+    if (isPlatformAdmin) return NextResponse.next()
+    return NextResponse.redirect(new URL('/dashboard', req.url))
   }
 
   // No tenant membership — Google OAuth user who hasn't set up clinic
   if (!tenantId && !isPlatformAdmin) {
-    if (pathname === '/signup/clinic-details') return withSignupAttribution(req, NextResponse.next())
-    return withSignupAttribution(req, NextResponse.redirect(new URL('/signup/clinic-details', req.url)))
+    if (pathname === '/signup/clinic-details') return NextResponse.next()
+    return NextResponse.redirect(new URL('/signup/clinic-details', req.url))
   }
 
   // Email not confirmed yet. Replaces the manual approval gate: the wait is
@@ -90,50 +86,11 @@ export default auth((req) => {
   // predates the claim, and those are cleared by the version check above
   // before they ever reach this line.
   if (session?.emailVerified === false) {
-    return withSignupAttribution(req, NextResponse.redirect(new URL('/confirm-email', req.url)))
+    return NextResponse.redirect(new URL('/confirm-email', req.url))
   }
 
-  return withSignupAttribution(req, NextResponse.next())
+  return NextResponse.next()
 })
-
-function withSignupAttribution(request: NextRequest, response: NextResponse): NextResponse {
-  if (request.method !== 'GET') return response
-  if (request.nextUrl.pathname.startsWith('/api/')) return response
-  if (!request.nextUrl.pathname.startsWith('/signup') && !hasAttributionSignal(request)) return response
-
-  const accept = request.headers.get('accept') ?? ''
-  if (accept && !accept.includes('text/html') && !accept.includes('*/*')) return response
-
-  const incoming = attributionFromUrl(request.nextUrl, request.headers.get('referer'))
-  if (!incoming) return response
-
-  const existing = parseStoredAttribution(request.cookies.get(ATTRIBUTION_COOKIE_NAME)?.value)
-  const attribution = mergeFirstTouchAttribution(existing, incoming)
-  const domain = cookieDomain(request.nextUrl.hostname)
-
-  response.cookies.set(ATTRIBUTION_COOKIE_NAME, JSON.stringify(attribution), {
-    maxAge: ATTRIBUTION_TTL_DAYS * 24 * 60 * 60,
-    path: '/',
-    sameSite: 'lax',
-    secure: request.nextUrl.protocol === 'https:',
-    httpOnly: true,
-    ...(domain ? { domain } : {}),
-  })
-
-  return response
-}
-
-function hasAttributionSignal(request: NextRequest): boolean {
-  return ATTRIBUTION_PARAM_KEYS.some((key) => request.nextUrl.searchParams.get(key)?.trim()) ||
-    Boolean(request.headers.get('referer')?.trim())
-}
-
-function cookieDomain(hostname: string): string | undefined {
-  if (hostname === 'floraclin.com.br' || hostname.endsWith('.floraclin.com.br')) {
-    return '.floraclin.com.br'
-  }
-  return undefined
-}
 
 export const config = {
   matcher: [

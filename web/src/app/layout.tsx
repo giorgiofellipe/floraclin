@@ -4,7 +4,6 @@ import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
 import { Toaster } from '@/components/ui/sonner'
 import { QueryProvider } from '@/components/providers/query-provider'
-import { AttributionCapture } from '@/components/marketing/attribution-capture'
 import { CookieConsentBanner } from '@/components/marketing/cookie-consent-banner'
 import { MetaPixel } from '@/components/marketing/meta-pixel'
 import { metaPixelId } from '@/lib/marketing-attribution'
@@ -45,7 +44,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Suspense fallback={null}>
           <MetaPixel pixelId={pixelId} />
         </Suspense>
-        <AttributionCapture />
         {/* useSession() throws without this ancestor. Two client components
             need it: the billing page calls update() after a Stripe return so
             the JWT picks up the new subscription, and the confirmation screen
