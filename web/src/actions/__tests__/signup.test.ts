@@ -15,6 +15,7 @@ const {
   cookieSetMock,
   cookieGetMock,
   reportSideEffectFailureMock,
+  notifyDiscordMock,
 } = vi.hoisted(() => ({
   tenantInsertSpy: vi.fn(),
   tenantExecuteSpy: vi.fn(),
@@ -25,6 +26,7 @@ const {
   cookieSetMock: vi.fn(),
   cookieGetMock: vi.fn(),
   reportSideEffectFailureMock: vi.fn(),
+  notifyDiscordMock: vi.fn(),
 }))
 
 vi.mock('next-auth', () => {
@@ -108,6 +110,10 @@ vi.mock('@/lib/meta/events', () => ({
 
 vi.mock('@/lib/observability', () => ({
   reportSideEffectFailure: (...args: unknown[]) => reportSideEffectFailureMock(...args),
+}))
+
+vi.mock('@/lib/discord', () => ({
+  notifyDiscord: (...args: unknown[]) => notifyDiscordMock(...args),
 }))
 
 describe('signUp action', () => {
@@ -217,35 +223,43 @@ describe('signUp action', () => {
     expect(tenantInsertSpy.mock.calls.some(([vals]) => 'status' in vals)).toBe(false)
   })
 
-  it('persists signup attribution after creating the tenant', async () => {
+  function withCookies(values: Record<string, string>) {
+    cookieGetMock.mockImplementation((name: string) => (values[name] ? { name, value: values[name] } : undefined))
+  }
+
+  const paidTouch = JSON.stringify({
+    utmSource: 'meta',
+    utmCampaign: 'hof-trial',
+    utmContent: 'headline-a',
+    fbclid: 'fb-click',
+    gclid: 'g-click',
+    landingPath: '/precos',
+    referrer: 'https://l.facebook.com',
+    capturedAt: '2026-10-06T00:00:00.000Z',
+  })
+
+  it('persists the first-touch cookie, click ids and Meta event id with marketing consent', async () => {
+    withCookies({ floraclin_ft: paidTouch, _fbp: 'fb.1.1700000000000.browser' })
     const formData = validFormData({ email: 'attribution@test.com' })
     formData.set('marketingConsent', 'granted')
     formData.set('metaEventId', 'complete_registration:event-1')
-    formData.set(
-      'marketingAttribution',
-      JSON.stringify({
-        utmSource: 'meta',
-        utmCampaign: 'hof-trial',
-        fbclid: 'fb-click',
-        fbc: 'fb.1.1700000000000.fb-click',
-        fbp: 'fb.1.1700000000000.browser',
-        landingUrl: 'https://app.floraclin.com.br/signup?utm_source=meta&fbclid=fb-click',
-        capturedAt: '2026-10-06T00:00:00.000Z',
-        expiresAt: '2027-01-04T00:00:00.000Z',
-      }),
-    )
 
     await signUp(null, formData)
 
     expect(tenantInsertSpy.mock.calls.some(([vals]) => 'signupAttribution' in vals)).toBe(false)
     expect(db.update).toHaveBeenCalledWith(tenants)
     expect((db as any).set).toHaveBeenCalledWith({
-      signupAttribution: expect.objectContaining({
+      signupAttribution: {
         utmSource: 'meta',
         utmCampaign: 'hof-trial',
+        utmContent: 'headline-a',
         fbclid: 'fb-click',
+        gclid: 'g-click',
+        landingPath: '/precos',
+        referrer: 'https://l.facebook.com',
+        capturedAt: '2026-10-06T00:00:00.000Z',
         metaEventId: 'complete_registration:event-1',
-      }),
+      },
       updatedAt: expect.any(Date),
     })
     expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledWith({
@@ -253,11 +267,18 @@ describe('signUp action', () => {
       email: 'attribution@test.com',
       phone: '11999998888',
       eventSourceUrl: 'https://app.floraclin.com.br/signup',
-      fbc: 'fb.1.1700000000000.fb-click',
+      fbc: 'fb.1.1791244800000.fb-click',
       fbp: 'fb.1.1700000000000.browser',
       clientIp: '203.0.113.10',
       userAgent: 'Vitest Signup Browser',
     })
+    expect(notifyDiscordMock).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'clinic.created',
+      attribution: expect.objectContaining({
+        utmCampaign: 'hof-trial',
+        utmContent: 'headline-a',
+      }),
+    }))
   })
 
   it('sends the _fbp and _fbc cookies when a consented signup has no campaign attribution', async () => {
@@ -314,21 +335,25 @@ describe('signUp action', () => {
     expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
   })
 
-  it('does not persist signup attribution or carry a Meta event id without marketing consent', async () => {
+  it('persists the first touch without click ids or Meta event id when marketing consent is missing', async () => {
+    withCookies({ floraclin_ft: paidTouch })
     const formData = validFormData({ email: 'no-consent@test.com' })
     formData.set('metaEventId', 'complete_registration:event-without-consent')
-    formData.set(
-      'marketingAttribution',
-      JSON.stringify({
-        utmSource: 'meta',
-        capturedAt: '2026-10-06T00:00:00.000Z',
-        expiresAt: '2027-01-04T00:00:00.000Z',
-      }),
-    )
 
     await signUp(null, formData)
 
-    expect(db.update).not.toHaveBeenCalledWith(tenants)
+    expect(db.update).toHaveBeenCalledWith(tenants)
+    expect((db as any).set).toHaveBeenCalledWith({
+      signupAttribution: {
+        utmSource: 'meta',
+        utmCampaign: 'hof-trial',
+        utmContent: 'headline-a',
+        landingPath: '/precos',
+        referrer: 'https://l.facebook.com',
+        capturedAt: '2026-10-06T00:00:00.000Z',
+      },
+      updatedAt: expect.any(Date),
+    })
     expect(sendSignupCompleteRegistrationEventMock).not.toHaveBeenCalled()
     const target = vi.mocked(redirect).mock.calls.at(-1)?.[0] as string
     expect(target).toContain('/confirm-email')

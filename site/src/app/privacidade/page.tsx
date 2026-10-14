@@ -17,7 +17,7 @@ export default function PrivacidadePage() {
         <div className="mx-auto max-w-[720px] px-6">
           <h1 className="text-3xl md:text-4xl mb-4">Política de Privacidade</h1>
           <p className="text-charcoal/50 text-sm mb-12">
-            Última atualização: 6 de outubro de 2026
+            Última atualização: 14 de outubro de 2026
           </p>
 
           <div className="text-charcoal/80 leading-relaxed space-y-8 text-[15px]">
@@ -130,7 +130,7 @@ export default function PrivacidadePage() {
                     <strong>Consentimento</strong> (Art. 7º, I): para dados de
                     pacientes inseridos pelo Usuário na Plataforma e para cookies,
                     identificadores e eventos de campanhas não essenciais, incluindo
-                    Meta Pixel e atribuição de campanhas.
+                    Meta Pixel e identificadores de clique em anúncios (fbclid, gclid).
                   </li>
                   <li>
                     <strong>Tutela da saúde</strong> (Art. 7º, VIII): para dados
@@ -138,8 +138,9 @@ export default function PrivacidadePage() {
                   </li>
                   <li>
                     <strong>Interesse legítimo</strong> (Art. 7º, IX): para
-                    melhorias do serviço, segurança, prevenção a fraudes e métricas
-                    agregadas que não dependam de cookies de anúncios e medição.
+                    melhorias do serviço, segurança, prevenção a fraudes, métricas
+                    agregadas que não dependam de cookies de anúncios e medição e
+                    registro da origem do primeiro acesso (item 7.4).
                   </li>
                   <li>
                     <strong>Obrigação legal</strong> (Art. 7º, II): para
@@ -241,12 +242,16 @@ export default function PrivacidadePage() {
                   lei.
                 </p>
                 <p>
-                  7.4. Dados de atribuição de campanhas coletados com consentimento
-                  (UTMs, fbclid, gclid, página de entrada, referência e data de captura)
-                  são armazenados por até 90 dias em cookie/localStorage e podem ser
-                  salvos no cadastro da clínica para mensuração do primeiro contato.
-                  A escolha de consentimento fica armazenada até que você a altere ou
-                  limpe os dados do navegador.
+                  7.4. Para saber de onde vêm os cadastros, registramos em um cookie
+                  próprio, por até 90 dias, o primeiro acesso: parâmetros UTM, página
+                  de entrada (sem parâmetros), domínio de referência e data de captura.
+                  Esses dados servem apenas a relatórios internos, com base no
+                  interesse legítimo, e podem ser salvos no cadastro da clínica. Você
+                  pode se opor a esse registro pelo e-mail contato@floraclin.com.br.
+                  Identificadores de clique em anúncios (fbclid, gclid) só são
+                  registrados após o aceite da categoria de anúncios e medição e são
+                  apagados se você recusar. A escolha de consentimento fica armazenada
+                  até que você a altere ou limpe os dados do navegador.
                 </p>
               </div>
             </section>
@@ -295,13 +300,15 @@ export default function PrivacidadePage() {
                     <strong>Anúncios e medição:</strong> opcionais. Incluem Meta Pixel e
                     tecnologias similares para medir campanhas, criar relatórios de
                     conversão, entender a origem de cadastros e apoiar anúncios da
-                    FloraClin. Nesta categoria também capturamos parâmetros de campanha
-                    como UTM, fbclid e gclid no primeiro contato.
+                    FloraClin. Nesta categoria também registramos identificadores de
+                    clique em anúncios, como fbclid e gclid, no primeiro contato.
                   </li>
                 </ul>
                 <p>
-                  O Meta Pixel não é carregado e a atribuição de campanha não é gravada
-                  antes do seu aceite da categoria de anúncios e medição. Você pode aceitar, recusar
+                  O Meta Pixel não é carregado e identificadores de clique em anúncios
+                  não são gravados antes do seu aceite da categoria de anúncios e
+                  medição. Parâmetros UTM, página de entrada e domínio de referência do
+                  primeiro acesso são registrados conforme o item 7.4. Você pode aceitar, recusar
                   ou alterar sua escolha pelo banner de cookies ou pelo link
                   &quot;Preferências de cookies&quot; no rodapé.
                 </p>

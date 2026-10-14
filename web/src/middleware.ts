@@ -1,5 +1,6 @@
 import { auth } from '@/lib/auth-config'
 import { NextResponse } from 'next/server'
+import { captureFirstTouch } from '@/lib/first-touch'
 
 export default auth((req) => {
   const { pathname } = req.nextUrl
@@ -50,7 +51,9 @@ export default auth((req) => {
       if (session?.emailVerified === false) return NextResponse.redirect(new URL('/confirm-email', req.url))
       return NextResponse.redirect(new URL('/dashboard', req.url))
     }
-    return NextResponse.next()
+    const response = NextResponse.next()
+    if (pathname === '/signup') captureFirstTouch(req, response)
+    return response
   }
 
   // Not authenticated — redirect to login

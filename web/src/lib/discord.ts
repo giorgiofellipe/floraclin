@@ -23,7 +23,14 @@ export type WhatsappDigestFailingTenant = {
 }
 
 export type DiscordEvent =
-  | { kind: 'clinic.created'; tenantName: string; city: string | null; state: string | null; tenantId: string }
+  | {
+      kind: 'clinic.created'
+      tenantName: string
+      city: string | null
+      state: string | null
+      tenantId: string
+      attribution?: { utmCampaign?: string; utmContent?: string } | null
+    }
   | { kind: 'clinic.approved'; tenantName: string; tenantId: string }
   | { kind: 'subscription.created'; tenantName: string; planName: string; priceCents: number; tenantId: string }
   | { kind: 'lifecycle.reply'; tenantName: string; tenantId: string; messageKey: string; body: string }
@@ -70,6 +77,11 @@ function digestReasonLabel(reason: WhatsappDigestFailingTenant['reason']): strin
   }
 }
 
+// Visitor-controlled text: inline code keeps Discord from rendering masked links or mentions.
+function asInlineCode(value: string): string {
+  return `\`${value.replaceAll('`', '')}\``
+}
+
 function adminTenantsUrl(): string {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
   return `${base}/admin/clinicas`
@@ -88,6 +100,10 @@ export function buildDiscordPayload(event: DiscordEvent): DiscordPayload {
   switch (event.kind) {
     case 'clinic.created': {
       const location = [event.city, event.state].filter(Boolean).join('/')
+      const attributionFields = [
+        { name: 'UTM Campaign', value: event.attribution?.utmCampaign },
+        { name: 'UTM Content', value: event.attribution?.utmContent },
+      ].flatMap(({ name, value }) => (value ? [{ name, value: asInlineCode(value), inline: true }] : []))
       return {
         username: 'FloraClin',
         embeds: [
@@ -97,6 +113,7 @@ export function buildDiscordPayload(event: DiscordEvent): DiscordPayload {
             fields: [
               { name: 'Clínica', value: event.tenantName, inline: true },
               { name: 'Localização', value: location || 'Não informado', inline: true },
+              ...attributionFields,
               { name: 'Admin', value: adminLink },
             ],
             timestamp: new Date().toISOString(),

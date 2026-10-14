@@ -153,7 +153,7 @@ export function CookieConsentBanner() {
                 <span>
                   <span className="block text-sm font-medium text-charcoal">Anúncios e medição</span>
                   <span className="mt-1 block text-sm text-mid">
-                    Meta Pixel, medição de campanhas e captura de UTM/fbclid/gclid para atribuição de cadastro.
+                    Meta Pixel, medição de campanhas e identificadores de clique em anúncios (fbclid/gclid) para atribuição de cadastro.
                   </span>
                 </span>
               </label>

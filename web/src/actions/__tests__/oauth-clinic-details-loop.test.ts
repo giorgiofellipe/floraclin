@@ -89,12 +89,6 @@ function form({ marketingConsent = false } = {}) {
   if (marketingConsent) {
     fd.set('marketingConsent', 'granted')
     fd.set('metaEventId', 'complete_registration:event-google')
-    fd.set('marketingAttribution', JSON.stringify({
-      utmSource: 'meta',
-      landingUrl: 'https://app.floraclin.com.br/signup?utm_source=meta',
-      capturedAt: '2026-10-06T00:00:00.000Z',
-      expiresAt: '2027-01-04T00:00:00.000Z',
-    }))
   }
   return fd
 }
