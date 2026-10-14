@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import {
   ChevronDownIcon,
   ChevronUpIcon,
@@ -75,8 +76,8 @@ export function SectionEditor({
   return (
     <div className="bg-white rounded-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.06)] overflow-hidden">
       {/* Section header */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-[#E8ECEF]">
-        <div className="flex items-center gap-1">
+      <div className="flex items-center gap-2 px-3 sm:px-4 py-3 border-b border-[#E8ECEF]">
+        <div className="flex flex-col sm:flex-row items-center sm:gap-1">
           <Button
             variant="ghost"
             size="icon-xs"
@@ -181,9 +182,9 @@ export function SectionEditor({
             section.questions.map((question, qIndex) => (
               <div
                 key={question.id}
-                className="flex items-center gap-2 px-4 py-2.5 hover:bg-cream/40 transition-colors group"
+                className="flex items-center gap-2 px-3 sm:px-4 py-2.5 hover:bg-cream/40 transition-colors group"
               >
-                <div className="flex items-center gap-0.5">
+                <div className="flex flex-col sm:flex-row items-center sm:gap-0.5">
                   <Button
                     variant="ghost"
                     size="icon-xs"
@@ -206,21 +207,23 @@ export function SectionEditor({
                   </Button>
                 </div>
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-charcoal truncate">
-                      {question.label}
-                    </span>
+                <button
+                  type="button"
+                  onClick={() => onEditQuestion(question)}
+                  className="flex-1 min-w-0 text-left"
+                >
+                  <p className="text-sm text-charcoal break-words sm:truncate">
+                    {question.label}
                     {question.required && (
-                      <span className="text-xs text-amber-dark font-medium">*</span>
+                      <span className="ml-1 text-xs text-amber-dark font-medium">*</span>
                     )}
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5">
+                  </p>
+                  <div className="flex flex-wrap items-center gap-x-2 mt-0.5">
                     <span className="text-xs text-mid">
                       {QUESTION_TYPE_LABELS[question.type] || question.type}
                     </span>
                     {question.options && question.options.length > 0 && (
-                      <span className="text-xs text-mid/60">
+                      <span className="text-xs text-mid/60 whitespace-nowrap">
                         ({question.options.length} opções)
                       </span>
                     )}
@@ -230,7 +233,7 @@ export function SectionEditor({
                       Alerta: {question.warningText}
                     </p>
                   )}
-                </div>
+                </button>
 
                 <div className="flex items-center gap-1">
                   <Button
@@ -238,7 +241,7 @@ export function SectionEditor({
                     size="icon-xs"
                     onClick={() => onEditQuestion(question)}
                     aria-label="Editar pergunta"
-                    className={ROW_ACTION_CLASS}
+                    className={cn(ROW_ACTION_CLASS, 'max-sm:hidden')}
                   >
                     <PencilIcon className="h-3.5 w-3.5" />
                   </Button>
@@ -280,7 +283,7 @@ export function SectionEditor({
           )}
 
           {/* Add question button */}
-          <div className="px-4 py-2.5">
+          <div className="px-3 sm:px-4 py-2.5">
             <Button
               variant="ghost"
               size="sm"
