@@ -22,29 +22,43 @@ const upsertTemplateMock = vi.fn(async (_tenantId: string, _template: { name: st
 const markStaleTemplatesMock = vi.fn(async (_tenantId: string, _metaTemplateIds: string[]) => 0)
 
 const getSendableTemplateMock = vi.fn()
+const getConversationByPhoneMock = vi.fn()
+const getQueuedCountMock = vi.fn()
+const createQueuedMessageMock = vi.fn(async () => ({}))
+const createMessageMock = vi.fn(async () => ({}))
 
 vi.mock('@/db/queries/whatsapp', () => ({
   upsertTemplate: upsertTemplateMock,
   markStaleTemplates: markStaleTemplatesMock,
   getSendableTemplate: getSendableTemplateMock,
+  getConversationByPhone: getConversationByPhoneMock,
+  getQueuedCount: getQueuedCountMock,
+  createQueuedMessage: createQueuedMessageMock,
+  createMessage: createMessageMock,
 }))
 
-const consumeCreditsMock = vi.fn()
-const refundCreditsMock = vi.fn(async () => undefined)
-const recordChargeMock = vi.fn(async () => undefined)
+const spendCreditsMock = vi.fn()
+const attachMetaMessageIdMock = vi.fn(async () => undefined)
+const refundSpendMock = vi.fn(async () => true)
 const getOrCreateCurrentPeriodMock = vi.fn()
 
 vi.mock('@/db/queries/whatsapp-credits', () => ({
-  consumeCredits: consumeCreditsMock,
-  refundCredits: refundCreditsMock,
-  recordCharge: recordChargeMock,
+  spendCredits: spendCreditsMock,
+  attachMetaMessageId: attachMetaMessageIdMock,
+  refundSpend: refundSpendMock,
   getOrCreateCurrentPeriod: getOrCreateCurrentPeriodMock,
 }))
+
+const CREDIT = {
+  actor: { type: 'user' as const, userId: 'user-1' },
+  recipient: { patientId: 'patient-1', name: 'Maria Silva' },
+}
 
 import { getTenant } from '@/db/queries/tenants'
 import {
   verifyWebhookSignature,
   sendMediaMessage,
+  sendOrEnqueueDocument,
   sendTemplateMessage,
   sendTextMessage,
   requireCredits,
@@ -95,6 +109,7 @@ describe('sendMediaMessage', () => {
   it('includes filename in document payload when provided', async () => {
     await sendMediaMessage(
       'tenant-1',
+      CREDIT,
       '+5511999999999',
       'document',
       'https://example.com/doc.pdf',
@@ -113,6 +128,7 @@ describe('sendMediaMessage', () => {
   it('omits filename for non-document media types', async () => {
     await sendMediaMessage(
       'tenant-1',
+      CREDIT,
       '+5511999999999',
       'image',
       'https://example.com/img.jpg',
@@ -128,6 +144,7 @@ describe('sendMediaMessage', () => {
   it('omits filename when not provided for a document', async () => {
     await sendMediaMessage(
       'tenant-1',
+      CREDIT,
       '+5511999999999',
       'document',
       'https://example.com/doc.pdf',
@@ -152,9 +169,9 @@ describe('credits on the shared number', () => {
     global.fetch = vi.fn(async () =>
       new Response(JSON.stringify({ messages: [{ id: 'wamid.123' }] }), { status: 200 }),
     ) as unknown as typeof fetch
-    consumeCreditsMock.mockResolvedValue({
+    spendCreditsMock.mockResolvedValue({
       allowed: true,
-      periodId: 'period-1',
+      spendId: 'spend-1',
       creditsUsed: 1,
       creditsTotal: 300,
     })
@@ -170,22 +187,62 @@ describe('credits on the shared number', () => {
   it.each([
     ['MARKETING', 3],
     ['UTILITY', 1],
-  ])('charges a %s template %i credits and records the charge', async (category, cost) => {
-    getSendableTemplateMock.mockResolvedValue({ name: 'tpl', language: 'pt_BR', category })
+  ])('charges a %s template %i credits and records the ledger line', async (category, cost) => {
+    getSendableTemplateMock.mockResolvedValue({
+      name: 'tpl',
+      language: 'pt_BR',
+      category,
+      purposeKey: 'anamnese_link',
+    })
 
-    await sendTemplateMessage('tenant-1', '5511999999999', 'tpl', 'pt_BR')
+    await sendTemplateMessage('tenant-1', CREDIT, '5511999990000', 'tpl', 'pt_BR')
 
-    expect(consumeCreditsMock).toHaveBeenCalledWith('tenant-1', cost)
-    expect(recordChargeMock).toHaveBeenCalledWith('tenant-1', 'period-1', 'wamid.123', cost)
+    expect(spendCreditsMock).toHaveBeenCalledWith('tenant-1', cost, expect.objectContaining({
+      actorType: 'user',
+      actorUserId: 'user-1',
+      patientId: 'patient-1',
+      contactName: 'Maria Silva',
+      contactPhone: '5511999990000',
+      itemKind: 'template',
+      templateName: 'tpl',
+      purposeKey: 'anamnese_link',
+    }))
+    expect(attachMetaMessageIdMock).toHaveBeenCalledWith('spend-1', 'wamid.123')
   })
 
   it.each([
-    ['text', () => sendTextMessage('tenant-1', '5511999999999', 'Olá')],
-    ['media', () => sendMediaMessage('tenant-1', '5511999999999', 'image', 'https://example.com/a.jpg')],
-  ])('charges a free-form %s message 1 credit', async (_kind, send) => {
+    ['text', () => sendTextMessage('tenant-1', CREDIT, '5511999999999', 'Olá')],
+    ['media', () => sendMediaMessage('tenant-1', CREDIT, '5511999999999', 'image', 'https://example.com/a.jpg')],
+  ])('charges a free-form %s message 1 credit', async (kind, send) => {
     await send()
 
-    expect(consumeCreditsMock).toHaveBeenCalledWith('tenant-1', 1)
+    expect(spendCreditsMock).toHaveBeenCalledWith('tenant-1', 1, expect.objectContaining({ itemKind: kind }))
+  })
+
+  it('records a named document send as a document line', async () => {
+    await sendMediaMessage(
+      'tenant-1',
+      { ...CREDIT, documentLabel: 'Atestado' },
+      '5511999990000',
+      'document',
+      'https://x/doc.pdf',
+      'Atestado',
+      'atestado.pdf',
+    )
+
+    expect(spendCreditsMock).toHaveBeenCalledWith('tenant-1', 1, expect.objectContaining({
+      itemKind: 'document',
+      documentLabel: 'Atestado',
+    }))
+  })
+
+  it('still sends when attaching the message id fails', async () => {
+    attachMetaMessageIdMock.mockRejectedValueOnce(new Error('db down'))
+
+    const res = await sendTextMessage('tenant-1', CREDIT, '5511999990000', 'oi')
+
+    expect(res.metaMessageId).toBe('wamid.123')
+    expect(refundSpendMock).not.toHaveBeenCalled()
   })
 
   it('never charges a tenant on its own number', async () => {
@@ -200,10 +257,10 @@ describe('credits on the shared number', () => {
       },
     } as Awaited<ReturnType<typeof getTenant>>)
 
-    await sendTemplateMessage('tenant-1', '5511999999999', 'tpl', 'pt_BR')
-    await sendTextMessage('tenant-1', '5511999999999', 'Olá')
+    await sendTemplateMessage('tenant-1', CREDIT, '5511999999999', 'tpl', 'pt_BR')
+    await sendTextMessage('tenant-1', CREDIT, '5511999999999', 'Olá')
 
-    expect(consumeCreditsMock).not.toHaveBeenCalled()
+    expect(spendCreditsMock).not.toHaveBeenCalled()
     expect(global.fetch).toHaveBeenCalledTimes(2)
   })
 
@@ -211,10 +268,10 @@ describe('credits on the shared number', () => {
     getSendableTemplateMock.mockResolvedValue(null)
 
     await expect(
-      sendTemplateMessage('tenant-1', '5511999999999', 'other_clinic_promo', 'pt_BR'),
+      sendTemplateMessage('tenant-1', CREDIT, '5511999999999', 'other_clinic_promo', 'pt_BR'),
     ).rejects.toBeInstanceOf(WhatsAppTemplateNotFoundError)
 
-    expect(consumeCreditsMock).not.toHaveBeenCalled()
+    expect(spendCreditsMock).not.toHaveBeenCalled()
     expect(global.fetch).not.toHaveBeenCalled()
   })
 
@@ -228,23 +285,46 @@ describe('credits on the shared number', () => {
     ) as unknown as typeof fetch
 
     await expect(
-      sendTemplateMessage('tenant-1', '5511999999999', 'tpl', 'pt_BR'),
+      sendTemplateMessage('tenant-1', CREDIT, '5511999999999', 'tpl', 'pt_BR'),
     ).rejects.toThrow('Meta API error')
 
-    expect(refundCreditsMock).toHaveBeenCalledWith('period-1', 3)
-    expect(recordChargeMock).not.toHaveBeenCalled()
+    expect(refundSpendMock).toHaveBeenCalledWith('spend-1', 'send_failed')
+    expect(attachMetaMessageIdMock).not.toHaveBeenCalled()
   })
 
   it('keeps the Meta error when the refund itself fails', async () => {
     getSendableTemplateMock.mockResolvedValue({ name: 'tpl', language: 'pt_BR', category: 'UTILITY' })
-    refundCreditsMock.mockRejectedValueOnce(new Error('db down'))
+    refundSpendMock.mockRejectedValueOnce(new Error('db down'))
     global.fetch = vi.fn(async () =>
       new Response(JSON.stringify({ error: { message: 'paused' } }), { status: 400 }),
     ) as unknown as typeof fetch
 
     await expect(
-      sendTemplateMessage('tenant-1', '5511999999999', 'tpl', 'pt_BR'),
+      sendTemplateMessage('tenant-1', CREDIT, '5511999999999', 'tpl', 'pt_BR'),
     ).rejects.toThrow('Meta API error')
+  })
+
+  it('carries the credit context into a queued document', async () => {
+    getConversationByPhoneMock.mockResolvedValue({
+      id: 'conv-1',
+      lastInboundAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+    })
+    getQueuedCountMock.mockResolvedValue(1)
+    getOrCreateCurrentPeriodMock.mockResolvedValue({ creditsUsed: 0, creditsTotal: 300 })
+
+    await sendOrEnqueueDocument(
+      'tenant-1',
+      { ...CREDIT, documentLabel: 'Atestado' },
+      '5511999990000',
+      'Maria',
+      'https://x/doc.pdf',
+      'Atestado',
+      'atestado.pdf',
+    )
+
+    expect(createQueuedMessageMock).toHaveBeenCalledWith('tenant-1', 'conv-1', expect.objectContaining({
+      creditContext: { ...CREDIT, documentLabel: 'Atestado' },
+    }))
   })
 
   // The first queued message also pays the resume template: 2 credits.
