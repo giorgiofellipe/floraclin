@@ -1,11 +1,11 @@
 import { db } from '@/db/client'
 import {
   whatsappCredits,
-  whatsappCreditCharges,
+  whatsappCreditLedger,
   tenantSubscriptions,
   plans,
 } from '@/db/schema'
-import { eq, and, lte, isNull, sql } from 'drizzle-orm'
+import { eq, and, lte, sql } from 'drizzle-orm'
 import { brToday, parseBrDate } from '@/lib/dates'
 import { addMonths } from 'date-fns'
 import { UNLIMITED_CREDITS } from '@/lib/whatsapp-credits'
@@ -20,8 +20,21 @@ type CreditPeriod = {
   periodEnd: Date
 }
 
-type ConsumeResult =
-  | { allowed: true; periodId: string; creditsUsed: number; creditsTotal: number }
+export type LedgerSpendInput = {
+  actorType: 'user' | 'patient' | 'system'
+  actorUserId: string | null
+  patientId: string | null
+  conversationId: string | null
+  contactName: string | null
+  contactPhone: string
+  itemKind: 'template' | 'text' | 'media' | 'document'
+  templateName: string | null
+  purposeKey: string | null
+  documentLabel: string | null
+}
+
+export type SpendResult =
+  | { allowed: true; spendId: string; creditsUsed: number; creditsTotal: number }
   | { allowed: false; creditsUsed: number; creditsTotal: number }
 
 type CreditUsage = {
@@ -123,87 +136,79 @@ export async function getOrCreateCurrentPeriod(tenantId: string): Promise<Credit
 
 // ─── CREDIT CONSUMPTION ──────────────────────────────────────────
 
-export async function consumeCredits(tenantId: string, cost: number): Promise<ConsumeResult> {
+export async function spendCredits(tenantId: string, cost: number, entry: LedgerSpendInput): Promise<SpendResult> {
   const credits = await getOrCreateCurrentPeriod(tenantId)
   const unlimited = credits.creditsTotal === UNLIMITED_CREDITS
-  const denied = {
-    allowed: false as const,
-    creditsUsed: credits.creditsUsed,
-    creditsTotal: credits.creditsTotal,
-  }
-
+  const denied = { allowed: false as const, creditsUsed: credits.creditsUsed, creditsTotal: credits.creditsTotal }
   if (!unlimited && credits.creditsUsed + cost > credits.creditsTotal) return denied
 
-  const [updated] = await db
-    .update(whatsappCredits)
-    .set({
-      creditsUsed: sql`${whatsappCredits.creditsUsed} + ${cost}`,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(whatsappCredits)
+      .set({ creditsUsed: sql`${whatsappCredits.creditsUsed} + ${cost}`, updatedAt: new Date() })
+      .where(and(
         eq(whatsappCredits.id, credits.id),
-        unlimited
-          ? undefined
-          : lte(sql`${whatsappCredits.creditsUsed} + ${cost}`, whatsappCredits.creditsTotal)
-      )
-    )
-    .returning()
-
-  if (!updated) return denied
-
-  return {
-    allowed: true,
-    periodId: updated.id,
-    creditsUsed: updated.creditsUsed,
-    creditsTotal: updated.creditsTotal,
-  }
-}
-
-export async function refundCredits(periodId: string, cost: number): Promise<void> {
-  await db
-    .update(whatsappCredits)
-    .set({
-      creditsUsed: sql`greatest(${whatsappCredits.creditsUsed} - ${cost}, 0)`,
-      updatedAt: new Date(),
-    })
-    .where(eq(whatsappCredits.id, periodId))
-}
-
-export async function recordCharge(
-  tenantId: string,
-  creditPeriodId: string,
-  metaMessageId: string,
-  cost: number,
-): Promise<void> {
-  await db
-    .insert(whatsappCreditCharges)
-    .values({ tenantId, creditPeriodId, metaMessageId, cost })
-    .onConflictDoNothing()
-}
-
-export async function refundFailedCharge(metaMessageId: string): Promise<void> {
-  await db.transaction(async (tx) => {
-    const [charge] = await tx
-      .update(whatsappCreditCharges)
-      .set({ refundedAt: new Date() })
-      .where(
-        and(
-          eq(whatsappCreditCharges.metaMessageId, metaMessageId),
-          isNull(whatsappCreditCharges.refundedAt),
-        )
-      )
+        unlimited ? undefined : lte(sql`${whatsappCredits.creditsUsed} + ${cost}`, whatsappCredits.creditsTotal),
+      ))
       .returning()
-    if (!charge) return
+    if (!updated) return denied
+
+    const [line] = await tx
+      .insert(whatsappCreditLedger)
+      .values({ tenantId, creditPeriodId: updated.id, kind: 'spend', amount: -cost, ...entry })
+      .returning({ id: whatsappCreditLedger.id })
+
+    return { allowed: true as const, spendId: line.id, creditsUsed: updated.creditsUsed, creditsTotal: updated.creditsTotal }
+  })
+}
+
+export async function attachMetaMessageId(spendId: string, metaMessageId: string): Promise<void> {
+  await db.update(whatsappCreditLedger).set({ metaMessageId }).where(eq(whatsappCreditLedger.id, spendId))
+}
+
+export async function refundSpend(spendId: string, reason: 'send_failed' | 'delivery_failed'): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [spend] = await tx.select().from(whatsappCreditLedger)
+      .where(and(eq(whatsappCreditLedger.id, spendId), eq(whatsappCreditLedger.kind, 'spend')))
+    if (!spend) return false
+
+    const [refund] = await tx
+      .insert(whatsappCreditLedger)
+      .values({
+        tenantId: spend.tenantId,
+        creditPeriodId: spend.creditPeriodId,
+        kind: 'refund',
+        amount: -spend.amount,
+        refundOf: spend.id,
+        refundReason: reason,
+        actorType: spend.actorType,
+        actorUserId: spend.actorUserId,
+        patientId: spend.patientId,
+        conversationId: spend.conversationId,
+        contactName: spend.contactName,
+        contactPhone: spend.contactPhone,
+        itemKind: spend.itemKind,
+        templateName: spend.templateName,
+        purposeKey: spend.purposeKey,
+        documentLabel: spend.documentLabel,
+      })
+      .onConflictDoNothing()
+      .returning({ id: whatsappCreditLedger.id })
+    if (!refund) return false
 
     await tx
       .update(whatsappCredits)
-      .set({
-        creditsUsed: sql`greatest(${whatsappCredits.creditsUsed} - ${charge.cost}, 0)`,
-        updatedAt: new Date(),
-      })
-      .where(eq(whatsappCredits.id, charge.creditPeriodId))
+      .set({ creditsUsed: sql`greatest(${whatsappCredits.creditsUsed} - ${-spend.amount}, 0)`, updatedAt: new Date() })
+      .where(eq(whatsappCredits.id, spend.creditPeriodId))
+    return true
   })
+}
+
+export async function refundSpendByMetaMessageId(metaMessageId: string): Promise<boolean> {
+  const [spend] = await db.select({ id: whatsappCreditLedger.id }).from(whatsappCreditLedger)
+    .where(and(eq(whatsappCreditLedger.metaMessageId, metaMessageId), eq(whatsappCreditLedger.kind, 'spend')))
+  if (!spend) return false
+  return refundSpend(spend.id, 'delivery_failed')
 }
 
 // ─── USAGE QUERY ─────────────────────────────────────────────────

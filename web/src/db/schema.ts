@@ -797,6 +797,7 @@ export const whatsappQueuedMessages = floraclinSchema.table('whatsapp_queued_mes
   mediaUrl: text('media_url'),
   status: varchar('status', { length: 20 }).notNull().default('queued'),
   resumeMetaMessageId: varchar('resume_meta_message_id', { length: 255 }),
+  creditContext: jsonb('credit_context'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   sentAt: timestamp('sent_at', { withTimezone: true }),
   expiredAt: timestamp('expired_at', { withTimezone: true }),
@@ -1090,18 +1091,32 @@ export const whatsappCredits = floraclinSchema.table('whatsapp_credits', {
   uniqueIndex('uq_whatsapp_credits_tenant_period').on(table.tenantId, table.periodStart),
 ])
 
-// One row per message sent on the shared number, so a send Meta later reports
-// as failed (and does not bill) can be refunded exactly once.
-export const whatsappCreditCharges = floraclinSchema.table('whatsapp_credit_charges', {
+// One line per credit movement on the shared number; refunds point at their spend.
+export const whatsappCreditLedger = floraclinSchema.table('whatsapp_credit_ledger', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   creditPeriodId: uuid('credit_period_id').notNull().references(() => whatsappCredits.id),
-  metaMessageId: varchar('meta_message_id', { length: 255 }).notNull(),
-  cost: integer('cost').notNull(),
-  refundedAt: timestamp('refunded_at', { withTimezone: true }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  kind: varchar('kind', { length: 10 }).notNull(),
+  amount: integer('amount').notNull(),
+  metaMessageId: varchar('meta_message_id', { length: 255 }),
+  refundOf: uuid('refund_of').references((): AnyPgColumn => whatsappCreditLedger.id),
+  refundReason: varchar('refund_reason', { length: 20 }),
+  actorType: varchar('actor_type', { length: 10 }).notNull(),
+  actorUserId: uuid('actor_user_id').references(() => users.id),
+  patientId: uuid('patient_id').references(() => patients.id),
+  conversationId: uuid('conversation_id').references(() => whatsappConversations.id),
+  contactName: varchar('contact_name', { length: 255 }),
+  contactPhone: varchar('contact_phone', { length: 30 }).notNull(),
+  itemKind: varchar('item_kind', { length: 10 }).notNull(),
+  templateName: varchar('template_name', { length: 255 }),
+  purposeKey: varchar('purpose_key', { length: 100 }),
+  documentLabel: varchar('document_label', { length: 255 }),
+  // Millisecond precision so a JS Date cursor matches stored values exactly.
+  createdAt: timestamp('created_at', { withTimezone: true, precision: 3 }).notNull().defaultNow(),
 }, (table) => [
-  uniqueIndex('uq_whatsapp_credit_charges_meta_message').on(table.metaMessageId),
+  index('idx_whatsapp_credit_ledger_period').on(table.tenantId, table.creditPeriodId, table.createdAt, table.id),
+  uniqueIndex('uq_whatsapp_credit_ledger_refund_of').on(table.refundOf).where(sql`refund_of IS NOT NULL`),
+  uniqueIndex('uq_whatsapp_credit_ledger_spend_meta').on(table.metaMessageId).where(sql`meta_message_id IS NOT NULL AND kind = 'spend'`),
 ])
 
 // ─── META CONVERSIONS ───────────────────────────────────────────────
