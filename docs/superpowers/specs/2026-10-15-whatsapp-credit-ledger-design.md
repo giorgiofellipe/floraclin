@@ -11,7 +11,7 @@ Success criteria:
 
 - Each call to `sendWithCredits` that charges credits writes exactly one `spend` line.
 - Each refund (immediate send failure or later Meta delivery failure) writes exactly one `refund` line linked to its spend.
-- For any credit period, the sum of `amount` equals `-credits_used`.
+- For any credit period that starts after the deploy, the sum of `amount` equals `-credits_used`. Earlier periods only have lines since 14/10 (PR #75).
 - The owner opens the history from the "Uso de créditos" section of Configurações > WhatsApp and pages through it by credit period.
 
 ## Decisions
@@ -167,7 +167,7 @@ In `whatsapp-settings-form.tsx`, "Uso de créditos" section (shared-number clini
 - "Ver histórico" button under `WhatsAppCreditBar`.
 - Opens `WhatsAppCreditHistory`: `Dialog` on desktop, full-height `Sheet` on mobile, both from the existing UI components.
 - Content:
-  1. Period `Select`, current first, label "15/09 a 14/10/2026", with "N de M créditos usados" for the selected period.
+  1. Period `Select`, current first, label "01/10 a 31/10/2026" (periods are BR calendar months), with "N de M créditos usados" for the selected period.
   2. Entries grouped under day headings (`dd/MM`, BRT). Each line: `HH:mm`, the sentence, and the amount at the right (`-1` red, `+1` green).
   3. "Carregar mais" while `nextCursor` is set (`useInfiniteQuery`).
   4. Empty state: "Nenhum crédito usado neste período".
@@ -184,13 +184,16 @@ Dates go through `@/lib/dates` helpers per AGENTS.md.
 | `meta_message_id` update fails after send | Sentry report; the line stays without the id; a later `failed` webhook cannot refund that message. |
 | Refund fails after send throws | Sentry report; original error rethrown; spend stays unrefunded. |
 | Duplicate `failed` webhook | Unique `refund_of` blocks the second refund; ignored. |
+| `failed` webhook before `meta_message_id` is attached | No spend found, no refund (same race as before the ledger). |
+| Refund after the month rolls over | The credit and the refund line go to the spend's period. |
+| Patient-triggered resume template | Shown as "Envio automático: Retomar conversa para Maria Silva"; the patient sentence is only for documents. |
 
-## Migration `0037_whatsapp_credit_ledger.sql`
+## Migrations `0037` (before deploy) and `0038` (after deploy)
 
 1. Create `whatsapp_credit_ledger` with indexes and RLS.
 2. Add `credit_context jsonb` to `whatsapp_queued_messages`.
 3. Copy existing `whatsapp_credit_charges` rows as `spend` lines (`actor_type = 'system'`, `item_kind = 'template'` when the joined message has a `template_name`, else `text`; recipient from the joined conversation). Rows with `refunded_at` also get a `delivery_failed` refund line.
-4. Drop `whatsapp_credit_charges`.
+4. `0038`, after the deploy: copy any charges and refunds the old code wrote in between (idempotent), then drop `whatsapp_credit_charges`.
 
 Queued rows created before deploy have no `credit_context` and drain as `system`.
 

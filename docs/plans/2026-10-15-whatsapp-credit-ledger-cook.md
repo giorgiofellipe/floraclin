@@ -120,15 +120,15 @@ API (Task 4): `GET /api/whatsapp/credits/ledger?periodId=<uuid>&cursor=<string>`
 
 ```
 Group A (parallel):
-  Task 1: Ledger storage: migration, schema, write queries (files: src/db/migrations/0037_whatsapp_credit_ledger.sql, src/db/schema.ts, src/db/queries/whatsapp-credits.ts, src/db/queries/__tests__/whatsapp-credits-ledger.test.ts)
+  Task 1: Ledger storage: migrations, schema, write queries (files: src/db/migrations/0037_whatsapp_credit_ledger.sql, src/db/migrations/0038_drop_whatsapp_credit_charges.sql, src/db/schema.ts, src/db/queries/whatsapp-credits.ts, src/db/queries/__tests__/whatsapp-credits-ledger.test.ts)
   Task 2: Ledger types + sentence builder (files: src/lib/whatsapp-credit-ledger.ts, src/lib/__tests__/whatsapp-credit-ledger.test.ts)
 
 Group B (depends on A):
   Task 3: sendWithCredits + send functions + queue context (files: src/lib/whatsapp.ts, src/lib/__tests__/whatsapp.test.ts, src/db/queries/whatsapp.ts)
-  Task 4: Ledger read query + API route (files: src/db/queries/whatsapp-credit-ledger.ts, src/app/api/whatsapp/credits/ledger/route.ts, src/app/api/whatsapp/credits/ledger/__tests__/route.test.ts)
+  Task 4: Ledger read query + API route (files: src/db/queries/whatsapp-credit-history.ts, src/db/queries/__tests__/whatsapp-credit-history.test.ts, src/app/api/whatsapp/credits/ledger/route.ts, src/app/api/whatsapp/credits/ledger/__tests__/route.test.ts)
   Task 5: History UI (files: src/hooks/queries/use-whatsapp-credit-ledger.ts, src/hooks/queries/query-keys.ts, src/components/settings/whatsapp-credit-history.tsx, src/components/settings/__tests__/whatsapp-credit-history.test.tsx, src/components/settings/whatsapp-settings-form.tsx)
 
-Group C (depends on B; typecheck is red between B and C until these land):
+Group C (depends on B). Typecheck is red from Task 1 onward (whatsapp.ts imports removed functions until Task 3, callers until Group C); vitest does not typecheck, so per-task tests still run. Typecheck must be green after Group C:
   Task 6: Inbox callers (files: src/app/api/whatsapp/conversations/[id]/messages/route.ts, src/app/api/whatsapp/conversations/route.ts, src/app/api/whatsapp/conversations/[id]/messages/[messageId]/retry/route.ts, plus any existing __tests__ in those three route folders)
   Task 7: Link and document callers (files: src/app/api/patients/[id]/anamnesis-link/send/route.ts, src/app/api/consent/send-signing-link/send/route.ts, src/app/api/clinical-documents/[id]/send-whatsapp/route.ts, src/app/api/consent/[id]/send-whatsapp/route.ts, plus existing __tests__ in those four route folders)
   Task 8: System callers + webhook (files: src/app/api/cron/whatsapp-automations/route.ts, src/lib/whatsapp-anamnesis.ts, src/app/api/webhooks/whatsapp/route.ts, src/app/api/cron/whatsapp-automations/__tests__/route.test.ts, src/lib/__tests__/whatsapp-anamnesis.test.ts, src/app/api/webhooks/whatsapp/__tests__/*.test.ts)
@@ -142,6 +142,7 @@ Between groups the orchestrator runs the tests of the finished tasks. After Grou
 
 **Files:**
 - Create: `web/src/db/migrations/0037_whatsapp_credit_ledger.sql`
+- Create: `web/src/db/migrations/0038_drop_whatsapp_credit_charges.sql`
 - Modify: `web/src/db/schema.ts` (replace `whatsappCreditCharges` near line 1093; add `creditContext` to `whatsappQueuedMessages` near line 791)
 - Modify: `web/src/db/queries/whatsapp-credits.ts`
 - Test: `web/src/db/queries/__tests__/whatsapp-credits-ledger.test.ts`
@@ -175,7 +176,8 @@ export const whatsappCreditLedger = floraclinSchema.table('whatsapp_credit_ledge
   templateName: varchar('template_name', { length: 255 }),
   purposeKey: varchar('purpose_key', { length: 100 }),
   documentLabel: varchar('document_label', { length: 255 }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  // Millisecond precision so a JS Date cursor matches stored values exactly.
+  createdAt: timestamp('created_at', { withTimezone: true, precision: 3 }).notNull().defaultNow(),
 }, (table) => [
   index('idx_whatsapp_credit_ledger_period').on(table.tenantId, table.creditPeriodId, table.createdAt, table.id),
   uniqueIndex('uq_whatsapp_credit_ledger_refund_of').on(table.refundOf).where(sql`refund_of IS NOT NULL`),
@@ -191,55 +193,84 @@ In `whatsappQueuedMessages`, add after `resumeMetaMessageId`:
 
 Grep the file for any `relations(` block or type export mentioning `whatsappCreditCharges` and remove it.
 
-- [ ] **Step 2: Migration**
+- [ ] **Step 2: Migrations (two files, so no row is lost during the deploy)**
 
-Create `0037_whatsapp_credit_ledger.sql` (statements separated by `--> statement-breakpoint`, same style as 0036):
+`0037_whatsapp_credit_ledger.sql` runs **before** the deploy. It creates the ledger and copies existing charges, but keeps `whatsapp_credit_charges` so the old code keeps working until the new code is live. Follow 0036's style (named constraints via `ADD CONSTRAINT`, `--> statement-breakpoint` separators):
 
 ```sql
 CREATE TABLE IF NOT EXISTS "floraclin"."whatsapp_credit_ledger" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"tenant_id" uuid NOT NULL REFERENCES "floraclin"."tenants"("id"),
-	"credit_period_id" uuid NOT NULL REFERENCES "floraclin"."whatsapp_credits"("id"),
+	"tenant_id" uuid NOT NULL,
+	"credit_period_id" uuid NOT NULL,
 	"kind" varchar(10) NOT NULL,
 	"amount" integer NOT NULL,
 	"meta_message_id" varchar(255),
-	"refund_of" uuid REFERENCES "floraclin"."whatsapp_credit_ledger"("id"),
+	"refund_of" uuid,
 	"refund_reason" varchar(20),
 	"actor_type" varchar(10) NOT NULL,
-	"actor_user_id" uuid REFERENCES "floraclin"."users"("id"),
-	"patient_id" uuid REFERENCES "floraclin"."patients"("id"),
-	"conversation_id" uuid REFERENCES "floraclin"."whatsapp_conversations"("id"),
+	"actor_user_id" uuid,
+	"patient_id" uuid,
+	"conversation_id" uuid,
 	"contact_name" varchar(255),
 	"contact_phone" varchar(30) NOT NULL,
 	"item_kind" varchar(10) NOT NULL,
 	"template_name" varchar(255),
 	"purpose_key" varchar(100),
 	"document_label" varchar(255),
-	"created_at" timestamptz DEFAULT now() NOT NULL
+	"created_at" timestamptz(3) DEFAULT now() NOT NULL
 );--> statement-breakpoint
+ALTER TABLE "floraclin"."whatsapp_credit_ledger" ADD CONSTRAINT "whatsapp_credit_ledger_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "floraclin"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "floraclin"."whatsapp_credit_ledger" ADD CONSTRAINT "whatsapp_credit_ledger_credit_period_id_whatsapp_credits_id_fk" FOREIGN KEY ("credit_period_id") REFERENCES "floraclin"."whatsapp_credits"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "floraclin"."whatsapp_credit_ledger" ADD CONSTRAINT "whatsapp_credit_ledger_refund_of_whatsapp_credit_ledger_id_fk" FOREIGN KEY ("refund_of") REFERENCES "floraclin"."whatsapp_credit_ledger"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "floraclin"."whatsapp_credit_ledger" ADD CONSTRAINT "whatsapp_credit_ledger_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "floraclin"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "floraclin"."whatsapp_credit_ledger" ADD CONSTRAINT "whatsapp_credit_ledger_patient_id_patients_id_fk" FOREIGN KEY ("patient_id") REFERENCES "floraclin"."patients"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "floraclin"."whatsapp_credit_ledger" ADD CONSTRAINT "whatsapp_credit_ledger_conversation_id_whatsapp_conversations_id_fk" FOREIGN KEY ("conversation_id") REFERENCES "floraclin"."whatsapp_conversations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_whatsapp_credit_ledger_period" ON "floraclin"."whatsapp_credit_ledger" USING btree ("tenant_id","credit_period_id","created_at","id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "uq_whatsapp_credit_ledger_refund_of" ON "floraclin"."whatsapp_credit_ledger" USING btree ("refund_of") WHERE refund_of IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "uq_whatsapp_credit_ledger_spend_meta" ON "floraclin"."whatsapp_credit_ledger" USING btree ("meta_message_id") WHERE meta_message_id IS NOT NULL AND kind = 'spend';--> statement-breakpoint
 ALTER TABLE "floraclin"."whatsapp_credit_ledger" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "floraclin"."whatsapp_queued_messages" ADD COLUMN IF NOT EXISTS "credit_context" jsonb;--> statement-breakpoint
+{COPY_SQL}
+```
+
+`0038_drop_whatsapp_credit_charges.sql` runs **after** the deploy is live. It repeats the same two copy statements (they are idempotent thanks to `NOT EXISTS`), catching charges and refunds the old code wrote between 0037 and the deploy, then drops the table:
+
+```sql
+{COPY_SQL}--> statement-breakpoint
+DROP TABLE IF EXISTS "floraclin"."whatsapp_credit_charges";
+```
+
+where `{COPY_SQL}` in both files is exactly:
+
+```sql
 INSERT INTO "floraclin"."whatsapp_credit_ledger"
-	("id","tenant_id","credit_period_id","kind","amount","meta_message_id","actor_type","patient_id","conversation_id","contact_name","contact_phone","item_kind","template_name","created_at")
+	("id","tenant_id","credit_period_id","kind","amount","meta_message_id","actor_type","patient_id","conversation_id","contact_name","contact_phone","item_kind","template_name","purpose_key","created_at")
 SELECT c.id, c.tenant_id, c.credit_period_id, 'spend', -c.cost, c.meta_message_id, 'system',
-	conv.patient_id, conv.id, conv.profile_name, COALESCE(conv.phone_number, ''),
+	conv.patient_id, conv.id, conv.profile_name, COALESCE(conv.phone_number, 'desconhecido'),
 	CASE WHEN m.template_name IS NOT NULL THEN 'template' WHEN m.media_type IS NOT NULL THEN 'media' ELSE 'text' END,
-	m.template_name, c.created_at
+	m.template_name, t.purpose_key, c.created_at
 FROM "floraclin"."whatsapp_credit_charges" c
-LEFT JOIN "floraclin"."whatsapp_messages" m ON m.meta_message_id = c.meta_message_id
-LEFT JOIN "floraclin"."whatsapp_conversations" conv ON conv.id = m.conversation_id;--> statement-breakpoint
+LEFT JOIN "floraclin"."whatsapp_messages" m ON m.meta_message_id = c.meta_message_id AND m.tenant_id = c.tenant_id
+LEFT JOIN "floraclin"."whatsapp_conversations" conv ON conv.id = m.conversation_id
+LEFT JOIN LATERAL (
+	SELECT purpose_key FROM "floraclin"."whatsapp_templates" wt
+	WHERE wt.name = m.template_name AND (wt.tenant_id = c.tenant_id OR wt.system_template)
+	LIMIT 1
+) t ON true
+WHERE NOT EXISTS (SELECT 1 FROM "floraclin"."whatsapp_credit_ledger" x WHERE x.id = c.id);--> statement-breakpoint
 INSERT INTO "floraclin"."whatsapp_credit_ledger"
-	("tenant_id","credit_period_id","kind","amount","refund_of","refund_reason","actor_type","patient_id","conversation_id","contact_name","contact_phone","item_kind","template_name","created_at")
+	("tenant_id","credit_period_id","kind","amount","refund_of","refund_reason","actor_type","patient_id","conversation_id","contact_name","contact_phone","item_kind","template_name","purpose_key","created_at")
 SELECT l.tenant_id, l.credit_period_id, 'refund', -l.amount, l.id, 'delivery_failed', 'system',
-	l.patient_id, l.conversation_id, l.contact_name, l.contact_phone, l.item_kind, l.template_name, c.refunded_at
+	l.patient_id, l.conversation_id, l.contact_name, l.contact_phone, l.item_kind, l.template_name, l.purpose_key, c.refunded_at
 FROM "floraclin"."whatsapp_credit_charges" c
 JOIN "floraclin"."whatsapp_credit_ledger" l ON l.id = c.id
-WHERE c.refunded_at IS NOT NULL;--> statement-breakpoint
-DROP TABLE "floraclin"."whatsapp_credit_charges";
+WHERE c.refunded_at IS NOT NULL
+	AND NOT EXISTS (SELECT 1 FROM "floraclin"."whatsapp_credit_ledger" r WHERE r.refund_of = l.id);
 ```
+
+In both migration files, replace the `{COPY_SQL}` marker with the full SQL above. The committed files contain no marker.
+
+Before committing, verify the copy against a scratch DB: after `prepareTestDatabase` (Step 4), insert one `whatsapp_credits` period, one `whatsapp_credit_charges` row with `refunded_at` set, run the two copy statements with `psql`, and check that one spend (`amount = -cost`) and one refund (`refund_of` = that spend) exist; run them again and check that nothing new is inserted.
 
 - [ ] **Step 3: Write the failing integration test**
 
@@ -248,7 +279,7 @@ DROP TABLE "floraclin"."whatsapp_credit_charges";
 ```ts
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { db } from '@/db/client'
-import { tenants, whatsappCredits, whatsappCreditLedger } from '@/db/schema'
+import { tenants, plans, tenantSubscriptions, whatsappCredits, whatsappCreditLedger } from '@/db/schema'
 import { eq, sql } from 'drizzle-orm'
 import {
   spendCredits,
@@ -269,9 +300,14 @@ const ENTRY: LedgerSpendInput = {
   itemKind: 'text', templateName: null, purposeKey: null, documentLabel: null,
 }
 
+const PLAN = '00000000-0000-0000-0000-00000000c0df'
+
+// getOrCreateCurrentPeriod resets credits_total from the plan limit on every
+// call, so the total must be set on the plan, not on the period row.
 async function setTotal(total: number) {
+  await db.update(plans).set({ limits: { whatsapp_credits: total } } as never).where(eq(plans.id, PLAN))
   const period = await getOrCreateCurrentPeriod(TENANT)
-  await db.update(whatsappCredits).set({ creditsTotal: total, creditsUsed: 0 }).where(eq(whatsappCredits.id, period.id))
+  await db.update(whatsappCredits).set({ creditsUsed: 0 }).where(eq(whatsappCredits.id, period.id))
   return period.id
 }
 
@@ -288,8 +324,11 @@ async function used(periodId: string) {
 
 describeIntegration('whatsapp credit ledger (integration, requires test DB)', () => {
   beforeAll(async () => {
-    // Insert a minimal tenant row; read `tenants` in schema.ts for the NOT NULL columns.
     await db.insert(tenants).values({ id: TENANT, name: 'Ledger Test', slug: 'ledger-test' } as never).onConflictDoNothing()
+    // Read `plans` and `tenantSubscriptions` in schema.ts and fill every NOT NULL column
+    // (tenant_subscriptions.current_period_end is NOT NULL).
+    await db.insert(plans).values({ id: PLAN, /* required columns */ limits: { whatsapp_credits: 0 } } as never).onConflictDoNothing()
+    await db.insert(tenantSubscriptions).values({ tenantId: TENANT, planId: PLAN, /* status, currentPeriodEnd, ... */ } as never).onConflictDoNothing()
   })
 
   beforeEach(async () => {
@@ -331,6 +370,14 @@ describeIntegration('whatsapp credit ledger (integration, requires test DB)', ()
     const lines = await db.select().from(whatsappCreditLedger).where(eq(whatsappCreditLedger.creditPeriodId, periodId))
     const refund = lines.find((l) => l.kind === 'refund')
     expect(refund).toMatchObject({ amount: 1, refundOf: res.spendId, refundReason: 'send_failed', contactName: 'Maria Silva' })
+  })
+
+  it('writes a line and counts usage on an unlimited plan', async () => {
+    const periodId = await setTotal(-1)
+    const res = await spendCredits(TENANT, 3, ENTRY)
+    expect(res.allowed).toBe(true)
+    expect(await used(periodId)).toBe(3)
+    expect(await ledgerSum(periodId)).toBe(-3)
   })
 
   it('refunds by Meta message id for a delivery failure', async () => {
@@ -446,12 +493,14 @@ export async function refundSpendByMetaMessageId(metaMessageId: string): Promise
 
 - [ ] **Step 6: Run the test, expect PASS**
 
-Same command as Step 4 (re-run `prepareTestDatabase` only if the schema changed). Expected: 5 passed. Then `pnpm test:db:down`.
+Same command as Step 4 (re-run `prepareTestDatabase` only if the schema changed). Expected: 6 passed. Keep the DB up only if Task 4 will run its integration test next; otherwise `pnpm test:db:down`.
+
+Note: these integration tests do not run in CI (no `RUN_DB_TESTS` there). The orchestrator runs them by hand after Group A and after Group C.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add web/src/db/migrations/0037_whatsapp_credit_ledger.sql web/src/db/schema.ts web/src/db/queries/whatsapp-credits.ts web/src/db/queries/__tests__/whatsapp-credits-ledger.test.ts
+git add web/src/db/migrations/0037_whatsapp_credit_ledger.sql web/src/db/migrations/0038_drop_whatsapp_credit_charges.sql web/src/db/schema.ts web/src/db/queries/whatsapp-credits.ts web/src/db/queries/__tests__/whatsapp-credits-ledger.test.ts
 git commit -m "Add the WhatsApp credit ledger table and write queries"
 ```
 
@@ -495,6 +544,7 @@ describe('describeLedgerEntry', () => {
     ['user document', { item: { kind: 'document', label: 'Atestado' } }, 'Ana Souza enviou o documento Atestado para Maria Silva'],
     ['removed user', { actor: { type: 'user', name: null } }, 'Usuário removido enviou uma mensagem para Maria Silva'],
     ['patient copy', { actor: { type: 'patient', name: 'Maria Silva' }, item: { kind: 'document', label: 'Termo de consentimento' } }, 'Maria Silva pediu uma cópia do Termo de consentimento'],
+    ['patient-triggered resume template', { actor: { type: 'patient', name: 'Maria Silva' }, item: { kind: 'template', label: 'Retomar conversa' } }, 'Envio automático: Retomar conversa para Maria Silva'],
     ['system template', { actor: { type: 'system', name: null }, item: { kind: 'template', label: 'Lembrete de consulta' } }, 'Envio automático: Lembrete de consulta para Maria Silva'],
     ['system text', { actor: { type: 'system', name: null } }, 'Envio automático: uma mensagem para Maria Silva'],
     ['refund send_failed template', { kind: 'refund', amount: 1, refundReason: 'send_failed', item: { kind: 'template', label: 'Link de anamnese' } }, 'Estorno: o envio de Link de anamnese para Maria Silva falhou'],
@@ -561,7 +611,11 @@ export function describeLedgerEntry(entry: LedgerEntry): SentencePart[] {
     case 'user':
       return [bold(entry.actor.name ?? 'Usuário removido'), plain(' enviou '), ...itemObject(entry.item), ...to]
     case 'patient':
-      return [bold(entry.recipientName), plain(' pediu uma cópia do '), bold(entry.item.label ?? 'documento')]
+      if (entry.item.kind === 'document') {
+        return [bold(entry.recipientName), plain(' pediu uma cópia do '), bold(entry.item.label ?? 'documento')]
+      }
+      // The resume template sent so a patient-requested copy can follow.
+      return [plain('Envio automático: '), ...itemObject(entry.item), ...to]
     case 'system':
       return [plain('Envio automático: '), ...itemObject(entry.item), ...to]
   }
@@ -640,6 +694,16 @@ it('still sends when attaching the message id fails', async () => {
 ```
 
 Keep the own-number test, asserting `spendCreditsMock` is not called.
+
+Give the existing `getSendableTemplateMock` resolved template a `purposeKey: 'anamnese_link'` and assert `purposeKey: 'anamnese_link'` in the template spend case, so the derivation is really exercised.
+
+Add one `sendOrEnqueueDocument` case with a closed window and an existing queue (extend the `@/db/queries/whatsapp` mock with `getConversationByPhone` returning `{ id: 'conv-1', lastInboundAt: <2 days ago> }`, `getQueuedCount` returning 1, `createQueuedMessage`, `createMessage`; make `requireCredits` pass) and assert:
+
+```ts
+expect(createQueuedMessageMock).toHaveBeenCalledWith('tenant-1', 'conv-1', expect.objectContaining({
+  creditContext: { ...CREDIT, documentLabel: 'Atestado' },
+}))
+```
 
 - [ ] **Step 2: Run, expect FAIL**
 
@@ -794,9 +858,10 @@ git commit -m "Write a ledger line for every WhatsApp credit spend and refund"
 ### Task 4: Ledger read query and API
 
 **Files:**
-- Create: `web/src/db/queries/whatsapp-credit-ledger.ts`
+- Create: `web/src/db/queries/whatsapp-credit-history.ts`
 - Create: `web/src/app/api/whatsapp/credits/ledger/route.ts`
 - Test: `web/src/app/api/whatsapp/credits/ledger/__tests__/route.test.ts`
+- Test: `web/src/db/queries/__tests__/whatsapp-credit-history.test.ts`
 
 **Interfaces:**
 - Consumes: Task 1 `whatsappCreditLedger`, `getOrCreateCurrentPeriod`; Task 2 `LedgerEntry`, `LedgerPeriod`, `LedgerPage`.
@@ -808,6 +873,7 @@ git commit -m "Write a ledger line for every WhatsApp credit spend and refund"
 import { db } from '@/db/client'
 import { whatsappCredits, whatsappCreditLedger, users, patients } from '@/db/schema'
 import { and, desc, eq, lt, or } from 'drizzle-orm'
+import { z } from 'zod'
 import { PURPOSE_LABELS } from '@/lib/whatsapp-blueprints'
 import type { LedgerEntry, LedgerPeriod } from '@/lib/whatsapp-credit-ledger'
 
@@ -818,10 +884,12 @@ export function encodeLedgerCursor(c: LedgerCursor): string {
   return Buffer.from(`${c.createdAt.toISOString()}|${c.id}`).toString('base64url')
 }
 
+const UUID = z.string().uuid()
+
 export function decodeLedgerCursor(raw: string): LedgerCursor | null {
   const [iso, id] = Buffer.from(raw, 'base64url').toString().split('|')
   const createdAt = new Date(iso)
-  if (!id || Number.isNaN(createdAt.getTime())) return null
+  if (!UUID.safeParse(id).success || Number.isNaN(createdAt.getTime())) return null
   return { createdAt, id }
 }
 
@@ -916,9 +984,16 @@ it('returns 400 for a garbage cursor', async () => {
 })
 
 it('passes a decoded cursor through', async () => {
-  const cursor = encodeLedgerCursor({ createdAt: new Date('2026-10-15T12:00:00.000Z'), id: 'l9' })
+  const id = '00000000-0000-4000-8000-0000000000a9'
+  const cursor = encodeLedgerCursor({ createdAt: new Date('2026-10-15T12:00:00.000Z'), id })
   await GET(new Request(`http://x/api/whatsapp/credits/ledger?cursor=${cursor}`))
-  expect(listLedgerEntries).toHaveBeenCalledWith('tenant-1', 'p2', { createdAt: new Date('2026-10-15T12:00:00.000Z'), id: 'l9' })
+  expect(listLedgerEntries).toHaveBeenCalledWith('tenant-1', 'p2', { createdAt: new Date('2026-10-15T12:00:00.000Z'), id })
+})
+
+it('returns 400 for a cursor whose id is not a uuid', async () => {
+  const cursor = encodeLedgerCursor({ createdAt: new Date('2026-10-15T12:00:00.000Z'), id: 'l9' })
+  const res = await GET(new Request(`http://x/api/whatsapp/credits/ledger?cursor=${cursor}`))
+  expect(res.status).toBe(400)
 })
 
 it('is owner only', async () => {
@@ -937,7 +1012,7 @@ import { z } from 'zod'
 import { requireRole } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error'
 import { getOrCreateCurrentPeriod } from '@/db/queries/whatsapp-credits'
-import { decodeLedgerCursor, listCreditPeriods, listLedgerEntries } from '@/db/queries/whatsapp-credit-ledger'
+import { decodeLedgerCursor, listCreditPeriods, listLedgerEntries } from '@/db/queries/whatsapp-credit-history'
 import type { LedgerPage } from '@/lib/whatsapp-credit-ledger'
 
 export async function GET(request: Request) {
@@ -974,10 +1049,16 @@ Note the test for "current period" must make `getOrCreateCurrentPeriod` return a
 
 - [ ] **Step 4: Run, expect PASS**
 
+- [ ] **Step 4b: Integration test for paging (Docker DB, same guard and setup as Task 1)**
+
+Add `web/src/db/queries/__tests__/whatsapp-credit-history.test.ts` (`describeIntegration`, same tenant/plan seeding as Task 1 with different ids). Insert 3 ledger lines directly with the same `created_at` (explicit value, e.g. `new Date('2026-10-15T12:00:00.123Z')`) and 1 older line, then page with `limit = 2`: page 1 returns 2 lines and a cursor, page 2 returns the remaining 2, and the 4 ids are distinct. Also assert a `refund` line's `item.label` resolves through `PURPOSE_LABELS` when `purposeKey = 'anamnese_link'`, and that a removed user (`actorUserId` null with `actorType = 'user'`) yields `actor.name = null`.
+
+Run with the Task 1 command pattern. Expected PASS.
+
 - [ ] **Step 5: Commit**
 
 ```bash
-git add web/src/db/queries/whatsapp-credit-ledger.ts web/src/app/api/whatsapp/credits/ledger
+git add web/src/db/queries/whatsapp-credit-history.ts web/src/db/queries/__tests__/whatsapp-credit-history.test.ts web/src/app/api/whatsapp/credits/ledger
 git commit -m "Add the owner credit ledger API"
 ```
 
@@ -994,7 +1075,7 @@ git commit -m "Add the owner credit ledger API"
 
 **Interfaces:**
 - Consumes: Task 2 types and `describeLedgerEntry`; the API contract `GET /api/whatsapp/credits/ledger?periodId&cursor` → `LedgerPage`.
-- Produces: `useWhatsAppCreditLedger(periodId: string | null)`, `<WhatsAppCreditHistory open onOpenChange />`.
+- Produces: `useWhatsAppCreditLedger(periodId: string | null, enabled: boolean)`, `<WhatsAppCreditHistory open onOpenChange />`.
 
 - [ ] **Step 1: Query key and hook**
 
@@ -1040,7 +1121,7 @@ export function useWhatsAppCreditLedger(periodId: string | null, enabled: boolea
 
 - [ ] **Step 2: Write the failing component test**
 
-Read an existing component test under `src/components/settings/__tests__/` for the render helper and QueryClient wrapper pattern used in this repo, and copy it. Mock `global.fetch`:
+Render with `renderWithProviders` from `src/tests/test-utils.tsx` (it provides the QueryClient). jsdom has no `window.matchMedia`, which `useIsMobile` calls: `vi.mock('@/hooks/use-is-mobile', () => ({ useIsMobile: () => false }))`. Mock `global.fetch`:
 
 ```ts
 const PAGE_1 = {
@@ -1057,8 +1138,9 @@ const PAGE_2 = { ...PAGE_1, entries: [{ ...PAGE_1.entries[0], id: 'c', recipient
 it('shows each line as a sentence with its amount', async () => {
   // fetch resolves PAGE_1
   render(<WhatsAppCreditHistory open onOpenChange={() => {}} />)
-  expect(await screen.findByText('Maria Silva', { exact: false })).toBeInTheDocument()
+  expect(await screen.findAllByText('Maria Silva')).toHaveLength(2)
   expect(screen.getByText(/enviou/)).toBeInTheDocument()
+  expect(screen.getByText(/não entregou/)).toBeInTheDocument()
   expect(screen.getByText('-1')).toBeInTheDocument()
   expect(screen.getByText('+1')).toBeInTheDocument()
   expect(screen.getByText('10:05')).toBeInTheDocument() // 13:05Z is 10:05 BRT
@@ -1071,6 +1153,12 @@ it('loads the next page with the cursor', async () => {
   expect(await screen.findByText('João Lima')).toBeInTheDocument()
   expect(vi.mocked(fetch).mock.calls[1][0]).toContain('cursor=c1')
   expect(screen.queryByRole('button', { name: 'Carregar mais' })).not.toBeInTheDocument()
+})
+
+it('labels an unlimited plan as ilimitado', async () => {
+  // fetch resolves PAGE_1 with periods[0].total = -1
+  render(...)
+  expect(await screen.findByText(/ilimitado/)).toBeInTheDocument()
 })
 
 it('shows the empty state', async () => {
@@ -1128,6 +1216,8 @@ Each line: `<time>` with `formatInTimeZone(new Date(e.createdAt), BR_TZ, 'HH:mm'
 
 Changing the period: `setPeriodId(value)`; the query key changes and paging restarts.
 
+Period usage label: `total === UNLIMITED_CREDITS` (from `@/lib/whatsapp-credits`) shows "N créditos usados (ilimitado)", same wording as `whatsapp-credit-bar.tsx`; otherwise "N de M créditos usados". Periods are BR calendar months, so the label reads like "01/10 a 31/10/2026".
+
 - [ ] **Step 4: Button in the settings form**
 
 In `whatsapp-settings-form.tsx`, inside the "Uso de créditos" block, after `<WhatsAppCreditBar ... />`:
@@ -1145,6 +1235,10 @@ with `const [historyOpen, setHistoryOpen] = useState(false)` near the other stat
 
 Run: `pnpm exec vitest run src/components/settings/__tests__/whatsapp-credit-history.test.tsx`
 
+- [ ] **Step 5b: Manual browser check (orchestrator, after Group C)**
+
+On local Docker (`pnpm test:db:up`, `pnpm test:dev`, owner session of a shared-number tenant with a few ledger rows inserted by SQL), open `/configuracoes?tab=whatsapp`, click "Ver histórico", and check at 1280px (Dialog) and 390px (Sheet): sentences, amounts, day headings, period select, "Carregar mais".
+
 - [ ] **Step 6: Commit**
 
 ```bash
@@ -1160,7 +1254,7 @@ git commit -m "Show the WhatsApp credit history from Uso de créditos"
 - Modify: `web/src/app/api/whatsapp/conversations/[id]/messages/route.ts` (sends at ~134, ~162, ~213, ~270; queue at ~236)
 - Modify: `web/src/app/api/whatsapp/conversations/route.ts` (~110)
 - Modify: `web/src/app/api/whatsapp/conversations/[id]/messages/[messageId]/retry/route.ts` (~168)
-- Modify: existing tests under those three folders' `__tests__` that assert send arguments.
+- Modify: `web/src/app/api/whatsapp/conversations/__tests__/meta-contact.test.ts` (the only test of `[id]/messages/route.ts`; add the queued-path case here) and `web/src/app/api/whatsapp/conversations/[id]/messages/[messageId]/retry/__tests__/route.test.ts` (~line 159 reads the phone by `mock.calls` index; it moves from `[1]` to `[2]`).
 
 **Interfaces:**
 - Consumes: Task 3 signatures; `CreditContext` from `@/lib/whatsapp-credit-ledger`; `createQueuedMessage` `creditContext`.
@@ -1179,7 +1273,7 @@ expect(sendTextMessage).toHaveBeenCalledWith(
 
 For the queued-text path in `messages/route.ts`, assert `createQueuedMessage` gets `creditContext` with the same actor and recipient. Add this assertion if the test file has a queued case; if no test covers the queued path, add one case that sends text with a closed window and asserts `createQueuedMessage` receives `creditContext.actor = { type: 'user', userId: 'user-1' }`.
 
-Run the tests → FAIL on argument mismatch.
+Run the tests → FAIL on argument mismatch (the routes still call the old signature; each assertion must check the full credit object, never `expect.anything()`).
 
 - [ ] **Step 2: Implement**
 
@@ -1226,8 +1320,8 @@ git commit -m "Record the sending user for inbox WhatsApp credits"
 - [ ] **Step 1: Update tests first**
 
 - anamnesis-link and send-signing-link tests: expected `sendTemplateMessage` call gains, as 2nd argument, `{ actor: { type: 'user', userId: 'user-1' }, recipient: { patientId: PATIENT_ID, name: 'Maria Silva' } }`.
-- If `consent/[id]/send-whatsapp` has no test file, create `web/src/app/api/consent/[id]/send-whatsapp/__tests__/route.test.ts` with two cases: a session user (mock `auth()` to return `{ user: { id: 'user-1' } }` and the membership query to return the tenant) sends with `actor: { type: 'user', userId: 'user-1' }`; a signing-token request (no session, `?token=abc`, `getRecentlyUsedSigningToken` returns `{ tenantId }`) sends with `actor: { type: 'patient' }`. Both assert `documentLabel` equals the acceptance `templateTitle`. Mock PDF render, storage upload, logo, `isSubscriptionActive`, and `getConsentAcceptanceWithContext` (fields: `patientId`, `patientName`, `patientPhone`, `templateTitle`, `tenantLogoUrl`).
-- clinical-documents test (create the same way if missing): `sendOrEnqueueDocument` gets `{ actor: { type: 'user', userId: 'user-1' }, recipient: { patientId: doc.patientId, name: doc.patient.fullName }, documentLabel: doc.title }`.
+- If `consent/[id]/send-whatsapp` has no test file, create `web/src/app/api/consent/[id]/send-whatsapp/__tests__/route.test.ts` with two cases: a session user (mock `auth` from `@/lib/auth-config` to return `{ user: { id: 'user-1' } }` and the membership query to return the tenant) sends with `actor: { type: 'user', userId: 'user-1' }`; a signing-token request (no session, `?token=abc`, `getRecentlyUsedSigningToken` returns `{ tenantId }`) sends with `actor: { type: 'patient' }`. Both assert `documentLabel` equals the acceptance `templateTitle`. Mock PDF render, storage upload, logo, `isSubscriptionActive`, and `getConsentAcceptanceWithContext` (fields: `patientId`, `patientName`, `patientPhone`, `templateTitle`, `tenantLogoUrl`).
+- clinical-documents: if a test file exists, update its expected `sendOrEnqueueDocument` call to `{ actor: { type: 'user', userId: 'user-1' }, recipient: { patientId: doc.patientId, name: doc.patient.fullName }, documentLabel: doc.title }`. Do not create a new one; typecheck covers this pass-through.
 
 Run → FAIL.
 
@@ -1274,7 +1368,7 @@ git commit -m "Record who sent links and documents in the credit ledger"
 - Modify: `web/src/app/api/cron/whatsapp-automations/route.ts` (~207)
 - Modify: `web/src/lib/whatsapp-anamnesis.ts` (~121)
 - Modify: `web/src/app/api/webhooks/whatsapp/route.ts` (drain ~486-545, status refund ~578)
-- Tests: `web/src/app/api/cron/whatsapp-automations/__tests__/route.test.ts`, `web/src/lib/__tests__/whatsapp-anamnesis.test.ts`, `web/src/app/api/webhooks/whatsapp/__tests__/shared-number-routing.test.ts` (and any other webhook test that mocks `refundFailedCharge` or asserts drain sends)
+- Tests: `web/src/app/api/cron/whatsapp-automations/__tests__/route.test.ts`, `web/src/lib/__tests__/whatsapp-anamnesis.test.ts`, `web/src/app/api/webhooks/whatsapp/__tests__/shared-number-routing.test.ts`, `web/src/app/api/webhooks/whatsapp/__tests__/confirmation-reply.test.ts` (asserts `sendTemplateMessage` args at ~820 and ~897 with the phone 2nd, and reads `mock.calls[0][1]` as the phone at ~1074: insert the system credit as 2nd argument and move the index to `[2]`)
 
 **Interfaces:**
 - Consumes: Task 1 `refundSpendByMetaMessageId`; Task 3 signatures; `WhatsappQueuedMessage.creditContext`.
@@ -1282,7 +1376,7 @@ git commit -m "Record who sent links and documents in the credit ledger"
 - [ ] **Step 1: Update tests first**
 
 - Webhook test: replace the `refundFailedCharge` mock with `refundSpendByMetaMessageId: vi.fn(async () => true)`; the failed-status test expects `refundSpendByMetaMessageId` called with `'wamid.failed'`.
-- Webhook drain tests: a queued row with `creditContext: { actor: { type: 'user', userId: 'user-1' }, recipient: { patientId: 'p1', name: 'Maria' } }` drains with that object as 2nd send argument; a queued row with `creditContext: null` drains with `{ actor: { type: 'system' }, recipient: { patientId: <conversation patientId or null>, conversationId, name: null } }`. If no drain test exists, add these two cases next to the existing queue/credit-exhausted drain test (it already mocks `getQueuedMessages`).
+- Webhook drain tests: a queued row with `creditContext: { actor: { type: 'user', userId: 'user-1' }, recipient: { patientId: 'p1', name: 'Maria' } }` drains with that object as 2nd send argument; a queued row with `creditContext: null` drains with `{ actor: { type: 'system' }, recipient: { patientId: null, conversationId: <the conversation id>, name: null } }`. A stored context without `conversationId` drains with the conversation id filled in. If no drain test exists, add these two cases next to the existing queue/credit-exhausted drain test (it already mocks `getQueuedMessages`).
 - Cron test: expected `sendTemplateMessage` 2nd argument `{ actor: { type: 'system' }, recipient: { patientId: appt.patientId ?? null, name: appt.patientName ?? appt.bookingName ?? null } }`.
 - Anamnesis test: expected 2nd argument `{ actor: { type: 'system' }, recipient: { patientId, name: patient.fullName } }`.
 
@@ -1309,10 +1403,10 @@ In `drainQueuedMessages`, per queued row:
 
 ```ts
 // Rows queued before the ledger existed carry no context.
-const credit = (qm.creditContext as CreditContext | null) ?? {
-  actor: { type: 'system' },
-  recipient: { patientId: null, conversationId, name: null },
-}
+const stored = qm.creditContext as CreditContext | null
+const credit: CreditContext = stored
+  ? { ...stored, recipient: { ...stored.recipient, conversationId: stored.recipient.conversationId ?? conversationId } }
+  : { actor: { type: 'system' }, recipient: { patientId: null, conversationId, name: null } }
 ```
 
 and pass `credit` as the 2nd argument to `sendMediaMessage` / `sendTextMessage`. Remove the old `refundFailedCharge` import.
@@ -1336,4 +1430,10 @@ git commit -m "Record automatic and queued WhatsApp sends in the credit ledger"
 
 ## Deployment note (for the human)
 
-`0037_whatsapp_credit_ledger.sql` drops `whatsapp_credit_charges` after copying its rows. Hand-written migrations after 0018 are not in the drizzle journal; apply it to production the same way 0036 was applied, before the deploy goes live, or every paid send fails on the missing table.
+1. Confirm 0036 is applied in production (`whatsapp_credit_charges` exists).
+2. Dry run 0037 inside `BEGIN; ... ROLLBACK;` against production, read-write session, only after approval.
+3. Apply 0037 with `psql -1 -f` right before promoting the deploy.
+4. Deploy.
+5. Apply 0038 right after the deploy is live. It copies charges written by old code in between, then drops the old table.
+
+Known gaps: periods before the deploy have charges only since 14/10 (PR #75), so their ledger sum does not equal `credits_used`; the invariant holds for periods after the deploy. A Meta `failed` webhook that arrives before `attachMetaMessageId` finds no spend and is not refunded (same race as today). A refund lands in the spend's period even after the month rolls over.
