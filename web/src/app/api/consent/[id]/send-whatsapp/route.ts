@@ -18,7 +18,9 @@ import { handleApiError } from '@/lib/api-error'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-async function resolveAuthorizedTenantId(req: NextRequest, acceptanceId: string): Promise<string | null> {
+type Requester = { tenantId: string; userId: string | null }
+
+async function resolveRequester(req: NextRequest, acceptanceId: string): Promise<Requester | null> {
   // Path 1: logged-in user with membership in the acceptance's tenant
   const session = await auth()
   if (session?.user?.id) {
@@ -32,7 +34,7 @@ async function resolveAuthorizedTenantId(req: NextRequest, acceptanceId: string)
       ))
       .where(eq(consentAcceptances.id, acceptanceId))
       .limit(1)
-    if (row) return row.tenantId
+    if (row) return { tenantId: row.tenantId, userId: session.user.id }
   }
 
   // Path 2: signing token (valid for 1h after use/expiry)
@@ -45,7 +47,7 @@ async function resolveAuthorizedTenantId(req: NextRequest, acceptanceId: string)
         .from(consentAcceptances)
         .where(and(eq(consentAcceptances.id, acceptanceId), eq(consentAcceptances.tenantId, tokenData.tenantId)))
         .limit(1)
-      if (row) return row.tenantId
+      if (row) return { tenantId: row.tenantId, userId: null }
     }
   }
 
@@ -59,13 +61,14 @@ export async function POST(
   try {
     const { id } = await params
 
-    const tenantId = await resolveAuthorizedTenantId(req, id)
-    if (!tenantId) {
+    const requester = await resolveRequester(req, id)
+    if (!requester) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const tenantId = requester.tenantId
 
     // Gated here rather than through `requireWrite`, because
-    // `resolveAuthorizedTenantId` accepts either a session or a capability
+    // `resolveRequester` accepts either a session or a capability
     // token and there may be no session at all. Checked against the tenant
     // the request resolved to, never the caller's own: someone whose own
     // clinic has lapsed must still be able to act on an active clinic that
@@ -108,6 +111,11 @@ export async function POST(
     const whatsappFilename = `${slugifyForFile(acceptance.templateTitle)}.pdf`
     await sendOrEnqueueDocument(
       tenantId,
+      {
+        actor: requester.userId ? { type: 'user', userId: requester.userId } : { type: 'patient' },
+        recipient: { patientId: acceptance.patientId, name: acceptance.patientName },
+        documentLabel: acceptance.templateTitle,
+      },
       whatsappPhone,
       firstName,
       url,

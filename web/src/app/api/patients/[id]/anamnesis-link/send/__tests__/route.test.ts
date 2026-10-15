@@ -77,6 +77,7 @@ describe('POST /api/patients/[id]/anamnesis-link/send', () => {
     expect(getTemplateForTenant).toHaveBeenCalledWith('tenant-1', 'anamnese_link')
     expect(sendTemplateMessage).toHaveBeenCalledWith(
       'tenant-1',
+      { actor: { type: 'user', userId: 'user-1' }, recipient: { patientId: PATIENT_ID, name: 'Maria Silva' } },
       expect.any(String),
       'platform_anamnesis_link',
       'pt_BR',

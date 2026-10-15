@@ -79,6 +79,11 @@ export async function POST(
     const whatsappFilename = `${slugifyForFile(doc.title)}.pdf`
     const sendResult = await sendOrEnqueueDocument(
       ctx.tenantId,
+      {
+        actor: { type: 'user', userId: ctx.userId },
+        recipient: { patientId: doc.patientId, name: doc.patient.fullName },
+        documentLabel: doc.title,
+      },
       whatsappPhone,
       firstName,
       url,
