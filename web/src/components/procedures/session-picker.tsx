@@ -9,57 +9,14 @@ import { ClosePackageDialog } from '@/components/packages/close-package-dialog'
 import { brToday } from '@/lib/dates'
 import { cn, formatDate } from '@/lib/utils'
 
+import { encounterViewQueryOptions, isClosedPackage } from './encounter-view'
+
 interface SessionPickerProps {
   encounterId: string
   procedureRecordIds: string[]
   packageId: string | null
   onPickPending: (recordId: string, ordinal: number) => void
   onPickExecuted: (sessionId: string) => void
-}
-
-interface EncounterViewSession {
-  id: string
-  sessionOrdinal: number
-  performedAt: string
-  executedByName: string
-  // Optional richer payload from /api/encounters/[id] — the picker doesn't
-  // surface these directly, but typing them keeps the cached query payload
-  // shape honest for downstream consumers (the orchestrator reads diagrams +
-  // productApplications for prefill, and the read-only view renders them).
-  technique?: string | null
-  clinicalResponse?: string | null
-  adverseEffects?: string | null
-  notes?: string | null
-  followUpDate?: string | null
-  nextSessionObjectives?: string | null
-  diagrams?: unknown
-  productApplications?: unknown
-}
-
-interface EncounterViewRecord {
-  id: string
-  procedureTypeName: string
-  sessionsTotal: number
-  sessions: EncounterViewSession[]
-}
-
-interface EncounterViewPackage {
-  id: string
-  name: string
-  expiresAt: string | null
-  status: string
-  closedAt: string | null
-  closedReason: string | null
-}
-
-interface EncounterView {
-  records: EncounterViewRecord[]
-  package: EncounterViewPackage | null
-}
-
-interface EncounterViewResponse {
-  success?: boolean
-  data?: EncounterView
 }
 
 // Visual constants — tweaking these adjusts the entire picker rhythm.
@@ -72,22 +29,7 @@ export function SessionPicker({
   onPickPending,
   onPickExecuted,
 }: SessionPickerProps) {
-  const { data, isLoading } = useQuery<EncounterView>({
-    queryKey: ['encounter-view', encounterId],
-    queryFn: async () => {
-      const res = await fetch(`/api/encounters/${encounterId}`)
-      const json: EncounterViewResponse | EncounterView = await res.json()
-      // Defensive: accept either { success, data: {...} } or the bare view object.
-      const view =
-        json && typeof json === 'object' && 'data' in json && json.data
-          ? (json as EncounterViewResponse).data
-          : (json as EncounterView)
-      if (!view || !Array.isArray(view.records)) {
-        throw new Error('Encounter view: unexpected response shape')
-      }
-      return view
-    },
-  })
+  const { data, isLoading } = useQuery(encounterViewQueryOptions(encounterId))
 
   // Package expiry is a YYYY-MM-DD calendar day; compare against BR today as strings.
   const expiredAt = useMemo(() => {
@@ -107,9 +49,7 @@ export function SessionPicker({
     )
   }
 
-  const isPackageClosed = Boolean(
-    data.package && (data.package.status === 'completed' || data.package.closedAt),
-  )
+  const isPackageClosed = isClosedPackage(data.package)
   const canCloseFromPicker = Boolean(data.package?.id) && !isPackageClosed
 
   return (
