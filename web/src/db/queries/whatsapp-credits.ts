@@ -171,6 +171,7 @@ export async function refundSpend(spendId: string, reason: 'send_failed' | 'deli
     const [spend] = await tx.select().from(whatsappCreditLedger)
       .where(and(eq(whatsappCreditLedger.id, spendId), eq(whatsappCreditLedger.kind, 'spend')))
     if (!spend) return false
+    const cost = -spend.amount
 
     const [refund] = await tx
       .insert(whatsappCreditLedger)
@@ -178,7 +179,7 @@ export async function refundSpend(spendId: string, reason: 'send_failed' | 'deli
         tenantId: spend.tenantId,
         creditPeriodId: spend.creditPeriodId,
         kind: 'refund',
-        amount: -spend.amount,
+        amount: cost,
         refundOf: spend.id,
         refundReason: reason,
         actorType: spend.actorType,
@@ -198,15 +199,19 @@ export async function refundSpend(spendId: string, reason: 'send_failed' | 'deli
 
     await tx
       .update(whatsappCredits)
-      .set({ creditsUsed: sql`greatest(${whatsappCredits.creditsUsed} - ${-spend.amount}, 0)`, updatedAt: new Date() })
+      .set({ creditsUsed: sql`greatest(${whatsappCredits.creditsUsed} - ${cost}, 0)`, updatedAt: new Date() })
       .where(eq(whatsappCredits.id, spend.creditPeriodId))
     return true
   })
 }
 
-export async function refundSpendByMetaMessageId(metaMessageId: string): Promise<boolean> {
+export async function refundSpendByMetaMessageId(tenantId: string, metaMessageId: string): Promise<boolean> {
   const [spend] = await db.select({ id: whatsappCreditLedger.id }).from(whatsappCreditLedger)
-    .where(and(eq(whatsappCreditLedger.metaMessageId, metaMessageId), eq(whatsappCreditLedger.kind, 'spend')))
+    .where(and(
+      eq(whatsappCreditLedger.tenantId, tenantId),
+      eq(whatsappCreditLedger.metaMessageId, metaMessageId),
+      eq(whatsappCreditLedger.kind, 'spend'),
+    ))
   if (!spend) return false
   return refundSpend(spend.id, 'delivery_failed')
 }

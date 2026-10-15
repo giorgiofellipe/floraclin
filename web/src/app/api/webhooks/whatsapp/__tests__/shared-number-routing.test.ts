@@ -706,7 +706,7 @@ describe('resolveSharedNumberTenant — status updates', () => {
     await POST(makeRequest(makeStatusPayload('wamid.failed', undefined, 'failed')))
 
     await vi.waitFor(() => {
-      expect(refundSpendByMetaMessageId).toHaveBeenCalledWith('wamid.failed')
+      expect(refundSpendByMetaMessageId).toHaveBeenCalledWith(expect.any(String), 'wamid.failed')
     })
   })
 

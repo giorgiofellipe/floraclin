@@ -1,5 +1,6 @@
 import { pgSchema, uuid, varchar, text, boolean, timestamp, decimal, integer, date, time, jsonb, inet, uniqueIndex, index, serial, type AnyPgColumn } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
+import type { CreditContext } from '@/lib/whatsapp-credit-ledger'
 
 export const floraclinSchema = pgSchema('floraclin')
 
@@ -797,7 +798,7 @@ export const whatsappQueuedMessages = floraclinSchema.table('whatsapp_queued_mes
   mediaUrl: text('media_url'),
   status: varchar('status', { length: 20 }).notNull().default('queued'),
   resumeMetaMessageId: varchar('resume_meta_message_id', { length: 255 }),
-  creditContext: jsonb('credit_context'),
+  creditContext: jsonb('credit_context').$type<CreditContext>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   sentAt: timestamp('sent_at', { withTimezone: true }),
   expiredAt: timestamp('expired_at', { withTimezone: true }),

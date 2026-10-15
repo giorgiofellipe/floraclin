@@ -9,7 +9,6 @@ export interface CreditRecipient {
 export interface CreditContext {
   actor: CreditActor
   recipient: CreditRecipient
-  // Set only for sendOrEnqueueDocument / a media send of a named document.
   documentLabel?: string
 }
 
@@ -84,7 +83,7 @@ export function describeLedgerEntry(entry: LedgerEntry): SentencePart[] {
       if (entry.item.kind === 'document') {
         return [bold(entry.recipientName), plain(' pediu uma cópia do '), bold(entry.item.label ?? 'documento')]
       }
-      // The resume template sent so a patient-requested copy can follow.
+      // Only the resume template that precedes a patient-requested copy lands here.
       return [plain('Envio automático: '), ...itemObject(entry.item), ...to]
     case 'system':
       return [plain('Envio automático: '), ...itemObject(entry.item), ...to]

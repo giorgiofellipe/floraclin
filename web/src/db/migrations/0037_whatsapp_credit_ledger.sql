@@ -42,6 +42,7 @@ LEFT JOIN "floraclin"."whatsapp_conversations" conv ON conv.id = m.conversation_
 LEFT JOIN LATERAL (
 	SELECT purpose_key FROM "floraclin"."whatsapp_templates" wt
 	WHERE wt.name = m.template_name AND (wt.tenant_id = c.tenant_id OR wt.system_template)
+	ORDER BY wt.system_template
 	LIMIT 1
 ) t ON true
 WHERE NOT EXISTS (SELECT 1 FROM "floraclin"."whatsapp_credit_ledger" x WHERE x.id = c.id);--> statement-breakpoint

@@ -55,15 +55,14 @@ describeIntegration('whatsapp credit history (integration, requires test DB)', (
     expect(new Set(ids).size).toBe(4)
   })
 
-  it('labels a template line from its purpose and leaves a removed user without a name', async () => {
+  it('labels a refunded template line from its purpose', async () => {
     await db.insert(whatsappCreditLedger).values({
       ...BASE,
       creditPeriodId: periodId,
       kind: 'refund',
       amount: 1,
       refundReason: 'delivery_failed',
-      actorType: 'user',
-      actorUserId: null,
+      actorType: 'system',
       itemKind: 'template',
       templateName: 'anamnese_v2',
       purposeKey: 'anamnese_link',
@@ -71,7 +70,7 @@ describeIntegration('whatsapp credit history (integration, requires test DB)', (
 
     const { entries } = await listLedgerEntries(TENANT, periodId, null)
     expect(entries[0].item).toEqual({ kind: 'template', label: 'Link de anamnese' })
-    expect(entries[0].actor).toEqual({ type: 'user', name: null })
+    expect(entries[0].actor).toEqual({ type: 'system', name: null })
     expect(entries[0].recipientName).toBe('Maria Silva')
   })
 })

@@ -46,8 +46,6 @@ async function used(periodId: string) {
 describeIntegration('whatsapp credit ledger (integration, requires test DB)', () => {
   beforeAll(async () => {
     await db.insert(tenants).values({ id: TENANT, name: 'Ledger Test', slug: 'ledger-test' }).onConflictDoNothing()
-    // Read `plans` and `tenantSubscriptions` in schema.ts and fill every NOT NULL column
-    // (tenant_subscriptions.current_period_end is NOT NULL).
     await db.insert(plans).values({ id: PLAN, slug: 'ledger-test-plan', name: 'Ledger Test', limits: { whatsapp_credits: 0 } }).onConflictDoNothing()
     await db.insert(tenantSubscriptions).values({ tenantId: TENANT, planId: PLAN, status: 'active', currentPeriodEnd: new Date(Date.now() + 30 * 86_400_000) }).onConflictDoNothing()
   })
@@ -106,9 +104,10 @@ describeIntegration('whatsapp credit ledger (integration, requires test DB)', ()
     const res = await spendCredits(TENANT, 3, ENTRY)
     if (!res.allowed) throw new Error('expected allowed')
     await attachMetaMessageId(res.spendId, 'wamid.ledger-1')
-    expect(await refundSpendByMetaMessageId('wamid.ledger-1')).toBe(true)
-    expect(await refundSpendByMetaMessageId('wamid.ledger-1')).toBe(false)
-    expect(await refundSpendByMetaMessageId('wamid.unknown')).toBe(false)
+    expect(await refundSpendByMetaMessageId('00000000-0000-0000-0000-00000000dead', 'wamid.ledger-1')).toBe(false)
+    expect(await refundSpendByMetaMessageId(TENANT, 'wamid.ledger-1')).toBe(true)
+    expect(await refundSpendByMetaMessageId(TENANT, 'wamid.ledger-1')).toBe(false)
+    expect(await refundSpendByMetaMessageId(TENANT, 'wamid.unknown')).toBe(false)
     expect(await used(periodId)).toBe(0)
     expect(await ledgerSum(periodId)).toBe(0)
   })

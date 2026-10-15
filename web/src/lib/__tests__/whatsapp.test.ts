@@ -323,7 +323,7 @@ describe('credits on the shared number', () => {
     )
 
     expect(createQueuedMessageMock).toHaveBeenCalledWith('tenant-1', 'conv-1', expect.objectContaining({
-      creditContext: { ...CREDIT, documentLabel: 'Atestado' },
+      creditContext: { ...CREDIT, recipient: { ...CREDIT.recipient, conversationId: 'conv-1' }, documentLabel: 'Atestado' },
     }))
   })
 

@@ -347,8 +347,7 @@ export async function sendOrEnqueueDocument(
   } = await import('@/db/queries/whatsapp')
 
   const conversation = await getConversationByPhone(tenantId, to)
-  // The resume template is its own template line, not the document.
-  const resumeCredit: CreditContext = { actor: credit.actor, recipient: credit.recipient }
+  if (conversation) credit = { ...credit, recipient: { ...credit.recipient, conversationId: conversation.id } }
 
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
   const windowOpen = conversation?.lastInboundAt
@@ -374,7 +373,7 @@ export async function sendOrEnqueueDocument(
   if (!conversation) {
     const resumeTemplate = await getTemplateForTenant(tenantId, 'resume_conversation')
     if (resumeTemplate?.status === 'APPROVED') {
-      await sendTemplateMessage(tenantId, resumeCredit, to, resumeTemplate.name, resumeTemplate.language, { '1': patientFirstName })
+      await sendTemplateMessage(tenantId, credit, to, resumeTemplate.name, resumeTemplate.language, { '1': patientFirstName })
     }
     return { queued: true }
   }
@@ -388,7 +387,7 @@ export async function sendOrEnqueueDocument(
     const resumeTemplate = await getTemplateForTenant(tenantId, 'resume_conversation')
     let resumeMetaMessageId: string | null = null
     if (resumeTemplate?.status === 'APPROVED') {
-      const resumeResult = await sendTemplateMessage(tenantId, resumeCredit, to, resumeTemplate.name, resumeTemplate.language, { '1': patientFirstName })
+      const resumeResult = await sendTemplateMessage(tenantId, credit, to, resumeTemplate.name, resumeTemplate.language, { '1': patientFirstName })
       resumeMetaMessageId = resumeResult.metaMessageId
 
       await createMessage(tenantId, conversation.id, {

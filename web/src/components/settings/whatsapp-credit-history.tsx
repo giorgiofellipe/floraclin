@@ -5,7 +5,8 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useIsMobile } from '@/hooks/use-is-mobile'
 import { useWhatsAppCreditLedger } from '@/hooks/queries/use-whatsapp-credit-ledger'
 import { BR_TZ, parseBrDate, toBrYmd } from '@/lib/dates'
@@ -38,7 +39,7 @@ function LedgerLine({ entry }: { entry: LedgerEntry }) {
   const amountColor = entry.amount > 0 ? 'text-emerald-600' : 'text-red-600'
   return (
     <li className="flex items-start gap-3 py-2">
-      <time className="shrink-0 text-xs text-mid tabular-nums pt-0.5">
+      <time dateTime={entry.createdAt} className="shrink-0 text-xs text-mid tabular-nums pt-0.5">
         {formatInTimeZone(new Date(entry.createdAt), BR_TZ, 'HH:mm')}
       </time>
       <p className="min-w-0 flex-1 break-words text-sm text-charcoal">
@@ -72,8 +73,8 @@ export function WhatsAppCreditHistory({ open, onOpenChange }: WhatsAppCreditHist
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-2">
       {first && (
         <div className="space-y-2">
-          <Select items={periodItems} value={first.periodId} onValueChange={(v) => setPeriodId(v)}>
-            <SelectTrigger className="w-full">
+          <Select items={periodItems} value={first.periodId} onValueChange={setPeriodId}>
+            <SelectTrigger className="w-full" aria-label="Período">
               <SelectValue />
             </SelectTrigger>
             <SelectContent />
@@ -83,9 +84,9 @@ export function WhatsAppCreditHistory({ open, onOpenChange }: WhatsAppCreditHist
       )}
 
       {query.isLoading && (
-        <div className="space-y-2 animate-pulse">
-          <div className="h-4 w-full bg-[#F4F6F8] rounded" />
-          <div className="h-4 w-3/4 bg-[#F4F6F8] rounded" />
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-3/4" />
         </div>
       )}
 
@@ -95,10 +96,10 @@ export function WhatsAppCreditHistory({ open, onOpenChange }: WhatsAppCreditHist
 
       {days.map((day) => (
         <section key={day.ymd}>
-          <h4 className="uppercase tracking-wider text-xs font-medium text-mid border-b border-[#E8ECEF] pb-1">
+          <h3 className="uppercase tracking-wider text-xs font-medium text-mid border-b border-topbar-border pb-1">
             {formatInTimeZone(parseBrDate(day.ymd), BR_TZ, 'dd/MM')}
-          </h4>
-          <ul className="divide-y divide-[#E8ECEF]">
+          </h3>
+          <ul className="divide-y divide-topbar-border">
             {day.entries.map((entry) => (
               <LedgerLine key={entry.id} entry={entry} />
             ))}

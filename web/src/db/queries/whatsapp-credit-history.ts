@@ -51,7 +51,7 @@ export async function listLedgerEntries(
     .select({ line: l, userName: users.fullName, patientName: patients.fullName })
     .from(l)
     .leftJoin(users, eq(users.id, l.actorUserId))
-    .leftJoin(patients, eq(patients.id, l.patientId))
+    .leftJoin(patients, and(eq(patients.id, l.patientId), eq(patients.tenantId, l.tenantId)))
     .where(and(
       eq(l.tenantId, tenantId),
       eq(l.creditPeriodId, periodId),

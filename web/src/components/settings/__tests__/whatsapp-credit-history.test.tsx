@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import { renderWithProviders, screen } from '@/tests/test-utils'
 import { WhatsAppCreditHistory } from '../whatsapp-credit-history'
@@ -21,12 +21,12 @@ function respondWith(...bodies: unknown[]) {
   for (const body of bodies) {
     fetchMock.mockResolvedValueOnce({ ok: true, json: async () => body })
   }
-  global.fetch = fetchMock as unknown as typeof fetch
+  vi.stubGlobal('fetch', fetchMock)
   return fetchMock
 }
 
 describe('WhatsAppCreditHistory', () => {
-  beforeEach(() => vi.restoreAllMocks())
+  afterEach(() => vi.unstubAllGlobals())
 
   it('shows each line as a sentence with its amount', async () => {
     respondWith(PAGE_1)

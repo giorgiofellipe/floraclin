@@ -511,9 +511,9 @@ async function drainQueuedMessages(
       }
 
       // Rows queued before the ledger existed carry no context.
-      const stored = qm.creditContext as CreditContext | null
+      const stored = qm.creditContext
       const credit: CreditContext = stored
-        ? { ...stored, recipient: { ...stored.recipient, conversationId: stored.recipient.conversationId ?? conversationId } }
+        ? { ...stored, recipient: { ...stored.recipient, conversationId } }
         : { actor: { type: 'system' }, recipient: { patientId: null, conversationId, name: null } }
 
       let result: { metaMessageId: string }
@@ -583,8 +583,8 @@ async function processStatusUpdate(
   const errorCode = failure?.code != null ? String(failure.code) : null
 
   if (mappedStatus === 'failed') {
-    await refundSpendByMetaMessageId(metaMessageId).catch((err) =>
-      reportWebhookFailure(err, 'refund_failed_charge', { tenantId, metaMessageId }),
+    await refundSpendByMetaMessageId(tenantId, metaMessageId).catch((err) =>
+      reportWebhookFailure(err, 'refund_spend', { tenantId, metaMessageId }),
     )
   }
 

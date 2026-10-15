@@ -1,6 +1,6 @@
 'use client'
 
-import { useInfiniteQuery } from '@tanstack/react-query'
+import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query'
 import { queryKeys } from './query-keys'
 import type { LedgerPage } from '@/lib/whatsapp-credit-ledger'
 
@@ -23,5 +23,6 @@ export function useWhatsAppCreditLedger(periodId: string | null, enabled: boolea
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
     enabled,
+    placeholderData: keepPreviousData,
   })
 }

@@ -46,6 +46,7 @@ describe('GET /api/whatsapp/credits/ledger', () => {
   it('returns 404 for a period of another tenant', async () => {
     const res = await GET(new Request('http://x/api/whatsapp/credits/ledger?periodId=00000000-0000-4000-8000-000000000999'))
     expect(res.status).toBe(404)
+    expect(listCreditPeriods).toHaveBeenCalledWith('tenant-1')
     expect(listLedgerEntries).not.toHaveBeenCalled()
   })
 
