@@ -206,6 +206,10 @@ async function runAutomations() {
 
           const result = await sendTemplateMessage(
             tenant.id,
+            {
+              actor: { type: 'system' },
+              recipient: { patientId: appt.patientId ?? null, name: appt.patientName ?? appt.bookingName ?? null },
+            },
             normalizedPhone,
             template.name,
             template.language,

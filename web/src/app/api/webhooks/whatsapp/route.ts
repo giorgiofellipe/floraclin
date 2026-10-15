@@ -37,7 +37,8 @@ import { enqueueMetaEvent } from '@/lib/meta/events'
 import { captureLifecycleReply, handleLifecycleStatus } from '@/lib/lifecycle-webhook'
 import { getWhatsAppErrorLabel, isKnownWhatsAppErrorCode } from '@/lib/whatsapp-errors'
 import { CreditExhaustedError } from '@/lib/whatsapp-credits'
-import { refundFailedCharge } from '@/db/queries/whatsapp-credits'
+import { refundSpendByMetaMessageId } from '@/db/queries/whatsapp-credits'
+import type { CreditContext } from '@/lib/whatsapp-credit-ledger'
 import { maybeAutoSendAnamnesisLink } from '@/lib/whatsapp-anamnesis'
 
 export const dynamic = 'force-dynamic'
@@ -509,11 +510,17 @@ async function drainQueuedMessages(
         continue
       }
 
+      // Rows queued before the ledger existed carry no context.
+      const stored = qm.creditContext as CreditContext | null
+      const credit: CreditContext = stored
+        ? { ...stored, recipient: { ...stored.recipient, conversationId: stored.recipient.conversationId ?? conversationId } }
+        : { actor: { type: 'system' }, recipient: { patientId: null, conversationId, name: null } }
+
       let result: { metaMessageId: string }
       if (qm.mediaUrl && qm.mediaType) {
-        result = await sendMediaMessage(tenantId, phoneNumber, qm.mediaType as 'document', qm.mediaUrl, qm.body ?? undefined)
+        result = await sendMediaMessage(tenantId, credit, phoneNumber, qm.mediaType as 'document', qm.mediaUrl, qm.body ?? undefined)
       } else {
-        result = await sendTextMessage(tenantId, phoneNumber, qm.body!)
+        result = await sendTextMessage(tenantId, credit, phoneNumber, qm.body!)
       }
 
       const sentMessage = await createMessage(tenantId, conversationId, {
@@ -576,7 +583,7 @@ async function processStatusUpdate(
   const errorCode = failure?.code != null ? String(failure.code) : null
 
   if (mappedStatus === 'failed') {
-    await refundFailedCharge(metaMessageId).catch((err) =>
+    await refundSpendByMetaMessageId(metaMessageId).catch((err) =>
       reportWebhookFailure(err, 'refund_failed_charge', { tenantId, metaMessageId }),
     )
   }

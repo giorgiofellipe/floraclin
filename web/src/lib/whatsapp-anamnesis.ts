@@ -120,6 +120,7 @@ export async function maybeAutoSendAnamnesisLink({
   // The token marks the day as sent, so an unsent link must not leave one behind.
   const result = await sendTemplateMessage(
     tenantId,
+    { actor: { type: 'system' }, recipient: { patientId, name: patient.fullName } },
     phone,
     template.name,
     template.language,

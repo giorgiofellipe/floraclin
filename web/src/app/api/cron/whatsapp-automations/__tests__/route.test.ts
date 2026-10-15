@@ -439,6 +439,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
       expect(json.sent).toBe(1)
       expect(sendTemplateMessage).toHaveBeenCalledWith(
         'tenant-1',
+        { actor: { type: 'system' }, recipient: { patientId: 'patient-1', name: 'Maria Silva' } },
         '5511999991234',
         'appointment_confirmation_v1',
         'pt_BR',
@@ -531,6 +532,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
 
       expect(sendTemplateMessage).toHaveBeenCalledWith(
         'tenant-1',
+        expect.any(Object),
         '5521988885678',
         expect.any(String),
         expect.any(String),
@@ -575,6 +577,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
 
       expect(sendTemplateMessage).toHaveBeenCalledWith(
         expect.any(String),
+        expect.any(Object),
         expect.any(String),
         expect.any(String),
         expect.any(String),
@@ -595,6 +598,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
 
       expect(sendTemplateMessage).toHaveBeenCalledWith(
         expect.any(String),
+        expect.any(Object),
         expect.any(String),
         expect.any(String),
         expect.any(String),
@@ -792,6 +796,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
 
       expect(sendTemplateMessage).toHaveBeenCalledWith(
         expect.any(String),
+        expect.any(Object),
         '5511999991234',
         expect.any(String),
         expect.any(String),
@@ -806,6 +811,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
 
       expect(sendTemplateMessage).toHaveBeenCalledWith(
         expect.any(String),
+        expect.any(Object),
         '5511999991234',
         expect.any(String),
         expect.any(String),
@@ -820,6 +826,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
 
       expect(sendTemplateMessage).toHaveBeenCalledWith(
         expect.any(String),
+        expect.any(Object),
         '5511999991234',
         expect.any(String),
         expect.any(String),
@@ -834,6 +841,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
 
       expect(sendTemplateMessage).toHaveBeenCalledWith(
         expect.any(String),
+        expect.any(Object),
         '5511999991234',
         expect.any(String),
         expect.any(String),
@@ -869,6 +877,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
 
       expect(sendTemplateMessage).toHaveBeenCalledWith(
         expect.any(String),
+        expect.any(Object),
         expect.any(String),
         expect.any(String),
         expect.any(String),
@@ -883,6 +892,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
 
       expect(sendTemplateMessage).toHaveBeenCalledWith(
         expect.any(String),
+        expect.any(Object),
         expect.any(String),
         expect.any(String),
         expect.any(String),
