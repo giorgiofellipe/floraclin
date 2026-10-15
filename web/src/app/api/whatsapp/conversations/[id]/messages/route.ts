@@ -19,6 +19,7 @@ import {
   sendMediaSchema,
 } from '@/validations/whatsapp'
 import { sendTextMessage, sendTemplateMessage, sendMediaMessage, resolveTemplateBody, requireCredits, pendingQueueCost } from '@/lib/whatsapp'
+import type { CreditContext } from '@/lib/whatsapp-credit-ledger'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { requireWrite } from '@/lib/write-access'
 import { getProspect, updateProspect } from '@/db/queries/prospects'
@@ -115,6 +116,15 @@ export async function POST(
       return NextResponse.json({ error: 'Conversa não encontrada' }, { status: 404 })
     }
 
+    const credit: CreditContext = {
+      actor: { type: 'user', userId: ctx.userId },
+      recipient: {
+        patientId: conversation.patientId ?? null,
+        conversationId: conversation.id,
+        name: conversation.profileName ?? null,
+      },
+    }
+
     const body = await request.json()
 
     let metaMessageId: string
@@ -133,6 +143,7 @@ export async function POST(
       }
       const result = await sendTemplateMessage(
         ctx.tenantId,
+        credit,
         conversation.phoneNumber,
         parsed.data.templateName,
         parsed.data.language,
@@ -161,6 +172,7 @@ export async function POST(
       }
       const result = await sendMediaMessage(
         ctx.tenantId,
+        credit,
         conversation.phoneNumber,
         parsed.data.mediaType,
         parsed.data.mediaUrl,
@@ -212,6 +224,7 @@ export async function POST(
           const firstName = conversation.profileName?.split(' ')[0] ?? 'paciente'
           const resumeResult = await sendTemplateMessage(
             ctx.tenantId,
+            credit,
             conversation.phoneNumber,
             resumeTemplate.name,
             resumeTemplate.language,
@@ -236,6 +249,7 @@ export async function POST(
         const queued = await createQueuedMessage(ctx.tenantId, conversationId, {
           body: parsed.data.body,
           resumeMetaMessageId,
+          creditContext: credit,
         })
 
         const queuedMessage = {
@@ -269,6 +283,7 @@ export async function POST(
 
       const result = await sendTextMessage(
         ctx.tenantId,
+        credit,
         conversation.phoneNumber,
         parsed.data.body,
       )

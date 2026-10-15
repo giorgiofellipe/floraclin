@@ -96,6 +96,7 @@ beforeEach(() => {
   } as never)
   vi.mocked(claimFailedMessageForRetry).mockResolvedValue({
     id: 'msg-1',
+    conversationId: 'conv-1',
     direction: 'outbound',
     deliveryStatus: 'retrying',
     metaMessageId: 'wamid.old',
@@ -126,6 +127,10 @@ describe('POST /api/whatsapp/conversations/[id]/messages/[messageId]/retry', () 
     expect(res.status).toBe(201)
     expect(sendTemplateMessage).toHaveBeenCalledWith(
       'tenant-1',
+      {
+        actor: { type: 'user', userId: 'user-1' },
+        recipient: { patientId: 'patient-1', conversationId: 'conv-1', name: 'Maria Silva' },
+      },
       '5547988443635',
       'appointment_confirmation_v2',
       'pt_BR',
@@ -156,7 +161,7 @@ describe('POST /api/whatsapp/conversations/[id]/messages/[messageId]/retry', () 
 
     await POST(request(), params())
 
-    expect(vi.mocked(sendTemplateMessage).mock.calls[0][1]).toBe('5547988443635')
+    expect(vi.mocked(sendTemplateMessage).mock.calls[0][2]).toBe('5547988443635')
   })
 
   // Regression: comparing a bare `new Date(appointment.date)` (UTC midnight)
