@@ -6,6 +6,7 @@ import { usePatient } from '@/hooks/queries/use-patients'
 import { useAnamnesis, useAnamnesisTemplate } from '@/hooks/queries/use-anamnesis'
 import { useLatestNonExecutedProcedure, useProcedure } from '@/hooks/queries/use-procedures'
 import { useTenant } from '@/hooks/queries/use-tenant'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { ServiceWizard } from '@/components/service-wizard/service-wizard'
 import type { ProcedureStatus } from '@/types'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
@@ -132,7 +133,7 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
       tenant={{
         id: tenant.id,
         name: tenant.name,
-        whatsappApiEnabled: !!(tenant.settings as Record<string, unknown> | null)?.whatsapp_enabled,
+        whatsappApiEnabled: isWhatsAppEnabled(tenant.settings as Record<string, unknown> | null),
       }}
       initialStep={initialStep}
       procedureId={procedure?.id ?? null}

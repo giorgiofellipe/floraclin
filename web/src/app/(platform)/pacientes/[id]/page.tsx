@@ -3,6 +3,7 @@ import { Suspense } from 'react'
 import { getAuthContext } from '@/lib/auth'
 import { getPatient } from '@/db/queries/patients'
 import { getTenant } from '@/db/queries/tenants'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { PatientDetailPageClient } from './patient-detail-page-client'
 
 interface PatientDetailPageProps {
@@ -41,7 +42,7 @@ export default async function PatientDetailPage({
     >
       <PatientDetailPageClient
         patientId={id}
-        whatsappApiEnabled={!!settings.whatsapp_enabled}
+        whatsappApiEnabled={isWhatsAppEnabled(settings)}
         role={ctx.role}
       />
     </Suspense>

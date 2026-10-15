@@ -13,6 +13,7 @@ import { withCronMonitor } from '@/lib/cron-monitor'
 import { buildConfirmationParams } from '@/lib/whatsapp-confirmation'
 import { brToday, parseBrDate } from '@/lib/dates'
 import { maybeAutoSendAnamnesisLink } from '@/lib/whatsapp-anamnesis'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 
 // Schedule mirrors `vercel.json`; see withCronMonitor for the rest. This is
 // the cron a clinic notices first when it stops running, so it gets the same
@@ -114,10 +115,7 @@ async function runAutomations() {
   const outcomes: TenantOutcome[] = []
 
   const waEnabled = allTenants.filter((t) => {
-    const s = t.settings as Record<string, unknown> | null
-    const mode = (s?.whatsapp_mode as string) ?? 'floraclin'
-    if (mode === 'floraclin') return true
-    if (s?.whatsapp_enabled) return true
+    if (isWhatsAppEnabled(t.settings as Record<string, unknown> | null)) return true
     outcomes.push(skipOutcome(t.id, t.name, 'wa_disabled'))
     return false
   })

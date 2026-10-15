@@ -3,19 +3,16 @@ import { z } from 'zod'
 import { requireWrite } from '@/lib/write-access'
 import { getTenant } from '@/db/queries/tenants'
 import { getPatient } from '@/db/queries/patients'
-import { getTemplateByPurpose, upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
-import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
+import { upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
+import { getTemplateForTenant, sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { SubscriptionExpiredError, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
 import { normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { handleApiError } from '@/lib/api-error'
-
-const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+import { isAppUrl } from '@/lib/app-url'
 
 const bodySchema = z.object({
-  url: z.string().url().refine(
-    (u) => appUrl && u.startsWith(appUrl),
-    'URL must belong to this application',
-  ),
+  url: z.string().url().refine(isAppUrl, 'URL must belong to this application'),
 })
 
 export async function POST(
@@ -27,8 +24,11 @@ export async function POST(
     if (blocked) return blocked
 
     const tenant = await getTenant(ctx.tenantId)
-    const settings = (tenant?.settings ?? {}) as Record<string, unknown>
-    if (!settings.whatsapp_enabled) {
+    if (!tenant) {
+      return NextResponse.json({ error: 'Clínica não encontrada' }, { status: 404 })
+    }
+    const settings = (tenant.settings ?? {}) as Record<string, unknown>
+    if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp não habilitado' }, { status: 403 })
     }
 
@@ -50,7 +50,7 @@ export async function POST(
       )
     }
 
-    const template = await getTemplateByPurpose(ctx.tenantId, 'anamnese_link')
+    const template = await getTemplateForTenant(ctx.tenantId, 'anamnese_link')
     if (!template) {
       return NextResponse.json({ error: 'Template de anamnese não cadastrado. Cadastre um template com finalidade "anamnese_link".' }, { status: 400 })
     }
@@ -64,7 +64,7 @@ export async function POST(
     // Extract token from the URL (last path segment after /a/)
     const urlToken = parsed.data.url.split('/a/').pop() ?? ''
 
-    const templateParams = { '1': firstName, '2': tenant!.name }
+    const templateParams = { '1': firstName, '2': tenant.name }
     const buttonParams = [
       {
         index: 0,

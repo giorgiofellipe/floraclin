@@ -10,6 +10,7 @@ import { getSubscription } from '@/db/queries/subscriptions'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { eq } from 'drizzle-orm'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
   const auth = await getAuthContext()
@@ -56,7 +57,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
         activeTenantId={auth.tenantId}
         isPlatformAdmin={auth.isPlatformAdmin}
         impersonatingTenantName={impersonatingTenantName}
-        whatsappEnabled={!!settings.whatsapp_enabled}
+        whatsappEnabled={isWhatsAppEnabled(settings)}
       />
       <div className="flex min-h-screen flex-col md:pl-[200px]">
         <Header
@@ -69,7 +70,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           activeTenantId={auth.tenantId}
           isPlatformAdmin={auth.isPlatformAdmin}
           impersonatingTenantName={impersonatingTenantName}
-          whatsappEnabled={!!settings.whatsapp_enabled}
+          whatsappEnabled={isWhatsAppEnabled(settings)}
         />
         <SubscriptionBanner
           subscriptionStatus={subscription?.status ?? null}

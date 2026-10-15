@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import { db } from '@/db/client'
 import { consentSigningTokens, patients, consentTemplates, tenants } from '@/db/schema'
 import { eq, and, isNull, sql, inArray } from 'drizzle-orm'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 
 const SIGNING_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
 
@@ -46,7 +47,7 @@ export async function getValidSigningToken(token: string) {
       expiresAt: consentSigningTokens.expiresAt,
       createdBy: consentSigningTokens.createdBy,
       patientName: patients.fullName,
-      whatsappEnabled: sql<boolean>`coalesce((${tenants.settings}->>'whatsapp_enabled')::boolean, false)`.as('whatsapp_enabled'),
+      tenantSettings: tenants.settings,
     })
     .from(consentSigningTokens)
     .innerJoin(patients, eq(patients.id, consentSigningTokens.patientId))
@@ -60,7 +61,9 @@ export async function getValidSigningToken(token: string) {
     )
     .limit(1)
 
-  return row ?? null
+  if (!row) return null
+  const { tenantSettings, ...signingToken } = row
+  return { ...signingToken, whatsappEnabled: isWhatsAppEnabled(tenantSettings as Record<string, unknown> | null) }
 }
 
 export async function markSigningTokenUsed(token: string, tx?: typeof db) {

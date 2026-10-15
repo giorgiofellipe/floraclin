@@ -14,9 +14,9 @@ import { getAppointmentByConfirmationMessageId, relinkConfirmationMessageId } fr
 import {
   sendTemplateMessage,
   resolveTemplateBody,
-  isWhatsAppEnabled,
   getTemplateForTenant,
 } from '@/lib/whatsapp'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { buildConfirmationParams } from '@/lib/whatsapp-confirmation'
 import { normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { parseBrDate } from '@/lib/dates'

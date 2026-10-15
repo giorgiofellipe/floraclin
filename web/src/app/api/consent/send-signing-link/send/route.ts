@@ -3,16 +3,18 @@ import { z } from 'zod'
 import { requireWrite } from '@/lib/write-access'
 import { getTenant } from '@/db/queries/tenants'
 import { getPatient } from '@/db/queries/patients'
-import { getTemplateByPurpose, upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
-import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
+import { upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
+import { getTemplateForTenant, sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { SubscriptionExpiredError, SUBSCRIPTION_EXPIRED_RESPONSE } from '@/lib/plans'
 import { CONSENT_SIGNING_TEMPLATE_PURPOSE } from '@/validations/consent'
 import { InvalidWhatsAppPhoneError, normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { handleApiError } from '@/lib/api-error'
 import { BusinessError } from '@/lib/errors'
+import { isAppUrl } from '@/lib/app-url'
 
 const sendSchema = z.object({
-  url: z.string().url(),
+  url: z.string().url().refine(isAppUrl, 'URL must belong to this application'),
   patientId: z.string().uuid(),
 })
 
@@ -32,7 +34,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Clínica não encontrada' }, { status: 404 })
     }
     const settings = (tenant.settings ?? {}) as Record<string, unknown>
-    if (!settings.whatsapp_enabled) {
+    if (!isWhatsAppEnabled(settings)) {
       return NextResponse.json({ error: 'WhatsApp não habilitado' }, { status: 403 })
     }
 
@@ -44,7 +46,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Paciente sem telefone cadastrado' }, { status: 400 })
     }
 
-    const template = await getTemplateByPurpose(ctx.tenantId, CONSENT_SIGNING_TEMPLATE_PURPOSE)
+    const template = await getTemplateForTenant(ctx.tenantId, CONSENT_SIGNING_TEMPLATE_PURPOSE)
     if (!template) {
       return NextResponse.json(
         { error: 'Template de assinatura não cadastrado. Cadastre um template com finalidade "consent_signing_link".' },

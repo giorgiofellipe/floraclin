@@ -13,8 +13,8 @@ import {
   getTemplate as getMetaTemplate,
   editTemplate as editMetaTemplate,
   deleteTemplate as deleteMetaTemplate,
-  isWhatsAppEnabled,
 } from '@/lib/whatsapp'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { updateTemplateSchema } from '@/validations/whatsapp'
 import { handleApiError } from '@/lib/api-error'
 import { reportSideEffectFailure } from '@/lib/observability'

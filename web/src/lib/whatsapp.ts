@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import { BusinessError } from '@/lib/errors'
 import { getTenant } from '@/db/queries/tenants'
 import { reportSideEffectFailure } from '@/lib/observability'
+import { resolveWhatsAppMode, type WhatsAppMode } from '@/lib/whatsapp-mode'
 import {
   DEFAULT_CREDIT_COST,
   UNLIMITED_CREDITS,
@@ -15,20 +16,10 @@ export { normalizeBrPhone } from '@/lib/phone'
 const GRAPH_API_VERSION = 'v21.0'
 const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`
 
-export type WhatsAppMode = 'floraclin' | 'own'
-
 interface WhatsAppCredentials {
   phoneNumberId: string
   accessToken: string
   businessAccountId: string
-}
-
-// WhatsApp is always available on the shared FloraClin mode (the default);
-// the whatsapp_enabled flag only gates tenants using their own number.
-export function isWhatsAppEnabled(settings: Record<string, unknown> | null | undefined): boolean {
-  const mode = (settings?.whatsapp_mode as WhatsAppMode) ?? 'floraclin'
-  if (mode === 'floraclin') return true
-  return !!settings?.whatsapp_enabled
 }
 
 /**
@@ -40,21 +31,21 @@ export function isWhatsAppEnabled(settings: Record<string, unknown> | null | und
 export function canManageTemplates(
   settings: Record<string, unknown> | null | undefined,
 ): boolean {
-  return ((settings?.whatsapp_mode as WhatsAppMode) ?? 'floraclin') === 'own'
+  return resolveWhatsAppMode(settings) === 'own'
 }
 
 export async function getWhatsAppMode(tenantId: string): Promise<WhatsAppMode> {
   const tenant = await getTenant(tenantId)
   if (!tenant) throw new Error('Tenant not found')
   const settings = tenant.settings as Record<string, unknown> | null
-  return (settings?.whatsapp_mode as WhatsAppMode) ?? 'floraclin'
+  return resolveWhatsAppMode(settings)
 }
 
 async function getCredentials(tenantId: string): Promise<WhatsAppCredentials> {
   const tenant = await getTenant(tenantId)
   if (!tenant) throw new Error('Tenant not found')
   const settings = tenant.settings as Record<string, unknown> | null
-  const mode = (settings?.whatsapp_mode as WhatsAppMode) ?? 'floraclin'
+  const mode = resolveWhatsAppMode(settings)
 
   if (mode === 'own') {
     if (!settings?.whatsapp_enabled) throw new Error('WhatsApp not enabled')

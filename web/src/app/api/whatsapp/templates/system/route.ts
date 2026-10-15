@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { listSystemTemplates } from '@/db/queries/whatsapp'
-import { isWhatsAppEnabled } from '@/lib/whatsapp'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { handleApiError } from '@/lib/api-error'
 
 /**

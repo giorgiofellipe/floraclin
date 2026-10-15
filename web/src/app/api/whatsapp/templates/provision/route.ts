@@ -6,9 +6,9 @@ import { listTemplates, upsertTemplate, updateLocalTemplate } from '@/db/queries
 import {
   canManageTemplates,
   createTemplate as createMetaTemplate,
-  isWhatsAppEnabled,
   syncTemplatesForTenant,
 } from '@/lib/whatsapp'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { TEMPLATE_BLUEPRINTS, resolveTemplatePrefix } from '@/lib/whatsapp-blueprints'
 import { handleApiError } from '@/lib/api-error'
 

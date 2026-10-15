@@ -3,7 +3,7 @@ import { getAuthContext } from '@/lib/auth'
 import { requireWrite } from '@/lib/write-access'
 import { getTenant } from '@/db/queries/tenants'
 import { upsertAutomation, getTemplateById } from '@/db/queries/whatsapp'
-import { isWhatsAppEnabled } from '@/lib/whatsapp'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { updateAutomationSchema } from '@/validations/whatsapp'
 import { handleApiError } from '@/lib/api-error'
 

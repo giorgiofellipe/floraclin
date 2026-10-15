@@ -34,6 +34,7 @@ import { WhatsAppTemplateList } from './whatsapp-template-list'
 import { WhatsAppAutomations } from './whatsapp-automations'
 import { WhatsAppCreditBar } from './whatsapp-credit-bar'
 import { WhatsAppSystemTemplates } from './whatsapp-system-templates'
+import type { WhatsAppMode } from '@/lib/whatsapp-mode'
 
 // ─── Help Image ─────────────────────────────────────────────────────
 
@@ -70,8 +71,6 @@ function HelpImage({ src, alt }: { src: string; alt: string }) {
 // ─── Schema ──────────────────────────────────────────────────────────
 
 const ALLOWED_ROLES = ['owner', 'practitioner', 'receptionist', 'financial'] as const
-
-type WhatsAppMode = 'floraclin' | 'own'
 
 const whatsappSettingsSchema = z.object({
   whatsapp_mode: z.enum(['floraclin', 'own']),
