@@ -6,6 +6,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { formatDate } from '@/lib/utils'
 
+import {
+  encounterViewQueryOptions,
+  type EncounterViewDiagram,
+  type EncounterViewProductApplication,
+  type EncounterViewSession,
+} from './encounter-view'
 import { SessionPicker } from './session-picker'
 import { SessionExecutionForm } from './session-execution-form'
 
@@ -37,81 +43,6 @@ type Mode =
 
 // ─── Read-only view ─────────────────────────────────────────────────
 
-interface EncounterViewDiagramPoint {
-  id?: string
-  x: string | number
-  y: string | number
-  productName: string
-  activeIngredient?: string | null
-  quantity: string | number
-  quantityUnit: string
-  technique?: string | null
-  depth?: string | null
-  notes?: string | null
-  sortOrder?: number
-}
-
-interface EncounterViewDiagram {
-  id?: string
-  viewType: string
-  points: EncounterViewDiagramPoint[]
-}
-
-interface EncounterViewProductApplication {
-  id?: string
-  productName: string
-  activeIngredient?: string | null
-  totalQuantity: string | number
-  quantityUnit: string
-  batchNumber?: string | null
-  expirationDate?: string | null
-  applicationAreas?: string | null
-  notes?: string | null
-}
-
-interface EncounterViewSession {
-  id: string
-  sessionOrdinal: number
-  performedAt: string
-  executedByName: string
-  technique?: string | null
-  clinicalResponse?: string | null
-  adverseEffects?: string | null
-  notes?: string | null
-  followUpDate?: string | null
-  nextSessionObjectives?: string | null
-  diagrams?: EncounterViewDiagram[]
-  productApplications?: EncounterViewProductApplication[]
-}
-
-interface EncounterViewRecord {
-  id: string
-  procedureTypeName: string
-  sessions: EncounterViewSession[]
-}
-
-interface EncounterView {
-  records: EncounterViewRecord[]
-}
-
-interface EncounterViewResponse {
-  success?: boolean
-  data?: EncounterView
-}
-
-async function fetchEncounterView(encounterId: string): Promise<EncounterView> {
-  const res = await fetch(`/api/encounters/${encounterId}`)
-  const json: EncounterViewResponse | EncounterView = await res.json()
-  const view =
-    json && typeof json === 'object' && 'data' in json && json.data
-      ? (json as EncounterViewResponse).data
-      : (json as EncounterView)
-  if (!view || !Array.isArray(view.records)) {
-    throw new Error('Encounter view: unexpected response shape')
-  }
-  return view
-}
-
 function SessionReadOnly({
   sessionId,
   encounterId,
@@ -121,12 +52,7 @@ function SessionReadOnly({
   encounterId: string
   onBack: () => void
 }) {
-  const { data } = useQuery<EncounterView>({
-    queryKey: ['encounter-view', encounterId],
-    queryFn: () => fetchEncounterView(encounterId),
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  })
+  const { data } = useQuery(encounterViewQueryOptions(encounterId))
 
   if (!data) return <div>Carregando…</div>
 
@@ -257,12 +183,7 @@ export function ProcedureExecution({
   // immediately, before the picker has had a chance to populate the cache.
   // For non-deep-link paths the picker's `useQuery` will populate this same
   // key, so we de-dupe automatically.
-  const { data: encounterView } = useQuery<EncounterView>({
-    queryKey: ['encounter-view', encounterId],
-    queryFn: () => fetchEncounterView(encounterId),
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  })
+  const { data: encounterView } = useQuery(encounterViewQueryOptions(encounterId))
 
   // Planned diagrams from the procedure record (step 3 planning) — used as
   // the diagram prefill for the FIRST session, which has no previous

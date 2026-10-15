@@ -34,6 +34,14 @@ import type { AnamnesisRecord, AnamnesisTemplate } from '@/lib/anamnesis/types'
 import type { EvaluationTemplateForForm, ExistingEvaluationResponse } from '@/components/procedures/procedure-form'
 import type { FormSection, FormResponses } from '@/lib/forms/types'
 import { formatBrPhone } from '@/lib/phone'
+import {
+  countPendingSessions,
+  encounterViewQueryOptions,
+  EncounterViewNotFoundError,
+} from '@/components/procedures/encounter-view'
+
+const PENDING_CHECK_FAILED_MESSAGE =
+  'Não foi possível verificar as sessões pendentes. Recarregue a página para tentar novamente.'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -596,38 +604,27 @@ export function ServiceWizard({
 
   // Subscribe to the encounter view (shared cache with SessionPicker — no
   // extra fetch) so we can tell whether any session is still pending.
-  type EncounterPickerSlice = {
-    records: Array<{ id: string; sessionsTotal: number; sessions: Array<{ id: string }> }>
-    package: { status: string; closedAt: string | null } | null
-  }
-  const { data: encounterView } = useQuery<EncounterPickerSlice>({
-    queryKey: ['encounter-view', state.encounterId],
-    queryFn: async () => {
-      const res = await fetch(`/api/encounters/${state.encounterId}`)
-      const json = await res.json()
-      const view = json?.data ?? json
-      return view as EncounterPickerSlice
-    },
+  const { data: encounterView, error: encounterViewError } = useQuery({
+    ...encounterViewQueryOptions(state.encounterId ?? ''),
     enabled: !!state.encounterId && state.currentStep === 5,
   })
 
-  const pendingSessionsRemaining = useMemo(() => {
-    if (!encounterView) return 0
-    const isPkgTerminal = Boolean(
-      encounterView.package &&
-        (encounterView.package.status === 'completed' ||
-          encounterView.package.closedAt),
-    )
-    // A closed/cancelled package means the user intentionally stopped — no
-    // pending sessions remain from the wizard's perspective.
-    if (isPkgTerminal) return 0
-    return encounterView.records.reduce(
-      (sum, r) => sum + Math.max(0, r.sessionsTotal - r.sessions.length),
-      0,
-    )
-  }, [encounterView])
+  const pendingSessionsRemaining = encounterView ? countPendingSessions(encounterView) : 0
+  const pendingCheckFailed =
+    !!encounterViewError && !(encounterViewError instanceof EncounterViewNotFoundError)
+  const isFinalizeBlocked =
+    state.currentStep === 5 && (pendingCheckFailed || pendingSessionsRemaining > 0)
 
-  const isFinalizeBlocked = state.currentStep === 5 && pendingSessionsRemaining > 0
+  let finalizeBlockedTitle = PENDING_CHECK_FAILED_MESSAGE
+  let finalizeBlockedText = PENDING_CHECK_FAILED_MESSAGE
+  if (!pendingCheckFailed) {
+    const sessionsLabel = pendingSessionsRemaining === 1 ? 'sessão pendente' : 'sessões pendentes'
+    finalizeBlockedTitle = `${pendingSessionsRemaining} ${sessionsLabel} — execute ou encerre o pacote antes de finalizar.`
+    finalizeBlockedText =
+      pendingSessionsRemaining === 1
+        ? '1 sessão pendente. Execute ou encerre o pacote antes de finalizar.'
+        : `${pendingSessionsRemaining} sessões pendentes. Execute todas ou encerre o pacote antes de finalizar.`
+  }
 
   const handleNext = useCallback(() => {
     console.log('[wizard] handleNext clicked', {
@@ -1068,11 +1065,7 @@ export function ServiceWizard({
               type="button"
               onClick={handleNext}
               disabled={state.isSaving || isFinalizing || isFinalizeBlocked}
-              title={
-                isFinalizeBlocked
-                  ? `${pendingSessionsRemaining} ${pendingSessionsRemaining === 1 ? 'sessão pendente' : 'sessões pendentes'} — execute ou encerre o pacote antes de finalizar.`
-                  : undefined
-              }
+              title={isFinalizeBlocked ? finalizeBlockedTitle : undefined}
               className={cn(
                 'flex w-full items-center justify-center gap-1.5 rounded-[3px] px-6 py-2.5 text-sm font-medium transition-colors min-h-[48px] md:w-auto md:order-3',
                 'bg-forest text-cream hover:bg-sage',
@@ -1091,9 +1084,7 @@ export function ServiceWizard({
             </button>
             {isFinalizeBlocked && (
               <p className="text-[11px] text-mid md:order-2 md:max-w-[260px] md:text-right">
-                {pendingSessionsRemaining === 1
-                  ? '1 sessão pendente. Execute ou encerre o pacote antes de finalizar.'
-                  : `${pendingSessionsRemaining} sessões pendentes. Execute todas ou encerre o pacote antes de finalizar.`}
+                {finalizeBlockedText}
               </p>
             )}
 
