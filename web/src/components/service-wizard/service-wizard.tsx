@@ -34,6 +34,7 @@ import type { AnamnesisRecord, AnamnesisTemplate } from '@/lib/anamnesis/types'
 import type { EvaluationTemplateForForm, ExistingEvaluationResponse } from '@/components/procedures/procedure-form'
 import type { FormSection, FormResponses } from '@/lib/forms/types'
 import { formatBrPhone } from '@/lib/phone'
+import { countPendingSessions, parseEncounterPickerSlice, type EncounterPickerSlice } from './encounter-view'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -596,35 +597,18 @@ export function ServiceWizard({
 
   // Subscribe to the encounter view (shared cache with SessionPicker — no
   // extra fetch) so we can tell whether any session is still pending.
-  type EncounterPickerSlice = {
-    records: Array<{ id: string; sessionsTotal: number; sessions: Array<{ id: string }> }>
-    package: { status: string; closedAt: string | null } | null
-  }
   const { data: encounterView } = useQuery<EncounterPickerSlice>({
     queryKey: ['encounter-view', state.encounterId],
     queryFn: async () => {
       const res = await fetch(`/api/encounters/${state.encounterId}`)
       const json = await res.json()
-      const view = json?.data ?? json
-      return view as EncounterPickerSlice
+      return parseEncounterPickerSlice(json)
     },
     enabled: !!state.encounterId && state.currentStep === 5,
   })
 
   const pendingSessionsRemaining = useMemo(() => {
-    if (!encounterView) return 0
-    const isPkgTerminal = Boolean(
-      encounterView.package &&
-        (encounterView.package.status === 'completed' ||
-          encounterView.package.closedAt),
-    )
-    // A closed/cancelled package means the user intentionally stopped — no
-    // pending sessions remain from the wizard's perspective.
-    if (isPkgTerminal) return 0
-    return encounterView.records.reduce(
-      (sum, r) => sum + Math.max(0, r.sessionsTotal - r.sessions.length),
-      0,
-    )
+    return countPendingSessions(encounterView)
   }, [encounterView])
 
   const isFinalizeBlocked = state.currentStep === 5 && pendingSessionsRemaining > 0
