@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import { formatInTimeZone } from 'date-fns-tz'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -43,9 +44,16 @@ function LedgerLine({ entry }: { entry: LedgerEntry }) {
         {formatInTimeZone(new Date(entry.createdAt), BR_TZ, 'HH:mm')}
       </time>
       <p className="min-w-0 flex-1 break-words text-sm text-charcoal">
-        {describeLedgerEntry(entry).map((part, i) =>
-          part.strong ? <strong key={i}>{part.text}</strong> : <span key={i}>{part.text}</span>,
-        )}
+        {describeLedgerEntry(entry).map((part, i) => {
+          if (part.href) {
+            return (
+              <Link key={i} href={part.href} className="font-semibold text-sage underline-offset-2 hover:underline">
+                {part.text}
+              </Link>
+            )
+          }
+          return part.strong ? <strong key={i}>{part.text}</strong> : <span key={i}>{part.text}</span>
+        })}
       </p>
       <span className={`shrink-0 text-sm font-medium tabular-nums ${amountColor}`}>{amountText}</span>
     </li>

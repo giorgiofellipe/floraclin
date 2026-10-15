@@ -22,6 +22,7 @@ export interface LedgerEntry {
   refundReason: LedgerRefundReason | null
   actor: { type: CreditActor['type']; name: string | null }
   recipientName: string
+  recipientPatientId: string | null
   item: { kind: LedgerItemKind; label: string | null }
   createdAt: string
 }
@@ -41,10 +42,15 @@ export interface LedgerPage {
   nextCursor: string | null
 }
 
-export type SentencePart = { text: string; strong: boolean }
+export type SentencePart = { text: string; strong: boolean; href?: string }
 
 const plain = (text: string): SentencePart => ({ text, strong: false })
 const bold = (text: string): SentencePart => ({ text, strong: true })
+const recipient = (entry: LedgerEntry): SentencePart => ({
+  text: entry.recipientName,
+  strong: true,
+  href: entry.recipientPatientId ? `/pacientes/${entry.recipientPatientId}` : undefined,
+})
 
 // "enviou X", "não entregou X"
 function itemObject(item: LedgerEntry['item']): SentencePart[] {
@@ -67,7 +73,7 @@ function itemAfterDe(item: LedgerEntry['item']): SentencePart[] {
 }
 
 export function describeLedgerEntry(entry: LedgerEntry): SentencePart[] {
-  const to = [plain(' para '), bold(entry.recipientName)]
+  const to = [plain(' para '), recipient(entry)]
 
   if (entry.kind === 'refund') {
     if (entry.refundReason === 'delivery_failed') {
@@ -81,7 +87,7 @@ export function describeLedgerEntry(entry: LedgerEntry): SentencePart[] {
       return [bold(entry.actor.name ?? 'Usuário removido'), plain(' enviou '), ...itemObject(entry.item), ...to]
     case 'patient':
       if (entry.item.kind === 'document') {
-        return [bold(entry.recipientName), plain(' pediu uma cópia do '), bold(entry.item.label ?? 'documento')]
+        return [recipient(entry), plain(' pediu uma cópia do '), bold(entry.item.label ?? 'documento')]
       }
       // Only the resume template that precedes a patient-requested copy lands here.
       return [plain('Envio automático: '), ...itemObject(entry.item), ...to]

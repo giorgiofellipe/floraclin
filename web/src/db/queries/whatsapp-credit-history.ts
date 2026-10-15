@@ -48,7 +48,7 @@ export async function listLedgerEntries(
 ): Promise<{ entries: LedgerEntry[]; nextCursor: string | null }> {
   const l = whatsappCreditLedger
   const rows = await db
-    .select({ line: l, userName: users.fullName, patientName: patients.fullName })
+    .select({ line: l, userName: users.fullName, patientName: patients.fullName, patientDeletedAt: patients.deletedAt })
     .from(l)
     .leftJoin(users, eq(users.id, l.actorUserId))
     .leftJoin(patients, and(eq(patients.id, l.patientId), eq(patients.tenantId, l.tenantId)))
@@ -63,7 +63,7 @@ export async function listLedgerEntries(
   const page = rows.slice(0, limit)
   const last = page.at(-1)
   return {
-    entries: page.map(({ line, userName, patientName }) => {
+    entries: page.map(({ line, userName, patientName, patientDeletedAt }) => {
       const recipientName = patientName ?? line.contactName ?? line.contactPhone
       const actorType = line.actorType as LedgerEntry['actor']['type']
       return {
@@ -73,6 +73,7 @@ export async function listLedgerEntries(
         refundReason: (line.refundReason as LedgerEntry['refundReason']) ?? null,
         actor: { type: actorType, name: actorName(actorType, userName, recipientName) },
         recipientName,
+        recipientPatientId: patientName !== null && !patientDeletedAt ? line.patientId : null,
         item: {
           kind: line.itemKind as LedgerEntry['item']['kind'],
           label: line.itemKind === 'template'

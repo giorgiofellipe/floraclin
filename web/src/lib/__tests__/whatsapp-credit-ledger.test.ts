@@ -6,6 +6,7 @@ function entry(overrides: Partial<LedgerEntry>): LedgerEntry {
     id: 'l1', kind: 'spend', amount: -1, refundReason: null,
     actor: { type: 'user', name: 'Ana Souza' },
     recipientName: 'Maria Silva',
+    recipientPatientId: null,
     item: { kind: 'text', label: null },
     createdAt: '2026-10-15T13:00:00.000Z',
     ...overrides,
