@@ -69,7 +69,7 @@ export function WhatsAppCreditHistory({ open, onOpenChange }: WhatsAppCreditHist
   const isEmpty = !!first && entries.length === 0
 
   const body = (
-    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-2">
       {first && (
         <div className="space-y-2">
           <Select items={periodItems} value={first.periodId} onValueChange={(v) => setPeriodId(v)}>
@@ -123,7 +123,7 @@ export function WhatsAppCreditHistory({ open, onOpenChange }: WhatsAppCreditHist
   if (isMobile) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="bottom" className="h-full p-4">
+        <SheetContent side="bottom" className="p-4 data-[side=bottom]:h-dvh">
           <SheetHeader className="p-0">
             <SheetTitle>Histórico de créditos</SheetTitle>
           </SheetHeader>
