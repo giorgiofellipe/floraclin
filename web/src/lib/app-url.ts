@@ -21,3 +21,11 @@ export function getAppUrl(): string {
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
   )
 }
+
+export function isAppUrl(url: string): boolean {
+  try {
+    return new URL(url).origin === new URL(getAppUrl()).origin
+  } catch {
+    return false
+  }
+}

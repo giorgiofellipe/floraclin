@@ -11,9 +11,10 @@ import { CONSENT_SIGNING_TEMPLATE_PURPOSE } from '@/validations/consent'
 import { InvalidWhatsAppPhoneError, normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { handleApiError } from '@/lib/api-error'
 import { BusinessError } from '@/lib/errors'
+import { isAppUrl } from '@/lib/app-url'
 
 const sendSchema = z.object({
-  url: z.string().url(),
+  url: z.string().url().refine(isAppUrl, 'URL must belong to this application'),
   patientId: z.string().uuid(),
 })
 

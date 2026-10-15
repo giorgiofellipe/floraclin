@@ -7,6 +7,7 @@ import { pushSseEvent } from '@/db/queries/whatsapp'
 import { updateProspectSchema } from '@/validations/prospect'
 import type { Role } from '@/types'
 import { handleApiError } from '@/lib/api-error'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { enqueueMetaEvent } from '@/lib/meta/events'
 
 async function requireWhatsappAccess() {
@@ -14,7 +15,7 @@ async function requireWhatsappAccess() {
 
   const tenant = await getTenant(ctx.tenantId)
   const settings = (tenant?.settings ?? {}) as Record<string, unknown>
-  if (!settings.whatsapp_enabled) {
+  if (!isWhatsAppEnabled(settings)) {
     return { ctx: null, error: NextResponse.json({ error: 'WhatsApp não está habilitado' }, { status: 403 }) }
   }
   const allowedRoles = (settings.whatsapp_allowed_roles as string[] | undefined) ?? ['owner']
