@@ -90,6 +90,9 @@ export const queryKeys = {
     connection: ['meta', 'connection'] as const,
     businesses: ['meta', 'businesses'] as const,
   },
+  whatsappCredits: {
+    ledger: (periodId: string | null) => ['whatsapp-credits', 'ledger', periodId ?? 'current'] as const,
+  },
   admin: {
     tenants: {
       all: ['admin', 'tenants'] as const,

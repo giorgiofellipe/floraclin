@@ -12,6 +12,7 @@ import { normalizeBrPhone } from '@/lib/phone'
 import { getTenant } from '@/db/queries/tenants'
 import { resolveTemplatePrefix, belongsToTemplatePrefix } from '@/lib/whatsapp-blueprints'
 import type { PaginatedResult } from '@/types'
+import type { CreditContext } from '@/lib/whatsapp-credit-ledger'
 
 // ─── TYPE EXPORTS ──────────────────────────────────────────────────
 
@@ -944,6 +945,7 @@ export async function createQueuedMessage(
     mediaType?: string | null
     mediaUrl?: string | null
     resumeMetaMessageId?: string | null
+    creditContext?: CreditContext | null
   },
 ): Promise<WhatsappQueuedMessage> {
   const [msg] = await db
@@ -955,6 +957,7 @@ export async function createQueuedMessage(
       mediaType: data.mediaType ?? null,
       mediaUrl: data.mediaUrl ?? null,
       resumeMetaMessageId: data.resumeMetaMessageId ?? null,
+      creditContext: data.creditContext ?? null,
     })
     .returning()
   return msg

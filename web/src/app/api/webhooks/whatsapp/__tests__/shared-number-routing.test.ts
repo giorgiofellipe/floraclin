@@ -114,7 +114,7 @@ vi.mock('@/lib/whatsapp', async () => {
 })
 
 vi.mock('@/db/queries/whatsapp-credits', () => ({
-  refundFailedCharge: vi.fn(async () => undefined),
+  refundSpendByMetaMessageId: vi.fn(async () => true),
 }))
 
 vi.mock('@/lib/lifecycle-webhook', () => ({
@@ -184,7 +184,7 @@ vi.mock('next/server', async () => {
 
 import { db } from '@/db/client'
 import { verifyWebhookSignature, sendTextMessage } from '@/lib/whatsapp'
-import { refundFailedCharge } from '@/db/queries/whatsapp-credits'
+import { refundSpendByMetaMessageId } from '@/db/queries/whatsapp-credits'
 import { CreditExhaustedError } from '@/lib/whatsapp-credits'
 import {
   upsertConversation,
@@ -524,6 +524,52 @@ describe('resolveSharedNumberTenant — phone history, ambiguous', () => {
     expect(reportSideEffectFailureMock).not.toHaveBeenCalled()
   })
 
+  it('drains a queued message with its stored credit context and the conversation id', async () => {
+    vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([convRow(TENANT_A, 5 * MINUTES)]) as never)
+    vi.mocked(getQueuedMessages).mockResolvedValueOnce([
+      {
+        id: 'q-1',
+        body: 'oi',
+        creditContext: { actor: { type: 'user', userId: 'user-1' }, recipient: { patientId: 'p1', name: 'Maria' } },
+      },
+    ] as never)
+    vi.mocked(sendTextMessage).mockResolvedValue({ metaMessageId: 'wamid.q1' })
+
+    await POST(makeRequest(makeInboundPayload({})))
+    await vi.waitFor(() => expect(upsertConversation).toHaveBeenCalled())
+    await flushAfter()
+
+    expect(sendTextMessage).toHaveBeenCalledWith(
+      TENANT_A,
+      {
+        actor: { type: 'user', userId: 'user-1' },
+        recipient: { patientId: 'p1', conversationId: CONVERSATION_ID, name: 'Maria' },
+      },
+      expect.any(String),
+      'oi',
+    )
+  })
+
+  // Regression: rows queued before the ledger existed have no credit context.
+  it('drains a queued message without a credit context as system', async () => {
+    vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([convRow(TENANT_A, 5 * MINUTES)]) as never)
+    vi.mocked(getQueuedMessages).mockResolvedValueOnce([
+      { id: 'q-1', body: 'oi', creditContext: null },
+    ] as never)
+    vi.mocked(sendTextMessage).mockResolvedValue({ metaMessageId: 'wamid.q1' })
+
+    await POST(makeRequest(makeInboundPayload({})))
+    await vi.waitFor(() => expect(upsertConversation).toHaveBeenCalled())
+    await flushAfter()
+
+    expect(sendTextMessage).toHaveBeenCalledWith(
+      TENANT_A,
+      { actor: { type: 'system' }, recipient: { patientId: null, conversationId: CONVERSATION_ID, name: null } },
+      expect.any(String),
+      'oi',
+    )
+  })
+
   it('stops draining the queue once credits run out', async () => {
     vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([convRow(TENANT_A, 5 * MINUTES)]) as never)
     vi.mocked(getQueuedMessages).mockResolvedValueOnce([
@@ -660,7 +706,7 @@ describe('resolveSharedNumberTenant — status updates', () => {
     await POST(makeRequest(makeStatusPayload('wamid.failed', undefined, 'failed')))
 
     await vi.waitFor(() => {
-      expect(refundFailedCharge).toHaveBeenCalledWith('wamid.failed')
+      expect(refundSpendByMetaMessageId).toHaveBeenCalledWith(expect.any(String), 'wamid.failed')
     })
   })
 

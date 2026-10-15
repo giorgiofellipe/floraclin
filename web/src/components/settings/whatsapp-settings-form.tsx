@@ -33,6 +33,7 @@ import {
 import { WhatsAppTemplateList } from './whatsapp-template-list'
 import { WhatsAppAutomations } from './whatsapp-automations'
 import { WhatsAppCreditBar } from './whatsapp-credit-bar'
+import { WhatsAppCreditHistory } from './whatsapp-credit-history'
 import { WhatsAppSystemTemplates } from './whatsapp-system-templates'
 import type { WhatsAppMode } from '@/lib/whatsapp-mode'
 
@@ -109,6 +110,7 @@ interface WhatsAppSettingsFormProps {
 export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormProps) {
   const updateTenant = useUpdateTenant()
   const [copiedWebhook, setCopiedWebhook] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [copiedToken, setCopiedToken] = useState(false)
   const [showAccessToken, setShowAccessToken] = useState(false)
   const [verifying, setVerifying] = useState(false)
@@ -353,6 +355,11 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
               periodEnd={billingUsage.usage.whatsapp.periodEnd ?? ''}
             />
           ) : null}
+
+          <Button type="button" variant="outline" size="sm" onClick={() => setHistoryOpen(true)}>
+            Ver histórico
+          </Button>
+          <WhatsAppCreditHistory open={historyOpen} onOpenChange={setHistoryOpen} />
         </div>
       )}
 

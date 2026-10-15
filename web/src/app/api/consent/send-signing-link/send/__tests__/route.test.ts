@@ -82,6 +82,7 @@ describe('POST /api/consent/send-signing-link/send', () => {
     expect(getTemplateForTenant).toHaveBeenCalledWith('tenant-1', 'consent_signing_link')
     expect(sendTemplateMessage).toHaveBeenCalledWith(
       'tenant-1',
+      { actor: { type: 'user', userId: 'user-1' }, recipient: { patientId: PATIENT_ID, name: 'Maria Silva' } },
       expect.any(String),
       'consent_link',
       'pt_BR',

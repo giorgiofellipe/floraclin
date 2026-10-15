@@ -109,6 +109,10 @@ export async function POST(request: Request) {
     if (parsed.data.templateName && parsed.data.language) {
       const sendResult = await sendTemplateMessage(
         ctx.tenantId,
+        {
+          actor: { type: 'user', userId: ctx.userId },
+          recipient: { patientId: patient.id, conversationId: conversation.id, name: patient.fullName },
+        },
         normalizedPhone,
         parsed.data.templateName,
         parsed.data.language,

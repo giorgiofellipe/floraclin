@@ -74,6 +74,7 @@ export async function POST(
     ]
     const result = await sendTemplateMessage(
       ctx.tenantId,
+      { actor: { type: 'user', userId: ctx.userId }, recipient: { patientId: patient.id, name: patient.fullName } },
       normalizedPhone,
       template.name,
       template.language,

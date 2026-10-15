@@ -819,6 +819,7 @@ describe('maybeAutoSendAnamnesis — happy path', () => {
     await vi.waitFor(() => {
       expect(sendTemplateMessage).toHaveBeenCalledWith(
         TENANT_ID,
+        { actor: { type: 'system' }, recipient: { patientId: PATIENT_ID, name: 'Maria Silva' } },
         PATIENT_PHONE,
         'anamnese_link_v1',
         'pt_BR',
@@ -896,6 +897,7 @@ describe('maybeAutoSendAnamnesis — happy path', () => {
     await vi.waitFor(() => {
       expect(sendTemplateMessage).toHaveBeenCalledWith(
         TENANT_ID,
+        { actor: { type: 'system' }, recipient: { patientId: PATIENT_ID, name: 'Ana Beatriz Costa' } },
         PATIENT_PHONE,
         'anamnese_link_v1',
         'pt_BR',
@@ -1071,7 +1073,7 @@ describe('maybeAutoSendAnamnesis — edge cases', () => {
 
     // The phone in the payload starts with 55, so the code's
     // `phone.startsWith('55') ? phone : \`55${phone}\`` keeps it as-is.
-    const phoneArg = vi.mocked(sendTemplateMessage).mock.calls[0][1]
+    const phoneArg = vi.mocked(sendTemplateMessage).mock.calls[0][2]
     expect(phoneArg).toBe(PATIENT_PHONE) // 5511999990000 starts with 55
   })
 })

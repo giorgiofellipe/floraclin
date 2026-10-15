@@ -10,6 +10,7 @@ import {
   CreditExhaustedError,
   WhatsAppTemplateNotFoundError,
 } from '@/lib/whatsapp-credits'
+import type { CreditContext, LedgerItemKind } from '@/lib/whatsapp-credit-ledger'
 
 export { normalizeBrPhone } from '@/lib/phone'
 
@@ -111,19 +112,42 @@ function sentMessageId(data: { messages?: { id?: string }[] }): string {
   return id
 }
 
+type ResolvedCharge = {
+  cost: number
+  item: {
+    kind: LedgerItemKind
+    templateName: string | null
+    purposeKey: string | null
+    documentLabel: string | null
+  }
+}
+
 // Every message on the shared number is charged to the tenant, including ones
 // Meta may not bill (free-form, open-window utility): its rules keep changing.
 async function sendWithCredits<T extends { metaMessageId: string }>(
   tenantId: string,
-  resolveCost: () => Promise<number>,
+  credit: CreditContext,
+  to: string,
+  resolve: () => Promise<ResolvedCharge>,
   send: () => Promise<T>,
 ): Promise<T> {
   await requireSendAllowed(tenantId)
   if ((await getWhatsAppMode(tenantId)) !== 'floraclin') return send()
 
-  const { consumeCredits, refundCredits, recordCharge } = await import('@/db/queries/whatsapp-credits')
-  const cost = await resolveCost()
-  const charge = await consumeCredits(tenantId, cost)
+  const { spendCredits, attachMetaMessageId, refundSpend } = await import('@/db/queries/whatsapp-credits')
+  const { cost, item } = await resolve()
+  const charge = await spendCredits(tenantId, cost, {
+    actorType: credit.actor.type,
+    actorUserId: credit.actor.type === 'user' ? credit.actor.userId : null,
+    patientId: credit.recipient.patientId,
+    conversationId: credit.recipient.conversationId ?? null,
+    contactName: credit.recipient.name,
+    contactPhone: to,
+    itemKind: item.kind,
+    templateName: item.templateName,
+    purposeKey: item.purposeKey,
+    documentLabel: item.documentLabel,
+  })
   if (!charge.allowed) {
     throw new CreditExhaustedError(charge.creditsUsed, charge.creditsTotal, cost)
   }
@@ -132,7 +156,7 @@ async function sendWithCredits<T extends { metaMessageId: string }>(
   try {
     sent = await send()
   } catch (err) {
-    await refundCredits(charge.periodId, cost).catch((refundErr) =>
+    await refundSpend(charge.spendId, 'send_failed').catch((refundErr) =>
       reportSideEffectFailure(refundErr, { area: 'whatsapp_credits', step: 'refund', extra: { tenantId, cost } }),
     )
     throw err
@@ -140,13 +164,18 @@ async function sendWithCredits<T extends { metaMessageId: string }>(
 
   // The message is already out; a failed bookkeeping write must not make the
   // caller treat it as unsent and send it again.
-  await recordCharge(tenantId, charge.periodId, sent.metaMessageId, cost).catch((recordErr) =>
-    reportSideEffectFailure(recordErr, { area: 'whatsapp_credits', step: 'record_charge', extra: { tenantId } }),
+  await attachMetaMessageId(charge.spendId, sent.metaMessageId).catch((err) =>
+    reportSideEffectFailure(err, { area: 'whatsapp_credits', step: 'attach_message_id', extra: { tenantId } }),
   )
   return sent
 }
 
-const flatCost = async () => DEFAULT_CREDIT_COST
+function flatCharge(kind: LedgerItemKind, documentLabel: string | null = null) {
+  return async (): Promise<ResolvedCharge> => ({
+    cost: DEFAULT_CREDIT_COST,
+    item: { kind, templateName: null, purposeKey: null, documentLabel },
+  })
+}
 
 // Queued messages are charged when they drain, so a clinic must not queue
 // what its credits cannot pay for.
@@ -160,8 +189,8 @@ export async function requireCredits(tenantId: string, cost: number) {
   }
 }
 
-export async function sendTextMessage(tenantId: string, to: string, body: string) {
-  return sendWithCredits(tenantId, flatCost, () => postTextMessage(tenantId, to, body))
+export async function sendTextMessage(tenantId: string, credit: CreditContext, to: string, body: string) {
+  return sendWithCredits(tenantId, credit, to, flatCharge('text'), () => postTextMessage(tenantId, to, body))
 }
 
 async function postTextMessage(tenantId: string, to: string, body: string) {
@@ -186,6 +215,7 @@ type TemplateButtonParam = {
 
 export async function sendTemplateMessage(
   tenantId: string,
+  credit: CreditContext,
   to: string,
   templateName: string,
   language: string,
@@ -194,11 +224,16 @@ export async function sendTemplateMessage(
 ) {
   return sendWithCredits(
     tenantId,
+    credit,
+    to,
     async () => {
       const { getSendableTemplate } = await import('@/db/queries/whatsapp')
       const template = await getSendableTemplate(tenantId, templateName, language)
       if (!template) throw new WhatsAppTemplateNotFoundError(templateName, language)
-      return templateCreditCost(template.category)
+      return {
+        cost: templateCreditCost(template.category),
+        item: { kind: 'template', templateName, purposeKey: template.purposeKey ?? null, documentLabel: null },
+      }
     },
     () => postTemplateMessage(tenantId, to, templateName, language, params, buttonParams),
   )
@@ -248,13 +283,15 @@ async function postTemplateMessage(
 
 export async function sendMediaMessage(
   tenantId: string,
+  credit: CreditContext,
   to: string,
   mediaType: 'image' | 'document' | 'audio' | 'video',
   mediaUrl: string,
   caption?: string,
   filename?: string,
 ) {
-  return sendWithCredits(tenantId, flatCost, () =>
+  const charge = credit.documentLabel ? flatCharge('document', credit.documentLabel) : flatCharge('media')
+  return sendWithCredits(tenantId, credit, to, charge, () =>
     postMediaMessage(tenantId, to, mediaType, mediaUrl, caption, filename),
   )
 }
@@ -294,6 +331,7 @@ export function pendingQueueCost(queueCount: number): number {
 
 export async function sendOrEnqueueDocument(
   tenantId: string,
+  credit: CreditContext & { documentLabel: string },
   to: string,
   patientFirstName: string,
   mediaUrl: string,
@@ -309,6 +347,7 @@ export async function sendOrEnqueueDocument(
   } = await import('@/db/queries/whatsapp')
 
   const conversation = await getConversationByPhone(tenantId, to)
+  if (conversation) credit = { ...credit, recipient: { ...credit.recipient, conversationId: conversation.id } }
 
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
   const windowOpen = conversation?.lastInboundAt
@@ -317,7 +356,7 @@ export async function sendOrEnqueueDocument(
 
   // Window open → send directly
   if (windowOpen && conversation) {
-    const result = await sendMediaMessage(tenantId, to, 'document', mediaUrl, caption, filename)
+    const result = await sendMediaMessage(tenantId, credit, to, 'document', mediaUrl, caption, filename)
     await createMessage(tenantId, conversation.id, {
       direction: 'outbound',
       metaMessageId: result.metaMessageId,
@@ -334,7 +373,7 @@ export async function sendOrEnqueueDocument(
   if (!conversation) {
     const resumeTemplate = await getTemplateForTenant(tenantId, 'resume_conversation')
     if (resumeTemplate?.status === 'APPROVED') {
-      await sendTemplateMessage(tenantId, to, resumeTemplate.name, resumeTemplate.language, { '1': patientFirstName })
+      await sendTemplateMessage(tenantId, credit, to, resumeTemplate.name, resumeTemplate.language, { '1': patientFirstName })
     }
     return { queued: true }
   }
@@ -348,7 +387,7 @@ export async function sendOrEnqueueDocument(
     const resumeTemplate = await getTemplateForTenant(tenantId, 'resume_conversation')
     let resumeMetaMessageId: string | null = null
     if (resumeTemplate?.status === 'APPROVED') {
-      const resumeResult = await sendTemplateMessage(tenantId, to, resumeTemplate.name, resumeTemplate.language, { '1': patientFirstName })
+      const resumeResult = await sendTemplateMessage(tenantId, credit, to, resumeTemplate.name, resumeTemplate.language, { '1': patientFirstName })
       resumeMetaMessageId = resumeResult.metaMessageId
 
       await createMessage(tenantId, conversation.id, {
@@ -366,6 +405,7 @@ export async function sendOrEnqueueDocument(
       mediaType: 'document',
       mediaUrl,
       resumeMetaMessageId,
+      creditContext: credit,
     })
     return { queued: true }
   }
@@ -375,6 +415,7 @@ export async function sendOrEnqueueDocument(
     body: caption,
     mediaType: 'document',
     mediaUrl,
+    creditContext: credit,
   })
   return { queued: true }
 }

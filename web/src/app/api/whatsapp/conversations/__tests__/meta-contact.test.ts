@@ -51,7 +51,7 @@ vi.mock('@/lib/meta/events', () => ({
 
 import { getAuthContext, requireRole } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
-import { getConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
+import { getConversation, createMessage, pushSseEvent, getQueuedCount, createQueuedMessage, expireStaleQueuedMessages } from '@/db/queries/whatsapp'
 import { sendTextMessage } from '@/lib/whatsapp'
 import { subscriptionGate } from '@/lib/plans'
 import { getProspect, updateProspect } from '@/db/queries/prospects'
@@ -112,6 +112,11 @@ const AUTH_CTX = {
   role: 'owner',
 }
 
+const CREDIT = {
+  actor: { type: 'user', userId: 'user-1' },
+  recipient: { patientId: null, conversationId: 'conv-1', name: 'Maria Souza' },
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(getAuthContext).mockResolvedValue(AUTH_CTX as never)
@@ -138,6 +143,7 @@ describe('POST /api/whatsapp/conversations/[id]/messages - Contact emission', ()
     const res = await POST(request(), params())
     expect(res!.status).toBe(201)
 
+    expect(sendTextMessage).toHaveBeenCalledWith('tenant-1', CREDIT, '+5511999999999', 'Olá, tudo bem?')
     expect(updateProspect).toHaveBeenCalledWith('tenant-1', 'prospect-1', { stage: 'contatado' })
     expect(pushSseEvent).toHaveBeenCalledWith('tenant-1', 'prospect_updated', {
       prospectId: 'prospect-1',
@@ -175,5 +181,25 @@ describe('POST /api/whatsapp/conversations/[id]/messages - Contact emission', ()
 
     expect(getProspect).not.toHaveBeenCalled()
     expect(enqueueMetaEvent).not.toHaveBeenCalled()
+  })
+})
+
+describe('POST /api/whatsapp/conversations/[id]/messages - credit context', () => {
+  it('queues text with the sending user as credit actor when the 24h window is closed', async () => {
+    vi.mocked(getConversation).mockResolvedValue(
+      conversation({ lastInboundAt: null, prospectId: null }) as never,
+    )
+    vi.mocked(expireStaleQueuedMessages).mockResolvedValue([])
+    vi.mocked(getQueuedCount).mockResolvedValue(1)
+    vi.mocked(createQueuedMessage).mockResolvedValue({ id: 'q-1', createdAt: new Date() } as never)
+
+    const res = await POST(request(), params())
+    expect(res!.status).toBe(201)
+
+    expect(createQueuedMessage).toHaveBeenCalledWith('tenant-1', 'conv-1', {
+      body: 'Olá, tudo bem?',
+      resumeMetaMessageId: null,
+      creditContext: CREDIT,
+    })
   })
 })

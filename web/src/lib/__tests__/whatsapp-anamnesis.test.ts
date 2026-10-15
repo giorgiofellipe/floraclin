@@ -114,6 +114,15 @@ describe('maybeAutoSendAnamnesisLink', () => {
 
     expect(result).toEqual({ status: 'sent', metaMessageId: 'wamid.1' })
     expect(createAnamnesisToken).toHaveBeenCalledWith('tenant-1', 'patient-1', 'owner-1', linkExpiresAt)
+    expect(sendTemplateMessage).toHaveBeenCalledWith(
+      'tenant-1',
+      { actor: { type: 'system' }, recipient: { patientId: 'patient-1', name: 'Maria Silva' } },
+      '5511999990000',
+      'anamnese_link_v1',
+      'pt_BR',
+      expect.any(Object),
+      expect.any(Array),
+    )
   })
 
   // Regression: an unsent link left its token behind, so the day read as already sent.

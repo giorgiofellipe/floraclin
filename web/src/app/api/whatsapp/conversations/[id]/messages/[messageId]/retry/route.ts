@@ -167,6 +167,14 @@ export async function POST(
       const templateParams = buildConfirmationParams(appointment, tenant.name)
       sent = await sendTemplateMessage(
         ctx.tenantId,
+        {
+          actor: { type: 'user', userId: ctx.userId },
+          recipient: {
+            patientId: appointment.patientId ?? null,
+            conversationId: message.conversationId,
+            name: appointment.patientName ?? appointment.bookingName ?? null,
+          },
+        },
         normalizedPhone,
         template.name,
         template.language,
