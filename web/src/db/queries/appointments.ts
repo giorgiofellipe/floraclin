@@ -11,6 +11,7 @@ import { getPatient } from './patients'
 import { enqueueMetaEvent } from '@/lib/meta/events'
 import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
 import { reportSideEffectFailure } from '@/lib/observability'
+import { recordLifecycleActivation } from '@/db/queries/lifecycle'
 
 export interface AppointmentListFilters {
   practitionerId?: string
@@ -212,6 +213,12 @@ export async function createAppointment(
     verifyUserBelongsToTenant(tenantId, data.practitionerId, 'Practitioner'),
   ])
 
+  const hadAppointment = await db
+    .select({ id: appointments.id })
+    .from(appointments)
+    .where(and(eq(appointments.tenantId, tenantId), isNull(appointments.deletedAt)))
+    .limit(1)
+
   const [result] = await db
     .insert(appointments)
     .values({
@@ -232,6 +239,11 @@ export async function createAppointment(
     .returning()
 
   await emitScheduleEvent(tenantId, result, data)
+  if (hadAppointment.length === 0) {
+    await recordLifecycleActivation(tenantId, 'first_appointment').catch((err) =>
+      reportSideEffectFailure(err, { area: 'lifecycle', step: 'activation_appointment', extra: { tenantId } }),
+    )
+  }
 
   return result
 }

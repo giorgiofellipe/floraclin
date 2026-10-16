@@ -82,6 +82,7 @@ const TOP_LEVEL_DIRS = [
   'face-diagrams',
   'financial',
   'integrations',
+  'lifecycle',
   'onboarding',
   'package-templates',
   'patient-packages',
@@ -189,6 +190,8 @@ const EXEMPT_GET_ROUTES: Record<string, string> = {
     'OAuth redirect target; persists the Meta connection via upsertMetaConnection/recordAcknowledgement on GET because the provider only supports a GET callback',
   'whatsapp/templates/[id]/route.ts':
     'refreshes local template status from Meta via updateLocalTemplate as a read-through side effect on GET',
+  'lifecycle/click/route.ts':
+    'signed lifecycle email link redirect; records click attribution before forwarding to an allowlisted FloraClin destination',
 }
 
 interface RouteFile {

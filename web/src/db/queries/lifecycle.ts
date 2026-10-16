@@ -1,6 +1,7 @@
 import { db } from '@/db/client'
 import {
   tenants,
+  tenantLifecycleEvents,
   tenantLifecycleMessages,
   tenantLifecycleReplies,
   whatsappConversations,
@@ -10,6 +11,8 @@ import { and, desc, eq, gte, sql } from 'drizzle-orm'
 
 export type LifecycleChannel = 'whatsapp' | 'email'
 export type LifecycleSendStatus = 'pending' | 'sent' | 'failed' | 'skipped'
+export type LifecycleDeliveryStatus = 'sent' | 'delivered' | 'read' | 'failed'
+export type LifecycleActivationKind = 'first_patient' | 'first_appointment' | 'whatsapp_automation_enabled'
 
 export interface LifecycleRecipient {
   tenantId: string
@@ -101,7 +104,12 @@ export async function claimLifecycleSend(row: {
 
 export async function finishLifecycleSend(
   id: string,
-  result: { status: 'sent' | 'failed'; metaMessageId?: string; error?: string },
+  result: {
+    status: 'sent' | 'failed'
+    metaMessageId?: string
+    providerMessageId?: string
+    error?: string
+  },
 ): Promise<void> {
   await db
     .update(tenantLifecycleMessages)
@@ -109,6 +117,9 @@ export async function finishLifecycleSend(
       status: result.status,
       completedAt: sql`now()`,
       metaMessageId: result.metaMessageId ?? null,
+      providerMessageId: result.providerMessageId ?? null,
+      deliveryStatus: result.status,
+      failedAt: result.status === 'failed' ? sql`now()` : null,
       error: result.error ?? null,
     })
     .where(and(eq(tenantLifecycleMessages.id, id), eq(tenantLifecycleMessages.status, 'pending')))
@@ -160,6 +171,25 @@ export async function findLifecycleSendByMetaId(metaMessageId: string): Promise<
   return row ?? null
 }
 
+export async function findLifecycleSendForClick(id: string): Promise<{
+  id: string
+  tenantId: string
+  messageKey: string
+  channel: string
+} | null> {
+  const [row] = await db
+    .select({
+      id: tenantLifecycleMessages.id,
+      tenantId: tenantLifecycleMessages.tenantId,
+      messageKey: tenantLifecycleMessages.messageKey,
+      channel: tenantLifecycleMessages.channel,
+    })
+    .from(tenantLifecycleMessages)
+    .where(eq(tenantLifecycleMessages.id, id))
+    .limit(1)
+  return row ?? null
+}
+
 export async function findRecentLifecycleTenantsByPhone(
   phone: string,
   since: Date,
@@ -203,10 +233,130 @@ export async function markLifecycleSendFailedByMetaId(
 ): Promise<boolean> {
   const updated = await db
     .update(tenantLifecycleMessages)
-    .set({ status: 'failed', error })
+    .set({
+      status: 'failed',
+      deliveryStatus: 'failed',
+      failedAt: sql`now()`,
+      error,
+    })
     .where(eq(tenantLifecycleMessages.metaMessageId, metaMessageId))
     .returning({ id: tenantLifecycleMessages.id })
   return updated.length > 0
+}
+
+export async function updateLifecycleDeliveryStatusByMetaId(
+  metaMessageId: string,
+  update: {
+    status: LifecycleDeliveryStatus
+    timestamp?: Date
+    errorCode?: string | null
+    error?: string | null
+  },
+): Promise<boolean> {
+  const at = update.timestamp ?? new Date()
+  const setData: Record<string, unknown> = {
+    deliveryStatus: update.status,
+    errorCode: update.errorCode ?? null,
+  }
+
+  if (update.status === 'sent') {
+    setData.completedAt = sql`coalesce(${tenantLifecycleMessages.completedAt}, ${at.toISOString()}::timestamptz)`
+  } else if (update.status === 'delivered') {
+    setData.deliveredAt = at
+  } else if (update.status === 'read') {
+    setData.readAt = at
+    setData.deliveredAt = sql`coalesce(${tenantLifecycleMessages.deliveredAt}, ${at.toISOString()}::timestamptz)`
+  } else if (update.status === 'failed') {
+    setData.status = 'failed'
+    setData.failedAt = at
+    setData.error = update.error ?? 'failed'
+  }
+
+  const updated = await db
+    .update(tenantLifecycleMessages)
+    .set(setData)
+    .where(
+      and(
+        eq(tenantLifecycleMessages.metaMessageId, metaMessageId),
+        eq(tenantLifecycleMessages.channel, 'whatsapp'),
+      ),
+    )
+    .returning({ id: tenantLifecycleMessages.id })
+  return updated.length > 0
+}
+
+export async function recordLifecycleClick(row: {
+  sendId: string
+  destination: string
+  userAgent?: string | null
+  ipAddress?: string | null
+}): Promise<boolean> {
+  const send = await findLifecycleSendForClick(row.sendId)
+  if (!send) return false
+
+  await db.insert(tenantLifecycleEvents).values({
+    tenantId: send.tenantId,
+    lifecycleMessageId: send.id,
+    messageKey: send.messageKey,
+    channel: send.channel,
+    eventType: 'click',
+    metadata: {
+      destination: row.destination,
+      ...(row.userAgent ? { userAgent: row.userAgent } : {}),
+      ...(row.ipAddress ? { ipAddress: row.ipAddress } : {}),
+    },
+  })
+  return true
+}
+
+async function recordLifecycleAttributedEvent(row: {
+  tenantId: string
+  eventType: 'activation' | 'conversion'
+  conversionType: LifecycleActivationKind | 'paid'
+}): Promise<boolean> {
+  const [click] = await db
+    .select({
+      lifecycleMessageId: tenantLifecycleEvents.lifecycleMessageId,
+      messageKey: tenantLifecycleEvents.messageKey,
+      channel: tenantLifecycleEvents.channel,
+    })
+    .from(tenantLifecycleEvents)
+    .where(sql`
+      ${tenantLifecycleEvents.tenantId} = ${row.tenantId}
+      and ${tenantLifecycleEvents.eventType} = 'click'
+      and ${tenantLifecycleEvents.createdAt} >= now() - interval '7 days'
+    `)
+    .orderBy(desc(tenantLifecycleEvents.createdAt))
+    .limit(1)
+
+  if (!click?.lifecycleMessageId) return false
+
+  const inserted = await db
+    .insert(tenantLifecycleEvents)
+    .values({
+      tenantId: row.tenantId,
+      lifecycleMessageId: click.lifecycleMessageId,
+      messageKey: click.messageKey,
+      channel: click.channel,
+      eventType: row.eventType,
+      conversionType: row.conversionType,
+      metadata: {},
+    })
+    .onConflictDoNothing()
+    .returning({ id: tenantLifecycleEvents.id })
+
+  return inserted.length > 0
+}
+
+export function recordLifecycleActivation(
+  tenantId: string,
+  kind: LifecycleActivationKind,
+): Promise<boolean> {
+  return recordLifecycleAttributedEvent({ tenantId, eventType: 'activation', conversionType: kind })
+}
+
+export function recordLifecyclePaidConversion(tenantId: string): Promise<boolean> {
+  return recordLifecycleAttributedEvent({ tenantId, eventType: 'conversion', conversionType: 'paid' })
 }
 
 export async function isTenantLifecycleOptedOut(tenantId: string): Promise<boolean> {
@@ -233,7 +383,14 @@ export async function insertLifecycleReply(row: {
 }
 
 export async function getLifecycleHistory(tenantId: string): Promise<{
-  sends: { messageKey: string; channel: string; status: string; claimedAt: string; error: string | null }[]
+  sends: {
+    messageKey: string
+    channel: string
+    status: string
+    deliveryStatus: string | null
+    claimedAt: string
+    error: string | null
+  }[]
   replies: { messageKey: string; body: string; receivedAt: string }[]
 }> {
   const [sends, replies] = await Promise.all([
@@ -242,6 +399,7 @@ export async function getLifecycleHistory(tenantId: string): Promise<{
         messageKey: tenantLifecycleMessages.messageKey,
         channel: tenantLifecycleMessages.channel,
         status: tenantLifecycleMessages.status,
+        deliveryStatus: tenantLifecycleMessages.deliveryStatus,
         claimedAt: tenantLifecycleMessages.claimedAt,
         error: tenantLifecycleMessages.error,
       })

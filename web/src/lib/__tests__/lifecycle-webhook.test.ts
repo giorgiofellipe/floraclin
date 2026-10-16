@@ -5,7 +5,7 @@ const q = vi.hoisted(() => ({
   findRecentLifecycleTenantsByPhone: vi.fn(),
   hasRecentConversationForPhone: vi.fn(),
   insertLifecycleReply: vi.fn(),
-  markLifecycleSendFailedByMetaId: vi.fn(),
+  updateLifecycleDeliveryStatusByMetaId: vi.fn(),
 }))
 vi.mock('@/db/queries/lifecycle', () => q)
 
@@ -37,6 +37,7 @@ beforeEach(() => {
   q.findRecentLifecycleTenantsByPhone.mockResolvedValue([])
   q.hasRecentConversationForPhone.mockResolvedValue(false)
   q.insertLifecycleReply.mockResolvedValue(true)
+  q.updateLifecycleDeliveryStatusByMetaId.mockResolvedValue(false)
 })
 
 describe('captureLifecycleReply', () => {
@@ -208,32 +209,64 @@ describe('captureLifecycleReply', () => {
 })
 
 describe('handleLifecycleStatus', () => {
-  it('marks the send failed with the Meta error text on a failed status', async () => {
-    q.markLifecycleSendFailedByMetaId.mockResolvedValue(true)
+  it('updates delivered/read lifecycle delivery status by Meta message id', async () => {
+    q.updateLifecycleDeliveryStatusByMetaId.mockResolvedValue(true)
+
+    const result = await handleLifecycleStatus({
+      id: 'wamid.out',
+      status: 'read',
+      timestamp: '1760628600',
+    })
+
+    expect(result).toBe(true)
+    expect(q.updateLifecycleDeliveryStatusByMetaId).toHaveBeenCalledWith('wamid.out', {
+      status: 'read',
+      timestamp: new Date(1760628600 * 1000),
+      errorCode: null,
+      error: null,
+    })
+  })
+
+  it('stores failed lifecycle status error details', async () => {
+    q.updateLifecycleDeliveryStatusByMetaId.mockResolvedValue(true)
 
     const result = await handleLifecycleStatus({
       id: 'wamid.out',
       status: 'failed',
-      errors: [{ title: 'Undeliverable', message: 'Recipient not on WhatsApp' }],
+      errors: [{ code: '131026', title: 'Undeliverable', message: 'Recipient not on WhatsApp' }],
     })
 
     expect(result).toBe(true)
-    expect(q.markLifecycleSendFailedByMetaId).toHaveBeenCalledWith(
-      'wamid.out',
-      'Recipient not on WhatsApp',
-    )
+    expect(q.updateLifecycleDeliveryStatusByMetaId).toHaveBeenCalledWith('wamid.out', {
+      status: 'failed',
+      timestamp: undefined,
+      errorCode: '131026',
+      error: 'Recipient not on WhatsApp',
+    })
   })
 
   it('returns false for a delivered status on a non-lifecycle id so patient status handling runs', async () => {
     const result = await handleLifecycleStatus({ id: 'wamid.patient', status: 'delivered' })
 
     expect(result).toBe(false)
-    expect(q.markLifecycleSendFailedByMetaId).not.toHaveBeenCalled()
+    expect(q.updateLifecycleDeliveryStatusByMetaId).toHaveBeenCalledWith('wamid.patient', {
+      status: 'delivered',
+      timestamp: undefined,
+      errorCode: null,
+      error: null,
+    })
   })
 
   it('returns true for a delivered status on a lifecycle id', async () => {
-    q.findLifecycleSendByMetaId.mockResolvedValue(send)
+    q.updateLifecycleDeliveryStatusByMetaId.mockResolvedValue(true)
 
     expect(await handleLifecycleStatus({ id: 'wamid.out', status: 'delivered' })).toBe(true)
+  })
+
+  it('falls back to a match check for unsupported statuses', async () => {
+    q.findLifecycleSendByMetaId.mockResolvedValue(send)
+
+    expect(await handleLifecycleStatus({ id: 'wamid.out', status: 'deleted' })).toBe(true)
+    expect(q.updateLifecycleDeliveryStatusByMetaId).not.toHaveBeenCalled()
   })
 })

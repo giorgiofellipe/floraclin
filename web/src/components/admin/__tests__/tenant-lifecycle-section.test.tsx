@@ -12,6 +12,7 @@ describe('TenantLifecycleSection', () => {
               messageKey: 'trial_welcome',
               channel: 'whatsapp',
               status: 'failed',
+              deliveryStatus: 'failed',
               claimedAt: '2026-10-09T15:30:00.000Z',
               error: 'Numero invalido',
             },

@@ -3,7 +3,8 @@ import {
   findRecentLifecycleTenantsByPhone,
   hasRecentConversationForPhone,
   insertLifecycleReply,
-  markLifecycleSendFailedByMetaId,
+  updateLifecycleDeliveryStatusByMetaId,
+  type LifecycleDeliveryStatus,
 } from '@/db/queries/lifecycle'
 import { notifyDiscord } from '@/lib/discord'
 import { optOutTenantLifecycle } from '@/lib/lifecycle-opt-out'
@@ -100,12 +101,25 @@ export async function captureLifecycleReply(msg: InboundForCapture): Promise<boo
 export async function handleLifecycleStatus(status: {
   id: string
   status: string
-  errors?: { title?: string; message?: string }[]
+  timestamp?: string
+  errors?: { code?: string | number; title?: string; message?: string }[]
 }): Promise<boolean> {
-  if (status.status === 'failed') {
-    const first = status.errors?.[0]
-    const text = first?.message || first?.title || 'failed'
-    return markLifecycleSendFailedByMetaId(status.id, text)
+  const mapped = lifecycleDeliveryStatus(status.status)
+  if (!mapped) return (await findLifecycleSendByMetaId(status.id)) !== null
+
+  const first = status.errors?.[0]
+  const timestamp = status.timestamp ? new Date(Number(status.timestamp) * 1000) : undefined
+  return updateLifecycleDeliveryStatusByMetaId(status.id, {
+    status: mapped,
+    timestamp,
+    errorCode: first?.code != null ? String(first.code) : null,
+    error: first?.message || first?.title || null,
+  })
+}
+
+function lifecycleDeliveryStatus(status: string): LifecycleDeliveryStatus | null {
+  if (status === 'sent' || status === 'delivered' || status === 'read' || status === 'failed') {
+    return status
   }
-  return (await findLifecycleSendByMetaId(status.id)) !== null
+  return null
 }

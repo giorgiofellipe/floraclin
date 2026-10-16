@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // however long the call chain is.
 function makeChain(result: unknown) {
   const chain: Record<string, unknown> = {}
-  const passthrough = ['values', 'returning']
+  const passthrough = ['values', 'returning', 'from', 'where', 'limit']
   for (const method of passthrough) {
     chain[method] = vi.fn(() => chain)
   }
@@ -13,18 +13,21 @@ function makeChain(result: unknown) {
   return chain
 }
 
-const { insertMock } = vi.hoisted(() => ({
+const { insertMock, selectMock, recordLifecycleActivationMock } = vi.hoisted(() => ({
   insertMock: vi.fn(),
+  selectMock: vi.fn(),
+  recordLifecycleActivationMock: vi.fn(),
 }))
 
 vi.mock('@/db/client', () => ({
   db: {
     insert: insertMock,
+    select: selectMock,
   },
 }))
 
 vi.mock('@/db/schema', () => ({
-  appointments: {},
+  appointments: { id: 'id', tenantId: 'tenant_id', deletedAt: 'deleted_at' },
   patients: {},
   procedureTypes: {},
   users: {},
@@ -74,6 +77,10 @@ vi.mock('@/lib/observability', () => ({
   reportSideEffectFailure: reportSideEffectFailureMock,
 }))
 
+vi.mock('@/db/queries/lifecycle', () => ({
+  recordLifecycleActivation: recordLifecycleActivationMock,
+}))
+
 import { createAppointment } from '../appointments'
 
 const TENANT = 'tenant-1'
@@ -98,6 +105,8 @@ describe('createAppointment: Meta Schedule event', () => {
     vi.clearAllMocks()
     enqueueMetaEventMock.mockReset()
     getPatientMock.mockResolvedValue(null)
+    selectMock.mockReturnValue(makeChain([]))
+    recordLifecycleActivationMock.mockResolvedValue(false)
   })
 
   it('emits one Schedule for a matched prospect', async () => {

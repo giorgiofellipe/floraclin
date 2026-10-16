@@ -13,6 +13,7 @@ import {
 } from '@/db/queries/subscriptions'
 import { handleApiError } from '@/lib/api-error'
 import { reportSideEffectFailure } from '@/lib/observability'
+import { recordLifecyclePaidConversion } from '@/db/queries/lifecycle'
 
 export const dynamic = 'force-dynamic'
 
@@ -108,6 +109,9 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     stripeSubscriptionId: stripeSubscriptionId ?? undefined,
     ...(period ?? {}),
   })
+  await recordLifecyclePaidConversion(tenantId).catch((err) =>
+    reportSideEffectFailure(err, { area: 'lifecycle', step: 'conversion_paid', extra: { tenantId } }),
+  )
 }
 
 async function handleInvoicePaid(invoice: Stripe.Invoice) {
@@ -196,6 +200,15 @@ async function syncStatusFromStripe(
   await updateSubscriptionStatus(sub.tenantId, status, {
     canceledAt: status === 'canceled' ? (sub.canceledAt ?? new Date()) : null,
   })
+  if (status === 'active') {
+    await recordLifecyclePaidConversion(sub.tenantId).catch((err) =>
+      reportSideEffectFailure(err, {
+        area: 'lifecycle',
+        step: 'conversion_paid',
+        extra: { tenantId: sub.tenantId },
+      }),
+    )
+  }
 }
 
 /** Records the billing period Stripe reports, leaving the plan as it is. */

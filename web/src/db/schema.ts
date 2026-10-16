@@ -1063,11 +1063,34 @@ export const tenantLifecycleMessages = floraclinSchema.table('tenant_lifecycle_m
   claimedAt: timestamp('claimed_at', { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   metaMessageId: varchar('meta_message_id', { length: 255 }),
+  providerMessageId: varchar('provider_message_id', { length: 255 }),
+  deliveryStatus: varchar('delivery_status', { length: 20 }),
+  deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+  readAt: timestamp('read_at', { withTimezone: true }),
+  failedAt: timestamp('failed_at', { withTimezone: true }),
+  errorCode: varchar('error_code', { length: 50 }),
   error: text('error'),
 }, (table) => [
   uniqueIndex('uq_tenant_lifecycle_message').on(table.tenantId, table.messageKey, table.channel),
   index('idx_tenant_lifecycle_messages_meta_id').on(table.metaMessageId),
+  index('idx_tenant_lifecycle_messages_provider_id').on(table.providerMessageId),
   index('idx_tenant_lifecycle_messages_recipient').on(table.recipient),
+])
+
+export const tenantLifecycleEvents = floraclinSchema.table('tenant_lifecycle_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  lifecycleMessageId: uuid('lifecycle_message_id').references(() => tenantLifecycleMessages.id),
+  messageKey: varchar('message_key', { length: 40 }),
+  channel: varchar('channel', { length: 10 }),
+  eventType: varchar('event_type', { length: 20 }).notNull(),
+  conversionType: varchar('conversion_type', { length: 40 }),
+  metadata: jsonb('metadata').notNull().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_tenant_lifecycle_events_tenant_created').on(table.tenantId, table.createdAt),
+  index('idx_tenant_lifecycle_events_message').on(table.lifecycleMessageId),
+  index('idx_tenant_lifecycle_events_type').on(table.eventType, table.conversionType),
 ])
 
 export const tenantLifecycleReplies = floraclinSchema.table('tenant_lifecycle_replies', {

@@ -133,10 +133,10 @@ describe('deliverLifecycleMessage', () => {
     await deliverLifecycleMessage(recipient, utility)
 
     expect(sendPlatformTemplate).toHaveBeenCalledWith('5511987654321', utility.templateName, ['Maria'])
-    expect(finishLifecycleSend).toHaveBeenCalledWith('row-whatsapp', {
+    expect(finishLifecycleSend).toHaveBeenCalledWith('row-whatsapp', expect.objectContaining({
       status: 'sent',
       metaMessageId: 'wamid.1',
-    })
+    }))
   })
 
   it('passes an opt-out URL for MARKETING emails and null for UTILITY', async () => {
@@ -153,10 +153,15 @@ describe('deliverLifecycleMessage', () => {
 
     await deliverLifecycleMessage(recipient, withButton)
 
-    expect(vi.mocked(sendLifecycleEmail).mock.calls[0][0].content.button).toEqual({
-      label: withButton.button!.label,
-      url: `https://app.test${withButton.button!.path}`,
-    })
+    const button = vi.mocked(sendLifecycleEmail).mock.calls[0][0].content.button
+    expect(button?.label).toBe(withButton.button!.label)
+    const click = new URL(button!.url)
+    const destination = new URL(click.searchParams.get('to')!)
+    expect(click.pathname).toBe('/api/lifecycle/click')
+    expect(click.searchParams.get('lc')).toBe('row-email')
+    expect(destination.toString()).toBe(
+      `https://app.test${withButton.button!.path}${withButton.button!.path.includes('?') ? '&' : '?'}utm_source=lifecycle&utm_medium=email&utm_campaign=${withButton.key}&lc=row-email`,
+    )
   })
 })
 
