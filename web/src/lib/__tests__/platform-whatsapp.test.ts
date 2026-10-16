@@ -67,4 +67,25 @@ describe('sendPlatformTemplate', () => {
       },
     ])
   })
+
+  it('sends dynamic URL button params as button components', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ messages: [{ id: 'wamid.ABC' }] }))
+    await sendPlatformTemplate('5511999999999', 'trial_welcome_click', ['Ana'], {
+      buttonUrlParams: ['send-1'],
+    })
+
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(sent.template.components).toEqual([
+      {
+        type: 'body',
+        parameters: [{ type: 'text', text: 'Ana' }],
+      },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: 'send-1' }],
+      },
+    ])
+  })
 })

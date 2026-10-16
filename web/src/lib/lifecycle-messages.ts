@@ -36,7 +36,7 @@ const isTrialing = (state: ActivationState) => state.subscriptionStatus === 'tri
 export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
   {
     key: 'trial_welcome',
-    templateName: 'trial_welcome',
+    templateName: 'trial_welcome_click',
     category: 'UTILITY',
     emailSubject: 'Sua conta na FloraClin está pronta',
     body: 'Olá, {{1}}! Sua conta na FloraClin está pronta. Comece pelo diagrama facial: cadastre um paciente e registre o primeiro procedimento em menos de 5 minutos.',
@@ -56,7 +56,7 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
   },
   {
     key: 'trial_ending',
-    templateName: 'trial_ending',
+    templateName: 'trial_ending_click',
     category: 'MARKETING',
     emailSubject: 'Seu teste termina em 2 dias',
     body: 'Olá, {{1}}! Seu teste gratuito da FloraClin termina em 2 dias. Para manter a agenda, os pacientes e o WhatsApp funcionando, escolha um plano.',
@@ -99,7 +99,7 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
   },
   {
     key: 'trial_setup_incomplete',
-    templateName: 'trial_setup_incomplete',
+    templateName: 'trial_setup_incomplete_click',
     category: 'MARKETING',
     emailSubject: 'Faltam 3 minutos para liberar sua agenda',
     body: 'Olá, {{1}}! Faltam 3 minutos para terminar a configuração da sua clínica na FloraClin. Depois disso, a agenda e os pacientes ficam liberados.',
@@ -119,7 +119,7 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
   },
   {
     key: 'trial_first_patient',
-    templateName: 'trial_first_patient',
+    templateName: 'trial_first_patient_click',
     category: 'MARKETING',
     emailSubject: 'Seu primeiro paciente na FloraClin',
     body: 'Olá, {{1}}! O primeiro passo na FloraClin é cadastrar um paciente. Leva 1 minuto e libera o diagrama facial, a agenda e o WhatsApp.',
@@ -139,7 +139,7 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
   },
   {
     key: 'trial_first_record',
-    templateName: 'trial_first_record',
+    templateName: 'trial_first_record_click',
     category: 'MARKETING',
     emailSubject: 'Registre um procedimento no diagrama facial',
     body: 'Olá, {{1}}! Já registrou um procedimento no diagrama facial? Marque os pontos, o produto e a quantidade. O histórico do paciente fica pronto para a próxima sessão.',
@@ -159,7 +159,7 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
   },
   {
     key: 'trial_first_appointment',
-    templateName: 'trial_first_appointment',
+    templateName: 'trial_first_appointment_click',
     category: 'MARKETING',
     emailSubject: 'Agenda com confirmação por WhatsApp',
     body: 'Olá, {{1}}! Agende o próximo atendimento na FloraClin e deixe a confirmação por WhatsApp com a gente. O paciente confirma com um toque.',

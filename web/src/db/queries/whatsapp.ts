@@ -835,6 +835,7 @@ export async function upsertAutomation(
       .update(whatsappAutomations)
       .set({
         ...(data.enabled !== undefined ? { enabled: data.enabled } : {}),
+        ...(data.enabled ? { firstEnabledAt: sql`coalesce(${whatsappAutomations.firstEnabledAt}, now())` } : {}),
         ...(data.templateId !== undefined ? { templateId: data.templateId } : {}),
         ...(data.config !== undefined ? { config: data.config } : {}),
         updatedAt: new Date(),
@@ -850,6 +851,7 @@ export async function upsertAutomation(
       tenantId,
       trigger,
       enabled: data.enabled ?? false,
+      firstEnabledAt: data.enabled ? new Date() : null,
       templateId: data.templateId ?? null,
       config: data.config ?? null,
     })

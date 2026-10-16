@@ -12,7 +12,8 @@ loadEnv({ path: '.env.local' })
 loadEnv({ path: '.env' })
 
 async function main() {
-  const { LIFECYCLE_MESSAGES, OPT_OUT_FOOTER } = await import('@/lib/lifecycle-messages')
+  const { LIFECYCLE_MESSAGES } = await import('@/lib/lifecycle-messages')
+  const { buildLifecycleTemplateDefinition } = await import('@/lib/lifecycle-templates')
   const { createPlatformTemplate } = await import('@/lib/platform-whatsapp')
 
   const args = process.argv.slice(2)
@@ -26,25 +27,7 @@ async function main() {
   if (messages.length === 0) throw new Error(`No lifecycle message matches --only=${only}`)
 
   for (const message of messages) {
-    const definition = {
-      name: message.templateName,
-      category: message.category,
-      language: 'pt_BR',
-      components: [
-        { type: 'BODY', text: message.body, example: { body_text: [['Ana']] } },
-        ...(message.category === 'MARKETING' ? [{ type: 'FOOTER', text: OPT_OUT_FOOTER }] : []),
-        ...(message.button
-          ? [
-              {
-                type: 'BUTTONS',
-                buttons: [
-                  { type: 'URL', text: message.button.label, url: `${appUrl}${message.button.path}` },
-                ],
-              },
-            ]
-          : []),
-      ],
-    }
+    const definition = buildLifecycleTemplateDefinition(message, appUrl)
 
     if (dryRun) {
       console.log(JSON.stringify(definition, null, 2))

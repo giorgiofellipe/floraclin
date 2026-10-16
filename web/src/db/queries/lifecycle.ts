@@ -1,15 +1,18 @@
 import { db } from '@/db/client'
 import {
   tenants,
+  tenantLifecycleClicks,
   tenantLifecycleMessages,
   tenantLifecycleReplies,
   whatsappConversations,
 } from '@/db/schema'
 import { rowsFromExecuteResult } from '@/db/queries/admin-tenants'
 import { and, desc, eq, gte, sql } from 'drizzle-orm'
+import type { PgUpdateSetSource } from 'drizzle-orm/pg-core'
 
 export type LifecycleChannel = 'whatsapp' | 'email'
 export type LifecycleSendStatus = 'pending' | 'sent' | 'failed' | 'skipped'
+export type LifecycleDeliveryStatus = 'sent' | 'delivered' | 'read' | 'failed'
 
 export interface LifecycleRecipient {
   tenantId: string
@@ -101,7 +104,12 @@ export async function claimLifecycleSend(row: {
 
 export async function finishLifecycleSend(
   id: string,
-  result: { status: 'sent' | 'failed'; metaMessageId?: string; error?: string },
+  result: {
+    status: 'sent' | 'failed'
+    metaMessageId?: string
+    providerMessageId?: string
+    error?: string
+  },
 ): Promise<void> {
   await db
     .update(tenantLifecycleMessages)
@@ -109,6 +117,7 @@ export async function finishLifecycleSend(
       status: result.status,
       completedAt: sql`now()`,
       metaMessageId: result.metaMessageId ?? null,
+      providerMessageId: result.providerMessageId ?? null,
       error: result.error ?? null,
     })
     .where(and(eq(tenantLifecycleMessages.id, id), eq(tenantLifecycleMessages.status, 'pending')))
@@ -160,6 +169,29 @@ export async function findLifecycleSendByMetaId(metaMessageId: string): Promise<
   return row ?? null
 }
 
+export interface LifecycleClickSend {
+  id: string
+  tenantId: string
+  messageKey: string
+  channel: LifecycleChannel
+  completedAt: Date | null
+}
+
+export async function findLifecycleSendForClick(id: string): Promise<LifecycleClickSend | null> {
+  const [row] = await db
+    .select({
+      id: tenantLifecycleMessages.id,
+      tenantId: tenantLifecycleMessages.tenantId,
+      messageKey: tenantLifecycleMessages.messageKey,
+      channel: tenantLifecycleMessages.channel,
+      completedAt: tenantLifecycleMessages.completedAt,
+    })
+    .from(tenantLifecycleMessages)
+    .where(eq(tenantLifecycleMessages.id, id))
+    .limit(1)
+  return row ? { ...row, channel: row.channel as LifecycleChannel } : null
+}
+
 export async function findRecentLifecycleTenantsByPhone(
   phone: string,
   since: Date,
@@ -197,16 +229,63 @@ export async function hasRecentConversationForPhone(phone: string, since: Date):
   return Boolean(row)
 }
 
-export async function markLifecycleSendFailedByMetaId(
+export async function updateLifecycleDeliveryStatusByMetaId(
   metaMessageId: string,
-  error: string,
+  update: {
+    status: LifecycleDeliveryStatus
+    at: Date
+    errorCode?: string | null
+    error?: string | null
+  },
 ): Promise<boolean> {
+  const m = tenantLifecycleMessages
   const updated = await db
-    .update(tenantLifecycleMessages)
-    .set({ status: 'failed', error })
-    .where(eq(tenantLifecycleMessages.metaMessageId, metaMessageId))
-    .returning({ id: tenantLifecycleMessages.id })
+    .update(m)
+    .set(deliveryUpdate(update))
+    .where(and(eq(m.metaMessageId, metaMessageId), eq(m.channel, 'whatsapp')))
+    .returning({ id: m.id })
   return updated.length > 0
+}
+
+// Meta does not order status webhooks, so each status only fills its own timestamp once.
+function deliveryUpdate(update: {
+  status: LifecycleDeliveryStatus
+  at: Date
+  errorCode?: string | null
+  error?: string | null
+}): PgUpdateSetSource<typeof tenantLifecycleMessages> {
+  const m = tenantLifecycleMessages
+  const at = sql`${update.at.toISOString()}::timestamptz`
+  switch (update.status) {
+    case 'failed':
+      return { status: 'failed', errorCode: update.errorCode ?? null, error: update.error ?? 'failed' }
+    case 'sent':
+      return { completedAt: sql`coalesce(${m.completedAt}, ${at})` }
+    case 'delivered':
+      return { deliveredAt: sql`coalesce(${m.deliveredAt}, ${at})` }
+    case 'read':
+      return {
+        deliveredAt: sql`coalesce(${m.deliveredAt}, ${at})`,
+        readAt: sql`coalesce(${m.readAt}, ${at})`,
+      }
+  }
+}
+
+const CLICK_DEDUPE_WINDOW = sql`interval '1 hour'`
+
+/** Returns false when the same send already has a click inside the dedupe window. */
+export async function recordLifecycleClick(send: { id: string; tenantId: string }): Promise<boolean> {
+  const c = tenantLifecycleClicks
+  const result = await db.execute(sql`
+    insert into ${c} (${sql.identifier(c.tenantId.name)}, ${sql.identifier(c.lifecycleMessageId.name)})
+    select ${send.tenantId}, ${send.id}
+    where not exists (
+      select 1 from ${c}
+      where ${c.lifecycleMessageId} = ${send.id} and ${c.createdAt} > now() - ${CLICK_DEDUPE_WINDOW}
+    )
+    returning ${c.id}
+  `)
+  return rowsFromExecuteResult(result).length > 0
 }
 
 export async function isTenantLifecycleOptedOut(tenantId: string): Promise<boolean> {
@@ -233,7 +312,13 @@ export async function insertLifecycleReply(row: {
 }
 
 export async function getLifecycleHistory(tenantId: string): Promise<{
-  sends: { messageKey: string; channel: string; status: string; claimedAt: string; error: string | null }[]
+  sends: {
+    messageKey: string
+    channel: string
+    status: string
+    claimedAt: string
+    error: string | null
+  }[]
   replies: { messageKey: string; body: string; receivedAt: string }[]
 }> {
   const [sends, replies] = await Promise.all([

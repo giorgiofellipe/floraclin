@@ -37,8 +37,20 @@ export async function sendPlatformTemplate(
   to: string,
   templateName: string,
   bodyParams: string[],
+  opts?: { buttonUrlParams?: string[] },
 ): Promise<{ metaMessageId: string }> {
   const creds = getPlatformCredentials()
+  const components = [
+    ...(bodyParams.length > 0
+      ? [{ type: 'body', parameters: bodyParams.map((text) => ({ type: 'text', text })) }]
+      : []),
+    ...(opts?.buttonUrlParams ?? []).map((text, index) => ({
+      type: 'button',
+      sub_type: 'url',
+      index: String(index),
+      parameters: [{ type: 'text', text }],
+    })),
+  ]
   const data = await platformFetch(`/${creds.phoneNumberId}/messages`, creds.accessToken, {
     messaging_product: 'whatsapp',
     to,
@@ -46,14 +58,7 @@ export async function sendPlatformTemplate(
     template: {
       name: templateName,
       language: { code: 'pt_BR' },
-      ...(bodyParams.length > 0 && {
-        components: [
-          {
-            type: 'body',
-            parameters: bodyParams.map((text) => ({ type: 'text', text })),
-          },
-        ],
-      }),
+      ...(components.length > 0 && { components }),
     },
   })
   const metaMessageId = data?.messages?.[0]?.id as string | undefined

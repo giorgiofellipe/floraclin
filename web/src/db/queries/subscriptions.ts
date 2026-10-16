@@ -256,6 +256,9 @@ export async function updateSubscriptionPlan(
   }
 
   if (opts?.status) setData.status = opts.status
+  if (source === 'stripe' && opts?.status === 'active') {
+    setData.firstPaidAt = sql`coalesce(${tenantSubscriptions.firstPaidAt}, now())`
+  }
   if (opts?.stripeCustomerId) setData.stripeCustomerId = opts.stripeCustomerId
   if (opts?.stripeSubscriptionId) setData.stripeSubscriptionId = opts.stripeSubscriptionId
   if (opts?.currentPeriodStart) setData.currentPeriodStart = opts.currentPeriodStart

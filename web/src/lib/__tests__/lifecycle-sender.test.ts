@@ -129,13 +129,25 @@ describe('deliverLifecycleMessage', () => {
     expect(sendPlatformTemplate).not.toHaveBeenCalled()
   })
 
-  it('sends the WhatsApp template to the normalized phone with the first name', async () => {
+  it('sends the WhatsApp template to the normalized phone with the first name and the send id for the button', async () => {
     await deliverLifecycleMessage(recipient, utility)
 
-    expect(sendPlatformTemplate).toHaveBeenCalledWith('5511987654321', utility.templateName, ['Maria'])
-    expect(finishLifecycleSend).toHaveBeenCalledWith('row-whatsapp', {
+    expect(sendPlatformTemplate).toHaveBeenCalledWith('5511987654321', utility.templateName, ['Maria'], {
+      buttonUrlParams: ['row-whatsapp'],
+    })
+    expect(finishLifecycleSend).toHaveBeenCalledWith('row-whatsapp', expect.objectContaining({
       status: 'sent',
       metaMessageId: 'wamid.1',
+    }))
+  })
+
+  it('sends no button param for a message without a button', async () => {
+    const noButton = LIFECYCLE_MESSAGES.find((m) => !m.button)!
+
+    await deliverLifecycleMessage(recipient, noButton)
+
+    expect(sendPlatformTemplate).toHaveBeenCalledWith('5511987654321', noButton.templateName, ['Maria'], {
+      buttonUrlParams: [],
     })
   })
 
@@ -148,15 +160,19 @@ describe('deliverLifecycleMessage', () => {
     expect(utilityCall[0].content.optOutUrl).toBeNull()
   })
 
-  it('builds the email button URL from the app URL and the button path', async () => {
+  it('points the email button at the click route for this send and stores the Resend id', async () => {
     const withButton = LIFECYCLE_MESSAGES.find((m) => m.button)!
 
     await deliverLifecycleMessage(recipient, withButton)
 
-    expect(vi.mocked(sendLifecycleEmail).mock.calls[0][0].content.button).toEqual({
+    const button = vi.mocked(sendLifecycleEmail).mock.calls[0][0].content.button
+    expect(button).toEqual({
       label: withButton.button!.label,
-      url: `https://app.test${withButton.button!.path}`,
+      url: 'https://app.test/api/lifecycle/click?lc=row-email',
     })
+    expect(finishLifecycleSend).toHaveBeenCalledWith('row-email', expect.objectContaining({
+      providerMessageId: 'email-1',
+    }))
   })
 })
 
@@ -194,7 +210,9 @@ describe('scheduleLifecycleWelcome', () => {
     scheduleLifecycleWelcome({ tenantId: 'tenant-1' })
     await Promise.all(pending)
 
-    expect(sendPlatformTemplate).toHaveBeenCalledWith('5511987654321', 'trial_welcome', ['Maria'])
+    expect(sendPlatformTemplate).toHaveBeenCalledWith('5511987654321', 'trial_welcome_click', ['Maria'], {
+      buttonUrlParams: ['row-whatsapp'],
+    })
     expect(sendLifecycleEmail).toHaveBeenCalledTimes(1)
   })
 

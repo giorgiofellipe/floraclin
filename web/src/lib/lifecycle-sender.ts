@@ -9,8 +9,8 @@ import {
   type LifecycleRecipient,
 } from '@/db/queries/lifecycle'
 import { getActivationState } from '@/lib/activation'
-import { getAppUrl } from '@/lib/app-url'
 import { sendLifecycleEmail } from '@/lib/email'
+import { lifecycleClickUrl } from '@/lib/lifecycle-attribution'
 import { lifecycleOptOutUrl } from '@/lib/lifecycle-opt-out'
 import {
   LIFECYCLE_WELCOME,
@@ -37,14 +37,14 @@ async function deliverChannel(
   message: LifecycleMessage,
   channel: LifecycleChannel,
   to: string,
-  send: () => Promise<{ metaMessageId?: string }>,
+  send: (sendId: string) => Promise<{ metaMessageId?: string; providerMessageId?: string }>,
 ): Promise<ChannelOutcome> {
   const key = { tenantId: recipient.tenantId, messageKey: message.key, channel }
   const id = await claimLifecycleSend({ ...key, recipient: to })
   if (!id) return 'already_claimed'
   try {
-    const { metaMessageId } = await send()
-    await finishLifecycleSend(id, { status: 'sent', metaMessageId })
+    const { metaMessageId, providerMessageId } = await send(id)
+    await finishLifecycleSend(id, { status: 'sent', metaMessageId, providerMessageId })
     return 'sent'
   } catch (err) {
     const extra = { tenantId: recipient.tenantId, key: message.key }
@@ -82,24 +82,29 @@ export async function deliverLifecycleMessage(
     })
     whatsapp = 'skipped'
   } else {
-    whatsapp = await deliverChannel(recipient, message, 'whatsapp', phone, () =>
-      sendPlatformTemplate(phone, message.templateName, [firstName]),
+    whatsapp = await deliverChannel(recipient, message, 'whatsapp', phone, (sendId) =>
+      sendPlatformTemplate(phone, message.templateName, [firstName], {
+        buttonUrlParams: message.button ? [sendId] : [],
+      }),
     )
   }
 
-  const email = await deliverChannel(recipient, message, 'email', recipient.ownerEmail, async () => {
-    await sendLifecycleEmail({
+  const email = await deliverChannel(recipient, message, 'email', recipient.ownerEmail, async (sendId) => {
+    const sent = await sendLifecycleEmail({
       to: recipient.ownerEmail,
       subject: message.emailSubject,
       content: {
         ...renderLifecycleEmail(message, firstName),
         button: message.button
-          ? { label: message.button.label, url: getAppUrl() + message.button.path }
+          ? {
+              label: message.button.label,
+              url: lifecycleClickUrl(sendId),
+            }
           : null,
         optOutUrl: message.category === 'MARKETING' ? lifecycleOptOutUrl(recipient.tenantId) : null,
       },
     })
-    return {}
+    return { providerMessageId: sent.id }
   })
 
   return { whatsapp, email }
