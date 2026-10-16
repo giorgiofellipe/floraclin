@@ -108,10 +108,10 @@ export async function handleLifecycleStatus(status: {
   if (!mapped) return (await findLifecycleSendByMetaId(status.id)) !== null
 
   const first = status.errors?.[0]
-  const timestamp = status.timestamp ? new Date(Number(status.timestamp) * 1000) : undefined
+  const seconds = Number(status.timestamp)
   return updateLifecycleDeliveryStatusByMetaId(status.id, {
     status: mapped,
-    timestamp,
+    at: Number.isFinite(seconds) && seconds > 0 ? new Date(seconds * 1000) : new Date(),
     errorCode: first?.code != null ? String(first.code) : null,
     error: first?.message || first?.title || null,
   })

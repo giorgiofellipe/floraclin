@@ -1,124 +1,76 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const { findLifecycleSendForClickMock, recordLifecycleClickMock } = vi.hoisted(() => ({
-  findLifecycleSendForClickMock: vi.fn(),
-  recordLifecycleClickMock: vi.fn(),
+const q = vi.hoisted(() => ({
+  findLifecycleSendForClick: vi.fn(),
+  recordLifecycleClick: vi.fn(),
 }))
-
-vi.mock('@/db/queries/lifecycle', () => ({
-  findLifecycleSendForClick: findLifecycleSendForClickMock,
-  recordLifecycleClick: recordLifecycleClickMock,
-}))
-
-vi.mock('@/lib/observability', () => ({
-  reportSideEffectFailure: vi.fn(),
-}))
-
-vi.mock('@/lib/app-url', () => ({ getAppUrl: () => 'https://app.floraclin.com.br' }))
+vi.mock('@/db/queries/lifecycle', () => q)
+vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
+vi.mock('@/lib/app-url', () => ({ getAppUrl: () => 'https://app.test' }))
 
 import { GET } from '../route'
+
+const SEND_ID = '6f1c2b8e-4a1d-4c3b-9e2f-0a1b2c3d4e5f'
+const CHROME = 'Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36'
+const send = {
+  id: SEND_ID,
+  tenantId: 'tenant-1',
+  messageKey: 'trial_first_patient',
+  channel: 'whatsapp',
+  completedAt: new Date(Date.now() - 60 * 60_000),
+}
+
+function click(query: string, userAgent: string | null = CHROME) {
+  return GET(new NextRequest(`https://app.test/api/lifecycle/click?${query}`, {
+    headers: userAgent ? { 'user-agent': userAgent } : {},
+  }))
+}
 
 describe('GET /api/lifecycle/click', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    findLifecycleSendForClickMock.mockResolvedValue({
-      id: 'send-1',
-      tenantId: 'tenant-1',
-      messageKey: 'trial_welcome',
-      channel: 'email',
-    })
-    recordLifecycleClickMock.mockResolvedValue(true)
+    q.findLifecycleSendForClick.mockResolvedValue(send)
+    q.recordLifecycleClick.mockResolvedValue(true)
   })
 
-  it('records the click and redirects to an allowed destination', async () => {
-    const destination = encodeURIComponent(
-      'https://app.floraclin.com.br/dashboard?utm_source=lifecycle&utm_medium=email&utm_campaign=trial_welcome&lc=send-1',
-    )
-    const request = new NextRequest(
-      `https://app.floraclin.com.br/api/lifecycle/click?lc=send-1&to=${destination}`,
-      {
-        headers: {
-          'user-agent': 'vitest',
-          'x-forwarded-for': '203.0.113.10, 10.0.0.1',
-        },
-      },
-    )
+  it('records the click and redirects to the message button with UTMs and no send id', async () => {
+    const res = await click(`lc=${SEND_ID}`)
 
-    const response = await GET(request)
-
-    expect(response.status).toBe(307)
-    expect(response.headers.get('location')).toBe(
-      'https://app.floraclin.com.br/dashboard?utm_source=lifecycle&utm_medium=email&utm_campaign=trial_welcome&lc=send-1',
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toBe(
+      'https://app.test/pacientes?novo=1&utm_source=lifecycle&utm_medium=whatsapp&utm_campaign=trial_first_patient',
     )
-    expect(recordLifecycleClickMock).toHaveBeenCalledWith({
-      sendId: 'send-1',
-      destination:
-        'https://app.floraclin.com.br/dashboard?utm_source=lifecycle&utm_medium=email&utm_campaign=trial_welcome&lc=send-1',
-      userAgent: 'vitest',
-      ipAddress: '203.0.113.10',
-    })
+    expect(q.recordLifecycleClick).toHaveBeenCalledWith(send)
   })
 
-  it('resolves WhatsApp destinations from the lifecycle send message key', async () => {
-    findLifecycleSendForClickMock.mockResolvedValue({
-      id: 'send-1',
-      tenantId: 'tenant-1',
-      messageKey: 'trial_first_patient',
-      channel: 'whatsapp',
-    })
-    const request = new NextRequest('https://app.floraclin.com.br/api/lifecycle/click?lc=send-1')
+  it('redirects a link scanner without recording a click', async () => {
+    const res = await click(`lc=${SEND_ID}`, 'Microsoft Office SafeLinks/1.0')
 
-    const response = await GET(request)
-
-    expect(response.status).toBe(307)
-    expect(response.headers.get('location')).toBe(
-      'https://app.floraclin.com.br/pacientes?novo=1&utm_source=lifecycle&utm_medium=whatsapp&utm_campaign=trial_first_patient&lc=send-1',
-    )
-    expect(recordLifecycleClickMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sendId: 'send-1',
-        destination:
-          'https://app.floraclin.com.br/pacientes?novo=1&utm_source=lifecycle&utm_medium=whatsapp&utm_campaign=trial_first_patient&lc=send-1',
-      }),
-    )
+    expect(res.headers.get('location')).toContain('/pacientes?novo=1')
+    expect(q.recordLifecycleClick).not.toHaveBeenCalled()
   })
 
-  it('rejects unknown send ids', async () => {
-    findLifecycleSendForClickMock.mockResolvedValue(null)
-    const request = new NextRequest('https://app.floraclin.com.br/api/lifecycle/click?lc=missing')
+  it('sends a malformed lc to the app home without touching the database', async () => {
+    const res = await click('lc=abc')
 
-    const response = await GET(request)
-
-    expect(response.status).toBe(404)
-    expect(recordLifecycleClickMock).not.toHaveBeenCalled()
+    expect(res.headers.get('location')).toBe('https://app.test/')
+    expect(q.findLifecycleSendForClick).not.toHaveBeenCalled()
   })
 
-  it('rejects mismatched WhatsApp destination keys', async () => {
-    findLifecycleSendForClickMock.mockResolvedValue({
-      id: 'send-1',
-      tenantId: 'tenant-1',
-      messageKey: 'trial_welcome',
-      channel: 'whatsapp',
-    })
-    const request = new NextRequest(
-      'https://app.floraclin.com.br/api/lifecycle/click?d=trial_ending&lc=send-1',
-    )
+  it('sends an unknown or unreadable send to the app home', async () => {
+    q.findLifecycleSendForClick.mockResolvedValueOnce(null).mockRejectedValueOnce(new Error('db down'))
 
-    const response = await GET(request)
-
-    expect(response.status).toBe(400)
-    expect(recordLifecycleClickMock).not.toHaveBeenCalled()
+    expect((await click(`lc=${SEND_ID}`)).headers.get('location')).toBe('https://app.test/')
+    expect((await click(`lc=${SEND_ID}`)).headers.get('location')).toBe('https://app.test/')
+    expect(q.recordLifecycleClick).not.toHaveBeenCalled()
   })
 
-  it('rejects open redirects', async () => {
-    const request = new NextRequest(
-      `https://app.floraclin.com.br/api/lifecycle/click?lc=send-1&to=${encodeURIComponent('https://evil.example/')}`,
-    )
+  it('still redirects to the destination when recording the click fails', async () => {
+    q.recordLifecycleClick.mockRejectedValue(new Error('insert failed'))
 
-    const response = await GET(request)
+    const res = await click(`lc=${SEND_ID}`)
 
-    expect(response.status).toBe(400)
-    expect(recordLifecycleClickMock).not.toHaveBeenCalled()
+    expect(res.headers.get('location')).toContain('/pacientes?novo=1')
   })
 })

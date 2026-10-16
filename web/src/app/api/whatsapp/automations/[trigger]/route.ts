@@ -6,8 +6,6 @@ import { upsertAutomation, getTemplateById } from '@/db/queries/whatsapp'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { updateAutomationSchema } from '@/validations/whatsapp'
 import { handleApiError } from '@/lib/api-error'
-import { recordLifecycleActivation } from '@/db/queries/lifecycle'
-import { reportSideEffectFailure } from '@/lib/observability'
 
 const VALID_TRIGGERS = ['appointment_confirmation', 'payment_reminder', 'follow_up']
 
@@ -46,15 +44,6 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     }
 
     const automation = await upsertAutomation(ctx.tenantId, trigger, parsed.data)
-    if (parsed.data.enabled === true) {
-      await recordLifecycleActivation(ctx.tenantId, 'whatsapp_automation_enabled').catch((err) =>
-        reportSideEffectFailure(err, {
-          area: 'lifecycle',
-          step: 'activation_whatsapp_automation',
-          extra: { tenantId: ctx.tenantId, trigger },
-        }),
-      )
-    }
     return NextResponse.json({ data: automation })
   } catch (error) {
     return handleApiError(error, request)

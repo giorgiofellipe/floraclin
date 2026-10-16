@@ -221,7 +221,7 @@ describe('handleLifecycleStatus', () => {
     expect(result).toBe(true)
     expect(q.updateLifecycleDeliveryStatusByMetaId).toHaveBeenCalledWith('wamid.out', {
       status: 'read',
-      timestamp: new Date(1760628600 * 1000),
+      at: new Date(1760628600 * 1000),
       errorCode: null,
       error: null,
     })
@@ -239,7 +239,7 @@ describe('handleLifecycleStatus', () => {
     expect(result).toBe(true)
     expect(q.updateLifecycleDeliveryStatusByMetaId).toHaveBeenCalledWith('wamid.out', {
       status: 'failed',
-      timestamp: undefined,
+      at: expect.any(Date),
       errorCode: '131026',
       error: 'Recipient not on WhatsApp',
     })
@@ -251,16 +251,18 @@ describe('handleLifecycleStatus', () => {
     expect(result).toBe(false)
     expect(q.updateLifecycleDeliveryStatusByMetaId).toHaveBeenCalledWith('wamid.patient', {
       status: 'delivered',
-      timestamp: undefined,
+      at: expect.any(Date),
       errorCode: null,
       error: null,
     })
   })
 
-  it('returns true for a delivered status on a lifecycle id', async () => {
+  it('uses the receive time when Meta sends a timestamp that is not a number', async () => {
     q.updateLifecycleDeliveryStatusByMetaId.mockResolvedValue(true)
 
-    expect(await handleLifecycleStatus({ id: 'wamid.out', status: 'delivered' })).toBe(true)
+    await expect(handleLifecycleStatus({ id: 'wamid.out', status: 'read', timestamp: 'oops' })).resolves.toBe(true)
+    const { at } = q.updateLifecycleDeliveryStatusByMetaId.mock.calls[0][1]
+    expect(Number.isNaN(at.getTime())).toBe(false)
   })
 
   it('falls back to a match check for unsupported statuses', async () => {

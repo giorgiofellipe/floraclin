@@ -191,7 +191,7 @@ const EXEMPT_GET_ROUTES: Record<string, string> = {
   'whatsapp/templates/[id]/route.ts':
     'refreshes local template status from Meta via updateLocalTemplate as a read-through side effect on GET',
   'lifecycle/click/route.ts':
-    'signed lifecycle email link redirect; records click attribution before forwarding to an allowlisted FloraClin destination',
+    'public lifecycle message link: records a click for the send id, then redirects to that message\'s fixed in-app destination',
 }
 
 interface RouteFile {

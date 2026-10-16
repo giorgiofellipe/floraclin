@@ -9,7 +9,6 @@ import {
   type LifecycleRecipient,
 } from '@/db/queries/lifecycle'
 import { getActivationState } from '@/lib/activation'
-import { getAppUrl } from '@/lib/app-url'
 import { sendLifecycleEmail } from '@/lib/email'
 import { lifecycleClickUrl } from '@/lib/lifecycle-attribution'
 import { lifecycleOptOutUrl } from '@/lib/lifecycle-opt-out'
@@ -21,7 +20,7 @@ import {
 } from '@/lib/lifecycle-messages'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { isCanonicalBrPhone, normalizeBrPhone } from '@/lib/phone'
-import { getPlatformTemplateStatus, sendPlatformTemplate } from '@/lib/platform-whatsapp'
+import { sendPlatformTemplate } from '@/lib/platform-whatsapp'
 
 export type ChannelOutcome = 'sent' | 'failed' | 'skipped' | 'already_claimed'
 export interface DeliveryOutcome {
@@ -62,26 +61,6 @@ async function deliverChannel(
   }
 }
 
-async function lifecycleWhatsAppTemplate(message: LifecycleMessage): Promise<{
-  name: string
-  buttonUrlParams?: string[]
-}> {
-  if (!message.button || !message.trackedTemplateName) return { name: message.templateName }
-
-  try {
-    const status = await getPlatformTemplateStatus(message.trackedTemplateName)
-    if (status === 'APPROVED') return { name: message.trackedTemplateName, buttonUrlParams: [] }
-  } catch (err) {
-    reportSideEffectFailure(err, {
-      area: 'lifecycle',
-      step: 'whatsapp_template_status',
-      extra: { templateName: message.trackedTemplateName },
-    })
-  }
-
-  return { name: message.templateName }
-}
-
 export async function deliverLifecycleMessage(
   recipient: LifecycleRecipient,
   message: LifecycleMessage,
@@ -103,16 +82,11 @@ export async function deliverLifecycleMessage(
     })
     whatsapp = 'skipped'
   } else {
-    whatsapp = await deliverChannel(recipient, message, 'whatsapp', phone, async (sendId) => {
-      const template = await lifecycleWhatsAppTemplate(message)
-      const params = template.buttonUrlParams ? { buttonUrlParams: [sendId] } : undefined
-      return sendPlatformTemplate(
-        phone,
-        template.name,
-        [firstName],
-        ...(params ? [params] : []),
-      )
-    })
+    whatsapp = await deliverChannel(recipient, message, 'whatsapp', phone, (sendId) =>
+      sendPlatformTemplate(phone, message.templateName, [firstName], {
+        buttonUrlParams: message.button ? [sendId] : [],
+      }),
+    )
   }
 
   const email = await deliverChannel(recipient, message, 'email', recipient.ownerEmail, async (sendId) => {
@@ -124,12 +98,7 @@ export async function deliverLifecycleMessage(
         button: message.button
           ? {
               label: message.button.label,
-              url: lifecycleClickUrl({
-                sendId,
-                messageKey: message.key,
-                channel: 'email',
-                destination: getAppUrl() + message.button.path,
-              }),
+              url: lifecycleClickUrl(sendId),
             }
           : null,
         optOutUrl: message.category === 'MARKETING' ? lifecycleOptOutUrl(recipient.tenantId) : null,

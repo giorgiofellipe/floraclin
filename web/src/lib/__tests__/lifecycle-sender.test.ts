@@ -15,10 +15,7 @@ vi.mock('@/db/queries/lifecycle', () => ({
   recordSkippedLifecycleSend: vi.fn(),
   findLifecycleRecipients: vi.fn(),
 }))
-vi.mock('@/lib/platform-whatsapp', () => ({
-  getPlatformTemplateStatus: vi.fn(),
-  sendPlatformTemplate: vi.fn(),
-}))
+vi.mock('@/lib/platform-whatsapp', () => ({ sendPlatformTemplate: vi.fn() }))
 vi.mock('@/lib/email', () => ({ sendLifecycleEmail: vi.fn() }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 import { reportSideEffectFailure } from '@/lib/observability'
@@ -36,7 +33,6 @@ import {
   recordSkippedLifecycleSend,
 } from '@/db/queries/lifecycle'
 import { sendPlatformTemplate } from '@/lib/platform-whatsapp'
-import { getPlatformTemplateStatus } from '@/lib/platform-whatsapp'
 import { sendLifecycleEmail } from '@/lib/email'
 import { getActivationState } from '@/lib/activation'
 import { LIFECYCLE_MESSAGES } from '@/lib/lifecycle-messages'
@@ -58,7 +54,6 @@ beforeEach(() => {
   pending.length = 0
   vi.unstubAllEnvs()
   vi.mocked(claimLifecycleSend).mockImplementation(async ({ channel }) => `row-${channel}`)
-  vi.mocked(getPlatformTemplateStatus).mockResolvedValue(null)
   vi.mocked(sendPlatformTemplate).mockResolvedValue({ metaMessageId: 'wamid.1' })
   vi.mocked(sendLifecycleEmail).mockResolvedValue({ id: 'email-1' })
 })
@@ -134,42 +129,26 @@ describe('deliverLifecycleMessage', () => {
     expect(sendPlatformTemplate).not.toHaveBeenCalled()
   })
 
-  it('sends the WhatsApp template to the normalized phone with the first name', async () => {
+  it('sends the WhatsApp template to the normalized phone with the first name and the send id for the button', async () => {
     await deliverLifecycleMessage(recipient, utility)
 
-    expect(sendPlatformTemplate).toHaveBeenCalledWith('5511987654321', utility.templateName, ['Maria'])
+    expect(sendPlatformTemplate).toHaveBeenCalledWith('5511987654321', utility.templateName, ['Maria'], {
+      buttonUrlParams: ['row-whatsapp'],
+    })
     expect(finishLifecycleSend).toHaveBeenCalledWith('row-whatsapp', expect.objectContaining({
       status: 'sent',
       metaMessageId: 'wamid.1',
     }))
   })
 
-  it('uses the tracked WhatsApp template with the send id when Meta has approved it', async () => {
-    const withButton = LIFECYCLE_MESSAGES.find((m) => m.trackedTemplateName)!
-    vi.mocked(getPlatformTemplateStatus).mockResolvedValue('APPROVED')
+  it('sends no button param for a message without a button', async () => {
+    const noButton = LIFECYCLE_MESSAGES.find((m) => !m.button)!
 
-    await deliverLifecycleMessage(recipient, withButton)
+    await deliverLifecycleMessage(recipient, noButton)
 
-    expect(getPlatformTemplateStatus).toHaveBeenCalledWith(withButton.trackedTemplateName)
-    expect(sendPlatformTemplate).toHaveBeenCalledWith(
-      '5511987654321',
-      withButton.trackedTemplateName,
-      ['Maria'],
-      { buttonUrlParams: ['row-whatsapp'] },
-    )
-  })
-
-  it('falls back to the old WhatsApp template until the tracked one is approved', async () => {
-    const withButton = LIFECYCLE_MESSAGES.find((m) => m.trackedTemplateName)!
-    vi.mocked(getPlatformTemplateStatus).mockResolvedValue('PENDING')
-
-    await deliverLifecycleMessage(recipient, withButton)
-
-    expect(sendPlatformTemplate).toHaveBeenCalledWith(
-      '5511987654321',
-      withButton.templateName,
-      ['Maria'],
-    )
+    expect(sendPlatformTemplate).toHaveBeenCalledWith('5511987654321', noButton.templateName, ['Maria'], {
+      buttonUrlParams: [],
+    })
   })
 
   it('passes an opt-out URL for MARKETING emails and null for UTILITY', async () => {
@@ -181,20 +160,19 @@ describe('deliverLifecycleMessage', () => {
     expect(utilityCall[0].content.optOutUrl).toBeNull()
   })
 
-  it('builds the email button URL from the app URL and the button path', async () => {
+  it('points the email button at the click route for this send and stores the Resend id', async () => {
     const withButton = LIFECYCLE_MESSAGES.find((m) => m.button)!
 
     await deliverLifecycleMessage(recipient, withButton)
 
     const button = vi.mocked(sendLifecycleEmail).mock.calls[0][0].content.button
-    expect(button?.label).toBe(withButton.button!.label)
-    const click = new URL(button!.url)
-    const destination = new URL(click.searchParams.get('to')!)
-    expect(click.pathname).toBe('/api/lifecycle/click')
-    expect(click.searchParams.get('lc')).toBe('row-email')
-    expect(destination.toString()).toBe(
-      `https://app.test${withButton.button!.path}${withButton.button!.path.includes('?') ? '&' : '?'}utm_source=lifecycle&utm_medium=email&utm_campaign=${withButton.key}&lc=row-email`,
-    )
+    expect(button).toEqual({
+      label: withButton.button!.label,
+      url: 'https://app.test/api/lifecycle/click?lc=row-email',
+    })
+    expect(finishLifecycleSend).toHaveBeenCalledWith('row-email', expect.objectContaining({
+      providerMessageId: 'email-1',
+    }))
   })
 })
 
@@ -232,7 +210,9 @@ describe('scheduleLifecycleWelcome', () => {
     scheduleLifecycleWelcome({ tenantId: 'tenant-1' })
     await Promise.all(pending)
 
-    expect(sendPlatformTemplate).toHaveBeenCalledWith('5511987654321', 'trial_welcome', ['Maria'])
+    expect(sendPlatformTemplate).toHaveBeenCalledWith('5511987654321', 'trial_welcome_click', ['Maria'], {
+      buttonUrlParams: ['row-whatsapp'],
+    })
     expect(sendLifecycleEmail).toHaveBeenCalledTimes(1)
   })
 

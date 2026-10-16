@@ -781,6 +781,7 @@ export const whatsappAutomations = floraclinSchema.table('whatsapp_automations',
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   trigger: varchar('trigger', { length: 50 }).notNull(),
   enabled: boolean('enabled').notNull().default(false),
+  firstEnabledAt: timestamp('first_enabled_at', { withTimezone: true }),
   templateId: uuid('template_id').references(() => whatsappTemplates.id, { onDelete: 'set null' }),
   config: jsonb('config'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1045,6 +1046,7 @@ export const tenantSubscriptions = floraclinSchema.table('tenant_subscriptions',
   currentPeriodStart: timestamp('current_period_start', { withTimezone: true }).notNull().defaultNow(),
   currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }).notNull(),
   canceledAt: timestamp('canceled_at', { withTimezone: true }),
+  firstPaidAt: timestamp('first_paid_at', { withTimezone: true }),
   source: varchar('source', { length: 20 }).notNull().default('trial'),
   giftedBy: uuid('gifted_by').references(() => users.id),
   giftedMonths: integer('gifted_months'),
@@ -1064,33 +1066,25 @@ export const tenantLifecycleMessages = floraclinSchema.table('tenant_lifecycle_m
   completedAt: timestamp('completed_at', { withTimezone: true }),
   metaMessageId: varchar('meta_message_id', { length: 255 }),
   providerMessageId: varchar('provider_message_id', { length: 255 }),
-  deliveryStatus: varchar('delivery_status', { length: 20 }),
   deliveredAt: timestamp('delivered_at', { withTimezone: true }),
   readAt: timestamp('read_at', { withTimezone: true }),
-  failedAt: timestamp('failed_at', { withTimezone: true }),
   errorCode: varchar('error_code', { length: 50 }),
   error: text('error'),
 }, (table) => [
   uniqueIndex('uq_tenant_lifecycle_message').on(table.tenantId, table.messageKey, table.channel),
   index('idx_tenant_lifecycle_messages_meta_id').on(table.metaMessageId),
-  index('idx_tenant_lifecycle_messages_provider_id').on(table.providerMessageId),
   index('idx_tenant_lifecycle_messages_recipient').on(table.recipient),
 ])
 
-export const tenantLifecycleEvents = floraclinSchema.table('tenant_lifecycle_events', {
+export const tenantLifecycleClicks = floraclinSchema.table('tenant_lifecycle_clicks', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
-  lifecycleMessageId: uuid('lifecycle_message_id').references(() => tenantLifecycleMessages.id),
-  messageKey: varchar('message_key', { length: 40 }),
-  channel: varchar('channel', { length: 10 }),
-  eventType: varchar('event_type', { length: 20 }).notNull(),
-  conversionType: varchar('conversion_type', { length: 40 }),
-  metadata: jsonb('metadata').notNull().default({}),
+  lifecycleMessageId: uuid('lifecycle_message_id').notNull()
+    .references(() => tenantLifecycleMessages.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  index('idx_tenant_lifecycle_events_tenant_created').on(table.tenantId, table.createdAt),
-  index('idx_tenant_lifecycle_events_message').on(table.lifecycleMessageId),
-  index('idx_tenant_lifecycle_events_type').on(table.eventType, table.conversionType),
+  index('idx_tenant_lifecycle_clicks_tenant_created').on(table.tenantId, table.createdAt),
+  index('idx_tenant_lifecycle_clicks_message_created').on(table.lifecycleMessageId, table.createdAt),
 ])
 
 export const tenantLifecycleReplies = floraclinSchema.table('tenant_lifecycle_replies', {

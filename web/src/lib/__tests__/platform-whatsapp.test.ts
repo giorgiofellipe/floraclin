@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { getPlatformTemplateStatus, sendPlatformTemplate } from '../platform-whatsapp'
+import { sendPlatformTemplate } from '../platform-whatsapp'
 
 const fetchMock = vi.fn()
 
@@ -87,15 +87,5 @@ describe('sendPlatformTemplate', () => {
         parameters: [{ type: 'text', text: 'send-1' }],
       },
     ])
-  })
-
-  it('reads a platform template status by name', async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ data: [{ name: 'trial_welcome_click', status: 'APPROVED' }] }))
-
-    await expect(getPlatformTemplateStatus('trial_welcome_click')).resolves.toBe('APPROVED')
-    expect(fetchMock.mock.calls[0][0]).toBe(
-      'https://graph.facebook.com/v21.0/waba-1/message_templates?name=trial_welcome_click',
-    )
-    expect(fetchMock.mock.calls[0][1].method).toBeUndefined()
   })
 })

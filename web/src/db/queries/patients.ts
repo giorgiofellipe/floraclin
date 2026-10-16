@@ -4,8 +4,6 @@ import { eq, and, isNull, ilike, or, sql, asc } from 'drizzle-orm'
 import type { PaginatedResult } from '@/types'
 import type { CreatePatientInput, UpdatePatientInput } from '@/validations/patient'
 import { isCanonicalBrPhone, normalizeBrPhone, normalizeBrPhoneForWhatsApp } from '@/lib/phone'
-import { recordLifecycleActivation } from '@/db/queries/lifecycle'
-import { reportSideEffectFailure } from '@/lib/observability'
 
 export type Patient = typeof patients.$inferSelect
 
@@ -132,12 +130,6 @@ export async function createPatient(
   data: CreatePatientInput,
   responsibleUserId?: string
 ): Promise<Patient> {
-  const hadPatient = await db
-    .select({ id: patients.id })
-    .from(patients)
-    .where(and(eq(patients.tenantId, tenantId), isNull(patients.deletedAt)))
-    .limit(1)
-
   const primaryPhone = normalizeBrPhoneForWhatsApp(data.phone)
   const secondaryPhone = data.phoneSecondary
     ? normalizeBrPhoneForWhatsApp(data.phoneSecondary)
@@ -162,12 +154,6 @@ export async function createPatient(
       marketingOptOut: data.marketingOptOut ?? false,
     })
     .returning()
-
-  if (hadPatient.length === 0) {
-    await recordLifecycleActivation(tenantId, 'first_patient').catch((err) =>
-      reportSideEffectFailure(err, { area: 'lifecycle', step: 'activation_patient', extra: { tenantId } }),
-    )
-  }
 
   return patient
 }
