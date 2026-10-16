@@ -1,5 +1,7 @@
 import { getAppUrl } from '@/lib/app-url'
+import { LIFECYCLE_MESSAGES } from '@/lib/lifecycle-messages'
 import type { LifecycleChannel } from '@/db/queries/lifecycle'
+import type { LifecycleMessageKey } from '@/lib/lifecycle-messages'
 
 const PRODUCTION_ALLOWED_HOSTS = new Set(['app.floraclin.com.br', 'floraclin.com.br'])
 
@@ -44,4 +46,13 @@ export function lifecycleClickUrl(
   click.searchParams.set('utm_medium', opts.channel)
   click.searchParams.set('utm_campaign', opts.messageKey)
   return click.toString()
+}
+
+export function lifecycleDestinationForMessage(
+  opts: { sendId: string; messageKey: string; channel: LifecycleChannel },
+  base = getAppUrl(),
+): URL | null {
+  const message = LIFECYCLE_MESSAGES.find((item) => item.key === (opts.messageKey as LifecycleMessageKey))
+  if (!message?.button) return null
+  return addLifecycleUtmParams(lifecycleDestination(message.button.path, base), opts)
 }

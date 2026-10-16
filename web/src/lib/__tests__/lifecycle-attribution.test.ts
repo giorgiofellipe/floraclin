@@ -4,6 +4,7 @@ import {
   isAllowedLifecycleDestination,
   lifecycleClickUrl,
   lifecycleDestination,
+  lifecycleDestinationForMessage,
 } from '@/lib/lifecycle-attribution'
 
 describe('lifecycle attribution URLs', () => {
@@ -45,5 +46,20 @@ describe('lifecycle attribution URLs', () => {
     expect(isAllowedLifecycleDestination(new URL('https://app.floraclin.com.br/dashboard'))).toBe(true)
     expect(isAllowedLifecycleDestination(new URL('https://floraclin.com.br/'))).toBe(true)
     expect(() => lifecycleDestination('https://evil.example/phish')).toThrow(/not allowed/)
+  })
+
+  it('resolves WhatsApp destinations from the lifecycle message key', () => {
+    const destination = lifecycleDestinationForMessage(
+      {
+        sendId: 'send-1',
+        messageKey: 'trial_ending',
+        channel: 'whatsapp',
+      },
+      'https://app.floraclin.com.br',
+    )
+
+    expect(destination?.toString()).toBe(
+      'https://app.floraclin.com.br/configuracoes?tab=assinatura&utm_source=lifecycle&utm_medium=whatsapp&utm_campaign=trial_ending&lc=send-1',
+    )
   })
 })

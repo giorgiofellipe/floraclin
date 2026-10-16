@@ -15,7 +15,10 @@ vi.mock('@/db/queries/lifecycle', () => ({
   recordSkippedLifecycleSend: vi.fn(),
   findLifecycleRecipients: vi.fn(),
 }))
-vi.mock('@/lib/platform-whatsapp', () => ({ sendPlatformTemplate: vi.fn() }))
+vi.mock('@/lib/platform-whatsapp', () => ({
+  getPlatformTemplateStatus: vi.fn(),
+  sendPlatformTemplate: vi.fn(),
+}))
 vi.mock('@/lib/email', () => ({ sendLifecycleEmail: vi.fn() }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 import { reportSideEffectFailure } from '@/lib/observability'
@@ -33,6 +36,7 @@ import {
   recordSkippedLifecycleSend,
 } from '@/db/queries/lifecycle'
 import { sendPlatformTemplate } from '@/lib/platform-whatsapp'
+import { getPlatformTemplateStatus } from '@/lib/platform-whatsapp'
 import { sendLifecycleEmail } from '@/lib/email'
 import { getActivationState } from '@/lib/activation'
 import { LIFECYCLE_MESSAGES } from '@/lib/lifecycle-messages'
@@ -54,6 +58,7 @@ beforeEach(() => {
   pending.length = 0
   vi.unstubAllEnvs()
   vi.mocked(claimLifecycleSend).mockImplementation(async ({ channel }) => `row-${channel}`)
+  vi.mocked(getPlatformTemplateStatus).mockResolvedValue(null)
   vi.mocked(sendPlatformTemplate).mockResolvedValue({ metaMessageId: 'wamid.1' })
   vi.mocked(sendLifecycleEmail).mockResolvedValue({ id: 'email-1' })
 })
@@ -137,6 +142,34 @@ describe('deliverLifecycleMessage', () => {
       status: 'sent',
       metaMessageId: 'wamid.1',
     }))
+  })
+
+  it('uses the tracked WhatsApp template with the send id when Meta has approved it', async () => {
+    const withButton = LIFECYCLE_MESSAGES.find((m) => m.trackedTemplateName)!
+    vi.mocked(getPlatformTemplateStatus).mockResolvedValue('APPROVED')
+
+    await deliverLifecycleMessage(recipient, withButton)
+
+    expect(getPlatformTemplateStatus).toHaveBeenCalledWith(withButton.trackedTemplateName)
+    expect(sendPlatformTemplate).toHaveBeenCalledWith(
+      '5511987654321',
+      withButton.trackedTemplateName,
+      ['Maria'],
+      { buttonUrlParams: ['row-whatsapp'] },
+    )
+  })
+
+  it('falls back to the old WhatsApp template until the tracked one is approved', async () => {
+    const withButton = LIFECYCLE_MESSAGES.find((m) => m.trackedTemplateName)!
+    vi.mocked(getPlatformTemplateStatus).mockResolvedValue('PENDING')
+
+    await deliverLifecycleMessage(recipient, withButton)
+
+    expect(sendPlatformTemplate).toHaveBeenCalledWith(
+      '5511987654321',
+      withButton.templateName,
+      ['Maria'],
+    )
   })
 
   it('passes an opt-out URL for MARKETING emails and null for UTILITY', async () => {

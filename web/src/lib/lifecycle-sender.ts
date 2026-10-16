@@ -21,7 +21,7 @@ import {
 } from '@/lib/lifecycle-messages'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { isCanonicalBrPhone, normalizeBrPhone } from '@/lib/phone'
-import { sendPlatformTemplate } from '@/lib/platform-whatsapp'
+import { getPlatformTemplateStatus, sendPlatformTemplate } from '@/lib/platform-whatsapp'
 
 export type ChannelOutcome = 'sent' | 'failed' | 'skipped' | 'already_claimed'
 export interface DeliveryOutcome {
@@ -62,6 +62,26 @@ async function deliverChannel(
   }
 }
 
+async function lifecycleWhatsAppTemplate(message: LifecycleMessage): Promise<{
+  name: string
+  buttonUrlParams?: string[]
+}> {
+  if (!message.button || !message.trackedTemplateName) return { name: message.templateName }
+
+  try {
+    const status = await getPlatformTemplateStatus(message.trackedTemplateName)
+    if (status === 'APPROVED') return { name: message.trackedTemplateName, buttonUrlParams: [] }
+  } catch (err) {
+    reportSideEffectFailure(err, {
+      area: 'lifecycle',
+      step: 'whatsapp_template_status',
+      extra: { templateName: message.trackedTemplateName },
+    })
+  }
+
+  return { name: message.templateName }
+}
+
 export async function deliverLifecycleMessage(
   recipient: LifecycleRecipient,
   message: LifecycleMessage,
@@ -83,9 +103,16 @@ export async function deliverLifecycleMessage(
     })
     whatsapp = 'skipped'
   } else {
-    whatsapp = await deliverChannel(recipient, message, 'whatsapp', phone, () =>
-      sendPlatformTemplate(phone, message.templateName, [firstName]),
-    )
+    whatsapp = await deliverChannel(recipient, message, 'whatsapp', phone, async (sendId) => {
+      const template = await lifecycleWhatsAppTemplate(message)
+      const params = template.buttonUrlParams ? { buttonUrlParams: [sendId] } : undefined
+      return sendPlatformTemplate(
+        phone,
+        template.name,
+        [firstName],
+        ...(params ? [params] : []),
+      )
+    })
   }
 
   const email = await deliverChannel(recipient, message, 'email', recipient.ownerEmail, async (sendId) => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { sendPlatformTemplate } from '../platform-whatsapp'
+import { getPlatformTemplateStatus, sendPlatformTemplate } from '../platform-whatsapp'
 
 const fetchMock = vi.fn()
 
@@ -66,5 +66,36 @@ describe('sendPlatformTemplate', () => {
         ],
       },
     ])
+  })
+
+  it('sends dynamic URL button params as button components', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ messages: [{ id: 'wamid.ABC' }] }))
+    await sendPlatformTemplate('5511999999999', 'trial_welcome_click', ['Ana'], {
+      buttonUrlParams: ['send-1'],
+    })
+
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(sent.template.components).toEqual([
+      {
+        type: 'body',
+        parameters: [{ type: 'text', text: 'Ana' }],
+      },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: 'send-1' }],
+      },
+    ])
+  })
+
+  it('reads a platform template status by name', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ data: [{ name: 'trial_welcome_click', status: 'APPROVED' }] }))
+
+    await expect(getPlatformTemplateStatus('trial_welcome_click')).resolves.toBe('APPROVED')
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://graph.facebook.com/v21.0/waba-1/message_templates?name=trial_welcome_click',
+    )
+    expect(fetchMock.mock.calls[0][1].method).toBeUndefined()
   })
 })
