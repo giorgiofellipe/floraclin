@@ -80,8 +80,21 @@ describe('WhatsAppCreditHistory', () => {
   })
 
   it('shows the empty state', async () => {
-    respondWith({ ...PAGE_1, entries: [], nextCursor: null })
+    respondWith({ ...PAGE_1, periods: [{ ...PAGE_1.periods[0], used: 0 }], entries: [], nextCursor: null })
     renderWithProviders(<WhatsAppCreditHistory open onOpenChange={() => {}} />)
     expect(await screen.findByText('Nenhum crédito usado neste período')).toBeInTheDocument()
+  })
+
+  it('says details are missing when a period used credits but has no lines', async () => {
+    respondWith({ ...PAGE_1, entries: [], nextCursor: null })
+    renderWithProviders(<WhatsAppCreditHistory open onOpenChange={() => {}} />)
+    expect(await screen.findByText('Sem detalhes de uso para este período')).toBeInTheDocument()
+  })
+
+  it('shows the empty state when the tenant has no period yet', async () => {
+    respondWith({ periods: [], periodId: null, entries: [], nextCursor: null })
+    renderWithProviders(<WhatsAppCreditHistory open onOpenChange={() => {}} />)
+    expect(await screen.findByText('Nenhum crédito usado neste período')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Período' })).not.toBeInTheDocument()
   })
 })

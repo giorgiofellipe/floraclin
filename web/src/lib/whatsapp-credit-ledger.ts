@@ -37,7 +37,7 @@ export interface LedgerPeriod {
 
 export interface LedgerPage {
   periods: LedgerPeriod[]
-  periodId: string
+  periodId: string | null
   entries: LedgerEntry[]
   nextCursor: string | null
 }

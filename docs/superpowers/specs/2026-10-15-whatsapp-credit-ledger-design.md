@@ -137,7 +137,7 @@ Name fallbacks:
 `GET /api/whatsapp/credits/ledger?periodId=<uuid>&cursor=<opaque>`
 
 - `requireRole('owner')`. Read-only, no subscription gate.
-- Without `periodId`: the tenant's current period.
+- Without `periodId`: the tenant's newest period. With no period at all, an empty page with `periodId: null`; the read never creates a period.
 - A `periodId` that does not belong to `ctx.tenantId` returns 404.
 - Response:
 
@@ -170,7 +170,7 @@ In `whatsapp-settings-form.tsx`, "Uso de créditos" section (shared-number clini
   1. Period `Select`, current first, label "01/10 a 31/10/2026" (periods are BR calendar months), with "N de M créditos usados" for the selected period.
   2. Entries grouped under day headings (`dd/MM`, BRT). Each line: `HH:mm`, the sentence, and the amount at the right (`-1` red, `+1` green).
   3. "Carregar mais" while `nextCursor` is set (`useInfiniteQuery`).
-  4. Empty state: "Nenhum crédito usado neste período".
+  4. Empty state: "Nenhum crédito usado neste período", or "Sem detalhes de uso para este período" when the period used credits but has no lines.
 - At 390px the sentence wraps under the time; the amount stays right-aligned.
 
 Dates go through `@/lib/dates` helpers per AGENTS.md.

@@ -76,10 +76,11 @@ export function WhatsAppCreditHistory({ open, onOpenChange }: WhatsAppCreditHist
   const selected = first?.periods.find((p) => p.id === first.periodId)
   const periodItems = Object.fromEntries((first?.periods ?? []).map((p) => [p.id, formatPeriod(p)]))
   const isEmpty = !!first && entries.length === 0
+  const emptyText = selected && selected.used > 0 ? 'Sem detalhes de uso para este período' : 'Nenhum crédito usado neste período'
 
   const body = (
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-2">
-      {first && (
+      {first?.periodId && (
         <div className="space-y-2">
           <Select items={periodItems} value={first.periodId} onValueChange={setPeriodId}>
             <SelectTrigger className="w-full" aria-label="Período">
@@ -100,7 +101,7 @@ export function WhatsAppCreditHistory({ open, onOpenChange }: WhatsAppCreditHist
 
       {query.isError && <p className="text-sm text-red-700">Não foi possível carregar o histórico.</p>}
 
-      {isEmpty && <p className="text-sm text-mid">Nenhum crédito usado neste período</p>}
+      {isEmpty && <p className="text-sm text-mid">{emptyText}</p>}
 
       {days.map((day) => (
         <section key={day.ymd}>
