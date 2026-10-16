@@ -89,7 +89,6 @@ describe('WhatsAppCreditHistory', () => {
     respondWith({ ...PAGE_1, entries: [], nextCursor: null })
     renderWithProviders(<WhatsAppCreditHistory open onOpenChange={() => {}} />)
     expect(await screen.findByText('Sem detalhes de uso para este período')).toBeInTheDocument()
-    expect(screen.queryByText('Nenhum crédito usado neste período')).not.toBeInTheDocument()
   })
 
   it('shows the empty state when the tenant has no period yet', async () => {

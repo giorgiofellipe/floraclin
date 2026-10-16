@@ -31,7 +31,6 @@ describe('GET /api/whatsapp/credits/ledger', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     requireRole.mockResolvedValue({ tenantId: 'tenant-1', role: 'owner' })
-    getOrCreateCurrentPeriod.mockResolvedValue({ id: 'p2' })
     listCreditPeriods.mockResolvedValue([P2, P1])
     listLedgerEntries.mockResolvedValue({ entries: [], nextCursor: null })
   })
