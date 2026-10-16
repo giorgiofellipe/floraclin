@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole } from '@/lib/auth'
 import { handleApiError } from '@/lib/api-error'
-import { getOrCreateCurrentPeriod } from '@/db/queries/whatsapp-credits'
 import { decodeLedgerCursor, listCreditPeriods, listLedgerEntries } from '@/db/queries/whatsapp-credit-history'
 import type { LedgerPage } from '@/lib/whatsapp-credit-ledger'
 
@@ -21,8 +20,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Cursor inválido' }, { status: 400 })
     }
 
-    const periodId = rawPeriod ?? (await getOrCreateCurrentPeriod(ctx.tenantId)).id
     const periods = await listCreditPeriods(ctx.tenantId)
+    const periodId = rawPeriod ?? periods[0]?.id
+    if (!periodId) {
+      const empty: LedgerPage = { periods, periodId: null, entries: [], nextCursor: null }
+      return NextResponse.json(empty)
+    }
     if (!periods.some((p) => p.id === periodId)) {
       return NextResponse.json({ error: 'Período não encontrado' }, { status: 404 })
     }

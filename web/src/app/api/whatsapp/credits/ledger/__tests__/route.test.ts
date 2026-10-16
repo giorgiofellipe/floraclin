@@ -36,11 +36,20 @@ describe('GET /api/whatsapp/credits/ledger', () => {
     listLedgerEntries.mockResolvedValue({ entries: [], nextCursor: null })
   })
 
-  it('uses the current period when none is given', async () => {
+  it('uses the newest period when none is given, without creating one', async () => {
     const res = await GET(new Request('http://x/api/whatsapp/credits/ledger'))
     expect(res.status).toBe(200)
     expect(listLedgerEntries).toHaveBeenCalledWith('tenant-1', 'p2', null)
     expect((await res.json()).periodId).toBe('p2')
+    expect(getOrCreateCurrentPeriod).not.toHaveBeenCalled()
+  })
+
+  it('returns an empty page when the tenant has no period', async () => {
+    listCreditPeriods.mockResolvedValue([])
+    const res = await GET(new Request('http://x/api/whatsapp/credits/ledger'))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ periods: [], periodId: null, entries: [], nextCursor: null })
+    expect(getOrCreateCurrentPeriod).not.toHaveBeenCalled()
   })
 
   it('returns 404 for a period of another tenant', async () => {
