@@ -34,7 +34,7 @@ async function requestJson(url: string, method: string, data?: unknown) {
 
 export function useCardRepasses(filters: CardRepasseFilters) {
   return useQuery({
-    queryKey: queryKeys.financial.cardRepasses(filters as unknown as Record<string, unknown>),
+    queryKey: queryKeys.financial.cardRepasses(filters),
     queryFn: (): Promise<CardRepassesResponse> => {
       const params = new URLSearchParams({
         dateFrom: filters.dateFrom,
@@ -55,6 +55,10 @@ export function useAdjustCardRepasse() {
   return useMutation({
     mutationFn: ({ id, ...data }: { id: string; netAmount: number; expectedDate: string }) =>
       requestJson(`/api/financial/card-repasses/${id}`, 'PATCH', data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.financial.all }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.financial.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+      ]),
   })
 }

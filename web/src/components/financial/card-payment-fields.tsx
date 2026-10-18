@@ -1,19 +1,32 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useId, useMemo } from 'react'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCardTerminals } from '@/hooks/queries/use-card-terminals'
 import {
   buildCardSchedule,
+  cardInstallmentCountFor,
   describeCardSchedule,
-  type CardTerminalTerms,
+  isCardMethod,
+  toCardTerminalTerms,
 } from '@/lib/financial/card-repasses'
 import { formatCurrency } from '@/lib/utils'
 
 export interface CardPaymentValue {
   terminalId: string | null
   installmentCount: number
+}
+
+export function toCardPayload(
+  method: string,
+  value: CardPaymentValue,
+): { terminalId: string; installmentCount: number } | undefined {
+  if (!isCardMethod(method) || !value.terminalId) return undefined
+  return {
+    terminalId: value.terminalId,
+    installmentCount: cardInstallmentCountFor(method, value.installmentCount),
+  }
 }
 
 interface CardPaymentFieldsProps {
@@ -45,7 +58,9 @@ export function CardPaymentFields({
   lockInstallmentCount,
   disabled,
 }: CardPaymentFieldsProps) {
-  const { data } = useCardTerminals()
+  const terminalId = useId()
+  const installmentsId = useId()
+  const { data, isLoading, isError } = useCardTerminals()
   const terminals = useMemo(() => data?.data ?? [], [data])
   const defaultTerminal = terminals.find((t) => t.isDefault)
   const terminal = terminals.find((t) => t.id === value.terminalId)
@@ -58,13 +73,7 @@ export function CardPaymentFields({
 
   const schedule = useMemo(() => {
     if (!terminal || !(gross > 0)) return null
-    const terms: CardTerminalTerms = {
-      debitRate: Number(terminal.debitRate),
-      debitPayoutDays: terminal.debitPayoutDays,
-      creditRates: terminal.creditRates.map(Number),
-      creditPayoutMode: terminal.creditPayoutMode as CardTerminalTerms['creditPayoutMode'],
-      creditLumpSumDays: terminal.creditLumpSumDays,
-    }
+    const terms = toCardTerminalTerms(terminal)
     return buildCardSchedule({
       gross,
       method,
@@ -74,6 +83,8 @@ export function CardPaymentFields({
     })
   }, [terminal, gross, method, value.installmentCount, paymentYmd])
 
+  if (isLoading) return <p className="text-sm text-mid">Carregando maquininhas...</p>
+  if (isError) return <p className="text-sm text-mid">Não foi possível carregar as maquininhas.</p>
   if (terminals.length === 0) {
     return (
       <p className="text-sm text-mid">Cadastre uma maquininha em Configurações › Financeiro.</p>
@@ -81,22 +92,18 @@ export function CardPaymentFields({
   }
 
   const terminalItems = Object.fromEntries(terminals.map((t) => [t.id, t.name]))
-  const feeLabel =
-    schedule?.payoutMode === 'lump_sum'
-      ? `Taxa com antecipação (${formatRate(schedule.rate)}%)`
-      : `Taxa (${schedule ? formatRate(schedule.rate) : ''}%)`
 
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label className={LABEL_CLASS}>Maquininha</Label>
+        <Label htmlFor={terminalId} className={LABEL_CLASS}>Maquininha</Label>
         <Select
           items={terminalItems}
           value={value.terminalId ?? ''}
           onValueChange={(v) => onChange({ ...value, terminalId: v || null })}
           disabled={disabled}
         >
-          <SelectTrigger className="w-full">
+          <SelectTrigger id={terminalId} className="w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent />
@@ -105,14 +112,14 @@ export function CardPaymentFields({
 
       {method === 'credit_card' && (
         <div className="space-y-2">
-          <Label className={LABEL_CLASS}>Parcelas no cartão</Label>
+          <Label htmlFor={installmentsId} className={LABEL_CLASS}>Parcelas no cartão</Label>
           <Select
             items={INSTALLMENT_ITEMS}
             value={String(value.installmentCount)}
             onValueChange={(v) => onChange({ ...value, installmentCount: Number(v ?? 1) })}
             disabled={disabled || lockInstallmentCount}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger id={installmentsId} className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent />
@@ -121,13 +128,17 @@ export function CardPaymentFields({
       )}
 
       {schedule && (
-        <div className="rounded-lg bg-[#F4F6F8] border border-[#E8ECEF] p-3 space-y-1 text-sm">
+        <div className="rounded-lg bg-content-bg border border-topbar-border p-3 space-y-1 text-sm">
           <div className="flex justify-between">
             <span>Valor da venda</span>
             <span>{formatCurrency(schedule.grossAmount)}</span>
           </div>
           <div className="flex justify-between text-mid">
-            <span>{feeLabel}</span>
+            <span>
+              {schedule.payoutMode === 'lump_sum'
+                ? `Taxa com antecipação (${formatRate(schedule.rate)}%)`
+                : `Taxa (${formatRate(schedule.rate)}%)`}
+            </span>
             <span>− {formatCurrency(schedule.feeAmount)}</span>
           </div>
           <div className="flex justify-between font-medium">

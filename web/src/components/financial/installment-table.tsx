@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { cn, formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { round2 } from '@/lib/financial/penalties'
+import type { CardPaymentSummary } from '@/lib/financial/card-repasses'
 import { PartialPaymentDialog } from './partial-payment-dialog'
 import {
   BanknoteIcon,
@@ -39,23 +40,12 @@ interface PaymentRecord {
   paidAt: string
   recordedAt: string
   notes: string | null
-  card?: CardSummary | null
+  card?: CardPaymentSummary | null
 }
 
-interface CardSummary {
-  terminalName: string
-  method: string
-  installmentCount: number
-  pendingRepasses: number
-  receivedRepasses: number
-  linkedPaymentCount: number
-}
-
-function cardLabel(card: CardSummary): string {
-  const method = card.method === 'debit_card' ? 'Cartão de débito' : 'Cartão de crédito'
-  return card.method === 'debit_card'
-    ? `${method} · ${card.terminalName}`
-    : `${method} · ${card.terminalName} · ${card.installmentCount}x`
+function cardLabel(card: CardPaymentSummary): string {
+  const base = `${card.method === 'debit_card' ? 'Cartão de débito' : 'Cartão de crédito'} · ${card.terminalName}`
+  return card.method === 'debit_card' ? base : `${base} · ${card.installmentCount}x`
 }
 
 interface Installment {
@@ -83,6 +73,11 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   debit_card: 'Cartão de Débito',
   cash: 'Dinheiro',
   transfer: 'Transferência',
+}
+
+function paymentRecordLabel(pr: PaymentRecord): string {
+  if (pr.card) return cardLabel(pr.card)
+  return PAYMENT_METHOD_LABELS[pr.paymentMethod] ?? pr.paymentMethod ?? ''
 }
 
 function getProgressPercent(inst: Installment): number {
@@ -298,11 +293,7 @@ export function InstallmentTable({
                               {formatDateTime(pr.paidAt)}
                             </span>
                             <span className="text-[10px] text-mid">
-                              {pr.card
-                                ? cardLabel(pr.card)
-                                : pr.paymentMethod
-                                  ? PAYMENT_METHOD_LABELS[pr.paymentMethod] ?? pr.paymentMethod
-                                  : ''}
+                              {paymentRecordLabel(pr)}
                             </span>
                           </div>
                           {/* Allocation breakdown */}
@@ -365,7 +356,7 @@ export function InstallmentTable({
               <strong>{formatCurrency(Number(reverseDialogPayment?.amount ?? 0))}</strong>
               {' '}realizado em{' '}
               <strong>{reverseDialogPayment ? formatDateTime(reverseDialogPayment.paidAt) : ''}</strong>.
-              {reverseDialogPayment?.card ? null : ' Um lançamento de saída será criado no caixa.'}
+              {!reverseDialogPayment?.card && ' Um lançamento de saída será criado no caixa.'}
             </DialogDescription>
             {reverseDialogPayment?.card && (
               <div className="space-y-2 text-sm text-mid">

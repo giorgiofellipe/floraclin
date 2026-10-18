@@ -25,7 +25,8 @@ import { addDays } from 'date-fns'
 import { brToday, toLocalYmd } from '@/lib/dates'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
-import { CardPaymentFields, type CardPaymentValue } from './card-payment-fields'
+import { CardPaymentFields, toCardPayload, type CardPaymentValue } from './card-payment-fields'
+import { isCardMethod } from '@/lib/financial/card-repasses'
 import type { PaymentMethod } from '@/types'
 
 const INSTALLMENT_COUNT_ITEMS: Record<string, string> = Object.fromEntries(
@@ -114,7 +115,7 @@ export function PaymentForm({ open, onClose, onSuccess, defaultPatient }: Paymen
 
   const parsedAmount = totalAmount ? parseCurrency(totalAmount) : 0
   const cardMethod =
-    paymentMethod === 'credit_card' || paymentMethod === 'debit_card' ? paymentMethod : null
+    isCardMethod(paymentMethod) ? paymentMethod : null
   const parsedCount = cardMethod ? 1 : parseInt(installmentCount, 10) || 1
 
   const installmentPreview = useMemo(() => {
@@ -166,13 +167,7 @@ export function PaymentForm({ open, onClose, onSuccess, defaultPatient }: Paymen
               customDueDates: dueDates,
               notes: (formData.get('notes') as string) || undefined,
               paymentMethod,
-              card:
-                cardMethod && card.terminalId
-                  ? {
-                      terminalId: card.terminalId,
-                      installmentCount: cardMethod === 'debit_card' ? 1 : card.installmentCount,
-                    }
-                  : undefined,
+              card: toCardPayload(paymentMethod, card),
             })
             if (created?.paymentError) {
               toast.error(created.paymentError, { description: 'A cobrança foi criada como pendente.' })

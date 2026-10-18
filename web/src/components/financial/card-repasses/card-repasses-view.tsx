@@ -1,10 +1,10 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { useCardRepasses } from '@/hooks/queries/use-card-repasses'
+import { useCardRepasses, type CardRepasseFilters } from '@/hooks/queries/use-card-repasses'
 import { useCardTerminals } from '@/hooks/queries/use-card-terminals'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
-import { brToday } from '@/lib/dates'
+import { brToday, shiftBrYmd } from '@/lib/dates'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { DateRangePicker } from '@/components/ui/date-picker'
@@ -24,26 +24,34 @@ const STATUS_FILTER_ITEMS: Record<string, string> = { all: 'Todos', ...STATUS_LA
 
 const STATUS_STYLES: Record<string, string> = {
   pending: 'bg-blush text-gold',
-  received: 'bg-[#F0F7F1] text-[#4A6B52]',
-  cancelled: 'bg-[#F4F6F8] text-mid',
+  received: 'bg-confirmed-bg text-sage',
+  cancelled: 'bg-content-bg text-mid',
 }
 
-const TH = 'px-4 py-3 text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] font-medium'
+const TH = 'px-4 py-3 text-[10px] uppercase tracking-[0.15em] text-mid font-medium'
+
+type RepasseStatus = NonNullable<CardRepasseFilters['status']>
+
+function lastDayOfMonth(ymd: string): string {
+  const [year, month] = ymd.split('-').map(Number)
+  const nextMonth = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`
+  return shiftBrYmd(nextMonth, -1)
+}
 
 export function CardRepassesView() {
   const today = useMemo(() => brToday(), [])
   const [dateFrom, setDateFrom] = useState(`${today.slice(0, 7)}-01`)
-  const [dateTo, setDateTo] = useState(today)
+  const [dateTo, setDateTo] = useState(lastDayOfMonth(today))
   const [terminalId, setTerminalId] = useState('')
-  const [status, setStatus] = useState('')
+  const [status, setStatus] = useState<RepasseStatus | ''>('')
   const [page, setPage] = useState(1)
   const [adjusting, setAdjusting] = useState<CardRepasseListRow | null>(null)
 
-  const { data, isPending, isFetching } = useCardRepasses({
+  const { data, isPending, isFetching, isError } = useCardRepasses({
     dateFrom,
     dateTo,
     terminalId: terminalId || undefined,
-    status: (status || undefined) as 'pending' | 'received' | 'cancelled' | undefined,
+    status: status || undefined,
     page,
     limit: PAGE_SIZE,
   })
@@ -92,7 +100,7 @@ export function CardRepassesView() {
           <Select
             items={STATUS_FILTER_ITEMS}
             value={status || 'all'}
-            onValueChange={(v) => { setStatus(!v || v === 'all' ? '' : v); setPage(1) }}
+            onValueChange={(v) => { setStatus(!v || v === 'all' ? '' : (v as RepasseStatus)); setPage(1) }}
           >
             <SelectTrigger className="w-[190px] border-sage/20">
               <SelectValue placeholder="Status" />
@@ -106,7 +114,7 @@ export function CardRepassesView() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-[#E8ECEF]">
+              <tr className="border-b border-topbar-border">
                 <th className={cn(TH, 'text-left')}>Data prevista</th>
                 <th className={cn(TH, 'text-left')}>Maquininha</th>
                 <th className={cn(TH, 'text-left')}>Paciente</th>
@@ -118,12 +126,19 @@ export function CardRepassesView() {
               </tr>
             </thead>
             <tbody>
-              {isPending && (
+              {isPending && !isError && (
                 <tr>
                   <td colSpan={8} className="text-center text-mid py-12">Carregando repasses...</td>
                 </tr>
               )}
-              {!isPending && rows.length === 0 && (
+              {isError && (
+                <tr>
+                  <td colSpan={8} className="text-center text-mid py-12">
+                    Não foi possível carregar os repasses.
+                  </td>
+                </tr>
+              )}
+              {!isPending && !isError && rows.length === 0 && (
                 <tr>
                   <td colSpan={8} className="text-center text-mid py-12">
                     Nenhum repasse encontrado no período.
@@ -131,7 +146,7 @@ export function CardRepassesView() {
                 </tr>
               )}
               {rows.map((r) => (
-                <tr key={r.id} className="border-b border-[#E8ECEF] last:border-b-0 hover:bg-[#F4F6F8] transition-colors">
+                <tr key={r.id} className="border-b border-topbar-border last:border-b-0 hover:bg-content-bg transition-colors">
                   <td className="px-4 py-3 text-charcoal whitespace-nowrap">{formatDate(r.expectedDate)}</td>
                   <td className="px-4 py-3 text-charcoal">{r.terminalName}</td>
                   <td className="px-4 py-3 text-charcoal">{r.patientName}</td>
@@ -144,7 +159,7 @@ export function CardRepassesView() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {r.status !== 'cancelled' && (
+                    {r.status !== 'cancelled' && !r.cardPaymentReversed && (
                       <Button variant="ghost" size="sm" className="text-mid hover:text-charcoal" onClick={() => setAdjusting(r)}>
                         Ajustar repasse
                       </Button>

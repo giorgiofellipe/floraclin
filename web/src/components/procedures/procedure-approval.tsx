@@ -37,6 +37,7 @@ import { WizardCart } from '@/components/service-wizard/wizard-cart'
 import { ConsentStatusList } from './approval/consent-status-list'
 import { ServiceContractSection } from './approval/service-contract-section'
 import { SendConsentSigningLink } from './approval/send-consent-signing-link'
+import { isCardMethod } from '@/lib/financial/card-repasses'
 import { ClipboardCheck } from 'lucide-react'
 
 const CATEGORY_TO_CONSENT: Record<string, string> = {
@@ -244,10 +245,17 @@ export function ProcedureApproval({
     return legacyFinancialPlan
   }, [isCartMode, cart, cartTotal, legacyFinancialPlan])
 
-  const cardMethod =
-    financialPlan?.paymentMethod === 'credit_card' || financialPlan?.paymentMethod === 'debit_card'
-      ? financialPlan.paymentMethod
-      : null
+  const cardMethod = isCardMethod(financialPlan?.paymentMethod)
+    ? financialPlan.paymentMethod
+    : null
+
+  const onCardPaymentChange = wizardOverrides?.onCardPaymentChange
+  useEffect(() => {
+    onCardPaymentChange?.({
+      cardNow: cardMethod !== null && cardNow,
+      terminalId: cardTerminalId,
+    })
+  }, [onCardPaymentChange, cardMethod, cardNow, cardTerminalId])
 
   const diagramPoints = useMemo(() => diagramsToPoints(diagrams ?? []), [diagrams])
   const productTotals = useMemo(() => computeProductTotals(diagramPoints), [diagramPoints])

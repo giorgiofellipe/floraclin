@@ -23,7 +23,8 @@ import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { allocatePayment } from '@/lib/financial/penalties'
 import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
 import { brToday, toPaidAtIso } from '@/lib/dates'
-import { CardPaymentFields, type CardPaymentValue } from './card-payment-fields'
+import { CardPaymentFields, toCardPayload, type CardPaymentValue } from './card-payment-fields'
+import { isCardMethod } from '@/lib/financial/card-repasses'
 import type { PaymentMethod } from '@/types'
 
 interface PartialPaymentDialogProps {
@@ -87,7 +88,7 @@ export function PartialPaymentDialog({
 
   const parsedAmount = amountStr ? parseCurrency(amountStr) : 0
   const cardMethod =
-    paymentMethod === 'credit_card' || paymentMethod === 'debit_card' ? paymentMethod : null
+    isCardMethod(paymentMethod) ? paymentMethod : null
   const cardMissingTerminal = cardMethod !== null && card.terminalId === null
 
   useEffect(() => {
@@ -125,13 +126,7 @@ export function PartialPaymentDialog({
         amount: parsedAmount,
         paymentMethod,
         paidAt: paidAtIso,
-        card:
-          cardMethod && card.terminalId
-            ? {
-                terminalId: card.terminalId,
-                installmentCount: cardMethod === 'debit_card' ? 1 : card.installmentCount,
-              }
-            : undefined,
+        card: toCardPayload(paymentMethod, card),
         notes: notes || undefined,
         expectedTotalDue: quote.totalDue,
         acceptOverpayment: isOverpayment || undefined,

@@ -130,7 +130,7 @@ export function CardTerminalsManager() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2Icon className="h-5 w-5 animate-spin text-[#4A6B52]" />
+        <Loader2Icon className="h-5 w-5 animate-spin text-sage" />
       </div>
     )
   }
@@ -141,19 +141,19 @@ export function CardTerminalsManager() {
     <div className="space-y-4">
       <div className="flex items-center gap-2 mb-1">
         <h3 className="uppercase tracking-wider text-xs font-medium text-mid">Maquininhas</h3>
-        <div className="flex-1 h-px bg-[#E8ECEF]" />
+        <div className="flex-1 h-px bg-topbar-border" />
       </div>
 
       <div className="space-y-1">
         {terminals.map((terminal) => (
           <div
             key={terminal.id}
-            className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-[#F4F6F8] transition-colors"
+            className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-content-bg transition-colors"
           >
-            <span className="flex-1 text-sm text-[#2A2A2A]">
+            <span className="flex-1 text-sm text-charcoal">
               {terminal.name}
               {terminal.isDefault && (
-                <span className="ml-2 rounded bg-[#4A6B52]/10 px-1.5 py-0.5 text-xs text-[#4A6B52]">
+                <span className="ml-2 rounded bg-sage/10 px-1.5 py-0.5 text-xs text-sage">
                   Padrão
                 </span>
               )}

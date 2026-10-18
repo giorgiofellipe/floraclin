@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import { Controller, type Control, type UseFormReturn } from 'react-hook-form'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -41,6 +42,11 @@ interface Props {
   hideTotalAmount?: boolean
 }
 
+function DebitInstallmentReset({ onReset }: { onReset: () => void }) {
+  useEffect(onReset, [onReset])
+  return null
+}
+
 export function FinancialPlanField({ control, form, disabled, hideTotalAmount }: Props) {
   return (
     <Controller
@@ -53,6 +59,7 @@ export function FinancialPlanField({ control, form, disabled, hideTotalAmount }:
           paymentMethod: undefined as PaymentMethod | undefined,
           notes: '',
         }
+        const isDebit = value.paymentMethod === 'debit_card'
         const update = (patch: Partial<typeof value>) =>
           field.onChange({ ...value, ...patch })
 
@@ -67,6 +74,9 @@ export function FinancialPlanField({ control, form, disabled, hideTotalAmount }:
 
         return (
           <div className="space-y-5">
+            {isDebit && value.installmentCount !== 1 && (
+              <DebitInstallmentReset onReset={() => update({ installmentCount: 1 })} />
+            )}
             <p className="text-xs text-mid">
               Defina o valor e condições de pagamento. A entrada financeira será criada somente após a aprovação.
             </p>
@@ -118,11 +128,11 @@ export function FinancialPlanField({ control, form, disabled, hideTotalAmount }:
                 </Label>
                 <Select
                   items={INSTALLMENT_COUNT_ITEMS}
-                  value={String(value.installmentCount)}
+                  value={isDebit ? '1' : String(value.installmentCount)}
                   onValueChange={(v) =>
                     update({ installmentCount: parseInt(String(v ?? '1'), 10) })
                   }
-                  disabled={disabled || value.paymentMethod === 'debit_card'}
+                  disabled={disabled || isDebit}
                 >
                   <SelectTrigger
                     aria-invalid={installmentCountHasError || undefined}

@@ -21,7 +21,8 @@ import { ReasonDialog } from './reason-dialog'
 import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
 import { brToday, toPaidAtIso } from '@/lib/dates'
 import { useInstallmentQuote } from '@/hooks/queries/use-installment-quote'
-import { CardPaymentFields, type CardPaymentValue } from './card-payment-fields'
+import { CardPaymentFields, toCardPayload, type CardPaymentValue } from './card-payment-fields'
+import { isCardMethod } from '@/lib/financial/card-repasses'
 import { CheckCircleIcon, XCircleIcon, RefreshCwIcon, Undo2Icon } from 'lucide-react'
 import type { PaymentMethod } from '@/types'
 
@@ -78,7 +79,7 @@ export function BulkActionBar({
   const bulkUncancel = useBulkUncancel()
 
   const cardMethod =
-    paymentMethod === 'credit_card' || paymentMethod === 'debit_card' ? paymentMethod : null
+    isCardMethod(paymentMethod) ? paymentMethod : null
   const paidAtIso = toPaidAtIso(paidAt)
   const quoteStates = selectedInstallmentIds.map((id) => quotes[id] ?? null)
   const quoteFailed = quoteStates.includes('error')
@@ -97,13 +98,7 @@ export function BulkActionBar({
         installmentIds: selectedInstallmentIds,
         paymentMethod,
         paidAt: paidAtIso,
-        card:
-          cardMethod && card.terminalId
-            ? {
-                terminalId: card.terminalId,
-                installmentCount: cardMethod === 'debit_card' ? 1 : card.installmentCount,
-              }
-            : undefined,
+        card: toCardPayload(paymentMethod, card),
       })
       setPayDialogOpen(false)
       onClear()
@@ -176,7 +171,10 @@ export function BulkActionBar({
           <Button
             size="sm"
             className="bg-forest text-cream hover:bg-sage transition-colors"
-            onClick={() => setPayDialogOpen(true)}
+            onClick={() => {
+              setCard({ terminalId: null, installmentCount: 1 })
+              setPayDialogOpen(true)
+            }}
             disabled={selectedInstallmentIds.length === 0}
           >
             <CheckCircleIcon data-icon="inline-start" />

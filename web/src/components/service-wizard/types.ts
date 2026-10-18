@@ -35,4 +35,11 @@ export interface WizardOverrides {
    * update endpoint instead of /execute). Default 'commit'.
    */
   saveMode?: 'commit' | 'partial'
+  /** Step 4: reports the "card payment done now" choice so the wizard can send it with finalize. */
+  onCardPaymentChange?: (value: CardPaymentChoice) => void
+}
+
+export interface CardPaymentChoice {
+  cardNow: boolean
+  terminalId: string | null
 }

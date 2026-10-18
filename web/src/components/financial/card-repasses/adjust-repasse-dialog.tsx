@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { DatePicker } from '@/components/ui/date-picker'
+import { brToday } from '@/lib/dates'
 import { useAdjustCardRepasse } from '@/hooks/queries/use-card-repasses'
 import type { CardRepasseListRow } from '@/db/queries/card-payments'
 
@@ -29,7 +30,8 @@ export function AdjustRepasseDialog({ open, onOpenChange, repasse }: AdjustRepas
   const adjust = useAdjustCardRepasse()
 
   const amount = Number(netAmount)
-  const canSubmit = Number.isFinite(amount) && amount > 0 && expectedDate !== ''
+  const netExceedsGross = amount > Number(repasse.grossAmount)
+  const canSubmit = Number.isFinite(amount) && amount > 0 && !netExceedsGross && expectedDate !== ''
 
   const handleSubmit = async () => {
     try {
@@ -62,10 +64,17 @@ export function AdjustRepasseDialog({ open, onOpenChange, repasse }: AdjustRepas
               value={netAmount}
               onChange={(e) => setNetAmount(e.target.value)}
             />
+            {netExceedsGross && (
+              <p className="text-xs text-red-600">O valor líquido não pode ser maior que o bruto.</p>
+            )}
           </div>
           <div className="space-y-2">
-            <Label className="uppercase tracking-wider text-xs font-medium text-mid">Data</Label>
-            <DatePicker value={expectedDate} onChange={setExpectedDate} />
+            <Label className="uppercase tracking-wider text-xs font-medium text-mid">Data prevista</Label>
+            <DatePicker
+              value={expectedDate}
+              onChange={setExpectedDate}
+              maxDate={repasse.status === 'received' ? brToday() : undefined}
+            />
           </div>
           {repasse.status === 'received' && (
             <p className="text-sm text-mid">

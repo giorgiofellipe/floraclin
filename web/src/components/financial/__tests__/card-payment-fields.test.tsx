@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { CardPaymentFields } from '../card-payment-fields'
+import { CardPaymentFields, toCardPayload } from '../card-payment-fields'
 import { useCardTerminals } from '@/hooks/queries/use-card-terminals'
 
 vi.mock('@/hooks/queries/use-card-terminals', () => ({
@@ -22,6 +22,15 @@ function terminal(overrides: Record<string, unknown> = {}) {
     creditLumpSumDays: 1,
     ...overrides,
   }
+}
+
+function mockLoading(state: { isLoading?: boolean; isError?: boolean }) {
+  vi.mocked(useCardTerminals).mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    ...state,
+  } as never)
 }
 
 function mockTerminals(rows: unknown[]) {
@@ -114,5 +123,40 @@ describe('CardPaymentFields', () => {
     )
     expect(screen.getByText('Cadastre uma maquininha em Configurações › Financeiro.')).toBeTruthy()
     expect(screen.queryByText('Você recebe')).toBeNull()
+  })
+})
+
+describe('CardPaymentFields load states', () => {
+  const props = {
+    method: 'credit_card' as const,
+    gross: 100,
+    paymentYmd: '2026-10-19',
+    value: { terminalId: null, installmentCount: 1 },
+    onChange: vi.fn(),
+  }
+
+  it('shows a loading message instead of the empty-state while terminals load', () => {
+    mockLoading({ isLoading: true })
+    render(<CardPaymentFields {...props} />)
+    expect(screen.getByText('Carregando maquininhas...')).toBeTruthy()
+    expect(screen.queryByText(/Cadastre uma maquininha/)).toBeNull()
+  })
+
+  it('shows an error message instead of the empty-state when terminals fail to load', () => {
+    mockLoading({ isError: true })
+    render(<CardPaymentFields {...props} />)
+    expect(screen.getByText('Não foi possível carregar as maquininhas.')).toBeTruthy()
+    expect(screen.queryByText(/Cadastre uma maquininha/)).toBeNull()
+  })
+})
+
+describe('toCardPayload', () => {
+  it.each([
+    ['credit_card', { terminalId: 't1', installmentCount: 6 }, { terminalId: 't1', installmentCount: 6 }],
+    ['debit_card', { terminalId: 't1', installmentCount: 6 }, { terminalId: 't1', installmentCount: 1 }],
+    ['credit_card', { terminalId: null, installmentCount: 6 }, undefined],
+    ['pix', { terminalId: 't1', installmentCount: 6 }, undefined],
+  ])('%s with %o gives %o', (method, value, expected) => {
+    expect(toCardPayload(method, value)).toEqual(expected)
   })
 })

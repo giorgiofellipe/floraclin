@@ -42,10 +42,10 @@ export function FinancialSummary({ stats, month, monthlyGoal = 0 }: FinancialSum
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <span className="text-[14px] font-medium text-[#2A2A2A]">
+        <span className="text-[14px] font-medium text-charcoal">
           Financeiro: {capitalizedMonth}
         </span>
-        <span className="text-[11px] font-medium uppercase tracking-wider text-[#7A7A7A] bg-[#F4F6F8] rounded-full px-2 py-0.5">
+        <span className="text-[11px] font-medium uppercase tracking-wider text-mid bg-content-bg rounded-full px-2 py-0.5">
           {year}
         </span>
       </div>
@@ -55,10 +55,10 @@ export function FinancialSummary({ stats, month, monthlyGoal = 0 }: FinancialSum
       {hasFinancialData && goal > 0 && (
         <div className="mb-5">
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[12px] text-[#7A7A7A]">
+            <span className="text-[12px] text-mid">
               Meta mensal R$ {goal.toLocaleString('pt-BR')}
             </span>
-            <span className="text-[12px] text-[#7A7A7A]">
+            <span className="text-[12px] text-mid">
               {progressPercent}% atingido
             </span>
           </div>
@@ -78,9 +78,9 @@ export function FinancialSummary({ stats, month, monthlyGoal = 0 }: FinancialSum
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="h-3 w-3 rounded-sm bg-[#8FB49A]" />
-              <span className="text-[13px] text-[#2A2A2A]">Recebido</span>
+              <span className="text-[13px] text-charcoal">Recebido</span>
             </div>
-            <span className="text-[13px] font-medium text-[#2A2A2A] tabular-nums">
+            <span className="text-[13px] font-medium text-charcoal tabular-nums">
               R$ {received.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
             </span>
           </div>
@@ -88,7 +88,7 @@ export function FinancialSummary({ stats, month, monthlyGoal = 0 }: FinancialSum
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="h-3 w-3 rounded-sm bg-[#D4845A]" />
-              <span className="text-[13px] text-[#2A2A2A]">A receber</span>
+              <span className="text-[13px] text-charcoal">A receber</span>
             </div>
             <span className="text-[13px] font-medium text-[#D4845A] tabular-nums">
               R$ {receivable.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
@@ -98,19 +98,19 @@ export function FinancialSummary({ stats, month, monthlyGoal = 0 }: FinancialSum
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="h-3 w-3 rounded-sm bg-[#D0D0D0]" />
-              <span className="text-[13px] text-[#2A2A2A]">Despesas</span>
+              <span className="text-[13px] text-charcoal">Despesas</span>
             </div>
-            <span className="text-[13px] font-medium text-[#2A2A2A] tabular-nums">
+            <span className="text-[13px] font-medium text-charcoal tabular-nums">
               R$ {expenses.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
             </span>
           </div>
 
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="h-3 w-3 rounded-sm bg-[#C4A882]" />
-              <span className="text-[13px] text-[#2A2A2A]">Taxas de cartão</span>
+              <span className="h-3 w-3 rounded-sm bg-gold" />
+              <span className="text-[13px] text-charcoal">Taxas de cartão</span>
             </div>
-            <span className="text-[13px] font-medium text-[#2A2A2A] tabular-nums">
+            <span className="text-[13px] font-medium text-charcoal tabular-nums">
               R$ {cardFees.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
             </span>
           </div>
@@ -118,8 +118,8 @@ export function FinancialSummary({ stats, month, monthlyGoal = 0 }: FinancialSum
           {/* Divider */}
           <div className="border-t border-[#F0F0F0] pt-3">
             <div className="flex items-center justify-between">
-              <span className="text-[13px] text-[#7A7A7A]">Lucro liquido</span>
-              <span className="text-[16px] font-semibold text-[#2A2A2A] tabular-nums">
+              <span className="text-[13px] text-mid">Lucro liquido</span>
+              <span className="text-[16px] font-semibold text-charcoal tabular-nums">
                 R$ {netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
               </span>
             </div>

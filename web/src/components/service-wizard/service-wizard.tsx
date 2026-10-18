@@ -25,7 +25,8 @@ import { SendAnamnesisDialog } from '@/components/patients/send-anamnesis-dialog
 import { ProcedureForm } from '@/components/procedures/procedure-form'
 import { ProcedureApproval } from '@/components/procedures/procedure-approval'
 import { ProcedureExecution } from '@/components/procedures/procedure-execution'
-import type { StepResult, WizardOverrides } from './types'
+import type { CardPaymentChoice, StepResult, WizardOverrides } from './types'
+import { buildFinalizeBody } from './build-finalize-body'
 import type { ProcedureStatus } from '@/types'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
@@ -477,6 +478,10 @@ export function ServiceWizard({
   // record ids that the planning step produced. On success, we adopt the
   // returned procedureRecordIds and advance to step 5.
   const [isFinalizing, setIsFinalizing] = useState(false)
+  const cardPaymentRef = useRef<CardPaymentChoice>({ cardNow: false, terminalId: null })
+  const handleCardPaymentChange = useCallback((value: CardPaymentChoice) => {
+    cardPaymentRef.current = value
+  }, [])
 
   const handleApprove = useCallback(async () => {
     if (isFinalizing) return
@@ -522,6 +527,12 @@ export function ServiceWizard({
       return
     }
 
+    const card = cardPaymentRef.current
+    if (card.cardNow && !card.terminalId) {
+      toast.error('Selecione a maquininha')
+      return
+    }
+
     setIsFinalizing(true)
     try {
       const res = await fetch(
@@ -529,23 +540,16 @@ export function ServiceWizard({
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cart: state.cart,
-            draftRecordIds,
-            patientId: patient.id,
-            practitionerId,
-            financialPlan: {
-              totalAmount: String(financialPlanRaw.totalAmount ?? ''),
-              installmentCount: Number(financialPlanRaw.installmentCount ?? 1),
-              paymentMethod: String(financialPlanRaw.paymentMethod ?? ''),
-              notes: financialPlanRaw.notes,
-            },
-            // Consents are signed in-line on the approval screen via the
-            // legacy /api/consent/accept endpoint. The finalize endpoint
-            // accepts an empty consents array — additional consents may be
-            // wired here once the approval UI is fully unified.
-            consents: [],
-          }),
+          body: JSON.stringify(
+            buildFinalizeBody({
+              cart: state.cart,
+              draftRecordIds,
+              patientId: patient.id,
+              practitionerId,
+              financialPlan: financialPlanRaw,
+              card,
+            }),
+          ),
         },
       )
 
@@ -568,6 +572,11 @@ export function ServiceWizard({
 
       if (recordIds.length > 0) {
         setProcedureRecordIds(recordIds)
+      }
+      if (typeof payload?.paymentError === 'string') {
+        toast.error(payload.paymentError, {
+          description: 'A cobrança ficou pendente no Financeiro.',
+        })
       }
       updateProcedureStatus('approved')
       updateStepTimestamp('approval', new Date())
@@ -702,6 +711,7 @@ export function ServiceWizard({
     hideNavigation: true,
     hideTitle: true,
     onSaveComplete: handleStepComplete,
+    onCardPaymentChange: handleCardPaymentChange,
   }
 
   // Each step gets triggerSave ONLY when it's the active step.
