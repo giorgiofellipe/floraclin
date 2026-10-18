@@ -2127,3 +2127,42 @@ async function updateEntryStatus(
 
   return newStatus
 }
+
+/**
+ * Open installments due between `fromYmd` and `toYmd` (BR calendar days)
+ * whose payment reminder has not gone out yet.
+ */
+export async function getInstallmentsDueReminder(tenantId: string, fromYmd: string, toYmd: string) {
+  return db
+    .select({
+      id: installments.id,
+      amount: installments.amount,
+      amountPaid: installments.amountPaid,
+      dueDate: installments.dueDate,
+      patientId: financialEntries.patientId,
+      patientName: patients.fullName,
+      patientPhone: patients.phone,
+    })
+    .from(installments)
+    .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
+    .innerJoin(patients, eq(patients.id, financialEntries.patientId))
+    .where(
+      and(
+        eq(installments.tenantId, tenantId),
+        eq(installments.status, 'pending'),
+        isNull(installments.cancelledAt),
+        isNull(installments.reminderSentAt),
+        isNull(financialEntries.deletedAt),
+        isNull(patients.deletedAt),
+        gte(installments.dueDate, fromYmd),
+        lte(installments.dueDate, toYmd),
+      ),
+    )
+}
+
+export async function markPaymentReminderSent(tenantId: string, installmentId: string) {
+  await db
+    .update(installments)
+    .set({ reminderSentAt: new Date() })
+    .where(and(eq(installments.tenantId, tenantId), eq(installments.id, installmentId)))
+}

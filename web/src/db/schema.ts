@@ -214,6 +214,7 @@ export const procedureRecords = floraclinSchema.table('procedure_records', {
   encounterId: uuid('encounter_id'),
   followupSnoozedUntil: date('followup_snoozed_until'),
   lastContactedAt: timestamp('last_contacted_at', { withTimezone: true }),
+  followUpSentAt: timestamp('follow_up_sent_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -429,6 +430,7 @@ export const installments = floraclinSchema.table('installments', {
   appliedGracePeriodDays: integer('applied_grace_period_days').notNull(),
   cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
   penaltyPauses: jsonb('penalty_pauses').$type<{ from: string; to: string }[]>().notNull().default([]),
+  reminderSentAt: timestamp('reminder_sent_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

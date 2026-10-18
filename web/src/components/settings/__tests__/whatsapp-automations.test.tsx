@@ -55,6 +55,28 @@ describe('WhatsAppAutomations in FloraClin mode', () => {
     expect(fetchMock).not.toHaveBeenCalledWith('/api/whatsapp/templates')
   })
 
+  it('previews the message each automation sends, naming its variables next to a filled example', async () => {
+    const fetchMock = mockFetch({
+      '/api/whatsapp/automations': { data: [] },
+      '/api/whatsapp/templates/system': {
+        data: [{
+          ...SYSTEM_TEMPLATE,
+          components: [{ type: 'BODY', text: 'Olá, {{1}}! Sua consulta na {{2}} está confirmada.' }],
+        }],
+        clinicName: 'Clínica Lume',
+      },
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<WhatsAppAutomations mode="floraclin" />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /ver mensagem enviada/i }))
+
+    expect(screen.getByText('Nome do paciente')).toBeInTheDocument()
+    expect(screen.getByText('Nome da clínica')).toBeInTheDocument()
+    expect(screen.getByText('Olá, Maria Silva! Sua consulta na Clínica Lume está confirmada.')).toBeInTheDocument()
+  })
+
   it('warns instead of claiming a default is in place when no platform template is approved', async () => {
     const fetchMock = mockFetch({
       '/api/whatsapp/automations': { data: [AUTOMATION] },

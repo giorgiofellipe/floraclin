@@ -316,6 +316,6 @@ describe('buildTemplatePreview', () => {
       'Clínica Flora',
     )
 
-    expect(preview).toEqual({ body: '', buttons: [] })
+    expect(preview).toEqual({ body: '', segments: [], buttons: [] })
   })
 })

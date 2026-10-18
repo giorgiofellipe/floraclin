@@ -6,8 +6,9 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, CalendarCheck, CheckCircle2, Clock, CreditCard, HeartPulse, Loader2, Plus, Save } from 'lucide-react'
+import { AlertTriangle, CalendarCheck, CheckCircle2, ChevronDown, Clock, CreditCard, HeartPulse, Loader2, Plus, Save } from 'lucide-react'
 import { toast } from 'sonner'
+import { WhatsAppTemplatePreview } from './whatsapp-template-preview'
 
 interface Automation {
   id: string
@@ -22,6 +23,7 @@ interface Template {
   name: string
   status: string
   purposeKey: string | null
+  components: unknown
 }
 
 type LocalState = Record<string, {
@@ -45,7 +47,7 @@ const TRIGGERS = [
   {
     key: 'payment_reminder',
     label: 'Lembrete de pagamento',
-    description: 'Envia um lembrete antes do vencimento de parcelas.',
+    description: 'Envia diariamente às 9h um lembrete para parcelas que vencem nos próximos dias.',
     icon: CreditCard,
     purposeKey: 'payment_reminder',
     configFields: [
@@ -55,7 +57,7 @@ const TRIGGERS = [
   {
     key: 'follow_up',
     label: 'Acompanhamento pós-procedimento',
-    description: 'Envia mensagem de acompanhamento após a realização de um procedimento.',
+    description: 'Envia diariamente às 9h30 uma mensagem de acompanhamento aos pacientes que realizaram um procedimento.',
     icon: HeartPulse,
     purposeKey: 'follow_up',
     configFields: [
@@ -111,6 +113,8 @@ interface WhatsAppAutomationsProps {
 export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
   const [serverAutomations, setServerAutomations] = useState<Automation[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
+  const [clinicName, setClinicName] = useState('')
+  const [previewOpen, setPreviewOpen] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [provisioning, setProvisioning] = useState(false)
@@ -130,6 +134,7 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
     if (!res.ok) return
     const data = await res.json()
     setTemplates((data.data ?? []) as Template[])
+    setClinicName((data.clinicName as string) ?? '')
   }, [templatesUrl])
 
   const fetchData = useCallback(async () => {
@@ -307,6 +312,37 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
                   }
                 />
               </div>
+
+              {matchingTemplate && (
+                <div className="pl-7">
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 text-xs text-sage hover:underline"
+                    aria-expanded={previewOpen.has(trigger.key)}
+                    onClick={() =>
+                      setPreviewOpen((prev) => {
+                        const next = new Set(prev)
+                        if (!next.delete(trigger.key)) next.add(trigger.key)
+                        return next
+                      })
+                    }
+                  >
+                    Ver mensagem enviada
+                    <ChevronDown
+                      className={`size-3.5 transition-transform ${previewOpen.has(trigger.key) ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+                  {previewOpen.has(trigger.key) && (
+                    <div className="mt-2">
+                      <WhatsAppTemplatePreview template={matchingTemplate} clinicName={clinicName} />
+                      <p className="mt-2 text-[11px] text-mid">
+                        Template <span className="font-mono">{matchingTemplate.name}</span>. No envio, cada
+                        campo destacado é preenchido com os dados do paciente.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {state.enabled && (
                 <div className="pl-7 space-y-3">

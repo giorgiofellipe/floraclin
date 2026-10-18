@@ -12,7 +12,7 @@ import {
   consentAcceptances,
   consentTemplates,
 } from '@/db/schema'
-import { eq, and, desc, isNull, sql, inArray } from 'drizzle-orm'
+import { eq, and, desc, isNull, sql, inArray, gte, lte } from 'drizzle-orm'
 import type { CreateProcedureInput, UpdateProcedureInput } from '@/validations/procedure'
 import { verifyTenantOwnership, verifyUserBelongsToTenant } from './helpers'
 
@@ -492,3 +492,48 @@ export async function getLatestOpenProcedure(
 
 /** @deprecated Use getLatestOpenProcedure */
 export const getLatestNonExecutedProcedure = getLatestOpenProcedure
+
+/**
+ * Procedures performed between `performedFrom` and `performedTo` whose
+ * post-procedure follow-up message has not gone out yet.
+ */
+export async function getProceduresDueFollowUp(
+  tenantId: string,
+  performedFrom: Date,
+  performedTo: Date,
+) {
+  return db
+    .select({
+      id: procedureRecords.id,
+      patientId: procedureRecords.patientId,
+      patientName: patients.fullName,
+      patientPhone: patients.phone,
+      procedureTypeName: procedureTypes.name,
+    })
+    .from(procedureRecords)
+    .innerJoin(patients, eq(patients.id, procedureRecords.patientId))
+    .innerJoin(procedureTypes, eq(procedureTypes.id, procedureRecords.procedureTypeId))
+    .where(
+      and(
+        eq(procedureRecords.tenantId, tenantId),
+        inArray(procedureRecords.status, ['in_progress', 'completed']),
+        isNull(procedureRecords.deletedAt),
+        isNull(procedureRecords.followUpSentAt),
+        isNull(patients.deletedAt),
+        gte(procedureRecords.performedAt, performedFrom),
+        lte(procedureRecords.performedAt, performedTo),
+      ),
+    )
+}
+
+export async function markFollowUpSent(tenantId: string, procedureRecordIds: string[]) {
+  await db
+    .update(procedureRecords)
+    .set({ followUpSentAt: new Date() })
+    .where(
+      and(
+        eq(procedureRecords.tenantId, tenantId),
+        inArray(procedureRecords.id, procedureRecordIds),
+      ),
+    )
+}

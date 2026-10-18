@@ -455,8 +455,13 @@ export function getTemplateDisplayLabel(template: {
   return template.name
 }
 
+export type TemplateBodySegment = { text: string } | { variable: string }
+
 export interface TemplatePreview {
+  /** Body as the patient receives it, filled with example values. */
   body: string
+  /** Body as written, with each {{n}} named by its variable label. */
+  segments: TemplateBodySegment[]
   buttons: string[]
 }
 
@@ -514,12 +519,24 @@ export function buildTemplatePreview(
   )
 
   const bodyComponent = components.find((c) => c.type === 'BODY')
-  let body = typeof bodyComponent?.text === 'string' ? bodyComponent.text : ''
+  const rawBody = typeof bodyComponent?.text === 'string' ? bodyComponent.text : ''
+  const variables = resolvePreviewVariables(template)
 
-  for (const variable of resolvePreviewVariables(template)) {
+  let body = rawBody
+  for (const variable of variables) {
     const value = variable.key === 'clinic_name' ? clinicName : variable.example
     body = body.replaceAll(`{{${variable.index}}}`, value)
   }
+
+  const segments = rawBody
+    .split(/(\{\{\d+\}\})/)
+    .filter(Boolean)
+    .map((part): TemplateBodySegment => {
+      const index = part.match(/^\{\{(\d+)\}\}$/)?.[1]
+      if (!index) return { text: part }
+      const label = variables.find((v) => v.index === Number(index))?.label
+      return { variable: label ?? `Variável ${index}` }
+    })
 
   const buttonsComponent = components.find((c) => c.type === 'BUTTONS')
   const buttons = Array.isArray(buttonsComponent?.buttons)
@@ -528,5 +545,5 @@ export function buildTemplatePreview(
         .filter(Boolean)
     : []
 
-  return { body, buttons }
+  return { body, segments, buttons }
 }
