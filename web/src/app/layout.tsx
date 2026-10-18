@@ -20,6 +20,14 @@ const cormorant = Cormorant_Garamond({
 
 export const viewport: Viewport = {
   themeColor: '#1C2B1E',
+  // Lets pages draw under the notch / home indicator so env(safe-area-inset-*)
+  // reports real values. Every edge-anchored element pads itself with those
+  // insets (see globals.css body and the fixed/sticky bars); they are 0 on
+  // devices without insets, so nothing moves there.
+  viewportFit: 'cover',
+  // Android Chrome shrinks the layout viewport (and dvh) when the keyboard
+  // opens, so full-height screens keep their composer above it.
+  interactiveWidget: 'resizes-content',
 }
 
 export const metadata: Metadata = {

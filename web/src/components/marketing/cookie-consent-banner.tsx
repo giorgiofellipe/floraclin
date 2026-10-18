@@ -66,7 +66,9 @@ export function CookieConsentBanner() {
         <section
           ref={bannerRef}
           aria-label="Aviso de cookies"
-          className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-4xl rounded-xl border border-sage/20 bg-cream/95 p-3 shadow-2xl backdrop-blur sm:inset-x-4 sm:bottom-4 sm:rounded-2xl sm:p-4 md:flex md:items-center md:gap-5"
+          // 0.75rem (1rem from sm) from the edges, plus the notch /
+          // home-indicator insets (viewport-fit=cover).
+          className="fixed right-[calc(0.75rem+env(safe-area-inset-right))] bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-[calc(0.75rem+env(safe-area-inset-left))] z-50 mx-auto max-w-4xl rounded-xl border border-sage/20 bg-cream/95 p-3 shadow-2xl backdrop-blur sm:right-[calc(1rem+env(safe-area-inset-right))] sm:bottom-[calc(1rem+env(safe-area-inset-bottom))] sm:left-[calc(1rem+env(safe-area-inset-left))] sm:rounded-2xl sm:p-4 md:flex md:items-center md:gap-5"
         >
           <div className="flex-1 text-xs leading-snug text-mid sm:text-sm sm:leading-relaxed">
             <p className="font-medium text-charcoal">Cookies</p>
@@ -117,12 +119,14 @@ export function CookieConsentBanner() {
       )}
 
       {isPreferencesOpen && (
-        <div className="fixed inset-0 z-50 flex items-end bg-charcoal/35 p-4 backdrop-blur-sm sm:items-center sm:justify-center">
+        // Bottom-anchored on mobile: the 1rem gap grows by the notch /
+        // home-indicator insets (viewport-fit=cover).
+        <div className="fixed inset-0 z-50 flex items-end bg-charcoal/35 px-4 pt-[calc(1rem+env(safe-area-inset-top))] pb-[calc(1rem+env(safe-area-inset-bottom))] backdrop-blur-sm sm:items-center sm:justify-center">
           <section
             role="dialog"
             aria-modal="true"
             aria-labelledby="cookie-preferences-title"
-            className="max-h-[calc(100svh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-sage/15 bg-cream p-5 shadow-2xl sm:p-6"
+            className="max-h-[calc(100svh-2rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] w-full max-w-lg overflow-y-auto rounded-2xl border border-sage/15 bg-cream p-5 shadow-2xl sm:p-6"
           >
             <h2 id="cookie-preferences-title" className="font-display text-2xl text-charcoal">
               Preferências de cookies

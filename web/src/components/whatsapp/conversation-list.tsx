@@ -238,7 +238,7 @@ export const ConversationList = forwardRef<ConversationListHandle, ConversationL
         </div>
 
         {/* Conversation list */}
-        <div className="flex-1 overflow-y-auto overscroll-y-contain">
+        <div className="flex-1 overflow-y-auto overscroll-y-contain pb-[env(safe-area-inset-bottom)] md:pb-0">
           {loading && (
             <div className="space-y-1 p-2">
               {Array.from({ length: 6 }).map((_, i) => (

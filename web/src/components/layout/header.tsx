@@ -100,7 +100,9 @@ export function Header({ userName, userEmail, userId, userRole, clinicName, tena
         </div>
       )}
       <header
-        className="sticky top-0 z-10 flex h-[52px] items-center justify-between border-b border-[#E8ECEF] bg-white px-4 md:px-6"
+        // Bar height comes from --app-header-h (globals.css), shared with
+        // full-height pages; the top padding keeps it clear of the notch.
+        className="sticky top-0 z-10 flex h-[calc(var(--app-header-h)+env(safe-area-inset-top))] items-center justify-between border-b border-[#E8ECEF] bg-white px-4 pt-[env(safe-area-inset-top)] md:px-6"
         data-testid="header"
       >
         {/* Left: hamburger (mobile) + page title */}

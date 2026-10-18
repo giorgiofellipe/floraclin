@@ -1006,7 +1006,8 @@ export function ProcedureForm({
 
 {/* ── Submit ──────────────────────────────────────── */}
       {!isReadOnly && !wizardOverrides?.hideSaveButton && (
-        <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-sage/10 bg-white/95 py-4 backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.05)] md:sticky md:left-auto md:right-auto">
+        // Insets keep it clear of the notch / home indicator (viewport-fit=cover).
+        <div className="fixed bottom-0 left-[env(safe-area-inset-left)] right-[env(safe-area-inset-right)] z-20 border-t border-sage/10 bg-white/95 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.05)] md:sticky md:left-auto md:right-auto">
           <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 md:px-0">
             <Button
               variant="outline"

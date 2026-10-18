@@ -47,7 +47,8 @@ export interface ChatPanelHandle {
 interface ChatPanelProps {
   conversation: Conversation | null
   onMarkRead?: (convId: string) => void
-  draft?: string | null
+  /** Prefills the composer, only when `conversationId` is the one opening. */
+  draft?: { conversationId: string; text: string } | null
   /** Mobile only: returns to the conversation list. */
   onBack?: () => void
   className?: string
@@ -173,7 +174,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
       if (conversation.id !== prevConvIdRef.current) {
         prevConvIdRef.current = conversation.id
         setPage(1)
-        setInputText(draft ?? '')
+        setInputText(draft?.conversationId === conversation.id ? draft.text : '')
         firstQueueRef.current = true
         jumpOnNextScrollRef.current = true
         fetchMessages(conversation.id, 1, false)

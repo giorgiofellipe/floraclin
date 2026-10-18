@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { ConversationList, type Conversation, type ConversationListHandle } from '@/components/whatsapp/conversation-list'
 import { ChatPanel, type ChatPanelHandle } from '@/components/whatsapp/chat-panel'
 import { useWhatsappSse } from '@/hooks/use-whatsapp-sse'
@@ -19,15 +19,94 @@ type ConfigStatus = 'loading' | 'configured' | 'not_configured' | 'no_access' | 
 const CONVERSATION_PARAM = 'conversa'
 // One-shot deep link; dropped once it has resolved to a conversation.
 const PHONE_PARAM = 'phone'
+// Composer text prefilled by the reschedule screen for the conversation in
+// ?conversa=. Dropped whenever the open conversation changes so it can never
+// land in another patient's composer.
+const DRAFT_PARAM = 'draft'
 
-// Mobile: the app header is 52px tall (components/layout/header.tsx) and the
-// inbox fills the rest of the *dynamic* viewport so the composer isn't pushed
-// under the browser toolbar. Desktop keeps its original vh-based height.
-const INBOX_HEIGHT_CLASS = 'h-[calc(100dvh-52px)] md:h-[calc(100vh-64px)]'
+// Tailwind's md breakpoint. From here up the list and the chat sit side by
+// side, so opening a conversation replaces the history entry instead of
+// adding one, and browser back leaves /whatsapp as it always did.
+const DESKTOP_QUERY = '(min-width: 768px)'
+
+function isDesktopViewport() {
+  return window.matchMedia(DESKTOP_QUERY).matches
+}
+
+// Set in history.state on entries we push on top of the list, so the back
+// arrow knows popping returns to the list (survives reload and forward).
+const HISTORY_MARKER = 'floraclinInbox'
+
+type InboxHistoryState = Record<string, unknown> & { [HISTORY_MARKER]?: boolean }
+
+// Next copies its own keys (__NA, the router tree) into whatever state we pass,
+// but skips syncing useSearchParams when the state already carries __NA (or the
+// pages-router _N), treating the call as its own. So we pass everything else
+// and let Next add those back.
+function currentHistoryState(): InboxHistoryState {
+  const state: unknown = window.history.state
+  if (!state || typeof state !== 'object') return {}
+  const rest: InboxHistoryState = { ...state }
+  delete rest.__NA
+  delete rest._N
+  return rest
+}
+
+function isPushedOverList() {
+  return window.history.state?.[HISTORY_MARKER] === true
+}
+
+// pushState/replaceState update the URL synchronously (no server round-trip),
+// and Next keeps useSearchParams in sync with them.
+function pushInboxEntry(url: string) {
+  window.history.pushState({ ...currentHistoryState(), [HISTORY_MARKER]: true }, '', url)
+}
+
+function replaceInboxEntry(url: string, { pushedOverList }: { pushedOverList: boolean }) {
+  window.history.replaceState({ ...currentHistoryState(), [HISTORY_MARKER]: pushedOverList }, '', url)
+}
+
+// Live-URL readers, not a render's searchParams, so taps that land before
+// React re-renders still see the entry they are about to change.
+function liveConversationParam() {
+  return new URLSearchParams(window.location.search).get(CONVERSATION_PARAM)
+}
+
+function buildInboxUrl(convId: string | null) {
+  const params = new URLSearchParams(window.location.search)
+  params.delete(PHONE_PARAM)
+  if (convId !== params.get(CONVERSATION_PARAM)) params.delete(DRAFT_PARAM)
+  if (convId) {
+    params.set(CONVERSATION_PARAM, convId)
+  } else {
+    params.delete(CONVERSATION_PARAM)
+  }
+  const qs = params.toString()
+  return qs ? `${window.location.pathname}?${qs}` : window.location.pathname
+}
+
+// Back to the list: pop our own entry when it sits on top of the list,
+// otherwise (deep link, ?phone=, desktop) rewrite this one so back doesn't
+// leave the inbox.
+function returnToListUrl() {
+  if (isPushedOverList()) {
+    window.history.back()
+  } else {
+    replaceInboxEntry(buildInboxUrl(null), { pushedOverList: false })
+  }
+}
+
+// Mobile: the inbox fills the *dynamic* viewport below the app header
+// (--app-header-h, plus the notch inset the header pads itself with) so the
+// composer isn't pushed under the browser toolbar. The layout hides its footer
+// (below md) and the install banner here. Desktop keeps its original vh-based
+// height: 64px = the 52px header + 12px left from the desktop page padding.
+const INBOX_HEIGHT_CLASS =
+  'h-[calc(100dvh-var(--app-header-h)-env(safe-area-inset-top))] md:h-[calc(100vh-64px)]'
 // Centered status screens (loading / not configured) subtract a fixed 120px for
-// the surrounding chrome. On mobile that's more than the real 84px (52px header
-// + 2×16px page padding), so the screen slightly under-fills; harmless for a
-// centered layout.
+// the surrounding chrome. On mobile that's more than the real 84px (the app
+// header, --app-header-h, + 2×16px page padding), so the screen slightly
+// under-fills; harmless for a centered layout.
 const STATUS_HEIGHT_CLASS = 'h-[calc(100dvh-120px)] md:h-[calc(100vh-120px)]'
 
 function WhatsAppEmptyState({
@@ -53,21 +132,20 @@ function WhatsAppEmptyState({
 
 export default function WhatsAppPage() {
   const searchParams = useSearchParams()
-  const router = useRouter()
-  const pathname = usePathname()
   const [configStatus, setConfigStatus] = useState<ConfigStatus>('loading')
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
   const [showStartDialog, setShowStartDialog] = useState(false)
   const [startDialogPhone, setStartDialogPhone] = useState<string | null>(null)
   const [conversationsLoaded, setConversationsLoaded] = useState(false)
-  const draft = searchParams.get('draft')
+  const draftText = searchParams.get(DRAFT_PARAM)
   const conversationListRef = useRef<ConversationListHandle>(null)
   const chatPanelRef = useRef<ChatPanelHandle>(null)
   const deepLinkHandledRef = useRef(false)
-  // True when opening the conversation added a history entry on top of the
-  // list, so going back can pop it instead of leaving the inbox.
-  const openedFromListRef = useRef(false)
   const selectedConversationId = searchParams.get(CONVERSATION_PARAM)
+  // Tied to the conversation it was linked for; ChatPanel ignores it for any
+  // other one (e.g. a render where the tap is ahead of the URL).
+  const draft =
+    draftText && selectedConversationId ? { conversationId: selectedConversationId, text: draftText } : null
 
   // Check if WhatsApp is configured by attempting to load conversations
   useEffect(() => {
@@ -101,46 +179,40 @@ export default function WhatsAppPage() {
     setActiveConversation(conv)
   }, [])
 
-  const buildInboxUrl = useCallback(
-    (convId: string | null) => {
-      const params = new URLSearchParams(searchParams.toString())
-      params.delete(PHONE_PARAM)
-      if (convId) {
-        params.set(CONVERSATION_PARAM, convId)
-      } else {
-        params.delete(CONVERSATION_PARAM)
+  // Every open (row tap, deep link, browser forward, ?phone= match) goes
+  // through here so the server and the list badge agree it has been read.
+  const openConversation = useCallback(
+    (conv: Conversation) => {
+      showConversation({ ...conv, unreadCount: 0 })
+      if (conv.unreadCount > 0) {
+        conversationListRef.current?.resetUnread(conv.id)
+        fetch(`/api/whatsapp/conversations/${conv.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'mark_read' }),
+        }).catch(() => {})
       }
-      const qs = params.toString()
-      return qs ? `${pathname}?${qs}` : pathname
     },
-    [pathname, searchParams],
+    [showConversation],
   )
 
-  // Opening from the list pushes a history entry so back returns to the list;
-  // switching between conversations replaces it to keep history shallow.
-  const navigateToConversation = useCallback(
-    (convId: string) => {
-      const url = buildInboxUrl(convId)
-      if (selectedConversationId) {
-        router.replace(url, { scroll: false })
-      } else {
-        openedFromListRef.current = true
-        router.push(url, { scroll: false })
-      }
-    },
-    [buildInboxUrl, router, selectedConversationId],
-  )
+  // Opening from the list pushes a history entry on mobile so back returns to
+  // the list; switching between conversations, and every open on desktop,
+  // replaces it to keep history as it was.
+  const navigateToConversation = useCallback((convId: string) => {
+    const url = buildInboxUrl(convId)
+    const urlHasConversation = liveConversationParam() !== null
+    if (urlHasConversation || isDesktopViewport()) {
+      replaceInboxEntry(url, { pushedOverList: isPushedOverList() })
+    } else {
+      pushInboxEntry(url)
+    }
+  }, [])
 
   const handleBackToList = useCallback(() => {
     showConversation(null)
-    if (openedFromListRef.current) {
-      openedFromListRef.current = false
-      router.back()
-    } else {
-      // Deep link: nothing of ours behind it, so router.back() would leave the app.
-      router.replace(buildInboxUrl(null), { scroll: false })
-    }
-  }, [buildInboxUrl, router, showConversation])
+    returnToListUrl()
+  }, [showConversation])
 
   // URL -> selection: deep links (?conversa=), browser/hardware back and
   // forward. An id that can't be loaded is dropped so the list shows instead.
@@ -152,10 +224,8 @@ export default function WhatsAppPage() {
     if (!selectedConversationId) {
       // Only a real id -> none transition (back) closes the chat; a late run
       // on initial load must not close one the user has just tapped.
-      if (prevSelectedId) {
-        openedFromListRef.current = false
-        showConversation(null)
-      }
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- mirrors the URL (browser back) into the open conversation
+      if (prevSelectedId) showConversation(null)
       return
     }
     deepLinkHandledRef.current = true
@@ -171,19 +241,15 @@ export default function WhatsAppPage() {
         const activeId = activeConvIdRef.current
         if (activeId !== null && activeId !== selectedConversationId) return
         if (conv) {
-          showConversation({ ...conv, unreadCount: 0 })
+          openConversation(conv)
         } else {
-          router.replace(buildInboxUrl(null), { scroll: false })
+          returnToListUrl()
         }
       })
     return () => {
       cancelled = true
     }
-    // Deps are intentionally limited to the URL-driven values. Re-running when
-    // helper identities change would be harmless (the prevSelectedId and
-    // activeConvIdRef guards make it a no-op), just unnecessary.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- URL-driven only; the guards above make reruns harmless
-  }, [selectedConversationId, conversationsLoaded])
+  }, [selectedConversationId, conversationsLoaded, showConversation, openConversation])
 
   // Deep-link: ?phone=<number> looks up an existing conversation by phone; if
   // none exists, opens the start-conversation dialog with the phone pre-searched
@@ -208,8 +274,8 @@ export default function WhatsAppPage() {
             return convDigits === phoneDigits || convDigits.endsWith(phoneDigits)
           })
           if (match) {
-            showConversation({ ...match, unreadCount: 0 })
-            router.replace(buildInboxUrl(match.id), { scroll: false })
+            openConversation(match)
+            replaceInboxEntry(buildInboxUrl(match.id), { pushedOverList: isPushedOverList() })
             return
           }
         }
@@ -221,23 +287,16 @@ export default function WhatsAppPage() {
       setShowStartDialog(true)
     }
     openByPhone(phoneParam)
-  }, [searchParams, conversationsLoaded, showConversation, router, buildInboxUrl])
+  }, [searchParams, conversationsLoaded, openConversation])
 
-  // Auto-mark-read when opening a conversation with unread messages
   const handleSelectConversation = useCallback(
     (conv: Conversation) => {
-      showConversation({ ...conv, unreadCount: 0 })
-      if (conv.id !== selectedConversationId) navigateToConversation(conv.id)
-      if (conv.unreadCount > 0) {
-        conversationListRef.current?.resetUnread(conv.id)
-        fetch(`/api/whatsapp/conversations/${conv.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'mark_read' }),
-        }).catch(() => {})
+      openConversation(conv)
+      if (liveConversationParam() !== conv.id) {
+        navigateToConversation(conv.id)
       }
     },
-    [navigateToConversation, selectedConversationId, showConversation],
+    [navigateToConversation, openConversation],
   )
 
   // SSE event handlers

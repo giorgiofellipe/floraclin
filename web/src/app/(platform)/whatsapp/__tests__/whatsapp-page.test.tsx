@@ -3,26 +3,49 @@
  * (where list and chat are separate full-screen views), the header back arrow
  * and the browser / Android back button both return to the list. Links from
  * other screens deep-link straight into a conversation, and the back arrow
- * must not leave the app when there is no list entry behind it.
+ * must not leave the inbox when there is no list entry behind it.
+ *
+ * The page writes the URL with window.history.pushState / replaceState. The
+ * next/navigation mock below stands in for Next's patch of those methods: it
+ * copies Next's internal state keys into the entry and updates
+ * useSearchParams on the next task (Next applies it in a transition, so a
+ * render can lag behind the URL). Like Next, it treats a call whose state
+ * already carries `__NA` as its own and does not sync it.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import WhatsAppPage from '../page'
 
-const mockPush = vi.fn()
-const mockReplace = vi.fn()
-const mockBack = vi.fn()
-// Next's router is stable across renders; a fresh object each call would
-// re-run every effect that depends on it.
-const mockRouter = { push: mockPush, replace: mockReplace, back: mockBack }
-let searchParamsValue = new URLSearchParams()
+const router = vi.hoisted(() => {
+  const listeners = new Set<() => void>()
+  return {
+    // The URL as far as useSearchParams knows.
+    search: '',
+    listeners,
+    sync() {
+      router.search = window.location.search
+      for (const listener of listeners) listener()
+    },
+  }
+})
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => mockRouter,
-  usePathname: () => '/whatsapp',
-  useSearchParams: () => searchParamsValue,
-}))
+vi.mock('next/navigation', async () => {
+  const { useMemo, useSyncExternalStore } = await import('react')
+  const subscribe = (listener: () => void) => {
+    router.listeners.add(listener)
+    return () => {
+      router.listeners.delete(listener)
+    }
+  }
+  return {
+    usePathname: () => window.location.pathname,
+    useSearchParams: () => {
+      const search = useSyncExternalStore(subscribe, () => router.search)
+      return useMemo(() => new URLSearchParams(search), [search])
+    },
+  }
+})
 
 vi.mock('next/link', () => ({
   default: ({ href, children, ...props }: { href: string; children: ReactNode }) => (
@@ -32,7 +55,62 @@ vi.mock('next/link', () => ({
 
 vi.mock('@/hooks/use-whatsapp-sse', () => ({ useWhatsappSse: () => {} }))
 
-function conversation(id: string, profileName: string, phoneNumber: string) {
+const NEXT_STATE = { __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: 'tree' }
+const originalPushState = History.prototype.pushState
+const originalReplaceState = History.prototype.replaceState
+
+type HistoryState = Record<string, unknown> | null
+
+// Mirrors Next's patched pushState/replaceState: state already carrying `__NA`
+// or `_N` passes through untouched; otherwise Next copies its keys from the
+// *current* entry and syncs useSearchParams.
+function patchHistoryLikeNext() {
+  const patch = (original: typeof originalPushState) =>
+    function (this: History, data: HistoryState, unused: string, url?: string | URL | null) {
+      if (data?.__NA || data?._N) return original.call(this, data, unused, url)
+      const current = (window.history.state ?? {}) as Record<string, unknown>
+      const next: Record<string, unknown> = { ...data }
+      if (current.__NA) next.__NA = current.__NA
+      if (current.__PRIVATE_NEXTJS_INTERNALS_TREE) {
+        next.__PRIVATE_NEXTJS_INTERNALS_TREE = current.__PRIVATE_NEXTJS_INTERNALS_TREE
+      }
+      original.call(this, next, unused, url)
+      setTimeout(() => act(() => router.sync()))
+    }
+  return {
+    push: vi.spyOn(window.history, 'pushState').mockImplementation(patch(originalPushState)),
+    replace: vi.spyOn(window.history, 'replaceState').mockImplementation(patch(originalReplaceState)),
+    back: vi.spyOn(window.history, 'back'),
+  }
+}
+
+const onPopState = () => act(() => router.sync())
+
+// Puts the browser on `url` before the page mounts, as a load or reload would.
+// Pushing (rather than replacing) drops forward entries left by earlier tests,
+// so history.length comparisons hold. `belowIt` adds a list entry underneath,
+// like one we pushed earlier.
+function startAt(url: string, { marker, belowIt }: { marker?: boolean; belowIt?: string } = {}) {
+  if (belowIt) originalPushState.call(window.history, { ...NEXT_STATE }, '', belowIt)
+  originalPushState.call(window.history, { ...NEXT_STATE, floraclinInbox: marker }, '', url)
+  router.search = window.location.search
+}
+
+// md breakpoint: list and chat side by side.
+function stubViewport(viewport: 'mobile' | 'desktop') {
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    writable: true,
+    value: vi.fn((query: string) => ({
+      matches: query === '(min-width: 768px)' && viewport === 'desktop',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  })
+}
+
+function conversation(id: string, profileName: string, phoneNumber: string, unreadCount = 0) {
   return {
     id,
     phoneNumber,
@@ -44,13 +122,14 @@ function conversation(id: string, profileName: string, phoneNumber: string) {
     lastMessageStatus: null,
     lastMessageAt: '2026-10-18T12:00:00.000Z',
     lastInboundAt: '2026-10-18T12:00:00.000Z',
-    unreadCount: 0,
+    unreadCount,
     status: 'active',
   }
 }
 
 const ANA = conversation('c1', 'Ana Souza', '5511999990000')
 const BIA = conversation('c2', 'Bia Lima', '5511988880000')
+const CAIO = conversation('c3', 'Caio Reis', '5511977770000', 2)
 
 const ANA_MESSAGE = {
   id: 'm1',
@@ -73,12 +152,14 @@ function json(body: unknown, status = 200) {
 }
 
 function stubApi() {
-  const fetchMock = vi.fn((url: string) => {
+  const conversations = [ANA, BIA, CAIO]
+  const fetchMock = vi.fn((url: string, init?: RequestInit) => {
     const path = url.split('?')[0]
-    if (path === '/api/whatsapp/conversations') return json({ data: [ANA, BIA] })
+    if (init?.method === 'PATCH') return json({ ok: true })
+    if (path === '/api/whatsapp/conversations') return json({ data: conversations })
     if (path === '/api/whatsapp/conversations/c1/messages') return json({ data: [ANA_MESSAGE] })
     if (path.endsWith('/messages')) return json({ data: [] })
-    const byId = [ANA, BIA].find((c) => path === `/api/whatsapp/conversations/${c.id}`)
+    const byId = conversations.find((c) => path === `/api/whatsapp/conversations/${c.id}`)
     if (byId) return json(byId)
     return json({ error: 'Not found' }, 404)
   })
@@ -86,38 +167,49 @@ function stubApi() {
   return fetchMock
 }
 
-function renderPage() {
-  const view = render(<WhatsAppPage />)
-  // Simulates Next updating useSearchParams after router.push / replace / back.
-  const navigate = (qs: string) => {
-    searchParamsValue = new URLSearchParams(qs)
-    view.rerender(<WhatsAppPage />)
-  }
-  return { ...view, navigate }
-}
-
 const messagesFetches = (fetchMock: ReturnType<typeof stubApi>, convId: string) =>
   fetchMock.mock.calls.filter(([url]) => url.startsWith(`/api/whatsapp/conversations/${convId}/messages?`)).length
+
+const markReadCalls = (fetchMock: ReturnType<typeof stubApi>) =>
+  fetchMock.mock.calls
+    .filter(([, init]) => init?.method === 'PATCH' && init.body === JSON.stringify({ action: 'mark_read' }))
+    .map(([url]) => url)
 
 const listRow = (name: string) => screen.findByRole('button', { name: new RegExp(name) })
 const backButton = () => screen.queryByRole('button', { name: 'Voltar para conversas' })
 // jsdom has no CSS; the list wrapper's classes decide which view mobile shows.
 const listView = () => screen.getByRole('region', { name: 'Conversas' })
+const currentUrl = () => `${window.location.pathname}${window.location.search}`
+const composer = () => screen.getByLabelText('Mensagem')
 
-describe('WhatsAppPage mobile navigation', () => {
+describe('WhatsAppPage navigation', () => {
   let fetchMock: ReturnType<typeof stubApi>
+  let history: ReturnType<typeof patchHistoryLikeNext>
 
   beforeEach(() => {
     vi.clearAllMocks()
-    searchParamsValue = new URLSearchParams()
+    startAt('/whatsapp')
+    stubViewport('mobile')
+    history = patchHistoryLikeNext()
+    window.addEventListener('popstate', onPopState)
+    // jsdom has no scrollIntoView; ChatPanel scrolls to the latest message.
     Element.prototype.scrollIntoView = vi.fn()
     fetchMock = stubApi()
   })
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => {
+    window.removeEventListener('popstate', onPopState)
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    delete (window as { matchMedia?: unknown }).matchMedia
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+  })
 
   it('shows only the list on mobile when nothing is open', async () => {
-    renderPage()
+    render(<WhatsAppPage />)
     await listRow('Ana Souza')
+    // Unread badge, which opening from the URL must clear (see below).
+    expect(within(await listRow('Caio Reis')).getByText('2')).toBeInTheDocument()
+    expect(markReadCalls(fetchMock)).toEqual([])
     expect(listView()).not.toHaveClass('hidden')
     expect(backButton()).not.toBeInTheDocument()
     // The desktop "select a conversation" placeholder must not show alone on mobile.
@@ -125,50 +217,91 @@ describe('WhatsAppPage mobile navigation', () => {
     expect(placeholder).toHaveClass('hidden', 'md:flex')
   })
 
-  it('opening a conversation pushes ?conversa= and the back arrow pops that entry', async () => {
-    const { navigate } = renderPage()
+  it('opening a conversation pushes a marked ?conversa= entry and the back arrow pops it', async () => {
+    render(<WhatsAppPage />)
+    const lengthBefore = window.history.length
     fireEvent.click(await listRow('Ana Souza'))
 
-    expect(mockPush).toHaveBeenCalledWith('/whatsapp?conversa=c1', { scroll: false })
+    expect(history.push).toHaveBeenCalledTimes(1)
+    expect(currentUrl()).toBe('/whatsapp?conversa=c1')
+    expect(window.history.length).toBe(lengthBefore + 1)
+    // Our marker sits next to Next's own keys, and Next still synced the URL.
+    expect(window.history.state).toMatchObject({ ...NEXT_STATE, floraclinInbox: true })
+    await waitFor(() => expect(router.search).toBe('?conversa=c1'))
     expect(screen.getByRole('heading', { name: 'Ana Souza' })).toBeInTheDocument()
     expect(listView()).toHaveClass('hidden', 'md:block')
-    navigate('conversa=c1')
 
     const back = backButton()
     expect(back).toHaveClass('md:hidden')
     fireEvent.click(back!)
 
-    expect(mockBack).toHaveBeenCalledTimes(1)
-    expect(mockReplace).not.toHaveBeenCalled()
+    expect(history.back).toHaveBeenCalledTimes(1)
+    expect(history.replace).not.toHaveBeenCalled()
     expect(listView()).not.toHaveClass('hidden')
     expect(backButton()).not.toBeInTheDocument()
+    await waitFor(() => expect(currentUrl()).toBe('/whatsapp'))
   })
 
-  it('browser / hardware back (param removed) returns to the list', async () => {
-    const { navigate } = renderPage()
+  it('a fast double tap pushes only one entry', async () => {
+    render(<WhatsAppPage />)
+    const lengthBefore = window.history.length
+    const ana = await listRow('Ana Souza')
+    const bia = await listRow('Bia Lima')
+
+    // Second tap lands before the page re-renders with the new URL.
+    fireEvent.click(ana)
+    fireEvent.click(bia)
+
+    expect(history.push).toHaveBeenCalledTimes(1)
+    expect(window.history.length).toBe(lengthBefore + 1)
+    expect(currentUrl()).toBe('/whatsapp?conversa=c2')
+    expect(screen.getByRole('heading', { name: 'Bia Lima' })).toBeInTheDocument()
+
+    // Back still lands on the list, not on Ana.
+    fireEvent.click(backButton()!)
+    await waitFor(() => expect(currentUrl()).toBe('/whatsapp'))
+    expect(history.back).toHaveBeenCalledTimes(1)
+  })
+
+  it('on desktop, opening and switching conversations replace the entry instead of adding one', async () => {
+    stubViewport('desktop')
+    render(<WhatsAppPage />)
+    const lengthBefore = window.history.length
+
     fireEvent.click(await listRow('Ana Souza'))
-    navigate('conversa=c1')
+    expect(currentUrl()).toBe('/whatsapp?conversa=c1')
+    fireEvent.click(await listRow('Bia Lima'))
+    expect(currentUrl()).toBe('/whatsapp?conversa=c2')
+
+    expect(history.push).not.toHaveBeenCalled()
+    expect(history.replace).toHaveBeenCalledTimes(2)
+    expect(window.history.length).toBe(lengthBefore)
+    expect(screen.getByRole('heading', { name: 'Bia Lima' })).toBeInTheDocument()
+  })
+
+  it('browser / hardware back returns to the list', async () => {
+    render(<WhatsAppPage />)
+    fireEvent.click(await listRow('Ana Souza'))
+    await waitFor(() => expect(router.search).toBe('?conversa=c1'))
     expect(backButton()).toBeInTheDocument()
 
-    navigate('')
+    act(() => window.history.back())
 
     await waitFor(() => expect(backButton()).not.toBeInTheDocument())
+    expect(currentUrl()).toBe('/whatsapp')
     expect(listView()).not.toHaveClass('hidden')
   })
 
   it('reopening the same conversation after going back refetches its messages', async () => {
-    const { navigate } = renderPage()
+    render(<WhatsAppPage />)
     fireEvent.click(await listRow('Ana Souza'))
-    navigate('conversa=c1')
     await screen.findByText('Oi, tudo bem?')
     expect(messagesFetches(fetchMock, 'c1')).toBe(1)
 
     fireEvent.click(backButton()!)
-    navigate('')
-    await waitFor(() => expect(backButton()).not.toBeInTheDocument())
+    await waitFor(() => expect(router.search).toBe(''))
 
     fireEvent.click(await listRow('Ana Souza'))
-    navigate('conversa=c1')
 
     await waitFor(() => expect(messagesFetches(fetchMock, 'c1')).toBe(2))
     expect(await screen.findByText('Oi, tudo bem?')).toBeInTheDocument()
@@ -176,57 +309,155 @@ describe('WhatsAppPage mobile navigation', () => {
   })
 
   it('switching conversations replaces the entry so back still lands on the list', async () => {
-    const { navigate } = renderPage()
+    render(<WhatsAppPage />)
     fireEvent.click(await listRow('Ana Souza'))
-    navigate('conversa=c1')
+    await waitFor(() => expect(router.search).toBe('?conversa=c1'))
+    const lengthAfterOpen = window.history.length
 
     fireEvent.click(await listRow('Bia Lima'))
 
-    expect(mockPush).toHaveBeenCalledTimes(1)
-    expect(mockReplace).toHaveBeenCalledWith('/whatsapp?conversa=c2', { scroll: false })
+    expect(history.push).toHaveBeenCalledTimes(1)
+    expect(window.history.length).toBe(lengthAfterOpen)
+    expect(currentUrl()).toBe('/whatsapp?conversa=c2')
+    expect(window.history.state).toMatchObject({ floraclinInbox: true })
     expect(screen.getByRole('heading', { name: 'Bia Lima' })).toBeInTheDocument()
   })
 
-  it('a ?conversa= deep link opens that conversation and back replaces to the list', async () => {
-    searchParamsValue = new URLSearchParams('conversa=c2&draft=Ol%C3%A1')
-    renderPage()
+  describe('back arrow and our history marker', () => {
+    it('after a reload of a pushed entry, pops back to the list instead of adding another', async () => {
+      startAt('/whatsapp?conversa=c1', { marker: true, belowIt: '/whatsapp' })
+      const lengthBefore = window.history.length
+      render(<WhatsAppPage />)
+      expect(await screen.findByRole('heading', { name: 'Ana Souza' })).toBeInTheDocument()
 
-    expect(await screen.findByRole('heading', { name: 'Bia Lima' })).toBeInTheDocument()
-    expect(await screen.findByDisplayValue('Olá')).toBe(screen.getByLabelText('Mensagem'))
+      fireEvent.click(backButton()!)
 
-    fireEvent.click(backButton()!)
+      expect(history.back).toHaveBeenCalledTimes(1)
+      expect(history.replace).not.toHaveBeenCalled()
+      await waitFor(() => expect(currentUrl()).toBe('/whatsapp'))
+      expect(window.history.length).toBe(lengthBefore)
+    })
 
-    expect(mockBack).not.toHaveBeenCalled()
-    expect(mockReplace).toHaveBeenCalledWith('/whatsapp?draft=Ol%C3%A1', { scroll: false })
-    expect(listView()).not.toHaveClass('hidden')
+    it('after browser back then forward, pops back to the list', async () => {
+      render(<WhatsAppPage />)
+      fireEvent.click(await listRow('Ana Souza'))
+      await waitFor(() => expect(router.search).toBe('?conversa=c1'))
+      act(() => window.history.back())
+      await waitFor(() => expect(backButton()).not.toBeInTheDocument())
+
+      act(() => window.history.forward())
+      expect(await screen.findByRole('heading', { name: 'Ana Souza' })).toBeInTheDocument()
+      history.back.mockClear()
+      fireEvent.click(backButton()!)
+
+      expect(history.back).toHaveBeenCalledTimes(1)
+      expect(history.replace).not.toHaveBeenCalled()
+      await waitFor(() => expect(currentUrl()).toBe('/whatsapp'))
+    })
+
+    it('a ?conversa= deep link (no marker) is replaced by the list, so back does not leave the inbox', async () => {
+      startAt('/whatsapp?conversa=c2')
+      const lengthBefore = window.history.length
+      render(<WhatsAppPage />)
+      expect(await screen.findByRole('heading', { name: 'Bia Lima' })).toBeInTheDocument()
+
+      fireEvent.click(backButton()!)
+
+      expect(history.back).not.toHaveBeenCalled()
+      expect(currentUrl()).toBe('/whatsapp')
+      expect(window.history.length).toBe(lengthBefore)
+      expect(window.history.state).toMatchObject({ ...NEXT_STATE, floraclinInbox: false })
+      expect(listView()).not.toHaveClass('hidden')
+    })
   })
 
   it('an unknown ?conversa= id falls back to the list and drops the param', async () => {
-    searchParamsValue = new URLSearchParams('conversa=missing')
-    renderPage()
+    startAt('/whatsapp?conversa=missing')
+    render(<WhatsAppPage />)
 
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/whatsapp', { scroll: false }))
+    await waitFor(() => expect(currentUrl()).toBe('/whatsapp'))
+    expect(history.back).not.toHaveBeenCalled()
     expect(listView()).not.toHaveClass('hidden')
     expect(backButton()).not.toBeInTheDocument()
   })
 
+  describe('reschedule draft (?draft=)', () => {
+    it('prefills the linked conversation and is dropped when going back to the list', async () => {
+      startAt('/whatsapp?conversa=c2&draft=Ol%C3%A1')
+      render(<WhatsAppPage />)
+
+      expect(await screen.findByDisplayValue('Olá')).toBe(composer())
+      fireEvent.click(backButton()!)
+      expect(currentUrl()).toBe('/whatsapp')
+
+      fireEvent.click(await listRow('Ana Souza'))
+      expect(currentUrl()).toBe('/whatsapp?conversa=c1')
+      await screen.findByText('Oi, tudo bem?')
+      expect(composer()).toHaveValue('')
+    })
+
+    it('does not prefill a different conversation opened from the list', async () => {
+      startAt('/whatsapp?conversa=c2&draft=Ol%C3%A1')
+      render(<WhatsAppPage />)
+      expect(await screen.findByDisplayValue('Olá')).toBe(composer())
+
+      fireEvent.click(await listRow('Ana Souza'))
+
+      expect(screen.getByRole('heading', { name: 'Ana Souza' })).toBeInTheDocument()
+      expect(composer()).toHaveValue('')
+      expect(currentUrl()).toBe('/whatsapp?conversa=c1')
+      await waitFor(() => expect(router.search).toBe('?conversa=c1'))
+      await screen.findByText('Oi, tudo bem?')
+      expect(composer()).toHaveValue('')
+    })
+  })
+
+  describe('mark as read when opened from the URL', () => {
+    it('a ?conversa= deep link with unread messages marks it read and clears the list badge', async () => {
+      startAt('/whatsapp?conversa=c3')
+      render(<WhatsAppPage />)
+      expect(await screen.findByRole('heading', { name: 'Caio Reis' })).toBeInTheDocument()
+
+      await waitFor(() => expect(markReadCalls(fetchMock)).toEqual(['/api/whatsapp/conversations/c3']))
+      expect(within(await listRow('Caio Reis')).queryByText('2')).not.toBeInTheDocument()
+    })
+
+    it('a conversation without unread messages is not marked read again', async () => {
+      startAt('/whatsapp?conversa=c2')
+      render(<WhatsAppPage />)
+      expect(await screen.findByRole('heading', { name: 'Bia Lima' })).toBeInTheDocument()
+      expect(markReadCalls(fetchMock)).toEqual([])
+    })
+  })
+
   describe('?phone= deep link', () => {
     it('opens the matching conversation and rewrites the URL to ?conversa=', async () => {
-      searchParamsValue = new URLSearchParams('phone=11988880000')
-      renderPage()
+      startAt('/whatsapp?phone=11988880000')
+      render(<WhatsAppPage />)
 
       expect(await screen.findByRole('heading', { name: 'Bia Lima' })).toBeInTheDocument()
-      expect(mockReplace).toHaveBeenCalledWith('/whatsapp?conversa=c2', { scroll: false })
+      expect(currentUrl()).toBe('/whatsapp?conversa=c2')
+      expect(history.push).not.toHaveBeenCalled()
       expect(listView()).toHaveClass('hidden', 'md:block')
       expect(screen.queryByRole('dialog', { name: 'Nova conversa' })).not.toBeInTheDocument()
     })
 
+    it('a match with unread messages marks it read and clears the list badge', async () => {
+      startAt('/whatsapp?phone=11977770000')
+      render(<WhatsAppPage />)
+
+      expect(await screen.findByRole('heading', { name: 'Caio Reis' })).toBeInTheDocument()
+      await waitFor(() => expect(markReadCalls(fetchMock)).toEqual(['/api/whatsapp/conversations/c3']))
+      expect(within(await listRow('Caio Reis')).queryByText('2')).not.toBeInTheDocument()
+    })
+
     it('opens the start-conversation dialog when no conversation matches', async () => {
-      searchParamsValue = new URLSearchParams('phone=11977770000')
-      renderPage()
+      startAt('/whatsapp?phone=11966660000')
+      render(<WhatsAppPage />)
 
       expect(await screen.findByRole('dialog', { name: 'Nova conversa' })).toBeInTheDocument()
-      expect(mockReplace).not.toHaveBeenCalled()
+      expect(history.replace).not.toHaveBeenCalled()
+      expect(currentUrl()).toBe('/whatsapp?phone=11966660000')
       expect(backButton()).not.toBeInTheDocument()
     })
   })

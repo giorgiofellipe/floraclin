@@ -156,7 +156,8 @@ export function ProspectDetailPanel({
       />
 
       {/* Panel */}
-      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col bg-white shadow-xl">
+      {/* Edge-anchored: pads for the notch / home indicator (viewport-fit=cover). */}
+      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col bg-white pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] shadow-xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b px-4 py-3">
           <h2 className="text-base font-medium text-[#2A2A2A]">

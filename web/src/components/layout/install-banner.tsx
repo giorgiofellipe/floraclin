@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { X } from 'lucide-react'
 import { IosInstallSteps } from '@/components/layout/ios-install-steps'
+import { useIsFullHeightPage } from '@/components/layout/platform-chrome'
 
 const DISMISSED_KEY = 'floraclin.install-banner.dismissed'
 // The complement of Tailwind's md breakpoint (48rem), where the wrapper's
@@ -50,6 +51,9 @@ export function InstallBanner() {
   const [mode, setMode] = useState<Mode>('hidden')
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const [showIosSteps, setShowIosSteps] = useState(false)
+  // Suppressed (not dismissed) on full-height screens, where it would cover
+  // the WhatsApp composer; it comes back on the next regular page.
+  const suppressed = useIsFullHeightPage()
 
   useEffect(() => {
     if (isInstalled() || readDismissed()) return
@@ -60,7 +64,7 @@ export function InstallBanner() {
   // Listeners live only while the banner is visible. Once it hides there is no
   // UI to hand the event to, so the browser must keep its own install prompt.
   useEffect(() => {
-    if (mode === 'hidden') return
+    if (mode === 'hidden' || suppressed) return
 
     const onBeforeInstallPrompt = (event: Event) => {
       if (!window.matchMedia(MOBILE_QUERY).matches) return
@@ -77,9 +81,9 @@ export function InstallBanner() {
       window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt)
       window.removeEventListener('appinstalled', onInstalled)
     }
-  }, [mode])
+  }, [mode, suppressed])
 
-  if (mode === 'hidden') return null
+  if (mode === 'hidden' || suppressed) return null
 
   const dismiss = () => {
     writeDismissed()
@@ -107,7 +111,8 @@ export function InstallBanner() {
   return (
     <div
       data-testid="install-banner"
-      className="fixed inset-x-3 bottom-3 z-30 rounded-xl bg-forest p-4 text-white shadow-lg md:hidden"
+      // 0.75rem from each edge, plus the notch / home-indicator insets.
+      className="fixed right-[calc(0.75rem+env(safe-area-inset-right))] bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-[calc(0.75rem+env(safe-area-inset-left))] z-30 rounded-xl bg-forest p-4 text-white shadow-lg md:hidden"
     >
       <div className="flex items-center gap-3">
         <Image src="/apple-icon.png" alt="" width={56} height={56} className="size-14 shrink-0 rounded-[22%] shadow-md ring-1 ring-white/25" />
