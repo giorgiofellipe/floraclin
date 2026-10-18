@@ -69,12 +69,11 @@ const TRIGGERS = [
 /**
  * What the panel can tell the clinic about the template behind a trigger.
  * On the shared number the clinic can neither create a template nor chase its
- * approval, so the only two useful answers are "the FloraClin default is in
- * place" and "it is not, and this automation will not send".
+ * approval, so the only thing worth saying is that it is missing and this
+ * automation will not send.
  */
 type TemplateState =
   | 'approved'
-  | 'platform'
   | 'unavailable'
   | 'pending'
   | 'provision'
@@ -82,9 +81,9 @@ type TemplateState =
 function resolveTemplateState(
   template: Template | undefined,
   mode: 'floraclin' | 'own',
-): TemplateState {
+): TemplateState | null {
   const usable = template?.status === 'APPROVED'
-  if (mode === 'floraclin') return usable ? 'platform' : 'unavailable'
+  if (mode === 'floraclin') return usable ? null : 'unavailable'
   if (!template) return 'provision'
   return usable ? 'approved' : 'pending'
 }
@@ -346,52 +345,48 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
 
               {state.enabled && (
                 <div className="pl-7 space-y-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-mid">Template</Label>
-                    {templateState === 'approved' && (
-                      <div className="flex items-center gap-2 text-xs text-green-700">
-                        <CheckCircle2 className="size-3.5" />
-                        <span>Template aprovado</span>
-                      </div>
-                    )}
-                    {templateState === 'platform' && (
-                      <div className="flex items-center gap-2 text-xs text-mid">
-                        <CheckCircle2 className="size-3.5" />
-                        <span>Mensagem padrão do FloraClin</span>
-                      </div>
-                    )}
-                    {templateState === 'pending' && (
-                      <div className="flex items-center gap-2 text-xs text-amber-700">
-                        <Clock className="size-3.5" />
-                        <span>Template em revisão pela Meta</span>
-                      </div>
-                    )}
-                    {templateState === 'unavailable' && (
-                      <div className="flex items-center gap-2 text-xs text-amber-700">
-                        <AlertTriangle className="size-3.5" />
-                        <span>
-                          Mensagem indisponível no momento. Fale com o suporte.
-                        </span>
-                      </div>
-                    )}
-                    {templateState === 'provision' && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="text-xs"
-                        disabled={provisioning}
-                        onClick={handleProvision}
-                      >
-                        {provisioning ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : (
-                          <Plus className="size-3.5" />
-                        )}
-                        Criar template padrão
-                      </Button>
-                    )}
-                  </div>
+                  {templateState && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-mid">Template</Label>
+                      {templateState === 'approved' && (
+                        <div className="flex items-center gap-2 text-xs text-green-700">
+                          <CheckCircle2 className="size-3.5" />
+                          <span>Template aprovado</span>
+                        </div>
+                      )}
+                      {templateState === 'pending' && (
+                        <div className="flex items-center gap-2 text-xs text-amber-700">
+                          <Clock className="size-3.5" />
+                          <span>Template em revisão pela Meta</span>
+                        </div>
+                      )}
+                      {templateState === 'unavailable' && (
+                        <div className="flex items-center gap-2 text-xs text-amber-700">
+                          <AlertTriangle className="size-3.5" />
+                          <span>
+                            Mensagem indisponível no momento. Fale com o suporte.
+                          </span>
+                        </div>
+                      )}
+                      {templateState === 'provision' && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="text-xs"
+                          disabled={provisioning}
+                          onClick={handleProvision}
+                        >
+                          {provisioning ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <Plus className="size-3.5" />
+                          )}
+                          Criar template padrão
+                        </Button>
+                      )}
+                    </div>
+                  )}
 
                   {trigger.configFields.map((field) => {
                     if ('dependsOn' in field && field.dependsOn && !state.config[field.dependsOn]) {
