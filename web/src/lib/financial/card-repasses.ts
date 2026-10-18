@@ -1,5 +1,5 @@
 import { shiftBrYmd, ymdDayIndex } from '@/lib/dates'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, formatDate } from '@/lib/utils'
 
 export type CardMethod = 'credit_card' | 'debit_card'
 export type CardPayoutMode = 'per_installment' | 'lump_sum' | 'debit'
@@ -10,6 +10,39 @@ export interface CardTerminalTerms {
   creditRates: number[]
   creditPayoutMode: 'per_installment' | 'lump_sum'
   creditLumpSumDays: number
+}
+
+export interface CardPaymentSummary {
+  terminalName: string
+  method: string
+  installmentCount: number
+  pendingRepasses: number
+  receivedRepasses: number
+  linkedPaymentCount: number
+}
+
+export function isCardMethod(method: string | null | undefined): method is CardMethod {
+  return method === 'credit_card' || method === 'debit_card'
+}
+
+export function cardInstallmentCountFor(method: CardMethod, count: number): number {
+  return method === 'debit_card' ? 1 : count
+}
+
+export function toCardTerminalTerms(row: {
+  debitRate: string
+  debitPayoutDays: number
+  creditRates: string[]
+  creditPayoutMode: 'per_installment' | 'lump_sum'
+  creditLumpSumDays: number
+}): CardTerminalTerms {
+  return {
+    debitRate: Number(row.debitRate),
+    debitPayoutDays: row.debitPayoutDays,
+    creditRates: row.creditRates.map(Number),
+    creditPayoutMode: row.creditPayoutMode,
+    creditLumpSumDays: row.creditLumpSumDays,
+  }
 }
 
 export interface PlannedRepasse {
@@ -105,17 +138,12 @@ export function buildCardSchedule(input: {
   }
 }
 
-function formatBrDate(ymd: string): string {
-  const [y, m, d] = ymd.split('-')
-  return `${d}/${m}/${y}`
-}
-
 export function describeCardSchedule(schedule: CardSchedule): string {
   const [first] = schedule.repasses
   const amount = formatCurrency(first.netAmount).replace(/ /g, ' ')
   if (schedule.repasses.length > 1) {
-    return `${schedule.repasses.length} repasses de ${amount}, a partir de ${formatBrDate(first.expectedDate)}`
+    return `${schedule.repasses.length} repasses de ${amount}, a partir de ${formatDate(first.expectedDate)}`
   }
   const suffix = schedule.payoutMode === 'lump_sum' ? ' (antecipado)' : ''
-  return `1 repasse de ${amount} em ${formatBrDate(first.expectedDate)}${suffix}`
+  return `1 repasse de ${amount} em ${formatDate(first.expectedDate)}${suffix}`
 }

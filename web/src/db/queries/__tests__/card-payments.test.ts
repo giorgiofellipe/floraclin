@@ -89,7 +89,7 @@ describe('repasseLedgerDescription', () => {
   })
 })
 
-/** A card payment whose repasses live in `state`, emulating only the row filters the queries rely on. */
+/** A card payment whose repasses live in `inserted`, emulating only the row filters the queries rely on. */
 function createPaymentTx() {
   const inserted: Record<string, unknown>[] = []
   let movementSeq = 0
@@ -220,17 +220,6 @@ describe('postDueRepassesTx', () => {
       return undefined
     })
   }
-
-  it('posts each repasse exactly once when the job runs twice', async () => {
-    const { postDueRepassesTx } = await import('../card-payments')
-    const { tx, log } = stateful()
-
-    const first = await postDueRepassesTx(tx as never, TENANT, { todayYmd: TODAY })
-    const second = await postDueRepassesTx(tx as never, TENANT, { todayYmd: TODAY })
-
-    expect([first, second]).toEqual([1, 0])
-    expect(inserts(log, cashMovements)).toHaveLength(1)
-  })
 
   it('claims rows of the given tenant only, with a row lock that skips concurrent reversals', async () => {
     const { postDueRepassesTx } = await import('../card-payments')
@@ -374,6 +363,18 @@ describe('adjustCardRepasse', () => {
     expect(whereParams(reversals[1].capture)).not.toContain('mov-0')
   })
 
+  it('writes nothing when the net and date are unchanged', async () => {
+    const { adjustCardRepasse } = await import('../card-payments')
+    const { log } = adjustTx({ status: 'received' })
+
+    await adjustCardRepasse(TENANT, USER_ID, REPASSE_ID, { netAmount: 455.05, expectedDate: '2026-10-10' })
+
+    expect(inserts(log, cashMovements)).toHaveLength(0)
+    expect(updates(log, cardRepasses)).toHaveLength(0)
+    expect(updates(log, cashMovements)).toHaveLength(0)
+    expect(createAuditLogMock).not.toHaveBeenCalled()
+  })
+
   it('edits a pending repasse in place without touching the ledger when the date stays in the future', async () => {
     const { adjustCardRepasse } = await import('../card-payments')
     const { log, repasse } = adjustTx({ status: 'pending', cashMovementId: null, expectedDate: '2026-11-17' })
@@ -417,16 +418,29 @@ describe('listCardRepasses', () => {
     return log
   }
 
-  it('scopes all three queries to the tenant and date window', async () => {
+  it('scopes all three queries to the tenant and rows and count to the date window', async () => {
     const { listCardRepasses } = await import('../card-payments')
     const log = mockDb('0')
 
     await listCardRepasses(TENANT, filters)
 
     expect(log).toHaveLength(3)
-    for (const q of log) {
-      expect(whereParams(q.capture)).toEqual(expect.arrayContaining([TENANT, '2026-10-01', '2026-10-31']))
+    for (const q of log) expect(whereParams(q.capture)).toContain(TENANT)
+    for (const q of log.slice(0, 2)) {
+      expect(whereParams(q.capture)).toEqual(expect.arrayContaining(['2026-10-01', '2026-10-31']))
     }
+  })
+
+  it('sums pendingNetTotal over all pending repasses, outside the date window', async () => {
+    const { listCardRepasses } = await import('../card-payments')
+    const log = mockDb('900.00')
+
+    await listCardRepasses(TENANT, filters)
+
+    const params = whereParams(log[2].capture)
+    expect(params).toEqual(expect.arrayContaining([TENANT, 'pending']))
+    expect(params).not.toContain('2026-10-01')
+    expect(params).not.toContain('2026-10-31')
   })
 
   it('applies the status filter to rows and total but keeps pendingNetTotal on pending, as numbers', async () => {

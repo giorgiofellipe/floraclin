@@ -3,11 +3,12 @@ import { requireWrite } from '@/lib/write-access'
 import { deleteCardTerminal, updateCardTerminal } from '@/db/queries/card-terminals'
 import { cardTerminalSchema } from '@/validations/card-terminals'
 import { handleApiError } from '@/lib/api-error'
+import { BusinessError } from '@/lib/errors'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
 function notFound(error: unknown) {
-  if (error instanceof Error && error.message === 'Maquininha não encontrada') {
+  if (error instanceof BusinessError && error.code === 'CARD_TERMINAL_NOT_FOUND') {
     return NextResponse.json({ error: error.message }, { status: 404 })
   }
   return null

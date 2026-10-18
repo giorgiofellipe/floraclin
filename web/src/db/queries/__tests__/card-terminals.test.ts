@@ -95,6 +95,8 @@ describe('updateCardTerminal', () => {
     await expect(updateCardTerminal(OTHER_TENANT, USER, TERMINAL, input())).rejects.toThrow(
       'Maquininha não encontrada',
     )
+    const lookup = log.find((q) => q.op === 'select')!
+    expect(whereParams(lookup.capture)).toContain(OTHER_TENANT)
     expect(terminalWrites(log)).toHaveLength(0)
   })
 })

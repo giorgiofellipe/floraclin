@@ -1,6 +1,31 @@
 import { describe, it, expect } from 'vitest'
 import { createProcedureSchema, diagramPointSchema, diagramSaveSchema } from '../procedure'
 
+describe('financialPlan debit rule', () => {
+  const base = {
+    patientId: '550e8400-e29b-41d4-a716-446655440000',
+    procedureTypeId: '550e8400-e29b-41d4-a716-446655440001',
+  }
+
+  it('refuses a debit plan in more than one installment', () => {
+    const result = createProcedureSchema.safeParse({
+      ...base,
+      financialPlan: { totalAmount: 100, installmentCount: 3, paymentMethod: 'debit_card' },
+    })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues.map((i) => i.message)).toContain('Débito não pode ser parcelado')
+  })
+
+  it('accepts a single debit installment and a multi-installment credit plan', () => {
+    for (const plan of [
+      { totalAmount: 100, installmentCount: 1, paymentMethod: 'debit_card' },
+      { totalAmount: 100, installmentCount: 3, paymentMethod: 'credit_card' },
+    ]) {
+      expect(createProcedureSchema.safeParse({ ...base, financialPlan: plan }).success).toBe(true)
+    }
+  })
+})
+
 describe('createProcedureSchema', () => {
   const validData = {
     patientId: '550e8400-e29b-41d4-a716-446655440000',

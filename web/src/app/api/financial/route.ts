@@ -9,10 +9,7 @@ import {
 } from '@/db/queries/financial'
 import { financialFilterSchema, createFinancialEntrySchema } from '@/validations/financial'
 import { handleApiError } from '@/lib/api-error'
-import { BusinessError } from '@/lib/errors'
-import { reportSideEffectFailure } from '@/lib/observability'
-
-const PAYMENT_FAILED_MESSAGE = 'Não foi possível registrar o pagamento. A cobrança ficou pendente.'
+import { cardPaymentErrorMessage } from '@/lib/financial/card-payment-error'
 
 export async function GET(request: Request) {
   try {
@@ -83,20 +80,11 @@ export async function POST(request: Request) {
           expectedTotalDue: totalAmount,
         })
       } catch (error) {
-        if (error instanceof BusinessError) {
-          paymentError = error.message
-        } else {
-          paymentError = PAYMENT_FAILED_MESSAGE
-          reportSideEffectFailure(error, {
-            area: 'financial',
-            step: 'create-entry-card-payment',
-            extra: { entryId: entry.id },
-          })
-        }
+        paymentError = cardPaymentErrorMessage(error, { area: 'financial', tenantId: ctx.tenantId })
       }
     }
 
-    return NextResponse.json({ success: true, data: entry, ...(paymentError && { paymentError }) }, { status: 201 })
+    return NextResponse.json({ success: true, data: entry, ...(paymentError && { paymentError }) }, { status: 200 })
   } catch (error) {
     return handleApiError(error, request)
   }

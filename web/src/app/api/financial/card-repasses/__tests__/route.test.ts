@@ -42,12 +42,12 @@ describe('PATCH /api/financial/card-repasses/[id]', () => {
   })
 
   it('maps BusinessError to 409 with its code', async () => {
-    vi.mocked(adjustCardRepasse).mockRejectedValue(new BusinessError('REPASSE_NOT_PENDING', 'Repasse já recebido'))
+    vi.mocked(adjustCardRepasse).mockRejectedValue(new BusinessError('REPASSE_CANCELLED', 'Repasse já recebido'))
 
     const res = await patch({ netAmount: 100, expectedDate: '2026-11-03' })
 
     expect(res.status).toBe(409)
-    expect(await res.json()).toEqual({ error: 'Repasse já recebido', code: 'REPASSE_NOT_PENDING' })
+    expect(await res.json()).toEqual({ error: 'Repasse já recebido', code: 'REPASSE_CANCELLED' })
   })
 
   it('adjusts with the session tenant and user', async () => {

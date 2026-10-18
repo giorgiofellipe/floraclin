@@ -3,11 +3,12 @@ import { cardTerminals } from '@/db/schema'
 import { and, asc, count, desc, eq, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { createAuditLog } from '@/lib/audit'
+import { BusinessError } from '@/lib/errors'
 import type { CardTerminalInput } from '@/validations/card-terminals'
 
 export type CardTerminalRow = typeof cardTerminals.$inferSelect
 
-const NOT_FOUND = 'Maquininha não encontrada'
+const notFound = () => new BusinessError('CARD_TERMINAL_NOT_FOUND', 'Maquininha não encontrada')
 
 const activeInTenant = (tenantId: string) =>
   and(eq(cardTerminals.tenantId, tenantId), isNull(cardTerminals.deletedAt))
@@ -77,7 +78,7 @@ export async function updateCardTerminal(
       .from(cardTerminals)
       .where(and(activeInTenant(tenantId), eq(cardTerminals.id, id)))
       .limit(1)
-    if (!current) throw new Error(NOT_FOUND)
+    if (!current) throw notFound()
 
     if (data.isDefault) {
       await tx
@@ -108,7 +109,7 @@ export async function deleteCardTerminal(tenantId: string, userId: string, id: s
       .from(cardTerminals)
       .where(and(activeInTenant(tenantId), eq(cardTerminals.id, id)))
       .limit(1)
-    if (!current) throw new Error(NOT_FOUND)
+    if (!current) throw notFound()
 
     await tx
       .update(cardTerminals)

@@ -9,12 +9,19 @@ import {
   patients,
   paymentRecords,
 } from '@/db/schema'
-import { and, asc, count, eq, gte, inArray, isNotNull, isNull, lte, ne, sum, type SQL } from 'drizzle-orm'
+import { and, asc, count, eq, gte, inArray, isNotNull, isNull, lte, ne, sql, sum, type SQL } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { brToday, parseBrDate, toBrYmd } from '@/lib/dates'
 import { createAuditLog } from '@/lib/audit'
 import { BusinessError } from '@/lib/errors'
-import { buildCardSchedule, type CardMethod, type CardTerminalTerms } from '@/lib/financial/card-repasses'
+import {
+  buildCardSchedule,
+  cardInstallmentCountFor,
+  toCardTerminalTerms,
+  type CardMethod,
+  type CardPaymentSummary,
+  type CardTerminalTerms,
+} from '@/lib/financial/card-repasses'
 
 export interface CardPaymentRequest {
   terminalId: string
@@ -36,6 +43,7 @@ export interface CardRepasseListRow {
   netAmount: string
   status: string
   receivedAt: Date | null
+  cardPaymentReversed: boolean
 }
 
 const DESCRIPTION_MAX = 255
@@ -78,13 +86,7 @@ export async function getCardTerminalTerms(
   return {
     id: row.id,
     name: row.name,
-    terms: {
-      debitRate: Number(row.debitRate),
-      debitPayoutDays: row.debitPayoutDays,
-      creditRates: row.creditRates.map(Number),
-      creditPayoutMode: row.creditPayoutMode as CardTerminalTerms['creditPayoutMode'],
-      creditLumpSumDays: row.creditLumpSumDays,
-    },
+    terms: toCardTerminalTerms(row),
   }
 }
 
@@ -110,7 +112,7 @@ export async function createCardPaymentTx(
       cardTerminalId: terminal.id,
       patientId: input.patientId,
       method: input.method,
-      installmentCount: input.method === 'debit_card' ? 1 : input.installmentCount,
+      installmentCount: cardInstallmentCountFor(input.method, input.installmentCount),
       rate: schedule.rate.toFixed(2),
       payoutMode: schedule.payoutMode,
       grossAmount: schedule.grossAmount.toFixed(2),
@@ -166,8 +168,14 @@ export async function postDueRepassesTx(
       terminalName: cardTerminals.name,
     })
     .from(cardRepasses)
-    .innerJoin(cardPayments, eq(cardPayments.id, cardRepasses.cardPaymentId))
-    .innerJoin(cardTerminals, eq(cardTerminals.id, cardPayments.cardTerminalId))
+    .innerJoin(
+      cardPayments,
+      and(eq(cardPayments.id, cardRepasses.cardPaymentId), eq(cardPayments.tenantId, tenantId)),
+    )
+    .innerJoin(
+      cardTerminals,
+      and(eq(cardTerminals.id, cardPayments.cardTerminalId), eq(cardTerminals.tenantId, tenantId)),
+    )
     .where(and(...conditions))
     .orderBy(asc(cardRepasses.id))
     .for('update', { of: [cardRepasses, cardPayments], skipLocked: true })
@@ -320,6 +328,8 @@ export async function adjustCardRepasse(
       throw new BusinessError('REPASSE_CANCELLED', 'Repasse cancelado não pode ser ajustado')
     }
 
+    if (netCents === toCents(repasse.netAmount) && data.expectedDate === repasse.expectedDate) return
+
     const todayYmd = brToday()
     const adjusted = {
       netAmount: centsToDecimal(netCents),
@@ -421,8 +431,17 @@ export async function listCardRepasses(
     gte(cardRepasses.expectedDate, filters.dateFrom),
     lte(cardRepasses.expectedDate, filters.dateTo),
   ]
-  if (filters.terminalId) scope.push(eq(cardPayments.cardTerminalId, filters.terminalId))
+  const pendingScope = [
+    eq(cardRepasses.tenantId, tenantId),
+    eq(cardRepasses.status, 'pending'),
+    isNull(cardPayments.reversedAt),
+  ]
+  if (filters.terminalId) {
+    scope.push(eq(cardPayments.cardTerminalId, filters.terminalId))
+    pendingScope.push(eq(cardPayments.cardTerminalId, filters.terminalId))
+  }
   const conditions = filters.status ? [...scope, eq(cardRepasses.status, filters.status)] : scope
+  const joinPayment = and(eq(cardPayments.id, cardRepasses.cardPaymentId), eq(cardPayments.tenantId, tenantId))
 
   const [rows, [totals], [pending]] = await Promise.all([
     db
@@ -440,11 +459,15 @@ export async function listCardRepasses(
         netAmount: cardRepasses.netAmount,
         status: cardRepasses.status,
         receivedAt: cardRepasses.receivedAt,
+        cardPaymentReversed: sql<boolean>`${cardPayments.reversedAt} IS NOT NULL`,
       })
       .from(cardRepasses)
-      .innerJoin(cardPayments, eq(cardPayments.id, cardRepasses.cardPaymentId))
-      .innerJoin(cardTerminals, eq(cardTerminals.id, cardPayments.cardTerminalId))
-      .innerJoin(patients, eq(patients.id, cardPayments.patientId))
+      .innerJoin(cardPayments, joinPayment)
+      .innerJoin(
+        cardTerminals,
+        and(eq(cardTerminals.id, cardPayments.cardTerminalId), eq(cardTerminals.tenantId, tenantId)),
+      )
+      .innerJoin(patients, and(eq(patients.id, cardPayments.patientId), eq(patients.tenantId, tenantId)))
       .where(and(...conditions))
       .orderBy(asc(cardRepasses.expectedDate), asc(cardRepasses.id))
       .limit(filters.limit)
@@ -452,13 +475,13 @@ export async function listCardRepasses(
     db
       .select({ total: count() })
       .from(cardRepasses)
-      .innerJoin(cardPayments, eq(cardPayments.id, cardRepasses.cardPaymentId))
+      .innerJoin(cardPayments, joinPayment)
       .where(and(...conditions)),
     db
       .select({ total: sum(cardRepasses.netAmount) })
       .from(cardRepasses)
-      .innerJoin(cardPayments, eq(cardPayments.id, cardRepasses.cardPaymentId))
-      .where(and(...scope, eq(cardRepasses.status, 'pending'))),
+      .innerJoin(cardPayments, joinPayment)
+      .where(and(...pendingScope)),
   ])
 
   return {
@@ -472,30 +495,8 @@ export async function getCardPaymentSummaries(
   tx: typeof db,
   tenantId: string,
   cardPaymentIds: string[],
-): Promise<
-  Map<
-    string,
-    {
-      terminalName: string
-      method: string
-      installmentCount: number
-      pendingRepasses: number
-      receivedRepasses: number
-      linkedPaymentCount: number
-    }
-  >
-> {
-  const summaries = new Map<
-    string,
-    {
-      terminalName: string
-      method: string
-      installmentCount: number
-      pendingRepasses: number
-      receivedRepasses: number
-      linkedPaymentCount: number
-    }
-  >()
+): Promise<Map<string, CardPaymentSummary>> {
+  const summaries = new Map<string, CardPaymentSummary>()
   if (cardPaymentIds.length === 0) return summaries
 
   const payments = await tx
@@ -506,7 +507,10 @@ export async function getCardPaymentSummaries(
       terminalName: cardTerminals.name,
     })
     .from(cardPayments)
-    .innerJoin(cardTerminals, eq(cardTerminals.id, cardPayments.cardTerminalId))
+    .innerJoin(
+      cardTerminals,
+      and(eq(cardTerminals.id, cardPayments.cardTerminalId), eq(cardTerminals.tenantId, tenantId)),
+    )
     .where(and(eq(cardPayments.tenantId, tenantId), inArray(cardPayments.id, cardPaymentIds)))
 
   const repasseCounts = await tx

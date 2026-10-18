@@ -1,10 +1,11 @@
 import { z } from 'zod'
 import { isValidYmd } from '@/lib/dates'
+import { MAX_PAYMENT_AMOUNT } from '@/validations/financial'
 
 const ymd = z.string().refine(isValidYmd, 'Data inválida')
 
 export const adjustRepasseSchema = z.object({
-  netAmount: z.number().positive('Valor inválido').max(9_999_999.99, 'Valor inválido'),
+  netAmount: z.number().positive('Valor inválido').max(MAX_PAYMENT_AMOUNT, 'Valor inválido'),
   expectedDate: ymd,
 })
 

@@ -364,11 +364,6 @@ describe('finalizeEncounter', () => {
       expected: { installmentCount: 1, paymentMethod: 'credit_card', cardInstallmentCount: 6 },
     },
     {
-      name: 'debit settles as 1 card installment',
-      plan: { installmentCount: 1, paymentMethod: 'debit_card' },
-      expected: { installmentCount: 1, paymentMethod: 'debit_card', cardInstallmentCount: 1 },
-    },
-    {
       name: 'pix 3x keeps the plan installments and has no card count',
       plan: { installmentCount: 3, paymentMethod: 'pix' },
       expected: { installmentCount: 3, paymentMethod: 'pix', cardInstallmentCount: undefined },

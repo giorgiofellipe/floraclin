@@ -28,15 +28,16 @@ import { eq } from 'drizzle-orm'
 import { requireWrite } from '@/lib/write-access'
 import { finalizeEncounter } from '@/lib/encounter-finalize'
 import { recordPayment } from '@/db/queries/financial'
-import { BusinessError } from '@/lib/errors'
-import { reportSideEffectFailure } from '@/lib/observability'
+import { cardPaymentErrorMessage } from '@/lib/financial/card-payment-error'
+import { isCardMethod } from '@/lib/financial/card-repasses'
+import { round2 } from '@/lib/financial/penalties'
+import type { PaymentMethod } from '@/types'
+import { paymentMethods } from '@/validations/financial'
 import { encounterCartSchema } from '@/validations/encounter-cart'
 import { getDefaultPackageValidityMonths } from '@/lib/tenant-settings'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { handleApiError } from '@/lib/api-error'
-
-const PAYMENT_PENDING_MESSAGE = 'Não foi possível registrar o pagamento. A cobrança ficou pendente.'
 
 const requestSchema = z.object({
   cart: encounterCartSchema,
@@ -46,7 +47,7 @@ const requestSchema = z.object({
     .object({
       totalAmount: z.string(),
       installmentCount: z.number().int().min(1).max(12),
-      paymentMethod: z.enum(['pix', 'credit_card', 'debit_card', 'cash', 'transfer']),
+      paymentMethod: z.enum(paymentMethods as [PaymentMethod, ...PaymentMethod[]]),
       notes: z.string().optional(),
     })
     .refine((plan) => plan.paymentMethod !== 'debit_card' || plan.installmentCount === 1, {
@@ -66,9 +67,7 @@ const requestSchema = z.object({
 })
   .refine(
     (body) =>
-      body.cardPayment === undefined ||
-      body.financialPlan.paymentMethod === 'credit_card' ||
-      body.financialPlan.paymentMethod === 'debit_card',
+      body.cardPayment === undefined || isCardMethod(body.financialPlan.paymentMethod),
     { message: 'Pagamento no cartão exige forma de pagamento em cartão', path: ['cardPayment'] },
   )
 
@@ -118,7 +117,7 @@ export async function POST(
     let paymentError: string | undefined
     if (body.cardPayment) {
       const { totalAmount, paymentMethod, installmentCount } = body.financialPlan
-      const amount = Number(Number(totalAmount).toFixed(2))
+      const amount = round2(Number(totalAmount))
       try {
         await recordPayment(ctx.tenantId, ctx.userId, {
           installmentId: result.firstInstallmentId,
@@ -131,16 +130,7 @@ export async function POST(
           },
         })
       } catch (error) {
-        if (error instanceof BusinessError) {
-          paymentError = error.message
-        } else {
-          paymentError = PAYMENT_PENDING_MESSAGE
-          reportSideEffectFailure(error, {
-            area: 'encounter-finalize',
-            step: 'card-payment',
-            extra: { financialEntryId: result.financialEntryId },
-          })
-        }
+        paymentError = cardPaymentErrorMessage(error, { area: 'encounter-finalize', tenantId: ctx.tenantId })
       }
     }
 

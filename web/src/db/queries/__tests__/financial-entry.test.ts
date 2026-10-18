@@ -339,15 +339,22 @@ describe('createFinancialEntry dates and payment method', () => {
 
   // 22:00 BRT on Oct 18 is already Oct 19 in UTC.
   it('dates the first installment on the BR day, not the UTC day, on a UTC host', async () => {
+    const originalTz = process.env.TZ
+    process.env.TZ = 'UTC'
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-10-19T01:00:00.000Z'))
 
-    const { installmentsInsert } = await create({})
+    try {
+      const { installmentsInsert } = await create({})
 
-    expect((installmentsInsert.value as { dueDate: string }[]).map((r) => r.dueDate)).toEqual([
-      '2026-10-18',
-      '2026-11-17',
-    ])
+      expect((installmentsInsert.value as { dueDate: string }[]).map((r) => r.dueDate)).toEqual([
+        '2026-10-18',
+        '2026-11-17',
+      ])
+    } finally {
+      if (originalTz === undefined) delete process.env.TZ
+      else process.env.TZ = originalTz
+    }
   })
 
   it('stores the planned method and card parcela count, and returns the installment ids in order', async () => {
@@ -365,7 +372,7 @@ describe('createFinancialEntry dates and payment method', () => {
     const debit = await create({
       installmentCount: 1,
       paymentMethod: 'debit_card',
-      card: { terminalId: 't', installmentCount: 1 },
+      card: { terminalId: 't', installmentCount: 3 },
     })
     const credit = await create({
       installmentCount: 1,

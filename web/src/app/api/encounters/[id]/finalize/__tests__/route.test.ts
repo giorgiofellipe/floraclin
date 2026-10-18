@@ -95,7 +95,7 @@ describe('POST /api/encounters/[id]/finalize card payment', () => {
   })
 
   it('returns success with the BusinessError message when the payment is refused', async () => {
-    vi.mocked(recordPayment).mockRejectedValue(new BusinessError('TERMINAL_NOT_FOUND', 'Maquininha não encontrada'))
+    vi.mocked(recordPayment).mockRejectedValue(new BusinessError('CARD_TERMINAL_NOT_FOUND', 'Maquininha não encontrada'))
 
     const res = await call({ cardPayment: { terminalId: TERMINAL_ID } })
     const json = await res.json()

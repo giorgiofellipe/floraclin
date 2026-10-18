@@ -9,6 +9,9 @@ export const financialPlanSchema = z.object({
   installmentCount: z.number().int().min(1, 'Mínimo 1 parcela').max(12, 'Máximo 12 parcelas'),
   paymentMethod: z.enum(['pix', 'credit_card', 'debit_card', 'cash', 'transfer']).optional(),
   notes: z.string().max(1000, 'Observações devem ter no máximo 1000 caracteres').optional(),
+}).refine((plan) => plan.paymentMethod !== 'debit_card' || plan.installmentCount === 1, {
+  message: 'Débito não pode ser parcelado',
+  path: ['installmentCount'],
 })
 
 export type FinancialPlan = z.infer<typeof financialPlanSchema>

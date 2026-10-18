@@ -72,6 +72,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uq_card_repasses_payment_sequence" ON "florac
 ALTER TABLE "floraclin"."card_repasses" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "floraclin"."financial_entries" ADD COLUMN IF NOT EXISTS "payment_method" varchar(20);--> statement-breakpoint
 ALTER TABLE "floraclin"."financial_entries" ADD COLUMN IF NOT EXISTS "card_installment_count" integer;--> statement-breakpoint
+ALTER TABLE "floraclin"."financial_entries" ADD CONSTRAINT "financial_entries_payment_method_check" CHECK ("payment_method" IS NULL OR "payment_method" IN ('pix','credit_card','debit_card','cash','transfer'));--> statement-breakpoint
+ALTER TABLE "floraclin"."financial_entries" ADD CONSTRAINT "financial_entries_card_installment_count_check" CHECK ("card_installment_count" IS NULL OR "card_installment_count" BETWEEN 1 AND 12);--> statement-breakpoint
 ALTER TABLE "floraclin"."payment_records" ADD COLUMN IF NOT EXISTS "card_payment_id" uuid;--> statement-breakpoint
 ALTER TABLE "floraclin"."payment_records" ADD CONSTRAINT "payment_records_card_payment_id_fk" FOREIGN KEY ("card_payment_id") REFERENCES "floraclin"."card_payments"("id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_payment_records_card_payment" ON "floraclin"."payment_records" USING btree ("card_payment_id");--> statement-breakpoint

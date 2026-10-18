@@ -49,6 +49,7 @@ import { brToday, parseBrDate, toBrYmd } from '@/lib/dates'
 import { addMonths } from 'date-fns'
 import { createAuditLog } from '@/lib/audit'
 import type { PaymentMethod } from '@/types'
+import { isCardMethod } from '@/lib/financial/card-repasses'
 
 export interface FinalizeEncounterInput {
   tenantId: string
@@ -187,7 +188,7 @@ export async function finalizeEncounter(
     const description = packageName ?? `Atendimento — ${input.cart.lines.map((l) => l.procedureTypeName).join(', ')}`
 
     const { paymentMethod, installmentCount } = input.financialPlan
-    const isCard = paymentMethod === 'credit_card' || paymentMethod === 'debit_card'
+    const isCard = isCardMethod(paymentMethod)
 
     const feEntry = await createFinancialEntry(
       input.tenantId,
@@ -198,11 +199,7 @@ export async function finalizeEncounter(
         totalAmount,
         installmentCount: isCard ? 1 : installmentCount,
         paymentMethod,
-        cardInstallmentCount: isCard
-          ? paymentMethod === 'debit_card'
-            ? 1
-            : installmentCount
-          : undefined,
+        cardInstallmentCount: isCard ? installmentCount : undefined,
         notes: input.financialPlan.notes,
       },
       tx,

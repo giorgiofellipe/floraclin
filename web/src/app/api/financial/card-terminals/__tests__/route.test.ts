@@ -11,6 +11,7 @@ vi.mock('@/db/queries/card-terminals', () => ({
 }))
 
 import { requireWrite } from '@/lib/write-access'
+import { BusinessError } from '@/lib/errors'
 import { createCardTerminal, updateCardTerminal } from '@/db/queries/card-terminals'
 import { POST } from '../route'
 import { PATCH } from '../[id]/route'
@@ -72,7 +73,7 @@ describe('POST /api/financial/card-terminals', () => {
 
 describe('PATCH /api/financial/card-terminals/[id]', () => {
   it('maps a missing terminal to 404', async () => {
-    vi.mocked(updateCardTerminal).mockRejectedValue(new Error('Maquininha não encontrada'))
+    vi.mocked(updateCardTerminal).mockRejectedValue(new BusinessError('CARD_TERMINAL_NOT_FOUND', 'Maquininha não encontrada'))
 
     const res = await PATCH(post(validBody), { params: Promise.resolve({ id: 'c1' }) })
 

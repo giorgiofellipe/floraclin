@@ -52,7 +52,7 @@ describe('POST /api/financial with a card payment', () => {
     const res = await callPost(cardBody)
     const body = await res.json()
 
-    expect(res.status).toBe(201)
+    expect(res.status).toBe(200)
     expect(body).toEqual({ success: true, data: ENTRY })
     expect(recordPayment).toHaveBeenCalledWith('tenant-1', 'user-1', {
       installmentId: 'inst-1',
@@ -69,7 +69,7 @@ describe('POST /api/financial with a card payment', () => {
     const res = await callPost(cardBody)
     const body = await res.json()
 
-    expect(res.status).toBe(201)
+    expect(res.status).toBe(200)
     expect(body).toEqual({ success: true, data: ENTRY, paymentError: 'Maquininha não encontrada' })
     expect(reportSideEffectFailure).not.toHaveBeenCalled()
   })
@@ -81,7 +81,7 @@ describe('POST /api/financial with a card payment', () => {
     const res = await callPost(cardBody)
     const body = await res.json()
 
-    expect(res.status).toBe(201)
+    expect(res.status).toBe(200)
     expect(body.paymentError).toBe('Não foi possível registrar o pagamento. A cobrança ficou pendente.')
     expect(reportSideEffectFailure).toHaveBeenCalledWith(failure, expect.objectContaining({ area: 'financial' }))
   })
@@ -89,7 +89,7 @@ describe('POST /api/financial with a card payment', () => {
   it('records no payment for a charge without a card', async () => {
     const res = await callPost({ ...cardBody, paymentMethod: 'pix', card: undefined })
 
-    expect(res.status).toBe(201)
+    expect(res.status).toBe(200)
     expect(recordPayment).not.toHaveBeenCalled()
   })
 })

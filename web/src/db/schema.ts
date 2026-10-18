@@ -496,7 +496,7 @@ export const cardTerminals = floraclinSchema.table('card_terminals', {
   debitRate: decimal('debit_rate', { precision: 5, scale: 2 }).notNull(),
   debitPayoutDays: integer('debit_payout_days').notNull().default(1),
   creditRates: jsonb('credit_rates').$type<string[]>().notNull(), // 12 percent strings, index 0 = 1x
-  creditPayoutMode: varchar('credit_payout_mode', { length: 20 }).notNull(), // CHECK in migration
+  creditPayoutMode: varchar('credit_payout_mode', { length: 20 }).$type<'per_installment' | 'lump_sum'>().notNull(), // CHECK in migration
   creditLumpSumDays: integer('credit_lump_sum_days').notNull().default(1),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

@@ -632,4 +632,13 @@ describe('card payment fields', () => {
     expect(result.success).toBe(false)
     expect(result.error?.issues.map((i) => i.message)).toContain('Pagamento em cartão gera uma única parcela')
   })
+
+  it.each([
+    ['above the column limit', 100_000_000, 'Valor acima do limite permitido'],
+    ['with a fractional cent', 10.005, 'Valor deve ter no máximo duas casas decimais'],
+  ])('a charge total %s is refused', (_name, totalAmount, message) => {
+    const result = createFinancialEntrySchema.safeParse({ ...entry, totalAmount })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues.map((i) => i.message)).toContain(message)
+  })
 })

@@ -39,7 +39,7 @@ import {
   getCardPaymentSummaries,
   sumCardFeesForEntries,
 } from './card-payments'
-import type { CardMethod } from '@/lib/financial/card-repasses'
+import { cardInstallmentCountFor, isCardMethod } from '@/lib/financial/card-repasses'
 import {
   claimAndSendPendingEvent,
   enqueueMetaEvent,
@@ -51,10 +51,6 @@ import { META_EVENT_MAX_AGE_MS } from '@/db/queries/meta-events'
 import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
 import type { MetaActionSource } from '@/lib/meta/types'
 import { reportSideEffectFailure } from '@/lib/observability'
-
-function isCardMethod(method: string | null | undefined): method is CardMethod {
-  return method === 'credit_card' || method === 'debit_card'
-}
 
 function requireCard(card: RecordPaymentInput['card']): NonNullable<RecordPaymentInput['card']> {
   if (!card) throw new BusinessError('CARD_TERMINAL_REQUIRED', 'Selecione a maquininha')
@@ -96,7 +92,9 @@ export async function createFinancialEntry(
         paymentMethod: data.paymentMethod,
         cardInstallmentCount:
           data.cardInstallmentCount ??
-          (data.card ? (data.paymentMethod === 'debit_card' ? 1 : data.card.installmentCount) : null),
+          (data.card && isCardMethod(data.paymentMethod)
+            ? cardInstallmentCountFor(data.paymentMethod, data.card.installmentCount)
+            : null),
         createdBy: userId,
       })
       .returning()
