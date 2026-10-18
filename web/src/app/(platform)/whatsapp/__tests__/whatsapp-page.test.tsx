@@ -323,6 +323,51 @@ describe('WhatsAppPage navigation', () => {
     expect(screen.getByRole('heading', { name: 'Bia Lima' })).toBeInTheDocument()
   })
 
+  it('a row tap while the back arrow pop is in flight is ignored', async () => {
+    render(<WhatsAppPage />)
+    fireEvent.click(await listRow('Ana Souza'))
+    await waitFor(() => expect(router.search).toBe('?conversa=c1'))
+    const lengthAfterOpen = window.history.length
+
+    fireEvent.click(backButton()!)
+    // history.back() is async: the URL is still ?conversa=c1 here.
+    expect(currentUrl()).toBe('/whatsapp?conversa=c1')
+    fireEvent.click(screen.getByRole('button', { name: /Bia Lima/ }))
+
+    // The entry being left is not rewritten to Bia, and Bia doesn't open.
+    expect(history.replace).not.toHaveBeenCalled()
+    expect(screen.queryByRole('heading', { name: 'Bia Lima' })).not.toBeInTheDocument()
+    await waitFor(() => expect(currentUrl()).toBe('/whatsapp'))
+    expect(window.history.length).toBe(lengthAfterOpen)
+    expect(listView()).not.toHaveClass('hidden')
+
+    // Once the pop has landed, taps open again.
+    fireEvent.click(await listRow('Bia Lima'))
+    expect(history.push).toHaveBeenCalledTimes(2)
+    expect(currentUrl()).toBe('/whatsapp?conversa=c2')
+    expect(screen.getByRole('heading', { name: 'Bia Lima' })).toBeInTheDocument()
+  })
+
+  it('a pageshow (bfcache restore) clears a back arrow pop that never landed', async () => {
+    render(<WhatsAppPage />)
+    fireEvent.click(await listRow('Ana Souza'))
+    await waitFor(() => expect(router.search).toBe('?conversa=c1'))
+
+    // The pop crosses into another document, so this page never sees popstate.
+    history.back.mockImplementation(() => {})
+    fireEvent.click(backButton()!)
+    expect(history.back).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: /Bia Lima/ }))
+    expect(screen.queryByRole('heading', { name: 'Bia Lima' })).not.toBeInTheDocument()
+
+    act(() => {
+      window.dispatchEvent(new Event('pageshow'))
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Bia Lima/ }))
+
+    expect(screen.getByRole('heading', { name: 'Bia Lima' })).toBeInTheDocument()
+  })
+
   describe('back arrow and our history marker', () => {
     it('after a reload of a pushed entry, pops back to the list instead of adding another', async () => {
       startAt('/whatsapp?conversa=c1', { marker: true, belowIt: '/whatsapp' })
@@ -459,6 +504,60 @@ describe('WhatsAppPage navigation', () => {
       expect(history.replace).not.toHaveBeenCalled()
       expect(currentUrl()).toBe('/whatsapp?phone=11966660000')
       expect(backButton()).not.toBeInTheDocument()
+    })
+
+    it.each([
+      ['a match', '11988880000'],
+      ['no match', '11966660000'],
+    ])('a lookup resolving (%s) after the user opened a conversation is dropped', async (_, phone) => {
+      let resolveLookup = () => {}
+      const lookup = new Promise<void>((resolve) => {
+        resolveLookup = resolve
+      })
+      const api = fetchMock.getMockImplementation()!
+      fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+        url.includes(`search=${phone}`) ? lookup.then(() => api(url, init)) : api(url, init),
+      )
+      startAt(`/whatsapp?phone=${phone}`)
+      render(<WhatsAppPage />)
+      await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.includes(`search=${phone}`))).toBe(true))
+
+      fireEvent.click(await listRow('Ana Souza'))
+      expect(currentUrl()).toBe('/whatsapp?conversa=c1')
+      await act(async () => resolveLookup())
+
+      expect(screen.getByRole('heading', { name: 'Ana Souza' })).toBeInTheDocument()
+      expect(currentUrl()).toBe('/whatsapp?conversa=c1')
+      expect(window.history.state).toMatchObject({ floraclinInbox: true })
+      expect(history.replace).not.toHaveBeenCalled()
+      expect(screen.queryByRole('dialog', { name: 'Nova conversa' })).not.toBeInTheDocument()
+    })
+
+    it('starting a conversation from the dialog drops ?phone= from the entry underneath', async () => {
+      const PATIENT = { id: 'p9', fullName: 'Duda Melo', phone: '11966660000' }
+      const STARTED = { id: 'c9', phoneNumber: '5511966660000', profileName: 'Duda Melo', patientId: 'p9' }
+      const api = fetchMock.getMockImplementation()!
+      fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+        // A single patient match makes the dialog start the conversation itself.
+        if (url.startsWith('/api/patients?')) return json({ data: [PATIENT] })
+        if (url === '/api/whatsapp/conversations' && init?.method === 'POST') {
+          return json({ data: { conversation: STARTED } })
+        }
+        return api(url, init)
+      })
+      startAt('/whatsapp?phone=11966660000')
+      const lengthBefore = window.history.length
+      render(<WhatsAppPage />)
+
+      expect(await screen.findByRole('heading', { name: 'Duda Melo' })).toBeInTheDocument()
+      expect(currentUrl()).toBe('/whatsapp?conversa=c9')
+      expect(window.history.length).toBe(lengthBefore + 1)
+
+      fireEvent.click(backButton()!)
+
+      expect(history.back).toHaveBeenCalledTimes(1)
+      await waitFor(() => expect(currentUrl()).toBe('/whatsapp'))
+      expect(window.history.state).toMatchObject({ floraclinInbox: false })
     })
   })
 })

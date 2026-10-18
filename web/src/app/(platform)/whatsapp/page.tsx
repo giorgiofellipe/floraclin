@@ -87,13 +87,15 @@ function buildInboxUrl(convId: string | null) {
 
 // Back to the list: pop our own entry when it sits on top of the list,
 // otherwise (deep link, ?phone=, desktop) rewrite this one so back doesn't
-// leave the inbox.
+// leave the inbox. Returns whether it popped: history.back() is async, so the
+// URL still belongs to the entry being left until popstate fires.
 function returnToListUrl() {
   if (isPushedOverList()) {
     window.history.back()
-  } else {
-    replaceInboxEntry(buildInboxUrl(null), { pushedOverList: false })
+    return true
   }
+  replaceInboxEntry(buildInboxUrl(null), { pushedOverList: false })
+  return false
 }
 
 // Mobile: the inbox fills the *dynamic* viewport below the app header
@@ -209,9 +211,28 @@ export default function WhatsAppPage() {
     }
   }, [])
 
+  // Set while a history.back() from the back arrow is in flight. Until its
+  // popstate lands the live URL is still the conversation entry being left, so
+  // an open in that gap would rewrite that entry and then be closed by the
+  // pop; user-triggered opens are ignored instead.
+  const backPendingRef = useRef(false)
+  useEffect(() => {
+    const clearBackPending = () => {
+      backPendingRef.current = false
+    }
+    // popstate only fires for same-document pops; a pop that crosses into
+    // another document and a later bfcache restore arrive as pageshow.
+    window.addEventListener('popstate', clearBackPending)
+    window.addEventListener('pageshow', clearBackPending)
+    return () => {
+      window.removeEventListener('popstate', clearBackPending)
+      window.removeEventListener('pageshow', clearBackPending)
+    }
+  }, [])
+
   const handleBackToList = useCallback(() => {
     showConversation(null)
-    returnToListUrl()
+    if (returnToListUrl()) backPendingRef.current = true
   }, [showConversation])
 
   // URL -> selection: deep links (?conversa=), browser/hardware back and
@@ -261,26 +282,33 @@ export default function WhatsAppPage() {
     if (!phoneParam) return
     deepLinkHandledRef.current = true
 
-    async function openByPhone(phone: string) {
+    async function findByPhone(phone: string): Promise<Conversation | null> {
       try {
         const res = await fetch(`/api/whatsapp/conversations?search=${encodeURIComponent(phone)}&limit=20`)
-        if (res.ok) {
-          const data = await res.json()
-          // listConversations searches by phoneNumber ILIKE, so we may get
-          // partial matches — narrow to an exact-suffix match on digits.
-          const phoneDigits = phone.replace(/\D/g, '')
-          const match = (data.data ?? []).find((c: Conversation) => {
-            const convDigits = c.phoneNumber.replace(/\D/g, '')
-            return convDigits === phoneDigits || convDigits.endsWith(phoneDigits)
-          })
-          if (match) {
-            openConversation(match)
-            replaceInboxEntry(buildInboxUrl(match.id), { pushedOverList: isPushedOverList() })
-            return
-          }
-        }
+        if (!res.ok) return null
+        const data = await res.json()
+        // listConversations searches by phoneNumber ILIKE, so we may get
+        // partial matches — narrow to an exact-suffix match on digits.
+        const phoneDigits = phone.replace(/\D/g, '')
+        const match = (data.data ?? []).find((c: Conversation) => {
+          const convDigits = c.phoneNumber.replace(/\D/g, '')
+          return convDigits === phoneDigits || convDigits.endsWith(phoneDigits)
+        })
+        return match ?? null
       } catch {
-        // fall through to opening the start dialog
+        return null
+      }
+    }
+
+    async function openByPhone(phone: string) {
+      const match = await findByPhone(phone)
+      // The user opened a conversation while the lookup was in flight; theirs
+      // wins (no open, no URL change, no start dialog).
+      if (activeConvIdRef.current !== null) return
+      if (match) {
+        openConversation(match)
+        replaceInboxEntry(buildInboxUrl(match.id), { pushedOverList: isPushedOverList() })
+        return
       }
       // No existing conversation — open the start dialog pre-searched.
       setStartDialogPhone(phone)
@@ -291,6 +319,7 @@ export default function WhatsAppPage() {
 
   const handleSelectConversation = useCallback(
     (conv: Conversation) => {
+      if (backPendingRef.current) return
       openConversation(conv)
       if (liveConversationParam() !== conv.id) {
         navigateToConversation(conv.id)
@@ -414,7 +443,14 @@ export default function WhatsAppPage() {
         status: 'active',
       }
       conversationListRef.current?.addOrUpdateConversation(newConv)
+      if (backPendingRef.current) return
       showConversation(newConv)
+      // After an unmatched ?phone= deep link, drop the one-shot param from the
+      // entry underneath first, so back lands on the plain list and a reload
+      // doesn't rerun the lookup.
+      if (new URLSearchParams(window.location.search).has(PHONE_PARAM)) {
+        replaceInboxEntry(buildInboxUrl(null), { pushedOverList: false })
+      }
       navigateToConversation(newConv.id)
     },
     [navigateToConversation, showConversation],

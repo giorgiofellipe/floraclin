@@ -25,9 +25,7 @@ export const viewport: Viewport = {
   // insets (see globals.css body and the fixed/sticky bars); they are 0 on
   // devices without insets, so nothing moves there.
   viewportFit: 'cover',
-  // Android Chrome shrinks the layout viewport (and dvh) when the keyboard
-  // opens, so full-height screens keep their composer above it.
-  interactiveWidget: 'resizes-content',
+  // interactiveWidget is set only for the inbox, see (platform)/whatsapp/layout.tsx.
 }
 
 export const metadata: Metadata = {
