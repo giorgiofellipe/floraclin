@@ -184,7 +184,8 @@ describe('recordPaymentSchema', () => {
   it('accepts all valid payment methods', () => {
     const methods = ['pix', 'credit_card', 'debit_card', 'cash', 'transfer']
     for (const paymentMethod of methods) {
-      const result = recordPaymentSchema.safeParse({ ...validData, paymentMethod })
+      const card = paymentMethod.endsWith('_card') ? { terminalId: UUID2, installmentCount: 1 } : undefined
+      const result = recordPaymentSchema.safeParse({ ...validData, paymentMethod, card })
       expect(result.success).toBe(true)
     }
   })
@@ -358,7 +359,8 @@ describe('bulkPaySchema', () => {
   it('accepts all valid payment methods', () => {
     const methods = ['pix', 'credit_card', 'debit_card', 'cash', 'transfer']
     for (const paymentMethod of methods) {
-      const result = bulkPaySchema.safeParse({ ...validData, paymentMethod })
+      const card = paymentMethod.endsWith('_card') ? { terminalId: UUID2, installmentCount: 1 } : undefined
+      const result = bulkPaySchema.safeParse({ ...validData, paymentMethod, card })
       expect(result.success).toBe(true)
     }
   })
@@ -588,5 +590,46 @@ describe('paidAt bounds', () => {
     ['the next BR day on the bulk schema', false, bulk, '2026-09-04T03:00:00.000Z'],
   ])('%s: accepted is %s', (_label, accepted, parse, paidAt) => {
     expect(parse(paidAt)).toBe(accepted)
+  })
+})
+
+describe('card payment fields', () => {
+  const card = { terminalId: UUID2, installmentCount: 6 }
+  const entry = { patientId: UUID, description: 'x', totalAmount: 500, installmentCount: 1 }
+  const payment = { installmentId: UUID, expectedTotalDue: 150, amount: 150 }
+  const bulk = { installmentIds: [UUID] }
+
+  it.each([
+    ['recordPaymentSchema', recordPaymentSchema, payment],
+    ['bulkPaySchema', bulkPaySchema, bulk],
+    ['createFinancialEntrySchema', createFinancialEntrySchema, entry],
+  ] as const)('%s asks for the maquininha when the method is a card and none is sent', (_name, schema, base) => {
+    for (const paymentMethod of ['credit_card', 'debit_card']) {
+      const result = (schema as typeof recordPaymentSchema).safeParse({ ...base, paymentMethod })
+      expect(result.success).toBe(false)
+      expect(result.error?.issues.map((i) => i.message)).toContain('Selecione a maquininha')
+    }
+  })
+
+  it.each([
+    ['recordPaymentSchema', recordPaymentSchema, payment],
+    ['bulkPaySchema', bulkPaySchema, bulk],
+    ['createFinancialEntrySchema', createFinancialEntrySchema, entry],
+  ] as const)('%s accepts a card method with the maquininha and a non-card method without it', (_name, schema, base) => {
+    const s = schema as typeof recordPaymentSchema
+    expect(s.safeParse({ ...base, paymentMethod: 'credit_card', card }).success).toBe(true)
+    expect(s.safeParse({ ...base, paymentMethod: 'pix' }).success).toBe(true)
+    expect(s.safeParse({ ...base, paymentMethod: 'pix', card }).success).toBe(false)
+  })
+
+  it('a card charge with 3 patient installments is refused', () => {
+    const result = createFinancialEntrySchema.safeParse({
+      ...entry,
+      installmentCount: 3,
+      paymentMethod: 'credit_card',
+      card,
+    })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues.map((i) => i.message)).toContain('Pagamento em cartão gera uma única parcela')
   })
 })

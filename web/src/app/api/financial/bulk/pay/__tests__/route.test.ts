@@ -93,4 +93,17 @@ describe('POST /api/financial/bulk/pay', () => {
       paidAt: undefined,
     })
   })
+
+  it('passes the maquininha through to the bulk payment', async () => {
+    const card = { terminalId: '22222222-2222-4222-8222-222222222222', installmentCount: 3 }
+
+    const res = await callPost({ ...validBody, paymentMethod: 'credit_card', card })
+
+    expect(res.status).toBe(200)
+    expect(bulkPayInstallments).toHaveBeenCalledWith(
+      'tenant-1',
+      'user-1',
+      expect.objectContaining({ paymentMethod: 'credit_card', card }),
+    )
+  })
 })

@@ -18,6 +18,11 @@ vi.mock('@/lib/meta/resolve-prospect', () => ({
   resolveProspectForPatient: (...args: unknown[]) => resolveProspectForPatientMock(...args),
 }))
 
+const createCardPaymentTxMock = vi.fn()
+vi.mock('../card-payments', () => ({
+  createCardPaymentTx: (...args: unknown[]) => createCardPaymentTxMock(...args),
+}))
+
 const reportSideEffectFailureMock = vi.fn()
 vi.mock('@/lib/observability', () => ({
   reportSideEffectFailure: (...args: unknown[]) => reportSideEffectFailureMock(...args),
@@ -560,5 +565,93 @@ describe('recordPayment locking and audit', () => {
         },
       },
     })
+  })
+})
+
+describe('recordPayment by card', () => {
+  const TERMINAL_ID = '00000000-0000-0000-0000-00000000t001'
+  const CARD_PAYMENT_ID = '00000000-0000-0000-0000-00000000c001'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resolveMetaEventPrerequisitesMock.mockResolvedValue(null)
+    resolveProspectForPatientMock.mockResolvedValue(null)
+    enqueueMetaEventMock.mockResolvedValue({ inserted: true })
+    createCardPaymentTxMock.mockResolvedValue({ cardPaymentId: CARD_PAYMENT_ID })
+  })
+
+  // Regression: the cash inflow at swipe time overstates cash by the fee and
+  // dates it on the sale day instead of the repasse dates.
+  it('credit 6x opens a card payment for the gross amount, links the record to it and writes no cash inflow', async () => {
+    const { recordPayment } = await import('../financial')
+    const { cashMovements, paymentRecords, installments, financialEntries } = await import('@/db/schema')
+    const { tx, log } = routedTx((q) => {
+      const table = tableOf(q)
+      if (q.op === 'insert' && table === paymentRecords) return [{ id: 'pay-1' }]
+      if (q.op !== 'select') return undefined
+      if (table === installments) {
+        if (isLock(q)) return [lockedInstallmentRow({ amount: '3000.00' })]
+        return [{ status: 'pending', amountPaid: '0' }]
+      }
+      if (table === financialEntries) return isLock(q) ? [ENTRY] : [{ status: 'pending', totalAmount: '3000.00' }]
+      return []
+    })
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+    queuePrepareRows()
+
+    await recordPayment(TENANT, USER_ID, {
+      installmentId: INSTALLMENT_ID,
+      amount: 3000,
+      paymentMethod: 'credit_card',
+      card: { terminalId: TERMINAL_ID, installmentCount: 6 },
+      paidAt: '2026-05-22T15:00:00.000Z',
+      expectedTotalDue: 3000,
+    })
+
+    expect(createCardPaymentTxMock).toHaveBeenCalledWith(
+      tx,
+      TENANT,
+      USER_ID,
+      expect.objectContaining({
+        terminalId: TERMINAL_ID,
+        method: 'credit_card',
+        installmentCount: 6,
+        gross: 3000,
+        patientId: PATIENT_ID,
+        description: 'x',
+        paidAt: new Date('2026-05-22T15:00:00.000Z'),
+      }),
+    )
+    const link = log.find((q) => q.op === 'update' && tableOf(q) === paymentRecords && q.capture.value && 'cardPaymentId' in (q.capture.value as object))
+    expect(link?.capture.value).toEqual({ cardPaymentId: CARD_PAYMENT_ID })
+    expect(log.some((q) => q.op === 'insert' && tableOf(q) === cashMovements)).toBe(false)
+  })
+
+  it('pix still writes the cash inflow and opens no card payment', async () => {
+    const { recordPayment } = await import('../financial')
+    const { cashMovements, paymentRecords, installments, financialEntries } = await import('@/db/schema')
+    const { tx, log } = routedTx((q) => {
+      const table = tableOf(q)
+      if (q.op === 'insert' && table === paymentRecords) return [{ id: 'pay-1' }]
+      if (q.op !== 'select') return undefined
+      if (table === installments) {
+        return isLock(q) ? [lockedInstallmentRow({ amount: '3000.00' })] : [{ status: 'pending', amountPaid: '0' }]
+      }
+      if (table === financialEntries) return isLock(q) ? [ENTRY] : [{ status: 'pending', totalAmount: '3000.00' }]
+      return []
+    })
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+    queuePrepareRows()
+
+    await recordPayment(TENANT, USER_ID, {
+      installmentId: INSTALLMENT_ID,
+      amount: 3000,
+      paymentMethod: 'pix',
+      paidAt: '2026-05-22T15:00:00.000Z',
+      expectedTotalDue: 3000,
+    })
+
+    expect(createCardPaymentTxMock).not.toHaveBeenCalled()
+    expect(log.some((q) => q.op === 'insert' && tableOf(q) === cashMovements)).toBe(true)
   })
 })

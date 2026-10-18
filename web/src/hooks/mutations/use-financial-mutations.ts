@@ -24,10 +24,28 @@ async function mutateJson(url: string, method: string, data?: unknown) {
   return res.json()
 }
 
+export interface CardPaymentPayload {
+  terminalId: string
+  installmentCount: number
+}
+
+export interface CreateFinancialEntryPayload {
+  patientId: string
+  procedureRecordId?: string
+  appointmentId?: string
+  description: string
+  totalAmount: number
+  installmentCount: number
+  customDueDates?: string[]
+  notes?: string
+  paymentMethod?: string
+  card?: CardPaymentPayload
+}
+
 export function useCreateFinancialEntry() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (data: Record<string, unknown>) => mutateJson('/api/financial', 'POST', data),
+    mutationFn: (data: CreateFinancialEntryPayload) => mutateJson('/api/financial', 'POST', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
       queryClient.invalidateQueries({ queryKey: ['financial', 'revenue'] })
@@ -49,6 +67,7 @@ export function usePayInstallment() {
       notes,
       expectedTotalDue,
       acceptOverpayment,
+      card,
     }: {
       id: string
       amount: number
@@ -57,6 +76,7 @@ export function usePayInstallment() {
       notes?: string
       expectedTotalDue: number
       acceptOverpayment?: boolean
+      card?: CardPaymentPayload
     }) =>
       mutateJson(`/api/financial/installments/${id}/pay`, 'PUT', {
         amount,
@@ -65,6 +85,7 @@ export function usePayInstallment() {
         notes,
         expectedTotalDue,
         acceptOverpayment,
+        card,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
@@ -105,6 +126,7 @@ export function useBulkPay() {
       installmentIds: string[]
       paymentMethod: string
       paidAt?: string
+      card?: CardPaymentPayload
     }) => mutateJson('/api/financial/bulk/pay', 'POST', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })

@@ -18,6 +18,11 @@ vi.mock('@/lib/meta/resolve-prospect', () => ({
   resolveProspectForPatient: (...args: unknown[]) => resolveProspectForPatientMock(...args),
 }))
 
+const createCardPaymentTxMock = vi.fn()
+vi.mock('../card-payments', () => ({
+  createCardPaymentTx: (...args: unknown[]) => createCardPaymentTxMock(...args),
+}))
+
 const reportSideEffectFailureMock = vi.fn()
 vi.mock('@/lib/observability', () => ({
   reportSideEffectFailure: (...args: unknown[]) => reportSideEffectFailureMock(...args),
@@ -380,5 +385,102 @@ describe('bulkPayInstallments dating and audit', () => {
         }),
       }),
     ])
+  })
+})
+
+describe('bulkPayInstallments by card', () => {
+  const TERMINAL_ID = '00000000-0000-0000-0000-00000000t001'
+  const CARD_PAYMENT_ID = '00000000-0000-0000-0000-00000000c001'
+  const OTHER_PATIENT_ID = '00000000-0000-0000-0000-00000000p002'
+  const card = { terminalId: TERMINAL_ID, installmentCount: 3 }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resolveMetaEventPrerequisitesMock.mockResolvedValue(null)
+    resolveProspectForPatientMock.mockResolvedValue(null)
+    enqueueMetaEventMock.mockResolvedValue({ inserted: true })
+    createCardPaymentTxMock.mockResolvedValue({ cardPaymentId: CARD_PAYMENT_ID })
+  })
+
+  // A card transaction belongs to one patient, so one swipe cannot settle
+  // the debts of two.
+  it('refuses a card payment across installments of different patients before writing anything', async () => {
+    const { bulkPayInstallments } = await import('../financial')
+    const { installments } = await import('@/db/schema')
+    const { tx, log } = routedTx((q) => {
+      if (q.op !== 'select') return undefined
+      if (tableOf(q) === installments) {
+        return [
+          { id: 'i1', financialEntryId: 'e1' },
+          { id: 'i2', financialEntryId: 'e2' },
+        ]
+      }
+      return [
+        { id: 'e1', status: 'pending', patientId: PATIENT_ID, description: 'a' },
+        { id: 'e2', status: 'pending', patientId: OTHER_PATIENT_ID, description: 'b' },
+      ]
+    })
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+    queuePrepareRows()
+
+    await expect(
+      bulkPayInstallments(TENANT, USER_ID, {
+        installmentIds: ['i1', 'i2'],
+        paymentMethod: 'credit_card',
+        card,
+      }),
+    ).rejects.toMatchObject({ code: 'CARD_BULK_MULTIPLE_PATIENTS' })
+
+    expect(log.some((q) => q.op === 'insert')).toBe(false)
+    expect(createCardPaymentTxMock).not.toHaveBeenCalled()
+  })
+
+  it('three installments of one patient become one card payment for their sum and no cash inflow', async () => {
+    const { bulkPayInstallments } = await import('../financial')
+    const { cashMovements, installments, paymentRecords, financialEntries } = await import('@/db/schema')
+    const ids = ['i1', 'i2', 'i3']
+    let recordSeq = 0
+    const { tx, log } = routedTx((q) => {
+      const table = tableOf(q)
+      if (q.op === 'insert' && table === paymentRecords) return [{ id: `pay-${++recordSeq}` }]
+      if (q.op !== 'select') return undefined
+      const fields = Object.keys((q.fields as object | undefined) ?? {})
+      if (table === installments) {
+        if (isLock(q)) return ids.map((id) => ({ id, financialEntryId: ENTRY_ID }))
+        if (fields.includes('amountPaid')) return [{ status: 'paid', amountPaid: '100.00' }]
+        return [typedInstallmentRow({ amount: '100.00', dueDate: '2099-01-01' })]
+      }
+      if (table === financialEntries) {
+        return fields.includes('patientId') ? [ENTRY] : [{ status: 'pending', totalAmount: '300.00' }]
+      }
+      return []
+    })
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+    queuePrepareRows()
+
+    await bulkPayInstallments(TENANT, USER_ID, {
+      installmentIds: ids,
+      paymentMethod: 'credit_card',
+      card,
+      paidAt: '2026-05-22T15:00:00.000Z',
+    })
+
+    expect(createCardPaymentTxMock).toHaveBeenCalledTimes(1)
+    expect(createCardPaymentTxMock).toHaveBeenCalledWith(
+      tx,
+      TENANT,
+      USER_ID,
+      expect.objectContaining({
+        terminalId: TERMINAL_ID,
+        method: 'credit_card',
+        installmentCount: 3,
+        gross: 300,
+        patientId: PATIENT_ID,
+        description: 'x',
+      }),
+    )
+    const link = log.find((q) => q.op === 'update' && tableOf(q) === paymentRecords && q.capture.value && 'cardPaymentId' in (q.capture.value as object))
+    expect(link?.capture.value).toEqual({ cardPaymentId: CARD_PAYMENT_ID })
+    expect(log.some((q) => q.op === 'insert' && tableOf(q) === cashMovements)).toBe(false)
   })
 })

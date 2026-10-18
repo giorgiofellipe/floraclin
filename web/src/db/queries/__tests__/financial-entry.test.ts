@@ -25,6 +25,13 @@ function chain(result: unknown) {
 const dbMock = { select: vi.fn() }
 vi.mock('@/db/client', () => ({ db: dbMock }))
 
+const sumCardFeesForEntriesMock = vi.fn()
+const getCardPaymentSummariesMock = vi.fn()
+vi.mock('../card-payments', () => ({
+  sumCardFeesForEntries: (...args: unknown[]) => sumCardFeesForEntriesMock(...args),
+  getCardPaymentSummaries: (...args: unknown[]) => getCardPaymentSummariesMock(...args),
+}))
+
 const TENANT = '00000000-0000-0000-0000-00000000a001'
 const PATIENT_ID = '00000000-0000-0000-0000-00000000p001'
 const ENTRY_ID = '00000000-0000-0000-0000-00000000e001'
@@ -285,7 +292,7 @@ describe('createFinancialEntry', () => {
     const tx = { select: vi.fn(), insert: vi.fn() }
     tx.insert.mockReturnValueOnce(chain([{ id: ENTRY_ID }])) // entry
     tx.select.mockReturnValueOnce(chain(settings)) // financial settings
-    tx.insert.mockReturnValueOnce(chainCapturing(undefined, installmentsInsert))
+    tx.insert.mockReturnValueOnce(chainCapturing([{ id: 'i1', installmentNumber: 1 }, { id: 'i2', installmentNumber: 2 }], installmentsInsert))
 
     await createFinancialEntry(
       TENANT,
@@ -298,6 +305,76 @@ describe('createFinancialEntry', () => {
       expect.objectContaining(terms),
       expect.objectContaining(terms),
     ])
+  })
+})
+
+describe('createFinancialEntry dates and payment method', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  async function create(data: Record<string, unknown>) {
+    const { createFinancialEntry } = await import('../financial')
+    dbMock.select.mockReturnValueOnce(chain([{ id: PATIENT_ID }])) // patient ownership
+    const entryInsert: { value?: unknown } = {}
+    const installmentsInsert: { value?: unknown } = {}
+    const tx = { select: vi.fn(), insert: vi.fn() }
+    tx.insert.mockReturnValueOnce(chainCapturing([{ id: ENTRY_ID }], entryInsert))
+    tx.select.mockReturnValueOnce(chain([])) // financial settings
+    tx.insert.mockReturnValueOnce(
+      chainCapturing([{ id: 'i2', installmentNumber: 2 }, { id: 'i1', installmentNumber: 1 }], installmentsInsert),
+    )
+    const entry = await createFinancialEntry(
+      TENANT,
+      'user-1',
+      { patientId: PATIENT_ID, description: 'Procedimento', totalAmount: 300, installmentCount: 2, ...data } as never,
+      tx as never,
+    )
+    return { entry, entryInsert, installmentsInsert }
+  }
+
+  // 22:00 BRT on Oct 18 is already Oct 19 in UTC.
+  it('dates the first installment on the BR day, not the UTC day, on a UTC host', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-19T01:00:00.000Z'))
+
+    const { installmentsInsert } = await create({})
+
+    expect((installmentsInsert.value as { dueDate: string }[]).map((r) => r.dueDate)).toEqual([
+      '2026-10-18',
+      '2026-11-17',
+    ])
+  })
+
+  it('stores the planned method and card parcela count, and returns the installment ids in order', async () => {
+    const { entry, entryInsert } = await create({
+      installmentCount: 2,
+      paymentMethod: 'credit_card',
+      cardInstallmentCount: 6,
+    })
+
+    expect(entryInsert.value).toMatchObject({ paymentMethod: 'credit_card', cardInstallmentCount: 6 })
+    expect((entry as { installmentIds: string[] }).installmentIds).toEqual(['i1', 'i2'])
+  })
+
+  it('derives a 1x card parcela count for debit and from the card payload for credit', async () => {
+    const debit = await create({
+      installmentCount: 1,
+      paymentMethod: 'debit_card',
+      card: { terminalId: 't', installmentCount: 1 },
+    })
+    const credit = await create({
+      installmentCount: 1,
+      paymentMethod: 'credit_card',
+      card: { terminalId: 't', installmentCount: 4 },
+    })
+
+    expect(debit.entryInsert.value).toMatchObject({ paymentMethod: 'debit_card', cardInstallmentCount: 1 })
+    expect(credit.entryInsert.value).toMatchObject({ paymentMethod: 'credit_card', cardInstallmentCount: 4 })
   })
 })
 
@@ -418,5 +495,62 @@ describe('getRevenueOverview overdue amount', () => {
     const result = await getRevenueOverview(TENANT, '2026-05-01', '2026-09-30')
 
     expect(result.summary.totalOverdue).toBe(689.7)
+  })
+})
+
+describe('getRevenueOverview card fees', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('subtracts the card fees of the period from net profit, along with expenses', async () => {
+    const { getRevenueOverview } = await import('../financial')
+
+    dbMock.select.mockReturnValueOnce(chain([{ totalReceived: 3000 }]))
+    dbMock.select.mockReturnValueOnce(chain([])) // monthly
+    dbMock.select.mockReturnValueOnce(chain([])) // by procedure type
+    dbMock.select.mockReturnValueOnce(chain([])) // by payment method
+    dbMock.select.mockReturnValueOnce(chain([{ totalExpenses: 500, totalPendingExpenses: 0 }]))
+    dbMock.select.mockReturnValueOnce(chain([])) // pending installments
+    sumCardFeesForEntriesMock.mockResolvedValueOnce(269.7)
+
+    const result = await getRevenueOverview(TENANT, '2026-10-01', '2026-10-31')
+
+    expect(sumCardFeesForEntriesMock).toHaveBeenCalledWith(TENANT, expect.any(Array))
+    expect(result.summary.totalCardFees).toBe(269.7)
+    expect(result.summary.netProfit).toBeCloseTo(2230.3, 2)
+  })
+})
+
+describe('getFinancialEntry card payments', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('attaches the card summary to a card payment record, null to a cash one, and exposes the planned method', async () => {
+    const { getFinancialEntry } = await import('../financial')
+    const summary = {
+      terminalName: 'Stone',
+      method: 'credit_card',
+      installmentCount: 6,
+      pendingRepasses: 5,
+      receivedRepasses: 1,
+      linkedPaymentCount: 3,
+    }
+    queueEntrySelects({
+      entry: [entryRow({ paymentMethod: 'credit_card', cardInstallmentCount: 6 })],
+      installments: [installmentRow({ status: 'paid' })],
+      payments: [
+        { id: 'p-card', installmentId: INSTALLMENT_ID, amount: '750.00', cardPaymentId: 'cp1', paidAt: '2026-05-22T15:00:00.000Z', recordedAt: '2026-05-22T15:00:00.000Z' },
+        { id: 'p-cash', installmentId: INSTALLMENT_ID, amount: '10.00', cardPaymentId: null, paidAt: '2026-05-22T15:00:00.000Z', recordedAt: '2026-05-22T15:00:00.000Z' },
+      ],
+    })
+    getCardPaymentSummariesMock.mockResolvedValueOnce(new Map([['cp1', summary]]))
+
+    const result = await getFinancialEntry(TENANT, ENTRY_ID)
+
+    expect(getCardPaymentSummariesMock).toHaveBeenCalledWith(expect.anything(), TENANT, ['cp1'])
+    expect(result?.installments[0].paymentRecords.map((p) => p.card)).toEqual([summary, null])
+    expect(result).toMatchObject({ paymentMethod: 'credit_card', cardInstallmentCount: 6 })
   })
 })
