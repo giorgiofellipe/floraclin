@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { routedTx, tableOf, isLock, whereParams, type LoggedQuery } from '@/tests/mocks/drizzle-tx'
-import { cardPayments, cardRepasses, cardTerminals, cashMovements } from '@/db/schema'
+import { routedTx, tableOf, isLock, whereParams, selectSql, type LoggedQuery } from '@/tests/mocks/drizzle-tx'
+import { eq } from 'drizzle-orm'
+import { drizzle } from 'drizzle-orm/postgres-js'
+import { cardPayments, cardRepasses, cardTerminals, cashMovements, financialEntries, paymentRecords } from '@/db/schema'
 import { parseBrDate } from '@/lib/dates'
 import { BusinessError } from '@/lib/errors'
 
-const dbMock = { transaction: vi.fn(), select: vi.fn() }
+const dbMock = { transaction: vi.fn(), select: vi.fn(), selectDistinct: vi.fn() }
 vi.mock('@/db/client', () => ({ db: dbMock }))
 
 const createAuditLogMock = vi.fn()
@@ -396,5 +398,209 @@ describe('adjustCardRepasse', () => {
     expect(error).toBeInstanceOf(BusinessError)
     expect(error.code).toBe(code)
     expect(inserts(log, cashMovements)).toHaveLength(0)
+  })
+})
+
+describe('listCardRepasses', () => {
+  const OTHER_TERMINAL = '00000000-0000-0000-0000-00000000t002'
+  const filters = { dateFrom: '2026-10-01', dateTo: '2026-10-31', page: 2, limit: 10 }
+
+  /** Answers the rows, count and pending-sum queries (issued in that order by Promise.all). */
+  function mockDb(sumTotal: string | null) {
+    const { tx, log } = routedTx((q) => {
+      const index = log.indexOf(q)
+      if (index === 0) return [{ id: REPASSE_ID }]
+      if (index === 1) return [{ total: 23 }]
+      return [{ total: sumTotal }]
+    })
+    dbMock.select.mockImplementation(tx.select)
+    return log
+  }
+
+  it('scopes all three queries to the tenant and date window', async () => {
+    const { listCardRepasses } = await import('../card-payments')
+    const log = mockDb('0')
+
+    await listCardRepasses(TENANT, filters)
+
+    expect(log).toHaveLength(3)
+    for (const q of log) {
+      expect(whereParams(q.capture)).toEqual(expect.arrayContaining([TENANT, '2026-10-01', '2026-10-31']))
+    }
+  })
+
+  it('applies the status filter to rows and total but keeps pendingNetTotal on pending, as numbers', async () => {
+    const { listCardRepasses } = await import('../card-payments')
+    const log = mockDb('1234.50')
+
+    const result = await listCardRepasses(TENANT, { ...filters, status: 'received' })
+
+    const [rowsQuery, countQuery, sumQuery] = log
+    expect(whereParams(rowsQuery.capture)).toContain('received')
+    expect(whereParams(countQuery.capture)).toContain('received')
+    expect(whereParams(sumQuery.capture)).toContain('pending')
+    expect(whereParams(sumQuery.capture)).not.toContain('received')
+    expect(result.total).toBe(23)
+    expect(result.pendingNetTotal).toBe(1234.5)
+    expect(result.rows).toEqual([{ id: REPASSE_ID }])
+  })
+
+  it('applies the terminal filter to all three queries, and pages with limit and offset', async () => {
+    const { listCardRepasses } = await import('../card-payments')
+    const log = mockDb(null)
+
+    const result = await listCardRepasses(TENANT, { ...filters, terminalId: OTHER_TERMINAL })
+
+    for (const q of log) expect(whereParams(q.capture)).toContain(OTHER_TERMINAL)
+    expect(log[0].capture.calls).toEqual(
+      expect.arrayContaining([
+        ['limit', [10]],
+        ['offset', [10]],
+      ]),
+    )
+    expect(result.pendingNetTotal).toBe(0)
+  })
+
+  it('does not filter by terminal or status when none are given', async () => {
+    const { listCardRepasses } = await import('../card-payments')
+    const log = mockDb('0')
+
+    await listCardRepasses(TENANT, filters)
+
+    const params = whereParams(log[0].capture)
+    expect(params).not.toContain('pending')
+    expect(params).not.toContain('received')
+    expect(params).not.toContain(OTHER_TERMINAL)
+  })
+})
+
+describe('getCardPaymentSummaries', () => {
+  const OTHER_PAYMENT = '00000000-0000-0000-0000-00000000c002'
+
+  function mockTx() {
+    return routedTx((q) => {
+      const table = tableOf(q)
+      if (table === cardPayments) {
+        return [
+          { id: PAYMENT_ID, method: 'credit_card', installmentCount: 3, terminalName: 'Stone' },
+          { id: OTHER_PAYMENT, method: 'debit_card', installmentCount: 1, terminalName: 'Cielo' },
+        ]
+      }
+      if (table === cardRepasses) {
+        return [
+          { cardPaymentId: PAYMENT_ID, status: 'pending', total: '2' },
+          { cardPaymentId: PAYMENT_ID, status: 'received', total: '1' },
+          { cardPaymentId: PAYMENT_ID, status: 'cancelled', total: '4' },
+          { cardPaymentId: OTHER_PAYMENT, status: 'received', total: '1' },
+        ]
+      }
+      if (table === paymentRecords) return [{ cardPaymentId: PAYMENT_ID, total: '2' }]
+      return undefined
+    })
+  }
+
+  it('counts pending and received repasses and linked records per payment as numbers, ignoring cancelled', async () => {
+    const { getCardPaymentSummaries } = await import('../card-payments')
+    const { tx } = mockTx()
+
+    const summaries = await getCardPaymentSummaries(tx as never, TENANT, [PAYMENT_ID, OTHER_PAYMENT])
+
+    expect(summaries.get(PAYMENT_ID)).toEqual({
+      terminalName: 'Stone',
+      method: 'credit_card',
+      installmentCount: 3,
+      pendingRepasses: 2,
+      receivedRepasses: 1,
+      linkedPaymentCount: 2,
+    })
+    expect(summaries.get(OTHER_PAYMENT)).toMatchObject({
+      pendingRepasses: 0,
+      receivedRepasses: 1,
+      linkedPaymentCount: 0,
+    })
+  })
+
+  it('scopes every query to the tenant and excludes reversed payment records', async () => {
+    const { getCardPaymentSummaries } = await import('../card-payments')
+    const { tx, log } = mockTx()
+
+    await getCardPaymentSummaries(tx as never, TENANT, [PAYMENT_ID])
+
+    expect(log).toHaveLength(3)
+    for (const q of log) expect(whereParams(q.capture)).toEqual(expect.arrayContaining([TENANT, PAYMENT_ID]))
+    const linkedQuery = log.find((q) => tableOf(q) === paymentRecords)!
+    expect(selectSql(linkedQuery.fields, linkedQuery.capture)).toMatch(/"reversed_at" is null/)
+  })
+
+  it('returns an empty map without querying when given no ids', async () => {
+    const { getCardPaymentSummaries } = await import('../card-payments')
+    const { tx, log } = mockTx()
+
+    const summaries = await getCardPaymentSummaries(tx as never, TENANT, [])
+
+    expect(summaries.size).toBe(0)
+    expect(log).toHaveLength(0)
+  })
+})
+
+describe('sumCardFeesForEntries', () => {
+  /** The first db.select builds the payments subquery (real, so it renders into the outer SQL); the second is the sum. */
+  function mockDb(total: string | null) {
+    const offline = drizzle.mock()
+    const { tx, log } = routedTx(() => [{ total }])
+    dbMock.select.mockImplementationOnce((fields: never) => offline.select(fields)).mockImplementation(tx.select)
+    return log
+  }
+
+  async function sumSql(total: string | null) {
+    const { sumCardFeesForEntries } = await import('../card-payments')
+    const log = mockDb(total)
+    const result = await sumCardFeesForEntries(TENANT, [eq(financialEntries.tenantId, TENANT)])
+    const query = log[0]
+    return { result, query, sql: selectSql(query.fields, query.capture) }
+  }
+
+  it('sums fees of non-cancelled repasses of non-reversed card payments for the tenant, as a number', async () => {
+    const { result, query, sql } = await sumSql('45.67')
+
+    expect(result).toBe(45.67)
+    expect(whereParams(query.capture)).toEqual(expect.arrayContaining([TENANT, 'cancelled']))
+    expect(sql).toMatch(/"floraclin"\."card_repasses"\."tenant_id" = \$/)
+    expect(sql).toMatch(/"floraclin"\."card_repasses"\."status" <> \$/)
+    expect(sql).toMatch(/"floraclin"\."card_payments"\."reversed_at" is null/)
+  })
+
+  it('only counts card payments of non-reversed payment records that match the entry conditions', async () => {
+    const { sql } = await sumSql('0')
+
+    expect(sql).toMatch(/"floraclin"\."card_repasses"\."card_payment_id" in \(select "floraclin"\."payment_records"\."card_payment_id"/)
+    expect(sql).toMatch(/"floraclin"\."payment_records"\."card_payment_id" is not null/)
+    expect(sql).toMatch(/"floraclin"\."payment_records"\."reversed_at" is null/)
+    expect(sql).toMatch(/"floraclin"\."financial_entries"\."tenant_id" = \$/)
+  })
+
+  it('returns 0 when there is nothing to sum', async () => {
+    expect((await sumSql(null)).result).toBe(0)
+  })
+})
+
+describe('listTenantsWithDueRepasses', () => {
+  function mockDb(rows: unknown[]) {
+    const { tx, log } = routedTx(() => rows)
+    dbMock.selectDistinct.mockImplementation(tx.select)
+    return log
+  }
+
+  it('returns the tenant ids of pending repasses due on or before today on non-reversed payments', async () => {
+    const { listTenantsWithDueRepasses } = await import('../card-payments')
+    const log = mockDb([{ tenantId: TENANT }, { tenantId: 'tenant-2' }])
+
+    const result = await listTenantsWithDueRepasses(TODAY)
+
+    expect(result).toEqual([TENANT, 'tenant-2'])
+    expect(whereParams(log[0].capture)).toEqual(expect.arrayContaining(['pending', TODAY]))
+    const sql = selectSql(log[0].fields, log[0].capture)
+    expect(sql).toMatch(/"floraclin"\."card_repasses"\."expected_date" <= \$/)
+    expect(sql).toMatch(/"floraclin"\."card_payments"\."reversed_at" is null/)
   })
 })
