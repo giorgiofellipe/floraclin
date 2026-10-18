@@ -142,7 +142,7 @@ export function StartConversationDialog({
             placeholder="Buscar paciente por nome ou telefone..."
             value={patientSearch}
             onChange={(e) => handlePatientSearchChange(e.target.value)}
-            className="pl-8 h-9 text-sm"
+            className="pl-8 h-11 md:h-9"
             autoFocus
           />
         </div>

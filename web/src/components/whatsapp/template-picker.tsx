@@ -181,7 +181,14 @@ export function TemplatePicker({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <button type="button" onClick={() => setSelectedTemplate(null)} className="text-mid hover:text-charcoal">
+              {/* Negative margins keep the icon where it was while the hit
+                  area grows to 44px on mobile. */}
+              <button
+                type="button"
+                onClick={() => setSelectedTemplate(null)}
+                aria-label="Voltar para templates"
+                className="-my-3 -ml-3.5 inline-flex size-11 shrink-0 items-center justify-center text-mid hover:text-charcoal md:m-0 md:size-auto"
+              >
                 <ArrowLeft className="h-4 w-4" />
               </button>
               Preencher variáveis
@@ -267,7 +274,7 @@ export function TemplatePicker({
             placeholder="Buscar template..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 h-8 text-sm"
+            className="pl-8 h-11 md:h-8"
           />
         </div>
 
@@ -334,10 +341,10 @@ function TemplateCard({
       onClick={() => onSelect(template)}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-          <div>
-            <p className="text-sm font-medium">{template.name}</p>
+          <div className="min-w-0">
+            <p className="text-sm font-medium wrap-anywhere">{template.name}</p>
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className="text-xs text-muted-foreground">{template.language}</span>
               {purposeLabel && (

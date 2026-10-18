@@ -8,11 +8,13 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { MessageBubble, type Message } from './message-bubble'
 import { TemplatePicker } from './template-picker'
+import { MOBILE_TAP_HEIGHT, MOBILE_TAP_TARGET } from './tap-targets'
 import type { Conversation } from './conversation-list'
 import { formatBrPhone } from '@/lib/phone'
 import { findBlueprintForTemplateName } from '@/lib/whatsapp-blueprints'
 import { toast } from 'sonner'
 import {
+  ArrowLeft,
   Send,
   FileText,
   CheckCheck,
@@ -31,6 +33,11 @@ const WINDOW_CLOSED_HELP =
   'as mensagens da fila são enviadas. Se ele não responder em 24h, elas expiram. ' +
   'Cada mensagem enviada usa créditos.'
 
+export const MESSAGES_PAGE_SIZE = 50
+
+// Header actions collapse to 44px icon buttons on mobile; labelled on desktop.
+const HEADER_ACTION_CLASS = 'h-11 min-w-11 px-0 md:h-7 md:min-w-0 md:px-2.5'
+
 export interface ChatPanelHandle {
   addMessage: (msg: Message) => void
   updateMessageStatus: (data: { messageId: string; status: string; metaMessageId?: string; errorCode?: string | null }) => void
@@ -41,6 +48,9 @@ interface ChatPanelProps {
   conversation: Conversation | null
   onMarkRead?: (convId: string) => void
   draft?: string | null
+  /** Mobile only: returns to the conversation list. */
+  onBack?: () => void
+  className?: string
 }
 
 function isWindowOpen(lastInboundAt: string | null): boolean {
@@ -87,7 +97,7 @@ function isConfirmationTemplate(templateName: string | null): boolean {
 }
 
 export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
-  function ChatPanel({ conversation, onMarkRead, draft }, ref) {
+  function ChatPanel({ conversation, onMarkRead, draft, onBack, className }, ref) {
     const [messages, setMessages] = useState<Message[]>([])
     const [loading, setLoading] = useState(false)
     const [loadingMore, setLoadingMore] = useState(false)
@@ -102,9 +112,14 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const prevConvIdRef = useRef<string | null>(null)
     const firstQueueRef = useRef(true)
+    // Jump (no animation) to the latest message when a conversation opens, so
+    // the user isn't animated through the whole history; animate afterwards.
+    const jumpOnNextScrollRef = useRef(true)
 
     const scrollToBottom = useCallback(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      const behavior: ScrollBehavior = jumpOnNextScrollRef.current ? 'auto' : 'smooth'
+      jumpOnNextScrollRef.current = false
+      messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' })
     }, [])
 
     const fetchMessages = useCallback(
@@ -118,7 +133,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
         try {
           const params = new URLSearchParams({
             page: String(pageNum),
-            limit: '50',
+            limit: String(MESSAGES_PAGE_SIZE),
           })
           const res = await fetch(
             `/api/whatsapp/conversations/${convId}/messages?${params}`
@@ -129,7 +144,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
           }
           const data = await res.json()
           const fetched: Message[] = data.data ?? []
-          setHasMore(fetched.length === 50)
+          setHasMore(fetched.length === MESSAGES_PAGE_SIZE)
           if (append) {
             setMessages((prev) => [...fetched, ...prev])
           } else {
@@ -151,6 +166,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
     useEffect(() => {
       if (!conversation) {
         setMessages([])
+        // Reopening the same conversation must refetch.
+        prevConvIdRef.current = null
         return
       }
       if (conversation.id !== prevConvIdRef.current) {
@@ -158,16 +175,19 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
         setPage(1)
         setInputText(draft ?? '')
         firstQueueRef.current = true
+        jumpOnNextScrollRef.current = true
         fetchMessages(conversation.id, 1, false)
       }
     }, [conversation, fetchMessages])
 
-    // Scroll to bottom when messages load initially
+    // Scroll to the latest message on open and whenever a newer one arrives.
+    // Keyed on the last id so "Carregar anteriores" (prepend) keeps position.
+    const lastMessageId = messages.at(-1)?.id
     useEffect(() => {
-      if (!loading && messages.length > 0) {
+      if (!loading && lastMessageId) {
         scrollToBottom()
       }
-    }, [loading, messages.length, scrollToBottom])
+    }, [loading, lastMessageId, scrollToBottom])
 
     const addMessage = useCallback(
       (msg: Message) => {
@@ -176,9 +196,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
           if (prev.some((m) => m.id === msg.id)) return prev
           return [...prev, msg]
         })
-        setTimeout(() => scrollToBottom(), 100)
       },
-      [conversation, scrollToBottom]
+      [conversation]
     )
 
     const updateMessageStatus = useCallback(
@@ -346,7 +365,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
     // Empty state -- no conversation selected
     if (!conversation) {
       return (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-[#F0F2F5]">
+        <div className={cn('flex flex-1 flex-col items-center justify-center gap-3 bg-[#F0F2F5]', className)}>
           <div className="rounded-full bg-[#25D366]/10 p-6">
             <MessageSquare className="size-12 text-[#25D366]" />
           </div>
@@ -363,44 +382,57 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
     const messageGroups = groupMessagesByDate(messages)
 
     return (
-      <div className="flex flex-1 flex-col">
+      <div className={cn('flex min-w-0 flex-1 flex-col', className)}>
         {/* Header */}
-        <div className="flex items-center justify-between border-b bg-[#F0F2F5] px-4 py-2">
-          <div className="flex items-center gap-3">
-            <Avatar>
+        <div className="flex items-center justify-between gap-2 border-b bg-[#F0F2F5] py-2 pr-2 pl-1 md:px-4">
+          <div className="flex min-w-0 items-center gap-2 md:gap-3">
+            {onBack && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn('md:hidden', MOBILE_TAP_TARGET)}
+                onClick={onBack}
+                aria-label="Voltar para conversas"
+              >
+                <ArrowLeft className="size-5 text-[#54656F]" />
+              </Button>
+            )}
+            <Avatar className="shrink-0">
               <AvatarFallback className="bg-[#DFE5E7] text-[#54656F] text-xs">
                 {displayName.slice(0, 2).toUpperCase()}
               </AvatarFallback>
             </Avatar>
-            <div>
-              <h3 className="text-sm font-medium text-[#111B21]">{displayName}</h3>
-              <p className="text-xs text-[#667781]">{formatBrPhone(conversation.phoneNumber)}</p>
+            <div className="min-w-0">
+              <h3 className="truncate text-sm font-medium text-[#111B21]">{displayName}</h3>
+              <p className="truncate text-xs text-[#667781]">{formatBrPhone(conversation.phoneNumber)}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1 md:gap-2">
             {conversation.unreadCount > 0 && (
               <Button
                 variant="ghost"
                 size="sm"
+                className={HEADER_ACTION_CLASS}
                 onClick={handleMarkRead}
                 disabled={markingRead}
+                aria-label="Marcar como lido"
               >
-                <CheckCheck className="mr-1 size-3.5" />
-                Marcar como lido
+                <CheckCheck className="size-3.5 md:mr-1" />
+                <span className="hidden md:inline">Marcar como lido</span>
               </Button>
             )}
 
             {conversation.patientId ? (
-              <Button variant="outline" size="sm" nativeButton={false} render={<Link href={`/pacientes/${conversation.patientId}`} />}>
-                <User className="mr-1 size-3.5" />
-                Ver paciente
+              <Button variant="outline" size="sm" className={HEADER_ACTION_CLASS} aria-label="Ver paciente" nativeButton={false} render={<Link href={`/pacientes/${conversation.patientId}`} />}>
+                <User className="size-3.5 md:mr-1" />
+                <span className="hidden md:inline">Ver paciente</span>
               </Button>
             ) : (
               conversation.prospectId && (
-                <Button variant="outline" size="sm" nativeButton={false} render={<Link href={`/pacientes?novo=1&telefone=${encodeURIComponent(formatBrPhone(conversation.phoneNumber))}&nome=${encodeURIComponent(conversation.profileName ?? '')}`} />}>
-                  <UserPlus className="mr-1 size-3.5" />
-                  Converter
+                <Button variant="outline" size="sm" className={HEADER_ACTION_CLASS} aria-label="Converter" nativeButton={false} render={<Link href={`/pacientes?novo=1&telefone=${encodeURIComponent(formatBrPhone(conversation.phoneNumber))}&nome=${encodeURIComponent(conversation.profileName ?? '')}`} />}>
+                  <UserPlus className="size-3.5 md:mr-1" />
+                  <span className="hidden md:inline">Converter</span>
                 </Button>
               )
             )}
@@ -409,7 +441,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 
         {/* Messages area */}
         <div
-          className="flex-1 overflow-y-auto bg-[#ECE5DD] px-4 py-3"
+          className="flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain bg-[#ECE5DD] px-3 py-3 md:px-4"
           style={{
             backgroundImage:
               'url("data:image/svg+xml,%3Csvg width=\'200\' height=\'200\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cdefs%3E%3Cpattern id=\'p\' width=\'40\' height=\'40\' patternUnits=\'userSpaceOnUse\'%3E%3Ccircle cx=\'20\' cy=\'20\' r=\'1\' fill=\'%23d5cec3\' opacity=\'0.3\'/%3E%3C/pattern%3E%3C/defs%3E%3Crect fill=\'url(%23p)\' width=\'200\' height=\'200\'/%3E%3C/svg%3E")',
@@ -431,7 +463,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                 size="sm"
                 onClick={handleLoadMore}
                 disabled={loadingMore}
-                className="bg-white/80 text-xs"
+                className={cn('bg-white/80 text-xs', MOBILE_TAP_HEIGHT)}
               >
                 {loadingMore ? (
                   <Loader2 className="mr-1 size-3 animate-spin" />
@@ -451,7 +483,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
               <Button
                 variant="ghost"
                 size="sm"
-                className="bg-white/80 text-xs"
+                className={cn('bg-white/80 text-xs', MOBILE_TAP_HEIGHT)}
                 onClick={() => conversation && fetchMessages(conversation.id, 1, false)}
               >
                 Tentar novamente
@@ -502,26 +534,29 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
               </InfoPopover>
             </div>
           )}
-          <div className="px-4 py-3">
+          <div className="px-2 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:px-4">
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
                 size="icon"
-                className="shrink-0"
+                className={cn('shrink-0', MOBILE_TAP_TARGET)}
                 onClick={() => setTemplateOpen(true)}
                 title="Enviar template"
+                aria-label="Enviar template"
               >
                 <FileText className="size-5 text-[#54656F]" />
               </Button>
 
               <textarea
                 className={cn(
-                  'flex-1 resize-none rounded-lg border-0 bg-white px-3 py-2 text-sm text-[#111B21] outline-none ring-0',
+                  // text-base on mobile: iOS zooms the page when focusing inputs under 16px.
+                  'min-w-0 flex-1 resize-none rounded-lg border-0 bg-white px-3 py-2 text-base text-[#111B21] outline-none ring-0 md:text-sm',
                   'placeholder:text-[#667781]',
                   'focus:ring-0 focus:outline-none',
                   'min-h-[40px] max-h-[120px]'
                 )}
                 placeholder="Mensagem..."
+                aria-label="Mensagem"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={handleKeyDown}
@@ -533,7 +568,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                 size="icon"
                 onClick={handleSendText}
                 disabled={!inputText.trim() || sending}
-                className="bg-[#25D366] hover:bg-[#1DA851] text-white shrink-0"
+                className={cn('bg-[#25D366] hover:bg-[#1DA851] text-white shrink-0', MOBILE_TAP_TARGET)}
+                aria-label="Enviar mensagem"
               >
                 {sending ? (
                   <Loader2 className="size-4 animate-spin" />

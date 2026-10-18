@@ -3,6 +3,7 @@
 import { cn } from '@/lib/utils'
 import { getWhatsAppErrorLabel } from '@/lib/whatsapp-errors'
 import { Check, CheckCheck, Clock, Loader2, RotateCcw } from 'lucide-react'
+import { MOBILE_TAP_MIN_H } from './tap-targets'
 
 export interface Message {
   id: string
@@ -71,7 +72,7 @@ export function MessageBubble({ message, onRetry, retrying = false }: MessageBub
     <div className={cn('flex w-full', isOutbound ? 'justify-end' : 'justify-start')}>
       <div
         className={cn(
-          'relative max-w-[75%] rounded-lg px-3 py-1.5 text-sm shadow-sm',
+          'relative min-w-0 max-w-[85%] rounded-lg px-3 py-1.5 text-sm shadow-sm md:max-w-[75%]',
           isOutbound
             ? 'bg-[#D9FDD3] text-[#111B21]'
             : 'bg-white text-[#111B21]',
@@ -84,7 +85,7 @@ export function MessageBubble({ message, onRetry, retrying = false }: MessageBub
               <img
                 src={message.mediaUrl}
                 alt="Imagem"
-                className="max-h-64 rounded object-cover"
+                className="max-h-64 max-w-full rounded object-cover"
               />
             ) : (
               <a
@@ -99,7 +100,7 @@ export function MessageBubble({ message, onRetry, retrying = false }: MessageBub
           </div>
         )}
 
-        <span className="whitespace-pre-wrap break-words">{displayText}</span>
+        <span className="whitespace-pre-wrap wrap-anywhere">{displayText}</span>
 
         {isQueued && (
           <div className="mt-1 text-[10px] text-amber-600">
@@ -115,7 +116,10 @@ export function MessageBubble({ message, onRetry, retrying = false }: MessageBub
                 type="button"
                 onClick={() => onRetry(message)}
                 disabled={retrying}
-                className="inline-flex items-center gap-1 rounded px-1 py-0.5 font-medium underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                className={cn(
+                  MOBILE_TAP_MIN_H,
+                  'inline-flex items-center gap-1 rounded px-1 py-0.5 font-medium underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-60',
+                )}
               >
                 {retrying ? (
                   <Loader2 className="size-3 animate-spin" />

@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Search, MessageSquare, Plus, Check, CheckCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatBrPhone } from '@/lib/phone'
+import { MOBILE_TAP_MIN_H } from './tap-targets'
 
 export interface Conversation {
   id: string
@@ -193,9 +194,11 @@ export const ConversationList = forwardRef<ConversationListHandle, ConversationL
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              {/* No text-sm below md: iOS zooms the page when focusing inputs under 16px. */}
               <Input
                 placeholder="Buscar contato..."
-                className="pl-8 h-8 text-sm border-sage/20"
+                aria-label="Buscar contato"
+                className="pl-8 h-11 md:h-8 border-sage/20"
                 onChange={(e) => handleSearchChange(e.target.value)}
               />
             </div>
@@ -203,8 +206,9 @@ export const ConversationList = forwardRef<ConversationListHandle, ConversationL
               <Button
                 variant="outline"
                 size="icon-sm"
-                className="shrink-0 size-9 text-[#25D366] border-[#25D366]/30 hover:bg-[#25D366]/10"
+                className="shrink-0 size-11 md:size-9 text-[#25D366] border-[#25D366]/30 hover:bg-[#25D366]/10"
                 onClick={onNewConversation}
+                aria-label="Nova conversa"
               >
                 <Plus className="size-4" />
               </Button>
@@ -213,18 +217,20 @@ export const ConversationList = forwardRef<ConversationListHandle, ConversationL
         </div>
 
         {/* Filter tabs */}
-        <div className="flex gap-1 border-b px-3 py-2">
+        <div className="flex flex-wrap gap-1 border-b px-3 py-2 md:flex-nowrap">
           {FILTER_TABS.map((tab) => (
             <button
               key={tab.value}
               type="button"
               className={cn(
+                MOBILE_TAP_MIN_H,
                 'rounded-full px-3 py-1 text-xs font-medium transition-colors',
                 filter === tab.value
                   ? 'bg-[#25D366]/10 text-[#128C7E]'
                   : 'text-muted-foreground hover:bg-muted'
               )}
               onClick={() => setFilter(tab.value)}
+              aria-pressed={filter === tab.value}
             >
               {tab.label}
             </button>
@@ -232,7 +238,7 @@ export const ConversationList = forwardRef<ConversationListHandle, ConversationL
         </div>
 
         {/* Conversation list */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto overscroll-y-contain">
           {loading && (
             <div className="space-y-1 p-2">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -277,7 +283,7 @@ export const ConversationList = forwardRef<ConversationListHandle, ConversationL
                   </AvatarFallback>
                 </Avatar>
 
-                <div className="flex-1 overflow-hidden">
+                <div className="min-w-0 flex-1 overflow-hidden">
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate text-sm font-medium text-[#111B21]">
                       {conv.profileName || formatBrPhone(conv.phoneNumber)}
