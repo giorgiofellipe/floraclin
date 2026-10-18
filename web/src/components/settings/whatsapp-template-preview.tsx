@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils'
 import { buildTemplatePreview, type PreviewableTemplate } from '@/lib/whatsapp-blueprints'
 
 interface WhatsAppTemplatePreviewProps {
@@ -49,5 +50,14 @@ export function WhatsAppTemplatePreview({ template, clinicName }: WhatsAppTempla
         </div>
       </div>
     </div>
+  )
+}
+
+export function WhatsAppTemplatePreviewNote({ className }: { className?: string }) {
+  return (
+    <p className={cn('text-xs text-mid', className)}>
+      Os campos destacados no modelo mudam a cada envio: são preenchidos com as informações do paciente, da
+      clínica ou do atendimento correspondente. O exemplo mostra o resultado com dados fictícios.
+    </p>
   )
 }

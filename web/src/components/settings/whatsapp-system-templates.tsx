@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getTemplateDisplayLabel } from '@/lib/whatsapp-blueprints'
-import { WhatsAppTemplatePreview } from './whatsapp-template-preview'
+import { WhatsAppTemplatePreview, WhatsAppTemplatePreviewNote } from './whatsapp-template-preview'
 
 interface SystemTemplate {
   id: string
@@ -76,11 +76,7 @@ export function WhatsAppSystemTemplates() {
             </div>
           ))}
 
-          <p className="text-xs text-mid">
-            Os campos destacados no modelo mudam a cada envio: são preenchidos
-            com as informações do paciente, da clínica ou do atendimento
-            correspondente. O exemplo mostra o resultado com dados fictícios.
-          </p>
+          <WhatsAppTemplatePreviewNote />
         </div>
       )}
     </div>

@@ -35,15 +35,16 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       )
     }
 
-    if (parsed.data.config) {
-      const config = AUTOMATION_CONFIG_SCHEMAS[trigger].safeParse(parsed.data.config)
-      if (!config.success) {
+    let config = parsed.data.config
+    if (config) {
+      const parsedConfig = AUTOMATION_CONFIG_SCHEMAS[trigger].safeParse(config)
+      if (!parsedConfig.success) {
         return NextResponse.json(
-          { error: 'Configuração inválida', fieldErrors: config.error.flatten().fieldErrors },
+          { error: 'Configuração inválida', fieldErrors: parsedConfig.error.flatten().fieldErrors },
           { status: 400 },
         )
       }
-      parsed.data.config = config.data
+      config = parsedConfig.data
     }
 
     if (parsed.data.templateId) {
@@ -53,7 +54,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       }
     }
 
-    const automation = await upsertAutomation(ctx.tenantId, trigger, parsed.data)
+    const automation = await upsertAutomation(ctx.tenantId, trigger, { ...parsed.data, config })
     return NextResponse.json({ data: automation })
   } catch (error) {
     return handleApiError(error, request)

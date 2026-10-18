@@ -80,28 +80,52 @@ beforeEach(() => {
 })
 
 describe('runTemplateAutomation', () => {
-  it('does not load or send anything when the automation is off for the tenant', async () => {
-    vi.mocked(listAutomations).mockResolvedValue([
-      { trigger: 'follow_up', enabled: false, config: {} },
-      { trigger: 'payment_reminder', enabled: true, config: {} },
-    ] as never)
+  // Each gate keeps paid messages from going out for a clinic that should not get them.
+  it.each([
+    ['WhatsApp is off on its own number', 'wa_disabled', () => {
+      dbMock.from.mockResolvedValue([
+        { id: 't1', name: 'Clínica Lume', settings: { whatsapp_mode: 'own', whatsapp_enabled: false } },
+      ])
+    }],
+    ['the subscription is inactive', 'subscription_inactive', () => {
+      vi.mocked(isSubscriptionActive).mockResolvedValue(false)
+    }],
+    ['the automation is off', 'no_automation', () => {
+      vi.mocked(listAutomations).mockResolvedValue([
+        { trigger: 'follow_up', enabled: false, config: {} },
+        { trigger: 'payment_reminder', enabled: true, config: {} },
+      ] as never)
+    }],
+    ['the template is not approved', 'template_not_approved', () => {
+      vi.mocked(getTemplateForTenant).mockResolvedValue({ ...(TEMPLATE as object), status: 'PENDING' } as never)
+    }],
+  ])('does not load or send anything when %s', async (_label, reason, arrange) => {
+    arrange()
     const loadDue = vi.fn()
 
     const result = await runTemplateAutomation('follow_up', loadDue)
 
-    expect(result.outcomes[0].reason).toBe('no_automation')
+    expect(result.outcomes[0].reason).toBe(reason)
     expect(loadDue).not.toHaveBeenCalled()
     expect(sendTemplateMessage).not.toHaveBeenCalled()
   })
 
-  it('does not send while the template is not approved', async () => {
-    vi.mocked(getTemplateForTenant).mockResolvedValue({ ...(TEMPLATE as object), status: 'PENDING' } as never)
-    const loadDue = vi.fn()
+  it('claims nothing when the template needs a value the automation does not supply', async () => {
+    vi.mocked(getTemplateForTenant).mockResolvedValue({
+      ...(TEMPLATE as object),
+      variableMapping: [
+        { index: 1, key: 'patient_name', label: 'Nome', example: 'Maria' },
+        { index: 2, key: 'appointment_date', label: 'Data', example: '15/04/2026' },
+      ],
+    } as never)
+    const message = dueMessage()
 
-    const result = await runTemplateAutomation('follow_up', loadDue)
+    const result = await runTemplateAutomation('follow_up', vi.fn().mockResolvedValue([message]))
 
-    expect(result.outcomes[0].reason).toBe('template_not_approved')
-    expect(loadDue).not.toHaveBeenCalled()
+    expect(result.outcomes[0].reason).toBe('template_incompatible')
+    expect(message.claim).not.toHaveBeenCalled()
+    expect(sendTemplateMessage).not.toHaveBeenCalled()
+    expect(captureMessageMock).toHaveBeenCalledTimes(1)
   })
 
   it('sends the trigger template with positional params built from the keyed values', async () => {
@@ -122,6 +146,7 @@ describe('runTemplateAutomation', () => {
       'follow_up',
       'pt_BR',
       { '1': 'Maria', '2': 'Botox' },
+      undefined,
     )
     expect(result.outcomes[0]).toMatchObject({ reason: 'sent', sent: 1, failed: 0 })
   })
@@ -185,13 +210,13 @@ describe('runTemplateAutomation', () => {
     expect(captureExceptionMock).not.toHaveBeenCalled()
   })
 
-  it('skips an invalid phone without reporting it, and still sends the rest', async () => {
+  it('skips an invalid phone without claiming or reporting it, and still sends the rest', async () => {
     const invalid = dueMessage({ ref: 'a', phone: '123' })
     const valid = dueMessage({ ref: 'b' })
 
     const result = await runTemplateAutomation('follow_up', vi.fn().mockResolvedValue([invalid, valid]))
 
-    expect(invalid.release).toHaveBeenCalledTimes(1)
+    expect(invalid.claim).not.toHaveBeenCalled()
     expect(valid.release).not.toHaveBeenCalled()
     expect(result.outcomes[0]).toMatchObject({ reason: 'sent', sent: 1, failed: 0 })
     expect(captureExceptionMock).not.toHaveBeenCalled()

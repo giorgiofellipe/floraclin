@@ -7,7 +7,7 @@ vi.mock('@/db/queries/procedures', () => ({
   releaseFollowUp: vi.fn(),
 }))
 
-import { claimFollowUp, getProcedureTypeNames, getSessionsDueFollowUp } from '@/db/queries/procedures'
+import { claimFollowUp, getProcedureTypeNames, getSessionsDueFollowUp, releaseFollowUp } from '@/db/queries/procedures'
 import { loadDueFollowUps } from '../whatsapp-follow-up'
 
 function session(overrides: Record<string, unknown> = {}) {
@@ -63,8 +63,21 @@ describe('loadDueFollowUps', () => {
       { patient_name: 'Maria', procedure_name: 'Botox, Preenchimento labial e Bioestimulador' },
       { patient_name: 'Ana', procedure_name: 'Botox' },
     ])
-    expect(await messages[0].claim()).toBe(true)
+    await messages[0].claim()
     expect(claimFollowUp).toHaveBeenCalledWith('t1', ['s1', 's2'])
+  })
+
+  // Regression: releasing the whole group cleared a session another run had
+  // claimed and sent, so the next run sent its follow-up again.
+  it('releases only the sessions its own claim took', async () => {
+    vi.mocked(getSessionsDueFollowUp).mockResolvedValue([session({ id: 's1' }), session({ id: 's3' })])
+    vi.mocked(claimFollowUp).mockResolvedValue(['s3'])
+
+    const [message] = await loadDueFollowUps(ARGS)
+    await message.claim()
+    await message.release()
+
+    expect(releaseFollowUp).toHaveBeenCalledWith('t1', ['s3'])
   })
 
   it('reports a group as taken when another run already claimed its sessions', async () => {

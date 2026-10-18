@@ -1,5 +1,5 @@
 import { upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
-import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
+import { sendTemplateMessage, resolveTemplateBody, type TemplateButtonParam } from '@/lib/whatsapp'
 import { reportSideEffectFailure } from '@/lib/observability'
 import type { CreditContext } from '@/lib/whatsapp-credit-ledger'
 
@@ -20,6 +20,7 @@ export async function sendAndRecordTemplate({
   recipient,
   template,
   params,
+  buttonParams,
   actor = { type: 'system' },
 }: {
   tenantId: string
@@ -27,6 +28,7 @@ export async function sendAndRecordTemplate({
   recipient: { patientId: string | null; name: string | null }
   template: AutomatedSendTemplate
   params: Record<string, string>
+  buttonParams?: TemplateButtonParam[]
   actor?: CreditContext['actor']
 }) {
   const result = await sendTemplateMessage(
@@ -36,6 +38,7 @@ export async function sendAndRecordTemplate({
     template.name,
     template.language,
     params,
+    buttonParams,
   )
 
   try {

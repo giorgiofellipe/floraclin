@@ -49,6 +49,7 @@ vi.mock('@/db/queries/whatsapp', () => ({
 vi.mock('@/lib/whatsapp', () => ({
   getTemplateForTenant: vi.fn(),
   sendTemplateMessage: vi.fn(),
+  resolveTemplateBody: vi.fn(),
 }))
 
 import { getAnamnesis } from '@/db/queries/anamnesis'
@@ -123,6 +124,30 @@ describe('maybeAutoSendAnamnesisLink', () => {
       expect.any(Object),
       expect.any(Array),
     )
+  })
+
+  // Regression: the link send hardcoded {1: name, 2: clinic}, so a clinic that
+  // reordered its template variables got the values swapped.
+  it('fills the params from the template variable mapping', async () => {
+    vi.mocked(getTemplateForTenant).mockResolvedValue({
+      name: 'anamnese_link_v1',
+      status: 'APPROVED',
+      language: 'pt_BR',
+      purposeKey: 'anamnese_link',
+      components: [],
+      variableMapping: [
+        { index: 1, key: 'clinic_name', label: 'Clínica', example: 'Clínica Flora' },
+        { index: 2, key: 'patient_name', label: 'Nome', example: 'Maria' },
+      ],
+    } as never)
+    vi.mocked(getPatient).mockResolvedValue({ fullName: 'Maria Silva' } as never)
+    vi.mocked(getTenant).mockResolvedValue({ name: 'Flora' } as never)
+    vi.mocked(createAnamnesisToken).mockResolvedValue({ token: 'tok-1' } as never)
+    vi.mocked(sendTemplateMessage).mockResolvedValue({ metaMessageId: 'wamid.1' } as never)
+
+    await maybeAutoSendAnamnesisLink({ tenantId: 'tenant-1', patientId: 'patient-1', phone: '5511999990000' })
+
+    expect(vi.mocked(sendTemplateMessage).mock.calls[0][5]).toEqual({ '1': 'Flora', '2': 'Maria' })
   })
 
   // Regression: an unsent link left its token behind, so the day read as already sent.

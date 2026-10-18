@@ -4,7 +4,7 @@ import { tenants } from '@/db/schema'
 import { listAutomations } from '@/db/queries/whatsapp'
 import { getTemplateForTenant } from '@/lib/whatsapp'
 import { sendAndRecordTemplate } from '@/lib/whatsapp-automated-send'
-import { buildTemplateParams } from '@/lib/whatsapp-blueprints'
+import { buildTemplateParams, missingTemplateKeys } from '@/lib/whatsapp-blueprints'
 import { CreditExhaustedError } from '@/lib/whatsapp-credits'
 import { InvalidWhatsAppPhoneError, normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { isSubscriptionActive } from '@/lib/plans'
@@ -12,14 +12,13 @@ import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { parseAutomationConfig, type AutomationConfig, type AutomationTrigger } from '@/lib/whatsapp-automation-config'
 
-export type TemplateAutomationTrigger = Exclude<AutomationTrigger, 'appointment_confirmation'>
+type TemplateAutomationTrigger = Exclude<AutomationTrigger, 'appointment_confirmation'>
 
 export interface DueMessage {
   ref: string
   patientId: string
   patientName: string
   phone: string
-  /** Template values keyed by variable key, e.g. `patient_name`. */
   values: Record<string, string>
   /**
    * Sets the sent marker before the send, so an overlapping run (a Vercel
@@ -41,13 +40,14 @@ type OutcomeReason =
   | 'no_automation'
   | 'template_missing'
   | 'template_not_approved'
+  | 'template_incompatible'
   | 'no_messages_due'
   | 'sent'
   | 'send_failed'
   | 'credit_exhausted'
   | 'tenant_error'
 
-export interface TemplateAutomationOutcome {
+interface TemplateAutomationOutcome {
   tenantId: string
   tenantName: string
   reason: OutcomeReason
@@ -124,14 +124,31 @@ async function runForTenant<T extends TemplateAutomationTrigger>(
     })
     if (due.length === 0) return outcome('no_messages_due')
 
+    const missingKeys = missingTemplateKeys(template, Object.keys(due[0].values))
+    if (missingKeys.length > 0) {
+      Sentry.captureMessage(`WhatsApp ${trigger} template needs values the automation does not supply`, {
+        level: 'warning',
+        extra: { tenantId: tenant.id, tenantName: tenant.name, template: template.name, missingKeys },
+      })
+      return outcome('template_incompatible')
+    }
+
     let sent = 0
     let failed = 0
     for (const message of due) {
+      let phone: string
+      try {
+        phone = normalizeBrPhoneForWhatsApp(message.phone)
+      } catch (err) {
+        if (!(err instanceof InvalidWhatsAppPhoneError)) throw err
+        console.warn(`[cron] Skipping ${trigger} ${message.ref}: ${err.message}`)
+        continue
+      }
       if (!(await message.claim())) continue
       try {
         await sendAndRecordTemplate({
           tenantId: tenant.id,
-          phone: normalizeBrPhoneForWhatsApp(message.phone),
+          phone,
           recipient: { patientId: message.patientId, name: message.patientName },
           template,
           params: buildTemplateParams(template, message.values),
@@ -151,10 +168,6 @@ async function runForTenant<T extends TemplateAutomationTrigger>(
             },
           })
           return outcome('credit_exhausted', sent, failed)
-        }
-        if (err instanceof InvalidWhatsAppPhoneError) {
-          console.warn(`[cron] Skipping ${trigger} ${message.ref}: ${err.message}`)
-          continue
         }
         console.error(`[cron] Failed to send ${trigger} ${message.ref}:`, err)
         Sentry.captureException(err, {

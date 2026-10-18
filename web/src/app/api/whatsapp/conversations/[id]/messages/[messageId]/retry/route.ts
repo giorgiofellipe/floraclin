@@ -17,8 +17,8 @@ import {
   getTemplateForTenant,
 } from '@/lib/whatsapp'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
-import { buildConfirmationValues } from '@/lib/whatsapp-confirmation'
-import { buildTemplateParams } from '@/lib/whatsapp-blueprints'
+import { buildConfirmationValues, CONFIRMATION_VALUE_KEYS } from '@/lib/whatsapp-confirmation'
+import { buildTemplateParams, missingTemplateKeys } from '@/lib/whatsapp-blueprints'
 import { normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { parseBrDate } from '@/lib/dates'
 import { requireWrite } from '@/lib/write-access'
@@ -161,7 +161,11 @@ export async function POST(
       const normalizedPhone = normalizeBrPhoneForWhatsApp(phone)
 
       const template = await getTemplateForTenant(ctx.tenantId, 'appointment_confirmation')
-      if (!template || template.status !== 'APPROVED') {
+      if (
+        !template
+        || template.status !== 'APPROVED'
+        || missingTemplateKeys(template, [...CONFIRMATION_VALUE_KEYS]).length > 0
+      ) {
         return badRequest('Template de confirmação não disponível.')
       }
 

@@ -11,8 +11,8 @@ import { InvalidWhatsAppPhoneError, normalizeBrPhoneForWhatsApp } from '@/lib/ph
 import { isSubscriptionActive } from '@/lib/plans'
 import { notifyDiscord, type WhatsappDigestFailingTenant } from '@/lib/discord'
 import { withCronMonitor } from '@/lib/cron-monitor'
-import { buildConfirmationValues } from '@/lib/whatsapp-confirmation'
-import { buildTemplateParams } from '@/lib/whatsapp-blueprints'
+import { buildConfirmationValues, CONFIRMATION_VALUE_KEYS } from '@/lib/whatsapp-confirmation'
+import { buildTemplateParams, missingTemplateKeys } from '@/lib/whatsapp-blueprints'
 import { brToday, parseBrDate } from '@/lib/dates'
 import { maybeAutoSendAnamnesisLink } from '@/lib/whatsapp-anamnesis'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
@@ -35,6 +35,7 @@ type TenantOutcomeReason =
   | 'no_automation'
   | 'template_missing'
   | 'template_not_approved'
+  | 'template_incompatible'
   | 'no_pending_appointments'
   | 'no_messages_due'
   | 'no_valid_phone'
@@ -153,7 +154,7 @@ async function runAutomations() {
       const sameDayAppointments = pendingAppointments.filter((appt) => appt.date === todayYmd)
       const nextDayAppointments = pendingAppointments.filter((appt) => appt.date !== todayYmd)
 
-      let confirmationBlockedReason: 'template_missing' | 'template_not_approved' | null = null
+      let confirmationBlockedReason: 'template_missing' | 'template_not_approved' | 'template_incompatible' | null = null
       let template: Awaited<ReturnType<typeof getTemplateForTenant>> = null
       if (nextDayAppointments.length > 0) {
         template = await getTemplateForTenant(tenant.id, 'appointment_confirmation')
@@ -161,6 +162,15 @@ async function runAutomations() {
           confirmationBlockedReason = 'template_missing'
         } else if (template.status !== 'APPROVED') {
           confirmationBlockedReason = 'template_not_approved'
+        } else {
+          const missingKeys = missingTemplateKeys(template, [...CONFIRMATION_VALUE_KEYS])
+          if (missingKeys.length > 0) {
+            confirmationBlockedReason = 'template_incompatible'
+            Sentry.captureMessage('WhatsApp confirmation template needs values the cron does not supply', {
+              level: 'warning',
+              extra: { tenantId: tenant.id, tenantName: tenant.name, template: template.name, missingKeys },
+            })
+          }
         }
       }
       const confirmationTemplate = confirmationBlockedReason ? null : template

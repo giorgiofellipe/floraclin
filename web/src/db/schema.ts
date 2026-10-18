@@ -202,7 +202,7 @@ export const procedureRecords = floraclinSchema.table('procedure_records', {
   notes: text('notes'),
   followUpDate: date('follow_up_date'),
   nextSessionObjectives: text('next_session_objectives'),
-  additionalTypeIds: jsonb('additional_type_ids').default([]),
+  additionalTypeIds: jsonb('additional_type_ids').$type<string[]>().default([]),
   status: varchar('status', { length: 20 }).notNull().default('draft'),
   plannedSnapshot: jsonb('planned_snapshot'),
   approvedAt: timestamp('approved_at', { withTimezone: true }),

@@ -1,7 +1,6 @@
 import { claimPaymentReminder, getInstallmentsDueReminder, releasePaymentReminder } from '@/db/queries/financial'
 import { brToday, shiftBrYmd } from '@/lib/dates'
-import { formatDate } from '@/lib/utils'
-import { firstName } from '@/lib/whatsapp-blueprints'
+import { firstName, formatDate } from '@/lib/utils'
 import type { DueMessage, LoadDueArgs } from '@/lib/whatsapp-automation-cron'
 
 const amountFormat = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })

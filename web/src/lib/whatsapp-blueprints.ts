@@ -455,7 +455,7 @@ export function getTemplateDisplayLabel(template: {
   return template.name
 }
 
-export type TemplateBodySegment = { text: string } | { variable: string }
+type TemplateBodySegment = { text: string } | { variable: string }
 
 export interface TemplatePreview {
   /** Body as the patient receives it, filled with example values. */
@@ -499,8 +499,11 @@ function resolveTemplateVariables(template: PreviewableTemplate): TemplateVariab
   return blueprint?.variables ?? []
 }
 
-export function firstName(fullName: string): string {
-  return fullName.split(' ')[0] || fullName
+/** Variable keys the template needs that a sender supplying `keys` lacks. */
+export function missingTemplateKeys(template: PreviewableTemplate, keys: string[]): string[] {
+  return resolveTemplateVariables(template)
+    .map((v) => v.key)
+    .filter((key) => !keys.includes(key))
 }
 
 /**

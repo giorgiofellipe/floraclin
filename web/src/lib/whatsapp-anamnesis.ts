@@ -5,14 +5,11 @@ import { getAnamnesis } from '@/db/queries/anamnesis'
 import { createAnamnesisToken, deleteAnamnesisToken, hasAnamnesisTokenCreatedOnBrDay } from '@/db/queries/anamnesis-tokens'
 import { getPatient } from '@/db/queries/patients'
 import { getTenant } from '@/db/queries/tenants'
-import {
-  createMessage,
-  listAutomations,
-  pushSseEvent,
-  upsertConversation,
-  type WhatsappAutomation,
-} from '@/db/queries/whatsapp'
-import { getTemplateForTenant, sendTemplateMessage } from '@/lib/whatsapp'
+import { listAutomations, type WhatsappAutomation } from '@/db/queries/whatsapp'
+import { getTemplateForTenant } from '@/lib/whatsapp'
+import { sendAndRecordTemplate } from '@/lib/whatsapp-automated-send'
+import { buildTemplateParams } from '@/lib/whatsapp-blueprints'
+import { firstName } from '@/lib/utils'
 import { brToday } from '@/lib/dates'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { parseAutomationConfig } from '@/lib/whatsapp-automation-config'
@@ -102,55 +99,24 @@ export async function maybeAutoSendAnamnesisLink({
   }
 
   const token = await createAnamnesisToken(tenantId, patientId, owner.userId, linkExpiresAt)
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.floraclin.com.br'
-  const link = `${appUrl}/a/${token.token}`
-
-  const firstName = patient.fullName.split(' ')[0] || patient.fullName
-  const params: Record<string, string> = {
-    '1': firstName,
-    '2': tenant.name,
-  }
-  const buttonParams = [{
-    index: 0,
-    subType: 'url' as const,
-    parameters: [{ type: 'text' as const, text: token.token }],
-  }]
 
   // The token marks the day as sent, so an unsent link must not leave one behind.
-  const result = await sendTemplateMessage(
+  const result = await sendAndRecordTemplate({
     tenantId,
-    { actor: { type: 'system' }, recipient: { patientId, name: patient.fullName } },
     phone,
-    template.name,
-    template.language,
-    params,
-    buttonParams,
-  ).catch(async (err) => {
+    recipient: { patientId, name: patient.fullName },
+    template,
+    params: buildTemplateParams(template, { patient_name: firstName(patient.fullName), clinic_name: tenant.name }),
+    buttonParams: [{
+      index: 0,
+      subType: 'url',
+      parameters: [{ type: 'text', text: token.token }],
+    }],
+  }).catch(async (err) => {
     await deleteAnamnesisToken(tenantId, token.id).catch((deleteErr) =>
       reportSideEffectFailure(deleteErr, { area: 'anamnesis', step: 'delete_token', extra: { tenantId } }),
     )
     throw err
-  })
-
-  const conversation = await upsertConversation(
-    tenantId,
-    phone,
-    patient.fullName,
-    undefined,
-    patientId,
-  )
-
-  const message = await createMessage(tenantId, conversation.id, {
-    direction: 'outbound',
-    metaMessageId: result.metaMessageId,
-    body: `Olá, ${firstName}! Para agilizar seu atendimento na ${tenant.name}, pedimos que preencha sua ficha de anamnese pelo link abaixo:\n\n${link}\n\nQualquer dúvida, estamos à disposição.`,
-    templateName: template.name,
-    deliveryStatus: 'sent',
-  })
-
-  await pushSseEvent(tenantId, 'new_message', {
-    conversationId: conversation.id,
-    message,
   })
 
   return { status: 'sent', metaMessageId: result.metaMessageId }

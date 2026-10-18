@@ -1,6 +1,6 @@
 import { claimFollowUp, getProcedureTypeNames, getSessionsDueFollowUp, releaseFollowUp } from '@/db/queries/procedures'
 import { brToday, endOfBrDay, shiftBrYmd, startOfBrDay } from '@/lib/dates'
-import { firstName } from '@/lib/whatsapp-blueprints'
+import { firstName } from '@/lib/utils'
 import type { DueMessage, LoadDueArgs } from '@/lib/whatsapp-automation-cron'
 
 // Lets a missed daily run catch up, without messaging sessions from months
@@ -16,19 +16,19 @@ export async function loadDueFollowUps({ tenantId, config }: LoadDueArgs<'follow
   )
   if (sessions.length === 0) return []
 
-  const additionalIds = sessions.flatMap((s) => (s.additionalTypeIds as string[] | null) ?? [])
+  const additionalIds = sessions.flatMap((s) => s.additionalTypeIds ?? [])
   const additionalNames = new Map(
     (await getProcedureTypeNames(tenantId, [...new Set(additionalIds)])).map((t) => [t.id, t.name]),
   )
 
-  // One message per patient, even when one visit covered several procedures.
   return [...Map.groupBy(sessions, (s) => s.patientId).values()].map((group) => {
     const { patientId, patientName, patientPhone } = group[0]
     const sessionIds = group.map((s) => s.id)
+    let claimedIds: string[] = []
     const procedureNames = new Set(
       group.flatMap((s) => [
         s.procedureTypeName,
-        ...((s.additionalTypeIds as string[] | null) ?? []).flatMap((id) => additionalNames.get(id) ?? []),
+        ...(s.additionalTypeIds ?? []).flatMap((id) => additionalNames.get(id) ?? []),
       ]),
     )
     return {
@@ -40,8 +40,11 @@ export async function loadDueFollowUps({ tenantId, config }: LoadDueArgs<'follow
         patient_name: firstName(patientName),
         procedure_name: joinPt([...procedureNames]),
       },
-      claim: async () => (await claimFollowUp(tenantId, sessionIds)).length > 0,
-      release: () => releaseFollowUp(tenantId, sessionIds),
+      claim: async () => {
+        claimedIds = await claimFollowUp(tenantId, sessionIds)
+        return claimedIds.length > 0
+      },
+      release: () => releaseFollowUp(tenantId, claimedIds),
     }
   })
 }

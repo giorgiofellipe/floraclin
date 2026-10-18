@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AlertTriangle, CalendarCheck, CheckCircle2, ChevronDown, Clock, CreditCard, HeartPulse, Loader2, Plus, Save } from 'lucide-react'
 import { toast } from 'sonner'
-import { WhatsAppTemplatePreview } from './whatsapp-template-preview'
+import { WhatsAppTemplatePreview, WhatsAppTemplatePreviewNote } from './whatsapp-template-preview'
 import {
   ANAMNESIS_STALE_DAYS_MAX,
   AUTOMATION_DAYS_MAX,
@@ -37,6 +37,8 @@ type LocalState = Record<string, {
   config: Record<string, unknown>
 }>
 
+const CONFIRMATION_DEFAULTS = automationConfigDefaults('appointment_confirmation')
+
 const TRIGGERS = [
   {
     key: 'appointment_confirmation',
@@ -45,8 +47,8 @@ const TRIGGERS = [
     icon: CalendarCheck,
     purposeKey: 'appointment_confirmation',
     configFields: [
-      { key: 'autoAnamnesisEnabled', label: 'Enviar anamnese automaticamente após confirmação', type: 'toggle' as const, default: automationConfigDefaults('appointment_confirmation').autoAnamnesisEnabled },
-      { key: 'anamnesisStaleDays', label: 'Dias para considerar anamnese desatualizada', type: 'number' as const, default: automationConfigDefaults('appointment_confirmation').anamnesisStaleDays, max: ANAMNESIS_STALE_DAYS_MAX, dependsOn: 'autoAnamnesisEnabled' },
+      { key: 'autoAnamnesisEnabled', label: 'Enviar anamnese automaticamente após confirmação', type: 'toggle' as const, default: CONFIRMATION_DEFAULTS.autoAnamnesisEnabled },
+      { key: 'anamnesisStaleDays', label: 'Dias para considerar anamnese desatualizada', type: 'number' as const, default: CONFIRMATION_DEFAULTS.anamnesisStaleDays, max: ANAMNESIS_STALE_DAYS_MAX, dependsOn: 'autoAnamnesisEnabled' },
     ],
   },
   {
@@ -138,7 +140,7 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
     if (!res.ok) return
     const data = await res.json()
     setTemplates((data.data ?? []) as Template[])
-    setClinicName((data.clinicName as string) ?? '')
+    setClinicName(data.clinicName ?? '')
   }, [templatesUrl])
 
   const fetchData = useCallback(async () => {
@@ -297,7 +299,7 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
           return (
             <div
               key={trigger.key}
-              className="rounded-[3px] border border-[#E8ECEF] bg-white p-4 space-y-3"
+              className="rounded-[3px] border border-topbar-border bg-white p-4 space-y-3"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -339,11 +341,12 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
                   {previewOpen.has(trigger.key) && (
                     <div className="mt-2">
                       <WhatsAppTemplatePreview template={matchingTemplate} clinicName={clinicName} />
-                      <p className="mt-2 text-xs text-mid">
-                        Template <span className="font-mono">{matchingTemplate.name}</span>. No envio, cada
-                        campo destacado é preenchido com as informações do paciente, da clínica ou do
-                        atendimento correspondente.
-                      </p>
+                      {mode === 'own' && (
+                        <p className="mt-2 text-xs text-mid">
+                          Template <span className="font-mono">{matchingTemplate.name}</span>
+                        </p>
+                      )}
+                      <WhatsAppTemplatePreviewNote className="mt-2" />
                     </div>
                   )}
                 </div>
@@ -421,12 +424,15 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
                         <Input
                           type="number"
                           min={1}
-                          max={'max' in field ? field.max : undefined}
+                          max={field.max}
                           className="w-32"
                           value={(state.config[field.key] as number) ?? field.default}
                           onChange={(e) =>
                             updateLocal(trigger.key, {
-                              config: { ...state.config, [field.key]: parseInt(e.target.value) || field.default },
+                              config: {
+                                ...state.config,
+                                [field.key]: Math.min(field.max, Math.max(1, parseInt(e.target.value) || field.default)),
+                              },
                             })
                           }
                         />
