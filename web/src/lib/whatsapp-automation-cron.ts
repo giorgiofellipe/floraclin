@@ -1,28 +1,38 @@
 import * as Sentry from '@sentry/nextjs'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
-import { listAutomations, upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
-import { sendTemplateMessage, resolveTemplateBody, getTemplateForTenant } from '@/lib/whatsapp'
+import { listAutomations } from '@/db/queries/whatsapp'
+import { getTemplateForTenant } from '@/lib/whatsapp'
+import { sendAndRecordTemplate } from '@/lib/whatsapp-automated-send'
+import { buildTemplateParams } from '@/lib/whatsapp-blueprints'
 import { CreditExhaustedError } from '@/lib/whatsapp-credits'
 import { InvalidWhatsAppPhoneError, normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { isSubscriptionActive } from '@/lib/plans'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
+import { reportSideEffectFailure } from '@/lib/observability'
+import { parseAutomationConfig, type AutomationConfig, type AutomationTrigger } from '@/lib/whatsapp-automation-config'
 
-export type TemplateAutomationTrigger = 'follow_up' | 'payment_reminder'
+export type TemplateAutomationTrigger = Exclude<AutomationTrigger, 'appointment_confirmation'>
 
 export interface DueMessage {
-  /** Identifies the message in logs and Sentry; never shown to anyone. */
   ref: string
   patientId: string
   patientName: string
   phone: string
-  params: Record<string, string>
-  markSent: () => Promise<void>
+  /** Template values keyed by variable key, e.g. `patient_name`. */
+  values: Record<string, string>
+  /**
+   * Sets the sent marker before the send, so an overlapping run (a Vercel
+   * retry, a manual run) skips the message. False means it is already taken.
+   */
+  claim: () => Promise<boolean>
+  release: () => Promise<void>
 }
 
-export interface LoadDueArgs {
+export interface LoadDueArgs<T extends TemplateAutomationTrigger> {
   tenantId: string
   tenantName: string
-  config: Record<string, unknown>
+  config: AutomationConfig<T>
 }
 
 type OutcomeReason =
@@ -46,15 +56,12 @@ export interface TemplateAutomationOutcome {
 }
 
 /**
- * Runs one template automation across every tenant: the same gates as the
- * confirmation cron (WhatsApp on, subscription active, automation enabled,
- * template approved), then sends each due message and marks it sent. Vercel
- * discards the response, so outcomes are logged per tenant and real failures
- * go to Sentry.
+ * Runs one template automation across every tenant. Vercel discards the
+ * response, so outcomes are logged per tenant and real failures go to Sentry.
  */
-export async function runTemplateAutomation(
-  trigger: TemplateAutomationTrigger,
-  loadDue: (args: LoadDueArgs) => Promise<DueMessage[]>,
+export async function runTemplateAutomation<T extends TemplateAutomationTrigger>(
+  trigger: T,
+  loadDue: (args: LoadDueArgs<T>) => Promise<DueMessage[]>,
 ) {
   const allTenants = await db
     .select({ id: tenants.id, name: tenants.name, settings: tenants.settings })
@@ -83,10 +90,10 @@ export async function runTemplateAutomation(
   return { ok: true, sent, outcomes, summary }
 }
 
-async function runForTenant(
-  trigger: TemplateAutomationTrigger,
+async function runForTenant<T extends TemplateAutomationTrigger>(
+  trigger: T,
   tenant: { id: string; name: string; settings: unknown },
-  loadDue: (args: LoadDueArgs) => Promise<DueMessage[]>,
+  loadDue: (args: LoadDueArgs<T>) => Promise<DueMessage[]>,
 ): Promise<TemplateAutomationOutcome> {
   const outcome = (reason: OutcomeReason, sent = 0, failed = 0): TemplateAutomationOutcome => ({
     tenantId: tenant.id,
@@ -96,9 +103,7 @@ async function runForTenant(
     failed,
   })
 
-  const settings = tenant.settings as Record<string, unknown> | null
-  const mode = (settings?.whatsapp_mode as string) ?? 'floraclin'
-  if (mode !== 'floraclin' && !settings?.whatsapp_enabled) return outcome('wa_disabled')
+  if (!isWhatsAppEnabled(tenant.settings as Record<string, unknown> | null)) return outcome('wa_disabled')
 
   try {
     if (!(await isSubscriptionActive(tenant.id))) return outcome('subscription_inactive')
@@ -115,50 +120,25 @@ async function runForTenant(
     const due = await loadDue({
       tenantId: tenant.id,
       tenantName: tenant.name,
-      config: (automation.config as Record<string, unknown> | null) ?? {},
+      config: parseAutomationConfig(trigger, automation.config),
     })
     if (due.length === 0) return outcome('no_messages_due')
 
     let sent = 0
     let failed = 0
     for (const message of due) {
+      if (!(await message.claim())) continue
       try {
-        const phone = normalizeBrPhoneForWhatsApp(message.phone)
-        const result = await sendTemplateMessage(
-          tenant.id,
-          {
-            actor: { type: 'system' },
-            recipient: { patientId: message.patientId, name: message.patientName },
-          },
-          phone,
-          template.name,
-          template.language,
-          message.params,
-        )
-        // Marked before the inbox bookkeeping: a failure there must not make
-        // the next run send the same message again.
-        await message.markSent()
-
-        const conversation = await upsertConversation(
-          tenant.id,
-          phone,
-          message.patientName,
-          undefined,
-          message.patientId,
-        )
-        const created = await createMessage(tenant.id, conversation.id, {
-          direction: 'outbound',
-          metaMessageId: result.metaMessageId,
-          body: resolveTemplateBody(template.components, message.params),
-          templateName: template.name,
-          deliveryStatus: 'sent',
-        })
-        await pushSseEvent(tenant.id, 'new_message', {
-          conversationId: conversation.id,
-          message: created,
+        await sendAndRecordTemplate({
+          tenantId: tenant.id,
+          phone: normalizeBrPhoneForWhatsApp(message.phone),
+          recipient: { patientId: message.patientId, name: message.patientName },
+          template,
+          params: buildTemplateParams(template, message.values),
         })
         sent++
       } catch (err) {
+        await releaseClaim(trigger, message)
         if (err instanceof CreditExhaustedError) {
           Sentry.captureMessage(`WhatsApp credits exhausted during ${trigger} cron`, {
             level: 'warning',
@@ -192,5 +172,13 @@ async function runForTenant(
       extra: { tenantId: tenant.id, tenantName: tenant.name, trigger },
     })
     return outcome('tenant_error')
+  }
+}
+
+async function releaseClaim(trigger: TemplateAutomationTrigger, message: DueMessage) {
+  try {
+    await message.release()
+  } catch (err) {
+    reportSideEffectFailure(err, { area: 'whatsapp', step: `${trigger}_release_claim`, extra: { ref: message.ref } })
   }
 }

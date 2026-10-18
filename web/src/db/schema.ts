@@ -214,7 +214,6 @@ export const procedureRecords = floraclinSchema.table('procedure_records', {
   encounterId: uuid('encounter_id'),
   followupSnoozedUntil: date('followup_snoozed_until'),
   lastContactedAt: timestamp('last_contacted_at', { withTimezone: true }),
-  followUpSentAt: timestamp('follow_up_sent_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -240,6 +239,7 @@ export const procedureSessions = floraclinSchema.table('procedure_sessions', {
   notes: text('notes'),
   followUpDate: date('follow_up_date'),
   nextSessionObjectives: text('next_session_objectives'),
+  followUpSentAt: timestamp('follow_up_sent_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

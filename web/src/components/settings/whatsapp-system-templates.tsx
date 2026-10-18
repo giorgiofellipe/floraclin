@@ -67,7 +67,7 @@ export function WhatsAppSystemTemplates() {
           {templates.map((template) => (
             <div
               key={template.id}
-              className="rounded-[3px] border border-[#E8ECEF] bg-white p-4 space-y-3"
+              className="rounded-[3px] border border-topbar-border bg-white p-4 space-y-3"
             >
               <h4 className="text-sm font-medium text-charcoal">
                 {getTemplateDisplayLabel(template)}

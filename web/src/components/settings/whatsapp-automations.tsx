@@ -9,6 +9,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { AlertTriangle, CalendarCheck, CheckCircle2, ChevronDown, Clock, CreditCard, HeartPulse, Loader2, Plus, Save } from 'lucide-react'
 import { toast } from 'sonner'
 import { WhatsAppTemplatePreview } from './whatsapp-template-preview'
+import {
+  ANAMNESIS_STALE_DAYS_MAX,
+  AUTOMATION_DAYS_MAX,
+  automationConfigDefaults,
+} from '@/lib/whatsapp-automation-config'
 
 interface Automation {
   id: string
@@ -40,8 +45,8 @@ const TRIGGERS = [
     icon: CalendarCheck,
     purposeKey: 'appointment_confirmation',
     configFields: [
-      { key: 'autoAnamnesisEnabled', label: 'Enviar anamnese automaticamente após confirmação', type: 'toggle' as const, default: false },
-      { key: 'anamnesisStaleDays', label: 'Dias para considerar anamnese desatualizada', type: 'number' as const, default: 60, dependsOn: 'autoAnamnesisEnabled' },
+      { key: 'autoAnamnesisEnabled', label: 'Enviar anamnese automaticamente após confirmação', type: 'toggle' as const, default: automationConfigDefaults('appointment_confirmation').autoAnamnesisEnabled },
+      { key: 'anamnesisStaleDays', label: 'Dias para considerar anamnese desatualizada', type: 'number' as const, default: automationConfigDefaults('appointment_confirmation').anamnesisStaleDays, max: ANAMNESIS_STALE_DAYS_MAX, dependsOn: 'autoAnamnesisEnabled' },
     ],
   },
   {
@@ -51,7 +56,7 @@ const TRIGGERS = [
     icon: CreditCard,
     purposeKey: 'payment_reminder',
     configFields: [
-      { key: 'daysBeforeDue', label: 'Dias antes do vencimento', type: 'number' as const, default: 3 },
+      { key: 'daysBeforeDue', label: 'Dias antes do vencimento', type: 'number' as const, default: automationConfigDefaults('payment_reminder').daysBeforeDue, max: AUTOMATION_DAYS_MAX },
     ],
   },
   {
@@ -61,7 +66,7 @@ const TRIGGERS = [
     icon: HeartPulse,
     purposeKey: 'follow_up',
     configFields: [
-      { key: 'daysAfterProcedure', label: 'Dias após o procedimento', type: 'number' as const, default: 7 },
+      { key: 'daysAfterProcedure', label: 'Dias após o procedimento', type: 'number' as const, default: automationConfigDefaults('follow_up').daysAfterProcedure, max: AUTOMATION_DAYS_MAX },
     ],
   },
 ]
@@ -334,9 +339,10 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
                   {previewOpen.has(trigger.key) && (
                     <div className="mt-2">
                       <WhatsAppTemplatePreview template={matchingTemplate} clinicName={clinicName} />
-                      <p className="mt-2 text-[11px] text-mid">
+                      <p className="mt-2 text-xs text-mid">
                         Template <span className="font-mono">{matchingTemplate.name}</span>. No envio, cada
-                        campo destacado é preenchido com os dados do paciente.
+                        campo destacado é preenchido com as informações do paciente, da clínica ou do
+                        atendimento correspondente.
                       </p>
                     </div>
                   )}
@@ -415,6 +421,7 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
                         <Input
                           type="number"
                           min={1}
+                          max={'max' in field ? field.max : undefined}
                           className="w-32"
                           value={(state.config[field.key] as number) ?? field.default}
                           onChange={(e) =>

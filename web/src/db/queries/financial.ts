@@ -2128,10 +2128,6 @@ async function updateEntryStatus(
   return newStatus
 }
 
-/**
- * Open installments due between `fromYmd` and `toYmd` (BR calendar days)
- * whose payment reminder has not gone out yet.
- */
 export async function getInstallmentsDueReminder(tenantId: string, fromYmd: string, toYmd: string) {
   return db
     .select({
@@ -2160,9 +2156,25 @@ export async function getInstallmentsDueReminder(tenantId: string, fromYmd: stri
     )
 }
 
-export async function markPaymentReminderSent(tenantId: string, installmentId: string) {
-  await db
+/** Sets the reminder marker when nobody set it yet; false means another run already has it. */
+export async function claimPaymentReminder(tenantId: string, installmentId: string) {
+  const rows = await db
     .update(installments)
     .set({ reminderSentAt: new Date() })
+    .where(
+      and(
+        eq(installments.tenantId, tenantId),
+        eq(installments.id, installmentId),
+        isNull(installments.reminderSentAt),
+      ),
+    )
+    .returning({ id: installments.id })
+  return rows.length > 0
+}
+
+export async function releasePaymentReminder(tenantId: string, installmentId: string) {
+  await db
+    .update(installments)
+    .set({ reminderSentAt: null })
     .where(and(eq(installments.tenantId, tenantId), eq(installments.id, installmentId)))
 }

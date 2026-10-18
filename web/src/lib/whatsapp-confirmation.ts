@@ -1,3 +1,5 @@
+import { firstName } from '@/lib/whatsapp-blueprints'
+
 interface ConfirmationAppointment {
   date: string
   startTime: string
@@ -10,15 +12,14 @@ function formatDateBr(ymd: string): string {
   return `${d}/${m}/${y}`
 }
 
-export function buildConfirmationParams(
+export function buildConfirmationValues(
   appointment: ConfirmationAppointment,
   tenantName: string,
 ): Record<string, string> {
-  const name = appointment.patientName ?? appointment.bookingName ?? ''
   return {
-    '1': name.split(' ')[0] || name,
-    '2': tenantName,
-    '3': formatDateBr(appointment.date),
-    '4': appointment.startTime.slice(0, 5),
+    patient_name: firstName(appointment.patientName ?? appointment.bookingName ?? ''),
+    clinic_name: tenantName,
+    appointment_date: formatDateBr(appointment.date),
+    appointment_time: appointment.startTime.slice(0, 5),
   }
 }

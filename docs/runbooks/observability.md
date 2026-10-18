@@ -23,8 +23,9 @@ Sentry is the error store; Discord is where the alerts land.
 | Swallowed side effects | `reportSideEffectFailure` in `web/src/lib/observability.ts`, plus `reportCalendarFailure` in `web/src/lib/google-calendar.ts` for the Google ones |
 | Client render errors inside the app | `error.tsx` in the `(auth)` and `(platform)` route groups |
 | Client render errors anywhere else (the root layout, and the `sign`, `verify`, `onboarding`, `a`, `c` and `(print)` trees, which have no boundary of their own) | `web/src/app/global-error.tsx` |
-| Missed or failed `calendar-renew` / `subscription-expiry` runs | `Sentry.withMonitor` in each cron route |
+| Missed or failed cron runs | `withCronMonitor` in each cron route |
 | whatsapp-automations tenant failures | `Sentry.captureMessage` / `captureException` in that route, plus the Discord digest below |
+| whatsapp-follow-up / whatsapp-payment-reminder tenant failures | `Sentry.captureMessage` / `captureException` in `web/src/lib/whatsapp-automation-cron.ts` |
 
 Deliberately **not** reported: 401 (logged-out caller, which arrives as a
 Next.js `redirect()` throw), 403 (`ForbiddenError` from `requireRole`), and the
@@ -92,8 +93,8 @@ in Sentry to see whether a bug hit one clinic or all of them.
 
 ### Cron monitors
 
-`calendar-renew` and `subscription-expiry` wrap their work in
-`Sentry.withMonitor`, which upserts the monitor on first check-in. The
+Every cron route wraps its work in `withCronMonitor`
+(`web/src/lib/cron-monitor.ts`), which upserts the monitor on first check-in. The
 schedules in those files mirror `vercel.json` and are declared in `Etc/UTC`,
 because Vercel evaluates cron expressions in UTC. If a schedule changes in
 `vercel.json`, change it in the route too or Sentry will report every run as
@@ -106,8 +107,8 @@ expiring connection, so counting it would turn the cron red until they come
 back. A failed run produces both a red check-in and a Sentry issue, since the
 throw also travels through `handleApiError`.
 
-`whatsapp-automations` has no monitor on purpose: its daily Discord digest is
-already a positive heartbeat (see below).
+`whatsapp-follow-up` and `whatsapp-payment-reminder` post no Discord digest:
+their monitors already tell "nothing to send" apart from "never ran".
 
 ### Google Calendar failures we do not report
 

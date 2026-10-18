@@ -6,8 +6,7 @@ import { upsertAutomation, getTemplateById } from '@/db/queries/whatsapp'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { updateAutomationSchema } from '@/validations/whatsapp'
 import { handleApiError } from '@/lib/api-error'
-
-const VALID_TRIGGERS = ['appointment_confirmation', 'payment_reminder', 'follow_up']
+import { AUTOMATION_CONFIG_SCHEMAS, isAutomationTrigger } from '@/lib/whatsapp-automation-config'
 
 type RouteParams = { params: Promise<{ trigger: string }> }
 
@@ -23,7 +22,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     const { blocked } = await requireWrite('owner')
     if (blocked) return blocked
 
-    if (!VALID_TRIGGERS.includes(trigger)) {
+    if (!isAutomationTrigger(trigger)) {
       return NextResponse.json({ error: 'Trigger inválido' }, { status: 400 })
     }
 
@@ -34,6 +33,17 @@ export async function PATCH(request: Request, { params }: RouteParams) {
         { error: 'Dados inválidos', fieldErrors: parsed.error.flatten().fieldErrors },
         { status: 400 },
       )
+    }
+
+    if (parsed.data.config) {
+      const config = AUTOMATION_CONFIG_SCHEMAS[trigger].safeParse(parsed.data.config)
+      if (!config.success) {
+        return NextResponse.json(
+          { error: 'Configuração inválida', fieldErrors: config.error.flatten().fieldErrors },
+          { status: 400 },
+        )
+      }
+      parsed.data.config = config.data
     }
 
     if (parsed.data.templateId) {

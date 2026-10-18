@@ -1,12 +1,7 @@
-import { buildTemplatePreview } from '@/lib/whatsapp-blueprints'
+import { buildTemplatePreview, type PreviewableTemplate } from '@/lib/whatsapp-blueprints'
 
 interface WhatsAppTemplatePreviewProps {
-  template: {
-    name: string
-    purposeKey: string | null
-    components: unknown
-    variableMapping?: unknown
-  }
+  template: PreviewableTemplate
   clinicName: string
 }
 
@@ -17,7 +12,7 @@ export function WhatsAppTemplatePreview({ template, clinicName }: WhatsAppTempla
     <div className="space-y-3">
       <div className="space-y-1.5">
         <p className="text-xs font-medium text-mid">Modelo</p>
-        <div className="rounded-[3px] border border-[#E8ECEF] bg-white px-4 py-3">
+        <div className="rounded-[3px] border border-topbar-border bg-white px-4 py-3">
           <p className="text-sm text-charcoal whitespace-pre-wrap leading-relaxed">
             {preview.segments.map((segment, i) =>
               'variable' in segment ? (
@@ -37,14 +32,14 @@ export function WhatsAppTemplatePreview({ template, clinicName }: WhatsAppTempla
 
       <div className="space-y-1.5">
         <p className="text-xs font-medium text-mid">Exemplo</p>
-        <div className="rounded-[3px] bg-[#F4F6F8] px-4 py-3 space-y-2">
+        <div className="rounded-[3px] bg-content-bg px-4 py-3 space-y-2">
           <p className="text-sm text-charcoal whitespace-pre-wrap">{preview.body}</p>
           {preview.buttons.length > 0 && (
             <div className="flex flex-wrap gap-2 pt-1">
               {preview.buttons.map((label) => (
                 <span
                   key={label}
-                  className="rounded-[3px] border border-[#E8ECEF] bg-white px-3 py-1 text-xs text-sage"
+                  className="rounded-[3px] border border-topbar-border bg-white px-3 py-1 text-xs text-sage"
                 >
                   {label}
                 </span>

@@ -46,17 +46,20 @@ const TEMPLATE = {
   name: 'follow_up',
   language: 'pt_BR',
   status: 'APPROVED',
+  purposeKey: 'follow_up',
+  variableMapping: null,
   components: [],
 } as never
 
 function dueMessage(overrides: Partial<DueMessage> = {}): DueMessage {
   return {
-    ref: 'procedures r1',
+    ref: 'sessions s1',
     patientId: 'patient-1',
     patientName: 'Maria Silva',
     phone: '11999991234',
-    params: { '1': 'Maria', '2': 'Botox' },
-    markSent: vi.fn().mockResolvedValue(undefined),
+    values: { patient_name: 'Maria', procedure_name: 'Botox' },
+    claim: vi.fn().mockResolvedValue(true),
+    release: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }
 }
@@ -101,9 +104,8 @@ describe('runTemplateAutomation', () => {
     expect(loadDue).not.toHaveBeenCalled()
   })
 
-  it('sends the template for the trigger with the loader params and the automation config', async () => {
-    const message = dueMessage()
-    const loadDue = vi.fn().mockResolvedValue([message])
+  it('sends the trigger template with positional params built from the keyed values', async () => {
+    const loadDue = vi.fn().mockResolvedValue([dueMessage()])
 
     const result = await runTemplateAutomation('follow_up', loadDue)
 
@@ -121,20 +123,52 @@ describe('runTemplateAutomation', () => {
       'pt_BR',
       { '1': 'Maria', '2': 'Botox' },
     )
-    expect(message.markSent).toHaveBeenCalledTimes(1)
     expect(result.outcomes[0]).toMatchObject({ reason: 'sent', sent: 1, failed: 0 })
   })
 
-  it('marks a sent message even when recording it in the inbox fails, so it is not sent twice', async () => {
+  it('reports a stored config the schema rejects instead of sending with it', async () => {
+    vi.mocked(listAutomations).mockResolvedValue([
+      { trigger: 'follow_up', enabled: true, config: { daysAfterProcedure: -3 } },
+    ] as never)
+    const loadDue = vi.fn()
+
+    const result = await runTemplateAutomation('follow_up', loadDue)
+
+    expect(result.outcomes[0].reason).toBe('tenant_error')
+    expect(loadDue).not.toHaveBeenCalled()
+  })
+
+  it('skips a message another run already claimed', async () => {
+    const message = dueMessage({ claim: vi.fn().mockResolvedValue(false) })
+
+    const result = await runTemplateAutomation('follow_up', vi.fn().mockResolvedValue([message]))
+
+    expect(sendTemplateMessage).not.toHaveBeenCalled()
+    expect(result.outcomes[0]).toMatchObject({ reason: 'no_messages_due', sent: 0 })
+  })
+
+  it('counts the message as sent and keeps its claim when only the inbox write fails', async () => {
     vi.mocked(createMessage).mockRejectedValue(new Error('db down'))
     const message = dueMessage()
 
-    await runTemplateAutomation('follow_up', vi.fn().mockResolvedValue([message]))
+    const result = await runTemplateAutomation('follow_up', vi.fn().mockResolvedValue([message]))
 
-    expect(message.markSent).toHaveBeenCalledTimes(1)
+    expect(message.release).not.toHaveBeenCalled()
+    expect(result.outcomes[0]).toMatchObject({ reason: 'sent', sent: 1, failed: 0 })
   })
 
-  it('stops the tenant at credit exhaustion without marking the unsent message', async () => {
+  it('releases the claim when the send fails, so the next run retries it', async () => {
+    vi.mocked(sendTemplateMessage).mockRejectedValue(new Error('Meta API error'))
+    const message = dueMessage()
+
+    const result = await runTemplateAutomation('follow_up', vi.fn().mockResolvedValue([message]))
+
+    expect(message.release).toHaveBeenCalledTimes(1)
+    expect(result.outcomes[0]).toMatchObject({ reason: 'send_failed', failed: 1 })
+    expect(captureExceptionMock).toHaveBeenCalled()
+  })
+
+  it('stops the tenant at credit exhaustion, releasing the unsent message and claiming no more', async () => {
     vi.mocked(sendTemplateMessage)
       .mockResolvedValueOnce({ metaMessageId: 'wamid.1' })
       .mockRejectedValueOnce(new CreditExhaustedError(100, 100, 1))
@@ -144,9 +178,9 @@ describe('runTemplateAutomation', () => {
 
     const result = await runTemplateAutomation('follow_up', vi.fn().mockResolvedValue([first, second, third]))
 
-    expect(sendTemplateMessage).toHaveBeenCalledTimes(2)
-    expect(second.markSent).not.toHaveBeenCalled()
-    expect(third.markSent).not.toHaveBeenCalled()
+    expect(first.release).not.toHaveBeenCalled()
+    expect(second.release).toHaveBeenCalledTimes(1)
+    expect(third.claim).not.toHaveBeenCalled()
     expect(result.outcomes[0]).toMatchObject({ reason: 'credit_exhausted', sent: 1 })
     expect(captureExceptionMock).not.toHaveBeenCalled()
   })
@@ -157,8 +191,8 @@ describe('runTemplateAutomation', () => {
 
     const result = await runTemplateAutomation('follow_up', vi.fn().mockResolvedValue([invalid, valid]))
 
-    expect(invalid.markSent).not.toHaveBeenCalled()
-    expect(valid.markSent).toHaveBeenCalledTimes(1)
+    expect(invalid.release).toHaveBeenCalledTimes(1)
+    expect(valid.release).not.toHaveBeenCalled()
     expect(result.outcomes[0]).toMatchObject({ reason: 'sent', sent: 1, failed: 0 })
     expect(captureExceptionMock).not.toHaveBeenCalled()
   })

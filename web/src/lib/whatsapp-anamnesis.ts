@@ -15,8 +15,7 @@ import {
 import { getTemplateForTenant, sendTemplateMessage } from '@/lib/whatsapp'
 import { brToday } from '@/lib/dates'
 import { reportSideEffectFailure } from '@/lib/observability'
-
-const DEFAULT_ANAMNESIS_STALE_DAYS = 60
+import { parseAutomationConfig } from '@/lib/whatsapp-automation-config'
 
 export type AutoSendAnamnesisResult =
   | { status: 'sent'; metaMessageId: string }
@@ -57,12 +56,12 @@ export async function maybeAutoSendAnamnesisLink({
     return { status: 'skipped', reason: 'automation_disabled' }
   }
 
-  const config = (confirmationAuto.config ?? {}) as Record<string, unknown>
+  const config = parseAutomationConfig('appointment_confirmation', confirmationAuto.config)
   if (!config.autoAnamnesisEnabled) {
     return { status: 'skipped', reason: 'automation_disabled' }
   }
 
-  const staleDays = (config.anamnesisStaleDays as number) ?? DEFAULT_ANAMNESIS_STALE_DAYS
+  const staleDays = config.anamnesisStaleDays
   const anamnesis = await getAnamnesis(tenantId, patientId)
   if (anamnesis?.updatedAt) {
     const daysSince = (Date.now() - new Date(anamnesis.updatedAt).getTime()) / (1000 * 60 * 60 * 24)

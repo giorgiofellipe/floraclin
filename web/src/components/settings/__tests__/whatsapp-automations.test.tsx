@@ -55,7 +55,7 @@ describe('WhatsAppAutomations in FloraClin mode', () => {
     expect(fetchMock).not.toHaveBeenCalledWith('/api/whatsapp/templates')
   })
 
-  it('previews the message each automation sends, naming its variables next to a filled example', async () => {
+  it('previews the message an automation sends, naming its variables next to a filled example', async () => {
     const fetchMock = mockFetch({
       '/api/whatsapp/automations': { data: [] },
       '/api/whatsapp/templates/system': {
