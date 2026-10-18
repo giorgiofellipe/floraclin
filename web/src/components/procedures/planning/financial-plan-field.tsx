@@ -122,7 +122,7 @@ export function FinancialPlanField({ control, form, disabled, hideTotalAmount }:
                   onValueChange={(v) =>
                     update({ installmentCount: parseInt(String(v ?? '1'), 10) })
                   }
-                  disabled={disabled}
+                  disabled={disabled || value.paymentMethod === 'debit_card'}
                 >
                   <SelectTrigger
                     aria-invalid={installmentCountHasError || undefined}
@@ -147,9 +147,14 @@ export function FinancialPlanField({ control, form, disabled, hideTotalAmount }:
               <Select
                 items={PAYMENT_METHOD_LABELS}
                 value={value.paymentMethod ?? ''}
-                onValueChange={(v) =>
-                  update({ paymentMethod: (v || undefined) as PaymentMethod | undefined })
-                }
+                onValueChange={(v) => {
+                  const paymentMethod = (v || undefined) as PaymentMethod | undefined
+                  update(
+                    paymentMethod === 'debit_card'
+                      ? { paymentMethod, installmentCount: 1 }
+                      : { paymentMethod },
+                  )
+                }}
                 disabled={disabled}
               >
                 <SelectTrigger className="max-w-sm border-sage/20 focus:border-sage/40">

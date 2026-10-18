@@ -27,22 +27,33 @@ import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { requireWrite } from '@/lib/write-access'
 import { finalizeEncounter } from '@/lib/encounter-finalize'
+import { recordPayment } from '@/db/queries/financial'
+import { BusinessError } from '@/lib/errors'
+import { reportSideEffectFailure } from '@/lib/observability'
 import { encounterCartSchema } from '@/validations/encounter-cart'
 import { getDefaultPackageValidityMonths } from '@/lib/tenant-settings'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { handleApiError } from '@/lib/api-error'
 
+const PAYMENT_PENDING_MESSAGE = 'Não foi possível registrar o pagamento. A cobrança ficou pendente.'
+
 const requestSchema = z.object({
   cart: encounterCartSchema,
   draftRecordIds: z.array(z.string().uuid()).min(1),
   patientId: z.string().uuid(),
-  financialPlan: z.object({
-    totalAmount: z.string(),
-    installmentCount: z.number().int().min(1),
-    paymentMethod: z.string(),
-    notes: z.string().optional(),
-  }),
+  financialPlan: z
+    .object({
+      totalAmount: z.string(),
+      installmentCount: z.number().int().min(1).max(12),
+      paymentMethod: z.enum(['pix', 'credit_card', 'debit_card', 'cash', 'transfer']),
+      notes: z.string().optional(),
+    })
+    .refine((plan) => plan.paymentMethod !== 'debit_card' || plan.installmentCount === 1, {
+      message: 'Débito não pode ser parcelado',
+      path: ['installmentCount'],
+    }),
+  cardPayment: z.object({ terminalId: z.string().uuid() }).optional(),
   consents: z.array(
     z.object({
       consentTemplateId: z.string().uuid(),
@@ -53,6 +64,13 @@ const requestSchema = z.object({
     }),
   ),
 })
+  .refine(
+    (body) =>
+      body.cardPayment === undefined ||
+      body.financialPlan.paymentMethod === 'credit_card' ||
+      body.financialPlan.paymentMethod === 'debit_card',
+    { message: 'Pagamento no cartão exige forma de pagamento em cartão', path: ['cardPayment'] },
+  )
 
 export async function POST(
   request: Request,
@@ -97,7 +115,36 @@ export async function POST(
       tenantDefaultValidityMonths: defaultValidity,
     })
 
-    return NextResponse.json({ success: true, data: result })
+    let paymentError: string | undefined
+    if (body.cardPayment) {
+      const { totalAmount, paymentMethod, installmentCount } = body.financialPlan
+      const amount = Number(Number(totalAmount).toFixed(2))
+      try {
+        await recordPayment(ctx.tenantId, ctx.userId, {
+          installmentId: result.firstInstallmentId,
+          amount,
+          paymentMethod,
+          expectedTotalDue: amount,
+          card: {
+            terminalId: body.cardPayment.terminalId,
+            installmentCount: paymentMethod === 'debit_card' ? 1 : installmentCount,
+          },
+        })
+      } catch (error) {
+        if (error instanceof BusinessError) {
+          paymentError = error.message
+        } else {
+          paymentError = PAYMENT_PENDING_MESSAGE
+          reportSideEffectFailure(error, {
+            area: 'encounter-finalize',
+            step: 'card-payment',
+            extra: { financialEntryId: result.financialEntryId },
+          })
+        }
+      }
+    }
+
+    return NextResponse.json({ success: true, data: result, ...(paymentError && { paymentError }) })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

@@ -22,7 +22,8 @@ import { formatCurrency } from '@/lib/utils'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { allocatePayment } from '@/lib/financial/penalties'
 import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
-import { toPaidAtIso } from '@/lib/dates'
+import { brToday, toPaidAtIso } from '@/lib/dates'
+import { CardPaymentFields, type CardPaymentValue } from './card-payment-fields'
 import type { PaymentMethod } from '@/types'
 
 interface PartialPaymentDialogProps {
@@ -32,6 +33,8 @@ interface PartialPaymentDialogProps {
     id: string
     amount: number
   }
+  defaultPaymentMethod?: PaymentMethod
+  defaultCardInstallmentCount?: number
   onSuccess?: () => void
 }
 
@@ -43,11 +46,17 @@ export function PartialPaymentDialog({
   open,
   onOpenChange,
   installment,
+  defaultPaymentMethod = 'pix',
+  defaultCardInstallmentCount = 1,
   onSuccess,
 }: PartialPaymentDialogProps) {
   const [amountStr, setAmountStr] = useState('')
   const [amountTouched, setAmountTouched] = useState(false)
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix')
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(defaultPaymentMethod)
+  const [card, setCard] = useState<CardPaymentValue>({
+    terminalId: null,
+    installmentCount: defaultCardInstallmentCount,
+  })
   const [paidAt, setPaidAt] = useState('')
   const [notes, setNotes] = useState('')
 
@@ -77,6 +86,9 @@ export function PartialPaymentDialog({
   const isPending = payInstallment.isPending
 
   const parsedAmount = amountStr ? parseCurrency(amountStr) : 0
+  const cardMethod =
+    paymentMethod === 'credit_card' || paymentMethod === 'debit_card' ? paymentMethod : null
+  const cardMissingTerminal = cardMethod !== null && card.terminalId === null
 
   useEffect(() => {
     if (!quote || amountTouched) return
@@ -113,6 +125,13 @@ export function PartialPaymentDialog({
         amount: parsedAmount,
         paymentMethod,
         paidAt: paidAtIso,
+        card:
+          cardMethod && card.terminalId
+            ? {
+                terminalId: card.terminalId,
+                installmentCount: cardMethod === 'debit_card' ? 1 : card.installmentCount,
+              }
+            : undefined,
         notes: notes || undefined,
         expectedTotalDue: quote.totalDue,
         acceptOverpayment: isOverpayment || undefined,
@@ -201,6 +220,16 @@ export function PartialPaymentDialog({
             </Select>
           </div>
 
+          {cardMethod && (
+            <CardPaymentFields
+              method={cardMethod}
+              gross={parsedAmount}
+              paymentYmd={paidAt || brToday()}
+              value={card}
+              onChange={setCard}
+            />
+          )}
+
           {/* Backdated payment date */}
           <div className="space-y-2">
             <Label className="uppercase tracking-wider text-xs font-medium text-mid">Data do pagamento (opcional)</Label>
@@ -277,7 +306,7 @@ export function PartialPaymentDialog({
           <Button
             className="bg-forest text-cream hover:bg-sage transition-colors"
             onClick={handleConfirm}
-            disabled={isPending || isQuoting || !quote || !!quoteError || parsedAmount <= 0}
+            disabled={isPending || isQuoting || !quote || !!quoteError || parsedAmount <= 0 || cardMissingTerminal}
           >
             {isPending ? 'Salvando...' : 'Confirmar Pagamento'}
           </Button>

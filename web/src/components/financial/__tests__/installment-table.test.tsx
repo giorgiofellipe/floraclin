@@ -205,4 +205,94 @@ describe('InstallmentTable', () => {
     await screen.findByText(/^Principal\s*R\$/)
     expect(screen.queryByText(/Excedente/)).not.toBeInTheDocument()
   })
+
+  describe('card payment records', () => {
+    function mockCardEntry(card: Record<string, unknown>) {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          paymentMethod: 'credit_card',
+          cardInstallmentCount: 6,
+          installments: [
+            {
+              id: 'inst-1',
+              installmentNumber: 1,
+              amount: '3000.00',
+              dueDate: '2026-08-25',
+              status: 'paid',
+              paidAt: '2026-09-01T15:00:00.000Z',
+              paymentMethod: 'credit_card',
+              notes: null,
+              amountPaid: '3000.00',
+              computedFineAmount: 0,
+              computedInterestAmount: 0,
+              paymentRecords: [
+                {
+                  id: 'pay-1',
+                  amount: '3000.00',
+                  paymentMethod: 'credit_card',
+                  interestCovered: '0',
+                  fineCovered: '0',
+                  principalCovered: '3000.00',
+                  paidAt: '2026-09-01T12:00:00.000Z',
+                  recordedAt: '2026-09-01T12:00:00.000Z',
+                  notes: null,
+                  card,
+                },
+              ],
+            },
+          ],
+        }),
+      } as Response)
+    }
+
+    const card = {
+      terminalName: 'Stone',
+      method: 'credit_card',
+      installmentCount: 6,
+      pendingRepasses: 4,
+      receivedRepasses: 2,
+      linkedPaymentCount: 1,
+    }
+
+    it('labels the record with method, terminal and parcelas', async () => {
+      mockCardEntry(card)
+      render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
+
+      await screen.findByText('Parcela 1/1')
+      fireEvent.click(screen.getByTestId('installment-expand-payments'))
+
+      expect(await screen.findByText('Cartão de crédito · Stone · 6x')).toBeInTheDocument()
+    })
+
+    it('explains the repasse consequences in the reverse dialog', async () => {
+      mockCardEntry(card)
+      render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
+
+      await screen.findByText('Parcela 1/1')
+      fireEvent.click(screen.getByTestId('installment-expand-payments'))
+      fireEvent.click(await screen.findByTestId('payment-reverse'))
+
+      expect(
+        await screen.findByText(
+          '4 repasses futuros serão cancelados. 2 repasses já recebidos ficam no extrato. Estorne o valor ao paciente na maquininha.',
+        ),
+      ).toBeInTheDocument()
+      expect(screen.queryByText(/cobre/)).not.toBeInTheDocument()
+      expect(screen.queryByText(/lançamento de saída/)).not.toBeInTheDocument()
+    })
+
+    it('warns that a bulk card payment reverses every linked parcela', async () => {
+      mockCardEntry({ ...card, linkedPaymentCount: 3 })
+      render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
+
+      await screen.findByText('Parcela 1/1')
+      fireEvent.click(screen.getByTestId('installment-expand-payments'))
+      fireEvent.click(await screen.findByTestId('payment-reverse'))
+
+      expect(
+        await screen.findByText('Este pagamento em cartão cobre 3 parcelas. Todas serão estornadas.'),
+      ).toBeInTheDocument()
+    })
+  })
 })

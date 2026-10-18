@@ -21,17 +21,19 @@ export function FinancialSummary({ stats, month, monthlyGoal = 0 }: FinancialSum
   const hasFinancialData =
     stats.revenueThisMonth !== null &&
     stats.totalPending !== null &&
-    stats.totalExpenses !== null
+    stats.totalExpenses !== null &&
+    stats.totalCardFees !== null
 
   // Fallbacks are only ever read when hasFinancialData is false, in which
   // case the breakdown below isn't rendered, so the value itself is inert.
   const received = stats.revenueThisMonth ?? 0
   const receivable = stats.totalPending ?? 0
   const expenses = stats.totalExpenses ?? 0
+  const cardFees = stats.totalCardFees ?? 0
 
   const goal = monthlyGoal
   const progressPercent = goal > 0 ? Math.min(100, Math.round((received / goal) * 100)) : 0
-  const netProfit = received - expenses
+  const netProfit = received - expenses - cardFees
 
   return (
     <div
@@ -100,6 +102,16 @@ export function FinancialSummary({ stats, month, monthlyGoal = 0 }: FinancialSum
             </div>
             <span className="text-[13px] font-medium text-[#2A2A2A] tabular-nums">
               R$ {expenses.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-sm bg-[#C4A882]" />
+              <span className="text-[13px] text-[#2A2A2A]">Taxas de cartão</span>
+            </div>
+            <span className="text-[13px] font-medium text-[#2A2A2A] tabular-nums">
+              R$ {cardFees.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
             </span>
           </div>
 

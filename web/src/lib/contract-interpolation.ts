@@ -131,9 +131,11 @@ export function buildContractData(
     .map((p) => (p.quantity ? `${p.name} — ${p.quantity}${p.unit ?? ''}` : p.name))
     .join(', ')
 
-  const paymentMethod = financialPlan.paymentMethod
-    ? PAYMENT_METHOD_LABELS[financialPlan.paymentMethod]
-    : 'A definir'
+  const paymentMethod = !financialPlan.paymentMethod
+    ? 'A definir'
+    : financialPlan.paymentMethod === 'credit_card' && financialPlan.installmentCount > 1
+      ? `Cartão de crédito em ${financialPlan.installmentCount}x`
+      : PAYMENT_METHOD_LABELS[financialPlan.paymentMethod]
 
   const parcelas =
     financialPlan.installmentCount > 1

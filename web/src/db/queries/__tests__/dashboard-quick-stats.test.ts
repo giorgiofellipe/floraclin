@@ -83,7 +83,12 @@ vi.mock('../financial', () => ({
   getRevenueOverview: getRevenueOverviewMock,
 }))
 
-function mockRevenueOverview(summary: { totalPending: number; totalExpenses: number; totalOverdue: number }) {
+function mockRevenueOverview(summary: {
+  totalPending: number
+  totalExpenses: number
+  totalOverdue: number
+  totalCardFees?: number
+}) {
   getRevenueOverviewMock.mockResolvedValueOnce({
     summary: {
       totalReceived: 0,
@@ -91,6 +96,7 @@ function mockRevenueOverview(summary: { totalPending: number; totalExpenses: num
       totalPending: summary.totalPending,
       totalExpenses: summary.totalExpenses,
       totalPendingExpenses: 0,
+      totalCardFees: summary.totalCardFees ?? 0,
       netProfit: 0 - summary.totalExpenses,
     },
     monthly: [],
@@ -118,7 +124,7 @@ describe('getQuickStats', () => {
     selectQueue.push([{ total: 4 }]) // patients this week
     selectQueue.push([{ total: 12 }]) // procedures this month
     selectQueue.push([{ total: '2500' }]) // revenue this month (pg sum comes back as a string)
-    mockRevenueOverview({ totalPending: 800, totalExpenses: 500, totalOverdue: 200 })
+    mockRevenueOverview({ totalPending: 800, totalExpenses: 500, totalOverdue: 200, totalCardFees: 42 })
 
     const result = await getQuickStats('tenant-1')
 
@@ -129,6 +135,7 @@ describe('getQuickStats', () => {
       totalPending: 800,
       totalExpenses: 500,
       totalOverdue: 200,
+      totalCardFees: 42,
     })
   })
 
@@ -146,7 +153,7 @@ describe('getQuickStats', () => {
   it('an explicit past month scopes procedures/revenue to it and nulls out the week metric', async () => {
     selectQueue.push([{ total: 7 }]) // procedures (no patients-this-week call issued)
     selectQueue.push([{ total: '1000' }]) // revenue
-    mockRevenueOverview({ totalPending: 300, totalExpenses: 150, totalOverdue: 50 })
+    mockRevenueOverview({ totalPending: 300, totalExpenses: 150, totalOverdue: 50, totalCardFees: 7 })
 
     const result = await getQuickStats('tenant-1', undefined, '2026-02')
 
@@ -157,6 +164,7 @@ describe('getQuickStats', () => {
       totalPending: 300,
       totalExpenses: 150,
       totalOverdue: 50,
+      totalCardFees: 7,
     })
   })
 
@@ -180,6 +188,7 @@ describe('getQuickStats', () => {
     expect(result.totalPending).toBeNull()
     expect(result.totalExpenses).toBeNull()
     expect(result.totalOverdue).toBeNull()
+    expect(result.totalCardFees).toBeNull()
     // Practitioners never trigger the clinic-wide revenue query at all.
     expect(getRevenueOverviewMock).not.toHaveBeenCalled()
   })
@@ -207,6 +216,7 @@ describe('getQuickStats', () => {
       totalPending: 0,
       totalExpenses: 0,
       totalOverdue: 0,
+      totalCardFees: 0,
     })
   })
 })

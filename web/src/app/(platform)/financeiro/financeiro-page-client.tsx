@@ -12,6 +12,7 @@ import {
   BookOpenIcon,
   UsersIcon,
   BarChart3Icon,
+  CreditCardIcon,
 } from 'lucide-react'
 
 const ExpenseList = lazy(() =>
@@ -19,6 +20,11 @@ const ExpenseList = lazy(() =>
 )
 const LedgerView = lazy(() =>
   import('@/components/financial/ledger/ledger-view').then((m) => ({ default: m.LedgerView }))
+)
+const CardRepassesView = lazy(() =>
+  import('@/components/financial/card-repasses/card-repasses-view').then((m) => ({
+    default: m.CardRepassesView,
+  }))
 )
 const PractitionerPLView = lazy(() =>
   import('@/components/financial/practitioner-pl/practitioner-pl-view').then((m) => ({
@@ -33,6 +39,7 @@ const TABS = [
   { value: 'receivables', label: 'A Receber', icon: ReceiptIcon },
   { value: 'expenses', label: 'Despesas', icon: ArrowDownCircleIcon },
   { value: 'ledger', label: 'Extrato', icon: BookOpenIcon },
+  { value: 'card-repasses', label: 'Repasses', icon: CreditCardIcon },
   { value: 'practitioner-pl', label: 'Por Profissional', icon: UsersIcon },
   { value: 'overview', label: 'Visão Geral', icon: BarChart3Icon },
 ] as const
@@ -125,6 +132,12 @@ export function FinanceiroPageClient() {
         {activeTab === 'ledger' && (
           <Suspense fallback={<TabFallback />}>
             <LedgerView />
+          </Suspense>
+        )}
+
+        {activeTab === 'card-repasses' && (
+          <Suspense fallback={<TabFallback />}>
+            <CardRepassesView />
           </Suspense>
         )}
 

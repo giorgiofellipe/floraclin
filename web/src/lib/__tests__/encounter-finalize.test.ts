@@ -20,6 +20,7 @@
  */
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import type { PaymentMethod } from '@/types'
 import { __test__ } from '../encounter-finalize'
 
 // ─── Pure helper: computeExpiresAt (Patch P5) ────────────────────────
@@ -123,7 +124,10 @@ const { txState, createFinancialEntryMock } = vi.hoisted(() => {
       _userId: string,
       _data: Record<string, unknown>,
       _tx?: unknown,
-    ): Promise<{ id: string }> => ({ id: 'fe-id-generated' }),
+    ): Promise<{ id: string; installmentIds: string[] }> => ({
+      id: 'fe-id-generated',
+      installmentIds: ['inst-1', 'inst-2'],
+    }),
   )
   ;(globalThis as Record<string, unknown>).__atfin_createFinancialEntryMock = createFinancialEntryMock
 
@@ -136,7 +140,10 @@ function resetTx() {
   txState.insertCalls = []
   txState.updateCalls = []
   createFinancialEntryMock.mockClear()
-  createFinancialEntryMock.mockImplementation(async () => ({ id: 'fe-id-generated' }))
+  createFinancialEntryMock.mockImplementation(async () => ({
+    id: 'fe-id-generated',
+    installmentIds: ['inst-1', 'inst-2'],
+  }))
 }
 
 // Stub @/db/queries/financial so we can assert against createFinancialEntry.
@@ -344,6 +351,50 @@ describe('finalizeEncounter', () => {
     expect(pkgInsert!.values.name).toBe('Pacote Skinbooster — 4 sessões')
     expect(pkgInsert!.values.status).toBe('active')
     expect(pkgInsert!.values.financialEntryId).toBe('fe-id-generated')
+  })
+
+  it.each<{
+    name: string
+    plan: { installmentCount: number; paymentMethod: PaymentMethod }
+    expected: { installmentCount: number; paymentMethod: string; cardInstallmentCount: number | undefined }
+  }>([
+    {
+      name: 'credit 6x becomes one entry installment with 6 card installments',
+      plan: { installmentCount: 6, paymentMethod: 'credit_card' },
+      expected: { installmentCount: 1, paymentMethod: 'credit_card', cardInstallmentCount: 6 },
+    },
+    {
+      name: 'debit settles as 1 card installment',
+      plan: { installmentCount: 1, paymentMethod: 'debit_card' },
+      expected: { installmentCount: 1, paymentMethod: 'debit_card', cardInstallmentCount: 1 },
+    },
+    {
+      name: 'pix 3x keeps the plan installments and has no card count',
+      plan: { installmentCount: 3, paymentMethod: 'pix' },
+      expected: { installmentCount: 3, paymentMethod: 'pix', cardInstallmentCount: undefined },
+    },
+  ])('passes the payment method to the entry: $name', async ({ plan, expected }) => {
+    const draftId = '00000000-0000-0000-0000-00000000d010'
+    txState.executeResponses.push({
+      rows: [{ id: draftId, tenant_id: tenantId, patient_id: patientId, status: 'draft', planned_snapshot: null }],
+    })
+
+    const result = await finalizeEncounter({
+      tenantId,
+      userId,
+      encounterId,
+      patientId,
+      practitionerId,
+      cart: adhocCart,
+      draftRecordIds: [draftId],
+      financialPlan: { totalAmount: '800.00', ...plan },
+      consents: [],
+    })
+
+    const data = createFinancialEntryMock.mock.calls[0][2]
+    expect(data).toMatchObject({ installmentCount: expected.installmentCount, paymentMethod: expected.paymentMethod })
+    expect(data.cardInstallmentCount).toBe(expected.cardInstallmentCount)
+    expect(result.firstInstallmentId).toBe('inst-1')
   })
 
   it('skips package row for a single ad-hoc session', async () => {

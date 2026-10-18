@@ -48,6 +48,7 @@ import {
 import { brToday, parseBrDate, toBrYmd } from '@/lib/dates'
 import { addMonths } from 'date-fns'
 import { createAuditLog } from '@/lib/audit'
+import type { PaymentMethod } from '@/types'
 
 export interface FinalizeEncounterInput {
   tenantId: string
@@ -74,7 +75,7 @@ export interface FinalizeEncounterInput {
   financialPlan: {
     totalAmount: string
     installmentCount: number
-    paymentMethod: string
+    paymentMethod: PaymentMethod
     notes?: string
   }
   consents: Array<{
@@ -92,6 +93,7 @@ export interface FinalizeEncounterResult {
   patientPackageId: string | null
   procedureRecordIds: string[]
   financialEntryId: string
+  firstInstallmentId: string
 }
 
 /**
@@ -184,6 +186,9 @@ export async function finalizeEncounter(
 
     const description = packageName ?? `Atendimento — ${input.cart.lines.map((l) => l.procedureTypeName).join(', ')}`
 
+    const { paymentMethod, installmentCount } = input.financialPlan
+    const isCard = paymentMethod === 'credit_card' || paymentMethod === 'debit_card'
+
     const feEntry = await createFinancialEntry(
       input.tenantId,
       input.userId,
@@ -191,7 +196,13 @@ export async function finalizeEncounter(
         patientId: input.patientId,
         description,
         totalAmount,
-        installmentCount: input.financialPlan.installmentCount,
+        installmentCount: isCard ? 1 : installmentCount,
+        paymentMethod,
+        cardInstallmentCount: isCard
+          ? paymentMethod === 'debit_card'
+            ? 1
+            : installmentCount
+          : undefined,
         notes: input.financialPlan.notes,
       },
       tx,
@@ -330,6 +341,7 @@ export async function finalizeEncounter(
       patientPackageId,
       procedureRecordIds: finalRecordIds,
       financialEntryId: feEntry.id,
+      firstInstallmentId: feEntry.installmentIds[0],
     }
   }
 

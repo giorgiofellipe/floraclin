@@ -48,6 +48,7 @@ export async function GET(request: Request) {
           totalPending: ctx.role === 'practitioner' ? null : 0,
           totalExpenses: ctx.role === 'practitioner' ? null : 0,
           totalOverdue: ctx.role === 'practitioner' ? null : 0,
+          totalCardFees: ctx.role === 'practitioner' ? null : 0,
         })),
         getUpcomingFollowUps(ctx.tenantId, practitionerId).catch(() => []),
         getRecentActivity(ctx.tenantId, 10).catch(() => []),

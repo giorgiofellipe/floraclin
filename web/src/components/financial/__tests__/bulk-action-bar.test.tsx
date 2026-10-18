@@ -2,6 +2,55 @@ import { afterEach, describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BulkActionBar } from '../bulk-action-bar'
+import { useInstallmentQuote } from '@/hooks/queries/use-installment-quote'
+
+vi.mock('@/hooks/queries/use-installment-quote', () => ({
+  useInstallmentQuote: vi.fn(),
+}))
+
+vi.mock('@/hooks/queries/use-card-terminals', () => ({
+  useCardTerminals: () => ({
+    data: {
+      data: [
+        {
+          id: 'term-1',
+          name: 'Stone',
+          isDefault: true,
+          debitRate: '1.50',
+          debitPayoutDays: 1,
+          creditRates: Array.from({ length: 12 }, () => '4.00'),
+          creditPayoutMode: 'per_installment',
+          creditLumpSumDays: 1,
+        },
+      ],
+    },
+    isLoading: false,
+  }),
+}))
+
+// The bar's method select is a popover; mocking it to a native select drives the choice.
+vi.mock('@/components/ui/select', () => ({
+  Select: ({
+    value,
+    onValueChange,
+    items,
+  }: {
+    value: string
+    onValueChange: (v: string) => void
+    items: Record<string, string>
+  }) => (
+    <select data-testid="method-select" value={value} onChange={(e) => onValueChange(e.target.value)}>
+      {Object.entries(items ?? {}).map(([k, label]) => (
+        <option key={k} value={k}>
+          {label}
+        </option>
+      ))}
+    </select>
+  ),
+  SelectTrigger: () => null,
+  SelectValue: () => null,
+  SelectContent: () => null,
+}))
 
 const mockBulkPay = vi.fn().mockResolvedValue({})
 const mockBulkCancel = vi.fn().mockResolvedValue({})
@@ -202,6 +251,80 @@ describe('BulkActionBar', () => {
 
     await waitFor(() => {
       expect(mockBulkPay).toHaveBeenCalledWith(expect.objectContaining({ paidAt: '2026-08-15T15:00:00.000Z' }))
+    })
+  })
+
+  describe('card bulk pay', () => {
+    function quotes(byId: Record<string, number | undefined>) {
+      vi.mocked(useInstallmentQuote).mockImplementation(
+        (id: string) =>
+          ({
+            data: byId[id] === undefined ? undefined : { totalDue: byId[id] },
+            error: null,
+          }) as ReturnType<typeof useInstallmentQuote>,
+      )
+    }
+
+    function openCardDialog() {
+      render(
+        <BulkActionBar
+          selectedCount={2}
+          selectedInstallmentIds={['a', 'b']}
+          selectedEntryIds={['e1', 'e2']}
+          onClear={() => {}}
+          onRenegotiate={() => {}}
+        />,
+        { wrapper: createWrapper() },
+      )
+      fireEvent.click(screen.getByText(/Marcar como pago \(2\)/))
+      fireEvent.change(screen.getByTestId('method-select'), { target: { value: 'credit_card' } })
+    }
+
+    it('keeps confirm disabled on Calculando... until every quote resolves, then prices the sum', async () => {
+      quotes({ a: 500, b: undefined })
+      openCardDialog()
+
+      expect(screen.getByText('Calculando...')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled()
+
+      quotes({ a: 500, b: 530.5 })
+      fireEvent.change(screen.getByTestId('bulk-pay-date'), { target: { value: '2026-08-15' } })
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Confirmar' })).not.toBeDisabled()
+      })
+      expect(screen.getByText('R$ 1.030,50', { exact: false })).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+      await waitFor(() => {
+        expect(mockBulkPay).toHaveBeenCalledWith(
+          expect.objectContaining({
+            paymentMethod: 'credit_card',
+            card: { terminalId: 'term-1', installmentCount: 1 },
+          }),
+        )
+      })
+    })
+
+    it('sends no card for pix', async () => {
+      quotes({})
+      render(
+        <BulkActionBar
+          selectedCount={2}
+          selectedInstallmentIds={['a', 'b']}
+          selectedEntryIds={['e1', 'e2']}
+          onClear={() => {}}
+          onRenegotiate={() => {}}
+        />,
+        { wrapper: createWrapper() },
+      )
+      fireEvent.click(screen.getByText(/Marcar como pago \(2\)/))
+      fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+      await waitFor(() => {
+        expect(mockBulkPay).toHaveBeenCalledTimes(1)
+      })
+      expect(mockBulkPay.mock.calls[0][0].card).toBeUndefined()
     })
   })
 })

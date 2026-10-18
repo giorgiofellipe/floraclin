@@ -90,6 +90,7 @@ export interface QuickStats {
   totalPending: number | null
   totalExpenses: number | null
   totalOverdue: number | null
+  totalCardFees: number | null
 }
 
 export interface UpcomingFollowUp {
@@ -220,6 +221,7 @@ export async function getQuickStats(
   let totalPending: number | null = null
   let totalExpenses: number | null = null
   let totalOverdue: number | null = null
+  let totalCardFees: number | null = null
   if (!practitionerId) {
     const revenueConditions = [
       eq(installments.tenantId, tenantId),
@@ -248,6 +250,7 @@ export async function getQuickStats(
     totalPending = Number(revenueOverview.summary.totalPending)
     totalExpenses = Number(revenueOverview.summary.totalExpenses)
     totalOverdue = Number(revenueOverview.summary.totalOverdue)
+    totalCardFees = Number(revenueOverview.summary.totalCardFees)
   }
 
   return {
@@ -257,6 +260,7 @@ export async function getQuickStats(
     totalPending,
     totalExpenses,
     totalOverdue,
+    totalCardFees,
   }
 }
 

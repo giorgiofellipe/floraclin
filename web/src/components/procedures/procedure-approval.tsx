@@ -10,7 +10,11 @@ import {
   ArrowLeft,
   RefreshCw,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { CardPaymentFields } from '@/components/financial/card-payment-fields'
+import { brToday } from '@/lib/dates'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAcceptConsent } from '@/hooks/mutations/use-consent-mutations'
 import {
@@ -211,6 +215,8 @@ export function ProcedureApproval({
   const [isApproving, setIsApproving] = useState(false)
   const [approveError, setApproveError] = useState<string | null>(null)
   const [approved, setApproved] = useState(false)
+  const [cardNow, setCardNow] = useState(false)
+  const [cardTerminalId, setCardTerminalId] = useState<string | null>(null)
 
   // Explicit dirty tracking — approval is not a form, so we manage this manually.
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -237,6 +243,11 @@ export function ProcedureApproval({
     }
     return legacyFinancialPlan
   }, [isCartMode, cart, cartTotal, legacyFinancialPlan])
+
+  const cardMethod =
+    financialPlan?.paymentMethod === 'credit_card' || financialPlan?.paymentMethod === 'debit_card'
+      ? financialPlan.paymentMethod
+      : null
 
   const diagramPoints = useMemo(() => diagramsToPoints(diagrams ?? []), [diagrams])
   const productTotals = useMemo(() => computeProductTotals(diagramPoints), [diagramPoints])
@@ -470,6 +481,15 @@ export function ProcedureApproval({
       return
     }
 
+    if (cardMethod && cardNow && !cardTerminalId) {
+      const error = 'Selecione a maquininha'
+      setApproveError(error)
+      if (origin === 'wizard') {
+        wizardOverrides?.onSaveComplete?.({ success: false, error, errorType: 'precondition' })
+      }
+      return
+    }
+
     setIsApproving(true)
     setApproveError(null)
 
@@ -518,6 +538,9 @@ export function ProcedureApproval({
           paymentMethod: financialPlan?.paymentMethod ?? 'pix',
           notes: financialPlan?.notes,
         },
+        ...(cardMethod && cardNow && cardTerminalId
+          ? { cardPayment: { terminalId: cardTerminalId } }
+          : {}),
         // Per-type consents and the service contract are recorded inline via
         // `acceptConsent` against the primary draft record. The finalize
         // endpoint's consent insert loop receives an empty array — no extra
@@ -548,6 +571,7 @@ export function ProcedureApproval({
               procedureRecordIds: string[]
               financialEntryId: string
             }
+            paymentError?: string
           }
         | { success: false; error: string }
 
@@ -555,6 +579,12 @@ export function ProcedureApproval({
         const msg =
           (!json.success && json.error) || 'Erro ao finalizar atendimento'
         throw new Error(msg)
+      }
+
+      if (json.paymentError) {
+        toast.error(json.paymentError, {
+          description: 'A cobrança ficou pendente no Financeiro.',
+        })
       }
 
       setApproved(true)
@@ -596,6 +626,9 @@ export function ProcedureApproval({
     procedure,
     legacyFinancialPlan,
     financialPlan,
+    cardMethod,
+    cardNow,
+    cardTerminalId,
     patient.id,
     practitionerId,
     primaryRecordId,
@@ -734,6 +767,36 @@ export function ProcedureApproval({
         onSignatureChange={handleContractSignatureChange}
         onSignContract={handleSignContract}
       />
+
+      {cardMethod && financialPlan && (
+        <Card className="border-0 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">
+          <CardContent className="space-y-4 py-6">
+            <label className="flex cursor-pointer items-center gap-3">
+              <Checkbox
+                checked={cardNow}
+                onCheckedChange={(val) => setCardNow(val === true)}
+                disabled={isApproving}
+                className="border-sage data-[state=checked]:bg-forest data-[state=checked]:border-forest"
+              />
+              <span className="text-sm font-medium text-charcoal">Pagamento no cartão feito agora</span>
+            </label>
+            {cardNow && (
+              <CardPaymentFields
+                method={cardMethod}
+                gross={financialPlan.totalAmount}
+                paymentYmd={brToday()}
+                value={{
+                  terminalId: cardTerminalId,
+                  installmentCount: cardMethod === 'debit_card' ? 1 : financialPlan.installmentCount,
+                }}
+                onChange={(v) => setCardTerminalId(v.terminalId)}
+                lockInstallmentCount
+                disabled={isApproving}
+              />
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {!wizardOverrides?.hideSaveButton && (
         <Card className="border-0 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">

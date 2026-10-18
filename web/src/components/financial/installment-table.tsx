@@ -39,6 +39,23 @@ interface PaymentRecord {
   paidAt: string
   recordedAt: string
   notes: string | null
+  card?: CardSummary | null
+}
+
+interface CardSummary {
+  terminalName: string
+  method: string
+  installmentCount: number
+  pendingRepasses: number
+  receivedRepasses: number
+  linkedPaymentCount: number
+}
+
+function cardLabel(card: CardSummary): string {
+  const method = card.method === 'debit_card' ? 'Cartão de débito' : 'Cartão de crédito'
+  return card.method === 'debit_card'
+    ? `${method} · ${card.terminalName}`
+    : `${method} · ${card.terminalName} · ${card.installmentCount}x`
 }
 
 interface Installment {
@@ -281,7 +298,11 @@ export function InstallmentTable({
                               {formatDateTime(pr.paidAt)}
                             </span>
                             <span className="text-[10px] text-mid">
-                              {pr.paymentMethod ? PAYMENT_METHOD_LABELS[pr.paymentMethod] ?? pr.paymentMethod : ''}
+                              {pr.card
+                                ? cardLabel(pr.card)
+                                : pr.paymentMethod
+                                  ? PAYMENT_METHOD_LABELS[pr.paymentMethod] ?? pr.paymentMethod
+                                  : ''}
                             </span>
                           </div>
                           {/* Allocation breakdown */}
@@ -344,8 +365,23 @@ export function InstallmentTable({
               <strong>{formatCurrency(Number(reverseDialogPayment?.amount ?? 0))}</strong>
               {' '}realizado em{' '}
               <strong>{reverseDialogPayment ? formatDateTime(reverseDialogPayment.paidAt) : ''}</strong>.
-              {' '}Um lançamento de saída será criado no caixa.
+              {reverseDialogPayment?.card ? null : ' Um lançamento de saída será criado no caixa.'}
             </DialogDescription>
+            {reverseDialogPayment?.card && (
+              <div className="space-y-2 text-sm text-mid">
+                <p>
+                  {reverseDialogPayment.card.pendingRepasses} repasses futuros serão cancelados.{' '}
+                  {reverseDialogPayment.card.receivedRepasses} repasses já recebidos ficam no extrato.{' '}
+                  Estorne o valor ao paciente na maquininha.
+                </p>
+                {reverseDialogPayment.card.linkedPaymentCount > 1 && (
+                  <p>
+                    Este pagamento em cartão cobre {reverseDialogPayment.card.linkedPaymentCount} parcelas.
+                    Todas serão estornadas.
+                  </p>
+                )}
+              </div>
+            )}
           </DialogHeader>
           <div className="space-y-2">
             <label className="text-xs uppercase tracking-wider font-medium text-mid">
@@ -399,6 +435,8 @@ export function InstallmentTable({
             id: payDialogInstallment.id,
             amount: Number(payDialogInstallment.amount),
           }}
+          defaultPaymentMethod={entryData?.paymentMethod ?? undefined}
+          defaultCardInstallmentCount={entryData?.cardInstallmentCount ?? undefined}
           onSuccess={onPaymentComplete}
         />
       )}

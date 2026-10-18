@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -19,7 +19,9 @@ import { useBulkPay, useBulkCancel, useBulkUncancel } from '@/hooks/mutations/us
 import { cn } from '@/lib/utils'
 import { ReasonDialog } from './reason-dialog'
 import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
-import { toPaidAtIso } from '@/lib/dates'
+import { brToday, toPaidAtIso } from '@/lib/dates'
+import { useInstallmentQuote } from '@/hooks/queries/use-installment-quote'
+import { CardPaymentFields, type CardPaymentValue } from './card-payment-fields'
 import { CheckCircleIcon, XCircleIcon, RefreshCwIcon, Undo2Icon } from 'lucide-react'
 import type { PaymentMethod } from '@/types'
 
@@ -32,6 +34,23 @@ interface BulkActionBarProps {
   onClear: () => void
   onRenegotiate: () => void
   onSuccess?: () => void
+}
+
+function QuoteProbe({
+  id,
+  paidAt,
+  onTotal,
+}: {
+  id: string
+  paidAt?: string
+  onTotal: (id: string, state: number | 'error' | null) => void
+}) {
+  const { data, error } = useInstallmentQuote(id, paidAt)
+  const state = error ? 'error' : (data?.totalDue ?? null)
+  useEffect(() => {
+    onTotal(id, state)
+  }, [id, state, onTotal])
+  return null
 }
 
 export function BulkActionBar({
@@ -49,6 +68,8 @@ export function BulkActionBar({
   const [uncancelDialogOpen, setUncancelDialogOpen] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix')
   const [paidAt, setPaidAt] = useState('')
+  const [card, setCard] = useState<CardPaymentValue>({ terminalId: null, installmentCount: 1 })
+  const [quotes, setQuotes] = useState<Record<string, number | 'error' | null>>({})
   const [cancelReason, setCancelReason] = useState('')
   const [uncancelReason, setUncancelReason] = useState('')
 
@@ -56,12 +77,33 @@ export function BulkActionBar({
   const bulkCancel = useBulkCancel()
   const bulkUncancel = useBulkUncancel()
 
+  const cardMethod =
+    paymentMethod === 'credit_card' || paymentMethod === 'debit_card' ? paymentMethod : null
+  const paidAtIso = toPaidAtIso(paidAt)
+  const quoteStates = selectedInstallmentIds.map((id) => quotes[id] ?? null)
+  const quoteFailed = quoteStates.includes('error')
+  const quotesReady = quoteStates.every((q) => typeof q === 'number')
+  const cardGross = quotesReady
+    ? Math.round(quoteStates.reduce<number>((sum, q) => sum + (q as number) * 100, 0)) / 100
+    : 0
+
+  function handleQuote(id: string, state: number | 'error' | null) {
+    setQuotes((prev) => (prev[id] === state ? prev : { ...prev, [id]: state }))
+  }
+
   async function handleBulkPay() {
     try {
       await bulkPay.mutateAsync({
         installmentIds: selectedInstallmentIds,
         paymentMethod,
-        paidAt: toPaidAtIso(paidAt),
+        paidAt: paidAtIso,
+        card:
+          cardMethod && card.terminalId
+            ? {
+                terminalId: card.terminalId,
+                installmentCount: cardMethod === 'debit_card' ? 1 : card.installmentCount,
+              }
+            : undefined,
       })
       setPayDialogOpen(false)
       onClear()
@@ -203,12 +245,34 @@ export function BulkActionBar({
                 data-testid="bulk-pay-date"
               />
             </div>
+            {cardMethod && payDialogOpen && (
+              <>
+                {selectedInstallmentIds.map((id) => (
+                  <QuoteProbe key={id} id={id} paidAt={paidAtIso} onTotal={handleQuote} />
+                ))}
+                {quotesReady ? (
+                  <CardPaymentFields
+                    method={cardMethod}
+                    gross={cardGross}
+                    paymentYmd={paidAt || brToday()}
+                    value={card}
+                    onChange={setCard}
+                  />
+                ) : (
+                  <p className="text-sm text-mid">
+                    {quoteFailed ? 'Total pendente indisponível' : 'Calculando...'}
+                  </p>
+                )}
+              </>
+            )}
           </div>
           <DialogFooter className="pt-2">
             <Button variant="outline" className="border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors" onClick={() => setPayDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button className="bg-forest text-cream hover:bg-sage transition-colors" onClick={handleBulkPay} disabled={bulkPay.isPending}>
+            <Button className="bg-forest text-cream hover:bg-sage transition-colors" onClick={handleBulkPay}
+              disabled={bulkPay.isPending || (cardMethod !== null && (!quotesReady || card.terminalId === null))}
+            >
               {bulkPay.isPending ? 'Processando...' : 'Confirmar'}
             </Button>
           </DialogFooter>
