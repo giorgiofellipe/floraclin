@@ -398,6 +398,8 @@ export const financialEntries = floraclinSchema.table('financial_entries', {
   description: varchar('description', { length: 255 }).notNull(),
   totalAmount: decimal('total_amount', { precision: 10, scale: 2 }).notNull(),
   installmentCount: integer('installment_count').notNull().default(1),
+  paymentMethod: varchar('payment_method', { length: 20 }),
+  cardInstallmentCount: integer('card_installment_count'),
   status: varchar('status', { length: 20 }).notNull().default('pending'), // CHECK in migration
   notes: text('notes'),
   renegotiatedAt: timestamp('renegotiated_at', { withTimezone: true }),
@@ -453,9 +455,11 @@ export const cashMovements = floraclinSchema.table('cash_movements', {
   expenseCategoryId: uuid('expense_category_id'),
   recordedBy: uuid('recorded_by').notNull().references(() => users.id),
   reversedByMovementId: uuid('reversed_by_movement_id'),
+  cardRepasseId: uuid('card_repasse_id').references((): AnyPgColumn => cardRepasses.id),
 }, (table) => [
   index('idx_cash_movements_tenant_date').on(table.tenantId, table.movementDate),
   index('idx_cash_movements_type').on(table.tenantId, table.type),
+  uniqueIndex('uq_cash_movements_active_repasse_inflow').on(table.cardRepasseId).where(sql`type = 'inflow' AND reversed_by_movement_id IS NULL AND card_repasse_id IS NOT NULL`),
 ])
 
 // ─── PAYMENT RECORDS ─────────────────────────────────────────────────
@@ -476,8 +480,71 @@ export const paymentRecords = floraclinSchema.table('payment_records', {
   reversedAt: timestamp('reversed_at', { withTimezone: true }),
   reversedBy: uuid('reversed_by').references(() => users.id),
   reversalReason: text('reversal_reason'),
+  cardPaymentId: uuid('card_payment_id').references((): AnyPgColumn => cardPayments.id),
 }, (table) => [
   index('idx_payment_records_installment').on(table.installmentId),
+  index('idx_payment_records_card_payment').on(table.cardPaymentId),
+])
+
+// ─── CARD SALES ──────────────────────────────────────────────────────
+
+export const cardTerminals = floraclinSchema.table('card_terminals', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  name: varchar('name', { length: 100 }).notNull(),
+  isDefault: boolean('is_default').notNull().default(false),
+  debitRate: decimal('debit_rate', { precision: 5, scale: 2 }).notNull(),
+  debitPayoutDays: integer('debit_payout_days').notNull().default(1),
+  creditRates: jsonb('credit_rates').$type<string[]>().notNull(), // 12 percent strings, index 0 = 1x
+  creditPayoutMode: varchar('credit_payout_mode', { length: 20 }).notNull(), // CHECK in migration
+  creditLumpSumDays: integer('credit_lump_sum_days').notNull().default(1),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => [
+  uniqueIndex('uq_card_terminals_default').on(table.tenantId).where(sql`is_default AND deleted_at IS NULL`),
+])
+
+export const cardPayments = floraclinSchema.table('card_payments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  cardTerminalId: uuid('card_terminal_id').notNull().references(() => cardTerminals.id),
+  patientId: uuid('patient_id').notNull().references(() => patients.id),
+  method: varchar('method', { length: 20 }).notNull(), // CHECK in migration
+  installmentCount: integer('installment_count').notNull(),
+  rate: decimal('rate', { precision: 5, scale: 2 }).notNull(),
+  payoutMode: varchar('payout_mode', { length: 20 }).notNull(), // CHECK in migration
+  grossAmount: decimal('gross_amount', { precision: 10, scale: 2 }).notNull(),
+  feeAmount: decimal('fee_amount', { precision: 10, scale: 2 }).notNull(),
+  netAmount: decimal('net_amount', { precision: 10, scale: 2 }).notNull(),
+  description: varchar('description', { length: 255 }).notNull(),
+  paidAt: timestamp('paid_at', { withTimezone: true }).notNull(),
+  reversedAt: timestamp('reversed_at', { withTimezone: true }),
+  reversedBy: uuid('reversed_by').references(() => users.id),
+  createdBy: uuid('created_by').notNull().references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_card_payments_tenant_paid').on(table.tenantId, table.paidAt),
+  index('idx_card_payments_patient').on(table.tenantId, table.patientId),
+])
+
+export const cardRepasses = floraclinSchema.table('card_repasses', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  cardPaymentId: uuid('card_payment_id').notNull().references(() => cardPayments.id),
+  sequence: integer('sequence').notNull(),
+  expectedDate: date('expected_date').notNull(),
+  grossAmount: decimal('gross_amount', { precision: 10, scale: 2 }).notNull(),
+  feeAmount: decimal('fee_amount', { precision: 10, scale: 2 }).notNull(),
+  netAmount: decimal('net_amount', { precision: 10, scale: 2 }).notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('pending'), // CHECK in migration
+  receivedAt: timestamp('received_at', { withTimezone: true }),
+  cashMovementId: uuid('cash_movement_id').references((): AnyPgColumn => cashMovements.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_card_repasses_status_date').on(table.tenantId, table.status, table.expectedDate),
+  uniqueIndex('uq_card_repasses_payment_sequence').on(table.cardPaymentId, table.sequence),
 ])
 
 // ─── RENEGOTIATION LINKS ─────────────────────────────────────────────
@@ -1355,6 +1422,25 @@ export const installmentsRelations = relations(installments, ({ one, many }) => 
 export const paymentRecordsRelations = relations(paymentRecords, ({ one }) => ({
   installment: one(installments, { fields: [paymentRecords.installmentId], references: [installments.id] }),
   recordedByUser: one(users, { fields: [paymentRecords.recordedBy], references: [users.id] }),
+  cardPayment: one(cardPayments, { fields: [paymentRecords.cardPaymentId], references: [cardPayments.id] }),
+}))
+
+export const cardTerminalsRelations = relations(cardTerminals, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [cardTerminals.tenantId], references: [tenants.id] }),
+  cardPayments: many(cardPayments),
+}))
+
+export const cardPaymentsRelations = relations(cardPayments, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [cardPayments.tenantId], references: [tenants.id] }),
+  cardTerminal: one(cardTerminals, { fields: [cardPayments.cardTerminalId], references: [cardTerminals.id] }),
+  patient: one(patients, { fields: [cardPayments.patientId], references: [patients.id] }),
+  repasses: many(cardRepasses),
+  paymentRecords: many(paymentRecords),
+}))
+
+export const cardRepassesRelations = relations(cardRepasses, ({ one }) => ({
+  cardPayment: one(cardPayments, { fields: [cardRepasses.cardPaymentId], references: [cardPayments.id] }),
+  cashMovement: one(cashMovements, { fields: [cardRepasses.cashMovementId], references: [cashMovements.id] }),
 }))
 
 export const renegotiationLinksRelations = relations(renegotiationLinks, ({ one }) => ({
