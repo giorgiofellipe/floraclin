@@ -81,7 +81,7 @@ function PacientesInativosBody({
       rows={data ?? []}
       columns={INACTIVE_PATIENT_COLUMNS}
       rowAction={(row) => (
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center justify-end gap-1.5">
           <ReportReactivationAction
             patientId={row.patientId}
             fullName={row.fullName}
