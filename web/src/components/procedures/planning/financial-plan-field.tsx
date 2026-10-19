@@ -60,6 +60,7 @@ export function FinancialPlanField({ control, form, disabled, hideTotalAmount }:
           notes: '',
         }
         const isDebit = value.paymentMethod === 'debit_card'
+        const isCredit = value.paymentMethod === 'credit_card'
         const update = (patch: Partial<typeof value>) =>
           field.onChange({ ...value, ...patch })
 
@@ -117,22 +118,48 @@ export function FinancialPlanField({ control, form, disabled, hideTotalAmount }:
                 </div>
               )}
 
-              <div>
+              <div className={cn(hideTotalAmount && 'max-w-sm')}>
+                <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
+                  Forma de pagamento
+                </Label>
+                <Select
+                  items={PAYMENT_METHOD_LABELS}
+                  value={value.paymentMethod ?? ''}
+                  onValueChange={(v) => {
+                    const paymentMethod = (v || undefined) as PaymentMethod | undefined
+                    update(
+                      paymentMethod === 'debit_card'
+                        ? { paymentMethod, installmentCount: 1 }
+                        : { paymentMethod },
+                    )
+                  }}
+                  disabled={disabled}
+                >
+                  <SelectTrigger className="border-sage/20 focus:border-sage/40">
+                    <SelectValue placeholder="Selecione..." />
+                  </SelectTrigger>
+                  <SelectContent />
+                </Select>
+              </div>
+            </div>
+
+            {!isDebit && (
+              <div className="max-w-sm">
                 <Label
                   className={cn(
                     'uppercase tracking-wider text-xs mb-2 block',
                     installmentCountHasError ? 'text-red-600' : 'text-mid',
                   )}
                 >
-                  Parcelas
+                  {isCredit ? 'Parcelas no cartão' : 'Parcelas'}
                 </Label>
                 <Select
                   items={INSTALLMENT_COUNT_ITEMS}
-                  value={isDebit ? '1' : String(value.installmentCount)}
+                  value={String(value.installmentCount)}
                   onValueChange={(v) =>
                     update({ installmentCount: parseInt(String(v ?? '1'), 10) })
                   }
-                  disabled={disabled || isDebit}
+                  disabled={disabled}
                 >
                   <SelectTrigger
                     aria-invalid={installmentCountHasError || undefined}
@@ -148,31 +175,7 @@ export function FinancialPlanField({ control, form, disabled, hideTotalAmount }:
                 </Select>
                 <FormFieldError form={form} name="financialPlan.installmentCount" />
               </div>
-            </div>
-
-            <div>
-              <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-                Forma de pagamento
-              </Label>
-              <Select
-                items={PAYMENT_METHOD_LABELS}
-                value={value.paymentMethod ?? ''}
-                onValueChange={(v) => {
-                  const paymentMethod = (v || undefined) as PaymentMethod | undefined
-                  update(
-                    paymentMethod === 'debit_card'
-                      ? { paymentMethod, installmentCount: 1 }
-                      : { paymentMethod },
-                  )
-                }}
-                disabled={disabled}
-              >
-                <SelectTrigger className="max-w-sm border-sage/20 focus:border-sage/40">
-                  <SelectValue placeholder="Selecione..." />
-                </SelectTrigger>
-                <SelectContent />
-              </Select>
-            </div>
+            )}
 
             <div>
               <Label

@@ -24,34 +24,44 @@ const basePlan: Plan = {
   notes: '',
 }
 
-const installmentTrigger = () => screen.getAllByRole('combobox')[0]
-const methodTrigger = () => screen.getAllByRole('combobox')[1]
+const methodTrigger = () => screen.getAllByRole('combobox')[0]
+const installmentTrigger = () => screen.getAllByRole('combobox')[1]
 
-describe('<FinancialPlanField> debit card', () => {
-  it('resets 6 installments to 1 and locks the installment select when the method becomes debit card', async () => {
-    const user = userEvent.setup()
+async function pickMethod(name: string) {
+  const user = userEvent.setup()
+  await user.click(methodTrigger())
+  await user.click(await screen.findByRole('option', { name }))
+}
+
+describe('<FinancialPlanField> payment method and parcelas', () => {
+  it('puts the method before the parcelas', () => {
+    render(<Harness initial={basePlan} />)
+    const labels = screen.getAllByText(/^(Forma de pagamento|Parcelas no cartão)$/).map((el) => el.textContent)
+    expect(labels).toEqual(['Forma de pagamento', 'Parcelas no cartão'])
+  })
+
+  it('hides the parcelas and stores 1 when the method becomes debit card', async () => {
     render(<Harness initial={basePlan} />)
     expect(installmentTrigger()).toHaveTextContent('6x')
-    expect(installmentTrigger()).toBeEnabled()
 
-    await user.click(methodTrigger())
-    await user.click(await screen.findByRole('option', { name: 'Cartão de Débito' }))
+    await pickMethod('Cartão de Débito')
 
     await waitFor(() => expect(latestPlan?.paymentMethod).toBe('debit_card'))
     expect(latestPlan?.installmentCount).toBe(1)
-    expect(installmentTrigger()).toHaveTextContent('1x')
-    expect(installmentTrigger()).toBeDisabled()
+    expect(screen.getAllByRole('combobox')).toHaveLength(1)
+    expect(screen.queryByText(/^Parcelas/)).toBeNull()
   })
 
-  it('keeps the chosen installment count and leaves the select enabled for credit card', async () => {
-    const user = userEvent.setup()
+  it('labels the count as card parcelas for credit card and keeps it', async () => {
     render(<Harness initial={{ ...basePlan, paymentMethod: 'pix' }} />)
+    expect(screen.getByText('Parcelas')).toBeInTheDocument()
 
-    await user.click(methodTrigger())
-    await user.click(await screen.findByRole('option', { name: 'Cartão de Crédito' }))
+    await pickMethod('Cartão de Crédito')
 
     await waitFor(() => expect(latestPlan?.paymentMethod).toBe('credit_card'))
     expect(latestPlan?.installmentCount).toBe(6)
+    expect(screen.getByText('Parcelas no cartão')).toBeInTheDocument()
+    expect(installmentTrigger()).toHaveTextContent('6x')
     expect(installmentTrigger()).toBeEnabled()
   })
 })
