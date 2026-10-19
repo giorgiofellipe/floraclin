@@ -756,7 +756,8 @@ export function ServiceWizard({
   return (
     <div className="-m-4 md:-m-6 flex min-h-screen flex-col bg-[#F4F6F8]">
       {/* ─── Unified header: patient + stepper ─────────────────────── */}
-      <header className="sticky top-0 z-30 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+      {/* env() padding keeps it clear of the notch / home-indicator insets (viewport-fit=cover). */}
+      <header className="sticky top-0 z-30 bg-white pt-[env(safe-area-inset-top)] shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         <div className="flex items-center justify-between px-6 py-2.5">
           {/* Left: patient info */}
           <div className="flex items-center gap-3 shrink-0">
@@ -1011,7 +1012,8 @@ export function ServiceWizard({
       </main>
 
       {/* ─── Sticky bottom navigation bar ─────────────────────────── */}
-      <nav className="fixed bottom-0 left-0 right-0 md:left-[200px] z-30 border-t border-gray-100 bg-white shadow-[0_-1px_4px_rgba(0,0,0,0.06)]">
+      {/* env() padding keeps it clear of the notch / home-indicator insets (viewport-fit=cover). */}
+      <nav className="fixed bottom-0 left-[env(safe-area-inset-left)] right-[env(safe-area-inset-right)] md:left-[calc(200px+env(safe-area-inset-left))] z-30 border-t border-gray-100 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-1px_4px_rgba(0,0,0,0.06)]">
         {/* Error display above navigation controls */}
         {state.error && (
           <div className="border-b border-red-100 bg-red-50 px-6 py-2">

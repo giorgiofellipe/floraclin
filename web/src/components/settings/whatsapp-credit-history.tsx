@@ -133,7 +133,7 @@ export function WhatsAppCreditHistory({ open, onOpenChange }: WhatsAppCreditHist
   if (isMobile) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="bottom" className="p-4 data-[side=bottom]:h-dvh">
+        <SheetContent side="bottom" className="p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] data-[side=bottom]:h-dvh">
           <SheetHeader className="p-0">
             <SheetTitle>Histórico de créditos</SheetTitle>
           </SheetHeader>

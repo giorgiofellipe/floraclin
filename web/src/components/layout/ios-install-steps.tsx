@@ -17,7 +17,7 @@ const STEPS = [
 export function IosInstallSteps({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="rounded-t-2xl px-5 pb-6 pt-5" showCloseButton={false}>
+      <SheetContent side="bottom" className="rounded-t-2xl px-5 pt-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))]" showCloseButton={false}>
         <SheetHeader className="flex-row items-center gap-3 p-0 text-left">
           <Image src="/apple-icon.png" alt="" width={64} height={64} className="size-16 shrink-0 rounded-[22%] shadow-md" />
           <div>

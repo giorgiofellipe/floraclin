@@ -110,9 +110,10 @@ export function BulkActionBar({
       <div
         data-testid="bulk-action-bar"
         className={cn(
-          'fixed bottom-0 left-0 right-0 z-40 ml-0 md:ml-64',
+          // Insets keep it clear of the notch / home indicator (viewport-fit=cover).
+          'fixed bottom-0 left-[env(safe-area-inset-left)] right-[env(safe-area-inset-right)] z-40 ml-0 md:ml-64',
           'border-t border-sage/20 bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.08)]',
-          'flex items-center justify-between gap-3 px-6 py-3',
+          'flex items-center justify-between gap-3 px-6 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]',
           'animate-in slide-in-from-bottom duration-200',
         )}
       >
