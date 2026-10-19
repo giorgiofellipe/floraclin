@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { CardPaymentFields, toCardPayload } from '../card-payment-fields'
 import { useCardTerminals } from '@/hooks/queries/use-card-terminals'
 
+const createMutateAsync = vi.fn()
+
 vi.mock('@/hooks/queries/use-card-terminals', () => ({
   useCardTerminals: vi.fn(),
+  useCreateCardTerminal: () => ({ mutateAsync: createMutateAsync, isPending: false }),
+  useUpdateCardTerminal: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
 const rates = (index: number, rate: string) =>
@@ -33,8 +37,8 @@ function mockLoading(state: { isLoading?: boolean; isError?: boolean }) {
   } as never)
 }
 
-function mockTerminals(rows: unknown[]) {
-  vi.mocked(useCardTerminals).mockReturnValue({ data: { data: rows }, isLoading: false } as never)
+function mockTerminals(rows: unknown[], canManage = true) {
+  vi.mocked(useCardTerminals).mockReturnValue({ data: { data: rows, canManage }, isLoading: false } as never)
 }
 
 const nbsp = (s: string) => s.replace(/\u00a0/g, " ")
@@ -140,19 +144,38 @@ describe('CardPaymentFields', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('asks to register a terminal when there are none', () => {
-    mockTerminals([])
-    render(
-      <CardPaymentFields
-        method="credit_card"
-        gross={100}
-        paymentYmd="2026-10-19"
-        value={{ terminalId: null, installmentCount: 1, expectedRate: null }}
-        onChange={vi.fn()}
-      />,
+  const emptyProps = {
+    method: 'credit_card' as const,
+    gross: 100,
+    paymentYmd: '2026-10-19',
+    value: { terminalId: null, installmentCount: 1, expectedRate: null },
+  }
+
+  it('lets an owner register the first terminal and selects it', async () => {
+    mockTerminals([], true)
+    createMutateAsync.mockResolvedValue({ success: true, data: terminal({ id: 'new-term' }) })
+    const onChange = vi.fn()
+    render(<CardPaymentFields {...emptyProps} onChange={onChange} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cadastrar maquininha' }))
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Stone' } })
+    fireEvent.change(screen.getByLabelText('Taxa (%)'), { target: { value: '1,5' } })
+    for (let i = 1; i <= 12; i++) {
+      fireEvent.change(screen.getByLabelText(`${i}x`), { target: { value: '3' } })
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() =>
+      expect(onChange).toHaveBeenCalledWith({ terminalId: 'new-term', installmentCount: 1, expectedRate: null }),
     )
-    expect(screen.getByText('Cadastre uma maquininha em Configurações › Financeiro.')).toBeTruthy()
     expect(screen.queryByText('Você recebe')).toBeNull()
+  })
+
+  it('tells a non-owner to ask the owner instead of offering the form', () => {
+    mockTerminals([], false)
+    render(<CardPaymentFields {...emptyProps} onChange={vi.fn()} />)
+    expect(screen.getByText('Peça ao responsável da clínica para cadastrar uma maquininha.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Cadastrar maquininha' })).toBeNull()
   })
 })
 

@@ -1,7 +1,10 @@
 'use client'
 
-import { useEffect, useId, useMemo } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
+import { PlusIcon } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { CardTerminalDialog } from '@/components/financial/settings/card-terminal-dialog'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCardTerminals } from '@/hooks/queries/use-card-terminals'
 import {
@@ -62,6 +65,7 @@ export function CardPaymentFields({
 }: CardPaymentFieldsProps) {
   const terminalId = useId()
   const installmentsId = useId()
+  const [creating, setCreating] = useState(false)
   const { data, isLoading, isError } = useCardTerminals()
   const terminals = useMemo(() => data?.data ?? [], [data])
   const defaultTerminal = terminals.find((t) => t.isDefault)
@@ -93,8 +97,24 @@ export function CardPaymentFields({
   if (isLoading) return <p className="text-sm text-mid">Carregando maquininhas...</p>
   if (isError) return <p className="text-sm text-mid">Não foi possível carregar as maquininhas.</p>
   if (terminals.length === 0) {
+    if (!data?.canManage) {
+      return (
+        <p className="text-sm text-mid">Peça ao responsável da clínica para cadastrar uma maquininha.</p>
+      )
+    }
     return (
-      <p className="text-sm text-mid">Cadastre uma maquininha em Configurações › Financeiro.</p>
+      <div className="space-y-2">
+        <p className="text-sm text-mid">Nenhuma maquininha cadastrada.</p>
+        <Button type="button" variant="outline" size="sm" onClick={() => setCreating(true)} disabled={disabled}>
+          <PlusIcon className="h-3.5 w-3.5" />
+          Cadastrar maquininha
+        </Button>
+        <CardTerminalDialog
+          open={creating}
+          onOpenChange={setCreating}
+          onCreated={(created) => onChange({ ...value, terminalId: created.id })}
+        />
+      </div>
     )
   }
 

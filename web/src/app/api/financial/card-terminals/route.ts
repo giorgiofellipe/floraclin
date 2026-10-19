@@ -9,7 +9,8 @@ export async function GET(request: Request) {
   try {
     const ctx = await getAuthContext()
     const terminals = await listCardTerminals(ctx.tenantId)
-    return NextResponse.json({ data: terminals })
+    // Must match the requireWrite('owner') on POST and PATCH.
+    return NextResponse.json({ data: terminals, canManage: ctx.role === 'owner' })
   } catch (error) {
     return handleApiError(error, request)
   }

@@ -10,10 +10,11 @@ vi.mock('@/db/queries/card-terminals', () => ({
   deleteCardTerminal: vi.fn(),
 }))
 
+import { getAuthContext } from '@/lib/auth'
 import { requireWrite } from '@/lib/write-access'
 import { BusinessError } from '@/lib/errors'
-import { createCardTerminal, updateCardTerminal } from '@/db/queries/card-terminals'
-import { POST } from '../route'
+import { createCardTerminal, listCardTerminals, updateCardTerminal } from '@/db/queries/card-terminals'
+import { GET, POST } from '../route'
 import { PATCH } from '../[id]/route'
 
 const validBody = {
@@ -39,6 +40,21 @@ beforeEach(() => {
     ctx: { tenantId: 't1', userId: 'u1', role: 'owner' },
     blocked: null,
   } as never)
+})
+
+describe('GET /api/financial/card-terminals', () => {
+  it.each([
+    ['owner', true],
+    ['receptionist', false],
+    ['financial', false],
+  ])('tells a %s whether they can manage terminals', async (role, canManage) => {
+    vi.mocked(getAuthContext).mockResolvedValue({ tenantId: 't1', userId: 'u1', role } as never)
+    vi.mocked(listCardTerminals).mockResolvedValue([])
+
+    const res = await GET(new Request('http://test/api/financial/card-terminals'))
+
+    expect(await res.json()).toEqual({ data: [], canManage })
+  })
 })
 
 describe('POST /api/financial/card-terminals', () => {

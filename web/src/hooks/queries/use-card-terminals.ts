@@ -21,7 +21,7 @@ async function requestJson(url: string, method: string, data?: unknown) {
 export function useCardTerminals() {
   return useQuery({
     queryKey: queryKeys.financial.cardTerminals,
-    queryFn: (): Promise<{ data: CardTerminalRow[] }> =>
+    queryFn: (): Promise<{ data: CardTerminalRow[]; canManage: boolean }> =>
       requestJson('/api/financial/card-terminals', 'GET'),
   })
 }
@@ -34,7 +34,8 @@ function useInvalidateTerminals() {
 export function useCreateCardTerminal() {
   const invalidate = useInvalidateTerminals()
   return useMutation({
-    mutationFn: (data: CardTerminalInput) => requestJson('/api/financial/card-terminals', 'POST', data),
+    mutationFn: (data: CardTerminalInput): Promise<{ success: true; data: CardTerminalRow }> =>
+      requestJson('/api/financial/card-terminals', 'POST', data),
     onSuccess: invalidate,
   })
 }
