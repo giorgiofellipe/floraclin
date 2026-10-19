@@ -1,3 +1,7 @@
+import { firstName, formatDate } from '@/lib/utils'
+
+export const CONFIRMATION_VALUE_KEYS = ['patient_name', 'clinic_name', 'appointment_date', 'appointment_time'] as const
+
 interface ConfirmationAppointment {
   date: string
   startTime: string
@@ -5,20 +9,14 @@ interface ConfirmationAppointment {
   bookingName: string | null
 }
 
-function formatDateBr(ymd: string): string {
-  const [y, m, d] = ymd.split('-')
-  return `${d}/${m}/${y}`
-}
-
-export function buildConfirmationParams(
+export function buildConfirmationValues(
   appointment: ConfirmationAppointment,
   tenantName: string,
-): Record<string, string> {
-  const name = appointment.patientName ?? appointment.bookingName ?? ''
+): Record<(typeof CONFIRMATION_VALUE_KEYS)[number], string> {
   return {
-    '1': name.split(' ')[0] || name,
-    '2': tenantName,
-    '3': formatDateBr(appointment.date),
-    '4': appointment.startTime.slice(0, 5),
+    patient_name: firstName(appointment.patientName ?? appointment.bookingName ?? ''),
+    clinic_name: tenantName,
+    appointment_date: formatDate(appointment.date),
+    appointment_time: appointment.startTime.slice(0, 5),
   }
 }

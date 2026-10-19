@@ -2127,3 +2127,54 @@ async function updateEntryStatus(
 
   return newStatus
 }
+
+export async function getInstallmentsDueReminder(tenantId: string, fromYmd: string, toYmd: string) {
+  return db
+    .select({
+      id: installments.id,
+      amount: installments.amount,
+      amountPaid: installments.amountPaid,
+      dueDate: installments.dueDate,
+      patientId: financialEntries.patientId,
+      patientName: patients.fullName,
+      patientPhone: patients.phone,
+    })
+    .from(installments)
+    .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
+    .innerJoin(patients, eq(patients.id, financialEntries.patientId))
+    .where(
+      and(
+        eq(installments.tenantId, tenantId),
+        eq(installments.status, 'pending'),
+        isNull(installments.cancelledAt),
+        isNull(installments.reminderSentAt),
+        isNull(financialEntries.deletedAt),
+        isNull(patients.deletedAt),
+        gte(installments.dueDate, fromYmd),
+        lte(installments.dueDate, toYmd),
+      ),
+    )
+}
+
+/** Sets the reminder marker when nobody set it yet; false means another run already has it. */
+export async function claimPaymentReminder(tenantId: string, installmentId: string) {
+  const rows = await db
+    .update(installments)
+    .set({ reminderSentAt: new Date() })
+    .where(
+      and(
+        eq(installments.tenantId, tenantId),
+        eq(installments.id, installmentId),
+        isNull(installments.reminderSentAt),
+      ),
+    )
+    .returning({ id: installments.id })
+  return rows.length > 0
+}
+
+export async function releasePaymentReminder(tenantId: string, installmentId: string) {
+  await db
+    .update(installments)
+    .set({ reminderSentAt: null })
+    .where(and(eq(installments.tenantId, tenantId), eq(installments.id, installmentId)))
+}

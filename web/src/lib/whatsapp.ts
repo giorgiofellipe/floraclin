@@ -207,7 +207,7 @@ async function postTextMessage(tenantId: string, to: string, body: string) {
   return { metaMessageId: sentMessageId(data) }
 }
 
-type TemplateButtonParam = {
+export type TemplateButtonParam = {
   index: number
   subType: string
   parameters: { type: string; text: string }[]

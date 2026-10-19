@@ -108,6 +108,8 @@ beforeEach(() => {
     name: 'appointment_confirmation_v2',
     language: 'pt_BR',
     status: 'APPROVED',
+    purposeKey: 'appointment_confirmation',
+    variableMapping: null,
     components: [],
   } as never)
   vi.mocked(sendTemplateMessage).mockResolvedValue({ metaMessageId: 'wamid.new' } as never)
