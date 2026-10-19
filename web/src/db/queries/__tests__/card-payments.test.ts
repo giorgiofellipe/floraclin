@@ -132,6 +132,7 @@ describe('createCardPaymentTx', () => {
     terminalId: TERMINAL_ID,
     method: 'credit_card' as const,
     installmentCount: 6,
+    expectedRate: 8.99,
     gross: 3000,
     patientId: PATIENT_ID,
     description: 'Procedimento',
@@ -162,6 +163,21 @@ describe('createCardPaymentTx', () => {
     const [repasses] = inserts(log, cardRepasses)
     expect(valuesOf(repasses)).toHaveLength(6)
     expect(inserts(log, cashMovements)).toHaveLength(0)
+  })
+
+  it('refuses with CARD_RATE_CHANGED and writes nothing when the terminal rate differs from the one shown', async () => {
+    const { createCardPaymentTx } = await import('../card-payments')
+    const { tx, log } = createPaymentTx()
+
+    await expect(
+      createCardPaymentTx(tx as never, TENANT, USER_ID, {
+        ...baseInput,
+        expectedRate: 7.5,
+        paidAt: parseBrDate(TODAY, '12:00:00'),
+      }),
+    ).rejects.toMatchObject({ code: 'CARD_RATE_CHANGED' })
+
+    expect(log.some((q) => q.op === 'insert' || q.op === 'update')).toBe(false)
   })
 
   it('posts only the repasses already due for a backdated payment, each on its own BR day', async () => {
@@ -325,7 +341,7 @@ describe('adjustCardRepasse', () => {
     expect(valuesOf(movementOps[0])).toMatchObject({
       type: 'outflow',
       amount: '455.05',
-      paymentMethod: null,
+      paymentMethod: 'credit_card',
       cardRepasseId: REPASSE_ID,
       movementDate: parseBrDate('2026-10-10', '12:00:00'),
       description: 'Ajuste de repasse: Repasse Stone 1/6: Procedimento',
@@ -557,40 +573,38 @@ describe('getCardPaymentSummaries', () => {
   })
 })
 
-describe('sumCardFeesForEntries', () => {
-  /** The first db.select builds the payments subquery (real, so it renders into the outer SQL); the second is the sum. */
-  function mockDb(total: string | null) {
-    const offline = drizzle.mock()
-    const { tx, log } = routedTx(() => [{ total }])
-    dbMock.select.mockImplementationOnce((fields: never) => offline.select(fields)).mockImplementation(tx.select)
-    return log
-  }
+describe('sumCardFeesForPeriod', () => {
+  const RANGE_START = parseBrDate('2026-11-01', '00:00:00')
+  const RANGE_END = parseBrDate('2026-11-30', '23:59:59')
 
   async function sumSql(total: string | null) {
-    const { sumCardFeesForEntries } = await import('../card-payments')
-    const log = mockDb(total)
-    const result = await sumCardFeesForEntries(TENANT, [eq(financialEntries.tenantId, TENANT)])
+    const { sumCardFeesForPeriod } = await import('../card-payments')
+    const { tx, log } = routedTx(() => [{ total }])
+    dbMock.select.mockImplementation(tx.select)
+    const result = await sumCardFeesForPeriod(TENANT, RANGE_START, RANGE_END)
     const query = log[0]
     return { result, query, sql: selectSql(query.fields, query.capture) }
   }
 
-  it('sums fees of non-cancelled repasses of non-reversed card payments for the tenant, as a number', async () => {
+  it('sums fees of non-cancelled repasses of the tenant, by the card payment date, as a number', async () => {
     const { result, query, sql } = await sumSql('45.67')
 
     expect(result).toBe(45.67)
-    expect(whereParams(query.capture)).toEqual(expect.arrayContaining([TENANT, 'cancelled']))
+    expect(whereParams(query.capture)).toEqual(
+      expect.arrayContaining([TENANT, 'cancelled', RANGE_START.toISOString(), RANGE_END.toISOString()]),
+    )
     expect(sql).toMatch(/"floraclin"\."card_repasses"\."tenant_id" = \$/)
+    expect(sql).toMatch(/"floraclin"\."card_payments"\."tenant_id" = \$/)
     expect(sql).toMatch(/"floraclin"\."card_repasses"\."status" <> \$/)
-    expect(sql).toMatch(/"floraclin"\."card_payments"\."reversed_at" is null/)
+    expect(sql).toMatch(/"floraclin"\."card_payments"\."paid_at" >= \$/)
+    expect(sql).toMatch(/"floraclin"\."card_payments"\."paid_at" <= \$/)
   })
 
-  it('only counts card payments of non-reversed payment records that match the entry conditions', async () => {
+  // A reversal cancels only pending repasses, so the fees of received ones stay owed.
+  it('does not exclude reversed card payments, so a reversed sale keeps the fees of its received repasses', async () => {
     const { sql } = await sumSql('0')
 
-    expect(sql).toMatch(/"floraclin"\."card_repasses"\."card_payment_id" in \(select "floraclin"\."payment_records"\."card_payment_id"/)
-    expect(sql).toMatch(/"floraclin"\."payment_records"\."card_payment_id" is not null/)
-    expect(sql).toMatch(/"floraclin"\."payment_records"\."reversed_at" is null/)
-    expect(sql).toMatch(/"floraclin"\."financial_entries"\."tenant_id" = \$/)
+    expect(sql).not.toMatch(/"reversed_at"/)
   })
 
   it('returns 0 when there is nothing to sum', async () => {

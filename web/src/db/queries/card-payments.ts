@@ -4,12 +4,10 @@ import {
   cardRepasses,
   cardTerminals,
   cashMovements,
-  financialEntries,
-  installments,
   patients,
   paymentRecords,
 } from '@/db/schema'
-import { and, asc, count, eq, gte, inArray, isNotNull, isNull, lte, ne, sql, sum, type SQL } from 'drizzle-orm'
+import { and, asc, count, eq, gte, inArray, isNull, lte, ne, sql, sum } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { brToday, parseBrDate, toBrYmd } from '@/lib/dates'
 import { createAuditLog } from '@/lib/audit'
@@ -27,6 +25,7 @@ export interface CardPaymentRequest {
   terminalId: string
   method: CardMethod
   installmentCount: number
+  expectedRate: number
 }
 
 export interface CardRepasseListRow {
@@ -104,6 +103,13 @@ export async function createCardPaymentTx(
     terms: terminal.terms,
     paymentYmd: toBrYmd(input.paidAt),
   })
+
+  if (Math.round(schedule.rate * 100) !== Math.round(input.expectedRate * 100)) {
+    throw new BusinessError(
+      'CARD_RATE_CHANGED',
+      'A taxa da maquininha mudou desde que a tela foi aberta. Confira o novo valor e confirme novamente.',
+    )
+  }
 
   const [payment] = await tx
     .insert(cardPayments)
@@ -364,7 +370,7 @@ export async function adjustCardRepasse(
           type: 'outflow',
           amount: original.amount,
           description: repasseLedgerDescription('Ajuste de repasse: ', original.description),
-          paymentMethod: null,
+          paymentMethod: original.paymentMethod,
           movementDate: original.movementDate,
           patientId: original.patientId,
           recordedBy: userId,
@@ -547,24 +553,20 @@ export async function getCardPaymentSummaries(
   return summaries
 }
 
-export async function sumCardFeesForEntries(tenantId: string, entryConditions: SQL[]): Promise<number> {
-  const matchingPayments = db
-    .select({ id: paymentRecords.cardPaymentId })
-    .from(paymentRecords)
-    .innerJoin(installments, eq(installments.id, paymentRecords.installmentId))
-    .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
-    .where(and(...entryConditions, isNotNull(paymentRecords.cardPaymentId), isNull(paymentRecords.reversedAt)))
-
+export async function sumCardFeesForPeriod(tenantId: string, rangeStart: Date, rangeEnd: Date): Promise<number> {
   const [row] = await db
     .select({ total: sum(cardRepasses.feeAmount) })
     .from(cardRepasses)
-    .innerJoin(cardPayments, eq(cardPayments.id, cardRepasses.cardPaymentId))
+    .innerJoin(
+      cardPayments,
+      and(eq(cardPayments.id, cardRepasses.cardPaymentId), eq(cardPayments.tenantId, tenantId)),
+    )
     .where(
       and(
         eq(cardRepasses.tenantId, tenantId),
         ne(cardRepasses.status, 'cancelled'),
-        isNull(cardPayments.reversedAt),
-        inArray(cardRepasses.cardPaymentId, matchingPayments),
+        gte(cardPayments.paidAt, rangeStart),
+        lte(cardPayments.paidAt, rangeEnd),
       ),
     )
   return Number(row?.total ?? 0)

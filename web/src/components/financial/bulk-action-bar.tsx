@@ -15,7 +15,9 @@ import { InfoPopover } from '@/components/ui/info-popover'
 import { Label } from '@/components/ui/label'
 import { DatePicker } from '@/components/ui/date-picker'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useBulkPay, useBulkCancel, useBulkUncancel } from '@/hooks/mutations/use-financial-mutations'
+import { useQueryClient } from '@tanstack/react-query'
+import { ApiError, useBulkPay, useBulkCancel, useBulkUncancel } from '@/hooks/mutations/use-financial-mutations'
+import { queryKeys } from '@/hooks/queries/query-keys'
 import { cn } from '@/lib/utils'
 import { ReasonDialog } from './reason-dialog'
 import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
@@ -69,11 +71,12 @@ export function BulkActionBar({
   const [uncancelDialogOpen, setUncancelDialogOpen] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix')
   const [paidAt, setPaidAt] = useState('')
-  const [card, setCard] = useState<CardPaymentValue>({ terminalId: null, installmentCount: 1 })
+  const [card, setCard] = useState<CardPaymentValue>({ terminalId: null, installmentCount: 1, expectedRate: null })
   const [quotes, setQuotes] = useState<Record<string, number | 'error' | null>>({})
   const [cancelReason, setCancelReason] = useState('')
   const [uncancelReason, setUncancelReason] = useState('')
 
+  const queryClient = useQueryClient()
   const bulkPay = useBulkPay()
   const bulkCancel = useBulkCancel()
   const bulkUncancel = useBulkUncancel()
@@ -104,6 +107,9 @@ export function BulkActionBar({
       onClear()
       onSuccess?.()
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'CARD_RATE_CHANGED') {
+        queryClient.invalidateQueries({ queryKey: queryKeys.financial.cardTerminals })
+      }
       toast.error(err instanceof Error ? err.message : 'Erro ao processar')
     }
   }
@@ -172,7 +178,7 @@ export function BulkActionBar({
             size="sm"
             className="bg-forest text-cream hover:bg-sage transition-colors"
             onClick={() => {
-              setCard({ terminalId: null, installmentCount: 1 })
+              setCard({ terminalId: null, installmentCount: 1, expectedRate: null })
               setPayDialogOpen(true)
             }}
             disabled={selectedInstallmentIds.length === 0}

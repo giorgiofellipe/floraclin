@@ -74,7 +74,7 @@ Você recebe                 R$ 2.730,30
 
 For a lump-sum maquininha the fee line reads "Taxa com antecipação (11,49%)" and the last line "1 repasse de R$ 2.655,30 em 19/10/2026 (antecipado)".
 
-The rate is the maquininha's rate for that count at the moment of payment, and it is frozen on the card payment. Later rate edits never change existing repasses.
+The rate is the maquininha's rate for that count at the moment of payment, and it is frozen on the card payment. Later rate edits never change existing repasses. The client sends the rate it showed (`expectedRate`); if the server's current rate differs, the payment is refused with "A taxa da maquininha mudou desde que a tela foi aberta. Confira o novo valor e confirme novamente." and the dialog reloads the rates.
 
 The same fields apply to bulk pay: one card payment for the total of the selected installments, one repasse schedule. Bulk pay must stop recording card payments as immediate cash.
 
@@ -108,7 +108,7 @@ New cron route under `app/api/cron/`, registered in `web/vercel.json`. Vercel cr
 
 Lists repasses with expected date, maquininha, patient, gross, fee, net and status ("Aguardando repasse", "Recebido", "Cancelado"). Filters: period, maquininha, status. Totals at the top: amount still owed by maquininhas.
 
-"Ajustar repasse": change net amount and/or date. On a pending repasse it edits the row. On a received repasse it reverses the old ledger line (setting `reversedByMovementId`) and inserts a new one. Fee is recalculated as gross − new net.
+"Ajustar repasse": change net amount and/or date. On a pending repasse it edits the row. On a received repasse it reverses the old ledger line (setting `reversedByMovementId`) and inserts a new one. The counter row carries the card method, so a ledger filtered by method nets out. Fee is recalculated as gross − new net.
 
 ### Reversal
 
@@ -118,13 +118,13 @@ Reversing a card payment:
 - Leaves received repasses and their ledger lines in place.
 - Reopens the installment as reversal does today.
 
-The dialog states it in plain words, for example: "3 repasses futuros serão cancelados. 3 repasses já recebidos ficam no extrato. Estorne o valor ao paciente na maquininha." The clinic records the refund outflow by hand.
+The dialog states it in plain words, for example: "3 repasses futuros serão cancelados. 3 repasses já recebidos ficam no extrato. Estorne o valor ao paciente na maquininha." A count of 1 uses the singular ("1 repasse futuro será cancelado.", "1 repasse já recebido fica no extrato."), and a sentence with a count of 0 is not shown. The clinic records the refund outflow by hand.
 
 Known gap from #88 research: `reversePayment` does not set `reversedByMovementId` today. Card reversal and "Ajustar repasse" must set it correctly. Fixing it for non-card reversals is in scope since the same function is touched.
 
 ### Reports
 
-- `getRevenueOverview` and dashboard: gross, "Taxas de cartão", net for the period. Gross keeps the existing `totalReceived` basis, and card fees use the same filter, so the two stay consistent.
+- `getRevenueOverview` and dashboard: gross, "Taxas de cartão", net for the period. Gross is the cash received: non-reversed `payment_records.amount` with `paidAt` in the period, for every method. Card fees are the fees of card payments with `paidAt` in the period, summed over repasses that are not cancelled. A reversal cancels only future repasses, so the fees of repasses already received keep counting.
 - Ledger (Extrato): net per repasse on its date, from the job.
 - "Ganhos por profissional" / practitioner P&L: unchanged ("Receita Recebida" stays gross on the payment day).
 

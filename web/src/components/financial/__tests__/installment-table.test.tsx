@@ -282,6 +282,20 @@ describe('InstallmentTable', () => {
       expect(screen.queryByText(/lançamento de saída/)).not.toBeInTheDocument()
     })
 
+    it('uses the singular for one repasse and drops the sentence for none', async () => {
+      mockCardEntry({ ...card, pendingRepasses: 1, receivedRepasses: 0 })
+      render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
+
+      await screen.findByText('Parcela 1/1')
+      fireEvent.click(screen.getByTestId('installment-expand-payments'))
+      fireEvent.click(await screen.findByTestId('payment-reverse'))
+
+      expect(
+        await screen.findByText('1 repasse futuro será cancelado. Estorne o valor ao paciente na maquininha.'),
+      ).toBeInTheDocument()
+      expect(screen.queryByText(/já recebido/)).not.toBeInTheDocument()
+    })
+
     it('warns that a bulk card payment reverses every linked parcela', async () => {
       mockCardEntry({ ...card, linkedPaymentCount: 3 })
       render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })

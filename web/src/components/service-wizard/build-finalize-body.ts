@@ -28,8 +28,8 @@ export function buildFinalizeBody(input: {
       paymentMethod: String(plan.paymentMethod ?? ''),
       notes: plan.notes,
     },
-    ...(card.cardNow && card.terminalId
-      ? { cardPayment: { terminalId: card.terminalId } }
+    ...(card.cardNow && card.terminalId && card.expectedRate !== null
+      ? { cardPayment: { terminalId: card.terminalId, expectedRate: card.expectedRate } }
       : {}),
     consents: [],
   }

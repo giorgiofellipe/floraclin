@@ -27,7 +27,7 @@ const cardBody = {
   totalAmount: 3000,
   installmentCount: 1,
   paymentMethod: 'credit_card',
-  card: { terminalId: TERMINAL_ID, installmentCount: 6 },
+  card: { terminalId: TERMINAL_ID, installmentCount: 6, expectedRate: 8.99 },
 }
 
 function callPost(body: unknown) {

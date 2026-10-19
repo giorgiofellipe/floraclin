@@ -42,4 +42,5 @@ export interface WizardOverrides {
 export interface CardPaymentChoice {
   cardNow: boolean
   terminalId: string | null
+  expectedRate: number | null
 }

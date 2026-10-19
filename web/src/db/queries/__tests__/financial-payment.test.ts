@@ -603,7 +603,7 @@ describe('recordPayment by card', () => {
       installmentId: INSTALLMENT_ID,
       amount: 3000,
       paymentMethod: 'credit_card',
-      card: { terminalId: TERMINAL_ID, installmentCount: 6 },
+      card: { terminalId: TERMINAL_ID, installmentCount: 6, expectedRate: 8.99 },
       paidAt: '2026-05-22T15:00:00.000Z',
       expectedTotalDue: 3000,
     })
@@ -616,6 +616,7 @@ describe('recordPayment by card', () => {
         terminalId: TERMINAL_ID,
         method: 'credit_card',
         installmentCount: 6,
+        expectedRate: 8.99,
         gross: 3000,
         patientId: PATIENT_ID,
         description: 'x',

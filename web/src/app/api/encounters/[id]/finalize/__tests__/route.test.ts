@@ -72,7 +72,7 @@ beforeEach(() => {
 
 describe('POST /api/encounters/[id]/finalize card payment', () => {
   it('charges the first installment with the plan card terms after finalizing', async () => {
-    const res = await call({ cardPayment: { terminalId: TERMINAL_ID } })
+    const res = await call({ cardPayment: { terminalId: TERMINAL_ID, expectedRate: 8.99 } })
 
     expect(res.status).toBe(200)
     expect(recordPayment).toHaveBeenCalledWith(
@@ -83,7 +83,7 @@ describe('POST /api/encounters/[id]/finalize card payment', () => {
         amount: 800,
         expectedTotalDue: 800,
         paymentMethod: 'credit_card',
-        card: { terminalId: TERMINAL_ID, installmentCount: 6 },
+        card: { terminalId: TERMINAL_ID, installmentCount: 6, expectedRate: 8.99 },
       }),
     )
     expect((await res.json()).paymentError).toBeUndefined()
@@ -97,7 +97,7 @@ describe('POST /api/encounters/[id]/finalize card payment', () => {
   it('returns success with the BusinessError message when the payment is refused', async () => {
     vi.mocked(recordPayment).mockRejectedValue(new BusinessError('CARD_TERMINAL_NOT_FOUND', 'Maquininha não encontrada'))
 
-    const res = await call({ cardPayment: { terminalId: TERMINAL_ID } })
+    const res = await call({ cardPayment: { terminalId: TERMINAL_ID, expectedRate: 8.99 } })
     const json = await res.json()
 
     expect(res.status).toBe(200)
@@ -111,7 +111,7 @@ describe('POST /api/encounters/[id]/finalize card payment', () => {
     const boom = new Error('connection reset')
     vi.mocked(recordPayment).mockRejectedValue(boom)
 
-    const res = await call({ cardPayment: { terminalId: TERMINAL_ID } })
+    const res = await call({ cardPayment: { terminalId: TERMINAL_ID, expectedRate: 8.99 } })
     const json = await res.json()
 
     expect(res.status).toBe(200)
@@ -129,8 +129,12 @@ describe('POST /api/encounters/[id]/finalize card payment', () => {
       name: 'cardPayment with a pix plan',
       overrides: {
         financialPlan: { totalAmount: '800.00', installmentCount: 1, paymentMethod: 'pix' },
-        cardPayment: { terminalId: TERMINAL_ID },
+        cardPayment: { terminalId: TERMINAL_ID, expectedRate: 8.99 },
       },
+    },
+    {
+      name: 'cardPayment without the expected rate',
+      overrides: { cardPayment: { terminalId: TERMINAL_ID } },
     },
     {
       name: 'unknown payment method',

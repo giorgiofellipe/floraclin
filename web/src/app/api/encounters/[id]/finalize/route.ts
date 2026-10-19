@@ -54,7 +54,7 @@ const requestSchema = z.object({
       message: 'Débito não pode ser parcelado',
       path: ['installmentCount'],
     }),
-  cardPayment: z.object({ terminalId: z.string().uuid() }).optional(),
+  cardPayment: z.object({ terminalId: z.string().uuid(), expectedRate: z.number().min(0).max(100) }).optional(),
   consents: z.array(
     z.object({
       consentTemplateId: z.string().uuid(),
@@ -127,6 +127,7 @@ export async function POST(
           card: {
             terminalId: body.cardPayment.terminalId,
             installmentCount: paymentMethod === 'debit_card' ? 1 : installmentCount,
+            expectedRate: body.cardPayment.expectedRate,
           },
         })
       } catch (error) {

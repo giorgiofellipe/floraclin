@@ -75,6 +75,16 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   transfer: 'Transferência',
 }
 
+function cardReversalNotice(card: CardPaymentSummary): string {
+  const sentences: string[] = []
+  if (card.pendingRepasses === 1) sentences.push('1 repasse futuro será cancelado.')
+  else if (card.pendingRepasses > 1) sentences.push(`${card.pendingRepasses} repasses futuros serão cancelados.`)
+  if (card.receivedRepasses === 1) sentences.push('1 repasse já recebido fica no extrato.')
+  else if (card.receivedRepasses > 1) sentences.push(`${card.receivedRepasses} repasses já recebidos ficam no extrato.`)
+  sentences.push('Estorne o valor ao paciente na maquininha.')
+  return sentences.join(' ')
+}
+
 function paymentRecordLabel(pr: PaymentRecord): string {
   if (pr.card) return cardLabel(pr.card)
   return PAYMENT_METHOD_LABELS[pr.paymentMethod] ?? pr.paymentMethod ?? ''
@@ -360,11 +370,7 @@ export function InstallmentTable({
             </DialogDescription>
             {reverseDialogPayment?.card && (
               <div className="space-y-2 text-sm text-mid">
-                <p>
-                  {reverseDialogPayment.card.pendingRepasses} repasses futuros serão cancelados.{' '}
-                  {reverseDialogPayment.card.receivedRepasses} repasses já recebidos ficam no extrato.{' '}
-                  Estorne o valor ao paciente na maquininha.
-                </p>
+                <p>{cardReversalNotice(reverseDialogPayment.card)}</p>
                 {reverseDialogPayment.card.linkedPaymentCount > 1 && (
                   <p>
                     Este pagamento em cartão cobre {reverseDialogPayment.card.linkedPaymentCount} parcelas.

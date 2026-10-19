@@ -37,7 +37,7 @@ import {
   cancelCardPaymentTx,
   createCardPaymentTx,
   getCardPaymentSummaries,
-  sumCardFeesForEntries,
+  sumCardFeesForPeriod,
 } from './card-payments'
 import { cardInstallmentCountFor, isCardMethod } from '@/lib/financial/card-repasses'
 import {
@@ -721,6 +721,7 @@ export async function recordPayment(
         terminalId: card.terminalId,
         method: data.paymentMethod,
         installmentCount: card.installmentCount,
+        expectedRate: card.expectedRate,
         gross: data.amount,
         paidAt,
         patientId: entry.patientId,
@@ -1153,6 +1154,7 @@ export async function bulkPayInstallments(
         terminalId: card.terminalId,
         method: cardMethod,
         installmentCount: card.installmentCount,
+        expectedRate: card.expectedRate,
         gross: cardRecords.reduce((sum, r) => sum + r.amountCents, 0) / 100,
         paidAt: new Date(Math.max(...cardRecords.map((r) => r.paidAt.getTime()))),
         patientId: entries[0].patientId,
@@ -1936,35 +1938,38 @@ export async function getRevenueOverview(
     lte(financialEntries.createdAt, rangeEnd),
   ]
 
-  // Summary: total received, pending, overdue
+  // Gross is cash received: live payment records paid inside the period,
+  // whenever the charge itself was created.
+  const receivedConditions = [
+    eq(installments.tenantId, tenantId),
+    eq(financialEntries.tenantId, tenantId),
+    isNull(financialEntries.deletedAt),
+    isNull(paymentRecords.reversedAt),
+    gte(paymentRecords.paidAt, rangeStart),
+    lte(paymentRecords.paidAt, rangeEnd),
+  ]
+
   const summaryQuery = db
     .select({
-      totalReceived: sql<number>`COALESCE(SUM(CASE WHEN ${installments.status} = 'paid' THEN ${installments.amount}::numeric ELSE 0 END), 0)`,
+      totalReceived: sql<number>`COALESCE(SUM(${paymentRecords.amount}::numeric), 0)`,
     })
-    .from(installments)
+    .from(paymentRecords)
+    .innerJoin(installments, eq(installments.id, paymentRecords.installmentId))
     .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
-    .where(and(...entryConditions, ...installmentConditions))
+    .where(and(...receivedConditions))
 
-  // Monthly revenue (paid installments grouped by month)
+  const monthExpr = sql`TO_CHAR(${paymentRecords.paidAt} AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM')`
   const monthlyQuery = db
     .select({
-      month: sql<string>`TO_CHAR(${installments.paidAt}, 'YYYY-MM')`,
-      total: sql<number>`COALESCE(SUM(${installments.amount}::numeric), 0)`,
+      month: sql<string>`${monthExpr}`,
+      total: sql<number>`COALESCE(SUM(${paymentRecords.amount}::numeric), 0)`,
     })
-    .from(installments)
+    .from(paymentRecords)
+    .innerJoin(installments, eq(installments.id, paymentRecords.installmentId))
     .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
-    .where(
-      and(
-        ...installmentConditions,
-        eq(installments.status, 'paid'),
-        eq(financialEntries.tenantId, tenantId),
-        isNull(financialEntries.deletedAt),
-        gte(installments.paidAt, rangeStart),
-        lte(installments.paidAt, rangeEnd)
-      )
-    )
-    .groupBy(sql`TO_CHAR(${installments.paidAt}, 'YYYY-MM')`)
-    .orderBy(sql`TO_CHAR(${installments.paidAt}, 'YYYY-MM')`)
+    .where(and(...receivedConditions))
+    .groupBy(monthExpr)
+    .orderBy(monthExpr)
 
   // Revenue by procedure type
   const byProcedureTypeQuery = db
@@ -1978,25 +1983,16 @@ export async function getRevenueOverview(
     .where(and(...entryConditions))
     .groupBy(procedureTypes.name)
 
-  // Revenue by payment method
   const byPaymentMethodQuery = db
     .select({
-      paymentMethod: sql<string>`COALESCE(${installments.paymentMethod}, 'Não informado')`,
-      total: sql<number>`COALESCE(SUM(${installments.amount}::numeric), 0)`,
+      paymentMethod: paymentRecords.paymentMethod,
+      total: sql<number>`COALESCE(SUM(${paymentRecords.amount}::numeric), 0)`,
     })
-    .from(installments)
+    .from(paymentRecords)
+    .innerJoin(installments, eq(installments.id, paymentRecords.installmentId))
     .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
-    .where(
-      and(
-        ...installmentConditions,
-        eq(installments.status, 'paid'),
-        eq(financialEntries.tenantId, tenantId),
-        isNull(financialEntries.deletedAt),
-        gte(installments.paidAt, rangeStart),
-        lte(installments.paidAt, rangeEnd)
-      )
-    )
-    .groupBy(installments.paymentMethod)
+    .where(and(...receivedConditions))
+    .groupBy(paymentRecords.paymentMethod)
 
   // Expense totals
   const expenseTotalsQuery = db
@@ -2047,7 +2043,7 @@ export async function getRevenueOverview(
     byPaymentMethodQuery,
     expenseTotalsQuery,
     pendingQuery,
-    sumCardFeesForEntries(tenantId, entryConditions),
+    sumCardFeesForPeriod(tenantId, rangeStart, rangeEnd),
   ])
 
   const now = new Date()

@@ -12,17 +12,22 @@ const base = {
 
 describe('buildFinalizeBody', () => {
   it('sends cardPayment when card is paid now with a terminal', () => {
-    const body = buildFinalizeBody({ ...base, card: { cardNow: true, terminalId: 't1' } })
-    expect(body.cardPayment).toEqual({ terminalId: 't1' })
+    const body = buildFinalizeBody({ ...base, card: { cardNow: true, terminalId: 't1', expectedRate: 8.99 } })
+    expect(body.cardPayment).toEqual({ terminalId: 't1', expectedRate: 8.99 })
   })
 
   it('omits cardPayment when the box is unchecked, even with a terminal chosen', () => {
-    const body = buildFinalizeBody({ ...base, card: { cardNow: false, terminalId: 't1' } })
+    const body = buildFinalizeBody({ ...base, card: { cardNow: false, terminalId: 't1', expectedRate: 8.99 } })
     expect('cardPayment' in body).toBe(false)
   })
 
   it('omits cardPayment when checked without a terminal', () => {
-    const body = buildFinalizeBody({ ...base, card: { cardNow: true, terminalId: null } })
+    const body = buildFinalizeBody({ ...base, card: { cardNow: true, terminalId: null, expectedRate: 8.99 } })
+    expect('cardPayment' in body).toBe(false)
+  })
+
+  it('omits cardPayment when checked without a displayed rate', () => {
+    const body = buildFinalizeBody({ ...base, card: { cardNow: true, terminalId: 't1', expectedRate: null } })
     expect('cardPayment' in body).toBe(false)
   })
 })

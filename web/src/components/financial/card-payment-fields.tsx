@@ -16,16 +16,18 @@ import { formatCurrency } from '@/lib/utils'
 export interface CardPaymentValue {
   terminalId: string | null
   installmentCount: number
+  expectedRate: number | null
 }
 
 export function toCardPayload(
   method: string,
   value: CardPaymentValue,
-): { terminalId: string; installmentCount: number } | undefined {
-  if (!isCardMethod(method) || !value.terminalId) return undefined
+): { terminalId: string; installmentCount: number; expectedRate: number } | undefined {
+  if (!isCardMethod(method) || !value.terminalId || value.expectedRate === null) return undefined
   return {
     terminalId: value.terminalId,
     installmentCount: cardInstallmentCountFor(method, value.installmentCount),
+    expectedRate: value.expectedRate,
   }
 }
 
@@ -82,6 +84,11 @@ export function CardPaymentFields({
       paymentYmd,
     })
   }, [terminal, gross, method, value.installmentCount, paymentYmd])
+
+  const displayedRate = schedule?.rate ?? null
+  useEffect(() => {
+    if (value.expectedRate !== displayedRate) onChange({ ...value, expectedRate: displayedRate })
+  }, [value, displayedRate, onChange])
 
   if (isLoading) return <p className="text-sm text-mid">Carregando maquininhas...</p>
   if (isError) return <p className="text-sm text-mid">Não foi possível carregar as maquininhas.</p>

@@ -392,7 +392,7 @@ describe('bulkPayInstallments by card', () => {
   const TERMINAL_ID = '00000000-0000-0000-0000-00000000t001'
   const CARD_PAYMENT_ID = '00000000-0000-0000-0000-00000000c001'
   const OTHER_PATIENT_ID = '00000000-0000-0000-0000-00000000p002'
-  const card = { terminalId: TERMINAL_ID, installmentCount: 3 }
+  const card = { terminalId: TERMINAL_ID, installmentCount: 3, expectedRate: 5 }
 
   beforeEach(() => {
     vi.clearAllMocks()

@@ -27,6 +27,7 @@ async function mutateJson(url: string, method: string, data?: unknown) {
 export interface CardPaymentPayload {
   terminalId: string
   installmentCount: number
+  expectedRate: number
 }
 
 export interface CreateFinancialEntryPayload {

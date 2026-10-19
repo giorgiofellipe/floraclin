@@ -51,7 +51,7 @@ describe('CardPaymentFields', () => {
         method="credit_card"
         gross={3000}
         paymentYmd="2026-10-18"
-        value={{ terminalId: 'term-1', installmentCount: 6 }}
+        value={{ terminalId: 'term-1', installmentCount: 6, expectedRate: null }}
         onChange={vi.fn()}
       />,
     )
@@ -71,7 +71,7 @@ describe('CardPaymentFields', () => {
         method="credit_card"
         gross={3000}
         paymentYmd="2026-10-18"
-        value={{ terminalId: 'term-1', installmentCount: 6 }}
+        value={{ terminalId: 'term-1', installmentCount: 6, expectedRate: null }}
         onChange={vi.fn()}
       />,
     )
@@ -87,7 +87,7 @@ describe('CardPaymentFields', () => {
         method="debit_card"
         gross={100}
         paymentYmd="2026-10-19"
-        value={{ terminalId: 'term-1', installmentCount: 1 }}
+        value={{ terminalId: 'term-1', installmentCount: 1, expectedRate: null }}
         onChange={vi.fn()}
       />,
     )
@@ -103,11 +103,41 @@ describe('CardPaymentFields', () => {
         method="credit_card"
         gross={100}
         paymentYmd="2026-10-19"
-        value={{ terminalId: null, installmentCount: 1 }}
+        value={{ terminalId: null, installmentCount: 1, expectedRate: null }}
         onChange={onChange}
       />,
     )
-    expect(onChange).toHaveBeenCalledWith({ terminalId: 'b', installmentCount: 1 })
+    expect(onChange).toHaveBeenCalledWith({ terminalId: 'b', installmentCount: 1, expectedRate: null })
+  })
+
+  it('reports the displayed schedule rate as expectedRate', () => {
+    mockTerminals([terminal()])
+    const onChange = vi.fn()
+    render(
+      <CardPaymentFields
+        method="credit_card"
+        gross={3000}
+        paymentYmd="2026-10-18"
+        value={{ terminalId: 'term-1', installmentCount: 6, expectedRate: null }}
+        onChange={onChange}
+      />,
+    )
+    expect(onChange).toHaveBeenCalledWith({ terminalId: 'term-1', installmentCount: 6, expectedRate: 8.99 })
+  })
+
+  it('does not re-report a rate that already matches the schedule', () => {
+    mockTerminals([terminal()])
+    const onChange = vi.fn()
+    render(
+      <CardPaymentFields
+        method="credit_card"
+        gross={3000}
+        paymentYmd="2026-10-18"
+        value={{ terminalId: 'term-1', installmentCount: 6, expectedRate: 8.99 }}
+        onChange={onChange}
+      />,
+    )
+    expect(onChange).not.toHaveBeenCalled()
   })
 
   it('asks to register a terminal when there are none', () => {
@@ -117,7 +147,7 @@ describe('CardPaymentFields', () => {
         method="credit_card"
         gross={100}
         paymentYmd="2026-10-19"
-        value={{ terminalId: null, installmentCount: 1 }}
+        value={{ terminalId: null, installmentCount: 1, expectedRate: null }}
         onChange={vi.fn()}
       />,
     )
@@ -131,7 +161,7 @@ describe('CardPaymentFields load states', () => {
     method: 'credit_card' as const,
     gross: 100,
     paymentYmd: '2026-10-19',
-    value: { terminalId: null, installmentCount: 1 },
+    value: { terminalId: null, installmentCount: 1, expectedRate: null },
     onChange: vi.fn(),
   }
 
@@ -152,10 +182,11 @@ describe('CardPaymentFields load states', () => {
 
 describe('toCardPayload', () => {
   it.each([
-    ['credit_card', { terminalId: 't1', installmentCount: 6 }, { terminalId: 't1', installmentCount: 6 }],
-    ['debit_card', { terminalId: 't1', installmentCount: 6 }, { terminalId: 't1', installmentCount: 1 }],
-    ['credit_card', { terminalId: null, installmentCount: 6 }, undefined],
-    ['pix', { terminalId: 't1', installmentCount: 6 }, undefined],
+    ['credit_card', { terminalId: 't1', installmentCount: 6, expectedRate: 8.99 }, { terminalId: 't1', installmentCount: 6, expectedRate: 8.99 }],
+    ['debit_card', { terminalId: 't1', installmentCount: 6, expectedRate: 1.5 }, { terminalId: 't1', installmentCount: 1, expectedRate: 1.5 }],
+    ['credit_card', { terminalId: null, installmentCount: 6, expectedRate: 8.99 }, undefined],
+    ['credit_card', { terminalId: 't1', installmentCount: 6, expectedRate: null }, undefined],
+    ['pix', { terminalId: 't1', installmentCount: 6, expectedRate: 8.99 }, undefined],
   ])('%s with %o gives %o', (method, value, expected) => {
     expect(toCardPayload(method, value)).toEqual(expected)
   })

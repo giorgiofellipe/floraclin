@@ -16,6 +16,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { MaskedInput } from '@/components/ui/masked-input'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DatePicker } from '@/components/ui/date-picker'
+import { useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/hooks/queries/query-keys'
 import { ApiError, usePayInstallment } from '@/hooks/mutations/use-financial-mutations'
 import { useInstallmentQuote } from '@/hooks/queries/use-installment-quote'
 import { formatCurrency } from '@/lib/utils'
@@ -57,6 +59,7 @@ export function PartialPaymentDialog({
   const [card, setCard] = useState<CardPaymentValue>({
     terminalId: null,
     installmentCount: defaultCardInstallmentCount,
+    expectedRate: null,
   })
   const [paidAt, setPaidAt] = useState('')
   const [notes, setNotes] = useState('')
@@ -83,6 +86,7 @@ export function PartialPaymentDialog({
     if (quoteError && TERMINAL_CODES.has(quoteErrorCode ?? '')) closeAsSettled(quoteError.message)
   }, [quoteError, quoteErrorCode])
 
+  const queryClient = useQueryClient()
   const payInstallment = usePayInstallment()
   const isPending = payInstallment.isPending
 
@@ -138,6 +142,8 @@ export function PartialPaymentDialog({
         // A prefilled amount follows the fresh quote on its own; an amount
         // the user typed is theirs to keep.
         refetchQuote()
+      } else if (err instanceof ApiError && err.code === 'CARD_RATE_CHANGED') {
+        queryClient.invalidateQueries({ queryKey: queryKeys.financial.cardTerminals })
       } else if (err instanceof ApiError && TERMINAL_CODES.has(err.code ?? '')) {
         onOpenChange(false)
         onSuccess?.()

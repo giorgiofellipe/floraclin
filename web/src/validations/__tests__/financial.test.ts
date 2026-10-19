@@ -184,7 +184,7 @@ describe('recordPaymentSchema', () => {
   it('accepts all valid payment methods', () => {
     const methods = ['pix', 'credit_card', 'debit_card', 'cash', 'transfer']
     for (const paymentMethod of methods) {
-      const card = paymentMethod.endsWith('_card') ? { terminalId: UUID2, installmentCount: 1 } : undefined
+      const card = paymentMethod.endsWith('_card') ? { terminalId: UUID2, installmentCount: 1, expectedRate: 1.5 } : undefined
       const result = recordPaymentSchema.safeParse({ ...validData, paymentMethod, card })
       expect(result.success).toBe(true)
     }
@@ -359,7 +359,7 @@ describe('bulkPaySchema', () => {
   it('accepts all valid payment methods', () => {
     const methods = ['pix', 'credit_card', 'debit_card', 'cash', 'transfer']
     for (const paymentMethod of methods) {
-      const card = paymentMethod.endsWith('_card') ? { terminalId: UUID2, installmentCount: 1 } : undefined
+      const card = paymentMethod.endsWith('_card') ? { terminalId: UUID2, installmentCount: 1, expectedRate: 1.5 } : undefined
       const result = bulkPaySchema.safeParse({ ...validData, paymentMethod, card })
       expect(result.success).toBe(true)
     }
@@ -594,7 +594,7 @@ describe('paidAt bounds', () => {
 })
 
 describe('card payment fields', () => {
-  const card = { terminalId: UUID2, installmentCount: 6 }
+  const card = { terminalId: UUID2, installmentCount: 6, expectedRate: 8.99 }
   const entry = { patientId: UUID, description: 'x', totalAmount: 500, installmentCount: 1 }
   const payment = { installmentId: UUID, expectedTotalDue: 150, amount: 150 }
   const bulk = { installmentIds: [UUID] }
@@ -620,6 +620,20 @@ describe('card payment fields', () => {
     expect(s.safeParse({ ...base, paymentMethod: 'credit_card', card }).success).toBe(true)
     expect(s.safeParse({ ...base, paymentMethod: 'pix' }).success).toBe(true)
     expect(s.safeParse({ ...base, paymentMethod: 'pix', card }).success).toBe(false)
+  })
+
+  it.each([
+    ['recordPaymentSchema', recordPaymentSchema, payment],
+    ['bulkPaySchema', bulkPaySchema, bulk],
+    ['createFinancialEntrySchema', createFinancialEntrySchema, entry],
+  ] as const)('%s refuses a card without the expected rate, or with a fractional or out of range one', (_name, schema, base) => {
+    const s = schema as typeof recordPaymentSchema
+    const withCard = (c: Record<string, unknown>) => s.safeParse({ ...base, paymentMethod: 'credit_card', card: c })
+    const { expectedRate: _omitted, ...noRate } = card
+    expect(withCard(noRate).success).toBe(false)
+    expect(withCard({ ...card, expectedRate: 8.995 }).success).toBe(false)
+    expect(withCard({ ...card, expectedRate: 101 }).success).toBe(false)
+    expect(withCard({ ...card, expectedRate: -1 }).success).toBe(false)
   })
 
   it('a card charge with 3 patient installments is refused', () => {

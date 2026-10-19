@@ -24,6 +24,11 @@ export const cardPaymentField = z
   .object({
     terminalId: z.string().uuid('Maquininha inválida'),
     installmentCount: z.number().int().min(1).max(12),
+    expectedRate: z
+      .number()
+      .min(0)
+      .max(100)
+      .refine(hasAtMostTwoDecimals, 'Taxa deve ter no máximo duas casas decimais'),
   })
   .optional()
 

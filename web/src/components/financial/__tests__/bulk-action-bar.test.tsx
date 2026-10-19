@@ -300,7 +300,7 @@ describe('BulkActionBar', () => {
         expect(mockBulkPay).toHaveBeenCalledWith(
           expect.objectContaining({
             paymentMethod: 'credit_card',
-            card: { terminalId: 'term-1', installmentCount: 1 },
+            card: { terminalId: 'term-1', installmentCount: 1, expectedRate: 4 },
           }),
         )
       })

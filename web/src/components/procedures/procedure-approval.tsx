@@ -218,6 +218,7 @@ export function ProcedureApproval({
   const [approved, setApproved] = useState(false)
   const [cardNow, setCardNow] = useState(false)
   const [cardTerminalId, setCardTerminalId] = useState<string | null>(null)
+  const [cardExpectedRate, setCardExpectedRate] = useState<number | null>(null)
 
   // Explicit dirty tracking — approval is not a form, so we manage this manually.
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -254,8 +255,9 @@ export function ProcedureApproval({
     onCardPaymentChange?.({
       cardNow: cardMethod !== null && cardNow,
       terminalId: cardTerminalId,
+      expectedRate: cardExpectedRate,
     })
-  }, [onCardPaymentChange, cardMethod, cardNow, cardTerminalId])
+  }, [onCardPaymentChange, cardMethod, cardNow, cardTerminalId, cardExpectedRate])
 
   const diagramPoints = useMemo(() => diagramsToPoints(diagrams ?? []), [diagrams])
   const productTotals = useMemo(() => computeProductTotals(diagramPoints), [diagramPoints])
@@ -489,7 +491,7 @@ export function ProcedureApproval({
       return
     }
 
-    if (cardMethod && cardNow && !cardTerminalId) {
+    if (cardMethod && cardNow && (!cardTerminalId || cardExpectedRate === null)) {
       const error = 'Selecione a maquininha'
       setApproveError(error)
       if (origin === 'wizard') {
@@ -546,8 +548,8 @@ export function ProcedureApproval({
           paymentMethod: financialPlan?.paymentMethod ?? 'pix',
           notes: financialPlan?.notes,
         },
-        ...(cardMethod && cardNow && cardTerminalId
-          ? { cardPayment: { terminalId: cardTerminalId } }
+        ...(cardMethod && cardNow && cardTerminalId && cardExpectedRate !== null
+          ? { cardPayment: { terminalId: cardTerminalId, expectedRate: cardExpectedRate } }
           : {}),
         // Per-type consents and the service contract are recorded inline via
         // `acceptConsent` against the primary draft record. The finalize
@@ -637,6 +639,7 @@ export function ProcedureApproval({
     cardMethod,
     cardNow,
     cardTerminalId,
+    cardExpectedRate,
     patient.id,
     practitionerId,
     primaryRecordId,
@@ -796,8 +799,12 @@ export function ProcedureApproval({
                 value={{
                   terminalId: cardTerminalId,
                   installmentCount: cardMethod === 'debit_card' ? 1 : financialPlan.installmentCount,
+                  expectedRate: cardExpectedRate,
                 }}
-                onChange={(v) => setCardTerminalId(v.terminalId)}
+                onChange={(v) => {
+                  setCardTerminalId(v.terminalId)
+                  setCardExpectedRate(v.expectedRate)
+                }}
                 lockInstallmentCount
                 disabled={isApproving}
               />

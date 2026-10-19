@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { routedTx, fromTable, selectSql, whereParams } from '@/tests/mocks/drizzle-tx'
+import { paymentRecords } from '@/db/schema'
+import { startOfBrDay, endOfBrDay } from '@/lib/dates'
 
 // A chainable, awaitable stand-in for drizzle's query builders, copied from
 // financial-meta.test.ts. Every method call returns the same proxy so any
@@ -25,10 +28,10 @@ function chain(result: unknown) {
 const dbMock = { select: vi.fn() }
 vi.mock('@/db/client', () => ({ db: dbMock }))
 
-const sumCardFeesForEntriesMock = vi.fn()
+const sumCardFeesForPeriodMock = vi.fn()
 const getCardPaymentSummariesMock = vi.fn()
 vi.mock('../card-payments', () => ({
-  sumCardFeesForEntries: (...args: unknown[]) => sumCardFeesForEntriesMock(...args),
+  sumCardFeesForPeriod: (...args: unknown[]) => sumCardFeesForPeriodMock(...args),
   getCardPaymentSummaries: (...args: unknown[]) => getCardPaymentSummariesMock(...args),
 }))
 
@@ -519,13 +522,62 @@ describe('getRevenueOverview card fees', () => {
     dbMock.select.mockReturnValueOnce(chain([])) // by payment method
     dbMock.select.mockReturnValueOnce(chain([{ totalExpenses: 500, totalPendingExpenses: 0 }]))
     dbMock.select.mockReturnValueOnce(chain([])) // pending installments
-    sumCardFeesForEntriesMock.mockResolvedValueOnce(269.7)
+    sumCardFeesForPeriodMock.mockResolvedValueOnce(269.7)
 
     const result = await getRevenueOverview(TENANT, '2026-10-01', '2026-10-31')
 
-    expect(sumCardFeesForEntriesMock).toHaveBeenCalledWith(TENANT, expect.any(Array))
+    expect(sumCardFeesForPeriodMock).toHaveBeenCalledWith(
+      TENANT,
+      startOfBrDay('2026-10-01'),
+      endOfBrDay('2026-10-31'),
+    )
     expect(result.summary.totalCardFees).toBe(269.7)
     expect(result.summary.netProfit).toBeCloseTo(2230.3, 2)
+  })
+})
+
+describe('getRevenueOverview revenue basis', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  // Charge created Oct 28, paid Nov 3: it belongs to November, gross and fee.
+  it('counts a charge created in one month and paid in the next in the payment month, gross and card fee', async () => {
+    const { getRevenueOverview } = await import('../financial')
+    const { tx, log } = routedTx((q) =>
+      fromTable(q.capture) === paymentRecords && q.fields && 'totalReceived' in (q.fields as object)
+        ? [{ totalReceived: '3000.00' }]
+        : [],
+    )
+    dbMock.select.mockImplementation(tx.select)
+    sumCardFeesForPeriodMock.mockResolvedValueOnce(269.7)
+
+    const result = await getRevenueOverview(TENANT, '2026-11-01', '2026-11-30')
+
+    expect(result.summary.totalReceived).toBe(3000)
+    expect(result.summary.totalCardFees).toBe(269.7)
+    expect(sumCardFeesForPeriodMock).toHaveBeenCalledWith(
+      TENANT,
+      startOfBrDay('2026-11-01'),
+      endOfBrDay('2026-11-30'),
+    )
+
+    const payments = log.filter((q) => q.op === 'select' && fromTable(q.capture) === paymentRecords)
+    expect(payments).toHaveLength(3)
+    for (const q of payments) {
+      const sql = selectSql(q.fields, q.capture)
+      expect(sql).toMatch(/"payment_records"\."paid_at" >= \$/)
+      expect(sql).toMatch(/"payment_records"\."paid_at" <= \$/)
+      expect(sql).toMatch(/"payment_records"\."reversed_at" is null/)
+      expect(sql).not.toMatch(/"financial_entries"\."created_at"/)
+      expect(whereParams(q.capture)).toEqual(
+        expect.arrayContaining([
+          TENANT,
+          startOfBrDay('2026-11-01').toISOString(),
+          endOfBrDay('2026-11-30').toISOString(),
+        ]),
+      )
+    }
   })
 })
 

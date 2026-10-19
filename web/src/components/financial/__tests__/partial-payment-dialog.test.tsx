@@ -464,7 +464,7 @@ describe('PartialPaymentDialog', () => {
       expect(mockMutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({
           paymentMethod: 'credit_card',
-          card: { terminalId: 'term-1', installmentCount: 6 },
+          card: { terminalId: 'term-1', installmentCount: 6, expectedRate: 4 },
         }),
       )
     })
@@ -506,8 +506,36 @@ describe('PartialPaymentDialog', () => {
 
     await waitFor(() => {
       expect(mockMutateAsync).toHaveBeenCalledWith(
-        expect.objectContaining({ card: { terminalId: 'term-1', installmentCount: 1 } }),
+        expect.objectContaining({ card: { terminalId: 'term-1', installmentCount: 1, expectedRate: 1.5 } }),
       )
     })
+  })
+
+  it('keeps the dialog open and shows the server message when the terminal rate changed', async () => {
+    const message = 'A taxa da maquininha mudou desde que a tela foi aberta. Confira o novo valor e confirme novamente.'
+    mockMutateAsync.mockRejectedValue(new ApiError(message, 'CARD_RATE_CHANGED'))
+    const onOpenChange = vi.fn()
+    const onSuccess = vi.fn()
+    render(
+      <PartialPaymentDialog
+        open={true}
+        onOpenChange={onOpenChange}
+        onSuccess={onSuccess}
+        installment={defaultInstallment}
+        defaultPaymentMethod="credit_card"
+      />,
+      { wrapper: createWrapper() },
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Confirmar Pagamento' })).not.toBeDisabled()
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar Pagamento' }))
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(message)
+    })
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(onSuccess).not.toHaveBeenCalled()
   })
 })

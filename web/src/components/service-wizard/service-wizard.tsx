@@ -478,7 +478,7 @@ export function ServiceWizard({
   // record ids that the planning step produced. On success, we adopt the
   // returned procedureRecordIds and advance to step 5.
   const [isFinalizing, setIsFinalizing] = useState(false)
-  const cardPaymentRef = useRef<CardPaymentChoice>({ cardNow: false, terminalId: null })
+  const cardPaymentRef = useRef<CardPaymentChoice>({ cardNow: false, terminalId: null, expectedRate: null })
   const handleCardPaymentChange = useCallback((value: CardPaymentChoice) => {
     cardPaymentRef.current = value
   }, [])
@@ -528,7 +528,7 @@ export function ServiceWizard({
     }
 
     const card = cardPaymentRef.current
-    if (card.cardNow && !card.terminalId) {
+    if (card.cardNow && (!card.terminalId || card.expectedRate === null)) {
       toast.error('Selecione a maquininha')
       return
     }

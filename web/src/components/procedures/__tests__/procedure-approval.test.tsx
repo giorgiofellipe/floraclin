@@ -9,7 +9,7 @@ vi.mock('@/hooks/mutations/use-consent-mutations', () => ({
 }))
 vi.mock('@/components/financial/card-payment-fields', () => ({
   CardPaymentFields: ({ onChange, value }: { onChange: (v: unknown) => void; value: object }) => (
-    <button type="button" onClick={() => onChange({ ...value, terminalId: 'term-1' })}>
+    <button type="button" onClick={() => onChange({ ...value, terminalId: 'term-1', expectedRate: 8.99 })}>
       escolher maquininha
     </button>
   ),
@@ -106,6 +106,6 @@ describe('ProcedureApproval card payment', () => {
     fireEvent.click(approve)
 
     await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/finalize'))).toBe(true))
-    expect(finalizeBody().cardPayment).toEqual({ terminalId: 'term-1' })
+    expect(finalizeBody().cardPayment).toEqual({ terminalId: 'term-1', expectedRate: 8.99 })
   })
 })
