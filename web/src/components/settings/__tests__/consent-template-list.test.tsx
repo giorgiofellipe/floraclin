@@ -28,7 +28,16 @@ describe('ConsentTemplateList "Novo"', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Novo/ }))
 
-    expect(screen.getByText(/Já existe um termo deste tipo/)).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Salvar nova versão (v2)' })).toBeTruthy()
+    screen.getByText(/Já existe um termo deste tipo/)
+    screen.getByRole('button', { name: 'Salvar nova versão (v2)' })
+  })
+
+  it('offers to create the term when the tenant has no active template of the default type', () => {
+    render(<ConsentTemplateList templates={[{ ...GENERAL_V1, id: 't-2', type: 'botox' }]} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Novo/ }))
+
+    screen.getByRole('button', { name: 'Criar termo' })
+    expect(screen.queryByText(/Já existe um termo deste tipo/)).toBeNull()
   })
 })

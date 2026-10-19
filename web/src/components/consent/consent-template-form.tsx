@@ -58,8 +58,7 @@ export function ConsentTemplateForm({ template, activeTemplates = [], onSuccess 
   const [title, setTitle] = useState(template?.title ?? '')
   const [content, setContent] = useState(template?.content ?? '')
 
-  const existingOfType = isEditing ? null : activeTemplates.find((t) => t.type === selectedType)
-  const versionBase = isEditing ? template : existingOfType
+  const versionBase = template ?? activeTemplates.find((t) => t.type === selectedType)
   const nextVersion = (versionBase?.version ?? 0) + 1
 
   // When type changes, suggest default content (only for new templates)
@@ -83,6 +82,10 @@ export function ConsentTemplateForm({ template, activeTemplates = [], onSuccess 
       setContent(defaultTemplate.content)
     }
   }
+
+  let submitLabel = 'Criar termo'
+  if (isPending) submitLabel = 'Salvando...'
+  else if (versionBase) submitLabel = `Salvar nova versão (v${nextVersion})`
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -223,11 +226,7 @@ export function ConsentTemplateForm({ template, activeTemplates = [], onSuccess 
             )}
 
             <Button type="submit" disabled={isPending} className="w-full bg-forest text-cream hover:bg-sage shadow-[0_1px_4px_rgba(0,0,0,0.06)] hover:shadow-md transition-all duration-200">
-              {isPending
-                ? 'Salvando...'
-                : versionBase
-                  ? `Salvar nova versão (v${nextVersion})`
-                  : 'Criar termo'}
+              {submitLabel}
             </Button>
           </form>
         </CardContent>
