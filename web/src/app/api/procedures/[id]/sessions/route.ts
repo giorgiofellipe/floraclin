@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { requireWrite } from '@/lib/write-access'
 import { executeSession } from '@/lib/session-execute'
 import { createSessionWireSchema } from '@/validations/procedure-session'
@@ -6,6 +6,7 @@ import { BusinessError } from '@/lib/errors'
 import type { DiagramViewType } from '@/types'
 import type { ProductApplicationItem } from '@/validations/procedure'
 import { handleApiError } from '@/lib/api-error'
+import { sendPostProcedureCare } from '@/lib/whatsapp-procedure-care'
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -36,6 +37,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       })),
       photoAssetIds: body.photoAssetIds,
     })
+    after(() => sendPostProcedureCare(ctx.tenantId, result.sessionId))
 
     return NextResponse.json({ success: true, data: result })
   } catch (error) {

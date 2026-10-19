@@ -286,6 +286,8 @@ async function emitScheduleEvent(
   }
 }
 
+const RECONFIRM_ON_MOVE = ['confirmed', 'pending_reschedule']
+
 export async function updateAppointment(
   tenantId: string,
   appointmentId: string,
@@ -303,6 +305,7 @@ export async function updateAppointment(
     .select({
       date: appointments.date,
       startTime: appointments.startTime,
+      status: appointments.status,
     })
     .from(appointments)
     .where(
@@ -343,6 +346,11 @@ export async function updateAppointment(
       ...data,
       ...(reschedules
         ? { confirmationSentAt: null, confirmationMessageId: null }
+        : {}),
+      // The confirmation cron and the Confirmar/Reagendar reply handler only
+      // act on 'scheduled' rows, so a moved slot has to be confirmed again.
+      ...(reschedules && RECONFIRM_ON_MOVE.includes(current.status)
+        ? { status: 'scheduled', confirmedAt: null }
         : {}),
       updatedAt: new Date(),
     })
@@ -795,4 +803,55 @@ export async function listPractitioners(tenantId: string) {
     .orderBy(users.fullName)
 
   return result
+}
+
+export async function getAppointmentsDuePreInstructions(tenantId: string, fromYmd: string, toYmd: string) {
+  return db
+    .select({
+      id: appointments.id,
+      date: appointments.date,
+      patientId: patients.id,
+      patientName: patients.fullName,
+      patientPhone: patients.phone,
+      procedureTypeName: procedureTypes.name,
+      instructions: procedureTypes.preProcedureInstructions,
+    })
+    .from(appointments)
+    .innerJoin(patients, eq(patients.id, appointments.patientId))
+    .innerJoin(procedureTypes, eq(procedureTypes.id, appointments.procedureTypeId))
+    .where(
+      and(
+        eq(appointments.tenantId, tenantId),
+        inArray(appointments.status, ['scheduled', 'confirmed']),
+        isNull(appointments.deletedAt),
+        isNull(appointments.preInstructionsSentAt),
+        isNull(patients.deletedAt),
+        sql`nullif(trim(${procedureTypes.preProcedureInstructions}), '') is not null`,
+        gte(appointments.date, fromYmd),
+        lte(appointments.date, toYmd),
+      ),
+    )
+}
+
+/** Sets the pre-instructions marker when nobody set it yet; false means another run already has it. */
+export async function claimPreInstructions(tenantId: string, appointmentId: string) {
+  const rows = await db
+    .update(appointments)
+    .set({ preInstructionsSentAt: new Date() })
+    .where(
+      and(
+        eq(appointments.tenantId, tenantId),
+        eq(appointments.id, appointmentId),
+        isNull(appointments.preInstructionsSentAt),
+      ),
+    )
+    .returning({ id: appointments.id })
+  return rows.length > 0
+}
+
+export async function releasePreInstructions(tenantId: string, appointmentId: string) {
+  await db
+    .update(appointments)
+    .set({ preInstructionsSentAt: null })
+    .where(and(eq(appointments.tenantId, tenantId), eq(appointments.id, appointmentId)))
 }

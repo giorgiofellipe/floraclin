@@ -13,6 +13,8 @@ export interface InactivePatientRow {
   daysSince: number
   lastProcedureType: string | null
   lifetimeValue: number
+  marketingOptOut: boolean
+  reactivationSentAt: Date | null
 }
 
 /** Server-recognized sort keys for this report. The route validates an
@@ -78,6 +80,8 @@ export async function listInactivePatients(
         fullName: patients.fullName,
         phone: patients.phone,
         createdAt: patients.createdAt,
+        marketingOptOut: patients.marketingOptOut,
+        reactivationSentAt: patients.reactivationSentAt,
       })
       .from(patients)
       .where(and(eq(patients.tenantId, tenantId), isNull(patients.deletedAt))),
@@ -139,6 +143,8 @@ export async function listInactivePatients(
         daysSince,
         lastProcedureType: last.procedureTypeName,
         lifetimeValue,
+        marketingOptOut: patient.marketingOptOut,
+        reactivationSentAt: patient.reactivationSentAt,
       })
       continue
     }
@@ -159,6 +165,8 @@ export async function listInactivePatients(
       daysSince,
       lastProcedureType: null,
       lifetimeValue,
+      marketingOptOut: patient.marketingOptOut,
+      reactivationSentAt: patient.reactivationSentAt,
     })
   }
 
