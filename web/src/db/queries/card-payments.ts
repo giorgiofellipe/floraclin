@@ -8,6 +8,7 @@ import {
   paymentRecords,
 } from '@/db/schema'
 import { and, asc, count, eq, gte, inArray, isNull, lte, ne, sql, sum } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import { withTransaction } from '@/lib/tenant'
 import { brToday, parseBrDate, toBrYmd } from '@/lib/dates'
 import { createAuditLog } from '@/lib/audit'
@@ -147,6 +148,11 @@ export async function createCardPaymentTx(
   return { cardPaymentId: payment.id }
 }
 
+// Drizzle renders a table in FOR UPDATE OF with its schema, which Postgres
+// rejects. An alias named after the table renders bare and names the same relation.
+const LOCKED_REPASSES = alias(cardRepasses, 'card_repasses')
+const LOCKED_PAYMENTS = alias(cardPayments, 'card_payments')
+
 export async function postDueRepassesTx(
   tx: typeof db,
   tenantId: string,
@@ -184,7 +190,7 @@ export async function postDueRepassesTx(
     )
     .where(and(...conditions))
     .orderBy(asc(cardRepasses.id))
-    .for('update', { of: [cardRepasses, cardPayments], skipLocked: true })
+    .for('update', { of: [LOCKED_REPASSES, LOCKED_PAYMENTS], skipLocked: true })
 
   if (due.length === 0) return 0
 

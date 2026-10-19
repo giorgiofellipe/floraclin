@@ -248,6 +248,8 @@ describe('postDueRepassesTx', () => {
     expect(isLock(select)).toBe(true)
     const lockArgs = select.capture.calls!.find(([m]) => m === 'for')![1]
     expect(lockArgs[1]).toMatchObject({ skipLocked: true })
+    // Postgres rejects schema-qualified names in FOR UPDATE OF.
+    expect(selectSql(select.fields, select.capture)).toMatch(/ for update of "card_repasses", "card_payments" skip locked$/)
     const claim = updates(log, cardRepasses)[0]
     expect(whereParams(claim.capture)).toEqual(expect.arrayContaining([TENANT, REPASSE_ID, 'pending']))
   })
