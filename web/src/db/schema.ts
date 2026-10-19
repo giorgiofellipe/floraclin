@@ -202,7 +202,7 @@ export const procedureRecords = floraclinSchema.table('procedure_records', {
   notes: text('notes'),
   followUpDate: date('follow_up_date'),
   nextSessionObjectives: text('next_session_objectives'),
-  additionalTypeIds: jsonb('additional_type_ids').default([]),
+  additionalTypeIds: jsonb('additional_type_ids').$type<string[]>().default([]),
   status: varchar('status', { length: 20 }).notNull().default('draft'),
   plannedSnapshot: jsonb('planned_snapshot'),
   approvedAt: timestamp('approved_at', { withTimezone: true }),
@@ -239,6 +239,7 @@ export const procedureSessions = floraclinSchema.table('procedure_sessions', {
   notes: text('notes'),
   followUpDate: date('follow_up_date'),
   nextSessionObjectives: text('next_session_objectives'),
+  followUpSentAt: timestamp('follow_up_sent_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -431,6 +432,7 @@ export const installments = floraclinSchema.table('installments', {
   appliedGracePeriodDays: integer('applied_grace_period_days').notNull(),
   cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
   penaltyPauses: jsonb('penalty_pauses').$type<{ from: string; to: string }[]>().notNull().default([]),
+  reminderSentAt: timestamp('reminder_sent_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

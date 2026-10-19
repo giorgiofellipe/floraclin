@@ -6,8 +6,14 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, CalendarCheck, CheckCircle2, Clock, CreditCard, HeartPulse, Loader2, Plus, Save } from 'lucide-react'
+import { AlertTriangle, CalendarCheck, CheckCircle2, ChevronDown, Clock, CreditCard, HeartPulse, Loader2, Plus, Save } from 'lucide-react'
 import { toast } from 'sonner'
+import { WhatsAppTemplatePreview, WhatsAppTemplatePreviewNote } from './whatsapp-template-preview'
+import {
+  ANAMNESIS_STALE_DAYS_MAX,
+  AUTOMATION_DAYS_MAX,
+  automationConfigDefaults,
+} from '@/lib/whatsapp-automation-config'
 
 interface Automation {
   id: string
@@ -22,6 +28,7 @@ interface Template {
   name: string
   status: string
   purposeKey: string | null
+  components: unknown
 }
 
 type LocalState = Record<string, {
@@ -29,6 +36,8 @@ type LocalState = Record<string, {
   templateId: string | null
   config: Record<string, unknown>
 }>
+
+const CONFIRMATION_DEFAULTS = automationConfigDefaults('appointment_confirmation')
 
 const TRIGGERS = [
   {
@@ -38,28 +47,28 @@ const TRIGGERS = [
     icon: CalendarCheck,
     purposeKey: 'appointment_confirmation',
     configFields: [
-      { key: 'autoAnamnesisEnabled', label: 'Enviar anamnese automaticamente após confirmação', type: 'toggle' as const, default: false },
-      { key: 'anamnesisStaleDays', label: 'Dias para considerar anamnese desatualizada', type: 'number' as const, default: 60, dependsOn: 'autoAnamnesisEnabled' },
+      { key: 'autoAnamnesisEnabled', label: 'Enviar anamnese automaticamente após confirmação', type: 'toggle' as const, default: CONFIRMATION_DEFAULTS.autoAnamnesisEnabled },
+      { key: 'anamnesisStaleDays', label: 'Dias para considerar anamnese desatualizada', type: 'number' as const, default: CONFIRMATION_DEFAULTS.anamnesisStaleDays, max: ANAMNESIS_STALE_DAYS_MAX, dependsOn: 'autoAnamnesisEnabled' },
     ],
   },
   {
     key: 'payment_reminder',
     label: 'Lembrete de pagamento',
-    description: 'Envia um lembrete antes do vencimento de parcelas.',
+    description: 'Envia diariamente às 9h um lembrete para parcelas que vencem nos próximos dias.',
     icon: CreditCard,
     purposeKey: 'payment_reminder',
     configFields: [
-      { key: 'daysBeforeDue', label: 'Dias antes do vencimento', type: 'number' as const, default: 3 },
+      { key: 'daysBeforeDue', label: 'Dias antes do vencimento', type: 'number' as const, default: automationConfigDefaults('payment_reminder').daysBeforeDue, max: AUTOMATION_DAYS_MAX },
     ],
   },
   {
     key: 'follow_up',
     label: 'Acompanhamento pós-procedimento',
-    description: 'Envia mensagem de acompanhamento após a realização de um procedimento.',
+    description: 'Envia diariamente às 9h30 uma mensagem de acompanhamento aos pacientes que realizaram um procedimento.',
     icon: HeartPulse,
     purposeKey: 'follow_up',
     configFields: [
-      { key: 'daysAfterProcedure', label: 'Dias após o procedimento', type: 'number' as const, default: 7 },
+      { key: 'daysAfterProcedure', label: 'Dias após o procedimento', type: 'number' as const, default: automationConfigDefaults('follow_up').daysAfterProcedure, max: AUTOMATION_DAYS_MAX },
     ],
   },
 ]
@@ -67,12 +76,11 @@ const TRIGGERS = [
 /**
  * What the panel can tell the clinic about the template behind a trigger.
  * On the shared number the clinic can neither create a template nor chase its
- * approval, so the only two useful answers are "the FloraClin default is in
- * place" and "it is not, and this automation will not send".
+ * approval, so the only thing worth saying is that it is missing and this
+ * automation will not send.
  */
 type TemplateState =
   | 'approved'
-  | 'platform'
   | 'unavailable'
   | 'pending'
   | 'provision'
@@ -80,9 +88,9 @@ type TemplateState =
 function resolveTemplateState(
   template: Template | undefined,
   mode: 'floraclin' | 'own',
-): TemplateState {
+): TemplateState | null {
   const usable = template?.status === 'APPROVED'
-  if (mode === 'floraclin') return usable ? 'platform' : 'unavailable'
+  if (mode === 'floraclin') return usable ? null : 'unavailable'
   if (!template) return 'provision'
   return usable ? 'approved' : 'pending'
 }
@@ -111,6 +119,8 @@ interface WhatsAppAutomationsProps {
 export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
   const [serverAutomations, setServerAutomations] = useState<Automation[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
+  const [clinicName, setClinicName] = useState('')
+  const [previewOpen, setPreviewOpen] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [provisioning, setProvisioning] = useState(false)
@@ -130,6 +140,7 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
     if (!res.ok) return
     const data = await res.json()
     setTemplates((data.data ?? []) as Template[])
+    setClinicName(data.clinicName ?? '')
   }, [templatesUrl])
 
   const fetchData = useCallback(async () => {
@@ -288,7 +299,7 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
           return (
             <div
               key={trigger.key}
-              className="rounded-[3px] border border-[#E8ECEF] bg-white p-4 space-y-3"
+              className="rounded-[3px] border border-topbar-border bg-white p-4 space-y-3"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -308,54 +319,83 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
                 />
               </div>
 
+              {matchingTemplate && (
+                <div className="pl-7">
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 text-xs text-sage hover:underline"
+                    aria-expanded={previewOpen.has(trigger.key)}
+                    onClick={() =>
+                      setPreviewOpen((prev) => {
+                        const next = new Set(prev)
+                        if (!next.delete(trigger.key)) next.add(trigger.key)
+                        return next
+                      })
+                    }
+                  >
+                    Ver mensagem enviada
+                    <ChevronDown
+                      className={`size-3.5 transition-transform ${previewOpen.has(trigger.key) ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+                  {previewOpen.has(trigger.key) && (
+                    <div className="mt-2">
+                      <WhatsAppTemplatePreview template={matchingTemplate} clinicName={clinicName} />
+                      {mode === 'own' && (
+                        <p className="mt-2 text-xs text-mid">
+                          Template <span className="font-mono">{matchingTemplate.name}</span>
+                        </p>
+                      )}
+                      <WhatsAppTemplatePreviewNote className="mt-2" />
+                    </div>
+                  )}
+                </div>
+              )}
+
               {state.enabled && (
                 <div className="pl-7 space-y-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-mid">Template</Label>
-                    {templateState === 'approved' && (
-                      <div className="flex items-center gap-2 text-xs text-green-700">
-                        <CheckCircle2 className="size-3.5" />
-                        <span>Template aprovado</span>
-                      </div>
-                    )}
-                    {templateState === 'platform' && (
-                      <div className="flex items-center gap-2 text-xs text-mid">
-                        <CheckCircle2 className="size-3.5" />
-                        <span>Mensagem padrão do FloraClin</span>
-                      </div>
-                    )}
-                    {templateState === 'pending' && (
-                      <div className="flex items-center gap-2 text-xs text-amber-700">
-                        <Clock className="size-3.5" />
-                        <span>Template em revisão pela Meta</span>
-                      </div>
-                    )}
-                    {templateState === 'unavailable' && (
-                      <div className="flex items-center gap-2 text-xs text-amber-700">
-                        <AlertTriangle className="size-3.5" />
-                        <span>
-                          Mensagem indisponível no momento. Fale com o suporte.
-                        </span>
-                      </div>
-                    )}
-                    {templateState === 'provision' && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="text-xs"
-                        disabled={provisioning}
-                        onClick={handleProvision}
-                      >
-                        {provisioning ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : (
-                          <Plus className="size-3.5" />
-                        )}
-                        Criar template padrão
-                      </Button>
-                    )}
-                  </div>
+                  {templateState && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-mid">Template</Label>
+                      {templateState === 'approved' && (
+                        <div className="flex items-center gap-2 text-xs text-green-700">
+                          <CheckCircle2 className="size-3.5" />
+                          <span>Template aprovado</span>
+                        </div>
+                      )}
+                      {templateState === 'pending' && (
+                        <div className="flex items-center gap-2 text-xs text-amber-700">
+                          <Clock className="size-3.5" />
+                          <span>Template em revisão pela Meta</span>
+                        </div>
+                      )}
+                      {templateState === 'unavailable' && (
+                        <div className="flex items-center gap-2 text-xs text-amber-700">
+                          <AlertTriangle className="size-3.5" />
+                          <span>
+                            Mensagem indisponível no momento. Fale com o suporte.
+                          </span>
+                        </div>
+                      )}
+                      {templateState === 'provision' && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="text-xs"
+                          disabled={provisioning}
+                          onClick={handleProvision}
+                        >
+                          {provisioning ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <Plus className="size-3.5" />
+                          )}
+                          Criar template padrão
+                        </Button>
+                      )}
+                    </div>
+                  )}
 
                   {trigger.configFields.map((field) => {
                     if ('dependsOn' in field && field.dependsOn && !state.config[field.dependsOn]) {
@@ -384,11 +424,15 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
                         <Input
                           type="number"
                           min={1}
+                          max={field.max}
                           className="w-32"
                           value={(state.config[field.key] as number) ?? field.default}
                           onChange={(e) =>
                             updateLocal(trigger.key, {
-                              config: { ...state.config, [field.key]: parseInt(e.target.value) || field.default },
+                              config: {
+                                ...state.config,
+                                [field.key]: Math.min(field.max, Math.max(1, parseInt(e.target.value) || field.default)),
+                              },
                             })
                           }
                         />

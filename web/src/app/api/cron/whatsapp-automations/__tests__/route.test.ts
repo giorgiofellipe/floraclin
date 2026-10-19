@@ -363,6 +363,33 @@ describe('GET /api/cron/whatsapp-automations', () => {
       expect(captureExceptionMock).not.toHaveBeenCalled()
     })
 
+    // Regression: a custom template mapped to a key the cron does not supply
+    // failed every send, one Sentry exception per appointment, every day.
+    it('records template_incompatible and sends nothing when the template needs an unknown value', async () => {
+      dbMock.from.mockResolvedValue([
+        makeTenant('t1', 'Clinic A', { whatsapp_enabled: true }),
+      ])
+      vi.mocked(listAutomations).mockResolvedValue([makeAutomation()])
+      vi.mocked(getAppointmentsPendingConfirmationUntil).mockResolvedValue([
+        makeAppointment({ date: shiftBrYmd(brToday(), 1) }),
+        makeAppointment({ id: 'appt-2', date: shiftBrYmd(brToday(), 1) }),
+      ])
+      vi.mocked(getTemplateForTenant).mockResolvedValue(makeTemplate({
+        variableMapping: [
+          { index: 1, key: 'patient_name', label: 'Nome', example: 'Maria' },
+          { index: 2, key: 'procedure_name', label: 'Procedimento', example: 'Botox' },
+        ],
+      }))
+
+      const res = await GET(makeRequest(CRON_SECRET))
+      const json = await res.json()
+
+      expect(findOutcome(json, 't1')?.reason).toBe('template_incompatible')
+      expect(sendTemplateMessage).not.toHaveBeenCalled()
+      expect(captureExceptionMock).not.toHaveBeenCalled()
+      expect(captureMessageMock).toHaveBeenCalledTimes(1)
+    })
+
     it('records no_pending_appointments when the query returns no appointments', async () => {
       dbMock.from.mockResolvedValue([
         makeTenant('t1', 'Clinic A', { whatsapp_enabled: true }),
@@ -449,6 +476,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
           '3': '02/06/2026',    // BR date format DD/MM/YYYY
           '4': '14:30',         // time HH:MM
         },
+        undefined,
       )
     })
 
@@ -537,6 +565,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         expect.any(String),
         expect.any(String),
         expect.objectContaining({ '1': 'Ana' }),
+        undefined,
       )
     })
 
@@ -582,6 +611,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         expect.any(String),
         expect.any(String),
         expect.objectContaining({ '1': 'Beyoncé' }),
+        undefined,
       )
     })
 
@@ -603,6 +633,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         expect.any(String),
         expect.any(String),
         expect.objectContaining({ '1': '' }),
+        undefined,
       )
     })
 
@@ -801,6 +832,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         expect.any(String),
         expect.any(String),
         expect.any(Object),
+        undefined,
       )
     })
 
@@ -816,6 +848,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         expect.any(String),
         expect.any(String),
         expect.any(Object),
+        undefined,
       )
     })
 
@@ -831,6 +864,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         expect.any(String),
         expect.any(String),
         expect.any(Object),
+        undefined,
       )
     })
 
@@ -846,6 +880,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         expect.any(String),
         expect.any(String),
         expect.any(Object),
+        undefined,
       )
     })
   })
@@ -882,6 +917,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         expect.any(String),
         expect.any(String),
         expect.objectContaining({ '3': '02/06/2026' }),
+        undefined,
       )
     })
 
@@ -897,6 +933,7 @@ describe('GET /api/cron/whatsapp-automations', () => {
         expect.any(String),
         expect.any(String),
         expect.objectContaining({ '3': '25/12/2026', '4': '15:45' }),
+        undefined,
       )
     })
   })

@@ -455,12 +455,17 @@ export function getTemplateDisplayLabel(template: {
   return template.name
 }
 
+type TemplateBodySegment = { text: string } | { variable: string }
+
 export interface TemplatePreview {
+  /** Body as the patient receives it, filled with example values. */
   body: string
+  /** Body as written, with each {{n}} named by its variable label. */
+  segments: TemplateBodySegment[]
   buttons: string[]
 }
 
-interface PreviewableTemplate {
+export interface PreviewableTemplate {
   name: string
   purposeKey: string | null
   components: unknown
@@ -485,13 +490,40 @@ function isVariableList(value: unknown): value is TemplateVariable[] {
   )
 }
 
-function resolvePreviewVariables(template: PreviewableTemplate): TemplateVariable[] {
+function resolveTemplateVariables(template: PreviewableTemplate): TemplateVariable[] {
   if (isVariableList(template.variableMapping)) return template.variableMapping
   const byPurpose = template.purposeKey
     ? TEMPLATE_BLUEPRINTS.find((b) => b.purposeKey === template.purposeKey)
     : null
   const blueprint = byPurpose ?? findBlueprintForTemplateName(template.name)
   return blueprint?.variables ?? []
+}
+
+/** Variable keys the template needs that a sender supplying `keys` lacks. */
+export function missingTemplateKeys(template: PreviewableTemplate, keys: string[]): string[] {
+  return resolveTemplateVariables(template)
+    .map((v) => v.key)
+    .filter((key) => !keys.includes(key))
+}
+
+/**
+ * Positional params for a send, from values keyed by variable key. Follows
+ * the template's own variable mapping, which a clinic on its own number can
+ * reorder, so a sender never assumes the blueprint's order.
+ */
+export function buildTemplateParams(
+  template: PreviewableTemplate,
+  values: Record<string, string>,
+): Record<string, string> {
+  const params: Record<string, string> = {}
+  for (const variable of resolveTemplateVariables(template)) {
+    const value = values[variable.key]
+    if (value === undefined) {
+      throw new Error(`Template ${template.name} needs a value for ${variable.key}`)
+    }
+    params[String(variable.index)] = value
+  }
+  return params
 }
 
 /**
@@ -514,12 +546,24 @@ export function buildTemplatePreview(
   )
 
   const bodyComponent = components.find((c) => c.type === 'BODY')
-  let body = typeof bodyComponent?.text === 'string' ? bodyComponent.text : ''
+  const rawBody = typeof bodyComponent?.text === 'string' ? bodyComponent.text : ''
+  const variables = resolveTemplateVariables(template)
 
-  for (const variable of resolvePreviewVariables(template)) {
+  let body = rawBody
+  for (const variable of variables) {
     const value = variable.key === 'clinic_name' ? clinicName : variable.example
     body = body.replaceAll(`{{${variable.index}}}`, value)
   }
+
+  const segments = rawBody
+    .split(/(\{\{\d+\}\})/)
+    .filter(Boolean)
+    .map((part): TemplateBodySegment => {
+      const index = part.match(/^\{\{(\d+)\}\}$/)?.[1]
+      if (!index) return { text: part }
+      const label = variables.find((v) => v.index === Number(index))?.label
+      return { variable: label ?? `Variável ${index}` }
+    })
 
   const buttonsComponent = components.find((c) => c.type === 'BUTTONS')
   const buttons = Array.isArray(buttonsComponent?.buttons)
@@ -528,5 +572,5 @@ export function buildTemplatePreview(
         .filter(Boolean)
     : []
 
-  return { body, buttons }
+  return { body, segments, buttons }
 }

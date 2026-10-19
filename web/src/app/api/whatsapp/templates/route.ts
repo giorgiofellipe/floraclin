@@ -113,7 +113,7 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({ data: templates })
+    return NextResponse.json({ data: templates, clinicName: tenant.name })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
     if (msg === 'WhatsApp not enabled') return NextResponse.json({ error: msg }, { status: 400 })

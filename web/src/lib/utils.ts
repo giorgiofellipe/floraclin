@@ -25,6 +25,10 @@ export function formatDateTime(date: Date | string): string {
   return format(toDisplayDate(date), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
 }
 
+export function firstName(fullName: string): string {
+  return fullName.split(' ')[0] || fullName
+}
+
 export function formatCurrency(value: number): string {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',

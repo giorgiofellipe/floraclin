@@ -3,14 +3,16 @@ import * as Sentry from '@sentry/nextjs'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { getAppointmentsPendingConfirmationUntil, markConfirmationSent } from '@/db/queries/appointments'
-import { listAutomations, upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
-import { sendTemplateMessage, resolveTemplateBody, getTemplateForTenant } from '@/lib/whatsapp'
+import { listAutomations } from '@/db/queries/whatsapp'
+import { getTemplateForTenant } from '@/lib/whatsapp'
+import { sendAndRecordTemplate } from '@/lib/whatsapp-automated-send'
 import { CreditExhaustedError } from '@/lib/whatsapp-credits'
 import { InvalidWhatsAppPhoneError, normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { isSubscriptionActive } from '@/lib/plans'
 import { notifyDiscord, type WhatsappDigestFailingTenant } from '@/lib/discord'
 import { withCronMonitor } from '@/lib/cron-monitor'
-import { buildConfirmationParams } from '@/lib/whatsapp-confirmation'
+import { buildConfirmationValues, CONFIRMATION_VALUE_KEYS } from '@/lib/whatsapp-confirmation'
+import { buildTemplateParams, missingTemplateKeys } from '@/lib/whatsapp-blueprints'
 import { brToday, parseBrDate } from '@/lib/dates'
 import { maybeAutoSendAnamnesisLink } from '@/lib/whatsapp-anamnesis'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
@@ -33,6 +35,7 @@ type TenantOutcomeReason =
   | 'no_automation'
   | 'template_missing'
   | 'template_not_approved'
+  | 'template_incompatible'
   | 'no_pending_appointments'
   | 'no_messages_due'
   | 'no_valid_phone'
@@ -151,7 +154,7 @@ async function runAutomations() {
       const sameDayAppointments = pendingAppointments.filter((appt) => appt.date === todayYmd)
       const nextDayAppointments = pendingAppointments.filter((appt) => appt.date !== todayYmd)
 
-      let confirmationBlockedReason: 'template_missing' | 'template_not_approved' | null = null
+      let confirmationBlockedReason: 'template_missing' | 'template_not_approved' | 'template_incompatible' | null = null
       let template: Awaited<ReturnType<typeof getTemplateForTenant>> = null
       if (nextDayAppointments.length > 0) {
         template = await getTemplateForTenant(tenant.id, 'appointment_confirmation')
@@ -159,6 +162,15 @@ async function runAutomations() {
           confirmationBlockedReason = 'template_missing'
         } else if (template.status !== 'APPROVED') {
           confirmationBlockedReason = 'template_not_approved'
+        } else {
+          const missingKeys = missingTemplateKeys(template, [...CONFIRMATION_VALUE_KEYS])
+          if (missingKeys.length > 0) {
+            confirmationBlockedReason = 'template_incompatible'
+            Sentry.captureMessage('WhatsApp confirmation template needs values the cron does not supply', {
+              level: 'warning',
+              extra: { tenantId: tenant.id, tenantName: tenant.name, template: template.name, missingKeys },
+            })
+          }
         }
       }
       const confirmationTemplate = confirmationBlockedReason ? null : template
@@ -201,45 +213,14 @@ async function runAutomations() {
           }
 
           const { template } = send
-          const name = appt.patientName ?? appt.bookingName ?? ''
-          const params = buildConfirmationParams(appt, tenant.name)
-
-          const result = await sendTemplateMessage(
-            tenant.id,
-            {
-              actor: { type: 'system' },
-              recipient: { patientId: appt.patientId ?? null, name: appt.patientName ?? appt.bookingName ?? null },
-            },
-            normalizedPhone,
-            template.name,
-            template.language,
-            params,
-          )
-
+          const result = await sendAndRecordTemplate({
+            tenantId: tenant.id,
+            phone: normalizedPhone,
+            recipient: { patientId: appt.patientId ?? null, name: appt.patientName ?? appt.bookingName ?? null },
+            template,
+            params: buildTemplateParams(template, buildConfirmationValues(appt, tenant.name)),
+          })
           await markConfirmationSent(tenant.id, appt.id, result.metaMessageId)
-
-          const conversation = await upsertConversation(
-            tenant.id,
-            normalizedPhone,
-            name,
-            undefined,
-            appt.patientId ?? undefined,
-          )
-
-          const resolvedBody = resolveTemplateBody(template.components, params)
-
-          const message = await createMessage(tenant.id, conversation.id, {
-            direction: 'outbound',
-            metaMessageId: result.metaMessageId,
-            body: resolvedBody,
-            templateName: template.name,
-            deliveryStatus: 'sent',
-          })
-
-          await pushSseEvent(tenant.id, 'new_message', {
-            conversationId: conversation.id,
-            message,
-          })
 
           sent++
           tenantSent++

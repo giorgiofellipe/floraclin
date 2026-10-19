@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { InstallBanner } from '../install-banner'
 
+const route = vi.hoisted(() => ({ pathname: '/dashboard' }))
+vi.mock('next/navigation', () => ({ usePathname: () => route.pathname }))
+
 vi.mock('next/image', () => ({
   __esModule: true,
   // eslint-disable-next-line jsx-a11y/alt-text -- plain img stands in for next/image under jsdom
@@ -50,6 +53,7 @@ const banner = () => screen.queryByTestId('install-banner')
 
 beforeEach(() => {
   localStorage.clear()
+  route.pathname = '/dashboard'
 })
 
 afterEach(() => {
@@ -61,6 +65,21 @@ afterEach(() => {
 })
 
 describe('InstallBanner', () => {
+  it('stays out of the WhatsApp inbox, where it would cover the composer, without counting as dismissed', () => {
+    stubEnvironment()
+    route.pathname = '/whatsapp'
+    const { rerender } = render(<InstallBanner />)
+
+    expect(banner()).not.toBeInTheDocument()
+    // No UI to hand the prompt to, so the browser keeps its own.
+    expect(fireInstallPrompt().defaultPrevented).toBe(false)
+    expect(localStorage.getItem('floraclin.install-banner.dismissed')).toBeNull()
+
+    route.pathname = '/agenda'
+    rerender(<InstallBanner />)
+    expect(banner()).toBeInTheDocument()
+  })
+
   it('renders nothing when already running as an installed app', () => {
     stubEnvironment({ installed: true, userAgent: IOS_UA })
     render(<InstallBanner />)

@@ -20,6 +20,12 @@ const cormorant = Cormorant_Garamond({
 
 export const viewport: Viewport = {
   themeColor: '#1C2B1E',
+  // Lets pages draw under the notch / home indicator so env(safe-area-inset-*)
+  // reports real values. Every edge-anchored element pads itself with those
+  // insets (see globals.css body and the fixed/sticky bars); they are 0 on
+  // devices without insets, so nothing moves there.
+  viewportFit: 'cover',
+  // interactiveWidget is set only for the inbox, see (platform)/whatsapp/layout.tsx.
 }
 
 export const metadata: Metadata = {

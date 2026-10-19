@@ -69,6 +69,10 @@
 }
 
 :root {
+  /* Platform header bar (components/layout/header.tsx), excluding the notch
+     inset it pads itself with. Full-height screens such as the WhatsApp inbox
+     subtract it. */
+  --app-header-h: 52px;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -143,6 +147,11 @@
   }
   body {
     @apply bg-[#F4F6F8] text-charcoal;
+    /* viewport-fit=cover (app/layout.tsx): keep in-flow content out of the
+       landscape notch, as the browser's own letterboxing did before. Fixed
+       elements are positioned against the viewport and pad themselves. */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
   html {
     @apply font-sans;

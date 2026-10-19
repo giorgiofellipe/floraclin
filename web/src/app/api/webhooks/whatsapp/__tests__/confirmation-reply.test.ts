@@ -781,6 +781,7 @@ describe('maybeAutoSendAnamnesis — happy path', () => {
 
     vi.mocked(getTemplateForTenant).mockResolvedValue({
       name: 'anamnese_link_v1',
+      purposeKey: 'anamnese_link',
       status: 'APPROVED',
       language: 'pt_BR',
     } as never)
@@ -860,6 +861,7 @@ describe('maybeAutoSendAnamnesis — happy path', () => {
 
     vi.mocked(getTemplateForTenant).mockResolvedValue({
       name: 'anamnese_link_v1',
+      purposeKey: 'anamnese_link',
       status: 'APPROVED',
       language: 'pt_BR',
     } as never)
@@ -967,6 +969,7 @@ describe('maybeAutoSendAnamnesis — edge cases', () => {
     vi.mocked(getAnamnesis).mockResolvedValue(null as never)
     vi.mocked(getTemplateForTenant).mockResolvedValue({
       name: 'anamnese_link_v1',
+      purposeKey: 'anamnese_link',
       status: 'APPROVED',
       language: 'pt_BR',
     } as never)
@@ -1001,6 +1004,7 @@ describe('maybeAutoSendAnamnesis — edge cases', () => {
     vi.mocked(getAnamnesis).mockResolvedValue(null as never)
     vi.mocked(getTemplateForTenant).mockResolvedValue({
       name: 'anamnese_link_v1',
+      purposeKey: 'anamnese_link',
       status: 'APPROVED',
       language: 'pt_BR',
     } as never)
@@ -1044,6 +1048,7 @@ describe('maybeAutoSendAnamnesis — edge cases', () => {
     vi.mocked(getAnamnesis).mockResolvedValue(null as never)
     vi.mocked(getTemplateForTenant).mockResolvedValue({
       name: 'anamnese_link_v1',
+      purposeKey: 'anamnese_link',
       status: 'APPROVED',
       language: 'pt_BR',
     } as never)

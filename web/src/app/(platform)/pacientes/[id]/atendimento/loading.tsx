@@ -3,8 +3,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 export default function AtendimentoLoading() {
   return (
     <div className="-m-4 md:-m-6 flex min-h-screen flex-col bg-[#F4F6F8]">
-      {/* Patient compact bar skeleton */}
-      <header className="sticky top-0 z-30 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+      {/* Patient compact bar skeleton; env() padding keeps it clear of the
+          notch (viewport-fit=cover), matching the wizard's header. */}
+      <header className="sticky top-0 z-30 bg-white pt-[env(safe-area-inset-top)] shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
         <div className="mx-auto flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-4">
             <Skeleton className="h-5 w-40" />
@@ -78,7 +79,8 @@ export default function AtendimentoLoading() {
       </main>
 
       {/* Navigation bar skeleton */}
-      <nav className="fixed bottom-0 left-0 right-0 md:left-[200px] z-30 border-t border-gray-100 bg-white shadow-[0_-1px_4px_rgba(0,0,0,0.06)]">
+      {/* env() padding keeps it clear of the notch / home-indicator insets (viewport-fit=cover). */}
+      <nav className="fixed bottom-0 left-[env(safe-area-inset-left)] right-[env(safe-area-inset-right)] md:left-[calc(200px+env(safe-area-inset-left))] z-30 border-t border-gray-100 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-1px_4px_rgba(0,0,0,0.06)]">
         <div className="mx-auto flex items-center justify-between px-6 py-3">
           <Skeleton className="h-[48px] w-24 rounded-[3px]" />
           <Skeleton className="hidden md:block h-4 w-32 rounded-full" />

@@ -22,7 +22,7 @@ afterEach(() => {
 })
 
 describe('WhatsAppSystemTemplates', () => {
-  it('shows the message with the clinic name and example values, not raw placeholders', async () => {
+  it('shows the model with named variables and an example with the clinic name and example values', async () => {
     stubFetch({
       clinicName: 'Dra. Micaela Floriani',
       data: [
@@ -38,10 +38,15 @@ describe('WhatsAppSystemTemplates', () => {
 
     render(<WhatsAppSystemTemplates />)
 
-    const body = await screen.findByText(/Gostaríamos de confirmar/)
+    const body = await screen.findByText(
+      (_, el) => el?.tagName === 'P' && !!el.textContent?.includes('Maria Silva'),
+    )
+    expect(body.textContent).toContain('Gostaríamos de confirmar')
     expect(body.textContent).toContain('Dra. Micaela Floriani')
     expect(body.textContent).toContain('Maria Silva')
     expect(body.textContent).not.toContain('{{')
+    expect(screen.getByText('Nome do paciente')).toBeInTheDocument()
+    expect(screen.queryByText(/\{\{\d+\}\}/)).not.toBeInTheDocument()
 
     expect(screen.getByText('Confirmar')).toBeInTheDocument()
     expect(screen.getByText('Reagendar')).toBeInTheDocument()

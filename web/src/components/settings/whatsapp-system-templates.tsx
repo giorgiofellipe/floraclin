@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
-import { getTemplateDisplayLabel, buildTemplatePreview } from '@/lib/whatsapp-blueprints'
+import { getTemplateDisplayLabel } from '@/lib/whatsapp-blueprints'
+import { WhatsAppTemplatePreview, WhatsAppTemplatePreviewNote } from './whatsapp-template-preview'
 
 interface SystemTemplate {
   id: string
@@ -63,43 +64,19 @@ export function WhatsAppSystemTemplates() {
         </div>
       ) : (
         <div className="space-y-3">
-          {templates.map((template) => {
-            const preview = buildTemplatePreview(template, clinicName)
-            return (
-              <div
-                key={template.id}
-                className="rounded-[3px] border border-[#E8ECEF] bg-white p-4 space-y-3"
-              >
-                <h4 className="text-sm font-medium text-charcoal">
-                  {getTemplateDisplayLabel(template)}
-                </h4>
+          {templates.map((template) => (
+            <div
+              key={template.id}
+              className="rounded-[3px] border border-topbar-border bg-white p-4 space-y-3"
+            >
+              <h4 className="text-sm font-medium text-charcoal">
+                {getTemplateDisplayLabel(template)}
+              </h4>
+              <WhatsAppTemplatePreview template={template} clinicName={clinicName} />
+            </div>
+          ))}
 
-                <div className="rounded-[3px] bg-[#F4F6F8] px-4 py-3 space-y-2">
-                  <p className="text-sm text-charcoal whitespace-pre-wrap">
-                    {preview.body}
-                  </p>
-                  {preview.buttons.length > 0 && (
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      {preview.buttons.map((label) => (
-                        <span
-                          key={label}
-                          className="rounded-[3px] border border-[#E8ECEF] bg-white px-3 py-1 text-xs text-sage"
-                        >
-                          {label}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-
-          <p className="text-xs text-mid">
-            Os dados mostrados acima são exemplos. No envio, cada mensagem é
-            preenchida com as informações do paciente, da clínica ou do
-            atendimento correspondente.
-          </p>
+          <WhatsAppTemplatePreviewNote />
         </div>
       )}
     </div>

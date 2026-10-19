@@ -8,6 +8,7 @@ import {
   findBlueprintForTemplateName,
   getTemplateDisplayLabel,
   buildTemplatePreview,
+  buildTemplateParams,
 } from '../whatsapp-blueprints'
 
 describe('whatsapp-blueprints', () => {
@@ -316,6 +317,34 @@ describe('buildTemplatePreview', () => {
       'Clínica Flora',
     )
 
-    expect(preview).toEqual({ body: '', buttons: [] })
+    expect(preview).toEqual({ body: '', segments: [], buttons: [] })
+  })
+})
+
+describe('buildTemplateParams', () => {
+  it('places each value at the position the template maps its key to, not the blueprint order', () => {
+    const params = buildTemplateParams(
+      {
+        name: 'clinica_payment_reminder',
+        purposeKey: 'payment_reminder',
+        components: [],
+        variableMapping: [
+          { index: 1, key: 'clinic_name', label: 'Clínica', example: 'Clínica Flora' },
+          { index: 2, key: 'patient_name', label: 'Paciente', example: 'Maria' },
+        ],
+      },
+      { patient_name: 'Maria', amount: '350,00', clinic_name: 'Clínica Lume', due_date: '20/10/2026' },
+    )
+
+    expect(params).toEqual({ '1': 'Clínica Lume', '2': 'Maria' })
+  })
+
+  it('throws when the template needs a value the sender did not provide', () => {
+    expect(() =>
+      buildTemplateParams(
+        { name: 'follow_up', purposeKey: 'follow_up', components: [], variableMapping: null },
+        { patient_name: 'Maria' },
+      ),
+    ).toThrow(/procedure_name/)
   })
 })

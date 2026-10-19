@@ -1,6 +1,7 @@
 import { db } from '@/db/client'
 import {
   procedureRecords,
+  procedureSessions,
   procedureTypes,
   patients,
   users,
@@ -12,7 +13,7 @@ import {
   consentAcceptances,
   consentTemplates,
 } from '@/db/schema'
-import { eq, and, desc, isNull, sql, inArray } from 'drizzle-orm'
+import { eq, and, desc, isNull, sql, inArray, gte, lte } from 'drizzle-orm'
 import type { CreateProcedureInput, UpdateProcedureInput } from '@/validations/procedure'
 import { verifyTenantOwnership, verifyUserBelongsToTenant } from './helpers'
 
@@ -492,3 +493,65 @@ export async function getLatestOpenProcedure(
 
 /** @deprecated Use getLatestOpenProcedure */
 export const getLatestNonExecutedProcedure = getLatestOpenProcedure
+
+export async function getSessionsDueFollowUp(
+  tenantId: string,
+  performedFrom: Date,
+  performedTo: Date,
+) {
+  return db
+    .select({
+      id: procedureSessions.id,
+      patientId: procedureRecords.patientId,
+      patientName: patients.fullName,
+      patientPhone: patients.phone,
+      procedureTypeName: procedureTypes.name,
+      additionalTypeIds: procedureRecords.additionalTypeIds,
+    })
+    .from(procedureSessions)
+    .innerJoin(procedureRecords, eq(procedureRecords.id, procedureSessions.procedureRecordId))
+    .innerJoin(patients, eq(patients.id, procedureRecords.patientId))
+    .innerJoin(procedureTypes, eq(procedureTypes.id, procedureRecords.procedureTypeId))
+    .where(
+      and(
+        eq(procedureSessions.tenantId, tenantId),
+        inArray(procedureRecords.status, ['in_progress', 'completed']),
+        isNull(procedureRecords.deletedAt),
+        isNull(procedureSessions.followUpSentAt),
+        isNull(patients.deletedAt),
+        gte(procedureSessions.performedAt, performedFrom),
+        lte(procedureSessions.performedAt, performedTo),
+      ),
+    )
+}
+
+export async function getProcedureTypeNames(tenantId: string, ids: string[]) {
+  if (ids.length === 0) return []
+  return db
+    .select({ id: procedureTypes.id, name: procedureTypes.name })
+    .from(procedureTypes)
+    .where(and(eq(procedureTypes.tenantId, tenantId), inArray(procedureTypes.id, ids)))
+}
+
+/** Sets the follow-up marker on the sessions nobody marked yet and returns their ids. */
+export async function claimFollowUp(tenantId: string, sessionIds: string[]) {
+  const rows = await db
+    .update(procedureSessions)
+    .set({ followUpSentAt: new Date() })
+    .where(
+      and(
+        eq(procedureSessions.tenantId, tenantId),
+        inArray(procedureSessions.id, sessionIds),
+        isNull(procedureSessions.followUpSentAt),
+      ),
+    )
+    .returning({ id: procedureSessions.id })
+  return rows.map((r) => r.id)
+}
+
+export async function releaseFollowUp(tenantId: string, sessionIds: string[]) {
+  await db
+    .update(procedureSessions)
+    .set({ followUpSentAt: null })
+    .where(and(eq(procedureSessions.tenantId, tenantId), inArray(procedureSessions.id, sessionIds)))
+}
