@@ -2178,3 +2178,24 @@ export async function releasePaymentReminder(tenantId: string, installmentId: st
     .set({ reminderSentAt: null })
     .where(and(eq(installments.tenantId, tenantId), eq(installments.id, installmentId)))
 }
+
+export async function getPaymentRecipients(tenantId: string, installmentIds: string[]) {
+  if (installmentIds.length === 0) return []
+  return db
+    .select({
+      installmentId: installments.id,
+      patientId: patients.id,
+      patientName: patients.fullName,
+      patientPhone: patients.phone,
+    })
+    .from(installments)
+    .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
+    .innerJoin(patients, eq(patients.id, financialEntries.patientId))
+    .where(
+      and(
+        eq(installments.tenantId, tenantId),
+        inArray(installments.id, installmentIds),
+        isNull(patients.deletedAt),
+      ),
+    )
+}

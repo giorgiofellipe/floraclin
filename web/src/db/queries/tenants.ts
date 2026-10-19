@@ -161,6 +161,8 @@ export async function createProcedureType(
       description: data.description || null,
       defaultPrice: data.defaultPrice || null,
       estimatedDurationMin: data.estimatedDurationMin ?? 60,
+      preProcedureInstructions: data.preProcedureInstructions || null,
+      postProcedureCare: data.postProcedureCare || null,
       isActive: data.isActive ?? true,
     })
     .returning()
@@ -180,6 +182,8 @@ export async function updateProcedureType(
   if (data.description !== undefined) updateData.description = data.description || null
   if (data.defaultPrice !== undefined) updateData.defaultPrice = data.defaultPrice || null
   if (data.estimatedDurationMin !== undefined) updateData.estimatedDurationMin = data.estimatedDurationMin
+  if (data.preProcedureInstructions !== undefined) updateData.preProcedureInstructions = data.preProcedureInstructions || null
+  if (data.postProcedureCare !== undefined) updateData.postProcedureCare = data.postProcedureCare || null
   if (data.isActive !== undefined) updateData.isActive = data.isActive
 
   const [pt] = await db

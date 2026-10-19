@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { patients } from '@/db/schema'
-import { eq, and, isNull, ilike, or, sql, asc } from 'drizzle-orm'
+import { eq, and, isNull, ilike, or, sql, asc, lt } from 'drizzle-orm'
 import type { PaginatedResult } from '@/types'
 import type { CreatePatientInput, UpdatePatientInput } from '@/validations/patient'
 import { isCanonicalBrPhone, normalizeBrPhone, normalizeBrPhoneForWhatsApp } from '@/lib/phone'
@@ -211,4 +211,34 @@ export async function deletePatient(tenantId: string, patientId: string): Promis
     .returning()
 
   return patient ?? null
+}
+
+/**
+ * Sets the reactivation marker unless one was set after `blockedSince`, so two
+ * clicks cannot both send. Returns the marker it replaced, for the release.
+ */
+export async function claimReactivation(tenantId: string, patientId: string, blockedSince: Date) {
+  const [previous] = await db
+    .select({ reactivationSentAt: patients.reactivationSentAt })
+    .from(patients)
+    .where(and(eq(patients.tenantId, tenantId), eq(patients.id, patientId)))
+  const rows = await db
+    .update(patients)
+    .set({ reactivationSentAt: new Date() })
+    .where(
+      and(
+        eq(patients.tenantId, tenantId),
+        eq(patients.id, patientId),
+        or(isNull(patients.reactivationSentAt), lt(patients.reactivationSentAt, blockedSince)),
+      ),
+    )
+    .returning({ id: patients.id })
+  return rows.length > 0 ? { previous: previous?.reactivationSentAt ?? null } : null
+}
+
+export async function releaseReactivation(tenantId: string, patientId: string, previous: Date | null) {
+  await db
+    .update(patients)
+    .set({ reactivationSentAt: previous })
+    .where(and(eq(patients.tenantId, tenantId), eq(patients.id, patientId)))
 }

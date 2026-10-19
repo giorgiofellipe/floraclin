@@ -10,9 +10,14 @@ import { InvalidWhatsAppPhoneError, normalizeBrPhoneForWhatsApp } from '@/lib/ph
 import { isSubscriptionActive } from '@/lib/plans'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { reportSideEffectFailure } from '@/lib/observability'
-import { parseAutomationConfig, type AutomationConfig, type AutomationTrigger } from '@/lib/whatsapp-automation-config'
+import {
+  parseAutomationConfig,
+  type AutomationConfig,
+  type AutomationTrigger,
+  type EventAutomationTrigger,
+} from '@/lib/whatsapp-automation-config'
 
-type TemplateAutomationTrigger = Exclude<AutomationTrigger, 'appointment_confirmation'>
+type TemplateAutomationTrigger = Exclude<AutomationTrigger, 'appointment_confirmation' | EventAutomationTrigger>
 
 export interface DueMessage {
   ref: string

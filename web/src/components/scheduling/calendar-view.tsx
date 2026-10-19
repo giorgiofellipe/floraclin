@@ -81,6 +81,7 @@ interface CalendarViewProps {
   initialAppointments: AppointmentWithDetails[]
   calendarBlocks?: CalendarBlockRow[]
   autoOpenNew?: boolean
+  autoOpenAppointmentId?: string
   defaultPatient?: { id: string; fullName: string }
   role: Role
   userId: string
@@ -124,6 +125,7 @@ export function CalendarView({
   initialAppointments,
   calendarBlocks = [],
   autoOpenNew,
+  autoOpenAppointmentId,
   defaultPatient,
   role,
   userId,
@@ -137,8 +139,10 @@ export function CalendarView({
   const [practitionerId, setPractitionerId] = React.useState(initialPractitionerId ?? 'all')
 
   // Form dialog state
-  const [formOpen, setFormOpen] = React.useState(autoOpenNew ?? false)
-  const [editingAppointment, setEditingAppointment] = React.useState<AppointmentWithDetails | null>(null)
+  const [editingAppointment, setEditingAppointment] = React.useState<AppointmentWithDetails | null>(
+    () => initialAppointments.find((a) => a.id === autoOpenAppointmentId) ?? null
+  )
+  const [formOpen, setFormOpen] = React.useState(!!autoOpenNew || !!editingAppointment)
   const [defaultFormDate, setDefaultFormDate] = React.useState<string>('')
   const [defaultFormTime, setDefaultFormTime] = React.useState<string>('')
 

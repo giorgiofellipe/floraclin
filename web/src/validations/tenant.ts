@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { PROCEDURE_CATEGORIES } from '@/lib/constants'
+import { TEMPLATE_TEXT_PARAM_MAX } from '@/lib/whatsapp-blueprints'
 
 export const addressSchema = z.object({
   street: z.string().optional(),
@@ -40,6 +41,8 @@ export const updateTenantSchema = z.object({
   settings: tenantSettingsSchema.optional(),
 })
 
+const careText = z.string().max(TEMPLATE_TEXT_PARAM_MAX, `Máximo ${TEMPLATE_TEXT_PARAM_MAX} caracteres`)
+
 export const procedureTypeSchema = z.object({
   name: z.string().min(1, 'Nome do procedimento é obrigatório'),
   category: z.enum(PROCEDURE_CATEGORIES, {
@@ -48,6 +51,8 @@ export const procedureTypeSchema = z.object({
   description: z.string().optional().or(z.literal('')),
   defaultPrice: z.string().optional().or(z.literal('')),
   estimatedDurationMin: z.coerce.number().int().min(5, 'Mínimo 5 minutos').max(480, 'Máximo 8 horas').optional(),
+  preProcedureInstructions: careText.optional(),
+  postProcedureCare: careText.optional(),
   isActive: z.boolean().optional(),
 })
 

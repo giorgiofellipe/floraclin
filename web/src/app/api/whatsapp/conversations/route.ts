@@ -3,13 +3,14 @@ import { z } from 'zod'
 import { getAuthContext } from '@/lib/auth'
 import { getTenant } from '@/db/queries/tenants'
 import { getPatient } from '@/db/queries/patients'
-import { listConversations, upsertConversation, createMessage, pushSseEvent, getTemplateByName } from '@/db/queries/whatsapp'
+import { listConversations, upsertConversation, createMessage, pushSseEvent, getSendableTemplate } from '@/db/queries/whatsapp'
 import { conversationFilterSchema } from '@/validations/whatsapp'
 import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { requireWrite } from '@/lib/write-access'
 import { normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { handleApiError } from '@/lib/api-error'
+import { isMarketingBlocked, MARKETING_OPTED_OUT_ERROR } from '@/lib/whatsapp-marketing'
 
 async function checkWhatsAppAccess() {
   const ctx = await getAuthContext()
@@ -98,6 +99,13 @@ export async function POST(request: Request) {
 
     const normalizedPhone = normalizeBrPhoneForWhatsApp(patient.phone)
 
+    const tpl = parsed.data.templateName && parsed.data.language
+      ? await getSendableTemplate(ctx.tenantId, parsed.data.templateName, parsed.data.language)
+      : null
+    if (await isMarketingBlocked(ctx.tenantId, tpl, { patientId: patient.id, phone: patient.phone })) {
+      return NextResponse.json({ error: MARKETING_OPTED_OUT_ERROR }, { status: 409 })
+    }
+
     const conversation = await upsertConversation(
       ctx.tenantId,
       normalizedPhone,
@@ -119,7 +127,6 @@ export async function POST(request: Request) {
         parsed.data.params,
       )
 
-      const tpl = await getTemplateByName(ctx.tenantId, parsed.data.templateName, parsed.data.language)
       const templateBody = tpl ? resolveTemplateBody(tpl.components, parsed.data.params) : null
 
       const message = await createMessage(ctx.tenantId, conversation.id, {

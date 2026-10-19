@@ -525,6 +525,37 @@ export async function getSessionsDueFollowUp(
     )
 }
 
+export async function getSessionCareRecipient(tenantId: string, sessionId: string) {
+  const [row] = await db
+    .select({
+      patientId: procedureRecords.patientId,
+      patientName: patients.fullName,
+      patientPhone: patients.phone,
+      performedAt: procedureSessions.performedAt,
+      procedureTypeId: procedureRecords.procedureTypeId,
+      additionalTypeIds: procedureRecords.additionalTypeIds,
+    })
+    .from(procedureSessions)
+    .innerJoin(procedureRecords, eq(procedureRecords.id, procedureSessions.procedureRecordId))
+    .innerJoin(patients, eq(patients.id, procedureRecords.patientId))
+    .where(
+      and(
+        eq(procedureSessions.tenantId, tenantId),
+        eq(procedureSessions.id, sessionId),
+        isNull(patients.deletedAt),
+      ),
+    )
+  return row ?? null
+}
+
+export async function getProcedureTypeCare(tenantId: string, ids: string[]) {
+  if (ids.length === 0) return []
+  return db
+    .select({ id: procedureTypes.id, name: procedureTypes.name, postProcedureCare: procedureTypes.postProcedureCare })
+    .from(procedureTypes)
+    .where(and(eq(procedureTypes.tenantId, tenantId), inArray(procedureTypes.id, ids)))
+}
+
 export async function getProcedureTypeNames(tenantId: string, ids: string[]) {
   if (ids.length === 0) return []
   return db

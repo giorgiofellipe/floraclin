@@ -35,7 +35,6 @@ export const PREDEFINED_VARIABLES: VariablePaletteItem[] = [
 ]
 
 export const PURPOSE_LABELS: Record<string, string> = {
-  appointment_reminder: 'Lembrete de consulta',
   appointment_confirmation: 'Confirmação de consulta',
   follow_up: 'Acompanhamento',
   reschedule_notification: 'Reagendamento',
@@ -64,29 +63,6 @@ function makeBody(text: string, variables: TemplateVariable[]): Record<string, u
 }
 
 export const TEMPLATE_BLUEPRINTS: TemplateBlueprint[] = [
-  {
-    slug: 'appointment_reminder',
-    purposeKey: 'appointment_reminder',
-    name: 'appointment_reminder',
-    category: 'UTILITY',
-    language: 'pt_BR',
-    description: 'Lembrete de consulta agendada',
-    variables: [
-      { index: 1, key: 'patient_name', label: 'Nome do paciente', example: 'Maria Silva' },
-      { index: 2, key: 'clinic_name', label: 'Nome da clínica', example: 'Clínica Flora' },
-      { index: 3, key: 'appointment_date', label: 'Data da consulta', example: '15/04/2026' },
-      { index: 4, key: 'appointment_time', label: 'Horário', example: '14:30' },
-    ],
-    components: makeBody(
-      'Olá, {{1}}! Lembramos que você tem um atendimento agendado na {{2}} no dia {{3}}, às {{4}}. Caso precise reagendar, entre em contato conosco. Até lá!',
-      [
-        { index: 1, key: 'patient_name', label: 'Nome do paciente', example: 'Maria Silva' },
-        { index: 2, key: 'clinic_name', label: 'Nome da clínica', example: 'Clínica Flora' },
-        { index: 3, key: 'appointment_date', label: 'Data da consulta', example: '15/04/2026' },
-        { index: 4, key: 'appointment_time', label: 'Horário', example: '14:30' },
-      ],
-    ),
-  },
   {
     slug: 'appointment_confirmation',
     purposeKey: 'appointment_confirmation',
@@ -504,6 +480,31 @@ export function missingTemplateKeys(template: PreviewableTemplate, keys: string[
   return resolveTemplateVariables(template)
     .map((v) => v.key)
     .filter((key) => !keys.includes(key))
+}
+
+/** "a, b e c" */
+export function joinPtList(items: string[]): string {
+  if (items.length <= 1) return items.join('')
+  return `${items.slice(0, -1).join(', ')} e ${items[items.length - 1]}`
+}
+
+/** Free text sent as a template param. Meta caps the whole body at 1024 characters. */
+export const TEMPLATE_TEXT_PARAM_MAX = 700
+
+/** Meta rejects a param with a newline, a tab, or more than 4 spaces in a row. */
+export function flattenTemplateParam(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .map((line) => (/[.!?;:]$/.test(line) ? line : `${line}.`))
+    .join(' ')
+}
+
+/** Cuts a free-text param to TEMPLATE_TEXT_PARAM_MAX, so the body stays under Meta's cap. */
+export function fitTemplateParam(text: string): string {
+  if (text.length <= TEMPLATE_TEXT_PARAM_MAX) return text
+  return `${text.slice(0, TEMPLATE_TEXT_PARAM_MAX - 3).trimEnd()}...`
 }
 
 /**
