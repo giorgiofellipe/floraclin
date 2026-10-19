@@ -38,10 +38,12 @@ interface ExistingTemplate {
 
 interface ConsentTemplateFormProps {
   template?: ExistingTemplate | null
+  // Active templates of the tenant; creating one of an existing type saves a new version of it
+  activeTemplates?: ExistingTemplate[]
   onSuccess?: () => void
 }
 
-export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateFormProps) {
+export function ConsentTemplateForm({ template, activeTemplates = [], onSuccess }: ConsentTemplateFormProps) {
   const isEditing = !!template
   const formRef = useRef<HTMLFormElement>(null)
 
@@ -50,33 +52,50 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
   const isPending = createTemplate.isPending || updateTemplate.isPending
   const [error, setError] = useState<string | null>(null)
 
-  const [selectedType, setSelectedType] = useState<ConsentType>(
-    (template?.type as ConsentType) ?? 'general'
-  )
-  const [title, setTitle] = useState(template?.title ?? '')
-  const [content, setContent] = useState(template?.content ?? '')
+  const initialType = (template?.type as ConsentType) ?? 'general'
+  const [selectedType, setSelectedType] = useState<ConsentType>(initialType)
 
-  // When type changes, suggest default content (only for new templates)
-  const handleTypeChange = (newType: ConsentType) => {
-    setSelectedType(newType)
-    if (!isEditing && newType !== 'custom') {
-      const defaultTemplate = DEFAULT_CONSENT_TEMPLATES[newType as keyof typeof DEFAULT_CONSENT_TEMPLATES]
-      if (defaultTemplate) {
-        setTitle(defaultTemplate.title)
-        setContent(defaultTemplate.content)
-      }
-    }
+  // In create mode, a type the clinic already has starts from its current active text
+  const activeOfType = (type: string) => activeTemplates.find((t) => t.type === type)
+  const initialText = template ?? activeOfType(initialType)
+  const [title, setTitle] = useState(initialText?.title ?? '')
+  const [content, setContent] = useState(initialText?.content ?? '')
+  // Whether the user typed since the last prefill; a type switch never overwrites edits
+  const [isDirty, setIsDirty] = useState(false)
+
+  const versionBase = template ?? activeOfType(selectedType)
+  const nextVersion = (versionBase?.version ?? 0) + 1
+
+  const prefill = (text: { title: string; content: string }) => {
+    setTitle(text.title)
+    setContent(text.content)
+    setIsDirty(false)
   }
 
+  // When type changes, suggest the clinic's current text, else the built-in default (only for new templates)
+  const handleTypeChange = (newType: ConsentType) => {
+    setSelectedType(newType)
+    if (isEditing || isDirty) return
+    const active = activeOfType(newType)
+    if (active) {
+      prefill(active)
+      return
+    }
+    if (newType !== 'custom') {
+      const defaultTemplate = DEFAULT_CONSENT_TEMPLATES[newType as keyof typeof DEFAULT_CONSENT_TEMPLATES]
+      if (defaultTemplate) prefill(defaultTemplate)
+    }
+  }
 
   const handleLoadDefault = () => {
     if (selectedType === 'custom') return
     const defaultTemplate = DEFAULT_CONSENT_TEMPLATES[selectedType as keyof typeof DEFAULT_CONSENT_TEMPLATES]
-    if (defaultTemplate) {
-      setTitle(defaultTemplate.title)
-      setContent(defaultTemplate.content)
-    }
+    if (defaultTemplate) prefill(defaultTemplate)
   }
+
+  let submitLabel = 'Criar termo'
+  if (isPending) submitLabel = 'Salvando...'
+  else if (versionBase) submitLabel = `Salvar nova versão (v${nextVersion})`
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -86,9 +105,10 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
           <CardTitle className="font-semibold text-[#2A2A2A]">
             {isEditing ? 'Editar Termo de Consentimento' : 'Novo Termo de Consentimento'}
           </CardTitle>
-          {isEditing && (
+          {versionBase && (
             <CardDescription className="text-mid">
-              Ao salvar, uma nova versão será criada (v{(template?.version ?? 0) + 1}).
+              {!isEditing && 'Já existe um termo deste tipo. '}
+              Ao salvar, uma nova versão será criada (v{nextVersion}).
               A versão anterior será preservada.
             </CardDescription>
           )}
@@ -103,12 +123,8 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
               } else {
                 await createTemplate.mutateAsync({ type: selectedType, title, content })
               }
+              // The parent closes the dialog on success, so the next open remounts with fresh prefill
               onSuccess?.()
-              if (!isEditing) {
-                setTitle('')
-                setContent('')
-                setSelectedType('general')
-              }
             } catch (err) {
               setError(err instanceof Error ? err.message : 'Erro ao salvar termo')
             }
@@ -142,7 +158,10 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
                 id="title"
                 name="title"
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  setTitle(e.target.value)
+                  setIsDirty(true)
+                }}
                 placeholder="Título do termo"
                 required
                 className="border-sage/20 focus:border-sage/40"
@@ -171,7 +190,10 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
                 id="content"
                 name="content"
                 value={content}
-                onChange={(e) => setContent(e.target.value)}
+                onChange={(e) => {
+                  setContent(e.target.value)
+                  setIsDirty(true)
+                }}
                 placeholder="Texto do termo de consentimento..."
                 rows={16}
                 className="min-h-64 font-mono text-xs border-sage/20 focus:border-sage/40"
@@ -216,11 +238,7 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
             )}
 
             <Button type="submit" disabled={isPending} className="w-full bg-forest text-cream hover:bg-sage shadow-[0_1px_4px_rgba(0,0,0,0.06)] hover:shadow-md transition-all duration-200">
-              {isPending
-                ? 'Salvando...'
-                : isEditing
-                  ? `Salvar nova versão (v${(template?.version ?? 0) + 1})`
-                  : 'Criar termo'}
+              {submitLabel}
             </Button>
           </form>
         </CardContent>
@@ -231,9 +249,9 @@ export function ConsentTemplateForm({ template, onSuccess }: ConsentTemplateForm
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="font-semibold text-[#2A2A2A]">Pré-visualização</CardTitle>
-            {isEditing && (
+            {versionBase && (
               <Badge variant="outline" className="border-sage/30 bg-sage/5 text-sage text-xs">
-                v{(template?.version ?? 0) + 1} (rascunho)
+                v{nextVersion} (rascunho)
               </Badge>
             )}
           </div>
