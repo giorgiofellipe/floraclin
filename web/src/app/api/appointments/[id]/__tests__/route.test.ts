@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/write-access', () => ({
   requireWrite: vi.fn(),
@@ -16,6 +16,10 @@ vi.mock('@/lib/google-calendar', () => ({
   reportCalendarFailure: vi.fn(),
 }))
 
+vi.mock('@/lib/whatsapp-reschedule', () => ({
+  sendRescheduleNotification: vi.fn(),
+}))
+
 vi.mock('@/db/queries/appointments', () => ({
   getAppointmentById: vi.fn(),
   updateAppointment: vi.fn(),
@@ -25,6 +29,7 @@ vi.mock('@/db/queries/appointments', () => ({
 
 import { requireWrite } from '@/lib/write-access'
 import { getAppointmentById, updateAppointment, checkTimeConflict } from '@/db/queries/appointments'
+import { sendRescheduleNotification } from '@/lib/whatsapp-reschedule'
 import { PUT } from '../route'
 
 const APPOINTMENT_ID = '11111111-1111-4111-8111-111111111111'
@@ -33,6 +38,7 @@ const PRACTITIONER_ID = '22222222-2222-4222-8222-222222222222'
 const current = {
   id: APPOINTMENT_ID,
   practitionerId: PRACTITIONER_ID,
+  status: 'scheduled',
   date: '2026-10-12',
   startTime: '09:00:00',
   endTime: '09:30:00',
@@ -54,6 +60,8 @@ const sameSlot = { practitionerId: PRACTITIONER_ID, date: '2026-10-12', startTim
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-10-10T12:00:00-03:00'))
   vi.mocked(requireWrite).mockResolvedValue({
     ctx: { tenantId: 'tenant-1', userId: 'user-1', role: 'owner' },
     blocked: null,
@@ -61,6 +69,11 @@ beforeEach(() => {
   vi.mocked(getAppointmentById).mockResolvedValue(current as never)
   vi.mocked(updateAppointment).mockResolvedValue({ ...current, notes: 'x' } as never)
   vi.mocked(checkTimeConflict).mockResolvedValue(true)
+  vi.mocked(sendRescheduleNotification).mockResolvedValue('sent')
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('PUT /api/appointments/[id]', () => {
@@ -90,5 +103,46 @@ describe('PUT /api/appointments/[id]', () => {
     expect(await res.json()).toEqual({ error: 'Horário indisponível para este profissional.' })
     expect(checkTimeConflict).toHaveBeenCalledWith('tenant-1', PRACTITIONER_ID, '2026-10-12', '10:00', '10:30', APPOINTMENT_ID)
     expect(updateAppointment).not.toHaveBeenCalled()
+  })
+
+  it('tells the patient the new slot when staff asked for it', async () => {
+    vi.mocked(checkTimeConflict).mockResolvedValue(false)
+    vi.mocked(updateAppointment).mockResolvedValue({ ...current, date: '2026-10-14', startTime: '15:00:00' } as never)
+
+    const res = await put({ ...sameSlot, date: '2026-10-14', startTime: '15:00', endTime: '15:30', notifyPatient: true })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ notification: 'sent' })
+    expect(sendRescheduleNotification).toHaveBeenCalledWith(
+      'tenant-1',
+      'user-1',
+      expect.objectContaining({ id: APPOINTMENT_ID, date: '2026-10-14', startTime: '15:00:00' }),
+    )
+    expect(updateAppointment).toHaveBeenCalledWith('tenant-1', APPOINTMENT_ID, expect.not.objectContaining({ notifyPatient: true }))
+  })
+
+  it('sends no reschedule notice when only the end time changed', async () => {
+    // The patient was told a start time; extending the visit does not move it.
+    vi.mocked(checkTimeConflict).mockResolvedValue(false)
+
+    const res = await put({ ...sameSlot, endTime: '10:00', notifyPatient: true })
+
+    expect(res.status).toBe(200)
+    expect(sendRescheduleNotification).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    // Regression: correcting the date of a finished visit telling the patient it was rescheduled.
+    ['the visit already happened', { status: 'completed' }, '2026-10-14'],
+    ['the new date is in the past', {}, '2026-10-08'],
+  ])('sends no reschedule notice when %s', async (_label, override, newDate) => {
+    vi.mocked(getAppointmentById).mockResolvedValue({ ...current, ...override } as never)
+    vi.mocked(checkTimeConflict).mockResolvedValue(false)
+    vi.mocked(updateAppointment).mockResolvedValue({ ...current, ...override, date: newDate } as never)
+
+    const res = await put({ ...sameSlot, date: newDate, notifyPatient: true })
+
+    expect(res.status).toBe(200)
+    expect(sendRescheduleNotification).not.toHaveBeenCalled()
   })
 })

@@ -52,7 +52,8 @@ export function AgendaPageClient({ role, userId }: { role: Role; userId: string 
   const dateStr = searchParams.get('date') ?? format(new Date(), 'yyyy-MM-dd')
   const currentDate = new Date(dateStr + 'T12:00:00')
   const practitionerFilter = searchParams.get('practitioner') ?? undefined
-  const autoOpenNew = searchParams.get('open') === 'new'
+  const openParam = searchParams.get('open')
+  const autoOpenNew = openParam === 'new'
   const patientId = searchParams.get('patient') ?? undefined
   const patientName = searchParams.get('patientName') ?? undefined
 
@@ -91,6 +92,7 @@ export function AgendaPageClient({ role, userId }: { role: Role; userId: string 
         initialAppointments={appointments ?? []}
         calendarBlocks={calendarBlocks ?? []}
         autoOpenNew={autoOpenNew}
+        autoOpenAppointmentId={openParam && !autoOpenNew ? openParam : undefined}
         role={role}
         userId={userId}
         defaultPatient={patientId ? { id: patientId, fullName: patientName ?? '' } : undefined}

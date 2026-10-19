@@ -1,6 +1,7 @@
 import { claimFollowUp, getProcedureTypeNames, getSessionsDueFollowUp, releaseFollowUp } from '@/db/queries/procedures'
 import { brToday, endOfBrDay, shiftBrYmd, startOfBrDay } from '@/lib/dates'
 import { firstName } from '@/lib/utils'
+import { joinPtList } from '@/lib/whatsapp-blueprints'
 import type { DueMessage, LoadDueArgs } from '@/lib/whatsapp-automation-cron'
 
 // Lets a missed daily run catch up, without messaging sessions from months
@@ -38,7 +39,7 @@ export async function loadDueFollowUps({ tenantId, config }: LoadDueArgs<'follow
       phone: patientPhone,
       values: {
         patient_name: firstName(patientName),
-        procedure_name: joinPt([...procedureNames]),
+        procedure_name: joinPtList([...procedureNames]),
       },
       claim: async () => {
         claimedIds = await claimFollowUp(tenantId, sessionIds)
@@ -47,9 +48,4 @@ export async function loadDueFollowUps({ tenantId, config }: LoadDueArgs<'follow
       release: () => releaseFollowUp(tenantId, claimedIds),
     }
   })
-}
-
-function joinPt(items: string[]): string {
-  if (items.length <= 1) return items.join('')
-  return `${items.slice(0, -1).join(', ')} e ${items[items.length - 1]}`
 }

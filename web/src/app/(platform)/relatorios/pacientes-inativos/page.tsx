@@ -7,6 +7,7 @@ import { ReportShell } from '@/components/reports/report-shell'
 import type { ReportFilterValues } from '@/components/reports/report-filters'
 import { ReportTable } from '@/components/reports/report-table'
 import { ReportWhatsAppAction } from '@/components/reports/report-whatsapp-action'
+import { ReportReactivationAction } from '@/components/reports/report-reactivation-action'
 import { INACTIVE_PATIENT_COLUMNS } from '@/lib/reports/columns/inactive-patients'
 import type { InactivePatientRow } from '@/db/queries/reports/inactive-patients'
 import type { ReportSort } from '@/lib/reports/types'
@@ -79,7 +80,18 @@ function PacientesInativosBody({
     <ReportTable
       rows={data ?? []}
       columns={INACTIVE_PATIENT_COLUMNS}
-      rowAction={(row) => <ReportWhatsAppAction phone={row.phone} fullName={row.fullName} />}
+      rowAction={(row) => (
+        <div className="flex items-center justify-end gap-1.5">
+          <ReportReactivationAction
+            patientId={row.patientId}
+            fullName={row.fullName}
+            phone={row.phone}
+            marketingOptOut={row.marketingOptOut}
+            reactivationSentAt={row.reactivationSentAt}
+          />
+          <ReportWhatsAppAction phone={row.phone} fullName={row.fullName} />
+        </div>
+      )}
       sort={sort}
       onSortChange={onSortChange}
       emptyHint={REPORT.emptyHint}

@@ -38,6 +38,8 @@ export default async function OnboardingPage() {
     description: pt.description,
     defaultPrice: pt.defaultPrice,
     estimatedDurationMin: pt.estimatedDurationMin,
+    preProcedureInstructions: pt.preProcedureInstructions,
+    postProcedureCare: pt.postProcedureCare,
     isActive: pt.isActive,
   }))
 

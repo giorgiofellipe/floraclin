@@ -15,7 +15,6 @@ vi.mock('@/db/queries/whatsapp', () => ({
   createMessage: vi.fn(),
   pushSseEvent: vi.fn(),
   getTemplateByPurpose: vi.fn(),
-  getTemplateByName: vi.fn(),
   getQueuedCount: vi.fn(),
   createQueuedMessage: vi.fn(),
   expireStaleQueuedMessages: vi.fn(),

@@ -15,6 +15,7 @@ import {
   Cake,
   MessageSquarePlus,
   ExternalLink,
+  FileQuestion,
 } from 'lucide-react'
 import { buttonVariants } from '@/components/ui/button'
 import { cn, maskCPF } from '@/lib/utils'
@@ -43,6 +44,7 @@ import { PatientEvolutionsTab } from './patient-evolutions-tab'
 import { PatientPackagesTab } from '@/components/packages/patient-packages-tab'
 import { PatientDocumentsTab } from '@/components/clinical-documents/patient-documents-tab'
 import { IssueDocumentDialog } from '@/components/clinical-documents/issue-document-dialog'
+import { RequestDocumentsDialog } from './request-documents-dialog'
 import { toast } from 'sonner'
 import { PaymentForm } from '@/components/financial/payment-form'
 import { AppointmentForm } from '@/components/scheduling/appointment-form'
@@ -112,6 +114,7 @@ export function PatientDetailContent({
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
   const [openingWhatsapp, setOpeningWhatsapp] = useState(false)
   const [showIssueDocument, setShowIssueDocument] = useState(false)
+  const [showRequestDocuments, setShowRequestDocuments] = useState(false)
   const { data: practitioners = [] } = usePractitioners()
   const { data: procedureTypes = [] } = useAppointmentProcedureTypes()
 
@@ -235,15 +238,26 @@ export function PatientDetailContent({
                           Ligar
                         </a>
                         {whatsappApiEnabled && normalizedPhone.ok && (
-                          <button
-                            type="button"
-                            className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-[#F4F6F8] transition-colors"
-                            onClick={handleOpenWhatsapp}
-                            disabled={openingWhatsapp}
-                          >
-                            <MessageSquarePlus className="size-3.5 text-[#25D366]" />
-                            {openingWhatsapp ? 'Abrindo...' : 'Iniciar conversa'}
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-[#F4F6F8] transition-colors"
+                              onClick={handleOpenWhatsapp}
+                              disabled={openingWhatsapp}
+                            >
+                              <MessageSquarePlus className="size-3.5 text-[#25D366]" />
+                              {openingWhatsapp ? 'Abrindo...' : 'Iniciar conversa'}
+                            </button>
+                            <button
+                              type="button"
+                              data-testid="request-documents"
+                              className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-[#F4F6F8] transition-colors"
+                              onClick={() => setShowRequestDocuments(true)}
+                            >
+                              <FileQuestion className="size-3.5 text-[#25D366]" />
+                              Solicitar documentos
+                            </button>
+                          </>
                         )}
                         {waHref && (
                           <a
@@ -419,6 +433,13 @@ export function PatientDetailContent({
         }}
       />
 
+
+      <RequestDocumentsDialog
+        patientId={patient.id}
+        patientName={patient.fullName}
+        open={showRequestDocuments}
+        onOpenChange={setShowRequestDocuments}
+      />
 
       <IssueDocumentDialog
         open={showIssueDocument}

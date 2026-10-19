@@ -8,10 +8,12 @@ import {
   deleteAppointment,
   checkTimeConflict,
 } from '@/db/queries/appointments'
-import { updateAppointmentSchema } from '@/validations/appointment'
+import { canSendRescheduleNotice, updateAppointmentSchema } from '@/validations/appointment'
+import { brToday } from '@/lib/dates'
 import { handleApiError } from '@/lib/api-error'
 import { toHhMm } from '@/lib/time-options'
 import { reportCalendarFailure } from '@/lib/google-calendar'
+import { sendRescheduleNotification } from '@/lib/whatsapp-reschedule'
 
 export async function PUT(
   request: Request,
@@ -31,7 +33,7 @@ export async function PUT(
       )
     }
 
-    const { id: appointmentId, ...data } = parsed.data
+    const { id: appointmentId, notifyPatient, ...data } = parsed.data
 
     const current = await getAppointmentById(ctx.tenantId, appointmentId)
     if (!current) {
@@ -90,7 +92,12 @@ export async function PUT(
 
     void syncAppointmentToGoogle(ctx.tenantId, appointmentId)
 
-    return NextResponse.json({ success: true, data: appointment })
+    const moved = checkDate !== current.date || checkStart !== toHhMm(current.startTime)
+    const notification = notifyPatient && moved && canSendRescheduleNotice(current.status, checkDate, brToday())
+      ? await sendRescheduleNotification(ctx.tenantId, ctx.userId, { ...current, ...appointment })
+      : undefined
+
+    return NextResponse.json({ success: true, data: appointment, notification })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('exclusion')) {

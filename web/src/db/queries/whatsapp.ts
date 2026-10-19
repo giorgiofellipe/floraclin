@@ -590,8 +590,8 @@ async function resolveTenantTemplatePrefix(tenantId: string): Promise<string | n
  * Templates the clinic can see and manage in its own settings UI. The WABA
  * is shared across tenants, so this filters loadTemplates' cached rows down
  * to the ones whose name belongs to this tenant's prefix. The cached rows
- * themselves are left unfiltered so getTemplateById/getTemplateByName/
- * getTemplateByPurpose (used on the send path) keep seeing the full set.
+ * themselves are left unfiltered so getTemplateById/getTemplateByPurpose
+ * (used on the send path) keep seeing the full set.
  */
 export async function listTemplates(
   tenantId: string,
@@ -648,15 +648,6 @@ export async function getTemplateById(
 ): Promise<WhatsappTemplate | null> {
   const templates = await loadTemplates(tenantId)
   return templates.find((t) => t.id === templateId) ?? null
-}
-
-export async function getTemplateByName(
-  tenantId: string,
-  name: string,
-  language: string,
-): Promise<WhatsappTemplate | null> {
-  const templates = await loadTemplates(tenantId)
-  return templates.find((t) => t.name === name && t.language === language) ?? null
 }
 
 // System templates are stored under the tenant that seeded them but sent by

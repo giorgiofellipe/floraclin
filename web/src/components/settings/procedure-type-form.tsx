@@ -16,6 +16,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { useCreateProcedureType, useUpdateProcedureType } from '@/hooks/mutations/use-procedure-type-mutations'
 import { PROCEDURE_CATEGORIES, PROCEDURE_CATEGORY_LABELS as CATEGORY_LABELS } from '@/lib/constants'
+import { TEMPLATE_TEXT_PARAM_MAX } from '@/lib/whatsapp-blueprints'
 import { toast } from 'sonner'
 
 interface ProcedureTypeFormProps {
@@ -26,6 +27,8 @@ interface ProcedureTypeFormProps {
     description?: string | null
     defaultPrice?: string | null
     estimatedDurationMin?: number | null
+    preProcedureInstructions?: string | null
+    postProcedureCare?: string | null
     isActive: boolean
   }
   onSuccess?: () => void
@@ -51,6 +54,8 @@ export function ProcedureTypeForm({ initialData, onSuccess, onCancel }: Procedur
   const [estimatedDurationMin, setEstimatedDurationMin] = useState(
     initialData?.estimatedDurationMin?.toString() || '60'
   )
+  const [preProcedureInstructions, setPreProcedureInstructions] = useState(initialData?.preProcedureInstructions || '')
+  const [postProcedureCare, setPostProcedureCare] = useState(initialData?.postProcedureCare || '')
   const [isActive, setIsActive] = useState(initialData?.isActive ?? true)
 
   const isEditing = !!initialData?.id
@@ -64,6 +69,8 @@ export function ProcedureTypeForm({ initialData, onSuccess, onCancel }: Procedur
       description,
       defaultPrice: defaultPrice ? String(parseCurrency(defaultPrice)) : '',
       estimatedDurationMin: parseInt(estimatedDurationMin) || 60,
+      preProcedureInstructions,
+      postProcedureCare,
       isActive,
     }
 
@@ -139,6 +146,32 @@ export function ProcedureTypeForm({ initialData, onSuccess, onCancel }: Procedur
             placeholder="60"
           />
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="pt-pre-instructions">Orientações pré-procedimento</Label>
+        <Textarea
+          id="pt-pre-instructions"
+          value={preProcedureInstructions}
+          onChange={(e) => setPreProcedureInstructions(e.target.value)}
+          placeholder="Ex: Evitar anti-inflamatórios 7 dias antes."
+          maxLength={TEMPLATE_TEXT_PARAM_MAX}
+          rows={3}
+        />
+        <p className="text-xs text-mid">Enviadas por WhatsApp antes da consulta, se a automação estiver ativa.</p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="pt-post-care">Cuidados pós-procedimento</Label>
+        <Textarea
+          id="pt-post-care"
+          value={postProcedureCare}
+          onChange={(e) => setPostProcedureCare(e.target.value)}
+          placeholder="Ex: Não deitar por 4 horas."
+          maxLength={TEMPLATE_TEXT_PARAM_MAX}
+          rows={3}
+        />
+        <p className="text-xs text-mid">Enviados por WhatsApp quando uma sessão é registrada, se a automação estiver ativa.</p>
       </div>
 
       {isEditing && (

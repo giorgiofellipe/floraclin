@@ -7,8 +7,7 @@ import {
   listMessages,
   createMessage,
   pushSseEvent,
-  getTemplateByPurpose,
-  getTemplateByName,
+  getSendableTemplate,
   getQueuedCount,
   createQueuedMessage,
   expireStaleQueuedMessages,
@@ -18,7 +17,10 @@ import {
   sendTemplateSchema,
   sendMediaSchema,
 } from '@/validations/whatsapp'
-import { sendTextMessage, sendTemplateMessage, sendMediaMessage, resolveTemplateBody, requireCredits, pendingQueueCost } from '@/lib/whatsapp'
+import { sendTextMessage, sendTemplateMessage, sendMediaMessage, resolveTemplateBody, requireCredits, pendingQueueCost, getTemplateForTenant } from '@/lib/whatsapp'
+import { firstName } from '@/lib/utils'
+import { buildTemplateParams } from '@/lib/whatsapp-blueprints'
+import { isMarketingBlocked, MARKETING_OPTED_OUT_ERROR } from '@/lib/whatsapp-marketing'
 import type { CreditContext } from '@/lib/whatsapp-credit-ledger'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { requireWrite } from '@/lib/write-access'
@@ -49,7 +51,7 @@ async function checkWhatsAppAccess() {
     return { error: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
   }
 
-  return { ctx }
+  return { ctx, tenant }
 }
 
 function isWindowOpen(lastInboundAt: Date | null): boolean {
@@ -101,7 +103,7 @@ export async function POST(
   try {
     const result = await checkWhatsAppAccess()
     if ('error' in result) return result.error
-    const { ctx } = result
+    const { ctx, tenant } = result
 
     // Role is already gated dynamically above (whatsapp_allowed_roles ?? ['owner']);
     // requireWrite here only adds the subscription check, so it is passed every
@@ -141,6 +143,10 @@ export async function POST(
           { status: 400 },
         )
       }
+      const tpl = await getSendableTemplate(ctx.tenantId, parsed.data.templateName, parsed.data.language)
+      if (await isMarketingBlocked(ctx.tenantId, tpl, { patientId: conversation.patientId, phone: conversation.phoneNumber })) {
+        return NextResponse.json({ error: MARKETING_OPTED_OUT_ERROR }, { status: 409 })
+      }
       const result = await sendTemplateMessage(
         ctx.tenantId,
         credit,
@@ -152,7 +158,6 @@ export async function POST(
       metaMessageId = result.metaMessageId
       templateName = parsed.data.templateName
 
-      const tpl = await getTemplateByName(ctx.tenantId, parsed.data.templateName, parsed.data.language)
       if (tpl) {
         messageBody = resolveTemplateBody(tpl.components, parsed.data.params)
       }
@@ -213,7 +218,7 @@ export async function POST(
 
         let resumeMetaMessageId: string | null = null
         if (queueCount === 0) {
-          const resumeTemplate = await getTemplateByPurpose(ctx.tenantId, 'resume_conversation')
+          const resumeTemplate = await getTemplateForTenant(ctx.tenantId, 'resume_conversation')
           if (!resumeTemplate || resumeTemplate.status !== 'APPROVED') {
             return NextResponse.json(
               { error: 'Template resume_conversation não disponível. Use um template manualmente.' },
@@ -221,21 +226,24 @@ export async function POST(
             )
           }
 
-          const firstName = conversation.profileName?.split(' ')[0] ?? 'paciente'
+          const resumeParams = buildTemplateParams(resumeTemplate, {
+            patient_name: conversation.profileName ? firstName(conversation.profileName) : 'paciente',
+            clinic_name: tenant.name,
+          })
           const resumeResult = await sendTemplateMessage(
             ctx.tenantId,
             credit,
             conversation.phoneNumber,
             resumeTemplate.name,
             resumeTemplate.language,
-            { '1': firstName },
+            resumeParams,
           )
           resumeMetaMessageId = resumeResult.metaMessageId
 
           const resumeMessage = await createMessage(ctx.tenantId, conversationId, {
             direction: 'outbound',
             metaMessageId: resumeMetaMessageId,
-            body: resolveTemplateBody(resumeTemplate.components, { '1': firstName }),
+            body: resolveTemplateBody(resumeTemplate.components, resumeParams),
             templateName: resumeTemplate.name,
             deliveryStatus: 'sent',
           })
