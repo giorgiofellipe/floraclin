@@ -96,14 +96,18 @@ beforeEach(() => {
 })
 
 describe('PaymentForm card methods', () => {
-  it('locks Parcelas to 1 for a card method and sends the card', async () => {
+  it('turns the chosen parcelas into card parcelas for credit and sends one patient installment', async () => {
     renderForm()
     expect(parcelasSelect()).toHaveValue('3')
 
     fireEvent.change(methodSelect(), { target: { value: 'credit_card' } })
 
-    await waitFor(() => expect(parcelasSelect()).toHaveValue('1'))
-    expect(parcelasSelect()).toBeDisabled()
+    // Only "Parcelas no cartão" is left, carrying the 3x the user had picked.
+    await waitFor(() => expect(screen.getByText('Parcelas no cartão')).toBeInTheDocument())
+    expect(screen.queryByText('Parcelas')).toBeNull()
+    expect(screen.queryByText('Parcelas e vencimentos')).toBeNull()
+    expect(screen.getAllByTestId('select-1')).toHaveLength(1)
+    expect(parcelasSelect()).toHaveValue('3')
 
     await waitFor(() => expect(screen.getByTestId('payment-form-submit')).not.toBeDisabled())
     fireEvent.click(screen.getByTestId('payment-form-submit'))
@@ -112,7 +116,7 @@ describe('PaymentForm card methods', () => {
     expect(mockCreate.mock.calls[0][0]).toMatchObject({
       installmentCount: 1,
       paymentMethod: 'credit_card',
-      card: { terminalId: 'term-1', installmentCount: 1 },
+      card: { terminalId: 'term-1', installmentCount: 3 },
     })
   })
 
