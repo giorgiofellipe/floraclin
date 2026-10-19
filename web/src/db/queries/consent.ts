@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { consentTemplates, consentAcceptances, patients, procedureRecords, tenants } from '@/db/schema'
-import { eq, and, desc } from 'drizzle-orm'
+import { eq, and, desc, max, sql } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import type { ConsentTemplateInput, ConsentAcceptanceInput } from '@/validations/consent'
 import { verifyTenantOwnership } from './helpers'
@@ -67,20 +67,54 @@ export async function getConsentTemplateById(tenantId: string, templateId: strin
   return template ?? null
 }
 
-export async function createConsentTemplate(tenantId: string, data: ConsentTemplateInput) {
-  const [template] = await db
+// Inserts the next version of a tenant's consent type and deactivates the current one.
+// Serialized per (tenant, type) so concurrent saves can't both pick the same version
+// and hit idx_consent_template_version.
+async function insertNextConsentVersion(
+  tx: typeof db,
+  tenantId: string,
+  data: { type: string; title: string; content: string }
+) {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${data.type}))`)
+
+  const sameType = and(
+    eq(consentTemplates.tenantId, tenantId),
+    eq(consentTemplates.type, data.type)
+  )
+
+  const [latest] = await tx
+    .select({ version: max(consentTemplates.version) })
+    .from(consentTemplates)
+    .where(sameType)
+
+  await tx
+    .update(consentTemplates)
+    .set({ isActive: false, updatedAt: new Date() })
+    .where(and(sameType, eq(consentTemplates.isActive, true)))
+
+  const [template] = await tx
     .insert(consentTemplates)
     .values({
       tenantId,
       type: data.type,
       title: data.title,
       content: data.content,
-      version: 1,
+      version: (latest?.version ?? 0) + 1,
       isActive: true,
     })
     .returning()
 
   return template
+}
+
+export async function createConsentTemplate(tenantId: string, data: ConsentTemplateInput) {
+  return withTransaction((tx) =>
+    insertNextConsentVersion(tx, tenantId, {
+      type: data.type,
+      title: data.title,
+      content: data.content,
+    })
+  )
 }
 
 export async function updateConsentTemplate(
@@ -94,33 +128,13 @@ export async function updateConsentTemplate(
     throw new Error('Termo não encontrado')
   }
 
-  return withTransaction(async (tx) => {
-    // Deactivate old version
-    await tx
-      .update(consentTemplates)
-      .set({ isActive: false, updatedAt: new Date() })
-      .where(
-        and(
-          eq(consentTemplates.id, templateId),
-          eq(consentTemplates.tenantId, tenantId)
-        )
-      )
-
-    // Create new version
-    const [newTemplate] = await tx
-      .insert(consentTemplates)
-      .values({
-        tenantId,
-        type: existing.type,
-        title: data.title ?? existing.title,
-        content: data.content,
-        version: existing.version + 1,
-        isActive: true,
-      })
-      .returning()
-
-    return newTemplate
-  })
+  return withTransaction((tx) =>
+    insertNextConsentVersion(tx, tenantId, {
+      type: existing.type,
+      title: data.title ?? existing.title,
+      content: data.content,
+    })
+  )
 }
 
 export async function acceptConsent(
