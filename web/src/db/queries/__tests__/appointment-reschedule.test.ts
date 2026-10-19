@@ -32,6 +32,7 @@ vi.mock('@/db/schema', () => ({
     tenantId: 'tenant_id',
     date: 'date',
     startTime: 'start_time',
+    status: 'status',
     deletedAt: 'deleted_at',
     confirmationSentAt: 'confirmation_sent_at',
     confirmationMessageId: 'confirmation_message_id',
@@ -70,7 +71,7 @@ import { updateAppointment } from '@/db/queries/appointments'
 
 const TENANT = 'tenant-1'
 const APPT = 'appt-1'
-const CURRENT = { date: '2026-08-20', startTime: '14:00:00' }
+const CURRENT = { date: '2026-08-20', startTime: '14:00:00', status: 'scheduled' }
 
 /** The object handed to drizzle's .set(), which is what we assert on. */
 function setPayload() {
@@ -129,6 +130,25 @@ describe('updateAppointment', () => {
     const payload = setPayload()
     expect(payload).not.toHaveProperty('confirmationSentAt')
     expect(payload).not.toHaveProperty('confirmationMessageId')
+  })
+
+  it.each(['confirmed', 'pending_reschedule'])(
+    'puts a moved %s appointment back to scheduled so it is confirmed again',
+    async (status) => {
+      selectLimit.mockResolvedValue([{ ...CURRENT, status }])
+
+      await updateAppointment(TENANT, APPT, { date: '2026-08-21' })
+
+      expect(setPayload()).toMatchObject({ status: 'scheduled', confirmedAt: null })
+    },
+  )
+
+  it('keeps a confirmed appointment confirmed when the slot did not move', async () => {
+    selectLimit.mockResolvedValue([{ ...CURRENT, status: 'confirmed' }])
+
+    await updateAppointment(TENANT, APPT, { notes: 'trouxe exames' })
+
+    expect(setPayload()).not.toHaveProperty('status')
   })
 
   it('returns undefined and writes nothing when the appointment does not exist', async () => {

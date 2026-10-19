@@ -6,12 +6,13 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, CalendarCheck, CheckCircle2, ChevronDown, Clock, CreditCard, HeartPulse, Loader2, Plus, Save } from 'lucide-react'
+import { AlertTriangle, CalendarCheck, CheckCircle2, ChevronDown, ClipboardList, Clock, CreditCard, HeartHandshake, HeartPulse, Loader2, Plus, ReceiptText, Save } from 'lucide-react'
 import { toast } from 'sonner'
 import { WhatsAppTemplatePreview, WhatsAppTemplatePreviewNote } from './whatsapp-template-preview'
 import {
   ANAMNESIS_STALE_DAYS_MAX,
   AUTOMATION_DAYS_MAX,
+  MAX_EVENT_AGE_DAYS,
   automationConfigDefaults,
 } from '@/lib/whatsapp-automation-config'
 
@@ -70,6 +71,32 @@ const TRIGGERS = [
     configFields: [
       { key: 'daysAfterProcedure', label: 'Dias após o procedimento', type: 'number' as const, default: automationConfigDefaults('follow_up').daysAfterProcedure, max: AUTOMATION_DAYS_MAX },
     ],
+  },
+  {
+    key: 'payment_confirmation',
+    label: 'Confirmação de pagamento',
+    description: `Envia uma confirmação ao paciente quando um pagamento é registrado. Pagamentos com data de mais de ${MAX_EVENT_AGE_DAYS} dias atrás não geram mensagem.`,
+    icon: ReceiptText,
+    purposeKey: 'payment_confirmation',
+    configFields: [],
+  },
+  {
+    key: 'pre_procedure_instructions',
+    label: 'Orientações pré-procedimento',
+    description: 'Envia diariamente às 10h30 as orientações de preparo para consultas dos próximos dias. Só para procedimentos com orientações cadastradas.',
+    icon: ClipboardList,
+    purposeKey: 'pre_procedure_instructions',
+    configFields: [
+      { key: 'daysBeforeAppointment', label: 'Dias antes da consulta', type: 'number' as const, default: automationConfigDefaults('pre_procedure_instructions').daysBeforeAppointment, max: AUTOMATION_DAYS_MAX },
+    ],
+  },
+  {
+    key: 'post_procedure_care',
+    label: 'Cuidados pós-procedimento',
+    description: `Envia os cuidados ao paciente quando uma sessão é registrada. Só para procedimentos com cuidados cadastrados. Sessões com data de mais de ${MAX_EVENT_AGE_DAYS} dias atrás não geram mensagem.`,
+    icon: HeartHandshake,
+    purposeKey: 'post_procedure_care',
+    configFields: [],
   },
 ]
 

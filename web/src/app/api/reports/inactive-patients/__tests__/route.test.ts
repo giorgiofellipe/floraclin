@@ -42,6 +42,8 @@ const SAMPLE_ROWS: InactivePatientRow[] = [
     daysSince: 200,
     lastProcedureType: 'Botox',
     lifetimeValue: 3500,
+    marketingOptOut: false,
+    reactivationSentAt: null,
   },
 ]
 

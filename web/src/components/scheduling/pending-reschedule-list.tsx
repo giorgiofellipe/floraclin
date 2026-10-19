@@ -148,10 +148,7 @@ export function PendingRescheduleList() {
           locale: ptBR,
           addSuffix: true,
         })
-        const displayNameEncoded = encodeURIComponent(displayName)
-        const rescheduleHref = appt.patientId
-          ? `/agenda?open=new&patient=${appt.patientId}&patientName=${displayNameEncoded}`
-          : '/agenda?open=new'
+        const rescheduleHref = `/agenda?view=day&date=${appt.date}&open=${appt.id}`
 
         return (
           <div

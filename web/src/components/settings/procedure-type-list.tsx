@@ -46,6 +46,8 @@ interface ProcedureType {
   description: string | null
   defaultPrice: string | null
   estimatedDurationMin: number | null
+  preProcedureInstructions?: string | null
+  postProcedureCare?: string | null
   isActive: boolean
 }
 
