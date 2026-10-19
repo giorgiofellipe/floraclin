@@ -46,7 +46,7 @@ Applied: per-tenant cron transactions; tenant required on every domain function;
 
 **Files:**
 - Modify: `src/db/schema.ts` (financial section ~397-470, relations ~1346-1400)
-- Create: `src/db/migrations/0041_card_sales.sql`
+- Create: `src/db/migrations/0042_card_sales.sql`
 
 **Interfaces (Produces):**
 
@@ -98,7 +98,7 @@ Also add columns:
 Relations: cardPayments has many cardRepasses and paymentRecords; one cardTerminal.
 
 - [ ] **Step 1:** Add the tables, columns, indexes and relations to `schema.ts`.
-- [ ] **Step 2:** Write `0041_card_sales.sql` in the style of `0040_lifecycle_attribution.sql` (`IF NOT EXISTS`, `--> statement-breakpoint`, `ENABLE ROW LEVEL SECURITY` on the three new tables), with CHECK constraints: `card_payments.method IN ('credit_card','debit_card')`, `card_payments.payout_mode IN ('per_installment','lump_sum','debit')`, `card_terminals.credit_payout_mode IN ('per_installment','lump_sum')`, `card_repasses.status IN ('pending','received','cancelled')`, `card_payments.installment_count BETWEEN 1 AND 12`, `jsonb_array_length(credit_rates) = 12`.
+- [ ] **Step 2:** Write `0042_card_sales.sql` in the style of `0040_lifecycle_attribution.sql` (`IF NOT EXISTS`, `--> statement-breakpoint`, `ENABLE ROW LEVEL SECURITY` on the three new tables), with CHECK constraints: `card_payments.method IN ('credit_card','debit_card')`, `card_payments.payout_mode IN ('per_installment','lump_sum','debit')`, `card_terminals.credit_payout_mode IN ('per_installment','lump_sum')`, `card_repasses.status IN ('pending','received','cancelled')`, `card_payments.installment_count BETWEEN 1 AND 12`, `jsonb_array_length(credit_rates) = 12`.
 - [ ] **Step 3:** `pnpm typecheck` passes.
 - [ ] **Step 4:** Commit `Add card terminal, card payment and repasse tables`.
 
