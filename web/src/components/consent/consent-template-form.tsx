@@ -52,35 +52,45 @@ export function ConsentTemplateForm({ template, activeTemplates = [], onSuccess 
   const isPending = createTemplate.isPending || updateTemplate.isPending
   const [error, setError] = useState<string | null>(null)
 
-  const [selectedType, setSelectedType] = useState<ConsentType>(
-    (template?.type as ConsentType) ?? 'general'
-  )
-  const [title, setTitle] = useState(template?.title ?? '')
-  const [content, setContent] = useState(template?.content ?? '')
+  const initialType = (template?.type as ConsentType) ?? 'general'
+  const [selectedType, setSelectedType] = useState<ConsentType>(initialType)
 
-  const versionBase = template ?? activeTemplates.find((t) => t.type === selectedType)
+  // In create mode, a type the clinic already has starts from its current active text
+  const activeOfType = (type: string) => activeTemplates.find((t) => t.type === type)
+  const initialText = template ?? activeOfType(initialType)
+  const [title, setTitle] = useState(initialText?.title ?? '')
+  const [content, setContent] = useState(initialText?.content ?? '')
+  // Whether the user typed since the last prefill; a type switch never overwrites edits
+  const [isDirty, setIsDirty] = useState(false)
+
+  const versionBase = template ?? activeOfType(selectedType)
   const nextVersion = (versionBase?.version ?? 0) + 1
 
-  // When type changes, suggest default content (only for new templates)
-  const handleTypeChange = (newType: ConsentType) => {
-    setSelectedType(newType)
-    if (!isEditing && newType !== 'custom') {
-      const defaultTemplate = DEFAULT_CONSENT_TEMPLATES[newType as keyof typeof DEFAULT_CONSENT_TEMPLATES]
-      if (defaultTemplate) {
-        setTitle(defaultTemplate.title)
-        setContent(defaultTemplate.content)
-      }
-    }
+  const prefill = (text: { title: string; content: string }) => {
+    setTitle(text.title)
+    setContent(text.content)
+    setIsDirty(false)
   }
 
+  // When type changes, suggest the clinic's current text, else the built-in default (only for new templates)
+  const handleTypeChange = (newType: ConsentType) => {
+    setSelectedType(newType)
+    if (isEditing || isDirty) return
+    const active = activeOfType(newType)
+    if (active) {
+      prefill(active)
+      return
+    }
+    if (newType !== 'custom') {
+      const defaultTemplate = DEFAULT_CONSENT_TEMPLATES[newType as keyof typeof DEFAULT_CONSENT_TEMPLATES]
+      if (defaultTemplate) prefill(defaultTemplate)
+    }
+  }
 
   const handleLoadDefault = () => {
     if (selectedType === 'custom') return
     const defaultTemplate = DEFAULT_CONSENT_TEMPLATES[selectedType as keyof typeof DEFAULT_CONSENT_TEMPLATES]
-    if (defaultTemplate) {
-      setTitle(defaultTemplate.title)
-      setContent(defaultTemplate.content)
-    }
+    if (defaultTemplate) prefill(defaultTemplate)
   }
 
   let submitLabel = 'Criar termo'
@@ -113,12 +123,8 @@ export function ConsentTemplateForm({ template, activeTemplates = [], onSuccess 
               } else {
                 await createTemplate.mutateAsync({ type: selectedType, title, content })
               }
+              // The parent closes the dialog on success, so the next open remounts with fresh prefill
               onSuccess?.()
-              if (!isEditing) {
-                setTitle('')
-                setContent('')
-                setSelectedType('general')
-              }
             } catch (err) {
               setError(err instanceof Error ? err.message : 'Erro ao salvar termo')
             }
@@ -152,7 +158,10 @@ export function ConsentTemplateForm({ template, activeTemplates = [], onSuccess 
                 id="title"
                 name="title"
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  setTitle(e.target.value)
+                  setIsDirty(true)
+                }}
                 placeholder="Título do termo"
                 required
                 className="border-sage/20 focus:border-sage/40"
@@ -181,7 +190,10 @@ export function ConsentTemplateForm({ template, activeTemplates = [], onSuccess 
                 id="content"
                 name="content"
                 value={content}
-                onChange={(e) => setContent(e.target.value)}
+                onChange={(e) => {
+                  setContent(e.target.value)
+                  setIsDirty(true)
+                }}
                 placeholder="Texto do termo de consentimento..."
                 rows={16}
                 className="min-h-64 font-mono text-xs border-sage/20 focus:border-sage/40"
