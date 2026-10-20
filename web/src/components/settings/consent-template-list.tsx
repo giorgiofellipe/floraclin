@@ -156,6 +156,7 @@ export function ConsentTemplateList({ templates, embedded = false }: ConsentTemp
             <DialogTitle>Novo Termo de Consentimento</DialogTitle>
           </DialogHeader>
           <ConsentTemplateForm
+            activeTemplates={templates.filter((t) => t.isActive)}
             onSuccess={handleSuccess}
           />
         </DialogContent>

@@ -1,5 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
+
+vi.mock('next/server', async () => {
+  const actual = await vi.importActual<typeof import('next/server')>('next/server')
+  return { ...actual, after: vi.fn() }
+})
+
+vi.mock('@/lib/whatsapp-payment-confirmation', () => ({
+  sendPaymentConfirmations: vi.fn(),
+}))
 
 vi.mock('@/lib/write-access', () => ({
   requireWrite: vi.fn(),
@@ -12,6 +21,7 @@ vi.mock('@/db/queries/financial', () => ({
 import { requireWrite } from '@/lib/write-access'
 import { recordPayment } from '@/db/queries/financial'
 import { BusinessError } from '@/lib/errors'
+import { sendPaymentConfirmations } from '@/lib/whatsapp-payment-confirmation'
 import { PUT } from '../route'
 
 const installmentId = '11111111-1111-4111-8111-111111111111'
@@ -110,5 +120,16 @@ describe('PUT /api/financial/installments/[id]/pay', () => {
       'user-1',
       expect.objectContaining({ paymentMethod: 'credit_card', card }),
     )
+  })
+
+  // Regression: a recorded payment that commits without telling the patient.
+  it('schedules the payment confirmation for the recorded payment after the response', async () => {
+    vi.mocked(recordPayment).mockResolvedValue({ paymentRecord: { id: 'pay-1' }, allocation: {} } as never)
+
+    await callPut(validBody)
+    const [scheduled] = vi.mocked(after).mock.calls[0]
+    await (scheduled as () => Promise<void>)()
+
+    expect(sendPaymentConfirmations).toHaveBeenCalledWith('tenant-1', [{ id: 'pay-1' }])
   })
 })

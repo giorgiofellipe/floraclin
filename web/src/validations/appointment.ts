@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { AppointmentStatus } from '@/types'
 
 export const createAppointmentSchema = z.object({
   patientId: z.string().uuid('Paciente inválido').nullable().optional(),
@@ -26,6 +27,7 @@ export const updateAppointmentSchema = z.object({
   startTime: z.string().regex(/^\d{2}:\d{2}$/, 'Horário inicial inválido').optional(),
   endTime: z.string().regex(/^\d{2}:\d{2}$/, 'Horário final inválido').optional(),
   notes: z.string().max(2000).optional(),
+  notifyPatient: z.boolean().optional(),
 })
 
 export const updateStatusSchema = z.object({
@@ -38,3 +40,10 @@ export const updateStatusSchema = z.object({
 export type CreateAppointmentInput = z.infer<typeof createAppointmentSchema>
 export type UpdateAppointmentInput = z.infer<typeof updateAppointmentSchema>
 export type UpdateStatusInput = z.infer<typeof updateStatusSchema>
+
+const RESCHEDULE_NOTICE_STATUSES: readonly string[] = ['scheduled', 'confirmed', 'pending_reschedule'] satisfies AppointmentStatus[]
+
+/** A moved appointment the patient still has to attend. `todayYmd` is the BR today. */
+export function canSendRescheduleNotice(status: string, newDate: string, todayYmd: string): boolean {
+  return RESCHEDULE_NOTICE_STATUSES.includes(status) && newDate >= todayYmd
+}

@@ -20,6 +20,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
+import { toast } from 'sonner'
 import {
   useCreateAppointment,
   useUpdateAppointment,
@@ -34,6 +36,11 @@ import type { AppointmentWithDetails } from '@/db/queries/appointments'
 import type { AppointmentStatus } from '@/types'
 import { START_TIMES, END_TIMES, timeItems } from '@/lib/time-options'
 import { formatBrPhone } from '@/lib/phone'
+import { useTenant } from '@/hooks/queries/use-tenant'
+import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
+import { canSendRescheduleNotice } from '@/validations/appointment'
+import { brToday } from '@/lib/dates'
+import type { RescheduleNotification } from '@/lib/whatsapp-reschedule'
 
 interface Practitioner {
   id: string
@@ -67,6 +74,13 @@ interface AppointmentFormProps {
 }
 
 const TIME_ITEMS = timeItems(START_TIMES)
+
+const NOTIFICATION_TOASTS: Record<Exclude<RescheduleNotification, 'sent'>, string> = {
+  unavailable: 'Reagendado. O aviso por WhatsApp não está disponível para esta clínica.',
+  no_phone: 'Reagendado. O paciente não tem um telefone válido para o aviso por WhatsApp.',
+  no_credits: 'Reagendado. Sem créditos de WhatsApp para enviar o aviso.',
+  failed: 'Reagendado, mas o aviso por WhatsApp não foi enviado.',
+}
 
 function getDefaultEndTime(startTime: string, durationMin: number = 30): string {
   const [h, m] = startTime.split(':').map(Number)
@@ -123,6 +137,14 @@ export function AppointmentForm({
     appointment?.endTime?.slice(0, 5) ?? getDefaultEndTime(defaultStartTime ?? '08:00')
   )
 
+  const { data: tenant } = useTenant()
+  const [notifyPatient, setNotifyPatient] = React.useState(true)
+  const slotMoved =
+    !!appointment &&
+    (date !== appointment.date || startTime !== appointment.startTime.slice(0, 5))
+  const canNotifyPatient =
+    slotMoved && canSendRescheduleNotice(appointment.status, date, brToday()) && isWhatsAppEnabled(tenant?.settings)
+
   const isPending = createPatient.isPending || createAppointment.isPending || updateAppointment.isPending
 
   const practitionerItems = React.useMemo(
@@ -160,6 +182,7 @@ export function AppointmentForm({
       }
       setPatientSearch('')
       setPatientOptions([])
+      setNotifyPatient(true)
       setShowNewPatient(false)
       setNewPatientName('')
       setNewPatientPhone('')
@@ -281,7 +304,16 @@ export function AppointmentForm({
             }
 
             if (isEditing && appointment) {
-              await updateAppointment.mutateAsync({ id: appointment.id, ...data })
+              const result = await updateAppointment.mutateAsync({
+                id: appointment.id,
+                ...data,
+                notifyPatient: canNotifyPatient && notifyPatient,
+              }) as { notification?: RescheduleNotification }
+              if (result.notification === 'sent') {
+                toast.success('Reagendado. Paciente avisado por WhatsApp.')
+              } else if (result.notification) {
+                toast.warning(NOTIFICATION_TOASTS[result.notification])
+              }
             } else {
               await createAppointment.mutateAsync(data)
             }
@@ -479,6 +511,20 @@ export function AppointmentForm({
               <input type="hidden" name="endTime" value={endTime} />
             </div>
           </div>
+
+          {canNotifyPatient && (
+            <label className="flex items-start gap-2 cursor-pointer">
+              <Checkbox
+                checked={notifyPatient}
+                onCheckedChange={(val) => setNotifyPatient(val === true)}
+                className="mt-0.5"
+                data-testid="appointment-notify-patient"
+              />
+              <span className="text-sm text-charcoal">
+                Avisar o paciente da nova data por WhatsApp
+              </span>
+            </label>
+          )}
 
           {/* Notes */}
           <div className="grid gap-2">
