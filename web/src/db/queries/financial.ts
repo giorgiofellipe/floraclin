@@ -16,7 +16,7 @@ import {
 } from '@/db/schema'
 import { eq, and, isNull, sql, count, sum, desc, inArray, notInArray, or, gte, lte } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
-import { startOfBrDay, endOfBrDay, toBrYmd, toLocalYmd } from '@/lib/dates'
+import { startOfBrDay, endOfBrDay, toBrYmd, brToday, shiftBrYmd } from '@/lib/dates'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { createAuditLog } from '@/lib/audit'
 import {
@@ -32,8 +32,14 @@ import {
 import { BusinessError } from '@/lib/errors'
 import type { CreateFinancialEntryInput, FinancialFilterInput, RecordPaymentInput } from '@/validations/financial'
 import type { PaymentMethod, FinancialStatus } from '@/types'
-import { addDays } from 'date-fns'
 import { verifyTenantOwnership } from './helpers'
+import {
+  cancelCardPaymentTx,
+  createCardPaymentTx,
+  getCardPaymentSummaries,
+  sumCardFeesForPeriod,
+} from './card-payments'
+import { cardInstallmentCountFor, isCardMethod } from '@/lib/financial/card-repasses'
 import {
   claimAndSendPendingEvent,
   enqueueMetaEvent,
@@ -46,12 +52,17 @@ import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
 import type { MetaActionSource } from '@/lib/meta/types'
 import { reportSideEffectFailure } from '@/lib/observability'
 
+function requireCard(card: RecordPaymentInput['card']): NonNullable<RecordPaymentInput['card']> {
+  if (!card) throw new BusinessError('CARD_TERMINAL_REQUIRED', 'Selecione a maquininha')
+  return card
+}
+
 // ─── CREATE FINANCIAL ENTRY ─────────────────────────────────────────
 
 export async function createFinancialEntry(
   tenantId: string,
   userId: string,
-  data: CreateFinancialEntryInput,
+  data: CreateFinancialEntryInput & { cardInstallmentCount?: number },
   txDb?: typeof db
 ) {
   // Verify foreign IDs belong to this tenant
@@ -78,6 +89,12 @@ export async function createFinancialEntry(
         installmentCount: data.installmentCount,
         status: 'pending',
         notes: data.notes,
+        paymentMethod: data.paymentMethod,
+        cardInstallmentCount:
+          data.cardInstallmentCount ??
+          (data.card && isCardMethod(data.paymentMethod)
+            ? cardInstallmentCountFor(data.paymentMethod, data.card.installmentCount)
+            : null),
         createdBy: userId,
       })
       .returning()
@@ -85,12 +102,11 @@ export async function createFinancialEntry(
     const terms = await loadInstallmentTerms(tx, tenantId)
     const installmentAmount = Math.floor((data.totalAmount * 100) / data.installmentCount) / 100
     const remainder = Math.round((data.totalAmount - installmentAmount * data.installmentCount) * 100) / 100
-    const today = new Date()
+    const today = brToday()
 
     const installmentRows = Array.from({ length: data.installmentCount }, (_, i) => {
       const amount = i === 0 ? installmentAmount + remainder : installmentAmount
-      const dueDate = data.customDueDates?.[i]
-        ?? toLocalYmd(addDays(today, i * 30))
+      const dueDate = data.customDueDates?.[i] ?? shiftBrYmd(today, i * 30)
       return {
         tenantId,
         financialEntryId: entry.id,
@@ -102,9 +118,15 @@ export async function createFinancialEntry(
       }
     })
 
-    await tx.insert(installments).values(installmentRows)
+    const created = await tx
+      .insert(installments)
+      .values(installmentRows)
+      .returning({ id: installments.id, installmentNumber: installments.installmentNumber })
 
-    return entry
+    return {
+      ...entry,
+      installmentIds: [...created].sort((a, b) => a.installmentNumber - b.installmentNumber).map((r) => r.id),
+    }
   }
 
   if (txDb) {
@@ -693,17 +715,32 @@ export async function recordPayment(
       })
       .returning()
 
-    await tx.insert(cashMovements).values({
-      tenantId,
-      type: 'inflow',
-      amount: data.amount.toFixed(2),
-      description: `Pagamento: ${entry?.description ?? 'Cobranca'}`,
-      paymentMethod: data.paymentMethod,
-      movementDate: paidAt,
-      paymentRecordId: paymentRecord.id,
-      patientId: entry?.patientId,
-      recordedBy: userId,
-    })
+    if (isCardMethod(data.paymentMethod)) {
+      const card = requireCard(data.card)
+      const { cardPaymentId } = await createCardPaymentTx(tx, tenantId, userId, {
+        terminalId: card.terminalId,
+        method: data.paymentMethod,
+        installmentCount: card.installmentCount,
+        expectedRate: card.expectedRate,
+        gross: data.amount,
+        paidAt,
+        patientId: entry.patientId,
+        description: entry.description,
+      })
+      await tx.update(paymentRecords).set({ cardPaymentId }).where(eq(paymentRecords.id, paymentRecord.id))
+    } else {
+      await tx.insert(cashMovements).values({
+        tenantId,
+        type: 'inflow',
+        amount: data.amount.toFixed(2),
+        description: `Pagamento: ${entry?.description ?? 'Cobranca'}`,
+        paymentMethod: data.paymentMethod,
+        movementDate: paidAt,
+        paymentRecordId: paymentRecord.id,
+        patientId: entry?.patientId,
+        recordedBy: userId,
+      })
+    }
 
     const { isPaid, splitChanges } = await persistReplay(tx, tenantId, {
       cause: 'payment',
@@ -775,11 +812,18 @@ export async function reversePayment(
       throw new BusinessError('PAYMENT_NOT_FOUND', 'Pagamento não encontrado')
     }
 
+    // A card payment may group several records (bulk pay). The card is one
+    // transaction, so reversing any of them reverses all of them.
+    const records = pr.cardPaymentId
+      ? await tx.select().from(paymentRecords).where(eq(paymentRecords.cardPaymentId, pr.cardPaymentId))
+      : [pr]
+
     // Both recordPayment and reversePayment rewrite payment records behind
     // this lock, so taking it here too serializes the two paths instead of
     // letting them deadlock on each other's row updates. It is also the
-    // tenant check: the payment record carries no tenant of its own.
-    const [inst] = await tx
+    // tenant check: the payment record carries no tenant of its own. Ordered
+    // by id, like bulkPayInstallments, so overlapping batches lock in one order.
+    const lockedInstallments = await tx
       .select({
         id: installments.id,
         financialEntryId: installments.financialEntryId,
@@ -794,89 +838,130 @@ export async function reversePayment(
         cancelledAt: installments.cancelledAt,
       })
       .from(installments)
-      .where(and(eq(installments.id, pr.installmentId), eq(installments.tenantId, tenantId)))
+      .where(
+        and(
+          inArray(installments.id, [...new Set(records.map((r) => r.installmentId))]),
+          eq(installments.tenantId, tenantId),
+        ),
+      )
+      .orderBy(installments.id)
       .for('update')
+    const installmentById = new Map(lockedInstallments.map((i) => [i.id, i]))
 
-    if (!inst) {
+    if (records.some((r) => !installmentById.has(r.installmentId))) {
       // Same message as a missing record: a distinct one would let a caller
       // probe whether a payment id exists in another clinic.
       throw new BusinessError('PAYMENT_NOT_FOUND', 'Pagamento não encontrado')
     }
 
-    const [entry] = await tx
+    const lockedEntries = await tx
       .select({
+        id: financialEntries.id,
         status: financialEntries.status,
         patientId: financialEntries.patientId,
         description: financialEntries.description,
       })
       .from(financialEntries)
-      .where(and(eq(financialEntries.id, inst.financialEntryId), eq(financialEntries.tenantId, tenantId)))
+      .where(
+        and(
+          inArray(financialEntries.id, [...new Set(lockedInstallments.map((i) => i.financialEntryId))]),
+          eq(financialEntries.tenantId, tenantId),
+        ),
+      )
+      .orderBy(financialEntries.id)
       .for('update')
+    const entryById = new Map(lockedEntries.map((e) => [e.id, e]))
 
-    // Re-read behind the lock rather than trusting the copy loaded above: two
-    // concurrent reversals both read an active payment, and the loser would
-    // otherwise go on to write a second outflow for the same money.
-    const [locked] = await tx
-      .select({ reversedAt: paymentRecords.reversedAt })
-      .from(paymentRecords)
-      .where(eq(paymentRecords.id, paymentRecordId))
-      .limit(1)
+    const card = pr.cardPaymentId ? await cancelCardPaymentTx(tx, tenantId, userId, pr.cardPaymentId) : undefined
 
-    if (locked?.reversedAt) {
-      throw new BusinessError('PAYMENT_ALREADY_REVERSED', 'Pagamento já foi estornado')
+    for (const record of records) {
+      const inst = installmentById.get(record.installmentId)!
+      const entry = entryById.get(inst.financialEntryId)
+
+      // Re-read behind the lock rather than trusting the copy loaded above: two
+      // concurrent reversals both read an active payment, and the loser would
+      // otherwise go on to write a second outflow for the same money.
+      const [locked] = await tx
+        .select({ reversedAt: paymentRecords.reversedAt })
+        .from(paymentRecords)
+        .where(eq(paymentRecords.id, record.id))
+        .limit(1)
+
+      if (locked?.reversedAt) {
+        if (record.id === paymentRecordId) {
+          throw new BusinessError('PAYMENT_ALREADY_REVERSED', 'Pagamento já foi estornado')
+        }
+        continue
+      }
+
+      await tx
+        .update(paymentRecords)
+        .set({
+          reversedAt: new Date(),
+          reversedBy: userId,
+          reversalReason: reason ?? null,
+        })
+        .where(eq(paymentRecords.id, record.id))
+
+      if (!card) {
+        const [outflow] = await tx
+          .insert(cashMovements)
+          .values({
+            tenantId,
+            type: 'outflow',
+            amount: record.amount,
+            description: `Estorno: ${entry?.description ?? 'Pagamento'}${reason ? ` — ${reason}` : ''}`,
+            paymentMethod: record.paymentMethod as PaymentMethod,
+            movementDate: new Date(),
+            patientId: entry?.patientId,
+            recordedBy: userId,
+          })
+          .returning({ id: cashMovements.id })
+
+        await tx
+          .update(cashMovements)
+          .set({ reversedByMovementId: outflow.id })
+          .where(
+            and(
+              eq(cashMovements.tenantId, tenantId),
+              eq(cashMovements.paymentRecordId, record.id),
+              eq(cashMovements.type, 'inflow'),
+            ),
+          )
+      }
+
+      const remaining = await loadLivePayments(tx, inst.id)
+      // Captured behind the lock, the same way the write paths do it.
+      const now = new Date()
+      const base = toInstallmentBase(inst)
+
+      const { splitChanges } = await persistReplay(tx, tenantId, {
+        cause: 'reversal',
+        // A renegotiation or a cancel already took this installment out of
+        // collection. Reversing corrects the cash record, not that decision.
+        keepCancelled: inst.status === 'cancelled',
+        updateEntryStatus: !isOutOfCollection(entry?.status),
+        installment: { id: inst.id, financialEntryId: inst.financialEntryId, amount: base.amount },
+        replay: replayPayments(base, remaining.inputs, now),
+        storedPayments: remaining.rows,
+      })
+
+      await createAuditLog({
+        tenantId,
+        userId,
+        action: 'update',
+        entityType: 'payment_record',
+        entityId: record.id,
+        changes: {
+          action: { old: 'active', new: 'reversed' },
+          amount: { old: record.amount, new: '0' },
+          reason: { old: null, new: reason ?? null },
+          ...splitChangesAudit(splitChanges),
+        },
+      }, tx)
     }
 
-    await tx
-      .update(paymentRecords)
-      .set({
-        reversedAt: new Date(),
-        reversedBy: userId,
-        reversalReason: reason ?? null,
-      })
-      .where(eq(paymentRecords.id, paymentRecordId))
-
-    await tx.insert(cashMovements).values({
-      tenantId,
-      type: 'outflow',
-      amount: pr.amount,
-      description: `Estorno: ${entry?.description ?? 'Pagamento'}${reason ? ` — ${reason}` : ''}`,
-      paymentMethod: pr.paymentMethod as PaymentMethod,
-      movementDate: new Date(),
-      patientId: entry?.patientId,
-      recordedBy: userId,
-    })
-
-    const remaining = await loadLivePayments(tx, inst.id)
-    // Captured behind the lock, the same way the write paths do it.
-    const now = new Date()
-    const base = toInstallmentBase(inst)
-
-    const { splitChanges } = await persistReplay(tx, tenantId, {
-      cause: 'reversal',
-      // A renegotiation or a cancel already took this installment out of
-      // collection. Reversing corrects the cash record, not that decision.
-      keepCancelled: inst.status === 'cancelled',
-      updateEntryStatus: !isOutOfCollection(entry?.status),
-      installment: { id: inst.id, financialEntryId: inst.financialEntryId, amount: base.amount },
-      replay: replayPayments(base, remaining.inputs, now),
-      storedPayments: remaining.rows,
-    })
-
-    await createAuditLog({
-      tenantId,
-      userId,
-      action: 'update',
-      entityType: 'payment_record',
-      entityId: paymentRecordId,
-      changes: {
-        action: { old: 'active', new: 'reversed' },
-        amount: { old: pr.amount, new: '0' },
-        reason: { old: null, new: reason ?? null },
-        ...splitChangesAudit(splitChanges),
-      },
-    }, tx)
-
-    return { success: true }
+    return card ? { success: true, card } : { success: true }
   })
 }
 
@@ -885,7 +970,7 @@ export async function reversePayment(
 export async function bulkPayInstallments(
   tenantId: string,
   userId: string,
-  data: { installmentIds: string[]; paymentMethod: string; paidAt?: string }
+  data: { installmentIds: string[]; paymentMethod: string; paidAt?: string; card?: RecordPaymentInput['card'] }
 ) {
   const metaContexts = await prepareMetaPurchaseContexts(tenantId, data.installmentIds)
 
@@ -935,6 +1020,15 @@ export async function bulkPayInstallments(
       .for('update')
     const entryById = new Map(entries.map((e) => [e.id, e]))
 
+    const cardMethod = isCardMethod(data.paymentMethod) ? data.paymentMethod : undefined
+    const card = cardMethod ? requireCard(data.card) : undefined
+    if (card && new Set(entries.map((e) => e.patientId)).size > 1) {
+      throw new BusinessError(
+        'CARD_BULK_MULTIPLE_PATIENTS',
+        'Pagamento em cartão deve ser de um único paciente',
+      )
+    }
+
     // One instant for the whole batch, behind the lock; see recordPayment.
     const now = new Date()
     const requestedPaidAt = data.paidAt
@@ -943,6 +1037,7 @@ export async function bulkPayInstallments(
 
     const results = []
     const purchases: PendingMetaEventRow[] = []
+    const cardRecords: { id: string; amountCents: number; paidAt: Date }[] = []
     for (const installmentId of data.installmentIds) {
       const [row] = await tx
         .select()
@@ -995,17 +1090,21 @@ export async function bulkPayInstallments(
         .returning()
 
       const entry = entryById.get(row.financialEntryId)
-      await tx.insert(cashMovements).values({
-        tenantId,
-        type: 'inflow',
-        amount: totalDue.toFixed(2),
-        description: `Pagamento: ${entry?.description ?? 'Cobranca'}`,
-        paymentMethod: data.paymentMethod,
-        movementDate: paidAt,
-        paymentRecordId: paymentRecord.id,
-        patientId: entry?.patientId,
-        recordedBy: userId,
-      })
+      if (card) {
+        cardRecords.push({ id: paymentRecord.id, amountCents: toCents(totalDue), paidAt })
+      } else {
+        await tx.insert(cashMovements).values({
+          tenantId,
+          type: 'inflow',
+          amount: totalDue.toFixed(2),
+          description: `Pagamento: ${entry?.description ?? 'Cobranca'}`,
+          paymentMethod: data.paymentMethod,
+          movementDate: paidAt,
+          paymentRecordId: paymentRecord.id,
+          patientId: entry?.patientId,
+          recordedBy: userId,
+        })
+      }
 
       const { splitChanges } = await persistReplay(tx, tenantId, {
         cause: 'payment',
@@ -1048,6 +1147,23 @@ export async function bulkPayInstallments(
       }, tx)
 
       results.push({ installmentId, paymentRecord, allocation })
+    }
+
+    if (card && cardMethod && cardRecords.length > 0) {
+      const { cardPaymentId } = await createCardPaymentTx(tx, tenantId, userId, {
+        terminalId: card.terminalId,
+        method: cardMethod,
+        installmentCount: card.installmentCount,
+        expectedRate: card.expectedRate,
+        gross: cardRecords.reduce((sum, r) => sum + r.amountCents, 0) / 100,
+        paidAt: new Date(Math.max(...cardRecords.map((r) => r.paidAt.getTime()))),
+        patientId: entries[0].patientId,
+        description: entries.length === 1 ? entries[0].description : `Pagamento de ${cardRecords.length} parcelas`,
+      })
+      await tx
+        .update(paymentRecords)
+        .set({ cardPaymentId })
+        .where(inArray(paymentRecords.id, cardRecords.map((r) => r.id)))
     }
 
     return { results, purchases }
@@ -1704,6 +1820,8 @@ export async function getFinancialEntry(tenantId: string, entryId: string) {
       description: financialEntries.description,
       totalAmount: financialEntries.totalAmount,
       installmentCount: financialEntries.installmentCount,
+      paymentMethod: financialEntries.paymentMethod,
+      cardInstallmentCount: financialEntries.cardInstallmentCount,
       status: financialEntries.status,
       notes: financialEntries.notes,
       renegotiatedAt: financialEntries.renegotiatedAt,
@@ -1739,6 +1857,14 @@ export async function getFinancialEntry(tenantId: string, entryId: string) {
     entryInstallments.map((i) => i.id),
   )
 
+  const cardSummaries = await getCardPaymentSummaries(db, tenantId, [
+    ...new Set(
+      [...paymentsByInstallment.values()].flat().flatMap((p) => (p.cardPaymentId ? [p.cardPaymentId] : [])),
+    ),
+  ])
+  const withCard = (payments: (typeof paymentRecords.$inferSelect)[]) =>
+    payments.map((p) => ({ ...p, card: (p.cardPaymentId && cardSummaries.get(p.cardPaymentId)) || null }))
+
   const now = new Date()
 
   // A paid row owes nothing. A cancelled one is frozen by the open pause from
@@ -1751,7 +1877,7 @@ export async function getFinancialEntry(tenantId: string, entryId: string) {
         ...inst,
         computedInterestAmount: 0,
         computedFineAmount: 0,
-        paymentRecords: payments,
+        paymentRecords: withCard(payments),
       }
     }
 
@@ -1761,7 +1887,7 @@ export async function getFinancialEntry(tenantId: string, entryId: string) {
       ...inst,
       computedInterestAmount: quote.interestAmount,
       computedFineAmount: quote.fineAmount,
-      paymentRecords: payments,
+      paymentRecords: withCard(payments),
     }
   })
 
@@ -1812,35 +1938,38 @@ export async function getRevenueOverview(
     lte(financialEntries.createdAt, rangeEnd),
   ]
 
-  // Summary: total received, pending, overdue
+  // Gross is cash received: live payment records paid inside the period,
+  // whenever the charge itself was created.
+  const receivedConditions = [
+    eq(installments.tenantId, tenantId),
+    eq(financialEntries.tenantId, tenantId),
+    isNull(financialEntries.deletedAt),
+    isNull(paymentRecords.reversedAt),
+    gte(paymentRecords.paidAt, rangeStart),
+    lte(paymentRecords.paidAt, rangeEnd),
+  ]
+
   const summaryQuery = db
     .select({
-      totalReceived: sql<number>`COALESCE(SUM(CASE WHEN ${installments.status} = 'paid' THEN ${installments.amount}::numeric ELSE 0 END), 0)`,
+      totalReceived: sql<number>`COALESCE(SUM(${paymentRecords.amount}::numeric), 0)`,
     })
-    .from(installments)
+    .from(paymentRecords)
+    .innerJoin(installments, eq(installments.id, paymentRecords.installmentId))
     .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
-    .where(and(...entryConditions, ...installmentConditions))
+    .where(and(...receivedConditions))
 
-  // Monthly revenue (paid installments grouped by month)
+  const monthExpr = sql`TO_CHAR(${paymentRecords.paidAt} AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM')`
   const monthlyQuery = db
     .select({
-      month: sql<string>`TO_CHAR(${installments.paidAt}, 'YYYY-MM')`,
-      total: sql<number>`COALESCE(SUM(${installments.amount}::numeric), 0)`,
+      month: sql<string>`${monthExpr}`,
+      total: sql<number>`COALESCE(SUM(${paymentRecords.amount}::numeric), 0)`,
     })
-    .from(installments)
+    .from(paymentRecords)
+    .innerJoin(installments, eq(installments.id, paymentRecords.installmentId))
     .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
-    .where(
-      and(
-        ...installmentConditions,
-        eq(installments.status, 'paid'),
-        eq(financialEntries.tenantId, tenantId),
-        isNull(financialEntries.deletedAt),
-        gte(installments.paidAt, rangeStart),
-        lte(installments.paidAt, rangeEnd)
-      )
-    )
-    .groupBy(sql`TO_CHAR(${installments.paidAt}, 'YYYY-MM')`)
-    .orderBy(sql`TO_CHAR(${installments.paidAt}, 'YYYY-MM')`)
+    .where(and(...receivedConditions))
+    .groupBy(monthExpr)
+    .orderBy(monthExpr)
 
   // Revenue by procedure type
   const byProcedureTypeQuery = db
@@ -1854,25 +1983,16 @@ export async function getRevenueOverview(
     .where(and(...entryConditions))
     .groupBy(procedureTypes.name)
 
-  // Revenue by payment method
   const byPaymentMethodQuery = db
     .select({
-      paymentMethod: sql<string>`COALESCE(${installments.paymentMethod}, 'Não informado')`,
-      total: sql<number>`COALESCE(SUM(${installments.amount}::numeric), 0)`,
+      paymentMethod: paymentRecords.paymentMethod,
+      total: sql<number>`COALESCE(SUM(${paymentRecords.amount}::numeric), 0)`,
     })
-    .from(installments)
+    .from(paymentRecords)
+    .innerJoin(installments, eq(installments.id, paymentRecords.installmentId))
     .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
-    .where(
-      and(
-        ...installmentConditions,
-        eq(installments.status, 'paid'),
-        eq(financialEntries.tenantId, tenantId),
-        isNull(financialEntries.deletedAt),
-        gte(installments.paidAt, rangeStart),
-        lte(installments.paidAt, rangeEnd)
-      )
-    )
-    .groupBy(installments.paymentMethod)
+    .where(and(...receivedConditions))
+    .groupBy(paymentRecords.paymentMethod)
 
   // Expense totals
   const expenseTotalsQuery = db
@@ -1915,6 +2035,7 @@ export async function getRevenueOverview(
     byPaymentMethodResult,
     expenseTotalsResult,
     pendingInstallments,
+    totalCardFees,
   ] = await Promise.all([
     summaryQuery,
     monthlyQuery,
@@ -1922,6 +2043,7 @@ export async function getRevenueOverview(
     byPaymentMethodQuery,
     expenseTotalsQuery,
     pendingQuery,
+    sumCardFeesForPeriod(tenantId, rangeStart, rangeEnd),
   ])
 
   const now = new Date()
@@ -1957,7 +2079,8 @@ export async function getRevenueOverview(
       totalOverdue,
       totalExpenses,
       totalPendingExpenses: Number(expenseTotalsResult[0]?.totalPendingExpenses ?? 0),
-      netProfit: totalReceived - totalExpenses,
+      totalCardFees,
+      netProfit: totalReceived - totalExpenses - totalCardFees,
     },
     monthly: monthlyResult,
     byProcedureType: byProcedureTypeResult,

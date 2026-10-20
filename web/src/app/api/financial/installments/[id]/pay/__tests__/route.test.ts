@@ -109,6 +109,19 @@ describe('PUT /api/financial/installments/[id]/pay', () => {
     })
   })
 
+  it('passes the maquininha through to the payment', async () => {
+    const card = { terminalId: '22222222-2222-4222-8222-222222222222', installmentCount: 6, expectedRate: 8.99 }
+
+    const res = await callPut({ ...validBody, paymentMethod: 'credit_card', card })
+
+    expect(res.status).toBe(200)
+    expect(recordPayment).toHaveBeenCalledWith(
+      'tenant-1',
+      'user-1',
+      expect.objectContaining({ paymentMethod: 'credit_card', card }),
+    )
+  })
+
   // Regression: a recorded payment that commits without telling the patient.
   it('schedules the payment confirmation for the recorded payment after the response', async () => {
     vi.mocked(recordPayment).mockResolvedValue({ paymentRecord: { id: 'pay-1' }, allocation: {} } as never)

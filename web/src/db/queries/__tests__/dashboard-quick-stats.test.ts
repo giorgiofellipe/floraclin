@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 // dashboard-month-boundaries.test.ts against the pure resolveMonthBoundaries
 // function, since that's where the real date math lives.
 //
-// getRevenueOverview (pending/expenses/overdue) is mocked at the module
+// getRevenueOverview (received/fees/pending/expenses/overdue) is mocked at the module
 // boundary rather than driven through the fake db: it's a large,
 // independently-owned query (joins, groupBy, multiple sub-queries) that
 // belongs to financial.ts, not to the getQuickStats logic under test here.
@@ -83,14 +83,21 @@ vi.mock('../financial', () => ({
   getRevenueOverview: getRevenueOverviewMock,
 }))
 
-function mockRevenueOverview(summary: { totalPending: number; totalExpenses: number; totalOverdue: number }) {
+function mockRevenueOverview(summary: {
+  totalPending: number
+  totalExpenses: number
+  totalOverdue: number
+  totalCardFees?: number
+  totalReceived?: number
+}) {
   getRevenueOverviewMock.mockResolvedValueOnce({
     summary: {
-      totalReceived: 0,
+      totalReceived: summary.totalReceived ?? 0,
       totalOverdue: summary.totalOverdue,
       totalPending: summary.totalPending,
       totalExpenses: summary.totalExpenses,
       totalPendingExpenses: 0,
+      totalCardFees: summary.totalCardFees ?? 0,
       netProfit: 0 - summary.totalExpenses,
     },
     monthly: [],
@@ -117,8 +124,7 @@ describe('getQuickStats', () => {
   it('with no month arg, matches the previous shape: week/procedures/revenue all populated for the current month', async () => {
     selectQueue.push([{ total: 4 }]) // patients this week
     selectQueue.push([{ total: 12 }]) // procedures this month
-    selectQueue.push([{ total: '2500' }]) // revenue this month (pg sum comes back as a string)
-    mockRevenueOverview({ totalPending: 800, totalExpenses: 500, totalOverdue: 200 })
+    mockRevenueOverview({ totalPending: 800, totalExpenses: 500, totalOverdue: 200, totalCardFees: 42, totalReceived: 2500 })
 
     const result = await getQuickStats('tenant-1')
 
@@ -129,13 +135,13 @@ describe('getQuickStats', () => {
       totalPending: 800,
       totalExpenses: 500,
       totalOverdue: 200,
+      totalCardFees: 42,
     })
   })
 
   it('passing the current month explicitly behaves the same as omitting it', async () => {
     selectQueue.push([{ total: 4 }])
     selectQueue.push([{ total: 12 }])
-    selectQueue.push([{ total: '2500' }])
     mockRevenueOverview({ totalPending: 0, totalExpenses: 0, totalOverdue: 0 })
 
     const result = await getQuickStats('tenant-1', undefined, '2026-04')
@@ -145,8 +151,7 @@ describe('getQuickStats', () => {
 
   it('an explicit past month scopes procedures/revenue to it and nulls out the week metric', async () => {
     selectQueue.push([{ total: 7 }]) // procedures (no patients-this-week call issued)
-    selectQueue.push([{ total: '1000' }]) // revenue
-    mockRevenueOverview({ totalPending: 300, totalExpenses: 150, totalOverdue: 50 })
+    mockRevenueOverview({ totalPending: 300, totalExpenses: 150, totalOverdue: 50, totalCardFees: 7, totalReceived: 1000 })
 
     const result = await getQuickStats('tenant-1', undefined, '2026-02')
 
@@ -157,12 +162,12 @@ describe('getQuickStats', () => {
       totalPending: 300,
       totalExpenses: 150,
       totalOverdue: 50,
+      totalCardFees: 7,
     })
   })
 
   it('scopes getRevenueOverview to the selected month boundaries, the same ones resolveMonthBoundaries hands to the other queries', async () => {
     selectQueue.push([{ total: 7 }]) // procedures
-    selectQueue.push([{ total: '1000' }]) // revenue
     mockRevenueOverview({ totalPending: 300, totalExpenses: 150, totalOverdue: 50 })
 
     await getQuickStats('tenant-1', undefined, '2026-02')
@@ -180,6 +185,7 @@ describe('getQuickStats', () => {
     expect(result.totalPending).toBeNull()
     expect(result.totalExpenses).toBeNull()
     expect(result.totalOverdue).toBeNull()
+    expect(result.totalCardFees).toBeNull()
     // Practitioners never trigger the clinic-wide revenue query at all.
     expect(getRevenueOverviewMock).not.toHaveBeenCalled()
   })
@@ -195,7 +201,6 @@ describe('getQuickStats', () => {
   it('defaults missing totals to zero', async () => {
     selectQueue.push([]) // patients this week: no rows
     selectQueue.push([]) // procedures: no rows
-    selectQueue.push([]) // revenue: no rows
     mockRevenueOverview({ totalPending: 0, totalExpenses: 0, totalOverdue: 0 })
 
     const result = await getQuickStats('tenant-1')
@@ -207,6 +212,7 @@ describe('getQuickStats', () => {
       totalPending: 0,
       totalExpenses: 0,
       totalOverdue: 0,
+      totalCardFees: 0,
     })
   })
 })

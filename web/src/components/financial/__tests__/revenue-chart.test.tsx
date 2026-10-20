@@ -24,6 +24,8 @@ const mockRevenueData = {
     totalPending: 15000,
     totalOverdue: 3000,
     totalExpenses: 12000,
+    totalCardFees: 100,
+    netProfit: 37900,
   },
   monthly: [
     { month: '2026-01', total: 8000, expenses: 2000 },
@@ -72,8 +74,15 @@ describe('RevenueChart', () => {
 
     const netProfitCard = screen.getByTestId('net-profit-card')
     expect(netProfitCard).toBeInTheDocument()
-    // Net profit = 50000 - 12000 = 38000
-    expect(netProfitCard).toHaveTextContent('R$ 38.000,00')
+    // summary.netProfit = 50000 - 12000 - 100 card fees
+    expect(netProfitCard).toHaveTextContent('R$ 37.900,00')
+  })
+
+  it('shows the card fees figure', () => {
+    render(<RevenueChart />)
+
+    expect(screen.getByTestId('card-fees-card')).toHaveTextContent('Taxas de cartão')
+    expect(screen.getByTestId('card-fees-card')).toHaveTextContent('R$ 100,00')
   })
 
   it('renders stacked bar chart with revenue and expense bars', () => {

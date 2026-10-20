@@ -9,7 +9,7 @@ import {
   auditLogs,
   users,
 } from '@/db/schema'
-import { eq, and, ne, isNull, gte, lte, sql, desc, count, sum } from 'drizzle-orm'
+import { eq, and, ne, isNull, gte, lte, sql, desc, count } from 'drizzle-orm'
 import {
   startOfWeek,
   endOfWeek,
@@ -90,6 +90,7 @@ export interface QuickStats {
   totalPending: number | null
   totalExpenses: number | null
   totalOverdue: number | null
+  totalCardFees: number | null
 }
 
 export interface UpcomingFollowUp {
@@ -220,23 +221,8 @@ export async function getQuickStats(
   let totalPending: number | null = null
   let totalExpenses: number | null = null
   let totalOverdue: number | null = null
+  let totalCardFees: number | null = null
   if (!practitionerId) {
-    const revenueConditions = [
-      eq(installments.tenantId, tenantId),
-      eq(installments.status, 'paid'),
-      gte(installments.paidAt, monthStart),
-      lte(installments.paidAt, monthEnd),
-    ]
-
-    const revenueResult = await db
-      .select({
-        total: sum(installments.amount),
-      })
-      .from(installments)
-      .where(and(...revenueConditions))
-
-    revenueThisMonth = Number(revenueResult[0]?.total ?? 0)
-
     // Reuse getRevenueOverview (same query the Financeiro screen uses) for
     // pending/expenses/overdue instead of duplicating that SQL here. Scoped
     // to the same monthStartYmd/monthEndYmd resolved above, so the dashboard
@@ -248,6 +234,8 @@ export async function getQuickStats(
     totalPending = Number(revenueOverview.summary.totalPending)
     totalExpenses = Number(revenueOverview.summary.totalExpenses)
     totalOverdue = Number(revenueOverview.summary.totalOverdue)
+    totalCardFees = Number(revenueOverview.summary.totalCardFees)
+    revenueThisMonth = Number(revenueOverview.summary.totalReceived)
   }
 
   return {
@@ -257,6 +245,7 @@ export async function getQuickStats(
     totalPending,
     totalExpenses,
     totalOverdue,
+    totalCardFees,
   }
 }
 

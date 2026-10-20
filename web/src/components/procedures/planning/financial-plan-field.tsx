@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import { Controller, type Control, type UseFormReturn } from 'react-hook-form'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -41,6 +42,11 @@ interface Props {
   hideTotalAmount?: boolean
 }
 
+function DebitInstallmentReset({ onReset }: { onReset: () => void }) {
+  useEffect(onReset, [onReset])
+  return null
+}
+
 export function FinancialPlanField({ control, form, disabled, hideTotalAmount }: Props) {
   return (
     <Controller
@@ -53,6 +59,8 @@ export function FinancialPlanField({ control, form, disabled, hideTotalAmount }:
           paymentMethod: undefined as PaymentMethod | undefined,
           notes: '',
         }
+        const isDebit = value.paymentMethod === 'debit_card'
+        const isCredit = value.paymentMethod === 'credit_card'
         const update = (patch: Partial<typeof value>) =>
           field.onChange({ ...value, ...patch })
 
@@ -67,6 +75,9 @@ export function FinancialPlanField({ control, form, disabled, hideTotalAmount }:
 
         return (
           <div className="space-y-5">
+            {isDebit && value.installmentCount !== 1 && (
+              <DebitInstallmentReset onReset={() => update({ installmentCount: 1 })} />
+            )}
             <p className="text-xs text-mid">
               Defina o valor e condições de pagamento. A entrada financeira será criada somente após a aprovação.
             </p>
@@ -107,14 +118,40 @@ export function FinancialPlanField({ control, form, disabled, hideTotalAmount }:
                 </div>
               )}
 
-              <div>
+              <div className={cn(hideTotalAmount && 'max-w-sm')}>
+                <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
+                  Forma de pagamento
+                </Label>
+                <Select
+                  items={PAYMENT_METHOD_LABELS}
+                  value={value.paymentMethod ?? ''}
+                  onValueChange={(v) => {
+                    const paymentMethod = (v || undefined) as PaymentMethod | undefined
+                    update(
+                      paymentMethod === 'debit_card'
+                        ? { paymentMethod, installmentCount: 1 }
+                        : { paymentMethod },
+                    )
+                  }}
+                  disabled={disabled}
+                >
+                  <SelectTrigger className="border-sage/20 focus:border-sage/40">
+                    <SelectValue placeholder="Selecione..." />
+                  </SelectTrigger>
+                  <SelectContent />
+                </Select>
+              </div>
+            </div>
+
+            {!isDebit && (
+              <div className="max-w-sm">
                 <Label
                   className={cn(
                     'uppercase tracking-wider text-xs mb-2 block',
                     installmentCountHasError ? 'text-red-600' : 'text-mid',
                   )}
                 >
-                  Parcelas
+                  {isCredit ? 'Parcelas no cartão' : 'Parcelas'}
                 </Label>
                 <Select
                   items={INSTALLMENT_COUNT_ITEMS}
@@ -138,26 +175,7 @@ export function FinancialPlanField({ control, form, disabled, hideTotalAmount }:
                 </Select>
                 <FormFieldError form={form} name="financialPlan.installmentCount" />
               </div>
-            </div>
-
-            <div>
-              <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
-                Forma de pagamento
-              </Label>
-              <Select
-                items={PAYMENT_METHOD_LABELS}
-                value={value.paymentMethod ?? ''}
-                onValueChange={(v) =>
-                  update({ paymentMethod: (v || undefined) as PaymentMethod | undefined })
-                }
-                disabled={disabled}
-              >
-                <SelectTrigger className="max-w-sm border-sage/20 focus:border-sage/40">
-                  <SelectValue placeholder="Selecione..." />
-                </SelectTrigger>
-                <SelectContent />
-              </Select>
-            </div>
+            )}
 
             <div>
               <Label

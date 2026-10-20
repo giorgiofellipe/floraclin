@@ -1,8 +1,9 @@
 import { z } from 'zod'
 import type { PaymentMethod } from '@/types'
 import { brToday, endOfBrDay } from '@/lib/dates'
+import { isCardMethod } from '@/lib/financial/card-repasses'
 
-const paymentMethods: PaymentMethod[] = ['pix', 'credit_card', 'debit_card', 'cash', 'transfer']
+export const paymentMethods: PaymentMethod[] = ['pix', 'credit_card', 'debit_card', 'cash', 'transfer']
 const financialStatuses = ['pending', 'partial', 'paid', 'overdue', 'cancelled', 'renegotiated'] as const
 
 // A payment date is a BR calendar day, so the ceiling is the end of today in
@@ -16,26 +17,54 @@ export const paidAtField = z
   })
   .optional()
 
-export const createFinancialEntrySchema = z.object({
-  patientId: z.string().uuid('Paciente inválido'),
-  procedureRecordId: z.string().uuid('Procedimento inválido').optional(),
-  appointmentId: z.string().uuid('Agendamento inválido').optional(),
-  description: z.string().min(1, 'Descrição é obrigatória'),
-  totalAmount: z.number().positive('Valor deve ser positivo'),
-  installmentCount: z.number().int().min(1, 'Mínimo 1 parcela').max(12, 'Máximo 12 parcelas'),
-  customDueDates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida')).optional(),
-  notes: z.string().optional(),
-})
+const cardMatchesMethod = (data: { paymentMethod?: string; card?: unknown }) =>
+  isCardMethod(data.paymentMethod) === (data.card !== undefined)
+
+export const cardPaymentField = z
+  .object({
+    terminalId: z.string().uuid('Maquininha inválida'),
+    installmentCount: z.number().int().min(1).max(12),
+    expectedRate: z
+      .number()
+      .min(0)
+      .max(100)
+      .refine(hasAtMostTwoDecimals, 'Taxa deve ter no máximo duas casas decimais'),
+  })
+  .optional()
 
 // payment_records.amount is decimal(10,2). Anything larger fails inside the
 // transaction as a numeric overflow, which is a 500 for what is a bad input.
-const MAX_PAYMENT_AMOUNT = 99_999_999.99
+export const MAX_PAYMENT_AMOUNT = 99_999_999.99
 
 // Allocation rounds to cents and the columns are decimal(10,2). A fractional
 // cent would allocate one figure and store another.
 function hasAtMostTwoDecimals(value: number): boolean {
   return Number(value.toFixed(2)) === value
 }
+
+export const createFinancialEntrySchema = z.object({
+  patientId: z.string().uuid('Paciente inválido'),
+  procedureRecordId: z.string().uuid('Procedimento inválido').optional(),
+  appointmentId: z.string().uuid('Agendamento inválido').optional(),
+  description: z.string().min(1, 'Descrição é obrigatória'),
+  totalAmount: z
+    .number()
+    .positive('Valor deve ser positivo')
+    .max(MAX_PAYMENT_AMOUNT, 'Valor acima do limite permitido')
+    .refine(hasAtMostTwoDecimals, 'Valor deve ter no máximo duas casas decimais'),
+  installmentCount: z.number().int().min(1, 'Mínimo 1 parcela').max(12, 'Máximo 12 parcelas'),
+  customDueDates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida')).optional(),
+  notes: z.string().optional(),
+  paymentMethod: z.enum(paymentMethods as [string, ...string[]], {
+    message: 'Método de pagamento inválido',
+  }).optional(),
+  card: cardPaymentField,
+})
+  .refine(cardMatchesMethod, { message: 'Selecione a maquininha', path: ['card'] })
+  .refine((data) => data.card === undefined || data.installmentCount === 1, {
+    message: 'Pagamento em cartão gera uma única parcela',
+    path: ['installmentCount'],
+  })
 
 export const recordPaymentSchema = z.object({
   installmentId: z.string().uuid('Parcela inválida'),
@@ -57,7 +86,8 @@ export const recordPaymentSchema = z.object({
     .min(0)
     .refine(hasAtMostTwoDecimals, 'Valor deve ter no máximo duas casas decimais'),
   acceptOverpayment: z.boolean().optional(),
-})
+  card: cardPaymentField,
+}).refine(cardMatchesMethod, { message: 'Selecione a maquininha', path: ['card'] })
 
 export const renegotiateSchema = z.object({
   entryIds: z.array(z.string().uuid()).min(1, 'Selecione ao menos uma cobrança'),
@@ -84,7 +114,8 @@ export const bulkPaySchema = z.object({
     message: 'Método de pagamento inválido',
   }),
   paidAt: paidAtField,
-})
+  card: cardPaymentField,
+}).refine(cardMatchesMethod, { message: 'Selecione a maquininha', path: ['card'] })
 
 export const bulkCancelSchema = z.object({
   entryIds: z.array(z.string().uuid()).min(1, 'Selecione ao menos uma cobrança'),

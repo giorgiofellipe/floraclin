@@ -1,8 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { chain, chainCapturing, isLock, routedTx, tableOf } from '@/tests/mocks/drizzle-tx'
+import { chain, chainCapturing, isLock, routedTx, tableOf, whereParams } from '@/tests/mocks/drizzle-tx'
 
 const dbMock = { transaction: vi.fn(), select: vi.fn() }
 vi.mock('@/db/client', () => ({ db: dbMock }))
+
+const cancelCardPaymentTxMock = vi.fn()
+vi.mock('../card-payments', () => ({
+  cancelCardPaymentTx: (...args: unknown[]) => cancelCardPaymentTxMock(...args),
+}))
 
 const TENANT = '00000000-0000-0000-0000-00000000a001'
 const USER_ID = '00000000-0000-0000-0000-0000000000u1'
@@ -64,12 +69,13 @@ describe('reversePayment', () => {
       chain([{ id: PAYMENT_RECORD_ID, installmentId: INSTALLMENT_ID, amount: '900.00', paymentMethod: 'pix' }]),
     ) // pr
     tx.select.mockReturnValueOnce(chain([installmentRow({ status: 'pending' })])) // installment lock
-    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x', status: 'partial' }])) // entry lock
+    tx.select.mockReturnValueOnce(chain([{ id: ENTRY_ID, patientId: PATIENT_ID, description: 'x', status: 'partial' }])) // entry lock
     tx.select.mockReturnValueOnce(chain([{ reversedAt: null }])) // locked re-read
     tx.update.mockReturnValueOnce(chain(undefined)) // mark payment reversed
 
     const cashInsert: { value?: unknown } = {}
-    tx.insert.mockReturnValueOnce(chainCapturing(undefined, cashInsert)) // cashMovements outflow
+    tx.insert.mockReturnValueOnce(chainCapturing([{ id: 'out-1' }], cashInsert)) // cashMovements outflow
+    tx.update.mockReturnValueOnce(chain(undefined)) // link the original inflow
 
     tx.select.mockReturnValueOnce(chain([])) // remainingPayments, none left
     tx.update.mockReturnValueOnce(chain(undefined)) // reset installment
@@ -97,10 +103,11 @@ describe('reversePayment', () => {
       chain([{ id: 'p1', installmentId: INSTALLMENT_ID, amount: '30.00', paymentMethod: 'pix' }]),
     ) // pr (p1, being reversed)
     tx.select.mockReturnValueOnce(chain([installmentRow({ status: 'pending' })])) // installment lock
-    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x', status: 'partial' }])) // entry lock
+    tx.select.mockReturnValueOnce(chain([{ id: ENTRY_ID, patientId: PATIENT_ID, description: 'x', status: 'partial' }])) // entry lock
     tx.select.mockReturnValueOnce(chain([{ reversedAt: null }])) // locked re-read
     tx.update.mockReturnValueOnce(chain(undefined)) // mark p1 reversed
-    tx.insert.mockReturnValueOnce(chain(undefined)) // cashMovements outflow
+    tx.insert.mockReturnValueOnce(chain([{ id: 'out-1' }])) // cashMovements outflow
+    tx.update.mockReturnValueOnce(chain(undefined)) // link the original inflow
 
     // p2 is what is left once p1 is reversed: due May 22, paid Jul 22 is 61
     // days overdue. fine = 750 * 2% = 15. interest = 750 * 1%/30 * 61 = 15.25.
@@ -141,11 +148,12 @@ describe('reversePayment', () => {
       chain([{ id: PAYMENT_RECORD_ID, installmentId: INSTALLMENT_ID, amount: '100.00', paymentMethod: 'pix' }]),
     ) // pr
     tx.select.mockReturnValueOnce(chain([installmentRow({ status: 'cancelled' })])) // installment lock
-    tx.select.mockReturnValueOnce(chain([{ patientId: PATIENT_ID, description: 'x', status: 'renegotiated' }])) // entry lock
+    tx.select.mockReturnValueOnce(chain([{ id: ENTRY_ID, patientId: PATIENT_ID, description: 'x', status: 'renegotiated' }])) // entry lock
     tx.select.mockReturnValueOnce(chain([{ reversedAt: null }])) // locked re-read
     tx.update.mockReturnValueOnce(chain(undefined)) // mark payment reversed
     const cashInsert: { value?: unknown } = {}
-    tx.insert.mockReturnValueOnce(chainCapturing(undefined, cashInsert)) // cashMovements outflow
+    tx.insert.mockReturnValueOnce(chainCapturing([{ id: 'out-1' }], cashInsert)) // cashMovements outflow
+    tx.update.mockReturnValueOnce(chain(undefined)) // link the original inflow
     tx.select.mockReturnValueOnce(chain([])) // live payments, none left
     const installmentUpdate: { value?: unknown } = {}
     tx.update.mockReturnValueOnce(chainCapturing(undefined, installmentUpdate)) // reset installment
@@ -191,9 +199,10 @@ describe('reversePayment locking', () => {
   async function reverse(opts: { entryStatus?: string; locked?: Record<string, unknown>; live?: unknown[] } = {}) {
     const locked = { ...LOCKED, ...opts.locked }
     const { reversePayment } = await import('../financial')
-    const { financialEntries, installments, paymentRecords } = await import('@/db/schema')
+    const { cashMovements, financialEntries, installments, paymentRecords } = await import('@/db/schema')
     const { tx, log } = routedTx((q) => {
       const table = tableOf(q)
+      if (q.op === 'insert' && table === cashMovements) return [{ id: 'out-1' }]
       if (q.op !== 'select') return undefined
       if (table === paymentRecords) {
         const live = (q.capture.calls ?? []).some(([method]) => method === 'orderBy')
@@ -205,7 +214,7 @@ describe('reversePayment locking', () => {
         return fields.includes('amountPaid') ? [{ status: 'pending', amountPaid: '14.25' }] : [STALE]
       }
       if (table === financialEntries) {
-        return [{ patientId: PATIENT_ID, description: 'x', status: opts.entryStatus ?? 'partial' }]
+        return [{ id: ENTRY_ID, patientId: PATIENT_ID, description: 'x', status: opts.entryStatus ?? 'partial' }]
       }
       return []
     })
@@ -248,5 +257,103 @@ describe('reversePayment locking', () => {
     const installmentUpdate = log.find((q) => q.op === 'update' && tableOf(q) === installments)
     expect(installmentUpdate?.capture.value).toMatchObject({ status: 'pending', amountPaid: '0', paidAt: null })
     expect(log.some((q) => q.op === 'update' && tableOf(q) === financialEntries)).toBe(false)
+  })
+})
+
+describe('reversePayment outflow link and card payments', () => {
+  const CARD_PAYMENT_ID = '00000000-0000-0000-0000-00000000c001'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  // Regression: the reversal wrote an outflow but left the original inflow
+  // looking live, so the ledger could not tell which line was corrected.
+  it('a pix reversal marks the original inflow as reversed by the new outflow', async () => {
+    const { reversePayment } = await import('../financial')
+    const { cashMovements, financialEntries, installments, paymentRecords } = await import('@/db/schema')
+    const { tx, log } = routedTx((q) => {
+      const table = tableOf(q)
+      if (q.op === 'insert' && table === cashMovements) return [{ id: 'out-1' }]
+      if (q.op !== 'select') return undefined
+      if (table === paymentRecords) {
+        const fields = Object.keys((q.fields as object | undefined) ?? {})
+        if (fields.includes('reversedAt')) return [{ reversedAt: null }]
+        return (q.capture.calls ?? []).some(([m]) => m === 'orderBy')
+          ? []
+          : [{ id: PAYMENT_RECORD_ID, installmentId: INSTALLMENT_ID, amount: '100.00', paymentMethod: 'pix', cardPaymentId: null }]
+      }
+      if (table === installments) {
+        if (isLock(q)) return [installmentRow({ status: 'paid' })]
+        return [{ status: 'paid', amountPaid: '100.00' }]
+      }
+      if (table === financialEntries) return [{ id: ENTRY_ID, patientId: PATIENT_ID, description: 'x', status: 'paid' }]
+      return []
+    })
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+
+    await reversePayment(TENANT, USER_ID, PAYMENT_RECORD_ID)
+
+    const link = log.find((q) => q.op === 'update' && tableOf(q) === cashMovements)
+    expect(link?.capture.value).toEqual({ reversedByMovementId: 'out-1' })
+    expect(whereParams(link!.capture)).toContain(PAYMENT_RECORD_ID)
+  })
+
+  // Regression: reversing one record of a bulk card payment left the others
+  // paid and cancelled the repasses from under them, or cancelled once per record.
+  it('reversing one record of a 3-record card payment reverses all three, cancels the repasses once and writes no outflow', async () => {
+    const { reversePayment } = await import('../financial')
+    const { cashMovements, financialEntries, installments, paymentRecords } = await import('@/db/schema')
+    const ids = [
+      { record: PAYMENT_RECORD_ID, installment: 'i1' },
+      { record: 'r2', installment: 'i2' },
+      { record: 'r3', installment: 'i3' },
+    ]
+    const recordRow = (r: (typeof ids)[number]) => ({
+      id: r.record,
+      installmentId: r.installment,
+      amount: '100.00',
+      paymentMethod: 'credit_card',
+      cardPaymentId: CARD_PAYMENT_ID,
+      reversedAt: null,
+    })
+    let paymentRecordReads = 0
+    let logLengthAtCancel = -1
+    const { tx, log } = routedTx((q) => {
+      const table = tableOf(q)
+      if (q.op !== 'select') return undefined
+      if (table === paymentRecords) {
+        const fields = Object.keys((q.fields as object | undefined) ?? {})
+        if (fields.includes('reversedAt')) return [{ reversedAt: null }]
+        if ((q.capture.calls ?? []).some(([m]) => m === 'orderBy')) return []
+        return ++paymentRecordReads === 1 ? [recordRow(ids[0])] : ids.map(recordRow)
+      }
+      if (table === installments) {
+        if (isLock(q)) return ids.map((r) => installmentRow({ id: r.installment, status: 'paid' }))
+        return [{ status: 'paid', amountPaid: '100.00' }]
+      }
+      if (table === financialEntries) return [{ id: ENTRY_ID, patientId: PATIENT_ID, description: 'x', status: 'paid' }]
+      return []
+    })
+    cancelCardPaymentTxMock.mockImplementation(async () => {
+      logLengthAtCancel = log.length
+      return { cancelledRepasses: 2, receivedRepasses: 1 }
+    })
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+
+    const result = await reversePayment(TENANT, USER_ID, PAYMENT_RECORD_ID)
+
+    expect(result).toEqual({ success: true, card: { cancelledRepasses: 2, receivedRepasses: 1 } })
+    expect(cancelCardPaymentTxMock).toHaveBeenCalledTimes(1)
+    expect(cancelCardPaymentTxMock).toHaveBeenCalledWith(tx, TENANT, USER_ID, CARD_PAYMENT_ID)
+    const reversals = log.filter(
+      (q) => q.op === 'update' && tableOf(q) === paymentRecords && q.capture.value && 'reversedAt' in (q.capture.value as object),
+    )
+    expect(reversals).toHaveLength(3)
+    expect(log.some((q) => q.op === 'insert' && tableOf(q) === cashMovements)).toBe(false)
+    const installmentLock = log.findIndex((q) => isLock(q) && tableOf(q) === installments)
+    const entryLock = log.findIndex((q) => isLock(q) && tableOf(q) === financialEntries)
+    expect(installmentLock).toBeLessThan(entryLock)
+    expect(entryLock).toBeLessThan(logLengthAtCancel)
   })
 })

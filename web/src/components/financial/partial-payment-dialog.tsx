@@ -16,13 +16,17 @@ import { Textarea } from '@/components/ui/textarea'
 import { MaskedInput } from '@/components/ui/masked-input'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DatePicker } from '@/components/ui/date-picker'
+import { useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/hooks/queries/query-keys'
 import { ApiError, usePayInstallment } from '@/hooks/mutations/use-financial-mutations'
 import { useInstallmentQuote } from '@/hooks/queries/use-installment-quote'
 import { formatCurrency } from '@/lib/utils'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { allocatePayment } from '@/lib/financial/penalties'
 import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
-import { toPaidAtIso } from '@/lib/dates'
+import { brToday, toPaidAtIso } from '@/lib/dates'
+import { CardPaymentFields, toCardPayload, type CardPaymentValue } from './card-payment-fields'
+import { isCardMethod } from '@/lib/financial/card-repasses'
 import type { PaymentMethod } from '@/types'
 
 interface PartialPaymentDialogProps {
@@ -32,6 +36,8 @@ interface PartialPaymentDialogProps {
     id: string
     amount: number
   }
+  defaultPaymentMethod?: PaymentMethod
+  defaultCardInstallmentCount?: number
   onSuccess?: () => void
 }
 
@@ -43,11 +49,18 @@ export function PartialPaymentDialog({
   open,
   onOpenChange,
   installment,
+  defaultPaymentMethod = 'pix',
+  defaultCardInstallmentCount = 1,
   onSuccess,
 }: PartialPaymentDialogProps) {
   const [amountStr, setAmountStr] = useState('')
   const [amountTouched, setAmountTouched] = useState(false)
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix')
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(defaultPaymentMethod)
+  const [card, setCard] = useState<CardPaymentValue>({
+    terminalId: null,
+    installmentCount: defaultCardInstallmentCount,
+    expectedRate: null,
+  })
   const [paidAt, setPaidAt] = useState('')
   const [notes, setNotes] = useState('')
 
@@ -73,10 +86,14 @@ export function PartialPaymentDialog({
     if (quoteError && TERMINAL_CODES.has(quoteErrorCode ?? '')) closeAsSettled(quoteError.message)
   }, [quoteError, quoteErrorCode])
 
+  const queryClient = useQueryClient()
   const payInstallment = usePayInstallment()
   const isPending = payInstallment.isPending
 
   const parsedAmount = amountStr ? parseCurrency(amountStr) : 0
+  const cardMethod =
+    isCardMethod(paymentMethod) ? paymentMethod : null
+  const cardMissingTerminal = cardMethod !== null && card.terminalId === null
 
   useEffect(() => {
     if (!quote || amountTouched) return
@@ -113,6 +130,7 @@ export function PartialPaymentDialog({
         amount: parsedAmount,
         paymentMethod,
         paidAt: paidAtIso,
+        card: toCardPayload(paymentMethod, card),
         notes: notes || undefined,
         expectedTotalDue: quote.totalDue,
         acceptOverpayment: isOverpayment || undefined,
@@ -124,6 +142,8 @@ export function PartialPaymentDialog({
         // A prefilled amount follows the fresh quote on its own; an amount
         // the user typed is theirs to keep.
         refetchQuote()
+      } else if (err instanceof ApiError && err.code === 'CARD_RATE_CHANGED') {
+        queryClient.invalidateQueries({ queryKey: queryKeys.financial.cardTerminals })
       } else if (err instanceof ApiError && TERMINAL_CODES.has(err.code ?? '')) {
         onOpenChange(false)
         onSuccess?.()
@@ -201,6 +221,16 @@ export function PartialPaymentDialog({
             </Select>
           </div>
 
+          {cardMethod && (
+            <CardPaymentFields
+              method={cardMethod}
+              gross={parsedAmount}
+              paymentYmd={paidAt || brToday()}
+              value={card}
+              onChange={setCard}
+            />
+          )}
+
           {/* Backdated payment date */}
           <div className="space-y-2">
             <Label className="uppercase tracking-wider text-xs font-medium text-mid">Data do pagamento (opcional)</Label>
@@ -277,7 +307,7 @@ export function PartialPaymentDialog({
           <Button
             className="bg-forest text-cream hover:bg-sage transition-colors"
             onClick={handleConfirm}
-            disabled={isPending || isQuoting || !quote || !!quoteError || parsedAmount <= 0}
+            disabled={isPending || isQuoting || !quote || !!quoteError || parsedAmount <= 0 || cardMissingTerminal}
           >
             {isPending ? 'Salvando...' : 'Confirmar Pagamento'}
           </Button>

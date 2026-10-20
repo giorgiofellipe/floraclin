@@ -50,6 +50,7 @@ beforeEach(() => {
     totalPending: 150,
     totalExpenses: 80,
     totalOverdue: 40,
+    totalCardFees: 0,
   })
   vi.mocked(getUpcomingFollowUps).mockResolvedValue([])
   vi.mocked(getRecentActivity).mockResolvedValue([])
@@ -108,6 +109,7 @@ describe('GET /api/dashboard', () => {
       totalPending: 300,
       totalExpenses: 150,
       totalOverdue: 50,
+      totalCardFees: 0,
     })
 
     const res = await GET(makeRequest('http://localhost/api/dashboard?month=2026-02'))
@@ -121,6 +123,7 @@ describe('GET /api/dashboard', () => {
       totalPending: 300,
       totalExpenses: 150,
       totalOverdue: 50,
+      totalCardFees: 0,
     })
   })
 

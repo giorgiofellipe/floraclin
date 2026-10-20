@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { toast } from 'sonner'
 
 import {
   Dialog,
@@ -21,8 +22,12 @@ import { useCreateFinancialEntry } from '@/hooks/mutations/use-financial-mutatio
 import { useFinancialSettings } from '@/hooks/queries/use-financial-settings'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { addDays } from 'date-fns'
-import { toLocalYmd } from '@/lib/dates'
+import { brToday, toLocalYmd } from '@/lib/dates'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
+import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
+import { CardPaymentFields, toCardPayload, type CardPaymentValue } from './card-payment-fields'
+import { isCardMethod } from '@/lib/financial/card-repasses'
+import type { PaymentMethod } from '@/types'
 
 const INSTALLMENT_COUNT_ITEMS: Record<string, string> = Object.fromEntries(
   Array.from({ length: 12 }, (_, i) => [String(i + 1), `${i + 1}x`])
@@ -40,6 +45,8 @@ export function PaymentForm({ open, onClose, onSuccess, defaultPatient }: Paymen
   const [patientName, setPatientName] = useState(defaultPatient?.fullName ?? '')
   const [totalAmount, setTotalAmount] = useState('')
   const [installmentCount, setInstallmentCount] = useState('1')
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix')
+  const [card, setCard] = useState<CardPaymentValue>({ terminalId: null, installmentCount: 1, expectedRate: null })
   const [customDueDates, setCustomDueDates] = useState<Record<number, string>>({})
   const [patientSearch, setPatientSearch] = useState('')
   const [patientOptions, setPatientOptions] = useState<{ id: string; fullName: string }[]>([])
@@ -59,6 +66,8 @@ export function PaymentForm({ open, onClose, onSuccess, defaultPatient }: Paymen
       setPatientName(defaultPatient?.fullName ?? '')
       setTotalAmount('')
       setInstallmentCount('1')
+      setPaymentMethod('pix')
+      setCard({ terminalId: null, installmentCount: 1, expectedRate: null })
       setCustomDueDates({})
       setPatientSearch('')
       setError(null)
@@ -105,7 +114,9 @@ export function PaymentForm({ open, onClose, onSuccess, defaultPatient }: Paymen
   }, [settings])
 
   const parsedAmount = totalAmount ? parseCurrency(totalAmount) : 0
-  const parsedCount = parseInt(installmentCount, 10) || 1
+  const cardMethod =
+    isCardMethod(paymentMethod) ? paymentMethod : null
+  const parsedCount = cardMethod ? 1 : parseInt(installmentCount, 10) || 1
 
   const installmentPreview = useMemo(() => {
     if (parsedAmount <= 0 || parsedCount < 1) return []
@@ -148,14 +159,19 @@ export function PaymentForm({ open, onClose, onSuccess, defaultPatient }: Paymen
           const formData = new FormData(e.currentTarget)
           try {
             const dueDates = installmentPreview.map((inst) => inst.dueDate)
-            await createFinancialEntry.mutateAsync({
+            const created = await createFinancialEntry.mutateAsync({
               patientId,
               description: (formData.get('description') as string) || '',
               totalAmount: parsedAmount,
               installmentCount: parsedCount,
               customDueDates: dueDates,
               notes: (formData.get('notes') as string) || undefined,
+              paymentMethod,
+              card: toCardPayload(paymentMethod, card),
             })
+            if (created?.paymentError) {
+              toast.error(created.paymentError, { description: 'A cobrança foi criada como pendente.' })
+            }
             onSuccess()
           } catch (err) {
             setError(err instanceof Error ? err.message : 'Erro ao criar cobrança')
@@ -247,22 +263,56 @@ export function PaymentForm({ open, onClose, onSuccess, defaultPatient }: Paymen
             )}
           </div>
 
-          {/* Installment count */}
+          {/* Payment method */}
           <div className="space-y-2">
-            <Label htmlFor="installmentCountSelect" className="uppercase tracking-wider text-xs font-medium text-mid">Parcelas</Label>
-            <Select items={INSTALLMENT_COUNT_ITEMS} value={installmentCount} onValueChange={(v) => { setInstallmentCount(v ?? '1'); setCustomDueDates({}) }}>
+            <Label className="uppercase tracking-wider text-xs font-medium text-mid">Método de Pagamento</Label>
+            <Select
+              items={PAYMENT_METHOD_ITEMS}
+              value={paymentMethod}
+              onValueChange={(v) => {
+                const method = (v ?? 'pix') as PaymentMethod
+                setPaymentMethod(method)
+                setCustomDueDates({})
+                if (method === 'credit_card') {
+                  setCard((prev) => ({ ...prev, installmentCount: parseInt(installmentCount, 10) || 1 }))
+                }
+              }}
+            >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent />
             </Select>
-            {fieldErrors?.installmentCount && (
-              <p className="text-sm text-destructive">{fieldErrors.installmentCount[0]}</p>
-            )}
           </div>
 
+          {/* For a card, the parcelas are the card's ("Parcelas no cartão" below) */}
+          {!cardMethod && (
+            <div className="space-y-2">
+              <Label htmlFor="installmentCountSelect" className="uppercase tracking-wider text-xs font-medium text-mid">Parcelas</Label>
+              <Select items={INSTALLMENT_COUNT_ITEMS} value={installmentCount} onValueChange={(v) => { setInstallmentCount(v ?? '1'); setCustomDueDates({}) }}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent />
+              </Select>
+              {fieldErrors?.installmentCount && (
+                <p className="text-sm text-destructive">{fieldErrors.installmentCount[0]}</p>
+              )}
+            </div>
+          )}
+
+          {cardMethod && (
+            <CardPaymentFields
+              method={cardMethod}
+              gross={parsedAmount}
+              paymentYmd={brToday()}
+              value={card}
+              onChange={setCard}
+            />
+          )}
+
           {/* Installment preview */}
-          {installmentPreview.length > 0 && parsedAmount > 0 && (
+          {!cardMethod && installmentPreview.length > 0 && parsedAmount > 0 && (
             <div className="rounded-[3px] border border-[#E8ECEF] bg-white p-4 space-y-3">
               <p className="text-[10px] uppercase tracking-[0.15em] font-medium text-[#7A7A7A]">Parcelas e vencimentos</p>
               <div className="space-y-2">
@@ -312,7 +362,7 @@ export function PaymentForm({ open, onClose, onSuccess, defaultPatient }: Paymen
             <Button type="button" variant="outline" className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={isPending || !patientId || parsedAmount <= 0} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="payment-form-submit">
+            <Button type="submit" disabled={isPending || !patientId || parsedAmount <= 0 || (cardMethod !== null && card.terminalId === null)} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="payment-form-submit">
               {isPending ? 'Salvando...' : 'Criar Cobrança'}
             </Button>
           </DialogFooter>

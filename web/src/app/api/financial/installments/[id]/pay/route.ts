@@ -24,6 +24,7 @@ export async function PUT(
       notes: body.notes,
       expectedTotalDue: body.expectedTotalDue,
       acceptOverpayment: body.acceptOverpayment,
+      card: body.card,
     })
     if (!parsed.success) {
       return NextResponse.json(

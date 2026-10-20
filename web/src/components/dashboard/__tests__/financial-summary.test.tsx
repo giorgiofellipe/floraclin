@@ -11,6 +11,7 @@ function makeStats(overrides: Partial<QuickStats> = {}): QuickStats {
     totalPending: 1200,
     totalExpenses: 800,
     totalOverdue: 300,
+    totalCardFees: 0,
     ...overrides,
   }
 }
@@ -60,6 +61,21 @@ describe('FinancialSummary', () => {
     expect(netProfitRow).toHaveTextContent('R$ 3.200')
   })
 
+  it('shows card fees and subtracts them from lucro liquido', () => {
+    render(
+      <FinancialSummary
+        stats={makeStats({ revenueThisMonth: 5000, totalExpenses: 1800, totalCardFees: 100 })}
+        month="2026-04"
+      />
+    )
+
+    const feeRow = screen.getByText('Taxas de cartão').closest('div')!.parentElement!
+    expect(feeRow).toHaveTextContent('R$ 100')
+    const netRow = screen.getByText('Lucro liquido').closest('div')!.parentElement!
+    // 5000 - 1800 - 100 = 3100
+    expect(netRow).toHaveTextContent('R$ 3.100')
+  })
+
   it('does not fold totalOverdue into "A receber": only totalPending is shown there', () => {
     render(
       <FinancialSummary
@@ -78,7 +94,7 @@ describe('FinancialSummary', () => {
   it('hides all money rows for practitioners (null pending/expenses/received)', () => {
     render(
       <FinancialSummary
-        stats={makeStats({ revenueThisMonth: null, totalPending: null, totalExpenses: null, totalOverdue: null })}
+        stats={makeStats({ revenueThisMonth: null, totalPending: null, totalExpenses: null, totalOverdue: null, totalCardFees: null })}
         month="2026-04"
       />
     )
@@ -86,6 +102,7 @@ describe('FinancialSummary', () => {
     expect(screen.queryByText('Recebido')).not.toBeInTheDocument()
     expect(screen.queryByText('A receber')).not.toBeInTheDocument()
     expect(screen.queryByText('Despesas')).not.toBeInTheDocument()
+    expect(screen.queryByText('Taxas de cartão')).not.toBeInTheDocument()
     expect(screen.queryByText('Lucro liquido')).not.toBeInTheDocument()
     // The header (month/year) still renders.
     expect(screen.getByTestId('dashboard-financial')).toHaveTextContent('Financeiro: Abril')
@@ -94,7 +111,7 @@ describe('FinancialSummary', () => {
   it('hides the progress bar for practitioners even when a monthly goal is configured', () => {
     render(
       <FinancialSummary
-        stats={makeStats({ revenueThisMonth: null, totalPending: null, totalExpenses: null, totalOverdue: null })}
+        stats={makeStats({ revenueThisMonth: null, totalPending: null, totalExpenses: null, totalOverdue: null, totalCardFees: null })}
         month="2026-04"
         monthlyGoal={10000}
       />

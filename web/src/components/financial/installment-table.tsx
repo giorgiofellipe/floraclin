@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { cn, formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { round2 } from '@/lib/financial/penalties'
+import type { CardPaymentSummary } from '@/lib/financial/card-repasses'
 import { PartialPaymentDialog } from './partial-payment-dialog'
 import {
   BanknoteIcon,
@@ -39,6 +40,12 @@ interface PaymentRecord {
   paidAt: string
   recordedAt: string
   notes: string | null
+  card?: CardPaymentSummary | null
+}
+
+function cardLabel(card: CardPaymentSummary): string {
+  const base = `${card.method === 'debit_card' ? 'Cartão de débito' : 'Cartão de crédito'} · ${card.terminalName}`
+  return card.method === 'debit_card' ? base : `${base} · ${card.installmentCount}x`
 }
 
 interface Installment {
@@ -66,6 +73,21 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   debit_card: 'Cartão de Débito',
   cash: 'Dinheiro',
   transfer: 'Transferência',
+}
+
+function cardReversalNotice(card: CardPaymentSummary): string {
+  const sentences: string[] = []
+  if (card.pendingRepasses === 1) sentences.push('1 repasse futuro será cancelado.')
+  else if (card.pendingRepasses > 1) sentences.push(`${card.pendingRepasses} repasses futuros serão cancelados.`)
+  if (card.receivedRepasses === 1) sentences.push('1 repasse já recebido fica no extrato.')
+  else if (card.receivedRepasses > 1) sentences.push(`${card.receivedRepasses} repasses já recebidos ficam no extrato.`)
+  sentences.push('Estorne o valor ao paciente na maquininha.')
+  return sentences.join(' ')
+}
+
+function paymentRecordLabel(pr: PaymentRecord): string {
+  if (pr.card) return cardLabel(pr.card)
+  return PAYMENT_METHOD_LABELS[pr.paymentMethod] ?? pr.paymentMethod ?? ''
 }
 
 function getProgressPercent(inst: Installment): number {
@@ -281,7 +303,7 @@ export function InstallmentTable({
                               {formatDateTime(pr.paidAt)}
                             </span>
                             <span className="text-[10px] text-mid">
-                              {pr.paymentMethod ? PAYMENT_METHOD_LABELS[pr.paymentMethod] ?? pr.paymentMethod : ''}
+                              {paymentRecordLabel(pr)}
                             </span>
                           </div>
                           {/* Allocation breakdown */}
@@ -344,8 +366,19 @@ export function InstallmentTable({
               <strong>{formatCurrency(Number(reverseDialogPayment?.amount ?? 0))}</strong>
               {' '}realizado em{' '}
               <strong>{reverseDialogPayment ? formatDateTime(reverseDialogPayment.paidAt) : ''}</strong>.
-              {' '}Um lançamento de saída será criado no caixa.
+              {!reverseDialogPayment?.card && ' Um lançamento de saída será criado no caixa.'}
             </DialogDescription>
+            {reverseDialogPayment?.card && (
+              <div className="space-y-2 text-sm text-mid">
+                <p>{cardReversalNotice(reverseDialogPayment.card)}</p>
+                {reverseDialogPayment.card.linkedPaymentCount > 1 && (
+                  <p>
+                    Este pagamento em cartão cobre {reverseDialogPayment.card.linkedPaymentCount} parcelas.
+                    Todas serão estornadas.
+                  </p>
+                )}
+              </div>
+            )}
           </DialogHeader>
           <div className="space-y-2">
             <label className="text-xs uppercase tracking-wider font-medium text-mid">
@@ -399,6 +432,8 @@ export function InstallmentTable({
             id: payDialogInstallment.id,
             amount: Number(payDialogInstallment.amount),
           }}
+          defaultPaymentMethod={entryData?.paymentMethod ?? undefined}
+          defaultCardInstallmentCount={entryData?.cardInstallmentCount ?? undefined}
           onSuccess={onPaymentComplete}
         />
       )}

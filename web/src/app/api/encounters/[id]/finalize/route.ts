@@ -27,6 +27,12 @@ import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { requireWrite } from '@/lib/write-access'
 import { finalizeEncounter } from '@/lib/encounter-finalize'
+import { recordPayment } from '@/db/queries/financial'
+import { cardPaymentErrorMessage } from '@/lib/financial/card-payment-error'
+import { isCardMethod } from '@/lib/financial/card-repasses'
+import { round2 } from '@/lib/financial/penalties'
+import type { PaymentMethod } from '@/types'
+import { paymentMethods } from '@/validations/financial'
 import { encounterCartSchema } from '@/validations/encounter-cart'
 import { getDefaultPackageValidityMonths } from '@/lib/tenant-settings'
 import { db } from '@/db/client'
@@ -37,12 +43,18 @@ const requestSchema = z.object({
   cart: encounterCartSchema,
   draftRecordIds: z.array(z.string().uuid()).min(1),
   patientId: z.string().uuid(),
-  financialPlan: z.object({
-    totalAmount: z.string(),
-    installmentCount: z.number().int().min(1),
-    paymentMethod: z.string(),
-    notes: z.string().optional(),
-  }),
+  financialPlan: z
+    .object({
+      totalAmount: z.string(),
+      installmentCount: z.number().int().min(1).max(12),
+      paymentMethod: z.enum(paymentMethods as [PaymentMethod, ...PaymentMethod[]]),
+      notes: z.string().optional(),
+    })
+    .refine((plan) => plan.paymentMethod !== 'debit_card' || plan.installmentCount === 1, {
+      message: 'Débito não pode ser parcelado',
+      path: ['installmentCount'],
+    }),
+  cardPayment: z.object({ terminalId: z.string().uuid(), expectedRate: z.number().min(0).max(100) }).optional(),
   consents: z.array(
     z.object({
       consentTemplateId: z.string().uuid(),
@@ -53,6 +65,11 @@ const requestSchema = z.object({
     }),
   ),
 })
+  .refine(
+    (body) =>
+      body.cardPayment === undefined || isCardMethod(body.financialPlan.paymentMethod),
+    { message: 'Pagamento no cartão exige forma de pagamento em cartão', path: ['cardPayment'] },
+  )
 
 export async function POST(
   request: Request,
@@ -97,7 +114,28 @@ export async function POST(
       tenantDefaultValidityMonths: defaultValidity,
     })
 
-    return NextResponse.json({ success: true, data: result })
+    let paymentError: string | undefined
+    if (body.cardPayment) {
+      const { totalAmount, paymentMethod, installmentCount } = body.financialPlan
+      const amount = round2(Number(totalAmount))
+      try {
+        await recordPayment(ctx.tenantId, ctx.userId, {
+          installmentId: result.firstInstallmentId,
+          amount,
+          paymentMethod,
+          expectedTotalDue: amount,
+          card: {
+            terminalId: body.cardPayment.terminalId,
+            installmentCount: paymentMethod === 'debit_card' ? 1 : installmentCount,
+            expectedRate: body.cardPayment.expectedRate,
+          },
+        })
+      } catch (error) {
+        paymentError = cardPaymentErrorMessage(error, { area: 'encounter-finalize', tenantId: ctx.tenantId })
+      }
+    }
+
+    return NextResponse.json({ success: true, data: result, ...(paymentError && { paymentError }) })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

@@ -19,7 +19,7 @@ import { formatCurrency } from '@/lib/utils'
 import { queryKeys } from '@/hooks/queries/query-keys'
 import { subMonths, format } from 'date-fns'
 import { toLocalYmd } from '@/lib/dates'
-import { DollarSignIcon, ClockIcon, AlertTriangleIcon, TrendingUpIcon, WalletIcon } from 'lucide-react'
+import { DollarSignIcon, ClockIcon, AlertTriangleIcon, TrendingUpIcon, WalletIcon, CreditCardIcon } from 'lucide-react'
 
 const DONUT_COLORS = [
   '#1C2B1E', // Forest
@@ -50,6 +50,8 @@ interface RevenueData {
     totalPending: number
     totalOverdue: number
     totalExpenses?: number
+    totalCardFees: number
+    netProfit: number
   }
   monthly: { month: string; total: number; expenses?: number }[]
   byProcedureType: { procedureTypeName: string; total: number }[]
@@ -90,9 +92,9 @@ export function RevenueChart() {
     )
   }
 
-  const totalExpensesPaid = Number(data.summary.totalExpenses ?? 0)
   const totalReceived = Number(data.summary.totalReceived)
-  const netProfit = totalReceived - totalExpensesPaid
+  const totalCardFees = Number(data.summary.totalCardFees)
+  const netProfit = Number(data.summary.netProfit)
   const netIsPositive = netProfit >= 0
 
   const monthlyChartData = data.monthly.map((m) => {
@@ -121,7 +123,7 @@ export function RevenueChart() {
   return (
     <div className="space-y-6">
       {/* Summary cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card size="sm" className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xs uppercase tracking-wider font-medium text-mid">Total Recebido</CardTitle>
@@ -164,6 +166,20 @@ export function RevenueChart() {
           </CardContent>
         </Card>
 
+        <Card size="sm" className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]" data-testid="card-fees-card">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs uppercase tracking-wider font-medium text-mid">Taxas de cartão</CardTitle>
+            <div className="rounded-full bg-blush p-2">
+              <CreditCardIcon className="size-4 text-gold" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-charcoal tabular-nums tracking-tight">
+              {formatCurrency(totalCardFees)}
+            </div>
+          </CardContent>
+        </Card>
+
         <Card size="sm" className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]" data-testid="net-profit-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xs uppercase tracking-wider font-medium text-mid">Lucro Líquido</CardTitle>
@@ -179,7 +195,7 @@ export function RevenueChart() {
             <div className={`text-2xl font-bold tabular-nums tracking-tight ${netIsPositive ? 'text-[#1C2B1E]' : 'text-red-600'}`}>
               {formatCurrency(netProfit)}
             </div>
-            <p className="text-[10px] text-mid mt-1">Recebido - Despesas pagas</p>
+            <p className="text-[10px] text-mid mt-1">Recebido - Despesas pagas - Taxas de cartão</p>
           </CardContent>
         </Card>
       </div>

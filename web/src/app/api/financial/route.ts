@@ -5,9 +5,11 @@ import { requireWrite } from '@/lib/write-access'
 import {
   listFinancialEntries,
   createFinancialEntry,
+  recordPayment,
 } from '@/db/queries/financial'
 import { financialFilterSchema, createFinancialEntrySchema } from '@/validations/financial'
 import { handleApiError } from '@/lib/api-error'
+import { cardPaymentErrorMessage } from '@/lib/financial/card-payment-error'
 
 export async function GET(request: Request) {
   try {
@@ -66,7 +68,23 @@ export async function POST(request: Request) {
       entityId: entry.id,
     })
 
-    return NextResponse.json({ success: true, data: entry })
+    const { card, paymentMethod, totalAmount } = parsed.data
+    let paymentError: string | undefined
+    if (card && paymentMethod) {
+      try {
+        await recordPayment(ctx.tenantId, ctx.userId, {
+          installmentId: entry.installmentIds[0],
+          amount: totalAmount,
+          paymentMethod,
+          card,
+          expectedTotalDue: totalAmount,
+        })
+      } catch (error) {
+        paymentError = cardPaymentErrorMessage(error, { area: 'financial', tenantId: ctx.tenantId })
+      }
+    }
+
+    return NextResponse.json({ success: true, data: entry, ...(paymentError && { paymentError }) }, { status: 200 })
   } catch (error) {
     return handleApiError(error, request)
   }
