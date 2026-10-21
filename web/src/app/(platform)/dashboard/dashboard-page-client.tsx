@@ -16,6 +16,7 @@ import { TrialChecklistCard } from '@/components/dashboard/trial-checklist-card'
 import { PendingRescheduleCard } from '@/components/dashboard/pending-reschedule-card'
 import { MonthSelector } from '@/components/dashboard/month-selector'
 import DashboardLoading from './loading'
+import { ReadOnlyGuard } from '@/components/layout/subscription-access'
 
 function getGreeting(): string {
   const hour = new Date().getHours()
@@ -78,20 +79,24 @@ export function DashboardPageClient() {
             </div>
           )}
           <div className="flex w-full gap-3 sm:w-auto">
-            <Link
-              href="/pacientes?new=true"
-              className="inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-sage/30 px-4 py-2 text-[13px] font-medium text-charcoal hover:bg-[#F0F7F1] transition-colors sm:flex-none"
-            >
-              <UserPlus className="mr-1.5 h-4 w-4" />
-              Novo Paciente
-            </Link>
-            <Link
-              href="/agenda?new=true"
-              className="inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-lg bg-forest px-4 py-2 text-[13px] font-medium text-cream hover:bg-sage transition-colors sm:flex-none"
-            >
-              <CalendarPlus className="mr-1.5 h-4 w-4" />
-              Novo Agendamento
-            </Link>
+            <ReadOnlyGuard label="Novo Paciente" className="flex-1 sm:flex-none">
+              <Link
+                href="/pacientes?new=true"
+                className="inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-sage/30 px-4 py-2 text-[13px] font-medium text-charcoal hover:bg-[#F0F7F1] transition-colors sm:flex-none"
+              >
+                <UserPlus className="mr-1.5 h-4 w-4" />
+                Novo Paciente
+              </Link>
+            </ReadOnlyGuard>
+            <ReadOnlyGuard label="Novo Agendamento" className="flex-1 sm:flex-none">
+              <Link
+                href="/agenda?new=true"
+                className="inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-lg bg-forest px-4 py-2 text-[13px] font-medium text-cream hover:bg-sage transition-colors sm:flex-none"
+              >
+                <CalendarPlus className="mr-1.5 h-4 w-4" />
+                Novo Agendamento
+              </Link>
+            </ReadOnlyGuard>
           </div>
         </div>
       </div>

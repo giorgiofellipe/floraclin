@@ -3,6 +3,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { brToday, endOfBrDay } from '@/lib/dates'
+import { grantNeedsNewEnd } from '@/lib/subscription-access'
+import {
+  stripeCancelMessage,
+  stripeGiftBlock,
+  stripePeriodOpenMessage,
+  stripePeriodStillOpen,
+  stripePlanChangeMessage,
+  stripeStillActiveMessage,
+} from '@/lib/admin-stripe-guard'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -84,6 +94,9 @@ export function SubscriptionDetailDialog({
   const [giftMonths, setGiftMonths] = useState('3')
   const [giftNotes, setGiftNotes] = useState('')
   const [extendDays, setExtendDays] = useState('7')
+  // New end (BR date) for a change that re-grants access on a lapsed
+  // trial / gift / admin row; the API refuses those without one.
+  const [newEndDate, setNewEndDate] = useState('')
 
   const { data: detailResult } = useAdminSubscriptionDetail(subscription?.tenantId ?? '')
   const { data: plansResult } = useAdminPlans()
@@ -107,6 +120,7 @@ export function SubscriptionDetailDialog({
       setGiftMonths('3')
       setGiftNotes('')
       setExtendDays('7')
+      setNewEndDate('')
     }
   }, [open, subscription])
 
@@ -119,13 +133,14 @@ export function SubscriptionDetailDialog({
       await updateSubscription.mutateAsync({
         tenantId: subscription.tenantId,
         planSlug: selectedPlanSlug,
+        ...newEndPayload(newEndDate),
       })
       toast.success('Plano alterado')
       setActionMode('none')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao alterar plano')
     }
-  }, [subscription, selectedPlanSlug, updateSubscription])
+  }, [subscription, selectedPlanSlug, newEndDate, updateSubscription])
 
   const handleGift = useCallback(async () => {
     if (!subscription || !selectedPlanSlug) return
@@ -187,18 +202,65 @@ export function SubscriptionDetailDialog({
       await updateSubscription.mutateAsync({
         tenantId: subscription.tenantId,
         status: 'active',
+        ...newEndPayload(newEndDate),
       })
       toast.success('Assinatura reativada')
       setActionMode('none')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao reativar')
     }
-  }, [subscription, updateSubscription])
+  }, [subscription, newEndDate, updateSubscription])
 
   if (!subscription) return null
 
   const isCanceledOrExpired = subscription.status === 'canceled' || subscription.status === 'expired'
+  // The API's own rule (grantNeedsNewEnd): reactivating sets `active`; a plan
+  // change keeps the current status, so it only needs a date when that
+  // status already grants access on a lapsed row.
+  const needsEnd = (status: string) =>
+    grantNeedsNewEnd({ status, source: subscription.source, currentPeriodEnd: subscription.currentPeriodEnd })
+  const stripeDriven = subscription.source === 'stripe'
+  // Reactivating a cancelled / expired Stripe row turns it into an admin
+  // grant, which always needs its own end date (same rule as the API).
+  const lapsedGrant = (stripeDriven && isCanceledOrExpired) || needsEnd('active')
+  const newEndMissing = lapsedGrant && !newEndDate
+  const planChangeNeedsEnd = !newEndDate && needsEnd(subscription.status)
+  const newEndField = lapsedGrant ? (
+    <div className="space-y-2">
+      <Label htmlFor="admin-new-period-end">Novo fim do acesso</Label>
+      <Input
+        id="admin-new-period-end"
+        type="date"
+        min={brToday()}
+        value={newEndDate}
+        onChange={(e) => setNewEndDate(e.target.value)}
+        className="border-sage/20"
+        data-testid="admin-new-period-end"
+      />
+      <p className="text-xs text-mid">O acesso anterior já terminou. Sem uma nova data, a clínica continuaria bloqueada.</p>
+    </div>
+  ) : null
   const isTrialing = subscription.status === 'trialing'
+  // Same rule the API enforces (lib/admin-stripe-guard), shown up front. The
+  // detail endpoint asked Stripe where the subscription stands; when it could
+  // not tell (null), the API decides on submit.
+  const stripeState: string | null = stripeDriven ? (detail?.stripeState ?? null) : null
+  const stripeReactivationBlock =
+    stripeState === 'pending_cancel' && stripePeriodStillOpen(subscription)
+      ? stripePeriodOpenMessage(subscription.currentPeriodEnd)
+      : stripeState === 'pending_cancel' || stripeState === 'live'
+        ? stripeStillActiveMessage()
+        : null
+  // Gift on a Stripe row: only once Stripe says it ended (null = unknown or
+  // nothing at Stripe; the API decides on submit).
+  const stripeGiftBlocked = stripeState === 'pending_cancel' || stripeState === 'live'
+  const backOnly = (
+    <div className="flex justify-end pt-1">
+      <Button variant="outline" size="sm" onClick={() => setActionMode('none')}>
+        Voltar
+      </Button>
+    </div>
+  )
   const canCancel = !isCanceledOrExpired
 
   return (
@@ -271,62 +333,86 @@ export function SubscriptionDetailDialog({
           {/* Action forms */}
           {actionMode === 'change-plan' && (
             <ActionPanel title="Alterar plano">
-              <div className="space-y-2">
-                <Label>Novo plano</Label>
-                <Select items={planItems} value={selectedPlanSlug} onValueChange={(v) => setSelectedPlanSlug(v ?? '')}>
-                  <SelectTrigger className="w-full border-sage/20 h-8 text-sm">
-                    <SelectValue placeholder="Selecione o plano" />
-                  </SelectTrigger>
-                  <SelectContent />
-                </Select>
-              </div>
-              <ActionButtons
-                onConfirm={handleChangePlan}
-                onCancel={() => setActionMode('none')}
-                isPending={isPending}
-                confirmLabel="Alterar"
-                disabled={!selectedPlanSlug || selectedPlanSlug === subscription.planSlug}
-              />
+              {stripeDriven ? (
+                <p className="text-sm text-mid" data-testid="admin-stripe-plan-change">
+                  {stripePlanChangeMessage()}
+                </p>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label>Novo plano</Label>
+                    <Select items={planItems} value={selectedPlanSlug} onValueChange={(v) => setSelectedPlanSlug(v ?? '')}>
+                      <SelectTrigger className="w-full border-sage/20 h-8 text-sm">
+                        <SelectValue placeholder="Selecione o plano" />
+                      </SelectTrigger>
+                      <SelectContent />
+                    </Select>
+                  </div>
+                  {newEndField}
+                </>
+              )}
+              {stripeDriven ? (
+                backOnly
+              ) : (
+                <ActionButtons
+                  onConfirm={handleChangePlan}
+                  onCancel={() => setActionMode('none')}
+                  isPending={isPending}
+                  confirmLabel="Alterar"
+                  disabled={!selectedPlanSlug || selectedPlanSlug === subscription.planSlug || planChangeNeedsEnd}
+                />
+              )}
             </ActionPanel>
           )}
 
           {actionMode === 'gift' && (
             <ActionPanel title="Presentear">
-              <div className="space-y-2">
-                <Label>Plano</Label>
-                <Select items={planItems} value={selectedPlanSlug} onValueChange={(v) => setSelectedPlanSlug(v ?? '')}>
-                  <SelectTrigger className="w-full border-sage/20 h-8 text-sm">
-                    <SelectValue placeholder="Selecione o plano" />
-                  </SelectTrigger>
-                  <SelectContent />
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Meses</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={giftMonths}
-                  onChange={(e) => setGiftMonths(e.target.value)}
-                  className="border-sage/20"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Observações</Label>
-                <Textarea
-                  value={giftNotes}
-                  onChange={(e) => setGiftNotes(e.target.value)}
-                  placeholder="Motivo do presente..."
-                  className="border-sage/20 min-h-12"
-                />
-              </div>
-              <ActionButtons
-                onConfirm={handleGift}
-                onCancel={() => setActionMode('none')}
-                isPending={isPending}
-                confirmLabel="Presentear"
-                disabled={!selectedPlanSlug}
-              />
+              {stripeGiftBlocked ? (
+                <>
+                  <p className="text-sm text-mid" data-testid="admin-stripe-gift">
+                    {stripeGiftBlock(subscription, stripeState as 'pending_cancel' | 'live')?.message}
+                  </p>
+                  {backOnly}
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label>Plano</Label>
+                    <Select items={planItems} value={selectedPlanSlug} onValueChange={(v) => setSelectedPlanSlug(v ?? '')}>
+                      <SelectTrigger className="w-full border-sage/20 h-8 text-sm">
+                        <SelectValue placeholder="Selecione o plano" />
+                      </SelectTrigger>
+                      <SelectContent />
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Meses</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={giftMonths}
+                      onChange={(e) => setGiftMonths(e.target.value)}
+                      className="border-sage/20"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Observações</Label>
+                    <Textarea
+                      value={giftNotes}
+                      onChange={(e) => setGiftNotes(e.target.value)}
+                      placeholder="Motivo do presente..."
+                      className="border-sage/20 min-h-12"
+                    />
+                  </div>
+                  <ActionButtons
+                    onConfirm={handleGift}
+                    onCancel={() => setActionMode('none')}
+                    isPending={isPending}
+                    confirmLabel="Presentear"
+                    disabled={!selectedPlanSlug}
+                  />
+                </>
+              )}
             </ActionPanel>
           )}
 
@@ -353,32 +439,56 @@ export function SubscriptionDetailDialog({
 
           {actionMode === 'cancel' && (
             <ActionPanel title="Cancelar assinatura">
-              <p className="text-sm text-mid">
-                Tem certeza que deseja cancelar a assinatura de{' '}
-                <strong className="text-charcoal">{subscription.tenantName}</strong>?
-              </p>
-              <ActionButtons
-                onConfirm={handleCancel}
-                onCancel={() => setActionMode('none')}
-                isPending={isPending}
-                confirmLabel="Cancelar assinatura"
-                variant="destructive"
-              />
+              {stripeDriven ? (
+                <>
+                  <p className="text-sm text-mid" data-testid="admin-stripe-cancel">
+                    {stripeCancelMessage()}
+                  </p>
+                  {backOnly}
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-mid">
+                    Tem certeza que deseja cancelar a assinatura de{' '}
+                    <strong className="text-charcoal">{subscription.tenantName}</strong>?
+                  </p>
+                  <ActionButtons
+                    onConfirm={handleCancel}
+                    onCancel={() => setActionMode('none')}
+                    isPending={isPending}
+                    confirmLabel="Cancelar assinatura"
+                    variant="destructive"
+                  />
+                </>
+              )}
             </ActionPanel>
           )}
 
           {actionMode === 'reactivate' && (
             <ActionPanel title="Reativar assinatura">
-              <p className="text-sm text-mid">
-                Reativar a assinatura de{' '}
-                <strong className="text-charcoal">{subscription.tenantName}</strong>?
-              </p>
-              <ActionButtons
-                onConfirm={handleReactivate}
-                onCancel={() => setActionMode('none')}
-                isPending={isPending}
-                confirmLabel="Reativar"
-              />
+              {stripeReactivationBlock ? (
+                <>
+                  <p className="text-sm text-mid" data-testid="admin-stripe-reactivation-blocked">
+                    {stripeReactivationBlock}
+                  </p>
+                  {backOnly}
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-mid">
+                    Reativar a assinatura de{' '}
+                    <strong className="text-charcoal">{subscription.tenantName}</strong>?
+                  </p>
+                  {newEndField}
+                  <ActionButtons
+                    onConfirm={handleReactivate}
+                    onCancel={() => setActionMode('none')}
+                    isPending={isPending}
+                    confirmLabel="Reativar"
+                    disabled={newEndMissing}
+                  />
+                </>
+              )}
             </ActionPanel>
           )}
         </div>
@@ -399,7 +509,7 @@ export function SubscriptionDetailDialog({
             >
               Presentear
             </Button>
-            {isTrialing && (
+            {isTrialing && !stripeDriven && (
               <Button
                 variant="outline"
                 size="sm"
@@ -433,6 +543,11 @@ export function SubscriptionDetailDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+/** End of the chosen BR day, as the ISO instant the API expects. */
+function newEndPayload(ymd: string): { currentPeriodEnd?: string } {
+  return ymd ? { currentPeriodEnd: endOfBrDay(ymd).toISOString() } : {}
 }
 
 /* ---------- Sub-components ---------- */

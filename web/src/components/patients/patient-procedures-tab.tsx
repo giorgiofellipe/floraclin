@@ -17,6 +17,7 @@ import {
   Ban,
   ArrowRight,
 } from 'lucide-react'
+import { useWriteGuard } from '@/components/layout/subscription-access'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -35,6 +36,7 @@ import { SessionsTimeline } from '@/components/procedures/sessions-timeline'
 import { useCancelProcedure } from '@/hooks/mutations/use-procedure-mutations'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { ReadOnlyGuard } from '@/components/layout/subscription-access'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -115,6 +117,7 @@ function formatYear(date: Date | string): string {
 
 export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
   const router = useRouter()
+  const guardWrite = useWriteGuard()
   const { data: proceduresResult, isLoading } = useProcedures(patientId)
   const procedures = (proceduresResult ?? []) as unknown as ProcedureRecord[]
   const { data: packages } = usePatientPackages(patientId)
@@ -226,14 +229,16 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
             {encounters.length} {encounters.length === 1 ? 'atendimento' : 'atendimentos'}
           </span>
         </div>
-        <Link
-          href={atendimentoHref}
-          onClick={handleNewAtendimentoClick}
-          className="inline-flex items-center justify-center rounded-xl bg-forest px-4 py-2 text-[13px] font-medium text-cream hover:bg-sage transition-all duration-200 shadow-sm hover:shadow-md gap-1.5"
-        >
-          <Plus className="size-3.5" />
-          Novo Atendimento
-        </Link>
+        <ReadOnlyGuard label="Novo Atendimento">
+          <Link
+            href={atendimentoHref}
+            onClick={handleNewAtendimentoClick}
+            className="inline-flex items-center justify-center rounded-xl bg-forest px-4 py-2 text-[13px] font-medium text-cream hover:bg-sage transition-all duration-200 shadow-sm hover:shadow-md gap-1.5"
+          >
+            <Plus className="size-3.5" />
+            Novo Atendimento
+          </Link>
+        </ReadOnlyGuard>
       </div>
 
       {procedures.length === 0 ? (
@@ -253,13 +258,15 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
           <p className="text-[13px] text-mid mt-1 mb-5">
             Inicie o primeiro atendimento deste paciente.
           </p>
-          <Link
-            href={`/pacientes/${patientId}/atendimento`}
-            className="inline-flex items-center gap-2 text-[13px] font-medium text-forest hover:text-sage transition-colors"
-          >
-            Iniciar Atendimento
-            <ArrowRight className="size-3.5" />
-          </Link>
+          <ReadOnlyGuard label="Iniciar Atendimento">
+            <Link
+              href={`/pacientes/${patientId}/atendimento`}
+              className="inline-flex items-center gap-2 text-[13px] font-medium text-forest hover:text-sage transition-colors"
+            >
+              Iniciar Atendimento
+              <ArrowRight className="size-3.5" />
+            </Link>
+          </ReadOnlyGuard>
         </div>
       ) : (
         /* ─── Encounter feed ──────────────────────────────────────── */
@@ -489,7 +496,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                         size="sm"
                         variant="ghost"
                         className="h-7 rounded-[3px] text-[11px] uppercase tracking-wider text-mid hover:bg-red-50 hover:text-red-600"
-                        onClick={() => handleCancelClick(proc.id)}
+                        onClick={guardWrite(() => handleCancelClick(proc.id))}
                       >
                         <XCircle className="mr-1 size-3" />
                         Cancelar
@@ -511,7 +518,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                         size="sm"
                         variant="ghost"
                         className="h-7 rounded-[3px] text-[11px] uppercase tracking-wider text-mid hover:bg-red-50 hover:text-red-600"
-                        onClick={() => handleCancelClick(proc.id)}
+                        onClick={guardWrite(() => handleCancelClick(proc.id))}
                       >
                         <XCircle className="mr-1 size-3" />
                         Cancelar

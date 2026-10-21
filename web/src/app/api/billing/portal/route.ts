@@ -27,9 +27,15 @@ export async function POST(request: Request) {
       )
     }
 
+    // The read-only paywall of a `past_due` subscription asks for the
+    // payment-method flow; everything else gets the portal home.
+    const body = (await request.json().catch(() => null)) as { flow?: unknown } | null
+    const flow = body?.flow === 'payment_method_update' ? 'payment_method_update' : undefined
+
     const { url } = await createBillingPortalSession(
       subscription.stripeCustomerId,
       `${getAppUrl()}/configuracoes?tab=assinatura`,
+      flow ? { flow } : undefined,
     )
 
     return NextResponse.json({ url })

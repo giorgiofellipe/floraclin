@@ -11,8 +11,9 @@ import { MessageSquare, Settings, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { Message } from '@/components/whatsapp/message-bubble'
 import { cn } from '@/lib/utils'
+import { useReadOnly } from '@/components/layout/subscription-access'
 
-type ConfigStatus = 'loading' | 'configured' | 'not_configured' | 'no_access' | 'subscription_expired'
+type ConfigStatus = 'loading' | 'configured' | 'not_configured' | 'no_access'
 
 // Selected conversation lives in the URL so browser / Android back closes it
 // on mobile and links from other screens can open one directly.
@@ -134,6 +135,7 @@ function WhatsAppEmptyState({
 
 export default function WhatsAppPage() {
   const searchParams = useSearchParams()
+  const readOnly = useReadOnly()
   const [configStatus, setConfigStatus] = useState<ConfigStatus>('loading')
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
   const [showStartDialog, setShowStartDialog] = useState(false)
@@ -154,9 +156,10 @@ export default function WhatsAppPage() {
     async function checkConfig() {
       try {
         const res = await fetch('/api/whatsapp/conversations?limit=1')
-        if (res.status === 402) {
-          setConfigStatus('subscription_expired')
-        } else if (res.status === 403) {
+        // An inactive subscription is not a config state: the inbox stays
+        // readable and ChatPanel swaps the composer for a notice (read-only
+        // mode, from the platform layout). This GET never returns 402.
+        if (res.status === 403) {
           // 403 covers two distinct cases: own-number mode without a
           // finished setup vs. the user's role lacking WhatsApp access.
           const body = await res.json().catch(() => null)
@@ -465,25 +468,6 @@ export default function WhatsAppPage() {
     )
   }
 
-  // Subscription not active (expired, canceled or past_due past its period end)
-  if (configStatus === 'subscription_expired') {
-    return (
-      <WhatsAppEmptyState
-        title="Assinatura inativa"
-        body="Sua assinatura não está ativa. Assine um plano para voltar a enviar e receber mensagens pelo WhatsApp."
-        action={
-          <Button
-            className="bg-forest text-cream hover:bg-sage"
-            nativeButton={false}
-            render={<Link href="/configuracoes?tab=assinatura" />}
-          >
-            Ver planos
-          </Button>
-        }
-      />
-    )
-  }
-
   // Role without WhatsApp access
   if (configStatus === 'no_access') {
     return (
@@ -550,7 +534,9 @@ export default function WhatsAppPage() {
       />
 
       <StartConversationDialog
-        open={showStartDialog}
+        // Read-only mode cannot start a conversation; a deep link that would
+        // open this dialog just lands on the inbox.
+        open={showStartDialog && !readOnly}
         onOpenChange={(open) => {
           setShowStartDialog(open)
           if (!open) setStartDialogPhone(null)

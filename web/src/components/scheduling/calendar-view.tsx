@@ -48,6 +48,7 @@ import { useAppointments } from '@/hooks/queries/use-appointments'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
 import type { CalendarBlockRow } from '@/db/queries/calendar'
 import type { Role } from '@/types'
+import { ReadOnlyGuard, useSubscriptionAccess } from '@/components/layout/subscription-access'
 
 type ViewType = 'day' | 'week' | 'month'
 
@@ -131,6 +132,9 @@ export function CalendarView({
   userId,
 }: CalendarViewProps) {
   const router = useRouter()
+  // Read-only mode: creating opens the paywall instead of a form whose save
+  // would only fail with a 402. Opening an existing appointment stays allowed.
+  const { readOnly, openPaywall } = useSubscriptionAccess()
   const cancelAppointment = useUpdateAppointmentStatus()
   const deleteBlock = useDeleteCalendarBlock()
 
@@ -142,7 +146,9 @@ export function CalendarView({
   const [editingAppointment, setEditingAppointment] = React.useState<AppointmentWithDetails | null>(
     () => initialAppointments.find((a) => a.id === autoOpenAppointmentId) ?? null
   )
-  const [formOpen, setFormOpen] = React.useState(!!autoOpenNew || !!editingAppointment)
+  // `?open=new` deep links (checklist, lifecycle email) open nothing in
+  // read-only mode; an existing appointment still opens for reading.
+  const [formOpen, setFormOpen] = React.useState((!!autoOpenNew && !readOnly) || !!editingAppointment)
   const [defaultFormDate, setDefaultFormDate] = React.useState<string>('')
   const [defaultFormTime, setDefaultFormTime] = React.useState<string>('')
 
@@ -233,6 +239,10 @@ export function CalendarView({
 
   const handleSlotClick = (date: string, time: string) => {
     setContextMenu(null)
+    if (readOnly) {
+      openPaywall()
+      return
+    }
     setEditingAppointment(null)
     setDefaultFormDate(date)
     setDefaultFormTime(time)
@@ -267,9 +277,13 @@ export function CalendarView({
 
   const handleBlockDelete = React.useCallback(() => {
     if (!blockMenu) return
-    setBlockToDelete(blockMenu.block)
     setBlockMenu(null)
-  }, [blockMenu])
+    if (readOnly) {
+      openPaywall()
+      return
+    }
+    setBlockToDelete(blockMenu.block)
+  }, [blockMenu, readOnly, openPaywall])
 
   const handleConfirmBlockDelete = React.useCallback(async () => {
     if (!blockToDelete) return
@@ -282,6 +296,8 @@ export function CalendarView({
     setBlockToDelete(null)
   }, [blockToDelete, deleteBlock])
 
+  // In read-only mode "Editar" still opens the appointment, but the form
+  // renders it read-only (see AppointmentForm).
   const handleContextEdit = React.useCallback(() => {
     if (!contextMenu) return
     setEditingAppointment(contextMenu.appointment)
@@ -293,23 +309,32 @@ export function CalendarView({
 
   const handleContextNewSlot = React.useCallback(() => {
     if (!contextMenu) return
+    if (readOnly) {
+      setContextMenu(null)
+      openPaywall()
+      return
+    }
     const appt = contextMenu.appointment
     setEditingAppointment(null)
     setDefaultFormDate(appt.date)
     setDefaultFormTime(appt.startTime.slice(0, 5))
     setFormOpen(true)
     setContextMenu(null)
-  }, [contextMenu])
+  }, [contextMenu, readOnly, openPaywall])
 
   const [cancelConfirmOpen, setCancelConfirmOpen] = React.useState(false)
   const [appointmentToCancel, setAppointmentToCancel] = React.useState<AppointmentWithDetails | null>(null)
 
   const handleContextCancel = React.useCallback(() => {
     if (!contextMenu) return
+    setContextMenu(null)
+    if (readOnly) {
+      openPaywall()
+      return
+    }
     setAppointmentToCancel(contextMenu.appointment)
     setCancelConfirmOpen(true)
-    setContextMenu(null)
-  }, [contextMenu])
+  }, [contextMenu, readOnly, openPaywall])
 
   const handleConfirmCancel = React.useCallback(async () => {
     if (!appointmentToCancel) return
@@ -361,6 +386,10 @@ export function CalendarView({
   }, [])
 
   const handleNewAppointment = () => {
+    if (readOnly) {
+      openPaywall()
+      return
+    }
     setEditingAppointment(null)
     setDefaultFormDate(format(currentDate, 'yyyy-MM-dd'))
     setDefaultFormTime('08:00')
@@ -427,7 +456,7 @@ export function CalendarView({
               variant="outline"
               size="sm"
               className="shrink-0 border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
-              onClick={() => setBlockFormOpen(true)}
+              onClick={() => (readOnly ? openPaywall() : setBlockFormOpen(true))}
               data-testid="calendar-new-block"
               aria-label="Bloquear"
             >
@@ -435,10 +464,12 @@ export function CalendarView({
               <span className="hidden md:inline">Bloquear</span>
             </Button>
           )}
-          <Button size="sm" className="shrink-0 bg-forest text-cream hover:bg-sage transition-colors" onClick={handleNewAppointment} data-testid="calendar-new-appointment" aria-label="Agendar">
-            <Plus className="size-4" />
-            <span className="hidden md:inline">Agendar</span>
-          </Button>
+          <ReadOnlyGuard label="Agendar" className="shrink-0">
+            <Button size="sm" className="shrink-0 bg-forest text-cream hover:bg-sage transition-colors" onClick={handleNewAppointment} data-testid="calendar-new-appointment" aria-label="Agendar">
+              <Plus className="size-4" />
+              <span className="hidden md:inline">Agendar</span>
+            </Button>
+          </ReadOnlyGuard>
         </div>
       </div>
 
@@ -513,7 +544,7 @@ export function CalendarView({
             onClick={handleContextEdit}
           >
             <PencilIcon className="h-3.5 w-3.5 text-mid" />
-            Editar agendamento
+            {readOnly ? 'Ver agendamento' : 'Editar agendamento'}
           </button>
           {contextMenu.appointment.status !== 'cancelled' && (
             <button

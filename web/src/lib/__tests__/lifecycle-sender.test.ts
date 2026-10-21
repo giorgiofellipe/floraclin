@@ -20,6 +20,24 @@ vi.mock('@/lib/email', () => ({ sendLifecycleEmail: vi.fn() }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 import { reportSideEffectFailure } from '@/lib/observability'
 vi.mock('@/lib/activation', () => ({ getActivationState: vi.fn() }))
+// Live data for messages with a `render` (last day, win-back, final).
+vi.mock('@/db/queries/subscriptions', () => ({
+  getSubscription: vi.fn(async () => ({
+    status: 'trialing',
+    source: 'trial',
+    stripeSubscriptionId: null,
+    firstPaidAt: null,
+    currentPeriodEnd: new Date('2026-10-22T21:30:00.000Z'),
+  })),
+  listPlans: vi.fn(async () => [
+    { slug: 'starter', name: 'Starter', priceCents: 9900, stripePriceId: 'price_starter' },
+    { slug: 'pro', name: 'Pro', priceCents: 19900, stripePriceId: 'price_pro' },
+  ]),
+}))
+vi.mock('@/db/queries/trial-recap', () => ({
+  getTrialRecap: vi.fn(async () => ({ patients: 3, appointments: 5, procedureRecords: 1, photos: 0, diagrams: 0 })),
+}))
+vi.mock('@/lib/winback-offer', () => ({ getValidatedWinbackOffer: vi.fn(async () => null) }))
 vi.mock('@/lib/lifecycle-opt-out', () => ({
   lifecycleOptOutUrl: vi.fn((tenantId: string) => `https://opt-out.test/${tenantId}`),
 }))
@@ -36,6 +54,7 @@ import { sendPlatformTemplate } from '@/lib/platform-whatsapp'
 import { sendLifecycleEmail } from '@/lib/email'
 import { getActivationState } from '@/lib/activation'
 import { LIFECYCLE_MESSAGES } from '@/lib/lifecycle-messages'
+import { getValidatedWinbackOffer } from '@/lib/winback-offer'
 import { deliverLifecycleMessage, scheduleLifecycleWelcome } from '../lifecycle-sender'
 
 const recipient = {
@@ -112,6 +131,40 @@ describe('deliverLifecycleMessage', () => {
     expect(sendLifecycleEmail).not.toHaveBeenCalled()
   })
 
+  it.each(['trial_ending_soon', 'trial_last_day'])(
+    'sends %s by email only while its WhatsApp template is not approved, and records the WhatsApp skip so the key completes',
+    async (key) => {
+      const message = LIFECYCLE_MESSAGES.find((m) => m.key === key)!
+      const outcome = await deliverLifecycleMessage(recipient, message)
+
+      expect(outcome).toEqual({ whatsapp: 'skipped', email: 'sent' })
+      expect(sendPlatformTemplate).not.toHaveBeenCalled()
+      expect(recordSkippedLifecycleSend).toHaveBeenCalledWith({
+        tenantId: 'tenant-1',
+        messageKey: key,
+        channel: 'whatsapp',
+        recipient: '5511987654321',
+        reason: 'template_not_approved',
+      })
+      expect(sendLifecycleEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.objectContaining({
+            button: expect.objectContaining({ url: expect.stringContaining('/api/lifecycle/click') }),
+            optOutUrl: expect.any(String),
+          }),
+        }),
+      )
+    },
+  )
+
+  it('skips the email-only nudges entirely for an opted-out owner', async () => {
+    vi.mocked(isTenantLifecycleOptedOut).mockResolvedValue(true)
+    const message = LIFECYCLE_MESSAGES.find((m) => m.key === 'trial_last_day')!
+
+    expect(await deliverLifecycleMessage(recipient, message)).toEqual({ whatsapp: 'skipped', email: 'skipped' })
+    expect(sendLifecycleEmail).not.toHaveBeenCalled()
+  })
+
   it('records a skipped WhatsApp row for an invalid phone and still sends the email', async () => {
     const outcome = await deliverLifecycleMessage({ ...recipient, tenantPhone: '(11) 1234' }, utility)
 
@@ -142,13 +195,37 @@ describe('deliverLifecycleMessage', () => {
   })
 
   it('sends no button param for a message without a button', async () => {
-    const noButton = LIFECYCLE_MESSAGES.find((m) => !m.button)!
+    const noButton = { ...utility, button: null }
 
     await deliverLifecycleMessage(recipient, noButton)
 
     expect(sendPlatformTemplate).toHaveBeenCalledWith('5511987654321', noButton.templateName, ['Maria'], {
       buttonUrlParams: [],
     })
+  })
+
+  it('renders live data into the last-day email: the end time and what the clinic built', async () => {
+    // The 10:00 BRT cron run the day before a trial that ends at 18:30.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-21T13:00:00.000Z'))
+    const message = LIFECYCLE_MESSAGES.find((m) => m.key === 'trial_last_day')!
+
+    await deliverLifecycleMessage(recipient, message).finally(() => vi.useRealTimers())
+
+    const [call] = vi.mocked(sendLifecycleEmail).mock.calls
+    expect(call[0].subject).toBe('Seu teste na FloraClin termina amanhã às 18:30')
+    // No offer in the last-day email, so no Stripe check either.
+    expect(getValidatedWinbackOffer).not.toHaveBeenCalled()
+    expect(call[0].content.points).toEqual(['3 pacientes cadastrados', '5 agendamentos', '1 atendimento registrado'])
+  })
+
+  it('sends the help email with replies going to the help address', async () => {
+    const message = LIFECYCLE_MESSAGES.find((m) => m.key === 'trial_help')!
+
+    await deliverLifecycleMessage(recipient, message)
+
+    expect(vi.mocked(sendLifecycleEmail).mock.calls[0][0].replyTo).toBe('contato@floraclin.com.br')
+    expect(sendPlatformTemplate).not.toHaveBeenCalled()
   })
 
   it('passes an opt-out URL for MARKETING emails and null for UTILITY', async () => {
@@ -177,7 +254,7 @@ describe('deliverLifecycleMessage', () => {
 })
 
 describe('scheduleLifecycleWelcome', () => {
-  const dueState = { subscriptionStatus: 'trialing', trialDay: 0 } as never
+  const dueState = { subscriptionStatus: 'trialing', trialDay: 0, msLeft: 14 * 24 * 60 * 60 * 1000 } as never
 
   it('never queries recipients when LIFECYCLE_ENABLED is unset', async () => {
     scheduleLifecycleWelcome({ tenantId: 'tenant-1' })

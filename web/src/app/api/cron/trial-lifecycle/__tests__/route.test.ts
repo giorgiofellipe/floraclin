@@ -46,9 +46,11 @@ const baseState: ActivationState = {
   hasWhatsappSend: true,
   trialDay: 1,
   daysLeft: 13,
+  msLeft: 13 * 24 * 60 * 60 * 1000,
   subscriptionStatus: 'trialing',
   subscriptionSource: 'trial',
   optedOut: false,
+  lastMarketingSentAt: null,
 }
 
 // trial_welcome and trial_setup_incomplete are both due; welcome has priority.

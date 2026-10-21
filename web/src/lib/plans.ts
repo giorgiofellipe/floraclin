@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/db/client'
 import { tenantUsers, patients, whatsappCredits, tenantSubscriptions, plans } from '@/db/schema'
 import { eq, and, isNull, sql, gte, lte } from 'drizzle-orm'
+import { isSubscriptionRowActive } from '@/lib/subscription-access'
 
 type PlanLimits = Record<string, number>
 type PlanFeatures = Record<string, boolean>
@@ -36,10 +37,12 @@ export async function checkPlanFeature(
   return features[featureKey] === true
 }
 
-export async function isSubscriptionActive(tenantId: string): Promise<boolean> {
+export async function isSubscriptionActive(tenantId: string, now: Date = new Date()): Promise<boolean> {
   const [row] = await db
     .select({
       status: tenantSubscriptions.status,
+      source: tenantSubscriptions.source,
+      stripeSubscriptionId: tenantSubscriptions.stripeSubscriptionId,
       currentPeriodEnd: tenantSubscriptions.currentPeriodEnd,
     })
     .from(tenantSubscriptions)
@@ -49,15 +52,11 @@ export async function isSubscriptionActive(tenantId: string): Promise<boolean> {
   // Fail closed: a missing row means the tenant is blocked. Sign-in
   // self-heals by creating the trial row (see auth-config jwt callback),
   // so no legitimate tenant stays row-less past their next login.
-  if (!row) return false
-  if (row.status === 'trialing' || row.status === 'active') return true
-  // Canceled and past_due honor the already-paid period: Stripe cancels at
-  // period end and retries failed payments, and our cancel dialog promises
-  // access until the period closes.
-  if (row.status === 'canceled' || row.status === 'past_due') {
-    return row.currentPeriodEnd > new Date()
-  }
-  return false
+  //
+  // Trials, gifts and admin grants end exactly at current_period_end, not
+  // when the 00:00 BRT expiry cron rewrites the status; Stripe-driven rows
+  // follow Stripe. See lib/subscription-access.ts for the full rule set.
+  return isSubscriptionRowActive(row ?? null, now)
 }
 
 /** Standard 402 payload for endpoints blocked by an inactive subscription. */

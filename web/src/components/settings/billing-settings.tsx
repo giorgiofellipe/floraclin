@@ -27,7 +27,7 @@ import {
   CreditCardIcon,
   AlertTriangleIcon,
 } from 'lucide-react'
-import { differenceInDays } from 'date-fns'
+import { brCalendarDaysBetween, brEndPhrase, formatBrDate, formatBrDayMonth } from '@/lib/dates'
 
 type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled' | 'expired'
 
@@ -50,6 +50,13 @@ interface BillingUsageResponse {
     priceCents: number
     features: Record<string, boolean>
   }
+  /** Coupon running on the Stripe subscription (e.g. the win-back offer). */
+  discount?: {
+    discountedCents: number
+    fullCents: number
+    duration: 'repeating' | 'forever'
+    endsAt: string | null
+  } | null
   usage: {
     users: UsageBucket
     patients: UsageBucket
@@ -147,23 +154,47 @@ function UsageBar({ label, icon: Icon, used, limit }: {
   )
 }
 
+function brl(cents: number): string {
+  return `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`
+}
+
+/**
+ * "R$ 69,30/mês até 21/01, depois R$ 99,00": what the clinic pays now. With a
+ * cancellation pending there is no "depois", and an end in another year
+ * carries the year.
+ */
+function discountedPriceLine(
+  discount: NonNullable<BillingUsageResponse['discount']>,
+  cancelPending: boolean,
+): string {
+  const now = `${brl(discount.discountedCents)}/mês`
+  if (cancelPending) return `${now} com desconto`
+  if (discount.endsAt) {
+    const sameYear = formatBrDate(discount.endsAt).slice(6) === formatBrDate(new Date()).slice(6)
+    const until = sameYear ? formatBrDayMonth(discount.endsAt) : formatBrDate(discount.endsAt)
+    return `${now} até ${until}, depois ${brl(discount.fullCents)}`
+  }
+  return `${now} com desconto (sem desconto: ${brl(discount.fullCents)})`
+}
+
 function PlanCard({
   plan,
   isCurrent,
   isSwitch,
   isCheckingOut,
   onSubscribe,
+  priceOverride,
 }: {
   plan: PlanItem
+  /** What the clinic actually pays on this plan (a running discount). */
+  priceOverride?: string | null
   isCurrent: boolean
   isSwitch: boolean
   isCheckingOut: boolean
   onSubscribe: (slug: string) => void
 }) {
   const isFree = plan.priceCents === 0
-  const price = isFree
-    ? 'Gratuito'
-    : `R$ ${(plan.priceCents / 100).toFixed(2).replace('.', ',')}/mês`
+  const price = isFree ? 'Gratuito' : (priceOverride ?? `${brl(plan.priceCents)}/mês`)
 
   const features = plan.features as Record<string, boolean>
   const limits = plan.limits as Record<string, number>
@@ -310,6 +341,10 @@ export function BillingSettings() {
       // refetch whatever drives this page.
       await update()
       queryClient.invalidateQueries({ queryKey: ['billing'] })
+      // The platform layout (read-only mode, banner, paywall) is a server
+      // component that client navigation keeps as is; re-render it so a
+      // clinic that just paid stops looking locked.
+      router.refresh()
     },
     onError: (err) => {
       // The webhook is still the source of truth and will very likely
@@ -393,6 +428,7 @@ export function BillingSettings() {
         toast.success('Plano alterado. A diferença é ajustada proporcionalmente.')
         await update()
         queryClient.invalidateQueries({ queryKey: ['billing'] })
+        router.refresh()
         return
       }
       window.location.href = url
@@ -431,6 +467,7 @@ export function BillingSettings() {
       toast.success('Assinatura reativada.')
       await update()
       queryClient.invalidateQueries({ queryKey: ['billing'] })
+      router.refresh()
     },
     onError: (err: Error) => {
       toast.error(err.message)
@@ -489,6 +526,12 @@ export function BillingSettings() {
   }
 
   const { subscription, plan, usage } = usageData
+  const discountLine = usageData.discount
+    ? discountedPriceLine(
+        usageData.discount,
+        subscription.status === 'canceled' && new Date(subscription.currentPeriodEnd) > new Date(),
+      )
+    : null
   const statusConfig = STATUS_CONFIG[subscription.status]
   const plans = plansData?.data ?? []
   const canCancel =
@@ -527,8 +570,13 @@ export function BillingSettings() {
 
   let statusLabel = statusConfig.label
   if (subscription.status === 'trialing') {
-    const daysLeft = differenceInDays(new Date(subscription.currentPeriodEnd), new Date())
-    statusLabel = `Teste gratuito · ${Math.max(daysLeft, 0)} dias restantes`
+    // Same day count and wording as the platform banner: BR calendar days,
+    // and "termina hoje / amanhã às HH:mm", never "0 dias restantes".
+    const daysLeft = Math.max(0, brCalendarDaysBetween(new Date(), new Date(subscription.currentPeriodEnd)))
+    statusLabel =
+      daysLeft <= 1
+        ? `Teste gratuito · termina ${brEndPhrase(subscription.currentPeriodEnd)}`
+        : `Teste gratuito · ${daysLeft} dias restantes`
   }
 
   return (
@@ -539,6 +587,11 @@ export function BillingSettings() {
           <div>
             <p className="text-xs font-medium text-mid uppercase tracking-wider mb-1">Plano atual</p>
             <h3 className="text-lg font-semibold text-charcoal">{plan.name}</h3>
+            {discountLine && (
+              <p className="text-sm text-forest mt-0.5" data-testid="billing-discounted-price">
+                {discountLine}
+              </p>
+            )}
           </div>
           <Badge className={`${statusConfig.className} border-transparent text-xs`}>
             {statusLabel}
@@ -575,6 +628,7 @@ export function BillingSettings() {
                 key={p.id}
                 plan={p}
                 isCurrent={p.slug === plan.slug && !isLapsed}
+                priceOverride={p.slug === plan.slug && !isLapsed ? discountLine : null}
                 isSwitch={isSwitching}
                 isCheckingOut={checkingOutSlug === p.slug}
                 onSubscribe={handleSubscribe}

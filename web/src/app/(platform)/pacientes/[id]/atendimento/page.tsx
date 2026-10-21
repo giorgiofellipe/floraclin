@@ -4,6 +4,7 @@ import { getAuthContext } from '@/lib/auth'
 import { getPatient } from '@/db/queries/patients'
 import { AtendimentoPageClient } from './atendimento-page-client'
 import AtendimentoLoading from './loading'
+import { ReadOnlyPage } from '@/components/layout/read-only-page'
 
 interface AtendimentoPageProps {
   params: Promise<{ id: string }>
@@ -32,7 +33,9 @@ export default async function AtendimentoPage({
 
   return (
     <Suspense fallback={<AtendimentoLoading />}>
-      <AtendimentoPageClient patientId={patientId} />
+      <ReadOnlyPage backHref={`/pacientes/${patientId}`} backLabel="Voltar para o paciente">
+        <AtendimentoPageClient patientId={patientId} />
+      </ReadOnlyPage>
     </Suspense>
   )
 }

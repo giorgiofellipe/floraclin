@@ -28,6 +28,7 @@ import {
   RefreshCwIcon,
   CircleDotIcon,
 } from 'lucide-react'
+import { ReadOnlyGuard } from '@/components/layout/subscription-access'
 
 interface Patient {
   id: string
@@ -286,14 +287,16 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
           </span>
         </div>
 
-        <Button
-          className="bg-forest text-cream hover:bg-sage transition-colors shadow-sm"
-          onClick={() => setShowPaymentForm(true)}
-          data-testid="financial-new-charge"
-        >
-          <PlusIcon className="h-4 w-4" />
-          Nova Cobrança
-        </Button>
+        <ReadOnlyGuard label="Nova Cobrança">
+          <Button
+            className="bg-forest text-cream hover:bg-sage transition-colors shadow-sm"
+            onClick={() => setShowPaymentForm(true)}
+            data-testid="financial-new-charge"
+          >
+            <PlusIcon className="h-4 w-4" />
+            Nova Cobrança
+          </Button>
+        </ReadOnlyGuard>
       </div>
 
       {/* Collapsible filters */}

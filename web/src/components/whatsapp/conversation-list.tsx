@@ -10,6 +10,7 @@ import { Search, MessageSquare, Plus, Check, CheckCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatBrPhone } from '@/lib/phone'
 import { MOBILE_TAP_MIN_H } from './tap-targets'
+import { ReadOnlyGuard } from '@/components/layout/subscription-access'
 
 export interface Conversation {
   id: string
@@ -203,15 +204,17 @@ export const ConversationList = forwardRef<ConversationListHandle, ConversationL
               />
             </div>
             {onNewConversation && (
-              <Button
-                variant="outline"
-                size="icon-sm"
-                className="shrink-0 size-11 md:size-9 text-[#25D366] border-[#25D366]/30 hover:bg-[#25D366]/10"
-                onClick={onNewConversation}
-                aria-label="Nova conversa"
-              >
-                <Plus className="size-4" />
-              </Button>
+              <ReadOnlyGuard label="Nova conversa" className="shrink-0">
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  className="shrink-0 size-11 md:size-9 text-[#25D366] border-[#25D366]/30 hover:bg-[#25D366]/10"
+                  onClick={onNewConversation}
+                  aria-label="Nova conversa"
+                >
+                  <Plus className="size-4" />
+                </Button>
+              </ReadOnlyGuard>
             )}
           </div>
         </div>

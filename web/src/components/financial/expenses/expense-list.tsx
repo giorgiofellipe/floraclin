@@ -24,6 +24,7 @@ import {
   CalendarIcon,
   WalletIcon,
 } from 'lucide-react'
+import { ReadOnlyGuard } from '@/components/layout/subscription-access'
 
 interface ExpenseEntry {
   id: string
@@ -162,14 +163,16 @@ export function ExpenseList() {
           </span>
         </div>
 
-        <Button
-          className="bg-forest text-cream hover:bg-sage transition-colors shadow-sm"
-          onClick={() => setShowForm(true)}
-          data-testid="new-expense-button"
-        >
-          <PlusIcon className="h-4 w-4" />
-          Nova Despesa
-        </Button>
+        <ReadOnlyGuard label="Nova Despesa">
+          <Button
+            className="bg-forest text-cream hover:bg-sage transition-colors shadow-sm"
+            onClick={() => setShowForm(true)}
+            data-testid="new-expense-button"
+          >
+            <PlusIcon className="h-4 w-4" />
+            Nova Despesa
+          </Button>
+        </ReadOnlyGuard>
       </div>
 
       {/* Collapsible filters */}

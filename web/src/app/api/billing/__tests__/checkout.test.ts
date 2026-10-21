@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
  * Switching plans used to double-bill.
@@ -17,6 +17,22 @@ vi.mock('@/lib/auth', () => ({ getAuthContext: vi.fn() }))
 vi.mock('@/lib/stripe', () => ({
   createCheckoutSession: vi.fn(),
   updateSubscriptionPrice: vi.fn(),
+  // Stripe confirms the win-back code unless a test says otherwise.
+  checkPromotionCode: vi.fn(async () => ({
+    percentOff: 30,
+    amountOffCents: null,
+    duration: 'repeating',
+    durationInMonths: 3,
+    productIds: null,
+    firstTimeTransaction: true,
+    minimumAmountCents: null,
+  })),
+  getPriceInfo: vi.fn(async (priceId: string) => ({ productId: `prod_for_${priceId}`, unitAmountCents: 19900 })),
+  customerHasPriorPurchase: vi.fn(async () => false),
+}))
+// Used the trial (a patient and an appointment) unless a test says otherwise.
+vi.mock('@/db/queries/trial-recap', () => ({
+  getTrialUsage: vi.fn(async () => ({ hasPatient: true, hasAppointment: true })),
 }))
 vi.mock('@/db/queries/subscriptions', () => ({
   getSubscription: vi.fn(),
@@ -26,7 +42,13 @@ vi.mock('@/db/queries/subscriptions', () => ({
 }))
 
 import { getAuthContext } from '@/lib/auth'
-import { createCheckoutSession, updateSubscriptionPrice } from '@/lib/stripe'
+import { getTrialUsage } from '@/db/queries/trial-recap'
+import {
+  checkPromotionCode,
+  createCheckoutSession,
+  customerHasPriorPurchase,
+  updateSubscriptionPrice,
+} from '@/lib/stripe'
 import {
   getSubscription,
   getPlanBySlug,
@@ -51,6 +73,7 @@ function request(planSlug = 'pro') {
 
 /** No Stripe subscription yet: the free/trial tenant. */
 const NO_SUBSCRIPTION = {
+  tenantId: 'tenant-1',
   planId: 'plan-free',
   status: 'trialing',
   stripeCustomerId: null,
@@ -63,7 +86,12 @@ const STARTER_ACTIVE = {
   status: 'active',
   stripeCustomerId: 'cus_1',
   stripeSubscriptionId: 'sub_starter',
+  source: 'stripe',
 }
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -90,6 +118,7 @@ const CANCELED_OPEN = {
   status: 'canceled',
   stripeCustomerId: 'cus_1',
   stripeSubscriptionId: 'sub_starter',
+  source: 'stripe',
   currentPeriodEnd: new Date('2026-09-20T00:00:00.000Z'),
 }
 
@@ -99,7 +128,7 @@ describe('POST /api/billing/checkout', () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ url: 'https://checkout.stripe.com/cs_1' })
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null)
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: null })
     expect(updateSubscriptionPrice).not.toHaveBeenCalled()
   })
 
@@ -115,6 +144,16 @@ describe('POST /api/billing/checkout', () => {
     expect(updateSubscriptionPrice).toHaveBeenCalledWith('sub_starter', 'price_pro')
     // The whole point: no second subscription.
     expect(createCheckoutSession).not.toHaveBeenCalled()
+  })
+
+  it('opens a fresh checkout for a gift row that still carries an old Stripe id', async () => {
+    vi.mocked(getSubscription).mockResolvedValue({ ...STARTER_ACTIVE, source: 'gift' } as never)
+
+    const res = await POST(request())
+
+    expect(res.status).toBe(200)
+    expect(updateSubscriptionPrice).not.toHaveBeenCalled()
+    expect(createCheckoutSession).toHaveBeenCalled()
   })
 
   it('records the new plan locally after the switch', async () => {
@@ -178,7 +217,7 @@ describe('POST /api/billing/checkout', () => {
     const res = await POST(request())
 
     expect(res.status).toBe(200)
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_1')
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_1', { promotionCodeId: null })
     expect(updateSubscriptionPrice).not.toHaveBeenCalled()
   })
 
@@ -233,5 +272,155 @@ describe('POST /api/billing/checkout', () => {
     expect(res.status).toBe(403)
     expect(createCheckoutSession).not.toHaveBeenCalled()
     expect(updateSubscriptionPrice).not.toHaveBeenCalled()
+  })
+
+  it('applies the win-back promotion code to an expired trial when one is configured', async () => {
+    vi.stubEnv('STRIPE_WINBACK_PROMOTION_CODE_ID', 'promo_winback')
+    vi.mocked(getSubscription).mockResolvedValue({
+      ...NO_SUBSCRIPTION,
+      status: 'expired',
+      source: 'trial',
+      stripeSubscriptionId: null,
+      firstPaidAt: null,
+      currentPeriodEnd: new Date(Date.now() - 60 * 60 * 1000),
+    } as never)
+
+    const res = await POST(request('pro'))
+
+    expect(res.status).toBe(200)
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: 'promo_winback' })
+  })
+
+  it("charges full price when the clinic's Stripe customer has paid before (first-time-only code)", async () => {
+    vi.stubEnv('STRIPE_WINBACK_PROMOTION_CODE_ID', 'promo_winback')
+    vi.mocked(customerHasPriorPurchase).mockResolvedValueOnce(true)
+    vi.mocked(getSubscription).mockResolvedValue({
+      ...NO_SUBSCRIPTION,
+      status: 'expired',
+      source: 'trial',
+      stripeCustomerId: 'cus_old',
+      stripeSubscriptionId: null,
+      firstPaidAt: null,
+      currentPeriodEnd: new Date(Date.now() - 60 * 60 * 1000),
+    } as never)
+
+    await POST(request('pro'))
+
+    expect(customerHasPriorPurchase).toHaveBeenCalledWith('cus_old', expect.any(Date))
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_old', { promotionCodeId: null })
+  })
+
+  it('charges full price when the plan is under the code minimum amount', async () => {
+    vi.stubEnv('STRIPE_WINBACK_PROMOTION_CODE_ID', 'promo_winback')
+    vi.mocked(checkPromotionCode).mockResolvedValueOnce({
+      percentOff: 30,
+      amountOffCents: null,
+      duration: 'repeating',
+      durationInMonths: 3,
+      productIds: null,
+      firstTimeTransaction: true,
+      minimumAmountCents: 25000,
+    })
+    vi.mocked(getSubscription).mockResolvedValue({
+      ...NO_SUBSCRIPTION,
+      status: 'expired',
+      source: 'trial',
+      stripeSubscriptionId: null,
+      firstPaidAt: null,
+      currentPeriodEnd: new Date(Date.now() - 60 * 60 * 1000),
+    } as never)
+
+    await POST(request('pro'))
+
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: null })
+  })
+
+  it.each([
+    ['no patient', { hasPatient: false, hasAppointment: true }],
+    ['no appointment', { hasPatient: true, hasAppointment: false }],
+    ['neither', { hasPatient: false, hasAppointment: false }],
+  ])('charges full price to a clinic that did not use the trial (%s)', async (_name, usage) => {
+    vi.stubEnv('STRIPE_WINBACK_PROMOTION_CODE_ID', 'promo_winback')
+    vi.mocked(getTrialUsage).mockResolvedValueOnce(usage)
+    vi.mocked(getSubscription).mockResolvedValue({
+      ...NO_SUBSCRIPTION,
+      status: 'expired',
+      source: 'trial',
+      stripeSubscriptionId: null,
+      firstPaidAt: null,
+      currentPeriodEnd: new Date(Date.now() - 60 * 60 * 1000),
+    } as never)
+
+    await POST(request('pro'))
+
+    expect(getTrialUsage).toHaveBeenCalledWith('tenant-1')
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: null })
+  })
+
+  it('charges full price when Stripe says the win-back code is no longer usable', async () => {
+    vi.stubEnv('STRIPE_WINBACK_PROMOTION_CODE_ID', 'promo_winback')
+    vi.mocked(checkPromotionCode).mockResolvedValueOnce(null)
+    vi.mocked(getSubscription).mockResolvedValue({
+      ...NO_SUBSCRIPTION,
+      status: 'expired',
+      source: 'trial',
+      stripeSubscriptionId: null,
+      firstPaidAt: null,
+      currentPeriodEnd: new Date(Date.now() - 60 * 60 * 1000),
+    } as never)
+
+    await POST(request('pro'))
+
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: null })
+  })
+
+  it('charges full price for a plan the win-back coupon does not cover', async () => {
+    vi.stubEnv('STRIPE_WINBACK_PROMOTION_CODE_ID', 'promo_winback')
+    vi.mocked(checkPromotionCode).mockResolvedValueOnce({
+      percentOff: 30,
+      amountOffCents: null,
+      duration: 'repeating',
+      durationInMonths: 3,
+      productIds: ['prod_for_price_starter'],
+      firstTimeTransaction: true,
+      minimumAmountCents: null,
+    })
+    vi.mocked(getSubscription).mockResolvedValue({
+      ...NO_SUBSCRIPTION,
+      status: 'expired',
+      source: 'trial',
+      stripeSubscriptionId: null,
+      firstPaidAt: null,
+      currentPeriodEnd: new Date(Date.now() - 60 * 60 * 1000),
+    } as never)
+
+    await POST(request('pro'))
+
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: null })
+  })
+
+  it('still applies the code to a plan a restricted coupon covers', async () => {
+    vi.stubEnv('STRIPE_WINBACK_PROMOTION_CODE_ID', 'promo_winback')
+    vi.mocked(checkPromotionCode).mockResolvedValueOnce({
+      percentOff: 30,
+      amountOffCents: null,
+      duration: 'repeating',
+      durationInMonths: 3,
+      productIds: ['prod_for_price_pro'],
+      firstTimeTransaction: true,
+      minimumAmountCents: null,
+    })
+    vi.mocked(getSubscription).mockResolvedValue({
+      ...NO_SUBSCRIPTION,
+      status: 'expired',
+      source: 'trial',
+      stripeSubscriptionId: null,
+      firstPaidAt: null,
+      currentPeriodEnd: new Date(Date.now() - 60 * 60 * 1000),
+    } as never)
+
+    await POST(request('pro'))
+
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: 'promo_winback' })
   })
 })

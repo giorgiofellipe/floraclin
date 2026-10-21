@@ -6,7 +6,7 @@ import { SubscriptionBanner } from '../subscription-banner'
  * `canceled` means two different things to the person reading it, and the
  * banner used to tell them only the first: "você mantém acesso até o fim do
  * período contratado". Nothing moves the status on when that period closes
- * (the expiry cron only looks at trials), so a lapsed customer kept being
+ * (the expiry cron never moves `canceled`), so a lapsed customer kept being
  * reassured about access they no longer had, and the "Reativar" link went to
  * a page whose only offer was a different plan from the one they had.
  */
@@ -71,5 +71,47 @@ describe('SubscriptionBanner, other states', () => {
     render(<SubscriptionBanner subscriptionStatus="trialing" currentPeriodEnd={FUTURE} />)
 
     expect(screen.getByText(/teste gratuito/i)).toBeInTheDocument()
+  })
+})
+
+describe('SubscriptionBanner, trial countdown escalation', () => {
+  const inDays = (days: number, hours = 0) =>
+    new Date(NOW.getTime() + (days * 24 + hours) * 60 * 60 * 1000).toISOString()
+
+  it('stays green and dismissible with more than 3 days left', () => {
+    render(<SubscriptionBanner subscriptionStatus="trialing" currentPeriodEnd={inDays(6)} />)
+
+    expect(screen.getByText(/6 dias restantes/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /fechar/i })).toBeInTheDocument()
+  })
+
+  it.each([3, 2, 1])('turns amber and cannot be dismissed with %s day(s) left', (days) => {
+    render(<SubscriptionBanner subscriptionStatus="trialing" currentPeriodEnd={inDays(days)} />)
+
+    // NOW is 09:00 BRT, so the end is at 09:00 BRT too.
+    expect(screen.getByTestId('trial-banner-ending')).toHaveTextContent(
+      days === 1 ? 'termina amanhã às 09:00' : `termina em ${days} dias`,
+    )
+    expect(screen.queryByRole('button', { name: /fechar/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /assinar agora/i })).toBeInTheDocument()
+  })
+
+  it('says "termina hoje" in red on the last day, never "0 dias restantes"', () => {
+    // NOW is 09:00 BRT; this ends at 18:00 BRT the same day.
+    render(<SubscriptionBanner subscriptionStatus="trialing" currentPeriodEnd={inDays(0, 9)} />)
+
+    const banner = screen.getByTestId('trial-banner-last-day')
+    // Same words as the last-day email: "termina hoje às HH:mm".
+    expect(banner).toHaveTextContent(/termina hoje às 18:00/i)
+    expect(banner).not.toHaveTextContent(/0 dias/i)
+    expect(screen.queryByRole('button', { name: /fechar/i })).not.toBeInTheDocument()
+  })
+
+  it('calls a lapsed gift a subscription that ended, not a trial', () => {
+    render(<SubscriptionBanner subscriptionStatus="expired" currentPeriodEnd={PAST} subscriptionSource="gift" />)
+
+    expect(screen.getByText(/sua assinatura terminou/i)).toBeInTheDocument()
+    expect(screen.queryByText(/período de teste/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /exportar meus dados/i })).toBeInTheDocument()
   })
 })

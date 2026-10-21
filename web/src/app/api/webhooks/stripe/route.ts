@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 import { db } from '@/db/client'
 import { tenantSubscriptions, plans } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { constructWebhookEvent, retrieveSubscription, subscriptionPeriod } from '@/lib/stripe'
 import {
   getPlanBySlug,
@@ -149,8 +149,9 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
  * us as a failed charge, and the period check decides when access stops.
  *
  * `paused` is Stripe not collecting: a trial that ends with no payment
- * method lands there. Holding our `trialing` would be the worst answer,
- * because trialing access ignores the period end entirely and would never
+ * method lands there. Holding our `trialing` would be the worst answer:
+ * a Stripe-driven `trialing` row is never cut off by its period end (Stripe
+ * owns that status, see lib/subscription-access.ts), so it would never
  * lapse. `past_due` stops at the period end and reads correctly in the UI.
  *
  * `incomplete` returns null and the row is left alone: that is a checkout
@@ -252,11 +253,21 @@ function extractSubscriptionId(invoice: Stripe.Invoice): string | undefined {
   return typeof sub === 'string' ? sub : sub.id
 }
 
+/**
+ * Only a genuine Stripe-sourced row follows Stripe. A gift or admin grant
+ * written over an old subscription can still carry its id; events for that
+ * old subscription (a late invoice, its deletion) must not rewrite the grant.
+ */
 async function findSubscriptionByStripeId(stripeSubscriptionId: string) {
   const [row] = await db
     .select()
     .from(tenantSubscriptions)
-    .where(eq(tenantSubscriptions.stripeSubscriptionId, stripeSubscriptionId))
+    .where(
+      and(
+        eq(tenantSubscriptions.stripeSubscriptionId, stripeSubscriptionId),
+        eq(tenantSubscriptions.source, 'stripe'),
+      ),
+    )
     .limit(1)
 
   return row ?? null

@@ -3,6 +3,7 @@ import { requirePlatformAdmin } from '@/lib/auth'
 import { extendTrial, getSubscription } from '@/db/queries/subscriptions'
 import { createAuditLog } from '@/lib/audit'
 import { handleApiError } from '@/lib/api-error'
+import { stripePeriodChangeMessage } from '@/lib/admin-stripe-guard'
 
 export async function POST(
   req: Request,
@@ -22,6 +23,11 @@ export async function POST(
     const existing = await getSubscription(tenantId)
     if (!existing) {
       return NextResponse.json({ error: 'Subscription not found' }, { status: 404 })
+    }
+
+    // A Stripe trial ends when Stripe says so; same rule as end-date edits.
+    if (existing.source === 'stripe') {
+      return NextResponse.json({ error: stripePeriodChangeMessage(), code: 'stripe_period_change' }, { status: 400 })
     }
 
     if (existing.status !== 'trialing') {

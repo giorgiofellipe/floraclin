@@ -47,6 +47,7 @@ describe('POST /api/billing/portal', () => {
     expect(createBillingPortalSession).toHaveBeenCalledWith(
       'cus_1',
       'https://app.example/configuracoes?tab=assinatura',
+      undefined,
     )
   })
 
@@ -60,7 +61,21 @@ describe('POST /api/billing/portal', () => {
     const res = await POST(request())
 
     expect(res.status).toBe(200)
-    expect(createBillingPortalSession).toHaveBeenCalledWith('cus_1', expect.any(String))
+    expect(createBillingPortalSession).toHaveBeenCalledWith('cus_1', expect.any(String), undefined)
+  })
+
+  it('opens straight on the card form when the paywall asks for it (past_due)', async () => {
+    await POST(
+      new Request('http://localhost/api/billing/portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flow: 'payment_method_update' }),
+      }),
+    )
+
+    expect(createBillingPortalSession).toHaveBeenCalledWith('cus_1', expect.any(String), {
+      flow: 'payment_method_update',
+    })
   })
 
   it('refuses when the tenant never paid, so has no Stripe customer', async () => {

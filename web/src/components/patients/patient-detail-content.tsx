@@ -53,6 +53,7 @@ import { usePractitioners, useAppointmentProcedureTypes } from '@/hooks/queries/
 import type { Patient } from '@/db/queries/patients'
 import type { Role } from '@/types'
 import { formatBrPhone, toWaMeUrl, tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
+import { ReadOnlyGuard, useReadOnly, useWriteGuard } from '@/components/layout/subscription-access'
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -110,6 +111,8 @@ export function PatientDetailContent({
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
+  const readOnly = useReadOnly()
+  const guardWrite = useWriteGuard()
   const [showPaymentForm, setShowPaymentForm] = useState(false)
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
   const [openingWhatsapp, setOpeningWhatsapp] = useState(false)
@@ -242,7 +245,7 @@ export function PatientDetailContent({
                             <button
                               type="button"
                               className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-[#F4F6F8] transition-colors"
-                              onClick={handleOpenWhatsapp}
+                              onClick={guardWrite(handleOpenWhatsapp)}
                               disabled={openingWhatsapp}
                             >
                               <MessageSquarePlus className="size-3.5 text-[#25D366]" />
@@ -252,7 +255,7 @@ export function PatientDetailContent({
                               type="button"
                               data-testid="request-documents"
                               className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-[#F4F6F8] transition-colors"
-                              onClick={() => setShowRequestDocuments(true)}
+                              onClick={guardWrite(() => setShowRequestDocuments(true))}
                             >
                               <FileQuestion className="size-3.5 text-[#25D366]" />
                               Solicitar documentos
@@ -294,21 +297,33 @@ export function PatientDetailContent({
             {/* Right: actions */}
             <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
               <TooltipProvider delay={300}>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="outline"
-                        size="icon-sm"
-                        className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
-                        onClick={() => setShowAppointmentForm(true)}
-                      >
-                        <CalendarPlus className="size-4" />
-                      </Button>
-                    }
-                  />
-                  <TooltipContent side="bottom"><p>Novo Agendamento</p></TooltipContent>
-                </Tooltip>
+                {readOnly ? (
+                  <ReadOnlyGuard label="Novo Agendamento">
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
+                    >
+                      <CalendarPlus className="size-4" />
+                    </Button>
+                  </ReadOnlyGuard>
+                ) : (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          variant="outline"
+                          size="icon-sm"
+                          className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
+                          onClick={() => setShowAppointmentForm(true)}
+                        >
+                          <CalendarPlus className="size-4" />
+                        </Button>
+                      }
+                    />
+                    <TooltipContent side="bottom"><p>Novo Agendamento</p></TooltipContent>
+                  </Tooltip>
+                )}
 
                 <Tooltip>
                   <TooltipTrigger
@@ -317,7 +332,7 @@ export function PatientDetailContent({
                         variant="outline"
                         size="icon-sm"
                         className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
-                        onClick={() => setShowPaymentForm(true)}
+                        onClick={guardWrite(() => setShowPaymentForm(true))}
                       >
                         <Receipt className="size-4" />
                       </Button>
@@ -333,7 +348,7 @@ export function PatientDetailContent({
                         variant="outline"
                         size="icon-sm"
                         className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
-                        onClick={() => setShowIssueDocument(true)}
+                        onClick={guardWrite(() => setShowIssueDocument(true))}
                       >
                         <FileText className="size-4" />
                       </Button>
@@ -344,16 +359,18 @@ export function PatientDetailContent({
 
               </TooltipProvider>
 
-              <Link
-                href={`/pacientes/${patient.id}/atendimento`}
-                className={cn(
-                  buttonVariants({ size: 'default' }),
-                  'bg-forest text-cream hover:bg-sage transition-all duration-200 rounded-xl px-5 py-2.5 text-[13px] font-semibold gap-2 min-h-[42px] shadow-sm hover:shadow-md',
-                )}
-              >
-                {hasActiveService ? 'Continuar Atendimento' : 'Iniciar Atendimento'}
-                <ArrowRight className="size-4" />
-              </Link>
+              <ReadOnlyGuard label={hasActiveService ? 'Continuar Atendimento' : 'Iniciar Atendimento'}>
+                <Link
+                  href={`/pacientes/${patient.id}/atendimento`}
+                  className={cn(
+                    buttonVariants({ size: 'default' }),
+                    'bg-forest text-cream hover:bg-sage transition-all duration-200 rounded-xl px-5 py-2.5 text-[13px] font-semibold gap-2 min-h-[42px] shadow-sm hover:shadow-md',
+                  )}
+                >
+                  {hasActiveService ? 'Continuar Atendimento' : 'Iniciar Atendimento'}
+                  <ArrowRight className="size-4" />
+                </Link>
+              </ReadOnlyGuard>
             </div>
           </div>
         </div>

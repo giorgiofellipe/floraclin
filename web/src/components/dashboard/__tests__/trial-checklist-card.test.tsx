@@ -12,9 +12,11 @@ function activationWith(overrides: Partial<ActivationState> = {}): ActivationSta
     hasWhatsappSend: false,
     trialDay: 2,
     daysLeft: 12,
+    msLeft: 12 * 24 * 60 * 60 * 1000,
     subscriptionStatus: 'trialing',
     subscriptionSource: 'trial',
     optedOut: false,
+    lastMarketingSentAt: null,
     ...overrides,
   }
 }
