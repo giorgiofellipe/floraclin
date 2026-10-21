@@ -25,7 +25,7 @@ export default function TermosPage() {
               <h2 className="text-xl mb-3">1. Aceitação dos Termos</h2>
               <p>
                 Ao acessar ou utilizar a plataforma FloraClin
-                (&quot;Plataforma&quot;), operada por Bullcode Servicos em
+                (&quot;Plataforma&quot;), operada por Bullcode Serviços em
                 Tecnologia LTDA, CNPJ 27.435.275/0001-04
                 (&quot;FloraClin&quot;, &quot;nós&quot;), você
                 (&quot;Usuário&quot;, &quot;você&quot;) concorda integralmente com

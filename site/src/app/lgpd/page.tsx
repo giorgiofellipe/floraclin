@@ -26,7 +26,7 @@ export default function LgpdPage() {
             <section>
               <h2 className="text-xl mb-3">Nosso Compromisso</h2>
               <p>
-                A FloraClin, operada por Bullcode Servicos em Tecnologia LTDA
+                A FloraClin, operada por Bullcode Serviços em Tecnologia LTDA
                 (CNPJ 27.435.275/0001-04), está
                 comprometida com a conformidade à Lei Geral de Proteção de Dados
                 Pessoais (Lei nº 13.709/2018 — LGPD). Esta página detalha como

@@ -22,5 +22,5 @@ FloraClin é uma plataforma SaaS que integra agenda, prontuário eletrônico, di
 
 ## Empresa
 
-Bullcode Servicos em Tecnologia LTDA
+Bullcode Serviços em Tecnologia LTDA
 CNPJ: 27.435.275/0001-04
