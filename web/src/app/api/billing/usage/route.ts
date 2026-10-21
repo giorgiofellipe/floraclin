@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
-import { getSubscription } from '@/db/queries/subscriptions'
+import { getSubscription, listPlans } from '@/db/queries/subscriptions'
 import { effectiveSubscriptionStatus } from '@/lib/subscription-access'
 import { db } from '@/db/client'
 import { tenantUsers, patients } from '@/db/schema'
@@ -8,6 +8,11 @@ import { eq, and, isNull, sql } from 'drizzle-orm'
 import { getCreditUsage } from '@/db/queries/whatsapp-credits'
 import { handleApiError } from '@/lib/api-error'
 import { getSubscriptionDiscount } from '@/lib/stripe'
+import { getValidatedWinbackOffer } from '@/lib/winback-offer'
+import { getReferralAttribution } from '@/db/queries/referrals'
+import { isReferralEnrollmentEnabled } from '@/lib/referral/config'
+import { getValidatedReferralOffer, publicReferralOffer } from '@/lib/referral/offer'
+import { referralOfferHeadline, type PublicReferralOffer } from '@/lib/referral/offer-copy'
 
 type PlanLimits = Record<string, number>
 
@@ -54,6 +59,29 @@ export async function GET(request: Request) {
         : Promise.resolve(null)
     const [whatsappUsage, discount] = await Promise.all([getCreditUsage(ctx.tenantId), discountP])
 
+    // With the switch off there is no referral DB call at all; when on, the
+    // attribution is read once and shared. The win-back wins at checkout, so
+    // the page shows the referral offer only when there is no win-back.
+    let referral: { offer: (PublicReferralOffer & { headline: string }) | null; canEnterCode: boolean } = {
+      offer: null,
+      canEnterCode: false,
+    }
+    if (isReferralEnrollmentEnabled()) {
+      const attribution = await getReferralAttribution(ctx.tenantId)
+      const plans = await listPlans(true)
+      const winback = await getValidatedWinbackOffer(subscription, plans)
+      const validated = winback
+        ? null
+        : publicReferralOffer(
+            await getValidatedReferralOffer(subscription, plans, undefined, undefined, undefined, { attribution }),
+          )
+      referral = {
+        offer: validated ? { ...validated, headline: referralOfferHeadline(validated) } : null,
+        canEnterCode:
+          ctx.role === 'owner' && !subscription.firstPaidAt && !subscription.stripeSubscriptionId && !attribution,
+      }
+    }
+
     return NextResponse.json({
       subscription: {
         // The effective status, so this page agrees with the gate: a trial
@@ -74,6 +102,7 @@ export async function GET(request: Request) {
         features: subscription.plan.features,
       },
       discount,
+      referral,
       usage: {
         users: {
           used: usersRow?.count ?? 0,
@@ -86,6 +115,7 @@ export async function GET(request: Request) {
         whatsapp: {
           used: whatsappUsage.used,
           limit: whatsappUsage.total,
+          bonus: whatsappUsage.bonus,
           periodEnd: whatsappUsage.periodEnd.toISOString(),
         },
       },
