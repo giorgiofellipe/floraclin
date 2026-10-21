@@ -20,10 +20,13 @@ export const tenants = floraclinSchema.table('tenants', {
   signupAttribution: jsonb('signup_attribution'),
   lifecycleNoticeAt: timestamp('lifecycle_notice_at', { withTimezone: true }),
   lifecycleOptedOutAt: timestamp('lifecycle_opted_out_at', { withTimezone: true }),
+  referralCode: varchar('referral_code', { length: 12 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-})
+}, (table) => [
+  uniqueIndex('uq_tenants_referral_code').on(table.referralCode),
+])
 
 export const users = floraclinSchema.table('users', {
   id: uuid('id').primaryKey(), // matches Supabase auth.users.id
@@ -1128,6 +1131,56 @@ export const tenantSubscriptions = floraclinSchema.table('tenant_subscriptions',
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+export const tenantReferrals = floraclinSchema.table('tenant_referrals', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  referrerTenantId: uuid('referrer_tenant_id').notNull().references(() => tenants.id),
+  referredTenantId: uuid('referred_tenant_id').notNull().references(() => tenants.id).unique('tenant_referrals_referred_unique'),
+  code: varchar('code', { length: 12 }).notNull(),
+  capturedVia: varchar('captured_via', { length: 12 }).notNull(),
+  capturedAt: timestamp('captured_at', { withTimezone: true }).notNull(),
+  status: varchar('status', { length: 16 }).notNull(),
+  pausedReason: varchar('paused_reason', { length: 16 }),
+  ineligibleReason: varchar('ineligible_reason', { length: 32 }),
+  checks: jsonb('checks').$type<Record<string, unknown>>().notNull().default({}),
+  stripeSubscriptionId: varchar('stripe_subscription_id', { length: 255 }),
+  firstPaidAt: timestamp('first_paid_at', { withTimezone: true }),
+  qualifiedAt: timestamp('qualified_at', { withTimezone: true }),
+  qualifyingInvoiceId: varchar('qualifying_invoice_id', { length: 255 }),
+  endedAt: timestamp('ended_at', { withTimezone: true }),
+  version: integer('version').notNull().default(0),
+  reconciledAt: timestamp('reconciled_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_tenant_referrals_referrer_status').on(table.referrerTenantId, table.status),
+  index('idx_tenant_referrals_stripe_sub').on(table.stripeSubscriptionId),
+])
+
+export const referralRewardEvents = floraclinSchema.table('referral_reward_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  referrerTenantId: uuid('referrer_tenant_id').notNull().references(() => tenants.id),
+  counting: integer('counting').notNull(),
+  discountPercent: integer('discount_percent').notNull(),
+  bonusCredits: integer('bonus_credits').notNull(),
+  stripeSubscriptionId: varchar('stripe_subscription_id', { length: 255 }),
+  reason: varchar('reason', { length: 32 }).notNull(),
+  referralId: uuid('referral_id').references(() => tenantReferrals.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_referral_reward_events_referrer_created').on(table.referrerTenantId, table.createdAt),
+])
+
+export const billingCardFingerprints = floraclinSchema.table('billing_card_fingerprints', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  fingerprint: varchar('fingerprint', { length: 64 }).notNull(),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull(),
+}, (table) => [
+  uniqueIndex('uq_billing_card_fingerprints_tenant_fp').on(table.tenantId, table.fingerprint),
+  index('idx_billing_card_fingerprints_fp').on(table.fingerprint),
+])
+
 export const tenantLifecycleMessages = floraclinSchema.table('tenant_lifecycle_messages', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
@@ -1176,6 +1229,8 @@ export const whatsappCredits = floraclinSchema.table('whatsapp_credits', {
   periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
   creditsTotal: integer('credits_total').notNull(),
   creditsUsed: integer('credits_used').notNull().default(0),
+  bonusCredits: integer('bonus_credits').notNull().default(0),
+  bonusSource: varchar('bonus_source', { length: 16 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
