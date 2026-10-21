@@ -15,7 +15,7 @@ export function buildLlmsTxt(): string {
     "",
     "> Sistema de gestão clínica feito exclusivamente para clínicas de Harmonização Orofacial (HOF) no Brasil.",
     "",
-    "FloraClin é uma plataforma SaaS que integra agenda, prontuário eletrônico, diagrama facial interativo, gestão financeira, assinatura digital, agendamento online, anamnese self-service, confirmações por WhatsApp e fotos de antes e depois com alinhamento automático. Planos: Starter R$ 99/mês e Pro R$ 199/mês, com teste grátis de 14 dias sem cartão.",
+    "FloraClin é uma plataforma SaaS que integra agenda, prontuário eletrônico, diagrama facial interativo, gestão financeira, assinatura digital, agendamento online, anamnese self-service, confirmações por WhatsApp e fotos de antes e depois com alinhamento automático, feita para dentistas e profissionais de HOF. Planos: Starter R$ 99/mês e Pro R$ 199/mês, com teste grátis de 14 dias sem cartão.",
     "",
     ...sections.flatMap((section) => [section, ""]),
     "## Links",

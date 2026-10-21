@@ -6,8 +6,9 @@ export const dynamic = "force-static";
 
 export function GET() {
   const key = indexNowKey();
-  if (!key) return new Response("Not Found", { status: 404 });
-  return new Response(key, {
+  // Empty 200 when IndexNow is off, so the ping script can tell "off" apart
+  // from an older deploy that has no such route yet (404).
+  return new Response(key ?? "", {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
       "X-Robots-Tag": "noindex",

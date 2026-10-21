@@ -21,8 +21,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.deployment_status.state == 'success' &&
-       startsWith(github.event.deployment.environment, 'Production') &&
-       endsWith(github.event.deployment.environment, 'floraclin-site'))
+       github.event.deployment.environment == 'Production – floraclin-site')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

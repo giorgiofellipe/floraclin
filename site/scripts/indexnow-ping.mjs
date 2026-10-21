@@ -42,10 +42,12 @@ async function withRetry(label, fn) {
 async function main() {
   const keyRes = await withRetry("key", async () => {
     const res = await fetchText(`${SITE}/indexnow-key`);
-    if (res.status !== 200 && res.status !== 404) throw new Error(`GET /indexnow-key returned ${res.status}`);
+    // A 404 means the live deploy predates the key route (alias still
+    // propagating), so retry; an empty 200 means INDEXNOW_KEY is unset.
+    if (res.status !== 200) throw new Error(`GET /indexnow-key returned ${res.status}`);
     return res;
   });
-  if (keyRes.status === 404) {
+  if (keyRes.text.trim() === "") {
     console.log("INDEXNOW_KEY is not set on the site; IndexNow is off. Nothing to do.");
     return;
   }
@@ -68,11 +70,16 @@ async function main() {
     return urls;
   });
 
-  const res = await fetch(ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-    body: JSON.stringify({ host: HOST, key, keyLocation, urlList }),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  // Retry throttling (429) and server errors; 400/403/422 fail right away.
+  const res = await withRetry("IndexNow", async () => {
+    const response = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ host: HOST, key, keyLocation, urlList }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (response.status === 429 || response.status >= 500) throw new Error(`IndexNow returned ${response.status}`);
+    return response;
   });
   const body = await res.text();
   console.log(`IndexNow answered ${res.status} for ${urlList.length} URLs${body ? `: ${body.slice(0, 300)}` : ""}`);
