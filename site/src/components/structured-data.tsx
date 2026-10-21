@@ -89,6 +89,19 @@ const SCHEMAS = [
   },
   {
     "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: "FloraClin",
+    url: "https://floraclin.com.br",
+    inLanguage: "pt-BR",
+    description:
+      "Gestão clínica para Harmonização Orofacial — agenda, prontuário, diagrama facial, financeiro.",
+  },
+];
+
+// The home FAQ is rendered only on "/": guides and comparisons carry their own
+// FAQPage, and a page should have a single one.
+const HOME_FAQ_SCHEMA = {
+    "@context": "https://schema.org",
     "@type": "FAQPage",
     mainEntity: [
       {
@@ -156,17 +169,15 @@ const SCHEMAS = [
         },
       },
     ],
-  },
-  {
-    "@context": "https://schema.org",
-    "@type": "WebSite",
-    name: "FloraClin",
-    url: "https://floraclin.com.br",
-    inLanguage: "pt-BR",
-    description:
-      "Gestão clínica para Harmonização Orofacial — agenda, prontuário, diagrama facial, financeiro.",
-  },
-];
+  };
+
+function JsonLd({ schema }: { schema: object }) {
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />;
+}
+
+export function HomeFaqStructuredData() {
+  return <JsonLd schema={HOME_FAQ_SCHEMA} />;
+}
 
 export function StructuredData() {
   return (

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { CookiePreferencesLink } from "@/components/cookie-consent-banner";
+import { CONTENT_PAGES } from "@/lib/site-pages";
 
 // Visible link between the FloraClin brand and the verified legal entity.
 // Meta requires it to approve the WhatsApp Business display name "FloraClin".
@@ -18,6 +19,10 @@ const COLUMNS = [
     ],
   },
   {
+    title: "Guias e comparativos",
+    links: CONTENT_PAGES.map((page) => ({ label: page.linkLabel ?? page.title, href: page.path })),
+  },
+  {
     title: "Legal",
     links: [
       { label: "Termos de Uso", href: "/termos" },
@@ -31,7 +36,7 @@ export function Footer() {
   return (
     <footer className="bg-forest text-cream/80 pt-16 md:pt-24 pb-8">
       <div className="mx-auto max-w-[1200px] px-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8 mb-16">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-12 md:gap-8 mb-16">
           {/* Brand column */}
           <div className="md:col-span-1">
             <Link href="/" className="flex items-center gap-2.5 no-underline mb-4">

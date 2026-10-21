@@ -13,3 +13,14 @@ describe('Footer', () => {
     ).toBeInTheDocument()
   })
 })
+
+describe('Footer guide links', () => {
+  // Internal links from every page (home included) to the guides and comparisons.
+  it('links every guide and comparison page', async () => {
+    const { CONTENT_PAGES } = await import('@/lib/site-pages')
+    render(<Footer />)
+    for (const page of CONTENT_PAGES) {
+      expect(screen.getByRole('link', { name: page.linkLabel ?? page.title })).toHaveAttribute('href', page.path)
+    }
+  })
+})

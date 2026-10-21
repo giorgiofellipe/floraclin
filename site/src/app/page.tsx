@@ -9,6 +9,7 @@ import { CtaBanner } from "@/components/cta-banner";
 import { Faq } from "@/components/faq";
 import { Contact } from "@/components/contact";
 import { Footer } from "@/components/footer";
+import { HomeFaqStructuredData } from "@/components/structured-data";
 
 export default function Home() {
   return (
@@ -26,6 +27,7 @@ export default function Home() {
         <Contact />
       </main>
       <Footer />
+      <HomeFaqStructuredData />
     </>
   );
 }
