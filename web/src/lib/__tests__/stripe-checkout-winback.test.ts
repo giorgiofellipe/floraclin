@@ -309,6 +309,18 @@ describe('getSubscriptionDiscount', () => {
       fullCents: 9900,
       duration: 'repeating',
       endsAt: new Date(END * 1000).toISOString(),
+      afterEndsCents: 9900,
+      parts: [
+        {
+          couponId: undefined,
+          purpose: 'other',
+          percentOff: 30,
+          amountOffCents: null,
+          duration: 'repeating',
+          endsAt: new Date(END * 1000).toISOString(),
+        },
+      ],
+      referralPercent: null,
     })
     expect(retrieveSub).toHaveBeenCalledWith('sub_1', { expand: ['discounts.source.coupon.applies_to'] })
   })

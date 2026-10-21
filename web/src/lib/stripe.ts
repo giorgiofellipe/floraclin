@@ -4,6 +4,7 @@ import { plans } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { getAppUrl } from '@/lib/app-url'
 import { reportSideEffectFailure } from '@/lib/observability'
+import type { CardSighting } from '@/lib/referral/types'
 
 let stripeClient: Stripe | null = null
 
@@ -26,7 +27,7 @@ export async function createCheckoutSession(
   tenantId: string,
   planSlug: string,
   stripeCustomerId?: string | null,
-  opts?: { promotionCodeId?: string | null },
+  opts?: { promotionCodeId?: string | null; discountKind?: 'winback' | 'referral'; referralId?: string | null },
 ): Promise<{ sessionId: string; url: string }> {
   const stripe = getStripeClient()
 
@@ -53,20 +54,21 @@ export async function createCheckoutSession(
     mode: 'subscription',
     customer,
     line_items: [{ price: plan.stripePriceId, quantity: 1 }],
-    metadata: { tenantId, planSlug },
+    metadata: { tenantId, planSlug, ...(opts?.referralId ? { referralId: opts.referralId } : {}) },
     success_url: `${appUrl}/configuracoes?tab=assinatura&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${appUrl}/configuracoes?tab=assinatura`,
   }
 
+  const kind = opts?.discountKind ?? 'winback'
   let session: Stripe.Checkout.Session
   if (opts?.promotionCodeId) {
     try {
-      // Win-back: the promotion code is applied for the clinic, never typed
+      // Win-back or referral welcome: the promotion code is applied for the clinic, never typed
       // by them. Stripe rejects `discounts` together with
       // `allow_promotion_codes`, which this session does not set.
       session = await stripe.checkout.sessions.create({
         ...base,
-        metadata: { ...base.metadata, winback: 'true' },
+        metadata: { ...base.metadata, [kind]: 'true' },
         discounts: [{ promotion_code: opts.promotionCodeId }],
       })
     } catch (err) {
@@ -75,7 +77,7 @@ export async function createCheckoutSession(
       // Only for errors about the discount itself: anything else (a bad
       // customer, a bad price) would fail the same way without it.
       if (!isPromotionCodeError(err)) throw err
-      reportSideEffectFailure(err, { area: 'billing', step: 'winback_discount', extra: { tenantId, planSlug } })
+      reportSideEffectFailure(err, { area: 'billing', step: `${kind}_discount`, extra: { tenantId, planSlug } })
       session = await stripe.checkout.sessions.create(base)
     }
   } else {
@@ -267,6 +269,140 @@ export async function updateSubscriptionPrice(
   })
 }
 
+// ─── Referral program helpers ──────────────────────────────────────
+// Thin wrappers over the Stripe API. All of them may throw: callers (webhook
+// handlers, the reconcile cron) rely on a failure to get the event redelivered.
+
+/** Upper bound for auto-paginated lists, so a runaway customer cannot loop. */
+export const STRIPE_LIST_CAP = 1000
+
+/** Retrieve that maps resource_missing to 'missing'; other errors throw. */
+export async function retrieveSubscriptionOrMissing(id: string): Promise<Stripe.Subscription | 'missing'> {
+  try {
+    return await getStripeClient().subscriptions.retrieve(id, { expand: ['discounts.source.coupon'] })
+  } catch (err) {
+    if (err instanceof Stripe.errors.StripeInvalidRequestError && err.code === 'resource_missing') return 'missing'
+    throw err
+  }
+}
+
+/**
+ * Sets the subscription's discount list. No explicit idempotency key: the body
+ * is the absolute desired list, so a repeat is naturally idempotent, while a
+ * fixed key would replay a stale request for 20 → 40 → 20. The SDK's own
+ * per-request retry key still covers network retries.
+ */
+export async function updateSubscriptionDiscounts(
+  id: string,
+  discounts: Stripe.SubscriptionUpdateParams.Discount[],
+): Promise<Stripe.Subscription> {
+  return getStripeClient().subscriptions.update(id, { discounts, proration_behavior: 'none' })
+}
+
+/** Open cycle drafts of a subscription. One page is enough: a subscription has at most one. */
+export async function listOpenCycleDrafts(subscriptionId: string): Promise<Stripe.Invoice[]> {
+  const list = await getStripeClient().invoices.list({
+    subscription: subscriptionId,
+    status: 'draft',
+    limit: 5,
+    expand: ['data.discounts.source.coupon'],
+  })
+  return list.data.filter((invoice) => invoice.billing_reason === 'subscription_cycle')
+}
+
+export async function retrieveInvoiceWithDiscounts(id: string): Promise<Stripe.Invoice> {
+  return getStripeClient().invoices.retrieve(id, { expand: ['discounts.source.coupon'] })
+}
+
+/** Same rule as updateSubscriptionDiscounts: no explicit idempotency key. */
+export async function updateInvoiceDiscounts(
+  id: string,
+  discounts: Stripe.InvoiceUpdateParams.Discount[],
+): Promise<Stripe.Invoice> {
+  return getStripeClient().invoices.update(id, { discounts })
+}
+
+export interface PaidInvoiceSummary {
+  id: string
+  billingReason: string | null
+  amountPaid: number
+  paidAt: Date | null
+}
+
+/** Paid invoices of a subscription, oldest first, across every page (capped). */
+export async function listPaidSubscriptionInvoices(subscriptionId: string): Promise<PaidInvoiceSummary[]> {
+  const invoices = await getStripeClient()
+    .invoices.list({ subscription: subscriptionId, status: 'paid', limit: 100 })
+    .autoPagingToArray({ limit: STRIPE_LIST_CAP })
+  if (invoices.length >= STRIPE_LIST_CAP) {
+    reportSideEffectFailure(new Error('Stripe list cap reached'), {
+      area: 'billing',
+      step: 'stripe_list_cap',
+      extra: { subscriptionId, list: 'invoices' },
+    })
+  }
+  return invoices
+    .map((invoice) => {
+      const paidAtSec = invoice.status_transitions?.paid_at
+      return {
+        id: invoice.id as string,
+        billingReason: invoice.billing_reason ?? null,
+        amountPaid: invoice.amount_paid,
+        paidAt: paidAtSec != null ? new Date(paidAtSec * 1000) : null,
+      }
+    })
+    .sort((a, b) => (a.paidAt?.getTime() ?? 0) - (b.paidAt?.getTime() ?? 0))
+}
+
+/** Cards that paid for a customer, with first/last successful charge times. */
+export async function listCustomerCardSightings(customerId: string): Promise<CardSighting[]> {
+  const charges = await getStripeClient()
+    .charges.list({ customer: customerId, limit: 100 })
+    .autoPagingToArray({ limit: STRIPE_LIST_CAP })
+  if (charges.length >= STRIPE_LIST_CAP) {
+    reportSideEffectFailure(new Error('Stripe list cap reached'), {
+      area: 'billing',
+      step: 'stripe_list_cap',
+      extra: { customerId, list: 'charges' },
+    })
+  }
+  const byFingerprint = new Map<string, CardSighting>()
+  for (const charge of charges) {
+    if (charge.status !== 'succeeded') continue
+    const fingerprint = charge.payment_method_details?.card?.fingerprint
+    if (!fingerprint) continue
+    const at = new Date(charge.created * 1000)
+    const seen = byFingerprint.get(fingerprint)
+    if (!seen) {
+      byFingerprint.set(fingerprint, { fingerprint, firstSeenAt: at, lastSeenAt: at })
+    } else {
+      if (at < seen.firstSeenAt) seen.firstSeenAt = at
+      if (at > seen.lastSeenAt) seen.lastSeenAt = at
+    }
+  }
+  return [...byFingerprint.values()]
+}
+
+/** The customer's earliest subscription (any status), or null. */
+export async function findEarliestSubscriptionId(customerId: string): Promise<string | null> {
+  const subs = await getStripeClient()
+    .subscriptions.list({ customer: customerId, status: 'all', limit: 100 })
+    .autoPagingToArray({ limit: STRIPE_LIST_CAP })
+  let earliest: Stripe.Subscription | null = null
+  for (const sub of subs) {
+    if (!earliest || sub.created < earliest.created) earliest = sub
+  }
+  return earliest?.id ?? null
+}
+
+/** The Stripe customer behind a dispute's charge, or null when it has none. */
+export async function retrieveDisputeCustomerId(dispute: Stripe.Dispute): Promise<string | null> {
+  const charge =
+    typeof dispute.charge === 'string' ? await getStripeClient().charges.retrieve(dispute.charge) : dispute.charge
+  if (!charge) return null
+  return typeof charge.customer === 'string' ? charge.customer : (charge.customer?.id ?? null)
+}
+
 // ─── Win-back promotion code check ─────────────────────────────────
 
 const PROMO_CHECK_TTL_MS = 10 * 60 * 1000
@@ -451,18 +587,37 @@ export async function customerHasPriorPurchase(customerId: string, now: Date = n
   return prior
 }
 
+export type DiscountPurpose = 'referral_reward' | 'referral_welcome' | 'winback' | 'other'
+
+export interface SubscriptionDiscountPart {
+  couponId: string
+  purpose: DiscountPurpose
+  percentOff: number | null
+  amountOffCents: number | null
+  duration: 'repeating' | 'forever'
+  /** When Stripe stops applying this part (repeating only); null otherwise. */
+  endsAt: string | null
+}
+
 /**
- * A discount running on a Stripe subscription (e.g. the win-back coupon),
- * for the billing page: what the clinic pays now and until when.
+ * The discounts running on a Stripe subscription (referral reward, referral
+ * welcome, win-back), for the billing page: what the clinic pays now and until
+ * when. The fields keep their single-discount meaning for the billing page.
  */
 export interface SubscriptionDiscount {
-  /** Per month with the discount, BRL cents. */
+  /** Per month with every active part applied, in Stripe's order, BRL cents. */
   discountedCents: number
-  /** Per month without it, BRL cents (the Stripe price). */
+  /** Per month without any, BRL cents (the Stripe price). */
   fullCents: number
+  /** 'repeating' if any part repeats. */
   duration: 'repeating' | 'forever'
-  /** When Stripe stops applying it (repeating only); null otherwise. */
+  /** Earliest end among the repeating parts; null otherwise. */
   endsAt: string | null
+  /** Price once the earliest repeating part ends (the others still applied); null with no repeating part. */
+  afterEndsCents: number | null
+  parts: SubscriptionDiscountPart[]
+  /** Percent of the referral_reward part, if any. */
+  referralPercent: number | null
 }
 
 const subscriptionDiscountCache = new Map<string, { discount: SubscriptionDiscount | null; until: number }>()
@@ -472,16 +627,34 @@ export function clearSubscriptionDiscountCache(): void {
   subscriptionDiscountCache.clear()
 }
 
-function discountCoupon(d: string | Stripe.Discount): Stripe.Coupon | null {
+export function discountCouponOf(d: string | Stripe.Discount | Stripe.DeletedDiscount): Stripe.Coupon | null {
   if (typeof d === 'string') return null
-  const coupon = d.source?.coupon
+  const coupon = 'source' in d ? d.source?.coupon : null
   return coupon && typeof coupon === 'object' ? coupon : null
 }
 
+/** Sequential: for each part, amount -= percent ? round(amount × p / 100) : amountOff; clamped at 0. */
+export function combineDiscounts(
+  fullCents: number,
+  parts: Array<Pick<SubscriptionDiscountPart, 'percentOff' | 'amountOffCents'>>,
+): number {
+  let amount = fullCents
+  for (const part of parts) {
+    const off = part.percentOff ? Math.round((amount * part.percentOff) / 100) : (part.amountOffCents ?? 0)
+    amount = Math.max(0, amount - off)
+  }
+  return amount
+}
+
+function discountPurpose(coupon: Stripe.Coupon): DiscountPurpose {
+  const purpose = coupon.metadata?.purpose
+  return purpose === 'referral_reward' || purpose === 'referral_welcome' ? purpose : 'other'
+}
+
 /**
- * The discount on a subscription right now, read from Stripe (subscription
+ * The discounts on a subscription right now, read from Stripe (subscription
  * level, where Checkout puts a promotion code). One retrieve, cached per
- * server instance for 10 minutes and never past the discount's own end.
+ * server instance for 10 minutes and never past the earliest part's end.
  * Null when there is none or Stripe errors (the page then shows the plain
  * price, which is what it showed before).
  */
@@ -509,31 +682,56 @@ export async function getSubscriptionDiscount(
         ? price.unit_amount * (item.quantity ?? 1)
         : null
     const nowSec = Math.floor(now.getTime() / 1000)
-    const active = (sub.discounts ?? []).find(
-      (d): d is Stripe.Discount =>
-        typeof d !== 'string' && d.start <= nowSec && (d.end == null || d.end > nowSec) && !!discountCoupon(d),
-    )
-    const coupon = active ? discountCoupon(active) : null
     const productId = price ? (typeof price.product === 'string' ? price.product : price.product?.id) : null
-    // A coupon limited to other products stays on the subscription after a
-    // plan switch but no longer discounts it.
-    const applies = !coupon?.applies_to || (!!productId && coupon.applies_to.products.includes(productId))
-    // A `once` coupon is spent on the first invoice, which checkout already
-    // paid, so there is nothing ahead to show.
-    if (fullCents != null && active && coupon && applies && coupon.duration !== 'once') {
-      const off = coupon.percent_off
-        ? Math.round((fullCents * coupon.percent_off) / 100)
-        : coupon.amount_off != null && (coupon.currency ?? '').toLowerCase() === 'brl'
+    const parts: SubscriptionDiscountPart[] = []
+    const ends: Array<number | null> = []
+    for (const d of sub.discounts ?? []) {
+      if (typeof d === 'string' || d.start > nowSec || (d.end != null && d.end <= nowSec)) continue
+      const coupon = discountCouponOf(d)
+      if (!coupon) continue
+      // A coupon limited to other products stays on the subscription after a
+      // plan switch but no longer discounts it.
+      const applies = !coupon.applies_to || (!!productId && coupon.applies_to.products.includes(productId))
+      // A `once` coupon is spent on the first invoice, which checkout already
+      // paid, so there is nothing ahead to show.
+      if (!applies || coupon.duration === 'once') continue
+      const percentOff = coupon.percent_off || null
+      const amountOffCents =
+        !percentOff && coupon.amount_off != null && (coupon.currency ?? '').toLowerCase() === 'brl'
           ? coupon.amount_off
           : null
-      if (off) {
+      if (!percentOff && !amountOffCents) continue
+      parts.push({
+        couponId: coupon.id,
+        purpose: discountPurpose(coupon),
+        percentOff,
+        amountOffCents,
+        duration: coupon.duration === 'forever' ? 'forever' : 'repeating',
+        endsAt: d.end != null ? new Date(d.end * 1000).toISOString() : null,
+      })
+      ends.push(d.end ?? null)
+    }
+    if (fullCents != null && parts.length > 0) {
+      const discountedCents = combineDiscounts(fullCents, parts)
+      if (discountedCents < fullCents) {
+        const endTimes = parts.flatMap((p) => (p.duration === 'repeating' && p.endsAt ? [p.endsAt] : []))
+        const endsAt = endTimes.length > 0 ? endTimes.reduce((a, b) => (a <= b ? a : b)) : null
+        const hasRepeating = parts.some((p) => p.duration === 'repeating')
         discount = {
-          discountedCents: Math.max(0, fullCents - off),
+          discountedCents,
           fullCents,
-          duration: coupon.duration === 'forever' ? 'forever' : 'repeating',
-          endsAt: active.end != null ? new Date(active.end * 1000).toISOString() : null,
+          duration: hasRepeating ? 'repeating' : 'forever',
+          endsAt,
+          afterEndsCents: hasRepeating
+            ? combineDiscounts(
+                fullCents,
+                parts.filter((p) => !(p.duration === 'repeating' && p.endsAt === endsAt)),
+              )
+            : null,
+          parts,
+          referralPercent: parts.find((p) => p.purpose === 'referral_reward')?.percentOff ?? null,
         }
-        if (active.end != null) until = Math.min(until, active.end * 1000)
+        for (const end of ends) if (end != null) until = Math.min(until, end * 1000)
       }
     }
   } catch (err) {
