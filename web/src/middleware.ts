@@ -51,14 +51,21 @@ export default auth((req) => {
       if (session?.emailVerified === false) return NextResponse.redirect(new URL('/confirm-email', req.url))
       return NextResponse.redirect(new URL('/dashboard', req.url))
     }
+    // /login too: people arriving there (bounced from / or a deep link) reach
+    // /signup through a client-side link, which never makes a document request
+    // and so would never be captured.
     const response = NextResponse.next()
-    if (pathname === '/signup') captureFirstTouch(req, response)
+    captureFirstTouch(req, response)
     return response
   }
 
-  // Not authenticated — redirect to login
+  // Not authenticated — redirect to login. The redirect drops the query
+  // string, so an ad or link pointing at the app root would lose its UTMs;
+  // record the first touch on the redirect response before they are gone.
   if (!isAuthenticated) {
-    return NextResponse.redirect(new URL('/login', req.url))
+    const response = NextResponse.redirect(new URL('/login', req.url))
+    captureFirstTouch(req, response)
+    return response
   }
 
   // Authenticated from here — read tenant info from session
