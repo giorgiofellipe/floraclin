@@ -35,6 +35,8 @@ export function contentPageMetadata(path: string): Metadata {
       url: absoluteUrl(path),
       type: "article",
       locale: "pt_BR",
+      // A page-level openGraph replaces the layout's, file-based image included.
+      images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "FloraClin — Gestão para clínicas de HOF" }],
       publishedTime: brDayToDate(page.published ?? page.updated).toISOString(),
       modifiedTime: brDayToDate(page.updated).toISOString(),
     },
@@ -133,7 +135,7 @@ export function ContentPage({
               FloraClin
             </Link>
             <span aria-hidden="true"> / </span>
-            <span>{page.linkLabel ?? page.title}</span>
+            <span aria-current="page">{page.linkLabel ?? page.title}</span>
           </nav>
           <p className="section-label mb-4">{eyebrow}</p>
           <h1 className="text-[2rem] leading-tight md:text-5xl md:leading-[1.1] mb-4">

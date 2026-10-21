@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { Footer } from '../footer'
+import { CONTENT_PAGES } from '@/lib/site-pages'
 
 describe('Footer', () => {
   // Meta checks this visible line to approve the WhatsApp display name "FloraClin".
@@ -16,8 +17,7 @@ describe('Footer', () => {
 
 describe('Footer guide links', () => {
   // Internal links from every page (home included) to the guides and comparisons.
-  it('links every guide and comparison page', async () => {
-    const { CONTENT_PAGES } = await import('@/lib/site-pages')
+  it('links every guide and comparison page', () => {
     render(<Footer />)
     for (const page of CONTENT_PAGES) {
       expect(screen.getByRole('link', { name: page.linkLabel ?? page.title })).toHaveAttribute('href', page.path)

@@ -183,8 +183,8 @@ export default function GuiaFotosPage() {
           Consentimento Livre e Esclarecido (art. 2º).
         </li>
         <li>
-          Continua proibido o sensacionalismo, a autopromoção, a mercantilização e a promessa de resultado (art. 2º, §
-          1º).
+          Continua proibido usar expressões que caracterizem sensacionalismo, autopromoção, concorrência desleal,
+          mercantilização da Odontologia ou promessa de resultado (art. 2º, § 1º).
         </li>
         <li>
           Proíbe vídeos e imagens do transcurso ou da realização do procedimento, exceto em publicações científicas
@@ -208,7 +208,10 @@ export default function GuiaFotosPage() {
           complicações e, quando aplicável, diferentes biotipos, faixas etárias e evoluções imediatas, mediatas e
           tardias.
         </li>
-        <li>É vedado usar imagens que identifiquem o paciente e qualquer edição, manipulação ou melhoramento.</li>
+        <li>
+          É vedado usar imagens de procedimentos que identifiquem o paciente e qualquer edição, manipulação ou
+          melhoramento das imagens.
+        </li>
         <li>
           Com fotos do próprio acervo, é preciso autorização do paciente, respeito ao pudor e à privacidade, e garantia
           de anonimato mesmo com a autorização.
@@ -234,7 +237,7 @@ export default function GuiaFotosPage() {
           rostos na mesma posição, escala e rotação. A foto original não é alterada.
         </li>
         <li>
-          <strong>Linha do tempo:</strong> cada foto fica marcada como pré, pós imediato, 7, 30 ou 90 dias, junto ao
+          <strong>Linha do tempo:</strong> cada foto fica marcada como pré, pós-imediato, 7, 30 ou 90 dias, junto ao
           procedimento e ao diagrama facial.
         </li>
         <li>

@@ -46,17 +46,20 @@ export const COMPETITORS = {
     prontuario: "Sim (prontuário e anamnese digital, fichas por especialidade)",
     facialMap: "Não verificado",
     beforeAfter: "Não verificado para fotos clínicas (a IA do plano Combo simula o antes e depois do sorriso)",
-    lgpd: "Não verificado",
+    lgpd: "Declara seguir a LGPD; prontuário criptografado em nuvem",
     strengths:
       "Usuários ilimitados em todos os planos, odontograma, app do paciente gratuito, emissão de NFS-e (com custo adicional), gestão de várias unidades e importação de dados em até 3 dias úteis.",
-    sources: [{ label: "Clinicorp, planos", url: "https://www.clinicorp.com/planos" }],
+    sources: [
+      { label: "Clinicorp, planos", url: "https://www.clinicorp.com/planos" },
+      { label: "Clinicorp, página principal", url: "https://www.clinicorp.com/" },
+    ],
   },
   belle: {
     name: "Belle Software",
     focus: "Clínicas de estética e odontologia, incluindo franquias.",
     price:
       "Não verificado (o valor depende do número de agendas e não aparece na página); módulos à parte, como WhatsApp R$ 229/mês e assinatura eletrônica R$ 45/mês",
-    trial: "14 dias grátis",
+    trial: "14 dias grátis, sem cartão",
     prontuario: "Sim, com IA que transcreve áudios",
     facialMap: "Não verificado (tem módulo de HOF)",
     beforeAfter: "Não verificado",
@@ -99,13 +102,16 @@ export const COMPETITORS = {
     focus: "Estética brasileira, de autônomas a estúdios com equipe.",
     price: "Solo R$ 39,90, Pro R$ 49,90 e Studio R$ 99,90 por mês",
     trial: "14 dias grátis, sem cartão",
-    prontuario: "Sim, que não pode ser apagado depois, com anamnese assinada",
+    prontuario: "Sim, com anamnese assinada; o registro não pode ser apagado depois",
     facialMap: "Sim (Pro): mapa do rosto com dose por ponto, lote, validade e foto da etiqueta",
     beforeAfter: "Fotos lado a lado; alinhamento automático não informado",
     lgpd: "Declara conformidade com a LGPD e DPO ativo",
     strengths:
       "Preço de entrada baixo, recepcionista sem custo, WhatsApp incluso sem custo por envio e registro de injetáveis com foto da etiqueta.",
-    sources: [{ label: "Agendiva, preços", url: "https://agendiva.com.br/precos" }],
+    sources: [
+      { label: "Agendiva, preços", url: "https://agendiva.com.br/precos" },
+      { label: "Agendiva, página principal", url: "https://agendiva.com.br/" },
+    ],
   },
   harmony: {
     name: "Harmony",
@@ -144,10 +150,11 @@ export const COMPETITORS = {
     prontuario: "Sim, com registro fotográfico de evolução",
     facialMap: "Sim: módulo de HOF com cada ponto na anatomia facial (produto, região, unidades e valor)",
     beforeAfter: "Comparação por sessão e exportação em PDF; alinhamento automático não informado",
-    lgpd: "Não verificado",
+    lgpd: "Declara conformidade com a LGPD; dados na AWS com criptografia e backup em 3 países",
     strengths:
       "Módulo de HOF junto com odontograma no mesmo sistema, importação gratuita do cadastro de pacientes e agente de atendimento com IA (contratado à parte).",
     sources: [
+      { label: "Santé, página principal", url: "https://www.santesistemas.io/" },
       { label: "Santé, planos", url: "https://www.santesistemas.io/planos" },
       { label: "Santé, harmonização orofacial", url: "https://www.santesistemas.io/harmonizacao-orofacial" },
     ],
@@ -170,11 +177,11 @@ export const COMPETITORS = {
     focus: "Sistema para clínicas e consultórios de várias áreas da saúde, com vertical de estética.",
     price:
       "No anual: Essencial 12x R$ 249 (até 3 usuários) e Avançado 12x R$ 399 (até 10); Experts sob orçamento. Mensal: não verificado",
-    trial: "7 dias grátis",
+    trial: "7 dias grátis, sem cartão",
     prontuario: "Sim, com transcrição do atendimento por IA",
     facialMap: "Planejador de injetáveis com os pontos marcados sobre a foto",
     beforeAfter: "Comparação arrastando sobre as fotos; alinhamento automático não informado",
-    lgpd: "Não verificado",
+    lgpd: "Declara conformidade com a LGPD e registra histórico de acessos e modificações",
     strengths:
       "Assistente de IA no WhatsApp 24h (Anna), transcrição do atendimento, análise de pele por IA, emissão de nota fiscal, teleconsulta e odontograma.",
     sources: [
@@ -188,5 +195,3 @@ export const COMPETITORS = {
     ],
   },
 } satisfies Record<string, CompetitorFacts>;
-
-export type CompetitorKey = keyof typeof COMPETITORS;

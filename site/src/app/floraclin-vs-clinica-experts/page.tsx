@@ -99,7 +99,7 @@ export default function FloraClinVsClinicaExpertsPage() {
           Experts descreve uma comparação por arrastar, sem alinhamento.
         </li>
         <li>
-          <strong>Teste mais longo e sem cartão:</strong> 14 dias, contra 7.
+          <strong>Teste mais longo:</strong> 14 dias, contra 7 (os dois sem cartão).
         </li>
         <li>
           <strong>Preço de entrada:</strong> R$ 99/mês no Starter, contra 12x R$ 249 no Essencial anual.

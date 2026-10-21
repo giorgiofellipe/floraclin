@@ -41,7 +41,7 @@ export default function FloraClinVsSimpluPage() {
       faqs={FAQS}
       quickAnswer={
         <p>
-          FloraClin e Simplu são os dois sistemas da lista feitos para harmonização que{" "}
+          FloraClin e Simplu são os dois sistemas do nosso comparativo feitos para harmonização que{" "}
           <strong>alinham automaticamente o antes e depois</strong>. O <strong>Simplu</strong> vai além em mapa facial
           3D, estoque pelo lote e equilíbrio de luz, e inclui tudo ilimitado por R$ 297/mês (R$ 252 no anual), sem teste
           grátis. O <strong>FloraClin</strong> custa R$ 99 ou R$ 199/mês, tem 14 dias grátis sem cartão e cobre

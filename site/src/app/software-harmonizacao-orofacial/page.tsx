@@ -16,7 +16,7 @@ const FAQS: FaqItem[] = [
   {
     question: "O que fica registrado em cada ponto do diagrama facial?",
     answer:
-      "Produto, princípio ativo, quantidade com a unidade (U, mL e outras), técnica, profundidade e observações. O diagrama tem vista frontal e perfis. O lote e a validade do produto ficam no registro de aplicação do procedimento.",
+      "Produto, princípio ativo, quantidade com a unidade (U ou mL), técnica, profundidade e observações. O diagrama tem vista frontal e perfis. O lote e a validade do produto ficam no registro de aplicação do procedimento.",
   },
   {
     question: "Como funciona o teste grátis?",
@@ -31,7 +31,7 @@ const FAQS: FaqItem[] = [
   {
     question: "O paciente precisa baixar um app?",
     answer:
-      "Não. O paciente recebe links pelo WhatsApp para confirmar a consulta, preencher a anamnese e assinar os termos, sem cadastro nem senha.",
+      "Não. O paciente confirma a consulta com um toque na mensagem do WhatsApp e recebe links para preencher a anamnese e assinar os termos, sem cadastro nem senha.",
   },
   {
     question: "Consigo trazer meus pacientes de outro sistema?",
@@ -78,7 +78,7 @@ export default function SoftwareHofPage() {
       <h2>Diagrama facial com o que foi aplicado em cada ponto</h2>
       <p>
         Em vez de um campo de texto com &quot;toxina na glabela&quot;, você toca no rosto e o ponto guarda o produto, o
-        princípio ativo, a quantidade (em U, mL e outras unidades), a técnica e a profundidade. O diagrama tem vista
+        princípio ativo, a quantidade (em U ou mL), a técnica e a profundidade. O diagrama tem vista
         frontal e de perfil, e o resumo soma o total por produto. Na sessão seguinte, você abre o mesmo mapa e sabe
         exatamente o que foi feito.
       </p>
@@ -112,7 +112,7 @@ export default function SoftwareHofPage() {
       <h2>Fotos de antes e depois que dá para comparar</h2>
       <p>
         A câmera mostra o contorno da pose (frontal, 45° e perfis), confere a posição do rosto e tira a foto sozinha
-        quando está tudo certo. Cada foto fica marcada no tempo (pré, pós imediato, 7, 30 ou 90 dias). Na comparação,
+        quando está tudo certo. Cada foto fica marcada no tempo (pré, pós-imediato, 7, 30 ou 90 dias). Na comparação,
         o FloraClin detecta os olhos nas duas fotos e alinha posição, escala e rotação, para que a diferença que
         aparece seja o resultado, não o enquadramento. Dá para comparar com cortina, lado a lado ou sobreposto, e
         anotar com setas, círculos e régua. O guia de{" "}
@@ -122,7 +122,7 @@ export default function SoftwareHofPage() {
 
       <h2>Agenda e WhatsApp</h2>
       <ul>
-        <li>Agenda com todos os profissionais lado a lado e sincronização com o Google Calendar.</li>
+        <li>Agenda com filtro por profissional e sincronização com o Google Calendar.</li>
         <li>Agendamento online por uma página pública da clínica.</li>
         <li>
           Confirmação e lembrete automáticos pelo WhatsApp, além de mensagens de pré e pós-procedimento, retorno e
@@ -133,13 +133,13 @@ export default function SoftwareHofPage() {
 
       <h2>Financeiro da clínica</h2>
       <p>
-        Parcelas, comissões por profissional, despesas e vendas no cartão com as maquininhas e os repasses, ligados ao
-        procedimento. Também há CRM de pacientes com tags e acompanhamento de retorno.
+        Parcelas, receita por profissional, despesas e vendas no cartão com as maquininhas e os repasses, ligados ao
+        procedimento. Também há CRM de contatos e acompanhamento de retorno.
       </p>
 
       <h2>O que o FloraClin ainda não faz</h2>
       <p>
-        Para você decidir com tudo na mesa: o FloraClin não tem controle de estoque com baixa automática, não emite
+        Para você decidir com tudo na mesa: o FloraClin não tem controle de estoque, não emite
         nota fiscal, não tem odontograma nem transcrição do atendimento por IA, e não tem app nas lojas (funciona no
         navegador). Se algum desses pontos for decisivo, veja o{" "}
         <Link href="/melhores-sistemas-clinica-estetica-harmonizacao-2026">comparativo de sistemas</Link>, que mostra

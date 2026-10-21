@@ -107,7 +107,7 @@ type Facts = Record<(typeof HEAD_TO_HEAD_ROWS)[number]["key"] | "name", string>;
 export function HeadToHead({ a, b }: { a: Facts; b: Facts }) {
   return (
     <ComparisonTable
-      caption="Dados das páginas oficiais, consultadas em 21/10/2026."
+      caption={`Dados das páginas oficiais, consultadas em ${SOURCES_CHECKED_ON}.`}
       head={["", a.name, b.name]}
       rows={HEAD_TO_HEAD_ROWS.map((r) => [r.label, a[r.key], b[r.key]])}
     />

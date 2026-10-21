@@ -36,7 +36,7 @@ const FAQS: FaqItem[] = [
   {
     question: "Quais sistemas têm teste grátis sem cartão?",
     answer:
-      "Na data da consulta: FloraClin (14 dias), Agendiva (14 dias), Santé (7 dias) e TuttoHOF (90 dias) informam teste sem cartão. Belle oferece 14 dias, Clínica Experts 7 e Trinks 5, sem dizer na página consultada se pedem cartão. Harmony pede o cartão na ativação dos 7 dias. Simplu e Iter Clinic não têm teste grátis: oferecem garantia de reembolso de 7 e 14 dias.",
+      "Na data da consulta: FloraClin (14 dias), Agendiva (14 dias), Belle (14 dias), Santé (7 dias), Clínica Experts (7 dias) e TuttoHOF (90 dias) informam teste sem cartão. A Trinks oferece 5 dias, sem dizer na página consultada se pede cartão. Harmony pede o cartão na ativação dos 7 dias. Simplu e Iter Clinic não têm teste grátis: oferecem garantia de reembolso de 7 e 14 dias, respectivamente.",
   },
   {
     question: "Esse comparativo é imparcial?",
@@ -76,7 +76,7 @@ export default function MelhoresSistemasPage() {
             Para <strong>harmonização orofacial</strong>, os sistemas que registram cada ponto de aplicação no rosto são
             FloraClin, Simplu, Santé (módulo de HOF) e Agendiva (plano Pro). Só <strong>FloraClin e Simplu</strong>{" "}
             dizem alinhar automaticamente as fotos de antes e depois. Para pagar pouco atendendo sozinha, Agendiva (R$
-            39,90/mês) e Iter Clinic (R$ 69/mês) são os mais baratos. Para redes e franquias, Clinicorp e Belle têm mais
+            39,90/mês), TuttoHOF (R$ 49,99/mês, como exibido na página) e Iter Clinic (R$ 69/mês) são os mais baratos. Para redes e franquias, Clinicorp e Belle têm mais
             módulos.
           </p>
           <p>
@@ -138,11 +138,11 @@ export default function MelhoresSistemasPage() {
         cada ponto, na vista frontal e nos perfis, e o lote e a validade do produto ficam no registro do procedimento.
         As fotos são tiradas com guia de pose e captura automática, e a comparação de antes e depois alinha os rostos
         sozinha. A agenda confirma consultas pelo WhatsApp, o paciente preenche a anamnese e assina os termos pelo
-        celular, e o financeiro cuida de parcelas, comissões e maquininhas. Custa R$ 99/mês (Starter) ou R$ 199/mês
+        celular, e o financeiro cuida de parcelas, despesas e maquininhas. Custa R$ 99/mês (Starter) ou R$ 199/mês
         (Pro), com 14 dias grátis sem cartão.
       </p>
       <p>
-        <strong>Onde ainda não chegamos:</strong> o FloraClin não tem controle de estoque com baixa automática, não emite
+        <strong>Onde ainda não chegamos:</strong> o FloraClin não tem controle de estoque, não emite
         nota fiscal, não tem odontograma nem transcrição do atendimento por IA, e funciona no navegador (não há app nas
         lojas). Se isso for essencial para você, alguns concorrentes abaixo atendem melhor.
       </p>

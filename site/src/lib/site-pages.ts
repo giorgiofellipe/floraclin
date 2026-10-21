@@ -139,7 +139,7 @@ export const SITE_PAGES: readonly SitePage[] = [
     path: "/floraclin-vs-simplu",
     title: "FloraClin vs Simplu",
     summary:
-      "Comparação entre FloraClin e Simplu, os dois sistemas feitos para harmonização orofacial: preço, teste, mapa facial e antes e depois com IA.",
+      "Comparação entre FloraClin e Simplu, dois sistemas feitos para harmonização orofacial: preço, teste, mapa facial e antes e depois com IA.",
     updated: "2026-10-21",
     published: "2026-10-21",
     changeFrequency: "monthly",

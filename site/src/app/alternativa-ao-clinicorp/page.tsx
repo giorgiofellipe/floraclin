@@ -114,7 +114,7 @@ export default function AlternativaClinicorpPage() {
       <p>
         Quer ver outras opções? O{" "}
         <Link href="/melhores-sistemas-clinica-estetica-harmonizacao-2026">comparativo de sistemas de 2026</Link> traz
-        onze sistemas com preços verificados.
+        onze sistemas, com os preços publicados nos sites oficiais.
       </p>
 
       <SourceList sources={[...CLINICORP.sources, ...FLORACLIN.sources]} />

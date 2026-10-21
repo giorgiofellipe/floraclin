@@ -12,10 +12,10 @@ const COLUMNS = [
   {
     title: "Navegação",
     links: [
-      { label: "Recursos", href: "#recursos" },
-      { label: "Como Funciona", href: "#como-funciona" },
-      { label: "Preços", href: "#precos" },
-      { label: "Contato", href: "#contato" },
+      { label: "Recursos", href: "/#recursos" },
+      { label: "Como Funciona", href: "/#como-funciona" },
+      { label: "Preços", href: "/#precos" },
+      { label: "Contato", href: "/#contato" },
     ],
   },
   {
