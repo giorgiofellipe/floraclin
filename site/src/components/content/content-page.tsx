@@ -20,7 +20,7 @@ const DATE_FORMAT = new Intl.DateTimeFormat("pt-BR", {
 });
 
 /** <title>, description, canonical and Open Graph for a registered content page. */
-export function contentPageMetadata(path: string): Metadata {
+export function contentPageMetadata(path: string, { article = true }: { article?: boolean } = {}): Metadata {
   const page = sitePage(path);
   const title = page.metaTitle ?? page.title;
   const description = page.description ?? page.summary;
@@ -33,7 +33,7 @@ export function contentPageMetadata(path: string): Metadata {
       title,
       description,
       url: absoluteUrl(path),
-      type: "article",
+      type: article ? "article" : "website",
       locale: "pt_BR",
       // A page-level openGraph replaces the layout's, file-based image included.
       images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "FloraClin — Gestão para clínicas de HOF" }],
@@ -44,7 +44,7 @@ export function contentPageMetadata(path: string): Metadata {
   };
 }
 
-function structuredData(path: string, faqs: FaqItem[], article: boolean) {
+function structuredData(path: string, faqs: FaqItem[], article: boolean, heading: string) {
   const page = sitePage(path);
   const url = absoluteUrl(path);
   const organization = {
@@ -59,7 +59,7 @@ function structuredData(path: string, faqs: FaqItem[], article: boolean) {
       "@type": "BreadcrumbList",
       itemListElement: [
         { "@type": "ListItem", position: 1, name: "FloraClin", item: SITE_URL },
-        { "@type": "ListItem", position: 2, name: page.title, item: url },
+        { "@type": "ListItem", position: 2, name: page.linkLabel ?? page.title, item: url },
       ],
     },
   ];
@@ -67,7 +67,8 @@ function structuredData(path: string, faqs: FaqItem[], article: boolean) {
     schemas.push({
       "@context": "https://schema.org",
       "@type": "Article",
-      headline: page.title,
+      // Matches the visible h1.
+      headline: heading,
       description: page.description ?? page.summary,
       inLanguage: "pt-BR",
       datePublished: brDayToDate(page.published ?? page.updated).toISOString(),
@@ -130,7 +131,7 @@ export function ContentPage({
       <Navigation />
       <main className="bg-cream pt-28 md:pt-36 pb-16 md:pb-24">
         <article className="mx-auto max-w-[760px] px-6">
-          <nav aria-label="Você está em" className="text-sm text-mid mb-6">
+          <nav aria-label="Você está em" className="text-sm text-charcoal/70 mb-6">
             <Link href="/" className="text-sage hover:text-forest no-underline">
               FloraClin
             </Link>
@@ -141,7 +142,7 @@ export function ContentPage({
           <h1 className="text-[2rem] leading-tight md:text-5xl md:leading-[1.1] mb-4">
             {heading ?? page.title}
           </h1>
-          <p className="text-sm text-mid mb-10">
+          <p className="text-sm text-charcoal/70 mb-10">
             Atualizado em{" "}
             <time dateTime={page.updated}>{DATE_FORMAT.format(brDayToDate(page.updated))}</time>
             {" · "}Escrito pela equipe do FloraClin
@@ -164,7 +165,7 @@ export function ContentPage({
               {ctaTitle}
             </h2>
             <p className="text-cream/70 mb-8">{ctaText}</p>
-            <SignupLink className="btn-primary bg-cream text-forest hover:bg-blush">
+            <SignupLink className="inline-flex items-center justify-center rounded-lg bg-cream px-8 py-3.5 text-sm font-medium uppercase tracking-[0.05em] text-forest no-underline transition-colors hover:bg-blush">
               Começar grátis
             </SignupLink>
           </section>
@@ -210,7 +211,7 @@ export function ContentPage({
         </article>
       </main>
       <Footer />
-      {structuredData(path, faqs, article).map((schema, i) => (
+      {structuredData(path, faqs, article, heading ?? page.title).map((schema, i) => (
         <script
           key={i}
           type="application/ld+json"

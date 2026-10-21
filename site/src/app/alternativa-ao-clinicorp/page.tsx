@@ -66,7 +66,7 @@ export default function AlternativaClinicorpPage() {
       <h2>Quando o FloraClin é a melhor alternativa</h2>
       <ul>
         <li>
-          <strong>Sua clínica é de HOF.</strong> O FloraClin foi feito só para harmonização. O diagrama facial guarda
+          <strong>Sua clínica é de HOF.</strong> O FloraClin foi feito para harmonização. O diagrama facial guarda
           produto, quantidade, técnica e profundidade em cada ponto, e o lote e a validade ficam no procedimento.
         </li>
         <li>

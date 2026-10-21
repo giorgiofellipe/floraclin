@@ -91,7 +91,7 @@ export default function FloraClinVsSimpluPage() {
           ilimitados.
         </li>
         <li>
-          <strong>Teste grátis de verdade:</strong> 14 dias sem cartão, em vez de pagar e pedir reembolso.
+          <strong>Teste grátis:</strong> 14 dias sem cartão, sem precisar assinar antes.
         </li>
         <li>
           <strong>Captura guiada:</strong> a câmera indica a pose (frontal, 45° e perfis) e tira a foto sozinha quando

@@ -24,7 +24,7 @@ export interface CompetitorFacts {
 
 export const FLORACLIN: CompetitorFacts = {
   name: "FloraClin",
-  focus: "Feito só para Harmonização Orofacial.",
+  focus: "Feito para Harmonização Orofacial.",
   price: "Starter R$ 99/mês; Pro R$ 199/mês (cobrança mensal)",
   trial: "14 dias grátis, sem cartão",
   prontuario: "Sim, com timeline de evolução, anamnese e termos assinados no celular",
@@ -45,7 +45,7 @@ export const COMPETITORS = {
     trial: "Não divulgado (oferece demonstração)",
     prontuario: "Sim (prontuário e anamnese digital, fichas por especialidade)",
     facialMap: "Não verificado",
-    beforeAfter: "Não verificado para fotos clínicas (a IA do plano Combo simula o antes e depois do sorriso)",
+    beforeAfter: "Não verificado para fotos clínicas (o módulo adicional Clinicorp IA simula o antes e depois do sorriso)",
     lgpd: "Declara seguir a LGPD; prontuário criptografado em nuvem",
     strengths:
       "Usuários ilimitados em todos os planos, odontograma, app do paciente gratuito, emissão de NFS-e (com custo adicional), gestão de várias unidades e importação de dados em até 3 dias úteis.",
@@ -75,7 +75,7 @@ export const COMPETITORS = {
     name: "Simplu",
     focus: "Feito para harmonização.",
     price: "R$ 297/mês no mensal ou R$ 252/mês no anual, tudo ilimitado",
-    trial: "Sem teste grátis: 7 dias de garantia com reembolso e demonstração gratuita",
+    trial: "Não tem; oferece 7 dias de garantia com reembolso e demonstração gratuita",
     prontuario: "Sim, com relatório assinável e exportação em PDF e Excel",
     facialMap: "Sim: mapa facial 3D com produto, dose e lote em cada ponto, com baixa no estoque",
     beforeAfter: "Sim: a IA alinha o rosto e equilibra a luz das duas fotos",
@@ -88,13 +88,13 @@ export const COMPETITORS = {
     name: "Iter Clinic",
     focus: "Estética facial e corporal, medicina estética e áreas próximas.",
     price: "Solo R$ 69, Silver R$ 99, Gold R$ 169 e Platinum R$ 309 por mês; a partir de R$ 39/mês no anual",
-    trial: "Sem teste grátis: 14 dias de garantia com reembolso",
+    trial: "Não tem; oferece 14 dias de garantia com reembolso",
     prontuario: "Sim",
     facialMap: "Não verificado",
     beforeAfter: "Fotos de antes e depois; alinhamento automático não informado",
     lgpd: "Declara conformidade com a LGPD e dados hospedados no Brasil",
     strengths:
-      "Preço de entrada mais baixo para quem atende sozinho, dados hospedados no Brasil e um assistente de gestão (Gênio) incluso em todos os planos.",
+      "Preço de entrada mais baixo que o do FloraClin para quem atende sozinho, dados hospedados no Brasil e um assistente de gestão (Gênio) incluso em todos os planos.",
     sources: [{ label: "Iter Clinic, planos", url: "https://www.iterclinic.com/" }],
   },
   agendiva: {
@@ -103,7 +103,7 @@ export const COMPETITORS = {
     price: "Solo R$ 39,90, Pro R$ 49,90 e Studio R$ 99,90 por mês",
     trial: "14 dias grátis, sem cartão",
     prontuario: "Sim, com anamnese assinada; o registro não pode ser apagado depois",
-    facialMap: "Sim (Pro): mapa do rosto com dose por ponto, lote, validade e foto da etiqueta",
+    facialMap: "Sim (Pro e Studio): mapa do rosto com dose por ponto, lote, validade e foto da etiqueta",
     beforeAfter: "Fotos lado a lado; alinhamento automático não informado",
     lgpd: "Declara conformidade com a LGPD e DPO ativo",
     strengths:
@@ -131,7 +131,7 @@ export const COMPETITORS = {
   },
   trinks: {
     name: "Trinks",
-    focus: "Salões, barbearias, spas e clínicas de estética.",
+    focus: "Salões de beleza, barbearias, clínicas de estética e studios.",
     price: "Não verificado (os valores carregam por faixa de profissionais e não ficaram visíveis na consulta)",
     trial: "5 dias grátis",
     prontuario: "Não verificado",
@@ -183,7 +183,7 @@ export const COMPETITORS = {
     beforeAfter: "Comparação arrastando sobre as fotos; alinhamento automático não informado",
     lgpd: "Declara conformidade com a LGPD e registra histórico de acessos e modificações",
     strengths:
-      "Assistente de IA no WhatsApp 24h (Anna), transcrição do atendimento, análise de pele por IA, emissão de nota fiscal, teleconsulta e odontograma.",
+      "Assistente de IA no WhatsApp 24h (Anna), transcrição do atendimento, análise de pele por IA, nota fiscal e teleconsulta (no plano Experts ou como adicionais) e odontograma.",
     sources: [
       { label: "Clínica Experts, planos", url: "https://clinicaexperts.com.br/planos" },
       { label: "Clínica Experts, estética", url: "https://clinicaexperts.com.br/solucoes/estetica" },

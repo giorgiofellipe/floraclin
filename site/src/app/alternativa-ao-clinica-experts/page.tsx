@@ -14,7 +14,7 @@ const FAQS: FaqItem[] = [
   {
     question: "Qual a melhor alternativa ao Clínica Experts para harmonização?",
     answer:
-      "Para clínicas focadas em HOF, os sistemas que registram cada ponto de aplicação no rosto são FloraClin, Simplu, Santé (módulo de HOF) e Agendiva (plano Pro). FloraClin e Simplu também alinham automaticamente as fotos de antes e depois. O FloraClin custa R$ 99 ou R$ 199 por mês, com 14 dias grátis sem cartão.",
+      "Para clínicas focadas em HOF, entre os sistemas cujo site mostra o registro de cada ponto de aplicação no rosto estão FloraClin, Simplu, Santé (módulo de HOF) e Agendiva (planos Pro e Studio). FloraClin e Simplu também alinham automaticamente as fotos de antes e depois. O FloraClin custa R$ 99 ou R$ 199 por mês, com 14 dias grátis sem cartão.",
   },
   {
     question: "Existe alternativa mais barata ao Clínica Experts?",
@@ -68,12 +68,12 @@ export default function AlternativaClinicaExpertsPage() {
           HOF pode preferir um fluxo feito para injetáveis.
         </li>
         <li>
-          <strong>Preço:</strong> no plano anual, o Essencial sai por 12x R$ 249, até 3 usuários, e as notificações
-          de WhatsApp pela API da Meta são cobradas à parte.
+          <strong>Preço:</strong> no plano anual, o Essencial sai por 12x R$ 249, até 3 usuários, e as mensagens de
+          WhatsApp pela API oficial são cobradas pela Meta, direto do cliente.
         </li>
         <li>
-          <strong>Fotos:</strong> a comparação de antes e depois é feita arrastando sobre as fotos, sem alinhamento
-          automático descrito no site.
+          <strong>Fotos:</strong> a comparação de antes e depois é feita arrastando sobre as fotos, e o site não menciona
+          alinhamento automático.
         </li>
         <li>
           <strong>Teste:</strong> 7 dias grátis.
@@ -90,7 +90,7 @@ export default function AlternativaClinicaExpertsPage() {
       <h2>Quando ficar no Clínica Experts</h2>
       <p>
         Se o assistente de IA no WhatsApp, a transcrição do atendimento ou a análise de pele já fazem parte da sua
-        rotina, ou se a clínica atende outras especialidades com teleconsulta, nota fiscal e estoque, o Clínica
+        rotina, ou se a clínica atende outras especialidades com estoque, teleconsulta e nota fiscal (estes dois no plano Experts ou como adicionais), o Clínica
         Experts entrega mais do que o FloraClin nesses pontos. Para uma visão completa, veja o{" "}
         <Link href="/floraclin-vs-clinica-experts">FloraClin vs Clínica Experts</Link>.
       </p>

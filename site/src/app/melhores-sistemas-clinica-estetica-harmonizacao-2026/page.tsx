@@ -26,7 +26,7 @@ const FAQS: FaqItem[] = [
   {
     question: "Qual o melhor sistema para clínica de estética em 2026?",
     answer:
-      "Depende do que pesa mais na sua rotina. Para harmonização orofacial, os sistemas que registram produto e quantidade em cada ponto do rosto são FloraClin, Simplu, Santé (módulo de HOF) e Agendiva (plano Pro); o Clínica Experts marca os pontos sobre a foto. Para quem atende sozinha e quer o menor preço, Agendiva e Iter Clinic têm planos de entrada abaixo de R$ 70/mês. Para redes, franquias e clínicas que também fazem odontologia geral, Clinicorp e Belle têm mais módulos.",
+      "Depende do que pesa mais na sua rotina. Para harmonização orofacial, entre os sistemas cujo site mostra o registro de produto e quantidade em cada ponto do rosto estão FloraClin, Simplu, Santé (módulo de HOF) e Agendiva (planos Pro e Studio); o Clínica Experts marca os pontos sobre a foto. Para quem atende sozinha e quer o menor preço, Agendiva, TuttoHOF e Iter Clinic têm planos de entrada abaixo de R$ 70/mês. Para redes, franquias e clínicas que também fazem odontologia geral, Clinicorp e Belle têm mais módulos.",
   },
   {
     question: "Qual sistema alinha automaticamente as fotos de antes e depois?",
@@ -46,7 +46,7 @@ const FAQS: FaqItem[] = [
   {
     question: "Quanto custa um sistema para clínica de estética?",
     answer:
-      "Nos sites consultados, os planos vão de R$ 39,90/mês (Agendiva Solo) a mais de R$ 350/mês nos planos completos para equipes (Clinicorp Premium, Harmony Enterprise). Alguns cobram à parte por implementação, módulos ou mensagens de WhatsApp, então compare o custo total, não só a mensalidade.",
+      "Nos sites consultados, os planos mensais vão de R$ 39,90/mês (Agendiva Solo) a mais de R$ 350/mês nos planos completos para equipes (Clinicorp Premium, Harmony Enterprise). Alguns cobram à parte por implementação, módulos ou mensagens de WhatsApp, então compare o custo total, não só a mensalidade.",
   },
 ];
 
@@ -73,8 +73,8 @@ export default function MelhoresSistemasPage() {
       quickAnswer={
         <>
           <p>
-            Para <strong>harmonização orofacial</strong>, os sistemas que registram cada ponto de aplicação no rosto são
-            FloraClin, Simplu, Santé (módulo de HOF) e Agendiva (plano Pro). Só <strong>FloraClin e Simplu</strong>{" "}
+            Para <strong>harmonização orofacial</strong>, entre os sistemas cujo site mostra o registro de cada ponto de
+            aplicação no rosto estão FloraClin, Simplu, Santé (módulo de HOF) e Agendiva (planos Pro e Studio). Só <strong>FloraClin e Simplu</strong>{" "}
             dizem alinhar automaticamente as fotos de antes e depois. Para pagar pouco atendendo sozinha, Agendiva (R$
             39,90/mês), TuttoHOF (R$ 49,99/mês, como exibido na página) e Iter Clinic (R$ 69/mês) são os mais baratos. Para redes e franquias, Clinicorp e Belle têm mais
             módulos.
@@ -134,7 +134,7 @@ export default function MelhoresSistemasPage() {
 
       <h3>FloraClin</h3>
       <p>
-        Feito só para harmonização orofacial. O diagrama facial guarda produto, quantidade, técnica e profundidade em
+        Feito para harmonização orofacial. O diagrama facial guarda produto, quantidade, técnica e profundidade em
         cada ponto, na vista frontal e nos perfis, e o lote e a validade do produto ficam no registro do procedimento.
         As fotos são tiradas com guia de pose e captura automática, e a comparação de antes e depois alinha os rostos
         sozinha. A agenda confirma consultas pelo WhatsApp, o paciente preenche a anamnese e assina os termos pelo
@@ -151,7 +151,7 @@ export default function MelhoresSistemasPage() {
         <div key={system.name}>
           <h3>{system.name}</h3>
           <p>
-            {system.focus} Preço: {system.price}. Teste: {system.trial.charAt(0).toLowerCase() + system.trial.slice(1)}.
+            {system.focus} Preço: {system.price}. Teste grátis: {system.trial.charAt(0).toLowerCase() + system.trial.slice(1)}.
           </p>
           <p>
             <strong>Onde é melhor que o FloraClin:</strong> {system.strengths}
@@ -167,10 +167,10 @@ export default function MelhoresSistemasPage() {
           pode ser testado por 14 dias sem cartão. Veja o <Link href="/floraclin-vs-simplu">FloraClin vs Simplu</Link>.
         </li>
         <li>
-          <strong>Você atende sozinha e quer gastar pouco:</strong> Agendiva ou Iter Clinic.
+          <strong>Você atende sozinha e quer gastar pouco:</strong> Agendiva, TuttoHOF ou Iter Clinic.
         </li>
         <li>
-          <strong>Sua clínica também faz odontologia geral:</strong> Clinicorp ou Santé, que têm odontograma. Veja a{" "}
+          <strong>Sua clínica também faz odontologia geral:</strong> Clinicorp, Santé, Belle ou Clínica Experts, que têm odontograma. Veja a{" "}
           <Link href="/alternativa-ao-clinicorp">alternativa ao Clinicorp</Link>.
         </li>
         <li>

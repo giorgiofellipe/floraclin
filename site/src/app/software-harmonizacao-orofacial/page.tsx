@@ -5,13 +5,13 @@ import { SignupLink } from "@/components/signup-link";
 
 const PATH = "/software-harmonizacao-orofacial";
 
-export const metadata = contentPageMetadata(PATH);
+export const metadata = contentPageMetadata(PATH, { article: false });
 
 const FAQS: FaqItem[] = [
   {
     question: "O FloraClin é feito para harmonização orofacial?",
     answer:
-      "Sim, só para HOF. O fluxo segue a rotina de quem trabalha com toxina, preenchedores e bioestimuladores: anamnese, avaliação, planejamento no diagrama facial, aprovação, execução com registro de produto e lote, fotos e retorno.",
+      "Sim, o foco é HOF. O fluxo segue a rotina de quem trabalha com toxina, preenchedores e bioestimuladores: anamnese, avaliação, planejamento no diagrama facial, aprovação, execução com registro de produto e lote, fotos e retorno.",
   },
   {
     question: "O que fica registrado em cada ponto do diagrama facial?",
@@ -49,7 +49,7 @@ export default function SoftwareHofPage() {
       faqs={FAQS}
       quickAnswer={
         <p>
-          O FloraClin é um sistema feito só para clínicas de <strong>harmonização orofacial</strong>. Você marca no
+          O FloraClin é um sistema feito para clínicas de <strong>harmonização orofacial</strong>. Você marca no
           diagrama facial o produto e a quantidade de cada ponto, registra lote e validade no procedimento, tira fotos
           com guia de pose e compara o antes e depois com <strong>alinhamento automático</strong>. Agenda com
           confirmação pelo WhatsApp, anamnese e termos assinados no celular e financeiro vêm juntos. São{" "}
@@ -72,7 +72,7 @@ export default function SoftwareHofPage() {
           sizes="(max-width: 768px) 100vw, 712px"
           className="w-full h-auto rounded-xl border border-sage/15 shadow-sm"
         />
-        <figcaption className="text-sm text-mid mt-3">Diagrama facial na execução do procedimento.</figcaption>
+        <figcaption className="text-sm text-charcoal/70 mt-3">Diagrama facial na execução do procedimento.</figcaption>
       </figure>
 
       <h2>Diagrama facial com o que foi aplicado em cada ponto</h2>

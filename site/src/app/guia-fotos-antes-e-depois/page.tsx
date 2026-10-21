@@ -21,7 +21,7 @@ const FAQS: FaqItem[] = [
   {
     question: "Preciso de autorização do paciente para fotografar?",
     answer:
-      "Sim. Foto de rosto ligada ao tratamento é dado pessoal sensível pela LGPD, e o uso da imagem também é protegido pelo Código Civil. Registre o consentimento específico para o prontuário e, à parte, a autorização de uso de imagem se pretende publicar. Os dois podem ser revogados pelo paciente.",
+      "Sim. Foto de rosto ligada ao tratamento é dado pessoal sensível pela LGPD, e o uso da imagem também é protegido pelo Código Civil. Para o prontuário, a LGPD permite tratar dados de saúde para a tutela da saúde, em procedimento feito por profissional de saúde (art. 11, II, f); mesmo assim, registrar o consentimento do paciente é uma boa prática. Para publicar, peça à parte uma autorização de uso de imagem, que o paciente pode revogar a qualquer momento (art. 8º, § 5º).",
   },
   {
     question: "Dentista pode postar antes e depois de harmonização?",
@@ -31,12 +31,12 @@ const FAQS: FaqItem[] = [
   {
     question: "Médico pode postar antes e depois?",
     answer:
-      "Desde a Resolução CFM nº 2.336/2023, sim, com finalidade educativa: a imagem precisa vir com texto sobre indicações, fatores que influenciam o resultado e complicações; o antes e depois deve mostrar evoluções satisfatórias, insatisfatórias e complicações; o paciente não pode ser identificado; e é vedada qualquer edição ou melhoramento da imagem.",
+      "Pela Resolução CFM nº 2.336/2023 (em vigor desde março de 2024), sim, com finalidade educativa: a imagem precisa vir com texto sobre indicações, fatores que influenciam o resultado e complicações; o antes e depois deve mostrar evoluções satisfatórias, insatisfatórias e complicações; o paciente não pode ser identificado; e é vedada qualquer edição ou melhoramento da imagem.",
   },
   {
     question: "O alinhamento automático do FloraClin altera a foto?",
     answer:
-      "Não. Na comparação, o FloraClin detecta os olhos nas duas fotos e ajusta posição, escala e rotação da exibição para os rostos ficarem na mesma posição. A foto original fica guardada como foi tirada, sem mudar luz, pele ou contorno.",
+      "Não. Na comparação, o FloraClin detecta os olhos nas duas fotos e ajusta posição, escala e rotação da exibição para os rostos ficarem na mesma posição. O alinhamento muda só a exibição: a foto salva não é editada, e luz, pele e contorno não mudam.",
   },
 ];
 

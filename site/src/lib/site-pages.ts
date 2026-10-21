@@ -85,7 +85,7 @@ export const SITE_PAGES: readonly SitePage[] = [
     changeFrequency: "monthly",
     priority: 0.8,
     llmsSection: "Guias e comparativos",
-    metaTitle: "Melhores sistemas para clínica de estética e HOF em 2026 | FloraClin",
+    metaTitle: "Melhores sistemas para clínica de estética e HOF (2026)",
     description:
       "Comparativo honesto de 11 sistemas para clínica de estética e harmonização: preço, teste grátis, prontuário, mapa facial e antes e depois. Fontes citadas.",
     linkLabel: "Comparativo de sistemas 2026",
@@ -100,7 +100,7 @@ export const SITE_PAGES: readonly SitePage[] = [
     changeFrequency: "monthly",
     priority: 0.8,
     llmsSection: "Guias e comparativos",
-    metaTitle: "Fotos de antes e depois padronizadas: guia para HOF e estética | FloraClin",
+    metaTitle: "Fotos de antes e depois padronizadas: guia — FloraClin",
     description:
       "Como padronizar fotos de antes e depois: luz, distância, ângulos e fundo, consentimento de imagem e LGPD, e as regras do CFM e do CFO para publicar.",
     linkLabel: "Guia de fotos de antes e depois",
@@ -115,7 +115,7 @@ export const SITE_PAGES: readonly SitePage[] = [
     changeFrequency: "monthly",
     priority: 0.9,
     llmsSection: "Guias e comparativos",
-    metaTitle: "Software para Harmonização Orofacial (HOF) | FloraClin",
+    metaTitle: "Software para Harmonização Orofacial (HOF) — FloraClin",
     description:
       "Diagrama facial com produto e quantidade por ponto, lote e validade no prontuário, fotos de antes e depois alinhadas automaticamente. 14 dias grátis, sem cartão.",
     linkLabel: "Software para HOF",
@@ -130,7 +130,7 @@ export const SITE_PAGES: readonly SitePage[] = [
     changeFrequency: "monthly",
     priority: 0.7,
     llmsSection: "Guias e comparativos",
-    metaTitle: "Alternativa ao Clinicorp para clínicas de HOF e estética | FloraClin",
+    metaTitle: "Alternativa ao Clinicorp para HOF e estética — FloraClin",
     description:
       "FloraClin ou Clinicorp? Preços verificados, o que cada um faz melhor e para qual clínica cada sistema serve. Comparativo escrito pelo FloraClin, com fontes.",
     linkLabel: "Alternativa ao Clinicorp",
@@ -145,7 +145,7 @@ export const SITE_PAGES: readonly SitePage[] = [
     changeFrequency: "monthly",
     priority: 0.7,
     llmsSection: "Guias e comparativos",
-    metaTitle: "FloraClin vs Simplu: comparativo para harmonização orofacial | FloraClin",
+    metaTitle: "FloraClin vs Simplu: comparativo para harmonização",
     description:
       "FloraClin ou Simplu? Preço, teste grátis, mapa facial e antes e depois alinhado lado a lado, com fontes oficiais e onde cada um é melhor.",
     linkLabel: "FloraClin vs Simplu",
@@ -160,7 +160,7 @@ export const SITE_PAGES: readonly SitePage[] = [
     changeFrequency: "monthly",
     priority: 0.7,
     llmsSection: "Guias e comparativos",
-    metaTitle: "FloraClin vs Clínica Experts: comparativo | FloraClin",
+    metaTitle: "FloraClin vs Clínica Experts: comparativo para HOF",
     description:
       "FloraClin ou Clínica Experts? Preço, teste grátis, foco em HOF, diagrama facial e antes e depois, com fontes e os pontos em que cada um é melhor.",
     linkLabel: "FloraClin vs Clínica Experts",
@@ -175,7 +175,7 @@ export const SITE_PAGES: readonly SitePage[] = [
     changeFrequency: "monthly",
     priority: 0.7,
     llmsSection: "Guias e comparativos",
-    metaTitle: "Alternativa ao Clínica Experts para clínicas de HOF | FloraClin",
+    metaTitle: "Alternativa ao Clínica Experts para HOF — FloraClin",
     description:
       "Procurando uma alternativa ao Clínica Experts? Veja preço, teste, diagrama facial e fotos alinhadas no FloraClin, e onde o Clínica Experts é melhor.",
     linkLabel: "Alternativa ao Clínica Experts",

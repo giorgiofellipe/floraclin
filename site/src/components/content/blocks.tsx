@@ -21,7 +21,7 @@ export function ComparisonTable({
   return (
     <div className="not-prose my-8 -mx-6 md:mx-0 overflow-x-auto">
       <table className="w-full min-w-[720px] border-collapse text-sm bg-white md:rounded-2xl">
-        <caption className="text-left text-xs text-mid px-6 md:px-0 pb-3">{caption}</caption>
+        <caption className="text-left text-xs text-charcoal/70 px-6 md:px-0 pb-3">{caption}</caption>
         <thead>
           <tr>
             {head.map((cell, i) => (
