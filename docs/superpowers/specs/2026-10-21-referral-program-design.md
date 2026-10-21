@@ -1,7 +1,7 @@
 # Referral program: "Indique e Ganhe FloraClin"
 
 Date: 2026-10-21
-Status: design, pending Giorgio's review and an implementation plan
+Status: design, open questions answered by Giorgio, pending an implementation plan
 Scope: `web` (billing, signup, settings, admin) and `site` (public rules page, referral landing)
 
 Labels used in this doc:
@@ -79,12 +79,14 @@ Across the programs reviewed, no one keeps an ongoing discount for lifetime refe
 6. **Past the cap:** each extra currently paying referral gives **+100 WhatsApp credits per month**.
 7. **Referred clinic:** the normal 14-day trial plus **20% off its first 2 paid months**, applied automatically at checkout through the referral link.
 8. **No reward for social posts on their own.** Only the link is tracked. **No cash payouts.**
+9. **Only clinics paying through Stripe can refer** (PR #96 review). Gifted clinics, such as Dra. Micaela's, get no link (§5.1).
+10. **If the program ends** (PR #96 review): FloraClin gives 30 days' notice. New referrals stop immediately. Existing discounts keep following the count until the end date, then drop to 0% from the next invoice. Past invoices are never touched (§6.1).
 
 ## 5. Rules as the clinic sees them
 
-### 5.1 Who can refer (agent call)
+### 5.1 Who can refer (Giorgio's decision)
 
-A clinic can refer only while it is **paying through Stripe**: `tenant_subscriptions.source='stripe'` and local `status='active'`. Trial clinics, expired clinics and gifted or admin clinics (`source='gift'|'admin'`) don't get an active link. Their "Indique e Ganhe" page explains: "Seu link de indicação fica ativo quando sua clínica tem uma assinatura paga."
+A clinic can refer only while it is **paying through Stripe**: `tenant_subscriptions.source='stripe'` and local `status='active'`. Trial clinics, expired clinics and gifted or admin clinics (`source='gift'|'admin'`) don't get an active link. This includes gifted influencer clinics such as Dra. Micaela's. Their "Indique e Ganhe" page explains: "Seu link de indicação fica ativo quando sua clínica tem uma assinatura paga."
 
 If the referrer stops paying, its code goes inactive. Signups that arrive through an inactive code are **not attributed**, and the visitor sees the normal site with no discount. Referrals captured while the code was active stay attributed.
 
@@ -149,7 +151,7 @@ Neither set uses `applies_to` (agent call). A coupon's `applies_to` can't be edi
 
 - `REFERRAL_ENROLLMENT_ENABLED` controls **new** activity: active links, new attributions and the welcome coupon at checkout. Turning it off stops the program growing.
 - **The reward sync never reads that switch.** As long as the coupon ids are configured, `syncReferrerReward`, the webhooks and the daily cron keep each referrer's discount equal to its current count. So when enrollment is off, the discounts wind down naturally as referrals churn. They are never frozen at their last value.
-- Ending the rewards themselves (§13) is a separate, explicit operation. It sets a `REFERRAL_REWARDS_END_AT` date, after which the sync writes 0% and no bonus.
+- **Ending the program (Giorgio's decision, §4.10)** is a separate, explicit operation. With 30 days' notice, enrollment is switched off at once, so no new links, attributions or welcome coupons. `REFERRAL_REWARDS_END_AT` is set to the end date. Until that date the sync keeps each discount following the current count. From the first invoice created after it, the sync writes 0% and no bonus. Invoices already issued are never touched.
 
 ### 6.2 Referred clinic at checkout
 
@@ -267,7 +269,7 @@ Rules for any variant: no before and after photos, no patient images, no promise
 
 ### 9.3 Public rules page: `floraclin.com.br/indique`
 
-It sits alongside `/termos` in `site`. In pt-BR it covers who can refer, what the referred clinic gets, how the discount is calculated (with a 5-row table), when a referral counts, pauses and ends, the WhatsApp bonus, the eligibility rules (new clinic, no self-referral), no cash, chargebacks, the required disclosure (#publi #linkafiliado), and the ending terms decided in §13 (discounts on invoices already issued are never taken back). The dashboard links here, and both use the same numbers from one shared constants module.
+It sits alongside `/termos` in `site`. In pt-BR it covers who can refer, what the referred clinic gets, how the discount is calculated (with a 5-row table), when a referral counts, pauses and ends, the WhatsApp bonus, the eligibility rules (new clinic, no self-referral), no cash, chargebacks, the required disclosure (#publi #linkafiliado), and the ending terms from §4.10 (30 days' notice, new referrals stop at once, discounts follow the count until the end date and then drop to 0% from the next invoice, and past invoices are never touched). The dashboard links here, and both use the same numbers from one shared constants module.
 
 ### 9.4 Referral landing `/indicacao/{CODE}`
 
@@ -324,7 +326,7 @@ Builder calls:
 
 ## 13. Open questions for Giorgio
 
-1. **If FloraClin ever ends the program, what happens to referrers' ongoing discounts?** The code must be built either way (§6.1 has the two switches), but the answer is a promise on the public rules page, which is legal copy. **Agent default if unanswered:** with 30 days' notice, new referrals stop at once. Existing discounts keep following the count until the end date, then drop to 0% from the next invoice. Discounts on invoices already issued are never taken back. The alternative is to grandfather every counting referral for as long as it keeps paying. That is friendlier to the clinics, but it can mean free clinics forever.
+None. Giorgio answered both questions on PR #96 (2026-10-21), and his answers are recorded as decisions 9 and 10 in §4.
 
 ## 14. Builder check log (2026-10-21)
 
@@ -332,4 +334,4 @@ A fresh reviewer (Claude Code, `claude -p`) read this doc and the codebase, and 
 
 - **Checkout "always creates a new Stripe customer" was wrong.** It reuses the stored customer. *Fixed in §3.* The `first_time_transaction` reasoning still holds, because a trial row has no customer.
 - **Annual plans: are they in scope, and under what rules?** *Settled as an agent call (§5.4):* monthly-only, gated by one helper, and the doc must be revisited before any yearly plan is sold.
-- **Kill switch: freeze or wind down existing discounts?** *Split.* The mechanics are an agent call (§6.1: enrollment switch, with the sync always running). The ending promise goes to Giorgio (§13.1).
+- **Kill switch: freeze or wind down existing discounts?** *Split.* The mechanics are an agent call (§6.1: enrollment switch, with the sync always running). The ending promise was decided by Giorgio (§4.10).
