@@ -4,6 +4,8 @@ import type { EmailContent } from '@/lib/email-layout'
 export type LifecycleMessageKey =
   | 'trial_welcome'
   | 'trial_ending'
+  | 'trial_ending_soon'
+  | 'trial_last_day'
   | 'trial_feedback'
   | 'trial_setup_incomplete'
   | 'trial_first_patient'
@@ -26,12 +28,24 @@ export interface LifecycleMessage {
   body: string
   email: LifecycleEmail
   button: { label: string; path: string } | null
+  /**
+   * False while the WhatsApp template is not approved on Meta yet: the
+   * message goes out by email only, and the WhatsApp channel is recorded as
+   * skipped so the key still completes. Flip to true (or drop the field)
+   * once `provision-lifecycle-templates --only=<key>` is APPROVED.
+   */
+  whatsapp?: boolean
   isDue: (state: ActivationState) => boolean
 }
 
 export const OPT_OUT_FOOTER = 'Para não receber mais dicas, responda PARAR.'
 
-const isTrialing = (state: ActivationState) => state.subscriptionStatus === 'trialing'
+// A row can still say `trialing` for a few hours after the trial ended (the
+// expiry cron runs at 00:00 BRT), but access ends at the exact instant, so
+// nothing written for a running trial may go out after it.
+const isTrialing = (state: ActivationState) => state.subscriptionStatus === 'trialing' && state.msLeft > 0
+
+const DAY_MS = 24 * 60 * 60 * 1000
 
 export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
   {
@@ -73,6 +87,51 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
     },
     button: { label: 'Ver planos', path: '/configuracoes?tab=assinatura' },
     isDue: (state) => isTrialing(state) && state.daysLeft === 2,
+  },
+  {
+    key: 'trial_last_day',
+    templateName: 'trial_last_day_click',
+    category: 'MARKETING',
+    emailSubject: 'Último dia do seu teste na FloraClin',
+    body: 'Olá, {{1}}! Seu teste gratuito da FloraClin termina em menos de 24 horas. Assine agora para não perder o acesso à agenda, aos pacientes e ao WhatsApp.',
+    email: {
+      preheader: 'Seu teste termina em menos de 24 horas. Assine para não perder o acesso.',
+      heading: 'Último dia do seu teste',
+      intro: 'Olá, {{1}}! Seu teste gratuito da FloraClin termina em menos de 24 horas. Depois disso a conta fica em modo leitura: você consulta e exporta tudo, mas não cadastra, não agenda e não envia WhatsApp. Assinando agora, nada para:',
+      points: [
+        'Agenda e confirmações por WhatsApp continuam funcionando',
+        'Pacientes, prontuários e diagramas faciais seguem editáveis',
+        'Leva 2 minutos, com cartão de crédito',
+      ],
+      closing: 'Ficou alguma dúvida sobre os planos? Responda a este e-mail.',
+    },
+    button: { label: 'Assinar agora', path: '/configuracoes?tab=assinatura' },
+    whatsapp: false,
+    // Within the last 24 hours rather than "on the BR calendar day of the end":
+    // the cron runs at 10:00 BRT, so a trial ending at 08:00 would otherwise
+    // never get its last-day message.
+    isDue: (state) => isTrialing(state) && state.msLeft <= DAY_MS,
+  },
+  {
+    key: 'trial_ending_soon',
+    templateName: 'trial_ending_soon_click',
+    category: 'MARKETING',
+    emailSubject: 'Seu teste termina em 3 dias',
+    body: 'Olá, {{1}}! Seu teste gratuito da FloraClin termina em 3 dias. Escolha um plano para manter a agenda, os pacientes e o WhatsApp funcionando.',
+    email: {
+      preheader: 'Faltam 3 dias. Escolha um plano para continuar sem interrupção.',
+      heading: 'Seu teste termina em 3 dias',
+      intro: 'Olá, {{1}}! Seu teste gratuito da FloraClin termina em 3 dias. Escolha um plano agora e continue sem interrupção. Tudo o que você cadastrou continua no lugar:',
+      points: [
+        'Pacientes, prontuários e diagramas faciais',
+        'Agenda e confirmações por WhatsApp',
+        'Histórico financeiro e documentos assinados',
+      ],
+      closing: 'Quer ajuda para escolher o plano? Responda a este e-mail.',
+    },
+    button: { label: 'Ver planos', path: '/configuracoes?tab=assinatura' },
+    whatsapp: false,
+    isDue: (state) => isTrialing(state) && state.daysLeft === 3,
   },
   {
     key: 'trial_feedback',

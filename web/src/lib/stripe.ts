@@ -3,6 +3,7 @@ import { db } from '@/db/client'
 import { plans } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { getAppUrl } from '@/lib/app-url'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 let stripeClient: Stripe | null = null
 
@@ -20,6 +21,7 @@ export async function createCheckoutSession(
   tenantId: string,
   planSlug: string,
   stripeCustomerId?: string | null,
+  opts?: { promotionCodeId?: string | null },
 ): Promise<{ sessionId: string; url: string }> {
   const stripe = getStripeClient()
 
@@ -42,14 +44,36 @@ export async function createCheckoutSession(
     customer = created.id
   }
 
-  const session = await stripe.checkout.sessions.create({
+  const base: Stripe.Checkout.SessionCreateParams = {
     mode: 'subscription',
     customer,
     line_items: [{ price: plan.stripePriceId, quantity: 1 }],
     metadata: { tenantId, planSlug },
     success_url: `${appUrl}/configuracoes?tab=assinatura&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${appUrl}/configuracoes?tab=assinatura`,
-  })
+  }
+
+  let session: Stripe.Checkout.Session
+  if (opts?.promotionCodeId) {
+    try {
+      // Win-back: the promotion code is applied for the clinic, never typed
+      // by them. Stripe rejects `discounts` together with
+      // `allow_promotion_codes`, which this session does not set.
+      session = await stripe.checkout.sessions.create({
+        ...base,
+        metadata: { ...base.metadata, winback: 'true' },
+        discounts: [{ promotion_code: opts.promotionCodeId }],
+      })
+    } catch (err) {
+      // An expired, exhausted or mistyped promotion code must never stop a
+      // clinic from paying: report it and fall back to full price.
+      if (!(err instanceof Stripe.errors.StripeInvalidRequestError)) throw err
+      reportSideEffectFailure(err, { area: 'billing', step: 'winback_discount', extra: { tenantId, planSlug } })
+      session = await stripe.checkout.sessions.create(base)
+    }
+  } else {
+    session = await stripe.checkout.sessions.create(base)
+  }
 
   if (!session.url) throw new Error('Stripe Checkout session created without a URL')
 

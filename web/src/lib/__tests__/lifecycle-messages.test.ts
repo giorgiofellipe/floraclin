@@ -17,6 +17,8 @@ function baseState(overrides: Partial<ActivationState> = {}): ActivationState {
     hasWhatsappSend: false,
     trialDay: 0,
     daysLeft: 14,
+    // Follows daysLeft unless a case pins it: daysLeft days plus one hour.
+    msLeft: ((overrides.daysLeft ?? 14) * 24 + 1) * 60 * 60 * 1000,
     subscriptionStatus: 'trialing',
     subscriptionSource: 'trial',
     optedOut: false,
@@ -61,6 +63,36 @@ describe('selectDueMessages', () => {
     {
       name: 'opted out on day 12 gets no trial_ending. Regression: trial_ending goes back to UTILITY, but Meta approved it as MARKETING',
       state: baseState({ trialDay: 12, daysLeft: 2, optedOut: true }),
+      completed: WELCOME_DONE,
+      expected: [],
+    },
+    {
+      name: 'day 11 (3 days left) sends trial_ending_soon before the nudges',
+      state: baseState({ trialDay: 11, daysLeft: 3, onboardingDone: true, hasPatient: true }),
+      completed: WELCOME_DONE,
+      expected: ['trial_ending_soon', 'trial_first_record', 'trial_first_appointment'],
+    },
+    {
+      name: 'last 24 hours sends trial_last_day first, even when the end is tomorrow morning on the BR calendar',
+      state: baseState({ trialDay: 13, daysLeft: 1, msLeft: 22 * 60 * 60 * 1000, onboardingDone: true, hasPatient: true, hasProcedureRecord: true, hasAppointment: true, hasWhatsappSend: true }),
+      completed: WELCOME_DONE,
+      expected: ['trial_last_day'],
+    },
+    {
+      name: 'more than 24 hours left is not the last day yet',
+      state: baseState({ trialDay: 13, daysLeft: 1, msLeft: 25 * 60 * 60 * 1000, onboardingDone: true, hasPatient: true, hasProcedureRecord: true, hasAppointment: true, hasWhatsappSend: true }),
+      completed: WELCOME_DONE,
+      expected: [],
+    },
+    {
+      name: 'a trial past its end that still reads trialing (cron not run yet) gets no trial message',
+      state: baseState({ trialDay: 14, daysLeft: 0, msLeft: -60 * 60 * 1000 }),
+      completed: WELCOME_DONE,
+      expected: [],
+    },
+    {
+      name: 'opted out gets neither trial_ending_soon nor trial_last_day',
+      state: baseState({ trialDay: 13, daysLeft: 1, msLeft: 60 * 60 * 1000, optedOut: true }),
       completed: WELCOME_DONE,
       expected: [],
     },

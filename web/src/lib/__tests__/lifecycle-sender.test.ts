@@ -112,6 +112,40 @@ describe('deliverLifecycleMessage', () => {
     expect(sendLifecycleEmail).not.toHaveBeenCalled()
   })
 
+  it.each(['trial_ending_soon', 'trial_last_day'])(
+    'sends %s by email only while its WhatsApp template is not approved, and records the WhatsApp skip so the key completes',
+    async (key) => {
+      const message = LIFECYCLE_MESSAGES.find((m) => m.key === key)!
+      const outcome = await deliverLifecycleMessage(recipient, message)
+
+      expect(outcome).toEqual({ whatsapp: 'skipped', email: 'sent' })
+      expect(sendPlatformTemplate).not.toHaveBeenCalled()
+      expect(recordSkippedLifecycleSend).toHaveBeenCalledWith({
+        tenantId: 'tenant-1',
+        messageKey: key,
+        channel: 'whatsapp',
+        recipient: '5511987654321',
+        reason: 'template_not_approved',
+      })
+      expect(sendLifecycleEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.objectContaining({
+            button: expect.objectContaining({ url: expect.stringContaining('/api/lifecycle/click') }),
+            optOutUrl: expect.any(String),
+          }),
+        }),
+      )
+    },
+  )
+
+  it('skips the email-only nudges entirely for an opted-out owner', async () => {
+    vi.mocked(isTenantLifecycleOptedOut).mockResolvedValue(true)
+    const message = LIFECYCLE_MESSAGES.find((m) => m.key === 'trial_last_day')!
+
+    expect(await deliverLifecycleMessage(recipient, message)).toEqual({ whatsapp: 'skipped', email: 'skipped' })
+    expect(sendLifecycleEmail).not.toHaveBeenCalled()
+  })
+
   it('records a skipped WhatsApp row for an invalid phone and still sends the email', async () => {
     const outcome = await deliverLifecycleMessage({ ...recipient, tenantPhone: '(11) 1234' }, utility)
 
@@ -177,7 +211,7 @@ describe('deliverLifecycleMessage', () => {
 })
 
 describe('scheduleLifecycleWelcome', () => {
-  const dueState = { subscriptionStatus: 'trialing', trialDay: 0 } as never
+  const dueState = { subscriptionStatus: 'trialing', trialDay: 0, msLeft: 14 * 24 * 60 * 60 * 1000 } as never
 
   it('never queries recipients when LIFECYCLE_ENABLED is unset', async () => {
     scheduleLifecycleWelcome({ tenantId: 'tenant-1' })

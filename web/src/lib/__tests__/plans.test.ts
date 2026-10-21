@@ -51,8 +51,34 @@ describe('isSubscriptionActive', () => {
     expect(await isSubscriptionActive(TENANT)).toBe(false)
   })
 
-  it.each(['trialing', 'active'])('returns true for %s regardless of period end', async (status) => {
-    limitMock.mockResolvedValue([{ status, currentPeriodEnd: past }])
+  // Trials, gifts and admin grants end exactly at current_period_end, not
+  // when the 00:00 BRT expiry cron gets round to rewriting the status.
+  it.each(['trial', 'gift', 'admin'])('%s row past its end is inactive even while the status still says so', async (source) => {
+    const status = source === 'trial' ? 'trialing' : 'active'
+    limitMock.mockResolvedValue([{ status, source, stripeSubscriptionId: null, currentPeriodEnd: past }])
+    expect(await isSubscriptionActive(TENANT)).toBe(false)
+  })
+
+  it.each(['trial', 'gift', 'admin'])('%s row before its end is active', async (source) => {
+    const status = source === 'trial' ? 'trialing' : 'active'
+    limitMock.mockResolvedValue([{ status, source, stripeSubscriptionId: null, currentPeriodEnd: future }])
+    expect(await isSubscriptionActive(TENANT)).toBe(true)
+  })
+
+  it('locks a trial at the exact end instant, not a day later', async () => {
+    const end = new Date('2026-10-20T15:34:58.896Z')
+    limitMock.mockResolvedValue([{ status: 'trialing', source: 'trial', currentPeriodEnd: end }])
+    expect(await isSubscriptionActive(TENANT, new Date(end.getTime() - 1))).toBe(true)
+    expect(await isSubscriptionActive(TENANT, end)).toBe(false)
+  })
+
+  it('keeps a Stripe-driven active subscription active past its period end (Stripe owns the status)', async () => {
+    limitMock.mockResolvedValue([{ status: 'active', source: 'stripe', stripeSubscriptionId: 'sub_1', currentPeriodEnd: past }])
+    expect(await isSubscriptionActive(TENANT)).toBe(true)
+  })
+
+  it('treats a row with a Stripe subscription id as Stripe-driven even if an admin changed its source', async () => {
+    limitMock.mockResolvedValue([{ status: 'active', source: 'admin', stripeSubscriptionId: 'sub_1', currentPeriodEnd: past }])
     expect(await isSubscriptionActive(TENANT)).toBe(true)
   })
 

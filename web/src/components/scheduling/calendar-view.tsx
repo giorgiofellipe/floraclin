@@ -48,6 +48,7 @@ import { useAppointments } from '@/hooks/queries/use-appointments'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
 import type { CalendarBlockRow } from '@/db/queries/calendar'
 import type { Role } from '@/types'
+import { ReadOnlyGuard, useSubscriptionAccess } from '@/components/layout/subscription-access'
 
 type ViewType = 'day' | 'week' | 'month'
 
@@ -131,6 +132,9 @@ export function CalendarView({
   userId,
 }: CalendarViewProps) {
   const router = useRouter()
+  // Read-only mode: creating opens the paywall instead of a form whose save
+  // would only fail with a 402. Opening an existing appointment stays allowed.
+  const { readOnly, openPaywall } = useSubscriptionAccess()
   const cancelAppointment = useUpdateAppointmentStatus()
   const deleteBlock = useDeleteCalendarBlock()
 
@@ -233,6 +237,10 @@ export function CalendarView({
 
   const handleSlotClick = (date: string, time: string) => {
     setContextMenu(null)
+    if (readOnly) {
+      openPaywall()
+      return
+    }
     setEditingAppointment(null)
     setDefaultFormDate(date)
     setDefaultFormTime(time)
@@ -293,13 +301,18 @@ export function CalendarView({
 
   const handleContextNewSlot = React.useCallback(() => {
     if (!contextMenu) return
+    if (readOnly) {
+      setContextMenu(null)
+      openPaywall()
+      return
+    }
     const appt = contextMenu.appointment
     setEditingAppointment(null)
     setDefaultFormDate(appt.date)
     setDefaultFormTime(appt.startTime.slice(0, 5))
     setFormOpen(true)
     setContextMenu(null)
-  }, [contextMenu])
+  }, [contextMenu, readOnly, openPaywall])
 
   const [cancelConfirmOpen, setCancelConfirmOpen] = React.useState(false)
   const [appointmentToCancel, setAppointmentToCancel] = React.useState<AppointmentWithDetails | null>(null)
@@ -361,6 +374,10 @@ export function CalendarView({
   }, [])
 
   const handleNewAppointment = () => {
+    if (readOnly) {
+      openPaywall()
+      return
+    }
     setEditingAppointment(null)
     setDefaultFormDate(format(currentDate, 'yyyy-MM-dd'))
     setDefaultFormTime('08:00')
@@ -435,10 +452,12 @@ export function CalendarView({
               <span className="hidden md:inline">Bloquear</span>
             </Button>
           )}
-          <Button size="sm" className="shrink-0 bg-forest text-cream hover:bg-sage transition-colors" onClick={handleNewAppointment} data-testid="calendar-new-appointment" aria-label="Agendar">
-            <Plus className="size-4" />
-            <span className="hidden md:inline">Agendar</span>
-          </Button>
+          <ReadOnlyGuard className="shrink-0">
+            <Button size="sm" className="shrink-0 bg-forest text-cream hover:bg-sage transition-colors" onClick={handleNewAppointment} data-testid="calendar-new-appointment" aria-label="Agendar">
+              <Plus className="size-4" />
+              <span className="hidden md:inline">Agendar</span>
+            </Button>
+          </ReadOnlyGuard>
         </div>
       </div>
 

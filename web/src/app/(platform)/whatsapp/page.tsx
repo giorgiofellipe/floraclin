@@ -11,6 +11,7 @@ import { MessageSquare, Settings, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { Message } from '@/components/whatsapp/message-bubble'
 import { cn } from '@/lib/utils'
+import { useReadOnly } from '@/components/layout/subscription-access'
 
 type ConfigStatus = 'loading' | 'configured' | 'not_configured' | 'no_access' | 'subscription_expired'
 
@@ -134,6 +135,7 @@ function WhatsAppEmptyState({
 
 export default function WhatsAppPage() {
   const searchParams = useSearchParams()
+  const readOnly = useReadOnly()
   const [configStatus, setConfigStatus] = useState<ConfigStatus>('loading')
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
   const [showStartDialog, setShowStartDialog] = useState(false)
@@ -550,7 +552,9 @@ export default function WhatsAppPage() {
       />
 
       <StartConversationDialog
-        open={showStartDialog}
+        // Read-only mode cannot start a conversation; a deep link that would
+        // open this dialog just lands on the inbox.
+        open={showStartDialog && !readOnly}
         onOpenChange={(open) => {
           setShowStartDialog(open)
           if (!open) setStartDialogPhone(null)

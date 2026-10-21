@@ -12,6 +12,7 @@ import {
 import { UserMenu } from './user-menu'
 import { HelpMenu } from './help-menu'
 import { MobileSidebarContent, type TenantOption } from './sidebar'
+import { ReadOnlyBadge } from '@/components/layout/expired-paywall'
 
 // ─── Page Title Mapping ───────────────────────────────────────────
 
@@ -133,6 +134,7 @@ export function Header({ userName, userEmail, userId, userRole, clinicName, tena
 
         {/* Right: help menu + user avatar */}
         <div className="flex items-center gap-2">
+          <ReadOnlyBadge />
           <HelpMenu />
           <UserMenu userName={userName} userEmail={userEmail} />
         </div>

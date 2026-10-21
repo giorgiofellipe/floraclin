@@ -13,6 +13,7 @@ import type { Conversation } from './conversation-list'
 import { formatBrPhone } from '@/lib/phone'
 import { findBlueprintForTemplateName } from '@/lib/whatsapp-blueprints'
 import { toast } from 'sonner'
+import { useSubscriptionAccess } from '@/components/layout/subscription-access'
 import {
   ArrowLeft,
   Send,
@@ -99,6 +100,9 @@ function isConfirmationTemplate(templateName: string | null): boolean {
 
 export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
   function ChatPanel({ conversation, onMarkRead, draft, onBack, className }, ref) {
+    // Read-only mode: the inbox stays readable, the composer is replaced by
+    // a notice instead of sends that would only fail with a 402.
+    const { readOnly, openPaywall } = useSubscriptionAccess()
     const [messages, setMessages] = useState<Message[]>([])
     const [loading, setLoading] = useState(false)
     const [loadingMore, setLoadingMore] = useState(false)
@@ -535,6 +539,25 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
               </InfoPopover>
             </div>
           )}
+          {readOnly ? (
+            <div
+              role="status"
+              data-testid="whatsapp-read-only"
+              className="flex flex-col gap-2 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-sm text-[#54656F] md:flex-row md:items-center md:justify-between"
+            >
+              <p>
+                <span className="font-medium text-[#111B21]">Assinatura inativa.</span> Você pode ler as
+                conversas, mas não enviar mensagens. Assine um plano para voltar a usar o WhatsApp.
+              </p>
+              <Button
+                size="sm"
+                className="shrink-0 bg-forest text-cream hover:bg-sage"
+                onClick={openPaywall}
+              >
+                Ver planos
+              </Button>
+            </div>
+          ) : (
           <div className="px-2 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:px-4">
             <div className="flex items-center gap-2">
               <Button
@@ -580,6 +603,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
               </Button>
             </div>
           </div>
+          )}
         </div>
 
         {/* Template picker modal */}

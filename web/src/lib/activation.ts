@@ -19,6 +19,8 @@ export interface ActivationState {
   hasWhatsappSend: boolean
   trialDay: number
   daysLeft: number
+  /** Milliseconds until the period ends; negative once it has. */
+  msLeft: number
   subscriptionStatus: SubscriptionStatus
   subscriptionSource: string
   optedOut: boolean
@@ -58,6 +60,7 @@ export async function getActivationState(
     hasWhatsappSend: row.hasWhatsappSend,
     trialDay: brCalendarDaysBetween(row.currentPeriodStart, now),
     daysLeft: brCalendarDaysBetween(now, row.currentPeriodEnd),
+    msLeft: row.currentPeriodEnd.getTime() - now.getTime(),
     subscriptionStatus: row.status as SubscriptionStatus,
     subscriptionSource: row.source,
     optedOut: row.optedOutAt != null,

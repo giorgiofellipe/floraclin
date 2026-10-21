@@ -8,6 +8,7 @@ import {
 } from '@/db/queries/subscriptions'
 import { createCheckoutSession, updateSubscriptionPrice } from '@/lib/stripe'
 import { handleApiError } from '@/lib/api-error'
+import { getWinbackOffer } from '@/lib/winback'
 
 export async function POST(request: Request) {
   try {
@@ -81,7 +82,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ url: null, updated: true })
     }
 
-    const { url } = await createCheckoutSession(ctx.tenantId, planSlug, subscription?.stripeCustomerId ?? null)
+    // Eligibility is decided here, from the stored row, never from the client.
+    const winback = getWinbackOffer(subscription)
+    const { url } = await createCheckoutSession(ctx.tenantId, planSlug, subscription?.stripeCustomerId ?? null, {
+      promotionCodeId: winback?.promotionCodeId ?? null,
+    })
 
     return NextResponse.json({ url })
   } catch (error) {

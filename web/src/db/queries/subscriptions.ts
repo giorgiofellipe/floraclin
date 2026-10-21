@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { plans, tenantSubscriptions, tenants } from '@/db/schema'
-import { eq, and, sql, asc, lt } from 'drizzle-orm'
+import { eq, and, or, ne, isNull, sql, asc, lt } from 'drizzle-orm'
 import { addDays, addMonths } from 'date-fns'
 
 // ─── TYPE EXPORTS ──────────────────────────────────────────────────
@@ -112,6 +112,7 @@ export async function getSubscription(tenantId: string): Promise<SubscriptionWit
       notes: tenantSubscriptions.notes,
       createdAt: tenantSubscriptions.createdAt,
       updatedAt: tenantSubscriptions.updatedAt,
+      firstPaidAt: tenantSubscriptions.firstPaidAt,
       plan: {
         id: plans.id,
         slug: plans.slug,
@@ -369,14 +370,38 @@ export async function listAllSubscriptions(filters?: {
   return result as SubscriptionListItem[]
 }
 
-export async function getExpiredTrials(): Promise<TenantSubscription[]> {
-  return db
-    .select()
-    .from(tenantSubscriptions)
-    .where(
+function lapsedCondition(now: Date) {
+  return and(
+    lt(tenantSubscriptions.currentPeriodEnd, now),
+    or(
+      eq(tenantSubscriptions.status, 'trialing'),
       and(
-        eq(tenantSubscriptions.status, 'trialing'),
-        lt(tenantSubscriptions.currentPeriodEnd, new Date())
-      )
-    )
+        eq(tenantSubscriptions.status, 'active'),
+        ne(tenantSubscriptions.source, 'stripe'),
+        isNull(tenantSubscriptions.stripeSubscriptionId),
+      ),
+    ),
+  )
+}
+
+/**
+ * Marks as `expired` every row whose access has ended but whose status still
+ * says otherwise: a trial past its end, or a gift / admin grant past its end.
+ * Stripe-driven rows are left alone; Stripe owns their status and the webhook
+ * moves them.
+ *
+ * One conditional UPDATE rather than select-then-update, so a checkout that
+ * turns a row into an active Stripe subscription between the two can never be
+ * overwritten back to expired.
+ *
+ * The gate (`isSubscriptionRowActive`) already treats these rows as inactive
+ * the moment the period ends; this only makes the stored status agree, for the
+ * admin list, the lifecycle emails and anything else that reads `status`.
+ */
+export async function expireLapsedSubscriptions(now: Date = new Date()): Promise<TenantSubscription[]> {
+  return db
+    .update(tenantSubscriptions)
+    .set({ status: 'expired', updatedAt: now })
+    .where(lapsedCondition(now))
+    .returning()
 }

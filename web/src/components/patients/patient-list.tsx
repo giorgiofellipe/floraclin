@@ -30,6 +30,7 @@ import {
   DialogClose,
 } from '@/components/ui/dialog'
 import { PlusIcon, SearchIcon, PencilIcon, TrashIcon, ChevronLeftIcon, ChevronRightIcon, UsersIcon } from 'lucide-react'
+import { ReadOnlyGuard } from '@/components/layout/subscription-access'
 
 interface PatientListProps {
   result: PaginatedResult<Patient>
@@ -128,10 +129,12 @@ export function PatientList({ result, search: initialSearch = '', isFetching = f
           Buscar
         </Button>
         <div className="flex-1" />
-        <Button onClick={handleNewPatient} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="patient-new-button">
-          <PlusIcon className="size-4" data-icon="inline-start" />
-          Novo Paciente
-        </Button>
+        <ReadOnlyGuard>
+          <Button onClick={handleNewPatient} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="patient-new-button">
+            <PlusIcon className="size-4" data-icon="inline-start" />
+            Novo Paciente
+          </Button>
+        </ReadOnlyGuard>
       </div>
 
       {/* Table */}

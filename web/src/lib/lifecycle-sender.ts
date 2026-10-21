@@ -72,7 +72,18 @@ export async function deliverLifecycleMessage(
 
   const phone = recipient.tenantPhone ? normalizeBrPhone(recipient.tenantPhone) : ''
   let whatsapp: ChannelOutcome
-  if (!isCanonicalBrPhone(phone)) {
+  if (message.whatsapp === false) {
+    // Template not approved on Meta yet: email only. Recording the skip is
+    // what lets the key complete (both channels must have a row).
+    await recordSkippedLifecycleSend({
+      tenantId: recipient.tenantId,
+      messageKey: message.key,
+      channel: 'whatsapp',
+      recipient: phone || 'none',
+      reason: 'template_not_approved',
+    })
+    whatsapp = 'skipped'
+  } else if (!isCanonicalBrPhone(phone)) {
     await recordSkippedLifecycleSend({
       tenantId: recipient.tenantId,
       messageKey: message.key,

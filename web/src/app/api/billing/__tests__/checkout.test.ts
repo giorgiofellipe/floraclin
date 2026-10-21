@@ -99,7 +99,7 @@ describe('POST /api/billing/checkout', () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ url: 'https://checkout.stripe.com/cs_1' })
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null)
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: null })
     expect(updateSubscriptionPrice).not.toHaveBeenCalled()
   })
 
@@ -178,7 +178,7 @@ describe('POST /api/billing/checkout', () => {
     const res = await POST(request())
 
     expect(res.status).toBe(200)
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_1')
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_1', { promotionCodeId: null })
     expect(updateSubscriptionPrice).not.toHaveBeenCalled()
   })
 
@@ -233,5 +233,23 @@ describe('POST /api/billing/checkout', () => {
     expect(res.status).toBe(403)
     expect(createCheckoutSession).not.toHaveBeenCalled()
     expect(updateSubscriptionPrice).not.toHaveBeenCalled()
+  })
+
+  it('applies the win-back promotion code to an expired trial when one is configured', async () => {
+    vi.stubEnv('STRIPE_WINBACK_PROMOTION_CODE_ID', 'promo_winback')
+    vi.mocked(getSubscription).mockResolvedValue({
+      ...NO_SUBSCRIPTION,
+      status: 'expired',
+      source: 'trial',
+      stripeSubscriptionId: null,
+      firstPaidAt: null,
+      currentPeriodEnd: new Date(Date.now() - 60 * 60 * 1000),
+    } as never)
+
+    const res = await POST(request('pro'))
+
+    expect(res.status).toBe(200)
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: 'promo_winback' })
+    vi.unstubAllEnvs()
   })
 })

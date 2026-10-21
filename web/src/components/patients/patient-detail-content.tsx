@@ -53,6 +53,7 @@ import { usePractitioners, useAppointmentProcedureTypes } from '@/hooks/queries/
 import type { Patient } from '@/db/queries/patients'
 import type { Role } from '@/types'
 import { formatBrPhone, toWaMeUrl, tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
+import { ReadOnlyGuard } from '@/components/layout/subscription-access'
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -344,16 +345,18 @@ export function PatientDetailContent({
 
               </TooltipProvider>
 
-              <Link
-                href={`/pacientes/${patient.id}/atendimento`}
-                className={cn(
-                  buttonVariants({ size: 'default' }),
-                  'bg-forest text-cream hover:bg-sage transition-all duration-200 rounded-xl px-5 py-2.5 text-[13px] font-semibold gap-2 min-h-[42px] shadow-sm hover:shadow-md',
-                )}
-              >
-                {hasActiveService ? 'Continuar Atendimento' : 'Iniciar Atendimento'}
-                <ArrowRight className="size-4" />
-              </Link>
+              <ReadOnlyGuard>
+                <Link
+                  href={`/pacientes/${patient.id}/atendimento`}
+                  className={cn(
+                    buttonVariants({ size: 'default' }),
+                    'bg-forest text-cream hover:bg-sage transition-all duration-200 rounded-xl px-5 py-2.5 text-[13px] font-semibold gap-2 min-h-[42px] shadow-sm hover:shadow-md',
+                  )}
+                >
+                  {hasActiveService ? 'Continuar Atendimento' : 'Iniciar Atendimento'}
+                  <ArrowRight className="size-4" />
+                </Link>
+              </ReadOnlyGuard>
             </div>
           </div>
         </div>

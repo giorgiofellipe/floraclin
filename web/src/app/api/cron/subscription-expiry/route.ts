@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getExpiredTrials, updateSubscriptionStatus } from '@/db/queries/subscriptions'
+import { expireLapsedSubscriptions } from '@/db/queries/subscriptions'
 import { handleApiError } from '@/lib/api-error'
 import { withCronMonitor } from '@/lib/cron-monitor'
 
@@ -23,13 +23,10 @@ export async function GET(request: Request) {
       MONITOR_SLUG,
       MONITOR_SCHEDULE,
       async () => {
-        const expiredTrials = await getExpiredTrials()
-
-        for (const sub of expiredTrials) {
-          await updateSubscriptionStatus(sub.tenantId, 'expired')
-        }
-
-        return expiredTrials.length
+        // Trials, gifts and admin grants past their end. Stripe-driven rows
+        // are never touched here: the webhook owns their status.
+        const lapsed = await expireLapsedSubscriptions()
+        return lapsed.length
       },
     )
 
