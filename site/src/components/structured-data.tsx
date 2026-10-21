@@ -3,7 +3,7 @@ const SCHEMAS = [
     "@context": "https://schema.org",
     "@type": "Organization",
     name: "FloraClin",
-    legalName: "Bullcode Servicos em Tecnologia LTDA",
+    legalName: "Bullcode Serviços em Tecnologia LTDA",
     url: "https://floraclin.com.br",
     logo: "https://floraclin.com.br/brand/logo-symbol.png",
     description:

@@ -24,7 +24,7 @@ export default function PrivacidadePage() {
             <section>
               <h2 className="text-xl mb-3">1. Introdução</h2>
               <p>
-                A FloraClin, operada por Bullcode Servicos em Tecnologia LTDA
+                A FloraClin, operada por Bullcode Serviços em Tecnologia LTDA
                 (CNPJ 27.435.275/0001-04), está
                 comprometida com a proteção da privacidade dos seus usuários e
                 dos pacientes atendidos por meio da Plataforma. Esta Política de

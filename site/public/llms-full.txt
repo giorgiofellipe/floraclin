@@ -101,6 +101,6 @@ Sim. Você tem o histórico completo de cada paciente, com tags e acompanhamento
 
 ## Empresa
 
-Bullcode Servicos em Tecnologia LTDA
+Bullcode Serviços em Tecnologia LTDA
 CNPJ: 27.435.275/0001-04
 Brasil
