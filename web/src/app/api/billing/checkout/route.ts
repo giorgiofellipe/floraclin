@@ -10,6 +10,9 @@ import { createCheckoutSession, updateSubscriptionPrice } from '@/lib/stripe'
 import { handleApiError } from '@/lib/api-error'
 import { getValidatedWinbackOffer } from '@/lib/winback-offer'
 import { isStripeDriven } from '@/lib/subscription-access'
+import { getReferralAttribution } from '@/db/queries/referrals'
+import { isReferralEnrollmentEnabled } from '@/lib/referral/config'
+import { chooseCheckoutDiscount, getValidatedReferralOffer } from '@/lib/referral/offer'
 
 export async function POST(request: Request) {
   try {
@@ -89,8 +92,21 @@ export async function POST(request: Request) {
     // Only when the coupon covers this plan; otherwise checkout is full price,
     // exactly what the paywall showed for it.
     const winback = await getValidatedWinbackOffer(subscription, [plan])
+    // With the referral switch off no referral DB call happens at all; when on, the attribution is read once.
+    const referralOn = isReferralEnrollmentEnabled()
+    const attribution = referralOn ? await getReferralAttribution(ctx.tenantId) : null
+    const referral =
+      winback || !attribution
+        ? null
+        : await getValidatedReferralOffer(subscription ?? null, [plan], undefined, undefined, undefined, {
+            attribution,
+          })
+    // Exactly one coupon at checkout; the win-back wins.
+    const choice = chooseCheckoutDiscount(winback, referral)
     const { url } = await createCheckoutSession(ctx.tenantId, planSlug, subscription?.stripeCustomerId ?? null, {
-      promotionCodeId: winback?.promotionCodeId ?? null,
+      promotionCodeId: choice.promotionCodeId,
+      discountKind: choice.kind ?? undefined,
+      referralId: attribution?.id ?? null,
     })
 
     return NextResponse.json({ url })
