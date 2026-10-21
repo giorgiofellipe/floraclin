@@ -9,13 +9,15 @@ on:
   deployment_status:
   workflow_dispatch:
 
-concurrency:
-  group: indexnow
-  cancel-in-progress: true
-
 jobs:
   ping:
     name: ping IndexNow
+    # Job-level so only runs that pass the filter below join the group; at the
+    # workflow level every deployment_status event (previews, the web project)
+    # would cancel an in-flight production ping.
+    concurrency:
+      group: indexnow
+      cancel-in-progress: true
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.deployment_status.state == 'success' &&
@@ -30,6 +32,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           sparse-checkout: site/scripts
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:

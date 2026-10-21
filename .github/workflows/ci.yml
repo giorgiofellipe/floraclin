@@ -38,3 +38,6 @@ jobs:
 
       - name: Tests
         run: pnpm --filter @floraclin/web test:run
+
+      - name: Site tests
+        run: pnpm --filter @floraclin/site test:run

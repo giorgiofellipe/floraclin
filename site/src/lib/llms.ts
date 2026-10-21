@@ -1,16 +1,14 @@
-import { SITE_PAGES, absoluteUrl, type LlmsSection } from "@/lib/site-pages";
+import { LLMS_SECTIONS, SITE_PAGES, absoluteUrl } from "@/lib/site-pages";
 import { SIGNUP_URL } from "@/lib/marketing-attribution";
-
-const SECTION_ORDER: LlmsSection[] = ["Produto", "Guias e comparativos", "Legal"];
 
 /** llms.txt (llmstxt.org format), generated from the page registry. */
 export function buildLlmsTxt(): string {
-  const sections = SECTION_ORDER.map((section) => {
+  const sections = LLMS_SECTIONS.flatMap((section) => {
     const pages = SITE_PAGES.filter((page) => page.llmsSection === section);
-    if (pages.length === 0) return null;
+    if (pages.length === 0) return [];
     const links = pages.map((page) => `- [${page.title}](${absoluteUrl(page.path)}): ${page.summary}`);
-    return [`## ${section}`, "", ...links].join("\n");
-  }).filter((section): section is string => section !== null);
+    return [[`## ${section}`, "", ...links].join("\n")];
+  });
 
   return [
     "# FloraClin",

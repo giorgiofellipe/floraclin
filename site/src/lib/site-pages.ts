@@ -1,17 +1,11 @@
 import type { MetadataRoute } from "next";
 
-/**
- * Single registry of the public, indexable pages of floraclin.com.br.
- *
- * The sitemap, llms.txt and the IndexNow ping are all built from this list,
- * so adding a page here is the only step needed to get it crawled.
- * `site-pages.test.ts` fails when a `page.tsx` exists under `src/app` that is
- * neither listed here nor in `NON_INDEXABLE_ROUTES`, so a new page can't be
- * forgotten.
- */
+/** Canonical origin of the marketing site. */
 export const SITE_URL = "https://floraclin.com.br";
 
-export type LlmsSection = "Produto" | "Guias e comparativos" | "Legal";
+/** llms.txt sections, in the order they appear. */
+export const LLMS_SECTIONS = ["Produto", "Guias e comparativos", "Legal"] as const;
+export type LlmsSection = (typeof LLMS_SECTIONS)[number];
 
 export interface SitePage {
   /** Route path, starting with "/". */
@@ -27,7 +21,16 @@ export interface SitePage {
   llmsSection: LlmsSection;
 }
 
-export const SITE_PAGES: SitePage[] = [
+/**
+ * Single registry of the public, indexable pages of floraclin.com.br.
+ *
+ * The sitemap, llms.txt and the IndexNow ping are all built from this list,
+ * so adding a page here is the only step needed to get it crawled.
+ * `site-pages.test.ts` fails when a `page.tsx` exists under `src/app` that is
+ * neither listed here nor in `NON_INDEXABLE_ROUTES`, so a new page can't be
+ * forgotten.
+ */
+export const SITE_PAGES: readonly SitePage[] = [
   {
     path: "/",
     title: "FloraClin",
@@ -68,13 +71,17 @@ export const SITE_PAGES: SitePage[] = [
 ];
 
 /** Routes that exist under src/app but must stay out of the sitemap. */
-export const NON_INDEXABLE_ROUTES = ["/motion-lab"];
+export const NON_INDEXABLE_ROUTES: readonly string[] = ["/motion-lab"];
 
 export function absoluteUrl(path: string): string {
   return path === "/" ? SITE_URL : `${SITE_URL}${path}`;
 }
 
-/** Noon in São Paulo on the given BR calendar day, so the date never flips. */
+/**
+ * Noon in São Paulo on the given BR calendar day, so the date never flips.
+ * A fixed -03:00 is safe: Brazil has had no DST since 2019. site/ has no
+ * @/lib/dates; mirror web/src/lib/dates.ts parseBrDate if that changes.
+ */
 export function brDayToDate(ymd: string): Date {
   return new Date(`${ymd}T12:00:00-03:00`);
 }

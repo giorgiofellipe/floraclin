@@ -8,16 +8,22 @@
 // The key is read from the live site (/indexnow-key), so CI needs no secret;
 // if the site has no INDEXNOW_KEY, IndexNow is off and this exits 0.
 
+// Mirrors SITE_URL in src/lib/site-pages.ts (this script runs without a TS toolchain).
 const SITE = "https://floraclin.com.br";
 const HOST = new URL(SITE).host;
 const ENDPOINT = "https://api.indexnow.org/indexnow";
 const ATTEMPTS = 6;
 const RETRY_MS = 20_000;
+// A stalled connection would otherwise hang until the job timeout, never retried.
+const REQUEST_TIMEOUT_MS = 15_000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function fetchText(url) {
-  const res = await fetch(url, { headers: { "Cache-Control": "no-cache" } });
+  const res = await fetch(url, {
+    headers: { "Cache-Control": "no-cache" },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
   return { status: res.status, text: await res.text() };
 }
 
@@ -66,6 +72,7 @@ async function main() {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8" },
     body: JSON.stringify({ host: HOST, key, keyLocation, urlList }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   const body = await res.text();
   console.log(`IndexNow answered ${res.status} for ${urlList.length} URLs${body ? `: ${body.slice(0, 300)}` : ""}`);

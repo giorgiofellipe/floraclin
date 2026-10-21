@@ -6,13 +6,16 @@ import { NON_INDEXABLE_ROUTES, SITE_PAGES } from '@/lib/site-pages'
 import { buildLlmsTxt } from '@/lib/llms'
 
 const APP_DIR = path.resolve(__dirname, '../../app')
+const PAGE_FILE = /^page\.(tsx|ts|jsx|js)$/
 
-/** Route paths of every page.tsx under src/app (route groups stripped). */
+/** Route paths of every page file under src/app (route groups stripped). */
 function appRoutes(dir = APP_DIR, segments: string[] = []): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    if (entry.isFile()) return entry.name === 'page.tsx' ? ['/' + segments.join('/')] : []
-    if (!entry.isDirectory()) return []
-    const isGroup = entry.name.startsWith('(') && entry.name.endsWith(')')
+    if (entry.isFile()) return PAGE_FILE.test(entry.name) ? ['/' + segments.join('/')] : []
+    // Private folders (_foo) are not routes.
+    if (!entry.isDirectory() || entry.name.startsWith('_')) return []
+    // Route groups and parallel-route slots add no URL segment.
+    const isGroup = (entry.name.startsWith('(') && entry.name.endsWith(')')) || entry.name.startsWith('@')
     return appRoutes(path.join(dir, entry.name), isGroup ? segments : [...segments, entry.name])
   })
 }
@@ -36,9 +39,10 @@ describe('site page registry', () => {
     expect(entries.every((e) => e.lastModified instanceof Date && !Number.isNaN(e.lastModified.getTime()))).toBe(true)
   })
 
-  it('keeps non-indexable routes out of the sitemap', () => {
-    const urls = sitemap().map((e) => e.url)
-    expect(urls.some((u) => u.endsWith('/motion-lab'))).toBe(false)
+  it('keeps non-indexable routes out of the registry, and has no stale ones', () => {
+    const routes = new Set(appRoutes())
+    expect(SITE_PAGES.filter((p) => NON_INDEXABLE_ROUTES.includes(p.path))).toEqual([])
+    expect(NON_INDEXABLE_ROUTES.filter((r) => !routes.has(r))).toEqual([])
   })
 
   it('links every registered page from llms.txt', () => {
