@@ -59,6 +59,14 @@ describe('signupUrlWithCampaign', () => {
     expect(url.searchParams.has('fbclid')).toBe(false)
   })
 
+  it('keeps the landing UTMs when a later page carries only a click id', () => {
+    const storage = memoryStorage()
+    rememberLandingParams(AD_QUERY, storage)
+    const url = new URL(signupUrlWithCampaign(SIGNUP, { search: '?fbclid=fb-2', storage, marketingConsent: true }))
+    expect(url.searchParams.get('utm_source')).toBe('meta')
+    expect(url.searchParams.get('fbclid')).toBe('fb-2')
+  })
+
   it('returns the bare signup URL when the visit carried no campaign', () => {
     expect(signupUrlWithCampaign(SIGNUP, { search: '?q=1', storage: memoryStorage(), marketingConsent: true })).toBe(SIGNUP)
   })

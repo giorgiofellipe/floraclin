@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ComponentProps, type MouseEvent } from "react";
-import { hasMarketingConsent } from "@/lib/cookie-consent";
+import { hasMarketingConsent, subscribeCookieConsent } from "@/lib/cookie-consent";
 import { SIGNUP_URL } from "@/lib/marketing-attribution";
 import { rememberLandingParams, sessionStorageOrNull, signupUrlWithCampaign } from "@/lib/signup-handoff";
 
@@ -24,10 +24,12 @@ export function SignupLink({ onClick, ...props }: Omit<ComponentProps<"a">, "hre
   useEffect(() => {
     rememberLandingParams(window.location.search, sessionStorageOrNull());
     setHref(currentSignupUrl());
+    return subscribeCookieConsent(() => setHref(currentSignupUrl()));
   }, []);
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
-    // Consent may have changed since mount; the href is read after this handler.
+    // Safety net for consent changed in another tab (the storage event can
+    // lag): the browser reads the href only after this handler returns.
     event.currentTarget.href = currentSignupUrl();
     onClick?.(event);
   }

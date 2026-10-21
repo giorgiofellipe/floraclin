@@ -49,10 +49,13 @@ export function signupUrlWithCampaign(
   signupUrl: string,
   { search, storage, marketingConsent }: { search: string; storage: StorageLike | null; marketingConsent: boolean },
 ): string {
-  let params = campaignParams(search, marketingConsent)
-  if (!params.size && storage) {
+  const params = campaignParams(search, marketingConsent)
+  // A later page can carry only a click id; the landing page's UTMs still apply.
+  if (storage && !UTM_PARAMS.some((name) => params.has(name))) {
     try {
-      params = campaignParams(storage.getItem(LANDING_PARAMS_STORAGE_KEY) ?? '', marketingConsent)
+      campaignParams(storage.getItem(LANDING_PARAMS_STORAGE_KEY) ?? '', false).forEach((value, name) =>
+        params.set(name, value),
+      )
     } catch {
       // Ignore blocked storage.
     }

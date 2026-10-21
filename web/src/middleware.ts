@@ -51,9 +51,10 @@ export default auth((req) => {
       if (session?.emailVerified === false) return NextResponse.redirect(new URL('/confirm-email', req.url))
       return NextResponse.redirect(new URL('/dashboard', req.url))
     }
-    // /login too: people arriving there (bounced from / or a deep link) reach
-    // /signup through a client-side link, which never makes a document request
-    // and so would never be captured.
+    // Not only /signup: people bounced to /login reach /signup through a
+    // client-side link, which never makes a document request and so would
+    // never be captured. Only UTMs, click ids and the bare path are kept, so
+    // the reset token in /reset-password's query is never recorded.
     const response = NextResponse.next()
     captureFirstTouch(req, response)
     return response
