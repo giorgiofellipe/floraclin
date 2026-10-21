@@ -2,6 +2,11 @@ import Link from "next/link";
 import Image from "next/image";
 import { CookiePreferencesLink } from "@/components/cookie-consent-banner";
 
+// Visible link between the FloraClin brand and the verified legal entity.
+// Meta requires it to approve the WhatsApp Business display name "FloraClin".
+const LEGAL_ENTITY_LINE =
+  "FloraClin é um produto da Bullcode Serviços em Tecnologia LTDA · CNPJ 27.435.275/0001-04 · Rio do Sul - SC";
+
 const COLUMNS = [
   {
     title: "Navegação",
@@ -112,6 +117,9 @@ export function Footer() {
         <div className="border-t border-cream/10 pt-8">
           <p className="text-cream/30 text-sm text-center">
             &copy; 2026 FloraClin. Todos os direitos reservados.
+          </p>
+          <p className="text-cream/30 text-xs text-center text-balance mt-2">
+            {LEGAL_ENTITY_LINE}
           </p>
         </div>
       </div>
