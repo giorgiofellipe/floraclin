@@ -30,7 +30,7 @@ import {
   DialogClose,
 } from '@/components/ui/dialog'
 import { PlusIcon, SearchIcon, PencilIcon, TrashIcon, ChevronLeftIcon, ChevronRightIcon, UsersIcon } from 'lucide-react'
-import { ReadOnlyGuard, useReadOnly } from '@/components/layout/subscription-access'
+import { ReadOnlyGuard, useSubscriptionAccess, useWriteGuard } from '@/components/layout/subscription-access'
 
 interface PatientListProps {
   result: PaginatedResult<Patient>
@@ -48,7 +48,8 @@ export function PatientList({ result, search: initialSearch = '', isFetching = f
   const telefoneParam = searchParams.get('telefone')
   // `?novo=1` comes from the trial checklist and a lifecycle email; in
   // read-only mode it must not open a form whose save would 402.
-  const readOnly = useReadOnly()
+  const { readOnly } = useSubscriptionAccess()
+  const guardWrite = useWriteGuard()
   const [formOpen, setFormOpen] = useState(novoParam === '1' && !readOnly)
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null)
   const [prefillData] = useState(
@@ -205,7 +206,7 @@ export function PatientList({ result, search: initialSearch = '', isFetching = f
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        onClick={() => handleEdit(patient)}
+                        onClick={guardWrite(() => handleEdit(patient))}
                         title="Editar"
                         className="text-mid hover:text-forest hover:bg-sage/10 transition-colors"
                       >

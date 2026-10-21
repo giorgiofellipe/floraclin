@@ -16,6 +16,7 @@ function activationWith(overrides: Partial<ActivationState> = {}): ActivationSta
     subscriptionStatus: 'trialing',
     subscriptionSource: 'trial',
     optedOut: false,
+    lastMarketingSentAt: null,
     ...overrides,
   }
 }

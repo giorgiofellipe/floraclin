@@ -13,7 +13,12 @@ import { tenants } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { effectiveSubscriptionStatus, isStripeDriven, isSubscriptionRowActive } from '@/lib/subscription-access'
-import { getWinbackOffer, publicWinbackOffer } from '@/lib/winback'
+import { publicWinbackOffer } from '@/lib/winback'
+import { getValidatedWinbackOffer } from '@/lib/winback-offer'
+import { getTrialRecap } from '@/db/queries/trial-recap'
+import { planBenefits, recommendedPlanSlug } from '@/lib/plan-benefits'
+import { brCalendarDaysBetween } from '@/lib/dates'
+import { TrialEndingModal } from '@/components/layout/trial-ending-modal'
 import { SubscriptionAccessProvider, type PaywallPlan } from '@/components/layout/subscription-access'
 import { ExpiredPaywall } from '@/components/layout/expired-paywall'
 
@@ -43,12 +48,38 @@ export default async function PlatformLayout({ children }: { children: React.Rea
   const now = new Date()
   const readOnly = !auth.isPlatformAdmin && !isSubscriptionRowActive(subscription, now)
   const displayStatus = effectiveSubscriptionStatus(subscription, now)
-  const paywallPlans: PaywallPlan[] = readOnly
-    ? (await listPlans(true))
-        .filter((p) => p.priceCents > 0 && !!p.stripePriceId)
-        .map((p) => ({ slug: p.slug, name: p.name, priceCents: p.priceCents, billingInterval: p.billingInterval }))
-    : []
-  const winback = readOnly ? publicWinbackOffer(getWinbackOffer(subscription, now)) : null
+  // A free trial (not Stripe's) with at most one BR day left: the one-time
+  // "seu teste termina amanhã" modal.
+  const trialEndsAt =
+    !readOnly &&
+    !auth.isPlatformAdmin &&
+    subscription?.status === 'trialing' &&
+    !isStripeDriven(subscription) &&
+    brCalendarDaysBetween(now, subscription.currentPeriodEnd) <= 1
+      ? subscription.currentPeriodEnd.toISOString()
+      : null
+  // A Stripe subscription whose payment failed: the way back is fixing the
+  // card in the billing portal, not a second checkout.
+  const recovery =
+    readOnly && subscription?.status === 'past_due' && isStripeDriven(subscription) ? 'payment_update' : 'checkout'
+  const needsPlans = readOnly || trialEndsAt !== null
+
+  const [planRows, recap, validatedWinback] = await Promise.all([
+    needsPlans && recovery === 'checkout' ? listPlans(true) : Promise.resolve([]),
+    needsPlans && recovery === 'checkout' ? getTrialRecap(auth.tenantId) : Promise.resolve(null),
+    readOnly && recovery === 'checkout' ? getValidatedWinbackOffer(subscription, now) : Promise.resolve(null),
+  ])
+  const paidPlans = planRows.filter((p) => p.priceCents > 0 && !!p.stripePriceId)
+  const recommended = recommendedPlanSlug(paidPlans)
+  const paywallPlans: PaywallPlan[] = paidPlans.map((p) => ({
+    slug: p.slug,
+    name: p.name,
+    priceCents: p.priceCents,
+    billingInterval: p.billingInterval,
+    benefits: planBenefits(p),
+    recommended: p.slug === recommended,
+  }))
+  const winback = publicWinbackOffer(validatedWinback)
   // A running trial / gift / admin grant locks at an exact instant; the
   // provider re-renders this layout then. Stripe rows follow the webhook.
   const lockAt =
@@ -81,6 +112,10 @@ export default async function PlatformLayout({ children }: { children: React.Rea
       plans={paywallPlans}
       winback={winback}
       lockAt={lockAt}
+      role={auth.role}
+      recovery={recovery}
+      recap={recap}
+      trialEndsAt={trialEndsAt}
     >
     <div className="min-h-screen bg-[#F4F6F8]">
       <Sidebar
@@ -122,6 +157,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
         </PlatformFooter>
       </div>
       <ExpiredPaywall />
+      <TrialEndingModal />
     </div>
     </SubscriptionAccessProvider>
   )

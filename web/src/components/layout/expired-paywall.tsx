@@ -1,14 +1,23 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
-import { Loader2, LockIcon, SparklesIcon } from 'lucide-react'
-import { toast } from 'sonner'
+import { Loader2, LockIcon } from 'lucide-react'
+import { LogoSymbol } from '@/components/brand/logo-symbol'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
-import { brToday, formatBrDayMonth } from '@/lib/dates'
+import { brToday } from '@/lib/dates'
 import { ExportDataLink } from '@/components/layout/export-data-dialog'
-import { useSubscriptionAccess, type PaywallPlan } from '@/components/layout/subscription-access'
+import {
+  PlanCards,
+  QUIET_ACTION_CLASS,
+  TrialRecapTiles,
+  TrustRow,
+  WinbackBadge,
+  hasRecap,
+  usePlanCheckout,
+} from '@/components/layout/plan-checkout'
+import { useSubscriptionAccess } from '@/components/layout/subscription-access'
 
 /** Pages that are the way out (billing) or account hygiene (profile): the
  *  paywall never opens on its own there. */
@@ -30,22 +39,47 @@ export function shouldAutoOpenPaywall(
   return storedDay !== today
 }
 
-function formatPrice(plan: PaywallPlan): string {
-  const value = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(plan.priceCents / 100)
-  return plan.billingInterval === 'year' ? `${value}/ano` : `${value}/mês`
+/** Value-led copy: what the clinic keeps by continuing, not what went wrong. */
+function paywallCopy({ paymentUpdate, trial, built }: { paymentUpdate: boolean; trial: boolean; built: boolean }) {
+  if (paymentUpdate) {
+    return {
+      eyebrow: 'Pagamento pendente',
+      headline: 'Atualize o cartão e continue de onde parou',
+      description:
+        'Não conseguimos cobrar a sua assinatura. Seus dados estão salvos; atualize a forma de pagamento para voltar a cadastrar, agendar e enviar WhatsApp.',
+    }
+  }
+  return {
+    eyebrow: trial ? 'Seu teste gratuito terminou' : 'Sua assinatura terminou',
+    headline: built ? 'Sua clínica já está montada. Continue de onde parou.' : 'Mantenha sua clínica funcionando na FloraClin',
+    description:
+      'Tudo o que você cadastrou continua salvo. Escolha um plano para voltar a cadastrar, agendar, registrar atendimentos e enviar WhatsApp.',
+  }
 }
 
 export function ExpiredPaywall() {
-  const { readOnly, reason, tenantId, canSubscribe, plans, winback, paywallOpen, openPaywall, closePaywall } =
-    useSubscriptionAccess()
+  const {
+    readOnly,
+    reason,
+    tenantId,
+    canSubscribe,
+    plans,
+    winback,
+    recap,
+    recovery,
+    paywallOpen,
+    openPaywall,
+    closePaywall,
+  } = useSubscriptionAccess()
   const pathname = usePathname()
-  const [checkingOut, setCheckingOut] = useState<string | null>(null)
+  const { pending, subscribe, updatePayment } = usePlanCheckout()
 
   // Re-checked on every navigation, so a session that starts on an exempt
   // page (billing) still gets it on the next page, and a tab left open past
   // midnight gets the next day's showing. The stored day and the ref keep it
   // to once per day and once per session.
   const autoOpenedRef = useRef(false)
+  const popupRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!readOnly || !tenantId || autoOpenedRef.current) return
     let stored: string | null = null
@@ -71,28 +105,9 @@ export function ExpiredPaywall() {
     closePaywall()
   }
 
-  async function subscribe(planSlug: string) {
-    setCheckingOut(planSlug)
-    try {
-      const res = await fetch('/api/billing/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planSlug }),
-      })
-      const body = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(body.error || 'Não foi possível abrir o pagamento.')
-      if (body.url) {
-        window.location.href = body.url
-        return
-      }
-      window.location.reload()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Não foi possível abrir o pagamento.')
-      setCheckingOut(null)
-    }
-  }
-
-  const title = reason === 'trial' ? 'Seu período de teste terminou' : 'Sua assinatura terminou'
+  const paymentUpdate = recovery === 'payment_update'
+  const built = hasRecap(recap)
+  const copy = paywallCopy({ paymentUpdate, trial: reason === 'trial', built })
 
   return (
     // Esc and a backdrop click count as "Continuar em modo leitura".
@@ -100,75 +115,82 @@ export function ExpiredPaywall() {
       <DialogContent
         showCloseButton={false}
         data-testid="expired-paywall"
-        // Full screen on every size: it replaces the page until the clinic
-        // subscribes or chooses read-only mode.
-        className="inset-0 top-0 left-0 h-dvh max-h-none w-full max-w-none translate-x-0 translate-y-0 place-items-center rounded-none bg-cream p-6 pt-[calc(1.5rem+env(safe-area-inset-top))] pb-[calc(1.5rem+env(safe-area-inset-bottom))] ring-0 sm:max-w-none sm:p-10"
+        // Focus the dialog itself, not the first plan button: on a phone that
+        // would scroll past the headline and the clinic's numbers.
+        initialFocus={popupRef}
+        ref={popupRef}
+        // Full screen on every size, scrolling on short screens: it replaces
+        // the page until the clinic subscribes or chooses read-only mode.
+        className="inset-0 top-0 left-0 block h-dvh max-h-none w-full max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-none bg-cream p-0 ring-0 sm:max-w-none"
       >
-        <div className="flex w-full max-w-2xl flex-col gap-5">
-          <div className="flex flex-col items-center gap-3 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-petal">
-              <LockIcon className="size-5 text-forest" />
+        <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col items-center justify-center gap-6 px-5 pt-[calc(2rem+env(safe-area-inset-top))] pb-[calc(2rem+env(safe-area-inset-bottom))] sm:px-8 sm:py-12">
+          <header className="flex flex-col items-center gap-3 text-center">
+            <div className="flex size-14 items-center justify-center rounded-2xl bg-white shadow-[0_2px_10px_rgba(28,43,30,0.08)] ring-1 ring-topbar-border" aria-hidden>
+              <LogoSymbol className="size-7 text-sage" />
             </div>
-            <DialogTitle className="text-xl text-charcoal">{title}</DialogTitle>
-            <DialogDescription className="max-w-md text-sm text-mid">
-              Seus pacientes, prontuários, agenda e histórico financeiro continuam salvos. Assine um plano
-              para voltar a cadastrar, agendar, registrar atendimentos e enviar mensagens pelo WhatsApp.
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sage" data-testid="paywall-eyebrow">
+              {copy.eyebrow}
+            </p>
+            <DialogTitle className="max-w-xl font-display text-[26px] leading-tight font-semibold text-forest sm:text-[32px]">
+              {copy.headline}
+            </DialogTitle>
+            <DialogDescription className="max-w-lg text-[15px] leading-relaxed text-charcoal/80">
+              {copy.description}
             </DialogDescription>
-          </div>
+          </header>
 
-          {winback && (
-            <div
-              data-testid="winback-offer"
-              className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
-            >
-              <SparklesIcon className="mt-0.5 size-4 shrink-0" />
-              <p>
-                <span className="font-semibold">Oferta para voltar: {winback.label}.</span> Aplicada
-                automaticamente no pagamento até {formatBrDayMonth(winback.endsAt)}.
-              </p>
-            </div>
+          {!paymentUpdate && <TrialRecapTiles recap={recap} title="O que sua clínica já tem aqui" />}
+
+          {!paymentUpdate && <WinbackBadge offer={winback} />}
+
+          {paymentUpdate && canSubscribe && (
+              <Button
+                size="lg"
+                className="h-12 w-full max-w-sm bg-forest text-sm font-semibold text-cream hover:bg-sage"
+                disabled={pending !== null}
+                onClick={updatePayment}
+                data-testid="paywall-update-payment"
+              >
+                {pending === 'payment_update' && <Loader2 className="size-4 animate-spin" aria-hidden />}
+                Atualizar forma de pagamento
+              </Button>
           )}
-
-          {plans.length > 0 && (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {plans.map((plan) => (
-                <div key={plan.slug} className="flex flex-col gap-3 rounded-xl border border-topbar-border bg-white p-4">
-                  <div>
-                    <p className="text-sm font-semibold text-charcoal">{plan.name}</p>
-                    <p className="text-lg font-semibold text-forest">{formatPrice(plan)}</p>
-                  </div>
-                  {canSubscribe && (
-                    <Button
-                      className="bg-forest text-cream hover:bg-sage"
-                      disabled={checkingOut !== null}
-                      onClick={() => subscribe(plan.slug)}
-                      data-testid={`paywall-subscribe-${plan.slug}`}
-                    >
-                      {checkingOut === plan.slug && <Loader2 className="size-4 animate-spin" />}
-                      Assinar {plan.name}
-                    </Button>
-                  )}
-                </div>
-              ))}
+          {!paymentUpdate && (
+            <div className="w-full">
+              <PlanCards
+                plans={plans}
+                offer={winback}
+                canSubscribe={canSubscribe}
+                pending={pending}
+                onSubscribe={subscribe}
+              />
             </div>
           )}
 
           {!canSubscribe && (
-            <p className="text-center text-sm text-mid">
-              Só a pessoa responsável pela clínica pode assinar. Peça a ela para escolher um plano em
-              Configurações › Assinatura.
+            <p className="max-w-md rounded-xl bg-white px-4 py-3 text-center text-sm text-charcoal ring-1 ring-topbar-border">
+              {paymentUpdate
+                ? 'Só a pessoa responsável pela clínica pode atualizar o pagamento. Peça a ela para acessar Configurações › Assinatura.'
+                : 'Só a pessoa responsável pela clínica pode assinar. Peça a ela para escolher um plano em Configurações › Assinatura.'}
             </p>
           )}
 
-          <div className="flex flex-col items-center gap-2 border-t border-topbar-border pt-4 text-sm">
-            <Button variant="ghost" onClick={dismiss} data-testid="paywall-read-only">
+          <TrustRow />
+
+          <footer className="flex flex-col items-center gap-1.5 text-center">
+            <button
+              type="button"
+              onClick={dismiss}
+              data-testid="paywall-read-only"
+              className={QUIET_ACTION_CLASS}
+            >
               Continuar em modo leitura
-            </Button>
-            <p className="text-center text-xs text-mid">
-              No modo leitura você consulta tudo e exporta seus dados, mas não cria nem edita.{' '}
+            </button>
+            <p className="text-xs text-charcoal/70">
+              No modo leitura você consulta e exporta seus dados, mas não cria nem edita.{' '}
               <ExportDataLink className="font-medium text-forest underline underline-offset-2" onNavigate={dismiss} />
             </p>
-          </div>
+          </footer>
         </div>
       </DialogContent>
     </Dialog>

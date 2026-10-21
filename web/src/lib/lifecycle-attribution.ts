@@ -10,7 +10,11 @@ export function lifecycleClickUrl(sendId: string): string {
 
 export function lifecycleDestination(send: { messageKey: string; channel: LifecycleChannel }): URL {
   const path = LIFECYCLE_MESSAGES.find((m) => m.key === send.messageKey)?.button?.path ?? '/'
-  const url = new URL(path, getAppUrl())
+  const appUrl = getAppUrl()
+  const url = new URL(path, appUrl)
+  // External buttons (the support WhatsApp) go out as written: their query
+  // string is someone else's API.
+  if (url.origin !== new URL(appUrl).origin) return url
   url.searchParams.set('utm_source', 'lifecycle')
   url.searchParams.set('utm_medium', send.channel)
   url.searchParams.set('utm_campaign', send.messageKey)

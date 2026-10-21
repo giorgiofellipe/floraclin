@@ -41,6 +41,12 @@ describe('getWinbackOffer', () => {
 
   it('keeps the promotion code id out of what the client gets', () => {
     const offer = getWinbackOffer(expiredTrial, new Date(END.getTime() + DAY), ENV)
-    expect(publicWinbackOffer(offer)).toEqual({ label: ENV.WINBACK_OFFER_LABEL, endsAt: offer!.endsAt })
+    expect(publicWinbackOffer(offer)).toEqual({
+      label: ENV.WINBACK_OFFER_LABEL,
+      endsAt: offer!.endsAt,
+      percentOff: null,
+      durationInMonths: null,
+    })
+    expect(JSON.stringify(publicWinbackOffer(offer))).not.toContain('promo_')
   })
 })

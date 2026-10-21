@@ -17,6 +17,8 @@ vi.mock('@/lib/auth', () => ({ getAuthContext: vi.fn() }))
 vi.mock('@/lib/stripe', () => ({
   createCheckoutSession: vi.fn(),
   updateSubscriptionPrice: vi.fn(),
+  // Stripe confirms the win-back code unless a test says otherwise.
+  checkPromotionCode: vi.fn(async () => ({ percentOff: 30, durationInMonths: 3 })),
 }))
 vi.mock('@/db/queries/subscriptions', () => ({
   getSubscription: vi.fn(),
@@ -26,7 +28,7 @@ vi.mock('@/db/queries/subscriptions', () => ({
 }))
 
 import { getAuthContext } from '@/lib/auth'
-import { createCheckoutSession, updateSubscriptionPrice } from '@/lib/stripe'
+import { checkPromotionCode, createCheckoutSession, updateSubscriptionPrice } from '@/lib/stripe'
 import {
   getSubscription,
   getPlanBySlug,
@@ -63,6 +65,7 @@ const STARTER_ACTIVE = {
   status: 'active',
   stripeCustomerId: 'cus_1',
   stripeSubscriptionId: 'sub_starter',
+  source: 'stripe',
 }
 
 afterEach(() => {
@@ -94,6 +97,7 @@ const CANCELED_OPEN = {
   status: 'canceled',
   stripeCustomerId: 'cus_1',
   stripeSubscriptionId: 'sub_starter',
+  source: 'stripe',
   currentPeriodEnd: new Date('2026-09-20T00:00:00.000Z'),
 }
 
@@ -119,6 +123,16 @@ describe('POST /api/billing/checkout', () => {
     expect(updateSubscriptionPrice).toHaveBeenCalledWith('sub_starter', 'price_pro')
     // The whole point: no second subscription.
     expect(createCheckoutSession).not.toHaveBeenCalled()
+  })
+
+  it('opens a fresh checkout for a gift row that still carries an old Stripe id', async () => {
+    vi.mocked(getSubscription).mockResolvedValue({ ...STARTER_ACTIVE, source: 'gift' } as never)
+
+    const res = await POST(request())
+
+    expect(res.status).toBe(200)
+    expect(updateSubscriptionPrice).not.toHaveBeenCalled()
+    expect(createCheckoutSession).toHaveBeenCalled()
   })
 
   it('records the new plan locally after the switch', async () => {
@@ -254,5 +268,22 @@ describe('POST /api/billing/checkout', () => {
 
     expect(res.status).toBe(200)
     expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: 'promo_winback' })
+  })
+
+  it('charges full price when Stripe says the win-back code is no longer usable', async () => {
+    vi.stubEnv('STRIPE_WINBACK_PROMOTION_CODE_ID', 'promo_winback')
+    vi.mocked(checkPromotionCode).mockResolvedValueOnce(null)
+    vi.mocked(getSubscription).mockResolvedValue({
+      ...NO_SUBSCRIPTION,
+      status: 'expired',
+      source: 'trial',
+      stripeSubscriptionId: null,
+      firstPaidAt: null,
+      currentPeriodEnd: new Date(Date.now() - 60 * 60 * 1000),
+    } as never)
+
+    await POST(request('pro'))
+
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: null })
   })
 })

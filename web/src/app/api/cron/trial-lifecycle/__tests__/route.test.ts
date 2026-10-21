@@ -50,6 +50,7 @@ const baseState: ActivationState = {
   subscriptionStatus: 'trialing',
   subscriptionSource: 'trial',
   optedOut: false,
+  lastMarketingSentAt: null,
 }
 
 // trial_welcome and trial_setup_incomplete are both due; welcome has priority.

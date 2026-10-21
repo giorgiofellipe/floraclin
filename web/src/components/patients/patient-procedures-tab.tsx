@@ -17,6 +17,7 @@ import {
   Ban,
   ArrowRight,
 } from 'lucide-react'
+import { useWriteGuard } from '@/components/layout/subscription-access'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -116,6 +117,7 @@ function formatYear(date: Date | string): string {
 
 export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
   const router = useRouter()
+  const guardWrite = useWriteGuard()
   const { data: proceduresResult, isLoading } = useProcedures(patientId)
   const procedures = (proceduresResult ?? []) as unknown as ProcedureRecord[]
   const { data: packages } = usePatientPackages(patientId)
@@ -494,7 +496,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                         size="sm"
                         variant="ghost"
                         className="h-7 rounded-[3px] text-[11px] uppercase tracking-wider text-mid hover:bg-red-50 hover:text-red-600"
-                        onClick={() => handleCancelClick(proc.id)}
+                        onClick={guardWrite(() => handleCancelClick(proc.id))}
                       >
                         <XCircle className="mr-1 size-3" />
                         Cancelar
@@ -516,7 +518,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                         size="sm"
                         variant="ghost"
                         className="h-7 rounded-[3px] text-[11px] uppercase tracking-wider text-mid hover:bg-red-50 hover:text-red-600"
-                        onClick={() => handleCancelClick(proc.id)}
+                        onClick={guardWrite(() => handleCancelClick(proc.id))}
                       >
                         <XCircle className="mr-1 size-3" />
                         Cancelar

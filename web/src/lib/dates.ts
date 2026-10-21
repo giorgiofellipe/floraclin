@@ -70,6 +70,18 @@ export function formatBrTime(date: Date | string): string {
   return formatInTimeZone(new Date(date), BR_TZ, 'HH:mm')
 }
 
+/**
+ * When a trial or offer ends, in the words every surface uses (banner, modal,
+ * billing settings, emails): "hoje às 18:30", "amanhã às 18:30", or
+ * "em 3 dias às 18:30" further out. BR calendar days.
+ */
+export function brEndPhrase(endsAt: Date | string, now: Date = new Date()): string {
+  const end = new Date(endsAt)
+  const days = brCalendarDaysBetween(now, end)
+  const day = days <= 0 ? 'hoje' : days === 1 ? 'amanhã' : `em ${days} dias`
+  return `${day} às ${formatBrTime(end)}`
+}
+
 /** `dd/MM` of an instant in São Paulo, e.g. "03/11". */
 export function formatBrDayMonth(date: Date | string): string {
   return formatInTimeZone(new Date(date), BR_TZ, 'dd/MM')

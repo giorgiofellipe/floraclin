@@ -88,8 +88,9 @@ describe('SubscriptionBanner, trial countdown escalation', () => {
   it.each([3, 2, 1])('turns amber and cannot be dismissed with %s day(s) left', (days) => {
     render(<SubscriptionBanner subscriptionStatus="trialing" currentPeriodEnd={inDays(days)} />)
 
+    // NOW is 09:00 BRT, so the end is at 09:00 BRT too.
     expect(screen.getByTestId('trial-banner-ending')).toHaveTextContent(
-      `termina em ${days} ${days === 1 ? 'dia' : 'dias'}`,
+      days === 1 ? 'termina amanhã às 09:00' : `termina em ${days} dias`,
     )
     expect(screen.queryByRole('button', { name: /fechar/i })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: /assinar agora/i })).toBeInTheDocument()
@@ -100,7 +101,8 @@ describe('SubscriptionBanner, trial countdown escalation', () => {
     render(<SubscriptionBanner subscriptionStatus="trialing" currentPeriodEnd={inDays(0, 9)} />)
 
     const banner = screen.getByTestId('trial-banner-last-day')
-    expect(banner).toHaveTextContent(/termina hoje, às 18:00/i)
+    // Same words as the last-day email: "termina hoje às HH:mm".
+    expect(banner).toHaveTextContent(/termina hoje às 18:00/i)
     expect(banner).not.toHaveTextContent(/0 dias/i)
     expect(screen.queryByRole('button', { name: /fechar/i })).not.toBeInTheDocument()
   })

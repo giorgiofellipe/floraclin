@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 import { db } from '@/db/client'
 import { tenantSubscriptions, plans } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { constructWebhookEvent, retrieveSubscription, subscriptionPeriod } from '@/lib/stripe'
 import {
   getPlanBySlug,
@@ -253,11 +253,21 @@ function extractSubscriptionId(invoice: Stripe.Invoice): string | undefined {
   return typeof sub === 'string' ? sub : sub.id
 }
 
+/**
+ * Only a genuine Stripe-sourced row follows Stripe. A gift or admin grant
+ * written over an old subscription can still carry its id; events for that
+ * old subscription (a late invoice, its deletion) must not rewrite the grant.
+ */
 async function findSubscriptionByStripeId(stripeSubscriptionId: string) {
   const [row] = await db
     .select()
     .from(tenantSubscriptions)
-    .where(eq(tenantSubscriptions.stripeSubscriptionId, stripeSubscriptionId))
+    .where(
+      and(
+        eq(tenantSubscriptions.stripeSubscriptionId, stripeSubscriptionId),
+        eq(tenantSubscriptions.source, 'stripe'),
+      ),
+    )
     .limit(1)
 
   return row ?? null

@@ -3,13 +3,15 @@
  * the server gate (`isSubscriptionActive`), the platform layout (read-only
  * mode, paywall, banner) and the expiry cron all agree on one definition.
  *
- * - Stripe-driven rows (`source = 'stripe'` or a Stripe subscription id) keep
- *   their status as Stripe reports it: `active` is active, and the webhook is
- *   what moves them. Their `current_period_end` is the billing period, which
+ * - Stripe-driven rows (`source = 'stripe'`) keep their status as Stripe
+ *   reports it: `active` is active, and the webhook is what moves them. Their `current_period_end` is the billing period, which
  *   Stripe renews; trusting it here would lock a payer for the few hours
  *   between period end and the renewal webhook.
  * - Everything else (`trial`, `gift`, `admin`) ends exactly at
- *   `current_period_end`, whatever the stored status says, so access never
+ *   `current_period_end`, even with a leftover `stripe_subscription_id` from
+ *   an earlier paid period (a gift over an old subscription, an admin grant):
+ *   that id says nothing about the grant the row holds now. They end
+ *   whatever the stored status says, so access never
  *   depends on the 00:00 BRT expiry cron having run yet.
  * - `canceled` and `past_due` honour the already-paid period.
  */
@@ -22,8 +24,8 @@ export interface SubscriptionAccessRow {
   currentPeriodEnd: Date | string | null
 }
 
-export function isStripeDriven(row: Pick<SubscriptionAccessRow, 'source' | 'stripeSubscriptionId'>): boolean {
-  return row.source === 'stripe' || !!row.stripeSubscriptionId
+export function isStripeDriven(row: Pick<SubscriptionAccessRow, 'source'>): boolean {
+  return row.source === 'stripe'
 }
 
 function periodOpen(row: SubscriptionAccessRow, now: Date): boolean {
@@ -61,4 +63,19 @@ export function effectiveSubscriptionStatus(
     return 'expired'
   }
   return row.status as SubscriptionStatus
+}
+
+/**
+ * An admin change that would give access (status `active` / `trialing`) on a
+ * trial, gift or admin row whose period already ended grants nothing: the
+ * gate reads the end date, and the expiry cron would re-expire the row. Such
+ * a change needs a new end date in the future.
+ */
+export function grantNeedsNewEnd(
+  next: { status: string; source: string | null | undefined; currentPeriodEnd: Date | string | null },
+  now: Date = new Date(),
+): boolean {
+  if (next.status !== 'active' && next.status !== 'trialing') return false
+  if (isStripeDriven(next)) return false
+  return !periodOpen(next, now)
 }

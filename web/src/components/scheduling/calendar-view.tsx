@@ -277,9 +277,13 @@ export function CalendarView({
 
   const handleBlockDelete = React.useCallback(() => {
     if (!blockMenu) return
-    setBlockToDelete(blockMenu.block)
     setBlockMenu(null)
-  }, [blockMenu])
+    if (readOnly) {
+      openPaywall()
+      return
+    }
+    setBlockToDelete(blockMenu.block)
+  }, [blockMenu, readOnly, openPaywall])
 
   const handleConfirmBlockDelete = React.useCallback(async () => {
     if (!blockToDelete) return
@@ -292,6 +296,8 @@ export function CalendarView({
     setBlockToDelete(null)
   }, [blockToDelete, deleteBlock])
 
+  // In read-only mode "Editar" still opens the appointment, but the form
+  // renders it read-only (see AppointmentForm).
   const handleContextEdit = React.useCallback(() => {
     if (!contextMenu) return
     setEditingAppointment(contextMenu.appointment)
@@ -321,10 +327,14 @@ export function CalendarView({
 
   const handleContextCancel = React.useCallback(() => {
     if (!contextMenu) return
+    setContextMenu(null)
+    if (readOnly) {
+      openPaywall()
+      return
+    }
     setAppointmentToCancel(contextMenu.appointment)
     setCancelConfirmOpen(true)
-    setContextMenu(null)
-  }, [contextMenu])
+  }, [contextMenu, readOnly, openPaywall])
 
   const handleConfirmCancel = React.useCallback(async () => {
     if (!appointmentToCancel) return
@@ -446,7 +456,7 @@ export function CalendarView({
               variant="outline"
               size="sm"
               className="shrink-0 border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
-              onClick={() => setBlockFormOpen(true)}
+              onClick={() => (readOnly ? openPaywall() : setBlockFormOpen(true))}
               data-testid="calendar-new-block"
               aria-label="Bloquear"
             >
@@ -534,7 +544,7 @@ export function CalendarView({
             onClick={handleContextEdit}
           >
             <PencilIcon className="h-3.5 w-3.5 text-mid" />
-            Editar agendamento
+            {readOnly ? 'Ver agendamento' : 'Editar agendamento'}
           </button>
           {contextMenu.appointment.status !== 'cancelled' && (
             <button

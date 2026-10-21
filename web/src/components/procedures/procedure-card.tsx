@@ -15,6 +15,7 @@ import {
   Calendar,
   Ban,
 } from 'lucide-react'
+import { useWriteGuard } from '@/components/layout/subscription-access'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -61,6 +62,7 @@ export function ProcedureCard({
 }: ProcedureCardProps) {
   const router = useRouter()
   const cancelProcedure = useCancelProcedure()
+  const guardWrite = useWriteGuard()
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
   const cancelling = cancelProcedure.isPending
@@ -288,7 +290,7 @@ export function ProcedureCard({
                       size="sm"
                       variant="outline"
                       className="h-7 text-xs border-forest text-forest hover:bg-sage/10"
-                      onClick={handleEdit}
+                      onClick={guardWrite(handleEdit)}
                     >
                       <Pencil className="mr-1 size-3" />
                       Continuar Planejamento
@@ -297,7 +299,7 @@ export function ProcedureCard({
                       size="sm"
                       variant="outline"
                       className="h-7 text-xs border-mid/30 text-mid hover:bg-red-50 hover:text-red-600 hover:border-red-200"
-                      onClick={handleCancelClick}
+                      onClick={guardWrite(handleCancelClick)}
                     >
                       <XCircle className="mr-1 size-3" />
                       Cancelar
@@ -310,7 +312,7 @@ export function ProcedureCard({
                       size="sm"
                       variant="outline"
                       className="h-7 text-xs border-sage text-sage hover:bg-sage/10"
-                      onClick={handleApprove}
+                      onClick={guardWrite(handleApprove)}
                     >
                       <CheckCircle2 className="mr-1 size-3" />
                       Aprovar
@@ -319,7 +321,7 @@ export function ProcedureCard({
                       size="sm"
                       variant="outline"
                       className="h-7 text-xs border-mid/30 text-mid hover:bg-petal"
-                      onClick={handleEdit}
+                      onClick={guardWrite(handleEdit)}
                     >
                       <Pencil className="mr-1 size-3" />
                       Editar
@@ -328,7 +330,7 @@ export function ProcedureCard({
                       size="sm"
                       variant="outline"
                       className="h-7 text-xs border-mid/30 text-mid hover:bg-red-50 hover:text-red-600 hover:border-red-200"
-                      onClick={handleCancelClick}
+                      onClick={guardWrite(handleCancelClick)}
                     >
                       <XCircle className="mr-1 size-3" />
                       Cancelar
@@ -342,7 +344,7 @@ export function ProcedureCard({
                       size="sm"
                       variant="outline"
                       className="h-7 text-xs border-forest text-forest hover:bg-sage/10"
-                      onClick={handleExecute}
+                      onClick={guardWrite(handleExecute)}
                     >
                       <Play className="mr-1 size-3" />
                       Registrar Execução
@@ -351,7 +353,7 @@ export function ProcedureCard({
                       size="sm"
                       variant="outline"
                       className="h-7 text-xs border-mid/30 text-mid hover:bg-red-50 hover:text-red-600 hover:border-red-200"
-                      onClick={handleCancelClick}
+                      onClick={guardWrite(handleCancelClick)}
                     >
                       <XCircle className="mr-1 size-3" />
                       Cancelar

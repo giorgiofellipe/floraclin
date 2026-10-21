@@ -15,15 +15,35 @@ vi.mock('next/link', () => ({
 import { ExpiredPaywall, ReadOnlyBadge, paywallStorageKey, shouldAutoOpenPaywall } from '../expired-paywall'
 import { ReadOnlyGuard, SubscriptionAccessProvider } from '../subscription-access'
 
+// A failing test must not leak its fetch stub into the next one.
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
 // 09:00 BRT. Frozen so "today" in the stored dismissal and in the component
 // can never straddle midnight mid-test.
 const NOW = new Date('2026-10-21T12:00:00.000Z')
 const TODAY = '2026-10-21'
 
 const PLANS = [
-  { slug: 'starter', name: 'Starter', priceCents: 14900, billingInterval: 'month' },
-  { slug: 'pro', name: 'Pro', priceCents: 29900, billingInterval: 'month' },
+  {
+    slug: 'starter',
+    name: 'Starter',
+    priceCents: 9900,
+    billingInterval: 'month',
+    benefits: ['Agenda, prontuário e diagrama facial', 'Até 2 usuários'],
+    recommended: false,
+  },
+  {
+    slug: 'pro',
+    name: 'Pro',
+    priceCents: 19900,
+    billingInterval: 'month',
+    benefits: ['Agenda, prontuário e diagrama facial', 'Usuários ilimitados para a equipe'],
+    recommended: true,
+  },
 ]
+const RECAP = { patients: 12, appointments: 30, procedureRecords: 4, photos: 0, diagrams: 2 }
 
 function renderWith(readOnly: boolean, extra: Partial<Parameters<typeof SubscriptionAccessProvider>[0]> = {}) {
   return render(
@@ -34,6 +54,7 @@ function renderWith(readOnly: boolean, extra: Partial<Parameters<typeof Subscrip
       canSubscribe
       plans={PLANS}
       winback={null}
+      role="owner"
       {...extra}
     >
       <ReadOnlyBadge />
@@ -78,9 +99,10 @@ describe('ExpiredPaywall', () => {
     renderWith(true)
 
     expect(await screen.findByTestId('expired-paywall')).toBeInTheDocument()
-    expect(screen.getByText('Seu período de teste terminou')).toBeInTheDocument()
-    expect(screen.getByTestId('paywall-subscribe-starter')).toHaveTextContent('Assinar Starter')
-    expect(screen.getByText(/R\$\s?149,00\/mês/)).toBeInTheDocument()
+    expect(screen.getByTestId('paywall-eyebrow')).toHaveTextContent('Seu teste gratuito terminou')
+    expect(screen.getByTestId('paywall-subscribe-starter')).toHaveTextContent('Continuar com o Starter')
+    expect(screen.getByTestId('paywall-plan-starter')).toHaveTextContent(/R\$\s?99,00\/mês/)
+    expect(screen.getByTestId('paywall-trust')).toHaveTextContent('Cancele quando quiser')
 
     fireEvent.click(screen.getByTestId('paywall-read-only'))
     await waitFor(() => expect(screen.queryByTestId('expired-paywall')).not.toBeInTheDocument())
@@ -123,7 +145,7 @@ describe('ExpiredPaywall', () => {
 
     pathnameMock.mockReturnValue('/agenda')
     rerender(
-      <SubscriptionAccessProvider readOnly reason="trial" tenantId="t1" canSubscribe plans={PLANS} winback={null}>
+      <SubscriptionAccessProvider readOnly reason="trial" tenantId="t1" canSubscribe plans={PLANS} winback={null} role="owner">
         <ExpiredPaywall />
       </SubscriptionAccessProvider>,
     )
@@ -140,12 +162,50 @@ describe('ExpiredPaywall', () => {
     await waitFor(() => expect(screen.queryByTestId('expired-paywall')).not.toBeInTheDocument())
   })
 
-  it('shows the win-back offer when the server says the clinic is eligible', async () => {
-    renderWith(true, { winback: { label: '30% de desconto nos 3 primeiros meses', endsAt: '2026-11-03T15:00:00.000Z' } })
+  it('shows the win-back offer with the discounted price struck against the full one', async () => {
+    renderWith(true, {
+      winback: {
+        label: '30% de desconto nos 3 primeiros meses',
+        endsAt: '2026-11-03T15:00:00.000Z',
+        percentOff: 30,
+        durationInMonths: 3,
+      },
+    })
 
     expect(await screen.findByTestId('winback-offer')).toHaveTextContent(
       'Oferta para voltar: 30% de desconto nos 3 primeiros meses. Aplicada automaticamente no pagamento até 03/11',
     )
+    const pro = screen.getByTestId('paywall-plan-pro')
+    expect(pro).toHaveTextContent(/R\$\s?139,30/)
+    expect(pro.querySelector('s')).toHaveTextContent(/R\$\s?199,00/)
+    // The price after the discount, said plainly: no surprise on month 4.
+    expect(screen.getByTestId('paywall-plan-pro-terms')).toHaveTextContent(/Nos 3 primeiros meses, depois R\$\s?199,00\/mês/)
+  })
+
+  it('leads with the clinic\'s own numbers and recommends one plan', async () => {
+    renderWith(true, { recap: RECAP })
+
+    await screen.findByTestId('expired-paywall')
+    expect(screen.getByRole('heading', { name: /sua clínica já está montada/i })).toBeInTheDocument()
+    expect(screen.getByTestId('trial-recap')).toHaveTextContent(/12\s*pacientes/)
+    expect(screen.getByTestId('trial-recap')).toHaveTextContent(/2\s*diagramas faciais/)
+    expect(screen.getByTestId('paywall-plan-pro')).toHaveTextContent('Recomendado')
+    expect(screen.getByTestId('paywall-plan-starter')).not.toHaveTextContent('Recomendado')
+  })
+
+  it('sends a past_due subscription to the card form, not to a new checkout', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ url: null }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderWith(true, { recovery: 'payment_update', reason: 'subscription' })
+
+    await screen.findByTestId('expired-paywall')
+    expect(screen.queryByTestId('paywall-subscribe-pro')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('paywall-update-payment'))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('/api/billing/portal')
+    expect(JSON.parse(String(init.body))).toEqual({ flow: 'payment_method_update' })
   })
 
   it('tells a non-owner who can subscribe instead of showing checkout buttons', async () => {
@@ -154,5 +214,70 @@ describe('ExpiredPaywall', () => {
     await screen.findByTestId('expired-paywall')
     expect(screen.queryByTestId('paywall-subscribe-starter')).not.toBeInTheDocument()
     expect(screen.getByText(/só a pessoa responsável pela clínica pode assinar/i)).toBeInTheDocument()
+  })
+})
+
+describe('ExportDataDialog roles', () => {
+  it.each([
+    ['owner', ['Prontuário do paciente (PDF)', 'Relatórios (CSV e PDF)', 'Extrato financeiro (CSV)']],
+    ['receptionist', ['Extrato financeiro (CSV)']],
+    ['practitioner', []],
+  ])('lists only what a %s can open', async (role, expected) => {
+    renderWith(true, { role })
+    await screen.findByTestId('expired-paywall')
+    fireEvent.click(screen.getByTestId('export-data-link'))
+    const dialog = await screen.findByTestId('export-data-dialog')
+    for (const title of ['Prontuário do paciente (PDF)', 'Relatórios (CSV e PDF)', 'Extrato financeiro (CSV)']) {
+      if (expected.includes(title)) expect(dialog).toHaveTextContent(title)
+      else expect(dialog).not.toHaveTextContent(title)
+    }
+    if (expected.length === 0) expect(screen.getByTestId('export-data-no-access')).toBeInTheDocument()
+  })
+})
+
+describe('global 402 handler', () => {
+  it('opens the paywall when any write comes back 402 subscription_expired', async () => {
+    window.localStorage.setItem(paywallStorageKey('t1'), TODAY)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ error: 'Assinatura expirada.', code: 'subscription_expired' }), { status: 402 }),
+      ),
+    )
+    renderWith(true)
+    expect(screen.queryByTestId('expired-paywall')).not.toBeInTheDocument()
+
+    const res = await window.fetch('/api/patients', { method: 'POST' })
+
+    // The caller still gets the response untouched.
+    expect(res.status).toBe(402)
+    expect(await screen.findByTestId('expired-paywall')).toBeInTheDocument()
+  })
+
+  it('ignores a 402 from another origin', async () => {
+    window.localStorage.setItem(paywallStorageKey('t1'), TODAY)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ code: 'subscription_expired' }), { status: 402 }),
+      ),
+    )
+    renderWith(true)
+
+    await window.fetch('https://api.example.com/v1/things', { method: 'POST' })
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(screen.queryByTestId('expired-paywall')).not.toBeInTheDocument()
+  })
+
+  it('leaves other 402s (WhatsApp credits) alone', async () => {
+    window.localStorage.setItem(paywallStorageKey('t1'), TODAY)
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Créditos' }), { status: 402 })))
+    renderWith(true)
+
+    await window.fetch('/api/whatsapp/send', { method: 'POST' })
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(screen.queryByTestId('expired-paywall')).not.toBeInTheDocument()
   })
 })

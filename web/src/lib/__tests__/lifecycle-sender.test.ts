@@ -20,6 +20,20 @@ vi.mock('@/lib/email', () => ({ sendLifecycleEmail: vi.fn() }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 import { reportSideEffectFailure } from '@/lib/observability'
 vi.mock('@/lib/activation', () => ({ getActivationState: vi.fn() }))
+// Live data for messages with a `render` (last day, win-back, final).
+vi.mock('@/db/queries/subscriptions', () => ({
+  getSubscription: vi.fn(async () => ({
+    status: 'trialing',
+    source: 'trial',
+    stripeSubscriptionId: null,
+    firstPaidAt: null,
+    currentPeriodEnd: new Date('2026-10-22T21:30:00.000Z'),
+  })),
+}))
+vi.mock('@/db/queries/trial-recap', () => ({
+  getTrialRecap: vi.fn(async () => ({ patients: 3, appointments: 5, procedureRecords: 1, photos: 0, diagrams: 0 })),
+}))
+vi.mock('@/lib/winback-offer', () => ({ getValidatedWinbackOffer: vi.fn(async () => null) }))
 vi.mock('@/lib/lifecycle-opt-out', () => ({
   lifecycleOptOutUrl: vi.fn((tenantId: string) => `https://opt-out.test/${tenantId}`),
 }))
@@ -36,6 +50,7 @@ import { sendPlatformTemplate } from '@/lib/platform-whatsapp'
 import { sendLifecycleEmail } from '@/lib/email'
 import { getActivationState } from '@/lib/activation'
 import { LIFECYCLE_MESSAGES } from '@/lib/lifecycle-messages'
+import { getValidatedWinbackOffer } from '@/lib/winback-offer'
 import { deliverLifecycleMessage, scheduleLifecycleWelcome } from '../lifecycle-sender'
 
 const recipient = {
@@ -176,13 +191,37 @@ describe('deliverLifecycleMessage', () => {
   })
 
   it('sends no button param for a message without a button', async () => {
-    const noButton = LIFECYCLE_MESSAGES.find((m) => !m.button)!
+    const noButton = { ...utility, button: null }
 
     await deliverLifecycleMessage(recipient, noButton)
 
     expect(sendPlatformTemplate).toHaveBeenCalledWith('5511987654321', noButton.templateName, ['Maria'], {
       buttonUrlParams: [],
     })
+  })
+
+  it('renders live data into the last-day email: the end time and what the clinic built', async () => {
+    // The 10:00 BRT cron run the day before a trial that ends at 18:30.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-21T13:00:00.000Z'))
+    const message = LIFECYCLE_MESSAGES.find((m) => m.key === 'trial_last_day')!
+
+    await deliverLifecycleMessage(recipient, message).finally(() => vi.useRealTimers())
+
+    const [call] = vi.mocked(sendLifecycleEmail).mock.calls
+    expect(call[0].subject).toBe('Seu teste na FloraClin termina amanhã às 18:30')
+    // No offer in the last-day email, so no Stripe check either.
+    expect(getValidatedWinbackOffer).not.toHaveBeenCalled()
+    expect(call[0].content.points).toEqual(['3 pacientes cadastrados', '5 agendamentos', '1 atendimento registrado'])
+  })
+
+  it('sends the help email with replies going to the help address', async () => {
+    const message = LIFECYCLE_MESSAGES.find((m) => m.key === 'trial_help')!
+
+    await deliverLifecycleMessage(recipient, message)
+
+    expect(vi.mocked(sendLifecycleEmail).mock.calls[0][0].replyTo).toBe('contato@floraclin.com.br')
+    expect(sendPlatformTemplate).not.toHaveBeenCalled()
   })
 
   it('passes an opt-out URL for MARKETING emails and null for UTILITY', async () => {

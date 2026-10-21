@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isLikelyLinkScanner } from '@/lib/lifecycle-attribution'
+import { isLikelyLinkScanner, lifecycleDestination } from '@/lib/lifecycle-attribution'
 
 const CHROME = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36'
 const sentAt = new Date('2026-10-16T12:00:00.000Z')
@@ -14,5 +14,20 @@ describe('isLikelyLinkScanner', () => {
     ['no user agent', null, after(5 * 60_000), true],
   ])('%s', (_name, userAgent, now, expected) => {
     expect(isLikelyLinkScanner(userAgent, sentAt, now)).toBe(expected)
+  })
+})
+
+describe('lifecycleDestination', () => {
+  it('tags app links with UTM params', () => {
+    const url = lifecycleDestination({ messageKey: 'trial_winback', channel: 'email' })
+    expect(url.pathname).toBe('/configuracoes')
+    expect(url.searchParams.get('utm_campaign')).toBe('trial_winback')
+  })
+
+  it('sends the help email straight to the support WhatsApp, query string untouched', () => {
+    const url = lifecycleDestination({ messageKey: 'trial_help', channel: 'email' })
+    expect(url.host).toBe('wa.me')
+    expect(url.searchParams.get('text')).toMatch(/ajuda/)
+    expect(url.searchParams.has('utm_source')).toBe(false)
   })
 })

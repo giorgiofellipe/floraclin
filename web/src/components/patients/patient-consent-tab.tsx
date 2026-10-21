@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Loader2, Plus, FileCheck, PenLine, Send } from 'lucide-react'
+import { useWriteGuard } from '@/components/layout/subscription-access'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -59,6 +60,7 @@ export function PatientConsentTab({
 
   const { data: rawTemplates, isLoading: loadingTemplates } = useConsentTemplates()
   const { data: tenant } = useTenant()
+  const guardWrite = useWriteGuard()
   const { data: profileResp } = useProfile()
   const clinicName = (tenant?.name as string) ?? ''
   const practitionerName = profileResp?.data?.fullName ?? ''
@@ -127,7 +129,7 @@ export function PatientConsentTab({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-mid">Contratos e termos de consentimento do paciente</p>
-        <Button onClick={() => setShowNewConsent(true)}>
+        <Button onClick={guardWrite(() => setShowNewConsent(true))}>
           <Plus className="size-4 mr-1" />
           Novo Termo
         </Button>

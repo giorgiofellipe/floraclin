@@ -17,7 +17,12 @@ import {
   ownerFirstName,
   renderLifecycleEmail,
   type LifecycleMessage,
+  type LifecycleRenderContext,
 } from '@/lib/lifecycle-messages'
+import { getSubscription } from '@/db/queries/subscriptions'
+import { getTrialRecap } from '@/db/queries/trial-recap'
+import { publicWinbackOffer } from '@/lib/winback'
+import { getValidatedWinbackOffer } from '@/lib/winback-offer'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { isCanonicalBrPhone, normalizeBrPhone } from '@/lib/phone'
 import { sendPlatformTemplate } from '@/lib/platform-whatsapp'
@@ -101,11 +106,14 @@ export async function deliverLifecycleMessage(
   }
 
   const email = await deliverChannel(recipient, message, 'email', recipient.ownerEmail, async (sendId) => {
+    const ctx = message.render ? await loadRenderContext(recipient.tenantId, !!message.usesOffer) : undefined
+    const rendered = renderLifecycleEmail(message, firstName, ctx)
     const sent = await sendLifecycleEmail({
       to: recipient.ownerEmail,
-      subject: message.emailSubject,
+      subject: rendered.subject,
+      replyTo: message.replyTo?.(),
       content: {
-        ...renderLifecycleEmail(message, firstName),
+        ...rendered.content,
         button: message.button
           ? {
               label: message.button.label,
@@ -119,6 +127,23 @@ export async function deliverLifecycleMessage(
   })
 
   return { whatsapp, email }
+}
+
+/**
+ * Live data for messages with a `render`: the trial end, what the clinic
+ * built, and a win-back offer only if Stripe confirms the code right now.
+ * Loaded inside the claimed send, so a failure here fails that send (and is
+ * recorded) rather than sending a half-filled email.
+ */
+async function loadRenderContext(
+  tenantId: string,
+  withOffer: boolean,
+  now: Date = new Date(),
+): Promise<LifecycleRenderContext> {
+  const [subscription, recap] = await Promise.all([getSubscription(tenantId), getTrialRecap(tenantId)])
+  if (!subscription) throw new Error('subscription not found for lifecycle render')
+  const offer = withOffer ? publicWinbackOffer(await getValidatedWinbackOffer(subscription, now)) : null
+  return { now, endsAt: subscription.currentPeriodEnd, recap, offer }
 }
 
 export function scheduleLifecycleWelcome(target: { tenantId: string } | { ownerEmail: string }): void {

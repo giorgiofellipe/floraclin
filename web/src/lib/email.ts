@@ -106,11 +106,12 @@ export async function sendLifecycleEmail(opts: {
   to: string
   subject: string
   content: EmailContent
+  replyTo?: string
 }): Promise<{ id: string }> {
   const { data, error } = await getResend().emails.send({
     from: FROM,
     to: opts.to,
-    replyTo: LIFECYCLE_REPLY_TO,
+    replyTo: opts.replyTo ?? LIFECYCLE_REPLY_TO,
     subject: opts.subject,
     html: renderEmailLayout(opts.content),
   })

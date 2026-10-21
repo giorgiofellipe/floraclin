@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { brToday, endOfBrDay } from '@/lib/dates'
+import { grantNeedsNewEnd } from '@/lib/subscription-access'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -84,6 +86,9 @@ export function SubscriptionDetailDialog({
   const [giftMonths, setGiftMonths] = useState('3')
   const [giftNotes, setGiftNotes] = useState('')
   const [extendDays, setExtendDays] = useState('7')
+  // New end (BR date) for a change that re-grants access on a lapsed
+  // trial / gift / admin row; the API refuses those without one.
+  const [newEndDate, setNewEndDate] = useState('')
 
   const { data: detailResult } = useAdminSubscriptionDetail(subscription?.tenantId ?? '')
   const { data: plansResult } = useAdminPlans()
@@ -107,6 +112,7 @@ export function SubscriptionDetailDialog({
       setGiftMonths('3')
       setGiftNotes('')
       setExtendDays('7')
+      setNewEndDate('')
     }
   }, [open, subscription])
 
@@ -119,13 +125,14 @@ export function SubscriptionDetailDialog({
       await updateSubscription.mutateAsync({
         tenantId: subscription.tenantId,
         planSlug: selectedPlanSlug,
+        ...newEndPayload(newEndDate),
       })
       toast.success('Plano alterado')
       setActionMode('none')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao alterar plano')
     }
-  }, [subscription, selectedPlanSlug, updateSubscription])
+  }, [subscription, selectedPlanSlug, newEndDate, updateSubscription])
 
   const handleGift = useCallback(async () => {
     if (!subscription || !selectedPlanSlug) return
@@ -187,17 +194,41 @@ export function SubscriptionDetailDialog({
       await updateSubscription.mutateAsync({
         tenantId: subscription.tenantId,
         status: 'active',
+        ...newEndPayload(newEndDate),
       })
       toast.success('Assinatura reativada')
       setActionMode('none')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao reativar')
     }
-  }, [subscription, updateSubscription])
+  }, [subscription, newEndDate, updateSubscription])
 
   if (!subscription) return null
 
   const isCanceledOrExpired = subscription.status === 'canceled' || subscription.status === 'expired'
+  // The API's own rule (grantNeedsNewEnd): reactivating sets `active`; a plan
+  // change keeps the current status, so it only needs a date when that
+  // status already grants access on a lapsed row.
+  const needsEnd = (status: string) =>
+    grantNeedsNewEnd({ status, source: subscription.source, currentPeriodEnd: subscription.currentPeriodEnd })
+  const lapsedGrant = needsEnd('active')
+  const newEndMissing = lapsedGrant && !newEndDate
+  const planChangeNeedsEnd = !newEndDate && needsEnd(subscription.status)
+  const newEndField = lapsedGrant ? (
+    <div className="space-y-2">
+      <Label htmlFor="admin-new-period-end">Novo fim do acesso</Label>
+      <Input
+        id="admin-new-period-end"
+        type="date"
+        min={brToday()}
+        value={newEndDate}
+        onChange={(e) => setNewEndDate(e.target.value)}
+        className="border-sage/20"
+        data-testid="admin-new-period-end"
+      />
+      <p className="text-xs text-mid">O acesso anterior já terminou. Sem uma nova data, a clínica continuaria bloqueada.</p>
+    </div>
+  ) : null
   const isTrialing = subscription.status === 'trialing'
   const canCancel = !isCanceledOrExpired
 
@@ -280,12 +311,13 @@ export function SubscriptionDetailDialog({
                   <SelectContent />
                 </Select>
               </div>
+              {newEndField}
               <ActionButtons
                 onConfirm={handleChangePlan}
                 onCancel={() => setActionMode('none')}
                 isPending={isPending}
                 confirmLabel="Alterar"
-                disabled={!selectedPlanSlug || selectedPlanSlug === subscription.planSlug}
+                disabled={!selectedPlanSlug || selectedPlanSlug === subscription.planSlug || planChangeNeedsEnd}
               />
             </ActionPanel>
           )}
@@ -373,11 +405,13 @@ export function SubscriptionDetailDialog({
                 Reativar a assinatura de{' '}
                 <strong className="text-charcoal">{subscription.tenantName}</strong>?
               </p>
+              {newEndField}
               <ActionButtons
                 onConfirm={handleReactivate}
                 onCancel={() => setActionMode('none')}
                 isPending={isPending}
                 confirmLabel="Reativar"
+                disabled={newEndMissing}
               />
             </ActionPanel>
           )}
@@ -433,6 +467,11 @@ export function SubscriptionDetailDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+/** End of the chosen BR day, as the ISO instant the API expects. */
+function newEndPayload(ymd: string): { currentPeriodEnd?: string } {
+  return ymd ? { currentPeriodEnd: endOfBrDay(ymd).toISOString() } : {}
 }
 
 /* ---------- Sub-components ---------- */

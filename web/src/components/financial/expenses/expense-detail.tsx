@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { useWriteGuard } from '@/components/layout/subscription-access'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -78,6 +79,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
 
   const { data: expenseData, isLoading } = useExpenseDetail(expenseId)
   const payInstallment = usePayExpenseInstallment()
+  const guardWrite = useWriteGuard()
   const cancelExpense = useCancelExpense()
   const revertInstallment = useRevertExpenseInstallment()
 
@@ -229,7 +231,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
                   aria-label="Desfazer pagamento"
                   onClick={(e) => {
                     e.stopPropagation()
-                    handleOpenRevert(inst)
+                    guardWrite(handleOpenRevert)(inst)
                   }}
                   className="shrink-0"
                 >
@@ -246,7 +248,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
                   data-testid="expense-installment-pay"
                   onClick={(e) => {
                     e.stopPropagation()
-                    handleOpenPayDialog(inst)
+                    guardWrite(handleOpenPayDialog)(inst)
                   }}
                 >
                   <BanknoteIcon className="h-3 w-3" />
@@ -277,7 +279,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setEditDialogOpen(true)}
+              onClick={guardWrite(() => setEditDialogOpen(true))}
             >
               <PencilIcon className="h-3.5 w-3.5" />
               Editar despesa
@@ -288,7 +290,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
             size="sm"
             className="text-red-600 hover:bg-red-50 hover:text-red-700"
             data-testid="expense-cancel"
-            onClick={() => setCancelDialogOpen(true)}
+            onClick={guardWrite(() => setCancelDialogOpen(true))}
           >
             <XCircleIcon className="h-3.5 w-3.5" />
             Cancelar Despesa

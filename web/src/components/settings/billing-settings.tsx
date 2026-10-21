@@ -27,7 +27,7 @@ import {
   CreditCardIcon,
   AlertTriangleIcon,
 } from 'lucide-react'
-import { brCalendarDaysBetween } from '@/lib/dates'
+import { brCalendarDaysBetween, brEndPhrase } from '@/lib/dates'
 
 type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled' | 'expired'
 
@@ -534,12 +534,12 @@ export function BillingSettings() {
   let statusLabel = statusConfig.label
   if (subscription.status === 'trialing') {
     // Same day count and wording as the platform banner: BR calendar days,
-    // and the last day is "termina hoje", never "0 dias restantes".
+    // and "termina hoje / amanhã às HH:mm", never "0 dias restantes".
     const daysLeft = Math.max(0, brCalendarDaysBetween(new Date(), new Date(subscription.currentPeriodEnd)))
     statusLabel =
-      daysLeft === 0
-        ? 'Teste gratuito · termina hoje'
-        : `Teste gratuito · ${daysLeft} ${daysLeft === 1 ? 'dia restante' : 'dias restantes'}`
+      daysLeft <= 1
+        ? `Teste gratuito · termina ${brEndPhrase(subscription.currentPeriodEnd)}`
+        : `Teste gratuito · ${daysLeft} dias restantes`
   }
 
   return (

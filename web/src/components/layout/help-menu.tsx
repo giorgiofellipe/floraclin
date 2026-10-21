@@ -3,9 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { HelpCircle, Mail, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-
-const WHATSAPP_NUMBER = '5547936181734'
-const SUPPORT_EMAIL = 'contato@floraclin.com.br'
+import { SUPPORT_EMAIL, SUPPORT_WHATSAPP_NUMBER } from '@/lib/support'
 
 function WhatsAppIcon({ className }: { className?: string }) {
   return (
@@ -31,7 +29,7 @@ export function HelpMenu() {
 
   const openWhatsApp = () => {
     window.open(
-      `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent('Olá! Preciso de ajuda com o FloraClin.')}`,
+      `https://wa.me/${SUPPORT_WHATSAPP_NUMBER}?text=${encodeURIComponent('Olá! Preciso de ajuda com o FloraClin.')}`,
       '_blank',
     )
     setIsOpen(false)

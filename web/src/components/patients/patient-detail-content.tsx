@@ -53,7 +53,7 @@ import { usePractitioners, useAppointmentProcedureTypes } from '@/hooks/queries/
 import type { Patient } from '@/db/queries/patients'
 import type { Role } from '@/types'
 import { formatBrPhone, toWaMeUrl, tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
-import { ReadOnlyGuard, useReadOnly } from '@/components/layout/subscription-access'
+import { ReadOnlyGuard, useReadOnly, useWriteGuard } from '@/components/layout/subscription-access'
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -112,6 +112,7 @@ export function PatientDetailContent({
   const searchParams = useSearchParams()
 
   const readOnly = useReadOnly()
+  const guardWrite = useWriteGuard()
   const [showPaymentForm, setShowPaymentForm] = useState(false)
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
   const [openingWhatsapp, setOpeningWhatsapp] = useState(false)
@@ -244,7 +245,7 @@ export function PatientDetailContent({
                             <button
                               type="button"
                               className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-[#F4F6F8] transition-colors"
-                              onClick={handleOpenWhatsapp}
+                              onClick={guardWrite(handleOpenWhatsapp)}
                               disabled={openingWhatsapp}
                             >
                               <MessageSquarePlus className="size-3.5 text-[#25D366]" />
@@ -254,7 +255,7 @@ export function PatientDetailContent({
                               type="button"
                               data-testid="request-documents"
                               className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-[#F4F6F8] transition-colors"
-                              onClick={() => setShowRequestDocuments(true)}
+                              onClick={guardWrite(() => setShowRequestDocuments(true))}
                             >
                               <FileQuestion className="size-3.5 text-[#25D366]" />
                               Solicitar documentos
@@ -331,7 +332,7 @@ export function PatientDetailContent({
                         variant="outline"
                         size="icon-sm"
                         className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
-                        onClick={() => setShowPaymentForm(true)}
+                        onClick={guardWrite(() => setShowPaymentForm(true))}
                       >
                         <Receipt className="size-4" />
                       </Button>
@@ -347,7 +348,7 @@ export function PatientDetailContent({
                         variant="outline"
                         size="icon-sm"
                         className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
-                        onClick={() => setShowIssueDocument(true)}
+                        onClick={guardWrite(() => setShowIssueDocument(true))}
                       >
                         <FileText className="size-4" />
                       </Button>

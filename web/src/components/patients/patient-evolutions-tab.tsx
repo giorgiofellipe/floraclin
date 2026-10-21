@@ -4,6 +4,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import { Loader2, NotebookPen, Plus } from 'lucide-react'
 
+import { useWriteGuard } from '@/components/layout/subscription-access'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -71,6 +72,7 @@ export function PatientEvolutionsTab({
   canEdit,
 }: PatientEvolutionsTabProps) {
   const { data: entries, isPending, isError, refetch } = useEvolutions(patientId)
+  const guardWrite = useWriteGuard()
   const deleteMutation = useDeleteEvolution(patientId)
 
   // ─── Composer state ────────────────────────────────────────────────
@@ -172,7 +174,7 @@ export function PatientEvolutionsTab({
           {canEdit && (
             <Button
               type="button"
-              onClick={openComposerForCreate}
+              onClick={guardWrite(openComposerForCreate)}
               className="gap-1.5"
             >
               <Plus className="size-3.5" />
@@ -197,8 +199,8 @@ export function PatientEvolutionsTab({
               entry={entry}
               canEdit={canEdit}
               patientId={patientId}
-              onEdit={canEdit ? openComposerForEdit : undefined}
-              onDelete={canEdit ? openDelete : undefined}
+              onEdit={canEdit ? guardWrite(openComposerForEdit) : undefined}
+              onDelete={canEdit ? guardWrite(openDelete) : undefined}
               onViewRevisions={openRevisions}
             />
           ))}

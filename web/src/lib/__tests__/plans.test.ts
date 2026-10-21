@@ -82,9 +82,9 @@ describe('isSubscriptionActive', () => {
     expect(await isSubscriptionActive(TENANT)).toBe(true)
   })
 
-  it('treats a row with a Stripe subscription id as Stripe-driven even if an admin changed its source', async () => {
+  it('ignores a leftover Stripe subscription id on an admin / gift row: it ends at its own end date', async () => {
     limitMock.mockResolvedValue([{ status: 'active', source: 'admin', stripeSubscriptionId: 'sub_1', currentPeriodEnd: past }])
-    expect(await isSubscriptionActive(TENANT)).toBe(true)
+    expect(await isSubscriptionActive(TENANT)).toBe(false)
   })
 
   it.each(['canceled', 'past_due'])('%s stays active until the period ends', async (status) => {

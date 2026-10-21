@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { X } from 'lucide-react'
-import { brCalendarDaysBetween, formatBrTime } from '@/lib/dates'
+import { brCalendarDaysBetween, brEndPhrase, formatBrTime } from '@/lib/dates'
 import { ExportDataLink } from '@/components/layout/export-data-dialog'
 
 interface SubscriptionBannerProps {
@@ -57,7 +57,7 @@ export function SubscriptionBanner({
         >
           <p>
             Seu teste gratuito termina hoje
-            {currentPeriodEnd ? `, às ${formatBrTime(currentPeriodEnd)}` : ''}. Assine para não
+            {currentPeriodEnd ? ` às ${formatBrTime(currentPeriodEnd)}` : ''}. Assine para não
             perder o acesso à agenda, aos pacientes e ao WhatsApp.
           </p>
           <SubscribeButton tone="red" />
@@ -73,8 +73,11 @@ export function SubscriptionBanner({
           className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800"
         >
           <p>
-            Seu teste gratuito termina em {daysLeft} {daysLeft === 1 ? 'dia' : 'dias'}. Assine para
-            continuar usando a agenda, os pacientes e o WhatsApp sem interrupção.
+            {/* Same words as the last-day email and the modal: "amanhã às HH:mm". */}
+            {daysLeft === 1 && currentPeriodEnd
+              ? `Seu teste gratuito termina ${brEndPhrase(currentPeriodEnd)}.`
+              : `Seu teste gratuito termina em ${daysLeft} dias.`}{' '}
+            Assine para continuar usando a agenda, os pacientes e o WhatsApp sem interrupção.
           </p>
           <SubscribeButton tone="amber" />
         </div>

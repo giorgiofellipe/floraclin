@@ -21,6 +21,17 @@ export interface WinbackOffer {
   promotionCodeId: string
   label: string
   endsAt: string
+  /** From the Stripe coupon, once validated (see getValidatedWinbackOffer). */
+  percentOff?: number | null
+  durationInMonths?: number | null
+}
+
+/** What reaches the client: no promotion code id. */
+export interface PublicWinbackOffer {
+  label: string
+  endsAt: string
+  percentOff?: number | null
+  durationInMonths?: number | null
 }
 
 const DEFAULT_LABEL = 'Desconto especial na primeira assinatura'
@@ -55,6 +66,12 @@ export function getWinbackOffer(
 }
 
 /** The client-safe part of the offer: the promotion code id stays server-side. */
-export function publicWinbackOffer(offer: WinbackOffer | null): { label: string; endsAt: string } | null {
-  return offer ? { label: offer.label, endsAt: offer.endsAt } : null
+export function publicWinbackOffer(offer: WinbackOffer | null): PublicWinbackOffer | null {
+  if (!offer) return null
+  return {
+    label: offer.label,
+    endsAt: offer.endsAt,
+    percentOff: offer.percentOff ?? null,
+    durationInMonths: offer.durationInMonths ?? null,
+  }
 }

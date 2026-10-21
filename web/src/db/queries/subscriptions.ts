@@ -375,8 +375,8 @@ function lapsedCondition(now: Date) {
     lt(tenantSubscriptions.currentPeriodEnd, now),
     or(eq(tenantSubscriptions.status, 'trialing'), eq(tenantSubscriptions.status, 'active')),
     // Mirrors `isStripeDriven`: Stripe owns those statuses, the webhook moves them.
+    // A leftover stripe_subscription_id on a gift / admin row does not count.
     ne(tenantSubscriptions.source, 'stripe'),
-    isNull(tenantSubscriptions.stripeSubscriptionId),
   )
 }
 

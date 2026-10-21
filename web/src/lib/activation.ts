@@ -4,12 +4,14 @@ import {
   appointments,
   patients,
   procedureRecords,
+  tenantLifecycleMessages,
   tenants,
   tenantSubscriptions,
   whatsappMessages,
 } from '@/db/schema'
 import type { SubscriptionStatus } from '@/db/queries/subscriptions'
 import { brCalendarDaysBetween } from '@/lib/dates'
+import { MARKETING_MESSAGE_KEYS } from '@/lib/lifecycle-messages'
 
 export interface ActivationState {
   onboardingDone: boolean
@@ -24,6 +26,8 @@ export interface ActivationState {
   subscriptionStatus: SubscriptionStatus
   subscriptionSource: string
   optedOut: boolean
+  /** When the last marketing message actually went out, for the spacing rule. */
+  lastMarketingSentAt: Date | null
 }
 
 export async function getActivationState(
@@ -41,6 +45,10 @@ export async function getActivationState(
       hasPatient: sql<boolean>`exists (select 1 from ${patients} where ${patients.tenantId} = ${tenants.id})`,
       hasAppointment: sql<boolean>`exists (select 1 from ${appointments} where ${appointments.tenantId} = ${tenants.id})`,
       hasProcedureRecord: sql<boolean>`exists (select 1 from ${procedureRecords} where ${procedureRecords.tenantId} = ${tenants.id})`,
+      lastMarketingSentAt: sql<Date | string | null>`(select max(coalesce(${tenantLifecycleMessages.completedAt}, ${tenantLifecycleMessages.claimedAt})) from ${tenantLifecycleMessages} where ${tenantLifecycleMessages.tenantId} = ${tenants.id} and ${tenantLifecycleMessages.status} = 'sent' and ${tenantLifecycleMessages.messageKey} in (${sql.join(
+        MARKETING_MESSAGE_KEYS.map((k) => sql`${k}`),
+        sql`, `,
+      )}))`,
       hasWhatsappSend: sql<boolean>`exists (select 1 from ${whatsappMessages} where ${whatsappMessages.tenantId} = ${tenants.id} and ${whatsappMessages.direction} = 'outbound')`,
     })
     .from(tenants)
@@ -64,5 +72,6 @@ export async function getActivationState(
     subscriptionStatus: row.status as SubscriptionStatus,
     subscriptionSource: row.source,
     optedOut: row.optedOutAt != null,
+    lastMarketingSentAt: row.lastMarketingSentAt ? new Date(row.lastMarketingSentAt) : null,
   }
 }

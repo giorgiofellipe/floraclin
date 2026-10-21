@@ -38,6 +38,7 @@ import { START_TIMES, END_TIMES, timeItems } from '@/lib/time-options'
 import { formatBrPhone } from '@/lib/phone'
 import { useTenant } from '@/hooks/queries/use-tenant'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
+import { useSubscriptionAccess } from '@/components/layout/subscription-access'
 import { canSendRescheduleNotice } from '@/validations/appointment'
 import { brToday } from '@/lib/dates'
 import type { RescheduleNotification } from '@/lib/whatsapp-reschedule'
@@ -103,6 +104,10 @@ export function AppointmentForm({
   defaultPatient,
 }: AppointmentFormProps) {
   const isEditing = !!appointment
+  // Read-only mode (subscription ended): an existing appointment opens for
+  // reading only, every field and action disabled, so nothing can be saved
+  // only to fail with a 402.
+  const { readOnly, openPaywall } = useSubscriptionAccess()
   const createAppointment = useCreateAppointment()
   const updateAppointment = useUpdateAppointment()
   const updateAppointmentStatus = useUpdateAppointmentStatus()
@@ -260,7 +265,7 @@ export function AppointmentForm({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader className="pb-2">
-          <DialogTitle className="text-lg font-semibold text-charcoal">{isEditing ? 'Editar Agendamento' : 'Novo Agendamento'}</DialogTitle>
+          <DialogTitle className="text-lg font-semibold text-charcoal">{readOnly ? 'Agendamento' : isEditing ? 'Editar Agendamento' : 'Novo Agendamento'}</DialogTitle>
         </DialogHeader>
 
         {error && (
@@ -271,6 +276,7 @@ export function AppointmentForm({
 
         <form onSubmit={async (e) => {
           e.preventDefault()
+          if (readOnly) return
           setError(null)
           const formData = new FormData(e.currentTarget)
           let patientId = selectedPatientId || null
@@ -323,6 +329,7 @@ export function AppointmentForm({
             setError(err instanceof Error ? err.message : 'Erro ao salvar agendamento')
           }
         }} className="grid gap-5" data-testid="appointment-form">
+          <fieldset disabled={readOnly} className="contents" data-testid="appointment-form-fields">
           {isEditing && <input type="hidden" name="id" value={appointment.id} />}
 
           {/* Patient search / quick create */}
@@ -538,6 +545,30 @@ export function AppointmentForm({
             />
           </div>
 
+          </fieldset>
+
+          {readOnly ? (
+            <DialogFooter className="pt-2 border-t border-sage/10" data-testid="appointment-form-read-only">
+              <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-mid">Modo leitura: assine um plano para editar ou remarcar.</p>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                    Fechar
+                  </Button>
+                  <Button
+                    type="button"
+                    className="bg-forest text-cream hover:bg-sage"
+                    onClick={() => {
+                      onOpenChange(false)
+                      openPaywall()
+                    }}
+                  >
+                    Ver planos
+                  </Button>
+                </div>
+              </div>
+            </DialogFooter>
+          ) : (
           <DialogFooter className="pt-2 border-t border-sage/10">
             <div className="flex w-full items-center justify-between">
               <div className="flex gap-2">
@@ -570,6 +601,7 @@ export function AppointmentForm({
               </div>
             </div>
           </DialogFooter>
+          )}
         </form>
       </DialogContent>
     </Dialog>

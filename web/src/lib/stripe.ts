@@ -131,10 +131,16 @@ export async function cancelStripeSubscription(stripeSubscriptionId: string) {
 export async function createBillingPortalSession(
   stripeCustomerId: string,
   returnUrl: string,
+  opts?: { flow?: 'payment_method_update' },
 ): Promise<{ url: string }> {
   const session = await getStripeClient().billingPortal.sessions.create({
     customer: stripeCustomerId,
     return_url: returnUrl,
+    // Straight to the card form for a failed payment, instead of the portal
+    // home where "update payment method" is one more click away.
+    ...(opts?.flow === 'payment_method_update'
+      ? { flow_data: { type: 'payment_method_update' as const } }
+      : {}),
   })
 
   return { url: session.url }
@@ -237,4 +243,70 @@ export async function updateSubscriptionPrice(
     proration_behavior: 'create_prorations',
     cancel_at_period_end: false,
   })
+}
+
+// ─── Win-back promotion code check ─────────────────────────────────
+
+const PROMO_CHECK_TTL_MS = 10 * 60 * 1000
+const PROMO_CHECK_ERROR_TTL_MS = 60 * 1000
+
+/** What the paywall needs to show the discount (strikethrough price). */
+export interface PromotionCodeTerms {
+  percentOff: number | null
+  durationInMonths: number | null
+}
+
+const promoCheckCache = new Map<string, { terms: PromotionCodeTerms | null; until: number }>()
+
+/** Test hook: the cache is module state. */
+export function clearPromotionCodeCache(): void {
+  promoCheckCache.clear()
+}
+
+/**
+ * The coupon terms when Stripe would accept this promotion code on a Checkout
+ * Session right now (active, not past `expires_at`, redemptions left, coupon
+ * still valid), else null. The paywall and the win-back emails only promise
+ * a discount that passes this.
+ *
+ * Cached per server instance for 10 minutes (1 minute after a Stripe error)
+ * so the platform layout does not call Stripe on every render. A Stripe
+ * error counts as unusable: better to hide the offer than to promise a
+ * discount checkout then drops.
+ */
+export async function checkPromotionCode(
+  promotionCodeId: string,
+  now: Date = new Date(),
+): Promise<PromotionCodeTerms | null> {
+  const cached = promoCheckCache.get(promotionCodeId)
+  if (cached && cached.until > now.getTime()) return cached.terms
+
+  let terms: PromotionCodeTerms | null = null
+  let ttl = PROMO_CHECK_TTL_MS
+  try {
+    const promo = await getStripeClient().promotionCodes.retrieve(promotionCodeId, {
+      expand: ['promotion.coupon'],
+    })
+    const coupon = promo.promotion?.coupon
+    const nowSec = Math.floor(now.getTime() / 1000)
+    const usable =
+      promo.active &&
+      (promo.expires_at == null || promo.expires_at > nowSec) &&
+      (promo.max_redemptions == null || promo.times_redeemed < promo.max_redemptions) &&
+      // Not expanded means Stripe did not hand it back; do not guess.
+      typeof coupon === 'object' &&
+      coupon !== null &&
+      coupon.valid
+    if (usable) {
+      terms = {
+        percentOff: coupon.percent_off ?? null,
+        durationInMonths: coupon.duration === 'repeating' ? (coupon.duration_in_months ?? null) : null,
+      }
+    }
+  } catch (err) {
+    reportSideEffectFailure(err, { area: 'billing', step: 'winback_promo_check', extra: { promotionCodeId } })
+    ttl = PROMO_CHECK_ERROR_TTL_MS
+  }
+  promoCheckCache.set(promotionCodeId, { terms, until: now.getTime() + ttl })
+  return terms
 }

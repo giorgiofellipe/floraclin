@@ -8,7 +8,8 @@ import {
 } from '@/db/queries/subscriptions'
 import { createCheckoutSession, updateSubscriptionPrice } from '@/lib/stripe'
 import { handleApiError } from '@/lib/api-error'
-import { getWinbackOffer } from '@/lib/winback'
+import { getValidatedWinbackOffer } from '@/lib/winback-offer'
+import { isStripeDriven } from '@/lib/subscription-access'
 
 export async function POST(request: Request) {
   try {
@@ -53,7 +54,9 @@ export async function POST(request: Request) {
         !!subscription.currentPeriodEnd &&
         subscription.currentPeriodEnd > new Date())
 
-    if (live && subscription?.stripeSubscriptionId) {
+    // Only a genuine Stripe subscription can be moved to another price: a
+    // gift or admin row with a leftover id points at a dead subscription.
+    if (live && subscription && isStripeDriven(subscription) && subscription.stripeSubscriptionId) {
       // Same plan while a cancellation is pending is a reactivation, and
       // /api/billing/reactivate is the route that says so.
       if (subscription.planId === plan.id) {
@@ -83,7 +86,7 @@ export async function POST(request: Request) {
     }
 
     // Eligibility is decided here, from the stored row, never from the client.
-    const winback = getWinbackOffer(subscription)
+    const winback = await getValidatedWinbackOffer(subscription)
     const { url } = await createCheckoutSession(ctx.tenantId, planSlug, subscription?.stripeCustomerId ?? null, {
       promotionCodeId: winback?.promotionCodeId ?? null,
     })
