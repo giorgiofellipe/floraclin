@@ -12,6 +12,7 @@ import {
   PlanCards,
   QUIET_ACTION_CLASS,
   TrialRecapTiles,
+  ReferralBadge,
   TrustRow,
   WinbackBadge,
   entryPriceLine,
@@ -66,6 +67,7 @@ export function ExpiredPaywall() {
     canSubscribe,
     plans,
     winback,
+    referral,
     recap,
     recovery,
     paywallOpen,
@@ -106,9 +108,11 @@ export function ExpiredPaywall() {
     closePaywall()
   }
 
+  // One offer at most: the win-back wins over the referral one.
+  const offer = winback ?? referral
   const paymentUpdate = recovery === 'payment_update'
   const built = hasRecap(recap)
-  const entryPrice = paymentUpdate ? null : entryPriceLine(plans, winback)
+  const entryPrice = paymentUpdate ? null : entryPriceLine(plans, offer)
   const copy = paywallCopy({ paymentUpdate, trial: reason === 'trial', built })
 
   return (
@@ -148,7 +152,7 @@ export function ExpiredPaywall() {
 
           {!paymentUpdate && <TrialRecapTiles recap={recap} title="O que sua clínica já tem aqui" />}
 
-          {!paymentUpdate && <WinbackBadge offer={winback} />}
+          {!paymentUpdate && (winback ? <WinbackBadge offer={winback} /> : <ReferralBadge offer={referral} />)}
 
           {paymentUpdate && canSubscribe && (
               <Button
@@ -166,7 +170,7 @@ export function ExpiredPaywall() {
             <div className="w-full">
               <PlanCards
                 plans={plans}
-                offer={winback}
+                offer={offer}
                 canSubscribe={canSubscribe}
                 pending={pending}
                 onSubscribe={subscribe}

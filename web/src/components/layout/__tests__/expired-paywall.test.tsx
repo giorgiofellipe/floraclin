@@ -35,6 +35,17 @@ const OFFER = {
   planSlugs: ['starter', 'pro'],
 }
 
+const REFERRAL = {
+  kind: 'referral' as const,
+  referrerName: 'Clínica Bela',
+  label: '20% de desconto nos 2 primeiros meses',
+  percentOff: 20,
+  amountOffCents: null,
+  duration: 'repeating' as const,
+  durationInMonths: 2,
+  planSlugs: ['starter', 'pro'],
+}
+
 const PLANS = [
   {
     slug: 'starter',
@@ -185,6 +196,27 @@ describe('ExpiredPaywall', () => {
     expect(screen.getByTestId('paywall-plan-pro-terms')).toHaveTextContent(/Nos 3 primeiros meses, depois R\$\s?199,00\/mês/)
     // The entry price near the headline is the lowest price under the offer.
     expect(screen.getByTestId('paywall-entry-price')).toHaveTextContent(/Planos a partir de R\$\s?69,30\/mês com a oferta/)
+  })
+
+  it('shows the referral offer with the discounted price struck against the full one', async () => {
+    renderWith(true, { referral: REFERRAL })
+
+    expect(await screen.findByTestId('referral-offer')).toHaveTextContent(
+      'Indicação de Clínica Bela: 20% de desconto nos 2 primeiros meses. Aplicado automaticamente no pagamento.',
+    )
+    const starter = screen.getByTestId('paywall-plan-starter')
+    expect(starter).toHaveTextContent(/R\$\s?79,20/)
+    expect(starter.querySelector('s')).toHaveTextContent(/R\$\s?99,00/)
+    expect(screen.getByTestId('paywall-entry-price')).toHaveTextContent(/Planos a partir de R\$\s?79,20\/mês com a oferta/)
+  })
+
+  it('never shows the referral badge next to a win-back offer', async () => {
+    renderWith(true, { winback: OFFER, referral: REFERRAL })
+
+    expect(await screen.findByTestId('winback-offer')).toBeInTheDocument()
+    expect(screen.queryByTestId('referral-offer')).not.toBeInTheDocument()
+    // Prices follow the win-back (30%), not the referral (20%).
+    expect(screen.getByTestId('paywall-plan-starter')).toHaveTextContent(/R\$\s?69,30/)
   })
 
   it('discounts only the plans the coupon covers', async () => {

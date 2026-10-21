@@ -14,12 +14,23 @@ import { SubscriptionAccessProvider } from '../subscription-access'
 const NOW = new Date('2026-10-21T12:00:00.000Z')
 const TOMORROW_1830 = '2026-10-22T21:30:00.000Z'
 
+const REFERRAL = {
+  kind: 'referral' as const,
+  referrerName: 'Clínica Bela',
+  label: '20% de desconto nos 2 primeiros meses',
+  percentOff: 20,
+  amountOffCents: null,
+  duration: 'repeating' as const,
+  durationInMonths: 2,
+  planSlugs: ['starter', 'pro'],
+}
+
 const PLANS = [
   { slug: 'starter', name: 'Starter', priceCents: 9900, billingInterval: 'month', benefits: ['A'], recommended: false },
   { slug: 'pro', name: 'Pro', priceCents: 19900, billingInterval: 'month', benefits: ['B'], recommended: true },
 ]
 
-function renderModal(trialEndsAt: string | null, readOnly = false) {
+function renderModal(trialEndsAt: string | null, readOnly = false, referral: typeof REFERRAL | null = null) {
   return render(
     <SubscriptionAccessProvider
       readOnly={readOnly}
@@ -28,6 +39,7 @@ function renderModal(trialEndsAt: string | null, readOnly = false) {
       canSubscribe
       plans={PLANS}
       winback={null}
+      referral={referral}
       recap={{ patients: 8, appointments: 15, procedureRecords: 0, photos: 3, diagrams: 0 }}
       trialEndsAt={trialEndsAt}
     >
@@ -59,6 +71,24 @@ describe('TrialEndingModal', () => {
     // Starter first, Pro right after it and highlighted.
     const cards = screen.getAllByTestId(/^paywall-plan-(starter|pro)$/)
     expect(cards.map((c) => c.dataset.testid)).toEqual(['paywall-plan-starter', 'paywall-plan-pro'])
+  })
+
+  it('shows the referral badge and the discounted price when there is an offer', async () => {
+    renderModal(TOMORROW_1830, false, REFERRAL)
+
+    const modal = await screen.findByTestId('trial-ending-modal')
+    expect(screen.getByTestId('referral-offer')).toHaveTextContent('Indicação de Clínica Bela: 20% de desconto nos 2 primeiros meses.')
+    expect(screen.getByTestId('paywall-plan-starter')).toHaveTextContent(/R\$\s?79,20/)
+    expect(modal.querySelector('s')).toHaveTextContent(/R\$\s?99,00/)
+  })
+
+  it('has no badge and full prices without an offer', async () => {
+    renderModal(TOMORROW_1830)
+
+    await screen.findByTestId('trial-ending-modal')
+    expect(screen.queryByTestId('referral-offer')).not.toBeInTheDocument()
+    expect(screen.getByTestId('paywall-plan-starter')).toHaveTextContent(/R\$\s?99,00/)
+    expect(screen.getByTestId('paywall-plan-starter').querySelector('s')).toBeNull()
   })
 
   it('shows once: dismissing it keeps it closed on the next load', async () => {

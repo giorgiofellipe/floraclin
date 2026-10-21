@@ -8,7 +8,11 @@ import { cn } from '@/lib/utils'
 import { formatBrDayMonth } from '@/lib/dates'
 import type { TrialRecap } from '@/lib/trial-recap'
 import { durationPhrase, winbackPriceCents, type PublicWinbackOffer } from '@/lib/winback'
+import { referralOfferHeadline, type PublicReferralOffer } from '@/lib/referral/offer-copy'
 import type { PaywallPlan } from '@/components/layout/subscription-access'
+
+/** What the plan cards and the entry price read: the win-back or the referral offer. */
+export type EntryOffer = PublicWinbackOffer | PublicReferralOffer
 
 /** The badge on the highlighted plan. A recommendation, not a popularity
  *  claim: we only say "most chosen" once the numbers say so. */
@@ -36,7 +40,7 @@ function formatEntryPrice(cents: number): string {
  * without scrolling to the cards. Under the win-back offer it is the lowest
  * discounted price, and says so.
  */
-export function entryPriceLine(plans: PaywallPlan[], offer: PublicWinbackOffer | null): string | null {
+export function entryPriceLine(plans: PaywallPlan[], offer: EntryOffer | null): string | null {
   if (plans.length === 0) return null
   const priced = plans.map((plan) => {
     const discounted = winbackPriceCents(plan, offer)
@@ -48,7 +52,7 @@ export function entryPriceLine(plans: PaywallPlan[], offer: PublicWinbackOffer |
 }
 
 /** The fine print under a discounted price: how long, and the price after. */
-function offerTermsLine(plan: PaywallPlan, offer: PublicWinbackOffer): string {
+function offerTermsLine(plan: PaywallPlan, offer: EntryOffer): string {
   if (offer.duration === 'forever') return 'Desconto em todas as mensalidades.'
   // Same words as the offer label ("nos 3 primeiros meses"), capitalised.
   const when = durationPhrase(offer).trim()
@@ -104,7 +108,7 @@ export function PlanCard({
   onSubscribe,
 }: {
   plan: PaywallPlan
-  offer: PublicWinbackOffer | null
+  offer: EntryOffer | null
   canSubscribe: boolean
   pending: string | null
   onSubscribe: (slug: string) => void
@@ -186,7 +190,7 @@ export function PlanCards({
   ...card
 }: {
   plans: PaywallPlan[]
-  offer: PublicWinbackOffer | null
+  offer: EntryOffer | null
   canSubscribe: boolean
   pending: string | null
   onSubscribe: (slug: string) => void
@@ -260,6 +264,19 @@ export function WinbackBadge({ offer }: { offer: PublicWinbackOffer | null }) {
     >
       <span className="font-semibold">Oferta para voltar: {offer.label}.</span>{' '}
       <span>Aplicada automaticamente no pagamento até {formatBrDayMonth(offer.endsAt)}.</span>
+    </p>
+  )
+}
+
+export function ReferralBadge({ offer }: { offer: PublicReferralOffer | null }) {
+  if (!offer) return null
+  return (
+    <p
+      data-testid="referral-offer"
+      className="mx-auto inline-flex max-w-full flex-wrap items-center justify-center gap-x-1.5 rounded-full border border-sage/40 bg-white px-4 py-1.5 text-center text-sm text-forest"
+    >
+      <span className="font-semibold">{referralOfferHeadline(offer)}</span>{' '}
+      <span>Aplicado automaticamente no pagamento.</span>
     </p>
   )
 }
