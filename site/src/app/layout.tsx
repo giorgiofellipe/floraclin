@@ -7,6 +7,21 @@ import { StructuredData } from "@/components/structured-data";
 import { metaPixelId } from "@/lib/marketing-attribution";
 import "./globals.css";
 
+// Search console ownership tags, rendered only when the env var is set on
+// floraclin-site. The values are baked in at build time, so a redeploy is
+// needed after changing them.
+function searchVerification(): Metadata["verification"] {
+  const google = process.env.GOOGLE_SITE_VERIFICATION?.trim();
+  const bing = process.env.BING_SITE_VERIFICATION?.trim();
+  return {
+    ...(google ? { google } : {}),
+    other: {
+      "facebook-domain-verification": "yopa79on7t80wti0m5ff2jw1w3j02v",
+      ...(bing ? { "msvalidate.01": bing } : {}),
+    },
+  };
+}
+
 export const metadata: Metadata = {
   metadataBase: new URL("https://floraclin.com.br"),
   title: "FloraClin — Gestão para clínicas de HOF",
@@ -35,11 +50,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
   },
-  verification: {
-    other: {
-      "facebook-domain-verification": "yopa79on7t80wti0m5ff2jw1w3j02v",
-    },
-  },
+  verification: searchVerification(),
 };
 
 export default function RootLayout({

@@ -1,0 +1,39 @@
+name: IndexNow
+
+# Tells Bing, Yandex and the other IndexNow engines about floraclin.com.br's
+# pages after each production deploy of the floraclin-site Vercel project.
+# Vercel reports deploys to GitHub as deployment statuses; only a successful
+# "Production – floraclin-site" one runs the ping, never a preview.
+# Run it by hand (Actions → IndexNow → Run workflow) after a manual deploy.
+on:
+  deployment_status:
+  workflow_dispatch:
+
+concurrency:
+  group: indexnow
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    name: ping IndexNow
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+       startsWith(github.event.deployment.environment, 'Production') &&
+       endsWith(github.event.deployment.environment, 'floraclin-site'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: site/scripts
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Ping IndexNow
+        run: node site/scripts/indexnow-ping.mjs
