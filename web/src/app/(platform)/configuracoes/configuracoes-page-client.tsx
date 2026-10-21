@@ -14,9 +14,10 @@ interface ConfiguracoesPageClientProps {
   currentUserId: string
   userRole: Role
   initialTab?: string
+  referralEnabled?: boolean
 }
 
-function OwnerSettingsWrapper({ currentUserId, userRole, initialTab, tenant }: ConfiguracoesPageClientProps & { tenant: NonNullable<ReturnType<typeof useTenant>['data']> }) {
+function OwnerSettingsWrapper({ currentUserId, userRole, initialTab, referralEnabled, tenant }: ConfiguracoesPageClientProps & { tenant: NonNullable<ReturnType<typeof useTenant>['data']> }) {
   const { data: procedureTypes, isLoading: ptLoading } = useProcedureTypes()
   const { data: products, isLoading: productsLoading } = useAllProducts()
   const { data: members, isLoading: membersLoading } = useTenantUsers()
@@ -53,12 +54,13 @@ function OwnerSettingsWrapper({ currentUserId, userRole, initialTab, tenant }: C
       currentUserId={currentUserId}
       userRole={userRole}
       initialTab={initialTab}
+      referralEnabled={referralEnabled}
       templateStatusMap={templateStatusMap}
     />
   )
 }
 
-export function ConfiguracoesPageClientWrapper({ currentUserId, userRole, initialTab }: ConfiguracoesPageClientProps) {
+export function ConfiguracoesPageClientWrapper({ currentUserId, userRole, initialTab, referralEnabled }: ConfiguracoesPageClientProps) {
   const { data: tenant, isLoading: tenantLoading } = useTenant()
 
   if (tenantLoading) {
@@ -79,6 +81,7 @@ export function ConfiguracoesPageClientWrapper({ currentUserId, userRole, initia
         currentUserId={currentUserId}
         userRole={userRole}
         initialTab={initialTab}
+        referralEnabled={referralEnabled}
         tenant={tenant}
       />
     )
@@ -94,6 +97,7 @@ export function ConfiguracoesPageClientWrapper({ currentUserId, userRole, initia
       currentUserId={currentUserId}
       userRole={userRole}
       initialTab={initialTab}
+      referralEnabled={referralEnabled}
     />
   )
 }
