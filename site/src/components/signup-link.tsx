@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ComponentProps, type MouseEvent } from "react";
+import { useEffect, useSyncExternalStore, type ComponentProps, type MouseEvent } from "react";
 import { hasMarketingConsent, subscribeCookieConsent } from "@/lib/cookie-consent";
 import { SIGNUP_URL } from "@/lib/marketing-attribution";
 import { rememberLandingParams, sessionStorageOrNull, signupUrlWithCampaign } from "@/lib/signup-handoff";
@@ -19,12 +19,12 @@ function currentSignupUrl(): string {
  * site's first-touch cookie never reached this browser.
  */
 export function SignupLink({ onClick, ...props }: Omit<ComponentProps<"a">, "href">) {
-  const [href, setHref] = useState(SIGNUP_URL);
+  // Server render and hydration use the bare URL; the client then re-reads it
+  // and again whenever the cookie banner changes consent.
+  const href = useSyncExternalStore(subscribeCookieConsent, currentSignupUrl, () => SIGNUP_URL);
 
   useEffect(() => {
     rememberLandingParams(window.location.search, sessionStorageOrNull());
-    setHref(currentSignupUrl());
-    return subscribeCookieConsent(() => setHref(currentSignupUrl()));
   }, []);
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
