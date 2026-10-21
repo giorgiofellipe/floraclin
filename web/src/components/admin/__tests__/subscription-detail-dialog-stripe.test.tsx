@@ -82,4 +82,33 @@ describe('SubscriptionDetailDialog on a Stripe subscription', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reativar' }))
     expect(screen.getByTestId('admin-stripe-reactivation-blocked').textContent).toMatch(/ainda está ativa no Stripe/)
   })
+
+  it('explains why a gift is not possible while Stripe still bills the clinic', () => {
+    detail.value = { stripeState: 'live' }
+    render(<SubscriptionDetailDialog open onOpenChange={() => {}} subscription={sub()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Presentear' }))
+    expect(screen.getByTestId('admin-stripe-gift').textContent).toMatch(/assinatura ativa no Stripe/)
+    expect(screen.queryByPlaceholderText('Motivo do presente...')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Presentear' })).toBeNull()
+  })
+
+  it('offers the gift form once Stripe says the subscription ended', () => {
+    detail.value = { stripeState: 'ended' }
+    render(<SubscriptionDetailDialog open onOpenChange={() => {}} subscription={sub({ status: 'canceled' })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Presentear' }))
+    expect(screen.queryByTestId('admin-stripe-gift')).toBeNull()
+    expect(screen.getByPlaceholderText('Motivo do presente...')).toBeTruthy()
+  })
+
+  it('does not offer "Estender teste" on a Stripe trial', () => {
+    render(<SubscriptionDetailDialog open onOpenChange={() => {}} subscription={sub({ status: 'trialing' })} />)
+    expect(screen.queryByRole('button', { name: 'Estender teste' })).toBeNull()
+  })
+
+  it('gives the end date when the Stripe subscription is already set to cancel', () => {
+    detail.value = { stripeState: 'pending_cancel' }
+    render(<SubscriptionDetailDialog open onOpenChange={() => {}} subscription={sub({ status: 'canceled' })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Presentear' }))
+    expect(screen.getByTestId('admin-stripe-gift').textContent).toContain('termina em 09/03/2099')
+  })
 })

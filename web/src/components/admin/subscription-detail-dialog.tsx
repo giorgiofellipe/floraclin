@@ -7,6 +7,7 @@ import { brToday, endOfBrDay } from '@/lib/dates'
 import { grantNeedsNewEnd } from '@/lib/subscription-access'
 import {
   stripeCancelMessage,
+  stripeGiftBlock,
   stripePeriodOpenMessage,
   stripePeriodStillOpen,
   stripePlanChangeMessage,
@@ -250,6 +251,9 @@ export function SubscriptionDetailDialog({
       : stripeState === 'pending_cancel' || stripeState === 'live'
         ? stripeStillActiveMessage()
         : null
+  // Gift on a Stripe row: only once Stripe says it ended (null = unknown or
+  // nothing at Stripe; the API decides on submit).
+  const stripeGiftBlocked = stripeState === 'pending_cancel' || stripeState === 'live'
   const backOnly = (
     <div className="flex justify-end pt-1">
       <Button variant="outline" size="sm" onClick={() => setActionMode('none')}>
@@ -363,41 +367,52 @@ export function SubscriptionDetailDialog({
 
           {actionMode === 'gift' && (
             <ActionPanel title="Presentear">
-              <div className="space-y-2">
-                <Label>Plano</Label>
-                <Select items={planItems} value={selectedPlanSlug} onValueChange={(v) => setSelectedPlanSlug(v ?? '')}>
-                  <SelectTrigger className="w-full border-sage/20 h-8 text-sm">
-                    <SelectValue placeholder="Selecione o plano" />
-                  </SelectTrigger>
-                  <SelectContent />
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Meses</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={giftMonths}
-                  onChange={(e) => setGiftMonths(e.target.value)}
-                  className="border-sage/20"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Observações</Label>
-                <Textarea
-                  value={giftNotes}
-                  onChange={(e) => setGiftNotes(e.target.value)}
-                  placeholder="Motivo do presente..."
-                  className="border-sage/20 min-h-12"
-                />
-              </div>
-              <ActionButtons
-                onConfirm={handleGift}
-                onCancel={() => setActionMode('none')}
-                isPending={isPending}
-                confirmLabel="Presentear"
-                disabled={!selectedPlanSlug}
-              />
+              {stripeGiftBlocked ? (
+                <>
+                  <p className="text-sm text-mid" data-testid="admin-stripe-gift">
+                    {stripeGiftBlock(subscription, stripeState as 'pending_cancel' | 'live')?.message}
+                  </p>
+                  {backOnly}
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label>Plano</Label>
+                    <Select items={planItems} value={selectedPlanSlug} onValueChange={(v) => setSelectedPlanSlug(v ?? '')}>
+                      <SelectTrigger className="w-full border-sage/20 h-8 text-sm">
+                        <SelectValue placeholder="Selecione o plano" />
+                      </SelectTrigger>
+                      <SelectContent />
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Meses</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={giftMonths}
+                      onChange={(e) => setGiftMonths(e.target.value)}
+                      className="border-sage/20"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Observações</Label>
+                    <Textarea
+                      value={giftNotes}
+                      onChange={(e) => setGiftNotes(e.target.value)}
+                      placeholder="Motivo do presente..."
+                      className="border-sage/20 min-h-12"
+                    />
+                  </div>
+                  <ActionButtons
+                    onConfirm={handleGift}
+                    onCancel={() => setActionMode('none')}
+                    isPending={isPending}
+                    confirmLabel="Presentear"
+                    disabled={!selectedPlanSlug}
+                  />
+                </>
+              )}
             </ActionPanel>
           )}
 
@@ -494,7 +509,7 @@ export function SubscriptionDetailDialog({
             >
               Presentear
             </Button>
-            {isTrialing && (
+            {isTrialing && !stripeDriven && (
               <Button
                 variant="outline"
                 size="sm"

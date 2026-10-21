@@ -9,36 +9,11 @@ import {
 } from '@/db/queries/subscriptions'
 import { grantNeedsNewEnd } from '@/lib/subscription-access'
 import { stripeAdminBlock } from '@/lib/admin-stripe-guard'
-import { getStripeSubscriptionState, type StripeSubscriptionState } from '@/lib/stripe'
-import { reportSideEffectFailure } from '@/lib/observability'
+import type { StripeSubscriptionState } from '@/lib/stripe'
+import { STRIPE_UNAVAILABLE_MESSAGE, stripeStateFor } from '@/lib/admin-stripe-state'
 import { getCreditUsage } from '@/db/queries/whatsapp-credits'
 import { createAuditLog } from '@/lib/audit'
 import { handleApiError } from '@/lib/api-error'
-
-/**
- * For a cancelled / expired Stripe row with a subscription id: what Stripe
- * says about it (see getStripeSubscriptionState), whatever our period says.
- * Null when there is nothing to ask; 'unavailable' when Stripe could not be
- * reached.
- */
-async function stripeStateFor(row: {
-  source?: string | null
-  status: string
-  stripeSubscriptionId?: string | null
-}): Promise<StripeSubscriptionState | 'unavailable' | null> {
-  if (row.source !== 'stripe' || !row.stripeSubscriptionId) return null
-  if (row.status !== 'canceled' && row.status !== 'expired') return null
-  try {
-    return await getStripeSubscriptionState(row.stripeSubscriptionId)
-  } catch (err) {
-    reportSideEffectFailure(err, {
-      area: 'billing',
-      step: 'admin_stripe_state',
-      extra: { subscriptionId: row.stripeSubscriptionId },
-    })
-    return 'unavailable'
-  }
-}
 
 export async function GET(
   req: Request,
@@ -102,11 +77,12 @@ export async function PATCH(
     const grants = nextStatus === 'active' || nextStatus === 'trialing'
 
     let stripeState: StripeSubscriptionState | null = null
-    if (grants && !planChanged) {
+    // Only a reactivation of a lapsed Stripe row needs Stripe's word.
+    if (grants && !planChanged && (existing.status === 'canceled' || existing.status === 'expired')) {
       const state = await stripeStateFor(existing)
       if (state === 'unavailable') {
         return NextResponse.json(
-          { error: 'Não foi possível consultar o Stripe agora. Tente novamente em instantes.', code: 'stripe_unavailable' },
+          { error: STRIPE_UNAVAILABLE_MESSAGE, code: 'stripe_unavailable' },
           { status: 503 },
         )
       }

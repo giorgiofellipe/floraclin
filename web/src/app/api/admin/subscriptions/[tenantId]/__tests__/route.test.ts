@@ -229,6 +229,39 @@ describe('PATCH /api/admin/subscriptions/[tenantId]', () => {
     expect(m.createAuditLog).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['past_due', 'active'],
+    ['active', 'past_due'],
+    ['past_due', 'trialing'],
+    ['canceled', 'past_due'],
+    ['active', 'trialing'],
+  ])('refuses a manual %s → %s on a Stripe row: Stripe controls the status', async (from, to) => {
+    m.getSubscription.mockResolvedValue(
+      row({ status: from, source: 'stripe', stripeSubscriptionId: 'sub_1', currentPeriodEnd: FUTURE }),
+    )
+    const res = await patch({ status: to })
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.code).toBe('stripe_status')
+    expect(body.error).toMatch(/controlado pelo Stripe/)
+    expect(m.updateSubscriptionStatus).not.toHaveBeenCalled()
+    expect(m.updateSubscriptionPlan).not.toHaveBeenCalled()
+  })
+
+  it('does not ask Stripe for a status change that is not a reactivation', async () => {
+    m.getSubscription.mockResolvedValue(row({ status: 'past_due', source: 'stripe', stripeSubscriptionId: 'sub_1' }))
+    const res = await patch({ status: 'active' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).code).toBe('stripe_status')
+    expect(m.getStripeSubscriptionState).not.toHaveBeenCalled()
+  })
+
+  it('still lets an admin move a grant between statuses', async () => {
+    m.getSubscription.mockResolvedValue(row({ status: 'active', source: 'admin', currentPeriodEnd: FUTURE }))
+    const res = await patch({ status: 'past_due' })
+    expect(res.status).toBe(200)
+  })
+
   it('still lets an admin cancel a grant', async () => {
     m.getSubscription.mockResolvedValue(row({ status: 'active', source: 'admin', currentPeriodEnd: FUTURE }))
     const res = await patch({ status: 'canceled' })

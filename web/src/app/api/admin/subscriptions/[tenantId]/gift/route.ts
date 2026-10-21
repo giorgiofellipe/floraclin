@@ -3,6 +3,8 @@ import { requirePlatformAdmin } from '@/lib/auth'
 import { getPlanBySlug, giftSubscription, getSubscription } from '@/db/queries/subscriptions'
 import { createAuditLog } from '@/lib/audit'
 import { handleApiError } from '@/lib/api-error'
+import { stripeGiftBlock } from '@/lib/admin-stripe-guard'
+import { STRIPE_UNAVAILABLE_MESSAGE, stripeStateFor } from '@/lib/admin-stripe-state'
 
 export async function POST(
   req: Request,
@@ -31,6 +33,19 @@ export async function POST(
     const existing = await getSubscription(tenantId)
     if (!existing) {
       return NextResponse.json({ error: 'Subscription not found' }, { status: 404 })
+    }
+
+    // A gift drops the Stripe link; while Stripe still bills the clinic that
+    // would leave it charged for a plan our row no longer follows.
+    if (existing.source === 'stripe') {
+      const state = await stripeStateFor(existing)
+      if (state === 'unavailable') {
+        return NextResponse.json({ error: STRIPE_UNAVAILABLE_MESSAGE, code: 'stripe_unavailable' }, { status: 503 })
+      }
+      const blocked = stripeGiftBlock(existing, state)
+      if (blocked) {
+        return NextResponse.json({ error: blocked.message, code: blocked.code }, { status: 400 })
+      }
     }
 
     const result = await giftSubscription(tenantId, plan.id, months, ctx.userId, notes)
