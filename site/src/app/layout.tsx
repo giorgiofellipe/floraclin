@@ -5,10 +5,26 @@ import { CookieConsentBanner } from "@/components/cookie-consent-banner";
 import { MetaPixel } from "@/components/meta-pixel";
 import { StructuredData } from "@/components/structured-data";
 import { metaPixelId } from "@/lib/marketing-attribution";
+import { SITE_URL } from "@/lib/site-pages";
 import "./globals.css";
 
+// Domain ownership tags. Google's and Bing's render only when their env var is
+// set on floraclin-site; Facebook's is a fixed token. The values are baked in
+// at build time, so a redeploy is needed after changing them.
+function searchVerification(): Metadata["verification"] {
+  const google = process.env.GOOGLE_SITE_VERIFICATION?.trim();
+  const bing = process.env.BING_SITE_VERIFICATION?.trim();
+  return {
+    ...(google ? { google } : {}),
+    other: {
+      "facebook-domain-verification": "yopa79on7t80wti0m5ff2jw1w3j02v",
+      ...(bing ? { "msvalidate.01": bing } : {}),
+    },
+  };
+}
+
 export const metadata: Metadata = {
-  metadataBase: new URL("https://floraclin.com.br"),
+  metadataBase: new URL(SITE_URL),
   title: "FloraClin — Gestão para clínicas de HOF",
   description:
     "Agenda, prontuário, financeiro e procedimentos — tudo integrado em uma plataforma feita exclusivamente para Harmonização Orofacial.",
@@ -28,18 +44,14 @@ export const metadata: Metadata = {
     title: "FloraClin — Gestão para clínicas de HOF",
     description:
       "Agenda, prontuário, financeiro e procedimentos — tudo integrado em uma plataforma feita exclusivamente para Harmonização Orofacial.",
-    url: "https://floraclin.com.br",
+    url: SITE_URL,
     type: "website",
     locale: "pt_BR",
   },
   twitter: {
     card: "summary_large_image",
   },
-  verification: {
-    other: {
-      "facebook-domain-verification": "yopa79on7t80wti0m5ff2jw1w3j02v",
-    },
-  },
+  verification: searchVerification(),
 };
 
 export default function RootLayout({
