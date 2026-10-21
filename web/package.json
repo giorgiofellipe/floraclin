@@ -31,6 +31,7 @@
     "logo:migrate-paths": "pnpm exec dotenv -e .env.local -- tsx scripts/migrate-logo-urls-to-paths.ts",
     "tokens:encrypt": "pnpm exec dotenv -e .env.local -- tsx scripts/encrypt-stored-tokens.ts",
     "referral:create-coupons": "pnpm exec dotenv -e .env.local -- tsx scripts/create-referral-coupons.ts",
+    "referral:backfill-fingerprints": "pnpm exec dotenv -e .env.local -- tsx scripts/backfill-card-fingerprints.ts",
     "icons:generate": "bash scripts/generate-icons.sh"
   },
   "dependencies": {
