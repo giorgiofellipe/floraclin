@@ -34,6 +34,7 @@ import {
 import { toast } from 'sonner'
 import { cn, formatDate } from '@/lib/utils'
 import { Loader2Icon } from 'lucide-react'
+import { TenantReferralsPanel } from './tenant-referrals-panel'
 
 interface SubscriptionListItem {
   id: string
@@ -265,7 +266,7 @@ export function SubscriptionDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{subscription.tenantName}</DialogTitle>
           <DialogDescription>{subscription.tenantSlug}</DialogDescription>
@@ -329,6 +330,8 @@ export function SubscriptionDetailDialog({
               </div>
             </div>
           )}
+
+          <TenantReferralsPanel tenantId={subscription.tenantId} />
 
           {/* Action forms */}
           {actionMode === 'change-plan' && (
