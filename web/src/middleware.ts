@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth-config'
 import { NextResponse } from 'next/server'
 import { captureFirstTouch } from '@/lib/first-touch'
+import { captureReferralCode } from '@/lib/referral/cookie'
 
 export default auth((req) => {
   const { pathname } = req.nextUrl
@@ -52,7 +53,10 @@ export default auth((req) => {
       return NextResponse.redirect(new URL('/dashboard', req.url))
     }
     const response = NextResponse.next()
-    if (pathname === '/signup') captureFirstTouch(req, response)
+    if (pathname === '/signup') {
+      captureFirstTouch(req, response)
+      captureReferralCode(req, response)
+    }
     return response
   }
 
