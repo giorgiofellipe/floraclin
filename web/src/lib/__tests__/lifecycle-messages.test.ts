@@ -56,22 +56,16 @@ describe('selectDueMessages', () => {
       expected: [],
     },
     {
-      name: 'day 12 sends trial_ending and no onboarding nudge: they stop 5 days before the end',
+      name: 'day 12 (2 days left) sends nothing: no onboarding nudge so close to the end, and there is no D-2 email',
       state: baseState({ trialDay: 12, daysLeft: 2 }),
       completed: WELCOME_DONE,
-      expected: ['trial_ending'],
+      expected: [],
     },
     {
       name: 'day 9 (5 days left) is the last day for onboarding nudges',
       state: baseState({ trialDay: 9, daysLeft: 5 }),
       completed: WELCOME_DONE,
       expected: ['trial_setup_incomplete', 'trial_first_patient', 'trial_first_record', 'trial_first_appointment'],
-    },
-    {
-      name: 'opted out on day 12 gets no trial_ending. Regression: trial_ending goes back to UTILITY, but Meta approved it as MARKETING',
-      state: baseState({ trialDay: 12, daysLeft: 2, optedOut: true }),
-      completed: WELCOME_DONE,
-      expected: [],
     },
     {
       name: 'day 11 (3 days left) sends trial_ending_soon',
@@ -110,7 +104,7 @@ describe('selectDueMessages', () => {
       expected: ['trial_welcome'],
     },
     {
-      name: 'extended trial at day 13 with 9 days left has no trial_ending. Regression: ending keyed to trial day',
+      name: 'extended trial at day 13 with 9 days left gets no ending nudge. Regression: ending keyed to trial day',
       state: baseState({ trialDay: 13, daysLeft: 9, onboardingDone: true, hasPatient: true, hasProcedureRecord: true, hasAppointment: true, hasWhatsappSend: true }),
       completed: WELCOME_DONE,
       expected: [],
@@ -222,7 +216,7 @@ describe('marketing spacing', () => {
       // Regression: the 44h spacing must never swallow the last-day email.
       const end = new Date(`2026-10-24T${time}:00-03:00`)
       const others = LIFECYCLE_MESSAGES.map((m) => m.key).filter(
-        (k) => !['trial_ending_soon', 'trial_ending', 'trial_last_day'].includes(k),
+        (k) => !['trial_ending_soon', 'trial_last_day'].includes(k),
       )
       const sent: string[] = []
       let lastMarketingSentAt: Date | null = null

@@ -211,7 +211,10 @@ export function SubscriptionDetailDialog({
   // status already grants access on a lapsed row.
   const needsEnd = (status: string) =>
     grantNeedsNewEnd({ status, source: subscription.source, currentPeriodEnd: subscription.currentPeriodEnd })
-  const lapsedGrant = needsEnd('active')
+  const stripeDriven = subscription.source === 'stripe'
+  // Reactivating a cancelled / expired Stripe row turns it into an admin
+  // grant, which always needs its own end date (same rule as the API).
+  const lapsedGrant = (stripeDriven && isCanceledOrExpired) || needsEnd('active')
   const newEndMissing = lapsedGrant && !newEndDate
   const planChangeNeedsEnd = !newEndDate && needsEnd(subscription.status)
   const newEndField = lapsedGrant ? (
@@ -302,23 +305,40 @@ export function SubscriptionDetailDialog({
           {/* Action forms */}
           {actionMode === 'change-plan' && (
             <ActionPanel title="Alterar plano">
-              <div className="space-y-2">
-                <Label>Novo plano</Label>
-                <Select items={planItems} value={selectedPlanSlug} onValueChange={(v) => setSelectedPlanSlug(v ?? '')}>
-                  <SelectTrigger className="w-full border-sage/20 h-8 text-sm">
-                    <SelectValue placeholder="Selecione o plano" />
-                  </SelectTrigger>
-                  <SelectContent />
-                </Select>
-              </div>
-              {newEndField}
-              <ActionButtons
-                onConfirm={handleChangePlan}
-                onCancel={() => setActionMode('none')}
-                isPending={isPending}
-                confirmLabel="Alterar"
-                disabled={!selectedPlanSlug || selectedPlanSlug === subscription.planSlug || planChangeNeedsEnd}
-              />
+              {stripeDriven ? (
+                <p className="text-sm text-mid" data-testid="admin-stripe-plan-change">
+                  Esta clínica assina pelo Stripe. Altere o plano no painel do Stripe ou pelo portal de cobrança
+                  (Configurações › Assinatura).
+                </p>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label>Novo plano</Label>
+                    <Select items={planItems} value={selectedPlanSlug} onValueChange={(v) => setSelectedPlanSlug(v ?? '')}>
+                      <SelectTrigger className="w-full border-sage/20 h-8 text-sm">
+                        <SelectValue placeholder="Selecione o plano" />
+                      </SelectTrigger>
+                      <SelectContent />
+                    </Select>
+                  </div>
+                  {newEndField}
+                </>
+              )}
+              {stripeDriven ? (
+                <div className="flex justify-end pt-1">
+                  <Button variant="outline" size="sm" onClick={() => setActionMode('none')}>
+                    Voltar
+                  </Button>
+                </div>
+              ) : (
+                <ActionButtons
+                  onConfirm={handleChangePlan}
+                  onCancel={() => setActionMode('none')}
+                  isPending={isPending}
+                  confirmLabel="Alterar"
+                  disabled={!selectedPlanSlug || selectedPlanSlug === subscription.planSlug || planChangeNeedsEnd}
+                />
+              )}
             </ActionPanel>
           )}
 

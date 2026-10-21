@@ -42,8 +42,9 @@ export async function getActivationState(
       source: tenantSubscriptions.source,
       currentPeriodStart: tenantSubscriptions.currentPeriodStart,
       currentPeriodEnd: tenantSubscriptions.currentPeriodEnd,
-      hasPatient: sql<boolean>`exists (select 1 from ${patients} where ${patients.tenantId} = ${tenants.id})`,
-      hasAppointment: sql<boolean>`exists (select 1 from ${appointments} where ${appointments.tenantId} = ${tenants.id})`,
+      // Soft-deleted rows do not count, matching the trial recap.
+      hasPatient: sql<boolean>`exists (select 1 from ${patients} where ${patients.tenantId} = ${tenants.id} and ${patients.deletedAt} is null)`,
+      hasAppointment: sql<boolean>`exists (select 1 from ${appointments} where ${appointments.tenantId} = ${tenants.id} and ${appointments.deletedAt} is null)`,
       hasProcedureRecord: sql<boolean>`exists (select 1 from ${procedureRecords} where ${procedureRecords.tenantId} = ${tenants.id})`,
       lastMarketingSentAt: sql<Date | string | null>`(select max(coalesce(${tenantLifecycleMessages.completedAt}, ${tenantLifecycleMessages.claimedAt})) from ${tenantLifecycleMessages} where ${tenantLifecycleMessages.tenantId} = ${tenants.id} and ${tenantLifecycleMessages.status} = 'sent' and ${tenantLifecycleMessages.messageKey} in (${sql.join(
         MARKETING_MESSAGE_KEYS.map((k) => sql`${k}`),

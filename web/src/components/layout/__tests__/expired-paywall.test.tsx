@@ -25,6 +25,16 @@ afterEach(() => {
 const NOW = new Date('2026-10-21T12:00:00.000Z')
 const TODAY = '2026-10-21'
 
+const OFFER = {
+  label: '30% de desconto nos 3 primeiros meses',
+  endsAt: '2026-11-04T02:59:59.999Z',
+  percentOff: 30,
+  amountOffCents: null,
+  duration: 'repeating' as const,
+  durationInMonths: 3,
+  planSlugs: ['starter', 'pro'],
+}
+
 const PLANS = [
   {
     slug: 'starter',
@@ -163,14 +173,7 @@ describe('ExpiredPaywall', () => {
   })
 
   it('shows the win-back offer with the discounted price struck against the full one', async () => {
-    renderWith(true, {
-      winback: {
-        label: '30% de desconto nos 3 primeiros meses',
-        endsAt: '2026-11-03T15:00:00.000Z',
-        percentOff: 30,
-        durationInMonths: 3,
-      },
-    })
+    renderWith(true, { winback: OFFER })
 
     expect(await screen.findByTestId('winback-offer')).toHaveTextContent(
       'Oferta para voltar: 30% de desconto nos 3 primeiros meses. Aplicada automaticamente no pagamento até 03/11',
@@ -180,6 +183,30 @@ describe('ExpiredPaywall', () => {
     expect(pro.querySelector('s')).toHaveTextContent(/R\$\s?199,00/)
     // The price after the discount, said plainly: no surprise on month 4.
     expect(screen.getByTestId('paywall-plan-pro-terms')).toHaveTextContent(/Nos 3 primeiros meses, depois R\$\s?199,00\/mês/)
+    // The entry price near the headline is the lowest price under the offer.
+    expect(screen.getByTestId('paywall-entry-price')).toHaveTextContent(/Planos a partir de R\$\s?69,30\/mês com a oferta/)
+  })
+
+  it('discounts only the plans the coupon covers', async () => {
+    renderWith(true, { winback: { ...OFFER, label: '30% de desconto nos 3 primeiros meses no plano Pro', planSlugs: ['pro'] } })
+
+    await screen.findByTestId('expired-paywall')
+    expect(screen.getByTestId('paywall-plan-pro').querySelector('s')).not.toBeNull()
+    const starter = screen.getByTestId('paywall-plan-starter')
+    expect(starter.querySelector('s')).toBeNull()
+    expect(starter).toHaveTextContent(/R\$\s?99,00/)
+    expect(screen.queryByTestId('paywall-plan-starter-terms')).not.toBeInTheDocument()
+    // R$ 99 full price is still the cheapest way in.
+    expect(screen.getByTestId('paywall-entry-price')).toHaveTextContent(/^Planos a partir de R\$\s?99\/mês$/)
+  })
+
+  it('puts Starter first, then the highlighted Pro, with the entry price by the headline', async () => {
+    renderWith(true)
+
+    await screen.findByTestId('expired-paywall')
+    const cards = screen.getAllByTestId(/^paywall-plan-(starter|pro)$/)
+    expect(cards.map((c) => c.dataset.testid)).toEqual(['paywall-plan-starter', 'paywall-plan-pro'])
+    expect(screen.getByTestId('paywall-entry-price')).toHaveTextContent(/^Planos a partir de R\$\s?99\/mês$/)
   })
 
   it('leads with the clinic\'s own numbers and recommends one plan', async () => {

@@ -18,7 +18,14 @@ vi.mock('@/lib/stripe', () => ({
   createCheckoutSession: vi.fn(),
   updateSubscriptionPrice: vi.fn(),
   // Stripe confirms the win-back code unless a test says otherwise.
-  checkPromotionCode: vi.fn(async () => ({ percentOff: 30, durationInMonths: 3 })),
+  checkPromotionCode: vi.fn(async () => ({
+    percentOff: 30,
+    amountOffCents: null,
+    duration: 'repeating',
+    durationInMonths: 3,
+    productIds: null,
+  })),
+  getPriceProductId: vi.fn(async (priceId: string) => `prod_for_${priceId}`),
 }))
 vi.mock('@/db/queries/subscriptions', () => ({
   getSubscription: vi.fn(),
@@ -285,5 +292,51 @@ describe('POST /api/billing/checkout', () => {
     await POST(request('pro'))
 
     expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: null })
+  })
+
+  it('charges full price for a plan the win-back coupon does not cover', async () => {
+    vi.stubEnv('STRIPE_WINBACK_PROMOTION_CODE_ID', 'promo_winback')
+    vi.mocked(checkPromotionCode).mockResolvedValueOnce({
+      percentOff: 30,
+      amountOffCents: null,
+      duration: 'repeating',
+      durationInMonths: 3,
+      productIds: ['prod_for_price_starter'],
+    })
+    vi.mocked(getSubscription).mockResolvedValue({
+      ...NO_SUBSCRIPTION,
+      status: 'expired',
+      source: 'trial',
+      stripeSubscriptionId: null,
+      firstPaidAt: null,
+      currentPeriodEnd: new Date(Date.now() - 60 * 60 * 1000),
+    } as never)
+
+    await POST(request('pro'))
+
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: null })
+  })
+
+  it('still applies the code to a plan a restricted coupon covers', async () => {
+    vi.stubEnv('STRIPE_WINBACK_PROMOTION_CODE_ID', 'promo_winback')
+    vi.mocked(checkPromotionCode).mockResolvedValueOnce({
+      percentOff: 30,
+      amountOffCents: null,
+      duration: 'repeating',
+      durationInMonths: 3,
+      productIds: ['prod_for_price_pro'],
+    })
+    vi.mocked(getSubscription).mockResolvedValue({
+      ...NO_SUBSCRIPTION,
+      status: 'expired',
+      source: 'trial',
+      stripeSubscriptionId: null,
+      firstPaidAt: null,
+      currentPeriodEnd: new Date(Date.now() - 60 * 60 * 1000),
+    } as never)
+
+    await POST(request('pro'))
+
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: 'promo_winback' })
   })
 })

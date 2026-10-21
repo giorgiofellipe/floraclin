@@ -94,11 +94,44 @@ describe('PATCH /api/admin/subscriptions/[tenantId]', () => {
     expect(res.status).toBe(400)
   })
 
-  it('keeps a Stripe row Stripe-driven on a plan change, with no end date needed', async () => {
-    m.getSubscription.mockResolvedValue(row({ status: 'active', source: 'stripe', currentPeriodEnd: PAST }))
-    const res = await patch({ planSlug: 'pro' })
+  it('refuses a plan change on a Stripe subscription: the plan is the Stripe price', async () => {
+    m.getSubscription.mockResolvedValue(row({ status: 'active', source: 'stripe', currentPeriodEnd: FUTURE }))
+    const res = await patch({ planSlug: 'pro', currentPeriodEnd: FUTURE.toISOString() })
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.code).toBe('stripe_plan_change')
+    expect(body.error).toMatch(/Stripe ou pelo portal de cobrança/)
+    expect(m.updateSubscriptionPlan).not.toHaveBeenCalled()
+  })
+
+  it('refuses to reactivate a cancelled Stripe row without a new end date, even mid-period', async () => {
+    m.getSubscription.mockResolvedValue(row({ status: 'canceled', source: 'stripe', currentPeriodEnd: FUTURE }))
+    const res = await patch({ status: 'active' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).code).toBe('period_end_required')
+    expect(m.updateSubscriptionPlan).not.toHaveBeenCalled()
+    expect(m.updateSubscriptionStatus).not.toHaveBeenCalled()
+  })
+
+  it('turns a reactivated Stripe row into an admin grant ending on the new date', async () => {
+    m.getSubscription.mockResolvedValue(row({ status: 'canceled', source: 'stripe', currentPeriodEnd: PAST }))
+    const res = await patch({ status: 'active', currentPeriodEnd: FUTURE.toISOString() })
     expect(res.status).toBe(200)
-    expect(m.updateSubscriptionPlan).toHaveBeenCalledWith('t1', 'p-pro', 'stripe', expect.anything())
+    // One write: no Stripe-driven `active` row with nothing behind it.
+    expect(m.updateSubscriptionPlan).toHaveBeenCalledWith('t1', 'p-starter', 'admin', {
+      status: 'active',
+      currentPeriodEnd: FUTURE,
+    })
+    expect(m.createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ changes: expect.objectContaining({ source: { old: 'stripe', new: 'admin' } }) }),
+    )
+  })
+
+  it('still lets an admin cancel a Stripe row', async () => {
+    m.getSubscription.mockResolvedValue(row({ status: 'active', source: 'stripe', currentPeriodEnd: FUTURE }))
+    const res = await patch({ status: 'canceled' })
+    expect(res.status).toBe(200)
+    expect(m.updateSubscriptionStatus).toHaveBeenCalledWith('t1', 'canceled')
   })
 
   it('lets an admin expire a lapsed grant without asking for a date', async () => {

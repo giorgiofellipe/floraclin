@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // The win-back discount must never stop a clinic from paying: a bad or
 // expired promotion code falls back to full price, and only that kind of
 // error does.
-const { create, report, retrievePromo } = vi.hoisted(() => ({ create: vi.fn(), report: vi.fn(), retrievePromo: vi.fn() }))
+const { create, report, retrievePromo, retrievePrice } = vi.hoisted(() => ({
+  create: vi.fn(),
+  report: vi.fn(),
+  retrievePromo: vi.fn(),
+  retrievePrice: vi.fn(),
+}))
 
 vi.mock('stripe', async () => {
   const actual = await vi.importActual<typeof import('stripe')>('stripe')
@@ -12,6 +17,7 @@ vi.mock('stripe', async () => {
     customers = { create: vi.fn() }
     checkout = { sessions: { create } }
     promotionCodes = { retrieve: retrievePromo }
+    prices = { retrieve: retrievePrice }
   }
   return { default: FakeStripe }
 })
@@ -25,7 +31,7 @@ vi.mock('@/lib/app-url', () => ({ getAppUrl: () => 'https://app.test' }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: report }))
 
 import Stripe from 'stripe'
-import { checkPromotionCode, clearPromotionCodeCache, createCheckoutSession } from '@/lib/stripe'
+import { checkPromotionCode, clearPromotionCodeCache, createCheckoutSession, getPriceProductId } from '@/lib/stripe'
 
 function invalidRequest(param: string, message: string) {
   return new Stripe.errors.StripeInvalidRequestError({ type: 'invalid_request_error', param, message })
@@ -77,6 +83,7 @@ describe('createCheckoutSession with a win-back promotion code', () => {
 })
 
 describe('checkPromotionCode', () => {
+  const TERMS = { percentOff: 30, amountOffCents: null, duration: 'repeating', durationInMonths: 3, productIds: null }
   const NOW = new Date('2026-10-21T13:00:00.000Z')
   const nowSec = Math.floor(NOW.getTime() / 1000)
   const promo = (over: Record<string, unknown> = {}, coupon: Record<string, unknown> = {}) => ({
@@ -98,8 +105,8 @@ describe('checkPromotionCode', () => {
 
   it('returns the coupon terms for a usable code', async () => {
     retrievePromo.mockResolvedValue(promo())
-    expect(await checkPromotionCode('promo_1', NOW)).toEqual({ percentOff: 30, durationInMonths: 3 })
-    expect(retrievePromo).toHaveBeenCalledWith('promo_1', { expand: ['promotion.coupon'] })
+    expect(await checkPromotionCode('promo_1', NOW)).toEqual(TERMS)
+    expect(retrievePromo).toHaveBeenCalledWith('promo_1', { expand: ['promotion.coupon', 'promotion.coupon.applies_to'] })
   })
 
   it.each([
@@ -107,9 +114,26 @@ describe('checkPromotionCode', () => {
     ['past expires_at', promo({ expires_at: nowSec - 1 })],
     ['out of redemptions', promo({ times_redeemed: 100 })],
     ['with an invalid coupon', promo({}, { valid: false })],
+    ['with an amount off in another currency', promo({}, { percent_off: null, amount_off: 1000, currency: 'usd' })],
   ])('treats a code %s as unusable', async (_name, value) => {
     retrievePromo.mockResolvedValue(value)
     expect(await checkPromotionCode('promo_1', NOW)).toBeNull()
+  })
+
+  it('carries the products the coupon is restricted to', async () => {
+    retrievePromo.mockResolvedValue(promo({}, { applies_to: { products: ['prod_pro'] } }))
+    expect(await checkPromotionCode('promo_1', NOW)).toEqual({ ...TERMS, productIds: ['prod_pro'] })
+  })
+
+  it('reads a BRL amount-off coupon and its duration', async () => {
+    retrievePromo.mockResolvedValue(promo({}, { percent_off: null, amount_off: 5000, currency: 'brl', duration: 'once' }))
+    expect(await checkPromotionCode('promo_1', NOW)).toEqual({
+      percentOff: null,
+      amountOffCents: 5000,
+      duration: 'once',
+      durationInMonths: null,
+      productIds: null,
+    })
   })
 
   it('caches the answer, so the layout does not call Stripe on every render', async () => {
@@ -125,6 +149,31 @@ describe('checkPromotionCode', () => {
     retrievePromo.mockRejectedValueOnce(new Error('stripe down')).mockResolvedValue(promo())
     expect(await checkPromotionCode('promo_1', NOW)).toBeNull()
     expect(report).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ step: 'winback_promo_check' }))
-    expect(await checkPromotionCode('promo_1', new Date(NOW.getTime() + 61 * 1000))).toEqual({ percentOff: 30, durationInMonths: 3 })
+    expect(await checkPromotionCode('promo_1', new Date(NOW.getTime() + 61 * 1000))).toEqual(TERMS)
+  })
+})
+
+describe('getPriceProductId', () => {
+  const NOW = new Date('2026-10-21T13:00:00.000Z')
+
+  beforeEach(() => {
+    retrievePrice.mockReset()
+    clearPromotionCodeCache()
+  })
+
+  it('reads the product id, string or expanded, and caches it for 10 minutes', async () => {
+    retrievePrice.mockResolvedValueOnce({ product: 'prod_pro' }).mockResolvedValueOnce({ product: { id: 'prod_pro2' } })
+    expect(await getPriceProductId('price_pro', NOW)).toBe('prod_pro')
+    expect(await getPriceProductId('price_pro', new Date(NOW.getTime() + 9 * 60 * 1000))).toBe('prod_pro')
+    expect(retrievePrice).toHaveBeenCalledTimes(1)
+    expect(await getPriceProductId('price_pro', new Date(NOW.getTime() + 11 * 60 * 1000))).toBe('prod_pro2')
+  })
+
+  it('returns null on a Stripe error (plan not covered) and retries after a minute', async () => {
+    retrievePrice.mockRejectedValueOnce(new Error('stripe down')).mockResolvedValue({ product: 'prod_pro' })
+    expect(await getPriceProductId('price_pro', NOW)).toBeNull()
+    expect(report).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ step: 'winback_price_product' }))
+    expect(await getPriceProductId('price_pro', new Date(NOW.getTime() + 30 * 1000))).toBeNull()
+    expect(await getPriceProductId('price_pro', new Date(NOW.getTime() + 61 * 1000))).toBe('prod_pro')
   })
 })

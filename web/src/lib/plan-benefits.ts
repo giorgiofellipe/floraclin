@@ -35,3 +35,9 @@ export function recommendedPlanSlug(plans: { slug: string; priceCents: number }[
   if (plans.some((p) => p.slug === 'pro')) return 'pro'
   return [...plans].sort((a, b) => b.priceCents - a.priceCents)[0].slug
 }
+
+/** Plans a clinic can buy: paid and wired to a Stripe price. The paywall and
+ *  the win-back emails both use this, so they agree on what the offer covers. */
+export function sellablePlans<P extends { priceCents: number; stripePriceId: string | null }>(plans: P[]): P[] {
+  return plans.filter((p) => p.priceCents > 0 && !!p.stripePriceId)
+}

@@ -16,7 +16,7 @@ import { effectiveSubscriptionStatus, isStripeDriven, isSubscriptionRowActive } 
 import { publicWinbackOffer } from '@/lib/winback'
 import { getValidatedWinbackOffer } from '@/lib/winback-offer'
 import { getTrialRecap } from '@/db/queries/trial-recap'
-import { planBenefits, recommendedPlanSlug } from '@/lib/plan-benefits'
+import { planBenefits, recommendedPlanSlug, sellablePlans } from '@/lib/plan-benefits'
 import { brCalendarDaysBetween } from '@/lib/dates'
 import { TrialEndingModal } from '@/components/layout/trial-ending-modal'
 import { SubscriptionAccessProvider, type PaywallPlan } from '@/components/layout/subscription-access'
@@ -64,12 +64,16 @@ export default async function PlatformLayout({ children }: { children: React.Rea
     readOnly && subscription?.status === 'past_due' && isStripeDriven(subscription) ? 'payment_update' : 'checkout'
   const needsPlans = readOnly || trialEndsAt !== null
 
-  const [planRows, recap, validatedWinback] = await Promise.all([
-    needsPlans && recovery === 'checkout' ? listPlans(true) : Promise.resolve([]),
+  const paidPlansP =
+    needsPlans && recovery === 'checkout' ? listPlans(true).then(sellablePlans) : Promise.resolve([])
+  const [paidPlans, recap, validatedWinback] = await Promise.all([
+    paidPlansP,
     needsPlans && recovery === 'checkout' ? getTrialRecap(auth.tenantId) : Promise.resolve(null),
-    readOnly && recovery === 'checkout' ? getValidatedWinbackOffer(subscription, now) : Promise.resolve(null),
+    // Per plan: a coupon restricted to some products discounts only those.
+    readOnly && recovery === 'checkout'
+      ? paidPlansP.then((plans) => getValidatedWinbackOffer(subscription, plans, now))
+      : Promise.resolve(null),
   ])
-  const paidPlans = planRows.filter((p) => p.priceCents > 0 && !!p.stripePriceId)
   const recommended = recommendedPlanSlug(paidPlans)
   const paywallPlans: PaywallPlan[] = paidPlans.map((p) => ({
     slug: p.slug,

@@ -68,12 +68,34 @@ export async function PATCH(
         return NextResponse.json({ error: 'A nova data de fim precisa estar no futuro.' }, { status: 400 })
       }
     }
-    // A Stripe row stays a Stripe row on an admin plan change: turning it into
-    // `admin` would cut it off from the webhook and lock a payer at the end of
-    // the billing period.
-    const source = existing.source === 'stripe' ? 'stripe' : 'admin'
+    const planChanged = !!planSlug && planSlug !== existing.plan.slug
     const nextStatus = status ?? existing.status
-    if (!newEnd && grantNeedsNewEnd({ status: nextStatus, source, currentPeriodEnd: existing.currentPeriodEnd }, now)) {
+    const grants = nextStatus === 'active' || nextStatus === 'trialing'
+
+    if (existing.source === 'stripe' && planChanged) {
+      // The plan of a Stripe subscription is its Stripe price: changing it
+      // here would leave the clinic billed for one plan and given another.
+      return NextResponse.json(
+        {
+          error:
+            'Esta clínica assina pelo Stripe. Altere o plano no painel do Stripe ou pelo portal de cobrança (Configurações › Assinatura).',
+          code: 'stripe_plan_change',
+        },
+        { status: 400 },
+      )
+    }
+
+    // Reactivating a cancelled / expired Stripe row has no Stripe
+    // subscription behind it any more: it becomes an admin grant with its own
+    // future end date, like any other grant. Otherwise a Stripe row stays a
+    // Stripe row.
+    const reactivatingStripe =
+      existing.source === 'stripe' && (existing.status === 'canceled' || existing.status === 'expired') && grants
+    const source = existing.source === 'stripe' && !reactivatingStripe ? 'stripe' : 'admin'
+    if (
+      !newEnd &&
+      (reactivatingStripe || grantNeedsNewEnd({ status: nextStatus, source, currentPeriodEnd: existing.currentPeriodEnd }, now))
+    ) {
       return NextResponse.json(
         {
           error: 'Este acesso já terminou. Informe uma nova data de fim no futuro para reativar ou trocar o plano.',
@@ -86,12 +108,13 @@ export async function PATCH(
     const changes: Record<string, { old: unknown; new: unknown }> = {}
     let result = existing
 
-    if (planSlug && planSlug !== existing.plan.slug) {
-      const plan = await getPlanBySlug(planSlug)
+    if (planChanged || reactivatingStripe) {
+      const plan = planChanged ? await getPlanBySlug(planSlug!) : existing.plan
       if (!plan) {
         return NextResponse.json({ error: 'Plan not found' }, { status: 404 })
       }
 
+      // One write for plan, source, status and end.
       const updated = await updateSubscriptionPlan(tenantId, plan.id, source, {
         status: status ?? undefined,
         currentPeriodEnd: newEnd ?? undefined,
@@ -100,30 +123,31 @@ export async function PATCH(
         return NextResponse.json({ error: 'Update failed' }, { status: 500 })
       }
 
-      changes.plan = { old: existing.plan.slug, new: planSlug }
+      if (planChanged) changes.plan = { old: existing.plan.slug, new: planSlug }
+      if (source !== existing.source) changes.source = { old: existing.source, new: source }
       if (status && status !== existing.status) {
         changes.status = { old: existing.status, new: status }
       }
       result = { ...updated, plan } as typeof existing
-    } else if (status && status !== existing.status) {
-      const updated = await updateSubscriptionStatus(tenantId, status)
-      if (!updated) {
-        return NextResponse.json({ error: 'Update failed' }, { status: 500 })
+    } else {
+      if (status && status !== existing.status) {
+        const updated = await updateSubscriptionStatus(tenantId, status)
+        if (!updated) {
+          return NextResponse.json({ error: 'Update failed' }, { status: 500 })
+        }
+        changes.status = { old: existing.status, new: status }
+        result = { ...updated, plan: existing.plan } as typeof existing
       }
-
-      changes.status = { old: existing.status, new: status }
-      result = { ...updated, plan: existing.plan } as typeof existing
-    }
-
-    if (newEnd && !(planSlug && planSlug !== existing.plan.slug)) {
-      const updated = await updateSubscriptionPeriod(tenantId, {
-        currentPeriodStart: result.currentPeriodStart,
-        currentPeriodEnd: newEnd,
-      })
-      if (!updated) {
-        return NextResponse.json({ error: 'Update failed' }, { status: 500 })
+      if (newEnd) {
+        const updated = await updateSubscriptionPeriod(tenantId, {
+          currentPeriodStart: result.currentPeriodStart,
+          currentPeriodEnd: newEnd,
+        })
+        if (!updated) {
+          return NextResponse.json({ error: 'Update failed' }, { status: 500 })
+        }
+        result = { ...result, ...updated, plan: result.plan } as typeof existing
       }
-      result = { ...result, ...updated, plan: result.plan } as typeof existing
     }
     if (newEnd) {
       changes.currentPeriodEnd = { old: existing.currentPeriodEnd, new: newEnd }

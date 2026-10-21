@@ -14,6 +14,7 @@ import {
   TrialRecapTiles,
   TrustRow,
   WinbackBadge,
+  entryPriceLine,
   hasRecap,
   usePlanCheckout,
 } from '@/components/layout/plan-checkout'
@@ -107,6 +108,7 @@ export function ExpiredPaywall() {
 
   const paymentUpdate = recovery === 'payment_update'
   const built = hasRecap(recap)
+  const entryPrice = paymentUpdate ? null : entryPriceLine(plans, winback)
   const copy = paywallCopy({ paymentUpdate, trial: reason === 'trial', built })
 
   return (
@@ -137,6 +139,11 @@ export function ExpiredPaywall() {
             <DialogDescription className="max-w-lg text-[15px] leading-relaxed text-charcoal/80">
               {copy.description}
             </DialogDescription>
+            {entryPrice && (
+              <p className="text-sm font-semibold text-forest" data-testid="paywall-entry-price">
+                {entryPrice}
+              </p>
+            )}
           </header>
 
           {!paymentUpdate && <TrialRecapTiles recap={recap} title="O que sua clínica já tem aqui" />}

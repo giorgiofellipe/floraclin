@@ -9,8 +9,10 @@ import { cn } from '@/lib/utils'
 import { PlanCards, QUIET_ACTION_CLASS, TrialRecapTiles, TrustRow, usePlanCheckout } from '@/components/layout/plan-checkout'
 import { useSubscriptionAccess } from '@/components/layout/subscription-access'
 
-export function trialEndingModalKey(tenantId: string): string {
-  return `floraclin:trial-ending-modal:${tenantId}`
+/** Per trial end, not per clinic: an admin extension moves the end, so the
+ *  heads-up shows again before the new one. */
+export function trialEndingModalKey(tenantId: string, trialEndsAt: string): string {
+  return `floraclin:trial-ending-modal:${tenantId}:${new Date(trialEndsAt).getTime()}`
 }
 
 /** "amanhã às 18:30" / "hoje às 18:30", the banner's and the email's words. */
@@ -21,7 +23,7 @@ export function trialEndingTitle(endsAt: Date, now: Date): string {
 /**
  * One-time heads-up when a free trial has a day (or less) left: what the
  * clinic set up so far and the plans, before the paywall would ever show.
- * Shown once per clinic on this device; dismissal lives in localStorage so
+ * Shown once per trial end on this device; dismissal lives in localStorage so
  * no schema change is needed. Never on Configurações, where the plans are
  * already on screen.
  */
@@ -34,21 +36,23 @@ function subscribeSeen(listener: () => void) {
   return () => seenListeners.delete(listener)
 }
 
-function readSeen(tenantId: string): boolean {
-  if (!tenantId) return true
-  if (seenInMemory.has(tenantId)) return true
+function readSeen(tenantId: string, trialEndsAt: string | null): boolean {
+  if (!tenantId || !trialEndsAt) return true
+  const key = trialEndingModalKey(tenantId, trialEndsAt)
+  if (seenInMemory.has(key)) return true
   try {
-    return window.localStorage.getItem(trialEndingModalKey(tenantId)) !== null
+    return window.localStorage.getItem(key) !== null
   } catch {
     return false // Storage blocked: show it; markSeen keeps it closed for this load.
   }
 }
 
-function markSeen(tenantId: string) {
+function markSeen(tenantId: string, trialEndsAt: string) {
+  const key = trialEndingModalKey(tenantId, trialEndsAt)
   try {
-    window.localStorage.setItem(trialEndingModalKey(tenantId), new Date().toISOString())
+    window.localStorage.setItem(key, new Date().toISOString())
   } catch {
-    seenInMemory.add(tenantId)
+    seenInMemory.add(key)
   }
   seenListeners.forEach((l) => l())
 }
@@ -62,7 +66,7 @@ export function TrialEndingModal() {
   // says "seen" so nothing flashes before hydration.
   const seen = useSyncExternalStore(
     subscribeSeen,
-    () => readSeen(tenantId),
+    () => readSeen(tenantId, trialEndsAt),
     () => true,
   )
   const onBilling = pathname === '/configuracoes' || pathname.startsWith('/configuracoes/')
@@ -70,9 +74,8 @@ export function TrialEndingModal() {
 
   if (readOnly || !trialEndsAt) return null
 
-  function dismiss() {
-    markSeen(tenantId)
-  }
+  const endsAt = trialEndsAt
+  const dismiss = () => markSeen(tenantId, endsAt)
 
   const title = trialEndingTitle(new Date(trialEndsAt), new Date())
 

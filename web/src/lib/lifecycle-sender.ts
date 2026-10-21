@@ -19,10 +19,11 @@ import {
   type LifecycleMessage,
   type LifecycleRenderContext,
 } from '@/lib/lifecycle-messages'
-import { getSubscription } from '@/db/queries/subscriptions'
+import { getSubscription, listPlans } from '@/db/queries/subscriptions'
 import { getTrialRecap } from '@/db/queries/trial-recap'
 import { publicWinbackOffer } from '@/lib/winback'
 import { getValidatedWinbackOffer } from '@/lib/winback-offer'
+import { sellablePlans } from '@/lib/plan-benefits'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { isCanonicalBrPhone, normalizeBrPhone } from '@/lib/phone'
 import { sendPlatformTemplate } from '@/lib/platform-whatsapp'
@@ -129,12 +130,17 @@ export async function deliverLifecycleMessage(
   return { whatsapp, email }
 }
 
+async function paidPlans() {
+  return sellablePlans(await listPlans(true))
+}
+
 /**
  * Live data for messages with a `render`: the trial end, what the clinic
  * built, and a win-back offer only if Stripe confirms the code right now.
  * Loaded inside the claimed send, so a failure here fails that send (and is
  * recorded) rather than sending a half-filled email.
  */
+
 async function loadRenderContext(
   tenantId: string,
   withOffer: boolean,
@@ -142,7 +148,7 @@ async function loadRenderContext(
 ): Promise<LifecycleRenderContext> {
   const [subscription, recap] = await Promise.all([getSubscription(tenantId), getTrialRecap(tenantId)])
   if (!subscription) throw new Error('subscription not found for lifecycle render')
-  const offer = withOffer ? publicWinbackOffer(await getValidatedWinbackOffer(subscription, now)) : null
+  const offer = withOffer ? publicWinbackOffer(await getValidatedWinbackOffer(subscription, await paidPlans(), now)) : null
   return { now, endsAt: subscription.currentPeriodEnd, recap, offer }
 }
 

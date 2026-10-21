@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { formatBrDayMonth } from '@/lib/dates'
 import type { TrialRecap } from '@/lib/trial-recap'
-import type { PublicWinbackOffer } from '@/lib/winback'
+import { durationPhrase, winbackPriceCents, type PublicWinbackOffer } from '@/lib/winback'
 import type { PaywallPlan } from '@/components/layout/subscription-access'
 
 /** The badge on the highlighted plan. A recommendation, not a popularity
@@ -24,10 +24,36 @@ function perInterval(plan: Pick<PaywallPlan, 'billingInterval'>): string {
   return plan.billingInterval === 'year' ? '/ano' : '/mês'
 }
 
-/** Discounted price when the validated win-back coupon is a percentage. */
-export function discountedCents(priceCents: number, offer: PublicWinbackOffer | null): number | null {
-  if (!offer?.percentOff) return null
-  return Math.round(priceCents * (1 - offer.percentOff / 100))
+/** Whole reais without cents ("R$ 99"), cents only when there are some. */
+function formatEntryPrice(cents: number): string {
+  return cents % 100 === 0
+    ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(cents / 100)
+    : formatCents(cents)
+}
+
+/**
+ * "Planos a partir de R$ 99/mês": the entry price, so a phone user sees it
+ * without scrolling to the cards. Under the win-back offer it is the lowest
+ * discounted price, and says so.
+ */
+export function entryPriceLine(plans: PaywallPlan[], offer: PublicWinbackOffer | null): string | null {
+  if (plans.length === 0) return null
+  const priced = plans.map((plan) => {
+    const discounted = winbackPriceCents(plan, offer)
+    return { plan, cents: discounted ?? plan.priceCents, discounted: discounted != null }
+  })
+  const cheapest = priced.reduce((a, b) => (b.cents < a.cents ? b : a))
+  const price = `${formatEntryPrice(cheapest.cents)}${perInterval(cheapest.plan)}`
+  return cheapest.discounted ? `Planos a partir de ${price} com a oferta` : `Planos a partir de ${price}`
+}
+
+/** The fine print under a discounted price: how long, and the price after. */
+function offerTermsLine(plan: PaywallPlan, offer: PublicWinbackOffer): string {
+  if (offer.duration === 'forever') return 'Desconto em todas as mensalidades.'
+  // Same words as the offer label ("nos 3 primeiros meses"), capitalised.
+  const when = durationPhrase(offer).trim()
+  const after = `depois ${formatCents(plan.priceCents)}${perInterval(plan)}.`
+  return when ? `${when[0].toUpperCase()}${when.slice(1)}, ${after}` : `${after[0].toUpperCase()}${after.slice(1)}`
 }
 
 /** Checkout and billing-portal redirects shared by the paywall and the
@@ -83,7 +109,7 @@ export function PlanCard({
   pending: string | null
   onSubscribe: (slug: string) => void
 }) {
-  const discounted = discountedCents(plan.priceCents, offer)
+  const discounted = winbackPriceCents(plan, offer)
   const titleId = `plan-${plan.slug}-title`
   return (
     <section
@@ -118,12 +144,10 @@ export function PlanCard({
           </s>
         )}
       </div>
-      {discounted != null && (
+      {discounted != null && offer && (
         // The full price after the discount, said plainly.
         <p className="mt-1 text-xs text-charcoal/70" data-testid={`paywall-plan-${plan.slug}-terms`}>
-          {offer?.durationInMonths
-            ? `Nos ${offer.durationInMonths} primeiros meses, depois ${formatCents(plan.priceCents)}${perInterval(plan)}.`
-            : `Depois ${formatCents(plan.priceCents)}${perInterval(plan)}.`}
+          {offerTermsLine(plan, offer)}
         </p>
       )}
 
@@ -168,9 +192,10 @@ export function PlanCards({
   onSubscribe: (slug: string) => void
 }) {
   if (plans.length === 0) return null
-  // The recommended plan comes first, stacked on a phone and on the left side
-  // by side, so the visual order, the reading order and the tab order agree.
-  const ordered = [...plans].sort((a, b) => Number(b.recommended) - Number(a.recommended))
+  // Cheapest first (Starter, then the highlighted Pro), stacked on a phone
+  // and left to right side by side: the entry price is the first one seen,
+  // and visual, reading and tab order agree.
+  const ordered = [...plans].sort((a, b) => a.priceCents - b.priceCents)
   return (
     <div className={cn('grid gap-5 pt-3', plans.length > 1 && 'sm:grid-cols-2')}>
       {ordered.map((plan) => (

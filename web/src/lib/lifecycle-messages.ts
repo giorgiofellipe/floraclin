@@ -6,7 +6,6 @@ import { trialRecapLines, usedTrial, type TrialRecap } from '@/lib/trial-recap'
 
 export type LifecycleMessageKey =
   | 'trial_welcome'
-  | 'trial_ending'
   | 'trial_ending_soon'
   | 'trial_last_day'
   | 'trial_winback'
@@ -132,26 +131,6 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
     },
     button: { label: 'Abrir FloraClin', path: '/dashboard' },
     isDue: isTrialing,
-  },
-  {
-    key: 'trial_ending',
-    templateName: 'trial_ending_click',
-    category: 'MARKETING',
-    emailSubject: 'Seu teste termina em 2 dias',
-    body: 'Olá, {{1}}! Seu teste gratuito da FloraClin termina em 2 dias. Para manter a agenda, os pacientes e o WhatsApp funcionando, escolha um plano.',
-    email: {
-      preheader: 'Escolha um plano para continuar usando a agenda e o WhatsApp.',
-      heading: 'Seu teste termina em 2 dias',
-      intro: 'Olá, {{1}}! Seu teste gratuito da FloraClin termina em 2 dias. Para continuar sem interrupção, escolha um plano. Tudo o que você cadastrou continua no lugar:',
-      points: [
-        'Pacientes, prontuários e diagramas faciais',
-        'Agenda e confirmações por WhatsApp',
-        'Histórico financeiro e documentos assinados',
-      ],
-      closing: 'Quer ajuda para escolher o plano? Responda a este e-mail.',
-    },
-    button: { label: 'Ver planos', path: '/configuracoes?tab=assinatura' },
-    isDue: (state) => isTrialing(state) && state.daysLeft === 2,
   },
   {
     key: 'trial_last_day',

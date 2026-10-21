@@ -56,17 +56,30 @@ describe('TrialEndingModal', () => {
     expect(screen.getByTestId('trial-recap')).toHaveTextContent(/3\s*fotos/)
     expect(screen.getByTestId('trial-recap')).not.toHaveTextContent('atendimento')
     expect(modal).toHaveTextContent('Continuar com o Pro')
+    // Starter first, Pro right after it and highlighted.
+    const cards = screen.getAllByTestId(/^paywall-plan-(starter|pro)$/)
+    expect(cards.map((c) => c.dataset.testid)).toEqual(['paywall-plan-starter', 'paywall-plan-pro'])
   })
 
   it('shows once: dismissing it keeps it closed on the next load', async () => {
     const { unmount } = renderModal(TOMORROW_1830)
     fireEvent.click(await screen.findByTestId('trial-ending-later'))
     await waitFor(() => expect(screen.queryByTestId('trial-ending-modal')).not.toBeInTheDocument())
-    expect(window.localStorage.getItem(trialEndingModalKey('t1'))).not.toBeNull()
+    expect(window.localStorage.getItem(trialEndingModalKey('t1', TOMORROW_1830))).not.toBeNull()
     unmount()
 
     renderModal(TOMORROW_1830)
     expect(screen.queryByTestId('trial-ending-modal')).not.toBeInTheDocument()
+  })
+
+  it('shows again when an admin extension moves the trial end', async () => {
+    const { unmount } = renderModal(TOMORROW_1830)
+    fireEvent.click(await screen.findByTestId('trial-ending-later'))
+    await waitFor(() => expect(screen.queryByTestId('trial-ending-modal')).not.toBeInTheDocument())
+    unmount()
+
+    renderModal('2026-10-22T23:00:00.000Z')
+    expect(await screen.findByTestId('trial-ending-modal')).toBeInTheDocument()
   })
 
   it('renders nothing without a trial ending within a day', () => {

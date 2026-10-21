@@ -29,6 +29,10 @@ vi.mock('@/db/queries/subscriptions', () => ({
     firstPaidAt: null,
     currentPeriodEnd: new Date('2026-10-22T21:30:00.000Z'),
   })),
+  listPlans: vi.fn(async () => [
+    { slug: 'starter', name: 'Starter', priceCents: 9900, stripePriceId: 'price_starter' },
+    { slug: 'pro', name: 'Pro', priceCents: 19900, stripePriceId: 'price_pro' },
+  ]),
 }))
 vi.mock('@/db/queries/trial-recap', () => ({
   getTrialRecap: vi.fn(async () => ({ patients: 3, appointments: 5, procedureRecords: 1, photos: 0, diagrams: 0 })),

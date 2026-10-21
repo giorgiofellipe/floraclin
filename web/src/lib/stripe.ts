@@ -250,24 +250,54 @@ export async function updateSubscriptionPrice(
 const PROMO_CHECK_TTL_MS = 10 * 60 * 1000
 const PROMO_CHECK_ERROR_TTL_MS = 60 * 1000
 
-/** What the paywall needs to show the discount (strikethrough price). */
+/**
+ * The coupon behind a usable promotion code: everything the paywall and the
+ * emails need to describe the discount and strike the price, read from Stripe
+ * so the copy can never drift from what checkout applies.
+ */
 export interface PromotionCodeTerms {
+  /** Exactly one of percentOff / amountOffCents is set. */
   percentOff: number | null
+  /** BRL cents; a coupon in another currency is treated as unusable. */
+  amountOffCents: number | null
+  duration: 'once' | 'repeating' | 'forever'
+  /** Set only when duration is `repeating`. */
   durationInMonths: number | null
+  /** Products the coupon is restricted to (`applies_to`); null = every product. */
+  productIds: string[] | null
 }
 
 const promoCheckCache = new Map<string, { terms: PromotionCodeTerms | null; until: number }>()
+const priceProductCache = new Map<string, { productId: string | null; until: number }>()
 
-/** Test hook: the cache is module state. */
+/** Test hook: the caches are module state. */
 export function clearPromotionCodeCache(): void {
   promoCheckCache.clear()
+  priceProductCache.clear()
+}
+
+function couponTerms(coupon: Stripe.Coupon): PromotionCodeTerms | null {
+  if (!coupon.valid) return null
+  const percentOff = coupon.percent_off ?? null
+  const amountOffCents =
+    coupon.amount_off != null && (coupon.currency ?? '').toLowerCase() === 'brl' ? coupon.amount_off : null
+  if (!percentOff && !amountOffCents) return null
+  const duration = coupon.duration
+  return {
+    percentOff: percentOff || null,
+    amountOffCents: percentOff ? null : amountOffCents,
+    duration,
+    durationInMonths: duration === 'repeating' ? (coupon.duration_in_months ?? null) : null,
+    productIds: coupon.applies_to ? [...coupon.applies_to.products] : null,
+  }
 }
 
 /**
  * The coupon terms when Stripe would accept this promotion code on a Checkout
  * Session right now (active, not past `expires_at`, redemptions left, coupon
- * still valid), else null. The paywall and the win-back emails only promise
- * a discount that passes this.
+ * still valid, a percentage or a BRL amount), else null. The paywall and the
+ * win-back emails only promise a discount that passes this; which plans it
+ * covers is decided from `productIds` (see `getPriceProductId`).
  *
  * Cached per server instance for 10 minutes (1 minute after a Stripe error)
  * so the platform layout does not call Stripe on every render. A Stripe
@@ -285,7 +315,8 @@ export async function checkPromotionCode(
   let ttl = PROMO_CHECK_TTL_MS
   try {
     const promo = await getStripeClient().promotionCodes.retrieve(promotionCodeId, {
-      expand: ['promotion.coupon'],
+      // applies_to is not returned unless expanded.
+      expand: ['promotion.coupon', 'promotion.coupon.applies_to'],
     })
     const coupon = promo.promotion?.coupon
     const nowSec = Math.floor(now.getTime() / 1000)
@@ -295,18 +326,34 @@ export async function checkPromotionCode(
       (promo.max_redemptions == null || promo.times_redeemed < promo.max_redemptions) &&
       // Not expanded means Stripe did not hand it back; do not guess.
       typeof coupon === 'object' &&
-      coupon !== null &&
-      coupon.valid
-    if (usable) {
-      terms = {
-        percentOff: coupon.percent_off ?? null,
-        durationInMonths: coupon.duration === 'repeating' ? (coupon.duration_in_months ?? null) : null,
-      }
-    }
+      coupon !== null
+    if (usable) terms = couponTerms(coupon)
   } catch (err) {
     reportSideEffectFailure(err, { area: 'billing', step: 'winback_promo_check', extra: { promotionCodeId } })
     ttl = PROMO_CHECK_ERROR_TTL_MS
   }
   promoCheckCache.set(promotionCodeId, { terms, until: now.getTime() + ttl })
   return terms
+}
+
+/**
+ * The Stripe product a price belongs to, to match a plan against a coupon's
+ * `applies_to`. Cached like the promotion check; an error returns null, so
+ * the plan counts as not covered and shows its full price.
+ */
+export async function getPriceProductId(priceId: string, now: Date = new Date()): Promise<string | null> {
+  const cached = priceProductCache.get(priceId)
+  if (cached && cached.until > now.getTime()) return cached.productId
+
+  let productId: string | null = null
+  let ttl = PROMO_CHECK_TTL_MS
+  try {
+    const price = await getStripeClient().prices.retrieve(priceId)
+    productId = typeof price.product === 'string' ? price.product : price.product.id
+  } catch (err) {
+    reportSideEffectFailure(err, { area: 'billing', step: 'winback_price_product', extra: { priceId } })
+    ttl = PROMO_CHECK_ERROR_TTL_MS
+  }
+  priceProductCache.set(priceId, { productId, until: now.getTime() + ttl })
+  return productId
 }

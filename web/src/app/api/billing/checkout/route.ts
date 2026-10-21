@@ -86,7 +86,9 @@ export async function POST(request: Request) {
     }
 
     // Eligibility is decided here, from the stored row, never from the client.
-    const winback = await getValidatedWinbackOffer(subscription)
+    // Only when the coupon covers this plan; otherwise checkout is full price,
+    // exactly what the paywall showed for it.
+    const winback = await getValidatedWinbackOffer(subscription, [plan])
     const { url } = await createCheckoutSession(ctx.tenantId, planSlug, subscription?.stripeCustomerId ?? null, {
       promotionCodeId: winback?.promotionCodeId ?? null,
     })
