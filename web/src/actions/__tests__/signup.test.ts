@@ -16,6 +16,7 @@ const {
   cookieGetMock,
   reportSideEffectFailureMock,
   notifyDiscordMock,
+  attributeReferralMock,
 } = vi.hoisted(() => ({
   tenantInsertSpy: vi.fn(),
   tenantExecuteSpy: vi.fn(),
@@ -27,6 +28,7 @@ const {
   cookieGetMock: vi.fn(),
   reportSideEffectFailureMock: vi.fn(),
   notifyDiscordMock: vi.fn(),
+  attributeReferralMock: vi.fn(),
 }))
 
 vi.mock('next-auth', () => {
@@ -114,6 +116,11 @@ vi.mock('@/lib/observability', () => ({
 
 vi.mock('@/lib/discord', () => ({
   notifyDiscord: (...args: unknown[]) => notifyDiscordMock(...args),
+}))
+
+vi.mock('@/lib/referral/attribution', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/referral/attribution')>()),
+  attributeReferral: (...args: unknown[]) => attributeReferralMock(...args),
 }))
 
 describe('signUp action', () => {
@@ -358,6 +365,51 @@ describe('signUp action', () => {
     const target = vi.mocked(redirect).mock.calls.at(-1)?.[0] as string
     expect(target).toContain('/confirm-email')
     expect(target).not.toContain('meta_event_id')
+  })
+
+  describe('referral attribution', () => {
+    beforeEach(() => {
+      attributeReferralMock.mockResolvedValue({ outcome: 'created', referralId: 'r1', status: 'trial' })
+    })
+
+    it('attributes the cookie code as a link and clears the cookie', async () => {
+      withCookies({ floraclin_ref: 'MECA7K' })
+      await signUp(null, validFormData({ email: 'ref-cookie@test.com' }))
+
+      expect(attributeReferralMock).toHaveBeenCalledWith({ referredTenantId: 'tenant-1', rawCode: 'MECA7K', capturedVia: 'link' })
+      expect(cookieSetMock).toHaveBeenCalledWith('floraclin_ref', '', expect.objectContaining({ maxAge: 0, path: '/' }))
+    })
+
+    it('lets the typed field override the cookie', async () => {
+      withCookies({ floraclin_ref: 'MECA7K' })
+      const formData = validFormData({ email: 'ref-field@test.com' })
+      formData.set('referralCode', ' abc234 ')
+      await signUp(null, formData)
+
+      expect(attributeReferralMock).toHaveBeenCalledWith({ referredTenantId: 'tenant-1', rawCode: 'ABC234', capturedVia: 'signup_field' })
+    })
+
+    it('does not clear the cookie when nothing was attributed', async () => {
+      attributeReferralMock.mockResolvedValue({ outcome: 'skipped', reason: 'unknown_or_inactive' })
+      withCookies({ floraclin_ref: 'MECA7K' })
+      await signUp(null, validFormData({ email: 'ref-skip@test.com' }))
+
+      expect(cookieSetMock).not.toHaveBeenCalledWith('floraclin_ref', expect.anything(), expect.anything())
+    })
+
+    it('does not call attribution without a code', async () => {
+      await signUp(null, validFormData({ email: 'ref-none@test.com' }))
+      expect(attributeReferralMock).not.toHaveBeenCalled()
+    })
+
+    it('reports and still redirects when attribution throws', async () => {
+      attributeReferralMock.mockRejectedValue(new Error('boom'))
+      withCookies({ floraclin_ref: 'MECA7K' })
+      await signUp(null, validFormData({ email: 'ref-throw@test.com' }))
+
+      expect(reportSideEffectFailureMock).toHaveBeenCalledWith(expect.any(Error), { area: 'referral', step: 'attribute_signup' })
+      expect(redirect).toHaveBeenCalledWith('/confirm-email')
+    })
   })
 
   it('issues a confirmation token and sends the confirmation email', async () => {
