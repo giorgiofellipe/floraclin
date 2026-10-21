@@ -5,6 +5,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { brToday, endOfBrDay } from '@/lib/dates'
 import { grantNeedsNewEnd } from '@/lib/subscription-access'
+import {
+  stripeCancelMessage,
+  stripePeriodOpenMessage,
+  stripePeriodStillOpen,
+  stripePlanChangeMessage,
+  stripeStillActiveMessage,
+} from '@/lib/admin-stripe-guard'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -233,6 +240,23 @@ export function SubscriptionDetailDialog({
     </div>
   ) : null
   const isTrialing = subscription.status === 'trialing'
+  // Same rule the API enforces (lib/admin-stripe-guard), shown up front. The
+  // detail endpoint asked Stripe where the subscription stands; when it could
+  // not tell (null), the API decides on submit.
+  const stripeState: string | null = stripeDriven ? (detail?.stripeState ?? null) : null
+  const stripeReactivationBlock =
+    stripeState === 'pending_cancel' && stripePeriodStillOpen(subscription)
+      ? stripePeriodOpenMessage(subscription.currentPeriodEnd)
+      : stripeState === 'pending_cancel' || stripeState === 'live'
+        ? stripeStillActiveMessage()
+        : null
+  const backOnly = (
+    <div className="flex justify-end pt-1">
+      <Button variant="outline" size="sm" onClick={() => setActionMode('none')}>
+        Voltar
+      </Button>
+    </div>
+  )
   const canCancel = !isCanceledOrExpired
 
   return (
@@ -307,8 +331,7 @@ export function SubscriptionDetailDialog({
             <ActionPanel title="Alterar plano">
               {stripeDriven ? (
                 <p className="text-sm text-mid" data-testid="admin-stripe-plan-change">
-                  Esta clínica assina pelo Stripe. Altere o plano no painel do Stripe ou pelo portal de cobrança
-                  (Configurações › Assinatura).
+                  {stripePlanChangeMessage()}
                 </p>
               ) : (
                 <>
@@ -325,11 +348,7 @@ export function SubscriptionDetailDialog({
                 </>
               )}
               {stripeDriven ? (
-                <div className="flex justify-end pt-1">
-                  <Button variant="outline" size="sm" onClick={() => setActionMode('none')}>
-                    Voltar
-                  </Button>
-                </div>
+                backOnly
               ) : (
                 <ActionButtons
                   onConfirm={handleChangePlan}
@@ -405,34 +424,56 @@ export function SubscriptionDetailDialog({
 
           {actionMode === 'cancel' && (
             <ActionPanel title="Cancelar assinatura">
-              <p className="text-sm text-mid">
-                Tem certeza que deseja cancelar a assinatura de{' '}
-                <strong className="text-charcoal">{subscription.tenantName}</strong>?
-              </p>
-              <ActionButtons
-                onConfirm={handleCancel}
-                onCancel={() => setActionMode('none')}
-                isPending={isPending}
-                confirmLabel="Cancelar assinatura"
-                variant="destructive"
-              />
+              {stripeDriven ? (
+                <>
+                  <p className="text-sm text-mid" data-testid="admin-stripe-cancel">
+                    {stripeCancelMessage()}
+                  </p>
+                  {backOnly}
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-mid">
+                    Tem certeza que deseja cancelar a assinatura de{' '}
+                    <strong className="text-charcoal">{subscription.tenantName}</strong>?
+                  </p>
+                  <ActionButtons
+                    onConfirm={handleCancel}
+                    onCancel={() => setActionMode('none')}
+                    isPending={isPending}
+                    confirmLabel="Cancelar assinatura"
+                    variant="destructive"
+                  />
+                </>
+              )}
             </ActionPanel>
           )}
 
           {actionMode === 'reactivate' && (
             <ActionPanel title="Reativar assinatura">
-              <p className="text-sm text-mid">
-                Reativar a assinatura de{' '}
-                <strong className="text-charcoal">{subscription.tenantName}</strong>?
-              </p>
-              {newEndField}
-              <ActionButtons
-                onConfirm={handleReactivate}
-                onCancel={() => setActionMode('none')}
-                isPending={isPending}
-                confirmLabel="Reativar"
-                disabled={newEndMissing}
-              />
+              {stripeReactivationBlock ? (
+                <>
+                  <p className="text-sm text-mid" data-testid="admin-stripe-reactivation-blocked">
+                    {stripeReactivationBlock}
+                  </p>
+                  {backOnly}
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-mid">
+                    Reativar a assinatura de{' '}
+                    <strong className="text-charcoal">{subscription.tenantName}</strong>?
+                  </p>
+                  {newEndField}
+                  <ActionButtons
+                    onConfirm={handleReactivate}
+                    onCancel={() => setActionMode('none')}
+                    isPending={isPending}
+                    confirmLabel="Reativar"
+                    disabled={newEndMissing}
+                  />
+                </>
+              )}
             </ActionPanel>
           )}
         </div>

@@ -8,9 +8,37 @@ import {
   updateSubscriptionStatus,
 } from '@/db/queries/subscriptions'
 import { grantNeedsNewEnd } from '@/lib/subscription-access'
+import { stripeAdminBlock } from '@/lib/admin-stripe-guard'
+import { getStripeSubscriptionState, type StripeSubscriptionState } from '@/lib/stripe'
+import { reportSideEffectFailure } from '@/lib/observability'
 import { getCreditUsage } from '@/db/queries/whatsapp-credits'
 import { createAuditLog } from '@/lib/audit'
 import { handleApiError } from '@/lib/api-error'
+
+/**
+ * For a cancelled / expired Stripe row with a subscription id: what Stripe
+ * says about it (see getStripeSubscriptionState), whatever our period says.
+ * Null when there is nothing to ask; 'unavailable' when Stripe could not be
+ * reached.
+ */
+async function stripeStateFor(row: {
+  source?: string | null
+  status: string
+  stripeSubscriptionId?: string | null
+}): Promise<StripeSubscriptionState | 'unavailable' | null> {
+  if (row.source !== 'stripe' || !row.stripeSubscriptionId) return null
+  if (row.status !== 'canceled' && row.status !== 'expired') return null
+  try {
+    return await getStripeSubscriptionState(row.stripeSubscriptionId)
+  } catch (err) {
+    reportSideEffectFailure(err, {
+      area: 'billing',
+      step: 'admin_stripe_state',
+      extra: { subscriptionId: row.stripeSubscriptionId },
+    })
+    return 'unavailable'
+  }
+}
 
 export async function GET(
   req: Request,
@@ -25,9 +53,10 @@ export async function GET(
       return NextResponse.json({ error: 'Subscription not found' }, { status: 404 })
     }
 
-    const creditUsage = await getCreditUsage(tenantId)
+    const [creditUsage, state] = await Promise.all([getCreditUsage(tenantId), stripeStateFor(subscription)])
+    const stripeState = state === 'unavailable' ? null : state
 
-    return NextResponse.json({ data: { ...subscription, creditUsage } })
+    return NextResponse.json({ data: { ...subscription, creditUsage, stripeState } })
   } catch (error) {
     return handleApiError(error, req)
   }
@@ -72,17 +101,22 @@ export async function PATCH(
     const nextStatus = status ?? existing.status
     const grants = nextStatus === 'active' || nextStatus === 'trialing'
 
-    if (existing.source === 'stripe' && planChanged) {
-      // The plan of a Stripe subscription is its Stripe price: changing it
-      // here would leave the clinic billed for one plan and given another.
-      return NextResponse.json(
-        {
-          error:
-            'Esta clínica assina pelo Stripe. Altere o plano no painel do Stripe ou pelo portal de cobrança (Configurações › Assinatura).',
-          code: 'stripe_plan_change',
-        },
-        { status: 400 },
-      )
+    let stripeState: StripeSubscriptionState | null = null
+    if (grants && !planChanged) {
+      const state = await stripeStateFor(existing)
+      if (state === 'unavailable') {
+        return NextResponse.json(
+          { error: 'Não foi possível consultar o Stripe agora. Tente novamente em instantes.', code: 'stripe_unavailable' },
+          { status: 503 },
+        )
+      }
+      stripeState = state
+    }
+    const blocked = stripeAdminBlock(existing, { planChanged, nextStatus, newEnd: !!newEnd }, now, {
+      stripeState,
+    })
+    if (blocked) {
+      return NextResponse.json({ error: blocked.message, code: blocked.code }, { status: 400 })
     }
 
     // Reactivating a cancelled / expired Stripe row has no Stripe

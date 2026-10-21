@@ -336,3 +336,58 @@ describe('BillingSettings plan cards after a lapse', () => {
     await waitFor(() => expect(screen.getAllByRole('button', { name: /assinar/i })).toHaveLength(2))
   })
 })
+
+describe('BillingSettings — a running discount (win-back coupon)', () => {
+  function renderWithDiscount(discount: Record<string, unknown> | null) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url === '/api/billing/usage') {
+          return {
+            ok: true,
+            json: async () => ({
+              ...USAGE_RESPONSE,
+              plan: { name: 'Starter', slug: 'starter', priceCents: 9900, features: {} },
+              discount,
+            }),
+          } as Response
+        }
+        if (url === '/api/billing/plans') {
+          return {
+            ok: true,
+            json: async () => ({
+              data: [{ id: 'p1', slug: 'starter', name: 'Starter', priceCents: 9900, features: {}, limits: {} }],
+            }),
+          } as Response
+        }
+        throw new Error(`unexpected fetch: ${url}`)
+      }),
+    )
+    render(<BillingSettings />)
+  }
+
+  const year = Number(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', year: 'numeric' }))
+
+  it('shows the discounted price and when it ends, on the plan and its card', async () => {
+    // 01:00 UTC on 31/12 is still 30/12 in São Paulo.
+    renderWithDiscount({ discountedCents: 6930, fullCents: 9900, duration: 'repeating', endsAt: `${year}-12-31T01:00:00.000Z` })
+    expect(await screen.findByTestId('billing-discounted-price')).toHaveTextContent(
+      'R$ 69,30/mês até 30/12, depois R$ 99,00',
+    )
+    expect(screen.getAllByText('R$ 69,30/mês até 30/12, depois R$ 99,00')).toHaveLength(2)
+    expect(screen.queryByText('R$ 99,00/mês')).toBeNull()
+  })
+
+  it('carries the year when the discount ends in another one', async () => {
+    renderWithDiscount({ discountedCents: 6930, fullCents: 9900, duration: 'repeating', endsAt: `${year + 1}-02-10T15:00:00.000Z` })
+    expect(await screen.findByTestId('billing-discounted-price')).toHaveTextContent(
+      `R$ 69,30/mês até 10/02/${year + 1}, depois R$ 99,00`,
+    )
+  })
+
+  it('shows the plain price without a discount', async () => {
+    renderWithDiscount(null)
+    expect(await screen.findByText('R$ 99,00/mês')).toBeInTheDocument()
+    expect(screen.queryByTestId('billing-discounted-price')).toBeNull()
+  })
+})

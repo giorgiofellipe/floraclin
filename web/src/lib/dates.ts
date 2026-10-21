@@ -87,6 +87,11 @@ export function formatBrDayMonth(date: Date | string): string {
   return formatInTimeZone(new Date(date), BR_TZ, 'dd/MM')
 }
 
+/** `dd/MM/yyyy` of an instant in São Paulo, e.g. "03/11/2026". */
+export function formatBrDate(date: Date | string): string {
+  return formatInTimeZone(new Date(date), BR_TZ, 'dd/MM/yyyy')
+}
+
 export function brToday(): string {
   return formatInTimeZone(new Date(), BR_TZ, 'yyyy-MM-dd')
 }

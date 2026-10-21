@@ -216,6 +216,28 @@ export async function retrieveSubscription(subscriptionId: string) {
 }
 
 /**
+ * Where a Stripe subscription stands, for an admin about to reactivate our
+ * row: `pending_cancel` (set to cancel at its period end; the clinic can
+ * resume it in the billing portal), `live` (still billing, e.g. resumed
+ * before our webhook caught up), or `ended` (Stripe will not charge again).
+ * Our row reads `canceled` for all three. Throws on a Stripe error.
+ */
+export type StripeSubscriptionState = 'pending_cancel' | 'live' | 'ended'
+
+export async function getStripeSubscriptionState(subscriptionId: string): Promise<StripeSubscriptionState> {
+  let sub: Stripe.Subscription
+  try {
+    sub = await retrieveSubscription(subscriptionId)
+  } catch (err) {
+    // Gone at Stripe (deleted, or an id from another mode): nothing to resume.
+    if (err instanceof Stripe.errors.StripeInvalidRequestError && err.code === 'resource_missing') return 'ended'
+    throw err
+  }
+  if (sub.status === 'canceled' || sub.status === 'incomplete_expired') return 'ended'
+  return sub.cancel_at_period_end ? 'pending_cancel' : 'live'
+}
+
+/**
  * Moves an existing subscription onto a different price.
  *
  * Checkout always opens a NEW subscription, so sending an existing subscriber
@@ -265,23 +287,39 @@ export interface PromotionCodeTerms {
   durationInMonths: number | null
   /** Products the coupon is restricted to (`applies_to`); null = every product. */
   productIds: string[] | null
+  /** `restrictions.first_time_transaction`: only customers who never paid. */
+  firstTimeTransaction: boolean
+  /** `restrictions.minimum_amount` in BRL cents, compared with the plan price. */
+  minimumAmountCents: number | null
 }
 
 const promoCheckCache = new Map<string, { terms: PromotionCodeTerms | null; until: number }>()
-const priceProductCache = new Map<string, { productId: string | null; until: number }>()
+const priceInfoCache = new Map<string, { info: PriceInfo | null; until: number }>()
+const priorPurchaseCache = new Map<string, { prior: boolean; until: number }>()
 
 /** Test hook: the caches are module state. */
 export function clearPromotionCodeCache(): void {
   promoCheckCache.clear()
-  priceProductCache.clear()
+  priceInfoCache.clear()
+  priorPurchaseCache.clear()
 }
 
-function couponTerms(coupon: Stripe.Coupon): PromotionCodeTerms | null {
+function couponTerms(
+  coupon: Stripe.Coupon,
+  restrictions: Stripe.PromotionCode.Restrictions | null | undefined,
+): PromotionCodeTerms | null {
   if (!coupon.valid) return null
   const percentOff = coupon.percent_off ?? null
   const amountOffCents =
     coupon.amount_off != null && (coupon.currency ?? '').toLowerCase() === 'brl' ? coupon.amount_off : null
   if (!percentOff && !amountOffCents) return null
+  // A BRL currency option wins; a minimum only in another currency can never
+  // be met by a BRL price, so the code is unusable here.
+  const brlOption = restrictions?.currency_options?.brl?.minimum_amount
+  const baseMinimum = restrictions?.minimum_amount ?? null
+  const baseIsBrl = (restrictions?.minimum_amount_currency ?? '').toLowerCase() === 'brl'
+  if (brlOption == null && baseMinimum != null && !baseIsBrl) return null
+  const minimumAmount = brlOption ?? baseMinimum
   const duration = coupon.duration
   return {
     percentOff: percentOff || null,
@@ -289,6 +327,8 @@ function couponTerms(coupon: Stripe.Coupon): PromotionCodeTerms | null {
     duration,
     durationInMonths: duration === 'repeating' ? (coupon.duration_in_months ?? null) : null,
     productIds: coupon.applies_to ? [...coupon.applies_to.products] : null,
+    firstTimeTransaction: restrictions?.first_time_transaction === true,
+    minimumAmountCents: minimumAmount,
   }
 }
 
@@ -297,7 +337,7 @@ function couponTerms(coupon: Stripe.Coupon): PromotionCodeTerms | null {
  * Session right now (active, not past `expires_at`, redemptions left, coupon
  * still valid, a percentage or a BRL amount), else null. The paywall and the
  * win-back emails only promise a discount that passes this; which plans it
- * covers is decided from `productIds` (see `getPriceProductId`).
+ * covers is decided from `productIds` (see `getPriceInfo`).
  *
  * Cached per server instance for 10 minutes (1 minute after a Stripe error)
  * so the platform layout does not call Stripe on every render. A Stripe
@@ -327,7 +367,7 @@ export async function checkPromotionCode(
       // Not expanded means Stripe did not hand it back; do not guess.
       typeof coupon === 'object' &&
       coupon !== null
-    if (usable) terms = couponTerms(coupon)
+    if (usable) terms = couponTerms(coupon, promo.restrictions)
   } catch (err) {
     reportSideEffectFailure(err, { area: 'billing', step: 'winback_promo_check', extra: { promotionCodeId } })
     ttl = PROMO_CHECK_ERROR_TTL_MS
@@ -336,24 +376,170 @@ export async function checkPromotionCode(
   return terms
 }
 
-/**
- * The Stripe product a price belongs to, to match a plan against a coupon's
- * `applies_to`. Cached like the promotion check; an error returns null, so
- * the plan counts as not covered and shows its full price.
- */
-export async function getPriceProductId(priceId: string, now: Date = new Date()): Promise<string | null> {
-  const cached = priceProductCache.get(priceId)
-  if (cached && cached.until > now.getTime()) return cached.productId
+/** What the win-back check needs from a Stripe price. */
+export interface PriceInfo {
+  productId: string
+  /** BRL cents; null for a price in another currency or without a fixed amount. */
+  unitAmountCents: number | null
+}
 
-  let productId: string | null = null
+/**
+ * The Stripe product a price belongs to (to match a plan against a coupon's
+ * `applies_to`) and its amount (Stripe checks a promotion code's
+ * `minimum_amount` against it, not against our `plans.price_cents`). Cached
+ * like the promotion check; an error returns null, so the plan counts as not
+ * covered and shows its full price.
+ */
+export async function getPriceInfo(priceId: string, now: Date = new Date()): Promise<PriceInfo | null> {
+  const cached = priceInfoCache.get(priceId)
+  if (cached && cached.until > now.getTime()) return cached.info
+
+  let info: PriceInfo | null = null
   let ttl = PROMO_CHECK_TTL_MS
   try {
     const price = await getStripeClient().prices.retrieve(priceId)
-    productId = typeof price.product === 'string' ? price.product : price.product.id
+    info = {
+      productId: typeof price.product === 'string' ? price.product : price.product.id,
+      unitAmountCents: (price.currency ?? '').toLowerCase() === 'brl' ? (price.unit_amount ?? null) : null,
+    }
   } catch (err) {
     reportSideEffectFailure(err, { area: 'billing', step: 'winback_price_product', extra: { priceId } })
     ttl = PROMO_CHECK_ERROR_TTL_MS
   }
-  priceProductCache.set(priceId, { productId, until: now.getTime() + ttl })
-  return productId
+  priceInfoCache.set(priceId, { info, until: now.getTime() + ttl })
+  return info
+}
+
+/** Stripe statuses of a subscription that never actually started. */
+const NEVER_STARTED: ReadonlySet<Stripe.Subscription.Status> = new Set(['incomplete', 'incomplete_expired'])
+
+/**
+ * Whether a Stripe customer has ever paid or held a subscription, i.e. would
+ * fail a promotion code's `first_time_transaction` restriction. Only asked
+ * for a clinic that already has a Stripe customer (one that opened checkout
+ * before); our own row answers the common case (see getWinbackOffer).
+ *
+ * Cached like the promotion check. A Stripe error counts as "has purchased":
+ * hiding the offer is better than promising a discount checkout would refuse.
+ */
+export async function customerHasPriorPurchase(customerId: string, now: Date = new Date()): Promise<boolean> {
+  const cached = priorPurchaseCache.get(customerId)
+  if (cached && cached.until > now.getTime()) return cached.prior
+
+  let prior = true
+  let ttl = PROMO_CHECK_TTL_MS
+  try {
+    const stripe = getStripeClient()
+    // Stripe's rule is "no successful payments or invoices"; any subscription
+    // that got past checkout counts too (a trial one has a paid R$ 0 invoice).
+    // The 100 most recent charges: a successful one older than that also
+    // left a paid invoice or a subscription, which the other two lists catch.
+    const [subs, charges, invoices] = await Promise.all([
+      stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 100 }),
+      stripe.charges.list({ customer: customerId, limit: 100 }),
+      stripe.invoices.list({ customer: customerId, status: 'paid', limit: 1 }),
+    ])
+    prior =
+      subs.data.some((sub) => !NEVER_STARTED.has(sub.status)) ||
+      charges.data.some((charge) => charge.status === 'succeeded') ||
+      invoices.data.length > 0
+  } catch (err) {
+    reportSideEffectFailure(err, { area: 'billing', step: 'winback_prior_purchase', extra: { customerId } })
+    ttl = PROMO_CHECK_ERROR_TTL_MS
+  }
+  priorPurchaseCache.set(customerId, { prior, until: now.getTime() + ttl })
+  return prior
+}
+
+/**
+ * A discount running on a Stripe subscription (e.g. the win-back coupon),
+ * for the billing page: what the clinic pays now and until when.
+ */
+export interface SubscriptionDiscount {
+  /** Per month with the discount, BRL cents. */
+  discountedCents: number
+  /** Per month without it, BRL cents (the Stripe price). */
+  fullCents: number
+  duration: 'repeating' | 'forever'
+  /** When Stripe stops applying it (repeating only); null otherwise. */
+  endsAt: string | null
+}
+
+const subscriptionDiscountCache = new Map<string, { discount: SubscriptionDiscount | null; until: number }>()
+
+/** Test hook. */
+export function clearSubscriptionDiscountCache(): void {
+  subscriptionDiscountCache.clear()
+}
+
+function discountCoupon(d: string | Stripe.Discount): Stripe.Coupon | null {
+  if (typeof d === 'string') return null
+  const coupon = d.source?.coupon
+  return coupon && typeof coupon === 'object' ? coupon : null
+}
+
+/**
+ * The discount on a subscription right now, read from Stripe (subscription
+ * level, where Checkout puts a promotion code). One retrieve, cached per
+ * server instance for 10 minutes and never past the discount's own end.
+ * Null when there is none or Stripe errors (the page then shows the plain
+ * price, which is what it showed before).
+ */
+export async function getSubscriptionDiscount(
+  subscriptionId: string,
+  now: Date = new Date(),
+  /** Our plan id: part of the cache key, so a plan switch reads Stripe again. */
+  planKey: string = '',
+): Promise<SubscriptionDiscount | null> {
+  const cacheKey = `${subscriptionId}:${planKey}`
+  const cached = subscriptionDiscountCache.get(cacheKey)
+  if (cached && cached.until > now.getTime()) return cached.discount
+
+  let discount: SubscriptionDiscount | null = null
+  let until = now.getTime() + PROMO_CHECK_TTL_MS
+  try {
+    const sub = await getStripeClient().subscriptions.retrieve(subscriptionId, {
+      // applies_to is only returned when expanded (4 levels, Stripe's limit).
+      expand: ['discounts.source.coupon.applies_to'],
+    })
+    const item = sub.items?.data?.[0]
+    const price = item?.price
+    const fullCents =
+      price && (price.currency ?? '').toLowerCase() === 'brl' && price.unit_amount != null
+        ? price.unit_amount * (item.quantity ?? 1)
+        : null
+    const nowSec = Math.floor(now.getTime() / 1000)
+    const active = (sub.discounts ?? []).find(
+      (d): d is Stripe.Discount =>
+        typeof d !== 'string' && d.start <= nowSec && (d.end == null || d.end > nowSec) && !!discountCoupon(d),
+    )
+    const coupon = active ? discountCoupon(active) : null
+    const productId = price ? (typeof price.product === 'string' ? price.product : price.product?.id) : null
+    // A coupon limited to other products stays on the subscription after a
+    // plan switch but no longer discounts it.
+    const applies = !coupon?.applies_to || (!!productId && coupon.applies_to.products.includes(productId))
+    // A `once` coupon is spent on the first invoice, which checkout already
+    // paid, so there is nothing ahead to show.
+    if (fullCents != null && active && coupon && applies && coupon.duration !== 'once') {
+      const off = coupon.percent_off
+        ? Math.round((fullCents * coupon.percent_off) / 100)
+        : coupon.amount_off != null && (coupon.currency ?? '').toLowerCase() === 'brl'
+          ? coupon.amount_off
+          : null
+      if (off) {
+        discount = {
+          discountedCents: Math.max(0, fullCents - off),
+          fullCents,
+          duration: coupon.duration === 'forever' ? 'forever' : 'repeating',
+          endsAt: active.end != null ? new Date(active.end * 1000).toISOString() : null,
+        }
+        if (active.end != null) until = Math.min(until, active.end * 1000)
+      }
+    }
+  } catch (err) {
+    reportSideEffectFailure(err, { area: 'billing', step: 'subscription_discount', extra: { subscriptionId } })
+    until = now.getTime() + PROMO_CHECK_ERROR_TTL_MS
+  }
+  subscriptionDiscountCache.set(cacheKey, { discount, until })
+  return discount
 }

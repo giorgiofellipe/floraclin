@@ -44,3 +44,18 @@ export async function getTrialRecap(tenantId: string): Promise<TrialRecap> {
     diagrams: Number(row?.diagrams ?? 0),
   }
 }
+
+/**
+ * Whether the clinic "used" its trial (see `usedTrial`): at least one
+ * non-deleted patient and one non-deleted appointment. Two indexed EXISTS,
+ * for the win-back offer, which only goes to clinics that got going.
+ */
+export async function getTrialUsage(tenantId: string): Promise<{ hasPatient: boolean; hasAppointment: boolean }> {
+  const result = await db.execute(sql`
+    select
+      exists (select 1 from floraclin.patients where tenant_id = ${tenantId} and deleted_at is null) as has_patient,
+      exists (select 1 from floraclin.appointments where tenant_id = ${tenantId} and deleted_at is null) as has_appointment
+  `)
+  const [row] = rowsFromExecuteResult<{ has_patient: boolean; has_appointment: boolean }>(result)
+  return { hasPatient: row?.has_patient === true, hasAppointment: row?.has_appointment === true }
+}

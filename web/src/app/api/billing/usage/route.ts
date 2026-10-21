@@ -7,6 +7,7 @@ import { tenantUsers, patients } from '@/db/schema'
 import { eq, and, isNull, sql } from 'drizzle-orm'
 import { getCreditUsage } from '@/db/queries/whatsapp-credits'
 import { handleApiError } from '@/lib/api-error'
+import { getSubscriptionDiscount } from '@/lib/stripe'
 
 type PlanLimits = Record<string, number>
 
@@ -41,14 +42,24 @@ export async function GET(request: Request) {
         )
       )
 
-    const whatsappUsage = await getCreditUsage(ctx.tenantId)
+    const status = effectiveSubscriptionStatus(subscription) ?? subscription.status
+    // A coupon on the Stripe subscription (the win-back offer): the page shows
+    // what the clinic actually pays and until when. Only for a live Stripe
+    // subscription; cached in getSubscriptionDiscount.
+    const discountP =
+      subscription.source === 'stripe' &&
+      subscription.stripeSubscriptionId &&
+      (status === 'active' || status === 'trialing' || status === 'past_due' || status === 'canceled')
+        ? getSubscriptionDiscount(subscription.stripeSubscriptionId, new Date(), subscription.planId)
+        : Promise.resolve(null)
+    const [whatsappUsage, discount] = await Promise.all([getCreditUsage(ctx.tenantId), discountP])
 
     return NextResponse.json({
       subscription: {
         // The effective status, so this page agrees with the gate: a trial
         // or gift past its end reads `expired` even before the 00:00 BRT
         // cron rewrites the row, and can buy its current plan again.
-        status: effectiveSubscriptionStatus(subscription) ?? subscription.status,
+        status,
         currentPeriodEnd: subscription.currentPeriodEnd,
         stripeSubscriptionId: subscription.stripeSubscriptionId,
         // Drives the billing-portal link. A lapsed tenant still has a
@@ -62,6 +73,7 @@ export async function GET(request: Request) {
         priceCents: subscription.plan.priceCents,
         features: subscription.plan.features,
       },
+      discount,
       usage: {
         users: {
           used: usersRow?.count ?? 0,

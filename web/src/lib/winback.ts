@@ -41,7 +41,12 @@ export type PublicWinbackOffer = Omit<ValidatedWinbackOffer, 'promotionCodeId'>
 const DEFAULT_DAYS = 14
 
 export interface WinbackRow extends SubscriptionAccessRow {
+  /** Needed for the "used the trial" check; without it there is no offer. */
+  tenantId?: string
   firstPaidAt?: Date | string | null
+  /** Checked against Stripe's first-time-customer rule when present (see
+   *  getValidatedWinbackOffer); a `trial` row is not expected to have one. */
+  stripeCustomerId?: string | null
 }
 
 export function getWinbackOffer(
@@ -53,6 +58,8 @@ export function getWinbackOffer(
   if (!promotionCodeId || !row) return null
   // Only a trial that ran out, never someone who has paid before or lost a
   // gift: the offer is there to convert, not to discount existing customers.
+  // This row is the cheap first-time check: a tenant that ever subscribed
+  // through Stripe has left `trial` for good (stripe, then admin or gift).
   if (row.source !== 'trial' || row.firstPaidAt || row.stripeSubscriptionId) return null
   if (effectiveSubscriptionStatus(row, now) !== 'expired' || !row.currentPeriodEnd) return null
 
