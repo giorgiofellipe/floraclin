@@ -204,7 +204,7 @@ export const ConversationList = forwardRef<ConversationListHandle, ConversationL
               />
             </div>
             {onNewConversation && (
-              <ReadOnlyGuard className="shrink-0">
+              <ReadOnlyGuard label="Nova conversa" className="shrink-0">
                 <Button
                   variant="outline"
                   size="icon-sm"

@@ -287,7 +287,7 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
           </span>
         </div>
 
-        <ReadOnlyGuard>
+        <ReadOnlyGuard label="Nova Cobrança">
           <Button
             className="bg-forest text-cream hover:bg-sage transition-colors shadow-sm"
             onClick={() => setShowPaymentForm(true)}

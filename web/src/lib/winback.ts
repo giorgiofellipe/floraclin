@@ -1,3 +1,4 @@
+import { addDays } from 'date-fns'
 import { effectiveSubscriptionStatus, type SubscriptionAccessRow } from '@/lib/subscription-access'
 
 /**
@@ -43,7 +44,7 @@ export function getWinbackOffer(
 
   const parsedDays = Number.parseInt(env.WINBACK_OFFER_DAYS ?? '', 10)
   const days = Number.isFinite(parsedDays) && parsedDays > 0 ? parsedDays : DEFAULT_DAYS
-  const endsAt = new Date(new Date(row.currentPeriodEnd).getTime() + days * 24 * 60 * 60 * 1000)
+  const endsAt = addDays(new Date(row.currentPeriodEnd), days)
   if (now.getTime() > endsAt.getTime()) return null
 
   return {

@@ -53,7 +53,7 @@ import { usePractitioners, useAppointmentProcedureTypes } from '@/hooks/queries/
 import type { Patient } from '@/db/queries/patients'
 import type { Role } from '@/types'
 import { formatBrPhone, toWaMeUrl, tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
-import { ReadOnlyGuard } from '@/components/layout/subscription-access'
+import { ReadOnlyGuard, useReadOnly } from '@/components/layout/subscription-access'
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -111,6 +111,7 @@ export function PatientDetailContent({
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
+  const readOnly = useReadOnly()
   const [showPaymentForm, setShowPaymentForm] = useState(false)
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
   const [openingWhatsapp, setOpeningWhatsapp] = useState(false)
@@ -295,21 +296,33 @@ export function PatientDetailContent({
             {/* Right: actions */}
             <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
               <TooltipProvider delay={300}>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="outline"
-                        size="icon-sm"
-                        className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
-                        onClick={() => setShowAppointmentForm(true)}
-                      >
-                        <CalendarPlus className="size-4" />
-                      </Button>
-                    }
-                  />
-                  <TooltipContent side="bottom"><p>Novo Agendamento</p></TooltipContent>
-                </Tooltip>
+                {readOnly ? (
+                  <ReadOnlyGuard label="Novo Agendamento">
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
+                    >
+                      <CalendarPlus className="size-4" />
+                    </Button>
+                  </ReadOnlyGuard>
+                ) : (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          variant="outline"
+                          size="icon-sm"
+                          className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
+                          onClick={() => setShowAppointmentForm(true)}
+                        >
+                          <CalendarPlus className="size-4" />
+                        </Button>
+                      }
+                    />
+                    <TooltipContent side="bottom"><p>Novo Agendamento</p></TooltipContent>
+                  </Tooltip>
+                )}
 
                 <Tooltip>
                   <TooltipTrigger
@@ -345,7 +358,7 @@ export function PatientDetailContent({
 
               </TooltipProvider>
 
-              <ReadOnlyGuard>
+              <ReadOnlyGuard label={hasActiveService ? 'Continuar Atendimento' : 'Iniciar Atendimento'}>
                 <Link
                   href={`/pacientes/${patient.id}/atendimento`}
                   className={cn(

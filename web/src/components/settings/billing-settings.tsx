@@ -27,7 +27,7 @@ import {
   CreditCardIcon,
   AlertTriangleIcon,
 } from 'lucide-react'
-import { differenceInDays } from 'date-fns'
+import { brCalendarDaysBetween } from '@/lib/dates'
 
 type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled' | 'expired'
 
@@ -310,6 +310,10 @@ export function BillingSettings() {
       // refetch whatever drives this page.
       await update()
       queryClient.invalidateQueries({ queryKey: ['billing'] })
+      // The platform layout (read-only mode, banner, paywall) is a server
+      // component that client navigation keeps as is; re-render it so a
+      // clinic that just paid stops looking locked.
+      router.refresh()
     },
     onError: (err) => {
       // The webhook is still the source of truth and will very likely
@@ -393,6 +397,7 @@ export function BillingSettings() {
         toast.success('Plano alterado. A diferença é ajustada proporcionalmente.')
         await update()
         queryClient.invalidateQueries({ queryKey: ['billing'] })
+        router.refresh()
         return
       }
       window.location.href = url
@@ -431,6 +436,7 @@ export function BillingSettings() {
       toast.success('Assinatura reativada.')
       await update()
       queryClient.invalidateQueries({ queryKey: ['billing'] })
+      router.refresh()
     },
     onError: (err: Error) => {
       toast.error(err.message)
@@ -527,8 +533,13 @@ export function BillingSettings() {
 
   let statusLabel = statusConfig.label
   if (subscription.status === 'trialing') {
-    const daysLeft = differenceInDays(new Date(subscription.currentPeriodEnd), new Date())
-    statusLabel = `Teste gratuito · ${Math.max(daysLeft, 0)} dias restantes`
+    // Same day count and wording as the platform banner: BR calendar days,
+    // and the last day is "termina hoje", never "0 dias restantes".
+    const daysLeft = Math.max(0, brCalendarDaysBetween(new Date(), new Date(subscription.currentPeriodEnd)))
+    statusLabel =
+      daysLeft === 0
+        ? 'Teste gratuito · termina hoje'
+        : `Teste gratuito · ${daysLeft} ${daysLeft === 1 ? 'dia restante' : 'dias restantes'}`
   }
 
   return (

@@ -518,7 +518,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                     <MessageBubble
                       key={msg.id}
                       message={msg}
-                      onRetry={isConfirmationTemplate(msg.templateName) ? handleRetryMessage : undefined}
+                      onRetry={!readOnly && isConfirmationTemplate(msg.templateName) ? handleRetryMessage : undefined}
                       retrying={retryingMessageId === msg.id}
                     />
                   ))}
@@ -531,7 +531,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 
         {/* Input area */}
         <div className="border-t bg-[#F0F2F5]">
-          {!windowOpen && (
+          {!windowOpen && !readOnly && (
             <div className="flex items-center gap-1.5 bg-amber-50 px-4 py-2 text-xs text-amber-700 border-b border-amber-100">
               Janela de 24h fechada: novas mensagens ficam na fila
               <InfoPopover content={WINDOW_CLOSED_HELP} className="cursor-help">

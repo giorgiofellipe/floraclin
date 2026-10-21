@@ -77,6 +77,11 @@ describe('isSubscriptionActive', () => {
     expect(await isSubscriptionActive(TENANT)).toBe(true)
   })
 
+  it('keeps a Stripe-driven trialing subscription active past its period end', async () => {
+    limitMock.mockResolvedValue([{ status: 'trialing', source: 'stripe', stripeSubscriptionId: 'sub_1', currentPeriodEnd: past }])
+    expect(await isSubscriptionActive(TENANT)).toBe(true)
+  })
+
   it('treats a row with a Stripe subscription id as Stripe-driven even if an admin changed its source', async () => {
     limitMock.mockResolvedValue([{ status: 'active', source: 'admin', stripeSubscriptionId: 'sub_1', currentPeriodEnd: past }])
     expect(await isSubscriptionActive(TENANT)).toBe(true)

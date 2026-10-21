@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { getSubscription } from '@/db/queries/subscriptions'
+import { effectiveSubscriptionStatus } from '@/lib/subscription-access'
 import { db } from '@/db/client'
 import { tenantUsers, patients } from '@/db/schema'
 import { eq, and, isNull, sql } from 'drizzle-orm'
@@ -44,7 +45,10 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       subscription: {
-        status: subscription.status,
+        // The effective status, so this page agrees with the gate: a trial
+        // or gift past its end reads `expired` even before the 00:00 BRT
+        // cron rewrites the row, and can buy its current plan again.
+        status: effectiveSubscriptionStatus(subscription) ?? subscription.status,
         currentPeriodEnd: subscription.currentPeriodEnd,
         stripeSubscriptionId: subscription.stripeSubscriptionId,
         // Drives the billing-portal link. A lapsed tenant still has a

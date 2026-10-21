@@ -13,7 +13,7 @@ import type { Message } from '@/components/whatsapp/message-bubble'
 import { cn } from '@/lib/utils'
 import { useReadOnly } from '@/components/layout/subscription-access'
 
-type ConfigStatus = 'loading' | 'configured' | 'not_configured' | 'no_access' | 'subscription_expired'
+type ConfigStatus = 'loading' | 'configured' | 'not_configured' | 'no_access'
 
 // Selected conversation lives in the URL so browser / Android back closes it
 // on mobile and links from other screens can open one directly.
@@ -156,9 +156,10 @@ export default function WhatsAppPage() {
     async function checkConfig() {
       try {
         const res = await fetch('/api/whatsapp/conversations?limit=1')
-        if (res.status === 402) {
-          setConfigStatus('subscription_expired')
-        } else if (res.status === 403) {
+        // An inactive subscription is not a config state: the inbox stays
+        // readable and ChatPanel swaps the composer for a notice (read-only
+        // mode, from the platform layout). This GET never returns 402.
+        if (res.status === 403) {
           // 403 covers two distinct cases: own-number mode without a
           // finished setup vs. the user's role lacking WhatsApp access.
           const body = await res.json().catch(() => null)
@@ -464,25 +465,6 @@ export default function WhatsAppPage() {
       <div className={cn('flex items-center justify-center', STATUS_HEIGHT_CLASS)}>
         <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
-    )
-  }
-
-  // Subscription not active (expired, canceled or past_due past its period end)
-  if (configStatus === 'subscription_expired') {
-    return (
-      <WhatsAppEmptyState
-        title="Assinatura inativa"
-        body="Sua assinatura não está ativa. Assine um plano para voltar a enviar e receber mensagens pelo WhatsApp."
-        action={
-          <Button
-            className="bg-forest text-cream hover:bg-sage"
-            nativeButton={false}
-            render={<Link href="/configuracoes?tab=assinatura" />}
-          >
-            Ver planos
-          </Button>
-        }
-      />
     )
   }
 

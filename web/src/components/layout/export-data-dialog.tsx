@@ -35,7 +35,17 @@ const EXPORTS = [
   },
 ] as const
 
-export function ExportDataDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function ExportDataDialog({
+  open,
+  onOpenChange,
+  onNavigate,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  /** Called when an export is picked, before navigating: the paywall uses it
+   *  to get out of the way of the page being opened. */
+  onNavigate?: () => void
+}) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md" data-testid="export-data-dialog">
@@ -50,8 +60,11 @@ export function ExportDataDialog({ open, onOpenChange }: { open: boolean; onOpen
             <li key={item.href}>
               <Link
                 href={item.href}
-                onClick={() => onOpenChange(false)}
-                className="flex items-start gap-3 rounded-lg border border-[#E8ECEF] p-3 transition-colors hover:bg-[#F4F6F8]"
+                onClick={() => {
+                  onOpenChange(false)
+                  onNavigate?.()
+                }}
+                className="flex items-start gap-3 rounded-lg border border-topbar-border p-3 transition-colors hover:bg-content-bg"
               >
                 <DownloadIcon className="mt-0.5 size-4 shrink-0 text-sage" />
                 <span>
@@ -75,14 +88,14 @@ export function ExportDataDialog({ open, onOpenChange }: { open: boolean; onOpen
 }
 
 /** Inline "Exportar meus dados" trigger with its own dialog. */
-export function ExportDataLink({ className, label = 'Exportar meus dados' }: { className?: string; label?: string }) {
+export function ExportDataLink({ className, onNavigate }: { className?: string; onNavigate?: () => void }) {
   const [open, setOpen] = useState(false)
   return (
     <>
       <button type="button" className={className} onClick={() => setOpen(true)} data-testid="export-data-link">
-        {label}
+        Exportar meus dados
       </button>
-      <ExportDataDialog open={open} onOpenChange={setOpen} />
+      <ExportDataDialog open={open} onOpenChange={setOpen} onNavigate={onNavigate} />
     </>
   )
 }

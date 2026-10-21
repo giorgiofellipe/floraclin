@@ -373,14 +373,10 @@ export async function listAllSubscriptions(filters?: {
 function lapsedCondition(now: Date) {
   return and(
     lt(tenantSubscriptions.currentPeriodEnd, now),
-    or(
-      eq(tenantSubscriptions.status, 'trialing'),
-      and(
-        eq(tenantSubscriptions.status, 'active'),
-        ne(tenantSubscriptions.source, 'stripe'),
-        isNull(tenantSubscriptions.stripeSubscriptionId),
-      ),
-    ),
+    or(eq(tenantSubscriptions.status, 'trialing'), eq(tenantSubscriptions.status, 'active')),
+    // Mirrors `isStripeDriven`: Stripe owns those statuses, the webhook moves them.
+    ne(tenantSubscriptions.source, 'stripe'),
+    isNull(tenantSubscriptions.stripeSubscriptionId),
   )
 }
 

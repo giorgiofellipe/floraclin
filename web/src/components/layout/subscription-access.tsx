@@ -1,7 +1,11 @@
 'use client'
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import { useRouter } from 'next/navigation'
+import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+
+const LOCK_REFRESH_WINDOW_MS = 24 * 60 * 60 * 1000
 
 export const READ_ONLY_TOOLTIP = 'Modo leitura: assine um plano para criar ou editar.'
 
@@ -49,8 +53,13 @@ export function SubscriptionAccessProvider({
   canSubscribe,
   plans,
   winback,
+  lockAt = null,
 }: {
   children: ReactNode
+  /** When a running trial / grant ends (ISO), so an open tab re-renders the
+   *  layout into read-only mode at that instant instead of only failing
+   *  saves with 402 until the next full load. */
+  lockAt?: string | null
   readOnly: boolean
   reason: 'trial' | 'subscription' | null
   tenantId: string
@@ -59,6 +68,17 @@ export function SubscriptionAccessProvider({
   winback: { label: string; endsAt: string } | null
 }) {
   const [paywallOpen, setPaywallOpen] = useState(false)
+  const router = useRouter()
+
+  useEffect(() => {
+    if (readOnly || !lockAt) return
+    const ms = new Date(lockAt).getTime() - Date.now()
+    // Only within a day: longer timers are pointless for a tab and
+    // setTimeout overflows past ~24.8 days anyway.
+    if (!(ms >= 0 && ms <= LOCK_REFRESH_WINDOW_MS)) return
+    const id = window.setTimeout(() => router.refresh(), ms + 1000)
+    return () => window.clearTimeout(id)
+  }, [readOnly, lockAt, router])
   const openPaywall = useCallback(() => setPaywallOpen(true), [])
   const closePaywall = useCallback(() => setPaywallOpen(false), [])
 
@@ -88,8 +108,19 @@ export function useReadOnly(): boolean {
  * Works for buttons and links alike: `inert` removes the child from focus and
  * pointer handling, so the wrapper is the only thing the user can reach.
  */
-export function ReadOnlyGuard({ children, className }: { children: ReactNode; className?: string }) {
+export function ReadOnlyGuard({
+  children,
+  label,
+  className,
+}: {
+  children: ReactNode
+  /** The control's own name, e.g. "Novo Paciente". `inert` hides the child
+   *  from assistive tech too, so the wrapper has to carry it. */
+  label: string
+  className?: string
+}) {
   const { readOnly, openPaywall } = useSubscriptionAccess()
+  const descriptionId = useId()
   if (!readOnly) return <>{children}</>
 
   return (
@@ -101,9 +132,12 @@ export function ReadOnlyGuard({ children, className }: { children: ReactNode; cl
               role="button"
               tabIndex={0}
               aria-disabled="true"
-              aria-label={READ_ONLY_TOOLTIP}
+              // The control keeps its own name ("Novo Paciente"); the reason
+              // it is unavailable is the description.
+              aria-label={label}
+              aria-describedby={descriptionId}
               data-testid="read-only-guard"
-              className={['inline-flex cursor-not-allowed', className].filter(Boolean).join(' ')}
+              className={cn('inline-flex cursor-not-allowed', className)}
               onClick={openPaywall}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -116,6 +150,9 @@ export function ReadOnlyGuard({ children, className }: { children: ReactNode; cl
         >
           <span inert className="pointer-events-none inline-flex opacity-50">
             {children}
+          </span>
+          <span id={descriptionId} className="sr-only">
+            {READ_ONLY_TOOLTIP}
           </span>
         </TooltipTrigger>
         <TooltipContent side="bottom">

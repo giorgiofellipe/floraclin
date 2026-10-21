@@ -146,7 +146,9 @@ export function CalendarView({
   const [editingAppointment, setEditingAppointment] = React.useState<AppointmentWithDetails | null>(
     () => initialAppointments.find((a) => a.id === autoOpenAppointmentId) ?? null
   )
-  const [formOpen, setFormOpen] = React.useState(!!autoOpenNew || !!editingAppointment)
+  // `?open=new` deep links (checklist, lifecycle email) open nothing in
+  // read-only mode; an existing appointment still opens for reading.
+  const [formOpen, setFormOpen] = React.useState((!!autoOpenNew && !readOnly) || !!editingAppointment)
   const [defaultFormDate, setDefaultFormDate] = React.useState<string>('')
   const [defaultFormTime, setDefaultFormTime] = React.useState<string>('')
 
@@ -452,7 +454,7 @@ export function CalendarView({
               <span className="hidden md:inline">Bloquear</span>
             </Button>
           )}
-          <ReadOnlyGuard className="shrink-0">
+          <ReadOnlyGuard label="Agendar" className="shrink-0">
             <Button size="sm" className="shrink-0 bg-forest text-cream hover:bg-sage transition-colors" onClick={handleNewAppointment} data-testid="calendar-new-appointment" aria-label="Agendar">
               <Plus className="size-4" />
               <span className="hidden md:inline">Agendar</span>

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { X } from 'lucide-react'
-import { brCalendarDaysBetween } from '@/lib/dates'
+import { brCalendarDaysBetween, formatBrTime } from '@/lib/dates'
 import { ExportDataLink } from '@/components/layout/export-data-dialog'
 
 interface SubscriptionBannerProps {
@@ -15,14 +15,6 @@ interface SubscriptionBannerProps {
 }
 
 const SUBSCRIBE_HREF = '/configuracoes?tab=assinatura'
-
-function formatBrTime(iso: string): string {
-  return new Intl.DateTimeFormat('pt-BR', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'America/Sao_Paulo',
-  }).format(new Date(iso))
-}
 
 function SubscribeButton({ tone }: { tone: 'red' | 'amber' }) {
   const color =
@@ -37,7 +29,12 @@ function SubscribeButton({ tone }: { tone: 'red' | 'amber' }) {
   )
 }
 
-export function SubscriptionBanner({ subscriptionStatus, currentPeriodEnd, subscriptionSource }: SubscriptionBannerProps) {
+export function SubscriptionBanner({
+  subscriptionStatus,
+  currentPeriodEnd,
+  // Callers that predate the prop only ever showed trials as `expired`.
+  subscriptionSource = 'trial',
+}: SubscriptionBannerProps) {
   const [dismissed, setDismissed] = useState(false)
 
   if (!subscriptionStatus || subscriptionStatus === 'active') {
@@ -109,7 +106,7 @@ export function SubscriptionBanner({ subscriptionStatus, currentPeriodEnd, subsc
   if (subscriptionStatus === 'expired') {
     // A gift or admin grant that ran out arrives here too; only a trial
     // should be told its trial ended.
-    const isTrial = !subscriptionSource || subscriptionSource === 'trial'
+    const isTrial = subscriptionSource === 'trial'
     return (
       <div
         role="status"

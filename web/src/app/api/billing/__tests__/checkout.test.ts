@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
  * Switching plans used to double-bill.
@@ -64,6 +64,10 @@ const STARTER_ACTIVE = {
   stripeCustomerId: 'cus_1',
   stripeSubscriptionId: 'sub_starter',
 }
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -250,6 +254,5 @@ describe('POST /api/billing/checkout', () => {
 
     expect(res.status).toBe(200)
     expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: 'promo_winback' })
-    vi.unstubAllEnvs()
   })
 })

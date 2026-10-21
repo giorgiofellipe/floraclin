@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/db/queries/subscriptions', () => ({ expireLapsedSubscriptions: vi.fn() }))
 vi.mock('@/lib/cron-monitor', () => ({
@@ -14,6 +14,9 @@ const req = (auth?: string) =>
 beforeEach(() => {
   vi.mocked(expireLapsedSubscriptions).mockReset()
   vi.stubEnv('CRON_SECRET', 's3cret')
+})
+afterEach(() => {
+  vi.unstubAllEnvs()
 })
 
 describe('GET /api/cron/subscription-expiry', () => {

@@ -163,7 +163,7 @@ export function ExpenseList() {
           </span>
         </div>
 
-        <ReadOnlyGuard>
+        <ReadOnlyGuard label="Nova Despesa">
           <Button
             className="bg-forest text-cream hover:bg-sage transition-colors shadow-sm"
             onClick={() => setShowForm(true)}

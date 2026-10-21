@@ -12,7 +12,7 @@ import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
-import { effectiveSubscriptionStatus, isSubscriptionRowActive } from '@/lib/subscription-access'
+import { effectiveSubscriptionStatus, isStripeDriven, isSubscriptionRowActive } from '@/lib/subscription-access'
 import { getWinbackOffer, publicWinbackOffer } from '@/lib/winback'
 import { SubscriptionAccessProvider, type PaywallPlan } from '@/components/layout/subscription-access'
 import { ExpiredPaywall } from '@/components/layout/expired-paywall'
@@ -49,6 +49,13 @@ export default async function PlatformLayout({ children }: { children: React.Rea
         .map((p) => ({ slug: p.slug, name: p.name, priceCents: p.priceCents, billingInterval: p.billingInterval }))
     : []
   const winback = readOnly ? publicWinbackOffer(getWinbackOffer(subscription, now)) : null
+  // A running trial / gift / admin grant locks at an exact instant; the
+  // provider re-renders this layout then. Stripe rows follow the webhook.
+  const lockAt =
+    !readOnly && subscription && !isStripeDriven(subscription) &&
+    (subscription.status === 'trialing' || subscription.status === 'active')
+      ? subscription.currentPeriodEnd.toISOString()
+      : null
 
   // Build tenant options for switcher (only relevant if user has >1 tenant)
   const tenantOptions = userTenants.map((t) => ({
@@ -73,6 +80,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
       canSubscribe={auth.role === 'owner'}
       plans={paywallPlans}
       winback={winback}
+      lockAt={lockAt}
     >
     <div className="min-h-screen bg-[#F4F6F8]">
       <Sidebar
@@ -101,7 +109,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
         <SubscriptionBanner
           subscriptionStatus={displayStatus}
           currentPeriodEnd={subscription?.currentPeriodEnd?.toISOString() ?? null}
-          subscriptionSource={subscription?.source ?? null}
+          subscriptionSource={subscription?.source}
         />
         <InstallBanner />
         <main className="flex-1 p-4 md:p-6">{children}</main>

@@ -65,6 +65,16 @@ export function parseLocalDate(ymd: string, time: string = '12:00:00'): Date {
  * "Today" as a `YYYY-MM-DD` string in BR time — regardless of host TZ.
  * Replaces `format(new Date(), 'yyyy-MM-dd')`, which uses process TZ.
  */
+/** `HH:mm` of an instant in São Paulo, e.g. "18:00". */
+export function formatBrTime(date: Date | string): string {
+  return formatInTimeZone(new Date(date), BR_TZ, 'HH:mm')
+}
+
+/** `dd/MM` of an instant in São Paulo, e.g. "03/11". */
+export function formatBrDayMonth(date: Date | string): string {
+  return formatInTimeZone(new Date(date), BR_TZ, 'dd/MM')
+}
+
 export function brToday(): string {
   return formatInTimeZone(new Date(), BR_TZ, 'yyyy-MM-dd')
 }

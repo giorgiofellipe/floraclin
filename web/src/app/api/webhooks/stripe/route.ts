@@ -149,8 +149,9 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
  * us as a failed charge, and the period check decides when access stops.
  *
  * `paused` is Stripe not collecting: a trial that ends with no payment
- * method lands there. Holding our `trialing` would be the worst answer,
- * because trialing access ignores the period end entirely and would never
+ * method lands there. Holding our `trialing` would be the worst answer:
+ * a Stripe-driven `trialing` row is never cut off by its period end (Stripe
+ * owns that status, see lib/subscription-access.ts), so it would never
  * lapse. `past_due` stops at the period end and reads correctly in the UI.
  *
  * `incomplete` returns null and the row is left alone: that is a checkout

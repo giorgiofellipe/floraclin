@@ -7,6 +7,11 @@ import { reportSideEffectFailure } from '@/lib/observability'
 
 let stripeClient: Stripe | null = null
 
+function isPromotionCodeError(err: unknown): boolean {
+  if (!(err instanceof Stripe.errors.StripeInvalidRequestError)) return false
+  return (err.param ?? '').startsWith('discounts') || /promotion|coupon|discount/i.test(err.message)
+}
+
 export function getStripeClient(): Stripe {
   if (stripeClient) return stripeClient
 
@@ -67,7 +72,9 @@ export async function createCheckoutSession(
     } catch (err) {
       // An expired, exhausted or mistyped promotion code must never stop a
       // clinic from paying: report it and fall back to full price.
-      if (!(err instanceof Stripe.errors.StripeInvalidRequestError)) throw err
+      // Only for errors about the discount itself: anything else (a bad
+      // customer, a bad price) would fail the same way without it.
+      if (!isPromotionCodeError(err)) throw err
       reportSideEffectFailure(err, { area: 'billing', step: 'winback_discount', extra: { tenantId, planSlug } })
       session = await stripe.checkout.sessions.create(base)
     }

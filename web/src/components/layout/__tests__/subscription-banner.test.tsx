@@ -6,7 +6,7 @@ import { SubscriptionBanner } from '../subscription-banner'
  * `canceled` means two different things to the person reading it, and the
  * banner used to tell them only the first: "você mantém acesso até o fim do
  * período contratado". Nothing moves the status on when that period closes
- * (the expiry cron only looks at trials), so a lapsed customer kept being
+ * (the expiry cron never moves `canceled`), so a lapsed customer kept being
  * reassured about access they no longer had, and the "Reativar" link went to
  * a page whose only offer was a different plan from the one they had.
  */

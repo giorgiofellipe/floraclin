@@ -13,6 +13,8 @@
  *   depends on the 00:00 BRT expiry cron having run yet.
  * - `canceled` and `past_due` honour the already-paid period.
  */
+import type { SubscriptionStatus } from '@/db/queries/subscriptions'
+
 export interface SubscriptionAccessRow {
   status: string
   source?: string | null
@@ -33,8 +35,9 @@ export function isSubscriptionRowActive(row: SubscriptionAccessRow | null | unde
   // Fail closed: a missing row means the tenant is blocked.
   if (!row) return false
   switch (row.status) {
+    // Stripe can report `trialing` too (the webhook maps it); like `active`,
+    // that status is Stripe's to change, not ours.
     case 'trialing':
-      return periodOpen(row, now)
     case 'active':
       return isStripeDriven(row) ? true : periodOpen(row, now)
     case 'canceled':
@@ -52,10 +55,10 @@ export function isSubscriptionRowActive(row: SubscriptionAccessRow | null | unde
 export function effectiveSubscriptionStatus(
   row: SubscriptionAccessRow | null | undefined,
   now: Date = new Date(),
-): string | null {
+): SubscriptionStatus | null {
   if (!row) return null
   if ((row.status === 'trialing' || row.status === 'active') && !isSubscriptionRowActive(row, now)) {
     return 'expired'
   }
-  return row.status
+  return row.status as SubscriptionStatus
 }

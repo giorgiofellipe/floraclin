@@ -30,7 +30,7 @@ import {
   DialogClose,
 } from '@/components/ui/dialog'
 import { PlusIcon, SearchIcon, PencilIcon, TrashIcon, ChevronLeftIcon, ChevronRightIcon, UsersIcon } from 'lucide-react'
-import { ReadOnlyGuard } from '@/components/layout/subscription-access'
+import { ReadOnlyGuard, useReadOnly } from '@/components/layout/subscription-access'
 
 interface PatientListProps {
   result: PaginatedResult<Patient>
@@ -46,7 +46,10 @@ export function PatientList({ result, search: initialSearch = '', isFetching = f
   const novoParam = searchParams.get('novo')
   const nomeParam = searchParams.get('nome')
   const telefoneParam = searchParams.get('telefone')
-  const [formOpen, setFormOpen] = useState(novoParam === '1')
+  // `?novo=1` comes from the trial checklist and a lifecycle email; in
+  // read-only mode it must not open a form whose save would 402.
+  const readOnly = useReadOnly()
+  const [formOpen, setFormOpen] = useState(novoParam === '1' && !readOnly)
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null)
   const [prefillData] = useState(
     novoParam === '1' ? { fullName: nomeParam ?? '', phone: telefoneParam ?? '' } : null
@@ -129,7 +132,7 @@ export function PatientList({ result, search: initialSearch = '', isFetching = f
           Buscar
         </Button>
         <div className="flex-1" />
-        <ReadOnlyGuard>
+        <ReadOnlyGuard label="Novo Paciente">
           <Button onClick={handleNewPatient} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="patient-new-button">
             <PlusIcon className="size-4" data-icon="inline-start" />
             Novo Paciente

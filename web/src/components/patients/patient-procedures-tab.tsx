@@ -227,7 +227,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
             {encounters.length} {encounters.length === 1 ? 'atendimento' : 'atendimentos'}
           </span>
         </div>
-        <ReadOnlyGuard>
+        <ReadOnlyGuard label="Novo Atendimento">
           <Link
             href={atendimentoHref}
             onClick={handleNewAtendimentoClick}
@@ -256,7 +256,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
           <p className="text-[13px] text-mid mt-1 mb-5">
             Inicie o primeiro atendimento deste paciente.
           </p>
-          <ReadOnlyGuard>
+          <ReadOnlyGuard label="Iniciar Atendimento">
             <Link
               href={`/pacientes/${patientId}/atendimento`}
               className="inline-flex items-center gap-2 text-[13px] font-medium text-forest hover:text-sage transition-colors"
