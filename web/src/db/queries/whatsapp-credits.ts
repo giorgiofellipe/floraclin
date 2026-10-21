@@ -75,7 +75,16 @@ async function initialReferralBonus(
   }
 }
 
-export async function getOrCreateCurrentPeriod(tenantId: string, exec: typeof db = db): Promise<CreditPeriod> {
+/**
+ * `opts.initialBonus`: the bonus a row created by this call starts with. `raiseReferralBonus`
+ * passes its freshly computed target (§7: a new month starts from the count at its creation);
+ * other callers fall back to the latest reward event.
+ */
+export async function getOrCreateCurrentPeriod(
+  tenantId: string,
+  exec: typeof db = db,
+  opts: { initialBonus?: number } = {},
+): Promise<CreditPeriod> {
   const today = brToday()
   const year = today.slice(0, 4)
   const month = today.slice(5, 7)
@@ -105,6 +114,17 @@ export async function getOrCreateCurrentPeriod(tenantId: string, exec: typeof db
   const limits = (sub?.limits ?? {}) as Record<string, number>
   const planLimit = limits.whatsapp_credits ?? 0
 
+  if (existing && existing.creditsTotal === periodCreditsTotal(planLimit, existing.bonusCredits)) {
+    return {
+      id: existing.id,
+      creditsTotal: existing.creditsTotal,
+      creditsUsed: existing.creditsUsed,
+      bonusCredits: existing.bonusCredits,
+      periodStart: existing.periodStart,
+      periodEnd: existing.periodEnd,
+    }
+  }
+
   if (existing) {
     // Computed in SQL from the stored bonus so a concurrent raiseReferralBonus is never undone.
     const total = sql`CASE WHEN ${planLimit} = -1 THEN -1 ELSE ${planLimit} + ${whatsappCredits.bonusCredits} END`
@@ -126,7 +146,7 @@ export async function getOrCreateCurrentPeriod(tenantId: string, exec: typeof db
     }
   }
 
-  const bonus = await initialReferralBonus(tenantId, new Date(), process.env, exec)
+  const bonus = opts.initialBonus ?? (await initialReferralBonus(tenantId, new Date(), process.env, exec))
   const [created] = await exec
     .insert(whatsappCredits)
     .values({
@@ -175,7 +195,8 @@ export async function getOrCreateCurrentPeriod(tenantId: string, exec: typeof db
 }
 
 /**
- * §7: the bonus only rises within a month. Ensures the current period exists, then raises
+ * §7: the bonus only rises within a month. Ensures the current period exists (a new month's
+ * row is seeded with `target`, not the previous reward event), then raises
  * `bonus_credits` to `target` and moves `credits_total` by the difference (unlimited stays -1).
  * `exec` is the reward lock's tx (P-18).
  */
@@ -184,7 +205,7 @@ export async function raiseReferralBonus(
   target: number,
   exec: typeof db = db,
 ): Promise<{ bonusCredits: number; creditsTotal: number }> {
-  const period = await getOrCreateCurrentPeriod(tenantId, exec)
+  const period = await getOrCreateCurrentPeriod(tenantId, exec, { initialBonus: Math.max(target, 0) })
   if (target <= 0) return { bonusCredits: period.bonusCredits, creditsTotal: period.creditsTotal }
 
   const raised = sql`GREATEST(${whatsappCredits.bonusCredits}, ${target})`

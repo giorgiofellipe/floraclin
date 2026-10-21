@@ -395,12 +395,32 @@ export async function findEarliestSubscriptionId(customerId: string): Promise<st
   return earliest?.id ?? null
 }
 
-/** The Stripe customer behind a dispute's charge, or null when it has none. */
-export async function retrieveDisputeCustomerId(dispute: Stripe.Dispute): Promise<string | null> {
-  const charge =
-    typeof dispute.charge === 'string' ? await getStripeClient().charges.retrieve(dispute.charge) : dispute.charge
-  if (!charge) return null
-  return typeof charge.customer === 'string' ? charge.customer : (charge.customer?.id ?? null)
+export interface DisputeTarget {
+  customerId: string | null
+  /** Subscription of the invoice the disputed charge paid; null when it can't be resolved. */
+  subscriptionId: string | null
+}
+
+/** Who a dispute is against: charge → customer, and charge → invoice payment → invoice → subscription. */
+export async function retrieveDisputeTarget(dispute: Stripe.Dispute): Promise<DisputeTarget> {
+  const stripe = getStripeClient()
+  const charge = typeof dispute.charge === 'string' ? await stripe.charges.retrieve(dispute.charge) : dispute.charge
+  if (!charge) return { customerId: null, subscriptionId: null }
+  const customerId = typeof charge.customer === 'string' ? charge.customer : (charge.customer?.id ?? null)
+  const paymentIntentId =
+    typeof charge.payment_intent === 'string' ? charge.payment_intent : (charge.payment_intent?.id ?? null)
+  if (!paymentIntentId) return { customerId, subscriptionId: null }
+
+  const { data } = await stripe.invoicePayments.list({
+    payment: { type: 'payment_intent', payment_intent: paymentIntentId },
+    limit: 1,
+  })
+  const invoiceRef = data[0]?.invoice
+  if (!invoiceRef) return { customerId, subscriptionId: null }
+  const invoice = typeof invoiceRef === 'string' ? await stripe.invoices.retrieve(invoiceRef) : invoiceRef
+  if ('deleted' in invoice && invoice.deleted) return { customerId, subscriptionId: null }
+  const sub = (invoice as Stripe.Invoice).parent?.subscription_details?.subscription
+  return { customerId, subscriptionId: (typeof sub === 'string' ? sub : sub?.id) ?? null }
 }
 
 // ─── Win-back promotion code check ─────────────────────────────────
@@ -587,7 +607,7 @@ export async function customerHasPriorPurchase(customerId: string, now: Date = n
   return prior
 }
 
-export type DiscountPurpose = 'referral_reward' | 'referral_welcome' | 'winback' | 'other'
+export type DiscountPurpose = 'referral_reward' | 'referral_welcome' | 'other'
 
 export interface SubscriptionDiscountPart {
   couponId: string

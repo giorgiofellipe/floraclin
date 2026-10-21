@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { eq, inArray } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { db } from '@/db/client'
+import { rowsFromExecuteResult } from '@/db/queries/admin-tenants'
 import { billingCardFingerprints, referralRewardEvents, tenantReferrals, tenants } from '@/db/schema'
 import type { ReferralState } from '@/lib/referral/types'
 import {
@@ -23,7 +24,28 @@ const REFERRED_1 = '00000000-0000-0000-0000-0000000b3a11'
 const REFERRED_2 = '00000000-0000-0000-0000-0000000b3a12'
 const ALL_TENANTS = [REFERRER_A, REFERRER_B, REFERRED_1, REFERRED_2]
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
+}
+
+/** Resolves once some session waits on an advisory lock in this database (fails after ~5 s). */
+async function untilAdvisoryLockWaiter(): Promise<void> {
+  for (let attempt = 0; attempt < 500; attempt++) {
+    const result = await db.execute(sql`
+      select 1 from pg_locks
+      where locktype = 'advisory' and not granted
+        and database = (select oid from pg_database where datname = current_database())
+      limit 1
+    `)
+    if (rowsFromExecuteResult(result).length > 0) return
+    await new Promise((r) => setTimeout(r, 10))
+  }
+  throw new Error('no session ever waited on the advisory lock')
+}
 
 function stateOf(row: typeof tenantReferrals.$inferSelect, patch: Partial<ReferralState>): ReferralState {
   return {
@@ -95,15 +117,25 @@ describeIntegration('referrals queries (integration, requires test DB)', () => {
 
   it('withReferrerRewardLock serialises callbacks of the same referrer', async () => {
     const order: string[] = []
+    const firstHolds = deferred()
+    const releaseFirst = deferred()
     const first = withReferrerRewardLock(REFERRER_A, async () => {
       order.push('first:start')
-      await sleep(300)
+      firstHolds.resolve()
+      await releaseFirst.promise
       order.push('first:end')
     })
-    await sleep(50)
-    const second = withReferrerRewardLock(REFERRER_A, async () => {
-      order.push('second:start')
-    })
+    let second: Promise<void> | undefined
+    try {
+      await firstHolds.promise // the first callback runs, so it holds the lock
+      second = withReferrerRewardLock(REFERRER_A, async () => {
+        order.push('second:start')
+      })
+      await untilAdvisoryLockWaiter() // the second is queued on the lock, not merely late
+      expect(order).toEqual(['first:start'])
+    } finally {
+      releaseFirst.resolve()
+    }
     await Promise.all([first, second])
 
     expect(order).toEqual(['first:start', 'first:end', 'second:start'])
@@ -111,16 +143,24 @@ describeIntegration('referrals queries (integration, requires test DB)', () => {
 
   it('withReferrerRewardLock does not block different referrers', async () => {
     const order: string[] = []
+    const aHolds = deferred()
+    const releaseA = deferred()
     const first = withReferrerRewardLock(REFERRER_A, async () => {
       order.push('a:start')
-      await sleep(300)
+      aHolds.resolve()
+      await releaseA.promise
       order.push('a:end')
     })
-    await sleep(50)
-    const second = withReferrerRewardLock(REFERRER_B, async () => {
-      order.push('b:start')
-    })
-    await Promise.all([first, second])
+    try {
+      await aHolds.promise
+      // A is held until released below, so this only resolves if B's lock is independent.
+      await withReferrerRewardLock(REFERRER_B, async () => {
+        order.push('b:start')
+      })
+    } finally {
+      releaseA.resolve()
+    }
+    await first
 
     expect(order).toEqual(['a:start', 'b:start', 'a:end'])
   })

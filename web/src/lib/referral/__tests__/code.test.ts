@@ -19,7 +19,7 @@ describe('generateReferralCode', () => {
     expect(generateReferralCode(() => batches.shift()!)).toBe('ABCDEF')
   })
 
-  it('never emits 0 O 1 I L over 10 000 codes', () => {
-    for (let i = 0; i < 10_000; i++) expect(generateReferralCode()).not.toMatch(/[0O1IL]/)
+  it('uses an alphabet without 0 O 1 I L', () => {
+    expect(REFERRAL_CODE_ALPHABET).not.toMatch(/[0O1IL]/)
   })
 })

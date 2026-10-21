@@ -10,6 +10,8 @@ const m = vi.hoisted(() => ({
   invUpdate: vi.fn(),
   chargesList: vi.fn(),
   chargesRetrieve: vi.fn(),
+  invRetrieve: vi.fn(),
+  invoicePaymentsList: vi.fn(),
 }))
 
 vi.mock('stripe', async () => {
@@ -19,7 +21,8 @@ vi.mock('stripe', async () => {
     customers = { create: vi.fn() }
     checkout = { sessions: { create: m.create } }
     subscriptions = { retrieve: m.subsRetrieve, update: m.subsUpdate, list: m.subsList }
-    invoices = { list: m.invList, update: m.invUpdate, retrieve: vi.fn() }
+    invoices = { list: m.invList, update: m.invUpdate, retrieve: m.invRetrieve }
+    invoicePayments = { list: m.invoicePaymentsList }
     charges = { list: m.chargesList, retrieve: m.chargesRetrieve }
   }
   return { default: FakeStripe }
@@ -44,7 +47,7 @@ import {
   listCustomerCardSightings,
   listOpenCycleDrafts,
   listPaidSubscriptionInvoices,
-  retrieveDisputeCustomerId,
+  retrieveDisputeTarget,
   retrieveSubscriptionOrMissing,
   updateInvoiceDiscounts,
   updateSubscriptionDiscounts,
@@ -264,13 +267,43 @@ describe('retrieveSubscriptionOrMissing', () => {
   })
 })
 
-describe('retrieveDisputeCustomerId', () => {
-  it('resolves the charge when only its id is on the dispute', async () => {
-    m.chargesRetrieve.mockResolvedValue({ customer: 'cus_1' })
-    expect(await retrieveDisputeCustomerId({ charge: 'ch_1' } as unknown as Stripe.Dispute)).toBe('cus_1')
+describe('retrieveDisputeTarget', () => {
+  const dispute = (charge: unknown) => ({ charge }) as unknown as Stripe.Dispute
+  const subInvoice = (sub: string) => ({ id: 'in_1', parent: { subscription_details: { subscription: sub } } })
+
+  it('resolves charge → invoice payment → invoice → subscription', async () => {
+    m.chargesRetrieve.mockResolvedValue({ customer: 'cus_1', payment_intent: 'pi_1' })
+    m.invoicePaymentsList.mockResolvedValue({ data: [{ invoice: 'in_1' }] })
+    m.invRetrieve.mockResolvedValue(subInvoice('sub_1'))
+    expect(await retrieveDisputeTarget(dispute('ch_1'))).toEqual({ customerId: 'cus_1', subscriptionId: 'sub_1' })
     expect(m.chargesRetrieve).toHaveBeenCalledWith('ch_1')
+    expect(m.invoicePaymentsList).toHaveBeenCalledWith({
+      payment: { type: 'payment_intent', payment_intent: 'pi_1' },
+      limit: 1,
+    })
+    expect(m.invRetrieve).toHaveBeenCalledWith('in_1')
   })
-  it('is null for a charge without a customer', async () => {
-    expect(await retrieveDisputeCustomerId({ charge: { customer: null } } as unknown as Stripe.Dispute)).toBeNull()
+  it('uses an expanded invoice without another retrieve', async () => {
+    m.invoicePaymentsList.mockResolvedValue({ data: [{ invoice: subInvoice('sub_2') }] })
+    const res = await retrieveDisputeTarget(dispute({ customer: { id: 'cus_2' }, payment_intent: { id: 'pi_2' } }))
+    expect(res).toEqual({ customerId: 'cus_2', subscriptionId: 'sub_2' })
+    expect(m.invRetrieve).not.toHaveBeenCalled()
+  })
+  it('has no subscription for a charge without a payment intent or invoice', async () => {
+    expect(await retrieveDisputeTarget(dispute({ customer: 'cus_1', payment_intent: null }))).toEqual({
+      customerId: 'cus_1',
+      subscriptionId: null,
+    })
+    m.invoicePaymentsList.mockResolvedValue({ data: [] })
+    expect(await retrieveDisputeTarget(dispute({ customer: 'cus_1', payment_intent: 'pi_1' }))).toEqual({
+      customerId: 'cus_1',
+      subscriptionId: null,
+    })
+  })
+  it('has no customer for a charge without one', async () => {
+    expect(await retrieveDisputeTarget(dispute({ customer: null, payment_intent: null }))).toEqual({
+      customerId: null,
+      subscriptionId: null,
+    })
   })
 })

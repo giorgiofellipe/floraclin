@@ -97,13 +97,20 @@ describe('periodCreditsTotal', () => {
 
 describe('getOrCreateCurrentPeriod, existing row', () => {
   it('writes credits_total as a SQL expression over bonus_credits and returns RETURNING values', async () => {
-    selectQueue.push([BASE_ROW], PLAN(300))
-    updateReturns.push([{ creditsTotal: 500, bonusCredits: 200 }])
+    selectQueue.push([BASE_ROW], PLAN(400))
+    updateReturns.push([{ creditsTotal: 600, bonusCredits: 200 }])
     const period = await getOrCreateCurrentPeriod('t1')
     expect(updateSets[0].creditsTotal).toBeInstanceOf(SQL)
     // M5: the read row said bonus 0, a raise landed in between
-    expect(period.creditsTotal).toBe(500)
+    expect(period.creditsTotal).toBe(600)
     expect(period.bonusCredits).toBe(200)
+  })
+
+  it('skips the UPDATE when the stored total already matches the plan and bonus', async () => {
+    selectQueue.push([{ ...BASE_ROW, creditsTotal: 500, bonusCredits: 200 }], PLAN(300))
+    const period = await getOrCreateCurrentPeriod('t1')
+    expect(updateSets).toHaveLength(0)
+    expect(period).toMatchObject({ creditsTotal: 500, bonusCredits: 200 })
   })
 
   it('passes an unlimited plan change (-1) through', async () => {
@@ -112,8 +119,8 @@ describe('getOrCreateCurrentPeriod, existing row', () => {
     expect((await getOrCreateCurrentPeriod('t1')).creditsTotal).toBe(-1)
   })
 
-  it('falls back to the stored bonus when the total was already right', async () => {
-    selectQueue.push([{ ...BASE_ROW, creditsTotal: 500, bonusCredits: 200 }], PLAN(300))
+  it('falls back to the stored bonus when the conditional UPDATE matched no row', async () => {
+    selectQueue.push([{ ...BASE_ROW, creditsTotal: 300, bonusCredits: 200 }], PLAN(300))
     updateReturns.push([])
     const period = await getOrCreateCurrentPeriod('t1')
     expect(period.creditsTotal).toBe(500)
@@ -180,12 +187,25 @@ describe('raiseReferralBonus', () => {
     const updateSpy = vi.spyOn(exec, 'update')
     const dbSelect = vi.spyOn(dbMock, 'select')
     selectQueue.push([BASE_ROW], PLAN(300))
-    updateReturns.push([{ creditsTotal: 300, bonusCredits: 0 }], [{ creditsTotal: 500, bonusCredits: 200 }])
+    updateReturns.push([{ creditsTotal: 500, bonusCredits: 200 }])
     const result = await raiseReferralBonus('t1', 200, exec as unknown as Parameters<typeof raiseReferralBonus>[2])
     expect(result).toEqual({ bonusCredits: 200, creditsTotal: 500 })
     expect(selectSpy).toHaveBeenCalled()
-    expect(updateSpy).toHaveBeenCalledTimes(2)
+    expect(updateSpy).toHaveBeenCalledTimes(1)
     expect(dbSelect).not.toHaveBeenCalled()
-    expect(updateSets[1].bonusCredits).toBeInstanceOf(SQL)
+    expect(updateSets[0].bonusCredits).toBeInstanceOf(SQL)
+  })
+
+  it('seeds a new month from the fresh target, not the previous reward event (§7)', async () => {
+    vi.stubEnv('STRIPE_REFERRER_COUPON_IDS', ACTIVE_ENV.STRIPE_REFERRER_COUPON_IDS)
+    selectQueue.push([], PLAN(300))
+    // Last month's event said 200; this sync's target dropped to 100.
+    state.eventResult = async () => [{ bonusCredits: 200 }]
+    state.insertReturn = [{ ...BASE_ROW, creditsTotal: 400, bonusCredits: 100, creditsUsed: 0 }]
+    updateReturns.push([{ creditsTotal: 400, bonusCredits: 100 }])
+    const result = await raiseReferralBonus('t1', 100)
+    expect(insertValues[0]).toMatchObject({ bonusCredits: 100, bonusSource: 'referral', creditsTotal: 400 })
+    expect(state.eventSelects).toBe(0)
+    expect(result).toEqual({ bonusCredits: 100, creditsTotal: 400 })
   })
 })

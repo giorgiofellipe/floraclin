@@ -1,4 +1,5 @@
 import { formatBrDate, formatBrDayMonth } from '@/lib/dates'
+import { REFERRAL_PERCENT_PER_REFERRAL } from '@/lib/referral/rules'
 
 // Client-safe: imported by the billing page. Structural type, no server imports.
 export interface SubscriptionDiscountLike {
@@ -13,9 +14,9 @@ export function brl(cents: number): string {
   return `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`
 }
 
-/** The reward ladder is 20% per paying referral. */
+/** The reward ladder is REFERRAL_PERCENT_PER_REFERRAL per paying referral (capped, so 100% reads as 5). */
 export function referralCountFromPercent(percent: number): number {
-  return percent / 20
+  return percent / REFERRAL_PERCENT_PER_REFERRAL
 }
 
 function untilPhrase(endsAt: string, now: Date): string {

@@ -9,10 +9,12 @@ export function isReferralSiteEnabled(env: Record<string, string | undefined> = 
   return env.REFERRAL_ENROLLMENT_ENABLED === 'true'
 }
 
-/** The program end instant, when set to a valid timestamp; otherwise null. */
+const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/
+
+/** The program end instant; same rule as web: full ISO with offset only (a bare date would be read as UTC). */
 export function referralRewardsEndAt(env: Record<string, string | undefined> = process.env): Date | null {
   const raw = env.REFERRAL_REWARDS_END_AT?.trim()
-  if (!raw) return null
+  if (!raw || !ISO_WITH_OFFSET.test(raw)) return null
   const at = new Date(raw)
   return Number.isNaN(at.getTime()) ? null : at
 }

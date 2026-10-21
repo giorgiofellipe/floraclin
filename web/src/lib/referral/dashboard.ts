@@ -1,16 +1,21 @@
+import { brl } from '@/lib/billing-discount-copy'
 import { formatBrDate, formatBrDayMonth } from '@/lib/dates'
 import { referralStatusLabel } from './status'
 import {
   REFERRAL_BONUS_CREDITS_PER_EXTRA,
   REFERRAL_MAX_COUNTING_FOR_DISCOUNT,
   REFERRAL_PERCENT_PER_REFERRAL,
+  REFERRAL_SITE_ORIGIN,
+  REFERRAL_TRIAL_DAYS,
+  REFERRAL_WELCOME_MONTHS,
+  REFERRAL_WELCOME_PERCENT,
   referralDiscountPercent,
   referralLink,
 } from './rules'
 import type { IneligibleReason, PausedReason, ReferralStatus } from './types'
 
 const INACTIVE_MESSAGE = 'Seu link de indicação fica ativo quando sua clínica tem uma assinatura paga.'
-const RULES_URL = 'https://floraclin.com.br/indique'
+const RULES_URL = `${REFERRAL_SITE_ORIGIN}/indique` as const
 const FREE_LABEL = `${REFERRAL_MAX_COUNTING_FOR_DISCOUNT} de ${REFERRAL_MAX_COUNTING_FOR_DISCOUNT}: seu FloraClin está grátis 🎉`
 
 export interface DashboardInput {
@@ -46,11 +51,7 @@ export interface ReferralDashboardResponse {
   discountLine: string
   referrals: Array<{ id: string; name: string; signupDate: string; label: string; sublabel: string | null }>
   history: Array<{ date: string; text: string }>
-  rulesUrl: 'https://floraclin.com.br/indique'
-}
-
-function brl(cents: number): string {
-  return `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`
+  rulesUrl: typeof RULES_URL
 }
 
 function clinicsPaying(n: number): string {
@@ -59,7 +60,7 @@ function clinicsPaying(n: number): string {
 
 export function referralShareText(link: string): string {
   return [
-    `Uso o FloraClin na minha clínica para agenda, prontuário e lembretes por WhatsApp. Se você também é profissional da saúde estética e quer testar, pelo meu link você ganha 14 dias grátis e 20% de desconto nos 2 primeiros meses: ${link}`,
+    `Uso o FloraClin na minha clínica para agenda, prontuário e lembretes por WhatsApp. Se você também é profissional da saúde estética e quer testar, pelo meu link você ganha ${REFERRAL_TRIAL_DAYS} dias grátis e ${REFERRAL_WELCOME_PERCENT}% de desconto nos ${REFERRAL_WELCOME_MONTHS} primeiros meses: ${link}`,
     'Ganho desconto na minha assinatura se você assinar. #publi #linkafiliado',
   ].join('\n')
 }
@@ -90,11 +91,18 @@ function discountLine(percent: number, priceCents: number | null, nextInvoiceAt:
   return `Seu desconto atual: ${percent}% (${brl(saved)} de ${brl(priceCents)}) a partir da próxima fatura, em ${formatBrDayMonth(nextInvoiceAt)}.`
 }
 
+function displayedPercent(input: DashboardInput, counting: number): number {
+  if (!input.rewardsActive) return 0
+  // Not referring (past_due, cancellation scheduled…): the discount still on the subscription, per the latest reward event.
+  if (!input.canRefer) return input.events[0]?.discountPercent ?? 0
+  return input.planEligible ? referralDiscountPercent(counting) : 0
+}
+
 export function buildReferralDashboard(input: DashboardInput): ReferralDashboardResponse {
   const link = input.canRefer && input.code ? referralLink(input.code) : null
   const shareText = link ? referralShareText(link) : null
   const counting = Math.max(0, Math.floor(input.counting))
-  const percent = input.rewardsActive && input.canRefer && input.planEligible ? referralDiscountPercent(counting) : 0
+  const percent = displayedPercent(input, counting)
 
   return {
     canRefer: input.canRefer,

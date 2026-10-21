@@ -680,7 +680,7 @@ export function BillingSettings() {
               onChange={(e) => setReferralCode(e.target.value)}
               placeholder="Código"
               aria-label="Código de indicação"
-              maxLength={32}
+              maxLength={12}
               className="max-w-[200px] uppercase"
             />
             <Button

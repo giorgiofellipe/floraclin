@@ -11,7 +11,7 @@ vi.mock('@/db/queries/referrals', () => ({
   listReconcileUnits: vi.fn(),
   markReferralsReconciled: vi.fn(),
 }))
-vi.mock('@/lib/stripe', () => ({ retrieveDisputeCustomerId: vi.fn() }))
+vi.mock('@/lib/stripe', () => ({ findEarliestSubscriptionId: vi.fn(), retrieveDisputeTarget: vi.fn() }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 vi.mock('../lifecycle', () => ({
   refreshReferral: vi.fn(),
@@ -56,7 +56,8 @@ function makeDeps(over: Record<string, unknown> = {}): ReferralEventDeps {
     tenantBySub: track('tenantBySub', async () => 'tenant1'),
     tenantByCustomer: track('tenantByCustomer', async () => 'tenant1'),
     isReferrer: track('isReferrer', async () => false),
-    disputeCustomer: track('disputeCustomer', async () => 'cus_1'),
+    disputeTarget: track('disputeTarget', async () => ({ customerId: 'cus_1', subscriptionId: 'sub_1' })),
+    findEarliestSubscription: track('findEarliest', async () => 'sub_new'),
     listUnits: track('listUnits', async () => []),
     markReconciled: track('markReconciled', async () => undefined),
     report: vi.fn(),
@@ -165,15 +166,40 @@ describe('handleReferralStripeEvent', () => {
     expect(calls).toEqual([])
   })
 
+  const checkout = (over: Record<string, unknown> = {}) =>
+    ev('checkout.session.completed', {
+      metadata: { tenantId: 'tenant1' },
+      mode: 'subscription',
+      customer: 'cus_1',
+      subscription: 'sub_new',
+      ...over,
+    })
+
   it('checkout.session.completed binds the subscription before refreshing', async () => {
     const d = makeDeps({ findByReferred: track('findByReferred', async () => ({ id: 'ref1' })) })
-    await handleReferralStripeEvent(
-      ev('checkout.session.completed', { metadata: { tenantId: 'tenant1' }, mode: 'subscription', subscription: 'sub_new' }),
-      d,
-    )
+    await handleReferralStripeEvent(checkout(), d)
     expect(d.bindSubscription).toHaveBeenCalledWith('ref1', 'sub_new')
     expect(calls.indexOf('bind')).toBeLessThan(calls.indexOf('refresh'))
     expect(calls.indexOf('refresh')).toBeLessThan(calls.indexOf('sync'))
+  })
+
+  it('checkout.session.completed binds the customer’s earliest subscription, not the session’s', async () => {
+    // The first sub was canceled and replaced before its own checkout webhook arrived.
+    const d = makeDeps({
+      findByReferred: track('findByReferred', async () => ({ id: 'ref1' })),
+      findEarliestSubscription: track('findEarliest', async () => 'sub_first'),
+    })
+    await handleReferralStripeEvent(checkout({ subscription: 'sub_replacement' }), d)
+    expect(d.findEarliestSubscription).toHaveBeenCalledWith('cus_1')
+    expect(d.bindSubscription).toHaveBeenCalledWith('ref1', 'sub_first')
+    expect(d.bindSubscription).not.toHaveBeenCalledWith('ref1', 'sub_replacement')
+  })
+
+  it('checkout.session.completed without a customer leaves binding to the refresh', async () => {
+    const d = makeDeps({ findByReferred: track('findByReferred', async () => ({ id: 'ref1' })) })
+    await handleReferralStripeEvent(checkout({ customer: null }), d)
+    expect(d.bindSubscription).not.toHaveBeenCalled()
+    expect(d.refresh).toHaveBeenCalledWith('ref1')
   })
 
   it('checkout.session.completed in payment mode skips binding', async () => {
@@ -195,18 +221,57 @@ describe('handleReferralStripeEvent', () => {
     expect(syncCalls(d)).toEqual([['tenant1', { reason: 'subscription' }]])
   })
 
-  it('charge.dispute.created marks the chargeback, then syncs the referrer', async () => {
-    const d = makeDeps()
-    await handleReferralStripeEvent(ev('charge.dispute.created', { id: 'dp_1', charge: 'ch_1' }), d)
+  const dispute = ev('charge.dispute.created', { id: 'dp_1', charge: 'ch_1' })
+  const boundReferral = (stripeSubscriptionId: string | null) => ({
+    findByReferred: track('findByReferred', async () => ({ id: 'ref1', stripeSubscriptionId })),
+  })
+
+  it('charge.dispute.created on the bound subscription marks the chargeback, then syncs the referrer', async () => {
+    const d = makeDeps(boundReferral('sub_1'))
+    await handleReferralStripeEvent(dispute, d)
     expect(d.tenantByCustomer).toHaveBeenCalledWith('cus_1')
     expect(d.chargeback).toHaveBeenCalledWith('tenant1')
     expect(syncCalls(d)).toEqual([['referrer1', { reason: 'referral_canceled', referralId: 'ref1' }]])
     expect(calls.indexOf('chargeback')).toBeLessThan(calls.indexOf('sync'))
   })
 
+  it('charge.dispute.created on another subscription of the same customer marks nothing', async () => {
+    const d = makeDeps({
+      ...boundReferral('sub_1'),
+      disputeTarget: track('disputeTarget', async () => ({ customerId: 'cus_1', subscriptionId: 'sub_other' })),
+    })
+    await handleReferralStripeEvent(dispute, d)
+    expect(d.chargeback).not.toHaveBeenCalled()
+    expect(d.sync).not.toHaveBeenCalled()
+  })
+
+  it('charge.dispute.created whose subscription cannot be resolved reports instead of marking', async () => {
+    const d = makeDeps({
+      ...boundReferral('sub_1'),
+      disputeTarget: track('disputeTarget', async () => ({ customerId: 'cus_1', subscriptionId: null })),
+    })
+    await handleReferralStripeEvent(dispute, d)
+    expect(d.chargeback).not.toHaveBeenCalled()
+    expect(d.report).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ area: 'referral', step: 'dispute_unresolved' }),
+    )
+  })
+
+  it('charge.dispute.created on an unbound referral compares with the customer’s earliest subscription', async () => {
+    const d = makeDeps({
+      ...boundReferral(null),
+      findEarliestSubscription: track('findEarliest', async () => 'sub_1'),
+    })
+    await handleReferralStripeEvent(dispute, d)
+    expect(d.findEarliestSubscription).toHaveBeenCalledWith('cus_1')
+    expect(d.chargeback).toHaveBeenCalledWith('tenant1')
+  })
+
   it('charge.dispute.created for a tenant without a referral syncs nothing', async () => {
-    const d = makeDeps({ chargeback: track('chargeback', async () => null) })
-    await handleReferralStripeEvent(ev('charge.dispute.created', { id: 'dp_1' }), d)
+    const d = makeDeps()
+    await handleReferralStripeEvent(dispute, d)
+    expect(d.chargeback).not.toHaveBeenCalled()
     expect(d.sync).not.toHaveBeenCalled()
   })
 

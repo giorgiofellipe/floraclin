@@ -77,6 +77,29 @@ describe('canRefer=false', () => {
   })
 })
 
+describe('canRefer=false discount line', () => {
+  const event = (discountPercent: number) => ({
+    createdAt: parseBrDate('2026-10-15', '12:00:00'),
+    counting: discountPercent / 20,
+    discountPercent,
+    bonusCredits: 0,
+  })
+
+  it('shows the discount still on the subscription (latest reward event), e.g. while past_due', () => {
+    const view = build({ canRefer: false, code: null, counting: 3, nextInvoiceAt: null, events: [event(60), event(40)] })
+    expect(view.discountLine).toBe('Seu desconto atual: 60% a partir da próxima fatura.')
+  })
+
+  it('explains the program when there is no reward event or rewards are inactive', () => {
+    const explainer =
+      'Cada clínica indicada que está pagando vale 20% de desconto na sua assinatura. Com 5, o FloraClin sai de graça.'
+    expect(build({ canRefer: false, code: null, counting: 3, nextInvoiceAt: null }).discountLine).toBe(explainer)
+    expect(
+      build({ canRefer: false, code: null, counting: 3, rewardsActive: false, events: [event(60)] }).discountLine,
+    ).toBe(explainer)
+  })
+})
+
 describe('sharing', () => {
   it('builds the exact share text and an encoded WhatsApp URL', () => {
     const link = 'https://floraclin.com.br/indicacao/MECA7K'
@@ -89,6 +112,7 @@ describe('sharing', () => {
     expect(view.shareText).toBe(text)
     expect(view.whatsappShareUrl).toBe(`https://wa.me/?text=${encodeURIComponent(text)}`)
     expect(view.inactiveMessage).toBeNull()
+    expect(view.rulesUrl).toBe('https://floraclin.com.br/indique')
   })
 })
 

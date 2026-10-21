@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/referral/events', () => ({ reconcileReferrals: vi.fn() }))
@@ -35,7 +37,13 @@ describe('GET /api/cron/referral-reconcile', () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ ok: true, refreshed: 3, synced: 2, failed: 1, skipped: 0 })
-    expect(withCronMonitor).toHaveBeenCalledWith('referral-reconcile', '30 7 * * *', expect.any(Function))
+    // The monitor schedule must be the one vercel.json declares, or Sentry reports every run as late.
+    const vercelConfig = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, '../../../../../../vercel.json'), 'utf8'),
+    ) as { crons: Array<{ path: string; schedule: string }> }
+    const cron = vercelConfig.crons.find((c) => c.path === '/api/cron/referral-reconcile')
+    expect(cron).toBeDefined()
+    expect(withCronMonitor).toHaveBeenCalledWith('referral-reconcile', cron?.schedule, expect.any(Function))
     const { deadlineAt } = vi.mocked(reconcileReferrals).mock.calls[0][0] as { deadlineAt: number }
     expect(deadlineAt).toBeGreaterThanOrEqual(before + 240_000)
     expect(deadlineAt).toBeLessThanOrEqual(Date.now() + 240_000)

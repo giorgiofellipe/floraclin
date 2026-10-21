@@ -61,13 +61,10 @@ beforeEach(() => {
 
 describe('stripe webhook → referral events', () => {
   it.each([
-    ['checkout.session.completed', { metadata: {} }],
     ['invoice.paid', { parent: { subscription_details: { subscription: 'sub_1' } } }],
     ['invoice.payment_failed', { parent: { subscription_details: { subscription: 'sub_1' } } }],
     ['customer.subscription.updated', { id: 'sub_1', status: 'active', items: { data: [] } }],
     ['customer.subscription.deleted', { id: 'sub_1' }],
-    ['invoice.created', { id: 'in_1', status: 'draft', billing_reason: 'subscription_cycle' }],
-    ['charge.dispute.created', { id: 'dp_1', charge: 'ch_1' }],
   ])('hands %s to the referral module after the local handlers', async (type, object) => {
     const event = deliver(type, object)
 
@@ -76,10 +73,24 @@ describe('stripe webhook → referral events', () => {
     expect(res.status).toBe(200)
     expect(referralMock).toHaveBeenCalledTimes(1)
     expect(referralMock).toHaveBeenCalledWith(event)
+    expect(order).toContain('local')
     expect(order.at(-1)).toBe('referral')
-    if (type !== 'invoice.created' && type !== 'charge.dispute.created' && type !== 'checkout.session.completed') {
-      expect(order.indexOf('local')).toBeLessThan(order.indexOf('referral'))
-    }
+    expect(order.indexOf('local')).toBeLessThan(order.indexOf('referral'))
+  })
+
+  it.each([
+    ['checkout.session.completed', { metadata: {} }],
+    ['invoice.created', { id: 'in_1', status: 'draft', billing_reason: 'subscription_cycle' }],
+    ['charge.dispute.created', { id: 'dp_1', charge: 'ch_1' }],
+  ])('hands %s (no local row lookup) to the referral module', async (type, object) => {
+    const event = deliver(type, object)
+
+    const res = await post()
+
+    expect(res.status).toBe(200)
+    expect(referralMock).toHaveBeenCalledTimes(1)
+    expect(referralMock).toHaveBeenCalledWith(event)
+    expect(order).toEqual(['referral'])
   })
 
   it('answers 500 when the referral module throws, so Stripe redelivers', async () => {

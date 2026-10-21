@@ -10,7 +10,7 @@ import {
   markReferralsReconciled,
 } from '@/db/queries/referrals'
 import { reportSideEffectFailure } from '@/lib/observability'
-import { retrieveDisputeCustomerId } from '@/lib/stripe'
+import { findEarliestSubscriptionId, retrieveDisputeTarget } from '@/lib/stripe'
 import { referrerCouponIds } from './config'
 import { markReferralChargeback, recordTenantCardFingerprints, refreshReferral } from './lifecycle'
 import { syncReferrerReward } from './reward'
@@ -27,7 +27,8 @@ export interface ReferralEventDeps {
   tenantBySub: typeof getTenantIdByStripeSubscription
   tenantByCustomer: typeof getTenantIdByStripeCustomer
   isReferrer: typeof isReferrer
-  disputeCustomer: typeof retrieveDisputeCustomerId
+  disputeTarget: typeof retrieveDisputeTarget
+  findEarliestSubscription: typeof findEarliestSubscriptionId
   listUnits: typeof listReconcileUnits // P-23
   markReconciled: typeof markReferralsReconciled
   report: typeof reportSideEffectFailure
@@ -45,7 +46,8 @@ const defaultDeps: ReferralEventDeps = {
   tenantBySub: getTenantIdByStripeSubscription,
   tenantByCustomer: getTenantIdByStripeCustomer,
   isReferrer,
-  disputeCustomer: retrieveDisputeCustomerId,
+  disputeTarget: retrieveDisputeTarget,
+  findEarliestSubscription: findEarliestSubscriptionId,
   listUnits: listReconcileUnits,
   markReconciled: markReferralsReconciled,
   report: reportSideEffectFailure,
@@ -97,11 +99,12 @@ export async function handleReferralStripeEvent(
       const tenantId = session.metadata?.tenantId
       if (!tenantId) return
       const referral = await d.findByReferred(tenantId)
-      if (referral) {
-        const subscriptionId = idOf(session.subscription)
-        if (session.mode === 'subscription' && subscriptionId) {
-          await d.bindSubscription(referral.id, subscriptionId)
-        }
+      const customerId = idOf(session.customer)
+      if (referral && session.mode === 'subscription' && customerId) {
+        // P-21: the customer's earliest subscription, as refreshReferral binds; never just this session's,
+        // which may be a replacement whose webhook beat the first one's.
+        const earliest = await d.findEarliestSubscription(customerId)
+        if (earliest) await d.bindSubscription(referral.id, earliest)
       }
       await syncTenantAndReferral(referral, tenantId, d)
       return
@@ -140,10 +143,24 @@ export async function handleReferralStripeEvent(
       return
     }
     case 'charge.dispute.created': {
-      const customerId = await d.disputeCustomer(event.data.object as Stripe.Dispute)
+      const dispute = event.data.object as Stripe.Dispute
+      const { customerId, subscriptionId } = await d.disputeTarget(dispute)
       if (!customerId) return
       const tenantId = await d.tenantByCustomer(customerId)
       if (!tenantId) return
+      const referral = await d.findByReferred(tenantId)
+      if (!referral) return
+      // §5.3: only a dispute on an invoice of the referred subscription disqualifies.
+      if (!subscriptionId) {
+        d.report(new Error('dispute subscription unresolved'), {
+          area: 'referral',
+          step: 'dispute_unresolved',
+          extra: { disputeId: dispute.id, referralId: referral.id },
+        })
+        return
+      }
+      const boundId = referral.stripeSubscriptionId ?? (await d.findEarliestSubscription(customerId))
+      if (subscriptionId !== boundId) return
       const r = await d.chargeback(tenantId)
       if (r) await d.sync(r.referrerTenantId, { reason: 'referral_canceled', referralId: r.referralId })
       return

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { lookupReferralCode, APP_ORIGIN_DEFAULT } from '../referral-lookup'
+import { lookupReferralCode, referralRewardsEndAt, APP_ORIGIN_DEFAULT } from '../referral-lookup'
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
 
@@ -32,5 +32,18 @@ describe('lookupReferralCode', () => {
     const fetchImpl = vi.fn().mockResolvedValue(json({ active: false }))
     await lookupReferralCode('MECA7K', { fetchImpl })
     expect(fetchImpl.mock.calls[0][0]).toBe('https://staging.example.com/api/referral/codes/MECA7K')
+  })
+})
+
+describe('referralRewardsEndAt', () => {
+  const at = (raw: string) => referralRewardsEndAt({ REFERRAL_REWARDS_END_AT: raw })
+
+  it('accepts a full ISO timestamp with offset, like web', () => {
+    expect(at('2027-01-15T02:00:00-03:00')?.toISOString()).toBe('2027-01-15T05:00:00.000Z')
+    expect(at('2027-01-15T05:00Z')?.toISOString()).toBe('2027-01-15T05:00:00.000Z')
+  })
+
+  it.each(['2027-01-01', '2027-01-15T02:00:00', 'not-a-date', ''])('rejects %j (a bare date would be read as UTC)', (raw) => {
+    expect(at(raw)).toBeNull()
   })
 })
