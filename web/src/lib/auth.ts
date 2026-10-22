@@ -2,13 +2,12 @@ import { redirect } from 'next/navigation'
 import * as Sentry from '@sentry/nextjs'
 import { cookies } from 'next/headers'
 import { auth } from '@/lib/auth-config'
+import { TENANT_COOKIE, TENANT_COOKIE_OPTIONS } from '@/lib/tenant-cookie'
 import { db } from '@/db/client'
 import { tenantUsers, users, tenants } from '@/db/schema'
 import { eq, and, isNull } from 'drizzle-orm'
 import type { AuthContext, Role } from '@/types'
 import { ForbiddenError } from '@/lib/errors'
-
-const TENANT_COOKIE = 'floraclin_tenant_id'
 
 export async function getAuthContext(): Promise<AuthContext> {
   // Test auth bypass: use TEST_USER_ID env var instead of Auth.js session
@@ -73,8 +72,13 @@ export async function getAuthContext(): Promise<AuthContext> {
     isPlatformAdmin = !!userRow?.isPlatformAdmin
   }
 
+  // Not /login: a token minted before the clinic was suspended (or the
+  // membership removed) still carries its tenantId, and middleware sends a
+  // signed-in user with a tenant from /login straight back to /dashboard,
+  // which lands here again: a redirect loop. Clinic details is where
+  // middleware sends tenantless tokens anyway, and it explains a suspension.
   if (memberships.length === 0 && !isPlatformAdmin) {
-    redirect('/login')
+    redirect('/signup/clinic-details')
   }
 
   // Resolve active tenant: cookie → first membership (or any tenant for platform admins)
@@ -134,13 +138,7 @@ export async function getAuthContext(): Promise<AuthContext> {
 // Call this when user switches tenant (e.g., from tenant switcher in sidebar)
 export async function setActiveTenant(tenantId: string) {
   const cookieStore = await cookies()
-  cookieStore.set(TENANT_COOKIE, tenantId, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 365, // 1 year
-  })
+  cookieStore.set(TENANT_COOKIE, tenantId, TENANT_COOKIE_OPTIONS)
 }
 
 // Get all tenants for current user (for tenant switcher UI)

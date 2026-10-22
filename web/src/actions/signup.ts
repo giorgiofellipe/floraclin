@@ -1,16 +1,19 @@
 'use server'
 
-import { signIn } from '@/lib/auth-config'
+import { signIn, signOut } from '@/lib/auth-config'
 import { redirect } from 'next/navigation'
 import { cookies, headers } from 'next/headers'
 import { after } from 'next/server'
 import { signUpSchema, clinicDetailsSchema } from '@/validations/signup'
 import { db } from '@/db/client'
 import { users, tenants, tenantUsers, plans } from '@/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { createSelfSignupTenant, findAvailableSlug, generateSlug, insertSelfSignupTenantBase } from '@/db/queries/admin-tenants'
 import { createSubscription } from '@/db/queries/subscriptions'
+import { getClinicMemberships } from '@/db/queries/clinic-membership'
+import { TENANT_COOKIE, TENANT_COOKIE_OPTIONS } from '@/lib/tenant-cookie'
+import { SUSPENDED_CLINIC_MESSAGE } from '@/lib/clinic-suspended'
 import { sendNewSignupNotification, sendConfirmationEmail } from '@/lib/email'
 import { withTransaction } from '@/lib/tenant'
 import { notifyDiscord } from '@/lib/discord'
@@ -186,8 +189,21 @@ export type ClinicDetailsState = {
   error?: { clinicName?: string[]; phone?: string[]; general?: string[] }
   success?: boolean
   created?: boolean
+  /** The user's only clinic is suspended; there is nothing to enter. */
+  suspended?: boolean
   metaEventId?: string
 } | null
+
+/**
+ * "Sair" on clinic details. Also drops the tenant cookie: a user who only sees
+ * the suspension notice never submits the form, so the action never gets the
+ * chance to clear a cookie naming a clinic they cannot use.
+ */
+export async function signOutFromClinicDetails() {
+  const cookieStore = await cookies()
+  cookieStore.delete(TENANT_COOKIE)
+  await signOut({ redirectTo: '/login' })
+}
 
 export async function createClinicForOAuthUser(
   _prevState: ClinicDetailsState,
@@ -201,18 +217,33 @@ export async function createClinicForOAuthUser(
     redirect('/login')
   }
 
-  const [existingMembership] = await db
-    .select({ id: tenantUsers.id })
-    .from(tenantUsers)
-    .where(and(eq(tenantUsers.userId, session.user.id), eq(tenantUsers.isActive, true)))
-    .limit(1)
+  // Through live tenants only, exactly as the jwt callback resolves the
+  // session tenant. See getClinicMemberships for the loop this prevents.
+  const memberships = await getClinicMemberships(session.user.id)
 
-  if (existingMembership) {
+  // A tenant cookie left from another account or a suspended clinic is
+  // ignored by getAuthContext for anyone but a platform admin, but drop it so
+  // it cannot pick the wrong clinic later. A platform admin's cookie may name
+  // any clinic on purpose, so it stays.
+  const isPlatformAdmin = (session as { isPlatformAdmin?: boolean }).isPlatformAdmin === true
+  const selectedTenantId = cookieStore.get(TENANT_COOKIE)?.value
+  if (!isPlatformAdmin && selectedTenantId && !memberships.liveTenantIds.includes(selectedTenantId)) {
+    cookieStore.delete(TENANT_COOKIE)
+  }
+
+  if (memberships.liveTenantIds.length > 0) {
     // Same reason as the success path below: a redirect here would hand
     // /dashboard a token that still says tenantId: null and get bounced
-    // straight back. This is the retry case, so the clinic already exists and
-    // there is nothing left to do but refresh the token.
+    // straight back. This is the retry case: the clinic exists and the
+    // session will resolve it, so the client only has to refresh the token.
     return { success: true, created: false }
+  }
+
+  if (memberships.suspendedOnly) {
+    // The session can never resolve a suspended clinic, so "it already
+    // exists, refresh" would loop. Suspension is the anti-abuse lever, so it
+    // is not silently sidestepped with a new clinic either: say what happened.
+    return { suspended: true, error: { general: [SUSPENDED_CLINIC_MESSAGE] } }
   }
 
   const raw = {
@@ -234,6 +265,7 @@ export async function createClinicForOAuthUser(
   const tenantAttribution = attributionForTenant(firstTouch, metaEventId)
 
   const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone })
+  cookieStore.set(TENANT_COOKIE, tenant.id, TENANT_COOKIE_OPTIONS)
   if (tenantAttribution) {
     await persistSignupAttribution(tenant.id, tenantAttribution)
   }
