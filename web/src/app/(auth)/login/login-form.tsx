@@ -56,10 +56,11 @@ export function LoginForm({
         {/* Google OAuth — first */}
         <GoogleSignIn
           action={loginWithGoogle}
-          label="Entrar com Google"
           inAppBrowser={inAppBrowser}
           callbackUrl={callbackUrl}
-          emailFallback="Ou entre com e-mail e senha abaixo. Criou a conta com o Google e não tem senha? Toque em “Esqueci minha senha” para criar uma."
+          emailFallbackLabel="Entrar com e-mail e senha"
+          emailFallbackHint="Criou a conta com o Google e não tem senha? Use “Esqueci minha senha” para criar uma."
+          emailInputId="email"
         />
 
         {/* Separator */}
