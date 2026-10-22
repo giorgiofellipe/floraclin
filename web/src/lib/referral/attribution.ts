@@ -99,13 +99,18 @@ export async function attributeReferral(
   return { outcome: 'created', referralId: row.id, status: res.verdict ? 'ineligible' : 'trial' }
 }
 
-/** P-4: the typed field wins over the cookie. A malformed field does not fall back to the cookie. */
+/**
+ * P-4: the typed field wins over the cookie. A malformed field does not fall back to the cookie. A field equal to the
+ * link cookie counts as 'link' (the form pre-fills it); without the cookie the field always counts as 'signup_field'.
+ */
 export function pickSignupCode(input: { field: unknown; cookie: unknown }): { code: string; via: CapturedVia } | null {
   const typed = typeof input.field === 'string' ? input.field.trim() : ''
+  const fromCookie = normalizeReferralCode(input.cookie)
   if (typed) {
     const code = normalizeReferralCode(typed)
-    return code ? { code, via: 'signup_field' } : null
+    if (!code) return null
+    // The form pre-fills the field from ?ref or the cookie; a field still matching the cookie came through the link.
+    return { code, via: code === fromCookie ? 'link' : 'signup_field' }
   }
-  const fromCookie = normalizeReferralCode(input.cookie)
   return fromCookie ? { code: fromCookie, via: 'link' } : null
 }

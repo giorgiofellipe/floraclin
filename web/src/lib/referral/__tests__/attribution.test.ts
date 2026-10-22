@@ -157,6 +157,15 @@ describe('pickSignupCode', () => {
     expect(pickSignupCode({ field: ' abc234 ', cookie: 'MECA7K' })).toEqual({ code: 'ABC234', via: 'signup_field' })
   })
 
+  it('counts a field left pre-filled from the link as a link signup', () => {
+    expect(pickSignupCode({ field: 'DRAMICAELA', cookie: 'DRAMICAELA' })).toEqual({ code: 'DRAMICAELA', via: 'link' })
+    expect(pickSignupCode({ field: ' dramicaela ', cookie: 'DRAMICAELA' })).toEqual({ code: 'DRAMICAELA', via: 'link' })
+  })
+
+  it('without the cookie a pre-filled field still counts as typed (known undercount of link signups)', () => {
+    expect(pickSignupCode({ field: 'DRAMICAELA', cookie: undefined })).toEqual({ code: 'DRAMICAELA', via: 'signup_field' })
+  })
+
   it('a malformed typed field does not silently fall back to the cookie', () => {
     expect(pickSignupCode({ field: 'MEC-7K', cookie: 'MECA7K' })).toBeNull()
   })

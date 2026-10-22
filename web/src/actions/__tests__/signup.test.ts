@@ -380,6 +380,15 @@ describe('signUp action', () => {
       expect(cookieSetMock).toHaveBeenCalledWith('floraclin_ref', '', expect.objectContaining({ maxAge: 0, path: '/' }))
     })
 
+    it('records a field left pre-filled with the cookie code as a link signup', async () => {
+      withCookies({ floraclin_ref: 'DRAMICAELA' })
+      const formData = validFormData({ email: 'ref-prefilled@test.com' })
+      formData.set('referralCode', 'DRAMICAELA')
+      await signUp(null, formData)
+
+      expect(attributeReferralMock).toHaveBeenCalledWith({ referredTenantId: 'tenant-1', rawCode: 'DRAMICAELA', capturedVia: 'link' })
+    })
+
     it('lets the typed field override the cookie', async () => {
       withCookies({ floraclin_ref: 'MECA7K' })
       const formData = validFormData({ email: 'ref-field@test.com' })
