@@ -22,3 +22,12 @@ export function placeholderClinicName(ownerName: string | null | undefined): str
   const firstName = Array.from(ownerName?.trim().split(/\s+/)[0] ?? '').slice(0, MAX_FIRST_NAME_LENGTH).join('')
   return firstName ? `Clínica de ${firstName}` : 'Minha clínica'
 }
+
+/**
+ * Platform admins are never given a clinic on arrival. The clinic-details page
+ * (which starts the automatic creation) and the server action (which refuses
+ * it) must agree on this, so both read it here.
+ */
+export function isPlatformAdminSession(session: unknown): boolean {
+  return (session as { isPlatformAdmin?: boolean } | null | undefined)?.isPlatformAdmin === true
+}

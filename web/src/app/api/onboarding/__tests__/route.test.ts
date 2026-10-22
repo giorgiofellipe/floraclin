@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const updateWhere = vi.fn()
-const updateSet = vi.fn(() => ({ where: updateWhere }))
+const updateSet = vi.fn((_values: Record<string, unknown>) => ({ where: updateWhere }))
 
 vi.mock('@/lib/write-access', () => ({
   requireWrite: vi.fn(async () => ({ ctx: { tenantId: 'tenant-1', userId: 'user-1' }, blocked: null })),
@@ -48,6 +48,7 @@ function postOnboarding(clinic: Record<string, unknown>) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  updateSet.mockImplementation(() => ({ where: updateWhere }))
 })
 
 describe('POST /api/onboarding', () => {
@@ -107,12 +108,34 @@ describe('POST /api/onboarding', () => {
       })
       // The lifecycle notice was first shown on the wizard's phone field.
       expect(updateSet).toHaveBeenCalledWith({ lifecycleNoticeAt: expect.anything() })
+      const stampCall = updateSet.mock.calls.findIndex(([values]) => 'lifecycleNoticeAt' in values)
+      expect(updateSet.mock.invocationCallOrder[stampCall]).toBeLessThan(
+        vi.mocked(updateTenantSettings).mock.invocationCallOrder[0],
+      )
       expect(scheduleLifecycleWelcome).toHaveBeenCalledTimes(1)
       expect(scheduleLifecycleWelcome).toHaveBeenCalledWith({ tenantId: 'tenant-1' })
       // The welcome reads the phone from the clinic, so it is scheduled after the save.
       expect(vi.mocked(updateTenant).mock.invocationCallOrder[0]).toBeLessThan(
         vi.mocked(scheduleLifecycleWelcome).mock.invocationCallOrder[0],
       )
+    })
+
+    // Regression: the flag was cleared before the stamp, so a failed stamp left
+    // the clinic with no flag and no stamp, out of every lifecycle message.
+    it('keeps the stand-in flag when the lifecycle stamp fails, so a retry stamps again', async () => {
+      vi.mocked(getTenant).mockResolvedValue({
+        id: 'tenant-1',
+        settings: { clinic_name_placeholder: true },
+      } as never)
+      updateSet.mockImplementation((values) => ({
+        where: 'lifecycleNoticeAt' in values ? vi.fn().mockRejectedValue(new Error('connection reset')) : updateWhere,
+      }))
+
+      const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777', workingHours: DEFAULT_WORKING_HOURS })
+
+      expect(res.status).toBe(500)
+      expect(updateTenantSettings).not.toHaveBeenCalled()
+      expect(scheduleLifecycleWelcome).not.toHaveBeenCalled()
     })
 
     it('leaves a clinic named at sign-up alone: its welcome already went out', async () => {

@@ -193,14 +193,13 @@ export function ClinicDetailsForm({ hasClinic = false, suspended = false, autoSt
   // Automatic start: until the server answers, while the session refreshes,
   // or after a failure. `needsDetails` drops through to the form.
   if (autoMode && !formState && !autoState?.needsDetails) {
-    const failed = autoFailed
     return (
       <div>
         {brand}
         <h2 className="text-2xl font-semibold text-charcoal">Preparando sua clínica…</h2>
         <p className="text-sm text-mid mt-1 mb-6">Em seguida você configura nome, telefone e procedimentos.</p>
         {refreshFailedAlert}
-        {failed && (
+        {autoFailed && (
           <div role="alert" className="mb-4 space-y-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
             <p>{AUTO_START_FAILED_MESSAGE}</p>
             <div className="flex flex-wrap gap-2">
@@ -219,7 +218,7 @@ export function ClinicDetailsForm({ hasClinic = false, suspended = false, autoSt
             </div>
           </div>
         )}
-        {!failed && !refreshFailed && (
+        {!autoFailed && !refreshFailed && (
           <div role="status" aria-live="polite" className="flex items-center gap-2 text-sm text-mid">
             <Loader2Icon className="size-4 animate-spin text-sage" aria-hidden />
             {autoState?.success ? 'Entrando...' : 'Criando sua clínica...'}

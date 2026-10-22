@@ -9,6 +9,8 @@ const h = vi.hoisted(() => ({
   signOut: vi.fn(),
   consent: 'unset' as 'unset' | 'granted' | 'denied',
   rerenderSession: null as null | (() => void),
+  // Every call is a new id, so a test can tell a reused id from a fresh one.
+  eventSeq: 0,
 }))
 
 // useSession hands out a new `update` whenever the session changes, the way
@@ -26,7 +28,7 @@ vi.mock('next-auth/react', async () => {
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: h.replace }) }))
 vi.mock('@/lib/marketing-attribution', () => ({
   trackMetaEvent: (...a: unknown[]) => h.trackMetaEvent(...a),
-  generateMetaEventId: (prefix: string) => `${prefix}:generated`,
+  generateMetaEventId: (prefix: string) => `${prefix}:${++h.eventSeq}`,
 }))
 vi.mock('@/lib/cookie-consent', () => ({ cookieConsentStatus: () => h.consent }))
 vi.mock('@/actions/signup', () => ({
@@ -53,6 +55,7 @@ beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   vi.clearAllMocks()
   h.consent = 'unset'
+  h.eventSeq = 0
   h.createClinic.mockResolvedValue({ success: true, created: true, metaEventId: 'complete_registration:1' })
   // Like the real update(): resolves, then the session (and so `update`) changes.
   // Capped so the pre-fix loop ends in a failed assertion rather than a hang.
@@ -212,7 +215,7 @@ describe('one-step Google sign-up: the clinic is created on arrival', () => {
 
   it('creates it once without asking anything, fires CompleteRegistration once, and goes to onboarding', async () => {
     h.consent = 'granted'
-    h.createClinic.mockResolvedValue({ success: true, created: true, metaEventId: 'complete_registration:generated' })
+    h.createClinic.mockResolvedValue({ success: true, created: true, metaEventId: 'complete_registration:1' })
     // StrictMode mounts effects twice in development: still one request.
     const { container, getByText } = render(<StrictMode><ClinicDetailsForm autoStart /></StrictMode>)
 
@@ -222,13 +225,13 @@ describe('one-step Google sign-up: the clinic is created on arrival', () => {
     await act(async () => {})
 
     expect(h.createClinic).toHaveBeenCalledTimes(1)
-    expect(sent()).toEqual([{ mode: 'auto', marketingConsent: 'granted', metaEventId: 'complete_registration:generated' }])
+    expect(sent()).toEqual([{ mode: 'auto', marketingConsent: 'granted', metaEventId: 'complete_registration:1' }])
     expect(h.update).toHaveBeenCalledWith({})
     expect(h.trackMetaEvent).toHaveBeenCalledTimes(1)
     expect(h.trackMetaEvent).toHaveBeenCalledWith(
       'CompleteRegistration',
       { status: 'trial_started', signup_method: 'google' },
-      'complete_registration:generated',
+      'complete_registration:1',
     )
     expect(h.replace).toHaveBeenCalledTimes(1)
   })

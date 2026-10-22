@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     // A clinic created on arrival after Google sign-up has a stand-in name and
     // no phone; this save is the first time we hear either.
     const current = await getTenant(auth.tenantId)
-    const namedOnArrival = hasPlaceholderName(current?.settings)
+    const createdOnArrival = hasPlaceholderName(current?.settings)
 
     // NOTE: Not using withTransaction here because the helper functions
     // (updateTenant, createProcedureType, etc.) all use the global `db` client.
@@ -207,24 +207,28 @@ export async function POST(request: Request) {
         })
       }
 
-      // 7. Mark onboarding as completed
-      await updateTenantSettings(auth.tenantId, {
-        onboarding_completed: true,
-        ...(namedOnArrival ? { [PLACEHOLDER_NAME_SETTING]: false } : {}),
-      })
-
       // A clinic created on arrival skipped the clinic form, so its owner saw
       // the lifecycle notice for the first time on this wizard's phone field.
-      // Stamping it now is what lets lifecycle messages (and the daily run)
-      // reach the clinic, and the held trial welcome goes out once, to the
-      // phone just saved. Its per-channel claims make a repeated save a no-op.
-      if (namedOnArrival) {
+      // Stamping it is what lets lifecycle messages (and the daily run) reach
+      // the clinic. It goes before the stand-in flag is cleared: if anything
+      // after it fails, a retry still sees the flag and stamps again, and
+      // coalesce keeps the first time.
+      if (createdOnArrival) {
         await db
           .update(tenants)
           .set({ lifecycleNoticeAt: sql`coalesce(${tenants.lifecycleNoticeAt}, now())` })
           .where(eq(tenants.id, auth.tenantId))
-        scheduleLifecycleWelcome({ tenantId: auth.tenantId })
       }
+
+      // 7. Mark onboarding as completed
+      await updateTenantSettings(auth.tenantId, {
+        onboarding_completed: true,
+        ...(createdOnArrival ? { [PLACEHOLDER_NAME_SETTING]: false } : {}),
+      })
+
+      // The held trial welcome goes out once, to the phone just saved. Its
+      // per-channel claims make a repeated save a no-op.
+      if (createdOnArrival) scheduleLifecycleWelcome({ tenantId: auth.tenantId })
 
       // 8. Audit log
       await createAuditLog({

@@ -23,7 +23,7 @@ import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
 import { buildFbc, generateMetaEventId } from '@/lib/marketing-attribution'
 import { FIRST_TOUCH_COOKIE, parseFirstTouch, withoutClickIds, type FirstTouch } from '@/lib/first-touch'
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
-import { placeholderClinicName } from '@/lib/clinic-placeholder'
+import { isPlatformAdminSession, placeholderClinicName } from '@/lib/clinic-placeholder'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { sendSignupCompleteRegistrationEvent, type SendSignupCompleteRegistrationInput } from '@/lib/meta/events'
 import {
@@ -231,7 +231,7 @@ export async function createClinicForOAuthUser(
   // ignored by getAuthContext for anyone but a platform admin, but drop it so
   // it cannot pick the wrong clinic later. A platform admin's cookie may name
   // any clinic on purpose, so it stays.
-  const isPlatformAdmin = (session as { isPlatformAdmin?: boolean }).isPlatformAdmin === true
+  const isPlatformAdmin = isPlatformAdminSession(session)
   const selectedTenantId = cookieStore.get(TENANT_COOKIE)?.value
   if (!isPlatformAdmin && selectedTenantId && !memberships.liveTenantIds.includes(selectedTenantId)) {
     cookieStore.delete(TENANT_COOKIE)

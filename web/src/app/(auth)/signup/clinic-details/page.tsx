@@ -1,5 +1,6 @@
 import { auth } from '@/lib/auth-config'
 import { getClinicMemberships } from '@/db/queries/clinic-membership'
+import { isPlatformAdminSession } from '@/lib/clinic-placeholder'
 import { ClinicDetailsForm } from './clinic-details-form'
 
 /**
@@ -20,7 +21,7 @@ export default async function ClinicDetailsPage() {
     ? await getClinicMemberships(session.user.id)
     : { liveTenantIds: [], suspendedOnly: false, neverMember: false }
   const hasClinic = memberships.liveTenantIds.length > 0
-  const isPlatformAdmin = (session as { isPlatformAdmin?: boolean } | null)?.isPlatformAdmin === true
+  const isPlatformAdmin = isPlatformAdminSession(session)
 
   return (
     <ClinicDetailsForm
