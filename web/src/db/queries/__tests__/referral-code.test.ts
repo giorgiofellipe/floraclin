@@ -5,7 +5,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm'
 const generated = vi.hoisted(() => ({ queue: [] as string[] }))
 vi.mock('@/lib/referral/code', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/referral/code')>()),
-  generateReferralCode: () => generated.queue.shift() ?? 'QQQQQQ',
+  generateReferralCode: () => generated.queue.shift() ?? 'ZQQQQQQQ',
 }))
 import { db } from '@/db/client'
 import { auditLogs, referralCodeAliases, tenantReferrals, tenants, users } from '@/db/schema'
@@ -37,8 +37,8 @@ let TENANT_B: string
 let REFERRED: string
 const created: string[] = []
 const FIXED_CODES = [
-  'ABC234', 'DRAMICAELA', 'HOFRACE', 'LIMIT0', 'LIMIT1', 'LIMIT2', 'LIMITX', 'NOVOCOD',
-  'ALIAS1', 'ALIAS2', 'ALIAS3', 'ALIAS4', 'ALIAS5', 'GENOLD', 'GENNEW',
+  'ZQABC234', 'ZQDRAMICAELA', 'ZQHOFRACE', 'ZQLIMIT0', 'ZQLIMIT1', 'ZQLIMIT2', 'ZQLIMITX', 'ZQNOVOCOD',
+  'ZQALIAS1', 'ZQALIAS2', 'ZQALIAS3', 'ZQALIAS4', 'ZQALIAS5', 'ZQGENOLD', 'ZQGENNEW',
 ]
 
 describeIntegration('referral code customisation (integration, requires test DB)', () => {
@@ -55,10 +55,11 @@ describeIntegration('referral code customisation (integration, requires test DB)
       await db.insert(tenants).values({ id, name: `Code Test ${id.slice(0, 8)}`, slug: `code-test-${id}` })
       created.push(id)
     }
-    // A fixed code from an earlier test or run may still be held or retired; free it before claiming it.
+    // A fixed code from an earlier test or run may still be held or retired; free it before claiming it. The codes
+    // start with ZQ so this never touches a real clinic's code in a shared dev/test database.
     await db.delete(referralCodeAliases).where(inArray(referralCodeAliases.code, FIXED_CODES))
     await db.update(tenants).set({ referralCode: null }).where(inArray(tenants.referralCode, FIXED_CODES))
-    await db.update(tenants).set({ referralCode: 'ABC234' }).where(eq(tenants.id, TENANT_A))
+    await db.update(tenants).set({ referralCode: 'ZQABC234' }).where(eq(tenants.id, TENANT_A))
   })
 
   afterAll(async () => {
@@ -71,7 +72,7 @@ describeIntegration('referral code customisation (integration, requires test DB)
     await insertReferral({
       referrerTenantId: TENANT_A,
       referredTenantId: REFERRED,
-      code: 'ABC234',
+      code: 'ZQABC234',
       capturedVia: 'link',
       capturedAt: new Date('2026-10-01T12:00:00.000Z'),
       status: 'trial',
@@ -79,12 +80,12 @@ describeIntegration('referral code customisation (integration, requires test DB)
       checks: {},
     })
 
-    const result = await updateReferralCode({ tenantId: TENANT_A, userId: USER, code: 'DRAMICAELA' })
-    expect(result).toEqual({ outcome: 'updated', code: 'DRAMICAELA', previousCode: 'ABC234' })
-    expect(await codeOf(TENANT_A)).toBe('DRAMICAELA')
-    expect((await findReferrerByCode('ABC234'))?.tenantId).toBe(TENANT_A)
-    expect((await findReferrerByCode('DRAMICAELA'))?.tenantId).toBe(TENANT_A)
-    expect(await listPreviousReferralCodes(TENANT_A)).toEqual(['ABC234'])
+    const result = await updateReferralCode({ tenantId: TENANT_A, userId: USER, code: 'ZQDRAMICAELA' })
+    expect(result).toEqual({ outcome: 'updated', code: 'ZQDRAMICAELA', previousCode: 'ZQABC234' })
+    expect(await codeOf(TENANT_A)).toBe('ZQDRAMICAELA')
+    expect((await findReferrerByCode('ZQABC234'))?.tenantId).toBe(TENANT_A)
+    expect((await findReferrerByCode('ZQDRAMICAELA'))?.tenantId).toBe(TENANT_A)
+    expect(await listPreviousReferralCodes(TENANT_A)).toEqual(['ZQABC234'])
 
     const referrals = await db.select().from(tenantReferrals).where(eq(tenantReferrals.referredTenantId, REFERRED))
     expect(referrals.map((r) => r.referrerTenantId)).toEqual([TENANT_A])
@@ -94,25 +95,25 @@ describeIntegration('referral code customisation (integration, requires test DB)
       .from(auditLogs)
       .where(and(eq(auditLogs.tenantId, TENANT_A), eq(auditLogs.entityType, REFERRAL_CODE_AUDIT_ENTITY)))
     expect(audits).toHaveLength(1)
-    expect(audits[0].changes).toEqual({ referralCode: { old: 'ABC234', new: 'DRAMICAELA' } })
+    expect(audits[0].changes).toEqual({ referralCode: { old: 'ZQABC234', new: 'ZQDRAMICAELA' } })
   })
 
   it('refuses a code another tenant holds, and reports availability per tenant', async () => {
-    expect(await isReferralCodeAvailable(TENANT_B, 'ABC234')).toBe(false)
-    expect(await isReferralCodeAvailable(TENANT_A, 'ABC234')).toBe(true) // its own code
-    expect(await updateReferralCode({ tenantId: TENANT_B, userId: USER, code: 'ABC234' })).toEqual({ outcome: 'taken' })
+    expect(await isReferralCodeAvailable(TENANT_B, 'ZQABC234')).toBe(false)
+    expect(await isReferralCodeAvailable(TENANT_A, 'ZQABC234')).toBe(true) // its own code
+    expect(await updateReferralCode({ tenantId: TENANT_B, userId: USER, code: 'ZQABC234' })).toEqual({ outcome: 'taken' })
     expect(await codeOf(TENANT_B)).toBeNull()
-    expect(await codeOf(TENANT_A)).toBe('ABC234')
+    expect(await codeOf(TENANT_A)).toBe('ZQABC234')
   })
 
   // Two pooled connections run these concurrently; the second UPDATE waits on the unique index, then fails.
   it('lets exactly one of two tenants racing for the same code win', async () => {
     const results = await Promise.all([
-      updateReferralCode({ tenantId: TENANT_A, userId: USER, code: 'HOFRACE' }),
-      updateReferralCode({ tenantId: TENANT_B, userId: USER, code: 'HOFRACE' }),
+      updateReferralCode({ tenantId: TENANT_A, userId: USER, code: 'ZQHOFRACE' }),
+      updateReferralCode({ tenantId: TENANT_B, userId: USER, code: 'ZQHOFRACE' }),
     ])
     expect(results.map((r) => r.outcome).sort()).toEqual(['taken', 'updated'])
-    const [holder] = await db.select({ id: tenants.id }).from(tenants).where(eq(tenants.referralCode, 'HOFRACE'))
+    const [holder] = await db.select({ id: tenants.id }).from(tenants).where(eq(tenants.referralCode, 'ZQHOFRACE'))
     expect(holder).toBeDefined()
   })
 
@@ -120,55 +121,55 @@ describeIntegration('referral code customisation (integration, requires test DB)
     const start = new Date('2026-10-22T12:00:00.000Z')
     for (let i = 0; i < REFERRAL_CODE_CHANGES_PER_DAY; i++) {
       const at = new Date(start.getTime() + i * 60_000)
-      expect((await updateReferralCode({ tenantId: TENANT_A, userId: USER, code: `LIMIT${i}`, now: at })).outcome).toBe(
+      expect((await updateReferralCode({ tenantId: TENANT_A, userId: USER, code: `ZQLIMIT${i}`, now: at })).outcome).toBe(
         'updated',
       )
     }
     const blocked = await updateReferralCode({
       tenantId: TENANT_A,
       userId: USER,
-      code: 'LIMITX',
+      code: 'ZQLIMITX',
       now: new Date(start.getTime() + 60 * 60_000),
     })
     expect(blocked).toEqual({ outcome: 'rate_limited' })
-    expect(await codeOf(TENANT_A)).toBe(`LIMIT${REFERRAL_CODE_CHANGES_PER_DAY - 1}`)
+    expect(await codeOf(TENANT_A)).toBe(`ZQLIMIT${REFERRAL_CODE_CHANGES_PER_DAY - 1}`)
 
     const nextDay = new Date(start.getTime() + 24 * 60 * 60_000 + 60_000)
-    expect((await updateReferralCode({ tenantId: TENANT_A, userId: USER, code: 'LIMITX', now: nextDay })).outcome).toBe(
+    expect((await updateReferralCode({ tenantId: TENANT_A, userId: USER, code: 'ZQLIMITX', now: nextDay })).outcome).toBe(
       'updated',
     )
   })
 
   it('saving the current code is a no-op that does not use up a change', async () => {
-    expect(await updateReferralCode({ tenantId: TENANT_A, userId: USER, code: 'ABC234' })).toEqual({
+    expect(await updateReferralCode({ tenantId: TENANT_A, userId: USER, code: 'ZQABC234' })).toEqual({
       outcome: 'unchanged',
-      code: 'ABC234',
+      code: 'ZQABC234',
     })
     const audits = await db.select().from(auditLogs).where(eq(auditLogs.tenantId, TENANT_A))
     expect(audits).toHaveLength(0)
   })
 
   it("never lets another tenant claim an old code, and lets the owner switch back to it", async () => {
-    await updateReferralCode({ tenantId: TENANT_A, userId: USER, code: 'DRAMICAELA' })
+    await updateReferralCode({ tenantId: TENANT_A, userId: USER, code: 'ZQDRAMICAELA' })
 
-    expect(await isReferralCodeAvailable(TENANT_B, 'ABC234')).toBe(false)
-    expect(await isReferralCodeAvailable(TENANT_A, 'ABC234')).toBe(true)
-    expect(await updateReferralCode({ tenantId: TENANT_B, userId: USER, code: 'ABC234' })).toEqual({ outcome: 'taken' })
+    expect(await isReferralCodeAvailable(TENANT_B, 'ZQABC234')).toBe(false)
+    expect(await isReferralCodeAvailable(TENANT_A, 'ZQABC234')).toBe(true)
+    expect(await updateReferralCode({ tenantId: TENANT_B, userId: USER, code: 'ZQABC234' })).toEqual({ outcome: 'taken' })
 
-    expect(await updateReferralCode({ tenantId: TENANT_A, userId: USER, code: 'ABC234' })).toMatchObject({ outcome: 'updated' })
-    expect(await codeOf(TENANT_A)).toBe('ABC234')
-    expect(await listPreviousReferralCodes(TENANT_A)).toEqual(['DRAMICAELA'])
-    expect((await findReferrerByCode('DRAMICAELA'))?.tenantId).toBe(TENANT_A)
+    expect(await updateReferralCode({ tenantId: TENANT_A, userId: USER, code: 'ZQABC234' })).toMatchObject({ outcome: 'updated' })
+    expect(await codeOf(TENANT_A)).toBe('ZQABC234')
+    expect(await listPreviousReferralCodes(TENANT_A)).toEqual(['ZQDRAMICAELA'])
+    expect((await findReferrerByCode('ZQDRAMICAELA'))?.tenantId).toBe(TENANT_A)
   })
 
   it(`blocks a brand-new code once ${MAX_PREVIOUS_REFERRAL_CODES} old codes exist, but still allows switching back`, async () => {
-    const old = Array.from({ length: MAX_PREVIOUS_REFERRAL_CODES }, (_, i) => `ALIAS${i + 1}`)
+    const old = Array.from({ length: MAX_PREVIOUS_REFERRAL_CODES }, (_, i) => `ZQALIAS${i + 1}`)
     await db.insert(referralCodeAliases).values(old.map((code) => ({ code, tenantId: TENANT_A })))
 
-    expect(await updateReferralCode({ tenantId: TENANT_A, userId: USER, code: 'NOVOCOD' })).toEqual({ outcome: 'alias_limit' })
-    expect(await codeOf(TENANT_A)).toBe('ABC234')
-    expect(await updateReferralCode({ tenantId: TENANT_A, userId: USER, code: 'ALIAS1' })).toMatchObject({ outcome: 'updated' })
-    expect((await listPreviousReferralCodes(TENANT_A)).sort()).toEqual(['ABC234', 'ALIAS2', 'ALIAS3', 'ALIAS4', 'ALIAS5'])
+    expect(await updateReferralCode({ tenantId: TENANT_A, userId: USER, code: 'ZQNOVOCOD' })).toEqual({ outcome: 'alias_limit' })
+    expect(await codeOf(TENANT_A)).toBe('ZQABC234')
+    expect(await updateReferralCode({ tenantId: TENANT_A, userId: USER, code: 'ZQALIAS1' })).toMatchObject({ outcome: 'updated' })
+    expect((await listPreviousReferralCodes(TENANT_A)).sort()).toEqual(['ZQABC234', 'ZQALIAS2', 'ZQALIAS3', 'ZQALIAS4', 'ZQALIAS5'])
   })
 
   // B must wait for A's in-flight change to ABC234 (the per-code advisory lock), then see it retired. Without the
@@ -179,15 +180,15 @@ describeIntegration('referral code customisation (integration, requires test DB)
     let locked!: () => void
     const lockTaken = new Promise<void>((resolve) => (locked = resolve))
     const retiring = db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${'referral_code:ABC234'}))`)
-      await tx.insert(referralCodeAliases).values({ code: 'ABC234', tenantId: TENANT_A })
-      await tx.update(tenants).set({ referralCode: 'HOFRACE' }).where(eq(tenants.id, TENANT_A))
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${'referral_code:ZQABC234'}))`)
+      await tx.insert(referralCodeAliases).values({ code: 'ZQABC234', tenantId: TENANT_A })
+      await tx.update(tenants).set({ referralCode: 'ZQHOFRACE' }).where(eq(tenants.id, TENANT_A))
       locked()
       await held
     })
     await lockTaken
 
-    const claim = updateReferralCode({ tenantId: TENANT_B, userId: USER, code: 'ABC234' })
+    const claim = updateReferralCode({ tenantId: TENANT_B, userId: USER, code: 'ZQABC234' })
     const early = await Promise.race([claim.then(() => 'answered'), new Promise((r) => setTimeout(() => r('waiting'), 300))])
     expect(early).toBe('waiting')
 
@@ -195,19 +196,19 @@ describeIntegration('referral code customisation (integration, requires test DB)
     await retiring
     expect(await claim).toEqual({ outcome: 'taken' })
     expect(await codeOf(TENANT_B)).toBeNull()
-    expect((await findReferrerByCode('ABC234'))?.tenantId).toBe(TENANT_A)
+    expect((await findReferrerByCode('ZQABC234'))?.tenantId).toBe(TENANT_A)
   })
 
   it("never generates another tenant's old code", async () => {
-    await db.insert(referralCodeAliases).values({ code: 'GENOLD', tenantId: TENANT_A })
-    generated.queue.push('GENOLD', 'GENNEW')
-    expect(await getOrCreateReferralCode(TENANT_B)).toBe('GENNEW')
-    expect((await findReferrerByCode('GENOLD'))?.tenantId).toBe(TENANT_A)
+    await db.insert(referralCodeAliases).values({ code: 'ZQGENOLD', tenantId: TENANT_A })
+    generated.queue.push('ZQGENOLD', 'ZQGENNEW')
+    expect(await getOrCreateReferralCode(TENANT_B)).toBe('ZQGENNEW')
+    expect((await findReferrerByCode('ZQGENOLD'))?.tenantId).toBe(TENANT_A)
   })
 
   it('prefers the current holder of a code over an old alias, should both ever exist', async () => {
-    await db.insert(referralCodeAliases).values({ code: 'GENOLD', tenantId: TENANT_B })
-    await db.update(tenants).set({ referralCode: 'GENOLD' }).where(eq(tenants.id, TENANT_A))
-    expect((await findReferrerByCode('GENOLD'))?.tenantId).toBe(TENANT_A)
+    await db.insert(referralCodeAliases).values({ code: 'ZQGENOLD', tenantId: TENANT_B })
+    await db.update(tenants).set({ referralCode: 'ZQGENOLD' }).where(eq(tenants.id, TENANT_A))
+    expect((await findReferrerByCode('ZQGENOLD'))?.tenantId).toBe(TENANT_A)
   })
 })
