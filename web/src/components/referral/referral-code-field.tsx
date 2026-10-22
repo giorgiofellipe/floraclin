@@ -21,7 +21,7 @@ export const REFERRAL_FIELD_COPY = {
   hint: `Tem um código de indicação? Garanta ${OFFER}.`,
   collapsedHint: `Garanta ${OFFER}.`,
   checking: 'Verificando código…',
-  valid: (clinicName: string) => `Indicação de ${clinicName}: ${OFFER}.`,
+  valid: `Código válido: ${OFFER}.`,
   notFound: `Código não encontrado. ${CONTINUE}`,
   badFormat: `Código inválido: use de ${REFERRAL_CODE_MIN_LENGTH} a ${REFERRAL_CODE_MAX_LENGTH} letras ou números. ${CONTINUE}`,
   unavailable: `Não foi possível verificar o código agora. ${CONTINUE}`,
@@ -32,12 +32,12 @@ const LOOKUP_DEBOUNCE_MS = 400
 /** Matches the endpoint's CDN cache closely enough; retyping a code within a minute does not refetch. */
 const LOOKUP_STALE_MS = 60_000
 
-type Lookup = { active: true; clinicName: string } | { active: false }
+type Lookup = { active: boolean }
 
 type Status =
   | { kind: 'hint' }
   | { kind: 'checking' }
-  | { kind: 'valid'; clinicName: string }
+  | { kind: 'valid' }
   | { kind: 'invalid'; message: string }
   | { kind: 'unavailable' }
 
@@ -54,7 +54,7 @@ function statusText(status: Status): string {
     case 'checking':
       return REFERRAL_FIELD_COPY.checking
     case 'valid':
-      return REFERRAL_FIELD_COPY.valid(status.clinicName)
+      return REFERRAL_FIELD_COPY.valid
     case 'invalid':
       return status.message
     case 'unavailable':
@@ -92,7 +92,7 @@ export function ReferralCodeField({
   const lookup = useQuery<Lookup>({
     queryKey: ['referral-code-lookup', debouncedCode],
     queryFn: async ({ signal }) => {
-      const res = await fetch(`/api/referral/codes/${encodeURIComponent(debouncedCode!)}`, { signal })
+      const res = await fetch(`/api/referral/codes/${encodeURIComponent(debouncedCode!)}?fields=active`, { signal })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return res.json()
     },
@@ -105,7 +105,7 @@ export function ReferralCodeField({
   if (shouldShowReferralFormatError(typed, blurred)) status = { kind: 'invalid', message: REFERRAL_FIELD_COPY.badFormat }
   else if (code && (!settled || lookup.isFetching)) status = { kind: 'checking' }
   else if (code && lookup.isError) status = { kind: 'unavailable' }
-  else if (code && lookup.data?.active) status = { kind: 'valid', clinicName: lookup.data.clinicName }
+  else if (code && lookup.data?.active) status = { kind: 'valid' }
   else if (code && lookup.data) status = { kind: 'invalid', message: REFERRAL_FIELD_COPY.notFound }
 
   if (!open) {

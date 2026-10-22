@@ -96,7 +96,7 @@ web/src/db/queries/referrals.ts   (B3) all referral DB access
 
 | Route | Owner | Contract |
 |---|---|---|
-| `GET /api/referral/codes/{code}` (public, no auth) | C4 | `200 { active: true, clinicName: string }` or `200 { active: false }` (unknown, inactive, malformed or switch off are indistinguishable). Header `Cache-Control: public, s-maxage=300, stale-while-revalidate=600`. |
+| `GET /api/referral/codes/{code}` (public, no auth) | C4 | `200 { active: true, clinicName: string }` or `200 { active: false }` (unknown, inactive, malformed or switch off are indistinguishable). With `?fields=active` (the signup field) an active code answers `{ active: true }` without the name. Header `Cache-Control: public, s-maxage=300, stale-while-revalidate=600`. |
 | `POST /api/referral/attach` (owner) | C4 | Body `{ code: string }`. `200 { status: 'trial' \| 'ineligible' }`, or `400 { error: <pt-BR> }`, or `404` when the switch is off. |
 | `GET /api/referral` (owner) | C5 | `200 ReferralDashboardResponse` (§C5), or `404` when the switch is off. |
 | `GET /api/admin/tenants/{id}/referrals` (platform admin) | D4 | `200 { data: AdminReferralView }` |
@@ -1400,7 +1400,7 @@ export function pickSignupCode(input: { field: unknown; cookie: unknown }): { co
 
 **`GET /api/referral/codes/[code]`** (public):
 - `normalizeReferralCode`, then the switch, then `findReferrerByCode` and `canRefer`.
-- Returns `{ active: true, clinicName: shortClinicName(name) }` or `{ active: false }`, with the cache header from §2.2.
+- Returns `{ active: true, clinicName: shortClinicName(name) }` or `{ active: false }`, with the cache header from §2.2. `?fields=active` (used by the signup field, whose message is generic) leaves `clinicName` out.
 - Never a 404 or 500 body that distinguishes cases: on error it reports and returns `{ active: false }`.
 
 **Tests:**

@@ -26,6 +26,16 @@ describe('GET /api/referral/codes/[code]', () => {
     expect(res.headers.get('Cache-Control')).toBe('public, s-maxage=300, stale-while-revalidate=600')
   })
 
+  it('leaves the clinic name out for ?fields=active (the signup field), still cacheable', async () => {
+    vi.mocked(findReferrerByCode).mockResolvedValue({ tenantId: 't1', name: 'Clínica Flora', canRefer: true })
+    const get = (query: string) =>
+      GET(new Request(`http://localhost/api/referral/codes/meca7k${query}`), { params: Promise.resolve({ code: 'meca7k' }) })
+    const res = await get('?fields=active')
+    expect(await res.json()).toEqual({ active: true })
+    expect(res.headers.get('Cache-Control')).toBe('public, s-maxage=300, stale-while-revalidate=600')
+    expect(await (await get('?fields=other')).json()).toEqual({ active: true, clinicName: 'Clínica Flora' })
+  })
+
   it.each([
     ['unknown', null],
     ['inactive', { tenantId: 't1', name: 'X', canRefer: false }],

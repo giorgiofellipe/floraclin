@@ -12,7 +12,7 @@ import { ClinicDetailsForm } from '../clinic-details-form'
 
 beforeEach(() => {
   // The field looks the code up as it is typed; answer as if it were valid.
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ active: true, clinicName: 'Clínica Flora' }))))
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ active: true }))))
   createClinicForOAuthUser.mockReset()
   createClinicForOAuthUser.mockResolvedValue(null)
 })
@@ -33,12 +33,12 @@ describe('ClinicDetailsForm referral code field', () => {
     expect(screen.getByLabelText('Código de indicação')).toHaveValue('')
   })
 
-  it('is open and pre-filled from the default code, and says whose code it is', async () => {
+  it('is open and pre-filled from the default code, and says it is valid, without naming the referrer', async () => {
     render(<ClinicDetailsForm referralEnabled defaultReferralCode="MECA7K" />)
     expect(screen.getByLabelText('Código de indicação')).toHaveValue('MECA7K')
     await waitFor(() =>
       expect(document.getElementById('referralCodeHint')).toHaveTextContent(
-        'Indicação de Clínica Flora: 20% de desconto nos 2 primeiros meses da assinatura.',
+        'Código válido: 20% de desconto nos 2 primeiros meses da assinatura.',
       ),
       { timeout: 2000 },
     )

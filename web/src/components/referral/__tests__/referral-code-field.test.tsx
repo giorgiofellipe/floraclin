@@ -30,16 +30,16 @@ describe('ReferralCodeField', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('shows what is typed in uppercase, looks up the normalised code once typing stops, and names the referrer', async () => {
-    respond(200, { active: true, clinicName: 'Clínica Flora' })
+  it('shows what is typed in uppercase, looks up the normalised code once typing stops, and says it is valid without naming the referrer', async () => {
+    respond(200, { active: true })
     renderWithProviders(<ReferralCodeField defaultCode="" />)
     const input = screen.getByLabelText('Código de indicação') as HTMLInputElement
     expect(input).toHaveClass('uppercase')
     fireEvent.change(input, { target: { value: 'dram' } })
     fireEvent.change(input, { target: { value: 'dramicaela' } })
-    await waitFor(() => expect(hint()).toHaveTextContent(REFERRAL_FIELD_COPY.valid('Clínica Flora')), LOOKUP_WAIT)
+    await waitFor(() => expect(hint()).toHaveTextContent('Código válido: 20% de desconto nos 2 primeiros meses da assinatura.'), LOOKUP_WAIT)
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock).toHaveBeenCalledWith('/api/referral/codes/DRAMICAELA', expect.anything())
+    expect(fetchMock).toHaveBeenCalledWith('/api/referral/codes/DRAMICAELA?fields=active', expect.anything())
     expect(input).not.toHaveAttribute('aria-invalid')
   })
 
