@@ -7,7 +7,8 @@
  * always cleans the id out of the URL so a refresh cannot re-post it.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { screen, waitFor, act } from '@testing-library/react'
+import { screen, waitFor, act, fireEvent } from '@testing-library/react'
+import { toast } from 'sonner'
 import { renderWithProviders as render } from '@/tests/test-utils'
 import { BillingSettings } from '../billing-settings'
 
@@ -22,6 +23,8 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/configuracoes',
   useSearchParams: () => searchParamsValue,
 }))
+
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 vi.mock('next-auth/react', () => ({
   useSession: () => ({ data: null, status: 'authenticated', update: mockUpdate }),
@@ -389,5 +392,123 @@ describe('BillingSettings — a running discount (win-back coupon)', () => {
     renderWithDiscount(null)
     expect(await screen.findByText('R$ 99,00/mês')).toBeInTheDocument()
     expect(screen.queryByTestId('billing-discounted-price')).toBeNull()
+  })
+})
+
+describe('BillingSettings — referral program', () => {
+  const OFFER = {
+    kind: 'referral',
+    referrerName: 'Clínica Flor',
+    label: '20% de desconto nos 2 primeiros meses',
+    percentOff: 20,
+    amountOffCents: null,
+    duration: 'repeating',
+    durationInMonths: 2,
+    planSlugs: ['starter'],
+    headline: 'Indicação de Clínica Flor: 20% de desconto nos 2 primeiros meses.',
+  }
+  const TRIAL_USAGE = {
+    ...USAGE_RESPONSE,
+    subscription: { ...USAGE_RESPONSE.subscription, status: 'trialing', stripeSubscriptionId: null, hasStripeCustomer: false },
+    plan: { name: 'Starter', slug: 'starter', priceCents: 9900, features: {} },
+  }
+  const PLANS = { data: [{ id: 'p1', slug: 'starter', name: 'Starter', priceCents: 9900, features: {}, limits: {} }] }
+
+  function setup(usageBodies: Array<Record<string, unknown>>, attach?: () => Response) {
+    let usageCalls = 0
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/billing/usage') {
+        const body = usageBodies[Math.min(usageCalls++, usageBodies.length - 1)]
+        return { ok: true, json: async () => body } as Response
+      }
+      if (url === '/api/billing/plans') return { ok: true, json: async () => PLANS } as Response
+      if (url === '/api/referral/attach' && init?.method === 'POST' && attach) return attach()
+      throw new Error(`unexpected fetch: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<BillingSettings />)
+    return fetchMock
+  }
+  const usageCalls = (m: ReturnType<typeof setup>) => m.mock.calls.filter((c) => c[0] === '/api/billing/usage').length
+
+  it('notes the referral bonus under the WhatsApp credits', async () => {
+    setup([{ ...USAGE_RESPONSE, usage: { ...USAGE_RESPONSE.usage, whatsapp: { used: 1, limit: 250, bonus: 50 } } }])
+    expect(await screen.findByTestId('usage-note')).toHaveTextContent('inclui +50 créditos de indicação')
+  })
+
+  it('shows no bonus note without a bonus', async () => {
+    setup([USAGE_RESPONSE])
+    await screen.findByText('Plano atual')
+    expect(screen.queryByTestId('usage-note')).toBeNull()
+  })
+
+  it('shows the offer banner and the struck plan price', async () => {
+    setup([{ ...TRIAL_USAGE, referral: { offer: OFFER, canEnterCode: false } }])
+    expect(await screen.findByTestId('referral-offer-banner')).toHaveTextContent(OFFER.headline)
+    const price = await screen.findByTestId('referral-plan-price')
+    expect(price).toHaveTextContent('R$ 99,00')
+    expect(price).toHaveTextContent('R$ 79,20/mês')
+    expect(price).toHaveTextContent('nos 2 primeiros meses')
+  })
+
+  it('renders the referral discount line', async () => {
+    setup([
+      {
+        ...USAGE_RESPONSE,
+        plan: { name: 'Starter', slug: 'starter', priceCents: 9900, features: {} },
+        discount: { discountedCents: 5940, fullCents: 9900, duration: 'forever', endsAt: null, referralPercent: 40, afterEndsCents: null },
+      },
+    ])
+    expect(await screen.findByTestId('billing-discounted-price')).toHaveTextContent(
+      'R$ 99,00 → R$ 59,40/mês · 40% de desconto por 2 indicações pagantes',
+    )
+  })
+
+  it('posts the code to attach, refetches usage and drops the card', async () => {
+    const m = setup(
+      [
+        { ...TRIAL_USAGE, referral: { offer: null, canEnterCode: true } },
+        { ...TRIAL_USAGE, referral: { offer: OFFER, canEnterCode: false } },
+      ],
+      () => ({ ok: true, status: 200, json: async () => ({ status: 'trial' }) }) as Response,
+    )
+    expect(await screen.findByText('Tem um código de indicação?')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Código de indicação'), { target: { value: ' MECA7K ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar código' }))
+
+    await waitFor(() => expect(usageCalls(m)).toBe(2))
+    const attach = m.mock.calls.find((c) => c[0] === '/api/referral/attach')!
+    expect(JSON.parse(attach[1]!.body as string)).toEqual({ code: 'MECA7K' })
+    expect(toast.success).toHaveBeenCalledWith('Indicação registrada')
+    await waitFor(() => expect(screen.queryByText('Tem um código de indicação?')).toBeNull())
+    expect(await screen.findByTestId('referral-offer-banner')).toBeInTheDocument()
+  })
+
+  it('explains an ineligible referral', async () => {
+    setup(
+      [{ ...TRIAL_USAGE, referral: { offer: null, canEnterCode: true } }],
+      () => ({ ok: true, status: 200, json: async () => ({ status: 'ineligible' }) }) as Response,
+    )
+    fireEvent.change(await screen.findByLabelText('Código de indicação'), { target: { value: 'MECA7K' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar código' }))
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Esta indicação não é elegível pelas regras do programa.'),
+    )
+  })
+
+  it('shows the server message on a 400', async () => {
+    setup(
+      [{ ...TRIAL_USAGE, referral: { offer: null, canEnterCode: true } }],
+      () => ({ ok: false, status: 400, json: async () => ({ error: 'Código inválido' }) }) as Response,
+    )
+    fireEvent.change(await screen.findByLabelText('Código de indicação'), { target: { value: 'XXXX' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar código' }))
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Código inválido'))
+  })
+
+  it('hides the code card when the program is off', async () => {
+    setup([{ ...TRIAL_USAGE, referral: { offer: null, canEnterCode: false } }])
+    await screen.findByText('Plano atual')
+    expect(screen.queryByText('Tem um código de indicação?')).toBeNull()
   })
 })

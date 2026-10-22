@@ -23,8 +23,11 @@ function appRoutes(dir = APP_DIR, segments: string[] = []): string[] {
 describe('site page registry', () => {
   it('has no dynamic routes the registry cannot list', () => {
     // A [slug] route needs registry entries generated from its data source;
-    // listing the pattern would publish a literal "[slug]" URL.
-    expect(appRoutes().filter((route) => route.includes('['))).toEqual([])
+    // listing the pattern would publish a literal "[slug]" URL. A dynamic
+    // route explicitly marked non-indexable is never listed, so it is fine.
+    expect(
+      appRoutes().filter((route) => route.includes('[') && !NON_INDEXABLE_ROUTES.includes(route)),
+    ).toEqual([])
   })
 
   it('lists every page under src/app, unless it is marked non-indexable', () => {

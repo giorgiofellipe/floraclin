@@ -27,7 +27,11 @@ import {
   CreditCardIcon,
   AlertTriangleIcon,
 } from 'lucide-react'
-import { brCalendarDaysBetween, brEndPhrase, formatBrDate, formatBrDayMonth } from '@/lib/dates'
+import { brl, discountSummaryLine } from '@/lib/billing-discount-copy'
+import { durationPhrase, winbackPriceCents } from '@/lib/winback'
+import { Input } from '@/components/ui/input'
+import type { PublicReferralOffer } from '@/lib/referral/offer-copy'
+import { brCalendarDaysBetween, brEndPhrase } from '@/lib/dates'
 
 type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled' | 'expired'
 
@@ -35,6 +39,8 @@ interface UsageBucket {
   used: number
   limit: number
 }
+
+type ReferralOfferView = PublicReferralOffer & { headline: string }
 
 interface BillingUsageResponse {
   subscription: {
@@ -56,11 +62,18 @@ interface BillingUsageResponse {
     fullCents: number
     duration: 'repeating' | 'forever'
     endsAt: string | null
+    afterEndsCents?: number | null
+    referralPercent?: number | null
   } | null
+  /** Absent on payloads from before the referral program. */
+  referral?: {
+    offer: ReferralOfferView | null
+    canEnterCode: boolean
+  }
   usage: {
     users: UsageBucket
     patients: UsageBucket
-    whatsapp: UsageBucket
+    whatsapp: UsageBucket & { bonus?: number }
   }
 }
 
@@ -118,11 +131,12 @@ const GATED_FEATURE_LABELS: Record<string, string> = {
   own_whatsapp_number: 'Número próprio de WhatsApp',
 }
 
-function UsageBar({ label, icon: Icon, used, limit }: {
+function UsageBar({ label, icon: Icon, used, limit, note }: {
   label: string
   icon: typeof UsersIcon
   used: number
   limit: number
+  note?: string | null
 }) {
   const isUnlimited = limit === -1
   const percentage = isUnlimited ? 0 : limit > 0 ? Math.min((used / limit) * 100, 100) : 0
@@ -150,31 +164,18 @@ function UsageBar({ label, icon: Icon, used, limit }: {
           />
         </div>
       )}
+      {note && <p className="text-xs text-mid" data-testid="usage-note">{note}</p>}
     </div>
   )
 }
 
-function brl(cents: number): string {
-  return `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`
-}
-
-/**
- * "R$ 69,30/mês até 21/01, depois R$ 99,00": what the clinic pays now. With a
- * cancellation pending there is no "depois", and an end in another year
- * carries the year.
- */
-function discountedPriceLine(
-  discount: NonNullable<BillingUsageResponse['discount']>,
-  cancelPending: boolean,
-): string {
-  const now = `${brl(discount.discountedCents)}/mês`
-  if (cancelPending) return `${now} com desconto`
-  if (discount.endsAt) {
-    const sameYear = formatBrDate(discount.endsAt).slice(6) === formatBrDate(new Date()).slice(6)
-    const until = sameYear ? formatBrDayMonth(discount.endsAt) : formatBrDate(discount.endsAt)
-    return `${now} até ${until}, depois ${brl(discount.fullCents)}`
-  }
-  return `${now} com desconto (sem desconto: ${brl(discount.fullCents)})`
+function referralPlanPrice(
+  plan: PlanItem,
+  offer: ReferralOfferView | null,
+) {
+  const discounted = offer ? winbackPriceCents(plan, offer) : null
+  if (!offer || discounted === null) return null
+  return { fullCents: plan.priceCents, discountedCents: discounted, phrase: durationPhrase(offer) }
 }
 
 function PlanCard({
@@ -184,10 +185,13 @@ function PlanCard({
   isCheckingOut,
   onSubscribe,
   priceOverride,
+  referralPrice,
 }: {
   plan: PlanItem
   /** What the clinic actually pays on this plan (a running discount). */
   priceOverride?: string | null
+  /** The referral welcome price on this plan: struck full price → discounted, for `phrase`. */
+  referralPrice?: { fullCents: number; discountedCents: number; phrase: string } | null
   isCurrent: boolean
   isSwitch: boolean
   isCheckingOut: boolean
@@ -210,7 +214,17 @@ function PlanCard({
       <div className="flex items-start justify-between mb-3">
         <div>
           <h3 className="text-base font-medium text-charcoal">{plan.name}</h3>
-          <p className="text-lg font-semibold text-forest mt-0.5">{price}</p>
+          {referralPrice && !isFree ? (
+            <div className="mt-0.5" data-testid="referral-plan-price">
+              <p className="text-lg font-semibold text-forest">
+                <span className="text-sm font-normal text-mid line-through mr-1.5">{brl(referralPrice.fullCents)}</span>
+                {brl(referralPrice.discountedCents)}/mês
+              </p>
+              <p className="text-xs text-mid">{referralPrice.phrase.trim()}</p>
+            </div>
+          ) : (
+            <p className="text-lg font-semibold text-forest mt-0.5">{price}</p>
+          )}
         </div>
         {isCurrent && (
           <Badge className="bg-sage/20 text-sage border-sage/30 text-[11px]">Atual</Badge>
@@ -492,6 +506,33 @@ export function BillingSettings() {
     },
   })
 
+  const [referralCode, setReferralCode] = useState('')
+  const attachMutation = useMutation({
+    mutationFn: async (code: string) => {
+      const res = await fetch('/api/referral/attach', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      })
+      if (!res.ok) {
+        throw new Error(await errorMessage(res, 'Não foi possível aplicar o código'))
+      }
+      return res.json() as Promise<{ status: 'trial' | 'ineligible' }>
+    },
+    onSuccess: ({ status }) => {
+      if (status === 'ineligible') {
+        toast.error('Esta indicação não é elegível pelas regras do programa.')
+      } else {
+        toast.success('Indicação registrada')
+      }
+      setReferralCode('')
+      queryClient.invalidateQueries({ queryKey: ['billing', 'usage'] })
+    },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    },
+  })
+
   function handleSubscribe(planSlug: string) {
     setCheckingOutSlug(planSlug)
     checkoutMutation.mutate(planSlug)
@@ -527,11 +568,12 @@ export function BillingSettings() {
 
   const { subscription, plan, usage } = usageData
   const discountLine = usageData.discount
-    ? discountedPriceLine(
-        usageData.discount,
-        subscription.status === 'canceled' && new Date(subscription.currentPeriodEnd) > new Date(),
-      )
+    ? discountSummaryLine(usageData.discount, {
+        cancelPending: subscription.status === 'canceled' && new Date(subscription.currentPeriodEnd) > new Date(),
+      })
     : null
+  const referralOffer = usageData.referral?.offer ?? null
+  const canEnterCode = usageData.referral?.canEnterCode ?? false
   const statusConfig = STATUS_CONFIG[subscription.status]
   const plans = plansData?.data ?? []
   const canCancel =
@@ -605,9 +647,52 @@ export function BillingSettings() {
         <div className="space-y-4">
           <UsageBar label="Usuários" icon={UsersIcon} used={usage.users.used} limit={usage.users.limit} />
           <UsageBar label="Pacientes" icon={UserIcon} used={usage.patients.used} limit={usage.patients.limit} />
-          <UsageBar label="Créditos WhatsApp" icon={MessageCircleIcon} used={usage.whatsapp.used} limit={usage.whatsapp.limit} />
+          <UsageBar
+            label="Créditos WhatsApp"
+            icon={MessageCircleIcon}
+            used={usage.whatsapp.used}
+            limit={usage.whatsapp.limit}
+            note={(usage.whatsapp.bonus ?? 0) > 0 ? `inclui +${usage.whatsapp.bonus} créditos de indicação` : null}
+          />
         </div>
       </div>
+
+      {referralOffer && (
+        <div className="rounded-[3px] border border-sage/30 bg-sage/10 p-4" data-testid="referral-offer-banner">
+          <p className="text-sm text-forest">{referralOffer.headline}</p>
+        </div>
+      )}
+
+      {canEnterCode && (
+        <form
+          className="rounded-[3px] border border-[#E8ECEF] p-5 space-y-3"
+          data-testid="referral-code-card"
+          onSubmit={(e) => {
+            e.preventDefault()
+            const code = referralCode.trim()
+            if (code) attachMutation.mutate(code)
+          }}
+        >
+          <p className="text-sm font-medium text-charcoal">Tem um código de indicação?</p>
+          <div className="flex gap-2">
+            <Input
+              value={referralCode}
+              onChange={(e) => setReferralCode(e.target.value)}
+              placeholder="Código"
+              aria-label="Código de indicação"
+              maxLength={12}
+              className="max-w-[200px] uppercase"
+            />
+            <Button
+              type="submit"
+              variant="outline"
+              disabled={attachMutation.isPending || !referralCode.trim()}
+            >
+              {attachMutation.isPending ? 'Aplicando...' : 'Aplicar código'}
+            </Button>
+          </div>
+        </form>
+      )}
 
       {/* Plan comparison */}
       {plansFailed && (
@@ -629,6 +714,7 @@ export function BillingSettings() {
                 plan={p}
                 isCurrent={p.slug === plan.slug && !isLapsed}
                 priceOverride={p.slug === plan.slug && !isLapsed ? discountLine : null}
+                referralPrice={referralPlanPrice(p, referralOffer)}
                 isSwitch={isSwitching}
                 isCheckingOut={checkingOutSlug === p.slug}
                 onSubscribe={handleSubscribe}

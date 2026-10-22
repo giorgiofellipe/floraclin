@@ -1,9 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { captureFirstTouch } from '@/lib/first-touch'
+import { captureReferralCode } from '@/lib/referral-cookie'
 
 export function middleware(request: NextRequest) {
   const response = NextResponse.next()
   captureFirstTouch(request, response)
+  captureReferralCode(request, response)
   return response
 }
 

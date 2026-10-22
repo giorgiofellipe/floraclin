@@ -21,6 +21,8 @@ import { buildFbc, generateMetaEventId } from '@/lib/marketing-attribution'
 import { FIRST_TOUCH_COOKIE, parseFirstTouch, withoutClickIds, type FirstTouch } from '@/lib/first-touch'
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
 import { reportSideEffectFailure } from '@/lib/observability'
+import { attributeReferral, pickSignupCode } from '@/lib/referral/attribution'
+import { REFERRAL_COOKIE_NAME } from '@/lib/referral/rules'
 import { sendSignupCompleteRegistrationEvent, type SendSignupCompleteRegistrationInput } from '@/lib/meta/events'
 import {
   CONFIRM_EMAIL_STATE_COOKIE,
@@ -107,6 +109,7 @@ export async function signUp(
     if (tenantAttribution) {
       await persistSignupAttribution(tenantId, tenantAttribution)
     }
+    await attributeSignupReferral(tenantId, formData, cookieStore, requestHeaders)
     if (marketingConsent && metaEventId) {
       scheduleSignupCompleteRegistration({
         eventId: metaEventId,
@@ -237,6 +240,7 @@ export async function createClinicForOAuthUser(
   if (tenantAttribution) {
     await persistSignupAttribution(tenant.id, tenantAttribution)
   }
+  await attributeSignupReferral(tenant.id, formData, cookieStore, requestHeaders)
   if (marketingConsent && metaEventId && session.user.email) {
     scheduleSignupCompleteRegistration({
       eventId: metaEventId,
@@ -310,6 +314,42 @@ async function persistSignupAttribution(
       return
     }
     throw err
+  }
+}
+
+/** Attribution must never block signup: any failure is reported and swallowed. */
+async function attributeSignupReferral(
+  tenantId: string,
+  formData: FormData,
+  cookieStore: Awaited<ReturnType<typeof cookies>>,
+  requestHeaders: Pick<Headers, 'get'>,
+): Promise<void> {
+  try {
+    const picked = pickSignupCode({
+      field: formData.get('referralCode'),
+      cookie: cookieStore.get(REFERRAL_COOKIE_NAME)?.value,
+    })
+    if (!picked) return
+    const result = await attributeReferral({ referredTenantId: tenantId, rawCode: picked.code, capturedVia: picked.via })
+    if (result.outcome === 'created') {
+      cookieStore.set(REFERRAL_COOKIE_NAME, '', referralCookieDeleteOptions(requestHeaders.get('host')))
+    }
+  } catch (err) {
+    reportSideEffectFailure(err, { area: 'referral', step: 'attribute_signup' })
+  }
+}
+
+// Mirrors the options captureReferralCode sets (lib/referral/cookie.ts, B6): the cookie is only
+// deleted when the domain/path match, and on our own hosts it lives on the parent domain.
+function referralCookieDeleteOptions(host: string | null) {
+  const hostname = (host ?? '').split(':')[0]
+  const own = hostname === 'floraclin.com.br' || hostname.endsWith('.floraclin.com.br')
+  return {
+    maxAge: 0,
+    path: '/',
+    sameSite: 'lax' as const,
+    httpOnly: true,
+    ...(own ? { domain: '.floraclin.com.br' } : {}),
   }
 }
 

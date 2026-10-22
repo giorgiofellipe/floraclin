@@ -4,6 +4,11 @@ export const MARKETING_CREDIT_COST = 3
 export const DEFAULT_CREDIT_COST = 1
 export const UNLIMITED_CREDITS = -1
 
+/** plan + bonus; -1 stays -1 (unlimited never gets a bonus). */
+export function periodCreditsTotal(planLimit: number, bonusCredits: number): number {
+  return planLimit === UNLIMITED_CREDITS ? UNLIMITED_CREDITS : planLimit + bonusCredits
+}
+
 export function templateCreditCost(category: string): number {
   return category === 'MARKETING' ? MARKETING_CREDIT_COST : DEFAULT_CREDIT_COST
 }

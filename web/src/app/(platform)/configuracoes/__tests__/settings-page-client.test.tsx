@@ -43,6 +43,7 @@ vi.mock('@/components/financial/settings/financial-settings-form', () => ({ Fina
 vi.mock('@/components/financial/settings/expense-categories-manager', () => ({ ExpenseCategoriesManager: stub }))
 vi.mock('@/components/settings/whatsapp-settings-form', () => ({ WhatsAppSettingsForm: stub }))
 vi.mock('@/components/settings/billing-settings', () => ({ BillingSettings: stub }))
+vi.mock('@/components/settings/referral-settings', () => ({ ReferralSettings: stub }))
 vi.mock('@/components/packages/package-template-list', () => ({ PackageTemplateList: stub }))
 vi.mock('@/components/settings/anamnesis-template-settings', () => ({ AnamnesisTemplateSettings: stub }))
 vi.mock('@/components/settings/document-template-list', () => ({ DocumentTemplateList: stub }))
@@ -62,7 +63,7 @@ const TENANT = {
   logoUrl: null,
 }
 
-function renderSettings(userRole: 'owner' | 'practitioner') {
+function renderSettings(userRole: 'owner' | 'practitioner', referralEnabled = false) {
   const props = {
     tenant: TENANT,
     procedureTypes: [],
@@ -71,6 +72,7 @@ function renderSettings(userRole: 'owner' | 'practitioner') {
     consentTemplates: [],
     currentUserId: 'u1',
     userRole,
+    referralEnabled,
     initialTab: searchParamsValue.get('tab') ?? undefined,
   }
   const view = render(<SettingsPageClient {...props} />)
@@ -115,5 +117,24 @@ describe('SettingsPageClient mobile drill-down', () => {
 
     expect(mockBack).toHaveBeenCalledTimes(1)
     expect(mockReplace).not.toHaveBeenCalled()
+  })
+})
+
+describe('SettingsPageClient "Indique e Ganhe" tab', () => {
+  const indiqueLink = '/configuracoes?tab=indique'
+
+  it('is hidden when the referral switch is off', () => {
+    renderSettings('owner', false)
+    expect(sectionLinks()).not.toContain(indiqueLink)
+  })
+
+  it('is visible for an owner when the switch is on', () => {
+    renderSettings('owner', true)
+    expect(sectionLinks()).toContain(indiqueLink)
+  })
+
+  it('is hidden for a non-owner even when the switch is on', () => {
+    renderSettings('practitioner', true)
+    expect(sectionLinks()).not.toContain(indiqueLink)
   })
 })

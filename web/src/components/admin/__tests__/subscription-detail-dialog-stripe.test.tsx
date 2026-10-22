@@ -21,6 +21,8 @@ vi.mock('@/hooks/mutations/use-admin-subscription-mutations', () => ({
   useExtendTrial: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
+vi.mock('../tenant-referrals-panel', () => ({ TenantReferralsPanel: () => null }))
+
 const FUTURE = '2099-03-10T02:00:00.000Z'
 
 function sub(over: Record<string, unknown> = {}) {

@@ -34,6 +34,7 @@ vi.mock('@/db/queries/subscriptions', () => ({
 }))
 vi.mock('@/db/client', () => ({ db: { select: () => selectMock() } }))
 vi.mock('@/db/schema', () => ({ tenantSubscriptions: {}, plans: {} }))
+vi.mock('@/lib/referral/events', () => ({ handleReferralStripeEvent: vi.fn() }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 vi.mock('@/lib/api-error', () => ({
   handleApiError: () => new Response('error', { status: 500 }),
