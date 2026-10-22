@@ -33,11 +33,13 @@ const sendSignupCompleteRegistrationEventMock = vi.fn()
 const headersMock = vi.fn()
 const afterMock = vi.fn()
 const scheduleLifecycleWelcomeMock = vi.fn()
+const getClinicMembershipsMock = vi.fn()
+const cookieSetMock = vi.fn()
 
 vi.mock('next/navigation', () => ({ redirect: (p: string) => redirectMock(p) }))
 vi.mock('next/headers', () => ({
   headers: () => headersMock(),
-  cookies: async () => ({ get: () => undefined }),
+  cookies: async () => ({ get: () => undefined, set: (...a: unknown[]) => cookieSetMock(...a), delete: vi.fn() }),
 }))
 vi.mock('next/server', () => ({
   after: (task: () => unknown) => task(),
@@ -52,6 +54,9 @@ vi.mock('@/db/client', () => ({
 vi.mock('@/db/queries/admin-tenants', () => ({
   createSelfSignupTenant: (...a: unknown[]) => createSelfSignupTenantMock(...a),
   generateSlug: (name: string) => name.toLowerCase().replace(/\s+/g, '-'),
+}))
+vi.mock('@/db/queries/clinic-membership', () => ({
+  getClinicMemberships: (...a: unknown[]) => getClinicMembershipsMock(...a),
 }))
 vi.mock('@/db/queries/subscriptions', () => ({
   createSubscription: (...a: unknown[]) => createSubscriptionMock(...a),
@@ -108,10 +113,9 @@ beforeEach(() => {
       where: () => Promise.resolve(),
     }),
   })
-  // No membership, then the free-plan lookup.
-  selectMock
-    .mockReturnValueOnce(membershipLookup([]))
-    .mockReturnValue(membershipLookup([{ id: 'plan-free', slug: 'free', name: 'Free', priceCents: 0 }]))
+  getClinicMembershipsMock.mockResolvedValue({ liveTenantIds: [], suspended: false })
+  // The free-plan lookup.
+  selectMock.mockReturnValue(membershipLookup([{ id: 'plan-free', slug: 'free', name: 'Free', priceCents: 0 }]))
 })
 
 describe('createClinicForOAuthUser does not redirect with a stale token', () => {
@@ -136,6 +140,8 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
       phone: '11988887777',
     })
     expect(updateMock).not.toHaveBeenCalled()
+    // The new clinic is the selected one.
+    expect(cookieSetMock).toHaveBeenCalledWith('floraclin_tenant_id', 'tenant-1', expect.objectContaining({ httpOnly: true }))
   })
 
   it('returns and persists the Meta event id when marketing consent was granted', async () => {
@@ -167,8 +173,7 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
   it('reports success on a retry rather than redirecting', async () => {
     // The user already submitted once. The clinic exists; the token does not
     // know it yet. Redirecting here was the second half of the loop.
-    selectMock.mockReset()
-    selectMock.mockReturnValue(membershipLookup([{ id: 'membership-1' }]))
+    getClinicMembershipsMock.mockResolvedValue({ liveTenantIds: ['tenant-1'], suspended: false })
 
     const state = await createClinicForOAuthUser(null, form())
 

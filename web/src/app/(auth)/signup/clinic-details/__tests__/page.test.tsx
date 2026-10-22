@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   replace: vi.fn(),
   trackMetaEvent: vi.fn(),
   createClinic: vi.fn(),
+  signOut: vi.fn(),
   rerenderSession: null as null | (() => void),
 }))
 
@@ -14,6 +15,7 @@ const h = vi.hoisted(() => ({
 vi.mock('next-auth/react', async () => {
   const React = await import('react')
   return {
+    signOut: (...a: unknown[]) => h.signOut(...a),
     useSession: () => {
       const [, setTick] = React.useState(0)
       h.rerenderSession = () => setTick((t) => t + 1)
@@ -26,7 +28,8 @@ vi.mock('@/lib/marketing-attribution', () => ({ trackMetaEvent: (...a: unknown[]
 vi.mock('@/actions/signup', () => ({ createClinicForOAuthUser: (...a: unknown[]) => h.createClinic(...a) }))
 vi.mock('@/components/marketing/signup-attribution-fields', () => ({ SignupAttributionFields: () => null }))
 
-import ClinicDetailsPage from '../page'
+import { ClinicDetailsForm, MAX_SESSION_REFRESH_ATTEMPTS, SESSION_REFRESH_FAILED_MESSAGE } from '../clinic-details-form'
+import { SUSPENDED_CLINIC_MESSAGE } from '@/lib/clinic-suspended'
 
 const MAX_SESSION_CHANGES = 5
 
@@ -43,7 +46,7 @@ beforeEach(() => {
 
 describe('clinic details after Google sign-up', () => {
   it('refreshes the token with a POST-style update, fires CompleteRegistration once, then navigates', async () => {
-    const { container } = render(<ClinicDetailsPage />)
+    const { container } = render(<ClinicDetailsForm />)
     await act(async () => {
       fireEvent.submit(container.querySelector('form')!)
     })
@@ -63,7 +66,7 @@ describe('clinic details after Google sign-up', () => {
       h.rerenderSession?.()
       return null
     })
-    const { container } = render(<ClinicDetailsPage />)
+    const { container } = render(<ClinicDetailsForm />)
     await act(async () => {
       fireEvent.submit(container.querySelector('form')!)
     })
@@ -74,5 +77,80 @@ describe('clinic details after Google sign-up', () => {
     expect(h.update).toHaveBeenCalledTimes(2)
     expect(h.replace).toHaveBeenCalledTimes(1)
     expect(h.trackMetaEvent).toHaveBeenCalledTimes(1)
+  })
+  it('stops with an explicit error, without navigating, when no refresh resolves a tenant', async () => {
+    // The loop in production: the clinic "exists" but the session never gets a
+    // tenant, so /dashboard bounces straight back here.
+    h.createClinic.mockResolvedValue({ success: true, created: false })
+    h.update.mockResolvedValue({ tenantId: null })
+    const { container, findByRole } = render(<ClinicDetailsForm />)
+    await act(async () => {
+      fireEvent.submit(container.querySelector('form')!)
+    })
+
+    const alert = await findByRole('alert', {}, { timeout: 3000 })
+    expect(alert.textContent).toContain(SESSION_REFRESH_FAILED_MESSAGE)
+    expect(h.update).toHaveBeenCalledTimes(MAX_SESSION_REFRESH_ATTEMPTS)
+    expect(h.replace).not.toHaveBeenCalled()
+    expect(h.trackMetaEvent).not.toHaveBeenCalled()
+
+    // "Tentar de novo" refreshes the token again; a plain reload would not.
+    h.update.mockResolvedValue({ tenantId: 'tenant-1' })
+    await act(async () => {
+      fireEvent.click(await findByRole('button', { name: 'Tentar de novo' }))
+    })
+    await waitFor(() => expect(h.replace).toHaveBeenCalledWith('/dashboard'))
+  })
+
+  it('keeps the form while refreshing when the action re-renders the page with the new clinic', async () => {
+    // Setting the tenant cookie in the action re-renders the server page,
+    // which now finds a live clinic.
+    let resolveUpdate: (v: unknown) => void = () => {}
+    h.update.mockImplementation(() => new Promise((r) => { resolveUpdate = r }))
+    const { container, rerender, queryByRole } = render(<ClinicDetailsForm />)
+    await act(async () => {
+      fireEvent.submit(container.querySelector('form')!)
+    })
+    rerender(<ClinicDetailsForm hasClinic />)
+
+    expect(container.querySelector('form')).not.toBeNull()
+    expect(queryByRole('button', { name: 'Entrar na clínica' })).toBeNull()
+    expect(container.querySelector('button[type=submit]')!.hasAttribute('disabled')).toBe(true)
+
+    await act(async () => resolveUpdate({ tenantId: 'tenant-1' }))
+    await waitFor(() => expect(h.replace).toHaveBeenCalledTimes(1))
+    expect(h.update).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the suspension notice from the action and no form', async () => {
+    h.createClinic.mockResolvedValue({ suspended: true, error: { general: [SUSPENDED_CLINIC_MESSAGE] } })
+    const { container, findByText } = render(<ClinicDetailsForm />)
+    await act(async () => {
+      fireEvent.submit(container.querySelector('form')!)
+    })
+
+    expect(await findByText(SUSPENDED_CLINIC_MESSAGE)).toBeTruthy()
+    expect(container.querySelector('form')).toBeNull()
+    expect(h.update).not.toHaveBeenCalled()
+    expect(h.replace).not.toHaveBeenCalled()
+  })
+})
+
+describe('clinic details for a user who is not new', () => {
+  it('shows the suspension notice up front for a suspended-only user', () => {
+    const { container, getByText } = render(<ClinicDetailsForm suspended />)
+    expect(getByText(SUSPENDED_CLINIC_MESSAGE)).toBeTruthy()
+    expect(container.querySelector('form')).toBeNull()
+  })
+
+  it('offers to enter an existing clinic instead of asking for it again', async () => {
+    const { container, getByRole } = render(<ClinicDetailsForm hasClinic />)
+    expect(container.querySelector('form')).toBeNull()
+    await act(async () => {
+      fireEvent.click(getByRole('button', { name: 'Entrar na clínica' }))
+    })
+    await waitFor(() => expect(h.replace).toHaveBeenCalledWith('/dashboard'))
+    expect(h.update).toHaveBeenCalledWith({})
+    expect(h.createClinic).not.toHaveBeenCalled()
   })
 })
