@@ -13,18 +13,24 @@ import { GET } from '../route'
 
 const SEND_ID = '6f1c2b8e-4a1d-4c3b-9e2f-0a1b2c3d4e5f'
 const CHROME = 'Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36'
+const WHATSAPP_WEBVIEW =
+  'Mozilla/5.0 (Linux; Android 14; SM-A546E; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/129.0 Mobile Safari/537.36 WhatsApp/2.24.21.80'
 const send = {
   id: SEND_ID,
   tenantId: 'tenant-1',
   messageKey: 'trial_first_patient',
   channel: 'whatsapp',
-  completedAt: new Date(Date.now() - 60 * 60_000),
+}
+
+function request(query: string, userAgent: string | null = CHROME, method = 'GET') {
+  return new NextRequest(`https://app.test/api/lifecycle/click?${query}`, {
+    method,
+    headers: userAgent ? { 'user-agent': userAgent } : {},
+  })
 }
 
 function click(query: string, userAgent: string | null = CHROME) {
-  return GET(new NextRequest(`https://app.test/api/lifecycle/click?${query}`, {
-    headers: userAgent ? { 'user-agent': userAgent } : {},
-  }))
+  return GET(request(query, userAgent))
 }
 
 describe('GET /api/lifecycle/click', () => {
@@ -44,11 +50,35 @@ describe('GET /api/lifecycle/click', () => {
     expect(q.recordLifecycleClick).toHaveBeenCalledWith(send)
   })
 
-  it('redirects a link scanner without recording a click', async () => {
+  it('redirects an email link scanner without recording a click', async () => {
+    q.findLifecycleSendForClick.mockResolvedValue({ ...send, channel: 'email' })
     const res = await click(`lc=${SEND_ID}`, 'Microsoft Office SafeLinks/1.0')
 
     expect(res.headers.get('location')).toContain('/pacientes?novo=1')
     expect(q.recordLifecycleClick).not.toHaveBeenCalled()
+  })
+
+  it('does not record a HEAD check on an email send', async () => {
+    q.findLifecycleSendForClick.mockResolvedValue({ ...send, channel: 'email' })
+    const res = await GET(request(`lc=${SEND_ID}`, CHROME, 'HEAD'))
+
+    expect(res.status).toBe(307)
+    expect(q.recordLifecycleClick).not.toHaveBeenCalled()
+  })
+
+  it('records a browser click on an email send', async () => {
+    const emailSend = { ...send, channel: 'email' }
+    q.findLifecycleSendForClick.mockResolvedValue(emailSend)
+
+    await click(`lc=${SEND_ID}`)
+
+    expect(q.recordLifecycleClick).toHaveBeenCalledWith(emailSend)
+  })
+
+  it("records a WhatsApp tap from WhatsApp's own browser", async () => {
+    await click(`lc=${SEND_ID}`, WHATSAPP_WEBVIEW)
+
+    expect(q.recordLifecycleClick).toHaveBeenCalledWith(send)
   })
 
   it('sends a malformed lc to the app home without touching the database', async () => {

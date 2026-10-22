@@ -174,7 +174,6 @@ export interface LifecycleClickSend {
   tenantId: string
   messageKey: string
   channel: LifecycleChannel
-  completedAt: Date | null
 }
 
 export async function findLifecycleSendForClick(id: string): Promise<LifecycleClickSend | null> {
@@ -184,7 +183,6 @@ export async function findLifecycleSendForClick(id: string): Promise<LifecycleCl
       tenantId: tenantLifecycleMessages.tenantId,
       messageKey: tenantLifecycleMessages.messageKey,
       channel: tenantLifecycleMessages.channel,
-      completedAt: tenantLifecycleMessages.completedAt,
     })
     .from(tenantLifecycleMessages)
     .where(eq(tenantLifecycleMessages.id, id))

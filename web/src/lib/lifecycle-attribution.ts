@@ -21,11 +21,44 @@ export function lifecycleDestination(send: { messageKey: string; channel: Lifecy
   return url
 }
 
-// Mail security gateways open every link right after delivery; a human click takes longer.
-const SCANNER_GRACE_MS = 60_000
-const SCANNER_USER_AGENT = /safelinks|mimecast|proofpoint|barracuda|facebookexternalhit|bot\b|crawler|spider|headless|python-requests|curl\//i
+// Mail security gateways (Defender/Safe Links, Proofpoint, Mimecast,
+// Barracuda) open links in email on their own. They are recognised only by
+// what the request itself says: a scanner user agent, a HEAD request, or a
+// prefetch/preview. Time since the send is not a signal: people tap within
+// seconds, especially on a phone notification.
+//
+// WhatsApp sends are never filtered: WhatsApp has no gateway that follows
+// template buttons, and a missed real tap costs more than a counted preview.
+//
+// `bot` only as a whole word or a product token (`Googlebot/2.1`), so phone
+// models such as CUBOT are not caught. The image-proxy tokens only matter if
+// this URL ever ends up in an <img>.
+const SCANNER_USER_AGENT =
+  /safelinks|microsoft office (existence|protocol) discovery|ms-office|mimecast|proofpoint|barracuda|googleimageproxy|ggpht\.com|facebookexternalhit|\bbot\b|bot\/|crawler|spider|headless|python-requests|go-http-client|curl\/|wget\//i
+// A prefetched redirect may be served from cache when the person then clicks,
+// so treating a prefetch as a scanner can cost that click; no webmail
+// prefetches links today, and counting every prefetch would cost more.
+const NON_HUMAN_PURPOSE = /prefetch|prerender|preview/i
 
-export function isLikelyLinkScanner(userAgent: string | null, sentAt: Date | null, now = new Date()): boolean {
-  if (!userAgent || SCANNER_USER_AGENT.test(userAgent)) return true
-  return sentAt !== null && now.getTime() - sentAt.getTime() < SCANNER_GRACE_MS
+export type LifecycleClickRequest = {
+  method: string
+  userAgent: string | null
+  // Sec-Purpose (Chromium, Firefox), Purpose (older Chromium), X-Purpose (Safari, `preview`), X-Moz (old Firefox).
+  prefetchHeader: string | null
+}
+
+export function lifecycleClickRequest(request: { method: string; headers: Headers }): LifecycleClickRequest {
+  const h = request.headers
+  return {
+    method: request.method,
+    userAgent: h.get('user-agent'),
+    prefetchHeader: h.get('sec-purpose') ?? h.get('purpose') ?? h.get('x-purpose') ?? h.get('x-moz'),
+  }
+}
+
+export function isLikelyLinkScanner(req: LifecycleClickRequest, send: { channel: LifecycleChannel }): boolean {
+  if (send.channel !== 'email') return false
+  if (req.method === 'HEAD') return true
+  if (req.prefetchHeader && NON_HUMAN_PURPOSE.test(req.prefetchHeader)) return true
+  return !req.userAgent || SCANNER_USER_AGENT.test(req.userAgent)
 }
