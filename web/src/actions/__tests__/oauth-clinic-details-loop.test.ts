@@ -77,6 +77,18 @@ vi.mock('@/lib/lifecycle-sender', () => ({
 
 import { createClinicForOAuthUser } from '../signup'
 import { notifyDiscord } from '@/lib/discord'
+import { sendNewSignupNotification } from '@/lib/email'
+
+async function withAdminEmail<T>(run: () => Promise<T>): Promise<T> {
+  const original = process.env.ADMIN_NOTIFICATION_EMAIL
+  process.env.ADMIN_NOTIFICATION_EMAIL = 'admin@floraclin.test'
+  try {
+    return await run()
+  } finally {
+    if (original === undefined) delete process.env.ADMIN_NOTIFICATION_EMAIL
+    else process.env.ADMIN_NOTIFICATION_EMAIL = original
+  }
+}
 
 /** Stands in for the `select().from().where().limit()` chain. */
 function membershipLookup(rows: unknown[]) {
@@ -162,6 +174,18 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
 
     expect(scheduleLifecycleWelcomeMock).toHaveBeenCalledTimes(1)
     expect(scheduleLifecycleWelcomeMock).toHaveBeenCalledWith({ tenantId: 'tenant-1' })
+  })
+
+  it('tells the team about the Google sign-up once, as waiting for onboarding', async () => {
+    await withAdminEmail(() => createClinicForOAuthUser(null, form()))
+
+    expect(notifyDiscord).toHaveBeenCalledTimes(1)
+    expect(notifyDiscord).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'signup.started',
+      ownerEmail: 'a@b.com',
+      method: 'google',
+    }))
+    expect(sendNewSignupNotification).not.toHaveBeenCalled()
   })
 
   it('does not schedule the welcome again when the subscription already existed', async () => {
@@ -283,13 +307,21 @@ describe('createClinicForOAuthUser on arrival (one-step Google sign-up)', () => 
     expect(scheduleLifecycleWelcomeMock).not.toHaveBeenCalled()
   })
 
-  it('tells the team the name is a stand-in, not what the owner typed', async () => {
-    await createClinicForOAuthUser(null, autoForm())
+  it('tells the team who signed up, once, without the stand-in clinic name', async () => {
+    await withAdminEmail(() => createClinicForOAuthUser(null, autoForm()))
 
-    expect(notifyDiscord).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'clinic.created',
-      tenantName: 'Clínica de Ana (nome provisório)',
-    }))
+    expect(notifyDiscord).toHaveBeenCalledTimes(1)
+    expect(notifyDiscord).toHaveBeenCalledWith({
+      kind: 'signup.started',
+      tenantId: 'tenant-1',
+      ownerName: 'Ana Souza',
+      ownerEmail: 'ana@b.com',
+      method: 'google',
+      attribution: null,
+    })
+    expect(JSON.stringify(vi.mocked(notifyDiscord).mock.calls)).not.toContain('Clínica de Ana')
+    // The admin e-mail waits for onboarding, where the real name is typed.
+    expect(sendNewSignupNotification).not.toHaveBeenCalled()
   })
 
   it('sends CompleteRegistration once, server-side, with the id the browser pixel uses and no phone', async () => {

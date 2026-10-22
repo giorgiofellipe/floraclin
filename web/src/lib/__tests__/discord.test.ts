@@ -17,60 +17,112 @@ vi.mock('@sentry/nextjs', () => ({
 import { buildDiscordPayload, notifyDiscord, type DiscordEvent } from '../discord'
 
 describe('buildDiscordPayload', () => {
-  it('formats clinic.created with title and clinic/location fields', () => {
+  it('formats signup.started with the person, e-mail and method, and no clinic name', () => {
     const payload = buildDiscordPayload({
-      kind: 'clinic.created',
-      tenantName: 'Clínica Bela Pele',
-      city: 'São Paulo',
-      state: 'SP',
+      kind: 'signup.started',
+      ownerName: 'Giorgio Teste',
+      ownerEmail: 'giorgio@example.com',
+      method: 'google',
       tenantId: 'tenant-1',
     })
 
     const embed = payload.embeds[0]
-    expect(embed.title).toBe('Nova clínica cadastrada')
-    expect(embed.fields).toContainEqual({ name: 'Clínica', value: 'Clínica Bela Pele', inline: true })
-    expect(embed.fields).toContainEqual({ name: 'Localização', value: 'São Paulo/SP', inline: true })
+    expect(embed.title).toBe('Novo cadastro (onboarding pendente)')
+    expect(embed.fields.map((field) => field.name)).toEqual(['Nome', 'E-mail', 'Método', 'Admin'])
+    expect(embed.fields).toContainEqual({ name: 'Nome', value: '`Giorgio Teste`', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'E-mail', value: '`giorgio@example.com`', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'Método', value: 'Google', inline: true })
   })
 
-  it('formats clinic.created location gracefully when city/state are missing', () => {
+  it('labels an e-mail/password signup.started as E-mail', () => {
     const payload = buildDiscordPayload({
-      kind: 'clinic.created',
-      tenantName: 'Clínica Sem Endereço',
+      kind: 'signup.started',
+      ownerName: 'Ana',
+      ownerEmail: 'ana@example.com',
+      method: 'email',
+      tenantId: 'tenant-1',
+    })
+    expect(payload.embeds[0].fields).toContainEqual({ name: 'Método', value: 'E-mail', inline: true })
+  })
+
+  it('shows signup.started UTM source and campaign as inline code, so a crafted value cannot render a link', () => {
+    const payload = buildDiscordPayload({
+      kind: 'signup.started',
+      ownerName: '[x](https://evil.example)',
+      ownerEmail: 'a@b.c',
+      method: 'email',
+      tenantId: 'tenant-1',
+      attribution: { utmSource: 'meta`ads', utmCampaign: '[promo](https://evil.example)' },
+    })
+
+    const embed = payload.embeds[0]
+    expect(embed.fields).toContainEqual({ name: 'Nome', value: '`[x](https://evil.example)`', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'UTM Source', value: '`metaads`', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'UTM Campaign', value: '`[promo](https://evil.example)`', inline: true })
+  })
+
+  it('omits UTM fields for an organic signup.started', () => {
+    const payload = buildDiscordPayload({
+      kind: 'signup.started',
+      ownerName: 'Ana',
+      ownerEmail: 'ana@example.com',
+      method: 'email',
+      tenantId: 'tenant-1',
+      attribution: {},
+    })
+    expect(payload.embeds[0].fields.map((field) => field.name)).toEqual(['Nome', 'E-mail', 'Método', 'Admin'])
+  })
+
+  it('formats onboarding.completed with the real clinic data and time since sign-up', () => {
+    const payload = buildDiscordPayload({
+      kind: 'onboarding.completed',
+      tenantName: 'Clínica Bela Pele',
+      phone: '(11) 98765-4321',
+      city: 'São Paulo',
+      state: 'SP',
+      elapsed: 'em 4 min',
+      tenantId: 'tenant-1',
+    })
+
+    const embed = payload.embeds[0]
+    expect(embed.title).toBe('Cadastro concluído')
+    expect(embed.description).toBe('Onboarding concluído em 4 min após o cadastro.')
+    expect(embed.fields).toContainEqual({ name: 'Clínica', value: '`Clínica Bela Pele`', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'Telefone', value: '`(11) 98765-4321`', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'Localização', value: '`São Paulo/SP`', inline: true })
+  })
+
+  // Discord rejects the whole post when one field is over 1024 characters,
+  // and the onboarding clinic name has no length limit.
+  it('caps a very long clinic name so the post stays under Discord\'s field limit', () => {
+    const payload = buildDiscordPayload({
+      kind: 'onboarding.completed',
+      tenantName: 'A'.repeat(5000),
+      phone: null,
       city: null,
       state: null,
+      elapsed: 'em 4 min',
+      tenantId: 't-1',
+    })
+    const clinic = payload.embeds[0].fields.find((f) => f.name === 'Clínica')!.value
+    expect(clinic.length).toBeLessThanOrEqual(1024)
+    expect(clinic).toBe(`\`${'A'.repeat(1000)}...\``)
+  })
+
+  it('formats onboarding.completed gracefully when phone and location are missing', () => {
+    const payload = buildDiscordPayload({
+      kind: 'onboarding.completed',
+      tenantName: 'Clínica Sem Endereço',
+      phone: null,
+      city: null,
+      state: null,
+      elapsed: 'em 2 dias',
       tenantId: 'tenant-2',
     })
 
     const embed = payload.embeds[0]
+    expect(embed.fields).toContainEqual({ name: 'Telefone', value: '`Não informado`', inline: true })
     expect(embed.fields).toContainEqual({ name: 'Localização', value: 'Não informado', inline: true })
-  })
-
-  it('shows clinic.created UTM campaign and content as inline code, so a crafted value cannot render a link', () => {
-    const payload = buildDiscordPayload({
-      kind: 'clinic.created',
-      tenantName: 'Clínica Bela Pele',
-      city: null,
-      state: null,
-      tenantId: 'tenant-1',
-      attribution: { utmCampaign: '[promo](https://evil.example)', utmContent: 'headline`a' },
-    })
-
-    const embed = payload.embeds[0]
-    expect(embed.fields).toContainEqual({ name: 'UTM Campaign', value: '`[promo](https://evil.example)`', inline: true })
-    expect(embed.fields).toContainEqual({ name: 'UTM Content', value: '`headlinea`', inline: true })
-  })
-
-  it('omits UTM fields for an organic clinic.created', () => {
-    const payload = buildDiscordPayload({
-      kind: 'clinic.created',
-      tenantName: 'Clínica Bela Pele',
-      city: null,
-      state: null,
-      tenantId: 'tenant-1',
-      attribution: {},
-    })
-
-    expect(payload.embeds[0].fields.map((field) => field.name)).toEqual(['Clínica', 'Localização', 'Admin'])
   })
 
   it('formats clinic.approved with title and clinic field', () => {
@@ -122,9 +174,8 @@ describe('buildDiscordPayload', () => {
     }
   })
 
-  it('never includes personal data (owner name, email or phone) in any event payload', () => {
+  it('never includes personal data (owner name, email or phone) in the events that do not carry it', () => {
     const events: DiscordEvent[] = [
-      { kind: 'clinic.created', tenantName: 'Clínica Bela Pele', city: 'São Paulo', state: 'SP', tenantId: 'tenant-1' },
       { kind: 'clinic.approved', tenantName: 'Clínica Bela Pele', tenantId: 'tenant-1' },
       { kind: 'subscription.created', tenantName: 'Clínica Bela Pele', planName: 'Profissional', priceCents: 19900, tenantId: 'tenant-1' },
     ]

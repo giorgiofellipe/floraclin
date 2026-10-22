@@ -5,7 +5,8 @@ import { formatCurrency } from '@/lib/utils'
 // Notifier for two Discord channels:
 //
 // - "floraclin" (DISCORD_WEBHOOK_EVENTS): business events -- the business
-//   grew. clinic.created / clinic.approved / subscription.created / lifecycle.reply.
+//   grew. signup.started / onboarding.completed / clinic.approved /
+//   subscription.created / lifecycle.reply.
 // - "floraclin-logs" (DISCORD_WEBHOOK_LOGS): operational digests -- code
 //   reporting on itself, e.g. the daily whatsapp-automations cron digest.
 //   Distinct from Sentry, which also posts to "floraclin-logs" but via its
@@ -22,14 +23,31 @@ export type WhatsappDigestFailingTenant = {
   anamnesisFailed: number
 }
 
+export type SignupMethod = 'google' | 'email'
+
 export type DiscordEvent =
+  // Step 1 of a self sign-up: the account and its clinic exist, onboarding
+  // has not been finished. Says who signed up, never the clinic name: a
+  // Google sign-up only has a stand-in name at this point.
   | {
-      kind: 'clinic.created'
+      kind: 'signup.started'
+      ownerName: string
+      ownerEmail: string
+      method: SignupMethod
+      tenantId: string
+      attribution?: { utmSource?: string; utmCampaign?: string } | null
+    }
+  // Step 2: onboarding finished for the first time, with the clinic data the
+  // owner typed there.
+  | {
+      kind: 'onboarding.completed'
       tenantName: string
+      phone: string | null
       city: string | null
       state: string | null
+      /** Already formatted, e.g. "em 4 min". */
+      elapsed: string
       tenantId: string
-      attribution?: { utmCampaign?: string; utmContent?: string } | null
     }
   | { kind: 'clinic.approved'; tenantName: string; tenantId: string }
   | { kind: 'subscription.created'; tenantName: string; planName: string; priceCents: number; tenantId: string }
@@ -58,7 +76,8 @@ export type DiscordPayload = {
   embeds: DiscordEmbed[]
 }
 
-const COLOR_CREATED = 0x4a9d5f
+const COLOR_ONBOARDING_COMPLETED = 0x4a9d5f
+const COLOR_SIGNUP_STARTED = 0x94a3b8
 const COLOR_APPROVED = 0x3b82f6
 const COLOR_SUBSCRIPTION = 0xf59e0b
 const COLOR_DIGEST_OK = 0x4a9d5f
@@ -77,9 +96,14 @@ function digestReasonLabel(reason: WhatsappDigestFailingTenant['reason']): strin
   }
 }
 
+// Discord rejects the whole post when a field value is over 1024 characters.
+const INLINE_CODE_MAX = 1000
+
 // Visitor-controlled text: inline code keeps Discord from rendering masked links or mentions.
 function asInlineCode(value: string): string {
-  return `\`${value.replaceAll('`', '')}\``
+  const clean = value.replaceAll('`', '')
+  const capped = clean.length > INLINE_CODE_MAX ? `${clean.slice(0, INLINE_CODE_MAX)}...` : clean
+  return `\`${capped}\``
 }
 
 function adminTenantsUrl(): string {
@@ -89,31 +113,52 @@ function adminTenantsUrl(): string {
 
 /**
  * Pure formatter: DiscordEvent -> Discord webhook payload. No I/O, so it can
- * be unit tested directly without touching fetch or env vars. Never include
- * anything beyond clinic name, city/state, plan, price and an admin link —
- * no owner name, email or phone. Patient data must never appear here because
- * none of the DiscordEvent variants carry it.
+ * be unit tested directly without touching fetch or env vars. The team
+ * channel gets the owner's name and e-mail on signup.started and the clinic
+ * phone on onboarding.completed, so a sign-up that stalls before onboarding
+ * can be followed up. Patient data must never appear here because none of
+ * the DiscordEvent variants carry it.
  */
 export function buildDiscordPayload(event: DiscordEvent): DiscordPayload {
   const adminLink = adminTenantsUrl()
 
   switch (event.kind) {
-    case 'clinic.created': {
-      const location = [event.city, event.state].filter(Boolean).join('/')
+    case 'signup.started': {
       const attributionFields = [
+        { name: 'UTM Source', value: event.attribution?.utmSource },
         { name: 'UTM Campaign', value: event.attribution?.utmCampaign },
-        { name: 'UTM Content', value: event.attribution?.utmContent },
       ].flatMap(({ name, value }) => (value ? [{ name, value: asInlineCode(value), inline: true }] : []))
       return {
         username: 'FloraClin',
         embeds: [
           {
-            title: 'Nova clínica cadastrada',
-            color: COLOR_CREATED,
+            title: 'Novo cadastro (onboarding pendente)',
+            color: COLOR_SIGNUP_STARTED,
             fields: [
-              { name: 'Clínica', value: event.tenantName, inline: true },
-              { name: 'Localização', value: location || 'Não informado', inline: true },
+              { name: 'Nome', value: asInlineCode(event.ownerName || 'Não informado'), inline: true },
+              { name: 'E-mail', value: asInlineCode(event.ownerEmail || 'Não informado'), inline: true },
+              { name: 'Método', value: event.method === 'google' ? 'Google' : 'E-mail', inline: true },
               ...attributionFields,
+              { name: 'Admin', value: adminLink },
+            ],
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      }
+    }
+    case 'onboarding.completed': {
+      const location = [event.city, event.state].filter(Boolean).join('/')
+      return {
+        username: 'FloraClin',
+        embeds: [
+          {
+            title: 'Cadastro concluído',
+            color: COLOR_ONBOARDING_COMPLETED,
+            description: `Onboarding concluído ${event.elapsed} após o cadastro.`,
+            fields: [
+              { name: 'Clínica', value: asInlineCode(event.tenantName), inline: true },
+              { name: 'Telefone', value: asInlineCode(event.phone || 'Não informado'), inline: true },
+              { name: 'Localização', value: location ? asInlineCode(location) : 'Não informado', inline: true },
               { name: 'Admin', value: adminLink },
             ],
             timestamp: new Date().toISOString(),
@@ -240,9 +285,11 @@ function webhookForEvent(kind: DiscordEvent['kind']): string | undefined {
  *    destination means an immediate return, before building a payload or
  *    touching fetch. This is what keeps local dev and the test suite from
  *    posting to a real channel.
- * 3. It never posts contact data or patient data, enforced by DiscordEvent's
- *    shape, not by this function. lifecycle.reply carries the reply text a
- *    clinic owner chose to send FloraClin.
+ * 3. It never posts patient data, enforced by DiscordEvent's shape, not by
+ *    this function. The only contact data is the owner's name and e-mail
+ *    (signup.started) and the clinic phone (onboarding.completed).
+ *    lifecycle.reply carries the reply text a clinic owner chose to send
+ *    FloraClin.
  */
 export async function notifyDiscord(event: DiscordEvent): Promise<void> {
   const webhookUrl = webhookForEvent(event.kind)
