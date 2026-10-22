@@ -107,9 +107,6 @@ const TOP_LEVEL_DIRS = [
  * institutional memory. Paths are relative to `app/api`, forward-slashed.
  */
 const EXEMPT_MUTATING_ROUTES: Record<string, string> = {
-  // One-off, removed right after use: CRON_SECRET bearer, no tenant session.
-  'admin/oneoff/google-signup-fix/route.ts': 'one-off, CRON_SECRET bearer, no tenant session',
-
   // Webhooks: unauthenticated machine callers. There is no session to check
   // a role or subscription against: the caller is Stripe, Meta or Google.
   'webhooks/stripe/route.ts': 'Stripe webhook, unauthenticated machine caller',
