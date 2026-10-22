@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useEffect } from 'react'
+import { useActionState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { createClinicForOAuthUser, type ClinicDetailsState } from '@/actions/signup'
@@ -10,6 +10,10 @@ import { Label } from '@/components/ui/label'
 import { maskPhone } from '@/lib/masks'
 import { SignupAttributionFields } from '@/components/marketing/signup-attribution-fields'
 import { trackMetaEvent } from '@/lib/marketing-attribution'
+
+const MAX_SESSION_REFRESH_ATTEMPTS = 3
+// Long enough for an in-flight session fetch (which makes update() a no-op) to finish.
+const SESSION_REFRESH_RETRY_MS = 500
 
 export default function ClinicDetailsPage() {
   const [state, formAction, isPending] = useActionState<ClinicDetailsState, FormData>(createClinicForOAuthUser, null)
@@ -21,16 +25,34 @@ export default function ClinicDetailsPage() {
   // tenantId: null, and middleware sends anyone in that state straight back
   // here. Navigating without refreshing the token first is an infinite loop
   // between this page and itself.
+  //
+  // Two traps here. `update()` with no argument is a plain GET of the session,
+  // which never runs the jwt callback with trigger 'update', so the token kept
+  // tenantId: null and middleware bounced /dashboard straight back to this
+  // page. Passing any data makes it the POST that refreshes the token. And
+  // `update` changes identity every time the session does, so this effect
+  // re-ran after each refresh: it looped, firing CompleteRegistration on every
+  // pass. Each action result is handled once. update() returns nothing while
+  // the provider is still loading and null when the fetch fails, so the
+  // refresh is retried a few times before navigating regardless.
+  const handledState = useRef<ClinicDetailsState>(null)
   useEffect(() => {
-    if (!state?.success) return
-    void (async () => {
-      if (state.created && state.metaEventId) {
-        trackMetaEvent('CompleteRegistration', { status: 'trial_started', signup_method: 'google' }, state.metaEventId)
+    if (!state?.success || handledState.current === state) return
+    handledState.current = state
+    if (state.created && state.metaEventId) {
+      trackMetaEvent('CompleteRegistration', { status: 'trial_started', signup_method: 'google' }, state.metaEventId)
+    }
+
+    async function refreshThenEnter() {
+      for (let attempt = 1; attempt <= MAX_SESSION_REFRESH_ATTEMPTS; attempt++) {
+        const fresh = (await update({})) as { tenantId?: string | null } | null | undefined
+        if (fresh?.tenantId) break
+        if (attempt < MAX_SESSION_REFRESH_ATTEMPTS) await new Promise((r) => setTimeout(r, SESSION_REFRESH_RETRY_MS))
       }
-      await update()
       router.replace('/dashboard')
-    })()
-  }, [state?.success, state?.created, state?.metaEventId, update, router])
+    }
+    void refreshThenEnter()
+  }, [state, update, router])
 
   return (
     <div>

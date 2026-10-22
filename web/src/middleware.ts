@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth-config'
 import { NextResponse } from 'next/server'
 import { captureFirstTouch } from '@/lib/first-touch'
+import { CALLBACK_URL_PARAM, safeCallbackPath } from '@/lib/callback-url'
 
 export default auth((req) => {
   const { pathname } = req.nextUrl
@@ -49,7 +50,10 @@ export default auth((req) => {
 
       if (!tenantId) return NextResponse.redirect(new URL('/signup/clinic-details', req.url))
       if (session?.emailVerified === false) return NextResponse.redirect(new URL('/confirm-email', req.url))
-      return NextResponse.redirect(new URL('/dashboard', req.url))
+      // Already signed in on this browser (a link copied out of an in-app
+      // browser, say): go where the link was going rather than the dashboard.
+      const destination = pathname === '/login' ? safeCallbackPath(req.nextUrl.searchParams.get(CALLBACK_URL_PARAM)) : null
+      return NextResponse.redirect(new URL(destination ?? '/dashboard', req.url))
     }
     // Not only /signup: people bounced to /login reach /signup through a
     // client-side link, which never makes a document request and so would
@@ -60,11 +64,15 @@ export default auth((req) => {
     return response
   }
 
-  // Not authenticated — redirect to login. The redirect drops the query
-  // string, so an ad or link pointing at the app root would lose its UTMs;
-  // record the first touch on the redirect response before they are gone.
+  // Not authenticated — redirect to login, carrying the destination so a
+  // lifecycle link to /onboarding still lands there after sign-in. The UTMs
+  // ride inside callbackUrl, not on /login itself, so record the first touch
+  // on the redirect response, where they are still in the request URL.
   if (!isAuthenticated) {
-    const response = NextResponse.redirect(new URL('/login', req.url))
+    const loginUrl = new URL('/login', req.url)
+    const destination = safeCallbackPath(`${pathname}${req.nextUrl.search}`)
+    if (destination) loginUrl.searchParams.set(CALLBACK_URL_PARAM, destination)
+    const response = NextResponse.redirect(loginUrl)
     captureFirstTouch(req, response)
     return response
   }
