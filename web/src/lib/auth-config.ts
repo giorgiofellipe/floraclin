@@ -59,7 +59,11 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
   // Credentials provider requires JWT strategy in Auth.js v5.
   // Database strategy throws UnsupportedStrategy error with Credentials.
   session: { strategy: 'jwt' },
-  pages: { signIn: '/login' },
+  // Errors Auth.js files under its generic error page (AccessDenied when the
+  // signIn callback refuses an unverified Google address, Configuration when
+  // Google is unreachable) would otherwise land on its built-in English page.
+  // /login explains them in Portuguese and offers the other way in.
+  pages: { signIn: '/login', error: '/login' },
   providers: [
     Credentials({
       credentials: {

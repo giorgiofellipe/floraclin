@@ -3,6 +3,11 @@
 import { signIn, signOut } from '@/lib/auth-config'
 import { redirect } from 'next/navigation'
 import { AuthError } from 'next-auth'
+import { CALLBACK_URL_PARAM, safeCallbackPath } from '@/lib/callback-url'
+
+function redirectAfterSignIn(formData: FormData | undefined): string {
+  return safeCallbackPath(formData?.get(CALLBACK_URL_PARAM)) ?? '/dashboard'
+}
 
 export type LoginState = {
   error?: { email?: string[]; password?: string[]; general?: string[] }
@@ -27,7 +32,7 @@ export async function login(
     await signIn('credentials', {
       email,
       password,
-      redirectTo: '/dashboard',
+      redirectTo: redirectAfterSignIn(formData),
     })
     return null
   } catch (error) {
@@ -65,8 +70,8 @@ export async function logout() {
   await signOut({ redirectTo: '/login' })
 }
 
-export async function loginWithGoogle() {
-  await signIn('google', { redirectTo: '/dashboard' })
+export async function loginWithGoogle(formData?: FormData) {
+  await signIn('google', { redirectTo: redirectAfterSignIn(formData) })
 }
 
 export async function loginWithMagicLink(formData: FormData) {

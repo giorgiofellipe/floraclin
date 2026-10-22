@@ -217,3 +217,32 @@ describe('middleware: first-touch capture outside /signup', () => {
     expect(firstTouchOf(documentRequest(`/api/tenant${AD_QUERY}`))).toBeNull()
   })
 })
+
+describe('middleware: the destination survives the trip through /login', () => {
+  it('carries a logged-out lifecycle link to /onboarding, UTMs included, in callbackUrl', () => {
+    const res = run('/onboarding?utm_source=lifecycle&utm_medium=whatsapp&utm_campaign=trial_setup_incomplete', null)
+    const location = new URL(locationOf(res)!)
+    expect(location.pathname).toBe('/login')
+    expect(location.searchParams.get('callbackUrl')).toBe(
+      '/onboarding?utm_source=lifecycle&utm_medium=whatsapp&utm_campaign=trial_setup_incomplete',
+    )
+  })
+
+  it('adds no callbackUrl for the app root', () => {
+    const location = new URL(locationOf(run('/', null))!)
+    expect(location.searchParams.has('callbackUrl')).toBe(false)
+  })
+
+  it('sends a signed-in user on /login to the callbackUrl', () => {
+    const res = run('/login?callbackUrl=%2Fonboarding', session())
+    expect(locationOf(res)).toBe('https://app.floraclin.com.br/onboarding')
+  })
+
+  it.each(['https%3A%2F%2Fevil.example%2F', '%2F.%2F%2Fevil.example', '%2F%2Fevil.example'])(
+    'ignores an off-site callbackUrl for a signed-in user: %s',
+    (callbackUrl) => {
+      const res = run(`/login?callbackUrl=${callbackUrl}`, session())
+      expect(locationOf(res)).toBe('https://app.floraclin.com.br/dashboard')
+    },
+  )
+})
