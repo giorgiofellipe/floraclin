@@ -7,6 +7,7 @@ vi.mock('@/db/queries/referrals', () => ({
   countCountingReferrals: vi.fn(),
   listReferralsForReferrer: vi.fn(),
   listRewardEvents: vi.fn(),
+  listPreviousReferralCodes: vi.fn(async () => []),
 }))
 vi.mock('@/lib/referral/config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/referral/config')>()),

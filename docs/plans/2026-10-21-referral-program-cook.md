@@ -1827,7 +1827,7 @@ The existing ones: `checkout.session.completed`, `invoice.paid`, `invoice.paymen
 
 ### 4.6 Rollout order
 
-1. **Migration first.** Giorgio applies `web/src/db/migrations/0043_referral_program.sql` in prod. It is additive only, so it is safe before the deploy, and the old code ignores it. The PR is **not** eligible for auto-merge.
+1. **Migrations first.** Giorgio applies `web/src/db/migrations/0043_referral_program.sql`, then `0044_referral_code_aliases.sql` (old codes keep working after a clinic customises its code), in prod. Both are additive only, so they are safe before the deploy, and the old code ignores them. The new code reads `referral_code_aliases` on every code lookup, so 0044 must be in before the deploy. Once any clinic has changed its code, do not roll back to a build without alias support: that build would let another clinic claim a retired code. The PR is **not** eligible for auto-merge.
 2. Merge and deploy with every referral var unset. Nothing changes for clinics. The webhook's referral hook and the cron return immediately because no coupon ids are configured.
 3. Run the test-mode coupons and the §4.2 E2E on the local or test setup.
 4. Legal review of `/indique`, the share text and the cookie (recommended, not a build blocker).

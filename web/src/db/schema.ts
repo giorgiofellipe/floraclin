@@ -1131,6 +1131,18 @@ export const tenantSubscriptions = floraclinSchema.table('tenant_subscriptions',
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+/**
+ * Codes a tenant used before changing its referral code (migration 0044). An old code keeps resolving to the same
+ * tenant forever and no other tenant can claim it; the primary key makes each code belong to one tenant at most.
+ */
+export const referralCodeAliases = floraclinSchema.table('referral_code_aliases', {
+  code: varchar('code', { length: 12 }).primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  retiredAt: timestamp('retired_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_referral_code_aliases_tenant').on(table.tenantId),
+])
+
 export const tenantReferrals = floraclinSchema.table('tenant_referrals', {
   id: uuid('id').primaryKey().defaultRandom(),
   referrerTenantId: uuid('referrer_tenant_id').notNull().references(() => tenants.id),

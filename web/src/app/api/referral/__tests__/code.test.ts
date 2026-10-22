@@ -128,4 +128,11 @@ describe('PUT /api/referral/code', () => {
     expect(res.status).toBe(429)
     expect(await res.json()).toEqual({ error: CUSTOM_CODE_MESSAGES.rateLimited })
   })
+
+  it('409 with the alias-limit message once the clinic has too many old codes', async () => {
+    vi.mocked(updateReferralCode).mockResolvedValue({ outcome: 'alias_limit' })
+    const res = await save({ code: 'DRAMICAELA' })
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: CUSTOM_CODE_MESSAGES.aliasLimit })
+  })
 })

@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, renderWithProviders as render, screen, waitFor } from '@/tests/test-utils'
 
 const createClinicForOAuthUser = vi.hoisted(() => vi.fn())
 vi.mock('@/actions/signup', () => ({ createClinicForOAuthUser }))
@@ -11,9 +11,13 @@ vi.mock('@/lib/marketing-attribution', () => ({ trackMetaEvent: vi.fn() }))
 import { ClinicDetailsForm } from '../clinic-details-form'
 
 beforeEach(() => {
+  // The field looks the code up as it is typed; answer as if it were valid.
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ active: true, clinicName: 'Clínica Flora' }))))
   createClinicForOAuthUser.mockReset()
   createClinicForOAuthUser.mockResolvedValue(null)
 })
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('ClinicDetailsForm referral code field', () => {
   it('is absent when enrollment is off', () => {
@@ -29,13 +33,20 @@ describe('ClinicDetailsForm referral code field', () => {
     expect(screen.getByLabelText('Código de indicação')).toHaveValue('')
   })
 
-  it('is open and pre-filled from the default code', () => {
+  it('is open and pre-filled from the default code, and says whose code it is', async () => {
     render(<ClinicDetailsForm referralEnabled defaultReferralCode="MECA7K" />)
     expect(screen.getByLabelText('Código de indicação')).toHaveValue('MECA7K')
+    await waitFor(() =>
+      expect(document.getElementById('referralCodeHint')).toHaveTextContent(
+        'Indicação de Clínica Flora: 20% de desconto nos 2 primeiros meses da assinatura.',
+      ),
+      { timeout: 2000 },
+    )
   })
 
-  it('shows the welcome-offer hint, with the label styled like the other labels', () => {
-    render(<ClinicDetailsForm referralEnabled defaultReferralCode="MECA7K" />)
+  it('shows the welcome-offer hint under the empty field, with the label styled like the other labels', () => {
+    render(<ClinicDetailsForm referralEnabled defaultReferralCode={null} />)
+    fireEvent.click(screen.getByText('Tem um código de indicação?'))
     expect(
       screen.getByText('Tem um código de indicação? Garanta 20% de desconto nos 2 primeiros meses da assinatura.'),
     ).toHaveClass('text-xs', 'text-mid')

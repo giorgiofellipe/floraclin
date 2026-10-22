@@ -1,17 +1,20 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { throwIfNotOk } from '@/hooks/throw-if-not-ok'
-import { validateCustomReferralCode } from '@/lib/referral/custom-code'
-import { REFERRAL_CODE_MAX_LENGTH, REFERRAL_CODE_MIN_LENGTH } from '@/lib/referral/rules'
+import { useDebounced } from '@/hooks/use-debounced'
+import { CUSTOM_CODE_MESSAGES, MAX_PREVIOUS_REFERRAL_CODES, validateCustomReferralCode } from '@/lib/referral/custom-code'
+import { REFERRAL_CODE_MAX_LENGTH, REFERRAL_CODE_MIN_LENGTH, shouldShowReferralFormatError } from '@/lib/referral/rules'
 
 /** Wait this long after the last keystroke before asking the server whether the code is free. */
 const AVAILABILITY_DEBOUNCE_MS = 400
+// Shown uppercase as typed (CSS, so the caret and mobile keyboards behave); the value is normalised before use.
+const UPPERCASE_INPUT = 'uppercase placeholder:normal-case'
 const HINT = `De ${REFERRAL_CODE_MIN_LENGTH} a ${REFERRAL_CODE_MAX_LENGTH} letras ou números.`
 
 type Availability =
@@ -23,18 +26,11 @@ type Availability =
 
 type AvailabilityResponse = { available: boolean; message?: string }
 
-/** `value` once it has stopped changing for `delayMs`. */
-function useDebounced<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delayMs)
-    return () => clearTimeout(timer)
-  }, [value, delayMs])
-  return debounced
-}
-
-/** Lets the clinic replace its code with one it can say out loud (DRAMICAELA). The old code stops working on save. */
-export function ReferralCodeEditor({ currentCode }: { currentCode: string }) {
+/**
+ * Lets the clinic replace its code with one it can say out loud (DRAMICAELA). Old codes keep working and stay the
+ * clinic's; after MAX_PREVIOUS_REFERRAL_CODES of them it can only switch back to one (the server enforces it too).
+ */
+export function ReferralCodeEditor({ currentCode, previousCodes = [] }: { currentCode: string; previousCodes?: string[] }) {
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState('')
@@ -42,7 +38,9 @@ export function ReferralCodeEditor({ currentCode }: { currentCode: string }) {
   const validation = validateCustomReferralCode(value)
   const normalized = validation.ok ? validation.code : null
   const isCurrent = normalized === currentCode
-  const toCheck = editing && normalized && !isCurrent ? normalized : null
+  const atAliasLimit =
+    previousCodes.length >= MAX_PREVIOUS_REFERRAL_CODES && normalized !== null && !previousCodes.includes(normalized)
+  const toCheck = editing && normalized && !isCurrent && !atAliasLimit ? normalized : null
   const debouncedToCheck = useDebounced(toCheck, AVAILABILITY_DEBOUNCE_MS)
 
   const check = useQuery<AvailabilityResponse>({
@@ -86,28 +84,38 @@ export function ReferralCodeEditor({ currentCode }: { currentCode: string }) {
     },
     onError: (err: Error) => {
       toast.error(err.message)
-      // A 409 means someone else took it since the check: re-check so the status and Save button reflect that.
-      void check.refetch()
+      // A 409 usually means someone else took it since the check: re-check so the status and Save button reflect
+      // that, and reload the dashboard in case the old-code list (alias limit) changed in another tab.
+      if (toCheck) void check.refetch()
+      void queryClient.invalidateQueries({ queryKey: ['referral'] })
     },
   })
 
   if (!editing) {
     return (
-      <div className="flex flex-wrap items-center gap-2">
-        <p className="text-sm text-charcoal">
-          Seu código: <span className="font-medium tracking-wide">{currentCode}</span>
-        </p>
-        <Button type="button" variant="link" className="h-auto p-0 text-sm" onClick={() => setEditing(true)}>
-          Personalizar código
-        </Button>
+      <div className="space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm text-charcoal">
+            Seu código: <span className="font-medium tracking-wide">{currentCode}</span>
+          </p>
+          <Button type="button" variant="link" className="h-auto p-0 text-sm" onClick={() => setEditing(true)}>
+            Personalizar código
+          </Button>
+        </div>
+        {previousCodes.length > 0 && (
+          <p className="text-xs text-mid">
+            Códigos anteriores, que continuam funcionando:{' '}
+            <span className="font-medium tracking-wide">{previousCodes.join(', ')}</span>
+          </p>
+        )}
       </div>
     )
   }
 
-  // Not while the clinic is still typing a short code: only once it is long enough, or has a character we refuse.
-  const typed = value.trim()
-  const showFormat = typed.length >= REFERRAL_CODE_MIN_LENGTH || /[^A-Za-z0-9]/.test(typed)
-  const formatMessage = showFormat && !validation.ok ? validation.message : null
+  let formatMessage: string | null = null
+  if (!validation.ok && (shouldShowReferralFormatError(value) || validation.reason === 'reserved')) {
+    formatMessage = validation.message
+  } else if (atAliasLimit) formatMessage = CUSTOM_CODE_MESSAGES.aliasLimit
   const canSave = availability.state === 'available' && !save.isPending
 
   return (
@@ -122,20 +130,21 @@ export function ReferralCodeEditor({ currentCode }: { currentCode: string }) {
       <Input
         id="customReferralCode"
         value={value}
-        onChange={(e) => setValue(e.target.value.toUpperCase())}
+        onChange={(e) => setValue(e.target.value)}
         maxLength={REFERRAL_CODE_MAX_LENGTH}
         autoCapitalize="characters"
         autoComplete="off"
         spellCheck={false}
         placeholder="Ex.: DRAMICAELA"
         aria-describedby="customReferralCodeStatus"
+        className={UPPERCASE_INPUT}
       />
       <p id="customReferralCodeStatus" aria-live="polite" className="text-xs text-mid">
         <AvailabilityText formatMessage={formatMessage} isCurrent={isCurrent} availability={availability} />
       </p>
-      <p className="rounded-[3px] bg-amber-light px-3 py-2 text-xs text-amber-dark">
-        Ao salvar, o link e o código atuais ({currentCode}) param de funcionar na hora, inclusive em posts já
-        publicados. As clínicas que já se cadastraram com eles continuam contando para você.
+      <p className="rounded-[3px] bg-sage/10 px-3 py-2 text-xs text-charcoal">
+        O link e o código atuais ({currentCode}) continuam funcionando e indicando para você, inclusive em posts já
+        publicados. Divulgue o novo daqui para a frente. Nenhuma outra clínica poderá usar o código antigo.
       </p>
       <div className="flex flex-wrap gap-2">
         <Button type="submit" disabled={!canSave}>

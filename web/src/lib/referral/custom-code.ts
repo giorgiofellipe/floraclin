@@ -4,6 +4,8 @@ import { REFERRAL_CODE_MAX_LENGTH, REFERRAL_CODE_MIN_LENGTH, normalizeReferralCo
 /** A clinic may change its code this many times in a rolling 24 h window. */
 export const REFERRAL_CODE_CHANGES_PER_DAY = 3
 export const REFERRAL_CODE_CHANGE_WINDOW_MS = 24 * 60 * 60 * 1000
+/** Old codes keep working forever; past this many, the clinic can only switch back to one of them. */
+export const MAX_PREVIOUS_REFERRAL_CODES = 5
 
 // Win-back promotion code clinics type at checkout; its id lives in STRIPE_WINBACK_PROMOTION_CODE_ID, not the string.
 const WINBACK_PROMOTION_CODE = 'VOLTA30'
@@ -36,6 +38,7 @@ export const CUSTOM_CODE_MESSAGES = {
   reserved: 'Esse código é reservado. Escolha outro.',
   taken: 'Esse código já está em uso por outra clínica. Escolha outro.',
   rateLimited: `Você já trocou o código ${REFERRAL_CODE_CHANGES_PER_DAY} vezes nas últimas 24 horas. Tente de novo mais tarde.`,
+  aliasLimit: `Você já tem ${MAX_PREVIOUS_REFERRAL_CODES} códigos anteriores, que continuam funcionando. Agora só é possível voltar para um deles.`,
 } as const
 
 export function isReservedReferralCode(code: string): boolean {

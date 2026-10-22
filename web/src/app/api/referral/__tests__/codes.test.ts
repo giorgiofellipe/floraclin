@@ -8,6 +8,7 @@ import { findReferrerByCode } from '@/db/queries/referrals'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { isReferralEnrollmentEnabled } from '@/lib/referral/config'
 import { GET } from '../codes/[code]/route'
+import { CODE_LOOKUPS_PER_MINUTE } from '@/lib/referral/rules'
 
 const call = (code: string) => GET(new Request(`http://localhost/api/referral/codes/${code}`), { params: Promise.resolve({ code }) })
 
@@ -55,5 +56,23 @@ describe('GET /api/referral/codes/[code]', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ active: false })
     expect(reportSideEffectFailure).toHaveBeenCalledWith(expect.any(Error), { area: 'referral', step: 'code_lookup' })
+  })
+})
+
+describe('GET /api/referral/codes/[code] rate limit', () => {
+  it(`answers 429 { active: false } past the per-minute limit for one client, without a DB lookup`, async () => {
+    vi.mocked(findReferrerByCode).mockResolvedValue(null)
+    const fromIp = (ip: string) =>
+      GET(new Request('http://localhost/api/referral/codes/MECA7K', { headers: { 'x-forwarded-for': ip } }), {
+        params: Promise.resolve({ code: 'MECA7K' }),
+      })
+    for (let i = 0; i < CODE_LOOKUPS_PER_MINUTE; i++) expect((await fromIp('9.9.9.9')).status).toBe(200)
+    vi.mocked(findReferrerByCode).mockClear()
+    const blocked = await fromIp('9.9.9.9')
+    expect(blocked.status).toBe(429)
+    expect(await blocked.json()).toEqual({ active: false })
+    expect(blocked.headers.get('Cache-Control')).toBe('no-store')
+    expect(findReferrerByCode).not.toHaveBeenCalled()
+    expect((await fromIp('8.8.8.8')).status).toBe(200)
   })
 })

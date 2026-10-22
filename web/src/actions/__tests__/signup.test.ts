@@ -411,6 +411,27 @@ describe('signUp action', () => {
       expect(attributeReferralMock).not.toHaveBeenCalled()
     })
 
+    it('still creates the account when attribution skips the typed code', async () => {
+      attributeReferralMock.mockResolvedValue({ outcome: 'skipped', reason: 'unknown_or_inactive' })
+      const formData = validFormData({ email: 'ref-unknown@test.com' })
+      formData.set('referralCode', 'NAOEXISTE')
+      const result = await signUp(null, formData)
+
+      expect(result).toBeUndefined()
+      expect(attributeReferralMock).toHaveBeenCalledWith({ referredTenantId: 'tenant-1', rawCode: 'NAOEXISTE', capturedVia: 'signup_field' })
+      expect(redirect).toHaveBeenCalledWith('/confirm-email')
+    })
+
+    it('ignores a malformed typed code without an error and still creates the account', async () => {
+      const formData = validFormData({ email: 'ref-malformed@test.com' })
+      formData.set('referralCode', 'ab!')
+      const result = await signUp(null, formData)
+
+      expect(result).toBeUndefined()
+      expect(attributeReferralMock).not.toHaveBeenCalled()
+      expect(redirect).toHaveBeenCalledWith('/confirm-email')
+    })
+
     it('reports and still redirects when attribution throws', async () => {
       attributeReferralMock.mockRejectedValue(new Error('boom'))
       withCookies({ floraclin_ref: 'MECA7K' })

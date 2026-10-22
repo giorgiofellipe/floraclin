@@ -209,6 +209,10 @@ The rule is "Stripe holds exactly one `floraclin_referrer_*` discount on the ref
 ```text
 tenants
   + referral_code varchar(12) unique null   -- e.g. "MICA7K"; random, A–Z/2–9 without ambiguous chars; created on first visit to the page
+                                            -- the clinic can replace it with its own (4–12 A–Z/0–9, e.g. DRAMICAELA)
+floraclin.referral_code_aliases (0044)      -- retired codes: (code pk, tenant_id, retired_at). An old code keeps
+                                            -- resolving to the same clinic forever and no other clinic can claim it;
+                                            -- after 5 old codes the clinic can only switch back to one of them.
 
 tenant_referrals                              -- one row per referred clinic
   id uuid pk

@@ -42,7 +42,7 @@ export function ReferralSettings() {
         {data.link && data.shareText && data.whatsappShareUrl ? (
           <div className="mt-3 space-y-3">
             <p className="break-all rounded-[3px] bg-[#F4F6F8] px-3 py-2 text-sm text-charcoal">{data.link}</p>
-            {data.code && <ReferralCodeEditor currentCode={data.code} />}
+            {data.code && <ReferralCodeEditor currentCode={data.code} previousCodes={data.previousCodes} />}
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={() => copy(data.link!, 'Link copiado')}>
                 Copiar link

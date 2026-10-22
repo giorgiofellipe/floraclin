@@ -21,6 +21,8 @@ const FREE_LABEL = `${REFERRAL_MAX_COUNTING_FOR_DISCOUNT} de ${REFERRAL_MAX_COUN
 export interface DashboardInput {
   canRefer: boolean
   code: string | null
+  /** Retired codes that still resolve to the clinic, newest first. */
+  previousCodes?: string[]
   rewardsActive: boolean
   counting: number
   /** Referrer's plan price (null when no paid plan). */
@@ -45,6 +47,8 @@ export interface ReferralDashboardResponse {
   inactiveMessage: string | null
   /** The clinic's code, editable on the tab; null when it cannot refer. */
   code: string | null
+  /** Old codes that still work (newest first); empty when it cannot refer. */
+  previousCodes: string[]
   link: string | null
   shareText: string | null
   whatsappShareUrl: string | null
@@ -110,6 +114,7 @@ export function buildReferralDashboard(input: DashboardInput): ReferralDashboard
     canRefer: input.canRefer,
     inactiveMessage: input.canRefer ? null : INACTIVE_MESSAGE,
     code: input.canRefer ? input.code : null,
+    previousCodes: input.canRefer ? (input.previousCodes ?? []) : [],
     link,
     shareText,
     whatsappShareUrl: shareText ? `https://wa.me/?text=${encodeURIComponent(shareText)}` : null,

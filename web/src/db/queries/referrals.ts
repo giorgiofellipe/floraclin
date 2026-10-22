@@ -3,6 +3,7 @@ import {
   auditLogs,
   billingCardFingerprints,
   plans,
+  referralCodeAliases,
   referralRewardEvents,
   tenantReferrals,
   tenants,
@@ -10,12 +11,16 @@ import {
   tenantUsers,
   users,
 } from '@/db/schema'
-import { and, asc, count, desc, eq, gt, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, inArray, isNull, ne, notExists, notInArray, sql } from 'drizzle-orm'
 import { isUniqueViolation } from '@/lib/errors'
 import { normalizeBrPhone } from '@/lib/phone'
 import { canRefer } from '@/lib/referral/config'
 import { generateReferralCode } from '@/lib/referral/code'
-import { REFERRAL_CODE_CHANGES_PER_DAY, REFERRAL_CODE_CHANGE_WINDOW_MS } from '@/lib/referral/custom-code'
+import {
+  MAX_PREVIOUS_REFERRAL_CODES,
+  REFERRAL_CODE_CHANGES_PER_DAY,
+  REFERRAL_CODE_CHANGE_WINDOW_MS,
+} from '@/lib/referral/custom-code'
 import type {
   CandidateTenant,
   CapturedVia,
@@ -40,7 +45,11 @@ const CODE_RETRIES = 5
 
 // ── codes ──
 
-/** Returns the tenant's code, creating it on first call (up to 5 retries on uq_tenants_referral_code). */
+/**
+ * Returns the tenant's code, creating it on first call (up to 5 retries on uq_tenants_referral_code). A generated
+ * code that is some tenant's retired code is skipped, so old codes never change hands; the candidate's advisory
+ * lock (see lockReferralCodes) keeps a code being retired right now from slipping past that check.
+ */
 export async function getOrCreateReferralCode(tenantId: string): Promise<string> {
   for (let attempt = 0; attempt < CODE_RETRIES; attempt++) {
     const [existing] = await db
@@ -51,14 +60,25 @@ export async function getOrCreateReferralCode(tenantId: string): Promise<string>
     if (existing?.code) return existing.code
     if (!existing) throw new Error(`Tenant ${tenantId} not found`)
 
+    const candidate = generateReferralCode()
     try {
-      const [updated] = await db
-        .update(tenants)
-        .set({ referralCode: generateReferralCode() })
-        .where(and(eq(tenants.id, tenantId), isNull(tenants.referralCode)))
-        .returning({ code: tenants.referralCode })
-      if (updated?.code) return updated.code
-      // Lost a race to another writer: loop and read what it stored.
+      const stored = await db.transaction(async (tx) => {
+        await lockReferralCodes(tx, [candidate])
+        const [updated] = await tx
+          .update(tenants)
+          .set({ referralCode: candidate })
+          .where(
+            and(
+              eq(tenants.id, tenantId),
+              isNull(tenants.referralCode),
+              notExists(tx.select({ one: sql`1` }).from(referralCodeAliases).where(eq(referralCodeAliases.code, candidate))),
+            ),
+          )
+          .returning({ code: tenants.referralCode })
+        return updated?.code ?? null
+      })
+      if (stored) return stored
+      // Lost a race to another writer, or the candidate is a retired code: loop, re-read, try another.
     } catch (err) {
       if (!isUniqueViolation(err, 'uq_tenants_referral_code')) throw err
     }
@@ -66,17 +86,46 @@ export async function getOrCreateReferralCode(tenantId: string): Promise<string>
   throw new Error('Could not generate a unique referral code')
 }
 
+/**
+ * Transaction advisory locks, one per code, in sorted order (no deadlocks). Every writer of tenants.referral_code
+ * or referral_code_aliases takes them, so one code cannot end up both retired by one tenant and current for another.
+ */
+async function lockReferralCodes(tx: Pick<DbExecutor, 'execute'>, codes: Array<string | null>): Promise<void> {
+  for (const code of [...new Set(codes.filter((c): c is string => !!c))].sort()) {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${'referral_code:' + code}))`)
+  }
+}
+
 /** Audit rows written by updateReferralCode; the rolling change limit counts them. */
 export const REFERRAL_CODE_AUDIT_ENTITY = 'referral_code'
 
-/** True when no other tenant holds `code` (already normalised). The tenant's own code counts as available. */
+/**
+ * True when no other tenant holds `code` (already normalised) as its current code or as a retired one. The
+ * tenant's own current and retired codes count as available.
+ */
 export async function isReferralCodeAvailable(tenantId: string, code: string): Promise<boolean> {
-  const [row] = await db
+  const [current] = await db
     .select({ id: tenants.id })
     .from(tenants)
     .where(and(eq(tenants.referralCode, code), ne(tenants.id, tenantId)))
     .limit(1)
-  return !row
+  if (current) return false
+  const [alias] = await db
+    .select({ id: referralCodeAliases.tenantId })
+    .from(referralCodeAliases)
+    .where(and(eq(referralCodeAliases.code, code), ne(referralCodeAliases.tenantId, tenantId)))
+    .limit(1)
+  return !alias
+}
+
+/** The tenant's retired codes, newest first. They all still resolve to the tenant. */
+export async function listPreviousReferralCodes(tenantId: string): Promise<string[]> {
+  const rows = await db
+    .select({ code: referralCodeAliases.code })
+    .from(referralCodeAliases)
+    .where(eq(referralCodeAliases.tenantId, tenantId))
+    .orderBy(desc(referralCodeAliases.retiredAt))
+  return rows.map((r) => r.code)
 }
 
 export type UpdateReferralCodeResult =
@@ -84,11 +133,16 @@ export type UpdateReferralCodeResult =
   | { outcome: 'unchanged'; code: string }
   | { outcome: 'taken' }
   | { outcome: 'rate_limited' }
+  | { outcome: 'alias_limit' }
 
 /**
- * Sets the tenant's referral code to `code` (already validated and normalised). Locks the tenant row so the
- * rolling REFERRAL_CODE_CHANGES_PER_DAY limit holds under concurrent saves; a concurrent claim of the same code
- * by another tenant surfaces as uq_tenants_referral_code and maps to 'taken'. The old code is released at once.
+ * Sets the tenant's referral code to `code` (already validated and normalised). The old code is kept as an alias
+ * (referral_code_aliases) that keeps resolving to this tenant; switching back to one of the tenant's own old codes
+ * just swaps it back. Once MAX_PREVIOUS_REFERRAL_CODES old codes exist, changes to a brand-new code are refused.
+ *
+ * Locks the tenant row (so the rolling REFERRAL_CODE_CHANGES_PER_DAY limit holds under concurrent saves) and the
+ * old and new codes (lockReferralCodes), so two tenants cannot race one code into both tenants.referral_code and
+ * referral_code_aliases. uq_tenants_referral_code and the aliases primary key back both sides; either maps to 'taken'.
  */
 export async function updateReferralCode(input: {
   tenantId: string
@@ -107,6 +161,30 @@ export async function updateReferralCode(input: {
       if (!tenant) throw new Error(`Tenant ${input.tenantId} not found`)
       if (tenant.code === input.code) return { outcome: 'unchanged', code: input.code } as const
 
+      await lockReferralCodes(tx, [tenant.code, input.code])
+
+      const [alias] = await tx
+        .select({ tenantId: referralCodeAliases.tenantId })
+        .from(referralCodeAliases)
+        .where(eq(referralCodeAliases.code, input.code))
+        .limit(1)
+      if (alias && alias.tenantId !== input.tenantId) return { outcome: 'taken' } as const
+      const [holder] = await tx
+        .select({ id: tenants.id })
+        .from(tenants)
+        .where(and(eq(tenants.referralCode, input.code), ne(tenants.id, input.tenantId)))
+        .limit(1)
+      if (holder) return { outcome: 'taken' } as const
+      const reclaiming = !!alias
+
+      if (!reclaiming && tenant.code) {
+        const [previous] = await tx
+          .select({ n: count() })
+          .from(referralCodeAliases)
+          .where(eq(referralCodeAliases.tenantId, input.tenantId))
+        if ((previous?.n ?? 0) >= MAX_PREVIOUS_REFERRAL_CODES) return { outcome: 'alias_limit' } as const
+      }
+
       const [recent] = await tx
         .select({ n: count() })
         .from(auditLogs)
@@ -120,6 +198,10 @@ export async function updateReferralCode(input: {
         )
       if ((recent?.n ?? 0) >= REFERRAL_CODE_CHANGES_PER_DAY) return { outcome: 'rate_limited' } as const
 
+      if (reclaiming) await tx.delete(referralCodeAliases).where(eq(referralCodeAliases.code, input.code))
+      if (tenant.code) {
+        await tx.insert(referralCodeAliases).values({ code: tenant.code, tenantId: input.tenantId, retiredAt: now })
+      }
       await tx.update(tenants).set({ referralCode: input.code }).where(eq(tenants.id, input.tenantId))
       await tx.insert(auditLogs).values({
         tenantId: input.tenantId,
@@ -134,29 +216,44 @@ export async function updateReferralCode(input: {
     })
   } catch (err) {
     // The unique violation aborted the transaction; it is rolled back by the time we get here.
-    if (isUniqueViolation(err, 'uq_tenants_referral_code')) {
+    if (isUniqueViolation(err, 'uq_tenants_referral_code') || isUniqueViolation(err, 'referral_code_aliases_pkey')) {
       return { outcome: 'taken' }
     }
     throw err
   }
 }
 
-/** By normalised code. canRefer = config.canRefer(row) && tenant not deleted. Null when no tenant has the code. */
+/**
+ * By normalised code, current or retired (an old code resolves to the tenant that used it). The current code wins.
+ * canRefer = config.canRefer(row) && tenant not deleted. Null when no tenant has or had the code.
+ * Two primary/unique-index lookups rather than one OR, which Postgres would answer with a scan of tenants.
+ */
 export async function findReferrerByCode(
   code: string,
 ): Promise<{ tenantId: string; name: string; canRefer: boolean } | null> {
-  const [row] = await db
-    .select({
-      tenantId: tenants.id,
-      name: tenants.name,
-      deletedAt: tenants.deletedAt,
-      source: tenantSubscriptions.source,
-      status: tenantSubscriptions.status,
-    })
-    .from(tenants)
-    .leftJoin(tenantSubscriptions, eq(tenantSubscriptions.tenantId, tenants.id))
-    .where(eq(tenants.referralCode, code))
-    .limit(1)
+  const referrer = (where: ReturnType<typeof eq>) =>
+    db
+      .select({
+        tenantId: tenants.id,
+        name: tenants.name,
+        deletedAt: tenants.deletedAt,
+        source: tenantSubscriptions.source,
+        status: tenantSubscriptions.status,
+      })
+      .from(tenants)
+      .leftJoin(tenantSubscriptions, eq(tenantSubscriptions.tenantId, tenants.id))
+      .where(where)
+      .limit(1)
+
+  let [row] = await referrer(eq(tenants.referralCode, code))
+  if (!row) {
+    const [alias] = await db
+      .select({ tenantId: referralCodeAliases.tenantId })
+      .from(referralCodeAliases)
+      .where(eq(referralCodeAliases.code, code))
+      .limit(1)
+    if (alias) [row] = await referrer(eq(tenants.id, alias.tenantId))
+  }
   if (!row) return null
   const sub = row.source === null || row.status === null ? null : { source: row.source, status: row.status }
   return { tenantId: row.tenantId, name: row.name, canRefer: row.deletedAt === null && canRefer(sub) }

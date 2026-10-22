@@ -48,7 +48,7 @@ export async function GET(request: Request) {
   }
 }
 
-/** Saves a new code: PUT { code }. The old code and link stop working at once. */
+/** Saves a new code: PUT { code }. The old code and link keep working for this clinic (referral_code_aliases). */
 export async function PUT(request: Request) {
   try {
     const { ctx, blocked } = await requireWrite('owner')
@@ -68,6 +68,8 @@ export async function PUT(request: Request) {
         return NextResponse.json({ error: CUSTOM_CODE_MESSAGES.taken }, { status: 409 })
       case 'rate_limited':
         return NextResponse.json({ error: CUSTOM_CODE_MESSAGES.rateLimited }, { status: 429 })
+      case 'alias_limit':
+        return NextResponse.json({ error: CUSTOM_CODE_MESSAGES.aliasLimit }, { status: 409 })
     }
   } catch (error) {
     return handleApiError(error, request)

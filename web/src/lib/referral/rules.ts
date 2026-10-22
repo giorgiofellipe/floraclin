@@ -75,3 +75,16 @@ export function referralLink(code: string, origin: string = REFERRAL_SITE_ORIGIN
 export function isReferralEligiblePlan(plan: { billingInterval: string | null | undefined }): boolean {
   return plan.billingInterval === 'month'
 }
+
+/** Per-client cap on cache-missing public code lookups (GET /api/referral/codes/[code]), per server instance. */
+export const CODE_LOOKUPS_PER_MINUTE = 60
+
+/**
+ * Whether to show a format error for what the user has typed so far: not while a short code is still being typed,
+ * only once it is long enough, has a character codes never contain, or the field was left (`blurred`).
+ */
+export function shouldShowReferralFormatError(typed: string, blurred = false): boolean {
+  const t = typed.trim()
+  if (t === '' || normalizeReferralCode(t)) return false
+  return blurred || t.length >= REFERRAL_CODE_MIN_LENGTH || /[^A-Za-z0-9]/.test(t)
+}

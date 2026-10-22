@@ -5,6 +5,7 @@ import { getSubscription } from '@/db/queries/subscriptions'
 import {
   countCountingReferrals,
   getOrCreateReferralCode,
+  listPreviousReferralCodes,
   listReferralsForReferrer,
   listRewardEvents,
 } from '@/db/queries/referrals'
@@ -26,10 +27,11 @@ export async function GET(request: Request) {
     const canRefer = isPayingReferrer(subscription)
     const code = canRefer ? await getOrCreateReferralCode(ctx.tenantId) : null
 
-    const [counting, referrals, events] = await Promise.all([
+    const [counting, referrals, events, previousCodes] = await Promise.all([
       countCountingReferrals(ctx.tenantId),
       listReferralsForReferrer(ctx.tenantId),
       listRewardEvents(ctx.tenantId, 10),
+      canRefer ? listPreviousReferralCodes(ctx.tenantId) : Promise.resolve([]),
     ])
 
     const plan = subscription?.plan ?? null
@@ -37,6 +39,7 @@ export async function GET(request: Request) {
       buildReferralDashboard({
         canRefer,
         code,
+        previousCodes,
         rewardsActive: areReferralRewardsActive(),
         counting,
         planPriceCents: plan?.priceCents ?? null,

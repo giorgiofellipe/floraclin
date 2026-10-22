@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { renderWithProviders as render } from '@/tests/test-utils'
-import { CUSTOM_CODE_MESSAGES } from '@/lib/referral/custom-code'
+import { CUSTOM_CODE_MESSAGES, MAX_PREVIOUS_REFERRAL_CODES } from '@/lib/referral/custom-code'
 import { ReferralCodeEditor } from '../referral-code-editor'
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -40,11 +40,11 @@ afterEach(() => {
 })
 
 describe('ReferralCodeEditor', () => {
-  it('shows the current code and warns that the old link and code stop working', () => {
+  it('shows the current code and says the old link and code keep working', () => {
     mockApi({})
     openEditor()
-    expect(screen.getByText(/o link e o código atuais \(MECA7K\) param de funcionar/)).toBeTruthy()
-    expect(screen.getByText(/continuam contando para você/)).toBeTruthy()
+    expect(screen.getByText(/O link e o código atuais \(MECA7K\) continuam funcionando e indicando para você/)).toBeTruthy()
+    expect(screen.getByText(/Nenhuma outra clínica poderá usar o código antigo/)).toBeTruthy()
     expect(saveButton().disabled).toBe(true)
   })
 
@@ -119,5 +119,32 @@ describe('ReferralCodeEditor', () => {
     expect(screen.queryByText(CUSTOM_CODE_MESSAGES.format)).toBeNull()
     fireEvent.change(input, { target: { value: 'DR-' } })
     expect(screen.getByText(CUSTOM_CODE_MESSAGES.format)).toBeTruthy()
+  })
+
+  it('lists the old codes that still work', () => {
+    mockApi({})
+    render(<ReferralCodeEditor currentCode="MECA7K" previousCodes={['DRAMICAELA', 'ABC234']} />)
+    expect(screen.getByText(/Códigos anteriores, que continuam funcionando/)).toBeTruthy()
+    expect(screen.getByText('DRAMICAELA, ABC234')).toBeTruthy()
+  })
+
+  it(`at ${MAX_PREVIOUS_REFERRAL_CODES} old codes, refuses a new one locally but allows switching back`, async () => {
+    const fetchMock = mockApi({ check: () => ({ body: { available: true } }) })
+    const previous = ['OLD001', 'OLD002', 'OLD003', 'OLD004', 'OLD005']
+    render(<ReferralCodeEditor currentCode="MECA7K" previousCodes={previous} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Personalizar código' }))
+    const input = screen.getByLabelText('Novo código')
+
+    vi.useFakeTimers()
+    fireEvent.change(input, { target: { value: 'novocod' } })
+    act(() => vi.advanceTimersByTime(1000)) // well past the debounce: a check would have fired by now
+    expect(screen.getByText(CUSTOM_CODE_MESSAGES.aliasLimit)).toBeTruthy()
+    expect(saveButton().disabled).toBe(true)
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.useRealTimers()
+
+    fireEvent.change(input, { target: { value: 'old003' } })
+    await waitFor(() => expect(screen.getByText('Disponível')).toBeTruthy(), DEBOUNCE_WAIT)
+    expect(saveButton().disabled).toBe(false)
   })
 })
