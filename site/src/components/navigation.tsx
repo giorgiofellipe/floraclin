@@ -6,10 +6,10 @@ import { Menu, X } from "lucide-react";
 import { SignupLink } from "@/components/signup-link";
 
 const NAV_LINKS = [
-  { href: "#recursos", label: "Recursos" },
-  { href: "#como-funciona", label: "Como Funciona" },
-  { href: "#precos", label: "Preços" },
-  { href: "#contato", label: "Contato" },
+  { href: "/#recursos", label: "Recursos" },
+  { href: "/#como-funciona", label: "Como Funciona" },
+  { href: "/#precos", label: "Preços" },
+  { href: "/#contato", label: "Contato" },
 ];
 
 export function Navigation() {
