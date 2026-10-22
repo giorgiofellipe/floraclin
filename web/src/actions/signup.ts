@@ -23,6 +23,7 @@ import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
 import { buildFbc, generateMetaEventId } from '@/lib/marketing-attribution'
 import { FIRST_TOUCH_COOKIE, parseFirstTouch, withoutClickIds, type FirstTouch } from '@/lib/first-touch'
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
+import { isPlatformAdminSession, placeholderClinicName } from '@/lib/clinic-placeholder'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { sendSignupCompleteRegistrationEvent, type SendSignupCompleteRegistrationInput } from '@/lib/meta/events'
 import {
@@ -191,6 +192,11 @@ export type ClinicDetailsState = {
   created?: boolean
   /** The user's only clinic is suspended; there is nothing to enter. */
   suspended?: boolean
+  /**
+   * An automatic start was refused because this account has been in a clinic
+   * before (an inactive membership): show the clinic form instead.
+   */
+  needsDetails?: boolean
   metaEventId?: string
 } | null
 
@@ -225,7 +231,7 @@ export async function createClinicForOAuthUser(
   // ignored by getAuthContext for anyone but a platform admin, but drop it so
   // it cannot pick the wrong clinic later. A platform admin's cookie may name
   // any clinic on purpose, so it stays.
-  const isPlatformAdmin = (session as { isPlatformAdmin?: boolean }).isPlatformAdmin === true
+  const isPlatformAdmin = isPlatformAdminSession(session)
   const selectedTenantId = cookieStore.get(TENANT_COOKIE)?.value
   if (!isPlatformAdmin && selectedTenantId && !memberships.liveTenantIds.includes(selectedTenantId)) {
     cookieStore.delete(TENANT_COOKIE)
@@ -246,17 +252,31 @@ export async function createClinicForOAuthUser(
     return { suspended: true, error: { general: [SUSPENDED_CLINIC_MESSAGE] } }
   }
 
-  const raw = {
-    clinicName: formData.get('clinicName') as string,
-    phone: formData.get('phone') as string,
+  // `mode=auto` is the page creating the clinic by itself right after Google
+  // sign-up, so the user goes straight to onboarding, which asks for the name
+  // and phone once. The name is a stand-in built here from the Google profile,
+  // never from the request, and the phone stays empty until onboarding.
+  // Platform admins are never given a clinic unasked: they get the form.
+  const auto = formData.get('mode') === 'auto'
+  let clinicName: string
+  let phone: string | null
+  if (auto) {
+    if (!memberships.neverMember || isPlatformAdmin) return { needsDetails: true }
+    clinicName = placeholderClinicName(session.user.name)
+    phone = null
+  } else {
+    const raw = {
+      clinicName: formData.get('clinicName') as string,
+      phone: formData.get('phone') as string,
+    }
+
+    const parsed = clinicDetailsSchema.safeParse(raw)
+    if (!parsed.success) {
+      return { error: parsed.error.flatten().fieldErrors }
+    }
+    ;({ clinicName, phone } = parsed.data)
   }
 
-  const parsed = clinicDetailsSchema.safeParse(raw)
-  if (!parsed.success) {
-    return { error: parsed.error.flatten().fieldErrors }
-  }
-
-  const { clinicName, phone } = parsed.data
   const marketingConsent = formData.get('marketingConsent') === 'granted'
   const metaEventId = marketingConsent
     ? String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
@@ -264,7 +284,13 @@ export async function createClinicForOAuthUser(
   const firstTouch = parseFirstTouch(cookieStore.get(FIRST_TOUCH_COOKIE)?.value)
   const tenantAttribution = attributionForTenant(firstTouch, metaEventId)
 
-  const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone })
+  const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone, placeholderName: auto })
+  if (!tenant) {
+    // Another request (a second tab, a double mount) created it first. Same
+    // answer as the retry case above, and nothing below runs twice: no second
+    // CompleteRegistration, trial or notification.
+    return { success: true, created: false }
+  }
   cookieStore.set(TENANT_COOKIE, tenant.id, TENANT_COOKIE_OPTIONS)
   if (tenantAttribution) {
     await persistSignupAttribution(tenant.id, tenantAttribution)
@@ -281,9 +307,13 @@ export async function createClinicForOAuthUser(
     })
   }
 
+  // The team sees a stand-in name and no phone for a clinic created on
+  // arrival; say so instead of passing them off as what the owner typed.
+  const notifiedName = auto ? `${clinicName} (nome provisório)` : clinicName
+
   await notifyDiscord({
     kind: 'clinic.created',
-    tenantName: clinicName,
+    tenantName: notifiedName,
     city: null,
     state: null,
     tenantId: tenant.id,
@@ -296,12 +326,16 @@ export async function createClinicForOAuthUser(
     if (created) {
       await notifyDiscord({
         kind: 'subscription.created',
-        tenantName: clinicName,
+        tenantName: notifiedName,
         planName: freePlan.name,
         priceCents: freePlan.priceCents,
         tenantId: tenant.id,
       })
-      scheduleLifecycleWelcome({ tenantId: tenant.id })
+      // A clinic created on arrival has no phone yet and has not been shown
+      // the lifecycle notice (lifecycle_notice_at is null, so neither this
+      // nor the daily lifecycle run can reach it). The onboarding save stamps
+      // the notice and sends the welcome once the phone is in.
+      if (!auto) scheduleLifecycleWelcome({ tenantId: tenant.id })
     }
   }
 
@@ -309,10 +343,10 @@ export async function createClinicForOAuthUser(
   if (adminEmail) {
     sendNewSignupNotification({
       adminEmail,
-      clinicName,
+      clinicName: notifiedName,
       ownerName: session.user.name ?? '',
       ownerEmail: session.user.email ?? '',
-      phone,
+      phone: phone ?? 'a informar no onboarding',
     }).catch(() => {})
   }
 

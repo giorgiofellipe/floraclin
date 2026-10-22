@@ -39,9 +39,11 @@ interface ClinicSettingsFormProps {
   /** When embedded in onboarding wizard, hides the save button and exposes data via onChange */
   embedded?: boolean
   onChange?: (data: Record<string, unknown>) => void
+  /** Mark the phone as required (onboarding checks it before moving on). */
+  phoneRequired?: boolean
 }
 
-export function ClinicSettingsForm({ initialData, embedded = false, onChange }: ClinicSettingsFormProps) {
+export function ClinicSettingsForm({ initialData, embedded = false, onChange, phoneRequired = false }: ClinicSettingsFormProps) {
   const updateTenant = useUpdateTenant()
   const isPending = updateTenant.isPending
   const [name, setName] = useState(initialData.name || '')
@@ -141,19 +143,28 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange }: 
               id="name"
               value={name}
               onChange={(e) => handleFieldChange('name', e.target.value)}
-              placeholder="Nome da clínica"
+              placeholder="Ex.: Clínica Bella Estética"
               required
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="phone">Telefone</Label>
+            <Label htmlFor="phone">{phoneRequired ? 'Telefone *' : 'Telefone'}</Label>
             <MaskedInput
               id="phone"
+              type="tel"
+              autoComplete="tel"
               mask={maskPhone}
               value={phone}
               onChange={(e) => handleFieldChange('phone', e.target.value)}
               placeholder="(11) 99999-9999"
+              required={phoneRequired}
+              aria-describedby={phoneRequired ? 'phone-hint' : undefined}
             />
+            {phoneRequired && (
+              <p id="phone-hint" className="text-xs text-mid">
+                Você receberá dicas da FloraClin por WhatsApp e e-mail durante o teste.
+              </p>
+            )}
           </div>
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="email">E-mail</Label>

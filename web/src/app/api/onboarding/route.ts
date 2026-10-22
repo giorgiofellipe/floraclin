@@ -10,6 +10,9 @@ import {
   listProcedureTypes,
 } from '@/db/queries/tenants'
 import { findAvailableSlug, generateSlug } from '@/db/queries/admin-tenants'
+import { hasPlaceholderName, PLACEHOLDER_NAME_SETTING } from '@/lib/clinic-placeholder'
+import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
+import { CLINIC_PHONE_REQUIRED_MESSAGE, hasClinicPhone } from '@/lib/clinic-phone'
 import { createConsentTemplate } from '@/db/queries/consent'
 import { DEFAULT_CONSENT_TEMPLATES } from '@/validations/consent'
 import { createProduct, listProducts } from '@/db/queries/products'
@@ -18,7 +21,7 @@ import { createTemplate } from '@/db/queries/evaluation-templates'
 import type { ProcedureCategory } from '@/types/evaluation'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 // withTransaction removed — helper functions use global db which deadlocks in transactions
 import { onboardingCompleteSchema } from '@/validations/onboarding'
 import { handleApiError } from '@/lib/api-error'
@@ -56,9 +59,20 @@ export async function POST(request: Request) {
       )
     }
     const data = parsed.data
+    // The wizard requires the phone before its first step; this is the same
+    // rule for a request that skips the wizard. A clinic created on arrival
+    // after Google sign-up gets its first phone here, and its trial welcome
+    // goes to it.
+    if (!hasClinicPhone(data.clinic.phone)) {
+      return NextResponse.json({ error: CLINIC_PHONE_REQUIRED_MESSAGE }, { status: 400 })
+    }
 
     // Check existing procedure types before entering transaction
     const existingTypes = await listProcedureTypes(auth.tenantId)
+    // A clinic created on arrival after Google sign-up has a stand-in name and
+    // no phone; this save is the first time we hear either.
+    const current = await getTenant(auth.tenantId)
+    const createdOnArrival = hasPlaceholderName(current?.settings)
 
     // NOTE: Not using withTransaction here because the helper functions
     // (updateTenant, createProcedureType, etc.) all use the global `db` client.
@@ -193,10 +207,28 @@ export async function POST(request: Request) {
         })
       }
 
+      // A clinic created on arrival skipped the clinic form, so its owner saw
+      // the lifecycle notice for the first time on this wizard's phone field.
+      // Stamping it is what lets lifecycle messages (and the daily run) reach
+      // the clinic. It goes before the stand-in flag is cleared: if anything
+      // after it fails, a retry still sees the flag and stamps again, and
+      // coalesce keeps the first time.
+      if (createdOnArrival) {
+        await db
+          .update(tenants)
+          .set({ lifecycleNoticeAt: sql`coalesce(${tenants.lifecycleNoticeAt}, now())` })
+          .where(eq(tenants.id, auth.tenantId))
+      }
+
       // 7. Mark onboarding as completed
       await updateTenantSettings(auth.tenantId, {
         onboarding_completed: true,
+        ...(createdOnArrival ? { [PLACEHOLDER_NAME_SETTING]: false } : {}),
       })
+
+      // The held trial welcome goes out once, to the phone just saved. Its
+      // per-channel claims make a repeated save a no-op.
+      if (createdOnArrival) scheduleLifecycleWelcome({ tenantId: auth.tenantId })
 
       // 8. Audit log
       await createAuditLog({

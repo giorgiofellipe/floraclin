@@ -76,6 +76,7 @@ vi.mock('@/lib/lifecycle-sender', () => ({
 }))
 
 import { createClinicForOAuthUser } from '../signup'
+import { notifyDiscord } from '@/lib/discord'
 
 /** Stands in for the `select().from().where().limit()` chain. */
 function membershipLookup(rows: unknown[]) {
@@ -138,6 +139,7 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
       userId: 'user-1',
       clinicName: 'Clínica Flora',
       phone: '11988887777',
+      placeholderName: false,
     })
     expect(updateMock).not.toHaveBeenCalled()
     // The new clinic is the selected one.
@@ -222,5 +224,123 @@ describe('createClinicForOAuthUser Meta CompleteRegistration', () => {
     await createClinicForOAuthUser(null, form())
 
     expect(sendSignupCompleteRegistrationEventMock).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * One-step Google sign-up: the clinic details page creates the clinic on
+ * arrival (mode=auto) and onboarding asks for the name and phone, once.
+ */
+function autoForm({ marketingConsent = false, clinicName }: { marketingConsent?: boolean; clinicName?: string } = {}) {
+  const fd = new FormData()
+  fd.set('mode', 'auto')
+  if (clinicName) fd.set('clinicName', clinicName)
+  if (marketingConsent) {
+    fd.set('marketingConsent', 'granted')
+    fd.set('metaEventId', 'complete_registration:event-auto')
+  }
+  return fd
+}
+
+describe('createClinicForOAuthUser on arrival (one-step Google sign-up)', () => {
+  beforeEach(() => {
+    authMock.mockResolvedValue({ user: { id: 'user-1', email: 'ana@b.com', name: 'Ana Souza' } })
+    getClinicMembershipsMock.mockResolvedValue({ liveTenantIds: [], suspendedOnly: false, neverMember: true })
+  })
+
+  it('creates the clinic with a stand-in name from the Google profile and no phone', async () => {
+    const state = await createClinicForOAuthUser(null, autoForm())
+
+    expect(state).toEqual({ success: true, created: true })
+    expect(createSelfSignupTenantMock).toHaveBeenCalledWith({
+      userId: 'user-1',
+      clinicName: 'Clínica de Ana',
+      phone: null,
+      placeholderName: true,
+    })
+    // The trial starts here, exactly as on the form path.
+    expect(createSubscriptionMock).toHaveBeenCalledTimes(1)
+    expect(cookieSetMock).toHaveBeenCalledWith('floraclin_tenant_id', 'tenant-1', expect.objectContaining({ httpOnly: true }))
+  })
+
+  it('never takes the name from the request on this path', async () => {
+    await createClinicForOAuthUser(null, autoForm({ clinicName: 'Injected' }))
+
+    expect(createSelfSignupTenantMock).toHaveBeenCalledWith(expect.objectContaining({ clinicName: 'Clínica de Ana' }))
+  })
+
+  it('falls back to a neutral name when Google gave none', async () => {
+    authMock.mockResolvedValue({ user: { id: 'user-1', email: 'ana@b.com', name: null } })
+
+    await createClinicForOAuthUser(null, autoForm())
+
+    expect(createSelfSignupTenantMock).toHaveBeenCalledWith(expect.objectContaining({ clinicName: 'Minha clínica' }))
+  })
+
+  it('waits for onboarding to send the welcome, so WhatsApp is not skipped for want of a phone', async () => {
+    await createClinicForOAuthUser(null, autoForm())
+
+    expect(scheduleLifecycleWelcomeMock).not.toHaveBeenCalled()
+  })
+
+  it('tells the team the name is a stand-in, not what the owner typed', async () => {
+    await createClinicForOAuthUser(null, autoForm())
+
+    expect(notifyDiscord).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'clinic.created',
+      tenantName: 'Clínica de Ana (nome provisório)',
+    }))
+  })
+
+  it('sends CompleteRegistration once, server-side, with the id the browser pixel uses and no phone', async () => {
+    const state = await createClinicForOAuthUser(null, autoForm({ marketingConsent: true }))
+
+    expect(state).toEqual({ success: true, created: true, metaEventId: 'complete_registration:event-auto' })
+    expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledTimes(1)
+    expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      eventId: 'complete_registration:event-auto',
+      email: 'ana@b.com',
+      phone: null,
+    }))
+  })
+
+  it('sends no Meta event without marketing consent', async () => {
+    const state = await createClinicForOAuthUser(null, autoForm())
+
+    expect(state).not.toHaveProperty('metaEventId')
+    expect(sendSignupCompleteRegistrationEventMock).not.toHaveBeenCalled()
+  })
+
+  it('refuses for an account that was in a clinic before, so a removed staff member gets the form, not a trial', async () => {
+    getClinicMembershipsMock.mockResolvedValue({ liveTenantIds: [], suspendedOnly: false, neverMember: false })
+
+    const state = await createClinicForOAuthUser(null, autoForm({ marketingConsent: true }))
+
+    expect(state).toEqual({ needsDetails: true })
+    expect(createSelfSignupTenantMock).not.toHaveBeenCalled()
+    expect(createSubscriptionMock).not.toHaveBeenCalled()
+    expect(sendSignupCompleteRegistrationEventMock).not.toHaveBeenCalled()
+  })
+
+  it('never gives a platform admin a clinic unasked', async () => {
+    authMock.mockResolvedValue({ user: { id: 'admin-1', email: 'ops@b.com', name: 'Ops' }, isPlatformAdmin: true })
+
+    const state = await createClinicForOAuthUser(null, autoForm())
+
+    expect(state).toEqual({ needsDetails: true })
+    expect(createSelfSignupTenantMock).not.toHaveBeenCalled()
+  })
+
+  it('makes no second trial, cookie or event when the clinic exists by the time the lock is held', async () => {
+    // createSelfSignupTenant re-checks under a per-user lock and returns null.
+    createSelfSignupTenantMock.mockResolvedValue(null)
+
+    const state = await createClinicForOAuthUser(null, autoForm({ marketingConsent: true }))
+
+    expect(state).toEqual({ success: true, created: false })
+    expect(cookieSetMock).not.toHaveBeenCalled()
+    expect(createSubscriptionMock).not.toHaveBeenCalled()
+    expect(sendSignupCompleteRegistrationEventMock).not.toHaveBeenCalled()
+    expect(updateMock).not.toHaveBeenCalled()
   })
 })

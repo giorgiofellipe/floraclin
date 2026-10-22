@@ -21,6 +21,7 @@ import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { cn } from '@/lib/utils'
 import { ExternalLinkIcon, CircleCheckIcon, CircleXIcon, Loader2Icon } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { CLINIC_PHONE_REQUIRED_MESSAGE, hasClinicPhone } from '@/lib/clinic-phone'
 
 interface ProcedureOverride {
   selected: boolean
@@ -55,6 +56,8 @@ interface OnboardingWizardProps {
   tenantEmail: string | null
   existingProcedureTypes: ProcedureTypeItem[]
   existingProducts?: Product[]
+  /** Ask for the clinic phone before moving past the first step. */
+  phoneRequired?: boolean
 }
 
 export function OnboardingWizard({
@@ -63,6 +66,7 @@ export function OnboardingWizard({
   tenantEmail,
   existingProcedureTypes,
   existingProducts = [],
+  phoneRequired = false,
 }: OnboardingWizardProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -223,6 +227,10 @@ export function OnboardingWizard({
     if (currentStep === 0) {
       if (!clinicData.name || (clinicData.name as string).trim().length === 0) {
         toast.error('Nome da clínica é obrigatório')
+        return
+      }
+      if (phoneRequired && !hasClinicPhone(clinicData.phone as string | undefined)) {
+        toast.error(CLINIC_PHONE_REQUIRED_MESSAGE)
         return
       }
     }
@@ -399,6 +407,7 @@ export function OnboardingWizard({
                   workingHours: (clinicData.workingHours as WorkingHours) || DEFAULT_WORKING_HOURS,
                 }}
                 embedded
+                phoneRequired={phoneRequired}
                 onChange={handleClinicChange}
               />
 

@@ -188,9 +188,9 @@ export async function seedForOnboarding() {
     `
 
     await sql`
-      INSERT INTO floraclin.tenants (id, name, slug, settings)
-      VALUES (${TEST_TENANT_ID}, 'Clínica E2E', 'clinica-e2e', '{}'::jsonb)
-      ON CONFLICT (id) DO UPDATE SET settings = '{}'::jsonb
+      INSERT INTO floraclin.tenants (id, name, slug, phone, settings)
+      VALUES (${TEST_TENANT_ID}, 'Clínica E2E', 'clinica-e2e', '(11) 98888-7777', '{}'::jsonb)
+      ON CONFLICT (id) DO UPDATE SET settings = '{}'::jsonb, phone = '(11) 98888-7777'
     `
 
     await sql`
