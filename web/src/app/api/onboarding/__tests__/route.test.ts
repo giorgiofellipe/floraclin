@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const updateWhere = vi.fn()
+const updateSet = vi.fn(() => ({ where: updateWhere }))
 
 vi.mock('@/lib/write-access', () => ({
   requireWrite: vi.fn(async () => ({ ctx: { tenantId: 'tenant-1', userId: 'user-1' }, blocked: null })),
@@ -8,7 +9,7 @@ vi.mock('@/lib/write-access', () => ({
 vi.mock('@/lib/auth', () => ({ requireRole: vi.fn() }))
 vi.mock('@/lib/audit', () => ({ createAuditLog: vi.fn() }))
 vi.mock('@/db/client', () => ({
-  db: { update: vi.fn(() => ({ set: vi.fn(() => ({ where: updateWhere })) })) },
+  db: { update: vi.fn(() => ({ set: updateSet })) },
 }))
 vi.mock('@/db/queries/tenants', () => ({
   getTenant: vi.fn(),
@@ -56,11 +57,30 @@ describe('POST /api/onboarding', () => {
       new Error('Failed query', { cause: { code: '23505', constraint_name: 'tenants_slug_unique' } }),
     )
 
-    const res = await postOnboarding({ name: 'Clinica Bela', slug: 'clinica-bela', workingHours: DEFAULT_WORKING_HOURS })
+    const res = await postOnboarding({ name: 'Clinica Bela', slug: 'clinica-bela', phone: '(11) 98888-7777', workingHours: DEFAULT_WORKING_HOURS })
 
     expect(res.status).toBe(409)
     expect((await res.json()).error).toBe('Este link já está em uso. Escolha outro.')
     expect(updateTenant).not.toHaveBeenCalled()
+  })
+
+  // The wizard checks the phone in the browser; a request that skips it must
+  // not finish onboarding (and release the held trial welcome) without one.
+  it.each([
+    ['no phone', undefined],
+    ['an empty phone', ''],
+    ['a phone without DDD', '9888-7777'],
+  ])('answers 400 and changes nothing for %s', async (_label, phone) => {
+    vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: { clinic_name_placeholder: true } } as never)
+
+    const res = await postOnboarding({ name: 'Clínica Bella', ...(phone === undefined ? {} : { phone }), workingHours: DEFAULT_WORKING_HOURS })
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('Informe o telefone da clínica com DDD')
+    expect(updateSet).not.toHaveBeenCalled()
+    expect(updateTenant).not.toHaveBeenCalled()
+    expect(updateTenantSettings).not.toHaveBeenCalled()
+    expect(scheduleLifecycleWelcome).not.toHaveBeenCalled()
   })
 
   describe('a clinic created on arrival after Google sign-up', () => {
@@ -85,6 +105,8 @@ describe('POST /api/onboarding', () => {
         onboarding_completed: true,
         clinic_name_placeholder: false,
       })
+      // The lifecycle notice was first shown on the wizard's phone field.
+      expect(updateSet).toHaveBeenCalledWith({ lifecycleNoticeAt: expect.anything() })
       expect(scheduleLifecycleWelcome).toHaveBeenCalledTimes(1)
       expect(scheduleLifecycleWelcome).toHaveBeenCalledWith({ tenantId: 'tenant-1' })
       // The welcome reads the phone from the clinic, so it is scheduled after the save.
@@ -100,6 +122,7 @@ describe('POST /api/onboarding', () => {
 
       expect(res.status).toBe(200)
       expect(updateTenantSettings).toHaveBeenCalledWith('tenant-1', { onboarding_completed: true })
+      expect(updateSet).not.toHaveBeenCalledWith({ lifecycleNoticeAt: expect.anything() })
       expect(scheduleLifecycleWelcome).not.toHaveBeenCalled()
     })
   })

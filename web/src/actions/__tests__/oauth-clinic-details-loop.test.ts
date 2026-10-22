@@ -76,6 +76,7 @@ vi.mock('@/lib/lifecycle-sender', () => ({
 }))
 
 import { createClinicForOAuthUser } from '../signup'
+import { notifyDiscord } from '@/lib/discord'
 
 /** Stands in for the `select().from().where().limit()` chain. */
 function membershipLookup(rows: unknown[]) {
@@ -280,6 +281,15 @@ describe('createClinicForOAuthUser on arrival (one-step Google sign-up)', () => 
     await createClinicForOAuthUser(null, autoForm())
 
     expect(scheduleLifecycleWelcomeMock).not.toHaveBeenCalled()
+  })
+
+  it('tells the team the name is a stand-in, not what the owner typed', async () => {
+    await createClinicForOAuthUser(null, autoForm())
+
+    expect(notifyDiscord).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'clinic.created',
+      tenantName: 'Clínica de Ana (nome provisório)',
+    }))
   })
 
   it('sends CompleteRegistration once, server-side, with the id the browser pixel uses and no phone', async () => {

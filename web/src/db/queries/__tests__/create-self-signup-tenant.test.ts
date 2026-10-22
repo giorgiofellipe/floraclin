@@ -40,6 +40,8 @@ describeIntegration('createSelfSignupTenant (integration, requires test DB)', ()
     const [tenant] = await db.select().from(tenants).where(eq(tenants.id, rows[0].tenantId))
     expect(tenant.phone).toBeNull()
     expect(tenant.settings).toEqual({ clinic_name_placeholder: true })
+    // No lifecycle notice was shown on this path: onboarding stamps it.
+    expect(tenant.lifecycleNoticeAt).toBeNull()
   })
 
   it('stores plain settings for a clinic named on the form', async () => {
@@ -48,5 +50,7 @@ describeIntegration('createSelfSignupTenant (integration, requires test DB)', ()
     const tenant = await createSelfSignupTenant({ userId, clinicName: 'Clínica Bela', phone: '11987654321' })
 
     expect(tenant?.settings).toEqual({})
+    const [row] = await db.select().from(tenants).where(eq(tenants.id, tenant!.id))
+    expect(row.lifecycleNoticeAt).not.toBeNull()
   })
 })

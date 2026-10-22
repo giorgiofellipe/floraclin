@@ -307,9 +307,13 @@ export async function createClinicForOAuthUser(
     })
   }
 
+  // The team sees a stand-in name and no phone for a clinic created on
+  // arrival; say so instead of passing them off as what the owner typed.
+  const notifiedName = auto ? `${clinicName} (nome provisório)` : clinicName
+
   await notifyDiscord({
     kind: 'clinic.created',
-    tenantName: clinicName,
+    tenantName: notifiedName,
     city: null,
     state: null,
     tenantId: tenant.id,
@@ -322,16 +326,16 @@ export async function createClinicForOAuthUser(
     if (created) {
       await notifyDiscord({
         kind: 'subscription.created',
-        tenantName: clinicName,
+        tenantName: notifiedName,
         planName: freePlan.name,
         priceCents: freePlan.priceCents,
         tenantId: tenant.id,
       })
-      // Without a phone the welcome would go out by email only and the
-      // WhatsApp send would be recorded as skipped for good. The onboarding
-      // save sends it instead, once the phone is in (the daily lifecycle cron
-      // covers anyone who never gets that far).
-      if (phone) scheduleLifecycleWelcome({ tenantId: tenant.id })
+      // A clinic created on arrival has no phone yet and has not been shown
+      // the lifecycle notice (lifecycle_notice_at is null, so neither this
+      // nor the daily lifecycle run can reach it). The onboarding save stamps
+      // the notice and sends the welcome once the phone is in.
+      if (!auto) scheduleLifecycleWelcome({ tenantId: tenant.id })
     }
   }
 
@@ -339,10 +343,10 @@ export async function createClinicForOAuthUser(
   if (adminEmail) {
     sendNewSignupNotification({
       adminEmail,
-      clinicName,
+      clinicName: notifiedName,
       ownerName: session.user.name ?? '',
       ownerEmail: session.user.email ?? '',
-      phone: phone ?? '',
+      phone: phone ?? 'a informar no onboarding',
     }).catch(() => {})
   }
 

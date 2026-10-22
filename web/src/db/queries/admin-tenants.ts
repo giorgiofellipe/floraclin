@@ -359,11 +359,18 @@ export async function insertSelfSignupTenantBase(
     /** Null when the clinic is created before anyone has asked for it (Google sign-up). */
     phone: string | null
     settings?: Record<string, unknown>
+    /**
+     * Whether the owner was shown the lifecycle notice ("Você receberá dicas
+     * da FloraClin por WhatsApp e e-mail") while creating the clinic. When
+     * false, `lifecycle_notice_at` stays null, which keeps the clinic out of
+     * every lifecycle send until onboarding shows the notice and stamps it.
+     */
+    lifecycleNoticeShown?: boolean
   },
 ): Promise<SelfSignupTenant> {
   const result = await tx.execute<RawTenantRow>(sql`
     INSERT INTO floraclin.tenants (name, slug, status, phone, settings, lifecycle_notice_at)
-    VALUES (${data.name}, ${data.slug}, ${data.status}, ${data.phone}, ${JSON.stringify(data.settings ?? {})}::jsonb, now())
+    VALUES (${data.name}, ${data.slug}, ${data.status}, ${data.phone}, ${JSON.stringify(data.settings ?? {})}::jsonb, ${data.lifecycleNoticeShown === false ? sql`null` : sql`now()`})
     RETURNING
       id,
       name,
@@ -435,7 +442,11 @@ export async function createSelfSignupTenant(data: {
       slug,
       status: 'active',
       phone: data.phone,
-      ...(data.placeholderName ? { settings: { [PLACEHOLDER_NAME_SETTING]: true } } : {}),
+      // A clinic created on arrival skipped the form that shows the lifecycle
+      // notice: onboarding shows it and stamps lifecycle_notice_at instead.
+      ...(data.placeholderName
+        ? { settings: { [PLACEHOLDER_NAME_SETTING]: true }, lifecycleNoticeShown: false }
+        : {}),
     })
 
     await tx.insert(tenantUsers).values({

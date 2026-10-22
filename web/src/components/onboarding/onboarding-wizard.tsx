@@ -21,9 +21,7 @@ import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { cn } from '@/lib/utils'
 import { ExternalLinkIcon, CircleCheckIcon, CircleXIcon, Loader2Icon } from 'lucide-react'
 import { Input } from '@/components/ui/input'
-
-/** DDD plus an 8-digit landline; mobiles have 11. */
-const MIN_PHONE_DIGITS = 10
+import { CLINIC_PHONE_REQUIRED_MESSAGE, hasClinicPhone } from '@/lib/clinic-phone'
 
 interface ProcedureOverride {
   selected: boolean
@@ -231,8 +229,8 @@ export function OnboardingWizard({
         toast.error('Nome da clínica é obrigatório')
         return
       }
-      if (phoneRequired && ((clinicData.phone as string) || '').replace(/\D/g, '').length < MIN_PHONE_DIGITS) {
-        toast.error('Informe o telefone da clínica com DDD')
+      if (phoneRequired && !hasClinicPhone(clinicData.phone as string | undefined)) {
+        toast.error(CLINIC_PHONE_REQUIRED_MESSAGE)
         return
       }
     }
