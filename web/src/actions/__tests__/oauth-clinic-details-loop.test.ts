@@ -113,7 +113,7 @@ beforeEach(() => {
       where: () => Promise.resolve(),
     }),
   })
-  getClinicMembershipsMock.mockResolvedValue({ liveTenantIds: [], suspended: false })
+  getClinicMembershipsMock.mockResolvedValue({ liveTenantIds: [], suspendedOnly: false })
   // The free-plan lookup.
   selectMock.mockReturnValue(membershipLookup([{ id: 'plan-free', slug: 'free', name: 'Free', priceCents: 0 }]))
 })
@@ -173,7 +173,7 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
   it('reports success on a retry rather than redirecting', async () => {
     // The user already submitted once. The clinic exists; the token does not
     // know it yet. Redirecting here was the second half of the loop.
-    getClinicMembershipsMock.mockResolvedValue({ liveTenantIds: ['tenant-1'], suspended: false })
+    getClinicMembershipsMock.mockResolvedValue({ liveTenantIds: ['tenant-1'], suspendedOnly: false })
 
     const state = await createClinicForOAuthUser(null, form())
 

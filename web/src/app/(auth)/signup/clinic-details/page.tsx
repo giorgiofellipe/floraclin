@@ -13,8 +13,8 @@ export default async function ClinicDetailsPage() {
   const session = await auth()
   const memberships = session?.user?.id
     ? await getClinicMemberships(session.user.id)
-    : { liveTenantIds: [], suspended: false }
+    : { liveTenantIds: [], suspendedOnly: false }
   const hasClinic = memberships.liveTenantIds.length > 0
 
-  return <ClinicDetailsForm hasClinic={hasClinic} suspended={!hasClinic && memberships.suspended} />
+  return <ClinicDetailsForm hasClinic={hasClinic} suspended={memberships.suspendedOnly} />
 }

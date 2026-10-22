@@ -65,12 +65,21 @@ describe('a suspended tenant loses API access, not just page access', () => {
 
   it('the tenant switcher does not offer a suspended clinic', async () => {
     // Listing one would be a dead end: picking it lands on getAuthContext,
-    // which now finds no membership and bounces to /login.
+    // which now finds no membership and bounces to clinic details.
     await getUserTenants('user-1')
 
     const query = capturedSql.find((s) => s.includes('tenant_users'))
     expect(query).toBeDefined()
     expect(query).toMatch(/deleted_at"? is null/i)
+  })
+})
+
+describe('a user signed in before the suspension', () => {
+  it('is sent to clinic details, not /login, so middleware cannot bounce them back', async () => {
+    // Their token still carries the suspended tenant, and middleware sends a
+    // tenanted token on /login straight to /dashboard, which lands back here:
+    // ERR_TOO_MANY_REDIRECTS. Clinic details explains the suspension.
+    await expect(getAuthContext()).rejects.toThrow('NEXT_REDIRECT:/signup/clinic-details')
   })
 })
 

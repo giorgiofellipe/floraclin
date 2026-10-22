@@ -72,8 +72,13 @@ export async function getAuthContext(): Promise<AuthContext> {
     isPlatformAdmin = !!userRow?.isPlatformAdmin
   }
 
+  // Not /login: a token minted before the clinic was suspended (or the
+  // membership removed) still carries its tenantId, and middleware sends a
+  // signed-in user with a tenant from /login straight back to /dashboard,
+  // which lands here again: a redirect loop. Clinic details is where
+  // middleware sends tenantless tokens anyway, and it explains a suspension.
   if (memberships.length === 0 && !isPlatformAdmin) {
-    redirect('/login')
+    redirect('/signup/clinic-details')
   }
 
   // Resolve active tenant: cookie → first membership (or any tenant for platform admins)

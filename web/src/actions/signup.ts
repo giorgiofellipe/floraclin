@@ -1,6 +1,6 @@
 'use server'
 
-import { signIn } from '@/lib/auth-config'
+import { signIn, signOut } from '@/lib/auth-config'
 import { redirect } from 'next/navigation'
 import { cookies, headers } from 'next/headers'
 import { after } from 'next/server'
@@ -194,6 +194,17 @@ export type ClinicDetailsState = {
   metaEventId?: string
 } | null
 
+/**
+ * "Sair" on clinic details. Also drops the tenant cookie: a user who only sees
+ * the suspension notice never submits the form, so the action never gets the
+ * chance to clear a cookie naming a clinic they cannot use.
+ */
+export async function signOutFromClinicDetails() {
+  const cookieStore = await cookies()
+  cookieStore.delete(TENANT_COOKIE)
+  await signOut({ redirectTo: '/login' })
+}
+
 export async function createClinicForOAuthUser(
   _prevState: ClinicDetailsState,
   formData: FormData,
@@ -228,7 +239,7 @@ export async function createClinicForOAuthUser(
     return { success: true, created: false }
   }
 
-  if (memberships.suspended) {
+  if (memberships.suspendedOnly) {
     // The session can never resolve a suspended clinic, so "it already
     // exists, refresh" would loop. Suspension is the anti-abuse lever, so it
     // is not silently sidestepped with a new clinic either: say what happened.

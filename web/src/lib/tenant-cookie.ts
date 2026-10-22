@@ -6,10 +6,12 @@
  */
 export const TENANT_COOKIE = 'floraclin_tenant_id'
 
+const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365
+
 export const TENANT_COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax' as const,
   path: '/',
-  maxAge: 60 * 60 * 24 * 365, // 1 year
+  maxAge: ONE_YEAR_SECONDS,
 }

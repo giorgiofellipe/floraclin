@@ -2,8 +2,8 @@
 
 import { useActionState, useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { signOut, useSession } from 'next-auth/react'
-import { createClinicForOAuthUser, type ClinicDetailsState } from '@/actions/signup'
+import { useSession } from 'next-auth/react'
+import { createClinicForOAuthUser, signOutFromClinicDetails, type ClinicDetailsState } from '@/actions/signup'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,7 +14,7 @@ import { SUSPENDED_CLINIC_MESSAGE } from '@/lib/clinic-suspended'
 
 export const MAX_SESSION_REFRESH_ATTEMPTS = 3
 // Long enough for an in-flight session fetch (which makes update() a no-op) to finish.
-const SESSION_REFRESH_RETRY_MS = 500
+export const SESSION_REFRESH_RETRY_MS = 500
 
 export const SESSION_REFRESH_FAILED_MESSAGE =
   'Sua clínica está pronta, mas não conseguimos atualizar sua sessão. Toque em “Tentar de novo”. Se não funcionar, saia e entre de novo.'
@@ -91,7 +91,7 @@ export function ClinicDetailsForm({ hasClinic = false, suspended = false }: Prop
     </div>
   )
 
-  const retry = () => {
+  const enter = () => {
     setEntering(true)
     setRefreshFailed(false)
     enterOrExplain()
@@ -102,7 +102,7 @@ export function ClinicDetailsForm({ hasClinic = false, suspended = false }: Prop
   if (isPending) submitLabel = 'Criando clínica...'
   else if (refreshing) submitLabel = 'Entrando...'
   const signOutButton = (
-    <Button type="button" size="sm" variant="outline" onClick={() => void signOut({ redirectTo: '/login' })}>
+    <Button type="button" size="sm" variant="outline" onClick={() => void signOutFromClinicDetails()}>
       Sair
     </Button>
   )
@@ -111,7 +111,7 @@ export function ClinicDetailsForm({ hasClinic = false, suspended = false }: Prop
     <div role="alert" className="mb-4 space-y-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
       <p>{SESSION_REFRESH_FAILED_MESSAGE}</p>
       <div className="flex flex-wrap gap-2">
-        <Button type="button" size="sm" disabled={entering} onClick={retry}>
+        <Button type="button" size="sm" disabled={entering} onClick={enter}>
           Tentar de novo
         </Button>
         {signOutButton}
@@ -124,7 +124,8 @@ export function ClinicDetailsForm({ hasClinic = false, suspended = false }: Prop
       <div>
         {brand}
         <h2 className="text-2xl font-semibold text-charcoal">Clínica suspensa</h2>
-        <p role={suspended ? undefined : 'alert'} className="text-sm text-mid mt-2 mb-6">{SUSPENDED_CLINIC_MESSAGE}</p>
+        {/* Announced only when it is the answer to a submit. */}
+        <p role={state?.suspended ? 'alert' : undefined} className="text-sm text-mid mt-2 mb-6">{SUSPENDED_CLINIC_MESSAGE}</p>
         {signOutButton}
       </div>
     )
@@ -138,15 +139,17 @@ export function ClinicDetailsForm({ hasClinic = false, suspended = false }: Prop
         {brand}
         <h2 className="text-2xl font-semibold text-charcoal">Sua clínica já está cadastrada</h2>
         <p className="text-sm text-mid mt-1 mb-6">Falta só entrar nela.</p>
-        {refreshFailedAlert}
-        <Button
-          type="button"
-          disabled={entering}
-          onClick={retry}
-          className="w-full bg-forest text-cream hover:bg-sage"
-        >
-          {entering ? 'Entrando...' : 'Entrar na clínica'}
-        </Button>
+        {/* After a failed refresh the alert's own "Tentar de novo" is the retry. */}
+        {refreshFailedAlert || (
+          <Button
+            type="button"
+            disabled={entering}
+            onClick={enter}
+            className="w-full bg-forest text-cream hover:bg-sage"
+          >
+            {entering ? 'Entrando...' : 'Entrar na clínica'}
+          </Button>
+        )}
       </div>
     )
   }

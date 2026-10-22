@@ -22,6 +22,8 @@ const cookieDelete = vi.fn()
 let tenantCookie: string | undefined
 let isPlatformAdmin = false
 const createSelfSignupTenantMock = vi.fn()
+const signOutMock = vi.fn()
+const STALE = '45d53bbe-4859-44f3-9405-15f5cc581694'
 
 // By default one membership, in a tenant suspended on Oct 13.
 const SUSPENDED = { tenantId: 'tenant-suspended', deletedAt: '2026-10-13 19:19:45.42+00' }
@@ -44,6 +46,7 @@ vi.mock('next/server', () => ({ after: (task: () => unknown) => task() }))
 vi.mock('@/lib/auth-config', () => ({
   auth: async () => ({ user: { id: 'user-1', email: 'a@b.com', name: 'A' }, isPlatformAdmin }),
   signIn: vi.fn(),
+  signOut: (...a: unknown[]) => signOutMock(...a),
 }))
 vi.mock('@/db/client', async () => {
   const { drizzle } = await import('drizzle-orm/pg-proxy')
@@ -52,13 +55,13 @@ vi.mock('@/db/client', async () => {
       capturedSql.push(sql)
       if (!sql.includes('"tenant_users"')) return { rows: [] }
       // Stand-in for Postgres: a query that filters out soft-deleted tenants
-      // gets nothing back; one that reads deleted_at gets it; one that never
-      // looks at tenants just sees a membership row.
+      // gets only live rows; one that reads deleted_at gets it. A membership
+      // lookup that never looks at the tenant is the bug, so it fails loudly.
       if (/"tenants"\."deleted_at" is null/.test(sql)) {
         return { rows: memberships.filter((m) => !m.deletedAt).map((m) => [m.tenantId]) }
       }
       if (/"tenants"\."deleted_at"/.test(sql)) return { rows: memberships.map((m) => [m.tenantId, m.deletedAt]) }
-      return { rows: memberships.length ? [['membership-1']] : [] }
+      throw new Error(`membership lookup ignores tenants.deleted_at: ${sql}`)
     }),
   }
 })
@@ -79,7 +82,8 @@ vi.mock('@/lib/meta/events', () => ({ sendSignupCompleteRegistrationEvent: vi.fn
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 vi.mock('@/lib/lifecycle-sender', () => ({ scheduleLifecycleWelcome: vi.fn() }))
 
-import { createClinicForOAuthUser } from '../signup'
+import { createClinicForOAuthUser, signOutFromClinicDetails } from '../signup'
+import { SUSPENDED_CLINIC_MESSAGE } from '@/lib/clinic-suspended'
 
 function form() {
   const fd = new FormData()
@@ -98,43 +102,24 @@ beforeEach(() => {
 })
 
 describe('clinic details for a user whose only clinic is suspended', () => {
-  it('does not claim the clinic already exists when the session can never see it', async () => {
+  it('says the clinic is suspended instead of claiming it exists, and creates nothing', async () => {
     const state = await createClinicForOAuthUser(null, form())
 
-    // created:false makes the client refresh a session that resolves no
-    // tenant, then land back here: the loop.
-    expect(state?.created).not.toBe(false)
-    expect(state?.success).not.toBe(true)
-  })
-
-  it('says, in Portuguese, that the clinic is suspended and creates nothing', async () => {
-    const state = await createClinicForOAuthUser(null, form())
-
-    expect(state?.suspended).toBe(true)
-    expect(state?.error?.general?.[0]).toMatch(/suspens/)
-    expect(state?.error?.general?.[0]).toContain('contato@floraclin.com.br')
+    // { success: true, created: false } makes the client refresh a session
+    // that resolves no tenant, then land back here: the loop.
+    expect(state).toEqual({ suspended: true, error: { general: [SUSPENDED_CLINIC_MESSAGE] } })
     expect(createSelfSignupTenantMock).not.toHaveBeenCalled()
   })
 
   it('clears a tenant cookie that points at a clinic the user cannot use', async () => {
-    tenantCookie = '45d53bbe-4859-44f3-9405-15f5cc581694'
+    tenantCookie = STALE
     await createClinicForOAuthUser(null, form())
 
     expect(cookieDelete).toHaveBeenCalledWith('floraclin_tenant_id')
   })
-
-  it('reads memberships the same way the jwt callback does, through live tenants', async () => {
-    await createClinicForOAuthUser(null, form())
-
-    const lookup = capturedSql.find((s) => s.includes('"tenant_users"'))
-    expect(lookup).toMatch(/inner join "floraclin"\."tenants"/i)
-    expect(lookup).toMatch(/"tenants"\."deleted_at"/)
-  })
 })
 
 describe('clinic details with a stale tenant cookie', () => {
-  const STALE = '45d53bbe-4859-44f3-9405-15f5cc581694'
-
   it('creates the clinic for a user with none, replacing the stale cookie', async () => {
     memberships = []
     tenantCookie = STALE
@@ -166,13 +151,23 @@ describe('clinic details with a stale tenant cookie', () => {
 
     expect(cookieDelete).not.toHaveBeenCalled()
   })
+
   it('leaves a platform admin\'s cookie alone: it may name any clinic on purpose', async () => {
-    memberships = []
     isPlatformAdmin = true
     tenantCookie = STALE
 
     await createClinicForOAuthUser(null, form())
 
     expect(cookieDelete).not.toHaveBeenCalled()
+    expect(cookieSet).not.toHaveBeenCalled()
+  })
+})
+
+describe('signing out from clinic details', () => {
+  it('drops the tenant cookie the suspension notice never gets to clear', async () => {
+    await signOutFromClinicDetails()
+
+    expect(cookieDelete).toHaveBeenCalledWith('floraclin_tenant_id')
+    expect(signOutMock).toHaveBeenCalledWith({ redirectTo: '/login' })
   })
 })
