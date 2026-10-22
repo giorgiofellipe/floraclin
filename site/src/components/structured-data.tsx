@@ -89,76 +89,6 @@ const SCHEMAS = [
   },
   {
     "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: [
-      {
-        "@type": "Question",
-        name: "Preciso instalar alguma coisa?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "Não. FloraClin funciona 100% no navegador, no computador ou celular. Nada para instalar.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "Funciona para clínicas com mais de um profissional?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "Sim. A agenda mostra todos os profissionais lado a lado, com controle de acesso por perfil (proprietário, profissional, recepcionista, financeiro).",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "Meus pacientes precisam criar conta?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "Não. O paciente recebe um link por WhatsApp para agendar, preencher a anamnese e assinar termos. Sem cadastro, sem senha.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "Como funciona o alinhamento de fotos?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "O sistema detecta o rosto automaticamente e alinha as fotos de antes e depois para que a comparação seja precisa. Você também pode capturar com guia de pose, que indica a posição ideal e tira a foto sozinho quando está tudo certo.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "Posso migrar meus dados de outro sistema?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "Sim. Entre em contato conosco e ajudamos na migração.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "O sistema envia lembretes de consulta?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "Sim. O FloraClin envia confirmação e lembrete automático por WhatsApp. O paciente confirma ou reagenda sem precisar ligar.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "Tem CRM de pacientes?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "Sim. Você tem o histórico completo de cada paciente, com tags e acompanhamento de retorno. Sabe exatamente quem precisa de follow-up.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "Quanto custa?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "14 dias grátis, sem cartão. Depois, R$ 99/mês no plano Starter ou R$ 199/mês no Pro. Os dois planos pagos incluem número próprio de WhatsApp; o Pro traz mais créditos de WhatsApp e usuários ilimitados.",
-        },
-      },
-    ],
-  },
-  {
-    "@context": "https://schema.org",
     "@type": "WebSite",
     name: "FloraClin",
     url: "https://floraclin.com.br",
@@ -167,6 +97,87 @@ const SCHEMAS = [
       "Gestão clínica para Harmonização Orofacial — agenda, prontuário, diagrama facial, financeiro.",
   },
 ];
+
+// The home FAQ is rendered only on "/": guides and comparisons carry their own
+// FAQPage, and a page should have a single one.
+const HOME_FAQ_SCHEMA = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: [
+    {
+      "@type": "Question",
+      name: "Preciso instalar alguma coisa?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Não. FloraClin funciona 100% no navegador, no computador ou celular. Nada para instalar.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Funciona para clínicas com mais de um profissional?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Sim. A agenda mostra todos os profissionais lado a lado, com controle de acesso por perfil (proprietário, profissional, recepcionista, financeiro).",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Meus pacientes precisam criar conta?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Não. O paciente recebe um link por WhatsApp para agendar, preencher a anamnese e assinar termos. Sem cadastro, sem senha.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Como funciona o alinhamento de fotos?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "O sistema detecta o rosto automaticamente e alinha as fotos de antes e depois para que a comparação seja precisa. Você também pode capturar com guia de pose, que indica a posição ideal e tira a foto sozinho quando está tudo certo.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Posso migrar meus dados de outro sistema?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Sim. Entre em contato conosco e ajudamos na migração.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "O sistema envia lembretes de consulta?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Sim. O FloraClin envia confirmação e lembrete automático por WhatsApp. O paciente confirma ou reagenda sem precisar ligar.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Tem CRM de pacientes?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Sim. Você tem o histórico completo de cada paciente, com tags e acompanhamento de retorno. Sabe exatamente quem precisa de follow-up.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Quanto custa?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "14 dias grátis, sem cartão. Depois, R$ 99/mês no plano Starter ou R$ 199/mês no Pro. Os dois planos pagos incluem número próprio de WhatsApp; o Pro traz mais créditos de WhatsApp e usuários ilimitados.",
+      },
+    },
+  ],
+};
+
+function JsonLd({ schema }: { schema: object }) {
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />;
+}
+
+export function HomeFaqStructuredData() {
+  return <JsonLd schema={HOME_FAQ_SCHEMA} />;
+}
 
 export function StructuredData() {
   return (

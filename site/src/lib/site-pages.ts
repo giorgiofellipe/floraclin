@@ -19,6 +19,13 @@ export interface SitePage {
   changeFrequency: NonNullable<MetadataRoute.Sitemap[number]["changeFrequency"]>;
   priority: number;
   llmsSection: LlmsSection;
+  /** Content pages only: <title> and meta description. */
+  metaTitle?: string;
+  description?: string;
+  /** Content pages only: BR calendar day first published (YYYY-MM-DD). */
+  published?: string;
+  /** Content pages only: short label for the footer and related links. */
+  linkLabel?: string;
 }
 
 /**
@@ -68,6 +75,111 @@ export const SITE_PAGES: readonly SitePage[] = [
     priority: 0.3,
     llmsSection: "Legal",
   },
+  {
+    path: "/melhores-sistemas-clinica-estetica-harmonizacao-2026",
+    title: "Melhores sistemas para clínica de estética e harmonização (2026)",
+    summary:
+      "Comparativo de 11 sistemas para clínicas de estética e HOF com preços e recursos verificados nos sites oficiais, escrito pelo FloraClin e com o viés declarado.",
+    updated: "2026-10-21",
+    published: "2026-10-21",
+    changeFrequency: "monthly",
+    priority: 0.8,
+    llmsSection: "Guias e comparativos",
+    metaTitle: "Melhores sistemas para clínica de estética e HOF (2026)",
+    description:
+      "Comparativo honesto de 11 sistemas para clínica de estética e harmonização: preço, teste grátis, prontuário, mapa facial e antes e depois. Fontes citadas.",
+    linkLabel: "Comparativo de sistemas 2026",
+  },
+  {
+    path: "/guia-fotos-antes-e-depois",
+    title: "Guia de fotos de antes e depois padronizadas",
+    summary:
+      "Como padronizar fotos clínicas de antes e depois (luz, distância, ângulos e fundo), consentimento e LGPD, e o que CFM e CFO permitem publicar.",
+    updated: "2026-10-21",
+    published: "2026-10-21",
+    changeFrequency: "monthly",
+    priority: 0.8,
+    llmsSection: "Guias e comparativos",
+    metaTitle: "Fotos de antes e depois padronizadas: guia — FloraClin",
+    description:
+      "Como padronizar fotos de antes e depois: luz, distância, ângulos e fundo, consentimento de imagem e LGPD, e as regras do CFM e do CFO para publicar.",
+    linkLabel: "Guia de fotos de antes e depois",
+  },
+  {
+    path: "/software-harmonizacao-orofacial",
+    title: "Software para Harmonização Orofacial",
+    summary:
+      "O FloraClin para clínicas de HOF: diagrama facial com produto e quantidade por ponto, prontuário, fotos alinhadas automaticamente e teste grátis de 14 dias.",
+    updated: "2026-10-21",
+    published: "2026-10-21",
+    changeFrequency: "monthly",
+    priority: 0.9,
+    llmsSection: "Guias e comparativos",
+    metaTitle: "Software para Harmonização Orofacial (HOF) — FloraClin",
+    description:
+      "Diagrama facial com produto e quantidade por ponto, lote e validade no prontuário, fotos de antes e depois alinhadas automaticamente. 14 dias grátis, sem cartão.",
+    linkLabel: "Software para HOF",
+  },
+  {
+    path: "/alternativa-ao-clinicorp",
+    title: "Alternativa ao Clinicorp para HOF e estética",
+    summary:
+      "Quando o FloraClin faz sentido no lugar do Clinicorp, e quando o Clinicorp é a melhor escolha, com preços verificados no site oficial.",
+    updated: "2026-10-21",
+    published: "2026-10-21",
+    changeFrequency: "monthly",
+    priority: 0.7,
+    llmsSection: "Guias e comparativos",
+    metaTitle: "Alternativa ao Clinicorp para HOF e estética — FloraClin",
+    description:
+      "FloraClin ou Clinicorp? Preços verificados, o que cada um faz melhor e para qual clínica cada sistema serve. Comparativo escrito pelo FloraClin, com fontes.",
+    linkLabel: "Alternativa ao Clinicorp",
+  },
+  {
+    path: "/floraclin-vs-simplu",
+    title: "FloraClin vs Simplu",
+    summary:
+      "Comparação entre FloraClin e Simplu, dois sistemas feitos para harmonização orofacial: preço, teste, mapa facial e antes e depois com IA.",
+    updated: "2026-10-21",
+    published: "2026-10-21",
+    changeFrequency: "monthly",
+    priority: 0.7,
+    llmsSection: "Guias e comparativos",
+    metaTitle: "FloraClin vs Simplu: comparativo para harmonização",
+    description:
+      "FloraClin ou Simplu? Preço, teste grátis, mapa facial e antes e depois alinhado lado a lado, com fontes oficiais e onde cada um é melhor.",
+    linkLabel: "FloraClin vs Simplu",
+  },
+  {
+    path: "/floraclin-vs-clinica-experts",
+    title: "FloraClin vs Clínica Experts",
+    summary:
+      "Comparação entre FloraClin e Clínica Experts: preço, teste grátis, foco em HOF, diagrama facial e antes e depois, com fontes oficiais.",
+    updated: "2026-10-21",
+    published: "2026-10-21",
+    changeFrequency: "monthly",
+    priority: 0.7,
+    llmsSection: "Guias e comparativos",
+    metaTitle: "FloraClin vs Clínica Experts: comparativo para HOF",
+    description:
+      "FloraClin ou Clínica Experts? Preço, teste grátis, foco em HOF, diagrama facial e antes e depois, com fontes e os pontos em que cada um é melhor.",
+    linkLabel: "FloraClin vs Clínica Experts",
+  },
+  {
+    path: "/alternativa-ao-clinica-experts",
+    title: "Alternativa ao Clínica Experts para HOF",
+    summary:
+      "Quando o FloraClin é uma alternativa ao Clínica Experts para clínicas de harmonização, e quando o Clínica Experts continua a melhor escolha.",
+    updated: "2026-10-21",
+    published: "2026-10-21",
+    changeFrequency: "monthly",
+    priority: 0.7,
+    llmsSection: "Guias e comparativos",
+    metaTitle: "Alternativa ao Clínica Experts para HOF — FloraClin",
+    description:
+      "Procurando uma alternativa ao Clínica Experts? Veja preço, teste, diagrama facial e fotos alinhadas no FloraClin, e onde o Clínica Experts é melhor.",
+    linkLabel: "Alternativa ao Clínica Experts",
+  },
 ];
 
 /**
@@ -77,6 +189,15 @@ export const SITE_PAGES: readonly SitePage[] = [
  * that renders the home page and is never indexed.
  */
 export const NON_INDEXABLE_ROUTES: readonly string[] = ["/motion-lab", "/indique", "/indicacao/[code]"];
+
+/** Guides and comparisons, in the order the footer lists them. */
+export const CONTENT_PAGES = SITE_PAGES.filter((page) => page.llmsSection === "Guias e comparativos");
+
+export function sitePage(path: string): SitePage {
+  const page = SITE_PAGES.find((p) => p.path === path);
+  if (!page) throw new Error(`${path} is not in SITE_PAGES`);
+  return page;
+}
 
 export function absoluteUrl(path: string): string {
   return path === "/" ? SITE_URL : `${SITE_URL}${path}`;
