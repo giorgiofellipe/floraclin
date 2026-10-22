@@ -1,4 +1,5 @@
 import { db } from '@/db/client'
+import { PLACEHOLDER_NAME_SETTING } from '@/lib/clinic-placeholder'
 import { tenants, users, tenantUsers, patients, financialEntries, plans } from '@/db/schema'
 import { eq, and, ne, ilike, or, sql, desc, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
@@ -355,12 +356,14 @@ export async function insertSelfSignupTenantBase(
     name: string
     slug: string
     status: string
-    phone: string
+    /** Null when the clinic is created before anyone has asked for it (Google sign-up). */
+    phone: string | null
+    settings?: Record<string, unknown>
   },
 ): Promise<SelfSignupTenant> {
   const result = await tx.execute<RawTenantRow>(sql`
-    INSERT INTO floraclin.tenants (name, slug, status, phone, lifecycle_notice_at)
-    VALUES (${data.name}, ${data.slug}, ${data.status}, ${data.phone}, now())
+    INSERT INTO floraclin.tenants (name, slug, status, phone, settings, lifecycle_notice_at)
+    VALUES (${data.name}, ${data.slug}, ${data.status}, ${data.phone}, ${JSON.stringify(data.settings ?? {})}::jsonb, now())
     RETURNING
       id,
       name,
@@ -399,12 +402,32 @@ export async function insertSelfSignupTenantBase(
   }
 }
 
+/**
+ * Creates the clinic and its owner membership for a self-signup Google user.
+ *
+ * Returns null when the user already has an active membership in a live
+ * clinic. The check runs under a per-user advisory lock, inside the same
+ * transaction as the insert, because the clinic is now created by the page
+ * itself on load: two tabs (or a double mount) reaching this at once would
+ * otherwise both see no clinic and create two trials.
+ */
 export async function createSelfSignupTenant(data: {
   userId: string
   clinicName: string
-  phone: string
+  phone: string | null
+  placeholderName?: boolean
 }) {
   return withTransaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`self-signup:${data.userId}`}))`)
+
+    const [existing] = await tx
+      .select({ tenantId: tenantUsers.tenantId })
+      .from(tenantUsers)
+      .innerJoin(tenants, and(eq(tenants.id, tenantUsers.tenantId), isNull(tenants.deletedAt)))
+      .where(and(eq(tenantUsers.userId, data.userId), eq(tenantUsers.isActive, true)))
+      .limit(1)
+    if (existing) return null
+
     const slug = await findAvailableSlug(tx, generateSlug(data.clinicName))
 
     const tenant = await insertSelfSignupTenantBase(tx, {
@@ -412,6 +435,7 @@ export async function createSelfSignupTenant(data: {
       slug,
       status: 'active',
       phone: data.phone,
+      ...(data.placeholderName ? { settings: { [PLACEHOLDER_NAME_SETTING]: true } } : {}),
     })
 
     await tx.insert(tenantUsers).values({

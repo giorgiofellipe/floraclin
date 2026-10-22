@@ -27,7 +27,7 @@ const STALE = '45d53bbe-4859-44f3-9405-15f5cc581694'
 
 // By default one membership, in a tenant suspended on Oct 13.
 const SUSPENDED = { tenantId: 'tenant-suspended', deletedAt: '2026-10-13 19:19:45.42+00' }
-let memberships: { tenantId: string; deletedAt: string | null }[] = []
+let memberships: { tenantId: string; deletedAt: string | null; isActive?: boolean }[] = []
 
 vi.mock('next/navigation', () => ({
   redirect: (p: string) => {
@@ -60,7 +60,7 @@ vi.mock('@/db/client', async () => {
       if (/"tenants"\."deleted_at" is null/.test(sql)) {
         return { rows: memberships.filter((m) => !m.deletedAt).map((m) => [m.tenantId]) }
       }
-      if (/"tenants"\."deleted_at"/.test(sql)) return { rows: memberships.map((m) => [m.tenantId, m.deletedAt]) }
+      if (/"tenants"\."deleted_at"/.test(sql)) return { rows: memberships.map((m) => [m.tenantId, m.deletedAt, m.isActive ?? true]) }
       throw new Error(`membership lookup ignores tenants.deleted_at: ${sql}`)
     }),
   }
@@ -160,6 +160,47 @@ describe('clinic details with a stale tenant cookie', () => {
 
     expect(cookieDelete).not.toHaveBeenCalled()
     expect(cookieSet).not.toHaveBeenCalled()
+  })
+})
+
+describe('clinic created on arrival (one-step Google sign-up)', () => {
+  const auto = () => {
+    const fd = new FormData()
+    fd.set('mode', 'auto')
+    return fd
+  }
+
+  it('creates it for an account that was never in any clinic', async () => {
+    memberships = []
+
+    const state = await createClinicForOAuthUser(null, auto())
+
+    expect(state).toMatchObject({ success: true, created: true })
+    expect(createSelfSignupTenantMock).toHaveBeenCalledWith(expect.objectContaining({ clinicName: 'Clínica de A', phone: null, placeholderName: true }))
+  })
+
+  it('asks for details instead when the account was removed from a clinic (inactive membership)', async () => {
+    memberships = [{ tenantId: 'tenant-old', deletedAt: null, isActive: false }]
+
+    const state = await createClinicForOAuthUser(null, auto())
+
+    expect(state).toEqual({ needsDetails: true })
+    expect(createSelfSignupTenantMock).not.toHaveBeenCalled()
+  })
+
+  it('says suspended, not "created", for a suspended-only account', async () => {
+    const state = await createClinicForOAuthUser(null, auto())
+
+    expect(state).toEqual({ suspended: true, error: { general: [SUSPENDED_CLINIC_MESSAGE] } })
+    expect(createSelfSignupTenantMock).not.toHaveBeenCalled()
+  })
+
+  it('lets a removed member still create a clinic by filling in the form', async () => {
+    memberships = [{ tenantId: 'tenant-old', deletedAt: null, isActive: false }]
+
+    const state = await createClinicForOAuthUser(null, form())
+
+    expect(state).toMatchObject({ success: true, created: true })
   })
 })
 

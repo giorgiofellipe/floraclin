@@ -8,6 +8,7 @@ import { getAuthContext } from '@/lib/auth'
 import { getTenant, listProcedureTypes } from '@/db/queries/tenants'
 import { listProducts } from '@/db/queries/products'
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard'
+import { hasPlaceholderName } from '@/lib/clinic-placeholder'
 
 export default async function OnboardingPage() {
   const auth = await getAuthContext()
@@ -48,7 +49,10 @@ export default async function OnboardingPage() {
 
   return (
     <OnboardingWizard
-      tenantName={tenant.name}
+      // A stand-in name ("Clínica de Ana") from a Google sign-up is not
+      // something to confirm: start empty so the real name is asked for.
+      tenantName={hasPlaceholderName(settings) ? '' : tenant.name}
+      phoneRequired
       tenantPhone={tenant.phone}
       tenantEmail={tenant.email}
       existingProcedureTypes={procedureTypesForWizard}

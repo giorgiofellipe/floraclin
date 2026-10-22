@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
+import { toast } from 'sonner'
 import { OnboardingWizard } from '../onboarding-wizard'
 
 // ─── Mocks ─────────────────────────────────────────────────────────
@@ -262,5 +263,62 @@ describe('OnboardingWizard', () => {
     await user.click(screen.getByTestId('onboarding-next'))
 
     expect(screen.getByTestId('onboarding-complete')).toBeDisabled()
+  })
+
+  describe('after a one-step Google sign-up (clinic created with a stand-in name, no phone)', () => {
+    function renderFresh() {
+      return render(
+        wrap(
+          <OnboardingWizard
+            tenantName=""
+            tenantPhone={null}
+            tenantEmail={null}
+            existingProcedureTypes={[]}
+            existingProducts={[]}
+            phoneRequired
+          />,
+        ),
+      )
+    }
+
+    it('asks for the clinic name from an empty field and the phone as required', () => {
+      renderFresh()
+      expect(screen.getByLabelText('Nome da Clínica *')).toHaveValue('')
+      expect(screen.getByLabelText('Telefone *')).toBeRequired()
+      expect(screen.getByText(/dicas da FloraClin por WhatsApp/)).toBeInTheDocument()
+    })
+
+    it('does not move on without a phone with DDD', async () => {
+      const user = userEvent.setup()
+      renderFresh()
+      await user.type(screen.getByLabelText('Nome da Clínica *'), 'Clínica Bella')
+      await user.type(screen.getByLabelText('Telefone *'), '9888')
+      await user.click(screen.getByTestId('onboarding-next'))
+
+      expect(toast.error).toHaveBeenCalledWith('Informe o telefone da clínica com DDD')
+      expect(screen.getByText(/Dados da Clínica/i)).toBeInTheDocument()
+    })
+
+    it('saves the name and phone typed here', async () => {
+      const user = userEvent.setup()
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+        new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      )
+      renderFresh()
+      await user.click(screen.getByTestId('onboarding-next'))
+      expect(toast.error).toHaveBeenCalledWith('Nome da clínica é obrigatório')
+
+      await user.type(screen.getByLabelText('Nome da Clínica *'), 'Clínica Bella')
+      await user.type(screen.getByLabelText('Telefone *'), '11988887777')
+      await user.click(screen.getByTestId('onboarding-next'))
+      await user.click(screen.getByTestId('onboarding-next'))
+      await user.click(screen.getByTestId('onboarding-next'))
+      await user.click(screen.getByTestId('onboarding-complete'))
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/onboarding', expect.objectContaining({ method: 'POST' })))
+      const call = fetchMock.mock.calls.find(([url]) => url === '/api/onboarding')!
+      const body = JSON.parse((call[1] as RequestInit).body as string)
+      expect(body.clinic).toMatchObject({ name: 'Clínica Bella', phone: '(11) 98888-7777' })
+    })
   })
 })

@@ -22,6 +22,9 @@ import { cn } from '@/lib/utils'
 import { ExternalLinkIcon, CircleCheckIcon, CircleXIcon, Loader2Icon } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 
+/** DDD plus an 8-digit landline; mobiles have 11. */
+const MIN_PHONE_DIGITS = 10
+
 interface ProcedureOverride {
   selected: boolean
   durationMin: number
@@ -55,6 +58,8 @@ interface OnboardingWizardProps {
   tenantEmail: string | null
   existingProcedureTypes: ProcedureTypeItem[]
   existingProducts?: Product[]
+  /** Ask for the clinic phone before moving past the first step. */
+  phoneRequired?: boolean
 }
 
 export function OnboardingWizard({
@@ -63,6 +68,7 @@ export function OnboardingWizard({
   tenantEmail,
   existingProcedureTypes,
   existingProducts = [],
+  phoneRequired = false,
 }: OnboardingWizardProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -223,6 +229,10 @@ export function OnboardingWizard({
     if (currentStep === 0) {
       if (!clinicData.name || (clinicData.name as string).trim().length === 0) {
         toast.error('Nome da clínica é obrigatório')
+        return
+      }
+      if (phoneRequired && ((clinicData.phone as string) || '').replace(/\D/g, '').length < MIN_PHONE_DIGITS) {
+        toast.error('Informe o telefone da clínica com DDD')
         return
       }
     }
@@ -399,6 +409,7 @@ export function OnboardingWizard({
                   workingHours: (clinicData.workingHours as WorkingHours) || DEFAULT_WORKING_HOURS,
                 }}
                 embedded
+                phoneRequired={phoneRequired}
                 onChange={handleClinicChange}
               />
 

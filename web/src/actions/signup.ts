@@ -23,6 +23,7 @@ import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
 import { buildFbc, generateMetaEventId } from '@/lib/marketing-attribution'
 import { FIRST_TOUCH_COOKIE, parseFirstTouch, withoutClickIds, type FirstTouch } from '@/lib/first-touch'
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
+import { placeholderClinicName } from '@/lib/clinic-placeholder'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { sendSignupCompleteRegistrationEvent, type SendSignupCompleteRegistrationInput } from '@/lib/meta/events'
 import {
@@ -191,6 +192,11 @@ export type ClinicDetailsState = {
   created?: boolean
   /** The user's only clinic is suspended; there is nothing to enter. */
   suspended?: boolean
+  /**
+   * An automatic start was refused because this account has been in a clinic
+   * before (an inactive membership): show the clinic form instead.
+   */
+  needsDetails?: boolean
   metaEventId?: string
 } | null
 
@@ -246,17 +252,31 @@ export async function createClinicForOAuthUser(
     return { suspended: true, error: { general: [SUSPENDED_CLINIC_MESSAGE] } }
   }
 
-  const raw = {
-    clinicName: formData.get('clinicName') as string,
-    phone: formData.get('phone') as string,
+  // `mode=auto` is the page creating the clinic by itself right after Google
+  // sign-up, so the user goes straight to onboarding, which asks for the name
+  // and phone once. The name is a stand-in built here from the Google profile,
+  // never from the request, and the phone stays empty until onboarding.
+  // Platform admins are never given a clinic unasked: they get the form.
+  const auto = formData.get('mode') === 'auto'
+  let clinicName: string
+  let phone: string | null
+  if (auto) {
+    if (!memberships.neverMember || isPlatformAdmin) return { needsDetails: true }
+    clinicName = placeholderClinicName(session.user.name)
+    phone = null
+  } else {
+    const raw = {
+      clinicName: formData.get('clinicName') as string,
+      phone: formData.get('phone') as string,
+    }
+
+    const parsed = clinicDetailsSchema.safeParse(raw)
+    if (!parsed.success) {
+      return { error: parsed.error.flatten().fieldErrors }
+    }
+    ;({ clinicName, phone } = parsed.data)
   }
 
-  const parsed = clinicDetailsSchema.safeParse(raw)
-  if (!parsed.success) {
-    return { error: parsed.error.flatten().fieldErrors }
-  }
-
-  const { clinicName, phone } = parsed.data
   const marketingConsent = formData.get('marketingConsent') === 'granted'
   const metaEventId = marketingConsent
     ? String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
@@ -264,7 +284,13 @@ export async function createClinicForOAuthUser(
   const firstTouch = parseFirstTouch(cookieStore.get(FIRST_TOUCH_COOKIE)?.value)
   const tenantAttribution = attributionForTenant(firstTouch, metaEventId)
 
-  const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone })
+  const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone, placeholderName: auto })
+  if (!tenant) {
+    // Another request (a second tab, a double mount) created it first. Same
+    // answer as the retry case above, and nothing below runs twice: no second
+    // CompleteRegistration, trial or notification.
+    return { success: true, created: false }
+  }
   cookieStore.set(TENANT_COOKIE, tenant.id, TENANT_COOKIE_OPTIONS)
   if (tenantAttribution) {
     await persistSignupAttribution(tenant.id, tenantAttribution)
@@ -301,7 +327,11 @@ export async function createClinicForOAuthUser(
         priceCents: freePlan.priceCents,
         tenantId: tenant.id,
       })
-      scheduleLifecycleWelcome({ tenantId: tenant.id })
+      // Without a phone the welcome would go out by email only and the
+      // WhatsApp send would be recorded as skipped for good. The onboarding
+      // save sends it instead, once the phone is in (the daily lifecycle cron
+      // covers anyone who never gets that far).
+      if (phone) scheduleLifecycleWelcome({ tenantId: tenant.id })
     }
   }
 
@@ -312,7 +342,7 @@ export async function createClinicForOAuthUser(
       clinicName,
       ownerName: session.user.name ?? '',
       ownerEmail: session.user.email ?? '',
-      phone,
+      phone: phone ?? '',
     }).catch(() => {})
   }
 

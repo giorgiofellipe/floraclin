@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { tenants, tenantUsers } from '@/db/schema'
 
@@ -11,6 +11,14 @@ export type ClinicMemberships = {
    * cannot disagree about it.
    */
   suspendedOnly: boolean
+  /**
+   * No membership row at all, active or not: a brand-new account. Only these
+   * get a clinic created automatically after Google sign-up. Someone removed
+   * from a clinic (an inactive membership) still sees the clinic form, so a
+   * former staff member signing in never gets a trial clinic they did not ask
+   * for.
+   */
+  neverMember: boolean
 }
 
 /**
@@ -23,12 +31,17 @@ export type ClinicMemberships = {
  * tenant, and middleware sent the user back to clinic details.
  */
 export async function getClinicMemberships(userId: string): Promise<ClinicMemberships> {
-  const rows = await db
-    .select({ tenantId: tenantUsers.tenantId, deletedAt: tenants.deletedAt })
+  const allRows = await db
+    .select({ tenantId: tenantUsers.tenantId, deletedAt: tenants.deletedAt, isActive: tenantUsers.isActive })
     .from(tenantUsers)
     .innerJoin(tenants, eq(tenants.id, tenantUsers.tenantId))
-    .where(and(eq(tenantUsers.userId, userId), eq(tenantUsers.isActive, true)))
+    .where(eq(tenantUsers.userId, userId))
 
+  const rows = allRows.filter((r) => r.isActive)
   const liveTenantIds = rows.filter((r) => r.deletedAt === null).map((r) => r.tenantId)
-  return { liveTenantIds, suspendedOnly: liveTenantIds.length === 0 && rows.length > 0 }
+  return {
+    liveTenantIds,
+    suspendedOnly: liveTenantIds.length === 0 && rows.length > 0,
+    neverMember: allRows.length === 0,
+  }
 }

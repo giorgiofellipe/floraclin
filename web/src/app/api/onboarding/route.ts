@@ -10,6 +10,8 @@ import {
   listProcedureTypes,
 } from '@/db/queries/tenants'
 import { findAvailableSlug, generateSlug } from '@/db/queries/admin-tenants'
+import { hasPlaceholderName, PLACEHOLDER_NAME_SETTING } from '@/lib/clinic-placeholder'
+import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
 import { createConsentTemplate } from '@/db/queries/consent'
 import { DEFAULT_CONSENT_TEMPLATES } from '@/validations/consent'
 import { createProduct, listProducts } from '@/db/queries/products'
@@ -59,6 +61,10 @@ export async function POST(request: Request) {
 
     // Check existing procedure types before entering transaction
     const existingTypes = await listProcedureTypes(auth.tenantId)
+    // A clinic created on arrival after Google sign-up has a stand-in name and
+    // no phone; this save is the first time we hear either.
+    const current = await getTenant(auth.tenantId)
+    const namedOnArrival = hasPlaceholderName(current?.settings)
 
     // NOTE: Not using withTransaction here because the helper functions
     // (updateTenant, createProcedureType, etc.) all use the global `db` client.
@@ -196,7 +202,14 @@ export async function POST(request: Request) {
       // 7. Mark onboarding as completed
       await updateTenantSettings(auth.tenantId, {
         onboarding_completed: true,
+        ...(namedOnArrival ? { [PLACEHOLDER_NAME_SETTING]: false } : {}),
       })
+
+      // Sign-up skipped the trial welcome for these clinics so its WhatsApp
+      // half was not recorded as skipped for want of a phone. Send it now that
+      // the phone is saved. Claims make a repeat (or one the daily lifecycle
+      // run already sent) a no-op.
+      if (namedOnArrival) scheduleLifecycleWelcome({ tenantId: auth.tenantId })
 
       // 8. Audit log
       await createAuditLog({
