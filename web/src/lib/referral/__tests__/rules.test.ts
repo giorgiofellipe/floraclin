@@ -32,7 +32,13 @@ describe('normalizeReferralCode', () => {
   it('trims and uppercases', () => {
     expect(normalizeReferralCode(' meca7k ')).toBe('MECA7K')
   })
-  it.each(['ME0A7K', 'MICA7K', 'ABC', 'ABCDEFGHJKMNP', 42, undefined])('rejects %s', (raw) => {
+  it('accepts any A–Z / 0–9 code a clinic may choose, including look-alike letters', () => {
+    expect(normalizeReferralCode('dramicaela')).toBe('DRAMICAELA')
+    expect(normalizeReferralCode('LOL10')).toBe('LOL10')
+    expect(normalizeReferralCode('ABCD')).toBe('ABCD')
+    expect(normalizeReferralCode('ABCDEFGHJKMN')).toBe('ABCDEFGHJKMN')
+  })
+  it.each(['MEC-7K', 'MEÇA7K', 'DRA MICA', 'ABC', 'ABCDEFGHJKMNP', 42, undefined])('rejects %s', (raw) => {
     expect(normalizeReferralCode(raw)).toBeNull()
   })
 })

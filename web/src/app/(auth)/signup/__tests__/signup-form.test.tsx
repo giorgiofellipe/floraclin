@@ -32,6 +32,23 @@ describe('SignupForm referral code field', () => {
     expect(screen.getByLabelText('Código de indicação')).toHaveValue('MECA7K')
   })
 
+  it('shows the welcome-offer hint under the field, and the label matches the other labels', () => {
+    render(<SignupForm referralEnabled defaultReferralCode="MECA7K" />)
+    const input = screen.getByLabelText('Código de indicação')
+    const hint = screen.getByText(
+      'Tem um código de indicação? Garanta 20% de desconto nos 2 primeiros meses da assinatura.',
+    )
+    expect(input).toHaveAttribute('aria-describedby', hint.id)
+    expect(hint).toHaveClass('text-xs', 'text-mid')
+    expect(screen.getByText('Código de indicação').className).toBe(screen.getByText('Telefone').className)
+    expect(input.className).toBe(screen.getByLabelText('Telefone').className)
+  })
+
+  it('states the offer under the collapsed link too', () => {
+    render(<SignupForm referralEnabled defaultReferralCode={null} />)
+    expect(screen.getByText('Garanta 20% de desconto nos 2 primeiros meses da assinatura.')).toHaveClass('text-mid')
+  })
+
   it('submits the pre-filled value', async () => {
     const { container } = render(<SignupForm referralEnabled defaultReferralCode="MECA7K" />)
     fireEvent.submit(container.querySelectorAll('form')[1])

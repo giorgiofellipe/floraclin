@@ -36,7 +36,7 @@ describe('signupReferralDefaults', () => {
   it('falls back to the cookie when ?ref is missing or malformed', async () => {
     m.cookie = 'abc234'
     expect((await signupReferralDefaults(params())).defaultReferralCode).toBe('ABC234')
-    expect((await signupReferralDefaults(params('0O1IL'))).defaultReferralCode).toBe('ABC234')
+    expect((await signupReferralDefaults(params('0O-IL'))).defaultReferralCode).toBe('ABC234')
   })
 
   it('is null with neither', async () => {

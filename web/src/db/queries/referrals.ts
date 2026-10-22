@@ -1,5 +1,6 @@
 import { db } from '@/db/client'
 import {
+  auditLogs,
   billingCardFingerprints,
   plans,
   referralRewardEvents,
@@ -9,11 +10,12 @@ import {
   tenantUsers,
   users,
 } from '@/db/schema'
-import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm'
 import { isUniqueViolation } from '@/lib/errors'
 import { normalizeBrPhone } from '@/lib/phone'
 import { canRefer } from '@/lib/referral/config'
 import { generateReferralCode } from '@/lib/referral/code'
+import { REFERRAL_CODE_CHANGES_PER_DAY, REFERRAL_CODE_CHANGE_WINDOW_MS } from '@/lib/referral/custom-code'
 import type {
   CandidateTenant,
   CapturedVia,
@@ -62,6 +64,81 @@ export async function getOrCreateReferralCode(tenantId: string): Promise<string>
     }
   }
   throw new Error('Could not generate a unique referral code')
+}
+
+/** Audit rows written by updateReferralCode; the rolling change limit counts them. */
+export const REFERRAL_CODE_AUDIT_ENTITY = 'referral_code'
+
+/** True when no other tenant holds `code` (already normalised). The tenant's own code counts as available. */
+export async function isReferralCodeAvailable(tenantId: string, code: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: tenants.id })
+    .from(tenants)
+    .where(and(eq(tenants.referralCode, code), ne(tenants.id, tenantId)))
+    .limit(1)
+  return !row
+}
+
+export type UpdateReferralCodeResult =
+  | { outcome: 'updated'; code: string; previousCode: string | null }
+  | { outcome: 'unchanged'; code: string }
+  | { outcome: 'taken' }
+  | { outcome: 'rate_limited' }
+
+/**
+ * Sets the tenant's referral code to `code` (already validated and normalised). Locks the tenant row so the
+ * rolling REFERRAL_CODE_CHANGES_PER_DAY limit holds under concurrent saves; a concurrent claim of the same code
+ * by another tenant surfaces as uq_tenants_referral_code and maps to 'taken'. The old code is released at once.
+ */
+export async function updateReferralCode(input: {
+  tenantId: string
+  userId: string
+  code: string
+  now?: Date
+}): Promise<UpdateReferralCodeResult> {
+  const now = input.now ?? new Date()
+  try {
+    return await db.transaction(async (tx) => {
+      const [tenant] = await tx
+        .select({ code: tenants.referralCode })
+        .from(tenants)
+        .where(eq(tenants.id, input.tenantId))
+        .for('update')
+      if (!tenant) throw new Error(`Tenant ${input.tenantId} not found`)
+      if (tenant.code === input.code) return { outcome: 'unchanged', code: input.code } as const
+
+      const [recent] = await tx
+        .select({ n: count() })
+        .from(auditLogs)
+        .where(
+          and(
+            eq(auditLogs.tenantId, input.tenantId),
+            eq(auditLogs.entityType, REFERRAL_CODE_AUDIT_ENTITY),
+            eq(auditLogs.action, 'update'),
+            gt(auditLogs.createdAt, new Date(now.getTime() - REFERRAL_CODE_CHANGE_WINDOW_MS)),
+          ),
+        )
+      if ((recent?.n ?? 0) >= REFERRAL_CODE_CHANGES_PER_DAY) return { outcome: 'rate_limited' } as const
+
+      await tx.update(tenants).set({ referralCode: input.code }).where(eq(tenants.id, input.tenantId))
+      await tx.insert(auditLogs).values({
+        tenantId: input.tenantId,
+        userId: input.userId,
+        action: 'update',
+        entityType: REFERRAL_CODE_AUDIT_ENTITY,
+        entityId: input.tenantId,
+        changes: { referralCode: { old: tenant.code, new: input.code } },
+        createdAt: now,
+      })
+      return { outcome: 'updated', code: input.code, previousCode: tenant.code } as const
+    })
+  } catch (err) {
+    // The unique violation aborted the transaction; it is rolled back by the time we get here.
+    if (isUniqueViolation(err, 'uq_tenants_referral_code')) {
+      return { outcome: 'taken' }
+    }
+    throw err
+  }
 }
 
 /** By normalised code. canRefer = config.canRefer(row) && tenant not deleted. Null when no tenant has the code. */

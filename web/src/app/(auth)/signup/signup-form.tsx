@@ -158,7 +158,13 @@ export function SignupForm({
             <p className="text-xs text-mid mt-1">Você receberá dicas da FloraClin por WhatsApp e e-mail durante o teste.</p>
           </div>
 
-          {referralEnabled && <ReferralCodeField defaultCode={defaultReferralCode} />}
+          {referralEnabled && (
+            <ReferralCodeField
+              defaultCode={defaultReferralCode}
+              labelClassName="uppercase tracking-wider text-xs text-mid"
+              inputClassName="auth-input h-11 border-blush/60 bg-white/80 rounded-lg transition-all duration-200 focus:border-sage focus:ring-2 focus:ring-mint/20 placeholder:text-mid/40"
+            />
+          )}
 
           <div className="pt-1">
             <Button

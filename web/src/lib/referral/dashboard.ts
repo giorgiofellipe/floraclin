@@ -43,6 +43,8 @@ export interface DashboardInput {
 export interface ReferralDashboardResponse {
   canRefer: boolean
   inactiveMessage: string | null
+  /** The clinic's code, editable on the tab; null when it cannot refer. */
+  code: string | null
   link: string | null
   shareText: string | null
   whatsappShareUrl: string | null
@@ -107,6 +109,7 @@ export function buildReferralDashboard(input: DashboardInput): ReferralDashboard
   return {
     canRefer: input.canRefer,
     inactiveMessage: input.canRefer ? null : INACTIVE_MESSAGE,
+    code: input.canRefer ? input.code : null,
     link,
     shareText,
     whatsappShareUrl: shareText ? `https://wa.me/?text=${encodeURIComponent(shareText)}` : null,

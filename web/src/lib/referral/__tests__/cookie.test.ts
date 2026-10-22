@@ -47,7 +47,7 @@ describe('captureReferralCode', () => {
   })
 
   it('sets nothing for a malformed code', () => {
-    expect(visit('https://app.floraclin.com.br/signup?ref=MICA7K')).toBeUndefined()
+    expect(visit('https://app.floraclin.com.br/signup?ref=MEC-7K')).toBeUndefined()
     expect(visit('https://app.floraclin.com.br/signup')).toBeUndefined()
   })
 

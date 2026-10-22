@@ -8,7 +8,7 @@ afterEach(() => vi.unstubAllEnvs())
 describe('lookupReferralCode', () => {
   it('never fetches a malformed code', async () => {
     const fetchImpl = vi.fn()
-    expect(await lookupReferralCode('MICA7K', { fetchImpl })).toEqual({ active: false })
+    expect(await lookupReferralCode('MEC-7K', { fetchImpl })).toEqual({ active: false })
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 

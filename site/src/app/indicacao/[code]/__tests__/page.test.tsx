@@ -40,6 +40,14 @@ describe('/indicacao/[code]', () => {
     expect(getByTestId('home')).toBeInTheDocument()
   })
 
+  it('resolves a clinic-chosen code typed in lowercase', async () => {
+    vi.stubEnv('REFERRAL_ENROLLMENT_ENABLED', 'true')
+    fetchMock.mockResolvedValue(json({ active: true, clinicName: 'Dra. Micaela' }))
+    const { getByTestId } = await renderPage('dramicaela')
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/referral\/codes\/DRAMICAELA$/)
+    expect(getByTestId('banner').textContent).toBe('Dra. Micaela|DRAMICAELA')
+  })
+
   it('renders the home without a banner for an inactive code', async () => {
     vi.stubEnv('REFERRAL_ENROLLMENT_ENABLED', 'true')
     fetchMock.mockResolvedValue(json({ active: false }))

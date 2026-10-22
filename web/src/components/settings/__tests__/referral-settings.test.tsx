@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 const ACTIVE = {
   canRefer: true,
   inactiveMessage: null,
+  code: 'MECA7K',
   link: 'https://floraclin.com.br/indicacao/MECA7K',
   shareText: 'texto de compartilhamento',
   whatsappShareUrl: 'https://wa.me/?text=texto',
@@ -22,6 +23,7 @@ const INACTIVE = {
   ...ACTIVE,
   canRefer: false,
   inactiveMessage: 'Seu link de indicação fica ativo quando sua clínica tem uma assinatura paga.',
+  code: null,
   link: null,
   shareText: null,
   whatsappShareUrl: null,
@@ -47,6 +49,7 @@ describe('ReferralSettings', () => {
 
     expect(await screen.findByText(ACTIVE.link)).toBeTruthy()
     expect(screen.getByText('Compartilhar no WhatsApp')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Personalizar código' })).toBeTruthy()
     expect(screen.getByText('Clínica A')).toBeTruthy()
     expect(screen.getByText('pagamento pendente')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Ver regras do programa' }).getAttribute('href')).toBe(ACTIVE.rulesUrl)
@@ -66,6 +69,7 @@ describe('ReferralSettings', () => {
 
     expect(await screen.findByText(INACTIVE.inactiveMessage)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Copiar link' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Personalizar código' })).toBeNull()
     expect(screen.getByText('Clínica A')).toBeTruthy()
   })
 })

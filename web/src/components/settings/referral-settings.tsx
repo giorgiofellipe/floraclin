@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ReferralDashboardResponse } from '@/lib/referral/dashboard'
+import { ReferralCodeEditor } from './referral-code-editor'
 
 const CARD = 'rounded-[3px] border border-[#E8ECEF] bg-white p-4 sm:p-5'
 
@@ -41,6 +42,7 @@ export function ReferralSettings() {
         {data.link && data.shareText && data.whatsappShareUrl ? (
           <div className="mt-3 space-y-3">
             <p className="break-all rounded-[3px] bg-[#F4F6F8] px-3 py-2 text-sm text-charcoal">{data.link}</p>
+            {data.code && <ReferralCodeEditor currentCode={data.code} />}
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={() => copy(data.link!, 'Link copiado')}>
                 Copiar link

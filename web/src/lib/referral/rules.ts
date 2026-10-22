@@ -12,7 +12,9 @@ export const REFERRAL_END_NOTICE_DAYS = 30
 export const REFERRAL_COOKIE_NAME = 'floraclin_ref'
 export const REFERRAL_COOKIE_MAX_AGE_DAYS = 60
 export const REFERRAL_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
-export const REFERRAL_CODE_LENGTH = 6
+export const REFERRAL_CODE_LENGTH = 6 // generated codes
+export const REFERRAL_CODE_MIN_LENGTH = 4 // any code, generated or chosen by the clinic
+export const REFERRAL_CODE_MAX_LENGTH = 12 // tenants.referral_code is varchar(12)
 export const REFERRAL_SITE_ORIGIN = 'https://floraclin.com.br'
 
 export type ReferralPercent = 0 | 20 | 40 | 60 | 80 | 100
@@ -33,15 +35,18 @@ export function referralBonusCredits(counting: number, planCreditLimit: number):
   return Math.max(clampCounting(counting) - REFERRAL_MAX_COUNTING_FOR_DISCOUNT, 0) * REFERRAL_BONUS_CREDITS_PER_EXTRA
 }
 
-/** Trim + uppercase; null unless 4–12 chars, all in REFERRAL_CODE_ALPHABET. */
+const REFERRAL_CODE_PATTERN = /^[A-Z0-9]+$/
+
+/**
+ * Trim + uppercase; null unless 4–12 chars of A–Z / 0–9. Wider than REFERRAL_CODE_ALPHABET on purpose:
+ * generated codes skip look-alike characters, but a clinic may choose any letters (DRAMICAELA).
+ * Codes are stored uppercase, so every lookup through here is case-insensitive.
+ */
 export function normalizeReferralCode(raw: unknown): string | null {
   if (typeof raw !== 'string') return null
   const code = raw.trim().toUpperCase()
-  if (code.length < 4 || code.length > 12) return null
-  for (const char of code) {
-    if (!REFERRAL_CODE_ALPHABET.includes(char)) return null
-  }
-  return code
+  if (code.length < REFERRAL_CODE_MIN_LENGTH || code.length > REFERRAL_CODE_MAX_LENGTH) return null
+  return REFERRAL_CODE_PATTERN.test(code) ? code : null
 }
 
 /** Trim, collapse whitespace; past `max`, cut at the last word boundary and add an ellipsis (hard cut without one). */

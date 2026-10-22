@@ -37,7 +37,7 @@ describe('GET /api/referral/codes/[code]', () => {
   })
 
   it('does not touch the DB for a malformed code', async () => {
-    const res = await call('ME0A7K')
+    const res = await call('MEC-7K')
     expect(await res.json()).toEqual({ active: false })
     expect(findReferrerByCode).not.toHaveBeenCalled()
   })

@@ -34,6 +34,14 @@ describe('ClinicDetailsForm referral code field', () => {
     expect(screen.getByLabelText('Código de indicação')).toHaveValue('MECA7K')
   })
 
+  it('shows the welcome-offer hint, with the label styled like the other labels', () => {
+    render(<ClinicDetailsForm referralEnabled defaultReferralCode="MECA7K" />)
+    expect(
+      screen.getByText('Tem um código de indicação? Garanta 20% de desconto nos 2 primeiros meses da assinatura.'),
+    ).toHaveClass('text-xs', 'text-mid')
+    expect(screen.getByText('Código de indicação').className).toBe(screen.getByText('Telefone').className)
+  })
+
   it('submits the pre-filled value', async () => {
     const { container } = render(<ClinicDetailsForm referralEnabled defaultReferralCode="MECA7K" />)
     fireEvent.submit(container.querySelector('form')!)

@@ -56,7 +56,7 @@ describe('attributeReferral skips', () => {
 
   it('invalid_code for a malformed code, without a lookup', async () => {
     const deps = makeDeps()
-    expect(await attribute('ME0A7K', deps)).toEqual({ outcome: 'skipped', reason: 'invalid_code' })
+    expect(await attribute('MEC-7K', deps)).toEqual({ outcome: 'skipped', reason: 'invalid_code' })
     expect(deps.findReferrer).not.toHaveBeenCalled()
   })
 
@@ -158,7 +158,7 @@ describe('pickSignupCode', () => {
   })
 
   it('a malformed typed field does not silently fall back to the cookie', () => {
-    expect(pickSignupCode({ field: 'ME0A7K', cookie: 'MECA7K' })).toBeNull()
+    expect(pickSignupCode({ field: 'MEC-7K', cookie: 'MECA7K' })).toBeNull()
   })
 
   it('null when neither is usable', () => {
