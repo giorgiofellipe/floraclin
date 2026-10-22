@@ -14,9 +14,9 @@ import { createSubscription } from '@/db/queries/subscriptions'
 import { getClinicMemberships } from '@/db/queries/clinic-membership'
 import { TENANT_COOKIE, TENANT_COOKIE_OPTIONS } from '@/lib/tenant-cookie'
 import { SUSPENDED_CLINIC_MESSAGE } from '@/lib/clinic-suspended'
-import { sendNewSignupNotification, sendConfirmationEmail } from '@/lib/email'
+import { sendConfirmationEmail } from '@/lib/email'
 import { withTransaction } from '@/lib/tenant'
-import { notifyDiscord } from '@/lib/discord'
+import { notifySignupStarted } from '@/lib/signup-notifications'
 import { issueConfirmationToken } from '@/lib/confirm-email'
 import { getAppUrl } from '@/lib/app-url'
 import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
@@ -122,33 +122,20 @@ export async function signUp(
         userAgent: requestHeaders.get('user-agent'),
       })
     }
-    await notifyDiscord({
-      kind: 'clinic.created',
-      tenantName: clinicName,
-      city: null,
-      state: null,
+    // Step 1 for the team; "Cadastro concluído" (and the admin e-mail)
+    // follows from the onboarding save, see notifyOnboardingCompleted.
+    await notifySignupStarted({
       tenantId,
+      ownerName: fullName,
+      ownerEmail: email,
+      method: 'email',
       attribution: tenantAttribution,
     })
 
     const [freePlan] = await db.select().from(plans).where(eq(plans.slug, 'free')).limit(1)
     if (freePlan) {
-      const { created } = await createSubscription(tenantId, freePlan.id)
-      if (created) {
-        await notifyDiscord({
-          kind: 'subscription.created',
-          tenantName: clinicName,
-          planName: freePlan.name,
-          priceCents: freePlan.priceCents,
-          tenantId,
-        })
-      }
+      await createSubscription(tenantId, freePlan.id)
     }
-  }
-
-  const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL
-  if (adminEmail) {
-    sendNewSignupNotification({ adminEmail, clinicName, ownerName: fullName, ownerEmail: email, phone }).catch(() => {})
   }
 
   // The tenant, user and membership rows are already committed above. If
@@ -307,16 +294,14 @@ export async function createClinicForOAuthUser(
     })
   }
 
-  // The team sees a stand-in name and no phone for a clinic created on
-  // arrival; say so instead of passing them off as what the owner typed.
-  const notifiedName = auto ? `${clinicName} (nome provisório)` : clinicName
-
-  await notifyDiscord({
-    kind: 'clinic.created',
-    tenantName: notifiedName,
-    city: null,
-    state: null,
+  // Step 1 for the team. It names the person, not the clinic: a clinic
+  // created on arrival only has a stand-in name until onboarding, which is
+  // where "Cadastro concluído" (and the admin e-mail) comes from.
+  await notifySignupStarted({
     tenantId: tenant.id,
+    ownerName: session.user.name ?? '',
+    ownerEmail: session.user.email ?? '',
+    method: 'google',
     attribution: tenantAttribution,
   })
 
@@ -324,30 +309,12 @@ export async function createClinicForOAuthUser(
   if (freePlan) {
     const { created } = await createSubscription(tenant.id, freePlan.id)
     if (created) {
-      await notifyDiscord({
-        kind: 'subscription.created',
-        tenantName: notifiedName,
-        planName: freePlan.name,
-        priceCents: freePlan.priceCents,
-        tenantId: tenant.id,
-      })
       // A clinic created on arrival has no phone yet and has not been shown
       // the lifecycle notice (lifecycle_notice_at is null, so neither this
       // nor the daily lifecycle run can reach it). The onboarding save stamps
       // the notice and sends the welcome once the phone is in.
       if (!auto) scheduleLifecycleWelcome({ tenantId: tenant.id })
     }
-  }
-
-  const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL
-  if (adminEmail) {
-    sendNewSignupNotification({
-      adminEmail,
-      clinicName: notifiedName,
-      ownerName: session.user.name ?? '',
-      ownerEmail: session.user.email ?? '',
-      phone: phone ?? 'a informar no onboarding',
-    }).catch(() => {})
   }
 
   // Deliberately no redirect. The JWT was minted at Google sign-in, before

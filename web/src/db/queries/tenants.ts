@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { tenants, procedureTypes, consentTemplates } from '@/db/schema'
-import { eq, and, isNull, asc, desc } from 'drizzle-orm'
+import { eq, and, isNull, asc, desc, sql } from 'drizzle-orm'
 import { fetchLogoDataUri, signLogoPath } from '@/lib/logo'
 import type { TenantHeaderInfo } from '@/lib/tenant-header'
 import type { UpdateTenantInput, ProcedureTypeInput } from '@/validations/tenant'
@@ -114,7 +114,36 @@ export async function updateTenantSettings(
   return tenant ?? null
 }
 
+/**
+ * Sets `onboarding_completed: true` (plus `extraSettings`) and reports
+ * whether this call is the one that completed onboarding. The flag is the
+ * marker for both sign-up paths, so a clinic is reported as completed once:
+ * a repeated or concurrent save finds the flag already set and gets false.
+ * One statement, merged in the database, so two saves cannot both win.
+ */
+export async function markOnboardingCompleted(
+  tenantId: string,
+  extraSettings: Record<string, unknown> = {},
+): Promise<boolean> {
+  const patch = JSON.stringify({ ...extraSettings, onboarding_completed: true })
+  const rows = await db
+    .update(tenants)
+    .set({
+      settings: sql`coalesce(${tenants.settings}, '{}'::jsonb) || ${patch}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(tenants.id, tenantId),
+        sql`coalesce(${tenants.settings}, '{}'::jsonb) -> 'onboarding_completed' is distinct from 'true'::jsonb`,
+      ),
+    )
+    .returning({ id: tenants.id })
+  return rows.length > 0
+}
+
 // ─── PROCEDURE TYPES ────────────────────────────────────────────────
+
 
 export async function listProcedureTypes(tenantId: string): Promise<ProcedureType[]> {
   return db

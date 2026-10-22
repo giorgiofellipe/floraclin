@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const updateWhere = vi.fn()
 const updateSet = vi.fn((_values: Record<string, unknown>) => ({ where: updateWhere }))
@@ -8,13 +8,24 @@ vi.mock('@/lib/write-access', () => ({
 }))
 vi.mock('@/lib/auth', () => ({ requireRole: vi.fn() }))
 vi.mock('@/lib/audit', () => ({ createAuditLog: vi.fn() }))
+const ownerLookup = vi.fn(async () => [{ fullName: 'Ana Souza', email: 'ana@b.com' }])
 vi.mock('@/db/client', () => ({
-  db: { update: vi.fn(() => ({ set: updateSet })) },
+  db: {
+    update: vi.fn(() => ({ set: updateSet })),
+    select: vi.fn(() => ({ from: () => ({ where: () => ({ limit: ownerLookup }) }) })),
+  },
+}))
+vi.mock('@/lib/discord', () => ({ notifyDiscord: vi.fn() }))
+vi.mock('@/lib/email', () => ({ sendNewSignupNotification: vi.fn(() => Promise.resolve()) }))
+vi.mock('@/lib/observability', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/observability')>()),
+  reportSideEffectFailure: vi.fn(),
 }))
 vi.mock('@/db/queries/tenants', () => ({
   getTenant: vi.fn(),
   updateTenant: vi.fn(),
   updateTenantSettings: vi.fn(),
+  markOnboardingCompleted: vi.fn(async () => true),
   createProcedureType: vi.fn(),
   listProcedureTypes: vi.fn(async () => []),
 }))
@@ -34,7 +45,11 @@ vi.mock('@/db/queries/clinical-documents', () => ({
 }))
 vi.mock('@/db/queries/evaluation-templates', () => ({ createTemplate: vi.fn() }))
 
-import { getTenant, updateTenant, updateTenantSettings } from '@/db/queries/tenants'
+import { getTenant, markOnboardingCompleted, updateTenant, updateTenantSettings } from '@/db/queries/tenants'
+import { notifyDiscord } from '@/lib/discord'
+import { sendNewSignupNotification } from '@/lib/email'
+import { reportSideEffectFailure } from '@/lib/observability'
+import { createAuditLog } from '@/lib/audit'
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
 import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
 import { POST } from '../route'
@@ -49,6 +64,8 @@ function postOnboarding(clinic: Record<string, unknown>) {
 beforeEach(() => {
   vi.clearAllMocks()
   updateSet.mockImplementation(() => ({ where: updateWhere }))
+  vi.mocked(markOnboardingCompleted).mockResolvedValue(true)
+  ownerLookup.mockResolvedValue([{ fullName: 'Ana Souza', email: 'ana@b.com' }])
 })
 
 describe('POST /api/onboarding', () => {
@@ -81,7 +98,9 @@ describe('POST /api/onboarding', () => {
     expect(updateSet).not.toHaveBeenCalled()
     expect(updateTenant).not.toHaveBeenCalled()
     expect(updateTenantSettings).not.toHaveBeenCalled()
+    expect(markOnboardingCompleted).not.toHaveBeenCalled()
     expect(scheduleLifecycleWelcome).not.toHaveBeenCalled()
+    expect(notifyDiscord).not.toHaveBeenCalled()
   })
 
   describe('a clinic created on arrival after Google sign-up', () => {
@@ -102,15 +121,13 @@ describe('POST /api/onboarding', () => {
         name: 'Clínica Bella',
         phone: '(11) 98888-7777',
       }))
-      expect(updateTenantSettings).toHaveBeenCalledWith('tenant-1', {
-        onboarding_completed: true,
-        clinic_name_placeholder: false,
-      })
+      expect(markOnboardingCompleted).toHaveBeenCalledWith('tenant-1', { clinic_name_placeholder: false })
+      expect(updateTenantSettings).not.toHaveBeenCalled()
       // The lifecycle notice was first shown on the wizard's phone field.
       expect(updateSet).toHaveBeenCalledWith({ lifecycleNoticeAt: expect.anything() })
       const stampCall = updateSet.mock.calls.findIndex(([values]) => 'lifecycleNoticeAt' in values)
       expect(updateSet.mock.invocationCallOrder[stampCall]).toBeLessThan(
-        vi.mocked(updateTenantSettings).mock.invocationCallOrder[0],
+        vi.mocked(markOnboardingCompleted).mock.invocationCallOrder[0],
       )
       expect(scheduleLifecycleWelcome).toHaveBeenCalledTimes(1)
       expect(scheduleLifecycleWelcome).toHaveBeenCalledWith({ tenantId: 'tenant-1' })
@@ -134,8 +151,10 @@ describe('POST /api/onboarding', () => {
       const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777', workingHours: DEFAULT_WORKING_HOURS })
 
       expect(res.status).toBe(500)
+      expect(markOnboardingCompleted).not.toHaveBeenCalled()
       expect(updateTenantSettings).not.toHaveBeenCalled()
       expect(scheduleLifecycleWelcome).not.toHaveBeenCalled()
+      expect(notifyDiscord).not.toHaveBeenCalled()
     })
 
     it('leaves a clinic named at sign-up alone: its welcome already went out', async () => {
@@ -144,9 +163,113 @@ describe('POST /api/onboarding', () => {
       const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777', workingHours: DEFAULT_WORKING_HOURS })
 
       expect(res.status).toBe(200)
-      expect(updateTenantSettings).toHaveBeenCalledWith('tenant-1', { onboarding_completed: true })
+      expect(markOnboardingCompleted).toHaveBeenCalledWith('tenant-1', {})
       expect(updateSet).not.toHaveBeenCalledWith({ lifecycleNoticeAt: expect.anything() })
       expect(scheduleLifecycleWelcome).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('telling the team onboarding is done', () => {
+    const fourMinutesAgo = () => new Date(Date.now() - 4 * 60_000 - 5_000)
+
+    beforeEach(() => {
+      updateWhere.mockResolvedValue(undefined)
+      vi.stubEnv('ADMIN_NOTIFICATION_EMAIL', 'admin@floraclin.test')
+    })
+    afterEach(() => {
+      vi.unstubAllEnvs()
+    })
+
+    const realClinic = {
+      name: 'Clínica Bella',
+      phone: '(11) 98888-7777',
+      address: { city: 'São Paulo', state: 'SP' },
+      workingHours: DEFAULT_WORKING_HOURS,
+    }
+
+    it.each([
+      ['a Google clinic created on arrival', { clinic_name_placeholder: true }],
+      ['an e-mail clinic named at sign-up', {}],
+    ])('posts "Cadastro concluído" once with the real data for %s', async (_label, settings) => {
+      vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings, createdAt: fourMinutesAgo() } as never)
+
+      const res = await postOnboarding(realClinic)
+
+      expect(res.status).toBe(200)
+      expect(notifyDiscord).toHaveBeenCalledTimes(1)
+      expect(notifyDiscord).toHaveBeenCalledWith({
+        kind: 'onboarding.completed',
+        tenantId: 'tenant-1',
+        tenantName: 'Clínica Bella',
+        phone: '(11) 98888-7777',
+        city: 'São Paulo',
+        state: 'SP',
+        elapsed: 'em 4 min',
+      })
+      expect(sendNewSignupNotification).toHaveBeenCalledTimes(1)
+      expect(sendNewSignupNotification).toHaveBeenCalledWith({
+        adminEmail: 'admin@floraclin.test',
+        clinicName: 'Clínica Bella',
+        ownerName: 'Ana Souza',
+        ownerEmail: 'ana@b.com',
+        phone: '(11) 98888-7777',
+      })
+    })
+
+    it('posts nothing when onboarding was already completed', async () => {
+      vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: {}, createdAt: fourMinutesAgo() } as never)
+      vi.mocked(markOnboardingCompleted).mockResolvedValue(false)
+
+      const res = await postOnboarding(realClinic)
+
+      expect(res.status).toBe(200)
+      expect(notifyDiscord).not.toHaveBeenCalled()
+      expect(sendNewSignupNotification).not.toHaveBeenCalled()
+    })
+
+    it('clears a leftover stand-in flag on a repeated save without posting again', async () => {
+      vi.mocked(getTenant).mockResolvedValue({
+        id: 'tenant-1',
+        settings: { clinic_name_placeholder: true },
+        createdAt: fourMinutesAgo(),
+      } as never)
+      vi.mocked(markOnboardingCompleted).mockResolvedValue(false)
+
+      const res = await postOnboarding(realClinic)
+
+      expect(res.status).toBe(200)
+      expect(updateTenantSettings).toHaveBeenCalledWith('tenant-1', {
+        onboarding_completed: true,
+        clinic_name_placeholder: false,
+      })
+      expect(notifyDiscord).not.toHaveBeenCalled()
+    })
+
+    // Regression: the report ran after the audit log, so a failed audit insert
+    // left the flag set and no later save would ever report the clinic.
+    it('still reports the clinic when a later step fails after the flag is set', async () => {
+      vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: {}, createdAt: fourMinutesAgo() } as never)
+      vi.mocked(createAuditLog).mockRejectedValueOnce(new Error('connection reset'))
+
+      const res = await postOnboarding(realClinic)
+
+      expect(res.status).toBe(500)
+      expect(notifyDiscord).toHaveBeenCalledTimes(1)
+      expect(notifyDiscord).toHaveBeenCalledWith(expect.objectContaining({ kind: 'onboarding.completed' }))
+      expect(sendNewSignupNotification).toHaveBeenCalledTimes(1)
+    })
+
+    it('still answers 200 when telling the team fails', async () => {
+      vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: {}, createdAt: fourMinutesAgo() } as never)
+      ownerLookup.mockRejectedValue(new Error('connection reset'))
+
+      const res = await postOnboarding(realClinic)
+
+      expect(res.status).toBe(200)
+      expect(reportSideEffectFailure).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({
+        area: 'onboarding',
+        step: 'notify_completed',
+      }))
     })
   })
 })

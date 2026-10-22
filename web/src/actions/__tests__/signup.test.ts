@@ -4,6 +4,7 @@ import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { signIn } from '@/lib/auth-config'
 import { redirect } from 'next/navigation'
+import { sendNewSignupNotification } from '@/lib/email'
 
 const {
   tenantInsertSpy,
@@ -273,12 +274,32 @@ describe('signUp action', () => {
       userAgent: 'Vitest Signup Browser',
     })
     expect(notifyDiscordMock).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'clinic.created',
-      attribution: expect.objectContaining({
-        utmCampaign: 'hof-trial',
-        utmContent: 'headline-a',
-      }),
+      kind: 'signup.started',
+      attribution: { utmSource: 'meta', utmCampaign: 'hof-trial' },
     }))
+  })
+
+  it('tells the team about the sign-up once, as an e-mail sign-up waiting for onboarding', async () => {
+    const original = process.env.ADMIN_NOTIFICATION_EMAIL
+    process.env.ADMIN_NOTIFICATION_EMAIL = 'admin@floraclin.test'
+    try {
+      await signUp(null, validFormData())
+    } finally {
+      if (original === undefined) delete process.env.ADMIN_NOTIFICATION_EMAIL
+      else process.env.ADMIN_NOTIFICATION_EMAIL = original
+    }
+
+    expect(notifyDiscordMock).toHaveBeenCalledTimes(1)
+    expect(notifyDiscordMock).toHaveBeenCalledWith({
+      kind: 'signup.started',
+      tenantId: 'tenant-1',
+      ownerName: 'Maria Silva',
+      ownerEmail: 'maria@test.com',
+      method: 'email',
+      attribution: null,
+    })
+    // The admin e-mail waits for onboarding, like "Cadastro concluído".
+    expect(sendNewSignupNotification).not.toHaveBeenCalled()
   })
 
   it('sends the _fbp and _fbc cookies when a consented signup has no campaign attribution', async () => {

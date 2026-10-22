@@ -6,12 +6,15 @@ import {
   getTenant,
   updateTenant,
   updateTenantSettings,
+  markOnboardingCompleted,
   createProcedureType,
   listProcedureTypes,
 } from '@/db/queries/tenants'
 import { findAvailableSlug, generateSlug } from '@/db/queries/admin-tenants'
 import { hasPlaceholderName, PLACEHOLDER_NAME_SETTING } from '@/lib/clinic-placeholder'
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
+import { notifyOnboardingCompleted } from '@/lib/signup-notifications'
+import { reportSideEffectFailure } from '@/lib/observability'
 import { CLINIC_PHONE_REQUIRED_MESSAGE, hasClinicPhone } from '@/lib/clinic-phone'
 import { createConsentTemplate } from '@/db/queries/consent'
 import { DEFAULT_CONSENT_TEMPLATES } from '@/validations/consent'
@@ -20,7 +23,7 @@ import { createTemplate } from '@/db/queries/evaluation-templates'
 // defaultTemplates is dynamically imported below to avoid loading 42KB on startup
 import type { ProcedureCategory } from '@/types/evaluation'
 import { db } from '@/db/client'
-import { tenants } from '@/db/schema'
+import { tenants, users } from '@/db/schema'
 import { eq, sql } from 'drizzle-orm'
 // withTransaction removed — helper functions use global db which deadlocks in transactions
 import { onboardingCompleteSchema } from '@/validations/onboarding'
@@ -220,11 +223,26 @@ export async function POST(request: Request) {
           .where(eq(tenants.id, auth.tenantId))
       }
 
-      // 7. Mark onboarding as completed
-      await updateTenantSettings(auth.tenantId, {
-        onboarding_completed: true,
-        ...(createdOnArrival ? { [PLACEHOLDER_NAME_SETTING]: false } : {}),
-      })
+      // 7. Mark onboarding as completed. Only the save that flips the flag
+      // reports the clinic to the team, once, for either sign-up path.
+      const stillNamedPlaceholder = createdOnArrival ? { [PLACEHOLDER_NAME_SETTING]: false } : {}
+      const firstCompletion = await markOnboardingCompleted(auth.tenantId, stillNamedPlaceholder)
+      // Reported straight away: once the flag is set no later save reports
+      // again, so a failure further down must not cost the team the message.
+      // reportOnboardingCompleted never throws.
+      if (firstCompletion) {
+        await reportOnboardingCompleted({
+          tenantId: auth.tenantId,
+          userId: auth.userId,
+          clinic: data.clinic,
+          signedUpAt: current?.createdAt ?? null,
+        })
+      }
+      // A repeated or concurrent save loses the compare-and-set above. It
+      // still clears a leftover stand-in flag (a no-op if the winner did).
+      if (!firstCompletion && createdOnArrival) {
+        await updateTenantSettings(auth.tenantId, { onboarding_completed: true, ...stillNamedPlaceholder })
+      }
 
       // The held trial welcome goes out once, to the phone just saved. Its
       // per-channel claims make a repeated save a no-op.
@@ -256,5 +274,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Sem permissao para completar o onboarding' }, { status: 403 })
     }
     return handleApiError(error, request, { body: { success: false, error: 'Erro ao completar o onboarding. Tente novamente.' } })
+  }
+}
+
+// The onboarding is already saved; a failure to tell the team must not turn
+// it into an error for the owner.
+async function reportOnboardingCompleted(input: {
+  tenantId: string
+  userId: string
+  clinic: { name: string; phone?: string; address?: { city?: string; state?: string } }
+  signedUpAt: Date | null
+}): Promise<void> {
+  try {
+    const [owner] = await db
+      .select({ fullName: users.fullName, email: users.email })
+      .from(users)
+      .where(eq(users.id, input.userId))
+      .limit(1)
+    await notifyOnboardingCompleted({
+      tenantId: input.tenantId,
+      clinicName: input.clinic.name,
+      phone: input.clinic.phone || null,
+      city: input.clinic.address?.city || null,
+      state: input.clinic.address?.state || null,
+      signedUpAt: input.signedUpAt ?? new Date(),
+      ownerName: owner?.fullName ?? '',
+      ownerEmail: owner?.email ?? '',
+    })
+  } catch (error) {
+    reportSideEffectFailure(error, { area: 'onboarding', step: 'notify_completed', extra: { tenantId: input.tenantId } })
   }
 }
