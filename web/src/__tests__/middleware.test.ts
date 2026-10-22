@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
@@ -27,6 +28,7 @@ vi.mock('@/lib/auth-config', () => ({
   auth: (handler: unknown) => handler,
 }))
 
+import { NextRequest, type NextResponse } from 'next/server'
 import middleware from '../middleware'
 
 const TOKEN_VERSION = 3
@@ -231,5 +233,56 @@ describe('middleware: referral and first-touch cookies on /signup', () => {
     const touch = JSON.parse(res.cookies.get('floraclin_ft')!.value)
     expect(touch).toMatchObject({ utmSource: 'google', landingPath: '/signup' })
     expect(res.cookies.get('floraclin_ref')).toBeUndefined()
+  })
+})
+
+describe('middleware: first-touch capture outside /signup', () => {
+  // An ad pointing at the app root, or a visitor who goes / -> /login and then
+  // follows the client-side "Criar conta" link, never made a document request
+  // to /signup, so signup_attribution came out empty.
+  const AD_QUERY = '?utm_source=meta&utm_medium=paid_social&utm_campaign=fc_trial&utm_content=video_1'
+
+  function documentRequest(pathname: string) {
+    const request = new NextRequest(`https://app.floraclin.com.br${pathname}`, {
+      headers: { 'sec-fetch-dest': 'document', referer: 'https://l.instagram.com/' },
+    }) as NextRequest & { auth: unknown }
+    request.auth = null
+    return (middleware as unknown as (r: unknown, c: unknown) => NextResponse)(request, {})
+  }
+
+  function firstTouchOf(res: NextResponse) {
+    const written = res.cookies.get('floraclin_ft')
+    return written ? JSON.parse(written.value) : null
+  }
+
+  it('records the UTMs on the redirect from the app root to /login', () => {
+    const res = documentRequest(`/${AD_QUERY}`)
+    expect(locationOf(res)).toContain('/login')
+    expect(firstTouchOf(res)).toMatchObject({
+      landingPath: '/',
+      utmSource: 'meta',
+      utmMedium: 'paid_social',
+      utmCampaign: 'fc_trial',
+      utmContent: 'video_1',
+      referrer: 'https://l.instagram.com',
+    })
+    expect(res.cookies.get('floraclin_ft')?.domain).toBe('.floraclin.com.br')
+  })
+
+  it('records a first touch on /login', () => {
+    const res = documentRequest(`/login${AD_QUERY}`)
+    expect(locationOf(res)).toBeNull()
+    expect(firstTouchOf(res)).toMatchObject({ landingPath: '/login', utmSource: 'meta' })
+  })
+
+  it('still records a first touch on /signup', () => {
+    expect(firstTouchOf(documentRequest(`/signup${AD_QUERY}`))).toMatchObject({
+      landingPath: '/signup',
+      utmCampaign: 'fc_trial',
+    })
+  })
+
+  it('leaves API requests alone', () => {
+    expect(firstTouchOf(documentRequest(`/api/tenant${AD_QUERY}`))).toBeNull()
   })
 })
