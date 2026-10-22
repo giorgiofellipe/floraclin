@@ -8,7 +8,7 @@ import { findReferrerByCode } from '@/db/queries/referrals'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { isReferralEnrollmentEnabled } from '@/lib/referral/config'
 import { GET } from '../codes/[code]/route'
-import { CODE_LOOKUPS_PER_MINUTE } from '@/lib/referral/rules'
+import { CODE_LOOKUPS_PER_MINUTE } from '@/lib/referral/custom-code'
 
 const call = (code: string) => GET(new Request(`http://localhost/api/referral/codes/${code}`), { params: Promise.resolve({ code }) })
 

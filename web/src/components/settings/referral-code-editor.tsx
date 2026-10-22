@@ -8,8 +8,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { throwIfNotOk } from '@/hooks/throw-if-not-ok'
 import { useDebounced } from '@/hooks/use-debounced'
-import { CUSTOM_CODE_MESSAGES, MAX_PREVIOUS_REFERRAL_CODES, validateCustomReferralCode } from '@/lib/referral/custom-code'
-import { REFERRAL_CODE_MAX_LENGTH, REFERRAL_CODE_MIN_LENGTH, shouldShowReferralFormatError } from '@/lib/referral/rules'
+import {
+  CUSTOM_CODE_MESSAGES,
+  MAX_PREVIOUS_REFERRAL_CODES,
+  shouldShowReferralFormatError,
+  validateCustomReferralCode,
+} from '@/lib/referral/custom-code'
+import { REFERRAL_CODE_MAX_LENGTH, REFERRAL_CODE_MIN_LENGTH } from '@/lib/referral/rules'
 
 /** Wait this long after the last keystroke before asking the server whether the code is free. */
 const AVAILABILITY_DEBOUNCE_MS = 400

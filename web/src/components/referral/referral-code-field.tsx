@@ -11,8 +11,8 @@ import {
   REFERRAL_WELCOME_MONTHS,
   REFERRAL_WELCOME_PERCENT,
   normalizeReferralCode,
-  shouldShowReferralFormatError,
 } from '@/lib/referral/rules'
+import { shouldShowReferralFormatError } from '@/lib/referral/custom-code'
 
 const OFFER = `${REFERRAL_WELCOME_PERCENT}% de desconto nos ${REFERRAL_WELCOME_MONTHS} primeiros meses da assinatura`
 const CONTINUE = 'Você pode continuar o cadastro sem ele.'

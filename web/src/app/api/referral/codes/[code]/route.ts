@@ -4,7 +4,7 @@ import { reportSideEffectFailure } from '@/lib/observability'
 import { isReferralEnrollmentEnabled } from '@/lib/referral/config'
 import { normalizeReferralCode, shortClinicName } from '@/lib/referral/rules'
 import { clientIpKey, createRateLimiter } from '@/lib/rate-limit'
-import { CODE_LOOKUPS_PER_MINUTE } from '@/lib/referral/rules'
+import { CODE_LOOKUPS_PER_MINUTE } from '@/lib/referral/custom-code'
 
 const CACHE_CONTROL = 'public, s-maxage=300, stale-while-revalidate=600'
 
