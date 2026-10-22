@@ -43,9 +43,9 @@ export function SignUpForm({ inAppBrowser }: { inAppBrowser: InAppBrowser | null
         {/* Google OAuth */}
         <GoogleSignIn
           action={signUpWithGoogle}
-          label="Criar conta com Google"
           inAppBrowser={inAppBrowser}
-          emailFallback="Ou crie sua conta com e-mail e senha abaixo."
+          emailFallbackLabel="Cadastrar com e-mail e senha"
+          emailInputId="email"
         />
 
         {/* Separator */}

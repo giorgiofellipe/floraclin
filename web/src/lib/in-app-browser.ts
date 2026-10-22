@@ -2,7 +2,7 @@
  * Google refuses OAuth inside embedded web views (error 403
  * `disallowed_useragent`), and the apps people open our links from, WhatsApp
  * and Instagram first among them, load links in exactly such a view. A
- * Google-only account tapping "Entrar com Google" there hits a Google error
+ * Google-only account tapping "Continuar com Google" there hits a Google error
  * page and has no other way in, so /login and /signup need to know before the
  * tap.
  *
@@ -44,7 +44,7 @@ const APPS: [InAppBrowserApp, RegExp][] = [
   ['pinterest', /\bPinterest\b/i],
 ]
 
-/** "dentro do WhatsApp": the phrase the in-app notice reads with. */
+/** "dentro do WhatsApp": the phrase the in-app modal reads with. */
 export const IN_APP_BROWSER_PLACE: Record<InAppBrowserApp, string> = {
   whatsapp: 'do WhatsApp',
   instagram: 'do Instagram',
