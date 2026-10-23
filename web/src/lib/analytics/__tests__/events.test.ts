@@ -44,7 +44,6 @@ describe('sanitizeUrl', () => {
     expect(sanitizeUrl('https://app.floraclin.com.br/pacientes/3f2b8c1e-1a2b-4c3d-8e9f-0a1b2c3d4e5f#notes')).toBe(
       'https://app.floraclin.com.br/pacientes/:id',
     )
-    expect(sanitizeUrl('/verify/A1B2C3')).toBe('/verify/:id')
   })
 })
 

@@ -89,12 +89,6 @@ export const EVENT_PROPERTY_KEYS: { [E in AnalyticsEventName]: readonly (keyof A
   first_appointment_created: [],
 }
 
-export const ANALYTICS_EVENT_NAMES = Object.keys(EVENT_PROPERTY_KEYS) as AnalyticsEventName[]
-
-export function isAnalyticsEventName(name: string): name is AnalyticsEventName {
-  return Object.prototype.hasOwnProperty.call(EVENT_PROPERTY_KEYS, name)
-}
-
 // A form field name, never a value: `name`, `clinic.phone`, `address[0]`.
 const FIELD_NAME = /^[A-Za-z][A-Za-z0-9_.[\]-]{0,63}$/
 const MAX_PROPERTY_STRING_LENGTH = 200

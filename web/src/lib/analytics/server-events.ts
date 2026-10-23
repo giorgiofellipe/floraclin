@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { appointments, patients, photoAssets, tenantUsers, users } from '@/db/schema'
 import type { TimelineStage } from '@/types'
@@ -16,19 +16,29 @@ interface Actor {
 }
 
 /**
- * True when the row just inserted is the tenant's only one. Soft-deleted rows
- * count: "first" means the first ever, so deleting and re-creating a patient
- * does not fire again. Reads at most two ids off the tenant index.
+ * True when the row just inserted is the tenant's earliest. Exactly one row is
+ * the earliest, so the request that inserted it fires even when another row
+ * lands before this lookup runs. Soft-deleted rows count: "first" means the
+ * first ever, so deleting and re-creating a patient does not fire again.
  */
-async function isTenantsFirst(table: typeof patients | typeof appointments | typeof photoAssets, tenantId: string) {
-  const rows = await db.select({ id: table.id }).from(table).where(eq(table.tenantId, tenantId)).limit(2)
-  return rows.length === 1
+async function isTenantsFirst(
+  table: typeof patients | typeof appointments | typeof photoAssets,
+  tenantId: string,
+  insertedId: string,
+) {
+  const [earliest] = await db
+    .select({ id: table.id })
+    .from(table)
+    .where(eq(table.tenantId, tenantId))
+    .orderBy(asc(table.createdAt), asc(table.id))
+    .limit(1)
+  return earliest?.id === insertedId
 }
 
-export function trackFirstPatientCreated(actor: Actor): void {
+export function trackFirstPatientCreated(actor: Actor, patientId: string): void {
   trackServerEvent(
     'first_patient_created',
-    async () => ((await isTenantsFirst(patients, actor.tenantId)) ? { distinctId: actor.userId, tenantId: actor.tenantId } : null),
+    async () => ((await isTenantsFirst(patients, actor.tenantId, patientId)) ? { distinctId: actor.userId, tenantId: actor.tenantId } : null),
     {},
   )
 }
@@ -38,18 +48,18 @@ export function trackFirstPatientCreated(actor: Actor): void {
  * signed-in user to attribute it to, but it still counts as the tenant's
  * first, so a staff appointment after it does not fire.
  */
-export function trackFirstAppointmentCreated(actor: Actor): void {
+export function trackFirstAppointmentCreated(actor: Actor, appointmentId: string): void {
   trackServerEvent(
     'first_appointment_created',
-    async () => ((await isTenantsFirst(appointments, actor.tenantId)) ? { distinctId: actor.userId, tenantId: actor.tenantId } : null),
+    async () => ((await isTenantsFirst(appointments, actor.tenantId, appointmentId)) ? { distinctId: actor.userId, tenantId: actor.tenantId } : null),
     {},
   )
 }
 
-export function trackFirstPhotoUploaded(actor: Actor, kind: TimelineStage): void {
+export function trackFirstPhotoUploaded(actor: Actor, photoAssetId: string, kind: TimelineStage): void {
   trackServerEvent(
     'first_photo_uploaded',
-    async () => ((await isTenantsFirst(photoAssets, actor.tenantId)) ? { distinctId: actor.userId, tenantId: actor.tenantId } : null),
+    async () => ((await isTenantsFirst(photoAssets, actor.tenantId, photoAssetId)) ? { distinctId: actor.userId, tenantId: actor.tenantId } : null),
     { kind },
   )
 }

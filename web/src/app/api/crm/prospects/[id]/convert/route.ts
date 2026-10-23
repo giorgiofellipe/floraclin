@@ -70,7 +70,7 @@ export async function POST(
         fullName: parsed.data.createPatient.fullName,
         phone: parsed.data.createPatient.phone,
       }, ctx.userId)
-      trackFirstPatientCreated(ctx)
+      trackFirstPatientCreated(ctx, patient.id)
       patientId = patient.id
     } else {
       return NextResponse.json(

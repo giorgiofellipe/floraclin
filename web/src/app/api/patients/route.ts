@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     }
 
     const patient = await createPatient(ctx.tenantId, parsed.data, ctx.userId)
-    trackFirstPatientCreated(ctx)
+    trackFirstPatientCreated(ctx, patient.id)
 
     await createAuditLog({
       tenantId: ctx.tenantId,

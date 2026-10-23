@@ -86,7 +86,7 @@ export async function POST(request: Request) {
       bookingPhone: data.bookingPhone,
       bookingEmail: data.bookingEmail,
     })
-    trackFirstAppointmentCreated(ctx)
+    trackFirstAppointmentCreated(ctx, appointment.id)
 
     await createAuditLog({
       tenantId: ctx.tenantId,

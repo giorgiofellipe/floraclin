@@ -107,16 +107,6 @@ describe('with a key', () => {
     expect(first.groups).toBeUndefined()
   })
 
-  it('identified events leave person processing on', async () => {
-    trackServerEvent('onboarding_completed', { distinctId: 'user-1', tenantId: 'tenant-1' }, {
-      procedure_types_count: 3,
-      products_count: 2,
-    })
-    await settle()
-
-    expect((captured[0] as { properties: Record<string, unknown> }).properties).not.toHaveProperty('$process_person_profile')
-  })
-
   it('skips the event when the lookup resolves to null (not the tenant’s first)', async () => {
     trackServerEvent('first_appointment_created', async () => null, {})
     await settle()

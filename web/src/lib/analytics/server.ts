@@ -40,14 +40,20 @@ function getClient(): Promise<PostHog | null> {
   if (!config) return Promise.resolve(null)
   // Serverless: send each event straight away rather than batching, and give
   // up quickly, since this runs inside the function's lifetime.
-  client ??= import('posthog-node').then(
-    ({ PostHog }) =>
-      new PostHog(config.key, { host: config.host, flushAt: 1, flushInterval: 0, requestTimeout: 3000, fetchRetryCount: 1 }),
-  )
+  client ??= import('posthog-node')
+    .then(
+      ({ PostHog }) =>
+        new PostHog(config.key, { host: config.host, flushAt: 1, flushInterval: 0, requestTimeout: 3000, fetchRetryCount: 1 }),
+    )
+    .catch((error) => {
+      // Let the next event try again instead of failing until a cold start.
+      client = null
+      throw error
+    })
   return client
 }
 
-export function buildServerEvent<E extends ServerEventName>(
+function buildServerEvent<E extends ServerEventName>(
   event: E,
   target: ServerEventTarget,
   properties: AnalyticsEventProperties[E],

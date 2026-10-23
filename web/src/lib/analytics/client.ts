@@ -2,14 +2,14 @@ import type { CaptureResult, PostHog, PostHogConfig } from 'posthog-js'
 import { clientAnalyticsConfig } from './config'
 import { clearPostHogStorage } from './consent'
 import { CLIENT_EVENT_NAMES, pickEventProperties, type AnalyticsEventProperties, type ClientEventName } from './events'
-import { sanitizeEventProperties } from './sanitize'
+import { sanitizeEventProperties, sanitizeUrl } from './sanitize'
 
 /**
  * Browser analytics. Two modes, switched by the cookie banner's optional
  * ("marketing") consent, see `analyticsConsentGranted`:
  *
  * - Without consent (the default): cookieless. Memory persistence, so the
- *   anonymous id lives only as long as the tab and nothing is written to
+ *   anonymous id lives only until the next full page load and nothing is written to
  *   cookies, localStorage or sessionStorage. No autocapture, pageviews, replay
  *   or heatmaps; `beforeSend` lets through only the funnel events in
  *   `CLIENT_EVENT_NAMES` plus `$identify`/`$groupidentify`, which carry ids
@@ -34,11 +34,15 @@ const CONSENTLESS_EVENTS = new Set<string>([...CLIENT_EVENT_NAMES, '$identify', 
 
 // Platform pages show patient names, clinical notes and patient photos.
 // Replay records the DOM, so all of that is masked or blocked; layout, clicks
-// and navigation are what replay is for here.
+// and navigation are what replay is for here. Network headers and bodies
+// (API responses carry patient data) are off explicitly: only an explicit
+// `false` here overrides the project's remote replay settings.
 const SESSION_RECORDING: PostHogConfig['session_recording'] = {
   maskAllInputs: true,
   maskTextSelector: '*',
   blockSelector: 'img, video, canvas, picture',
+  recordHeaders: false,
+  recordBody: false,
 }
 
 const COOKIELESS_CONFIG = {
@@ -62,22 +66,39 @@ const CONSENTED_CONFIG = {
 } as const satisfies Partial<PostHogConfig>
 
 /** `before_send`: drops anything but funnel events without consent, and scrubs URLs on everything. */
-export function beforeSend(event: CaptureResult | null): CaptureResult | null {
+function beforeSend(event: CaptureResult | null): CaptureResult | null {
   if (!event || suppressed) return null
   if (!consentGranted && !CONSENTLESS_EVENTS.has(event.event)) return null
   event.properties = sanitizeEventProperties(event.properties ?? {})
   if (event.$set) event.$set = sanitizeEventProperties(event.$set)
   if (event.$set_once) event.$set_once = sanitizeEventProperties(event.$set_once)
+  if (event.event === '$snapshot') {
+    event.properties.$snapshot_data = sanitizeSnapshotHrefs(event.properties.$snapshot_data)
+  }
   return event
 }
 
-export function buildInitConfig(host: string, granted: boolean): Partial<PostHogConfig> {
+// rrweb meta events (type 4) carry the raw `location.href`, query string included.
+const RRWEB_META_EVENT = 4
+
+function sanitizeSnapshotHrefs(snapshots: unknown): unknown {
+  if (!Array.isArray(snapshots)) return snapshots
+  return snapshots.map((snapshot) =>
+    snapshot?.type === RRWEB_META_EVENT && typeof snapshot.data?.href === 'string'
+      ? { ...snapshot, data: { ...snapshot.data, href: sanitizeUrl(snapshot.data.href) } }
+      : snapshot,
+  )
+}
+
+function buildInitConfig(host: string, granted: boolean): Partial<PostHogConfig> {
   return {
     api_host: host,
     ...(granted ? CONSENTED_CONFIG : COOKIELESS_CONFIG),
     // Started explicitly once consent is known, see applyConsent.
     disable_session_recording: true,
     session_recording: SESSION_RECORDING,
+    // Explicit, so the project's remote setting cannot turn it on.
+    enable_recording_console_log: false,
     capture_dead_clicks: false,
     capture_performance: false,
     // Sentry already owns error tracking.
@@ -151,10 +172,13 @@ export async function applyAnalyticsConsent(granted: boolean): Promise<void> {
   if (!posthog) return
 
   if (granted) {
+    // A grant that arrived while posthog-js was loading has already been
+    // applied by init, which captured the initial pageview itself.
+    const initialisedConsented = posthog.config.persistence !== 'memory'
     posthog.set_config(CONSENTED_CONFIG)
     if (!suppressed) posthog.startSessionRecording()
     // history_change only fires on the next navigation.
-    posthog.capture('$pageview')
+    if (!initialisedConsented) posthog.capture('$pageview')
   } else {
     posthog.stopSessionRecording()
     posthog.set_config(COOKIELESS_CONFIG)

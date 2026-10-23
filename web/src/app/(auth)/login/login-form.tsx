@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useEffect } from 'react'
+import { useActionState, useEffect, useRef } from 'react'
 import { login, loginWithGoogle, type LoginState } from '@/actions/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,16 +26,24 @@ export function LoginForm({
 }) {
   const [state, formAction, isPending] = useActionState<LoginState, FormData>(login, null)
 
+  // Once per distinct error the page was sent back with, not on every render:
+  // the server page passes a fresh `authFailure` (and `inAppBrowser`) object
+  // on each render.
+  const reportedAuthFailure = useRef<string | null>(null)
   useEffect(() => {
-    if (authFailure) track('login_failed', { ...authFailure, ...inAppBrowserProperties(inAppBrowser) })
-    // Once per arrival on the page with an error, not on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    if (!authFailure) return
+    const key = `${authFailure.method}:${authFailure.reason}`
+    if (reportedAuthFailure.current === key) return
+    reportedAuthFailure.current = key
+    track('login_failed', { ...authFailure, ...inAppBrowserProperties(inAppBrowser) })
+  }, [authFailure, inAppBrowser])
 
   // A new state object per submission, so each refused attempt counts once.
   // The action cannot tell a wrong password from an unconfirmed address.
+  const reportedState = useRef<LoginState>(null)
   useEffect(() => {
-    if (!state?.error) return
+    if (!state?.error || reportedState.current === state) return
+    reportedState.current = state
     const reason = state.error.general ? 'invalid_credentials' : 'missing_fields'
     track('login_failed', { method: 'email', reason, ...inAppBrowserProperties(inAppBrowser) })
   }, [state, inAppBrowser])

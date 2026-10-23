@@ -50,7 +50,7 @@ export default async function OnboardingPage() {
 
   return (
     <>
-      <AnalyticsProvider userId={auth.userId} tenantId={auth.tenantId} />
+      <AnalyticsProvider userId={auth.userId} tenantId={auth.tenantId} enabled={!auth.isPlatformAdmin} />
       <OnboardingWizard
         // A stand-in name ("Clínica de Ana") from a Google sign-up is not
         // something to confirm: start empty so the real name is asked for.

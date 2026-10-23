@@ -152,6 +152,10 @@ describe('granting consent', () => {
     expect(startRecording).toHaveBeenCalled()
     expect(posthog.config.disable_session_recording).toBe(false)
     expect(posthog.config.session_recording.maskAllInputs).toBe(true)
+    // Only an explicit false overrides the project's remote replay settings.
+    expect(posthog.config.session_recording.recordHeaders).toBe(false)
+    expect(posthog.config.session_recording.recordBody).toBe(false)
+    expect(posthog.config.enable_recording_console_log).toBe(false)
     // The grant itself counts the page being looked at.
     expect(sent.map((e) => e.event)).toContain('$pageview')
 
@@ -233,6 +237,22 @@ describe('sent properties', () => {
     expect(JSON.stringify(event)).not.toContain('ana@example.com')
     expect(JSON.stringify(event)).not.toContain('token=abc')
     window.history.replaceState(null, '', '/')
+  })
+
+  it('strips the query string from the page URL recorded in session replay', async () => {
+    const client = await loadClient()
+    const { posthog, sent } = await start(client, true)
+
+    posthog.capture('$snapshot', {
+      $snapshot_data: [
+        { type: 4, data: { href: 'http://localhost:3000/whatsapp?conversa=1&draft=Ana', width: 1, height: 1 }, timestamp: 1 },
+      ],
+    })
+
+    const snapshot = sent.find((e) => e.event === '$snapshot')
+    expect(snapshot?.properties.$snapshot_data[0].data.href).toBe('http://localhost:3000/whatsapp')
+    // Back to cookieless, so this instance writes nothing into the next test.
+    await client.applyAnalyticsConsent(false)
   })
 })
 

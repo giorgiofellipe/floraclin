@@ -7,7 +7,7 @@
  * set and clear the vars. `NEXT_PUBLIC_*` is still inlined into the client
  * bundle at build time because each is referenced by its literal name.
  */
-export const DEFAULT_POSTHOG_HOST = 'https://eu.i.posthog.com'
+const DEFAULT_POSTHOG_HOST = 'https://eu.i.posthog.com'
 
 export interface AnalyticsConfig {
   key: string

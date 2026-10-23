@@ -2,7 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from 'react'
 import { cookieConsentStatus, subscribeCookieConsent } from '@/lib/cookie-consent'
-import { analyticsConsentGranted } from '@/lib/analytics/consent'
+import { analyticsConsentGranted, clearPostHogStorage } from '@/lib/analytics/consent'
 import {
   applyAnalyticsConsent,
   identifyAnalyticsUser,
@@ -37,8 +37,12 @@ export function AnalyticsProvider({ userId, tenantId, enabled = true }: Analytic
     // throw away a consenting visitor's persisted id on every page load.
     const granted = analyticsConsentGranted()
     if (enabled) void initAnalytics({ consentGranted: granted })
-    // Not tracked here, but a withdrawal still has to clear what is stored.
-    else void applyAnalyticsConsent(granted)
+    // Not tracked here, but a withdrawal still has to clear what is stored,
+    // even before this tab has a PostHog instance.
+    else {
+      if (!granted) clearPostHogStorage()
+      void applyAnalyticsConsent(granted)
+    }
   }, [consentStatus, enabled])
 
   useEffect(() => {

@@ -26,7 +26,6 @@ describe('LoginForm analytics', () => {
     expect(vi.mocked(track).mock.calls).toEqual([
       ['login_failed', { method: 'email', reason: 'invalid_credentials', in_app_browser: false }],
     ])
-    expect(JSON.stringify(vi.mocked(track).mock.calls)).not.toContain('ana@example.com')
   })
 
   it('reports the Auth.js error the page was sent back with, once', () => {

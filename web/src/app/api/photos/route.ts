@@ -105,7 +105,7 @@ export async function POST(request: Request) {
       throw dbError
     }
 
-    trackFirstPhotoUploaded(ctx, timelineStage)
+    trackFirstPhotoUploaded(ctx, photoAsset.id, timelineStage)
 
     await createAuditLog({
       tenantId: ctx.tenantId,
