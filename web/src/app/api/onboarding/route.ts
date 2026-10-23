@@ -15,6 +15,7 @@ import { hasPlaceholderName, PLACEHOLDER_NAME_SETTING } from '@/lib/clinic-place
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
 import { notifyOnboardingCompleted } from '@/lib/signup-notifications'
 import { reportSideEffectFailure } from '@/lib/observability'
+import { trackServerEvent } from '@/lib/analytics/server'
 import { CLINIC_PHONE_REQUIRED_MESSAGE, hasClinicPhone } from '@/lib/clinic-phone'
 import { createConsentTemplate } from '@/db/queries/consent'
 import { DEFAULT_CONSENT_TEMPLATES } from '@/validations/consent'
@@ -231,6 +232,13 @@ export async function POST(request: Request) {
       // again, so a failure further down must not cost the team the message.
       // reportOnboardingCompleted never throws.
       if (firstCompletion) {
+        // Server-side and only on the save that flips the flag, so a retried
+        // or concurrent save cannot count a clinic twice.
+        trackServerEvent(
+          'onboarding_completed',
+          { distinctId: auth.userId, tenantId: auth.tenantId },
+          { procedure_types_count: data.procedureTypes.length, products_count: data.selectedProducts.length },
+        )
         await reportOnboardingCompleted({
           tenantId: auth.tenantId,
           userId: auth.userId,

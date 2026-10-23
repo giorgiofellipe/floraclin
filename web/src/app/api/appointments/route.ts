@@ -11,6 +11,7 @@ import {
 import { getProspectByPatientId, getProspectByPhone, updateProspect, logProspectActivity } from '@/db/queries/prospects'
 import { getPatient } from '@/db/queries/patients'
 import { createAppointmentSchema } from '@/validations/appointment'
+import { trackFirstAppointmentCreated } from '@/lib/analytics/server-events'
 import { handleApiError } from '@/lib/api-error'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { reportCalendarFailure } from '@/lib/google-calendar'
@@ -85,6 +86,7 @@ export async function POST(request: Request) {
       bookingPhone: data.bookingPhone,
       bookingEmail: data.bookingEmail,
     })
+    trackFirstAppointmentCreated(ctx)
 
     await createAuditLog({
       tenantId: ctx.tenantId,

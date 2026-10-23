@@ -9,6 +9,8 @@ import { users, sessions, accounts, verificationTokens, tenantUsers, tenants, te
 import { eq, and, isNull, sql } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { markEmailVerifiedViaGoogle } from '@/db/queries/users'
+import { trackServerEvent } from '@/lib/analytics/server'
+import { loginMethodFromProvider } from '@/lib/analytics/events'
 
 const baseAdapter = DrizzleAdapter(db as any, {
   usersTable: users as any,
@@ -240,6 +242,17 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             token.planFeatures = sub?.planFeatures ?? {}
           }
         }
+      }
+
+      // `user` and `account` are only present on the sign-in itself, for
+      // every provider, so this counts each successful sign-in once.
+      const loginMethod = user && account ? loginMethodFromProvider(account.provider) : null
+      if (loginMethod && token.sub) {
+        trackServerEvent(
+          'login_succeeded',
+          { distinctId: token.sub, tenantId: (token.tenantId as string | null | undefined) ?? null },
+          { method: loginMethod, is_new_user: trigger === 'signUp' },
+        )
       }
 
       return token

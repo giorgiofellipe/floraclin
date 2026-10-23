@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useRef } from 'react'
 import Link from 'next/link'
 import { signUp, signUpWithGoogle, type SignUpState } from '@/actions/signup'
 import { Button } from '@/components/ui/button'
@@ -10,9 +10,20 @@ import { maskPhone } from '@/lib/masks'
 import { SignupAttributionFields } from '@/components/marketing/signup-attribution-fields'
 import { GoogleSignIn } from '@/components/auth/google-sign-in'
 import type { InAppBrowser } from '@/lib/in-app-browser'
+import { track } from '@/lib/analytics/client'
+import { inAppBrowserProperties, type SignupMethod, type UtmProperties } from '@/lib/analytics/events'
 
-export function SignUpForm({ inAppBrowser }: { inAppBrowser: InAppBrowser | null }) {
+export function SignUpForm({ inAppBrowser, utm = {} }: { inAppBrowser: InAppBrowser | null; utm?: UtmProperties }) {
   const [state, formAction, isPending] = useActionState<SignUpState, FormData>(signUp, null)
+  // signup_started: the first focus inside the e-mail form, or the first tap
+  // on Google. Once per method per page, so both paths show up in the funnel.
+  const startedMethods = useRef(new Set<SignupMethod>())
+
+  function markStarted(method: SignupMethod) {
+    if (startedMethods.current.has(method)) return
+    startedMethods.current.add(method)
+    track('signup_started', { method, ...utm, ...inAppBrowserProperties(inAppBrowser) })
+  }
 
   return (
     <div className="animate-fade-in-up">
@@ -46,6 +57,7 @@ export function SignUpForm({ inAppBrowser }: { inAppBrowser: InAppBrowser | null
           inAppBrowser={inAppBrowser}
           emailFallbackLabel="Cadastrar com e-mail e senha"
           emailInputId="email"
+          onAttempt={() => markStarted('google')}
         />
 
         {/* Separator */}
@@ -61,7 +73,7 @@ export function SignUpForm({ inAppBrowser }: { inAppBrowser: InAppBrowser | null
         )}
 
         {/* Signup form */}
-        <form action={formAction} className="space-y-5">
+        <form action={formAction} onFocus={() => markStarted('email')} onSubmit={() => markStarted('email')} className="space-y-5">
           <SignupAttributionFields />
           <div className="space-y-1.5">
             <Label htmlFor="fullName" className="uppercase tracking-wider text-xs text-mid">

@@ -9,6 +9,7 @@ import { getTenant, listProcedureTypes } from '@/db/queries/tenants'
 import { listProducts } from '@/db/queries/products'
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard'
 import { hasPlaceholderName } from '@/lib/clinic-placeholder'
+import { AnalyticsProvider } from '@/components/analytics/analytics-provider'
 
 export default async function OnboardingPage() {
   const auth = await getAuthContext()
@@ -48,15 +49,18 @@ export default async function OnboardingPage() {
   const existingProducts = await listProducts(auth.tenantId)
 
   return (
-    <OnboardingWizard
-      // A stand-in name ("Clínica de Ana") from a Google sign-up is not
-      // something to confirm: start empty so the real name is asked for.
-      tenantName={hasPlaceholderName(settings) ? '' : tenant.name}
-      phoneRequired
-      tenantPhone={tenant.phone}
-      tenantEmail={tenant.email}
-      existingProcedureTypes={procedureTypesForWizard}
-      existingProducts={existingProducts}
-    />
+    <>
+      <AnalyticsProvider userId={auth.userId} tenantId={auth.tenantId} />
+      <OnboardingWizard
+        // A stand-in name ("Clínica de Ana") from a Google sign-up is not
+        // something to confirm: start empty so the real name is asked for.
+        tenantName={hasPlaceholderName(settings) ? '' : tenant.name}
+        phoneRequired
+        tenantPhone={tenant.phone}
+        tenantEmail={tenant.email}
+        existingProcedureTypes={procedureTypesForWizard}
+        existingProducts={existingProducts}
+      />
+    </>
   )
 }

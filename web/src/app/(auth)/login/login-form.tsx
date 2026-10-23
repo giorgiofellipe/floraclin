@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useEffect } from 'react'
 import { login, loginWithGoogle, type LoginState } from '@/actions/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,17 +9,36 @@ import Link from 'next/link'
 import { GoogleSignIn } from '@/components/auth/google-sign-in'
 import { CALLBACK_URL_PARAM } from '@/lib/callback-url'
 import type { InAppBrowser } from '@/lib/in-app-browser'
+import { track } from '@/lib/analytics/client'
+import { inAppBrowserProperties, type LoginFailureReason, type LoginMethod } from '@/lib/analytics/events'
 
 export function LoginForm({
   inAppBrowser,
   callbackUrl,
   authError,
+  authFailure = null,
 }: {
   inAppBrowser: InAppBrowser | null
   callbackUrl: string | null
   authError: string | null
+  /** The `?error=` Auth.js sent back, as an analytics reason. */
+  authFailure?: { method: LoginMethod; reason: LoginFailureReason } | null
 }) {
   const [state, formAction, isPending] = useActionState<LoginState, FormData>(login, null)
+
+  useEffect(() => {
+    if (authFailure) track('login_failed', { ...authFailure, ...inAppBrowserProperties(inAppBrowser) })
+    // Once per arrival on the page with an error, not on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // A new state object per submission, so each refused attempt counts once.
+  // The action cannot tell a wrong password from an unconfirmed address.
+  useEffect(() => {
+    if (!state?.error) return
+    const reason = state.error.general ? 'invalid_credentials' : 'missing_fields'
+    track('login_failed', { method: 'email', reason, ...inAppBrowserProperties(inAppBrowser) })
+  }, [state, inAppBrowser])
 
   return (
     <div className="animate-fade-in-up">
@@ -61,6 +80,13 @@ export function LoginForm({
           emailFallbackLabel="Entrar com e-mail e senha"
           emailFallbackHint="Criou a conta com o Google e não tem senha? Use “Esqueci minha senha” para criar uma."
           emailInputId="email"
+          // Inside an in-app browser the tap opens our modal instead of
+          // Google's 403 disallowed_useragent page: the sign-in is blocked.
+          onAttempt={
+            inAppBrowser
+              ? () => track('login_failed', { method: 'google', reason: 'disallowed_useragent', ...inAppBrowserProperties(inAppBrowser) })
+              : undefined
+          }
         />
 
         {/* Separator */}

@@ -21,6 +21,7 @@ import { brCalendarDaysBetween } from '@/lib/dates'
 import { TrialEndingModal } from '@/components/layout/trial-ending-modal'
 import { SubscriptionAccessProvider, type PaywallPlan } from '@/components/layout/subscription-access'
 import { ExpiredPaywall } from '@/components/layout/expired-paywall'
+import { AnalyticsProvider } from '@/components/analytics/analytics-provider'
 
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
   const auth = await getAuthContext()
@@ -122,6 +123,9 @@ export default async function PlatformLayout({ children }: { children: React.Rea
       trialEndsAt={trialEndsAt}
     >
     <div className="min-h-screen bg-[#F4F6F8]">
+      {/* Platform admins are left out: their sessions (often inside another
+          clinic) are support work, not product usage. */}
+      <AnalyticsProvider userId={auth.userId} tenantId={auth.tenantId} enabled={!auth.isPlatformAdmin} />
       <Sidebar
         clinicName={tenant?.name ?? 'FloraClin'}
         userName={auth.fullName}

@@ -1,9 +1,11 @@
 import Link from 'next/link'
 import { CookiePreferencesLink } from '@/components/marketing/cookie-consent-banner'
+import { AnalyticsProvider } from '@/components/analytics/analytics-provider'
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex bg-cream">
+      <AnalyticsProvider />
       {/* Left panel — rich branded visual (desktop only) */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-forest items-center justify-center">
         {/* Gradient mesh overlay */}

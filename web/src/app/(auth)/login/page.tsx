@@ -3,6 +3,7 @@ import { LoginForm } from './login-form'
 import { CALLBACK_URL_PARAM, safeCallbackPath } from '@/lib/callback-url'
 import { detectInAppBrowser } from '@/lib/in-app-browser'
 import { authErrorMessage } from '@/lib/auth-error-message'
+import { loginFailureFromAuthError } from '@/lib/analytics/events'
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
@@ -18,6 +19,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
       inAppBrowser={detectInAppBrowser(userAgent)}
       callbackUrl={safeCallbackPath(first(params[CALLBACK_URL_PARAM]))}
       authError={authErrorMessage(first(params.error))}
+      authFailure={loginFailureFromAuthError(first(params.error))}
     />
   )
 }
