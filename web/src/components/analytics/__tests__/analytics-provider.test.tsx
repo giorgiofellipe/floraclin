@@ -105,4 +105,20 @@ describe('AnalyticsProvider', () => {
     expect(sent).toEqual([])
     expect(posthog.get_distinct_id()).not.toBe('admin-1')
   })
+
+  it.each([
+    ['no banner choice', null],
+    ['a stored rejection', false],
+  ] as const)('clears PostHog storage where tracking is disabled, with %s and no instance yet', async (_, choice) => {
+    const { AnalyticsProvider, saveCookieConsent } = await load()
+    if (choice !== null) saveCookieConsent(choice)
+    localStorage.setItem(`ph_${KEY}_posthog`, '{"distinct_id":"old"}')
+    sessionStorage.setItem(`ph_${KEY}_window_id`, 'w')
+    document.cookie = `ph_${KEY}_posthog=old; Path=/`
+
+    render(<AnalyticsProvider enabled={false} />)
+
+    await waitFor(() => expect(phEntries()).toEqual([]))
+    expect(posthog.__loaded).toBeFalsy()
+  })
 })

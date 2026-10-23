@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from 'drizzle-orm'
+import { and, eq, ne, sql } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { appointments, patients, photoAssets, tenantUsers, users } from '@/db/schema'
 import type { TimelineStage } from '@/types'
@@ -16,23 +16,31 @@ interface Actor {
 }
 
 /**
- * True when the row just inserted is the tenant's earliest. Exactly one row is
- * the earliest, so the request that inserted it fires even when another row
- * lands before this lookup runs. Soft-deleted rows count: "first" means the
- * first ever, so deleting and re-creating a patient does not fire again.
+ * True when no row of the tenant is older than the one just inserted, by
+ * `(created_at, id)`. The request that inserted the earliest row fires;
+ * concurrent first inserts can, rarely, both fire. Stops at the first older
+ * row instead of sorting all of the tenant's rows. Soft-deleted rows count:
+ * "first" means the first ever, so deleting and re-creating a patient does
+ * not fire again.
  */
 async function isTenantsFirst(
   table: typeof patients | typeof appointments | typeof photoAssets,
   tenantId: string,
   insertedId: string,
 ) {
-  const [earliest] = await db
+  const inserted = db.select({ createdAt: table.createdAt }).from(table).where(eq(table.id, insertedId))
+  const [older] = await db
     .select({ id: table.id })
     .from(table)
-    .where(eq(table.tenantId, tenantId))
-    .orderBy(asc(table.createdAt), asc(table.id))
+    .where(
+      and(
+        eq(table.tenantId, tenantId),
+        ne(table.id, insertedId),
+        sql`(${table.createdAt}, ${table.id}) < ((${inserted}), ${insertedId}::uuid)`,
+      ),
+    )
     .limit(1)
-  return earliest?.id === insertedId
+  return !older
 }
 
 export function trackFirstPatientCreated(actor: Actor, patientId: string): void {

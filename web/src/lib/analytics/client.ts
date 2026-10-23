@@ -158,6 +158,9 @@ export function initAnalytics(options: { consentGranted: boolean }): Promise<Pos
 export function setAnalyticsSuppressed(value: boolean): void {
   suppressed = value
   if (value) {
+    // What a disabled page queued on mount (children's effects run first)
+    // must not be flushed by a later tracked page's init.
+    pending = []
     void instance?.then((posthog) => posthog?.stopSessionRecording())
   } else if (consentGranted) {
     void instance?.then((posthog) => posthog?.startSessionRecording())

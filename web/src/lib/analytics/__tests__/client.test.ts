@@ -174,6 +174,21 @@ describe('granting consent', () => {
     await flush()
     expect(phStorageKeys(localStorage).length + phCookies().length).toBeGreaterThan(0)
   })
+  it('sends exactly one $pageview when consent is granted while posthog-js is still loading', async () => {
+    const client = await loadClient()
+    const { default: posthog } = (await import('posthog-js')) as unknown as { default: PostHog }
+    const capture = vi.spyOn(posthog, 'capture')
+
+    const init = client.initAnalytics({ consentGranted: false })
+    const grant = client.applyAnalyticsConsent(true)
+    await init
+    await grant
+    await flush()
+
+    expect(posthog.config.persistence).toBe('localStorage+cookie')
+    expect(capture.mock.calls.filter(([event]) => event === '$pageview')).toHaveLength(1)
+    await client.applyAnalyticsConsent(false)
+  })
 })
 
 describe('withdrawing consent', () => {
@@ -205,6 +220,25 @@ describe('withdrawing consent', () => {
     await flush()
     expect(sent.map((e) => e.event)).toEqual(['onboarding_step_viewed'])
     expect(phStorageKeys(localStorage)).toEqual([])
+  })
+})
+
+describe('suppressed pages', () => {
+  it('drops events a disabled page queued before PostHog started', async () => {
+    const client = await loadClient()
+    const { default: posthog } = (await import('posthog-js')) as unknown as { default: PostHog }
+    const capture = vi.spyOn(posthog, 'capture')
+
+    // A platform admin's /onboarding: the wizard's mount event is queued, then the provider disables tracking.
+    client.track('onboarding_step_viewed', { step_index: 0, step_name: 'clinic' })
+    client.setAnalyticsSuppressed(true)
+    // Later, a tracked page in the same tab: its own mount event is queued before init.
+    client.setAnalyticsSuppressed(false)
+    client.track('signup_started', { method: 'email', in_app_browser: false })
+    await client.initAnalytics({ consentGranted: false })
+    await flush()
+
+    expect(capture.mock.calls.map(([event]) => event)).toEqual(['signup_started'])
   })
 })
 
