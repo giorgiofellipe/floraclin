@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { sendPlatformTemplate } from '../platform-whatsapp'
+import { findPlatformTemplate, sendPlatformTemplate } from '../platform-whatsapp'
 
 const fetchMock = vi.fn()
 
@@ -87,5 +87,65 @@ describe('sendPlatformTemplate', () => {
         parameters: [{ type: 'text', text: 'send-1' }],
       },
     ])
+  })
+})
+
+describe('findPlatformTemplate', () => {
+  const row = (name: string, language: string, status = 'APPROVED') => ({
+    id: `id-${name}-${language}`,
+    name,
+    language,
+    status,
+    category: 'MARKETING',
+  })
+
+  it('queries the WABA by name with the bearer token and returns the exact pt_BR match', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        data: [
+          row('trial_final_v2', 'pt_BR'),
+          row('trial_final', 'en_US'),
+          { ...row('trial_final', 'pt_BR', 'REJECTED'), rejected_reason: 'INVALID_FORMAT' },
+        ],
+      }),
+    )
+
+    const result = await findPlatformTemplate('trial_final')
+
+    expect(result).toEqual({
+      id: 'id-trial_final-pt_BR',
+      name: 'trial_final',
+      status: 'REJECTED',
+      category: 'MARKETING',
+      rejectedReason: 'INVALID_FORMAT',
+    })
+    const [url, init] = fetchMock.mock.calls[0]
+    const parsed = new URL(url)
+    expect(parsed.pathname).toBe('/v21.0/waba-1/message_templates')
+    expect(parsed.searchParams.get('name')).toBe('trial_final')
+    expect(parsed.searchParams.get('fields')).toBe('id,name,status,category,language,rejected_reason')
+    expect(init.headers).toEqual({ Authorization: 'Bearer token-1' })
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('returns null when only prefix matches or other languages exist', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ data: [row('trial_final_v2', 'pt_BR'), row('trial_final', 'en_US')] }))
+    expect(await findPlatformTemplate('trial_final')).toBeNull()
+  })
+
+  it('throws the Meta error without leaking the access token', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: { message: 'Invalid OAuth access token', code: 190 } }, 401))
+
+    const error = await findPlatformTemplate('trial_final').catch((e: Error) => e)
+
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toBe('Meta API error: Invalid OAuth access token | code=190')
+    expect((error as Error).message).not.toContain('token-1')
+  })
+
+  it('throws WHATSAPP_NOT_CONFIGURED before any network call when env is missing', async () => {
+    vi.stubEnv('FLORACLIN_WA_BUSINESS_ACCOUNT_ID', '')
+    await expect(findPlatformTemplate('trial_final')).rejects.toMatchObject({ code: 'WHATSAPP_NOT_CONFIGURED' })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

@@ -80,3 +80,34 @@ export async function createPlatformTemplate(def: {
   )
   return data as { id: string; status: string }
 }
+
+export interface PlatformTemplateStatus {
+  id: string
+  name: string
+  status: string
+  category: string
+  rejectedReason: string | null
+}
+
+/** The pt_BR template with exactly this name on the platform WABA, or null when Meta has none. */
+export async function findPlatformTemplate(name: string): Promise<PlatformTemplateStatus | null> {
+  const creds = getPlatformCredentials()
+  const params = new URLSearchParams({ name, fields: 'id,name,status,category,language,rejected_reason' })
+  const res = await fetch(`${GRAPH_API_BASE}/${creds.businessAccountId}/message_templates?${params}`, {
+    headers: { Authorization: `Bearer ${creds.accessToken}` },
+    signal: AbortSignal.timeout(10_000),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    const err = data?.error
+    const details = [err?.message, err?.code && `code=${err.code}`].filter(Boolean).join(' | ')
+    throw new Error(`Meta API error: ${details || 'Unknown error'}`)
+  }
+  // `name` is a prefix filter on Meta's side, so match exactly.
+  const t = (data?.data as Array<Record<string, string>> | undefined)?.find(
+    (row) => row.name === name && row.language === 'pt_BR',
+  )
+  return t
+    ? { id: t.id, name: t.name, status: t.status, category: t.category, rejectedReason: t.rejected_reason ?? null }
+    : null
+}

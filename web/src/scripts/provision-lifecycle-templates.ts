@@ -2,6 +2,8 @@
  * Creates the trial lifecycle WhatsApp templates on the FloraClin platform WABA (FLORACLIN_WA_*).
  * Meta does not allow content edits on approved templates: to change a body, rename
  * `templateName` in lifecycle-messages.ts and delete the old template on Meta (see AGENTS.md).
+ * No code change is needed after approval: the sender checks the status on Meta before
+ * each send and starts using a template as soon as Meta reports it APPROVED.
  *
  * Run (env from web/.env.local is loaded automatically):
  *   cd web && npx tsx --tsconfig tsconfig.json src/scripts/provision-lifecycle-templates.ts [--only=<key>] [--dry-run]

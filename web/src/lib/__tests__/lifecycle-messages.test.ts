@@ -273,11 +273,6 @@ describe('post-expiry rendering', () => {
     expect(helpReplyTo({ LIFECYCLE_HELP_REPLY_TO: 'giorgio@example.com' })).toBe('giorgio@example.com')
   })
 
-  it('every post-expiry message is email only until its template is approved', () => {
-    for (const key of ['trial_winback', 'trial_help', 'trial_final']) {
-      expect(LIFECYCLE_MESSAGES.find((m) => m.key === key)?.whatsapp).toBe(false)
-    }
-  })
 })
 
 describe('last-day wording', () => {

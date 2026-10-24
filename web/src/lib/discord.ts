@@ -8,7 +8,8 @@ import { formatCurrency } from '@/lib/utils'
 //   grew. signup.started / onboarding.completed / clinic.approved /
 //   subscription.created / lifecycle.reply.
 // - "floraclin-logs" (DISCORD_WEBHOOK_LOGS): operational digests -- code
-//   reporting on itself, e.g. the daily whatsapp-automations cron digest.
+//   reporting on itself, e.g. the daily whatsapp-automations cron digest
+//   or lifecycle.template_not_approved.
 //   Distinct from Sentry, which also posts to "floraclin-logs" but via its
 //   own Discord integration (configured in Sentry's UI, see
 //   docs/runbooks/observability.md).
@@ -52,6 +53,15 @@ export type DiscordEvent =
   | { kind: 'clinic.approved'; tenantName: string; tenantId: string }
   | { kind: 'subscription.created'; tenantName: string; planName: string; priceCents: number; tenantId: string }
   | { kind: 'lifecycle.reply'; tenantName: string; tenantId: string; messageKey: string; body: string }
+  // A lifecycle WhatsApp was skipped (email only) because Meta does not
+  // report its template as APPROVED. Sent at most once per template per BR day.
+  | {
+      kind: 'lifecycle.template_not_approved'
+      templateName: string
+      messageKey: string
+      /** Meta status (PENDING, REJECTED, PAUSED, ...) or MISSING. */
+      status: string
+    }
   | {
       kind: 'whatsapp_automations.digest'
       tenantsProcessed: number
@@ -220,6 +230,25 @@ export function buildDiscordPayload(event: DiscordEvent): DiscordPayload {
         ],
       }
     }
+    case 'lifecycle.template_not_approved': {
+      return {
+        username: 'FloraClin',
+        embeds: [
+          {
+            title: 'Lifecycle: template de WhatsApp não aprovado',
+            color: COLOR_DIGEST_ALERT,
+            description:
+              'Mensagens de lifecycle desta chave estão saindo só por e-mail. As clínicas puladas não recebem o WhatsApp depois da aprovação.',
+            fields: [
+              { name: 'Template', value: asInlineCode(event.templateName), inline: true },
+              { name: 'Mensagem', value: asInlineCode(event.messageKey), inline: true },
+              { name: 'Status na Meta', value: asInlineCode(event.status), inline: true },
+            ],
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      }
+    }
     case 'whatsapp_automations.digest': {
       // Routine run: one compact line, totals only. Abnormal run (at least
       // one tenant with send_failed / tenant_error / credit_exhausted, the
@@ -268,13 +297,15 @@ export function buildDiscordPayload(event: DiscordEvent): DiscordPayload {
 }
 
 function webhookForEvent(kind: DiscordEvent['kind']): string | undefined {
-  if (kind === 'whatsapp_automations.digest') return process.env.DISCORD_WEBHOOK_LOGS
+  if (kind === 'whatsapp_automations.digest' || kind === 'lifecycle.template_not_approved') {
+    return process.env.DISCORD_WEBHOOK_LOGS
+  }
   return process.env.DISCORD_WEBHOOK_EVENTS
 }
 
 /**
  * Posts an event to its Discord channel -- "floraclin" for business events,
- * "floraclin-logs" for the whatsapp_automations digest (see webhookForEvent).
+ * "floraclin-logs" for operational events (see webhookForEvent).
  * Three properties matter more than the formatting:
  *
  * 1. It can never break the caller. Every branch is wrapped so nothing

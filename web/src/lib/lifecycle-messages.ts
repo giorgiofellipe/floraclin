@@ -37,19 +37,17 @@ export interface LifecycleRenderContext {
 
 export interface LifecycleMessage {
   key: LifecycleMessageKey
+  /**
+   * Meta template for the WhatsApp channel. Each send checks its status on
+   * Meta (lifecycle-template-status.ts): until it is APPROVED the message goes
+   * out by email only and the WhatsApp channel is recorded as skipped.
+   */
   templateName: string
   category: 'UTILITY' | 'MARKETING'
   emailSubject: string
   body: string
   email: LifecycleEmail
   button: { label: string; path: string } | null
-  /**
-   * False while the WhatsApp template is not approved on Meta yet: the
-   * message goes out by email only, and the WhatsApp channel is recorded as
-   * skipped so the key still completes. Flip to true (or drop the field)
-   * once `provision-lifecycle-templates --only=<key>` is APPROVED.
-   */
-  whatsapp?: boolean
   /** Email built from live data (dates, recap, offer) instead of the static
    *  `emailSubject` / `email`, which stay as the fallback and the admin copy. */
   render?: (ctx: LifecycleRenderContext) => { subject: string; email: LifecycleEmail }
@@ -150,7 +148,6 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
       closing: 'Ficou alguma dúvida sobre os planos? Responda a este e-mail.',
     },
     button: { label: 'Assinar agora', path: '/configuracoes?tab=assinatura' },
-    whatsapp: false,
     render: (ctx) => {
       const when = trialEndPhrase(ctx.endsAt, ctx.now)
       const kept = trialRecapLines(ctx.recap)
@@ -198,15 +195,13 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
       closing: 'Quer ajuda para escolher o plano? Responda a este e-mail.',
     },
     button: { label: 'Ver planos', path: '/configuracoes?tab=assinatura' },
-    whatsapp: false,
     isDue: (state) => isTrialing(state) && state.daysLeft === 3,
   },
   // ─── After the trial ended ────────────────────────────────────────
   // One message around D+2 (win-back for clinics that used the trial, a help
   // offer for those that never got going) and one final message at D+7..10.
   // They replace the old D+2 "o que faltou?" email: the reply-to-this-email
-  // question lives on in both. Email only until the WhatsApp templates are
-  // approved on Meta.
+  // question lives on in both.
   {
     key: 'trial_winback',
     usesOffer: true,
@@ -226,7 +221,6 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
       closing: 'Se algo faltou para você continuar, responda a este e-mail. Lemos cada resposta.',
     },
     button: { label: 'Ver planos', path: '/configuracoes?tab=assinatura' },
-    whatsapp: false,
     render: (ctx) => {
       const offer = emailOffer(ctx)
       return {
@@ -268,7 +262,6 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
       closing: 'É só responder a este e-mail ou chamar a gente no WhatsApp. Sua conta e o que você já cadastrou continuam salvos.',
     },
     button: { label: 'Falar no WhatsApp', path: SUPPORT_WHATSAPP_URL },
-    whatsapp: false,
     replyTo: () => helpReplyTo(),
     isDue: (state) => expiredTrialDaysAgo(state, 2, 6) && !usedTrial(state),
   },
@@ -287,7 +280,6 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
       closing: 'Esta é a nossa última mensagem sobre o seu teste. Se quiser conversar, responda a este e-mail.',
     },
     button: { label: 'Ver planos', path: '/configuracoes?tab=assinatura' },
-    whatsapp: false,
     render: (ctx) => {
       const offer = emailOffer(ctx)
       return {
