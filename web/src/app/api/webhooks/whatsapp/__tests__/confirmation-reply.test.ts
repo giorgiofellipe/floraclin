@@ -111,6 +111,7 @@ vi.mock('@/db/queries/patients', () => ({
 
 vi.mock('@/db/queries/tenants', () => ({
   getTenant: vi.fn(),
+  findTenantIdByOwnPhoneNumberId: vi.fn(),
 }))
 
 vi.mock('@/lib/classify-prospect', () => ({
@@ -150,7 +151,7 @@ import {
   getProspectByPhone,
 } from '@/db/queries/prospects'
 import { getPatientByPhone, getPatient } from '@/db/queries/patients'
-import { getTenant } from '@/db/queries/tenants'
+import { getTenant, findTenantIdByOwnPhoneNumberId } from '@/db/queries/tenants'
 import { NextRequest } from 'next/server'
 import { POST } from '../route'
 
@@ -267,6 +268,8 @@ function makeRequest(body: unknown): NextRequest {
 function setupCommonMocks() {
   // Signature verification passes
   vi.mocked(verifyWebhookSignature).mockReturnValue(true)
+
+  vi.mocked(findTenantIdByOwnPhoneNumberId).mockResolvedValue(TENANT_ID)
 
   // Tenant lookup — the route queries the tenants table directly via db.select
   vi.mocked(db.select).mockReturnValue({

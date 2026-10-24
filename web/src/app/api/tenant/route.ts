@@ -6,12 +6,24 @@ import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
-import { getTenant, updateTenant, updateTenantSettings } from '@/db/queries/tenants'
+import { getTenant, updateTenant, updateTenantSettings, isPhoneNumberIdClaimedByAnotherTenant } from '@/db/queries/tenants'
 import { signLogoPath } from '@/lib/logo'
 import { updateTenantSchema, bookingSettingsSchema } from '@/validations/tenant'
 import { whatsappSettingsSchema } from '@/validations/whatsapp'
 import { handleApiError } from '@/lib/api-error'
 import { checkPlanFeature } from '@/lib/plans'
+
+// The webhook routes an own number to the one tenant holding its id, so a
+// second clinic saving the same id would split or capture that inbox.
+async function phoneNumberIdConflict(tenantId: string, settings: Record<string, unknown> | undefined) {
+  const id = settings?.whatsapp_phone_number_id
+  if (settings?.whatsapp_mode !== 'own' || typeof id !== 'string' || !id) return null
+  if (!(await isPhoneNumberIdClaimedByAnotherTenant(tenantId, id))) return null
+  return NextResponse.json(
+    { error: 'Este número de WhatsApp já está conectado a outra clínica.' },
+    { status: 409 },
+  )
+}
 
 export async function GET(request: Request) {
   try {
@@ -78,6 +90,9 @@ export async function PUT(request: Request) {
       if (parsed.data.whatsapp_access_token) {
         settingsUpdate.whatsapp_access_token = parsed.data.whatsapp_access_token
       }
+
+      const conflict = await phoneNumberIdConflict(ctx.tenantId, settingsUpdate)
+      if (conflict) return conflict
 
       const tenant = await updateTenantSettings(ctx.tenantId, settingsUpdate)
       if (!tenant) {
@@ -179,6 +194,12 @@ export async function PUT(request: Request) {
         )
       }
     }
+
+    const conflict = await phoneNumberIdConflict(
+      ctx.tenantId,
+      parsed.data.settings as Record<string, unknown> | undefined,
+    )
+    if (conflict) return conflict
 
     const existing = await getTenant(ctx.tenantId)
     const tenant = await updateTenant(ctx.tenantId, parsed.data)
