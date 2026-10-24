@@ -19,7 +19,7 @@ function LastUsedBadge() {
       className="absolute -top-2 right-3 z-10 rounded-full bg-mint/90 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-forest shadow-sm"
       data-testid="login-last-used"
     >
-      Último usado
+      Usado por último
     </span>
   )
 }
