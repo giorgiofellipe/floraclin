@@ -56,7 +56,8 @@ const STEPS: { label: string; icon: typeof Building2Icon; name: OnboardingStepNa
 function submitFailureReason(status: number): OnboardingSubmitFailureReason {
   if (status === 409) return 'slug_taken'
   if (status === 400) return 'validation'
-  if (status === 401 || status === 402 || status === 403) return 'forbidden'
+  if (status === 402) return 'subscription_expired'
+  if (status === 401 || status === 403) return 'forbidden'
   return 'server_error'
 }
 
@@ -317,9 +318,10 @@ export function OnboardingWizard({
             selectedProducts,
           }),
         })
-      } catch (error) {
+      } catch {
         track('onboarding_submit_failed', { ...stepProperties(currentStep), reason: 'network_error' })
-        throw error
+        toast.error('Erro ao completar o onboarding')
+        return
       }
 
       // A gateway error page is not JSON.

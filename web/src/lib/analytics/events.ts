@@ -31,7 +31,13 @@ export type LoginFailureReason =
 
 export type OnboardingStepName = 'clinic' | 'procedures' | 'products' | 'team'
 
-export type OnboardingSubmitFailureReason = 'slug_taken' | 'validation' | 'forbidden' | 'server_error' | 'network_error'
+export type OnboardingSubmitFailureReason =
+  | 'slug_taken'
+  | 'validation'
+  | 'subscription_expired'
+  | 'forbidden'
+  | 'server_error'
+  | 'network_error'
 
 export interface UtmProperties {
   utm_source?: string

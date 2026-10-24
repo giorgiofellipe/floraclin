@@ -180,11 +180,26 @@ describe('OnboardingWizard', () => {
   })
 
   it.each([
-    ['a taken booking link', new Response(JSON.stringify({ error: 'Link em uso' }), { status: 409 }), { reason: 'slug_taken', status: 409 }],
-    ['a gateway error page', new Response('<html>Bad Gateway</html>', { status: 502 }), { reason: 'server_error', status: 502 }],
-  ])('reports a failed final save (%s) with its reason, and still tells the owner', async (_, response, expected) => {
+    ['a taken booking link', () => Response.json({ error: 'Link em uso' }, { status: 409 }), 'Link em uso', { reason: 'slug_taken', status: 409 }],
+    ['invalid data', () => Response.json({ error: 'Dados de onboarding inválidos' }, { status: 400 }), 'Dados de onboarding inválidos', { reason: 'validation', status: 400 }],
+    [
+      'an expired trial',
+      () => Response.json({ error: 'Assinatura expirada', code: 'subscription_expired' }, { status: 402 }),
+      'Assinatura expirada',
+      { reason: 'subscription_expired', status: 402 },
+    ],
+    ['a gateway error page', () => new Response('<html>Bad Gateway</html>', { status: 502 }), 'Erro ao completar o onboarding', { reason: 'server_error', status: 502 }],
+    [
+      'no connection',
+      () => Promise.reject(new TypeError('Failed to fetch')),
+      'Erro ao completar o onboarding',
+      { reason: 'network_error' },
+    ],
+  ])('reports a failed final save (%s) with its reason, and still tells the owner', async (_, respond, message, expected) => {
     const user = userEvent.setup()
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(response)
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) =>
+      String(url) === '/api/onboarding' ? respond() : Response.json({ available: true }),
+    )
     render(
       wrap(
         <OnboardingWizard tenantName="My Clinic" tenantPhone={null} tenantEmail={null} existingProcedureTypes={[]} existingProducts={[]} />,
@@ -195,8 +210,10 @@ describe('OnboardingWizard', () => {
     await user.click(screen.getByTestId('onboarding-next'))
     await user.click(screen.getByTestId('onboarding-complete'))
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message))
     expect(vi.mocked(track)).toHaveBeenCalledWith('onboarding_submit_failed', { step_index: 3, step_name: 'team', ...expected })
+    // The owner can retry without retyping the wizard.
+    await waitFor(() => expect(screen.getByTestId('onboarding-complete')).toBeEnabled())
   })
 
   // Regression: finishing onboarding erased the signup phone, so lifecycle WhatsApp messages were skipped.
