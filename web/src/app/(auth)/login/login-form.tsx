@@ -11,12 +11,15 @@ import { CALLBACK_URL_PARAM } from '@/lib/callback-url'
 import type { InAppBrowser } from '@/lib/in-app-browser'
 import { track } from '@/lib/analytics/client'
 import { inAppBrowserProperties, type LoginFailureReason, type LoginMethod } from '@/lib/analytics/events'
-import type { LastLoginOption } from '@/lib/last-login-method'
+import type { LastLoginOption } from '@/lib/last-login'
+
+const LAST_USED_BADGE_ID = 'login-last-used'
 
 function LastUsedBadge() {
   return (
     <span
-      className="absolute -top-2 right-3 z-10 rounded-full bg-mint/90 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-forest shadow-sm"
+      id={LAST_USED_BADGE_ID}
+      className="absolute -top-2 right-3 rounded-full bg-mint/90 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-forest shadow-sm"
       data-testid="login-last-used"
     >
       Usado por último
@@ -96,7 +99,6 @@ export function LoginForm({
 
         {/* Google OAuth — first */}
         <div className="relative">
-          {lastLogin === 'google' && <LastUsedBadge />}
           <GoogleSignIn
             action={loginWithGoogle}
             inAppBrowser={inAppBrowser}
@@ -111,7 +113,9 @@ export function LoginForm({
                 ? () => track('login_failed', { method: 'google', reason: 'disallowed_useragent', ...inAppBrowserProperties(inAppBrowser) })
                 : undefined
             }
+            describedBy={lastLogin === 'google' ? LAST_USED_BADGE_ID : undefined}
           />
+          {lastLogin === 'google' && <LastUsedBadge />}
         </div>
 
         {/* Separator */}
@@ -168,15 +172,16 @@ export function LoginForm({
             </div>
           )}
           <div className="relative mt-1">
-            {lastLogin === 'email' && <LastUsedBadge />}
             <Button
               type="submit"
+              aria-describedby={lastLogin === 'email' ? LAST_USED_BADGE_ID : undefined}
               className="w-full h-11 bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium rounded-lg transition-all duration-300 shadow-sm hover:shadow-md"
               disabled={isPending}
               data-testid="login-submit"
             >
               {isPending ? 'Entrando...' : 'Entrar'}
             </Button>
+            {lastLogin === 'email' && <LastUsedBadge />}
           </div>
           <div className="text-center pt-2">
             <Link

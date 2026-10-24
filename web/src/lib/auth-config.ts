@@ -11,8 +11,7 @@ import bcrypt from 'bcryptjs'
 import { markEmailVerifiedViaGoogle } from '@/db/queries/users'
 import { trackServerEvent } from '@/lib/analytics/server'
 import { loginMethodFromProvider } from '@/lib/analytics/events'
-import { cookies } from 'next/headers'
-import { LAST_LOGIN_METHOD_COOKIE, lastLoginCookieOptions, lastLoginOptionForProvider } from '@/lib/last-login-method'
+import { rememberLastLogin } from '@/lib/last-login'
 
 const baseAdapter = DrizzleAdapter(db as any, {
   usersTable: users as any,
@@ -125,10 +124,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
   ],
   events: {
     async signIn({ account }) {
-      const option = account ? lastLoginOptionForProvider(account.provider) : null
-      if (!option) return
-      const cookieStore = await cookies()
-      cookieStore.set(LAST_LOGIN_METHOD_COOKIE, option, lastLoginCookieOptions)
+      await rememberLastLogin(account?.provider)
     },
   },
   callbacks: {

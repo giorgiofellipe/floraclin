@@ -20,6 +20,7 @@ type Props = {
   emailInputId: string
   /** Each tap on the Google button, including one that only opens the in-app browser modal. */
   onAttempt?: () => void
+  describedBy?: string
 }
 
 const GOOGLE_LABEL = 'Continuar com Google'
@@ -30,7 +31,7 @@ const GOOGLE_LABEL = 'Continuar com Google'
  * gets the person into a real browser or onto email and password, instead of
  * sending them to Google's error page. Nothing is shown before the tap.
  */
-export function GoogleSignIn({ action, inAppBrowser, callbackUrl, emailFallbackLabel, emailFallbackHint, emailInputId, onAttempt }: Props) {
+export function GoogleSignIn({ action, inAppBrowser, callbackUrl, emailFallbackLabel, emailFallbackHint, emailInputId, onAttempt, describedBy }: Props) {
   const formId = useId()
   const googleButtonRef = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
@@ -50,6 +51,7 @@ export function GoogleSignIn({ action, inAppBrowser, callbackUrl, emailFallbackL
           }}
           variant="outline"
           className="w-full h-11 border-sage/20 rounded-lg"
+          aria-describedby={describedBy}
           data-testid="google-sign-in"
         >
           <GoogleIcon /> {GOOGLE_LABEL}
