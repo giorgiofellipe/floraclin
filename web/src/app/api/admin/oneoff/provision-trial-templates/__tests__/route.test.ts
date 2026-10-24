@@ -146,7 +146,8 @@ describe('one-off provision trial templates', () => {
     expect(calls('DELETE')).toHaveLength(0)
 
     onMeta.set(RETIRED, row(RETIRED))
-    // Shares the prefix with trial_ending_soon_click; the delete must name the retired one only.
+    // Close to trial_ending_soon_click (same `trial_ending_` stem, though neither name is a prefix
+    // of the other); the delete must name the retired one only.
     body = await (await run()).json()
     expect(body.retired).toEqual({ name: RETIRED, action: 'deleted' })
     expect(calls('DELETE')).toHaveLength(1)
@@ -192,7 +193,31 @@ describe('one-off provision trial templates', () => {
     it('posts when something was created', async () => {
       await run()
       expect(discordCalls()).toHaveLength(1)
-      expect(JSON.parse(String(discordCalls()[0][1].body)).content).toContain(`${NAMES[0]}: PENDING (created)`)
+      expect(JSON.parse(String(discordCalls()[0][1].body)).content).toContain(
+        `${NAMES[0]} [id-${NAMES[0]}]: PENDING MARKETING (created)`,
+      )
+    })
+
+    it('includes id, category and a rejected reason other than NONE', async () => {
+      allExist()
+      onMeta.set(NAMES[1], { ...row(NAMES[1], 'REJECTED'), rejected_reason: 'INVALID_FORMAT' })
+      failLookup.add(NAMES[2])
+      await run()
+      const content = JSON.parse(String(discordCalls()[0][1].body)).content
+      expect(content).toContain(`${NAMES[0]} [id-${NAMES[0]}]: APPROVED MARKETING (exists)`)
+      expect(content).toContain(`${NAMES[1]} [id-${NAMES[1]}]: REJECTED MARKETING (exists, INVALID_FORMAT)`)
+      expect(content).toContain(`${NAMES[2]} [?]: ? ? (lookup_failed)`)
+      expect(content).not.toContain('NONE')
+    })
+
+    it('warns with the status only when the webhook answers non-2xx', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      fetchMock.mockImplementation((input, init) =>
+        String(input) === DISCORD ? Promise.resolve(json({}, 429)) : fakeFetch(input, init))
+      expect((await run()).status).toBe(200)
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+      expect(warnSpy.mock.calls[0]).toEqual(['[oneoff-provision-trial-templates]', 'Discord webhook returned HTTP 429'])
+      expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(DISCORD)
     })
 
     it('posts on an error', async () => {

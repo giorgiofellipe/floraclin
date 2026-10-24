@@ -104,17 +104,19 @@ function shouldNotify(summary: Summary, now: Date) {
 async function notifyDiscord(summary: Summary) {
   const webhookUrl = process.env.DISCORD_WEBHOOK_LOGS
   if (!webhookUrl) return
-  const lines = summary.templates.map(
-    (t) => `- ${t.name}: ${t.status ?? '?'} (${t.action}${t.rejectedReason && t.rejectedReason !== 'NONE' ? `, ${t.rejectedReason}` : ''})`,
-  )
+  const lines = summary.templates.map((t) => {
+    const reason = t.rejectedReason && t.rejectedReason !== 'NONE' ? `, ${t.rejectedReason}` : ''
+    return `- ${t.name} [${t.id ?? '?'}]: ${t.status ?? '?'} ${t.category ?? '?'} (${t.action}${reason})`
+  })
   lines.push(`- ${summary.retired.name}: ${summary.retired.action}`)
   try {
-    await fetch(webhookUrl, {
+    const res = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: 'FloraClin', content: `Templates de trial (one-off)\n${lines.join('\n')}` }),
       signal: AbortSignal.timeout(5_000),
     })
+    if (!res.ok) console.warn(LOG_PREFIX, `Discord webhook returned HTTP ${res.status}`)
   } catch {
     // Discord is best-effort; the log line is the record.
   }

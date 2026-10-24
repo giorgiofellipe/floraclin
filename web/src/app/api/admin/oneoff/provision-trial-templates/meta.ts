@@ -19,14 +19,15 @@ async function metaError(res: Response) {
 
 export async function findTemplate(name: string): Promise<MetaTemplate | null> {
   const creds = getPlatformCredentials()
-  const params = new URLSearchParams({ name, fields: 'id,name,status,category,language,rejected_reason' })
+  // `name` is a prefix filter and results are paginated (small default page),
+  // so ask for a full page and match the exact name below.
+  const params = new URLSearchParams({ name, fields: 'id,name,status,category,language,rejected_reason', limit: '100' })
   const res = await fetch(`${GRAPH_API_BASE}/${creds.businessAccountId}/message_templates?${params}`, {
     headers: { Authorization: `Bearer ${creds.accessToken}` },
     signal: AbortSignal.timeout(10_000),
   })
   if (!res.ok) throw await metaError(res)
   const data = await res.json()
-  // `name` is a prefix filter on Meta's side, so match exactly.
   const t = (data?.data as Array<Record<string, string>> | undefined)?.find(
     (row) => row.name === name && row.language === 'pt_BR',
   )
