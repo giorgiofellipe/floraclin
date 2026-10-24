@@ -107,9 +107,6 @@ const TOP_LEVEL_DIRS = [
  * institutional memory. Paths are relative to `app/api`, forward-slashed.
  */
 const EXEMPT_MUTATING_ROUTES: Record<string, string> = {
-  // One-off, removed right after use: CRON_SECRET bearer, no tenant session.
-  'admin/oneoff/provision-trial-templates/route.ts': 'one-off, CRON_SECRET bearer, no tenant session',
-
   // Webhooks: unauthenticated machine callers. There is no session to check
   // a role or subscription against: the caller is Stripe, Meta or Google.
   'webhooks/stripe/route.ts': 'Stripe webhook, unauthenticated machine caller',
@@ -187,8 +184,6 @@ const EXEMPT_MUTATING_ROUTES: Record<string, string> = {
  * rule the way these did.
  */
 const EXEMPT_GET_ROUTES: Record<string, string> = {
-  'admin/oneoff/provision-trial-templates/route.ts':
-    'one-off Vercel cron (CRON_SECRET bearer): creates/deletes platform WhatsApp templates on Meta, no DB write',
   'calendar/auth/callback/route.ts':
     'OAuth redirect target; persists the Google Calendar connection via upsertConnection/updateConnection on GET because the provider only supports a GET callback',
   'integrations/meta/auth/callback/route.ts':
