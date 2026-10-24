@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getAuthContext } from '@/lib/auth'
 import {
   verifyOAuthState,
   exchangeCodeForTokens,
@@ -26,7 +27,16 @@ export async function GET(request: Request) {
 
     const payload = verifyOAuthState(state)
     if (!payload) {
-      console.error('Invalid OAuth state signature')
+      console.error('Invalid or expired OAuth state')
+      return NextResponse.redirect(`${APP_URL}/configuracoes?calendar=error`)
+    }
+
+    // The state names who started the flow; the browser finishing it must be
+    // that same member, still allowed to connect. Otherwise a link minted in
+    // one clinic binds whoever clicks it into that clinic's calendar sync.
+    const ctx = await getAuthContext().catch(() => null)
+    const allowedRoles = payload.type === 'clinic' ? ['owner'] : ['owner', 'practitioner']
+    if (!ctx || ctx.userId !== payload.userId || ctx.tenantId !== payload.tenantId || !allowedRoles.includes(ctx.role)) {
       return NextResponse.redirect(`${APP_URL}/configuracoes?calendar=error`)
     }
 

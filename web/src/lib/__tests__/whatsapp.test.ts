@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import crypto from 'crypto'
 
@@ -440,13 +441,20 @@ describe('downloadAndStoreMedia', () => {
     vi.unstubAllEnvs()
   })
 
-  it("keeps the upload inside the tenant's media folder whatever the sender names the file", async () => {
+  it("keeps the upload inside the tenant's folder whatever the sender names the file", async () => {
     // The sender's document filename used to be the third argument and went
-    // into the key, so '../' walked out to the private PHI bucket.
+    // into the key, so '../' walked out of the folder.
     const store = downloadAndStoreMedia as (...args: unknown[]) => ReturnType<typeof downloadAndStoreMedia>
     await store('tenant-1', '123', '../../../../floraclin/tenant-2/branding/logo.png')
 
     expect(storageRequests).toHaveLength(1)
-    expect(storageRequests[0].startsWith('/storage/v1/object/media/whatsapp/tenant-1/123')).toBe(true)
+    expect(storageRequests[0].startsWith('/storage/v1/object/floraclin/tenant-1/whatsapp/123')).toBe(true)
+  })
+
+  it('serves patient media through the signer, never a public bucket URL', async () => {
+    const { storedUrl } = await downloadAndStoreMedia('tenant-1', '123')
+
+    expect(storageRequests[0].startsWith('/storage/v1/object/floraclin/')).toBe(true)
+    expect(storedUrl).toBe(`/api/whatsapp/media?path=${encodeURIComponent('tenant-1/whatsapp/123')}`)
   })
 })

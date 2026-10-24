@@ -35,15 +35,20 @@ export async function exchangeCodeForTokens(code: string) {
   return tokens
 }
 
-export function signOAuthState(payload: { userId: string; tenantId: string; type: 'practitioner' | 'clinic' }): string {
-  const json = JSON.stringify(payload)
+export type OAuthStatePayload = { userId: string; tenantId: string; type: 'practitioner' | 'clinic' }
+
+// Long enough for a slow consent screen; a state that outlives it is a replay.
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000
+
+export function signOAuthState(payload: OAuthStatePayload): string {
+  const json = JSON.stringify({ ...payload, issuedAt: Date.now() })
   const encoded = Buffer.from(json).toString('base64url')
   const { stateSecret } = getConfig()
   const signature = createHmac('sha256', stateSecret).update(encoded).digest('base64url')
   return `${encoded}.${signature}`
 }
 
-export function verifyOAuthState(state: string): { userId: string; tenantId: string; type: 'practitioner' | 'clinic' } | null {
+export function verifyOAuthState(state: string): OAuthStatePayload | null {
   const dotIndex = state.lastIndexOf('.')
   if (dotIndex === -1) return null
 
@@ -58,7 +63,10 @@ export function verifyOAuthState(state: string): { userId: string; tenantId: str
 
   try {
     const json = Buffer.from(encoded, 'base64url').toString('utf-8')
-    return JSON.parse(json)
+    const { issuedAt, ...payload } = JSON.parse(json)
+    const age = Date.now() - issuedAt
+    if (typeof issuedAt !== 'number' || age > OAUTH_STATE_TTL_MS || age < 0) return null
+    return payload
   } catch {
     return null
   }
