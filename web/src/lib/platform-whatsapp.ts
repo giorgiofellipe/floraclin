@@ -1,8 +1,8 @@
 import { BusinessError } from '@/lib/errors'
 
-const GRAPH_API_BASE = 'https://graph.facebook.com/v21.0'
+export const GRAPH_API_BASE = 'https://graph.facebook.com/v21.0'
 
-function getPlatformCredentials() {
+export function getPlatformCredentials() {
   const phoneNumberId = process.env.FLORACLIN_WA_PHONE_NUMBER_ID
   const accessToken = process.env.FLORACLIN_WA_ACCESS_TOKEN
   const businessAccountId = process.env.FLORACLIN_WA_BUSINESS_ACCOUNT_ID
@@ -71,14 +71,14 @@ export async function createPlatformTemplate(def: {
   category: 'UTILITY' | 'MARKETING'
   language: string
   components: unknown[]
-}): Promise<{ id: string; status: string }> {
+}): Promise<{ id: string; status: string; category?: string }> {
   const creds = getPlatformCredentials()
   const data = await platformFetch(
     `/${creds.businessAccountId}/message_templates`,
     creds.accessToken,
     def,
   )
-  return data as { id: string; status: string }
+  return data as { id: string; status: string; category?: string }
 }
 
 export interface PlatformTemplateStatus {
