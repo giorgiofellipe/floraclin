@@ -71,14 +71,14 @@ export async function createPlatformTemplate(def: {
   category: 'UTILITY' | 'MARKETING'
   language: string
   components: unknown[]
-}): Promise<{ id: string; status: string }> {
+}): Promise<{ id: string; status: string; category?: string }> {
   const creds = getPlatformCredentials()
   const data = await platformFetch(
     `/${creds.businessAccountId}/message_templates`,
     creds.accessToken,
     def,
   )
-  return data as { id: string; status: string }
+  return data as { id: string; status: string; category?: string }
 }
 
 export interface PlatformTemplateStatus {

@@ -75,7 +75,14 @@ async function provision(message: (typeof LIFECYCLE_MESSAGES)[number], appUrl: s
   if (existing) return { name, ...fromMeta(existing), action: 'exists' }
   try {
     const created = await createPlatformTemplate(buildLifecycleTemplateDefinition(message, appUrl))
-    return { name, ...EMPTY, id: created.id ?? null, status: created.status ?? null, category: message.category, action: 'created' }
+    return {
+      name,
+      ...EMPTY,
+      id: created.id ?? null,
+      status: created.status ?? null,
+      category: created.category ?? message.category,
+      action: 'created',
+    }
   } catch (err) {
     return { name, ...EMPTY, action: 'create_failed', error: errorMessage(err) }
   }
@@ -85,7 +92,10 @@ async function retire(): Promise<Summary['retired']> {
   const name = RETIRED_TEMPLATE
   if (LIFECYCLE_MESSAGES.some((m) => m.templateName === name)) return { name, action: 'skipped_still_referenced' }
   try {
-    if (!(await findTemplate(name))) return { name, action: 'absent' }
+    const existing = await findTemplate(name)
+    // A delete already in flight (or done) must not be issued again.
+    if (!existing || existing.status === 'PENDING_DELETION' || existing.status === 'DELETED')
+      return { name, action: 'absent' }
     await deleteTemplate(name)
     return { name, action: 'deleted' }
   } catch (err) {
@@ -94,10 +104,9 @@ async function retire(): Promise<Summary['retired']> {
 }
 
 function shouldNotify(summary: Summary, now: Date) {
-  const changed =
-    summary.templates.some((t) => t.action !== 'exists') ||
-    (summary.retired.action !== 'absent' && summary.retired.action !== 'skipped_still_referenced')
-  // Otherwise one heartbeat an hour (the cron runs every 15 minutes).
+  const changed = summary.templates.some((t) => t.action === 'created') || summary.retired.action === 'deleted'
+  // Everything else, failures included, waits for the hourly heartbeat (the cron
+  // runs every 15 minutes) so a lasting failure does not post four times an hour.
   return changed || now.getUTCMinutes() < 15
 }
 
@@ -127,17 +136,34 @@ function authorized(request: Request) {
   return Boolean(cronSecret) && request.headers.get('authorization') === `Bearer ${cronSecret}`
 }
 
+// The button URL is permanent once Meta approves the template, so only accept
+// a public https origin, without trailing slashes.
+function appUrlProblem(appUrl: string | undefined) {
+  if (!appUrl) return 'NEXT_PUBLIC_APP_URL is not set'
+  let url: URL
+  try {
+    url = new URL(appUrl)
+  } catch {
+    return 'NEXT_PUBLIC_APP_URL is not a valid URL'
+  }
+  if (url.protocol !== 'https:') return 'NEXT_PUBLIC_APP_URL must be an https URL'
+  if (['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) || url.hostname.endsWith('.localhost'))
+    return 'NEXT_PUBLIC_APP_URL must not point to localhost'
+  return null
+}
+
 async function handle(request: Request) {
   if (!authorized(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL
-  if (!appUrl) {
-    console.error(LOG_PREFIX, 'NEXT_PUBLIC_APP_URL is not set')
-    return NextResponse.json({ error: 'NEXT_PUBLIC_APP_URL is not set' }, { status: 500 })
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/+$/, '')
+  const problem = appUrlProblem(appUrl)
+  if (problem || !appUrl) {
+    console.error(LOG_PREFIX, problem)
+    return NextResponse.json({ error: problem }, { status: 500 })
   }
   try {
     const messages = trialMessages()
-    const templates: TemplateResult[] = []
-    for (const message of messages) templates.push(await provision(message, appUrl))
+    // In parallel (results keep KEYS order) so the worst case stays well below maxDuration.
+    const templates = await Promise.all(messages.map((message) => provision(message, appUrl)))
     const summary: Summary = { templates, retired: await retire() }
     // Vercel keeps no response body for crons: this line is the record.
     console.log(LOG_PREFIX, JSON.stringify(summary))

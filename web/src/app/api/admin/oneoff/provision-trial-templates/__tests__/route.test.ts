@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn(), captureMessage: vi.fn() }))
 
+import { LIFECYCLE_MESSAGES } from '@/lib/lifecycle-messages'
 import { GET, POST } from '../route'
 
 const SECRET = 'test-cron-secret'
@@ -18,6 +19,7 @@ let onMeta: Map<string, Row>
 let failLookup: Set<string>
 let failCreate: Set<string>
 let failDelete: boolean
+let recategorizeAs: string | null
 let fetchMock: ReturnType<typeof vi.fn>
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
@@ -39,7 +41,9 @@ function fakeFetch(input: string | URL | Request, init?: RequestInit) {
     const def = JSON.parse(String(init?.body))
     if (failCreate.has(def.name)) return Promise.resolve(metaError('create broke'))
     onMeta.set(def.name, { id: `id-${def.name}`, name: def.name, status: 'PENDING', category: def.category, language: def.language })
-    return Promise.resolve(json({ id: `id-${def.name}`, status: 'PENDING' }))
+    const category = recategorizeAs ?? def.category
+    onMeta.set(def.name, { ...onMeta.get(def.name)!, category })
+    return Promise.resolve(json({ id: `id-${def.name}`, status: 'PENDING', ...(recategorizeAs && { category }) }))
   }
   if (method === 'DELETE') {
     if (failDelete) return Promise.resolve(metaError('delete broke'))
@@ -74,6 +78,7 @@ beforeEach(() => {
   failLookup = new Set()
   failCreate = new Set()
   failDelete = false
+  recategorizeAs = null
   fetchMock = vi.fn(fakeFetch)
   vi.stubGlobal('fetch', fetchMock)
   logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -100,6 +105,60 @@ describe('one-off provision trial templates', () => {
     expect((await run()).status).toBe(500)
     expect(errorSpy).toHaveBeenCalled()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['http://app.example.test', 'https'],
+    ['https://localhost:3000', 'localhost'],
+    ['https://127.0.0.1', 'localhost'],
+    ['not a url', 'valid URL'],
+  ])('fails with 500 when NEXT_PUBLIC_APP_URL is %s, before touching Meta', async (appUrl, reason) => {
+    process.env.NEXT_PUBLIC_APP_URL = appUrl
+    const res = await run()
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toContain(reason)
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('strips trailing slashes from NEXT_PUBLIC_APP_URL in the button URL', async () => {
+    process.env.NEXT_PUBLIC_APP_URL = 'https://app.example.test//'
+    await run()
+    for (const [, init] of calls('POST')) {
+      const def = JSON.parse(String(init.body))
+      expect(def.components.find((c: { type: string }) => c.type === 'BUTTONS').buttons[0].url).toBe(
+        'https://app.example.test/api/lifecycle/click?lc={{1}}',
+      )
+    }
+  })
+
+  it('fails with 500 and touches no Meta endpoint when a trial message has an unexpected template name', async () => {
+    const message = LIFECYCLE_MESSAGES.find((m) => m.key === 'trial_help') as { templateName: string }
+    const original = message.templateName
+    message.templateName = 'trial_help_v2'
+    try {
+      expect((await run()).status).toBe(500)
+    } finally {
+      message.templateName = original
+    }
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps the result order when lookups resolve out of order', async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      const name = new URL(String(input)).searchParams.get('name')
+      if (name === NAMES[0] && (init?.method ?? 'GET') === 'GET') await new Promise((r) => setTimeout(r, 20))
+      return fakeFetch(input, init)
+    })
+    const body = await (await run()).json()
+    expect(body.templates.map((t: { name: string }) => t.name)).toEqual(NAMES)
+    expect(createdNames()[4]).toBe(NAMES[0])
+  })
+
+  it('reports the category Meta assigned to a created template', async () => {
+    recategorizeAs = 'UTILITY'
+    const body = await (await run()).json()
+    expect(body.templates.every((t: { category: string }) => t.category === 'UTILITY')).toBe(true)
   })
 
   it('creates only the missing templates with the lifecycle definitions', async () => {
@@ -160,6 +219,13 @@ describe('one-off provision trial templates', () => {
     expect(calls('DELETE')).toHaveLength(0)
   })
 
+  it.each(['PENDING_DELETION', 'DELETED'])('treats trial_ending_click in %s as absent', async (status) => {
+    onMeta.set(RETIRED, row(RETIRED, status))
+    const body = await (await run()).json()
+    expect(body.retired).toEqual({ name: RETIRED, action: 'absent' })
+    expect(calls('DELETE')).toHaveLength(0)
+  })
+
   it('reports a failed delete', async () => {
     onMeta.set(RETIRED, row(RETIRED))
     failDelete = true
@@ -202,6 +268,7 @@ describe('one-off provision trial templates', () => {
       allExist()
       onMeta.set(NAMES[1], { ...row(NAMES[1], 'REJECTED'), rejected_reason: 'INVALID_FORMAT' })
       failLookup.add(NAMES[2])
+      vi.setSystemTime(new Date('2026-10-24T16:05:00Z'))
       await run()
       const content = JSON.parse(String(discordCalls()[0][1].body)).content
       expect(content).toContain(`${NAMES[0]} [id-${NAMES[0]}]: APPROVED MARKETING (exists)`)
@@ -220,9 +287,23 @@ describe('one-off provision trial templates', () => {
       expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(DISCORD)
     })
 
-    it('posts on an error', async () => {
+    it('posts when the retired template was deleted', async () => {
+      allExist()
+      onMeta.set(RETIRED, row(RETIRED))
+      await run()
+      expect(discordCalls()).toHaveLength(1)
+    })
+
+    it('reports failures only inside the hourly window', async () => {
       allExist()
       failLookup.add(NAMES[0])
+      failCreate.add(NAMES[1])
+      onMeta.delete(NAMES[1])
+      onMeta.set(RETIRED, row(RETIRED))
+      failDelete = true
+      await run()
+      expect(discordCalls()).toHaveLength(0)
+      vi.setSystemTime(new Date('2026-10-24T16:14:59Z'))
       await run()
       expect(discordCalls()).toHaveLength(1)
     })
