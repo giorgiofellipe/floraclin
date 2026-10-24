@@ -179,6 +179,26 @@ describe('OnboardingWizard', () => {
     }
   })
 
+  it.each([
+    ['a taken booking link', new Response(JSON.stringify({ error: 'Link em uso' }), { status: 409 }), { reason: 'slug_taken', status: 409 }],
+    ['a gateway error page', new Response('<html>Bad Gateway</html>', { status: 502 }), { reason: 'server_error', status: 502 }],
+  ])('reports a failed final save (%s) with its reason, and still tells the owner', async (_, response, expected) => {
+    const user = userEvent.setup()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(response)
+    render(
+      wrap(
+        <OnboardingWizard tenantName="My Clinic" tenantPhone={null} tenantEmail={null} existingProcedureTypes={[]} existingProducts={[]} />,
+      ),
+    )
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-complete'))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    expect(vi.mocked(track)).toHaveBeenCalledWith('onboarding_submit_failed', { step_index: 3, step_name: 'team', ...expected })
+  })
+
   // Regression: finishing onboarding erased the signup phone, so lifecycle WhatsApp messages were skipped.
   it('keeps the tenant phone and email when the owner finishes without editing them', async () => {
     const user = userEvent.setup()

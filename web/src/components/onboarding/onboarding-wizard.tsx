@@ -23,7 +23,7 @@ import { ExternalLinkIcon, CircleCheckIcon, CircleXIcon, Loader2Icon } from 'luc
 import { Input } from '@/components/ui/input'
 import { CLINIC_PHONE_REQUIRED_MESSAGE, hasClinicPhone } from '@/lib/clinic-phone'
 import { resetAnalytics, track } from '@/lib/analytics/client'
-import type { OnboardingStepName } from '@/lib/analytics/events'
+import type { OnboardingStepName, OnboardingSubmitFailureReason } from '@/lib/analytics/events'
 
 interface ProcedureOverride {
   selected: boolean
@@ -52,6 +52,13 @@ const STEPS: { label: string; icon: typeof Building2Icon; name: OnboardingStepNa
   { label: 'Produtos', icon: PackageIcon, name: 'products' },
   { label: 'Equipe', icon: UsersIcon, name: 'team' },
 ]
+
+function submitFailureReason(status: number): OnboardingSubmitFailureReason {
+  if (status === 409) return 'slug_taken'
+  if (status === 400) return 'validation'
+  if (status === 401 || status === 402 || status === 403) return 'forbidden'
+  return 'server_error'
+}
 
 function stepProperties(index: number) {
   return { step_index: index, step_name: STEPS[index].name }
@@ -292,29 +299,37 @@ export function OnboardingWizard({
         })),
       ]
 
-      const res = await fetch('/api/onboarding', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clinic: {
-            name: (clinicData.name as string) || tenantName,
-            slug: customSlug || undefined,
-            phone: (clinicData.phone as string) || undefined,
-            email: (clinicData.email as string) || undefined,
-            address: (clinicData.address as Record<string, string>) || undefined,
-            workingHours: (clinicData.workingHours as WorkingHours) || DEFAULT_WORKING_HOURS,
-          },
-          procedureTypes,
-          selectedProducts,
-        }),
-      })
+      let res: Response
+      try {
+        res = await fetch('/api/onboarding', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clinic: {
+              name: (clinicData.name as string) || tenantName,
+              slug: customSlug || undefined,
+              phone: (clinicData.phone as string) || undefined,
+              email: (clinicData.email as string) || undefined,
+              address: (clinicData.address as Record<string, string>) || undefined,
+              workingHours: (clinicData.workingHours as WorkingHours) || DEFAULT_WORKING_HOURS,
+            },
+            procedureTypes,
+            selectedProducts,
+          }),
+        })
+      } catch (error) {
+        track('onboarding_submit_failed', { ...stepProperties(currentStep), reason: 'network_error' })
+        throw error
+      }
 
-      const result = await res.json()
+      // A gateway error page is not JSON.
+      const result = await res.json().catch(() => null)
 
       if (result?.success) {
         toast.success('Configuração concluída! Bem-vindo ao FloraClin.')
         router.push('/dashboard')
       } else {
+        track('onboarding_submit_failed', { ...stepProperties(currentStep), reason: submitFailureReason(res.status), status: res.status })
         toast.error(result?.error || 'Erro ao completar o onboarding')
       }
     })

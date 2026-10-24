@@ -31,6 +31,8 @@ export type LoginFailureReason =
 
 export type OnboardingStepName = 'clinic' | 'procedures' | 'products' | 'team'
 
+export type OnboardingSubmitFailureReason = 'slug_taken' | 'validation' | 'forbidden' | 'server_error' | 'network_error'
+
 export interface UtmProperties {
   utm_source?: string
   utm_medium?: string
@@ -58,6 +60,7 @@ export interface AnalyticsEventProperties {
   onboarding_step_viewed: OnboardingStepProperties
   onboarding_step_submitted: OnboardingStepProperties
   onboarding_step_validation_error: OnboardingStepProperties & { fields: string[] }
+  onboarding_submit_failed: OnboardingStepProperties & { reason: OnboardingSubmitFailureReason; status?: number }
   onboarding_completed: { procedure_types_count: number; products_count: number }
   first_patient_created: Record<string, never>
   first_photo_uploaded: { kind: TimelineStage }
@@ -80,6 +83,7 @@ export const EVENT_PROPERTY_KEYS: { [E in AnalyticsEventName]: readonly (keyof A
   onboarding_step_viewed: STEP_KEYS,
   onboarding_step_submitted: STEP_KEYS,
   onboarding_step_validation_error: [...STEP_KEYS, 'fields'],
+  onboarding_submit_failed: [...STEP_KEYS, 'reason', 'status'],
   onboarding_completed: ['procedure_types_count', 'products_count'],
   first_patient_created: [],
   first_photo_uploaded: ['kind'],
@@ -181,6 +185,7 @@ export const CLIENT_EVENT_NAMES = [
   'onboarding_step_viewed',
   'onboarding_step_submitted',
   'onboarding_step_validation_error',
+  'onboarding_submit_failed',
 ] as const satisfies readonly AnalyticsEventName[]
 
 export type ClientEventName = (typeof CLIENT_EVENT_NAMES)[number]
