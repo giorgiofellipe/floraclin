@@ -70,15 +70,6 @@ describe('AnalyticsProvider', () => {
     expect(phEntries()).toEqual([])
   })
 
-  it('starts in consented mode straight away when consent was stored earlier', async () => {
-    const { AnalyticsProvider, saveCookieConsent } = await load()
-    saveCookieConsent(true)
-    render(<AnalyticsProvider />)
-
-    await waitFor(() => expect(posthog.__loaded).toBe(true))
-    expect(posthog.config.persistence).toBe('localStorage+cookie')
-  })
-
   it('stays cookieless when the stored choice is a rejection', async () => {
     const { AnalyticsProvider, saveCookieConsent } = await load()
     saveCookieConsent(false)

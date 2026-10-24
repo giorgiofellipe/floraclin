@@ -73,7 +73,7 @@ export function SignUpForm({ inAppBrowser, utm = {} }: { inAppBrowser: InAppBrow
         )}
 
         {/* Signup form */}
-        <form action={formAction} onFocus={() => markStarted('email')} onSubmit={() => markStarted('email')} className="space-y-5">
+        <form action={formAction} onFocus={() => markStarted('email')} className="space-y-5">
           <SignupAttributionFields />
           <div className="space-y-1.5">
             <Label htmlFor="fullName" className="uppercase tracking-wider text-xs text-mid">

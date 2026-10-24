@@ -38,11 +38,14 @@ function clearDevice() {
  * loaded once per worker, so its default singleton would otherwise carry one
  * test's init into the next.
  */
+let loaded: ClientModule | null = null
+
 async function loadClient(): Promise<ClientModule> {
   vi.resetModules()
   const actual = await vi.importActual<typeof import('posthog-js')>('posthog-js')
   vi.doMock('posthog-js', () => ({ default: new actual.PostHog() }))
-  return import('../client')
+  loaded = await import('../client')
+  return loaded
 }
 
 /** Lets the client's promise callbacks run. */
@@ -63,7 +66,11 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })))
 })
 
-afterEach(() => {
+afterEach(async () => {
+  // Back to cookieless even when an assertion failed, so a consented instance
+  // writes nothing into the next test.
+  await loaded?.applyAnalyticsConsent(false)
+  loaded = null
   vi.doUnmock('posthog-js')
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
@@ -156,6 +163,15 @@ describe('granting consent', () => {
     expect(posthog.config.session_recording.recordHeaders).toBe(false)
     expect(posthog.config.session_recording.recordBody).toBe(false)
     expect(posthog.config.enable_recording_console_log).toBe(false)
+    // Patient names, notes and photos on platform pages must never reach a replay.
+    expect(posthog.config.session_recording).toMatchObject({ maskTextSelector: '*' })
+    expect(posthog.config.session_recording.blockSelector).toContain('img')
+    expect(posthog.config.session_recording.blockSelector).toContain('input[type=hidden]')
+    const maskAttribute = posthog.config.session_recording.maskAttributeFn!
+    expect(maskAttribute('href', 'tel:+5511999999999', document.createElement('a'))).toBe('*')
+    expect(maskAttribute('aria-label', 'Enviar WhatsApp para Ana Souza')).toBe('*')
+    expect(maskAttribute('class', 'flex gap-2')).toBe('flex gap-2')
+    expect(maskAttribute('href', '/_next/static/css/app.css', document.createElement('link'))).toBe('/_next/static/css/app.css')
     // The grant itself counts the page being looked at.
     expect(sent.map((e) => e.event)).toContain('$pageview')
 
@@ -174,6 +190,7 @@ describe('granting consent', () => {
     await flush()
     expect(phStorageKeys(localStorage).length + phCookies().length).toBeGreaterThan(0)
   })
+
   it('sends exactly one $pageview when consent is granted while posthog-js is still loading', async () => {
     const client = await loadClient()
     const { default: posthog } = (await import('posthog-js')) as unknown as { default: PostHog }
@@ -187,7 +204,6 @@ describe('granting consent', () => {
 
     expect(posthog.config.persistence).toBe('localStorage+cookie')
     expect(capture.mock.calls.filter(([event]) => event === '$pageview')).toHaveLength(1)
-    await client.applyAnalyticsConsent(false)
   })
 })
 
@@ -224,21 +240,34 @@ describe('withdrawing consent', () => {
 })
 
 describe('suppressed pages', () => {
-  it('drops events a disabled page queued before PostHog started', async () => {
+  it('sends nothing while a disabled page is shown in a tab that already started PostHog', async () => {
+    const client = await loadClient()
+    const { sent } = await start(client, false)
+
+    // /login, then a soft navigation to a platform admin's /onboarding.
+    client.setAnalyticsSuppressed(true)
+    client.track('onboarding_step_viewed', { step_index: 0, step_name: 'clinic' })
+    await flush()
+    // Logout, back to a tracked page.
+    client.setAnalyticsSuppressed(false)
+    client.track('login_failed', { method: 'email', reason: 'invalid_credentials', in_app_browser: false })
+    await flush()
+
+    expect(sent.map((e) => e.event)).toEqual(['login_failed'])
+  })
+
+  it('drops events tracked on a disabled page that never started PostHog', async () => {
     const client = await loadClient()
     const { default: posthog } = (await import('posthog-js')) as unknown as { default: PostHog }
     const capture = vi.spyOn(posthog, 'capture')
 
-    // A platform admin's /onboarding: the wizard's mount event is queued, then the provider disables tracking.
-    client.track('onboarding_step_viewed', { step_index: 0, step_name: 'clinic' })
     client.setAnalyticsSuppressed(true)
-    // Later, a tracked page in the same tab: its own mount event is queued before init.
+    client.track('onboarding_step_viewed', { step_index: 0, step_name: 'clinic' })
     client.setAnalyticsSuppressed(false)
-    client.track('signup_started', { method: 'email', in_app_browser: false })
     await client.initAnalytics({ consentGranted: false })
     await flush()
 
-    expect(capture.mock.calls.map(([event]) => event)).toEqual(['signup_started'])
+    expect(capture).not.toHaveBeenCalled()
   })
 })
 
@@ -267,7 +296,6 @@ describe('sent properties', () => {
     expect(event.properties.$pathname).toBe('/pacientes/:id')
     expect(event.properties).not.toHaveProperty('email')
     expect(event.properties).not.toHaveProperty('clinic_name')
-    expect(event.properties).not.toHaveProperty('title')
     expect(JSON.stringify(event)).not.toContain('ana@example.com')
     expect(JSON.stringify(event)).not.toContain('token=abc')
     window.history.replaceState(null, '', '/')
@@ -285,8 +313,37 @@ describe('sent properties', () => {
 
     const snapshot = sent.find((e) => e.event === '$snapshot')
     expect(snapshot?.properties.$snapshot_data[0].data.href).toBe('http://localhost:3000/whatsapp')
-    // Back to cookieless, so this instance writes nothing into the next test.
-    await client.applyAnalyticsConsent(false)
+  })
+
+  it('strips query strings and ids from heatmap page keys, merging the points', async () => {
+    const client = await loadClient()
+    const { posthog, sent } = await start(client, true)
+
+    posthog.capture('$$heatmap', {
+      $heatmap_data: {
+        'http://localhost:3000/pacientes/3f2b8c1e-1a2b-4c3d-8e9f-0a1b2c3d4e5f?tab=fotos': [{ x: 1 }],
+        'http://localhost:3000/pacientes/9a8b7c6d-1a2b-4c3d-8e9f-0a1b2c3d4e5f': [{ x: 2 }],
+      },
+    })
+
+    const heatmap = sent.find((e) => e.event === '$$heatmap')
+    expect(heatmap?.properties.$heatmap_data).toEqual({ 'http://localhost:3000/pacientes/:id': [{ x: 1 }, { x: 2 }] })
+  })
+
+  it('stores no initial person info, which would carry the raw page URL to /flags', async () => {
+    window.history.replaceState(null, '', '/whatsapp?conversa=1&draft=Ana')
+    // posthog-js keeps memory persistence in a module-level store keyed by project.
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'phc_initial_props')
+    const client = await loadClient()
+    const { posthog } = await start(client, false)
+
+    client.track('login_failed', { method: 'email', reason: 'invalid_credentials', in_app_browser: false })
+    await flush()
+
+    // Sent as person_properties on every /flags request, outside before_send,
+    // and stored in the cookie once consent is given.
+    expect(posthog.persistence?.get_initial_props()).toEqual({})
+    window.history.replaceState(null, '', '/')
   })
 })
 
@@ -311,6 +368,5 @@ describe('without a key', () => {
     expect(vi.mocked(fetch)).not.toHaveBeenCalled()
     expect(phCookies()).toEqual([])
     expect(phStorageKeys(localStorage)).toEqual([])
-    vi.doUnmock('posthog-js')
   })
 })

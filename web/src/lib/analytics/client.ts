@@ -1,5 +1,5 @@
 import type { CaptureResult, PostHog, PostHogConfig } from 'posthog-js'
-import { clientAnalyticsConfig } from './config'
+import { analyticsConfig } from './config'
 import { clearPostHogStorage } from './consent'
 import { CLIENT_EVENT_NAMES, pickEventProperties, type AnalyticsEventProperties, type ClientEventName } from './events'
 import { sanitizeEventProperties, sanitizeUrl } from './sanitize'
@@ -25,22 +25,31 @@ let instance: Promise<PostHog | null> | null = null
 let consentGranted = false
 // Set on pages that must not be tracked at all (platform admins' sessions).
 let suppressed = false
-// Events tracked before the provider's effect has started PostHog (a child's
-// mount effect runs first). Sent on init; dropped if this page never inits.
-const MAX_PENDING = 20
-let pending: (() => void)[] = []
 
 const CONSENTLESS_EVENTS = new Set<string>([...CLIENT_EVENT_NAMES, '$identify', '$groupidentify'])
 
+// Attributes replay needs to render the layout. Everything else (href, title,
+// aria-label, alt, data-*, value) can carry a patient's name, phone or id.
+const REPLAY_KEPT_ATTRIBUTES = new Set(['class', 'style', 'id', 'type', 'role', 'width', 'height', 'colspan', 'rowspan', 'dir'])
+
+function maskReplayAttribute(name: string, value: string, element?: Element): string {
+  if (REPLAY_KEPT_ATTRIBUTES.has(name)) return value
+  // Stylesheet links: static assets, and the replay needs them for styling.
+  if (name === 'href' && element?.tagName === 'LINK') return value
+  return '*'
+}
+
 // Platform pages show patient names, clinical notes and patient photos.
 // Replay records the DOM, so all of that is masked or blocked; layout, clicks
-// and navigation are what replay is for here. Network headers and bodies
+// and navigation are what replay is for here. Hidden inputs are recorded
+// unmasked by rrweb whatever `maskAllInputs` says. Network headers and bodies
 // (API responses carry patient data) are off explicitly: only an explicit
 // `false` here overrides the project's remote replay settings.
 const SESSION_RECORDING: PostHogConfig['session_recording'] = {
   maskAllInputs: true,
   maskTextSelector: '*',
-  blockSelector: 'img, video, canvas, picture',
+  maskAttributeFn: maskReplayAttribute,
+  blockSelector: 'img, video, canvas, picture, input[type=hidden]',
   recordHeaders: false,
   recordBody: false,
 }
@@ -75,7 +84,21 @@ function beforeSend(event: CaptureResult | null): CaptureResult | null {
   if (event.event === '$snapshot') {
     event.properties.$snapshot_data = sanitizeSnapshotHrefs(event.properties.$snapshot_data)
   }
+  if (event.event === '$$heatmap') {
+    event.properties.$heatmap_data = sanitizeHeatmapUrls(event.properties.$heatmap_data)
+  }
   return event
+}
+
+// Heatmap points are keyed by the raw `location.href`.
+function sanitizeHeatmapUrls(data: unknown): unknown {
+  if (!data || typeof data !== 'object') return data
+  const out: Record<string, unknown[]> = {}
+  for (const [url, points] of Object.entries(data)) {
+    const key = sanitizeUrl(url)
+    out[key] = [...(out[key] ?? []), ...(Array.isArray(points) ? points : [])]
+  }
+  return out
 }
 
 // rrweb meta events (type 4) carry the raw `location.href`, query string included.
@@ -94,11 +117,19 @@ function buildInitConfig(host: string, granted: boolean): Partial<PostHogConfig>
   return {
     api_host: host,
     ...(granted ? CONSENTED_CONFIG : COOKIELESS_CONFIG),
-    // Started explicitly once consent is known, see applyConsent.
+    // Started explicitly once consent is known.
     disable_session_recording: true,
     session_recording: SESSION_RECORDING,
     // Explicit, so the project's remote setting cannot turn it on.
     enable_recording_console_log: false,
+    // The Logs product turns console capture on from the project's remote
+    // settings regardless of local config; dropping every record is what holds.
+    logs: { beforeSend: () => null },
+    // Both feed the stored initial person info: the raw first URL and referrer,
+    // sent with every /flags request (bypassing before_send) and kept in the cookie.
+    save_referrer: false,
+    save_campaign_params: false,
+    cross_subdomain_cookie: false,
     capture_dead_clicks: false,
     capture_performance: false,
     // Sentry already owns error tracking.
@@ -126,7 +157,7 @@ export function initAnalytics(options: { consentGranted: boolean }): Promise<Pos
     void applyAnalyticsConsent(options.consentGranted)
     return instance
   }
-  const config = typeof window === 'undefined' ? null : clientAnalyticsConfig()
+  const config = typeof window === 'undefined' ? null : analyticsConfig()
   if (!config) return Promise.resolve(null)
 
   consentGranted = options.consentGranted
@@ -138,12 +169,6 @@ export function initAnalytics(options: { consentGranted: boolean }): Promise<Pos
     .then(({ default: posthog }) => {
       posthog.init(config.key, buildInitConfig(config.host, consentGranted))
       if (consentGranted) posthog.startSessionRecording()
-      return posthog
-    })
-    .then((posthog) => {
-      const queued = pending
-      pending = []
-      if (posthog) for (const send of queued) send()
       return posthog
     })
     .catch(() => null)
@@ -158,9 +183,6 @@ export function initAnalytics(options: { consentGranted: boolean }): Promise<Pos
 export function setAnalyticsSuppressed(value: boolean): void {
   suppressed = value
   if (value) {
-    // What a disabled page queued on mount (children's effects run first)
-    // must not be flushed by a later tracked page's init.
-    pending = []
     void instance?.then((posthog) => posthog?.stopSessionRecording())
   } else if (consentGranted) {
     void instance?.then((posthog) => posthog?.startSessionRecording())
@@ -189,13 +211,11 @@ export async function applyAnalyticsConsent(granted: boolean): Promise<void> {
   }
 }
 
+// The provider is an earlier sibling of every caller, so its effect has
+// already started PostHog; no instance means this page is not tracked.
 export function track<E extends ClientEventName>(event: E, properties: AnalyticsEventProperties[E]): void {
-  if (!clientAnalyticsConfig()) return
+  if (!instance) return
   const picked = pickEventProperties(event, properties)
-  if (!instance) {
-    if (pending.length < MAX_PENDING) pending.push(() => void track(event, properties))
-    return
-  }
   void instance.then((posthog) => {
     posthog?.capture(event, picked)
   })
@@ -225,12 +245,4 @@ export function resetAnalytics(options: { onlyIfIdentified?: boolean } = {}): vo
 
 function isIdentified(posthog: PostHog): boolean {
   return posthog.get_property('$user_state') === 'identified'
-}
-
-/** Test-only: forget the loaded instance and consent state. */
-export function __resetAnalyticsClientForTests(): void {
-  instance = null
-  consentGranted = false
-  suppressed = false
-  pending = []
 }

@@ -1,4 +1,5 @@
 import { maskPath } from '@/lib/observability'
+import { UTM_KEYS } from './events'
 
 /**
  * posthog-js copies the page URL, path and referrer onto every event (and
@@ -10,7 +11,7 @@ import { maskPath } from '@/lib/observability'
  * fragment is dropped, and path segments that are not plain lowercase words
  * become `:id` (same rule as Sentry's scrubbing, see `maskPath`).
  */
-const KEPT_QUERY_PARAMS = new Set(['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'])
+const KEPT_QUERY_PARAMS = new Set<string>(UTM_KEYS)
 
 export function sanitizeUrl(value: string): string {
   let parsed: URL

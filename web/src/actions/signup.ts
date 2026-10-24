@@ -282,11 +282,13 @@ export async function createClinicForOAuthUser(
     return { success: true, created: false }
   }
   cookieStore.set(TENANT_COOKIE, tenant.id, TENANT_COOKIE_OPTIONS)
-  trackServerEvent(
-    'signup_completed',
-    { distinctId: session.user.id, tenantId: tenant.id },
-    { method: 'google', ...utmProperties(firstTouch) },
-  )
+  if (!isPlatformAdmin) {
+    trackServerEvent(
+      'signup_completed',
+      { distinctId: session.user.id, tenantId: tenant.id },
+      { method: 'google', ...utmProperties(firstTouch) },
+    )
+  }
   if (tenantAttribution) {
     await persistSignupAttribution(tenant.id, tenantAttribution)
   }

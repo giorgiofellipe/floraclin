@@ -36,13 +36,14 @@ export function AnalyticsProvider({ userId, tenantId, enabled = true }: Analytic
     // the first pass): starting cookieless and upgrading a moment later would
     // throw away a consenting visitor's persisted id on every page load.
     const granted = analyticsConsentGranted()
-    if (enabled) void initAnalytics({ consentGranted: granted })
+    if (enabled) {
+      void initAnalytics({ consentGranted: granted })
+      return
+    }
     // Not tracked here, but a withdrawal still has to clear what is stored,
     // even before this tab has a PostHog instance.
-    else {
-      if (!granted) clearPostHogStorage()
-      void applyAnalyticsConsent(granted)
-    }
+    if (!granted) clearPostHogStorage()
+    void applyAnalyticsConsent(granted)
   }, [consentStatus, enabled])
 
   useEffect(() => {

@@ -1,7 +1,8 @@
-import { and, eq, ne, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { appointments, patients, photoAssets, tenantUsers, users } from '@/db/schema'
 import type { TimelineStage } from '@/types'
+import type { AnalyticsEventProperties } from './events'
 import { trackServerEvent } from './server'
 
 /**
@@ -13,7 +14,10 @@ import { trackServerEvent } from './server'
 interface Actor {
   userId: string
   tenantId: string
+  isPlatformAdmin: boolean
 }
+
+type TenantTable = typeof patients | typeof appointments | typeof photoAssets
 
 /**
  * True when no row of the tenant is older than the one just inserted, by
@@ -23,32 +27,37 @@ interface Actor {
  * "first" means the first ever, so deleting and re-creating a patient does
  * not fire again.
  */
-async function isTenantsFirst(
-  table: typeof patients | typeof appointments | typeof photoAssets,
-  tenantId: string,
-  insertedId: string,
-) {
+async function isTenantsFirst(table: TenantTable, tenantId: string, insertedId: string) {
   const inserted = db.select({ createdAt: table.createdAt }).from(table).where(eq(table.id, insertedId))
   const [older] = await db
     .select({ id: table.id })
     .from(table)
-    .where(
-      and(
-        eq(table.tenantId, tenantId),
-        ne(table.id, insertedId),
-        sql`(${table.createdAt}, ${table.id}) < ((${inserted}), ${insertedId}::uuid)`,
-      ),
-    )
+    .where(and(eq(table.tenantId, tenantId), sql`(${table.createdAt}, ${table.id}) < ((${inserted}), ${insertedId}::uuid)`))
     .limit(1)
   return !older
 }
 
-export function trackFirstPatientCreated(actor: Actor, patientId: string): void {
+/**
+ * Platform admins' rows (support work inside a customer's clinic) send
+ * nothing, but still count as the tenant's first.
+ */
+function trackTenantFirst<E extends 'first_patient_created' | 'first_appointment_created' | 'first_photo_uploaded'>(
+  event: E,
+  table: TenantTable,
+  actor: Actor,
+  insertedId: string,
+  properties: AnalyticsEventProperties[E],
+): void {
+  if (actor.isPlatformAdmin) return
   trackServerEvent(
-    'first_patient_created',
-    async () => ((await isTenantsFirst(patients, actor.tenantId, patientId)) ? { distinctId: actor.userId, tenantId: actor.tenantId } : null),
-    {},
+    event,
+    async () => ((await isTenantsFirst(table, actor.tenantId, insertedId)) ? { distinctId: actor.userId, tenantId: actor.tenantId } : null),
+    properties,
   )
+}
+
+export function trackFirstPatientCreated(actor: Actor, patientId: string): void {
+  trackTenantFirst('first_patient_created', patients, actor, patientId, {})
 }
 
 /**
@@ -57,19 +66,11 @@ export function trackFirstPatientCreated(actor: Actor, patientId: string): void 
  * first, so a staff appointment after it does not fire.
  */
 export function trackFirstAppointmentCreated(actor: Actor, appointmentId: string): void {
-  trackServerEvent(
-    'first_appointment_created',
-    async () => ((await isTenantsFirst(appointments, actor.tenantId, appointmentId)) ? { distinctId: actor.userId, tenantId: actor.tenantId } : null),
-    {},
-  )
+  trackTenantFirst('first_appointment_created', appointments, actor, appointmentId, {})
 }
 
 export function trackFirstPhotoUploaded(actor: Actor, photoAssetId: string, kind: TimelineStage): void {
-  trackServerEvent(
-    'first_photo_uploaded',
-    async () => ((await isTenantsFirst(photoAssets, actor.tenantId, photoAssetId)) ? { distinctId: actor.userId, tenantId: actor.tenantId } : null),
-    { kind },
-  )
+  trackTenantFirst('first_photo_uploaded', photoAssets, actor, photoAssetId, { kind })
 }
 
 /** The confirm route only knows the address; the event is keyed by the user id behind it. */

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { track } from '@/lib/analytics/client'
 import { SignUpForm } from '../signup-form'
@@ -20,7 +20,6 @@ describe('SignUpForm analytics', () => {
 
     await user.type(screen.getByLabelText('Nome completo'), 'Ana Souza')
     await user.type(screen.getByLabelText('E-mail'), 'ana@example.com')
-    fireEvent.submit(screen.getByRole('button', { name: 'Criar conta' }).closest('form')!)
     await user.click(screen.getByTestId('google-sign-in'))
 
     expect(vi.mocked(track).mock.calls).toEqual([

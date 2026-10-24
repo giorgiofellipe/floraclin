@@ -232,13 +232,13 @@ export async function POST(request: Request) {
       // again, so a failure further down must not cost the team the message.
       // reportOnboardingCompleted never throws.
       if (firstCompletion) {
-        // Server-side and only on the save that flips the flag, so a retried
-        // or concurrent save cannot count a clinic twice.
-        trackServerEvent(
-          'onboarding_completed',
-          { distinctId: auth.userId, tenantId: auth.tenantId },
-          { procedure_types_count: data.procedureTypes.length, products_count: data.selectedProducts.length },
-        )
+        if (!auth.isPlatformAdmin) {
+          trackServerEvent(
+            'onboarding_completed',
+            { distinctId: auth.userId, tenantId: auth.tenantId },
+            { procedure_types_count: data.procedureTypes.length, products_count: data.selectedProducts.length },
+          )
+        }
         await reportOnboardingCompleted({
           tenantId: auth.tenantId,
           userId: auth.userId,

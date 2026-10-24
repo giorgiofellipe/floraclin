@@ -10,9 +10,9 @@ export function analyticsConsentGranted(): boolean {
 }
 
 // posthog-js names everything it stores `ph_<key>_...` (persistence, window
-// id) or `__ph_opt_in_out_<key>`; `ph_debug` too.
+// id) or `__ph_opt_in_out_<key>`; `ph_debug` too. The toolbar's key is the exception.
 function isPostHogKey(name: string): boolean {
-  return name.startsWith('ph_') || name.startsWith('__ph_')
+  return name.startsWith('ph_') || name.startsWith('__ph_') || name === '_postHogToolbarParams'
 }
 
 /**

@@ -247,7 +247,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       // `user` and `account` are only present on the sign-in itself, for
       // every provider, so this counts each successful sign-in once.
       const loginMethod = user && account ? loginMethodFromProvider(account.provider) : null
-      if (loginMethod && token.sub) {
+      if (loginMethod && token.sub && !token.isPlatformAdmin) {
         trackServerEvent(
           'login_succeeded',
           { distinctId: token.sub, tenantId: (token.tenantId as string | null | undefined) ?? null },

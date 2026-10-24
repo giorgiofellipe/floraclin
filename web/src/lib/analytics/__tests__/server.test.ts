@@ -55,7 +55,6 @@ afterEach(() => {
 describe('without a key', () => {
   it('schedules nothing, constructs no client and never runs the lookup', async () => {
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', '')
-    vi.stubEnv('POSTHOG_KEY', '')
     const lookup = vi.fn(async () => ({ distinctId: 'user-1' }))
 
     trackServerEvent('first_patient_created', lookup, {})
@@ -94,19 +93,6 @@ describe('with a key', () => {
     ])
   })
 
-  it('sends anonymous events with a throwaway id and no person profile', async () => {
-    trackServerEvent('email_confirmed', { distinctId: null }, {})
-    trackServerEvent('email_confirmed', {}, {})
-    await settle()
-
-    const [first, second] = captured as { distinctId: string; properties: Record<string, unknown>; groups?: unknown }[]
-    expect(first.properties.$process_person_profile).toBe(false)
-    expect(second.properties.$process_person_profile).toBe(false)
-    expect(first.distinctId).toMatch(/^[0-9a-f-]{36}$/)
-    expect(first.distinctId).not.toBe(second.distinctId)
-    expect(first.groups).toBeUndefined()
-  })
-
   it('skips the event when the lookup resolves to null (not the tenant’s first)', async () => {
     trackServerEvent('first_appointment_created', async () => null, {})
     await settle()
@@ -119,13 +105,6 @@ describe('with a key', () => {
     expect(constructed).toEqual([
       { key: 'phc_public', options: expect.objectContaining({ host: 'https://eu.i.posthog.com', flushAt: 1, flushInterval: 0 }) },
     ])
-  })
-
-  it('prefers the server-only POSTHOG_KEY when set', async () => {
-    vi.stubEnv('POSTHOG_KEY', 'phc_server')
-    trackServerEvent('email_confirmed', { distinctId: 'user-1' }, {})
-    await settle()
-    expect(constructed[0].key).toBe('phc_server')
   })
 
   it('never throws into the request: a failing lookup is reported and swallowed', async () => {

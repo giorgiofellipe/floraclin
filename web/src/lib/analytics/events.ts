@@ -9,7 +9,8 @@
  * extra key a caller sneaks past the types (an e-mail, a clinic name) is
  * dropped rather than sent.
  */
-import type { InAppBrowserApp } from '@/lib/in-app-browser'
+import type { FirstTouch } from '@/lib/first-touch'
+import type { InAppBrowser, InAppBrowserApp } from '@/lib/in-app-browser'
 import type { TimelineStage } from '@/types'
 
 export type SignupMethod = 'google' | 'email'
@@ -17,19 +18,16 @@ export type LoginMethod = 'google' | 'email' | 'magic_link'
 
 /**
  * Why a sign-in did not happen. A fixed set so failures group cleanly; the
- * raw Auth.js error type is mapped by {@link loginFailureReasonFromAuthError}.
+ * raw Auth.js error type is mapped by {@link loginFailureFromAuthError}.
  */
 export type LoginFailureReason =
   | 'invalid_credentials'
   | 'missing_fields'
-  | 'email_not_confirmed'
   | 'oauth_error'
   | 'access_denied'
   | 'account_not_linked'
   | 'magic_link_expired'
   | 'disallowed_useragent'
-  | 'rate_limited'
-  | 'unknown'
 
 export type OnboardingStepName = 'clinic' | 'procedures' | 'products' | 'team'
 
@@ -62,14 +60,13 @@ export interface AnalyticsEventProperties {
   onboarding_step_validation_error: OnboardingStepProperties & { fields: string[] }
   onboarding_completed: { procedure_types_count: number; products_count: number }
   first_patient_created: Record<string, never>
-  /** `kind` is the photo's timeline stage as stored: `pre` (before), `immediate_post`, `7d`... */
   first_photo_uploaded: { kind: TimelineStage }
   first_appointment_created: Record<string, never>
 }
 
 export type AnalyticsEventName = keyof AnalyticsEventProperties
 
-const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'] as const
+export const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'] as const
 const IN_APP_KEYS = ['in_app_browser', 'in_app_browser_name'] as const
 const STEP_KEYS = ['step_index', 'step_name'] as const
 
@@ -124,9 +121,7 @@ export function pickEventProperties<E extends AnalyticsEventName>(
 }
 
 /** UTM properties from the first-touch record the signup flow already keeps. */
-export function utmProperties(
-  touch: { utmSource?: string; utmMedium?: string; utmCampaign?: string; utmContent?: string; utmTerm?: string } | null | undefined,
-): UtmProperties {
+export function utmProperties(touch: FirstTouch | null | undefined): UtmProperties {
   if (!touch) return {}
   return {
     utm_source: touch.utmSource,
@@ -137,11 +132,11 @@ export function utmProperties(
   }
 }
 
-export function inAppBrowserProperties(inAppBrowser: { app: InAppBrowserApp } | null | undefined): InAppBrowserProperties {
+export function inAppBrowserProperties(inAppBrowser: InAppBrowser | null | undefined): InAppBrowserProperties {
   return inAppBrowser ? { in_app_browser: true, in_app_browser_name: inAppBrowser.app } : { in_app_browser: false }
 }
 
-/** Auth.js `?error=` types on /login, as a failure reason and the sign-in method they belong to. */
+/** Auth.js `?error=` types on /login, as a failure reason and the sign-in method they belong to. Anything else is not reported. */
 export function loginFailureFromAuthError(
   error: string | undefined | null,
 ): { method: LoginMethod; reason: LoginFailureReason } | null {
@@ -161,7 +156,7 @@ export function loginFailureFromAuthError(
     case 'Verification':
       return { method: 'magic_link', reason: 'magic_link_expired' }
     default:
-      return { method: 'google', reason: 'unknown' }
+      return null
   }
 }
 

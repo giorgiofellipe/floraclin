@@ -64,10 +64,14 @@ describe('sanitizeEventProperties', () => {
 })
 
 describe('loginFailureFromAuthError', () => {
-  it('maps Auth.js error types onto the fixed reasons', () => {
-    expect(loginFailureFromAuthError('AccessDenied')).toEqual({ method: 'google', reason: 'access_denied' })
-    expect(loginFailureFromAuthError('Verification')).toEqual({ method: 'magic_link', reason: 'magic_link_expired' })
-    expect(loginFailureFromAuthError('SomethingNew')).toEqual({ method: 'google', reason: 'unknown' })
-    expect(loginFailureFromAuthError(undefined)).toBeNull()
+  it.each([
+    ['CredentialsSignin', { method: 'email', reason: 'invalid_credentials' }],
+    ['AccessDenied', { method: 'google', reason: 'access_denied' }],
+    ['Verification', { method: 'magic_link', reason: 'magic_link_expired' }],
+    // A crafted or new ?error= must not be counted as a Google failure.
+    ['SomethingNew', null],
+    [undefined, null],
+  ])('%s → %o', (error, expected) => {
+    expect(loginFailureFromAuthError(error)).toEqual(expected)
   })
 })

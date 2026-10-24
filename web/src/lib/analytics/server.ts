@@ -1,7 +1,7 @@
 import { after } from 'next/server'
 import type { EventMessage, PostHog } from 'posthog-node'
 import { reportSideEffectFailure } from '@/lib/observability'
-import { serverAnalyticsConfig } from './config'
+import { analyticsConfig } from './config'
 import { pickEventProperties, type AnalyticsEventProperties, type ServerEventName } from './events'
 
 /**
@@ -20,9 +20,9 @@ import { pickEventProperties, type AnalyticsEventProperties, type ServerEventNam
  * configured nothing is scheduled, and posthog-node is never loaded.
  */
 
-export interface ServerEventTarget {
-  /** Internal user id. Omitted for anonymous events, which then create no person profile. */
-  distinctId?: string | null
+interface ServerEventTarget {
+  /** Internal user id. */
+  distinctId: string
   tenantId?: string | null
 }
 
@@ -31,12 +31,12 @@ export interface ServerEventTarget {
  * an "is this the tenant's first?" check). Resolving to null skips the event.
  * The function only runs when analytics is configured.
  */
-export type ServerEventTargetInput = ServerEventTarget | (() => Promise<ServerEventTarget | null>)
+type ServerEventTargetInput = ServerEventTarget | (() => Promise<ServerEventTarget | null>)
 
 let client: Promise<PostHog | null> | null = null
 
 function getClient(): Promise<PostHog | null> {
-  const config = serverAnalyticsConfig()
+  const config = analyticsConfig()
   if (!config) return Promise.resolve(null)
   // Serverless: send each event straight away rather than batching, and give
   // up quickly, since this runs inside the function's lifetime.
@@ -58,15 +58,10 @@ function buildServerEvent<E extends ServerEventName>(
   target: ServerEventTarget,
   properties: AnalyticsEventProperties[E],
 ): EventMessage {
-  const anonymous = !target.distinctId
   return {
-    // An anonymous event still needs a distinct id; a random one links it to nothing.
-    distinctId: target.distinctId || crypto.randomUUID(),
+    distinctId: target.distinctId,
     event,
-    properties: {
-      ...pickEventProperties(event, properties),
-      ...(anonymous ? { $process_person_profile: false } : {}),
-    },
+    properties: pickEventProperties(event, properties),
     ...(target.tenantId ? { groups: { tenant: target.tenantId } } : {}),
   }
 }
@@ -76,7 +71,7 @@ export function trackServerEvent<E extends ServerEventName>(
   target: ServerEventTargetInput,
   properties: AnalyticsEventProperties[E],
 ): void {
-  if (!serverAnalyticsConfig()) return
+  if (!analyticsConfig()) return
   try {
     after(async () => {
       try {
