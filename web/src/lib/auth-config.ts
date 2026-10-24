@@ -11,6 +11,8 @@ import bcrypt from 'bcryptjs'
 import { markEmailVerifiedViaGoogle } from '@/db/queries/users'
 import { trackServerEvent } from '@/lib/analytics/server'
 import { loginMethodFromProvider } from '@/lib/analytics/events'
+import { cookies } from 'next/headers'
+import { LAST_LOGIN_METHOD_COOKIE, lastLoginCookieOptions, lastLoginOptionForProvider } from '@/lib/last-login-method'
 
 const baseAdapter = DrizzleAdapter(db as any, {
   usersTable: users as any,
@@ -121,6 +123,14 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       from: process.env.EMAIL_FROM ?? 'FloraClin <contato@floraclin.com.br>',
     }),
   ],
+  events: {
+    async signIn({ account }) {
+      const option = account ? lastLoginOptionForProvider(account.provider) : null
+      if (!option) return
+      const cookieStore = await cookies()
+      cookieStore.set(LAST_LOGIN_METHOD_COOKIE, option, lastLoginCookieOptions)
+    },
+  },
   callbacks: {
     async signIn({ account, profile }) {
       // For Google OAuth, only allow sign-in if Google has verified the email
