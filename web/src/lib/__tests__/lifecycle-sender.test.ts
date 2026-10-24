@@ -265,7 +265,7 @@ describe('deliverLifecycleMessage', () => {
     consoleError.mockRestore()
   })
 
-  it('skips the email-only nudges entirely for an opted-out owner', async () => {
+  it('skips both WhatsApp and email for an owner opted out of marketing', async () => {
     vi.mocked(isTenantLifecycleOptedOut).mockResolvedValue(true)
     const message = LIFECYCLE_MESSAGES.find((m) => m.key === 'trial_last_day')!
 

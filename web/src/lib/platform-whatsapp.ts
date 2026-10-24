@@ -92,7 +92,13 @@ export interface PlatformTemplateStatus {
 /** The pt_BR template with exactly this name on the platform WABA, or null when Meta has none. */
 export async function findPlatformTemplate(name: string): Promise<PlatformTemplateStatus | null> {
   const creds = getPlatformCredentials()
-  const params = new URLSearchParams({ name, fields: 'id,name,status,category,language,rejected_reason' })
+  const params = new URLSearchParams({
+    name,
+    fields: 'id,name,status,category,language,rejected_reason',
+    // `name` is a prefix filter and results are paginated; widen the page so
+    // the exact match isn't pushed past the first page by similar names.
+    limit: '100',
+  })
   const res = await fetch(`${GRAPH_API_BASE}/${creds.businessAccountId}/message_templates?${params}`, {
     headers: { Authorization: `Bearer ${creds.accessToken}` },
     signal: AbortSignal.timeout(10_000),
@@ -103,11 +109,20 @@ export async function findPlatformTemplate(name: string): Promise<PlatformTempla
     const details = [err?.message, err?.code && `code=${err.code}`].filter(Boolean).join(' | ')
     throw new Error(`Meta API error: ${details || 'Unknown error'}`)
   }
+  // A malformed 2xx must throw, not read as "missing": callers treat null as
+  // not approved, while a throw lets them fail open as status unknown.
+  if (!Array.isArray(data?.data)) throw new Error('Meta API error: unexpected response')
   // `name` is a prefix filter on Meta's side, so match exactly.
-  const t = (data?.data as Array<Record<string, string>> | undefined)?.find(
-    (row) => row.name === name && row.language === 'pt_BR',
+  const t = (data.data as Array<Record<string, unknown>>).find(
+    (row) => row?.name === name && row?.language === 'pt_BR',
   )
-  return t
-    ? { id: t.id, name: t.name, status: t.status, category: t.category, rejectedReason: t.rejected_reason ?? null }
-    : null
+  if (!t) return null
+  if (typeof t.status !== 'string') throw new Error('Meta API error: unexpected response')
+  return {
+    id: t.id as string,
+    name,
+    status: t.status,
+    category: t.category as string,
+    rejectedReason: (t.rejected_reason as string | undefined) ?? null,
+  }
 }

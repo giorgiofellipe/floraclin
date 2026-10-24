@@ -124,6 +124,7 @@ describe('findPlatformTemplate', () => {
     expect(parsed.pathname).toBe('/v21.0/waba-1/message_templates')
     expect(parsed.searchParams.get('name')).toBe('trial_final')
     expect(parsed.searchParams.get('fields')).toBe('id,name,status,category,language,rejected_reason')
+    expect(parsed.searchParams.get('limit')).toBe('100')
     expect(init.headers).toEqual({ Authorization: 'Bearer token-1' })
     expect(init.signal).toBeInstanceOf(AbortSignal)
   })
@@ -131,6 +132,22 @@ describe('findPlatformTemplate', () => {
   it('returns null when only prefix matches or other languages exist', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ data: [row('trial_final_v2', 'pt_BR'), row('trial_final', 'en_US')] }))
     expect(await findPlatformTemplate('trial_final')).toBeNull()
+  })
+
+  it('throws on a 2xx whose body is not valid JSON so the status reads as unknown, not missing', async () => {
+    fetchMock.mockResolvedValue(new Response('<html>bad gateway</html>', { status: 200 }))
+    await expect(findPlatformTemplate('trial_final')).rejects.toThrow('Meta API error: unexpected response')
+  })
+
+  it('throws on a 2xx without a data array', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ paging: {} }))
+    await expect(findPlatformTemplate('trial_final')).rejects.toThrow('Meta API error: unexpected response')
+  })
+
+  it('throws when the exact pt_BR match has no string status', async () => {
+    const { status: _status, ...withoutStatus } = row('trial_final', 'pt_BR')
+    fetchMock.mockResolvedValue(jsonResponse({ data: [withoutStatus] }))
+    await expect(findPlatformTemplate('trial_final')).rejects.toThrow('Meta API error: unexpected response')
   })
 
   it('throws the Meta error without leaking the access token', async () => {
