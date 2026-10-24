@@ -110,9 +110,12 @@ export async function deliverLifecycleMessage(
       if (skipId) await alertTemplateNotApproved(message, approval.status, skipId)
       whatsapp = 'skipped'
     } else {
-      if (approval.state === 'unknown') {
-        // Fail open: a lookup error must not skip the clinic for good. Meta
-        // rejects a template that is not approved, which records `failed`.
+      // Fail open: a lookup error records no template_not_approved skip; the
+      // send is attempted. If Meta rejects it (e.g. the template is not
+      // approved), a `failed` row is recorded, which like any failed send
+      // also completes the key: it is not retried. A missing FLORACLIN_WA_*
+      // env (previews) is not reported here: the send path reports it.
+      if (approval.state === 'unknown' && approval.code !== 'WHATSAPP_NOT_CONFIGURED') {
         console.error('[lifecycle] template status lookup failed', message.templateName, approval.error)
         reportSideEffectFailure(new Error(approval.error), {
           area: 'lifecycle',
@@ -154,15 +157,15 @@ export async function deliverLifecycleMessage(
 
 /**
  * Discord alert (#floraclin-logs) for a skip because of the template, at most
- * once per template per BR day: only the instance whose skip row is the first
- * of the day posts. Never throws, so the email still goes.
+ * once per message key per BR day: only the instance whose skip row is the
+ * first of the day for the key posts. Never throws, so the email still goes.
  */
 async function alertTemplateNotApproved(message: LifecycleMessage, status: string, skipId: string) {
   const today = brToday()
-  if (isTemplateAlertSettled(message.templateName, today)) return
+  if (isTemplateAlertSettled(message.key, today)) return
   try {
     const first = await isFirstTemplateNotApprovedSkipToday(message.key, skipId)
-    markTemplateAlertSettled(message.templateName, today)
+    markTemplateAlertSettled(message.key, today)
     if (!first) return
     await notifyDiscord({
       kind: 'lifecycle.template_not_approved',

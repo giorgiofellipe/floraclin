@@ -134,6 +134,20 @@ describe('findPlatformTemplate', () => {
     expect(await findPlatformTemplate('trial_final')).toBeNull()
   })
 
+  it('falls back to empty strings and a null reason when id, category or rejected_reason are not strings', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ data: [{ ...row('trial_final', 'pt_BR'), id: 42, category: null, rejected_reason: 7 }] }),
+    )
+
+    expect(await findPlatformTemplate('trial_final')).toEqual({
+      id: '',
+      name: 'trial_final',
+      status: 'APPROVED',
+      category: '',
+      rejectedReason: null,
+    })
+  })
+
   it('throws on a 2xx whose body is not valid JSON so the status reads as unknown, not missing', async () => {
     fetchMock.mockResolvedValue(new Response('<html>bad gateway</html>', { status: 200 }))
     await expect(findPlatformTemplate('trial_final')).rejects.toThrow('Meta API error: unexpected response')

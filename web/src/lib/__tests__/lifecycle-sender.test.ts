@@ -21,6 +21,7 @@ vi.mock('@/lib/discord', () => ({ notifyDiscord: vi.fn() }))
 vi.mock('@/lib/email', () => ({ sendLifecycleEmail: vi.fn() }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 import { reportSideEffectFailure } from '@/lib/observability'
+import { BusinessError } from '@/lib/errors'
 vi.mock('@/lib/activation', () => ({ getActivationState: vi.fn() }))
 // Live data for messages with a `render` (last day, win-back, final).
 vi.mock('@/db/queries/subscriptions', () => ({
@@ -206,7 +207,7 @@ describe('deliverLifecycleMessage', () => {
     },
   )
 
-  it('alerts once per template per day: a second skip of the same template sends no second alert', async () => {
+  it('alerts once per message key per day: a second skip of the same key sends no second alert', async () => {
     vi.mocked(findPlatformTemplate).mockResolvedValue(template('PENDING'))
     const message = LIFECYCLE_MESSAGES.find((m) => m.key === 'trial_winback')!
 
@@ -215,6 +216,7 @@ describe('deliverLifecycleMessage', () => {
     await deliverLifecycleMessage({ ...recipient, tenantId: 'tenant-2' }, message)
 
     expect(recordSkippedLifecycleSend).toHaveBeenCalledTimes(2)
+    expect(isFirstTemplateNotApprovedSkipToday).toHaveBeenCalledTimes(1)
     expect(notifyDiscord).toHaveBeenCalledTimes(1)
   })
 
@@ -250,7 +252,7 @@ describe('deliverLifecycleMessage', () => {
     expect(reportSideEffectFailure).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ step: 'template_alert' }))
   })
 
-  it('attempts the WhatsApp send when the template lookup fails, so a Meta hiccup never skips a clinic for good', async () => {
+  it('attempts the WhatsApp send when the template lookup fails, recording no template_not_approved skip', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.mocked(findPlatformTemplate).mockRejectedValue(new Error('Meta API error: timeout'))
 
@@ -265,12 +267,37 @@ describe('deliverLifecycleMessage', () => {
     consoleError.mockRestore()
   })
 
-  it('skips both WhatsApp and email for an owner opted out of marketing', async () => {
-    vi.mocked(isTenantLifecycleOptedOut).mockResolvedValue(true)
-    const message = LIFECYCLE_MESSAGES.find((m) => m.key === 'trial_last_day')!
+  it('records a failed WhatsApp row when the lookup fails and Meta then rejects the send', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(findPlatformTemplate).mockRejectedValue(new Error('Meta API error: timeout'))
+    vi.mocked(sendPlatformTemplate).mockRejectedValue(new Error('Meta API error: template not approved'))
 
-    expect(await deliverLifecycleMessage(recipient, message)).toEqual({ whatsapp: 'skipped', email: 'skipped' })
-    expect(sendLifecycleEmail).not.toHaveBeenCalled()
+    const outcome = await deliverLifecycleMessage(recipient, utility)
+
+    expect(outcome).toEqual({ whatsapp: 'failed', email: 'sent' })
+    expect(recordSkippedLifecycleSend).not.toHaveBeenCalled()
+    expect(finishLifecycleSend).toHaveBeenCalledWith('row-whatsapp', {
+      status: 'failed',
+      error: 'Meta API error: template not approved',
+    })
+    consoleError.mockRestore()
+  })
+
+  it('does not report the lookup when WhatsApp is not configured, and still attempts the send', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const notConfigured = new BusinessError('WHATSAPP_NOT_CONFIGURED')
+    vi.mocked(findPlatformTemplate).mockRejectedValue(notConfigured)
+    vi.mocked(sendPlatformTemplate).mockRejectedValue(notConfigured)
+
+    const outcome = await deliverLifecycleMessage(recipient, utility)
+
+    expect(outcome).toEqual({ whatsapp: 'failed', email: 'sent' })
+    expect(sendPlatformTemplate).toHaveBeenCalledTimes(1)
+    expect(consoleError).not.toHaveBeenCalled()
+    expect(reportSideEffectFailure).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ step: 'template_status' }))
+    // The send path reports it once.
+    expect(reportSideEffectFailure).toHaveBeenCalledWith(notConfigured, expect.objectContaining({ step: 'whatsapp' }))
+    consoleError.mockRestore()
   })
 
   it('records a skipped WhatsApp row for an invalid phone and still sends the email', async () => {

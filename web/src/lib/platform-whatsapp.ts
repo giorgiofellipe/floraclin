@@ -97,6 +97,7 @@ export async function findPlatformTemplate(name: string): Promise<PlatformTempla
     fields: 'id,name,status,category,language,rejected_reason',
     // `name` is a prefix filter and results are paginated; widen the page so
     // the exact match isn't pushed past the first page by similar names.
+    // Only this first page (100 prefix matches) is checked.
     limit: '100',
   })
   const res = await fetch(`${GRAPH_API_BASE}/${creds.businessAccountId}/message_templates?${params}`, {
@@ -119,10 +120,10 @@ export async function findPlatformTemplate(name: string): Promise<PlatformTempla
   if (!t) return null
   if (typeof t.status !== 'string') throw new Error('Meta API error: unexpected response')
   return {
-    id: t.id as string,
+    id: typeof t.id === 'string' ? t.id : '',
     name,
     status: t.status,
-    category: t.category as string,
-    rejectedReason: (t.rejected_reason as string | undefined) ?? null,
+    category: typeof t.category === 'string' ? t.category : '',
+    rejectedReason: typeof t.rejected_reason === 'string' ? t.rejected_reason : null,
   }
 }

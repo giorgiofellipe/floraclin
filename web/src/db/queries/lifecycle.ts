@@ -151,7 +151,7 @@ export async function recordSkippedLifecycleSend(row: {
 /**
  * True when `id` is the first WhatsApp `template_not_approved` skip recorded
  * for this key on the current BR calendar day, across every instance. Lets
- * the not-approved alert fire once a day per template without a table of its own.
+ * the not-approved alert fire once a day per message key without a table of its own.
  */
 export async function isFirstTemplateNotApprovedSkipToday(messageKey: string, id: string): Promise<boolean> {
   const m = tenantLifecycleMessages

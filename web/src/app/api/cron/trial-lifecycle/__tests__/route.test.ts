@@ -107,9 +107,9 @@ describe('GET /api/cron/trial-lifecycle', () => {
     expect(vi.mocked(deliverLifecycleMessage).mock.calls[0][1].key).toBe('trial_welcome')
   })
 
-  it('never resends a key whose WhatsApp was skipped earlier, even once the template is approved', async () => {
-    // The last-day message went out by email with the WhatsApp skipped
-    // (template_not_approved): both channels have a row, so the key is complete.
+  it('does not redeliver a key that is already complete', async () => {
+    // e.g. the last-day message went out by email with the WhatsApp skipped:
+    // both channels have a row, so the key is complete.
     const lastDayState: ActivationState = { ...baseState, trialDay: 13, daysLeft: 0, msLeft: 60 * 60 * 1000 }
     vi.mocked(findLifecycleRecipients).mockResolvedValue([recipient('t1')])
     vi.mocked(getActivationState).mockResolvedValue(lastDayState)

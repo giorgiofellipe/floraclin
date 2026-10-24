@@ -1,5 +1,5 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { eq } from 'drizzle-orm'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { tenantLifecycleMessages, tenants } from '@/db/schema'
 import {
@@ -14,6 +14,8 @@ const describeIntegration = RUN_INTEGRATION ? describe : describe.skip
 
 const TENANT = '00000000-0000-0000-0000-0000000a71c0'
 const OTHER = '00000000-0000-0000-0000-0000000a71c1'
+const TENANTS = [TENANT, OTHER]
+const MESSAGE_KEYS = ['trial_final', 'trial_help']
 
 const skip = (tenantId: string, messageKey = 'trial_final') =>
   recordSkippedLifecycleSend({
@@ -33,8 +35,25 @@ describeIntegration('lifecycle template_not_approved skips (integration, require
   })
 
   beforeEach(async () => {
-    await db.delete(tenantLifecycleMessages).where(eq(tenantLifecycleMessages.tenantId, TENANT))
-    await db.delete(tenantLifecycleMessages).where(eq(tenantLifecycleMessages.tenantId, OTHER))
+    const m = tenantLifecycleMessages
+    await db.delete(m).where(inArray(m.tenantId, TENANTS))
+    // The first-skip-of-the-day check spans every tenant: clear all of today's
+    // competing skip rows for these keys, not only this test's tenants.
+    await db
+      .delete(m)
+      .where(
+        and(
+          inArray(m.messageKey, MESSAGE_KEYS),
+          eq(m.channel, 'whatsapp'),
+          eq(m.status, 'skipped'),
+          eq(m.error, 'template_not_approved'),
+        ),
+      )
+  })
+
+  afterAll(async () => {
+    await db.delete(tenantLifecycleMessages).where(inArray(tenantLifecycleMessages.tenantId, TENANTS))
+    await db.delete(tenants).where(inArray(tenants.id, TENANTS))
   })
 
   it('keeps a key skipped for a clinic complete, so approving the template later never resends it', async () => {

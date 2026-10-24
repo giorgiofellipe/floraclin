@@ -54,7 +54,7 @@ export type DiscordEvent =
   | { kind: 'subscription.created'; tenantName: string; planName: string; priceCents: number; tenantId: string }
   | { kind: 'lifecycle.reply'; tenantName: string; tenantId: string; messageKey: string; body: string }
   // A lifecycle WhatsApp was skipped (email only) because Meta does not
-  // report its template as APPROVED. Sent at most once per template per BR day.
+  // report its template as APPROVED. Sent at most once per message key per BR day.
   | {
       kind: 'lifecycle.template_not_approved'
       templateName: string
