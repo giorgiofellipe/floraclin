@@ -12,13 +12,16 @@ vi.mock('@/db/queries/lifecycle', () => ({
   claimLifecycleSend: vi.fn(),
   finishLifecycleSend: vi.fn(),
   isTenantLifecycleOptedOut: vi.fn(),
+  isFirstTemplateNotApprovedSkipToday: vi.fn(),
   recordSkippedLifecycleSend: vi.fn(),
   findLifecycleRecipients: vi.fn(),
 }))
-vi.mock('@/lib/platform-whatsapp', () => ({ sendPlatformTemplate: vi.fn() }))
+vi.mock('@/lib/platform-whatsapp', () => ({ sendPlatformTemplate: vi.fn(), findPlatformTemplate: vi.fn() }))
+vi.mock('@/lib/discord', () => ({ notifyDiscord: vi.fn() }))
 vi.mock('@/lib/email', () => ({ sendLifecycleEmail: vi.fn() }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 import { reportSideEffectFailure } from '@/lib/observability'
+import { BusinessError } from '@/lib/errors'
 vi.mock('@/lib/activation', () => ({ getActivationState: vi.fn() }))
 // Live data for messages with a `render` (last day, win-back, final).
 vi.mock('@/db/queries/subscriptions', () => ({
@@ -47,10 +50,13 @@ import {
   claimLifecycleSend,
   finishLifecycleSend,
   findLifecycleRecipients,
+  isFirstTemplateNotApprovedSkipToday,
   isTenantLifecycleOptedOut,
   recordSkippedLifecycleSend,
 } from '@/db/queries/lifecycle'
-import { sendPlatformTemplate } from '@/lib/platform-whatsapp'
+import { findPlatformTemplate, sendPlatformTemplate } from '@/lib/platform-whatsapp'
+import { notifyDiscord } from '@/lib/discord'
+import { clearLifecycleTemplateApprovalCache } from '@/lib/lifecycle-template-status'
 import { sendLifecycleEmail } from '@/lib/email'
 import { getActivationState } from '@/lib/activation'
 import { LIFECYCLE_MESSAGES } from '@/lib/lifecycle-messages'
@@ -68,6 +74,14 @@ const recipient = {
 const marketing = LIFECYCLE_MESSAGES.find((m) => m.category === 'MARKETING')!
 const utility = LIFECYCLE_MESSAGES.find((m) => m.category === 'UTILITY')!
 
+const template = (status: string) => ({
+  id: 'tpl-1',
+  name: 'any',
+  status,
+  category: 'MARKETING',
+  rejectedReason: null,
+})
+
 beforeEach(() => {
   vi.resetAllMocks()
   pending.length = 0
@@ -75,6 +89,10 @@ beforeEach(() => {
   vi.mocked(claimLifecycleSend).mockImplementation(async ({ channel }) => `row-${channel}`)
   vi.mocked(sendPlatformTemplate).mockResolvedValue({ metaMessageId: 'wamid.1' })
   vi.mocked(sendLifecycleEmail).mockResolvedValue({ id: 'email-1' })
+  vi.mocked(findPlatformTemplate).mockResolvedValue(template('APPROVED'))
+  vi.mocked(recordSkippedLifecycleSend).mockResolvedValue('skip-1')
+  vi.mocked(isFirstTemplateNotApprovedSkipToday).mockResolvedValue(true)
+  clearLifecycleTemplateApprovalCache()
 })
 
 describe('deliverLifecycleMessage', () => {
@@ -99,6 +117,7 @@ describe('deliverLifecycleMessage', () => {
     expect(outcome).toEqual({ whatsapp: 'skipped', email: 'skipped' })
     expect(claimLifecycleSend).not.toHaveBeenCalled()
     expect(recordSkippedLifecycleSend).not.toHaveBeenCalled()
+    expect(findPlatformTemplate).not.toHaveBeenCalled()
     expect(sendPlatformTemplate).not.toHaveBeenCalled()
     expect(sendLifecycleEmail).not.toHaveBeenCalled()
   })
@@ -131,20 +150,51 @@ describe('deliverLifecycleMessage', () => {
     expect(sendLifecycleEmail).not.toHaveBeenCalled()
   })
 
-  it.each(['trial_ending_soon', 'trial_last_day'])(
-    'sends %s by email only while its WhatsApp template is not approved, and records the WhatsApp skip so the key completes',
+  it.each(LIFECYCLE_MESSAGES.map((m) => m.key))(
+    'sends %s by WhatsApp once Meta reports its template APPROVED',
     async (key) => {
       const message = LIFECYCLE_MESSAGES.find((m) => m.key === key)!
       const outcome = await deliverLifecycleMessage(recipient, message)
 
+      expect(outcome).toEqual({ whatsapp: 'sent', email: 'sent' })
+      expect(findPlatformTemplate).toHaveBeenCalledWith(message.templateName)
+      expect(sendPlatformTemplate).toHaveBeenCalledWith('5511987654321', message.templateName, ['Maria'], {
+        buttonUrlParams: message.button ? ['row-whatsapp'] : [],
+      })
+      expect(recordSkippedLifecycleSend).not.toHaveBeenCalled()
+      expect(notifyDiscord).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    ['PENDING', template('PENDING')],
+    ['REJECTED', template('REJECTED')],
+    ['MISSING', null],
+  ])(
+    'sends by email only while the template is %s, records the WhatsApp skip so the key completes, and alerts Discord',
+    async (status, found) => {
+      vi.mocked(findPlatformTemplate).mockResolvedValue(found)
+      const message = LIFECYCLE_MESSAGES.find((m) => m.key === 'trial_last_day')!
+
+      const outcome = await deliverLifecycleMessage(recipient, message)
+
       expect(outcome).toEqual({ whatsapp: 'skipped', email: 'sent' })
       expect(sendPlatformTemplate).not.toHaveBeenCalled()
+      expect(claimLifecycleSend).not.toHaveBeenCalledWith(expect.objectContaining({ channel: 'whatsapp' }))
       expect(recordSkippedLifecycleSend).toHaveBeenCalledWith({
         tenantId: 'tenant-1',
-        messageKey: key,
+        messageKey: 'trial_last_day',
         channel: 'whatsapp',
         recipient: '5511987654321',
         reason: 'template_not_approved',
+      })
+      expect(isFirstTemplateNotApprovedSkipToday).toHaveBeenCalledWith('trial_last_day', 'skip-1')
+      expect(notifyDiscord).toHaveBeenCalledTimes(1)
+      expect(notifyDiscord).toHaveBeenCalledWith({
+        kind: 'lifecycle.template_not_approved',
+        templateName: message.templateName,
+        messageKey: 'trial_last_day',
+        status,
       })
       expect(sendLifecycleEmail).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -157,12 +207,97 @@ describe('deliverLifecycleMessage', () => {
     },
   )
 
-  it('skips the email-only nudges entirely for an opted-out owner', async () => {
-    vi.mocked(isTenantLifecycleOptedOut).mockResolvedValue(true)
-    const message = LIFECYCLE_MESSAGES.find((m) => m.key === 'trial_last_day')!
+  it('alerts once per message key per day: a second skip of the same key sends no second alert', async () => {
+    vi.mocked(findPlatformTemplate).mockResolvedValue(template('PENDING'))
+    const message = LIFECYCLE_MESSAGES.find((m) => m.key === 'trial_winback')!
 
-    expect(await deliverLifecycleMessage(recipient, message)).toEqual({ whatsapp: 'skipped', email: 'skipped' })
-    expect(sendLifecycleEmail).not.toHaveBeenCalled()
+    await deliverLifecycleMessage(recipient, message)
+    vi.mocked(recordSkippedLifecycleSend).mockResolvedValue('skip-2')
+    await deliverLifecycleMessage({ ...recipient, tenantId: 'tenant-2' }, message)
+
+    expect(recordSkippedLifecycleSend).toHaveBeenCalledTimes(2)
+    expect(isFirstTemplateNotApprovedSkipToday).toHaveBeenCalledTimes(1)
+    expect(notifyDiscord).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends no alert when another instance already recorded the first skip of the day', async () => {
+    vi.mocked(findPlatformTemplate).mockResolvedValue(template('PENDING'))
+    vi.mocked(isFirstTemplateNotApprovedSkipToday).mockResolvedValue(false)
+
+    const outcome = await deliverLifecycleMessage(recipient, utility)
+
+    expect(outcome).toEqual({ whatsapp: 'skipped', email: 'sent' })
+    expect(notifyDiscord).not.toHaveBeenCalled()
+  })
+
+  it('sends no alert when the skip row already existed (insert conflict)', async () => {
+    vi.mocked(findPlatformTemplate).mockResolvedValue(template('PENDING'))
+    vi.mocked(recordSkippedLifecycleSend).mockResolvedValue(null)
+
+    const outcome = await deliverLifecycleMessage(recipient, utility)
+
+    expect(outcome).toEqual({ whatsapp: 'skipped', email: 'sent' })
+    expect(isFirstTemplateNotApprovedSkipToday).not.toHaveBeenCalled()
+    expect(notifyDiscord).not.toHaveBeenCalled()
+  })
+
+  it('still sends the email when the alert dedupe check fails', async () => {
+    vi.mocked(findPlatformTemplate).mockResolvedValue(template('PENDING'))
+    vi.mocked(isFirstTemplateNotApprovedSkipToday).mockRejectedValue(new Error('db down'))
+
+    const outcome = await deliverLifecycleMessage(recipient, utility)
+
+    expect(outcome).toEqual({ whatsapp: 'skipped', email: 'sent' })
+    expect(notifyDiscord).not.toHaveBeenCalled()
+    expect(reportSideEffectFailure).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ step: 'template_alert' }))
+  })
+
+  it('attempts the WhatsApp send when the template lookup fails, recording no template_not_approved skip', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(findPlatformTemplate).mockRejectedValue(new Error('Meta API error: timeout'))
+
+    const outcome = await deliverLifecycleMessage(recipient, utility)
+
+    expect(outcome).toEqual({ whatsapp: 'sent', email: 'sent' })
+    expect(sendPlatformTemplate).toHaveBeenCalledTimes(1)
+    expect(recordSkippedLifecycleSend).not.toHaveBeenCalled()
+    expect(notifyDiscord).not.toHaveBeenCalled()
+    expect(consoleError).toHaveBeenCalled()
+    expect(reportSideEffectFailure).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ step: 'template_status' }))
+    consoleError.mockRestore()
+  })
+
+  it('records a failed WhatsApp row when the lookup fails and Meta then rejects the send', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(findPlatformTemplate).mockRejectedValue(new Error('Meta API error: timeout'))
+    vi.mocked(sendPlatformTemplate).mockRejectedValue(new Error('Meta API error: template not approved'))
+
+    const outcome = await deliverLifecycleMessage(recipient, utility)
+
+    expect(outcome).toEqual({ whatsapp: 'failed', email: 'sent' })
+    expect(recordSkippedLifecycleSend).not.toHaveBeenCalled()
+    expect(finishLifecycleSend).toHaveBeenCalledWith('row-whatsapp', {
+      status: 'failed',
+      error: 'Meta API error: template not approved',
+    })
+    consoleError.mockRestore()
+  })
+
+  it('does not report the lookup when WhatsApp is not configured, and still attempts the send', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const notConfigured = new BusinessError('WHATSAPP_NOT_CONFIGURED')
+    vi.mocked(findPlatformTemplate).mockRejectedValue(notConfigured)
+    vi.mocked(sendPlatformTemplate).mockRejectedValue(notConfigured)
+
+    const outcome = await deliverLifecycleMessage(recipient, utility)
+
+    expect(outcome).toEqual({ whatsapp: 'failed', email: 'sent' })
+    expect(sendPlatformTemplate).toHaveBeenCalledTimes(1)
+    expect(consoleError).not.toHaveBeenCalled()
+    expect(reportSideEffectFailure).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ step: 'template_status' }))
+    // The send path reports it once.
+    expect(reportSideEffectFailure).toHaveBeenCalledWith(notConfigured, expect.objectContaining({ step: 'whatsapp' }))
+    consoleError.mockRestore()
   })
 
   it('records a skipped WhatsApp row for an invalid phone and still sends the email', async () => {
@@ -179,6 +314,7 @@ describe('deliverLifecycleMessage', () => {
     expect(claimLifecycleSend).not.toHaveBeenCalledWith(
       expect.objectContaining({ channel: 'whatsapp' }),
     )
+    expect(findPlatformTemplate).not.toHaveBeenCalled()
     expect(sendPlatformTemplate).not.toHaveBeenCalled()
   })
 
@@ -225,7 +361,6 @@ describe('deliverLifecycleMessage', () => {
     await deliverLifecycleMessage(recipient, message)
 
     expect(vi.mocked(sendLifecycleEmail).mock.calls[0][0].replyTo).toBe('contato@floraclin.com.br')
-    expect(sendPlatformTemplate).not.toHaveBeenCalled()
   })
 
   it('passes an opt-out URL for MARKETING emails and null for UTILITY', async () => {

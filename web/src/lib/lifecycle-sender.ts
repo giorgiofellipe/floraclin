@@ -3,12 +3,15 @@ import {
   claimLifecycleSend,
   finishLifecycleSend,
   findLifecycleRecipients,
+  isFirstTemplateNotApprovedSkipToday,
   isTenantLifecycleOptedOut,
   recordSkippedLifecycleSend,
   type LifecycleChannel,
   type LifecycleRecipient,
 } from '@/db/queries/lifecycle'
 import { getActivationState } from '@/lib/activation'
+import { brToday } from '@/lib/dates'
+import { notifyDiscord } from '@/lib/discord'
 import { sendLifecycleEmail } from '@/lib/email'
 import { lifecycleClickUrl } from '@/lib/lifecycle-attribution'
 import { lifecycleOptOutUrl } from '@/lib/lifecycle-opt-out'
@@ -27,6 +30,11 @@ import { sellablePlans } from '@/lib/plan-benefits'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { isCanonicalBrPhone, normalizeBrPhone } from '@/lib/phone'
 import { sendPlatformTemplate } from '@/lib/platform-whatsapp'
+import {
+  getLifecycleTemplateApproval,
+  isTemplateAlertSettled,
+  markTemplateAlertSettled,
+} from '@/lib/lifecycle-template-status'
 
 export type ChannelOutcome = 'sent' | 'failed' | 'skipped' | 'already_claimed'
 export interface DeliveryOutcome {
@@ -78,18 +86,7 @@ export async function deliverLifecycleMessage(
 
   const phone = recipient.tenantPhone ? normalizeBrPhone(recipient.tenantPhone) : ''
   let whatsapp: ChannelOutcome
-  if (message.whatsapp === false) {
-    // Template not approved on Meta yet: email only. Recording the skip is
-    // what lets the key complete (both channels must have a row).
-    await recordSkippedLifecycleSend({
-      tenantId: recipient.tenantId,
-      messageKey: message.key,
-      channel: 'whatsapp',
-      recipient: phone || 'none',
-      reason: 'template_not_approved',
-    })
-    whatsapp = 'skipped'
-  } else if (!isCanonicalBrPhone(phone)) {
+  if (!isCanonicalBrPhone(phone)) {
     await recordSkippedLifecycleSend({
       tenantId: recipient.tenantId,
       messageKey: message.key,
@@ -99,11 +96,39 @@ export async function deliverLifecycleMessage(
     })
     whatsapp = 'skipped'
   } else {
-    whatsapp = await deliverChannel(recipient, message, 'whatsapp', phone, (sendId) =>
-      sendPlatformTemplate(phone, message.templateName, [firstName], {
-        buttonUrlParams: message.button ? [sendId] : [],
-      }),
-    )
+    const approval = await getLifecycleTemplateApproval(message.templateName)
+    if (approval.state === 'not_approved') {
+      // Email only. The skip row completes the key for this clinic, so it is
+      // never resent by WhatsApp once the template is approved later.
+      const skipId = await recordSkippedLifecycleSend({
+        tenantId: recipient.tenantId,
+        messageKey: message.key,
+        channel: 'whatsapp',
+        recipient: phone,
+        reason: 'template_not_approved',
+      })
+      if (skipId) await alertTemplateNotApproved(message, approval.status, skipId)
+      whatsapp = 'skipped'
+    } else {
+      // Fail open: a lookup error records no template_not_approved skip; the
+      // send is attempted. If Meta rejects it (e.g. the template is not
+      // approved), a `failed` row is recorded, which like any failed send
+      // also completes the key: it is not retried. A missing FLORACLIN_WA_*
+      // env (previews) is not reported here: the send path reports it.
+      if (approval.state === 'unknown' && approval.code !== 'WHATSAPP_NOT_CONFIGURED') {
+        console.error('[lifecycle] template status lookup failed', message.templateName, approval.error)
+        reportSideEffectFailure(new Error(approval.error), {
+          area: 'lifecycle',
+          step: 'template_status',
+          extra: { tenantId: recipient.tenantId, key: message.key, templateName: message.templateName },
+        })
+      }
+      whatsapp = await deliverChannel(recipient, message, 'whatsapp', phone, (sendId) =>
+        sendPlatformTemplate(phone, message.templateName, [firstName], {
+          buttonUrlParams: message.button ? [sendId] : [],
+        }),
+      )
+    }
   }
 
   const email = await deliverChannel(recipient, message, 'email', recipient.ownerEmail, async (sendId) => {
@@ -128,6 +153,29 @@ export async function deliverLifecycleMessage(
   })
 
   return { whatsapp, email }
+}
+
+/**
+ * Discord alert (#floraclin-logs) for a skip because of the template, at most
+ * once per message key per BR day: only the instance whose skip row is the
+ * first of the day for the key posts. Never throws, so the email still goes.
+ */
+async function alertTemplateNotApproved(message: LifecycleMessage, status: string, skipId: string) {
+  const today = brToday()
+  if (isTemplateAlertSettled(message.key, today)) return
+  try {
+    const first = await isFirstTemplateNotApprovedSkipToday(message.key, skipId)
+    markTemplateAlertSettled(message.key, today)
+    if (!first) return
+    await notifyDiscord({
+      kind: 'lifecycle.template_not_approved',
+      templateName: message.templateName,
+      messageKey: message.key,
+      status,
+    })
+  } catch (err) {
+    reportSideEffectFailure(err, { area: 'lifecycle', step: 'template_alert', extra: { key: message.key } })
+  }
 }
 
 async function paidPlans() {

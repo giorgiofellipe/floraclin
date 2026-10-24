@@ -107,6 +107,20 @@ describe('GET /api/cron/trial-lifecycle', () => {
     expect(vi.mocked(deliverLifecycleMessage).mock.calls[0][1].key).toBe('trial_welcome')
   })
 
+  it('does not redeliver a key that is already complete', async () => {
+    // e.g. the last-day message went out by email with the WhatsApp skipped:
+    // both channels have a row, so the key is complete.
+    const lastDayState: ActivationState = { ...baseState, trialDay: 13, daysLeft: 0, msLeft: 60 * 60 * 1000 }
+    vi.mocked(findLifecycleRecipients).mockResolvedValue([recipient('t1')])
+    vi.mocked(getActivationState).mockResolvedValue(lastDayState)
+    vi.mocked(getCompletedLifecycleKeys).mockResolvedValue(new Set(['trial_welcome', 'trial_last_day']))
+
+    const body = await (await GET(request(`Bearer ${SECRET}`))).json()
+
+    expect(deliverLifecycleMessage).not.toHaveBeenCalled()
+    expect(body.outcomes).toEqual([{ tenantId: 't1', result: 'nothing_due' }])
+  })
+
   it('keeps going after one clinic throws and marks that clinic tenant_error', async () => {
     vi.mocked(findLifecycleRecipients).mockResolvedValue([recipient('bad'), recipient('good')])
     vi.mocked(getActivationState).mockResolvedValue(twoDueState)

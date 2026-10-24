@@ -391,4 +391,32 @@ describe('notifyDiscord', () => {
       expect(fetchMock).not.toHaveBeenCalled()
     })
   })
+
+  describe('lifecycle.template_not_approved', () => {
+    const event: DiscordEvent = {
+      kind: 'lifecycle.template_not_approved',
+      templateName: 'trial_final',
+      messageKey: 'trial_final',
+      status: 'PENDING',
+    }
+
+    it('posts to DISCORD_WEBHOOK_LOGS with the template, key and Meta status', async () => {
+      process.env.DISCORD_WEBHOOK_LOGS = 'https://discord.com/api/webhooks/logs'
+      process.env.DISCORD_WEBHOOK_EVENTS = 'https://discord.com/api/webhooks/events'
+      const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => new Response(null, { status: 204 }))
+      global.fetch = fetchMock as unknown as typeof fetch
+
+      await notifyDiscord(event)
+
+      expect(fetchMock).toHaveBeenCalledOnce()
+      const [url, init] = fetchMock.mock.calls[0]
+      expect(url).toBe('https://discord.com/api/webhooks/logs')
+      const fields = JSON.parse(init.body as string).embeds[0].fields
+      expect(fields).toEqual([
+        { name: 'Template', value: '`trial_final`', inline: true },
+        { name: 'Mensagem', value: '`trial_final`', inline: true },
+        { name: 'Status na Meta', value: '`PENDING`', inline: true },
+      ])
+    })
+  })
 })

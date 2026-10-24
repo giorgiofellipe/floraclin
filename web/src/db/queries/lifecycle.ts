@@ -7,7 +7,8 @@ import {
   whatsappConversations,
 } from '@/db/schema'
 import { rowsFromExecuteResult } from '@/db/queries/admin-tenants'
-import { and, desc, eq, gte, sql } from 'drizzle-orm'
+import { brToday, startOfBrDay } from '@/lib/dates'
+import { and, asc, desc, eq, gte, sql } from 'drizzle-orm'
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core'
 
 export type LifecycleChannel = 'whatsapp' | 'email'
@@ -129,8 +130,8 @@ export async function recordSkippedLifecycleSend(row: {
   channel: LifecycleChannel
   recipient: string
   reason: string
-}): Promise<void> {
-  await db
+}): Promise<string | null> {
+  const [inserted] = await db
     .insert(tenantLifecycleMessages)
     .values({
       tenantId: row.tenantId,
@@ -142,6 +143,33 @@ export async function recordSkippedLifecycleSend(row: {
       error: row.reason,
     })
     .onConflictDoNothing()
+    .returning({ id: tenantLifecycleMessages.id })
+  // Null when the row already existed (conflict): nothing was recorded now.
+  return inserted?.id ?? null
+}
+
+/**
+ * True when `id` is the first WhatsApp `template_not_approved` skip recorded
+ * for this key on the current BR calendar day, across every instance. Lets
+ * the not-approved alert fire once a day per message key without a table of its own.
+ */
+export async function isFirstTemplateNotApprovedSkipToday(messageKey: string, id: string): Promise<boolean> {
+  const m = tenantLifecycleMessages
+  const [first] = await db
+    .select({ id: m.id })
+    .from(m)
+    .where(
+      and(
+        eq(m.messageKey, messageKey),
+        eq(m.channel, 'whatsapp'),
+        eq(m.status, 'skipped'),
+        eq(m.error, 'template_not_approved'),
+        gte(m.claimedAt, startOfBrDay(brToday())),
+      ),
+    )
+    .orderBy(asc(m.claimedAt), asc(m.id))
+    .limit(1)
+  return first?.id === id
 }
 
 export async function findLifecycleSendByMetaId(metaMessageId: string): Promise<{
