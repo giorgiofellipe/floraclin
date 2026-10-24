@@ -1,8 +1,8 @@
 import { BusinessError } from '@/lib/errors'
 
-const GRAPH_API_BASE = 'https://graph.facebook.com/v21.0'
+export const GRAPH_API_BASE = 'https://graph.facebook.com/v21.0'
 
-function getPlatformCredentials() {
+export function getPlatformCredentials() {
   const phoneNumberId = process.env.FLORACLIN_WA_PHONE_NUMBER_ID
   const accessToken = process.env.FLORACLIN_WA_ACCESS_TOKEN
   const businessAccountId = process.env.FLORACLIN_WA_BUSINESS_ACCOUNT_ID
