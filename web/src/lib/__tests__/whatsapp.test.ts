@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import crypto from 'crypto'
 
@@ -440,10 +441,19 @@ describe('downloadAndStoreMedia', () => {
     vi.unstubAllEnvs()
   })
 
-  it("keeps the sender's filename out of the storage key", async () => {
-    const { storedUrl } = await downloadAndStoreMedia('tenant-1', '123', '../../../../floraclin/tenant-2/a&b=c#d.png')
+  it("keeps the upload inside the tenant's folder whatever the sender names the file", async () => {
+    await downloadAndStoreMedia('tenant-1', '123', '../../../../floraclin/tenant-2/branding/logo.png')
 
-    expect(storageRequests).toEqual(['/storage/v1/object/media/whatsapp/tenant-1/123'])
-    expect(new URL(storedUrl).searchParams.get('download')).toBe('.._.._.._.._floraclin_tenant-2_a_b_c_d.png')
+    expect(storageRequests).toHaveLength(1)
+    expect(storageRequests[0].startsWith('/storage/v1/object/floraclin/tenant-1/whatsapp/123')).toBe(true)
+  })
+
+  it('serves patient media through the signer, never a public bucket URL', async () => {
+    const { storedUrl } = await downloadAndStoreMedia('tenant-1', '123', 'exame.pdf')
+
+    const url = new URL(storedUrl, 'http://app')
+    expect(url.pathname).toBe('/api/whatsapp/media')
+    expect(url.searchParams.get('path')).toBe('tenant-1/whatsapp/123')
+    expect(url.searchParams.get('name')).toBe('exame.pdf')
   })
 })

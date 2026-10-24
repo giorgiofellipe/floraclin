@@ -604,22 +604,18 @@ export async function downloadAndStoreMedia(
   const buffer = Buffer.from(await res.arrayBuffer())
   const mimeType = res.headers.get('content-type') ?? 'application/octet-stream'
 
-  const { createClient } = await import('@supabase/supabase-js')
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  )
-  // No sender-chosen filename in the key: storage-js puts the key into the
-  // request URL unencoded, so '../' segments would leave this bucket.
-  const path = `whatsapp/${tenantId}/${mediaId}`
-  const { error } = await supabase.storage
-    .from('media')
+  const { createStorageClient } = await import('@/lib/supabase/storage-client')
+  // Patient media is PHI: private bucket, served through the tenant-checked
+  // signer. No sender-chosen filename in the key: storage-js puts the key into
+  // the request URL unencoded, so '../' segments would leave the tenant folder.
+  const path = `${tenantId}/whatsapp/${mediaId}`
+  const { error } = await createStorageClient()
+    .storage.from('floraclin')
     .upload(path, buffer, { contentType: mimeType, upsert: true })
   if (error) throw new Error(`Storage upload failed: ${error.message}`)
-  // storage-js appends `download` to the query string without encoding `&`, `#` or `=`.
-  const downloadName = filename.replace(/[^\p{L}\p{N}._ -]/gu, '_')
-  const { data: urlData } = supabase.storage.from('media').getPublicUrl(path, { download: downloadName })
-  return { storedUrl: urlData.publicUrl, mimeType }
+  // The signer turns `name` into the download filename, so documents keep the sender's name.
+  const query = new URLSearchParams({ path, name: filename })
+  return { storedUrl: `/api/whatsapp/media?${query}`, mimeType }
 }
 
 export async function verifyCredentials(phoneNumberId: string, token: string) {

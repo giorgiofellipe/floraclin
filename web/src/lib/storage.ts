@@ -26,12 +26,14 @@ export async function uploadFile(
   return { path: data.path, error: null }
 }
 
-export async function getSignedUrl(path: string, expiresIn = 7200): Promise<string | null> {
+export async function getSignedUrl(path: string, expiresIn = 7200, downloadName?: string): Promise<string | null> {
   const supabase = createStorageClient()
 
+  // storage-js appends `download` to the signed URL without encoding `&`, `#` or `=`.
+  const download = downloadName?.replace(/[^\p{L}\p{N}._ -]/gu, '_')
   const { data, error } = await supabase.storage
     .from(BUCKET_NAME)
-    .createSignedUrl(path, expiresIn)
+    .createSignedUrl(path, expiresIn, download ? { download } : undefined)
 
   if (error) return null
   return data.signedUrl
