@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { Loader2Icon } from 'lucide-react'
 import { createClinicForOAuthUser, signOutFromClinicDetails, type ClinicDetailsState } from '@/actions/signup'
+import { resetAnalytics } from '@/lib/analytics/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -161,7 +162,15 @@ export function ClinicDetailsForm({ hasClinic = false, suspended = false, autoSt
   if (isPending) submitLabel = 'Criando clínica...'
   else if (refreshing) submitLabel = 'Entrando...'
   const signOutButton = (
-    <Button type="button" size="sm" variant="outline" onClick={() => void signOutFromClinicDetails()}>
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      onClick={() => {
+        resetAnalytics()
+        void signOutFromClinicDetails()
+      }}
+    >
       Sair
     </Button>
   )

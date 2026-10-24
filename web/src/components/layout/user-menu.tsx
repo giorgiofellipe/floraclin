@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { logout } from '@/actions/auth'
+import { resetAnalytics } from '@/lib/analytics/client'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -59,7 +60,12 @@ export function UserMenu({ userName, userEmail }: UserMenuProps) {
           Meu Perfil
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => logout()}>
+        <DropdownMenuItem
+          onClick={() => {
+            resetAnalytics()
+            void logout()
+          }}
+        >
           <LogOut className="mr-2 h-4 w-4" />
           Sair
         </DropdownMenuItem>

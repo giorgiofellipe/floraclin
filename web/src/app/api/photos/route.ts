@@ -16,6 +16,7 @@ import {
 } from '@/validations/photo'
 import { handleApiError } from '@/lib/api-error'
 import { reportSideEffectFailure } from '@/lib/observability'
+import { trackFirstPhotoUploaded } from '@/lib/analytics/server-events'
 
 // ─── Upload Photo ───────────────────────────────────────────────────
 
@@ -103,6 +104,8 @@ export async function POST(request: Request) {
       }
       throw dbError
     }
+
+    trackFirstPhotoUploaded(ctx, photoAsset.id, timelineStage)
 
     await createAuditLog({
       tenantId: ctx.tenantId,

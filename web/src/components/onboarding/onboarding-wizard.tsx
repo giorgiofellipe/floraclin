@@ -22,6 +22,8 @@ import { cn } from '@/lib/utils'
 import { ExternalLinkIcon, CircleCheckIcon, CircleXIcon, Loader2Icon } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { CLINIC_PHONE_REQUIRED_MESSAGE, hasClinicPhone } from '@/lib/clinic-phone'
+import { resetAnalytics, track } from '@/lib/analytics/client'
+import type { OnboardingStepName } from '@/lib/analytics/events'
 
 interface ProcedureOverride {
   selected: boolean
@@ -43,12 +45,17 @@ interface ProcedureTypeItem {
   isActive: boolean
 }
 
-const STEPS = [
-  { label: 'Clínica', icon: Building2Icon },
-  { label: 'Procedimentos', icon: SyringeIcon },
-  { label: 'Produtos', icon: PackageIcon },
-  { label: 'Equipe', icon: UsersIcon },
+// `name` is the step's stable analytics id, independent of the label copy.
+const STEPS: { label: string; icon: typeof Building2Icon; name: OnboardingStepName }[] = [
+  { label: 'Clínica', icon: Building2Icon, name: 'clinic' },
+  { label: 'Procedimentos', icon: SyringeIcon, name: 'procedures' },
+  { label: 'Produtos', icon: PackageIcon, name: 'products' },
+  { label: 'Equipe', icon: UsersIcon, name: 'team' },
 ]
+
+function stepProperties(index: number) {
+  return { step_index: index, step_name: STEPS[index].name }
+}
 
 interface OnboardingWizardProps {
   tenantName: string
@@ -223,17 +230,26 @@ export function OnboardingWizard({
     }
   }, [customSlug, clinicName])
 
+  // The wizard saves everything in one POST at the end, so step-level
+  // drop-off is only visible from here. Field names only, never values.
+  useEffect(() => {
+    track('onboarding_step_viewed', stepProperties(currentStep))
+  }, [currentStep])
+
   function handleNext() {
     if (currentStep === 0) {
       if (!clinicData.name || (clinicData.name as string).trim().length === 0) {
+        track('onboarding_step_validation_error', { ...stepProperties(currentStep), fields: ['name'] })
         toast.error('Nome da clínica é obrigatório')
         return
       }
       if (phoneRequired && !hasClinicPhone(clinicData.phone as string | undefined)) {
+        track('onboarding_step_validation_error', { ...stepProperties(currentStep), fields: ['phone'] })
         toast.error(CLINIC_PHONE_REQUIRED_MESSAGE)
         return
       }
     }
+    track('onboarding_step_submitted', stepProperties(currentStep))
     setCurrentStep(prev => Math.min(prev + 1, STEPS.length - 1))
   }
 
@@ -242,6 +258,9 @@ export function OnboardingWizard({
   }
 
   function handleComplete() {
+    // onboarding_completed itself is sent by the server, once, when the save
+    // succeeds (api/onboarding).
+    track('onboarding_step_submitted', stepProperties(currentStep))
     startTransition(async () => {
       const procedureTypes = DEFAULT_PROCEDURE_TYPES.flatMap((pt, i) => {
         const override = procedureOverrides[i]
@@ -314,7 +333,10 @@ export function OnboardingWizard({
           </p>
           <button
             type="button"
-            onClick={() => logout()}
+            onClick={() => {
+              resetAnalytics()
+              void logout()
+            }}
             className="mt-3 inline-flex items-center gap-1 text-xs text-mid/50 hover:text-mid transition-colors"
           >
             <LogOutIcon className="h-3 w-3" />

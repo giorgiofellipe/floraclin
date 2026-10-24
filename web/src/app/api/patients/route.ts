@@ -8,6 +8,7 @@ import {
 } from '@/db/queries/patients'
 import { createPatientSchema, patientSearchSchema } from '@/validations/patient'
 import { handleApiError } from '@/lib/api-error'
+import { trackFirstPatientCreated } from '@/lib/analytics/server-events'
 
 export async function GET(request: Request) {
   try {
@@ -47,6 +48,7 @@ export async function POST(request: Request) {
     }
 
     const patient = await createPatient(ctx.tenantId, parsed.data, ctx.userId)
+    trackFirstPatientCreated(ctx, patient.id)
 
     await createAuditLog({
       tenantId: ctx.tenantId,

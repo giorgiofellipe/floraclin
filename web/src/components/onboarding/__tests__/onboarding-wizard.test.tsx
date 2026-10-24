@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { toast } from 'sonner'
+import { track } from '@/lib/analytics/client'
 import { OnboardingWizard } from '../onboarding-wizard'
 
 // ─── Mocks ─────────────────────────────────────────────────────────
@@ -16,6 +17,11 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/actions/auth', () => ({
   logout: vi.fn(),
+}))
+
+vi.mock('@/lib/analytics/client', () => ({
+  track: vi.fn(),
+  resetAnalytics: vi.fn(),
 }))
 
 vi.mock('sonner', () => ({
@@ -319,6 +325,39 @@ describe('OnboardingWizard', () => {
       const call = fetchMock.mock.calls.find(([url]) => url === '/api/onboarding')!
       const body = JSON.parse((call[1] as RequestInit).body as string)
       expect(body.clinic).toMatchObject({ name: 'Clínica Bella', phone: '(11) 98888-7777' })
+    })
+
+    it('reports each step it shows, each step passed, and the names (never the values) of fields that stopped it', async () => {
+      const user = userEvent.setup()
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+        new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      )
+      renderFresh()
+      await user.click(screen.getByTestId('onboarding-next'))
+      await user.type(screen.getByLabelText('Nome da Clínica *'), 'Clínica Bella')
+      await user.type(screen.getByLabelText('Telefone *'), '9888')
+      await user.click(screen.getByTestId('onboarding-next'))
+      await user.clear(screen.getByLabelText('Telefone *'))
+      await user.type(screen.getByLabelText('Telefone *'), '11988887777')
+      await user.click(screen.getByTestId('onboarding-next'))
+      await user.click(screen.getByTestId('onboarding-next'))
+      await user.click(screen.getByTestId('onboarding-next'))
+      await user.click(screen.getByTestId('onboarding-complete'))
+
+      const clinic = { step_index: 0, step_name: 'clinic' }
+      expect(vi.mocked(track).mock.calls).toEqual([
+        ['onboarding_step_viewed', clinic],
+        ['onboarding_step_validation_error', { ...clinic, fields: ['name'] }],
+        ['onboarding_step_validation_error', { ...clinic, fields: ['phone'] }],
+        ['onboarding_step_submitted', clinic],
+        ['onboarding_step_viewed', { step_index: 1, step_name: 'procedures' }],
+        ['onboarding_step_submitted', { step_index: 1, step_name: 'procedures' }],
+        ['onboarding_step_viewed', { step_index: 2, step_name: 'products' }],
+        ['onboarding_step_submitted', { step_index: 2, step_name: 'products' }],
+        ['onboarding_step_viewed', { step_index: 3, step_name: 'team' }],
+        ['onboarding_step_submitted', { step_index: 3, step_name: 'team' }],
+      ])
+      expect(JSON.stringify(vi.mocked(track).mock.calls)).not.toMatch(/Bella|9888|98888/)
     })
   })
 })
