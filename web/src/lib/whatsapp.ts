@@ -592,7 +592,6 @@ export async function getTemplate(
 export async function downloadAndStoreMedia(
   tenantId: string,
   mediaId: string,
-  filename: string,
 ): Promise<{ storedUrl: string; mimeType: string }> {
   const creds = await getCredentials(tenantId)
   const meta = await graphFetch(`/${mediaId}`, creds.accessToken)
@@ -609,7 +608,9 @@ export async function downloadAndStoreMedia(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
-  const path = `whatsapp/${tenantId}/${mediaId}/${filename}`
+  // No sender-chosen filename in the key: storage-js puts the key into the
+  // request URL unencoded, so '../' segments would leave this bucket.
+  const path = `whatsapp/${tenantId}/${mediaId}`
   const { error } = await supabase.storage
     .from('media')
     .upload(path, buffer, { contentType: mimeType, upsert: true })

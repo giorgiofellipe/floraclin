@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { users, tenantUsers, tenants } from '@/db/schema'
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, and, isNull, sql } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { sendInviteEmail } from '@/lib/email'
 import type { InviteUserInput } from '@/validations/user'
@@ -227,6 +227,18 @@ export async function markEmailVerified(email: string): Promise<void> {
  * legitimately confirmed by email and then adds Google keeps their password,
  * which is why the password column is a CASE rather than a plain null.
  */
+/**
+ * The magic-link counterpart of markEmailVerifiedViaGoogle. Auth.js stamps
+ * emailVerified on its own for that provider, so this runs just before it and
+ * only drops the password while the account is still unconfirmed.
+ */
+export async function discardUnconfirmedPassword(email: string): Promise<void> {
+  await db
+    .update(users)
+    .set({ passwordHash: null })
+    .where(and(sql`lower(${users.email}) = ${email.toLowerCase()}`, isNull(users.emailVerified)))
+}
+
 export async function markEmailVerifiedViaGoogle(email: string): Promise<void> {
   await db
     .update(users)

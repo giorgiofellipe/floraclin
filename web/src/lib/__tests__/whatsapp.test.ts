@@ -64,6 +64,7 @@ import {
   requireCredits,
   pendingQueueCost,
   syncTemplatesForTenant,
+  downloadAndStoreMedia,
 } from '../whatsapp'
 import { CreditExhaustedError, WhatsAppTemplateNotFoundError } from '../whatsapp-credits'
 
@@ -412,5 +413,40 @@ describe('syncTemplatesForTenant', () => {
     expect(result.skipped).toBe(4)
     expect(upsertTemplateMock).not.toHaveBeenCalled()
     expect(markStaleTemplatesMock).toHaveBeenCalledWith('tenant-1', [])
+  })
+})
+
+describe('downloadAndStoreMedia', () => {
+  const originalFetch = global.fetch
+  const storageRequests: string[] = []
+
+  beforeEach(() => {
+    storageRequests.length = 0
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://storage.example')
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'service-key')
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('https://graph.facebook.com/')) return Response.json({ url: 'https://lookaside.example/m' })
+      if (url === 'https://lookaside.example/m') {
+        return new Response(new Uint8Array([1]), { headers: { 'content-type': 'application/pdf' } })
+      }
+      storageRequests.push(new URL(url).pathname)
+      return Response.json({ Id: 'x', Key: 'k' })
+    }) as unknown as typeof fetch
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
+    vi.unstubAllEnvs()
+  })
+
+  it("keeps the upload inside the tenant's media folder whatever the sender names the file", async () => {
+    // The sender's document filename used to be the third argument and went
+    // into the key, so '../' walked out to the private PHI bucket.
+    const store = downloadAndStoreMedia as (...args: unknown[]) => ReturnType<typeof downloadAndStoreMedia>
+    await store('tenant-1', '123', '../../../../floraclin/tenant-2/branding/logo.png')
+
+    expect(storageRequests).toHaveLength(1)
+    expect(storageRequests[0].startsWith('/storage/v1/object/media/whatsapp/tenant-1/123')).toBe(true)
   })
 })
