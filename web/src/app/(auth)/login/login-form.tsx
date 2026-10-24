@@ -11,18 +11,35 @@ import { CALLBACK_URL_PARAM } from '@/lib/callback-url'
 import type { InAppBrowser } from '@/lib/in-app-browser'
 import { track } from '@/lib/analytics/client'
 import { inAppBrowserProperties, type LoginFailureReason, type LoginMethod } from '@/lib/analytics/events'
+import type { LastLoginOption } from '@/lib/last-login'
+
+const LAST_USED_BADGE_ID = 'login-last-used'
+
+function LastUsedBadge() {
+  return (
+    <span
+      id={LAST_USED_BADGE_ID}
+      className="absolute -top-2 right-3 rounded-full bg-mint/90 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-forest shadow-sm"
+      data-testid="login-last-used"
+    >
+      Usado por último
+    </span>
+  )
+}
 
 export function LoginForm({
   inAppBrowser,
   callbackUrl,
   authError,
   authFailure = null,
+  lastLogin = null,
 }: {
   inAppBrowser: InAppBrowser | null
   callbackUrl: string | null
   authError: string | null
   /** The `?error=` Auth.js sent back, as an analytics reason. */
   authFailure?: { method: LoginMethod; reason: LoginFailureReason } | null
+  lastLogin?: LastLoginOption | null
 }) {
   const [state, formAction, isPending] = useActionState<LoginState, FormData>(login, null)
 
@@ -81,21 +98,25 @@ export function LoginForm({
         )}
 
         {/* Google OAuth — first */}
-        <GoogleSignIn
-          action={loginWithGoogle}
-          inAppBrowser={inAppBrowser}
-          callbackUrl={callbackUrl}
-          emailFallbackLabel="Entrar com e-mail e senha"
-          emailFallbackHint="Criou a conta com o Google e não tem senha? Use “Esqueci minha senha” para criar uma."
-          emailInputId="email"
-          // Inside an in-app browser the tap opens our modal instead of
-          // Google's 403 disallowed_useragent page: the sign-in is blocked.
-          onAttempt={
-            inAppBrowser
-              ? () => track('login_failed', { method: 'google', reason: 'disallowed_useragent', ...inAppBrowserProperties(inAppBrowser) })
-              : undefined
-          }
-        />
+        <div className="relative">
+          <GoogleSignIn
+            action={loginWithGoogle}
+            inAppBrowser={inAppBrowser}
+            callbackUrl={callbackUrl}
+            emailFallbackLabel="Entrar com e-mail e senha"
+            emailFallbackHint="Criou a conta com o Google e não tem senha? Use “Esqueci minha senha” para criar uma."
+            emailInputId="email"
+            // Inside an in-app browser the tap opens our modal instead of
+            // Google's 403 disallowed_useragent page: the sign-in is blocked.
+            onAttempt={
+              inAppBrowser
+                ? () => track('login_failed', { method: 'google', reason: 'disallowed_useragent', ...inAppBrowserProperties(inAppBrowser) })
+                : undefined
+            }
+            describedBy={lastLogin === 'google' ? LAST_USED_BADGE_ID : undefined}
+          />
+          {lastLogin === 'google' && <LastUsedBadge />}
+        </div>
 
         {/* Separator */}
         <div className="relative my-6">
@@ -150,15 +171,17 @@ export function LoginForm({
               </p>
             </div>
           )}
-          <div className="pt-1">
+          <div className="relative mt-1">
             <Button
               type="submit"
+              aria-describedby={lastLogin === 'email' ? LAST_USED_BADGE_ID : undefined}
               className="w-full h-11 bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium rounded-lg transition-all duration-300 shadow-sm hover:shadow-md"
               disabled={isPending}
               data-testid="login-submit"
             >
               {isPending ? 'Entrando...' : 'Entrar'}
             </Button>
+            {lastLogin === 'email' && <LastUsedBadge />}
           </div>
           <div className="text-center pt-2">
             <Link
