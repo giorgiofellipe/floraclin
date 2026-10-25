@@ -81,6 +81,7 @@ export async function POST(request: Request) {
         slug: plan.slug,
         priceCents: plan.priceCents,
       },
+      amountPaidCents: session.amount_total ?? plan.priceCents,
     })
   } catch (error) {
     return handleApiError(error, request)

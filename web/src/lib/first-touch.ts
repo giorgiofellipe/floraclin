@@ -3,7 +3,6 @@ import type { NextRequest, NextResponse } from 'next/server'
 // Same cookie, shape and rules as site/src/lib/first-touch.ts: both apps write
 // it on .floraclin.com.br and the signup action here reads what the site wrote.
 export const FIRST_TOUCH_COOKIE = 'floraclin_ft'
-const CONSENT_COOKIE = 'floraclin_cookie_consent'
 const OWN_DOMAIN = 'floraclin.com.br'
 const MAX_AGE_SECONDS = 90 * 24 * 60 * 60
 // Keeps the encoded cookie well under the browser's 4 KB limit, past which it is dropped silently.
@@ -28,7 +27,7 @@ type ClickIdField = (typeof CLICK_ID_FIELDS)[keyof typeof CLICK_ID_FIELDS]
 
 /**
  * One visit, kept whole. UTMs, path and an external referrer origin are stored
- * for internal signup reporting; ad click ids only with marketing consent.
+ * for signup reporting, ad click ids for the Meta conversion events.
  */
 export type FirstTouch = Partial<Record<UtmField | ClickIdField, string>> & {
   landingPath: string
@@ -39,7 +38,6 @@ export type FirstTouch = Partial<Record<UtmField | ClickIdField, string>> & {
 export function touchFromUrl(
   url: URL,
   referer: string | null,
-  marketingConsent: boolean,
   capturedAt = new Date(),
 ): FirstTouch {
   const touch: FirstTouch = {
@@ -47,7 +45,7 @@ export function touchFromUrl(
     capturedAt: capturedAt.toISOString(),
   }
   copyParams(url.searchParams, UTM_FIELDS, touch)
-  if (marketingConsent) copyParams(url.searchParams, CLICK_ID_FIELDS, touch)
+  copyParams(url.searchParams, CLICK_ID_FIELDS, touch)
   const referrer = externalOrigin(referer, url.hostname)
   if (referrer) touch.referrer = referrer
   return touch
@@ -62,11 +60,6 @@ export function chooseFirstTouch(existing: FirstTouch | null, incoming: FirstTou
   if (!existing) return incoming
   if (!hasCampaignSignal(existing) && hasCampaignSignal(incoming)) return incoming
   return existing
-}
-
-export function withoutClickIds(touch: FirstTouch): FirstTouch {
-  const { fbclid: _fbclid, gclid: _gclid, ...rest } = touch
-  return rest
 }
 
 export function parseFirstTouch(value: string | undefined): FirstTouch | null {
@@ -88,26 +81,12 @@ export function parseFirstTouch(value: string | undefined): FirstTouch | null {
   }
 }
 
-export function marketingConsentFromCookie(value: string | undefined): boolean {
-  if (!value) return false
-  try {
-    return (JSON.parse(value) as { marketing?: unknown }).marketing === true
-  } catch {
-    return false
-  }
-}
-
 /** Writes the first-touch cookie on document requests, only when its value changes. */
 export function captureFirstTouch(request: NextRequest, response: NextResponse): void {
   if (request.method !== 'GET' || !isDocumentRequest(request)) return
 
-  const marketingConsent = marketingConsentFromCookie(request.cookies.get(CONSENT_COOKIE)?.value)
   const stored = parseFirstTouch(request.cookies.get(FIRST_TOUCH_COOKIE)?.value)
-  const existing = stored && !marketingConsent ? withoutClickIds(stored) : stored
-  const next = chooseFirstTouch(
-    existing,
-    touchFromUrl(request.nextUrl, request.headers.get('referer'), marketingConsent),
-  )
+  const next = chooseFirstTouch(stored, touchFromUrl(request.nextUrl, request.headers.get('referer')))
   if (stored && JSON.stringify(next) === JSON.stringify(stored)) return
 
   const onOwnDomain = isOwnHost(request.nextUrl.hostname)

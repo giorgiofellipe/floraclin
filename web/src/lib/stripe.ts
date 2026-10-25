@@ -1,4 +1,5 @@
 import Stripe from 'stripe'
+import type { MetaBrowserSignals } from '@/lib/meta/request-signals'
 import { db } from '@/db/client'
 import { plans } from '@/db/schema'
 import { eq } from 'drizzle-orm'
@@ -26,7 +27,7 @@ export async function createCheckoutSession(
   tenantId: string,
   planSlug: string,
   stripeCustomerId?: string | null,
-  opts?: { promotionCodeId?: string | null },
+  opts?: { promotionCodeId?: string | null; browser?: MetaBrowserSignals },
 ): Promise<{ sessionId: string; url: string }> {
   const stripe = getStripeClient()
 
@@ -53,7 +54,7 @@ export async function createCheckoutSession(
     mode: 'subscription',
     customer,
     line_items: [{ price: plan.stripePriceId, quantity: 1 }],
-    metadata: { tenantId, planSlug },
+    metadata: { tenantId, planSlug, ...metaSignalsMetadata(opts?.browser) },
     success_url: `${appUrl}/configuracoes?tab=assinatura&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${appUrl}/configuracoes?tab=assinatura`,
   }
@@ -85,6 +86,15 @@ export async function createCheckoutSession(
   if (!session.url) throw new Error('Stripe Checkout session created without a URL')
 
   return { sessionId: session.id, url: session.url }
+}
+
+// Stripe caps metadata values at 500 characters.
+const STRIPE_METADATA_MAX = 500
+
+/** The buyer's browser signals, kept on the session for the Subscribe event the webhook sends. */
+function metaSignalsMetadata(browser?: MetaBrowserSignals): Record<string, string> {
+  const entries = Object.entries({ meta_ip: browser?.clientIp, meta_ua: browser?.userAgent, meta_fbc: browser?.fbc, meta_fbp: browser?.fbp })
+  return Object.fromEntries(entries.flatMap(([key, value]) => (value ? [[key, value.slice(0, STRIPE_METADATA_MAX)]] : [])))
 }
 
 /** Reads a Checkout Session back, expanding the subscription so the caller

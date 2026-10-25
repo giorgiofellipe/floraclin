@@ -239,10 +239,9 @@ describe('signUp action', () => {
     capturedAt: '2026-10-06T00:00:00.000Z',
   })
 
-  it('persists the first-touch cookie, click ids and Meta event id with marketing consent', async () => {
+  it('persists the first-touch cookie, click ids and Meta event id', async () => {
     withCookies({ floraclin_ft: paidTouch, _fbp: 'fb.1.1700000000000.browser' })
     const formData = validFormData({ email: 'attribution@test.com' })
-    formData.set('marketingConsent', 'granted')
     formData.set('metaEventId', 'complete_registration:event-1')
 
     await signUp(null, formData)
@@ -259,6 +258,8 @@ describe('signUp action', () => {
         landingPath: '/precos',
         referrer: 'https://l.facebook.com',
         capturedAt: '2026-10-06T00:00:00.000Z',
+        fbc: 'fb.1.1791244800000.fb-click',
+        fbp: 'fb.1.1700000000000.browser',
         metaEventId: 'complete_registration:event-1',
       },
       updatedAt: expect.any(Date),
@@ -290,19 +291,18 @@ describe('signUp action', () => {
     }
 
     expect(notifyDiscordMock).toHaveBeenCalledTimes(1)
-    expect(notifyDiscordMock).toHaveBeenCalledWith({
+    expect(notifyDiscordMock).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'signup.started',
       tenantId: 'tenant-1',
       ownerName: 'Maria Silva',
       ownerEmail: 'maria@test.com',
       method: 'email',
-      attribution: null,
-    })
+    }))
     // The admin e-mail waits for onboarding, like "Cadastro concluído".
     expect(sendNewSignupNotification).not.toHaveBeenCalled()
   })
 
-  it('sends the _fbp and _fbc cookies when a consented signup has no campaign attribution', async () => {
+  it('sends the _fbp and _fbc cookies when a signup has no campaign attribution', async () => {
     const metaCookies: Record<string, string> = {
       _fbp: 'fb.1.1700000000000.organic',
       _fbc: 'fb.1.1700000000000.pixel-click',
@@ -311,7 +311,6 @@ describe('signUp action', () => {
       metaCookies[name] ? { name, value: metaCookies[name] } : undefined,
     )
     const formData = validFormData({ email: 'organic@test.com' })
-    formData.set('marketingConsent', 'granted')
     formData.set('metaEventId', 'complete_registration:event-organic')
 
     await signUp(null, formData)
@@ -323,7 +322,6 @@ describe('signUp action', () => {
 
   it('still completes signup when the attribution column is not migrated yet', async () => {
     const formData = validFormData({ email: 'missing-column@test.com' })
-    formData.set('marketingConsent', 'granted')
     formData.set('metaEventId', 'complete_registration:event-2')
     vi.mocked(db.update).mockReturnValueOnce({
       set: vi.fn(() => {
@@ -356,29 +354,21 @@ describe('signUp action', () => {
     expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
   })
 
-  it('persists the first touch without click ids or Meta event id when marketing consent is missing', async () => {
+  // Regression: signups without marketing consent never reached Meta.
+  it('sends CompleteRegistration with the ad click as fbc without any consent', async () => {
     withCookies({ floraclin_ft: paidTouch })
     const formData = validFormData({ email: 'no-consent@test.com' })
-    formData.set('metaEventId', 'complete_registration:event-without-consent')
+    formData.set('metaEventId', 'complete_registration:event-no-consent')
 
     await signUp(null, formData)
 
-    expect(db.update).toHaveBeenCalledWith(tenants)
-    expect((db as any).set).toHaveBeenCalledWith({
-      signupAttribution: {
-        utmSource: 'meta',
-        utmCampaign: 'hof-trial',
-        utmContent: 'headline-a',
-        landingPath: '/precos',
-        referrer: 'https://l.facebook.com',
-        capturedAt: '2026-10-06T00:00:00.000Z',
-      },
-      updatedAt: expect.any(Date),
-    })
-    expect(sendSignupCompleteRegistrationEventMock).not.toHaveBeenCalled()
-    const target = vi.mocked(redirect).mock.calls.at(-1)?.[0] as string
-    expect(target).toContain('/confirm-email')
-    expect(target).not.toContain('meta_event_id')
+    expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      eventId: 'complete_registration:event-no-consent',
+      fbc: 'fb.1.1791244800000.fb-click',
+    }))
+    expect((db as any).set).toHaveBeenCalledWith(expect.objectContaining({
+      signupAttribution: expect.objectContaining({ fbclid: 'fb-click', metaEventId: 'complete_registration:event-no-consent' }),
+    }))
   })
 
   it('issues a confirmation token and sends the confirmation email', async () => {

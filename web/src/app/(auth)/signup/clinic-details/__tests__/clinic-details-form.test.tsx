@@ -7,7 +7,6 @@ const h = vi.hoisted(() => ({
   trackMetaEvent: vi.fn(),
   createClinic: vi.fn(),
   signOut: vi.fn(),
-  consent: 'unset' as 'unset' | 'granted' | 'denied',
   rerenderSession: null as null | (() => void),
   // Every call is a new id, so a test can tell a reused id from a fresh one.
   eventSeq: 0,
@@ -30,7 +29,6 @@ vi.mock('@/lib/marketing-attribution', () => ({
   trackMetaEvent: (...a: unknown[]) => h.trackMetaEvent(...a),
   generateMetaEventId: (prefix: string) => `${prefix}:${++h.eventSeq}`,
 }))
-vi.mock('@/lib/cookie-consent', () => ({ cookieConsentStatus: () => h.consent }))
 vi.mock('@/actions/signup', () => ({
   createClinicForOAuthUser: (...a: unknown[]) => h.createClinic(...a),
   signOutFromClinicDetails: (...a: unknown[]) => h.signOut(...a),
@@ -54,7 +52,6 @@ beforeEach(() => {
   // instead of sleeping through it.
   vi.useFakeTimers({ shouldAdvanceTime: true })
   vi.clearAllMocks()
-  h.consent = 'unset'
   h.eventSeq = 0
   h.createClinic.mockResolvedValue({ success: true, created: true, metaEventId: 'complete_registration:1' })
   // Like the real update(): resolves, then the session (and so `update`) changes.
@@ -214,7 +211,6 @@ describe('one-step Google sign-up: the clinic is created on arrival', () => {
   const sent = () => h.createClinic.mock.calls.map(([, fd]) => Object.fromEntries((fd as FormData).entries()))
 
   it('creates it once without asking anything, fires CompleteRegistration once, and goes to onboarding', async () => {
-    h.consent = 'granted'
     h.createClinic.mockResolvedValue({ success: true, created: true, metaEventId: 'complete_registration:1' })
     // StrictMode mounts effects twice in development: still one request.
     const { container, getByText } = render(<StrictMode><ClinicDetailsForm autoStart /></StrictMode>)
@@ -225,7 +221,7 @@ describe('one-step Google sign-up: the clinic is created on arrival', () => {
     await act(async () => {})
 
     expect(h.createClinic).toHaveBeenCalledTimes(1)
-    expect(sent()).toEqual([{ mode: 'auto', marketingConsent: 'granted', metaEventId: 'complete_registration:1' }])
+    expect(sent()).toEqual([{ mode: 'auto', metaEventId: 'complete_registration:1' }])
     expect(h.update).toHaveBeenCalledWith({})
     expect(h.trackMetaEvent).toHaveBeenCalledTimes(1)
     expect(h.trackMetaEvent).toHaveBeenCalledWith(
@@ -234,15 +230,6 @@ describe('one-step Google sign-up: the clinic is created on arrival', () => {
       'complete_registration:1',
     )
     expect(h.replace).toHaveBeenCalledTimes(1)
-  })
-
-  it('sends no consent and no event id when the visitor has not accepted marketing cookies', async () => {
-    h.createClinic.mockResolvedValue({ success: true, created: true })
-    render(<ClinicDetailsForm autoStart />)
-
-    await waitFor(() => expect(h.replace).toHaveBeenCalledWith('/onboarding'))
-    expect(sent()).toEqual([{ mode: 'auto' }])
-    expect(h.trackMetaEvent).not.toHaveBeenCalled()
   })
 
   it('keeps the progress screen when the new clinic cookie re-renders the page', async () => {
@@ -279,7 +266,6 @@ describe('one-step Google sign-up: the clinic is created on arrival', () => {
   })
 
   it('does not retry a failure on its own; the user retries with the same event id', async () => {
-    h.consent = 'granted'
     h.createClinic.mockRejectedValueOnce(new Error('network'))
     const { findByRole, findByText } = render(<ClinicDetailsForm autoStart />)
 

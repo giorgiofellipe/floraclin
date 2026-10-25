@@ -322,14 +322,18 @@ export function BillingSettings() {
       if (!res.ok) {
         throw new Error('Erro ao confirmar pagamento')
       }
-      return res.json() as Promise<{ activated: boolean; plan?: { slug: string; priceCents: number } }>
+      return res.json() as Promise<{
+        activated: boolean
+        plan?: { slug: string; priceCents: number }
+        amountPaidCents?: number
+      }>
     },
     onSuccess: async (result) => {
       if (result.activated && result.plan) {
         trackMetaEvent(
           'Subscribe',
           {
-            value: result.plan.priceCents / 100,
+            value: (result.amountPaidCents ?? result.plan.priceCents) / 100,
             currency: 'BRL',
             predicted_ltv: result.plan.priceCents / 100,
             plan: result.plan.slug,

@@ -19,7 +19,7 @@ export default function LgpdPage() {
             LGPD — Lei Geral de Proteção de Dados
           </h1>
           <p className="text-charcoal/50 text-sm mb-12">
-            Última atualização: 14 de outubro de 2026
+            Última atualização: 25 de outubro de 2026
           </p>
 
           <div className="text-charcoal/80 leading-relaxed space-y-8 text-[15px]">
@@ -248,18 +248,24 @@ export default function LgpdPage() {
                   clínica responsável pelo seu atendimento.
                 </p>
                 <p>
-                  A FloraClin também utiliza, mediante consentimento específico
-                  para cookies de marketing, Meta Pixel e tecnologias similares
-                  para medir campanhas próprias da FloraClin, eventos de cadastro
-                  e assinatura, e identificadores de clique em anúncios como
-                  fbclid e gclid. Google Ads/gtag poderá ser utilizado futuramente
-                  para finalidades equivalentes. A base legal para essa categoria é
-                  o consentimento (Art. 7º, I), que pode ser recusado ou revogado
-                  pelo link &quot;Preferências de cookies&quot; no rodapé. A origem do
-                  primeiro acesso (parâmetros UTM, página de entrada e domínio de
-                  referência) é registrada para relatórios internos com base no
-                  interesse legítimo (Art. 7º, IX), conforme a Política de
-                  Privacidade.
+                  A FloraClin também mede os seus próprios anúncios na Meta (Facebook e
+                  Instagram). O Meta Pixel só é carregado com o seu consentimento para a
+                  categoria &quot;Anúncios e medição&quot; (Art. 7º, I). Quando você conclui
+                  o cadastro ou contrata um plano, nosso servidor envia à Meta Platforms,
+                  Inc. o evento correspondente pela API de Conversões, com e-mail e, quando
+                  houver, telefone em hash SHA-256, endereço IP, navegador, identificador
+                  de clique do anúncio, o cookie &quot;_fbp&quot; quando existir e, na
+                  assinatura, o valor do plano. Esse envio e o registro da origem do
+                  primeiro acesso se baseiam no interesse legítimo (Art. 7º, IX, e Art. 10)
+                  e acontecem independentemente da escolha no banner de cookies.
+                </p>
+                <p>
+                  A finalidade é apenas medir e otimizar os anúncios da FloraClin. Fizemos
+                  um teste de balanceamento, disponível em resumo mediante pedido. A Meta
+                  pode tratar os dados fora do Brasil (Art. 33). Esse fluxo não envolve
+                  dados de pacientes. Você pode se opor a qualquer momento pelo e-mail
+                  contato@floraclin.com.br (Art. 18, § 2º), e envios já feitos não podem
+                  ser recolhidos. Detalhes na Política de Privacidade, seções 4, 5, 8 e 9.
                 </p>
               </div>
             </section>

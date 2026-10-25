@@ -4,7 +4,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { FIRST_TOUCH_COOKIE, captureFirstTouch } from '../first-touch'
 
 const NOW = '2026-10-14T12:00:00.000Z'
-const GRANTED = JSON.stringify({ necessary: true, marketing: true, version: 1 })
 const DENIED = JSON.stringify({ necessary: true, marketing: false, version: 1 })
 
 function visit(
@@ -33,9 +32,9 @@ describe('captureFirstTouch', () => {
     vi.useRealTimers()
   })
 
-  it('records UTMs, the bare landing path and the referrer origin, but no click ids, without marketing consent', () => {
+  it('records UTMs, the bare landing path and the referrer origin, never other params', () => {
     const { written, touch } = visit(
-      'https://floraclin.com.br/precos?utm_source=meta&utm_campaign=hof&fbclid=fb-1&gclid=g-1&token=secret',
+      'https://floraclin.com.br/precos?utm_source=meta&utm_campaign=hof&token=secret',
       { headers: { referer: 'https://l.facebook.com/l.php?u=private' } },
     )
 
@@ -49,10 +48,12 @@ describe('captureFirstTouch', () => {
     expect(written).toMatchObject({ httpOnly: true, domain: '.floraclin.com.br', path: '/' })
   })
 
-  it('records click ids when marketing consent was granted', () => {
-    const { touch } = visit('https://floraclin.com.br/?fbclid=fb-1&gclid=g-1', {
-      cookies: { floraclin_cookie_consent: GRANTED },
-    })
+  // Regression: ad clicks landing before the banner was answered lost fbclid, so CAPI sent no fbc.
+  it.each([
+    ['the banner was never answered', {}],
+    ['marketing was refused', { floraclin_cookie_consent: DENIED }],
+  ])('records click ids whatever the banner says: %s', (_name, cookies) => {
+    const { touch } = visit('https://floraclin.com.br/?fbclid=fb-1&gclid=g-1', { cookies })
 
     expect(touch).toMatchObject({ fbclid: 'fb-1', gclid: 'g-1' })
   })
@@ -78,16 +79,6 @@ describe('captureFirstTouch', () => {
     const { touch } = visit(laterUrl, { cookies: { floraclin_ft: JSON.stringify(stored) } })
 
     expect(touch ?? undefined).toEqual(expected)
-  })
-
-  it('drops stored click ids once marketing consent is refused', () => {
-    const stored = { utmSource: 'meta', fbclid: 'fb-1', gclid: 'g-1', landingPath: '/', capturedAt: '2026-10-01T00:00:00.000Z' }
-
-    const { touch } = visit('https://floraclin.com.br/precos', {
-      cookies: { floraclin_ft: JSON.stringify(stored), floraclin_cookie_consent: DENIED },
-    })
-
-    expect(touch).toEqual({ utmSource: 'meta', landingPath: '/', capturedAt: '2026-10-01T00:00:00.000Z' })
   })
 
   it.each([

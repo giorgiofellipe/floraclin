@@ -7,8 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { maskPhone } from '@/lib/masks'
-import { SignupAttributionFields } from '@/components/marketing/signup-attribution-fields'
 import { GoogleSignIn } from '@/components/auth/google-sign-in'
+import { SignupTermsNotice } from '@/components/auth/signup-terms-notice'
 import type { InAppBrowser } from '@/lib/in-app-browser'
 import { track } from '@/lib/analytics/client'
 import { inAppBrowserProperties, type SignupMethod, type UtmProperties } from '@/lib/analytics/events'
@@ -59,6 +59,7 @@ export function SignUpForm({ inAppBrowser, utm = {} }: { inAppBrowser: InAppBrow
           emailInputId="email"
           onAttempt={() => markStarted('google')}
         />
+        <SignupTermsNotice lead="Ao criar sua conta, com e-mail ou Google" />
 
         {/* Separator */}
         <div className="relative my-6">
@@ -74,7 +75,6 @@ export function SignUpForm({ inAppBrowser, utm = {} }: { inAppBrowser: InAppBrow
 
         {/* Signup form */}
         <form action={formAction} onFocus={() => markStarted('email')} className="space-y-5">
-          <SignupAttributionFields />
           <div className="space-y-1.5">
             <Label htmlFor="fullName" className="uppercase tracking-wider text-xs text-mid">
               Nome completo

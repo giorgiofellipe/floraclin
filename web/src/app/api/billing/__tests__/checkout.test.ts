@@ -128,7 +128,7 @@ describe('POST /api/billing/checkout', () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ url: 'https://checkout.stripe.com/cs_1' })
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: null })
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null }))
     expect(updateSubscriptionPrice).not.toHaveBeenCalled()
   })
 
@@ -217,7 +217,7 @@ describe('POST /api/billing/checkout', () => {
     const res = await POST(request())
 
     expect(res.status).toBe(200)
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_1', { promotionCodeId: null })
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_1', expect.objectContaining({ promotionCodeId: null }))
     expect(updateSubscriptionPrice).not.toHaveBeenCalled()
   })
 
@@ -288,7 +288,7 @@ describe('POST /api/billing/checkout', () => {
     const res = await POST(request('pro'))
 
     expect(res.status).toBe(200)
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: 'promo_winback' })
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: 'promo_winback' }))
   })
 
   it("charges full price when the clinic's Stripe customer has paid before (first-time-only code)", async () => {
@@ -307,7 +307,7 @@ describe('POST /api/billing/checkout', () => {
     await POST(request('pro'))
 
     expect(customerHasPriorPurchase).toHaveBeenCalledWith('cus_old', expect.any(Date))
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_old', { promotionCodeId: null })
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_old', expect.objectContaining({ promotionCodeId: null }))
   })
 
   it('charges full price when the plan is under the code minimum amount', async () => {
@@ -332,7 +332,7 @@ describe('POST /api/billing/checkout', () => {
 
     await POST(request('pro'))
 
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: null })
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null }))
   })
 
   it.each([
@@ -354,7 +354,7 @@ describe('POST /api/billing/checkout', () => {
     await POST(request('pro'))
 
     expect(getTrialUsage).toHaveBeenCalledWith('tenant-1')
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: null })
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null }))
   })
 
   it('charges full price when Stripe says the win-back code is no longer usable', async () => {
@@ -371,7 +371,7 @@ describe('POST /api/billing/checkout', () => {
 
     await POST(request('pro'))
 
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: null })
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null }))
   })
 
   it('charges full price for a plan the win-back coupon does not cover', async () => {
@@ -396,7 +396,7 @@ describe('POST /api/billing/checkout', () => {
 
     await POST(request('pro'))
 
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: null })
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null }))
   })
 
   it('still applies the code to a plan a restricted coupon covers', async () => {
@@ -421,6 +421,6 @@ describe('POST /api/billing/checkout', () => {
 
     await POST(request('pro'))
 
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, { promotionCodeId: 'promo_winback' })
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: 'promo_winback' }))
   })
 })

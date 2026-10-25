@@ -17,7 +17,7 @@ export default function TermosPage() {
         <div className="mx-auto max-w-[720px] px-6">
           <h1 className="text-3xl md:text-4xl mb-4">Termos de Uso</h1>
           <p className="text-charcoal/50 text-sm mb-12">
-            Última atualização: 31 de maio de 2026
+            Última atualização: 25 de outubro de 2026
           </p>
 
           <div className="text-charcoal/80 leading-relaxed space-y-8 text-[15px]">
@@ -138,6 +138,14 @@ export default function TermosPage() {
                   6.3. Em caso de cancelamento, os dados do Usuário serão
                   mantidos por 30 dias para possibilitar a exportação. Após esse
                   período, serão permanentemente excluídos.
+                </p>
+                <p>
+                  6.4. Para os dados cadastrais e de uso do próprio Usuário, a
+                  FloraClin atua como controladora, conforme a{" "}
+                  <a href="/privacidade" className="text-sage hover:underline">
+                    Política de Privacidade
+                  </a>
+                  , que integra estes Termos.
                 </p>
               </div>
             </section>
