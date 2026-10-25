@@ -69,7 +69,7 @@ const CONNECTION = {
   advancedMatchingEnabled: true,
 }
 
-describe('sendSignupCompleteRegistrationEvent', () => {
+describe('FloraClin conversion events', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.clearAllMocks()
@@ -126,7 +126,7 @@ describe('sendSignupCompleteRegistrationEvent', () => {
   })
 
   // Regression: the paid conversion only went through the browser pixel, so Meta missed it whenever the pixel did.
-  it('posts Subscribe with the plan value in BRL under the pixel event id', async () => {
+  it('posts Subscribe with the amount paid as value and the list price as predicted LTV', async () => {
     process.env.META_CAPI_ACCESS_TOKEN = 'signup-token'
     const { sendSubscribeEvent } = await import('../events')
 
@@ -134,7 +134,8 @@ describe('sendSignupCompleteRegistrationEvent', () => {
       eventId: 'subscribe:cs_test_1',
       email: 'maria@clinica.com',
       eventSourceUrl: 'https://app.floraclin.com.br/configuracoes',
-      valueCents: 14990,
+      paidCents: 10493,
+      listPriceCents: 14990,
       planSlug: 'pro',
     })
 
@@ -142,7 +143,7 @@ describe('sendSignupCompleteRegistrationEvent', () => {
     expect(postedPayload()).toMatchObject({
       event_name: 'Subscribe',
       event_id: 'subscribe:cs_test_1',
-      custom_data: { value: 149.9, currency: 'BRL', predicted_ltv: 149.9, plan: 'pro' },
+      custom_data: { value: 104.93, currency: 'BRL', predicted_ltv: 149.9, plan: 'pro' },
     })
   })
 

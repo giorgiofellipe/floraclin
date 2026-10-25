@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
   try {
     switch (event.type) {
       case 'checkout.session.completed':
-        await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session)
+        await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session, new Date(event.created * 1000))
         break
       case 'invoice.paid':
         await handleInvoicePaid(event.data.object as Stripe.Invoice)
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ received: true })
 }
 
-async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+async function handleCheckoutCompleted(session: Stripe.Checkout.Session, completedAt: Date) {
   const tenantId = session.metadata?.tenantId
   const planSlug = session.metadata?.planSlug
   if (!tenantId || !planSlug) return
@@ -109,7 +109,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     stripeSubscriptionId: stripeSubscriptionId ?? undefined,
     ...(period ?? {}),
   })
-  scheduleSubscribeConversion(session, tenantId, plan)
+  scheduleSubscribeConversion(session, tenantId, plan, completedAt)
 }
 
 async function handleInvoicePaid(invoice: Stripe.Invoice) {

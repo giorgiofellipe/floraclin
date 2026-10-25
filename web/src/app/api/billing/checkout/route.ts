@@ -8,6 +8,7 @@ import {
 } from '@/db/queries/subscriptions'
 import { createCheckoutSession, updateSubscriptionPrice } from '@/lib/stripe'
 import { handleApiError } from '@/lib/api-error'
+import { cookieFromHeader, metaBrowserSignals } from '@/lib/meta/request-signals'
 import { getValidatedWinbackOffer } from '@/lib/winback-offer'
 import { isStripeDriven } from '@/lib/subscription-access'
 
@@ -91,6 +92,7 @@ export async function POST(request: Request) {
     const winback = await getValidatedWinbackOffer(subscription, [plan])
     const { url } = await createCheckoutSession(ctx.tenantId, planSlug, subscription?.stripeCustomerId ?? null, {
       promotionCodeId: winback?.promotionCodeId ?? null,
+      browser: metaBrowserSignals(request.headers, cookieFromHeader(request.headers)),
     })
 
     return NextResponse.json({ url })

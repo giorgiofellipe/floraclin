@@ -8,9 +8,10 @@ const retrieveSubscriptionMock = vi.fn()
 const getPlanBySlugMock = vi.fn()
 const tenantRow = vi.fn()
 
+const afterTasks: Promise<unknown>[] = []
 vi.mock('next/server', async (importOriginal) => ({
   ...(await importOriginal<typeof import('next/server')>()),
-  after: (task: () => unknown) => task(),
+  after: (task: () => Promise<unknown>) => void afterTasks.push(task()),
 }))
 vi.mock('@/lib/stripe', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/stripe')>()),
@@ -33,23 +34,28 @@ vi.mock('@/lib/api-error', () => ({ handleApiError: () => new Response('error', 
 
 import { POST } from '../route'
 
-function deliver(subscriptionStatus: string) {
+async function deliver(subscriptionStatus: string, { livemode = true } = {}) {
   constructWebhookEventMock.mockReturnValue({
     type: 'checkout.session.completed',
+    created: 1792900000,
     data: {
       object: {
         id: 'cs_test_1',
+        livemode,
+        amount_total: 10493,
         payment_status: 'paid',
         customer: 'cus_1',
         subscription: 'sub_1',
         customer_details: { email: 'maria@clinica.com' },
-        metadata: { tenantId: 'tenant-1', planSlug: 'pro' },
+        metadata: { tenantId: 'tenant-1', planSlug: 'pro', meta_ip: '203.0.113.7', meta_ua: 'Checkout Browser' },
       },
     },
   })
   retrieveSubscriptionMock.mockResolvedValue({ id: 'sub_1', status: subscriptionStatus, cancel_at_period_end: false, items: { data: [] } })
   const req = new Request('http://localhost/api/webhooks/stripe', { method: 'POST', body: '{}', headers: { 'stripe-signature': 'sig' } })
-  return POST(req as never)
+  const response = await POST(req as never)
+  await Promise.all(afterTasks.splice(0))
+  return response
 }
 
 describe('checkout.session.completed', () => {
@@ -61,15 +67,19 @@ describe('checkout.session.completed', () => {
     ])
   })
 
-  it('sends Subscribe under the pixel event id, with the signup ad click as fbc', async () => {
+  it('sends Subscribe under the pixel event id, with the amount paid, the buyer browser and the signup ad click', async () => {
     await deliver('active')
 
     expect(sendSubscribeEventMock).toHaveBeenCalledWith(expect.objectContaining({
       eventId: 'subscribe:cs_test_1',
+      eventTime: new Date(1792900000 * 1000),
+      clientIp: '203.0.113.7',
+      userAgent: 'Checkout Browser',
       email: 'maria@clinica.com',
       phone: '11999998888',
       fbc: 'fb.1.1791244800000.fb-click',
-      valueCents: 14990,
+      paidCents: 10493,
+      listPriceCents: 14990,
       planSlug: 'pro',
     }))
   })
@@ -78,6 +88,17 @@ describe('checkout.session.completed', () => {
     tenantRow.mockReturnValue([{ phone: null, signupAttribution: null, optedOutAt: new Date('2026-10-20T00:00:00.000Z') }])
 
     await deliver('active')
+
+    expect(sendSubscribeEventMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['a test-mode checkout', { livemode: false }, undefined],
+    ['a deleted clinic', {}, { phone: null, signupAttribution: null, deletedAt: new Date('2026-10-20T00:00:00.000Z') }],
+  ])('sends nothing for %s', async (_name, options, row) => {
+    if (row) tenantRow.mockReturnValue([row])
+
+    await deliver('active', options)
 
     expect(sendSubscribeEventMock).not.toHaveBeenCalled()
   })

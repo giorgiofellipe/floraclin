@@ -252,13 +252,19 @@ export function sendSignupCompleteRegistrationEvent(input: SendSignupCompleteReg
 }
 
 export interface SendSubscribeInput extends SendSignupCompleteRegistrationInput {
-  valueCents: number
+  /** What the buyer paid, after any discount. */
+  paidCents: number
+  /** The plan's list price, Meta's best guess at the lifetime value. */
+  listPriceCents: number
   planSlug: string
 }
 
-export function sendSubscribeEvent({ valueCents, planSlug, ...input }: SendSubscribeInput): Promise<boolean> {
-  const value = valueCents / 100
-  return sendPlatformConversion('Subscribe', { value, currency: 'BRL', predicted_ltv: value, plan: planSlug }, input)
+export function sendSubscribeEvent({ paidCents, listPriceCents, planSlug, ...input }: SendSubscribeInput): Promise<boolean> {
+  return sendPlatformConversion(
+    'Subscribe',
+    { value: paidCents / 100, currency: 'BRL', predicted_ltv: listPriceCents / 100, plan: planSlug },
+    input,
+  )
 }
 
 const PLATFORM_CONVERSION_STEP = {

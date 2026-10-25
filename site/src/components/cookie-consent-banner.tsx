@@ -71,7 +71,7 @@ export function CookieConsentBanner() {
           <div className="flex-1 text-xs leading-snug text-charcoal/75 sm:text-sm sm:leading-relaxed">
             <p className="font-sans font-medium text-charcoal">Cookies</p>
             <p className="mt-1 sm:hidden">
-              Meta Pixel só com sua autorização. Cadastros são medidos pelo nosso servidor.{" "}
+              Meta Pixel só com sua autorização. Cadastros e assinaturas são informados à Meta pelo nosso servidor.{" "}
               <button type="button" onClick={showPreferences} className="text-sage underline underline-offset-2">
                 Ver detalhes
               </button>
@@ -84,7 +84,8 @@ export function CookieConsentBanner() {
             <p className="mt-1 hidden sm:block">
               Usamos cookies necessários para o site funcionar. Com sua autorização, também usamos o Meta Pixel para
               medir anúncios. Independentemente da sua escolha, registramos a origem do seu acesso e, se você se
-              cadastrar, informamos o cadastro à Meta pelo nosso servidor, com e-mail em hash. Você pode se opor por
+              cadastrar ou assinar, informamos o cadastro e a assinatura à Meta pelo nosso servidor, com e-mail em
+              hash. Você pode se opor por
               e-mail. Veja a{" "}
               <Link href="/privacidade" className="text-sage underline underline-offset-2">
                 Política de Privacidade

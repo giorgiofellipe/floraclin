@@ -17,9 +17,11 @@ export function scheduleSubscribeConversion(
   session: Stripe.Checkout.Session,
   tenantId: string,
   plan: { slug: string; priceCents: number },
+  paidAt: Date,
 ): void {
   const email = session.customer_details?.email ?? session.customer_email
-  if (!email) return
+  // Test-mode checkouts (Stripe CLI, previews) must not reach the production dataset.
+  if (!email || !session.livemode) return
   after(async () => {
     try {
       const [tenant] = await db
@@ -27,18 +29,26 @@ export function scheduleSubscribeConversion(
           phone: tenants.phone,
           signupAttribution: tenants.signupAttribution,
           optedOutAt: tenants.metaConversionsOptedOutAt,
+          deletedAt: tenants.deletedAt,
         })
         .from(tenants)
         .where(eq(tenants.id, tenantId))
         .limit(1)
-      if (tenant?.optedOutAt) return
+      if (!tenant || tenant.optedOutAt || tenant.deletedAt) return
+      const browser = session.metadata ?? {}
+      const signup = (tenant.signupAttribution ?? {}) as SignupIds
       await sendSubscribeEvent({
         eventId: `subscribe:${session.id}`,
+        eventTime: paidAt,
         email,
-        phone: tenant?.phone,
+        phone: tenant.phone,
         eventSourceUrl: `${getAppUrl()}/configuracoes?tab=assinatura`,
-        fbc: signupFbc(tenant?.signupAttribution),
-        valueCents: plan.priceCents,
+        clientIp: browser.meta_ip,
+        userAgent: browser.meta_ua,
+        fbc: browser.meta_fbc ?? signup.fbc ?? signupFbc(signup),
+        fbp: browser.meta_fbp ?? signup.fbp,
+        paidCents: session.amount_total ?? plan.priceCents,
+        listPriceCents: plan.priceCents,
         planSlug: plan.slug,
       })
     } catch (error) {
@@ -47,8 +57,8 @@ export function scheduleSubscribeConversion(
   })
 }
 
-function signupFbc(attribution: unknown): string | undefined {
-  const { fbc, fbclid, capturedAt } = (attribution ?? {}) as { fbc?: string; fbclid?: string; capturedAt?: string }
-  if (fbc) return fbc
-  return fbclid ? buildFbc(fbclid, capturedAt ? Date.parse(capturedAt) : undefined) : undefined
+type SignupIds = { fbc?: string; fbp?: string; fbclid?: string; capturedAt?: string }
+
+function signupFbc({ fbclid, capturedAt }: SignupIds): string | undefined {
+  return fbclid && capturedAt ? buildFbc(fbclid, Date.parse(capturedAt)) : undefined
 }

@@ -223,7 +223,7 @@ export default function PrivacidadePage() {
                     de Privacidade, inclusive quanto ao prazo de retenção, e esses termos
                     podem incluir usos próprios da Meta, fora do controle da FloraClin. A
                     Meta pode tratar os dados fora do Brasil, em especial nos Estados Unidos,
-                    em transferência internacional realizada conforme o art. 33 da LGPD.
+                    em transferência internacional realizada conforme o Art. 33 da LGPD.
                     Você pode se opor a esse envio conforme a seção 8. O gclid fica
                     registrado apenas no cookie de primeiro acesso e no cadastro, para
                     relatórios internos, e hoje não é enviado ao Google. Se passarmos a
@@ -288,10 +288,10 @@ export default function PrivacidadePage() {
                   os identificadores de clique em anúncios (fbclid, gclid), a página de
                   entrada (sem parâmetros), o domínio de referência e a data de captura.
                   Esse registro se baseia no interesse legítimo e acontece
-                  independentemente da escolha no banner de cookies. Ele não é
-                  compartilhado com terceiros, com uma exceção: o fbclid compõe o
-                  identificador de clique enviado à Meta nos eventos de cadastro e
-                  assinatura (seção 5). Ao concluir o cadastro, esses dados são salvos no
+                  independentemente da escolha no banner de cookies. Além das
+                  nossas ferramentas de análise de uso, ele só sai da FloraClin pelo
+                  fbclid, que compõe o identificador de clique enviado à Meta nos eventos
+                  de cadastro e assinatura (seção 5). Ao concluir o cadastro, esses dados são salvos no
                   cadastro da clínica. Você pode apagar o cookie no seu navegador a
                   qualquer momento e pode se opor a esse registro conforme a seção 8. A sua
                   escolha no banner de cookies fica guardada por até 180 dias ou até você

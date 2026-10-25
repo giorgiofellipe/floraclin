@@ -20,7 +20,8 @@ import { notifySignupStarted } from '@/lib/signup-notifications'
 import { issueConfirmationToken } from '@/lib/confirm-email'
 import { getAppUrl } from '@/lib/app-url'
 import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
-import { buildFbc, generateMetaEventId } from '@/lib/marketing-attribution'
+import { generateMetaEventId } from '@/lib/marketing-attribution'
+import { metaBrowserSignals, type MetaBrowserSignals } from '@/lib/meta/request-signals'
 import { FIRST_TOUCH_COOKIE, parseFirstTouch, type FirstTouch } from '@/lib/first-touch'
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
 import { isPlatformAdminSession, placeholderClinicName } from '@/lib/clinic-placeholder'
@@ -60,7 +61,8 @@ export async function signUp(
   const { fullName, email, password, clinicName, phone } = parsed.data
   const metaEventId = String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
   const firstTouch = parseFirstTouch(cookieStore.get(FIRST_TOUCH_COOKIE)?.value)
-  const tenantAttribution: TenantAttribution = { ...firstTouch, metaEventId }
+  const browser = metaBrowserSignals(requestHeaders, (name) => cookieStore.get(name)?.value, firstTouch)
+  const tenantAttribution: TenantAttribution = { ...firstTouch, ...browserIds(browser), metaEventId }
   const appUrl = getAppUrl()
 
   const [existing] = await db
@@ -114,9 +116,7 @@ export async function signUp(
       email,
       phone,
       eventSourceUrl: `${appUrl}/signup`,
-      ...(await metaBrowserIds(firstTouch)),
-      clientIp: clientIpFromHeaders(requestHeaders),
-      userAgent: requestHeaders.get('user-agent'),
+      ...browser,
     })
     // Step 1 for the team; "Cadastro concluído" (and the admin e-mail)
     // follows from the onboarding save, see notifyOnboardingCompleted.
@@ -258,9 +258,11 @@ export async function createClinicForOAuthUser(
     ;({ clinicName, phone } = parsed.data)
   }
 
-  const metaEventId = String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
+  // A platform admin making a clinic is not a conversion: no CAPI event, no pixel event.
+  const metaEventId = isPlatformAdmin ? null : String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
   const firstTouch = parseFirstTouch(cookieStore.get(FIRST_TOUCH_COOKIE)?.value)
-  const tenantAttribution: TenantAttribution = { ...firstTouch, metaEventId }
+  const browser = metaBrowserSignals(requestHeaders, (name) => cookieStore.get(name)?.value, firstTouch)
+  const tenantAttribution: TenantAttribution = { ...firstTouch, ...browserIds(browser), ...(metaEventId ? { metaEventId } : {}) }
 
   const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone, placeholderName: auto })
   if (!tenant) {
@@ -278,15 +280,13 @@ export async function createClinicForOAuthUser(
     )
   }
   await persistSignupAttribution(tenant.id, tenantAttribution)
-  if (session.user.email) {
+  if (metaEventId && session.user.email) {
     scheduleSignupCompleteRegistration({
       eventId: metaEventId,
       email: session.user.email,
       phone,
       eventSourceUrl: `${getAppUrl()}/signup/clinic-details`,
-      ...(await metaBrowserIds(firstTouch)),
-      clientIp: clientIpFromHeaders(requestHeaders),
-      userAgent: requestHeaders.get('user-agent'),
+      ...browser,
     })
   }
 
@@ -319,10 +319,10 @@ export async function createClinicForOAuthUser(
   // redirecting to /dashboard here loops: the client has to refresh the
   // session first. It reports success and navigates once the token is
   // current.
-  return { success: true, created: true, metaEventId }
+  return { success: true, created: true, ...(metaEventId ? { metaEventId } : {}) }
 }
 
-type TenantAttribution = Partial<FirstTouch> & { metaEventId?: string }
+type TenantAttribution = Partial<FirstTouch> & { metaEventId?: string; fbc?: string; fbp?: string }
 
 async function persistSignupAttribution(
   tenantId: string,
@@ -342,20 +342,9 @@ async function persistSignupAttribution(
   }
 }
 
-function clientIpFromHeaders(requestHeaders: Pick<Headers, 'get'>): string | null {
-  const forwardedFor = requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim()
-  if (forwardedFor) return forwardedFor
-
-  return requestHeaders.get('x-real-ip')?.trim() || null
-}
-
-async function metaBrowserIds(firstTouch: FirstTouch | null): Promise<{ fbc?: string; fbp?: string }> {
-  const cookieStore = await cookies()
-  const builtFbc = firstTouch?.fbclid ? buildFbc(firstTouch.fbclid, Date.parse(firstTouch.capturedAt)) : undefined
-  return {
-    fbc: cookieStore.get('_fbc')?.value ?? builtFbc,
-    fbp: cookieStore.get('_fbp')?.value,
-  }
+/** Kept with the signup so the later Subscribe event can match the same browser. */
+function browserIds({ fbc, fbp }: MetaBrowserSignals): { fbc?: string; fbp?: string } {
+  return { ...(fbc ? { fbc } : {}), ...(fbp ? { fbp } : {}) }
 }
 
 function scheduleSignupCompleteRegistration(input: SendSignupCompleteRegistrationInput): void {

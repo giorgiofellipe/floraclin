@@ -241,6 +241,16 @@ describe('createClinicForOAuthUser Meta CompleteRegistration', () => {
     }))
   })
 
+  // Regression: a platform admin making a clinic by hand counted as an ad conversion.
+  it('sends no event and returns no event id when a platform admin makes the clinic', async () => {
+    authMock.mockResolvedValue({ user: { id: 'admin-1', email: 'ops@b.com', name: 'Ops' }, isPlatformAdmin: true })
+
+    const state = await createClinicForOAuthUser(null, form())
+
+    expect(state).toEqual({ success: true, created: true })
+    expect(sendSignupCompleteRegistrationEventMock).not.toHaveBeenCalled()
+  })
+
   // Regression: signups without marketing consent never reached Meta.
   it('makes an event id when the form brings none, so every signup reaches Meta', async () => {
     await createClinicForOAuthUser(null, form({ eventId: null }))

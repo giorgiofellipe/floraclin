@@ -119,6 +119,15 @@ describe('POST /api/billing/confirm', () => {
     )
   })
 
+  // Regression: a discounted checkout reported the list price to the Meta pixel.
+  it('returns what the buyer paid, so the pixel reports the discounted amount', async () => {
+    vi.mocked(retrieveCheckoutSession).mockResolvedValue({ ...makeSession(), amount_total: 6930 } as never)
+
+    const json = await (await POST(makeRequest({ sessionId: 'cs_test_123' }))).json()
+
+    expect(json.amountPaidCents).toBe(6930)
+  })
+
   it('activates a paid session for the caller tenant with a live subscription', async () => {
     vi.mocked(retrieveCheckoutSession).mockResolvedValue(makeSession())
 
@@ -126,7 +135,7 @@ describe('POST /api/billing/confirm', () => {
     const json = await res.json()
 
     expect(res.status).toBe(200)
-    expect(json).toEqual({ activated: true, plan: { slug: 'pro', priceCents: 9900 } })
+    expect(json).toEqual({ activated: true, plan: { slug: 'pro', priceCents: 9900 }, amountPaidCents: 9900 })
     expect(updateSubscriptionPlan).toHaveBeenCalledWith(
       'tenant-1',
       'plan-1',

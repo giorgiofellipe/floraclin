@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import Link from 'next/link'
 import { GoogleSignIn } from '@/components/auth/google-sign-in'
+import { SignupTermsNotice } from '@/components/auth/signup-terms-notice'
 import { CALLBACK_URL_PARAM } from '@/lib/callback-url'
 import type { InAppBrowser } from '@/lib/in-app-browser'
 import { track } from '@/lib/analytics/client'
@@ -117,6 +118,7 @@ export function LoginForm({
           />
           {lastLogin === 'google' && <LastUsedBadge />}
         </div>
+        <SignupTermsNotice lead="Se for o seu primeiro acesso com Google, ao criar a conta" />
 
         {/* Separator */}
         <div className="relative my-6">

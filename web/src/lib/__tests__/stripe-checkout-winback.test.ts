@@ -59,7 +59,7 @@ beforeEach(() => {
   vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_x')
 })
 
-describe('createCheckoutSession with a win-back promotion code', () => {
+describe('createCheckoutSession', () => {
   it('attaches the promotion code as a discount', async () => {
     create.mockResolvedValue({ id: 'cs_1', url: 'https://checkout/cs_1' })
 
@@ -95,6 +95,20 @@ describe('createCheckoutSession with a win-back promotion code', () => {
     await createCheckoutSession('t1', 'pro', 'cus_1')
 
     expect(create).toHaveBeenCalledWith(expect.not.objectContaining({ discounts: expect.anything() }))
+  })
+
+  // Regression: the webhook's Subscribe event had no IP or user agent, which Meta requires on website events.
+  it('keeps the buyer browser signals on the session for the Subscribe event', async () => {
+    create.mockResolvedValue({ id: 'cs_4', url: 'https://checkout/cs_4' })
+
+    await createCheckoutSession('t1', 'pro', 'cus_1', {
+      browser: { clientIp: '203.0.113.7', userAgent: 'x'.repeat(600), fbp: 'fb.1.1.browser' },
+    })
+
+    const { metadata } = create.mock.calls[0][0]
+    expect(metadata).toMatchObject({ tenantId: 't1', planSlug: 'pro', meta_ip: '203.0.113.7', meta_fbp: 'fb.1.1.browser' })
+    expect(metadata.meta_ua).toHaveLength(500)
+    expect(metadata).not.toHaveProperty('meta_fbc')
   })
 })
 

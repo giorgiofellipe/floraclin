@@ -258,6 +258,8 @@ describe('signUp action', () => {
         landingPath: '/precos',
         referrer: 'https://l.facebook.com',
         capturedAt: '2026-10-06T00:00:00.000Z',
+        fbc: 'fb.1.1791244800000.fb-click',
+        fbp: 'fb.1.1700000000000.browser',
         metaEventId: 'complete_registration:event-1',
       },
       updatedAt: expect.any(Date),
@@ -353,22 +355,19 @@ describe('signUp action', () => {
   })
 
   // Regression: signups without marketing consent never reached Meta.
-  it('sends CompleteRegistration with the ad click as fbc even after the banner was refused', async () => {
-    withCookies({
-      floraclin_ft: paidTouch,
-      floraclin_cookie_consent: JSON.stringify({ necessary: true, marketing: false, version: 1 }),
-    })
-    const formData = validFormData({ email: 'unanswered@test.com' })
-    formData.set('metaEventId', 'complete_registration:event-unanswered')
+  it('sends CompleteRegistration with the ad click as fbc without any consent', async () => {
+    withCookies({ floraclin_ft: paidTouch })
+    const formData = validFormData({ email: 'no-consent@test.com' })
+    formData.set('metaEventId', 'complete_registration:event-no-consent')
 
     await signUp(null, formData)
 
     expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledWith(expect.objectContaining({
-      eventId: 'complete_registration:event-unanswered',
+      eventId: 'complete_registration:event-no-consent',
       fbc: 'fb.1.1791244800000.fb-click',
     }))
     expect((db as any).set).toHaveBeenCalledWith(expect.objectContaining({
-      signupAttribution: expect.objectContaining({ fbclid: 'fb-click', metaEventId: 'complete_registration:event-unanswered' }),
+      signupAttribution: expect.objectContaining({ fbclid: 'fb-click', metaEventId: 'complete_registration:event-no-consent' }),
     }))
   })
 

@@ -9,7 +9,8 @@ Documento interno (Art. 10 e Art. 37 da LGPD). Revisar anualmente ou a cada muda
 
 ## 1. Finalidade
 
-- **Dados:** e-mail e telefone (hash SHA-256); IP, user agent, fbc (a partir do fbclid), gclid, `_fbp` (só existe após o aceite do Pixel), valor e plano da assinatura; UTMs, página de entrada, domínio de referência e data de captura.
+- **Dados enviados à Meta:** e-mail e telefone (hash SHA-256), IP, user agent, fbc (a partir do fbclid), `_fbp` (só existe após o aceite do Pixel) e, na assinatura, valor e plano.
+- **Dados que ficam só no cookie e no cadastro:** UTMs, gclid, página de entrada, domínio de referência e data de captura.
 - **Titulares:** profissionais adultos que se cadastram diretamente na FloraClin. Sem dados de pacientes. Sem dados sensíveis.
 - **Interesse:** medir o retorno dos anúncios próprios da FloraClin e otimizar a entrega da Meta para perfis com chance de se tornar cliente.
 - **Situação concreta:** a FloraClin investe em Meta Ads. Entre 09/10 e 25/10/2026, a Meta registrou 11 dos 22 cadastros vindos de anúncios, porque o Pixel e o envio pelo servidor dependiam do banner de cookies.
