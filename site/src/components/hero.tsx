@@ -146,19 +146,10 @@ export function Hero() {
             consultas — tudo num só lugar.
           </p>
 
-          {/* CTAs */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-10 animate-fade-up animate-delay-300">
+          <div className="flex justify-center mb-10 animate-fade-up animate-delay-300">
             <SignupLink className="btn-primary text-base px-10 py-4">
               Testar Grátis por 14 Dias
             </SignupLink>
-            <a
-              href="https://wa.me/5547936181734?text=Ol%C3%A1%2C%20gostaria%20de%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20da%20FloraClin."
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-secondary text-base px-10 py-4"
-            >
-              Agendar uma Demo
-            </a>
           </div>
 
           {/* Social proof */}
