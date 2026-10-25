@@ -53,8 +53,12 @@ export interface LifecycleMessage {
   render?: (ctx: LifecycleRenderContext) => { subject: string; email: LifecycleEmail }
   /** Overrides the default reply-to (contato@) for this message's email. */
   replyTo?: () => string
-  /** Render needs the validated win-back offer (a Stripe check); others skip it. */
-  usesOffer?: boolean
+  /**
+   * The message carries the win-back offer (a Stripe check): the email through
+   * `render`, and WhatsApp through this template ({{2}} the offer, {{3}} its
+   * last day) instead of `templateName`, whenever the email shows the offer.
+   */
+  offerTemplate?: { name: string; body: string }
   isDue: (state: ActivationState) => boolean
 }
 
@@ -89,11 +93,12 @@ export function trialEndPhrase(endsAt: Date, now: Date): string {
   return brEndPhrase(endsAt, now)
 }
 
-/** Win-back offers go into an email only with at least 72 hours left, so the
- *  date the email promises is always comfortably ahead. */
+/** Win-back offers go into a message only with at least 72 hours left, so the
+ *  date it promises is always comfortably ahead. */
 const OFFER_MIN_LEAD_MS = 72 * 60 * 60 * 1000
 
-function emailOffer(ctx: LifecycleRenderContext) {
+/** The offer the email and the WhatsApp of this send name, or null to send the plain copy. */
+export function offerToShow(ctx: LifecycleRenderContext) {
   if (!ctx.offer) return null
   return new Date(ctx.offer.endsAt).getTime() - ctx.now.getTime() >= OFFER_MIN_LEAD_MS ? ctx.offer : null
 }
@@ -204,8 +209,11 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
   // question lives on in both.
   {
     key: 'trial_winback',
-    usesOffer: true,
     templateName: 'trial_winback_click',
+    offerTemplate: {
+      name: 'trial_winback_offer_click',
+      body: 'Olá, {{1}}! Seu teste na FloraClin terminou, mas tudo o que você cadastrou continua salvo. Para você voltar: {{2}} na assinatura, aplicado automaticamente até {{3}}. Toque em Ver planos para aproveitar.',
+    },
     category: 'MARKETING',
     emailSubject: 'Sua clínica continua salva na FloraClin',
     body: 'Olá, {{1}}! Seu teste na FloraClin terminou, mas tudo o que você cadastrou continua salvo. Assine para voltar a usar a agenda, os pacientes e o WhatsApp.',
@@ -222,7 +230,7 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
     },
     button: { label: 'Ver planos', path: '/configuracoes?tab=assinatura' },
     render: (ctx) => {
-      const offer = emailOffer(ctx)
+      const offer = offerToShow(ctx)
       return {
         subject: offer ? `Uma oferta para voltar à FloraClin: ${offer.label}` : 'Sua clínica continua salva na FloraClin',
         email: {
@@ -267,8 +275,11 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
   },
   {
     key: 'trial_final',
-    usesOffer: true,
     templateName: 'trial_final_click',
+    offerTemplate: {
+      name: 'trial_final_offer_click',
+      body: 'Olá, {{1}}! Sua conta na FloraClin continua guardada, em modo leitura. Última chance: {{2}} na assinatura, até {{3}}. Esta é a nossa última mensagem sobre o teste.',
+    },
     category: 'MARKETING',
     emailSubject: 'Sua conta na FloraClin continua guardada',
     body: 'Olá, {{1}}! Sua conta na FloraClin continua guardada, em modo leitura. Quando quiser voltar, é só escolher um plano. Esta é a nossa última mensagem sobre o teste.',
@@ -281,7 +292,7 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
     },
     button: { label: 'Ver planos', path: '/configuracoes?tab=assinatura' },
     render: (ctx) => {
-      const offer = emailOffer(ctx)
+      const offer = offerToShow(ctx)
       return {
         subject: offer ? `Última chance: ${offer.label} na FloraClin` : 'Sua conta na FloraClin continua guardada',
         email: {

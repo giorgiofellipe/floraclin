@@ -10,13 +10,14 @@ import {
   type LifecycleRecipient,
 } from '@/db/queries/lifecycle'
 import { getActivationState } from '@/lib/activation'
-import { brToday } from '@/lib/dates'
+import { brToday, formatBrDayMonth } from '@/lib/dates'
 import { notifyDiscord } from '@/lib/discord'
 import { sendLifecycleEmail } from '@/lib/email'
 import { lifecycleClickUrl } from '@/lib/lifecycle-attribution'
 import { lifecycleOptOutUrl } from '@/lib/lifecycle-opt-out'
 import {
   LIFECYCLE_WELCOME,
+  offerToShow,
   ownerFirstName,
   renderLifecycleEmail,
   type LifecycleMessage,
@@ -123,16 +124,20 @@ export async function deliverLifecycleMessage(
           extra: { tenantId: recipient.tenantId, key: message.key, templateName: message.templateName },
         })
       }
-      whatsapp = await deliverChannel(recipient, message, 'whatsapp', phone, (sendId) =>
-        sendPlatformTemplate(phone, message.templateName, [firstName], {
-          buttonUrlParams: message.button ? [sendId] : [],
-        }),
-      )
+      whatsapp = await deliverChannel(recipient, message, 'whatsapp', phone, async (sendId) => {
+        const offer = await whatsappOffer(recipient, message)
+        return sendPlatformTemplate(
+          phone,
+          offer ? offer.templateName : message.templateName,
+          offer ? [firstName, offer.label, formatBrDayMonth(offer.endsAt)] : [firstName],
+          { buttonUrlParams: message.button ? [sendId] : [] },
+        )
+      })
     }
   }
 
   const email = await deliverChannel(recipient, message, 'email', recipient.ownerEmail, async (sendId) => {
-    const ctx = message.render ? await loadRenderContext(recipient.tenantId, !!message.usesOffer) : undefined
+    const ctx = message.render ? await loadRenderContext(recipient.tenantId, !!message.offerTemplate) : undefined
     const rendered = renderLifecycleEmail(message, firstName, ctx)
     const sent = await sendLifecycleEmail({
       to: recipient.ownerEmail,
@@ -175,6 +180,21 @@ async function alertTemplateNotApproved(message: LifecycleMessage, status: strin
     })
   } catch (err) {
     reportSideEffectFailure(err, { area: 'lifecycle', step: 'template_alert', extra: { key: message.key } })
+  }
+}
+
+/** Null sends the plain template: no offer in the email, the offer template not
+ *  approved yet, or a failed load. The offer never costs the clinic the WhatsApp. */
+async function whatsappOffer(recipient: LifecycleRecipient, message: LifecycleMessage) {
+  if (!message.offerTemplate) return null
+  try {
+    const approval = await getLifecycleTemplateApproval(message.offerTemplate.name)
+    if (approval.state !== 'approved') return null
+    const offer = offerToShow(await loadRenderContext(recipient.tenantId, true))
+    return offer ? { templateName: message.offerTemplate.name, ...offer } : null
+  } catch (err) {
+    reportSideEffectFailure(err, { area: 'lifecycle', step: 'whatsapp_offer', extra: { tenantId: recipient.tenantId, key: message.key } })
+    return null
   }
 }
 

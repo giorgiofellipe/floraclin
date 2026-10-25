@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const pending: Promise<unknown>[] = []
 
@@ -337,6 +337,69 @@ describe('deliverLifecycleMessage', () => {
 
     expect(sendPlatformTemplate).toHaveBeenCalledWith('5511987654321', noButton.templateName, ['Maria'], {
       buttonUrlParams: [],
+    })
+  })
+
+  describe('win-back offer on WhatsApp', () => {
+    const winback = LIFECYCLE_MESSAGES.find((m) => m.key === 'trial_winback')!
+    const offer = {
+      promotionCodeId: 'promo_1',
+      label: '30% de desconto nos 3 primeiros meses',
+      endsAt: '2026-11-07T02:59:59.999Z',
+      percentOff: 30,
+      amountOffCents: null,
+      duration: 'repeating' as const,
+      durationInMonths: 3,
+      planSlugs: ['starter', 'pro'],
+    }
+    const offerTemplateStatus = (status: string) =>
+      vi.mocked(findPlatformTemplate).mockImplementation(async (name) =>
+        template(name === winback.offerTemplate!.name ? status : 'APPROVED'),
+      )
+
+    beforeEach(() => {
+      // The 10:00 BRT cron run two days after a trial that ended on 10-23.
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-10-25T13:00:00.000Z'))
+      vi.mocked(getValidatedWinbackOffer).mockResolvedValue(offer)
+    })
+    afterEach(() => vi.useRealTimers())
+
+    it('names the offer and its last day, like the email. Regression: WhatsApp sends the plain copy while the email has the offer', async () => {
+      offerTemplateStatus('APPROVED')
+
+      await deliverLifecycleMessage(recipient, winback)
+
+      expect(sendPlatformTemplate).toHaveBeenCalledWith(
+        '5511987654321',
+        'trial_winback_offer_click',
+        ['Maria', '30% de desconto nos 3 primeiros meses', '06/11'],
+        { buttonUrlParams: ['row-whatsapp'] },
+      )
+      expect(vi.mocked(sendLifecycleEmail).mock.calls[0][0].subject).toContain(offer.label)
+    })
+
+    it.each([
+      ['the offer template is still PENDING on Meta', () => offerTemplateStatus('PENDING')],
+      ['Stripe confirms no offer', () => {
+        offerTemplateStatus('APPROVED')
+        vi.mocked(getValidatedWinbackOffer).mockResolvedValue(null)
+      }],
+      ['loading the offer fails', () => {
+        offerTemplateStatus('APPROVED')
+        vi.mocked(getValidatedWinbackOffer).mockRejectedValueOnce(new Error('stripe down'))
+      }],
+    ])('sends the plain template when %s. Regression: the offer costs the clinic its WhatsApp', async (_case, arrange) => {
+      arrange()
+
+      const outcome = await deliverLifecycleMessage(recipient, winback)
+
+      expect(outcome.whatsapp).toBe('sent')
+      expect(sendPlatformTemplate).toHaveBeenCalledWith('5511987654321', 'trial_winback_click', ['Maria'], {
+        buttonUrlParams: ['row-whatsapp'],
+      })
+      expect(recordSkippedLifecycleSend).not.toHaveBeenCalled()
+      expect(notifyDiscord).not.toHaveBeenCalled()
     })
   })
 

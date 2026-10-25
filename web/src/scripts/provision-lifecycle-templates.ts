@@ -6,7 +6,7 @@
  * each send and starts using a template as soon as Meta reports it APPROVED.
  *
  * Run (env from web/.env.local is loaded automatically):
- *   cd web && npx tsx --tsconfig tsconfig.json src/scripts/provision-lifecycle-templates.ts [--only=<key>] [--dry-run]
+ *   cd web && npx tsx --tsconfig tsconfig.json src/scripts/provision-lifecycle-templates.ts [--only=<key or template name>] [--dry-run]
  */
 import { config as loadEnv } from 'dotenv'
 
@@ -15,7 +15,7 @@ loadEnv({ path: '.env' })
 
 async function main() {
   const { LIFECYCLE_MESSAGES } = await import('@/lib/lifecycle-messages')
-  const { buildLifecycleTemplateDefinition } = await import('@/lib/lifecycle-templates')
+  const { buildLifecycleTemplateDefinitions } = await import('@/lib/lifecycle-templates')
   const { createPlatformTemplate } = await import('@/lib/platform-whatsapp')
 
   const args = process.argv.slice(2)
@@ -25,12 +25,14 @@ async function main() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL
   if (!appUrl) throw new Error('NEXT_PUBLIC_APP_URL is required')
 
-  const messages = LIFECYCLE_MESSAGES.filter((message) => !only || message.key === only)
-  if (messages.length === 0) throw new Error(`No lifecycle message matches --only=${only}`)
+  const definitions = LIFECYCLE_MESSAGES.flatMap((message) =>
+    buildLifecycleTemplateDefinitions(message, appUrl).filter(
+      (definition) => !only || message.key === only || definition.name === only,
+    ),
+  )
+  if (definitions.length === 0) throw new Error(`No lifecycle message or template matches --only=${only}`)
 
-  for (const message of messages) {
-    const definition = buildLifecycleTemplateDefinition(message, appUrl)
-
+  for (const definition of definitions) {
     if (dryRun) {
       console.log(JSON.stringify(definition, null, 2))
       continue
