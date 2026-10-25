@@ -100,14 +100,11 @@ function membershipLookup(rows: unknown[]) {
   return chain
 }
 
-type ConsentField = 'granted' | 'denied' | 'unset'
-
-function form({ consent = 'denied' }: { consent?: ConsentField } = {}) {
+function form({ eventId = 'complete_registration:event-google' }: { eventId?: string | null } = {}) {
   const fd = new FormData()
   fd.set('clinicName', 'Clínica Flora')
   fd.set('phone', '11988887777')
-  fd.set('marketingConsent', consent)
-  if (consent !== 'denied') fd.set('metaEventId', 'complete_registration:event-google')
+  if (eventId) fd.set('metaEventId', eventId)
   return fd
 }
 
@@ -138,6 +135,7 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
     expect(state).toEqual({
       success: true,
       created: true,
+      metaEventId: 'complete_registration:event-google',
     })
     // The redirect is the bug. /dashboard with tenantId: null in the token is
     // bounced straight back here by middleware.
@@ -153,13 +151,12 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
       phone: '11988887777',
       placeholderName: false,
     })
-    expect(updateMock).not.toHaveBeenCalled()
     // The new clinic is the selected one.
     expect(cookieSetMock).toHaveBeenCalledWith('floraclin_tenant_id', 'tenant-1', expect.objectContaining({ httpOnly: true }))
   })
 
-  it('returns and persists the Meta event id when marketing consent was granted', async () => {
-    const state = await createClinicForOAuthUser(null, form({ consent: 'granted' }))
+  it('returns and persists the Meta event id', async () => {
+    const state = await createClinicForOAuthUser(null, form())
 
     expect(state).toEqual({
       success: true,
@@ -232,7 +229,7 @@ describe('createClinicForOAuthUser does not redirect with a stale token', () => 
 
 describe('createClinicForOAuthUser Meta CompleteRegistration', () => {
   it('sends the server event with the same id the browser pixel uses', async () => {
-    await createClinicForOAuthUser(null, form({ consent: 'granted' }))
+    await createClinicForOAuthUser(null, form())
 
     expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledWith(expect.objectContaining({
       eventId: 'complete_registration:event-google',
@@ -244,14 +241,13 @@ describe('createClinicForOAuthUser Meta CompleteRegistration', () => {
     }))
   })
 
-  // Regression: signups that never answered the cookie banner never reached Meta.
-  it.each([
-    ['sends it when the banner was never answered', 'unset', 1],
-    ['sends nothing when marketing was refused', 'denied', 0],
-  ] as const)('%s', async (_name, consent, calls) => {
-    await createClinicForOAuthUser(null, form({ consent }))
+  // Regression: signups without marketing consent never reached Meta.
+  it('makes an event id when the form brings none, so every signup reaches Meta', async () => {
+    await createClinicForOAuthUser(null, form({ eventId: null }))
 
-    expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledTimes(calls)
+    expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      eventId: expect.stringMatching(/^complete_registration:/),
+    }))
   })
 })
 
@@ -259,12 +255,11 @@ describe('createClinicForOAuthUser Meta CompleteRegistration', () => {
  * One-step Google sign-up: the clinic details page creates the clinic on
  * arrival (mode=auto) and onboarding asks for the name and phone, once.
  */
-function autoForm({ consent = 'denied', clinicName }: { consent?: ConsentField; clinicName?: string } = {}) {
+function autoForm({ clinicName }: { clinicName?: string } = {}) {
   const fd = new FormData()
   fd.set('mode', 'auto')
   if (clinicName) fd.set('clinicName', clinicName)
-  fd.set('marketingConsent', consent)
-  if (consent !== 'denied') fd.set('metaEventId', 'complete_registration:event-auto')
+  fd.set('metaEventId', 'complete_registration:event-auto')
   return fd
 }
 
@@ -277,7 +272,7 @@ describe('createClinicForOAuthUser on arrival (one-step Google sign-up)', () => 
   it('creates the clinic with a stand-in name from the Google profile and no phone', async () => {
     const state = await createClinicForOAuthUser(null, autoForm())
 
-    expect(state).toEqual({ success: true, created: true })
+    expect(state).toEqual({ success: true, created: true, metaEventId: 'complete_registration:event-auto' })
     expect(createSelfSignupTenantMock).toHaveBeenCalledWith({
       userId: 'user-1',
       clinicName: 'Clínica de Ana',
@@ -313,21 +308,20 @@ describe('createClinicForOAuthUser on arrival (one-step Google sign-up)', () => 
     await withAdminEmail(() => createClinicForOAuthUser(null, autoForm()))
 
     expect(notifyDiscord).toHaveBeenCalledTimes(1)
-    expect(notifyDiscord).toHaveBeenCalledWith({
+    expect(notifyDiscord).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'signup.started',
       tenantId: 'tenant-1',
       ownerName: 'Ana Souza',
       ownerEmail: 'ana@b.com',
       method: 'google',
-      attribution: null,
-    })
+    }))
     expect(JSON.stringify(vi.mocked(notifyDiscord).mock.calls)).not.toContain('Clínica de Ana')
     // The admin e-mail waits for onboarding, where the real name is typed.
     expect(sendNewSignupNotification).not.toHaveBeenCalled()
   })
 
   it('sends CompleteRegistration once, server-side, with the id the browser pixel uses and no phone', async () => {
-    const state = await createClinicForOAuthUser(null, autoForm({ consent: 'granted' }))
+    const state = await createClinicForOAuthUser(null, autoForm())
 
     expect(state).toEqual({ success: true, created: true, metaEventId: 'complete_registration:event-auto' })
     expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledTimes(1)
@@ -338,17 +332,10 @@ describe('createClinicForOAuthUser on arrival (one-step Google sign-up)', () => 
     }))
   })
 
-  it('sends no Meta event when marketing was refused', async () => {
-    const state = await createClinicForOAuthUser(null, autoForm({ consent: 'denied' }))
-
-    expect(state).not.toHaveProperty('metaEventId')
-    expect(sendSignupCompleteRegistrationEventMock).not.toHaveBeenCalled()
-  })
-
   it('refuses for an account that was in a clinic before, so a removed staff member gets the form, not a trial', async () => {
     getClinicMembershipsMock.mockResolvedValue({ liveTenantIds: [], suspendedOnly: false, neverMember: false })
 
-    const state = await createClinicForOAuthUser(null, autoForm({ consent: 'granted' }))
+    const state = await createClinicForOAuthUser(null, autoForm())
 
     expect(state).toEqual({ needsDetails: true })
     expect(createSelfSignupTenantMock).not.toHaveBeenCalled()
@@ -369,7 +356,7 @@ describe('createClinicForOAuthUser on arrival (one-step Google sign-up)', () => 
     // createSelfSignupTenant re-checks under a per-user lock and returns null.
     createSelfSignupTenantMock.mockResolvedValue(null)
 
-    const state = await createClinicForOAuthUser(null, autoForm({ consent: 'granted' }))
+    const state = await createClinicForOAuthUser(null, autoForm())
 
     expect(state).toEqual({ success: true, created: false })
     expect(cookieSetMock).not.toHaveBeenCalled()

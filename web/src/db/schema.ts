@@ -20,6 +20,8 @@ export const tenants = floraclinSchema.table('tenants', {
   signupAttribution: jsonb('signup_attribution'),
   lifecycleNoticeAt: timestamp('lifecycle_notice_at', { withTimezone: true }),
   lifecycleOptedOutAt: timestamp('lifecycle_opted_out_at', { withTimezone: true }),
+  // Set by hand when the owner objects (Art. 18 §2) to FloraClin's own Meta conversion events.
+  metaConversionsOptedOutAt: timestamp('meta_conversions_opted_out_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),

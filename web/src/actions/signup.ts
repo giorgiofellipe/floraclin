@@ -21,8 +21,7 @@ import { issueConfirmationToken } from '@/lib/confirm-email'
 import { getAppUrl } from '@/lib/app-url'
 import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
 import { buildFbc, generateMetaEventId } from '@/lib/marketing-attribution'
-import { FIRST_TOUCH_COOKIE, marketingRefusedFromCookie, parseFirstTouch, withoutClickIds, type FirstTouch } from '@/lib/first-touch'
-import { COOKIE_CONSENT_COOKIE_NAME } from '@/lib/cookie-consent'
+import { FIRST_TOUCH_COOKIE, parseFirstTouch, type FirstTouch } from '@/lib/first-touch'
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
 import { isPlatformAdminSession, placeholderClinicName } from '@/lib/clinic-placeholder'
 import { reportSideEffectFailure } from '@/lib/observability'
@@ -59,10 +58,9 @@ export async function signUp(
   }
 
   const { fullName, email, password, clinicName, phone } = parsed.data
-  const refused = marketingRefused(formData, cookieStore)
-  const metaEventId = refused ? null : signupMetaEventId(formData)
+  const metaEventId = String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
   const firstTouch = parseFirstTouch(cookieStore.get(FIRST_TOUCH_COOKIE)?.value)
-  const tenantAttribution = attributionForTenant(firstTouch, refused, metaEventId)
+  const tenantAttribution: TenantAttribution = { ...firstTouch, metaEventId }
   const appUrl = getAppUrl()
 
   const [existing] = await db
@@ -110,20 +108,16 @@ export async function signUp(
 
   if (tenantId) {
     trackServerEvent('signup_completed', { distinctId: userId, tenantId }, { method: 'email', ...utmProperties(firstTouch) })
-    if (tenantAttribution) {
-      await persistSignupAttribution(tenantId, tenantAttribution)
-    }
-    if (metaEventId) {
-      scheduleSignupCompleteRegistration({
-        eventId: metaEventId,
-        email,
-        phone,
-        eventSourceUrl: `${appUrl}/signup`,
-        ...(await metaBrowserIds(firstTouch)),
-        clientIp: clientIpFromHeaders(requestHeaders),
-        userAgent: requestHeaders.get('user-agent'),
-      })
-    }
+    await persistSignupAttribution(tenantId, tenantAttribution)
+    scheduleSignupCompleteRegistration({
+      eventId: metaEventId,
+      email,
+      phone,
+      eventSourceUrl: `${appUrl}/signup`,
+      ...(await metaBrowserIds(firstTouch)),
+      clientIp: clientIpFromHeaders(requestHeaders),
+      userAgent: requestHeaders.get('user-agent'),
+    })
     // Step 1 for the team; "Cadastro concluído" (and the admin e-mail)
     // follows from the onboarding save, see notifyOnboardingCompleted.
     await notifySignupStarted({
@@ -165,9 +159,7 @@ export async function signUp(
     confirmEmailStateCookieOptions(),
   )
   const confirmEmailUrl = new URL('/confirm-email', getAppUrl())
-  if (metaEventId) {
-    confirmEmailUrl.searchParams.set('meta_event_id', metaEventId)
-  }
+  confirmEmailUrl.searchParams.set('meta_event_id', metaEventId)
   redirect(`${confirmEmailUrl.pathname}${confirmEmailUrl.search}`)
 }
 
@@ -266,10 +258,9 @@ export async function createClinicForOAuthUser(
     ;({ clinicName, phone } = parsed.data)
   }
 
-  const refused = marketingRefused(formData, cookieStore)
-  const metaEventId = refused ? null : signupMetaEventId(formData)
+  const metaEventId = String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
   const firstTouch = parseFirstTouch(cookieStore.get(FIRST_TOUCH_COOKIE)?.value)
-  const tenantAttribution = attributionForTenant(firstTouch, refused, metaEventId)
+  const tenantAttribution: TenantAttribution = { ...firstTouch, metaEventId }
 
   const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone, placeholderName: auto })
   if (!tenant) {
@@ -286,10 +277,8 @@ export async function createClinicForOAuthUser(
       { method: 'google', ...utmProperties(firstTouch) },
     )
   }
-  if (tenantAttribution) {
-    await persistSignupAttribution(tenant.id, tenantAttribution)
-  }
-  if (metaEventId && session.user.email) {
+  await persistSignupAttribution(tenant.id, tenantAttribution)
+  if (session.user.email) {
     scheduleSignupCompleteRegistration({
       eventId: metaEventId,
       email: session.user.email,
@@ -330,7 +319,7 @@ export async function createClinicForOAuthUser(
   // redirecting to /dashboard here loops: the client has to refresh the
   // session first. It reports success and navigates once the token is
   // current.
-  return { success: true, created: true, ...(metaEventId ? { metaEventId } : {}) }
+  return { success: true, created: true, metaEventId }
 }
 
 type TenantAttribution = Partial<FirstTouch> & { metaEventId?: string }
@@ -351,28 +340,6 @@ async function persistSignupAttribution(
     }
     throw err
   }
-}
-
-// The CAPI signup event rests on legitimate interest (see /privacidade): every signup except an explicit refusal.
-// The cookie is checked too: a form posted before hydration, or from a stale tab, says 'unset'.
-function marketingRefused(formData: FormData, cookieStore: Awaited<ReturnType<typeof cookies>>): boolean {
-  return (
-    formData.get('marketingConsent') === 'denied' ||
-    marketingRefusedFromCookie(cookieStore.get(COOKIE_CONSENT_COOKIE_NAME)?.value)
-  )
-}
-
-function signupMetaEventId(formData: FormData): string {
-  return String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
-}
-
-function attributionForTenant(
-  firstTouch: FirstTouch | null,
-  refused: boolean,
-  metaEventId: string | null,
-): TenantAttribution | null {
-  if (refused) return firstTouch && withoutClickIds(firstTouch)
-  return { ...firstTouch, ...(metaEventId ? { metaEventId } : {}) }
 }
 
 function clientIpFromHeaders(requestHeaders: Pick<Headers, 'get'>): string | null {

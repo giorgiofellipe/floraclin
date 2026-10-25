@@ -7,19 +7,17 @@
 // own /signup request whatever happened to the site's cookie.
 
 const UTM_PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'] as const
-// Ad click ids identify a click, so like the cookie they stop travelling once marketing is refused.
 const CLICK_ID_PARAMS = ['fbclid', 'gclid'] as const
 const MAX_PARAM_LENGTH = 200
 export const LANDING_PARAMS_STORAGE_KEY = 'floraclin_landing_params'
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>
 
-/** The campaign params of a query string, UTMs first, click ids only when asked for. */
-export function campaignParams(search: string, includeClickIds: boolean): URLSearchParams {
+/** The campaign params of a query string: UTMs and ad click ids, nothing else. */
+export function campaignParams(search: string): URLSearchParams {
   const source = new URLSearchParams(search)
   const picked = new URLSearchParams()
-  const names = includeClickIds ? [...UTM_PARAMS, ...CLICK_ID_PARAMS] : UTM_PARAMS
-  for (const name of names) {
+  for (const name of [...UTM_PARAMS, ...CLICK_ID_PARAMS]) {
     const value = source.get(name)?.trim()
     if (value) picked.set(name, value.slice(0, MAX_PARAM_LENGTH))
   }
@@ -27,14 +25,13 @@ export function campaignParams(search: string, includeClickIds: boolean): URLSea
 }
 
 /**
- * Keeps the landing page's UTMs for this tab, so a visitor who browses to
- * /precos before clicking still carries them. Like the cookie, the first visit
- * that brought a campaign wins. Click ids are never stored here: the visitor
- * may still refuse, so they only travel straight from the current URL.
+ * Keeps the landing page's campaign params for this tab, so a visitor who
+ * browses to /precos before clicking still carries them. Like the cookie, the
+ * first visit that brought a campaign wins.
  */
 export function rememberLandingParams(search: string, storage: StorageLike | null): void {
   if (!storage) return
-  const incoming = campaignParams(search, false)
+  const incoming = campaignParams(search)
   if (!incoming.size) return
   try {
     if (storage.getItem(LANDING_PARAMS_STORAGE_KEY)) return
@@ -47,15 +44,15 @@ export function rememberLandingParams(search: string, storage: StorageLike | nul
 /** The signup URL with the visit's campaign params, falling back to the bare URL. */
 export function signupUrlWithCampaign(
   signupUrl: string,
-  { search, storage, includeClickIds }: { search: string; storage: StorageLike | null; includeClickIds: boolean },
+  { search, storage }: { search: string; storage: StorageLike | null },
 ): string {
-  const params = campaignParams(search, includeClickIds)
+  const params = campaignParams(search)
   // A later page can carry only a click id; the landing page's UTMs still apply.
   if (storage && !UTM_PARAMS.some((name) => params.has(name))) {
     try {
-      campaignParams(storage.getItem(LANDING_PARAMS_STORAGE_KEY) ?? '', false).forEach((value, name) =>
-        params.set(name, value),
-      )
+      campaignParams(storage.getItem(LANDING_PARAMS_STORAGE_KEY) ?? '').forEach((value, name) => {
+        if (!params.has(name)) params.set(name, value)
+      })
     } catch {
       // Ignore blocked storage.
     }

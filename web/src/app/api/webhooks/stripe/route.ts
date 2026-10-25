@@ -13,6 +13,7 @@ import {
 } from '@/db/queries/subscriptions'
 import { handleApiError } from '@/lib/api-error'
 import { reportSideEffectFailure } from '@/lib/observability'
+import { scheduleSubscribeConversion } from '@/lib/meta/platform-conversions'
 
 export const dynamic = 'force-dynamic'
 
@@ -108,6 +109,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     stripeSubscriptionId: stripeSubscriptionId ?? undefined,
     ...(period ?? {}),
   })
+  scheduleSubscribeConversion(session, tenantId, plan)
 }
 
 async function handleInvoicePaid(invoice: Stripe.Invoice) {

@@ -19,7 +19,7 @@ import { metaPixelId } from '@/lib/marketing-attribution'
 
 import { postEvents } from './capi-client'
 import { hashEmail, hashName, hashPhone, splitFullName } from './hashing'
-import type { MetaActionSource, MetaCapiTarget, MetaEventName, MetaEventPayload, MetaUserData } from './types'
+import type { MetaActionSource, MetaCapiTarget, MetaCustomData, MetaEventName, MetaEventPayload, MetaUserData } from './types'
 
 /** The attribution columns an event payload reads. */
 export interface MetaAttributionSignals {
@@ -218,18 +218,18 @@ function reportMissingSecretOnce(): void {
   )
 }
 
-let missingSignupTokenReported = false
+let missingPlatformTokenReported = false
 const HTTP_TOO_MANY_REQUESTS = 429
 
-function signupCapiTarget(): MetaCapiTarget | null {
+function platformCapiTarget(): MetaCapiTarget | null {
   const accessToken = process.env.META_CAPI_ACCESS_TOKEN
   if (!accessToken) {
     // Previews and local dev run without the token on purpose.
-    if (!missingSignupTokenReported && process.env.VERCEL_ENV === 'production') {
-      missingSignupTokenReported = true
+    if (!missingPlatformTokenReported && process.env.VERCEL_ENV === 'production') {
+      missingPlatformTokenReported = true
       reportSideEffectFailure(
-        new Error('META_CAPI_ACCESS_TOKEN is unset; signup CompleteRegistration events are not sent'),
-        { area: 'meta-capi', step: 'signup_capi_token' },
+        new Error('META_CAPI_ACCESS_TOKEN is unset; FloraClin conversion events are not sent'),
+        { area: 'meta-capi', step: 'platform_capi_token' },
       )
     }
     return null
@@ -247,10 +247,31 @@ function trimMetaSignal(value: string | null | undefined, max: number): string |
   return trimmed ? trimmed.slice(0, max) : undefined
 }
 
-export async function sendSignupCompleteRegistrationEvent(
+export function sendSignupCompleteRegistrationEvent(input: SendSignupCompleteRegistrationInput): Promise<boolean> {
+  return sendPlatformConversion('CompleteRegistration', { status: 'trial_started' }, input)
+}
+
+export interface SendSubscribeInput extends SendSignupCompleteRegistrationInput {
+  valueCents: number
+  planSlug: string
+}
+
+export function sendSubscribeEvent({ valueCents, planSlug, ...input }: SendSubscribeInput): Promise<boolean> {
+  const value = valueCents / 100
+  return sendPlatformConversion('Subscribe', { value, currency: 'BRL', predicted_ltv: value, plan: planSlug }, input)
+}
+
+const PLATFORM_CONVERSION_STEP = {
+  CompleteRegistration: 'signup_complete_registration',
+  Subscribe: 'subscribe',
+} as const
+
+async function sendPlatformConversion(
+  eventName: Extract<MetaEventName, 'CompleteRegistration' | 'Subscribe'>,
+  customData: MetaCustomData,
   input: SendSignupCompleteRegistrationInput,
 ): Promise<boolean> {
-  const target = signupCapiTarget()
+  const target = platformCapiTarget()
   if (!target) return false
 
   try {
@@ -270,13 +291,13 @@ export async function sendSignupCompleteRegistrationEvent(
     if (userAgent) userData.client_user_agent = userAgent
 
     const payload: MetaEventPayload = {
-      event_name: 'CompleteRegistration',
+      event_name: eventName,
       event_time: Math.floor((input.eventTime ?? new Date()).getTime() / 1000),
       event_id: input.eventId,
       action_source: 'website',
       event_source_url: input.eventSourceUrl,
       user_data: userData,
-      custom_data: { status: 'trial_started' },
+      custom_data: customData,
     }
 
     let result = await postEvents(target, [payload])
@@ -285,14 +306,14 @@ export async function sendSignupCompleteRegistrationEvent(
     }
     if (result.ok) return true
 
-    reportSideEffectFailure(new Error(`Meta CompleteRegistration rejected: ${result.message}`), {
+    reportSideEffectFailure(new Error(`Meta ${eventName} rejected: ${result.message}`), {
       area: 'meta-capi',
-      step: 'signup_complete_registration',
+      step: PLATFORM_CONVERSION_STEP[eventName],
       extra: { kind: result.kind, fbTraceId: result.fbTraceId },
     })
     return false
   } catch (error) {
-    reportSideEffectFailure(error, { area: 'meta-capi', step: 'signup_complete_registration' })
+    reportSideEffectFailure(error, { area: 'meta-capi', step: PLATFORM_CONVERSION_STEP[eventName] })
     return false
   }
 }

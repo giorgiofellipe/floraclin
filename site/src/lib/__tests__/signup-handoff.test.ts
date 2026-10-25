@@ -20,55 +20,45 @@ function memoryStorage(initial: Record<string, string> = {}) {
 }
 
 describe('campaignParams', () => {
-  it('keeps UTMs and drops click ids and anything else without marketing consent', () => {
-    expect(campaignParams(AD_QUERY, false).toString()).toBe(
-      'utm_source=meta&utm_medium=paid_social&utm_campaign=fc_meta_trial&utm_content=video_1&utm_term=adset_a',
+  it('keeps UTMs and the ad click id, and drops anything else', () => {
+    expect(campaignParams(AD_QUERY).toString()).toBe(
+      'utm_source=meta&utm_medium=paid_social&utm_campaign=fc_meta_trial&utm_content=video_1&utm_term=adset_a&fbclid=fb-1',
     )
   })
 
-  it('adds the ad click id with marketing consent', () => {
-    expect(campaignParams(AD_QUERY, true).get('fbclid')).toBe('fb-1')
-    expect(campaignParams(AD_QUERY, true).has('token')).toBe(false)
-  })
-
   it('caps each value so the app cookie stays under the browser limit', () => {
-    expect(campaignParams(`?utm_campaign=${'x'.repeat(500)}`, false).get('utm_campaign')).toHaveLength(200)
+    expect(campaignParams(`?utm_campaign=${'x'.repeat(500)}`).get('utm_campaign')).toHaveLength(200)
   })
 })
 
 describe('signupUrlWithCampaign', () => {
-  it('forwards the landing page UTMs to the app signup', () => {
-    const url = new URL(signupUrlWithCampaign(SIGNUP, { search: AD_QUERY, storage: null, includeClickIds: false }))
+  it('forwards the landing page UTMs and ad click id to the app signup', () => {
+    const url = new URL(signupUrlWithCampaign(SIGNUP, { search: AD_QUERY, storage: null }))
     expect(url.origin + url.pathname).toBe(SIGNUP)
     expect(url.searchParams.get('utm_source')).toBe('meta')
     expect(url.searchParams.get('utm_content')).toBe('video_1')
     expect(url.searchParams.get('utm_term')).toBe('adset_a')
-    expect(url.searchParams.has('fbclid')).toBe(false)
-  })
-
-  it('forwards the click id only when asked to', () => {
-    const url = new URL(signupUrlWithCampaign(SIGNUP, { search: AD_QUERY, storage: null, includeClickIds: true }))
     expect(url.searchParams.get('fbclid')).toBe('fb-1')
   })
 
   it('falls back to the params remembered from the landing page after browsing elsewhere', () => {
     const storage = memoryStorage()
     rememberLandingParams(AD_QUERY, storage)
-    const url = new URL(signupUrlWithCampaign(SIGNUP, { search: '', storage, includeClickIds: false }))
+    const url = new URL(signupUrlWithCampaign(SIGNUP, { search: '', storage }))
     expect(url.searchParams.get('utm_campaign')).toBe('fc_meta_trial')
-    expect(url.searchParams.has('fbclid')).toBe(false)
+    expect(url.searchParams.get('fbclid')).toBe('fb-1')
   })
 
   it('keeps the landing UTMs when a later page carries only a click id', () => {
     const storage = memoryStorage()
     rememberLandingParams(AD_QUERY, storage)
-    const url = new URL(signupUrlWithCampaign(SIGNUP, { search: '?fbclid=fb-2', storage, includeClickIds: true }))
+    const url = new URL(signupUrlWithCampaign(SIGNUP, { search: '?fbclid=fb-2', storage }))
     expect(url.searchParams.get('utm_source')).toBe('meta')
     expect(url.searchParams.get('fbclid')).toBe('fb-2')
   })
 
   it('returns the bare signup URL when the visit carried no campaign', () => {
-    expect(signupUrlWithCampaign(SIGNUP, { search: '?q=1', storage: memoryStorage(), includeClickIds: true })).toBe(SIGNUP)
+    expect(signupUrlWithCampaign(SIGNUP, { search: '?q=1', storage: memoryStorage() })).toBe(SIGNUP)
   })
 
   it('survives storage that throws, as in some in-app browsers', () => {
@@ -81,17 +71,11 @@ describe('signupUrlWithCampaign', () => {
       },
     }
     expect(() => rememberLandingParams(AD_QUERY, storage)).not.toThrow()
-    expect(signupUrlWithCampaign(SIGNUP, { search: '', storage, includeClickIds: false })).toBe(SIGNUP)
+    expect(signupUrlWithCampaign(SIGNUP, { search: '', storage })).toBe(SIGNUP)
   })
 })
 
 describe('rememberLandingParams', () => {
-  it('never stores the ad click id, which the visitor may still refuse', () => {
-    const storage = memoryStorage()
-    rememberLandingParams(AD_QUERY, storage)
-    expect(storage.data.get(LANDING_PARAMS_STORAGE_KEY)).not.toContain('fbclid')
-  })
-
   it('keeps the first campaign of the tab', () => {
     const storage = memoryStorage()
     rememberLandingParams('?utm_source=meta&utm_campaign=first', storage)

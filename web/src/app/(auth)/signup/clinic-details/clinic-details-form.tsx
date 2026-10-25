@@ -10,9 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { maskPhone } from '@/lib/masks'
-import { SignupAttributionFields } from '@/components/marketing/signup-attribution-fields'
 import { generateMetaEventId, trackMetaEvent } from '@/lib/marketing-attribution'
-import { cookieConsentStatus } from '@/lib/cookie-consent'
 import { SUSPENDED_CLINIC_MESSAGE } from '@/lib/clinic-suspended'
 
 export const MAX_SESSION_REFRESH_ATTEMPTS = 3
@@ -113,22 +111,14 @@ export function ClinicDetailsForm({ hasClinic = false, suspended = false, autoSt
     enterOrExplain()
   }, [state, enterOrExplain, autoMode])
 
-  // Consent is read when the request goes out, not from a hydrated hidden
-  // field: on an automatic start that runs right after mount, the field would
-  // still hold its server snapshot ('unset') and miss a refusal the visitor
-  // already gave on the sign-up page.
   // One event id for every attempt, so a retry after a lost response cannot
   // count the same sign-up twice on Meta's side.
   const autoEventId = useRef<string | null>(null)
   const startAutomatically = useCallback(() => {
     const data = new FormData()
     data.set('mode', 'auto')
-    const consent = cookieConsentStatus()
-    data.set('marketingConsent', consent)
-    if (consent !== 'denied') {
-      autoEventId.current ??= generateMetaEventId('complete_registration')
-      data.set('metaEventId', autoEventId.current)
-    }
+    autoEventId.current ??= generateMetaEventId('complete_registration')
+    data.set('metaEventId', autoEventId.current)
     createClinicForOAuthUser(null, data).then(setAutoState, () => setAutoFailed(true))
   }, [])
 
@@ -275,7 +265,6 @@ export function ClinicDetailsForm({ hasClinic = false, suspended = false, autoSt
       )}
 
       <form action={formAction} className="space-y-4">
-        <SignupAttributionFields />
         <div>
           <Label htmlFor="clinicName">Nome da clínica</Label>
           <Input id="clinicName" name="clinicName" required />

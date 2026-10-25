@@ -1,7 +1,7 @@
 export const META_GRAPH_VERSION = 'v21.0'
 
 /** PageView exists only for the "Testar conexão" probe and is never written to the outbox. */
-export type MetaEventName = 'Lead' | 'Contact' | 'Schedule' | 'Purchase' | 'PageView' | 'CompleteRegistration'
+export type MetaEventName = 'Lead' | 'Contact' | 'Schedule' | 'Purchase' | 'PageView' | 'CompleteRegistration' | 'Subscribe'
 
 export type MetaActionSource = 'business_messaging' | 'website' | 'system_generated'
 
@@ -23,6 +23,8 @@ export interface MetaCustomData {
   value?: number
   currency?: string
   status?: string
+  predicted_ltv?: number
+  plan?: string
 }
 
 export interface MetaEventPayload {

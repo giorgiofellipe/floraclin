@@ -4,7 +4,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { FIRST_TOUCH_COOKIE, captureFirstTouch } from '../first-touch'
 
 const NOW = '2026-10-14T12:00:00.000Z'
-const GRANTED = JSON.stringify({ necessary: true, marketing: true, version: 1 })
 const DENIED = JSON.stringify({ necessary: true, marketing: false, version: 1 })
 
 function visit(
@@ -51,13 +50,12 @@ describe('captureFirstTouch', () => {
 
   // Regression: ad clicks landing before the banner was answered lost fbclid, so CAPI sent no fbc.
   it.each([
-    ['the banner was never answered', {}, { fbclid: 'fb-1', gclid: 'g-1' }],
-    ['marketing was granted', { floraclin_cookie_consent: GRANTED }, { fbclid: 'fb-1', gclid: 'g-1' }],
-    ['marketing was refused', { floraclin_cookie_consent: DENIED }, {}],
-  ])('records click ids unless refused: %s', (_name, cookies, expected) => {
+    ['the banner was never answered', {}],
+    ['marketing was refused', { floraclin_cookie_consent: DENIED }],
+  ])('records click ids whatever the banner says: %s', (_name, cookies) => {
     const { touch } = visit('https://floraclin.com.br/?fbclid=fb-1&gclid=g-1', { cookies })
 
-    expect({ fbclid: touch.fbclid, gclid: touch.gclid }).toEqual({ fbclid: undefined, gclid: undefined, ...expected })
+    expect(touch).toMatchObject({ fbclid: 'fb-1', gclid: 'g-1' })
   })
 
   it('ignores referrers from FloraClin domains', () => {
@@ -81,16 +79,6 @@ describe('captureFirstTouch', () => {
     const { touch } = visit(laterUrl, { cookies: { floraclin_ft: JSON.stringify(stored) } })
 
     expect(touch ?? undefined).toEqual(expected)
-  })
-
-  it('drops stored click ids once marketing is refused', () => {
-    const stored = { utmSource: 'meta', fbclid: 'fb-1', gclid: 'g-1', landingPath: '/', capturedAt: '2026-10-01T00:00:00.000Z' }
-
-    const { touch } = visit('https://floraclin.com.br/precos', {
-      cookies: { floraclin_ft: JSON.stringify(stored), floraclin_cookie_consent: DENIED },
-    })
-
-    expect(touch).toEqual({ utmSource: 'meta', landingPath: '/', capturedAt: '2026-10-01T00:00:00.000Z' })
   })
 
   it.each([

@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { maskPhone } from '@/lib/masks'
-import { SignupAttributionFields } from '@/components/marketing/signup-attribution-fields'
 import { GoogleSignIn } from '@/components/auth/google-sign-in'
 import type { InAppBrowser } from '@/lib/in-app-browser'
 import { track } from '@/lib/analytics/client'
@@ -74,7 +73,6 @@ export function SignUpForm({ inAppBrowser, utm = {} }: { inAppBrowser: InAppBrow
 
         {/* Signup form */}
         <form action={formAction} onFocus={() => markStarted('email')} className="space-y-5">
-          <SignupAttributionFields />
           <div className="space-y-1.5">
             <Label htmlFor="fullName" className="uppercase tracking-wider text-xs text-mid">
               Nome completo
@@ -164,6 +162,19 @@ export function SignUpForm({ inAppBrowser, utm = {} }: { inAppBrowser: InAppBrow
               {isPending ? 'Criando conta...' : 'Criar conta'}
             </Button>
           </div>
+
+          <p className="text-center text-xs text-mid">
+            Ao criar sua conta, com e-mail ou Google, você concorda com os{' '}
+            <a href="https://floraclin.com.br/termos" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+              Termos de Uso
+            </a>{' '}
+            e a{' '}
+            <a href="https://floraclin.com.br/privacidade" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+              Política de Privacidade
+            </a>
+            . Informamos o cadastro à Meta, com e-mail em hash, para medir nossos anúncios. Você pode se opor pelo
+            e-mail contato@floraclin.com.br.
+          </p>
 
           <p className="text-center text-sm text-mid pt-2">
             Já tem conta?{' '}

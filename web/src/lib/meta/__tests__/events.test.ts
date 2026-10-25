@@ -125,6 +125,27 @@ describe('sendSignupCompleteRegistrationEvent', () => {
     })
   })
 
+  // Regression: the paid conversion only went through the browser pixel, so Meta missed it whenever the pixel did.
+  it('posts Subscribe with the plan value in BRL under the pixel event id', async () => {
+    process.env.META_CAPI_ACCESS_TOKEN = 'signup-token'
+    const { sendSubscribeEvent } = await import('../events')
+
+    const sent = await sendSubscribeEvent({
+      eventId: 'subscribe:cs_test_1',
+      email: 'maria@clinica.com',
+      eventSourceUrl: 'https://app.floraclin.com.br/configuracoes',
+      valueCents: 14990,
+      planSlug: 'pro',
+    })
+
+    expect(sent).toBe(true)
+    expect(postedPayload()).toMatchObject({
+      event_name: 'Subscribe',
+      event_id: 'subscribe:cs_test_1',
+      custom_data: { value: 149.9, currency: 'BRL', predicted_ltv: 149.9, plan: 'pro' },
+    })
+  })
+
   it.each([
     ['production', 1],
     ['preview', 0],

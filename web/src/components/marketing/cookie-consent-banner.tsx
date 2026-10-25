@@ -73,7 +73,7 @@ export function CookieConsentBanner() {
           <div className="flex-1 text-xs leading-snug text-mid sm:text-sm sm:leading-relaxed">
             <p className="font-medium text-charcoal">Cookies</p>
             <p className="mt-1 sm:hidden">
-              Meta Pixel só com sua autorização.{' '}
+              Meta Pixel só com sua autorização. Cadastros são medidos pelo nosso servidor.{' '}
               <button type="button" onClick={showPreferences} className="text-sage underline underline-offset-2">
                 Ver detalhes
               </button>
@@ -85,7 +85,9 @@ export function CookieConsentBanner() {
             </p>
             <p className="mt-1 hidden sm:block">
               Usamos cookies necessários para o app funcionar. Com sua autorização, também usamos o Meta Pixel para
-              medir anúncios. Se recusar, não guardamos o clique do anúncio nem enviamos seu cadastro à Meta. Veja a{' '}
+              medir anúncios. Independentemente da sua escolha, registramos a origem do seu acesso e, se você se
+              cadastrar, informamos o cadastro à Meta pelo nosso servidor, com e-mail em hash. Você pode se opor por
+              e-mail. Veja a{' '}
               <Link href="https://floraclin.com.br/privacidade" className="text-sage underline underline-offset-2">
                 Política de Privacidade
               </Link>
@@ -157,7 +159,7 @@ export function CookieConsentBanner() {
                 <span>
                   <span className="block text-sm font-medium text-charcoal">Anúncios e medição</span>
                   <span className="mt-1 block text-sm text-mid">
-                    Meta Pixel, medição de campanhas e identificadores de clique em anúncios (fbclid/gclid). Recusar também impede o envio do seu cadastro à Meta.
+                    Meta Pixel no navegador para medir campanhas. Recusar desliga o Pixel. O registro da origem do acesso e o envio do cadastro e da assinatura pelo nosso servidor seguem o interesse legítimo, e você pode se opor a eles pelo e-mail contato@floraclin.com.br (veja a Política de Privacidade, seção 8).
                   </span>
                 </span>
               </label>
