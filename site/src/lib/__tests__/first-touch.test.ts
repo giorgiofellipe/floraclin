@@ -33,9 +33,9 @@ describe('captureFirstTouch', () => {
     vi.useRealTimers()
   })
 
-  it('records UTMs, the bare landing path and the referrer origin, but no click ids, without marketing consent', () => {
+  it('records UTMs, the bare landing path and the referrer origin, never other params', () => {
     const { written, touch } = visit(
-      'https://floraclin.com.br/precos?utm_source=meta&utm_campaign=hof&fbclid=fb-1&gclid=g-1&token=secret',
+      'https://floraclin.com.br/precos?utm_source=meta&utm_campaign=hof&token=secret',
       { headers: { referer: 'https://l.facebook.com/l.php?u=private' } },
     )
 
@@ -49,12 +49,15 @@ describe('captureFirstTouch', () => {
     expect(written).toMatchObject({ httpOnly: true, domain: '.floraclin.com.br', path: '/' })
   })
 
-  it('records click ids when marketing consent was granted', () => {
-    const { touch } = visit('https://floraclin.com.br/?fbclid=fb-1&gclid=g-1', {
-      cookies: { floraclin_cookie_consent: GRANTED },
-    })
+  // Regression: ad clicks landing before the banner was answered lost fbclid, so CAPI sent no fbc.
+  it.each([
+    ['the banner was never answered', {}, { fbclid: 'fb-1', gclid: 'g-1' }],
+    ['marketing was granted', { floraclin_cookie_consent: GRANTED }, { fbclid: 'fb-1', gclid: 'g-1' }],
+    ['marketing was refused', { floraclin_cookie_consent: DENIED }, {}],
+  ])('records click ids unless refused: %s', (_name, cookies, expected) => {
+    const { touch } = visit('https://floraclin.com.br/?fbclid=fb-1&gclid=g-1', { cookies })
 
-    expect(touch).toMatchObject({ fbclid: 'fb-1', gclid: 'g-1' })
+    expect({ fbclid: touch.fbclid, gclid: touch.gclid }).toEqual({ fbclid: undefined, gclid: undefined, ...expected })
   })
 
   it('ignores referrers from FloraClin domains', () => {
@@ -80,7 +83,7 @@ describe('captureFirstTouch', () => {
     expect(touch ?? undefined).toEqual(expected)
   })
 
-  it('drops stored click ids once marketing consent is refused', () => {
+  it('drops stored click ids once marketing is refused', () => {
     const stored = { utmSource: 'meta', fbclid: 'fb-1', gclid: 'g-1', landingPath: '/', capturedAt: '2026-10-01T00:00:00.000Z' }
 
     const { touch } = visit('https://floraclin.com.br/precos', {

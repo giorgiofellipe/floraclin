@@ -115,18 +115,18 @@ export function ClinicDetailsForm({ hasClinic = false, suspended = false, autoSt
 
   // Consent is read when the request goes out, not from a hydrated hidden
   // field: on an automatic start that runs right after mount, the field would
-  // still hold its server snapshot ('unset') and drop a consent the visitor
-  // already gave on the sign-up page. No consent, no event id: the server
-  // then sends no CAPI event and the browser fires no pixel event.
+  // still hold its server snapshot ('unset') and miss a refusal the visitor
+  // already gave on the sign-up page.
   // One event id for every attempt, so a retry after a lost response cannot
   // count the same sign-up twice on Meta's side.
   const autoEventId = useRef<string | null>(null)
   const startAutomatically = useCallback(() => {
     const data = new FormData()
     data.set('mode', 'auto')
-    if (cookieConsentStatus() === 'granted') {
+    const consent = cookieConsentStatus()
+    data.set('marketingConsent', consent)
+    if (consent !== 'denied') {
       autoEventId.current ??= generateMetaEventId('complete_registration')
-      data.set('marketingConsent', 'granted')
       data.set('metaEventId', autoEventId.current)
     }
     createClinicForOAuthUser(null, data).then(setAutoState, () => setAutoFailed(true))

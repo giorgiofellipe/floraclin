@@ -236,13 +236,17 @@ describe('one-step Google sign-up: the clinic is created on arrival', () => {
     expect(h.replace).toHaveBeenCalledTimes(1)
   })
 
-  it('sends no consent and no event id when the visitor has not accepted marketing cookies', async () => {
+  // Regression: Google sign-ups that never answered the cookie banner never reached Meta.
+  it.each([
+    ['sends an event id when the banner was never answered', 'unset', { metaEventId: 'complete_registration:1' }],
+    ['sends no event id when marketing was refused', 'denied', {}],
+  ] as const)('%s', async (_name, consent, expected) => {
+    h.consent = consent
     h.createClinic.mockResolvedValue({ success: true, created: true })
     render(<ClinicDetailsForm autoStart />)
 
     await waitFor(() => expect(h.replace).toHaveBeenCalledWith('/onboarding'))
-    expect(sent()).toEqual([{ mode: 'auto' }])
-    expect(h.trackMetaEvent).not.toHaveBeenCalled()
+    expect(sent()).toEqual([{ mode: 'auto', marketingConsent: consent, ...expected }])
   })
 
   it('keeps the progress screen when the new clinic cookie re-renders the page', async () => {

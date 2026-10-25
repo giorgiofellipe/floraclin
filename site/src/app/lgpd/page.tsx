@@ -19,7 +19,7 @@ export default function LgpdPage() {
             LGPD — Lei Geral de Proteção de Dados
           </h1>
           <p className="text-charcoal/50 text-sm mb-12">
-            Última atualização: 14 de outubro de 2026
+            Última atualização: 25 de outubro de 2026
           </p>
 
           <div className="text-charcoal/80 leading-relaxed space-y-8 text-[15px]">
@@ -249,13 +249,18 @@ export default function LgpdPage() {
                 </p>
                 <p>
                   A FloraClin também utiliza, mediante consentimento específico
-                  para cookies de marketing, Meta Pixel e tecnologias similares
-                  para medir campanhas próprias da FloraClin, eventos de cadastro
-                  e assinatura, e identificadores de clique em anúncios como
-                  fbclid e gclid. Google Ads/gtag poderá ser utilizado futuramente
-                  para finalidades equivalentes. A base legal para essa categoria é
-                  o consentimento (Art. 7º, I), que pode ser recusado ou revogado
-                  pelo link &quot;Preferências de cookies&quot; no rodapé. A origem do
+                  para cookies de marketing (Art. 7º, I), Meta Pixel e tecnologias
+                  similares para medir campanhas próprias da FloraClin e eventos de
+                  cadastro e assinatura. Google Ads/gtag poderá ser utilizado
+                  futuramente para finalidades equivalentes. Ao concluir o cadastro,
+                  enviamos à Meta, pelo nosso servidor, o evento de cadastro concluído
+                  com e-mail e, quando houver, telefone em hash, endereço IP, navegador e
+                  identificadores de clique em anúncios (fbclid, gclid), com base no
+                  interesse legítimo (Art. 7º, IX), para medir os anúncios da
+                  FloraClin. Recusar a categoria de anúncios e medição pelo link
+                  &quot;Preferências de cookies&quot; no rodapé desativa o Meta Pixel,
+                  apaga os identificadores de clique ainda não usados e impede envios
+                  futuros. A origem do
                   primeiro acesso (parâmetros UTM, página de entrada e domínio de
                   referência) é registrada para relatórios internos com base no
                   interesse legítimo (Art. 7º, IX), conforme a Política de

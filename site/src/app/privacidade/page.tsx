@@ -17,7 +17,7 @@ export default function PrivacidadePage() {
         <div className="mx-auto max-w-[720px] px-6">
           <h1 className="text-3xl md:text-4xl mb-4">Política de Privacidade</h1>
           <p className="text-charcoal/50 text-sm mb-12">
-            Última atualização: 14 de outubro de 2026
+            Última atualização: 25 de outubro de 2026
           </p>
 
           <div className="text-charcoal/80 leading-relaxed space-y-8 text-[15px]">
@@ -75,6 +75,12 @@ export default function PrivacidadePage() {
                       identificadores de campanha e tecnologias similares do Meta Pixel.
                     </li>
                     <li>
+                      Ao concluir o cadastro, salvo se você recusar a categoria de anúncios e
+                      medição: o evento de cadastro concluído, com e-mail e, quando houver,
+                      telefone em hash, endereço IP, navegador e identificador de clique
+                      do anúncio, enviado à Meta pelo nosso servidor (API de Conversões).
+                    </li>
+                    <li>
                       Dados de atribuição de campanhas capturados no primeiro contato, como
                       utm_source, utm_medium, utm_campaign, utm_content, utm_term, fbclid,
                       gclid, página de entrada, referência e data de captura.
@@ -105,9 +111,11 @@ export default function PrivacidadePage() {
                   experiência.
                 </li>
                 <li>
-                  <strong>Medição de campanhas:</strong> quando houver consentimento,
-                  medir a efetividade de anúncios, entender a origem de cadastros
-                  e evitar duplicidade na mensuração de conversões.
+                  <strong>Medição de campanhas:</strong> medir a efetividade de
+                  anúncios da FloraClin, entender a origem de cadastros e evitar
+                  duplicidade na mensuração de conversões. O Meta Pixel depende do seu
+                  consentimento; o envio do cadastro concluído à Meta pelo nosso
+                  servidor se baseia no interesse legítimo.
                 </li>
                 <li>
                   <strong>Obrigações legais:</strong> cumprir exigências
@@ -127,10 +135,9 @@ export default function PrivacidadePage() {
                     prestar o serviço contratado pelo Usuário.
                   </li>
                   <li>
-                    <strong>Consentimento</strong> (Art. 7º, I): para dados de
-                    pacientes inseridos pelo Usuário na Plataforma e para cookies,
-                    identificadores e eventos de campanhas não essenciais, incluindo
-                    Meta Pixel e identificadores de clique em anúncios (fbclid, gclid).
+                    <strong>Consentimento</strong> (Art. 7º, I): para dados de pacientes inseridos pelo Usuário na Plataforma e para cookies
+                    não essenciais, incluindo o Meta Pixel. O cookie de primeiro acesso
+                    (item 7.4) segue o interesse legítimo.
                   </li>
                   <li>
                     <strong>Tutela da saúde</strong> (Art. 7º, VIII): para dados
@@ -139,8 +146,11 @@ export default function PrivacidadePage() {
                   <li>
                     <strong>Interesse legítimo</strong> (Art. 7º, IX): para
                     melhorias do serviço, segurança, prevenção a fraudes, métricas
-                    agregadas que não dependam de cookies de anúncios e medição e
-                    registro da origem do primeiro acesso (item 7.4).
+                    agregadas que não dependam de cookies de anúncios e medição,
+                    registro da origem do primeiro acesso (item 7.4) e envio do
+                    cadastro concluído à Meta pela API de Conversões para medir
+                    anúncios próprios da FloraClin (itens 6 e 9). Você pode se opor
+                    recusando a categoria de anúncios e medição.
                   </li>
                   <li>
                     <strong>Obrigação legal</strong> (Art. 7º, II): para
@@ -186,7 +196,11 @@ export default function PrivacidadePage() {
                     quando você aceita cookies de anúncios e medição em floraclin.com.br ou
                     app.floraclin.com.br, podemos compartilhar eventos de navegação
                     e conversão, identificadores online e parâmetros de campanha com
-                    a Meta (Facebook/Instagram). Também poderemos usar Google Ads/gtag
+                    a Meta (Facebook/Instagram). Ao concluir o cadastro, enviamos à
+                    Meta, pelo nosso servidor, o evento de cadastro concluído com
+                    e-mail e, quando houver, telefone em hash, endereço IP, navegador e identificador
+                    de clique do anúncio, com base no interesse legítimo, exceto se
+                    você tiver recusado a categoria de anúncios e medição. Também poderemos usar Google Ads/gtag
                     no futuro para finalidades equivalentes de mensuração e anúncios,
                     sempre condicionado à categoria de anúncios e medição.
                   </li>
@@ -248,9 +262,9 @@ export default function PrivacidadePage() {
                   Esses dados servem apenas a relatórios internos, com base no
                   interesse legítimo, e podem ser salvos no cadastro da clínica. Você
                   pode se opor a esse registro pelo e-mail contato@floraclin.com.br.
-                  Identificadores de clique em anúncios (fbclid, gclid) só são
-                  registrados após o aceite da categoria de anúncios e medição e são
-                  apagados se você recusar. A escolha de consentimento fica armazenada
+                  Identificadores de clique em anúncios (fbclid, gclid) também são
+                  registrados nesse cookie, para atribuir o cadastro ao anúncio, e são
+                  apagados do cookie se você recusar a categoria de anúncios e medição. A escolha de consentimento fica armazenada
                   até que você a altere ou limpe os dados do navegador.
                 </p>
               </div>
@@ -300,14 +314,17 @@ export default function PrivacidadePage() {
                     <strong>Anúncios e medição:</strong> opcionais. Incluem Meta Pixel e
                     tecnologias similares para medir campanhas, criar relatórios de
                     conversão, entender a origem de cadastros e apoiar anúncios da
-                    FloraClin. Nesta categoria também registramos identificadores de
-                    clique em anúncios, como fbclid e gclid, no primeiro contato.
+                    FloraClin. Recusar esta categoria também impede o registro de
+                    identificadores de clique em anúncios, como fbclid e gclid, e o
+                    envio do seu cadastro à Meta pelo nosso servidor.
                   </li>
                 </ul>
                 <p>
-                  O Meta Pixel não é carregado e identificadores de clique em anúncios
-                  não são gravados antes do seu aceite da categoria de anúncios e
-                  medição. Parâmetros UTM, página de entrada e domínio de referência do
+                  O Meta Pixel não é carregado antes do seu aceite da categoria de
+                  anúncios e medição. Identificadores de clique em anúncios são
+                  registrados no primeiro acesso (item 7.4) e apagados do cookie se você
+                  recusar. A recusa impede envios futuros do cadastro à Meta, mas não
+                  desfaz um envio já feito. Parâmetros UTM, página de entrada e domínio de referência do
                   primeiro acesso são registrados conforme o item 7.4. Você pode aceitar, recusar
                   ou alterar sua escolha pelo banner de cookies ou pelo link
                   &quot;Preferências de cookies&quot; no rodapé.

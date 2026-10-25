@@ -21,7 +21,8 @@ import { issueConfirmationToken } from '@/lib/confirm-email'
 import { getAppUrl } from '@/lib/app-url'
 import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
 import { buildFbc, generateMetaEventId } from '@/lib/marketing-attribution'
-import { FIRST_TOUCH_COOKIE, parseFirstTouch, withoutClickIds, type FirstTouch } from '@/lib/first-touch'
+import { FIRST_TOUCH_COOKIE, marketingRefusedFromCookie, parseFirstTouch, withoutClickIds, type FirstTouch } from '@/lib/first-touch'
+import { COOKIE_CONSENT_COOKIE_NAME } from '@/lib/cookie-consent'
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
 import { isPlatformAdminSession, placeholderClinicName } from '@/lib/clinic-placeholder'
 import { reportSideEffectFailure } from '@/lib/observability'
@@ -58,12 +59,10 @@ export async function signUp(
   }
 
   const { fullName, email, password, clinicName, phone } = parsed.data
-  const marketingConsent = formData.get('marketingConsent') === 'granted'
-  const metaEventId = marketingConsent
-    ? String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
-    : null
+  const refused = marketingRefused(formData, cookieStore)
+  const metaEventId = refused ? null : signupMetaEventId(formData)
   const firstTouch = parseFirstTouch(cookieStore.get(FIRST_TOUCH_COOKIE)?.value)
-  const tenantAttribution = attributionForTenant(firstTouch, metaEventId)
+  const tenantAttribution = attributionForTenant(firstTouch, refused, metaEventId)
   const appUrl = getAppUrl()
 
   const [existing] = await db
@@ -114,7 +113,7 @@ export async function signUp(
     if (tenantAttribution) {
       await persistSignupAttribution(tenantId, tenantAttribution)
     }
-    if (marketingConsent && metaEventId) {
+    if (metaEventId) {
       scheduleSignupCompleteRegistration({
         eventId: metaEventId,
         email,
@@ -267,12 +266,10 @@ export async function createClinicForOAuthUser(
     ;({ clinicName, phone } = parsed.data)
   }
 
-  const marketingConsent = formData.get('marketingConsent') === 'granted'
-  const metaEventId = marketingConsent
-    ? String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
-    : null
+  const refused = marketingRefused(formData, cookieStore)
+  const metaEventId = refused ? null : signupMetaEventId(formData)
   const firstTouch = parseFirstTouch(cookieStore.get(FIRST_TOUCH_COOKIE)?.value)
-  const tenantAttribution = attributionForTenant(firstTouch, metaEventId)
+  const tenantAttribution = attributionForTenant(firstTouch, refused, metaEventId)
 
   const tenant = await createSelfSignupTenant({ userId: session.user.id, clinicName, phone, placeholderName: auto })
   if (!tenant) {
@@ -292,7 +289,7 @@ export async function createClinicForOAuthUser(
   if (tenantAttribution) {
     await persistSignupAttribution(tenant.id, tenantAttribution)
   }
-  if (marketingConsent && metaEventId && session.user.email) {
+  if (metaEventId && session.user.email) {
     scheduleSignupCompleteRegistration({
       eventId: metaEventId,
       email: session.user.email,
@@ -356,10 +353,26 @@ async function persistSignupAttribution(
   }
 }
 
-// metaEventId is only issued with marketing consent, so it doubles as the consent check.
-function attributionForTenant(firstTouch: FirstTouch | null, metaEventId: string | null): TenantAttribution | null {
-  if (metaEventId) return { ...firstTouch, metaEventId }
-  return firstTouch && withoutClickIds(firstTouch)
+// The CAPI signup event rests on legitimate interest (see /privacidade): every signup except an explicit refusal.
+// The cookie is checked too: a form posted before hydration, or from a stale tab, says 'unset'.
+function marketingRefused(formData: FormData, cookieStore: Awaited<ReturnType<typeof cookies>>): boolean {
+  return (
+    formData.get('marketingConsent') === 'denied' ||
+    marketingRefusedFromCookie(cookieStore.get(COOKIE_CONSENT_COOKIE_NAME)?.value)
+  )
+}
+
+function signupMetaEventId(formData: FormData): string {
+  return String(formData.get('metaEventId') || generateMetaEventId('complete_registration'))
+}
+
+function attributionForTenant(
+  firstTouch: FirstTouch | null,
+  refused: boolean,
+  metaEventId: string | null,
+): TenantAttribution | null {
+  if (refused) return firstTouch && withoutClickIds(firstTouch)
+  return { ...firstTouch, ...(metaEventId ? { metaEventId } : {}) }
 }
 
 function clientIpFromHeaders(requestHeaders: Pick<Headers, 'get'>): string | null {

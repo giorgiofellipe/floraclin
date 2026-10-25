@@ -38,7 +38,7 @@ describe('campaignParams', () => {
 
 describe('signupUrlWithCampaign', () => {
   it('forwards the landing page UTMs to the app signup', () => {
-    const url = new URL(signupUrlWithCampaign(SIGNUP, { search: AD_QUERY, storage: null, marketingConsent: false }))
+    const url = new URL(signupUrlWithCampaign(SIGNUP, { search: AD_QUERY, storage: null, includeClickIds: false }))
     expect(url.origin + url.pathname).toBe(SIGNUP)
     expect(url.searchParams.get('utm_source')).toBe('meta')
     expect(url.searchParams.get('utm_content')).toBe('video_1')
@@ -46,15 +46,15 @@ describe('signupUrlWithCampaign', () => {
     expect(url.searchParams.has('fbclid')).toBe(false)
   })
 
-  it('forwards the click id only with marketing consent', () => {
-    const url = new URL(signupUrlWithCampaign(SIGNUP, { search: AD_QUERY, storage: null, marketingConsent: true }))
+  it('forwards the click id only when asked to', () => {
+    const url = new URL(signupUrlWithCampaign(SIGNUP, { search: AD_QUERY, storage: null, includeClickIds: true }))
     expect(url.searchParams.get('fbclid')).toBe('fb-1')
   })
 
   it('falls back to the params remembered from the landing page after browsing elsewhere', () => {
     const storage = memoryStorage()
     rememberLandingParams(AD_QUERY, storage)
-    const url = new URL(signupUrlWithCampaign(SIGNUP, { search: '', storage, marketingConsent: false }))
+    const url = new URL(signupUrlWithCampaign(SIGNUP, { search: '', storage, includeClickIds: false }))
     expect(url.searchParams.get('utm_campaign')).toBe('fc_meta_trial')
     expect(url.searchParams.has('fbclid')).toBe(false)
   })
@@ -62,13 +62,13 @@ describe('signupUrlWithCampaign', () => {
   it('keeps the landing UTMs when a later page carries only a click id', () => {
     const storage = memoryStorage()
     rememberLandingParams(AD_QUERY, storage)
-    const url = new URL(signupUrlWithCampaign(SIGNUP, { search: '?fbclid=fb-2', storage, marketingConsent: true }))
+    const url = new URL(signupUrlWithCampaign(SIGNUP, { search: '?fbclid=fb-2', storage, includeClickIds: true }))
     expect(url.searchParams.get('utm_source')).toBe('meta')
     expect(url.searchParams.get('fbclid')).toBe('fb-2')
   })
 
   it('returns the bare signup URL when the visit carried no campaign', () => {
-    expect(signupUrlWithCampaign(SIGNUP, { search: '?q=1', storage: memoryStorage(), marketingConsent: true })).toBe(SIGNUP)
+    expect(signupUrlWithCampaign(SIGNUP, { search: '?q=1', storage: memoryStorage(), includeClickIds: true })).toBe(SIGNUP)
   })
 
   it('survives storage that throws, as in some in-app browsers', () => {
@@ -81,12 +81,12 @@ describe('signupUrlWithCampaign', () => {
       },
     }
     expect(() => rememberLandingParams(AD_QUERY, storage)).not.toThrow()
-    expect(signupUrlWithCampaign(SIGNUP, { search: '', storage, marketingConsent: false })).toBe(SIGNUP)
+    expect(signupUrlWithCampaign(SIGNUP, { search: '', storage, includeClickIds: false })).toBe(SIGNUP)
   })
 })
 
 describe('rememberLandingParams', () => {
-  it('never stores the ad click id, which needs consent first', () => {
+  it('never stores the ad click id, which the visitor may still refuse', () => {
     const storage = memoryStorage()
     rememberLandingParams(AD_QUERY, storage)
     expect(storage.data.get(LANDING_PARAMS_STORAGE_KEY)).not.toContain('fbclid')

@@ -290,14 +290,13 @@ describe('signUp action', () => {
     }
 
     expect(notifyDiscordMock).toHaveBeenCalledTimes(1)
-    expect(notifyDiscordMock).toHaveBeenCalledWith({
+    expect(notifyDiscordMock).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'signup.started',
       tenantId: 'tenant-1',
       ownerName: 'Maria Silva',
       ownerEmail: 'maria@test.com',
       method: 'email',
-      attribution: null,
-    })
+    }))
     // The admin e-mail waits for onboarding, like "Cadastro concluído".
     expect(sendNewSignupNotification).not.toHaveBeenCalled()
   })
@@ -356,9 +355,48 @@ describe('signUp action', () => {
     expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
   })
 
-  it('persists the first touch without click ids or Meta event id when marketing consent is missing', async () => {
+  // Regression: signups that never answered the cookie banner never reached Meta.
+  it('sends CompleteRegistration with the ad click as fbc when the banner was never answered', async () => {
+    withCookies({ floraclin_ft: paidTouch })
+    const formData = validFormData({ email: 'unanswered@test.com' })
+    formData.set('marketingConsent', 'unset')
+    formData.set('metaEventId', 'complete_registration:event-unanswered')
+
+    await signUp(null, formData)
+
+    expect(sendSignupCompleteRegistrationEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      eventId: 'complete_registration:event-unanswered',
+      fbc: 'fb.1.1791244800000.fb-click',
+    }))
+    expect((db as any).set).toHaveBeenCalledWith(expect.objectContaining({
+      signupAttribution: expect.objectContaining({ fbclid: 'fb-click', metaEventId: 'complete_registration:event-unanswered' }),
+    }))
+  })
+
+  // Regression: a form posted before hydration or from a stale tab says 'unset' (or nothing) even after a refusal.
+  it.each([
+    ['the form says unset', 'unset'],
+    ['the form has no consent field', null],
+  ])('sends nothing when the consent cookie refused marketing and %s', async (_name, field) => {
+    withCookies({
+      floraclin_ft: paidTouch,
+      floraclin_cookie_consent: JSON.stringify({ necessary: true, marketing: false, version: 1 }),
+    })
+    const formData = validFormData({ email: 'cookie-refused@test.com' })
+    if (field) formData.set('marketingConsent', field)
+
+    await signUp(null, formData)
+
+    expect(sendSignupCompleteRegistrationEventMock).not.toHaveBeenCalled()
+    expect((db as any).set).toHaveBeenCalledWith(expect.objectContaining({
+      signupAttribution: expect.not.objectContaining({ fbclid: expect.anything() }),
+    }))
+  })
+
+  it('persists the first touch without click ids or Meta event id when marketing was refused', async () => {
     withCookies({ floraclin_ft: paidTouch })
     const formData = validFormData({ email: 'no-consent@test.com' })
+    formData.set('marketingConsent', 'denied')
     formData.set('metaEventId', 'complete_registration:event-without-consent')
 
     await signUp(null, formData)

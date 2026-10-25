@@ -28,7 +28,7 @@ type ClickIdField = (typeof CLICK_ID_FIELDS)[keyof typeof CLICK_ID_FIELDS]
 
 /**
  * One visit, kept whole. UTMs, path and an external referrer origin are stored
- * for internal signup reporting; ad click ids only with marketing consent.
+ * for internal signup reporting; ad click ids unless marketing was refused.
  */
 export type FirstTouch = Partial<Record<UtmField | ClickIdField, string>> & {
   landingPath: string
@@ -39,7 +39,7 @@ export type FirstTouch = Partial<Record<UtmField | ClickIdField, string>> & {
 export function touchFromUrl(
   url: URL,
   referer: string | null,
-  marketingConsent: boolean,
+  keepClickIds: boolean,
   capturedAt = new Date(),
 ): FirstTouch {
   const touch: FirstTouch = {
@@ -47,7 +47,7 @@ export function touchFromUrl(
     capturedAt: capturedAt.toISOString(),
   }
   copyParams(url.searchParams, UTM_FIELDS, touch)
-  if (marketingConsent) copyParams(url.searchParams, CLICK_ID_FIELDS, touch)
+  if (keepClickIds) copyParams(url.searchParams, CLICK_ID_FIELDS, touch)
   const referrer = externalOrigin(referer, url.hostname)
   if (referrer) touch.referrer = referrer
   return touch
@@ -88,10 +88,11 @@ export function parseFirstTouch(value: string | undefined): FirstTouch | null {
   }
 }
 
-export function marketingConsentFromCookie(value: string | undefined): boolean {
+/** Only an explicit "Recusar" counts: a visitor who never answered the banner has not refused. */
+export function marketingRefusedFromCookie(value: string | undefined): boolean {
   if (!value) return false
   try {
-    return (JSON.parse(value) as { marketing?: unknown }).marketing === true
+    return (JSON.parse(value) as { marketing?: unknown }).marketing === false
   } catch {
     return false
   }
@@ -101,12 +102,12 @@ export function marketingConsentFromCookie(value: string | undefined): boolean {
 export function captureFirstTouch(request: NextRequest, response: NextResponse): void {
   if (request.method !== 'GET' || !isDocumentRequest(request)) return
 
-  const marketingConsent = marketingConsentFromCookie(request.cookies.get(CONSENT_COOKIE)?.value)
+  const refused = marketingRefusedFromCookie(request.cookies.get(CONSENT_COOKIE)?.value)
   const stored = parseFirstTouch(request.cookies.get(FIRST_TOUCH_COOKIE)?.value)
-  const existing = stored && !marketingConsent ? withoutClickIds(stored) : stored
+  const existing = stored && refused ? withoutClickIds(stored) : stored
   const next = chooseFirstTouch(
     existing,
-    touchFromUrl(request.nextUrl, request.headers.get('referer'), marketingConsent),
+    touchFromUrl(request.nextUrl, request.headers.get('referer'), !refused),
   )
   if (stored && JSON.stringify(next) === JSON.stringify(stored)) return
 

@@ -71,7 +71,7 @@ export function CookieConsentBanner() {
           <div className="flex-1 text-xs leading-snug text-charcoal/75 sm:text-sm sm:leading-relaxed">
             <p className="font-sans font-medium text-charcoal">Cookies</p>
             <p className="mt-1 sm:hidden">
-              Anúncios e medição só com sua autorização.{" "}
+              Meta Pixel só com sua autorização.{" "}
               <button type="button" onClick={showPreferences} className="text-sage underline underline-offset-2">
                 Ver detalhes
               </button>
@@ -82,8 +82,8 @@ export function CookieConsentBanner() {
               .
             </p>
             <p className="mt-1 hidden sm:block">
-              Usamos cookies necessários para o site funcionar. Com sua autorização, também usamos Meta Pixel e
-              dados de campanha para medir anúncios e melhorar nossas comunicações. Veja a{" "}
+              Usamos cookies necessários para o site funcionar. Com sua autorização, também usamos o Meta Pixel para
+              medir anúncios. Se recusar, não guardamos o clique do anúncio nem enviamos seu cadastro à Meta. Veja a{" "}
               <Link href="/privacidade" className="text-sage underline underline-offset-2">
                 Política de Privacidade
               </Link>
@@ -153,7 +153,7 @@ export function CookieConsentBanner() {
                 <span>
                   <span className="block font-sans text-sm font-medium text-charcoal">Anúncios e medição</span>
                   <span className="mt-1 block text-sm text-charcoal/65">
-                    Meta Pixel, medição de campanhas e identificadores de clique em anúncios (fbclid/gclid) para atribuição de cadastro.
+                    Meta Pixel, medição de campanhas e identificadores de clique em anúncios (fbclid/gclid). Recusar também impede o envio do seu cadastro à Meta.
                   </span>
                 </span>
               </label>

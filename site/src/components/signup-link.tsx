@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useSyncExternalStore, type ComponentProps, type MouseEvent } from "react";
-import { hasMarketingConsent, subscribeCookieConsent } from "@/lib/cookie-consent";
+import { cookieConsentStatus, subscribeCookieConsent } from "@/lib/cookie-consent";
 import { SIGNUP_URL } from "@/lib/marketing-attribution";
 import { rememberLandingParams, sessionStorageOrNull, signupUrlWithCampaign } from "@/lib/signup-handoff";
 
@@ -9,13 +9,13 @@ function currentSignupUrl(): string {
   return signupUrlWithCampaign(SIGNUP_URL, {
     search: window.location.search,
     storage: sessionStorageOrNull(),
-    marketingConsent: hasMarketingConsent(),
+    includeClickIds: cookieConsentStatus() !== "denied",
   });
 }
 
 /**
- * Links to the app's signup, carrying the visit's UTMs (and, with marketing
- * consent, the ad click id) so the app records the campaign even when the
+ * Links to the app's signup, carrying the visit's UTMs (and, unless marketing
+ * was refused, the ad click id) so the app records the campaign even when the
  * site's first-touch cookie never reached this browser.
  */
 export function SignupLink({ onClick, ...props }: Omit<ComponentProps<"a">, "href">) {
