@@ -84,6 +84,9 @@ export async function deliverLifecycleMessage(
     return { whatsapp: 'skipped', email: 'skipped' }
   }
   const firstName = ownerFirstName(recipient.ownerName)
+  // Loaded once per delivery, so the WhatsApp and the email name the same offer.
+  let renderContext: Promise<LifecycleRenderContext> | undefined
+  const loadContext = () => (renderContext ??= loadRenderContext(recipient.tenantId, !!message.offerTemplate))
 
   const phone = recipient.tenantPhone ? normalizeBrPhone(recipient.tenantPhone) : ''
   let whatsapp: ChannelOutcome
@@ -97,7 +100,10 @@ export async function deliverLifecycleMessage(
     })
     whatsapp = 'skipped'
   } else {
-    const approval = await getLifecycleTemplateApproval(message.templateName)
+    // Only the template actually sent must be approved: an approved offer
+    // template goes out even while the plain one is paused on Meta.
+    const offer = await whatsappOffer(recipient, message, loadContext)
+    const approval = offer ? { state: 'approved' as const } : await getLifecycleTemplateApproval(message.templateName)
     if (approval.state === 'not_approved') {
       // Email only. The skip row completes the key for this clinic, so it is
       // never resent by WhatsApp once the template is approved later.
@@ -124,20 +130,16 @@ export async function deliverLifecycleMessage(
           extra: { tenantId: recipient.tenantId, key: message.key, templateName: message.templateName },
         })
       }
-      whatsapp = await deliverChannel(recipient, message, 'whatsapp', phone, async (sendId) => {
-        const offer = await whatsappOffer(recipient, message)
-        return sendPlatformTemplate(
-          phone,
-          offer ? offer.templateName : message.templateName,
-          offer ? [firstName, offer.label, formatBrDayMonth(offer.endsAt)] : [firstName],
-          { buttonUrlParams: message.button ? [sendId] : [] },
-        )
-      })
+      whatsapp = await deliverChannel(recipient, message, 'whatsapp', phone, (sendId) =>
+        sendPlatformTemplate(phone, offer?.templateName ?? message.templateName, [firstName, ...(offer?.params ?? [])], {
+          buttonUrlParams: message.button ? [sendId] : [],
+        }),
+      )
     }
   }
 
   const email = await deliverChannel(recipient, message, 'email', recipient.ownerEmail, async (sendId) => {
-    const ctx = message.render ? await loadRenderContext(recipient.tenantId, !!message.offerTemplate) : undefined
+    const ctx = message.render ? await loadContext() : undefined
     const rendered = renderLifecycleEmail(message, firstName, ctx)
     const sent = await sendLifecycleEmail({
       to: recipient.ownerEmail,
@@ -183,15 +185,18 @@ async function alertTemplateNotApproved(message: LifecycleMessage, status: strin
   }
 }
 
-/** Null sends the plain template: no offer in the email, the offer template not
- *  approved yet, or a failed load. The offer never costs the clinic the WhatsApp. */
-async function whatsappOffer(recipient: LifecycleRecipient, message: LifecycleMessage) {
+/** Null sends the plain template, also on a failed load: the offer never costs the clinic the WhatsApp. */
+async function whatsappOffer(
+  recipient: LifecycleRecipient,
+  message: LifecycleMessage,
+  loadContext: () => Promise<LifecycleRenderContext>,
+) {
   if (!message.offerTemplate) return null
   try {
     const approval = await getLifecycleTemplateApproval(message.offerTemplate.name)
     if (approval.state !== 'approved') return null
-    const offer = offerToShow(await loadRenderContext(recipient.tenantId, true))
-    return offer ? { templateName: message.offerTemplate.name, ...offer } : null
+    const offer = offerToShow(await loadContext())
+    return offer ? { templateName: message.offerTemplate.name, params: [offer.label, formatBrDayMonth(offer.endsAt)] } : null
   } catch (err) {
     reportSideEffectFailure(err, { area: 'lifecycle', step: 'whatsapp_offer', extra: { tenantId: recipient.tenantId, key: message.key } })
     return null

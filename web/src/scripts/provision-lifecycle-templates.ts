@@ -6,7 +6,7 @@
  * each send and starts using a template as soon as Meta reports it APPROVED.
  *
  * Run (env from web/.env.local is loaded automatically):
- *   cd web && npx tsx --tsconfig tsconfig.json src/scripts/provision-lifecycle-templates.ts [--only=<key or template name>] [--dry-run]
+ *   cd web && npx tsx --tsconfig tsconfig.json src/scripts/provision-lifecycle-templates.ts [--only=<key, or a template name to submit just that one>] [--dry-run]
  */
 import { config as loadEnv } from 'dotenv'
 
@@ -43,6 +43,7 @@ async function main() {
       console.log(`${definition.name}: ${status}`)
     } catch (error) {
       console.error(`${definition.name}: ${error instanceof Error ? error.message : error}`)
+      process.exitCode = 1
     }
   }
 }

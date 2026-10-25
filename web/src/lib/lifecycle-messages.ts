@@ -53,11 +53,8 @@ export interface LifecycleMessage {
   render?: (ctx: LifecycleRenderContext) => { subject: string; email: LifecycleEmail }
   /** Overrides the default reply-to (contato@) for this message's email. */
   replyTo?: () => string
-  /**
-   * The message carries the win-back offer (a Stripe check): the email through
-   * `render`, and WhatsApp through this template ({{2}} the offer, {{3}} its
-   * last day) instead of `templateName`, whenever the email shows the offer.
-   */
+  /** The message carries the win-back offer: WhatsApp sends this template ({{2}} the
+   *  offer, {{3}} its last day) instead of `templateName` when `offerToShow` returns one. */
   offerTemplate?: { name: string; body: string }
   isDue: (state: ActivationState) => boolean
 }
@@ -97,7 +94,7 @@ export function trialEndPhrase(endsAt: Date, now: Date): string {
  *  date it promises is always comfortably ahead. */
 const OFFER_MIN_LEAD_MS = 72 * 60 * 60 * 1000
 
-/** The offer the email and the WhatsApp of this send name, or null to send the plain copy. */
+/** The offer this send names, in the email and on WhatsApp, or null for the plain copy. */
 export function offerToShow(ctx: LifecycleRenderContext) {
   if (!ctx.offer) return null
   return new Date(ctx.offer.endsAt).getTime() - ctx.now.getTime() >= OFFER_MIN_LEAD_MS ? ctx.offer : null
@@ -212,7 +209,7 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
     templateName: 'trial_winback_click',
     offerTemplate: {
       name: 'trial_winback_offer_click',
-      body: 'Olá, {{1}}! Seu teste na FloraClin terminou, mas tudo o que você cadastrou continua salvo. Para você voltar: {{2}} na assinatura, aplicado automaticamente até {{3}}. Toque em Ver planos para aproveitar.',
+      body: 'Olá, {{1}}! Seu teste na FloraClin terminou, mas tudo o que você cadastrou continua salvo. Para você voltar: {{2}}, aplicado automaticamente até {{3}}. Toque em Ver planos para aproveitar.',
     },
     category: 'MARKETING',
     emailSubject: 'Sua clínica continua salva na FloraClin',
@@ -278,7 +275,7 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
     templateName: 'trial_final_click',
     offerTemplate: {
       name: 'trial_final_offer_click',
-      body: 'Olá, {{1}}! Sua conta na FloraClin continua guardada, em modo leitura. Última chance: {{2}} na assinatura, até {{3}}. Esta é a nossa última mensagem sobre o teste.',
+      body: 'Olá, {{1}}! Sua conta na FloraClin continua guardada, em modo leitura. Última chance: {{2}}, até {{3}}. Esta é a nossa última mensagem sobre o teste.',
     },
     category: 'MARKETING',
     emailSubject: 'Sua conta na FloraClin continua guardada',

@@ -358,7 +358,7 @@ describe('deliverLifecycleMessage', () => {
       )
 
     beforeEach(() => {
-      // The 10:00 BRT cron run two days after a trial that ended on 10-23.
+      // A 10:00 BRT cron run, 11 days before the offer's last day (06/11).
       vi.useFakeTimers({ toFake: ['Date'] })
       vi.setSystemTime(new Date('2026-10-25T13:00:00.000Z'))
       vi.mocked(getValidatedWinbackOffer).mockResolvedValue(offer)
@@ -379,8 +379,24 @@ describe('deliverLifecycleMessage', () => {
       expect(vi.mocked(sendLifecycleEmail).mock.calls[0][0].subject).toContain(offer.label)
     })
 
+    it('sends the approved offer template while the plain one is paused. Regression: a paused plain template skips a usable offer WhatsApp', async () => {
+      vi.mocked(findPlatformTemplate).mockImplementation(async (name) =>
+        template(name === winback.offerTemplate!.name ? 'APPROVED' : 'PAUSED'),
+      )
+
+      const outcome = await deliverLifecycleMessage(recipient, winback)
+
+      expect(outcome.whatsapp).toBe('sent')
+      expect(sendPlatformTemplate).toHaveBeenCalledWith('5511987654321', 'trial_winback_offer_click', expect.any(Array), expect.any(Object))
+      expect(recordSkippedLifecycleSend).not.toHaveBeenCalled()
+    })
+
     it.each([
       ['the offer template is still PENDING on Meta', () => offerTemplateStatus('PENDING')],
+      ['the offer has less than 72h left, so the email leaves it out too', () => {
+        offerTemplateStatus('APPROVED')
+        vi.mocked(getValidatedWinbackOffer).mockResolvedValue({ ...offer, endsAt: '2026-10-27T13:00:00.000Z' })
+      }],
       ['Stripe confirms no offer', () => {
         offerTemplateStatus('APPROVED')
         vi.mocked(getValidatedWinbackOffer).mockResolvedValue(null)

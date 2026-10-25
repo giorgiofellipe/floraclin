@@ -30,7 +30,7 @@ describe('buildLifecycleTemplateDefinitions', () => {
     },
   )
 
-  it('adds the offer variants next to the plain win-back and final templates', () => {
+  it('builds the offer variants with the plain win-back and final templates. Regression: the offer templates never get provisioned', () => {
     expect(definitions.map(({ definition }) => definition.name)).toEqual(
       expect.arrayContaining(['trial_winback_click', 'trial_winback_offer_click', 'trial_final_click', 'trial_final_offer_click']),
     )
