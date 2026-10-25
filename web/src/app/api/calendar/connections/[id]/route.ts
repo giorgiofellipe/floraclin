@@ -1,14 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireWrite } from '@/lib/write-access'
-import {
-  updateConnection,
-  deleteConnection,
-  deleteBlocksByConnection,
-  clearAppointmentGoogleEventIds,
-  getConnectionByUserId,
-  listConnections,
-} from '@/db/queries/calendar'
-import { stopWebhookChannel, revokeToken } from '@/lib/google-calendar'
+import { updateConnection, getConnectionByUserId, listConnections } from '@/db/queries/calendar'
+import { disconnectCalendar } from '@/lib/google-calendar'
 import { handleApiError } from '@/lib/api-error'
 
 export async function PATCH(
@@ -63,19 +56,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
-    if (connection.channelId && connection.channelResourceId) {
-      await stopWebhookChannel(connection.id, connection.channelId, connection.channelResourceId)
-    }
-
-    await deleteBlocksByConnection(connection.id)
-    await clearAppointmentGoogleEventIds(ctx.tenantId, connection.userId)
-
-    const deleted = await deleteConnection(id, ctx.tenantId)
-
-    if (deleted) {
-      // Both helpers swallow and report their own failures; neither rejects.
-      void revokeToken(deleted.accessToken)
-    }
+    await disconnectCalendar(connection)
 
     return NextResponse.json({ success: true })
   } catch (error) {

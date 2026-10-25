@@ -82,6 +82,7 @@ export async function POST(request: Request) {
             renderedContent: renderedContents[sig.consentTemplateId] || undefined,
             deviceFingerprint: sig.deviceFingerprint,
             geolocation: sig.geolocation,
+            signingTokenId: tokenData.id,
           },
           tx,
         )

@@ -39,7 +39,9 @@ import { db } from '@/db/client'
 import { getAuthContext, requireRole } from '@/lib/auth'
 import { ForbiddenError } from '@/lib/errors'
 
-function setupDbMemberships(memberships: Array<{ tenantId: string; role: string; fullName: string; email: string }>) {
+function setupDbMemberships(
+  memberships: Array<{ tenantId: string; role: string; fullName: string; email: string; passwordChangedAt?: Date | null }>,
+) {
   // getAuthContext chains:
   //   db.select({...}).from(tenantUsers).innerJoin(tenants, ...).innerJoin(users, ...).where(and(...))
   // The where() is the terminal call and the result is awaited directly. The
@@ -126,6 +128,28 @@ describe('auth', () => {
       const context = await requireRole('owner', 'practitioner')
       expect(context.role).toBe('practitioner')
       expect(context.tenantId).toBe('tenant-2')
+    })
+  })
+
+  describe('after a password change', () => {
+    const owner = { tenantId: 'tenant-1', role: 'owner', fullName: 'Owner', email: 'o@test.com' }
+    const changedAt = new Date('2026-10-02T12:00:00Z')
+
+    it.each([
+      ['signed in before the change', changedAt.getTime() - 1],
+      ['minted before sessions carried a sign-in time', undefined],
+    ])('rejects a session %s', async (_case, authAt) => {
+      mockAuth.mockResolvedValue({ user: { id: 'user-1' }, authAt })
+      setupDbMemberships([{ ...owner, passwordChangedAt: changedAt }])
+
+      await expect(getAuthContext()).rejects.toThrow('REDIRECT:/api/session/revoked')
+    })
+
+    it('accepts the session signed in after the change', async () => {
+      mockAuth.mockResolvedValue({ user: { id: 'user-1' }, authAt: changedAt.getTime() + 1 })
+      setupDbMemberships([{ ...owner, passwordChangedAt: changedAt }])
+
+      await expect(getAuthContext()).resolves.toMatchObject({ userId: 'user-1' })
     })
   })
 

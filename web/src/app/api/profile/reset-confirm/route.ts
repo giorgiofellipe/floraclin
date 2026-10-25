@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     const hash = await bcrypt.hash(newPassword, 12)
     await db
       .update(users)
-      .set({ passwordHash: hash, updatedAt: new Date() })
+      .set({ passwordHash: hash, passwordChangedAt: new Date(), updatedAt: new Date() })
       .where(eq(users.email, email.toLowerCase()))
 
     return NextResponse.json({ success: true })

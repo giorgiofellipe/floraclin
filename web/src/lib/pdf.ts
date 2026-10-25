@@ -46,6 +46,20 @@ function getLocalChromePath(): string | undefined {
   return undefined
 }
 
+// Prontuário embeds app-hosted face templates and Supabase-signed photos. Any
+// other URL in the markup would be a server-side request from our network.
+function isAllowedPdfRequest(url: string): boolean {
+  if (url.startsWith('data:')) return true
+  try {
+    const { origin } = new URL(url)
+    return [getAppUrl(), process.env.NEXT_PUBLIC_SUPABASE_URL].some(
+      (allowed) => !!allowed && new URL(allowed).origin === origin,
+    )
+  } catch {
+    return false
+  }
+}
+
 const USE_SPARTICUZ = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined
 
 export const PRINT_BASE_CSS = `
@@ -156,6 +170,11 @@ export async function renderReactToPdf(
 
   try {
     const page = await browser.newPage()
+    await page.setRequestInterception(true)
+    page.on('request', (request) => {
+      if (isAllowedPdfRequest(request.url())) void request.continue()
+      else void request.abort()
+    })
     await page.setContent(html, { waitUntil: 'load' })
     const footerTemplate = options.footerTemplate ?? buildFloraclinFooterTemplate()
     const pdf = await page.pdf({

@@ -1,5 +1,12 @@
 import { google } from 'googleapis'
-import { getConnectionById, updateConnection } from '@/db/queries/calendar'
+import {
+  getConnectionById,
+  updateConnection,
+  deleteConnection,
+  deleteBlocksByConnection,
+  clearAppointmentGoogleEventIds,
+  type CalendarConnectionRow,
+} from '@/db/queries/calendar'
 import { randomBytes, createHmac, timingSafeEqual } from 'crypto'
 import { reportSideEffectFailure } from '@/lib/observability'
 
@@ -160,6 +167,22 @@ export async function revokeToken(accessToken: string) {
     // A token we failed to revoke stays valid on Google's side until it
     // expires, so this is the one cleanup failure worth knowing about.
     reportCalendarFailure(error, 'revoke_token')
+  }
+}
+
+export async function disconnectCalendar(connection: CalendarConnectionRow) {
+  if (connection.channelId && connection.channelResourceId) {
+    await stopWebhookChannel(connection.id, connection.channelId, connection.channelResourceId)
+  }
+
+  await deleteBlocksByConnection(connection.id)
+  await clearAppointmentGoogleEventIds(connection.tenantId, connection.userId)
+
+  const deleted = await deleteConnection(connection.id, connection.tenantId)
+
+  if (deleted) {
+    // Both helpers swallow and report their own failures; neither rejects.
+    void revokeToken(deleted.accessToken)
   }
 }
 

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { deactivateUser } from '@/db/queries/users'
+import { getConnectionByUserId } from '@/db/queries/calendar'
+import { disconnectCalendar } from '@/lib/google-calendar'
 import { handleApiError } from '@/lib/api-error'
 
 export async function PUT(
@@ -22,6 +24,11 @@ export async function PUT(
     if (!result) {
       return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 })
     }
+
+    // The iCal feed and the Google push are keyed to the connection, not the
+    // membership, so they keep serving this member's appointments until it goes.
+    const connection = await getConnectionByUserId(ctx.tenantId, userId)
+    if (connection) await disconnectCalendar(connection)
 
     await createAuditLog({
       tenantId: ctx.tenantId,

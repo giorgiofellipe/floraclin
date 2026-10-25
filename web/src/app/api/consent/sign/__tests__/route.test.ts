@@ -183,4 +183,18 @@ describe('POST /api/consent/sign: token consumption', () => {
       expect.anything(),
     )
   })
+
+  it('ties each acceptance to the token that signed it, which is what lets that token send its copies', async () => {
+    vi.mocked(isSubscriptionActive).mockResolvedValue(true)
+    vi.mocked(getValidSigningToken).mockResolvedValue(TOKEN_DATA as never)
+
+    await POST(makeRequest(makeBody()))
+
+    expect(acceptConsent).toHaveBeenCalledWith(
+      TOKEN_TENANT_ID,
+      expect.anything(),
+      expect.objectContaining({ signingTokenId: TOKEN_DATA.id }),
+      expect.anything(),
+    )
+  })
 })
