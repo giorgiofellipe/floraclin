@@ -172,6 +172,15 @@ describe('LIFECYCLE_MESSAGES copy', () => {
     }
   })
 
+  it('has {{1}}, {{2}} and {{3}} once each in an offer template, none at an edge. Regression: Meta rejects edge variables', () => {
+    const bodies = LIFECYCLE_MESSAGES.flatMap((m) => (m.offerTemplate ? [m.offerTemplate.body] : []))
+    expect(bodies).toHaveLength(2)
+    for (const body of bodies) {
+      for (const variable of ['{{1}}', '{{2}}', '{{3}}']) expect(body.split(variable)).toHaveLength(2)
+      expect(body).not.toMatch(/^\{\{\d\}\}|\{\{\d\}\}[.!]?$/)
+    }
+  })
+
   it('puts {{1}} only in the email intro, once. Regression: a literal {{1}} ships in the email', () => {
     for (const { email } of LIFECYCLE_MESSAGES) {
       expect(email.intro.split('{{1}}')).toHaveLength(2)
