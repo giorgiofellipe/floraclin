@@ -3,14 +3,27 @@ import { getAuthContext } from '@/lib/auth'
 import { getSignedUrl } from '@/lib/storage'
 import { handleApiError } from '@/lib/api-error'
 
+// The signer runs with the service role, so the tenant prefix is the only thing
+// keeping one clinic's keys out of another's. storage-js sends the key unencoded
+// and the URL parser resolves `..`, `%2e%2e` and `\`, so segments are allowlisted.
+const KEY_SEGMENT = /^[\w.-]+$/
+
+function isOwnTenantKey(path: string, tenantId: string): boolean {
+  const segments = path.split('/')
+  return segments[0] === tenantId && segments.every((s) => KEY_SEGMENT.test(s) && s !== '.' && s !== '..')
+}
+
 export async function GET(request: Request) {
   try {
-    await getAuthContext()
+    const ctx = await getAuthContext()
 
     const { searchParams } = new URL(request.url)
     const path = searchParams.get('path')
     if (!path) {
       return NextResponse.json({ error: 'Missing path' }, { status: 400 })
+    }
+    if (!isOwnTenantKey(path, ctx.tenantId)) {
+      return NextResponse.json({ error: 'File not found' }, { status: 404 })
     }
 
     const url = await getSignedUrl(path, 3600)

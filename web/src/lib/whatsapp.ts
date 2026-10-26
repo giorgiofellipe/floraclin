@@ -609,12 +609,16 @@ export async function downloadAndStoreMedia(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
-  const path = `whatsapp/${tenantId}/${mediaId}/${filename}`
+  // No sender-chosen filename in the key: storage-js puts the key into the
+  // request URL unencoded, so '../' segments would leave this bucket.
+  const path = `whatsapp/${tenantId}/${mediaId}`
   const { error } = await supabase.storage
     .from('media')
     .upload(path, buffer, { contentType: mimeType, upsert: true })
   if (error) throw new Error(`Storage upload failed: ${error.message}`)
-  const { data: urlData } = supabase.storage.from('media').getPublicUrl(path)
+  // storage-js appends `download` to the query string without encoding `&`, `#` or `=`.
+  const downloadName = filename.replace(/[^\p{L}\p{N}._ -]/gu, '_')
+  const { data: urlData } = supabase.storage.from('media').getPublicUrl(path, { download: downloadName })
   return { storedUrl: urlData.publicUrl, mimeType }
 }
 

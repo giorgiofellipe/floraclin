@@ -8,7 +8,7 @@ import { db } from '@/db/client'
 import { users, sessions, accounts, verificationTokens, tenantUsers, tenants, tenantSubscriptions, plans } from '@/db/schema'
 import { eq, and, isNull, sql } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
-import { markEmailVerifiedViaGoogle } from '@/db/queries/users'
+import { discardUnconfirmedPassword, markEmailVerifiedViaGoogle } from '@/db/queries/users'
 import { trackServerEvent } from '@/lib/analytics/server'
 import { loginMethodFromProvider } from '@/lib/analytics/events'
 import { rememberLastLogin } from '@/lib/last-login'
@@ -128,10 +128,16 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     },
   },
   callbacks: {
-    async signIn({ account, profile }) {
+    async signIn({ user, account, profile, email }) {
       // For Google OAuth, only allow sign-in if Google has verified the email
       if (account?.provider === 'google' && !(profile as any)?.email_verified) {
         return false
+      }
+      // Magic-link callback (not the send request): this runs before Auth.js
+      // stamps emailVerified, the last point where a password planted by
+      // whoever registered the address first can still be told apart.
+      if (account?.type === 'email' && !email?.verificationRequest && user.email) {
+        await discardUnconfirmedPassword(user.email)
       }
       return true
     },

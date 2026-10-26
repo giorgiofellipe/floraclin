@@ -116,6 +116,9 @@ export function ConfirmActions({ email, token }: ConfirmActionsProps) {
             {confirming ? 'Confirmando...' : 'Confirmar e-mail'}
           </Button>
           {confirmError && <p className="mt-2 text-sm text-red-600">{confirmError}</p>}
+          <p className="mt-2 text-xs text-mid">
+            Só confirme se foi você quem criou esta conta. Se não foi, feche esta página.
+          </p>
         </div>
       )}
 

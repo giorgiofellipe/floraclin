@@ -60,7 +60,10 @@ export async function sendConfirmationEmail(email: string, url: string, clinicNa
         `Bem-vindo(a) à ${clinicName}! Falta só confirmar seu e-mail para começar a usar a FloraClin.`,
       ],
       button: { label: 'Confirmar e-mail', url },
-      notes: ['Este link expira em 24 horas.', 'Se você não criou esta conta, ignore este e-mail.'],
+      notes: [
+        'Este link expira em 24 horas.',
+        `Se não foi você quem criou a clínica ${clinicName}, não confirme e ignore este e-mail. Quem criou a conta continuaria com acesso a ela.`,
+      ],
     }),
   })
 }

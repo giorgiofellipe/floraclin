@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { users, tenantUsers, tenants } from '@/db/schema'
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, and, isNull, sql } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { sendInviteEmail } from '@/lib/email'
 import type { InviteUserInput } from '@/validations/user'
@@ -211,6 +211,14 @@ export async function markEmailVerified(email: string): Promise<void> {
     .update(users)
     .set({ emailVerified: new Date() })
     .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
+}
+
+/** Drops the password of a still-unconfirmed account. Magic-link counterpart of markEmailVerifiedViaGoogle. */
+export async function discardUnconfirmedPassword(email: string): Promise<void> {
+  await db
+    .update(users)
+    .set({ passwordHash: null })
+    .where(and(sql`lower(${users.email}) = ${email.toLowerCase()}`, isNull(users.emailVerified)))
 }
 
 /**
