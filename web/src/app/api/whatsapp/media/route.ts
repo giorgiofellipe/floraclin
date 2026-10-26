@@ -26,7 +26,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'File not found' }, { status: 404 })
     }
 
-    const url = await getSignedUrl(path, 3600)
+    const url = await getSignedUrl(path, 3600, searchParams.get('name') ?? undefined)
     if (!url) {
       return NextResponse.json({ error: 'File not found' }, { status: 404 })
     }

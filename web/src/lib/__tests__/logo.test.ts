@@ -39,7 +39,7 @@ describe('signLogoPath', () => {
     expect(url).toBe(
       'https://xyz.supabase.co/storage/v1/object/sign/floraclin/logo.png?token=t',
     )
-    expect(createSignedUrl).toHaveBeenCalledWith(PATH, LOGO_SIGNED_URL_TTL)
+    expect(createSignedUrl).toHaveBeenCalledWith(PATH, LOGO_SIGNED_URL_TTL, undefined)
     expect(LOGO_SIGNED_URL_TTL).toBe(60 * 60)
   })
 

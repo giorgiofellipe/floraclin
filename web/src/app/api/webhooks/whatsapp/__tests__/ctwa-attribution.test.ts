@@ -107,7 +107,7 @@ vi.mock('@/db/queries/patients', () => ({
   getPatientByPhone: vi.fn(async () => null),
   getPatient: vi.fn(),
 }))
-vi.mock('@/db/queries/tenants', () => ({ getTenant: vi.fn() }))
+vi.mock('@/db/queries/tenants', () => ({ getTenant: vi.fn(), findOwnPhoneNumberClaimants: vi.fn() }))
 vi.mock('@/lib/classify-prospect', () => ({ classifyMessage: vi.fn() }))
 
 // `recordAttribution` simulates the real query's unique-index first-touch
@@ -140,6 +140,7 @@ import { getMessageByMetaId } from '@/db/queries/whatsapp'
 import { createNewProspect, getProspectByPhone } from '@/db/queries/prospects'
 import { getPatientByPhone } from '@/db/queries/patients'
 import { recordAttribution } from '@/db/queries/lead-attributions'
+import { findOwnPhoneNumberClaimants } from '@/db/queries/tenants'
 import { enqueueMetaEvent } from '@/lib/meta/events'
 import { POST } from '../route'
 
@@ -212,15 +213,7 @@ function makePayload(opts: { metaMessageId: string; referral?: Record<string, un
 }
 
 function setupTenantLookup() {
-  vi.mocked(db.select).mockReturnValue({
-    from: vi.fn().mockReturnValue({
-      where: vi.fn().mockReturnValue({
-        limit: vi.fn().mockResolvedValue([
-          { id: TENANT_ID, settings: { whatsapp_phone_number_id: PHONE_NUMBER_ID } },
-        ]),
-      }),
-    }),
-  } as never)
+  vi.mocked(findOwnPhoneNumberClaimants).mockResolvedValue([TENANT_ID])
 }
 
 function existingProspect() {

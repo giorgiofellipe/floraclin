@@ -114,6 +114,31 @@ export async function updateTenantSettings(
   return tenant ?? null
 }
 
+// A phone_number_id in settings is only a claim: any owner can type one. Own
+// mode is plan-gated, so only own-mode, live tenants count as holding it.
+function ownsPhoneNumberId(phoneNumberId: string) {
+  return and(
+    sql`${tenants.settings}->>'whatsapp_phone_number_id' = ${phoneNumberId}`,
+    sql`${tenants.settings}->>'whatsapp_mode' = 'own'`,
+    isNull(tenants.deletedAt),
+  )
+}
+
+/** Up to two tenants claiming an own number: enough to tell one owner from a conflict. */
+export async function findOwnPhoneNumberClaimants(phoneNumberId: string): Promise<string[]> {
+  const rows = await db.select({ id: tenants.id }).from(tenants).where(ownsPhoneNumberId(phoneNumberId)).limit(2)
+  return rows.map((r) => r.id)
+}
+
+export async function isPhoneNumberIdClaimedByAnotherTenant(tenantId: string, phoneNumberId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: tenants.id })
+    .from(tenants)
+    .where(and(ownsPhoneNumberId(phoneNumberId), sql`${tenants.id} <> ${tenantId}`))
+    .limit(1)
+  return !!row
+}
+
 /**
  * Sets `onboarding_completed: true` (plus `extraSettings`) and reports
  * whether this call is the one that completed onboarding. The flag is the

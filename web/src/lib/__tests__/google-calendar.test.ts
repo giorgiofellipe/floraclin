@@ -91,6 +91,22 @@ describe('signOAuthState / verifyOAuthState', () => {
     const result = verifyOAuthState(state)
     expect(result).toEqual(clinicPayload)
   })
+
+  // A state never expired, so a link from a member who was later removed or
+  // demoted could re-point the clinic calendar to their own Google account.
+  it('refuses a state once its 10 minutes are up', () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-10-24T12:00:00Z'))
+      const state = signOAuthState(payload)
+      vi.setSystemTime(new Date('2026-10-24T12:09:59Z'))
+      expect(verifyOAuthState(state)).toEqual(payload)
+      vi.setSystemTime(new Date('2026-10-24T12:10:01Z'))
+      expect(verifyOAuthState(state)).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('generateFeedToken', () => {

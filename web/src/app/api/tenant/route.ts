@@ -6,12 +6,40 @@ import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
-import { getTenant, updateTenant, updateTenantSettings } from '@/db/queries/tenants'
+import { getTenant, updateTenant, updateTenantSettings, isPhoneNumberIdClaimedByAnotherTenant } from '@/db/queries/tenants'
 import { signLogoPath } from '@/lib/logo'
 import { updateTenantSchema, bookingSettingsSchema } from '@/validations/tenant'
 import { whatsappSettingsSchema } from '@/validations/whatsapp'
 import { handleApiError } from '@/lib/api-error'
 import { checkPlanFeature } from '@/lib/plans'
+import { verifyCredentials } from '@/lib/whatsapp'
+
+type Settings = Record<string, unknown> | undefined
+
+// The webhook routes an own number to whichever tenant holds its id, so a new
+// claim must show Meta lets this token reach that number.
+async function ownNumberClaimError(tenantId: string, settings: Settings, current: Settings) {
+  const id = settings?.whatsapp_phone_number_id
+  if (settings?.whatsapp_mode !== 'own' || typeof id !== 'string' || !id) return null
+
+  const token = (settings.whatsapp_access_token || current?.whatsapp_access_token) as string | undefined
+  const isNewClaim =
+    current?.whatsapp_mode !== 'own' || current?.whatsapp_phone_number_id !== id || current?.whatsapp_access_token !== token
+  if (isNewClaim && (!token || !(await verifyCredentials(id, token)).valid)) {
+    return NextResponse.json(
+      { error: 'Não foi possível confirmar este Phone Number ID com o Access Token informado.' },
+      { status: 400 },
+    )
+  }
+
+  if (await isPhoneNumberIdClaimedByAnotherTenant(tenantId, id)) {
+    return NextResponse.json(
+      { error: 'Este número de WhatsApp já está conectado a outra clínica.' },
+      { status: 409 },
+    )
+  }
+  return null
+}
 
 export async function GET(request: Request) {
   try {
@@ -78,6 +106,10 @@ export async function PUT(request: Request) {
       if (parsed.data.whatsapp_access_token) {
         settingsUpdate.whatsapp_access_token = parsed.data.whatsapp_access_token
       }
+
+      const current = await getTenant(ctx.tenantId)
+      const claimError = await ownNumberClaimError(ctx.tenantId, settingsUpdate, current?.settings as Settings)
+      if (claimError) return claimError
 
       const tenant = await updateTenantSettings(ctx.tenantId, settingsUpdate)
       if (!tenant) {
@@ -181,6 +213,13 @@ export async function PUT(request: Request) {
     }
 
     const existing = await getTenant(ctx.tenantId)
+    const claimError = await ownNumberClaimError(
+      ctx.tenantId,
+      parsed.data.settings as Settings,
+      existing?.settings as Settings,
+    )
+    if (claimError) return claimError
+
     const tenant = await updateTenant(ctx.tenantId, parsed.data)
     if (!tenant) {
       return NextResponse.json({ error: 'Erro ao atualizar configurações' }, { status: 500 })

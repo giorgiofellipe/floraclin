@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { db } from '@/db/client'
-import { tenants, procedureTypes, whatsappMessages, whatsappConversations } from '@/db/schema'
+import { procedureTypes, whatsappMessages, whatsappConversations } from '@/db/schema'
+import { findOwnPhoneNumberClaimants } from '@/db/queries/tenants'
 import { eq, and, sql } from 'drizzle-orm'
 import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage, sendTemplateMessage, sendMediaMessage, normalizeBrPhone } from '@/lib/whatsapp'
 import {
@@ -151,23 +152,19 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // Look up tenant by WhatsApp phone number ID stored in settings JSONB
-      const [tenant] = await db
-        .select()
-        .from(tenants)
-        .where(
-          sql`${tenants.settings}->>'whatsapp_phone_number_id' = ${phoneNumberId}`,
-        )
-        .limit(1)
-
-      if (!tenant) {
-        console.warn(
-          `WhatsApp webhook: unknown phone_number_id ${phoneNumberId}`,
-        )
+      const claimants = await findOwnPhoneNumberClaimants(phoneNumberId)
+      if (claimants.length > 1) {
+        reportWebhookFailure(new Error('Own phone_number_id claimed by several tenants'), 'own_number_tenant', {
+          phoneNumberId,
+          tenantIds: claimants,
+        })
         continue
       }
-
-      const tenantId = tenant.id
+      const [tenantId] = claimants
+      if (!tenantId) {
+        console.warn(`WhatsApp webhook: unknown phone_number_id ${phoneNumberId}`)
+        continue
+      }
 
       // Process inbound messages
       for (const msg of value.messages ?? []) {
