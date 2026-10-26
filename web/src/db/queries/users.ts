@@ -213,6 +213,14 @@ export async function markEmailVerified(email: string): Promise<void> {
     .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
 }
 
+/** Drops the password of a still-unconfirmed account. Magic-link counterpart of markEmailVerifiedViaGoogle. */
+export async function discardUnconfirmedPassword(email: string): Promise<void> {
+  await db
+    .update(users)
+    .set({ passwordHash: null })
+    .where(and(sql`lower(${users.email}) = ${email.toLowerCase()}`, isNull(users.emailVerified)))
+}
+
 /**
  * Marks the address verified via Google, and discards any password that was
  * set on the account while it was still unconfirmed.
@@ -227,18 +235,6 @@ export async function markEmailVerified(email: string): Promise<void> {
  * legitimately confirmed by email and then adds Google keeps their password,
  * which is why the password column is a CASE rather than a plain null.
  */
-/**
- * The magic-link counterpart of markEmailVerifiedViaGoogle. Auth.js stamps
- * emailVerified on its own for that provider, so this runs just before it and
- * only drops the password while the account is still unconfirmed.
- */
-export async function discardUnconfirmedPassword(email: string): Promise<void> {
-  await db
-    .update(users)
-    .set({ passwordHash: null })
-    .where(and(sql`lower(${users.email}) = ${email.toLowerCase()}`, isNull(users.emailVerified)))
-}
-
 export async function markEmailVerifiedViaGoogle(email: string): Promise<void> {
   await db
     .update(users)

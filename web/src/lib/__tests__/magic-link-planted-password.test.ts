@@ -1,30 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { drizzle } from 'drizzle-orm/pg-proxy'
+import type { NextAuthConfig } from 'next-auth'
 
 /**
- * Anyone can register someone else's address with a password of their own.
- * The account stays unconfirmed, so that password is refused, until the real
- * owner signs in with the magic link: Auth.js then stamps emailVerified and
- * the planted password starts working. The signIn callback is the last step
- * before that stamp, so it must drop the password there, and only on the
- * callback: dropping it when the link is merely requested would let anyone
- * wipe the password of an account that is still waiting for its confirmation.
- *
- * Real drizzle through pg-proxy, because the defence is the emitted UPDATE.
+ * A password planted on an unconfirmed account starts working once the real
+ * owner uses the magic link. Drop it on the callback only: dropping it when the
+ * link is merely requested would let anyone wipe a pending account's password.
  */
 
-const captured: string[] = []
+const captured: { sql: string; params: unknown[] }[] = []
 
 vi.mock('@/db/client', () => ({
-  db: drizzle(async (sql: string) => {
-    captured.push(sql)
+  db: drizzle(async (sql: string, params: unknown[]) => {
+    captured.push({ sql, params })
     return { rows: [] }
   }),
 }))
 
-const { nextAuthConfig } = vi.hoisted(() => ({ nextAuthConfig: { current: null as any } }))
+const { nextAuthConfig } = vi.hoisted(() => ({ nextAuthConfig: { current: null as NextAuthConfig | null } }))
 vi.mock('next-auth', () => ({
-  default: (config: unknown) => {
+  default: (config: NextAuthConfig) => {
     nextAuthConfig.current = config
     return { auth: vi.fn(), handlers: {}, signIn: vi.fn(), signOut: vi.fn() }
   },
@@ -33,12 +28,14 @@ vi.mock('next-auth/providers/credentials', () => ({ default: () => ({}) }))
 vi.mock('next-auth/providers/google', () => ({ default: () => ({}) }))
 vi.mock('next-auth/providers/resend', () => ({ default: () => ({}) }))
 
-async function signInCallback(args: Record<string, unknown>) {
+type SignInArgs = Parameters<NonNullable<NonNullable<NextAuthConfig['callbacks']>['signIn']>>[0]
+
+async function signInCallback(args: SignInArgs) {
   await import('../auth-config')
-  return nextAuthConfig.current.callbacks.signIn(args)
+  return nextAuthConfig.current!.callbacks!.signIn!(args)
 }
 
-const magicLinkAccount = { provider: 'resend', type: 'email', providerAccountId: 'vitima@clinica.com.br' }
+const magicLinkAccount = { provider: 'resend', type: 'email', providerAccountId: 'vitima@clinica.com.br' } as const
 
 beforeEach(() => {
   captured.length = 0
@@ -49,14 +46,12 @@ describe('magic-link sign-in and a password planted before confirmation', () => 
     const allowed = await signInCallback({
       user: { id: 'u1', email: 'Vitima@Clinica.com.br', emailVerified: null },
       account: magicLinkAccount,
-      email: {},
     })
 
     expect(allowed).toBe(true)
-    const update = captured.find((sql) => sql.startsWith('update "floraclin"."users"'))
-    expect(update).toMatch(/"password_hash" = \$1/)
-    expect(update).toMatch(/lower\("floraclin"\."users"\."email"\) = \$\d/)
-    expect(update).toMatch(/"email_verified" is null/)
+    const update = captured.find(({ sql }) => sql.startsWith('update "floraclin"."users"'))
+    expect(update?.sql).toMatch(/set "password_hash" = \$1 where \(lower\("floraclin"\."users"\."email"\) = \$2 and "floraclin"\."users"\."email_verified" is null\)/)
+    expect(update?.params).toEqual([null, 'vitima@clinica.com.br'])
   })
 
   it('leaves the account alone when the link is only being requested', async () => {

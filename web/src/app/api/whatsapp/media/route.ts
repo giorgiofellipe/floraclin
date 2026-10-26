@@ -4,11 +4,13 @@ import { getSignedUrl } from '@/lib/storage'
 import { handleApiError } from '@/lib/api-error'
 
 // The signer runs with the service role, so the tenant prefix is the only thing
-// keeping one clinic's keys out of another's. Dot segments are refused because
-// storage-js sends the key unencoded and the URL parser would resolve them.
+// keeping one clinic's keys out of another's. storage-js sends the key unencoded
+// and the URL parser resolves `..`, `%2e%2e` and `\`, so segments are allowlisted.
+const KEY_SEGMENT = /^[\w.-]+$/
+
 function isOwnTenantKey(path: string, tenantId: string): boolean {
   const segments = path.split('/')
-  return segments[0] === tenantId && segments.every((s) => s !== '' && s !== '.' && s !== '..')
+  return segments[0] === tenantId && segments.every((s) => KEY_SEGMENT.test(s) && s !== '.' && s !== '..')
 }
 
 export async function GET(request: Request) {

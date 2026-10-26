@@ -1,11 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-/**
- * The signer uses the service role, so a key from another clinic would come
- * back as a working URL for its patient photos and signed consents. Only keys
- * under the caller's own tenant may be signed.
- */
-
 vi.mock('@/lib/auth', () => ({ getAuthContext: vi.fn() }))
 vi.mock('@/lib/storage', () => ({ getSignedUrl: vi.fn() }))
 
@@ -19,7 +13,14 @@ function get(path: string) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(getAuthContext).mockResolvedValue({ tenantId: 'tenant-b', userId: 'user-1', role: 'owner' } as never)
+  vi.mocked(getAuthContext).mockResolvedValue({
+    tenantId: 'tenant-b',
+    userId: 'user-1',
+    role: 'owner',
+    email: 'dona@clinica.com.br',
+    fullName: 'Dona',
+    isPlatformAdmin: false,
+  })
   vi.mocked(getSignedUrl).mockImplementation(async (path: string) => `https://storage.example/sign/${path}`)
 })
 
@@ -34,6 +35,8 @@ describe('GET /api/whatsapp/media', () => {
   it.each([
     ['another tenant', 'tenant-a/patients/p1/foto.jpg'],
     ['a dot segment back out of the tenant', 'tenant-b/../tenant-a/patients/p1/foto.jpg'],
+    ['an encoded dot segment', 'tenant-b/%2e%2e/tenant-a/patients/p1/foto.jpg'],
+    ['a backslash dot segment', 'tenant-b/..\\tenant-a/patients/p1/foto.jpg'],
   ])('refuses %s', async (_label, path) => {
     const res = await get(path)
 

@@ -592,6 +592,7 @@ export async function getTemplate(
 export async function downloadAndStoreMedia(
   tenantId: string,
   mediaId: string,
+  filename: string,
 ): Promise<{ storedUrl: string; mimeType: string }> {
   const creds = await getCredentials(tenantId)
   const meta = await graphFetch(`/${mediaId}`, creds.accessToken)
@@ -615,7 +616,9 @@ export async function downloadAndStoreMedia(
     .from('media')
     .upload(path, buffer, { contentType: mimeType, upsert: true })
   if (error) throw new Error(`Storage upload failed: ${error.message}`)
-  const { data: urlData } = supabase.storage.from('media').getPublicUrl(path)
+  // storage-js appends `download` to the query string without encoding `&`, `#` or `=`.
+  const downloadName = filename.replace(/[^\p{L}\p{N}._ -]/gu, '_')
+  const { data: urlData } = supabase.storage.from('media').getPublicUrl(path, { download: downloadName })
   return { storedUrl: urlData.publicUrl, mimeType }
 }
 

@@ -304,9 +304,10 @@ async function processInboundMessage(
 
       const mediaId = media.id
       if (mediaId) {
+        const filename = mediaFilename
         after(async () => {
           try {
-            const { storedUrl } = await downloadAndStoreMedia(tenantId, mediaId)
+            const { storedUrl } = await downloadAndStoreMedia(tenantId, mediaId, filename)
             await updateMessageMedia(tenantId, metaMessageId, storedUrl)
           } catch (err) {
             reportWebhookFailure(err, 'media_download', { tenantId, mediaId })

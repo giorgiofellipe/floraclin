@@ -440,13 +440,10 @@ describe('downloadAndStoreMedia', () => {
     vi.unstubAllEnvs()
   })
 
-  it("keeps the upload inside the tenant's media folder whatever the sender names the file", async () => {
-    // The sender's document filename used to be the third argument and went
-    // into the key, so '../' walked out to the private PHI bucket.
-    const store = downloadAndStoreMedia as (...args: unknown[]) => ReturnType<typeof downloadAndStoreMedia>
-    await store('tenant-1', '123', '../../../../floraclin/tenant-2/branding/logo.png')
+  it("keeps the sender's filename out of the storage key", async () => {
+    const { storedUrl } = await downloadAndStoreMedia('tenant-1', '123', '../../../../floraclin/tenant-2/a&b=c#d.png')
 
-    expect(storageRequests).toHaveLength(1)
-    expect(storageRequests[0].startsWith('/storage/v1/object/media/whatsapp/tenant-1/123')).toBe(true)
+    expect(storageRequests).toEqual(['/storage/v1/object/media/whatsapp/tenant-1/123'])
+    expect(new URL(storedUrl).searchParams.get('download')).toBe('.._.._.._.._floraclin_tenant-2_a_b_c_d.png')
   })
 })
