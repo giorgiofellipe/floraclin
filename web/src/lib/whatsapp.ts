@@ -605,9 +605,8 @@ export async function downloadAndStoreMedia(
   const mimeType = res.headers.get('content-type') ?? 'application/octet-stream'
 
   const { createStorageClient } = await import('@/lib/supabase/storage-client')
-  // Patient media is PHI: private bucket, served through the tenant-checked
-  // signer. No sender-chosen filename in the key: storage-js puts the key into
-  // the request URL unencoded, so '../' segments would leave the tenant folder.
+  // No sender-chosen filename in the key: storage-js puts the key into the
+  // request URL unencoded, so '../' segments would leave the tenant folder.
   const path = `${tenantId}/whatsapp/${mediaId}`
   const { error } = await createStorageClient()
     .storage.from('floraclin')

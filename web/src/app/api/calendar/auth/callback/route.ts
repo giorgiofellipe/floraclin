@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
+import { isNextRedirectError } from '@/lib/api-error'
 import {
   verifyOAuthState,
   exchangeCodeForTokens,
@@ -31,10 +32,11 @@ export async function GET(request: Request) {
       return NextResponse.redirect(`${APP_URL}/configuracoes?calendar=error`)
     }
 
-    // The state names who started the flow; the browser finishing it must be
-    // that same member, still allowed to connect. Otherwise a link minted in
-    // one clinic binds whoever clicks it into that clinic's calendar sync.
-    const ctx = await getAuthContext().catch(() => null)
+    // Otherwise a link minted in one clinic binds whoever clicks it into that clinic's calendar sync.
+    const ctx = await getAuthContext().catch((err) => {
+      if (isNextRedirectError(err)) return null
+      throw err
+    })
     const allowedRoles = payload.type === 'clinic' ? ['owner'] : ['owner', 'practitioner']
     if (!ctx || ctx.userId !== payload.userId || ctx.tenantId !== payload.tenantId || !allowedRoles.includes(ctx.role)) {
       return NextResponse.redirect(`${APP_URL}/configuracoes?calendar=error`)

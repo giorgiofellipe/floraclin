@@ -166,6 +166,7 @@ vi.mock('@/db/queries/patients', () => ({
 
 vi.mock('@/db/queries/tenants', () => ({
   getTenant: vi.fn(),
+  findOwnPhoneNumberClaimants: vi.fn(),
 }))
 
 vi.mock('@/lib/classify-prospect', () => ({
@@ -201,6 +202,7 @@ import { getPatientByPhone } from '@/db/queries/patients'
 import { NextRequest, after } from 'next/server'
 import { flushAfter } from './flush-after'
 import { eq } from 'drizzle-orm'
+import { findOwnPhoneNumberClaimants } from '@/db/queries/tenants'
 import { POST } from '../route'
 
 // ---------------------------------------------------------------------------
@@ -636,6 +638,25 @@ describe('resolveSharedNumberTenant — phone history, zero candidates', () => {
 
     expect(upsertConversation).not.toHaveBeenCalled()
     expect(reportSideEffectFailureMock).not.toHaveBeenCalled()
+  })
+})
+
+// Two clinics holding one own number used to drop its patient messages with
+// only a console.warn, so neither clinic nor we ever learned about it.
+describe('own-number routing — two clinics claim the same number', () => {
+  it('drops the messages and reports it', async () => {
+    vi.mocked(findOwnPhoneNumberClaimants).mockResolvedValue(['tenant-a', 'tenant-b'])
+    const payload = makeInboundPayload({})
+    payload.entry[0].changes[0].value.metadata.phone_number_id = 'own-number-id'
+
+    await POST(makeRequest(payload))
+
+    await vi.waitFor(() => expect(reportSideEffectFailureMock).toHaveBeenCalledTimes(1))
+    expect(reportSideEffectFailureMock.mock.calls[0][1]).toMatchObject({
+      step: 'own_number_tenant',
+      extra: { phoneNumberId: 'own-number-id', tenantIds: ['tenant-a', 'tenant-b'] },
+    })
+    expect(upsertConversation).not.toHaveBeenCalled()
   })
 })
 

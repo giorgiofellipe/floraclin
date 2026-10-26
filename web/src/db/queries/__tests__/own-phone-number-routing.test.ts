@@ -12,36 +12,38 @@ import { drizzle } from 'drizzle-orm/pg-proxy'
  * Real drizzle through pg-proxy: the defence is the emitted filter.
  */
 
-const captured: string[] = []
+const captured: { sql: string; params: unknown[] }[] = []
 let rows: unknown[][] = []
 
 vi.mock('@/db/client', () => ({
-  db: drizzle(async (sql: string) => {
-    captured.push(sql)
+  db: drizzle(async (sql: string, params: unknown[]) => {
+    captured.push({ sql, params })
     return { rows }
   }),
 }))
 vi.mock('@/lib/logo', () => ({ fetchLogoDataUri: vi.fn(), signLogoPath: vi.fn() }))
 
-import { findTenantIdByOwnPhoneNumberId } from '../tenants'
+import { findOwnPhoneNumberClaimants } from '../tenants'
 
 beforeEach(() => {
   captured.length = 0
   rows = []
 })
 
-describe('findTenantIdByOwnPhoneNumberId', () => {
+describe('findOwnPhoneNumberClaimants', () => {
   it('counts only own-mode tenants that are not deleted', async () => {
     rows = [['tenant-a']]
 
-    expect(await findTenantIdByOwnPhoneNumberId('111')).toBe('tenant-a')
-    expect(captured[0]).toMatch(/->>'whatsapp_mode' = 'own'/)
-    expect(captured[0]).toMatch(/"deleted_at" is null/)
+    expect(await findOwnPhoneNumberClaimants('111')).toEqual(['tenant-a'])
+    expect(captured[0].sql).toMatch(/->>'whatsapp_mode' = 'own'/)
+    expect(captured[0].sql).toMatch(/"deleted_at" is null/)
   })
 
-  it('refuses to pick when two tenants hold the same id', async () => {
+  it('returns both tenants when two hold the same id', async () => {
     rows = [['tenant-a'], ['tenant-b']]
 
-    expect(await findTenantIdByOwnPhoneNumberId('111')).toBeNull()
+    expect(await findOwnPhoneNumberClaimants('111')).toEqual(['tenant-a', 'tenant-b'])
+    // With LIMIT 1 Postgres would hand back one claimant and hide the second.
+    expect(captured[0].params.at(-1)).toBe(2)
   })
 })

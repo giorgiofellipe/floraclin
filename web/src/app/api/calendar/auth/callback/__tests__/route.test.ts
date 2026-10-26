@@ -24,7 +24,7 @@ vi.mock('@/db/queries/calendar', () => ({
 vi.mock('@/lib/google-calendar-pull', () => ({ runInitialSync: vi.fn(async () => undefined) }))
 
 import { getAuthContext } from '@/lib/auth'
-import { signOAuthState } from '@/lib/google-calendar'
+import { signOAuthState, reportCalendarFailure } from '@/lib/google-calendar'
 import { upsertConnection } from '@/db/queries/calendar'
 import { GET } from '../route'
 
@@ -53,7 +53,7 @@ describe('GET /api/calendar/auth/callback', () => {
     ['there is no session', null],
   ])('refuses when %s', async (_label, ctx) => {
     if (ctx) vi.mocked(getAuthContext).mockResolvedValue(ctx as never)
-    else vi.mocked(getAuthContext).mockRejectedValue(new Error('Unauthorized'))
+    else vi.mocked(getAuthContext).mockRejectedValue(Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;replace;/login;307;' }))
 
     const res = await callback(practitionerState())
 
@@ -67,6 +67,18 @@ describe('GET /api/calendar/auth/callback', () => {
     const res = await callback(signOAuthState({ userId: 'user-a', tenantId: 'tenant-a', type: 'clinic' }))
 
     expect(res.headers.get('location')).toContain('calendar=error')
+    expect(upsertConnection).not.toHaveBeenCalled()
+  })
+
+  // Swallowing every auth failure as "no session" hid a broken auth database
+  // behind the same generic error a logged-out user gets.
+  it('reports a session lookup that fails for another reason', async () => {
+    vi.mocked(getAuthContext).mockRejectedValue(new Error('connection terminated'))
+
+    const res = await callback(practitionerState())
+
+    expect(res.headers.get('location')).toContain('calendar=error')
+    expect(reportCalendarFailure).toHaveBeenCalledWith(expect.objectContaining({ message: 'connection terminated' }), 'callback')
     expect(upsertConnection).not.toHaveBeenCalled()
   })
 })

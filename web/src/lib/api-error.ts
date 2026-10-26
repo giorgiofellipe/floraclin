@@ -29,7 +29,7 @@ import { maskPath } from './observability'
 // never reached Sentry.
 const REDIRECT_DIGEST_PREFIX = 'NEXT_REDIRECT;'
 
-function isNextRedirectError(error: unknown): boolean {
+export function isNextRedirectError(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   const digest = (error as { digest?: unknown }).digest
   return typeof digest === 'string' && digest.startsWith(REDIRECT_DIGEST_PREFIX)

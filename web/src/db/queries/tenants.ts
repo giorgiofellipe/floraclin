@@ -114,13 +114,6 @@ export async function updateTenantSettings(
   return tenant ?? null
 }
 
-/**
- * Sets `onboarding_completed: true` (plus `extraSettings`) and reports
- * whether this call is the one that completed onboarding. The flag is the
- * marker for both sign-up paths, so a clinic is reported as completed once:
- * a repeated or concurrent save finds the flag already set and gets false.
- * One statement, merged in the database, so two saves cannot both win.
- */
 // A phone_number_id in settings is only a claim: any owner can type one. Own
 // mode is plan-gated, so only own-mode, live tenants count as holding it.
 function ownsPhoneNumberId(phoneNumberId: string) {
@@ -131,10 +124,10 @@ function ownsPhoneNumberId(phoneNumberId: string) {
   )
 }
 
-/** The tenant an own-number webhook belongs to, or null when none or several claim the number. */
-export async function findTenantIdByOwnPhoneNumberId(phoneNumberId: string): Promise<string | null> {
+/** Up to two tenants claiming an own number: enough to tell one owner from a conflict. */
+export async function findOwnPhoneNumberClaimants(phoneNumberId: string): Promise<string[]> {
   const rows = await db.select({ id: tenants.id }).from(tenants).where(ownsPhoneNumberId(phoneNumberId)).limit(2)
-  return rows.length === 1 ? rows[0].id : null
+  return rows.map((r) => r.id)
 }
 
 export async function isPhoneNumberIdClaimedByAnotherTenant(tenantId: string, phoneNumberId: string): Promise<boolean> {
@@ -146,6 +139,13 @@ export async function isPhoneNumberIdClaimedByAnotherTenant(tenantId: string, ph
   return !!row
 }
 
+/**
+ * Sets `onboarding_completed: true` (plus `extraSettings`) and reports
+ * whether this call is the one that completed onboarding. The flag is the
+ * marker for both sign-up paths, so a clinic is reported as completed once:
+ * a repeated or concurrent save finds the flag already set and gets false.
+ * One statement, merged in the database, so two saves cannot both win.
+ */
 export async function markOnboardingCompleted(
   tenantId: string,
   extraSettings: Record<string, unknown> = {},

@@ -448,7 +448,7 @@ describe('downloadAndStoreMedia', () => {
     expect(storageRequests[0].startsWith('/storage/v1/object/floraclin/tenant-1/whatsapp/123')).toBe(true)
   })
 
-  it('serves patient media through the signer, never a public bucket URL', async () => {
+  it('stores the tenant-checked media route, never a public bucket URL', async () => {
     const { storedUrl } = await downloadAndStoreMedia('tenant-1', '123', 'exame.pdf')
 
     const url = new URL(storedUrl, 'http://app')

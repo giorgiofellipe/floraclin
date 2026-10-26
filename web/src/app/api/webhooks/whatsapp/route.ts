@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { db } from '@/db/client'
 import { procedureTypes, whatsappMessages, whatsappConversations } from '@/db/schema'
-import { findTenantIdByOwnPhoneNumberId } from '@/db/queries/tenants'
+import { findOwnPhoneNumberClaimants } from '@/db/queries/tenants'
 import { eq, and, sql } from 'drizzle-orm'
 import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage, sendTemplateMessage, sendMediaMessage, normalizeBrPhone } from '@/lib/whatsapp'
 import {
@@ -152,11 +152,17 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      const tenantId = await findTenantIdByOwnPhoneNumberId(phoneNumberId)
+      const claimants = await findOwnPhoneNumberClaimants(phoneNumberId)
+      if (claimants.length > 1) {
+        reportWebhookFailure(new Error('Own phone_number_id claimed by several tenants'), 'own_number_tenant', {
+          phoneNumberId,
+          tenantIds: claimants,
+        })
+        continue
+      }
+      const [tenantId] = claimants
       if (!tenantId) {
-        console.warn(
-          `WhatsApp webhook: no single own-number tenant for phone_number_id ${phoneNumberId}`,
-        )
+        console.warn(`WhatsApp webhook: unknown phone_number_id ${phoneNumberId}`)
         continue
       }
 
