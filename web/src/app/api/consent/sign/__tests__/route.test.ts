@@ -184,7 +184,17 @@ describe('POST /api/consent/sign: token consumption', () => {
     )
   })
 
-  it('ties each acceptance to the token that signed it, which is what lets that token send its copies', async () => {
+  it('refuses the same template signed twice', async () => {
+    vi.mocked(isSubscriptionActive).mockResolvedValue(true)
+    const [signature] = makeBody().signatures
+
+    const res = await POST(makeRequest(makeBody({ signatures: [signature, signature] })))
+
+    expect(res.status).toBe(400)
+    expect(acceptConsent).not.toHaveBeenCalled()
+  })
+
+  it('stores the signing token id on each acceptance', async () => {
     vi.mocked(isSubscriptionActive).mockResolvedValue(true)
     vi.mocked(getValidSigningToken).mockResolvedValue(TOKEN_DATA as never)
 

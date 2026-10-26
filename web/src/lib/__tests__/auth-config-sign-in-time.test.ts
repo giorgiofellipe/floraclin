@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { NextAuthConfig } from 'next-auth'
 import type { JWT } from 'next-auth/jwt'
 
@@ -32,6 +32,10 @@ async function jwt(args: Partial<JwtArgs> & { token: JWT }) {
   return config.current!.callbacks!.jwt!(args as JwtArgs) as Promise<JWT>
 }
 
+afterEach(() => {
+  vi.useRealTimers()
+})
+
 describe('the sign-in time on the session token', () => {
   it('is stamped at sign-in', async () => {
     vi.useFakeTimers({ now: new Date('2026-10-24T12:00:00Z') })
@@ -40,7 +44,6 @@ describe('the sign-in time on the session token', () => {
       user: { id: 'u1', email: 'a@b.com' },
       account: { provider: 'credentials', type: 'credentials', providerAccountId: 'u1' },
     })
-    vi.useRealTimers()
 
     expect(token.authAt).toBe(Date.parse('2026-10-24T12:00:00Z'))
   })

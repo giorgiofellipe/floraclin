@@ -105,22 +105,30 @@ export async function getRecentlyUsedSigningToken(token: string) {
 
 /**
  * One patient copy per acceptance, and only for acceptances this token signed.
- * Returns the tenant when the claim is taken, null when it is not.
+ * Returns null when the acceptance is not this token's.
  */
-export async function claimPatientCopy(acceptanceId: string, signingTokenId: string): Promise<{ tenantId: string } | null> {
-  const [row] = await db
+export async function claimPatientCopy(
+  acceptanceId: string,
+  signingTokenId: string,
+): Promise<{ tenantId: string; alreadySent: boolean } | null> {
+  const ownAcceptance = and(
+    eq(consentAcceptances.id, acceptanceId),
+    eq(consentAcceptances.signingTokenId, signingTokenId),
+  )
+
+  const [claimed] = await db
     .update(consentAcceptances)
     .set({ patientCopySentAt: new Date() })
-    .where(
-      and(
-        eq(consentAcceptances.id, acceptanceId),
-        eq(consentAcceptances.signingTokenId, signingTokenId),
-        isNull(consentAcceptances.patientCopySentAt),
-      ),
-    )
+    .where(and(ownAcceptance, isNull(consentAcceptances.patientCopySentAt)))
     .returning({ tenantId: consentAcceptances.tenantId })
+  if (claimed) return { tenantId: claimed.tenantId, alreadySent: false }
 
-  return row ?? null
+  const [sent] = await db
+    .select({ tenantId: consentAcceptances.tenantId })
+    .from(consentAcceptances)
+    .where(ownAcceptance)
+    .limit(1)
+  return sent ? { tenantId: sent.tenantId, alreadySent: true } : null
 }
 
 export async function releasePatientCopy(acceptanceId: string) {

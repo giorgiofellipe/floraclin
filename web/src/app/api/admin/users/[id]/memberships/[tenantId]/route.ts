@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requirePlatformAdmin } from '@/lib/auth'
 import { removeUserMembership } from '@/db/queries/admin-users'
+import { revokeMemberCalendarAccess } from '@/lib/google-calendar'
 import { handleApiError } from '@/lib/api-error'
 
 export async function DELETE(
@@ -15,6 +16,8 @@ export async function DELETE(
     if (!membership) {
       return NextResponse.json({ error: 'Vinculo nao encontrado' }, { status: 404 })
     }
+
+    await revokeMemberCalendarAccess(tenantId, id, membership.role)
 
     return NextResponse.json({ success: true, data: membership })
   } catch (error) {

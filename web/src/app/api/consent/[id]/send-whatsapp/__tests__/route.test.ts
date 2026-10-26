@@ -88,7 +88,7 @@ describe('POST /api/consent/[id]/send-whatsapp', () => {
   it('attributes a signing-token send without a session to the patient', async () => {
     vi.mocked(auth).mockResolvedValue(null as never)
     vi.mocked(getRecentlyUsedSigningToken).mockResolvedValue({ id: 'token-1', tenantId: 'tenant-1' } as never)
-    vi.mocked(claimPatientCopy).mockResolvedValue({ tenantId: 'tenant-1' })
+    vi.mocked(claimPatientCopy).mockResolvedValue({ tenantId: 'tenant-1', alreadySent: false })
 
     const res = await post('?token=abc')
 
@@ -109,7 +109,7 @@ describe('POST /api/consent/[id]/send-whatsapp', () => {
     )
   })
 
-  it('refuses a token send once the patient copy for that acceptance was claimed', async () => {
+  it('refuses a token send for an acceptance the token did not sign', async () => {
     vi.mocked(auth).mockResolvedValue(null as never)
     vi.mocked(getRecentlyUsedSigningToken).mockResolvedValue({ id: 'token-1', tenantId: 'tenant-1' } as never)
     vi.mocked(claimPatientCopy).mockResolvedValue(null)
@@ -122,16 +122,41 @@ describe('POST /api/consent/[id]/send-whatsapp', () => {
     expect(sendOrEnqueueDocument).not.toHaveBeenCalled()
   })
 
+  it('answers success without sending again when the copy was already sent', async () => {
+    vi.mocked(auth).mockResolvedValue(null as never)
+    vi.mocked(getRecentlyUsedSigningToken).mockResolvedValue({ id: 'token-1', tenantId: 'tenant-1' } as never)
+    vi.mocked(claimPatientCopy).mockResolvedValue({ tenantId: 'tenant-1', alreadySent: true })
+
+    const res = await post('?token=abc')
+
+    expect(res.status).toBe(200)
+    expect(sendOrEnqueueDocument).not.toHaveBeenCalled()
+    expect(releasePatientCopy).not.toHaveBeenCalled()
+  })
+
   it('gives the claimed copy back when the send fails, so the patient can retry', async () => {
     vi.mocked(auth).mockResolvedValue(null as never)
     vi.mocked(getRecentlyUsedSigningToken).mockResolvedValue({ id: 'token-1', tenantId: 'tenant-1' } as never)
-    vi.mocked(claimPatientCopy).mockResolvedValue({ tenantId: 'tenant-1' })
+    vi.mocked(claimPatientCopy).mockResolvedValue({ tenantId: 'tenant-1', alreadySent: false })
     vi.mocked(sendOrEnqueueDocument).mockRejectedValue(new Error('meta down'))
+    vi.mocked(releasePatientCopy).mockResolvedValue(undefined)
 
     const res = await post('?token=abc')
 
     expect(res.status).toBe(500)
     expect(releasePatientCopy).toHaveBeenCalledWith(ACCEPTANCE_ID)
+  })
+
+  it('still answers the send failure when giving the copy back fails too', async () => {
+    vi.mocked(auth).mockResolvedValue(null as never)
+    vi.mocked(getRecentlyUsedSigningToken).mockResolvedValue({ id: 'token-1', tenantId: 'tenant-1' } as never)
+    vi.mocked(claimPatientCopy).mockResolvedValue({ tenantId: 'tenant-1', alreadySent: false })
+    vi.mocked(sendOrEnqueueDocument).mockRejectedValue(new Error('meta down'))
+    vi.mocked(releasePatientCopy).mockRejectedValue(new Error('db down'))
+
+    const res = await post('?token=abc')
+
+    expect(res.status).toBe(500)
   })
 
   it('refuses a session from before the last password change', async () => {

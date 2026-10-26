@@ -54,9 +54,10 @@ export async function PUT(request: Request) {
     // If no password set (magic link/OAuth user), allow setting without current password
 
     const hash = await bcrypt.hash(parsed.data.newPassword, 12)
+    const now = new Date()
     await db
       .update(users)
-      .set({ passwordHash: hash, passwordChangedAt: new Date(), updatedAt: new Date() })
+      .set({ passwordHash: hash, passwordChangedAt: now, updatedAt: now })
       .where(eq(users.id, ctx.userId))
 
     // The change revokes every older session, this one included, so sign the

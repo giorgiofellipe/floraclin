@@ -15,11 +15,12 @@ import { signedInBeforePasswordChange } from '@/lib/auth'
 import { eq, and } from 'drizzle-orm'
 import { normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { handleApiError } from '@/lib/api-error'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-type Requester = { tenantId: string; userId: string | null; claimedCopy: boolean }
+type Requester = { tenantId: string; userId: string | null; claimedCopy: boolean; alreadySent?: boolean }
 
 async function resolveRequester(req: NextRequest, acceptanceId: string): Promise<Requester | null> {
   // Path 1: logged-in user with membership in the acceptance's tenant
@@ -46,8 +47,10 @@ async function resolveRequester(req: NextRequest, acceptanceId: string): Promise
   if (signingToken) {
     const tokenData = await getRecentlyUsedSigningToken(signingToken)
     if (tokenData) {
-      const claimed = await claimPatientCopy(acceptanceId, tokenData.id)
-      if (claimed) return { tenantId: claimed.tenantId, userId: null, claimedCopy: true }
+      const claim = await claimPatientCopy(acceptanceId, tokenData.id)
+      if (claim) {
+        return { tenantId: claim.tenantId, userId: null, claimedCopy: !claim.alreadySent, alreadySent: claim.alreadySent }
+      }
     }
   }
 
@@ -66,6 +69,8 @@ export async function POST(
     if (!requester) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    // The signing page sends its copies one by one and retries the whole list.
+    if (requester.alreadySent) return NextResponse.json({ success: true, alreadySent: true })
     const tenantId = requester.tenantId
 
     // Gated here rather than through `requireWrite`, because
@@ -131,7 +136,11 @@ export async function POST(
     return handleApiError(error, req, { body: { error: 'Falha ao enviar via WhatsApp' } })
   } finally {
     // A failed send gives the patient their one copy back to retry.
-    if (requester?.claimedCopy && !delivered) await releasePatientCopy(id)
+    if (requester?.claimedCopy && !delivered) {
+      await releasePatientCopy(id).catch((error) =>
+        reportSideEffectFailure(error, { area: 'consent', step: 'release_patient_copy' }),
+      )
+    }
   }
 }
 

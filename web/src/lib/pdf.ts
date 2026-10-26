@@ -51,10 +51,11 @@ function getLocalChromePath(): string | undefined {
 function isAllowedPdfRequest(url: string): boolean {
   if (url.startsWith('data:')) return true
   try {
-    const { origin } = new URL(url)
-    return [getAppUrl(), process.env.NEXT_PUBLIC_SUPABASE_URL].some(
-      (allowed) => !!allowed && new URL(allowed).origin === origin,
-    )
+    const { origin, pathname } = new URL(url)
+    return [
+      [getAppUrl(), '/face-templates/'],
+      [process.env.NEXT_PUBLIC_SUPABASE_URL, '/storage/v1/object/'],
+    ].some(([allowed, path]) => !!allowed && new URL(allowed).origin === origin && pathname.startsWith(path!))
   } catch {
     return false
   }

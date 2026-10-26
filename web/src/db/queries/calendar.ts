@@ -201,6 +201,7 @@ export async function updateConnection(
     accessToken: string
     refreshToken: string
     tokenExpiresAt: Date
+    feedToken: string
   }>
 ) {
   const [result] = await db

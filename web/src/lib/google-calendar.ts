@@ -1,6 +1,8 @@
 import { google } from 'googleapis'
 import {
   getConnectionById,
+  getConnectionByUserId,
+  getClinicConnection,
   updateConnection,
   deleteConnection,
   deleteBlocksByConnection,
@@ -183,6 +185,17 @@ export async function disconnectCalendar(connection: CalendarConnectionRow) {
   if (deleted) {
     // Both helpers swallow and report their own failures; neither rejects.
     void revokeToken(deleted.accessToken)
+  }
+}
+
+export async function revokeMemberCalendarAccess(tenantId: string, userId: string, role: string) {
+  const connection = await getConnectionByUserId(tenantId, userId)
+  if (connection) await disconnectCalendar(connection)
+
+  // Owners can read the clinic feed URL, so it has to change when one leaves.
+  if (role === 'owner') {
+    const clinic = await getClinicConnection(tenantId)
+    if (clinic) await updateConnection(clinic.id, tenantId, { feedToken: generateFeedToken() })
   }
 }
 
