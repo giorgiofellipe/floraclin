@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createElement } from 'react'
 import { getConsentAcceptanceWithContext } from '@/db/queries/consent'
 import { isSubscriptionActive } from '@/lib/plans'
-import { getRecentlyUsedSigningToken } from '@/db/queries/consent-signing-tokens'
+import { getRecentlyUsedSigningToken, claimPatientCopy, releasePatientCopy } from '@/db/queries/consent-signing-tokens'
 import { PrintConsent } from '@/components/consent/print-consent'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
 import { fetchLogoDataUri } from '@/lib/logo'
@@ -10,31 +10,36 @@ import { uploadPdfBuffer } from '@/lib/storage'
 import { sendOrEnqueueDocument } from '@/lib/whatsapp'
 import { auth } from '@/lib/auth-config'
 import { db } from '@/db/client'
-import { consentAcceptances, tenantUsers } from '@/db/schema'
+import { consentAcceptances, tenantUsers, users } from '@/db/schema'
+import { signedInBeforePasswordChange } from '@/lib/auth'
 import { eq, and } from 'drizzle-orm'
 import { normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { handleApiError } from '@/lib/api-error'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-type Requester = { tenantId: string; userId: string | null }
+type Requester = { tenantId: string; userId: string | null; claimedCopy: boolean; alreadySent?: boolean }
 
 async function resolveRequester(req: NextRequest, acceptanceId: string): Promise<Requester | null> {
   // Path 1: logged-in user with membership in the acceptance's tenant
   const session = await auth()
   if (session?.user?.id) {
     const [row] = await db
-      .select({ tenantId: consentAcceptances.tenantId })
+      .select({ tenantId: consentAcceptances.tenantId, passwordChangedAt: users.passwordChangedAt })
       .from(consentAcceptances)
       .innerJoin(tenantUsers, and(
         eq(tenantUsers.tenantId, consentAcceptances.tenantId),
         eq(tenantUsers.userId, session.user.id),
         eq(tenantUsers.isActive, true),
       ))
+      .innerJoin(users, eq(users.id, tenantUsers.userId))
       .where(eq(consentAcceptances.id, acceptanceId))
       .limit(1)
-    if (row) return { tenantId: row.tenantId, userId: session.user.id }
+    if (row && !signedInBeforePasswordChange((session as { authAt?: number }).authAt, row.passwordChangedAt)) {
+      return { tenantId: row.tenantId, userId: session.user.id, claimedCopy: false }
+    }
   }
 
   // Path 2: signing token (valid for 1h after use/expiry)
@@ -42,12 +47,10 @@ async function resolveRequester(req: NextRequest, acceptanceId: string): Promise
   if (signingToken) {
     const tokenData = await getRecentlyUsedSigningToken(signingToken)
     if (tokenData) {
-      const [row] = await db
-        .select({ tenantId: consentAcceptances.tenantId })
-        .from(consentAcceptances)
-        .where(and(eq(consentAcceptances.id, acceptanceId), eq(consentAcceptances.tenantId, tokenData.tenantId)))
-        .limit(1)
-      if (row) return { tenantId: row.tenantId, userId: null }
+      const claim = await claimPatientCopy(acceptanceId, tokenData.id)
+      if (claim) {
+        return { tenantId: claim.tenantId, userId: null, claimedCopy: !claim.alreadySent, alreadySent: claim.alreadySent }
+      }
     }
   }
 
@@ -58,13 +61,16 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const { id } = await params
+  let requester: Requester | null = null
+  let delivered = false
   try {
-    const { id } = await params
-
-    const requester = await resolveRequester(req, id)
+    requester = await resolveRequester(req, id)
     if (!requester) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    // The signing page sends its copies one by one and retries the whole list.
+    if (requester.alreadySent) return NextResponse.json({ success: true, alreadySent: true })
     const tenantId = requester.tenantId
 
     // Gated here rather than through `requireWrite`, because
@@ -124,9 +130,17 @@ export async function POST(
       storagePath,
     )
 
+    delivered = true
     return NextResponse.json({ success: true })
   } catch (error) {
     return handleApiError(error, req, { body: { error: 'Falha ao enviar via WhatsApp' } })
+  } finally {
+    // A failed send gives the patient their one copy back to retry.
+    if (requester?.claimedCopy && !delivered) {
+      await releasePatientCopy(id).catch((error) =>
+        reportSideEffectFailure(error, { area: 'consent', step: 'release_patient_copy' }),
+      )
+    }
   }
 }
 

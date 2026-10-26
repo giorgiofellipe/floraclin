@@ -45,7 +45,10 @@ export async function POST(request: Request) {
 
     const requiredIds = new Set(tokenData.consentTemplateIds as string[])
     const signedIds = new Set(parsed.data.signatures.map((s) => s.consentTemplateId))
-    const complete = signedIds.size === requiredIds.size && [...signedIds].every((id) => requiredIds.has(id))
+    const complete =
+      signedIds.size === requiredIds.size &&
+      parsed.data.signatures.length === signedIds.size &&
+      [...signedIds].every((id) => requiredIds.has(id))
     if (!complete) {
       return NextResponse.json({ error: 'Assine todos os termos do link antes de enviar' }, { status: 400 })
     }
@@ -82,6 +85,7 @@ export async function POST(request: Request) {
             renderedContent: renderedContents[sig.consentTemplateId] || undefined,
             deviceFingerprint: sig.deviceFingerprint,
             geolocation: sig.geolocation,
+            signingTokenId: tokenData.id,
           },
           tx,
         )

@@ -148,6 +148,7 @@ export async function acceptConsent(
     signerCpf?: string
     deviceFingerprint?: DeviceFingerprint
     geolocation?: Geolocation
+    signingTokenId?: string
   },
   tx?: typeof db,
 ) {
@@ -230,6 +231,7 @@ export async function acceptConsent(
       signatureEvidence,
       professionalSnapshot,
       verificationCode,
+      signingTokenId: meta.signingTokenId ?? null,
     })
     .returning()
 

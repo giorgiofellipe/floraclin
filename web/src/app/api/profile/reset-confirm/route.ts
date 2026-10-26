@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/db/client'
 import { users, verificationTokens } from '@/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import { handleApiError } from '@/lib/api-error'
@@ -42,10 +42,11 @@ export async function POST(request: Request) {
 
     // Hash and update password
     const hash = await bcrypt.hash(newPassword, 12)
+    const now = new Date()
     await db
       .update(users)
-      .set({ passwordHash: hash, updatedAt: new Date() })
-      .where(eq(users.email, email.toLowerCase()))
+      .set({ passwordHash: hash, passwordChangedAt: now, updatedAt: now })
+      .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
 
     return NextResponse.json({ success: true })
   } catch (error) {

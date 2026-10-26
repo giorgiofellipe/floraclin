@@ -144,6 +144,9 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     async jwt({ token, user, account, trigger }) {
       if (user) {
         token.sub = user.id
+        // Not `iat`: Auth.js re-signs the token on every refresh, so `iat` moves
+        // forward and would outlive a password change.
+        token.authAt = Date.now()
       }
 
       // Google already verifies the address itself (the signIn callback above
@@ -286,6 +289,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       ;(session as any).planSlug = token.planSlug ?? 'free'
       ;(session as any).planFeatures = token.planFeatures ?? {}
       ;(session as any).v = token.v ?? 0
+      ;(session as any).authAt = token.authAt
       return session
     },
   },

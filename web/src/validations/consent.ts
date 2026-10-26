@@ -36,7 +36,8 @@ export const consentAcceptanceSchema = z.object({
   acceptanceMethod: z.enum(acceptanceMethods, {
     message: 'Método de aceite é obrigatório',
   }),
-  signatureData: z.string().max(500_000).optional(),
+  // Rendered as <img src> by server-side Chromium, so a URL here is a server-side fetch.
+  signatureData: z.string().max(500_000).refine((s) => s.startsWith('data:image/'), 'Assinatura inválida').optional(),
   renderedContent: z.string().max(100_000).optional(),
   signerCpf: z.string().max(20).optional(),
   deviceFingerprint: z.object({
@@ -51,7 +52,7 @@ export const consentAcceptanceSchema = z.object({
 }).refine(
   (data) => {
     if (data.acceptanceMethod === 'signature' || data.acceptanceMethod === 'both') {
-      return !!data.signatureData && data.signatureData.startsWith('data:image/')
+      return !!data.signatureData
     }
     return true
   },

@@ -103,6 +103,14 @@ describe('consentAcceptanceSchema', () => {
     expect(result.success).toBe(true)
   })
 
+  it('rejects a URL as signature data even when the method needs no signature', () => {
+    const result = consentAcceptanceSchema.safeParse({
+      ...validAcceptance,
+      signatureData: 'http://169.254.169.254/latest/meta-data/',
+    })
+    expect(result.success).toBe(false)
+  })
+
   it('fails with invalid patientId', () => {
     const result = consentAcceptanceSchema.safeParse({
       ...validAcceptance,

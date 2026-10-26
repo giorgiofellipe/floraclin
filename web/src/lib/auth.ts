@@ -9,6 +9,15 @@ import { eq, and, isNull } from 'drizzle-orm'
 import type { AuthContext, Role } from '@/types'
 import { ForbiddenError } from '@/lib/errors'
 
+// Not /login: middleware sends a signed-in user on /login back to /dashboard, so
+// the revoked cookie has to be cleared first.
+export const SESSION_REVOKED_PATH = '/api/session/revoked'
+
+/** A token from before the last password change, or minted before `authAt` existed. */
+export function signedInBeforePasswordChange(authAt: number | undefined, passwordChangedAt: Date | null): boolean {
+  return passwordChangedAt !== null && passwordChangedAt.getTime() > (authAt ?? 0)
+}
+
 export async function getAuthContext(): Promise<AuthContext> {
   // Test auth bypass: use TEST_USER_ID env var instead of Auth.js session
   // Double guard: env var AND not production
@@ -18,6 +27,7 @@ export async function getAuthContext(): Promise<AuthContext> {
       : null
 
   let userId: string
+  let authAt: number | undefined
 
   if (testUserId) {
     userId = testUserId
@@ -28,6 +38,7 @@ export async function getAuthContext(): Promise<AuthContext> {
       redirect('/login')
     }
     userId = user.id
+    authAt = (session as { authAt?: number }).authAt
   }
 
   // Get ALL tenants for this user
@@ -45,6 +56,7 @@ export async function getAuthContext(): Promise<AuthContext> {
       fullName: users.fullName,
       email: users.email,
       isPlatformAdmin: users.isPlatformAdmin,
+      passwordChangedAt: users.passwordChangedAt,
     })
     .from(tenantUsers)
     .innerJoin(tenants, and(eq(tenants.id, tenantUsers.tenantId), isNull(tenants.deletedAt)))
@@ -62,14 +74,20 @@ export async function getAuthContext(): Promise<AuthContext> {
   // the admin API that exists to undo exactly that. The jwt callback already
   // resolves it this way; this path has to agree.
   let isPlatformAdmin = !!memberships[0]?.isPlatformAdmin
+  let passwordChangedAt = memberships[0]?.passwordChangedAt ?? null
 
   if (!isPlatformAdmin && memberships.length === 0) {
     const [userRow] = await db
-      .select({ isPlatformAdmin: users.isPlatformAdmin })
+      .select({ isPlatformAdmin: users.isPlatformAdmin, passwordChangedAt: users.passwordChangedAt })
       .from(users)
       .where(eq(users.id, userId))
       .limit(1)
     isPlatformAdmin = !!userRow?.isPlatformAdmin
+    passwordChangedAt = userRow?.passwordChangedAt ?? null
+  }
+
+  if (!testUserId && signedInBeforePasswordChange(authAt, passwordChangedAt)) {
+    redirect(SESSION_REVOKED_PATH)
   }
 
   // Not /login: a token minted before the clinic was suspended (or the
@@ -102,6 +120,7 @@ export async function getAuthContext(): Promise<AuthContext> {
         fullName: memberships[0]?.fullName ?? '',
         email: memberships[0]?.email ?? '',
         isPlatformAdmin: true,
+        passwordChangedAt,
       }
     }
   }

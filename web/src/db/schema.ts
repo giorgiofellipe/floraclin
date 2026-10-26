@@ -34,6 +34,7 @@ export const users = floraclinSchema.table('users', {
   phone: varchar('phone', { length: 20 }),
   avatarUrl: text('avatar_url'),
   passwordHash: text('password_hash'),
+  passwordChangedAt: timestamp('password_changed_at', { withTimezone: true }),
   emailVerified: timestamp('email_verified', { withTimezone: true }),
   isPlatformAdmin: boolean('is_platform_admin').notNull().default(false),
   signatureData: text('signature_data'),
@@ -372,6 +373,8 @@ export const consentAcceptances = floraclinSchema.table('consent_acceptances', {
   signatureEvidence: jsonb('signature_evidence'),
   professionalSnapshot: jsonb('professional_snapshot'),
   verificationCode: varchar('verification_code', { length: 16 }).unique(),
+  signingTokenId: uuid('signing_token_id').references((): AnyPgColumn => consentSigningTokens.id),
+  patientCopySentAt: timestamp('patient_copy_sent_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('idx_consent_acceptances_patient').on(table.tenantId, table.patientId),

@@ -183,4 +183,28 @@ describe('POST /api/consent/sign: token consumption', () => {
       expect.anything(),
     )
   })
+
+  it('refuses the same template signed twice', async () => {
+    vi.mocked(isSubscriptionActive).mockResolvedValue(true)
+    const [signature] = makeBody().signatures
+
+    const res = await POST(makeRequest(makeBody({ signatures: [signature, signature] })))
+
+    expect(res.status).toBe(400)
+    expect(acceptConsent).not.toHaveBeenCalled()
+  })
+
+  it('stores the signing token id on each acceptance', async () => {
+    vi.mocked(isSubscriptionActive).mockResolvedValue(true)
+    vi.mocked(getValidSigningToken).mockResolvedValue(TOKEN_DATA as never)
+
+    await POST(makeRequest(makeBody()))
+
+    expect(acceptConsent).toHaveBeenCalledWith(
+      TOKEN_TENANT_ID,
+      expect.anything(),
+      expect.objectContaining({ signingTokenId: TOKEN_DATA.id }),
+      expect.anything(),
+    )
+  })
 })

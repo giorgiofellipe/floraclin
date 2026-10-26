@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import React from 'react'
 
 // `pdf.ts` starts with `import 'server-only'`, which throws unconditionally
@@ -13,15 +13,17 @@ vi.mock('server-only', () => ({}))
 // with instead of actually spawning a browser. `vi.hoisted` is required
 // because `vi.mock` factories run before this file's own top-level const
 // declarations.
-const { launchMock, pdfMock, setContentMock } = vi.hoisted(() => {
+const { launchMock, pdfMock, setContentMock, onMock, interceptionMock } = vi.hoisted(() => {
   const pdfMock = vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]))
   const setContentMock = vi.fn().mockResolvedValue(undefined)
-  const page = { setContent: setContentMock, pdf: pdfMock }
+  const onMock = vi.fn()
+  const interceptionMock = vi.fn()
+  const page = { setContent: setContentMock, pdf: pdfMock, setRequestInterception: interceptionMock, on: onMock }
   const launchMock = vi.fn().mockResolvedValue({
     newPage: vi.fn().mockResolvedValue(page),
     close: vi.fn().mockResolvedValue(undefined),
   })
-  return { launchMock, pdfMock, setContentMock }
+  return { launchMock, pdfMock, setContentMock, onMock, interceptionMock }
 })
 
 vi.mock('puppeteer-core', () => ({ default: { launch: launchMock } }))
@@ -33,6 +35,12 @@ beforeEach(() => {
   launchMock.mockClear()
   pdfMock.mockClear()
   setContentMock.mockClear()
+  onMock.mockClear()
+  interceptionMock.mockClear()
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
 })
 
 describe('renderReactToPdf', () => {
@@ -62,5 +70,28 @@ describe('renderReactToPdf', () => {
     const result = await renderReactToPdf(React.createElement('div', null, 'x'), PRINT_BASE_CSS)
     expect(Buffer.isBuffer(result)).toBe(true)
     expect(Array.from(result)).toEqual([1, 2, 3])
+  })
+
+  it('lets Chromium load only inline data, app assets and Supabase storage', async () => {
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.floraclin.com.br')
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://proj.supabase.co')
+    await renderReactToPdf(React.createElement('div', null, 'x'), PRINT_BASE_CSS)
+    expect(interceptionMock).toHaveBeenCalledWith(true)
+    const onRequest = onMock.mock.calls.find(([event]) => event === 'request')![1]
+
+    const outcome = (url: string) => {
+      const request = { url: () => url, continue: vi.fn(), abort: vi.fn() }
+      onRequest(request)
+      return request.abort.mock.calls.length ? 'blocked' : 'allowed'
+    }
+
+    expect(outcome('data:image/png;base64,abc')).toBe('allowed')
+    expect(outcome('https://app.floraclin.com.br/face-templates/female-front.webp')).toBe('allowed')
+    expect(outcome('https://proj.supabase.co/storage/v1/object/sign/x.jpg?token=t')).toBe('allowed')
+    expect(outcome('http://169.254.169.254/latest/meta-data/')).toBe('blocked')
+    expect(outcome('http://localhost:3000/api/admin')).toBe('blocked')
+    expect(outcome('file:///etc/passwd')).toBe('blocked')
+    expect(outcome('https://app.floraclin.com.br/api/admin/users')).toBe('blocked')
+    expect(outcome('https://proj.supabase.co/rest/v1/users')).toBe('blocked')
   })
 })

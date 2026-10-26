@@ -4,7 +4,11 @@ import { NextRequest } from 'next/server'
 vi.mock('@/lib/auth-config', () => ({ auth: vi.fn() }))
 vi.mock('@/db/client', () => ({ db: { select: vi.fn() } }))
 vi.mock('@/db/queries/consent', () => ({ getConsentAcceptanceWithContext: vi.fn() }))
-vi.mock('@/db/queries/consent-signing-tokens', () => ({ getRecentlyUsedSigningToken: vi.fn() }))
+vi.mock('@/db/queries/consent-signing-tokens', () => ({
+  getRecentlyUsedSigningToken: vi.fn(),
+  claimPatientCopy: vi.fn(),
+  releasePatientCopy: vi.fn(),
+}))
 vi.mock('@/lib/plans', () => ({ isSubscriptionActive: vi.fn() }))
 vi.mock('@/lib/pdf', () => ({ renderReactToPdf: vi.fn(), PRINT_BASE_CSS: '' }))
 vi.mock('@/lib/logo', () => ({ fetchLogoDataUri: vi.fn() }))
@@ -15,7 +19,7 @@ vi.mock('@/components/consent/print-consent', () => ({ PrintConsent: () => null 
 import { auth } from '@/lib/auth-config'
 import { db } from '@/db/client'
 import { getConsentAcceptanceWithContext } from '@/db/queries/consent'
-import { getRecentlyUsedSigningToken } from '@/db/queries/consent-signing-tokens'
+import { getRecentlyUsedSigningToken, claimPatientCopy, releasePatientCopy } from '@/db/queries/consent-signing-tokens'
 import { isSubscriptionActive } from '@/lib/plans'
 import { renderReactToPdf } from '@/lib/pdf'
 import { fetchLogoDataUri } from '@/lib/logo'
@@ -25,10 +29,10 @@ import { POST } from '../route'
 
 const ACCEPTANCE_ID = 'acc-1'
 
-function mockMembershipRow(row: { tenantId: string } | undefined) {
+function mockMembershipRow(row: { tenantId: string; passwordChangedAt?: Date | null } | undefined) {
   const chain: Record<string, unknown> = {}
   for (const m of ['from', 'innerJoin', 'where']) chain[m] = vi.fn(() => chain)
-  chain.limit = vi.fn(async () => (row ? [row] : []))
+  chain.limit = vi.fn(async () => (row ? [{ passwordChangedAt: null, ...row }] : []))
   vi.mocked(db.select).mockReturnValue(chain as never)
 }
 
@@ -83,8 +87,8 @@ describe('POST /api/consent/[id]/send-whatsapp', () => {
 
   it('attributes a signing-token send without a session to the patient', async () => {
     vi.mocked(auth).mockResolvedValue(null as never)
-    vi.mocked(getRecentlyUsedSigningToken).mockResolvedValue({ tenantId: 'tenant-1' } as never)
-    mockMembershipRow({ tenantId: 'tenant-1' })
+    vi.mocked(getRecentlyUsedSigningToken).mockResolvedValue({ id: 'token-1', tenantId: 'tenant-1' } as never)
+    vi.mocked(claimPatientCopy).mockResolvedValue({ tenantId: 'tenant-1', alreadySent: false })
 
     const res = await post('?token=abc')
 
@@ -103,5 +107,65 @@ describe('POST /api/consent/[id]/send-whatsapp', () => {
       expect.any(String),
       'termos/y.pdf',
     )
+  })
+
+  it('refuses a token send for an acceptance the token did not sign', async () => {
+    vi.mocked(auth).mockResolvedValue(null as never)
+    vi.mocked(getRecentlyUsedSigningToken).mockResolvedValue({ id: 'token-1', tenantId: 'tenant-1' } as never)
+    vi.mocked(claimPatientCopy).mockResolvedValue(null)
+
+    const res = await post('?token=abc')
+
+    expect(res.status).toBe(401)
+    expect(claimPatientCopy).toHaveBeenCalledWith(ACCEPTANCE_ID, 'token-1')
+    expect(renderReactToPdf).not.toHaveBeenCalled()
+    expect(sendOrEnqueueDocument).not.toHaveBeenCalled()
+  })
+
+  it('answers success without sending again when the copy was already sent', async () => {
+    vi.mocked(auth).mockResolvedValue(null as never)
+    vi.mocked(getRecentlyUsedSigningToken).mockResolvedValue({ id: 'token-1', tenantId: 'tenant-1' } as never)
+    vi.mocked(claimPatientCopy).mockResolvedValue({ tenantId: 'tenant-1', alreadySent: true })
+
+    const res = await post('?token=abc')
+
+    expect(res.status).toBe(200)
+    expect(sendOrEnqueueDocument).not.toHaveBeenCalled()
+    expect(releasePatientCopy).not.toHaveBeenCalled()
+  })
+
+  it('gives the claimed copy back when the send fails, so the patient can retry', async () => {
+    vi.mocked(auth).mockResolvedValue(null as never)
+    vi.mocked(getRecentlyUsedSigningToken).mockResolvedValue({ id: 'token-1', tenantId: 'tenant-1' } as never)
+    vi.mocked(claimPatientCopy).mockResolvedValue({ tenantId: 'tenant-1', alreadySent: false })
+    vi.mocked(sendOrEnqueueDocument).mockRejectedValue(new Error('meta down'))
+    vi.mocked(releasePatientCopy).mockResolvedValue(undefined)
+
+    const res = await post('?token=abc')
+
+    expect(res.status).toBe(500)
+    expect(releasePatientCopy).toHaveBeenCalledWith(ACCEPTANCE_ID)
+  })
+
+  it('still answers the send failure when giving the copy back fails too', async () => {
+    vi.mocked(auth).mockResolvedValue(null as never)
+    vi.mocked(getRecentlyUsedSigningToken).mockResolvedValue({ id: 'token-1', tenantId: 'tenant-1' } as never)
+    vi.mocked(claimPatientCopy).mockResolvedValue({ tenantId: 'tenant-1', alreadySent: false })
+    vi.mocked(sendOrEnqueueDocument).mockRejectedValue(new Error('meta down'))
+    vi.mocked(releasePatientCopy).mockRejectedValue(new Error('db down'))
+
+    const res = await post('?token=abc')
+
+    expect(res.status).toBe(500)
+  })
+
+  it('refuses a session from before the last password change', async () => {
+    vi.mocked(auth).mockResolvedValue({ user: { id: 'user-1' }, authAt: Date.parse('2026-10-01') } as never)
+    mockMembershipRow({ tenantId: 'tenant-1', passwordChangedAt: new Date('2026-10-02') })
+
+    const res = await post()
+
+    expect(res.status).toBe(401)
+    expect(sendOrEnqueueDocument).not.toHaveBeenCalled()
   })
 })

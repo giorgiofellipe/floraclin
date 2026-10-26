@@ -182,7 +182,7 @@ export async function updateUserRole(
 export async function deactivateUser(
   tenantId: string,
   userId: string
-): Promise<boolean> {
+): Promise<{ role: string } | null> {
   const [updated] = await db
     .update(tenantUsers)
     .set({ isActive: false, updatedAt: new Date() })
@@ -192,9 +192,9 @@ export async function deactivateUser(
         eq(tenantUsers.userId, userId)
       )
     )
-    .returning()
+    .returning({ role: tenantUsers.role })
 
-  return !!updated
+  return updated ?? null
 }
 
 /**

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto'
 import { db } from '@/db/client'
-import { consentSigningTokens, patients, consentTemplates, tenants } from '@/db/schema'
+import { consentSigningTokens, consentAcceptances, patients, consentTemplates, tenants } from '@/db/schema'
 import { eq, and, isNull, sql, inArray } from 'drizzle-orm'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 
@@ -86,6 +86,7 @@ export async function markSigningTokenUsed(token: string, tx?: typeof db) {
 export async function getRecentlyUsedSigningToken(token: string) {
   const [row] = await db
     .select({
+      id: consentSigningTokens.id,
       tenantId: consentSigningTokens.tenantId,
       usedAt: consentSigningTokens.usedAt,
       expiresAt: consentSigningTokens.expiresAt,
@@ -100,6 +101,41 @@ export async function getRecentlyUsedSigningToken(token: string) {
   if (new Date() > deadline) return null
 
   return row
+}
+
+/**
+ * One patient copy per acceptance, and only for acceptances this token signed.
+ * Returns null when the acceptance is not this token's.
+ */
+export async function claimPatientCopy(
+  acceptanceId: string,
+  signingTokenId: string,
+): Promise<{ tenantId: string; alreadySent: boolean } | null> {
+  const ownAcceptance = and(
+    eq(consentAcceptances.id, acceptanceId),
+    eq(consentAcceptances.signingTokenId, signingTokenId),
+  )
+
+  const [claimed] = await db
+    .update(consentAcceptances)
+    .set({ patientCopySentAt: new Date() })
+    .where(and(ownAcceptance, isNull(consentAcceptances.patientCopySentAt)))
+    .returning({ tenantId: consentAcceptances.tenantId })
+  if (claimed) return { tenantId: claimed.tenantId, alreadySent: false }
+
+  const [sent] = await db
+    .select({ tenantId: consentAcceptances.tenantId })
+    .from(consentAcceptances)
+    .where(ownAcceptance)
+    .limit(1)
+  return sent ? { tenantId: sent.tenantId, alreadySent: true } : null
+}
+
+export async function releasePatientCopy(acceptanceId: string) {
+  await db
+    .update(consentAcceptances)
+    .set({ patientCopySentAt: null })
+    .where(eq(consentAcceptances.id, acceptanceId))
 }
 
 export async function getTemplatesForToken(tenantId: string, templateIds: string[]) {
