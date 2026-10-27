@@ -17,7 +17,7 @@ import { SUSPENDED_CLINIC_MESSAGE } from '@/lib/clinic-suspended'
 import { sendConfirmationEmail } from '@/lib/email'
 import { withTransaction } from '@/lib/tenant'
 import { notifySignupStarted } from '@/lib/signup-notifications'
-import { issueConfirmationToken } from '@/lib/confirm-email'
+import { confirmEmailUrl, issueConfirmationToken } from '@/lib/confirm-email'
 import { getAppUrl } from '@/lib/app-url'
 import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
 import { generateMetaEventId } from '@/lib/marketing-attribution'
@@ -141,15 +141,15 @@ export async function signUp(
   // must never be allowed to block sign-in.
   try {
     const rawToken = await issueConfirmationToken(email)
-    const confirmUrl = `${appUrl}/api/auth/confirm?email=${encodeURIComponent(email)}&token=${rawToken}`
+    const confirmUrl = confirmEmailUrl(email, rawToken!)
     await sendConfirmationEmail(email, confirmUrl, clinicName)
   } catch (err) {
-    console.error('Failed to send confirmation email', err)
+    reportSideEffectFailure(err, { area: 'signup', step: 'confirmation_email' })
   }
 
   // Deliberately no signIn here. Signing the user in before they confirm
   // would hand an unconfirmed account a working session cookie, and the API
-  // would accept it: middleware's /api branch returns before any email check.
+  // would accept it: proxy's /api branch returns before any email check.
   // The first sign-in happens after confirming, and `authorize` refuses until
   // then. There is no session for the page to read the address from, so it
   // rides in an httpOnly cookie instead of the URL that Meta sees.
@@ -158,9 +158,9 @@ export async function signUp(
     serializeConfirmEmailPageState({ email }),
     confirmEmailStateCookieOptions(),
   )
-  const confirmEmailUrl = new URL('/confirm-email', getAppUrl())
-  confirmEmailUrl.searchParams.set('meta_event_id', metaEventId)
-  redirect(`${confirmEmailUrl.pathname}${confirmEmailUrl.search}`)
+  const confirmPageUrl = new URL('/confirm-email', getAppUrl())
+  confirmPageUrl.searchParams.set('meta_event_id', metaEventId)
+  redirect(`${confirmPageUrl.pathname}${confirmPageUrl.search}`)
 }
 
 export async function signUpWithGoogle() {

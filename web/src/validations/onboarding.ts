@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { addressSchema, workingHoursSchema } from './tenant'
 import { PROCEDURE_CATEGORIES } from '@/lib/constants'
+import { hasClinicPhone } from '@/lib/clinic-phone'
 
 const PRODUCT_CATEGORIES = ['botox', 'filler', 'biostimulator', 'skinbooster', 'peel', 'other'] as const
 
@@ -25,12 +26,19 @@ export const productSelectionSchema = z
 
 export type ProductSelection = z.infer<typeof productSelectionSchema>
 
+export const ONBOARDING_STEPS = ['clinic', 'procedures', 'products', 'team'] as const
+
+// An address with every field emptied is stored as none, so clearing it sticks.
+const clinicAddressSchema = addressSchema.unwrap().transform((address) =>
+  Object.values(address).some(Boolean) ? address : null,
+)
+
 const clinicDataSchema = z.object({
   name: z.string().trim().min(1),
   slug: z.string().trim().min(1).max(100).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug inválido').optional(),
   phone: z.string().optional(),
   email: z.string().optional(),
-  address: addressSchema.optional(),
+  address: clinicAddressSchema.optional(),
   workingHours: workingHoursSchema,
 })
 
@@ -48,3 +56,40 @@ export const onboardingCompleteSchema = z.object({
 })
 
 export type OnboardingCompleteInput = z.infer<typeof onboardingCompleteSchema>
+
+// Autosave runs on every keystroke, so a half-typed value is dropped (not saved yet) instead of failing the save.
+const savedWhenComplete = <T extends z.ZodType>(schema: T) => schema.optional().catch(undefined)
+
+const progressClinicSchema = z.object({
+  name: savedWhenComplete(safeTrimmedString('Nome', 255).min(1)),
+  phone: savedWhenComplete(z.string().trim().max(20).refine(hasClinicPhone)),
+  email: savedWhenComplete(z.string().trim().max(255).email()),
+  address: savedWhenComplete(clinicAddressSchema),
+  workingHours: savedWhenComplete(workingHoursSchema),
+})
+
+export const onboardingDraftSchema = z.object({
+  step: z.number().int().min(0).max(ONBOARDING_STEPS.length - 1),
+  procedures: z
+    .array(
+      z.object({
+        selected: z.boolean(),
+        durationMin: z.number().int().min(5).max(480),
+        defaultPrice: z.string().max(20),
+      }),
+    )
+    .max(100),
+  selectedProductNames: z.array(z.string().max(150)).max(200),
+  productsTouched: z.boolean(),
+  customProducts: z.array(productSelectionSchema).max(200),
+  customSlug: z.string().max(100).regex(/^[a-z0-9-]*$/),
+})
+
+export type OnboardingDraft = z.infer<typeof onboardingDraftSchema>
+
+export const onboardingProgressSchema = z.object({
+  clinic: progressClinicSchema.default({}),
+  draft: savedWhenComplete(onboardingDraftSchema),
+})
+
+export type OnboardingProgressInput = z.input<typeof onboardingProgressSchema>

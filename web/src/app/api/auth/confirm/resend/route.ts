@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/db/client'
 import { users, tenantUsers, tenants } from '@/db/schema'
 import { eq, and, isNull, sql } from 'drizzle-orm'
-import { issueConfirmationToken } from '@/lib/confirm-email'
+import { confirmEmailUrl, issueConfirmationToken } from '@/lib/confirm-email'
 import { sendConfirmationEmail } from '@/lib/email'
-import { getAppUrl } from '@/lib/app-url'
 import { handleApiError } from '@/lib/api-error'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 /**
  * One resend per 60 seconds per identifier. Vercel runs several instances of
@@ -57,9 +57,12 @@ export async function POST(request: NextRequest) {
       .where(and(eq(tenantUsers.userId, user.id), eq(tenantUsers.isActive, true)))
       .limit(1)
 
-    const appUrl = getAppUrl()
-    const confirmUrl = `${appUrl}/api/auth/confirm?email=${encodeURIComponent(normalizedEmail)}&token=${rawToken}`
-    await sendConfirmationEmail(normalizedEmail, confirmUrl, membership?.tenantName ?? 'FloraClin')
+    const confirmUrl = confirmEmailUrl(normalizedEmail, rawToken)
+    try {
+      await sendConfirmationEmail(normalizedEmail, confirmUrl, membership?.tenantName ?? 'FloraClin')
+    } catch (err) {
+      reportSideEffectFailure(err, { area: 'signup', step: 'resend_confirmation' })
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {

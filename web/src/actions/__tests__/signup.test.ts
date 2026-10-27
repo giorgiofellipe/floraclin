@@ -80,7 +80,8 @@ vi.mock('@/lib/email', () => ({
   sendConfirmationEmail: sendConfirmationEmailMock,
 }))
 
-vi.mock('@/lib/confirm-email', () => ({
+vi.mock('@/lib/confirm-email', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/confirm-email')>()),
   issueConfirmationToken: issueConfirmationTokenMock,
 }))
 
@@ -384,18 +385,17 @@ describe('signUp action', () => {
     expect(confirmUrl).toContain('/api/auth/confirm')
   })
 
-  it('still reaches /confirm-email when the confirmation email fails to send', async () => {
+  it('still reaches /confirm-email when the confirmation email fails to send, and reports it', async () => {
     // The rows are already committed by this point. If a Resend failure
     // escaped, the account would exist, be unregisterable because the email
     // is taken, and have no way to ask for a resend.
-    sendConfirmationEmailMock.mockRejectedValueOnce(new Error('Resend is down'))
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const sendError = new Error('Resend is down')
+    sendConfirmationEmailMock.mockRejectedValueOnce(sendError)
 
     await signUp(null, validFormData({ email: 'send-fails@test.com' }))
 
     expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
-
-    consoleErrorSpy.mockRestore()
+    expect(reportSideEffectFailureMock).toHaveBeenCalledWith(sendError, expect.objectContaining({ area: 'signup' }))
   })
 
   it('never signs the new account in', async () => {

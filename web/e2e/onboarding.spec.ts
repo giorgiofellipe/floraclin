@@ -4,7 +4,7 @@ import { seedForOnboarding } from './helpers/test-db'
 /**
  * Onboarding E2E Tests
  *
- * Runs against an ephemeral Docker Postgres. Before this suite, the
+ * Runs against an ephemeral Docker Postgres. Before each test, the
  * tenant settings are reset to onboarding_completed = false.
  * Auth is bypassed via x-test-user-id header (set in playwright config).
  *
@@ -27,8 +27,8 @@ function skipIfNotOnboarding(page: Page) {
 test.describe('Onboarding', () => {
   test.describe.configure({ mode: 'serial' })
 
-  // Reset tenant to onboarding-incomplete state before this suite
-  test.beforeAll(async () => {
+  // The wizard resumes at the autosaved step, so each test starts from a fresh draft.
+  test.beforeEach(async () => {
     await seedForOnboarding()
   })
 
@@ -37,7 +37,7 @@ test.describe('Onboarding', () => {
     expect(page.url()).toContain('/onboarding')
   })
 
-  test('should display stepper with 3 steps on step 1', async ({ page }) => {
+  test('should display the stepper on step 1', async ({ page }) => {
     await loginTestUser(page)
     skipIfNotOnboarding(page)
 
@@ -79,9 +79,9 @@ test.describe('Onboarding', () => {
     await expect(page.locator('text=Procedimentos Sugeridos')).toBeVisible()
 
     // Default procedures listed as checkboxes (all checked by default)
-    const checkboxes = page.locator('input[type="checkbox"]')
-    await expect(checkboxes.first()).toBeVisible()
-    await expect(checkboxes.first()).toBeChecked()
+    const firstProcedure = page.getByRole('checkbox').first()
+    await expect(firstProcedure).toBeVisible()
+    await expect(firstProcedure).toHaveAttribute('aria-checked', 'true')
 
     // Previous button now visible
     await expect(page.getByTestId('onboarding-prev')).toBeVisible()
@@ -96,14 +96,14 @@ test.describe('Onboarding', () => {
     await expect(page.locator('text=Procedimentos Sugeridos')).toBeVisible({ timeout: 5000 })
 
     // Uncheck first procedure
-    const firstCheckbox = page.locator('input[type="checkbox"]').first()
-    await expect(firstCheckbox).toBeChecked()
-    await firstCheckbox.uncheck()
-    await expect(firstCheckbox).not.toBeChecked()
+    const firstProcedure = page.getByRole('checkbox').first()
+    await expect(firstProcedure).toHaveAttribute('aria-checked', 'true')
+    await firstProcedure.click()
+    await expect(firstProcedure).toHaveAttribute('aria-checked', 'false')
 
     // Check it again
-    await firstCheckbox.check()
-    await expect(firstCheckbox).toBeChecked()
+    await firstProcedure.click()
+    await expect(firstProcedure).toHaveAttribute('aria-checked', 'true')
   })
 
   test('should go back from step 2 to step 1', async ({ page }) => {
@@ -119,7 +119,7 @@ test.describe('Onboarding', () => {
     await expect(page.locator('text=Dados da Clínica')).toBeVisible({ timeout: 5000 })
   })
 
-  test('should navigate to step 3 — Equipe', async ({ page }) => {
+  test('should navigate to step 4: Equipe', async ({ page }) => {
     await loginTestUser(page)
     skipIfNotOnboarding(page)
 
@@ -127,7 +127,9 @@ test.describe('Onboarding', () => {
     await page.getByTestId('onboarding-next').click()
     await expect(page.locator('text=Tipos de Procedimento')).toBeVisible({ timeout: 5000 })
 
-    // Step 2 → Step 3
+    // Step 2 → Step 3 → Step 4
+    await page.getByTestId('onboarding-next').click()
+    await expect(page.getByRole('heading', { name: 'Produtos', exact: true })).toBeVisible({ timeout: 5000 })
     await page.getByTestId('onboarding-next').click()
     await expect(page.locator('text=Convide sua Equipe')).toBeVisible({ timeout: 5000 })
 
@@ -147,6 +149,7 @@ test.describe('Onboarding', () => {
     await page.getByTestId('onboarding-next').click()
     await expect(page.locator('text=Tipos de Procedimento')).toBeVisible({ timeout: 5000 })
 
+    await page.getByTestId('onboarding-next').click()
     await page.getByTestId('onboarding-next').click()
     await expect(page.getByTestId('onboarding-complete')).toBeVisible({ timeout: 5000 })
 

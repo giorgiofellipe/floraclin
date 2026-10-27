@@ -13,7 +13,7 @@ import { toast } from 'sonner'
 import { CheckIcon, Building2Icon, SyringeIcon, PackageIcon, UsersIcon, LogOutIcon, PlusIcon } from 'lucide-react'
 import { logout } from '@/actions/auth'
 import type { WorkingHours } from '@/validations/tenant'
-import { ProductsStep, type ProductStepItem } from './products-step'
+import { ProductsStep } from './products-step'
 import type { CustomProductInput } from './custom-product-form'
 import type { Product } from '@/db/queries/products'
 import { MaskedInput } from '@/components/ui/masked-input'
@@ -24,6 +24,8 @@ import { Input } from '@/components/ui/input'
 import { CLINIC_PHONE_REQUIRED_MESSAGE, hasClinicPhone } from '@/lib/clinic-phone'
 import { resetAnalytics, track } from '@/lib/analytics/client'
 import type { OnboardingStepName, OnboardingSubmitFailureReason } from '@/lib/analytics/events'
+import { ONBOARDING_STEPS, type OnboardingDraft, type OnboardingProgressInput } from '@/validations/onboarding'
+import { useOnboardingAutosave } from './use-onboarding-autosave'
 
 interface ProcedureOverride {
   selected: boolean
@@ -32,6 +34,12 @@ interface ProcedureOverride {
 }
 
 const DURATION_OPTIONS = [15, 30, 45, 60, 75, 90, 120] as const
+
+type CustomProductItem = CustomProductInput & { isCustom: true }
+
+function withoutCustomFlag({ name, category, activeIngredient, defaultUnit }: CustomProductItem): CustomProductInput {
+  return { name, category, activeIngredient, defaultUnit }
+}
 
 interface ProcedureTypeItem {
   id: string
@@ -45,13 +53,15 @@ interface ProcedureTypeItem {
   isActive: boolean
 }
 
+const STEP_DISPLAY: Record<OnboardingStepName, { label: string; icon: typeof Building2Icon }> = {
+  clinic: { label: 'Clínica', icon: Building2Icon },
+  procedures: { label: 'Procedimentos', icon: SyringeIcon },
+  products: { label: 'Produtos', icon: PackageIcon },
+  team: { label: 'Equipe', icon: UsersIcon },
+}
+
 // `name` is the step's stable analytics id, independent of the label copy.
-const STEPS: { label: string; icon: typeof Building2Icon; name: OnboardingStepName }[] = [
-  { label: 'Clínica', icon: Building2Icon, name: 'clinic' },
-  { label: 'Procedimentos', icon: SyringeIcon, name: 'procedures' },
-  { label: 'Produtos', icon: PackageIcon, name: 'products' },
-  { label: 'Equipe', icon: UsersIcon, name: 'team' },
-]
+const STEPS = ONBOARDING_STEPS.map((name) => ({ name, ...STEP_DISPLAY[name] }))
 
 function submitFailureReason(status: number): OnboardingSubmitFailureReason {
   if (status === 409) return 'slug_taken'
@@ -69,6 +79,10 @@ interface OnboardingWizardProps {
   tenantName: string
   tenantPhone: string | null
   tenantEmail: string | null
+  tenantAddress?: Record<string, string> | null
+  tenantWorkingHours?: WorkingHours | null
+  /** Progress autosaved on an earlier visit, to resume from. */
+  draft?: OnboardingDraft | null
   existingProcedureTypes: ProcedureTypeItem[]
   existingProducts?: Product[]
   /** Ask for the clinic phone before moving past the first step. */
@@ -79,30 +93,37 @@ export function OnboardingWizard({
   tenantName,
   tenantPhone,
   tenantEmail,
+  tenantAddress = null,
+  tenantWorkingHours = null,
+  draft = null,
   existingProcedureTypes,
   existingProducts = [],
   phoneRequired = false,
 }: OnboardingWizardProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
-  const [currentStep, setCurrentStep] = useState(0)
+  // A later step needs the clinic step passed; if its save did not land, ask again.
+  const clinicStepSaved = Boolean(tenantName.trim()) && (!phoneRequired || hasClinicPhone(tenantPhone))
+  const [currentStep, setCurrentStep] = useState(clinicStepSaved ? (draft?.step ?? 0) : 0)
 
   // Step 1 state: clinic info
   const [clinicData, setClinicData] = useState<Record<string, unknown>>({
     name: tenantName || '',
     phone: tenantPhone ?? '',
     email: tenantEmail ?? '',
-    address: {},
-    workingHours: DEFAULT_WORKING_HOURS,
+    address: tenantAddress ?? {},
+    workingHours: tenantWorkingHours ?? DEFAULT_WORKING_HOURS,
   })
 
   // Step 2 state: procedure types (local selection before onboarding completes)
   const [procedureOverrides, setProcedureOverrides] = useState<ProcedureOverride[]>(() =>
-    DEFAULT_PROCEDURE_TYPES.map((pt) => ({
-      selected: true,
-      durationMin: pt.estimatedDurationMin,
-      defaultPrice: '',
-    })),
+    draft?.procedures.length === DEFAULT_PROCEDURE_TYPES.length
+      ? draft.procedures
+      : DEFAULT_PROCEDURE_TYPES.map((pt) => ({
+          selected: true,
+          durationMin: pt.estimatedDurationMin,
+          defaultPrice: '',
+        })),
   )
   const [showAddProcedure, setShowAddProcedure] = useState(false)
 
@@ -125,14 +146,18 @@ export function OnboardingWizard({
   }
 
   const [selectedProductNames, setSelectedProductNames] = useState<Set<string>>(() =>
-    computeDefaultProductSelection(DEFAULT_PROCEDURE_TYPES.map(() => true)),
+    draft
+      ? new Set(draft.selectedProductNames)
+      : computeDefaultProductSelection(DEFAULT_PROCEDURE_TYPES.map(() => true)),
   )
-  const [productsTouched, setProductsTouched] = useState(false)
-  const [customProducts, setCustomProducts] = useState<ProductStepItem[]>([])
+  const [productsTouched, setProductsTouched] = useState(draft?.productsTouched ?? false)
+  const [customProducts, setCustomProducts] = useState<CustomProductItem[]>(
+    () => draft?.customProducts.map((p) => ({ ...p, isCustom: true as const })) ?? [],
+  )
   const productsAlreadyConfigured = (existingProducts?.length ?? 0) > 0
 
   // Slug state
-  const [customSlug, setCustomSlug] = useState('')
+  const [customSlug, setCustomSlug] = useState(draft?.customSlug ?? '')
   const [slugAvailable, setSlugAvailable] = useState<boolean | null>(null)
   const [slugChecking, setSlugChecking] = useState(false)
   const [suggestedSlug, setSuggestedSlug] = useState('')
@@ -143,6 +168,25 @@ export function OnboardingWizard({
   // Step 4 state: track sent invites count
   const [invitesSent, setInvitesSent] = useState(0)
   const [showInviteForm, setShowInviteForm] = useState(false)
+
+  const progress: OnboardingProgressInput = {
+    clinic: {
+      name: clinicData.name as string,
+      phone: clinicData.phone as string,
+      email: clinicData.email as string,
+      address: clinicData.address as Record<string, string>,
+      workingHours: clinicData.workingHours as WorkingHours,
+    },
+    draft: {
+      step: currentStep,
+      procedures: procedureOverrides,
+      selectedProductNames: [...selectedProductNames],
+      productsTouched,
+      customProducts: customProducts.map(withoutCustomFlag),
+      customSlug,
+    },
+  }
+  const autosave = useOnboardingAutosave(progress)
 
   const handleClinicChange = useCallback((data: Record<string, unknown>) => {
     setClinicData(data)
@@ -238,8 +282,7 @@ export function OnboardingWizard({
     }
   }, [customSlug, clinicName])
 
-  // The wizard saves everything in one POST at the end, so step-level
-  // drop-off is only visible from here. Field names only, never values.
+  // Field names only, never values.
   useEffect(() => {
     track('onboarding_step_viewed', stepProperties(currentStep))
   }, [currentStep])
@@ -270,6 +313,7 @@ export function OnboardingWizard({
     // succeeds (api/onboarding).
     track('onboarding_step_submitted', stepProperties(currentStep))
     startTransition(async () => {
+      await autosave.pause()
       const procedureTypes = DEFAULT_PROCEDURE_TYPES.flatMap((pt, i) => {
         const override = procedureOverrides[i]
         if (!override?.selected) return []
@@ -292,12 +336,7 @@ export function OnboardingWizard({
           activeIngredient: p.activeIngredient,
           defaultUnit: p.defaultUnit,
         })),
-        ...customProducts.map((p) => ({
-          name: p.name,
-          category: p.category,
-          activeIngredient: p.activeIngredient,
-          defaultUnit: p.defaultUnit,
-        })),
+        ...customProducts.map(withoutCustomFlag),
       ]
 
       let res: Response
@@ -319,6 +358,7 @@ export function OnboardingWizard({
           }),
         })
       } catch {
+        autosave.resume()
         track('onboarding_submit_failed', { ...stepProperties(currentStep), reason: 'network_error' })
         toast.error('Erro ao completar o onboarding')
         return
@@ -328,9 +368,11 @@ export function OnboardingWizard({
       const result = await res.json().catch(() => null)
 
       if (result?.success) {
+        autosave.finish()
         toast.success('Configuração concluída! Bem-vindo ao FloraClin.')
         router.push('/dashboard')
       } else {
+        autosave.resume()
         track('onboarding_submit_failed', { ...stepProperties(currentStep), reason: submitFailureReason(res.status), status: res.status })
         toast.error(result?.error || 'Erro ao completar o onboarding')
       }
@@ -472,6 +514,7 @@ export function OnboardingWizard({
                         setCustomSlug(v)
                         setSlugAvailable(null)
                       }}
+                      maxLength={100}
                       className="h-8 text-sm font-medium text-forest max-w-48"
                     />
                     {slugChecking ? (

@@ -35,6 +35,10 @@
     {
       "path": "/api/cron/card-repasses",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/signup-reminders",
+      "schedule": "0 * * * *"
     }
   ]
 }

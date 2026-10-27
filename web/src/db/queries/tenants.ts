@@ -74,9 +74,11 @@ export async function getTenantHeaderInfoForPdf(
   return { ...tenant, logoUrl: await fetchLogoDataUri(tenant.logoUrl) }
 }
 
+type TenantAddress = UpdateTenantInput['address']
+
 export async function updateTenant(
   tenantId: string,
-  data: UpdateTenantInput
+  data: Omit<UpdateTenantInput, 'address'> & { address?: TenantAddress | null }
 ): Promise<Tenant | null> {
   const updateData: Record<string, unknown> = { updatedAt: new Date() }
 
@@ -139,6 +141,12 @@ export async function isPhoneNumberIdClaimedByAnotherTenant(tenantId: string, ph
   return !!row
 }
 
+const onboardingOpen = (tenantId: string) =>
+  and(
+    eq(tenants.id, tenantId),
+    sql`coalesce(${tenants.settings}, '{}'::jsonb) -> 'onboarding_completed' is distinct from 'true'::jsonb`,
+  )
+
 /**
  * Sets `onboarding_completed: true` (plus `extraSettings`) and reports
  * whether this call is the one that completed onboarding. The flag is the
@@ -157,14 +165,40 @@ export async function markOnboardingCompleted(
       settings: sql`coalesce(${tenants.settings}, '{}'::jsonb) || ${patch}::jsonb`,
       updatedAt: new Date(),
     })
-    .where(
-      and(
-        eq(tenants.id, tenantId),
-        sql`coalesce(${tenants.settings}, '{}'::jsonb) -> 'onboarding_completed' is distinct from 'true'::jsonb`,
-      ),
-    )
+    .where(onboardingOpen(tenantId))
     .returning({ id: tenants.id })
   return rows.length > 0
+}
+
+/**
+ * Autosave from the onboarding wizard: writes the given clinic columns and
+ * merges `settings`, only while onboarding is still open, so a save that lands
+ * after completion cannot undo it. A saved phone also stamps the lifecycle
+ * notice; `noticeStamped` is true only for the save that stamped it first.
+ */
+export async function saveOnboardingProgress(
+  tenantId: string,
+  clinic: Partial<Pick<UpdateTenantInput, 'name' | 'phone' | 'email' | 'workingHours'>> & { address?: TenantAddress | null },
+  settings: Record<string, unknown>,
+): Promise<{ saved: boolean; noticeStamped: boolean }> {
+  const saved = await db
+    .update(tenants)
+    .set({
+      ...clinic,
+      settings: sql`coalesce(${tenants.settings}, '{}'::jsonb) || ${JSON.stringify(settings)}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(onboardingOpen(tenantId))
+    .returning({ id: tenants.id })
+  if (saved.length === 0) return { saved: false, noticeStamped: false }
+  if (!clinic.phone) return { saved: true, noticeStamped: false }
+
+  const stamped = await db
+    .update(tenants)
+    .set({ lifecycleNoticeAt: sql`now()` })
+    .where(and(eq(tenants.id, tenantId), isNull(tenants.lifecycleNoticeAt)))
+    .returning({ id: tenants.id })
+  return { saved: true, noticeStamped: stamped.length > 0 }
 }
 
 // ─── PROCEDURE TYPES ────────────────────────────────────────────────

@@ -1,8 +1,9 @@
 import { db } from '@/db/client'
-import { verificationTokens } from '@/db/schema'
-import { eq, and, isNull, lt, or, sql } from 'drizzle-orm'
+import { users, verificationTokens } from '@/db/schema'
+import { eq, and, gt, isNull, lt, or, sql } from 'drizzle-orm'
 import crypto from 'crypto'
 import { CONFIRM_TOKEN_TTL_MS } from '@/lib/confirm-email-page-state'
+import { getAppUrl } from '@/lib/app-url'
 
 /**
  * Confirmation tokens share `verification_tokens` with password reset
@@ -22,6 +23,20 @@ export function hashToken(raw: string): string {
 }
 
 /**
+ * Derived from the row instead of random, so a reminder can resend the link
+ * already in the inbox without invalidating it. Only the hash is stored.
+ */
+function rawTokenFor(identifier: string, expires: Date): string {
+  const secret = process.env.NEXTAUTH_SECRET
+  if (!secret) throw new Error('NEXTAUTH_SECRET is not set')
+  return crypto.createHmac('sha256', secret).update(`${identifier}:${expires.getTime()}`).digest('hex')
+}
+
+export function confirmEmailUrl(email: string, rawToken: string): string {
+  return `${getAppUrl()}/api/auth/confirm?email=${encodeURIComponent(email)}&token=${rawToken}`
+}
+
+/**
  * Issues a token, atomically.
  *
  * An upsert rather than delete-then-insert: the delete left a window in which
@@ -38,16 +53,17 @@ export async function issueConfirmationToken(
   email: string,
   cooldownMs?: number,
 ): Promise<string | null> {
-  const raw = crypto.randomBytes(32).toString('hex')
   const identifier = confirmIdentifier(email)
   const now = new Date()
+  const expires = new Date(now.getTime() + CONFIRM_TOKEN_TTL_MS)
+  const raw = rawTokenFor(identifier, expires)
 
   const rows = await db
     .insert(verificationTokens)
     .values({
       identifier,
       token: hashToken(raw),
-      expires: new Date(now.getTime() + CONFIRM_TOKEN_TTL_MS),
+      expires,
       lastSentAt: now,
     })
     .onConflictDoUpdate({
@@ -60,7 +76,7 @@ export async function issueConfirmationToken(
       targetWhere: sql`${verificationTokens.identifier} like 'confirm:%'`,
       set: {
         token: hashToken(raw),
-        expires: new Date(now.getTime() + CONFIRM_TOKEN_TTL_MS),
+        expires,
         lastSentAt: now,
       },
       setWhere: cooldownMs
@@ -76,33 +92,63 @@ export async function issueConfirmationToken(
 }
 
 /**
- * Deletes and returns the matching row in one statement, the same
- * pattern reset-confirm uses (reset-confirm/route.ts). A SELECT
- * followed by a DELETE would let two concurrent clicks both pass the
- * check before either delete lands, firing verification side effects
- * twice. With DELETE ... RETURNING, only one concurrent caller can ever
- * get the row back.
+ * Rebuilds the outstanding link instead of rotating it, so a reminder never
+ * kills the link in an earlier email. A link a password change revoked is
+ * replaced, since confirmEmailWithToken would refuse it.
  */
-export async function consumeConfirmationToken(email: string, rawToken: string): Promise<string | null> {
+export async function getOrIssueConfirmationUrl(email: string): Promise<string> {
   const identifier = confirmIdentifier(email)
-  const hashedToken = hashToken(rawToken)
+  const [row] = await db
+    .select({ expires: verificationTokens.expires })
+    .from(verificationTokens)
+    .where(
+      and(
+        eq(verificationTokens.identifier, identifier),
+        gt(verificationTokens.expires, new Date()),
+        sql`not exists (
+          select 1 from ${users}
+          where lower(${users.email}) = ${email.toLowerCase()}
+            and ${users.passwordChangedAt} > ${verificationTokens.lastSentAt}
+        )`,
+      ),
+    )
+    .limit(1)
 
-  const [tokenRow] = await db
-    .delete(verificationTokens)
-    .where(and(eq(verificationTokens.identifier, identifier), eq(verificationTokens.token, hashedToken)))
-    .returning()
-
-  if (!tokenRow) {
-    return null
-  }
-
-  // Expiry is checked on the row that was already deleted, not before
-  // deleting it, so an expired token is still consumed and cannot be
-  // replayed after its window closes.
-  if (new Date() > tokenRow.expires) {
-    return null
-  }
-
-  return email.toLowerCase()
+  if (row) return confirmEmailUrl(email, rawTokenFor(identifier, row.expires))
+  // Without a cooldown the upsert always writes, so this is never null.
+  return confirmEmailUrl(email, (await issueConfirmationToken(email))!)
 }
 
+export interface ConfirmedUser {
+  id: string
+  email: string
+  name: string
+}
+
+/**
+ * Consumes the token and verifies the address in one statement, so two
+ * concurrent clicks cannot both pass and the side effects fire once.
+ *
+ * A token sent before the last password change is refused: a reset is how
+ * the owner takes back an address someone else registered.
+ */
+export async function confirmEmailWithToken(email: string, rawToken: string): Promise<ConfirmedUser | null> {
+  const rows = await db.execute<{ id: string; email: string; full_name: string }>(sql`
+    with consumed as (
+      delete from ${verificationTokens}
+      where ${verificationTokens.identifier} = ${confirmIdentifier(email)}
+        and ${verificationTokens.token} = ${hashToken(rawToken)}
+        and ${verificationTokens.expires} > now()
+      returning ${verificationTokens.lastSentAt} as last_sent_at
+    )
+    update ${users}
+    set email_verified = now()
+    from consumed
+    where lower(${users.email}) = ${email.toLowerCase()}
+      and (${users.passwordChangedAt} is null or ${users.passwordChangedAt} <= consumed.last_sent_at)
+    returning ${users.id}, ${users.email}, ${users.fullName}
+  `)
+
+  const [user] = rows
+  return user ? { id: user.id, email: user.email, name: user.full_name } : null
+}

@@ -10,6 +10,8 @@ import { listProducts } from '@/db/queries/products'
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard'
 import { hasPlaceholderName } from '@/lib/clinic-placeholder'
 import { AnalyticsProvider } from '@/components/analytics/analytics-provider'
+import { onboardingDraftSchema } from '@/validations/onboarding'
+import { addressSchema, workingHoursSchema } from '@/validations/tenant'
 
 export default async function OnboardingPage() {
   const auth = await getAuthContext()
@@ -48,6 +50,10 @@ export default async function OnboardingPage() {
   // Load existing products (in case user partially completed onboarding before)
   const existingProducts = await listProducts(auth.tenantId)
 
+  const draft = onboardingDraftSchema.safeParse(settings.onboarding_draft)
+  const address = addressSchema.safeParse(tenant.address)
+  const workingHours = workingHoursSchema.safeParse(tenant.workingHours)
+
   return (
     <>
       <AnalyticsProvider userId={auth.userId} tenantId={auth.tenantId} enabled={!auth.isPlatformAdmin} />
@@ -58,6 +64,9 @@ export default async function OnboardingPage() {
         phoneRequired
         tenantPhone={tenant.phone}
         tenantEmail={tenant.email}
+        tenantAddress={address.data ?? null}
+        tenantWorkingHours={workingHours.data ?? null}
+        draft={draft.success ? draft.data : null}
         existingProcedureTypes={procedureTypesForWizard}
         existingProducts={existingProducts}
       />

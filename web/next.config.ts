@@ -25,6 +25,19 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  async headers() {
+    // One click on this page signs the person in, so it must not be framed.
+    // Only here: public booking pages are meant to be embedded.
+    return [
+      {
+        source: '/confirm-email',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+        ],
+      },
+    ]
+  },
 }
 
 const baseConfig = withNextIntl(nextConfig)

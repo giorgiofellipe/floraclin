@@ -87,6 +87,21 @@ export async function resetTestDatabase() {
   }
 }
 
+// The reset truncates plans too, and a tenant with no subscription row gets 402 on every write.
+async function seedTrialSubscription(sql: ReturnType<typeof getTestDb>) {
+  await sql`
+    INSERT INTO floraclin.plans (slug, name, price_cents, trial_days)
+    VALUES ('free', 'Gratuito', 0, 14)
+    ON CONFLICT (slug) DO NOTHING
+  `
+  await sql`
+    INSERT INTO floraclin.tenant_subscriptions (tenant_id, plan_id, status, current_period_end, source)
+    SELECT ${TEST_TENANT_ID}, id, 'trialing', now() + interval '14 days', 'trial'
+    FROM floraclin.plans WHERE slug = 'free'
+    ON CONFLICT (tenant_id) DO UPDATE SET status = 'trialing', current_period_end = now() + interval '14 days'
+  `
+}
+
 /**
  * Seed the test database with all data needed for e2e tests.
  *
@@ -94,6 +109,7 @@ export async function resetTestDatabase() {
  * - Test user (owner, not platform admin)
  * - Test tenant with onboarding completed
  * - User membership
+ * - Trial subscription
  * - 2 patients
  * - 2 procedure types
  * - Financial settings
@@ -128,6 +144,8 @@ export async function seedTestDatabase() {
       VALUES (${TEST_TENANT_ID}, ${TEST_USER_ID}, 'owner', true)
       ON CONFLICT DO NOTHING
     `
+
+    await seedTrialSubscription(sql)
 
     // ── Patients ─────────────────────────────────────────────────
     await sql`
@@ -198,6 +216,8 @@ export async function seedForOnboarding() {
       VALUES (${TEST_TENANT_ID}, ${TEST_USER_ID}, 'owner', true)
       ON CONFLICT DO NOTHING
     `
+
+    await seedTrialSubscription(sql)
 
     console.log('✓ Database seeded for onboarding (incomplete)')
   } finally {

@@ -29,7 +29,7 @@ vi.mock('@/lib/auth-config', () => ({
 }))
 
 import { NextRequest, type NextResponse } from 'next/server'
-import middleware from '../middleware'
+import proxy from '../proxy'
 
 const TOKEN_VERSION = 3
 
@@ -61,7 +61,7 @@ function locationOf(res: { headers: Headers } | undefined) {
 
 /** Auth.js's wrapper takes (req, ctx); the handler ignores ctx. */
 function run(pathname: string, s: Record<string, unknown> | null) {
-  return (middleware as unknown as (r: unknown, c: unknown) => { headers: Headers })(
+  return (proxy as unknown as (r: unknown, c: unknown) => { headers: Headers })(
     req(pathname, s),
     {},
   )
@@ -69,7 +69,7 @@ function run(pathname: string, s: Record<string, unknown> | null) {
 
 beforeEach(() => vi.clearAllMocks())
 
-describe('middleware: email confirmation gate', () => {
+describe('proxy: email confirmation gate', () => {
   it('sends an unconfirmed user to /confirm-email', () => {
     const res = run('/dashboard', session({ emailVerified: false }))
     expect(locationOf(res)).toContain('/confirm-email')
@@ -96,7 +96,7 @@ describe('middleware: email confirmation gate', () => {
   })
 })
 
-describe('middleware: an old token is not a reason to redirect', () => {
+describe('proxy: an old token is not a reason to redirect', () => {
   it('lets a session minted before the current claims through', () => {
     // The outage. A version check here sent this token to /login and deleted
     // the cookie; the deletion missed, so /login redirected to /login without
@@ -119,7 +119,7 @@ describe('middleware: an old token is not a reason to redirect', () => {
   })
 })
 
-describe('middleware: API routes are not gated here', () => {
+describe('proxy: API routes are not gated here', () => {
   it('passes API requests through untouched', () => {
     // Write enforcement lives in requireWrite, against the database and the
     // caller's real tenant. Middleware only sees a JWT that refreshes on
@@ -135,7 +135,7 @@ describe('middleware: API routes are not gated here', () => {
   })
 })
 
-describe('middleware: the approval gate is gone', () => {
+describe('proxy: the approval gate is gone', () => {
   it('never redirects to /pending-approval', () => {
     for (const status of ['active', 'pending_approval', 'suspended']) {
       const res = run('/dashboard', session({ tenantStatus: status }))
@@ -144,7 +144,7 @@ describe('middleware: the approval gate is gone', () => {
   })
 })
 
-describe('middleware: the web app manifest is public', () => {
+describe('proxy: the web app manifest is public', () => {
   it('does not redirect an unauthenticated request for /manifest.webmanifest', () => {
     // Chrome fetches the manifest without cookies before it decides the app
     // is installable. A redirect to /login here means no install prompt, ever.
@@ -153,7 +153,7 @@ describe('middleware: the web app manifest is public', () => {
   })
 })
 
-describe('middleware: the Sentry tunnel is public', () => {
+describe('proxy: the Sentry tunnel is public', () => {
   it('does not redirect an unauthenticated POST to /monitoring', () => {
     // An anonymous visitor's client-side errors go through this tunnel. A
     // redirect to /login turned every one of them into a 405 and dropped it.
@@ -167,7 +167,7 @@ describe('middleware: the Sentry tunnel is public', () => {
   })
 })
 
-describe('middleware: first-touch capture outside /signup', () => {
+describe('proxy: first-touch capture outside /signup', () => {
   // An ad pointing at the app root, or a visitor who goes / -> /login and then
   // follows the client-side "Criar conta" link, never made a document request
   // to /signup, so signup_attribution came out empty.
@@ -178,7 +178,7 @@ describe('middleware: first-touch capture outside /signup', () => {
       headers: { 'sec-fetch-dest': 'document', referer: 'https://l.instagram.com/' },
     }) as NextRequest & { auth: unknown }
     request.auth = null
-    return (middleware as unknown as (r: unknown, c: unknown) => NextResponse)(request, {})
+    return (proxy as unknown as (r: unknown, c: unknown) => NextResponse)(request, {})
   }
 
   function firstTouchOf(res: NextResponse) {
@@ -218,7 +218,7 @@ describe('middleware: first-touch capture outside /signup', () => {
   })
 })
 
-describe('middleware: the destination survives the trip through /login', () => {
+describe('proxy: the destination survives the trip through /login', () => {
   it('carries a logged-out lifecycle link to /onboarding, UTMs included, in callbackUrl', () => {
     const res = run('/onboarding?utm_source=lifecycle&utm_medium=whatsapp&utm_campaign=trial_setup_incomplete', null)
     const location = new URL(locationOf(res)!)

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/lib/auth-config'
+import { getAuthContext } from '@/lib/auth'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { eq, and, ne } from 'drizzle-orm'
@@ -8,17 +8,12 @@ import { findAvailableSlug, generateSlug } from '@/db/queries/admin-tenants'
 
 export async function GET(request: Request) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
+    const { tenantId } = await getAuthContext()
     const { searchParams } = new URL(request.url)
-    const tenantId = (session as any).tenantId as string | null
 
     const name = searchParams.get('name')?.trim()
     if (name) {
-      const slug = await findAvailableSlug(db, generateSlug(name), tenantId ?? undefined)
+      const slug = await findAvailableSlug(db, generateSlug(name), tenantId)
       return NextResponse.json({ available: true, slug })
     }
 
@@ -27,15 +22,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ available: false })
     }
 
-    const conditions = [eq(tenants.slug, slug)]
-    if (tenantId) {
-      conditions.push(ne(tenants.id, tenantId))
-    }
-
     const [existing] = await db
       .select({ id: tenants.id })
       .from(tenants)
-      .where(and(...conditions))
+      .where(and(eq(tenants.slug, slug), ne(tenants.id, tenantId)))
       .limit(1)
 
     return NextResponse.json({ available: !existing })
