@@ -16,6 +16,7 @@ describe('last login option', () => {
   it.each([
     ['google', 'google'],
     ['credentials', 'email'],
+    ['confirm-email', 'email'],
   ] as const)('a %s sign-in marks %s', async (provider, option) => {
     await rememberLastLogin(provider)
     expect(await readLastLogin()).toBe(option)

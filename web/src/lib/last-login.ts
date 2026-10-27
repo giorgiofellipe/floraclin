@@ -10,6 +10,7 @@ export type LastLoginOption = 'google' | 'email'
 const OPTION_BY_PROVIDER: Partial<Record<string, LastLoginOption>> = {
   google: 'google',
   credentials: 'email',
+  'confirm-email': 'email',
 }
 
 export async function rememberLastLogin(provider: string | undefined): Promise<void> {

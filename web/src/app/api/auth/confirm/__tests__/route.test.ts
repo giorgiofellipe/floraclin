@@ -4,8 +4,6 @@
  * - GET /api/auth/confirm renders (redirects to the confirm-email page)
  *   and never consumes the token itself -- a mail scanner following the
  *   link must not burn it before the recipient clicks.
- * - POST /api/auth/confirm consumes: a valid token verifies, an expired or
- *   replayed one fails.
  * - POST /api/auth/confirm/resend is throttled by a conditional UPDATE and
  *   never reveals whether an address has an account or is already verified.
  * - The auth-config jwt callback stamps emailVerified once a Google account
@@ -65,24 +63,21 @@ vi.mock('@/db/schema', () => ({
   accounts: {},
 }))
 
-const { consumeConfirmationTokenMock, markEmailVerifiedMock, markEmailVerifiedViaGoogleMock, issueConfirmationTokenMock } = vi.hoisted(() => ({
-  consumeConfirmationTokenMock: vi.fn(),
-  markEmailVerifiedMock: vi.fn(),
+const { confirmEmailWithTokenMock, markEmailVerifiedViaGoogleMock, issueConfirmationTokenMock } = vi.hoisted(() => ({
+  confirmEmailWithTokenMock: vi.fn(),
   markEmailVerifiedViaGoogleMock: vi.fn(),
   issueConfirmationTokenMock: vi.fn().mockResolvedValue('raw-token'),
 }))
 
 vi.mock('@/lib/confirm-email', () => ({
   confirmIdentifier: (email: string) => `confirm:${email.toLowerCase()}`,
-  consumeConfirmationToken: consumeConfirmationTokenMock,
+  confirmEmailWithToken: confirmEmailWithTokenMock,
+  confirmEmailUrl: (email: string, token: string) =>
+    `https://app.floraclin.com.br/api/auth/confirm?email=${encodeURIComponent(email)}&token=${token}`,
   issueConfirmationToken: issueConfirmationTokenMock,
 }))
 
-// markEmailVerified lives in the users query module, not beside the tokens.
-// auth-config calls it and is imported by middleware, which runs on the Edge
-// Runtime where the token module's node:crypto import is unavailable.
 vi.mock('@/db/queries/users', () => ({
-  markEmailVerified: markEmailVerifiedMock,
   markEmailVerifiedViaGoogle: markEmailVerifiedViaGoogleMock,
 }))
 
@@ -93,9 +88,9 @@ vi.mock('@/lib/email', () => ({
   sendConfirmationEmail: sendConfirmationEmailMock,
 }))
 
-const { scheduleLifecycleWelcomeMock } = vi.hoisted(() => ({ scheduleLifecycleWelcomeMock: vi.fn() }))
-vi.mock('@/lib/lifecycle-sender', () => ({
-  scheduleLifecycleWelcome: scheduleLifecycleWelcomeMock,
+const { reportSideEffectFailureMock } = vi.hoisted(() => ({ reportSideEffectFailureMock: vi.fn() }))
+vi.mock('@/lib/observability', () => ({
+  reportSideEffectFailure: reportSideEffectFailureMock,
 }))
 
 vi.mock('@/lib/app-url', () => ({
@@ -125,7 +120,7 @@ vi.mock('next-auth/providers/resend', () => ({ default: vi.fn(() => ({ id: 'rese
 vi.mock('@auth/drizzle-adapter', () => ({ DrizzleAdapter: vi.fn(() => ({})) }))
 vi.mock('bcryptjs', () => ({ default: { compare: vi.fn(), hash: vi.fn() } }))
 
-import { GET, POST } from '../route'
+import { GET } from '../route'
 import { POST as POST_RESEND } from '../resend/route'
 import '@/lib/auth-config' // side effect: NextAuth(config) runs, capturing config
 
@@ -150,71 +145,7 @@ describe('GET /api/auth/confirm', () => {
     expect(location.search).toBe('')
     expect(response.headers.get('set-cookie')).toContain('floraclin_confirm_email=')
     expect(response.headers.get('set-cookie')).toContain('HttpOnly')
-    expect(consumeConfirmationTokenMock).not.toHaveBeenCalled()
-  })
-})
-
-// ─── POST /api/auth/confirm ─────────────────────────────────────────
-
-describe('POST /api/auth/confirm', () => {
-  function postConfirm(body: unknown) {
-    return POST(
-      new NextRequest('https://app.floraclin.com.br/api/auth/confirm', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      })
-    )
-  }
-
-  it('verifies with a valid token', async () => {
-    consumeConfirmationTokenMock.mockResolvedValueOnce('a@b.com')
-
-    const response = await postConfirm({ email: 'a@b.com', token: 'raw' })
-    const data = await response.json()
-
-    expect(response.status).toBe(200)
-    expect(data).toEqual({ success: true })
-    expect(consumeConfirmationTokenMock).toHaveBeenCalledWith('a@b.com', 'raw')
-    expect(markEmailVerifiedMock).toHaveBeenCalledWith('a@b.com')
-    expect(scheduleLifecycleWelcomeMock).toHaveBeenCalledWith({ ownerEmail: 'a@b.com' })
-  })
-
-  it('clears the confirm-email cookie once the token is consumed', async () => {
-    consumeConfirmationTokenMock.mockResolvedValueOnce('a@b.com')
-
-    const response = await postConfirm({ email: 'a@b.com', token: 'raw' })
-
-    const setCookie = response.headers.get('set-cookie') ?? ''
-    expect(setCookie).toContain('floraclin_confirm_email=;')
-    expect(setCookie).toContain('Path=/confirm-email')
-    expect(setCookie).toMatch(/Expires=Thu, 01 Jan 1970|Max-Age=0/)
-  })
-
-  it('fails for an expired token, does not mark verified, and clears the confirm-email cookie', async () => {
-    consumeConfirmationTokenMock.mockResolvedValueOnce(null)
-
-    const response = await postConfirm({ email: 'a@b.com', token: 'expired' })
-    const data = await response.json()
-
-    expect(response.status).toBe(400)
-    expect(data.error).toBeTruthy()
-    expect(markEmailVerifiedMock).not.toHaveBeenCalled()
-    expect(scheduleLifecycleWelcomeMock).not.toHaveBeenCalled()
-    const setCookie = response.headers.get('set-cookie') ?? ''
-    expect(setCookie).toContain('floraclin_confirm_email=;')
-    expect(setCookie).toContain('Path=/confirm-email')
-  })
-
-  it('rejects a replayed token on the second attempt', async () => {
-    consumeConfirmationTokenMock.mockResolvedValueOnce('a@b.com').mockResolvedValueOnce(null)
-
-    const first = await postConfirm({ email: 'a@b.com', token: 'raw' })
-    const second = await postConfirm({ email: 'a@b.com', token: 'raw' })
-
-    expect(first.status).toBe(200)
-    expect(second.status).toBe(400)
-    expect(markEmailVerifiedMock).toHaveBeenCalledTimes(1)
-    expect(scheduleLifecycleWelcomeMock).toHaveBeenCalledTimes(1)
+    expect(confirmEmailWithTokenMock).not.toHaveBeenCalled()
   })
 })
 
@@ -296,6 +227,19 @@ describe('POST /api/auth/confirm/resend', () => {
       'Clinica Teste'
     )
   })
+
+  it('responds the same and reports it when the email fails to send', async () => {
+    pushSelect([{ id: 'user-1', emailVerified: null }])
+    pushSelect([{ tenantName: 'Clinica Teste' }])
+    const sendError = new Error('domain not verified')
+    sendConfirmationEmailMock.mockRejectedValueOnce(sendError)
+
+    const response = await postResend({ email: 'a@b.com' })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ success: true })
+    expect(reportSideEffectFailureMock).toHaveBeenCalledWith(sendError, expect.objectContaining({ step: 'resend_confirmation' }))
+  })
 })
 
 // ─── auth-config: Google sign-in stamps emailVerified ───────────────
@@ -315,7 +259,7 @@ describe('Google sign-in stamps emailVerified (auth-config jwt callback)', () =>
       account: { provider: 'credentials' },
     })
 
-    expect(markEmailVerifiedMock).not.toHaveBeenCalled()
+    expect(markEmailVerifiedViaGoogleMock).not.toHaveBeenCalled()
   })
 
   it('stamps emailVerified for a brand-new Google user (no tenant yet)', async () => {
@@ -352,10 +296,6 @@ describe('Google sign-in stamps emailVerified (auth-config jwt callback)', () =>
     })
 
     expect(markEmailVerifiedViaGoogleMock).toHaveBeenCalledWith('existing@floraclin.com.br')
-    // Not the plain marker: linking into an account that was never confirmed
-    // must also discard whatever password was set on it, or whoever planted
-    // it keeps a working credential on a now-verified account.
-    expect(markEmailVerifiedMock).not.toHaveBeenCalled()
     expect(token.emailVerified).toBe(true)
     expect(token.tenantStatus).toBe('active')
   })

@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { consumeConfirmationToken } from '@/lib/confirm-email'
-import { markEmailVerified } from '@/db/queries/users'
-import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
-import { trackEmailConfirmed } from '@/lib/analytics/server-events'
-import { handleApiError } from '@/lib/api-error'
 import {
   CONFIRM_EMAIL_STATE_COOKIE,
-  CONFIRM_EMAIL_STATE_PATH,
   confirmEmailStateCookieOptions,
   serializeConfirmEmailPageState,
 } from '@/lib/confirm-email-page-state'
@@ -20,8 +14,9 @@ import {
  * land on "link invalido ou expirado" for a link they never opened.
  *
  * So GET only hands the email and token to the confirm-email page in a
- * cookie, and the page renders a "Confirmar e-mail" button that POSTs them.
- * Consumption only happens from that explicit, human-initiated POST.
+ * cookie, and the page renders a "Confirmar e-mail" button that signs in
+ * with them (actions/confirm-email.ts). Consumption only happens from that
+ * explicit, human-initiated click.
  */
 export async function GET(request: NextRequest) {
   const email = request.nextUrl.searchParams.get('email')
@@ -41,36 +36,4 @@ export async function GET(request: NextRequest) {
   }
 
   return response
-}
-
-/**
- * POST consumes the token and marks the address verified.
- *
- * The caller's JWT (if it has one) still says emailVerified: false after
- * this succeeds -- refreshing that is the client's job, via useSession()'s
- * update() (see confirm-actions.tsx), not this route's.
- */
-export async function POST(request: NextRequest) {
-  try {
-    const { email, token } = await request.json()
-
-    if (!email || !token) {
-      return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 })
-    }
-
-    const verifiedEmail = await consumeConfirmationToken(email, token)
-    if (verifiedEmail) {
-      await markEmailVerified(verifiedEmail)
-      scheduleLifecycleWelcome({ ownerEmail: verifiedEmail })
-      trackEmailConfirmed(verifiedEmail)
-    }
-
-    const response = verifiedEmail
-      ? NextResponse.json({ success: true })
-      : NextResponse.json({ error: 'Link inválido ou expirado' }, { status: 400 })
-    response.cookies.delete({ name: CONFIRM_EMAIL_STATE_COOKIE, path: CONFIRM_EMAIL_STATE_PATH })
-    return response
-  } catch (error) {
-    return handleApiError(error, request)
-  }
 }

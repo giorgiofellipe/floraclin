@@ -20,7 +20,6 @@ export default async function ConfirmEmailPage({ searchParams }: ConfirmEmailPag
   if ((session as any)?.emailVerified) redirect('/dashboard')
 
   const email = pageState?.email ?? session?.user?.email ?? null
-  const token = pageState?.token ?? null
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-cream px-6">
@@ -40,7 +39,7 @@ export default async function ConfirmEmailPage({ searchParams }: ConfirmEmailPag
               said the credentials were invalid. They can ask for a new link
               themselves instead. */}
           {email ? (
-            <ConfirmActions email={email} token={token} />
+            <ConfirmActions email={email} hasToken={!!pageState?.token} />
           ) : (
             <RequestConfirmationForm />
           )}

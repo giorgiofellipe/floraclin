@@ -197,22 +197,6 @@ export async function deactivateUser(
   return updated ?? null
 }
 
-/**
- * Stamps the account as email-verified.
- *
- * Lives here rather than beside the confirmation tokens because
- * `auth-config.ts` calls it on Google sign-in, and `auth-config` is imported
- * by `middleware.ts`, which runs on the Edge Runtime. The token module pulls
- * in `node:crypto`, which Edge does not provide, so importing it from there
- * dragged an unsupported module into the middleware bundle.
- */
-export async function markEmailVerified(email: string): Promise<void> {
-  await db
-    .update(users)
-    .set({ emailVerified: new Date() })
-    .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
-}
-
 /** Drops the password of a still-unconfirmed account. Magic-link counterpart of markEmailVerifiedViaGoogle. */
 export async function discardUnconfirmedPassword(email: string): Promise<void> {
   await db

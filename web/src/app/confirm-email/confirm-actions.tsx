@@ -1,11 +1,10 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
-import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { loginWithGoogle } from '@/actions/auth'
+import { confirmEmail } from '@/actions/confirm-email'
 
 function GoogleIcon() {
   return (
@@ -22,13 +21,11 @@ const RESEND_COOLDOWN_SECONDS = 60
 
 interface ConfirmActionsProps {
   email: string
-  token: string | null
+  hasToken: boolean
 }
 
-export function ConfirmActions({ email, token }: ConfirmActionsProps) {
-  const router = useRouter()
-  const { status, update } = useSession()
-  const [confirming, setConfirming] = useState(false)
+export function ConfirmActions({ email, hasToken }: ConfirmActionsProps) {
+  const [isConfirming, startConfirm] = useTransition()
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [resendCooldown, setResendCooldown] = useState(0)
   const [isResending, startResend] = useTransition()
@@ -39,40 +36,16 @@ export function ConfirmActions({ email, token }: ConfirmActionsProps) {
     return () => clearInterval(id)
   }, [resendCooldown])
 
-  async function handleConfirm() {
-    if (!token) return
-    setConfirming(true)
+  function handleConfirm() {
     setConfirmError(null)
-    try {
-      const res = await fetch('/api/auth/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, token }),
-      })
-      const data = await res.json()
-
-      if (!res.ok) {
-        setConfirmError(data.error ?? 'Link inválido ou expirado.')
-        return
+    startConfirm(async () => {
+      try {
+        const result = await confirmEmail()
+        if (result) setConfirmError(result.error)
+      } catch {
+        setConfirmError('Não foi possível confirmar agora. Tente novamente.')
       }
-
-      // The session's JWT still says emailVerified: false here. update()
-      // re-runs the jwt callback with trigger: 'update' so this browser's
-      // session picks up the fresh value before navigating -- without it,
-      // /dashboard would bounce straight back to /confirm-email. There is
-      // nothing to update() if this browser never had a session to begin
-      // with (the link was opened on a different device than the signup).
-      if (status === 'authenticated') {
-        await update()
-        router.push('/dashboard')
-      } else {
-        router.push('/login')
-      }
-    } catch {
-      setConfirmError('Não foi possível confirmar agora. Tente novamente.')
-    } finally {
-      setConfirming(false)
-    }
+    })
   }
 
   function handleResend() {
@@ -110,17 +83,20 @@ export function ConfirmActions({ email, token }: ConfirmActionsProps) {
         </p>
       </div>
 
-      {token && (
+      {hasToken && (
         <div>
-          <Button type="button" className="w-full h-11" disabled={confirming} onClick={handleConfirm}>
-            {confirming ? 'Confirmando...' : 'Confirmar e-mail'}
+          <Button type="button" className="w-full h-11" disabled={isConfirming} onClick={handleConfirm}>
+            {isConfirming ? 'Confirmando...' : 'Confirmar e-mail'}
           </Button>
-          {confirmError && <p className="mt-2 text-sm text-red-600">{confirmError}</p>}
           <p className="mt-2 text-xs text-mid">
             Só confirme se foi você quem criou esta conta. Se não foi, feche esta página.
           </p>
         </div>
       )}
+
+      {/* Outside the token block: a failed confirm drops the token from the
+          cookie, and the page re-renders without the button. */}
+      {confirmError && <p className="text-sm text-red-600">{confirmError}</p>}
 
       <div className="grid gap-3">
         <Button

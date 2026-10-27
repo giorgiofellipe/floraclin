@@ -174,6 +174,7 @@ export function loginFailureFromAuthError(
 export function loginMethodFromProvider(provider: string | undefined | null): LoginMethod | null {
   switch (provider) {
     case 'credentials':
+    case 'confirm-email':
       return 'email'
     case 'google':
       return 'google'

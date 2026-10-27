@@ -73,10 +73,13 @@ export async function POST(request: Request) {
 
     // Check existing procedure types before entering transaction
     const existingTypes = await listProcedureTypes(auth.tenantId)
-    // A clinic created on arrival after Google sign-up has a stand-in name and
-    // no phone; this save is the first time we hear either.
     const current = await getTenant(auth.tenantId)
-    const createdOnArrival = hasPlaceholderName(current?.settings)
+    // Autosave may have cleared the stand-in flag already; it is still set
+    // when this save is the first to hear the clinic's real name.
+    const stillNamedPlaceholder = hasPlaceholderName(current?.settings)
+    // Pending for a clinic created on arrival after Google sign-up, unless
+    // autosave already stamped it with the first saved phone.
+    const noticePending = !current?.lifecycleNoticeAt
 
     // NOTE: Not using withTransaction here because the helper functions
     // (updateTenant, createProcedureType, etc.) all use the global `db` client.
@@ -105,7 +108,7 @@ export async function POST(request: Request) {
         name: data.clinic.name,
         phone: data.clinic.phone || '',
         email: data.clinic.email || '',
-        address: Object.values(data.clinic.address || {}).some(v => v) ? data.clinic.address : undefined,
+        address: data.clinic.address,
         workingHours: data.clinic.workingHours,
       })
 
@@ -211,23 +214,24 @@ export async function POST(request: Request) {
         })
       }
 
-      // A clinic created on arrival skipped the clinic form, so its owner saw
-      // the lifecycle notice for the first time on this wizard's phone field.
-      // Stamping it is what lets lifecycle messages (and the daily run) reach
-      // the clinic. It goes before the stand-in flag is cleared: if anything
-      // after it fails, a retry still sees the flag and stamps again, and
-      // coalesce keeps the first time.
-      if (createdOnArrival) {
+      // The stamp lets lifecycle messages reach the clinic. The held welcome is
+      // scheduled with it, before completion: a retry after this point no longer
+      // sees the notice pending, and a failed stamp leaves it pending for a retry.
+      if (noticePending) {
         await db
           .update(tenants)
           .set({ lifecycleNoticeAt: sql`coalesce(${tenants.lifecycleNoticeAt}, now())` })
           .where(eq(tenants.id, auth.tenantId))
+        scheduleLifecycleWelcome({ tenantId: auth.tenantId })
       }
 
       // 7. Mark onboarding as completed. Only the save that flips the flag
       // reports the clinic to the team, once, for either sign-up path.
-      const stillNamedPlaceholder = createdOnArrival ? { [PLACEHOLDER_NAME_SETTING]: false } : {}
-      const firstCompletion = await markOnboardingCompleted(auth.tenantId, stillNamedPlaceholder)
+      const completionSettings = {
+        onboarding_draft: null,
+        ...(stillNamedPlaceholder ? { [PLACEHOLDER_NAME_SETTING]: false } : {}),
+      }
+      const firstCompletion = await markOnboardingCompleted(auth.tenantId, completionSettings)
       // Reported straight away: once the flag is set no later save reports
       // again, so a failure further down must not cost the team the message.
       // reportOnboardingCompleted never throws.
@@ -248,13 +252,9 @@ export async function POST(request: Request) {
       }
       // A repeated or concurrent save loses the compare-and-set above. It
       // still clears a leftover stand-in flag (a no-op if the winner did).
-      if (!firstCompletion && createdOnArrival) {
-        await updateTenantSettings(auth.tenantId, { onboarding_completed: true, ...stillNamedPlaceholder })
+      if (!firstCompletion && stillNamedPlaceholder) {
+        await updateTenantSettings(auth.tenantId, { onboarding_completed: true, [PLACEHOLDER_NAME_SETTING]: false })
       }
-
-      // The held trial welcome goes out once, to the phone just saved. Its
-      // per-channel claims make a repeated save a no-op.
-      if (createdOnArrival) scheduleLifecycleWelcome({ tenantId: auth.tenantId })
 
       // 8. Audit log
       await createAuditLog({
@@ -290,7 +290,7 @@ export async function POST(request: Request) {
 async function reportOnboardingCompleted(input: {
   tenantId: string
   userId: string
-  clinic: { name: string; phone?: string; address?: { city?: string; state?: string } }
+  clinic: { name: string; phone?: string; address?: { city?: string; state?: string } | null }
   signedUpAt: Date | null
 }): Promise<void> {
   try {

@@ -103,6 +103,22 @@ describe('POST /api/onboarding', () => {
     expect(notifyDiscord).not.toHaveBeenCalled()
   })
 
+  // Regression: an emptied address was skipped, so the one autosaved before stayed.
+  it('clears the stored address when every field was emptied', async () => {
+    updateWhere.mockResolvedValue(undefined)
+    vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: {}, lifecycleNoticeAt: new Date() } as never)
+
+    const res = await postOnboarding({
+      name: 'Clínica Bella',
+      phone: '(11) 98888-7777',
+      address: { street: '', city: '' },
+      workingHours: DEFAULT_WORKING_HOURS,
+    })
+
+    expect(res.status).toBe(200)
+    expect(updateTenant).toHaveBeenCalledWith('tenant-1', expect.objectContaining({ address: null }))
+  })
+
   describe('a clinic created on arrival after Google sign-up', () => {
     beforeEach(() => {
       updateWhere.mockResolvedValue(undefined)
@@ -121,7 +137,7 @@ describe('POST /api/onboarding', () => {
         name: 'Clínica Bella',
         phone: '(11) 98888-7777',
       }))
-      expect(markOnboardingCompleted).toHaveBeenCalledWith('tenant-1', { clinic_name_placeholder: false })
+      expect(markOnboardingCompleted).toHaveBeenCalledWith('tenant-1', { onboarding_draft: null, clinic_name_placeholder: false })
       expect(updateTenantSettings).not.toHaveBeenCalled()
       // The lifecycle notice was first shown on the wizard's phone field.
       expect(updateSet).toHaveBeenCalledWith({ lifecycleNoticeAt: expect.anything() })
@@ -157,13 +173,30 @@ describe('POST /api/onboarding', () => {
       expect(notifyDiscord).not.toHaveBeenCalled()
     })
 
-    it('leaves a clinic named at sign-up alone: its welcome already went out', async () => {
-      vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: {} } as never)
+    // Regression: the stamp and welcome were keyed on the stand-in flag, which
+    // autosave now clears with the first saved name.
+    it('still stamps the notice and sends the welcome when autosave already cleared the stand-in flag', async () => {
+      vi.mocked(getTenant).mockResolvedValue({
+        id: 'tenant-1',
+        settings: { clinic_name_placeholder: false, onboarding_draft: { step: 3 } },
+        lifecycleNoticeAt: null,
+      } as never)
 
       const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777', workingHours: DEFAULT_WORKING_HOURS })
 
       expect(res.status).toBe(200)
-      expect(markOnboardingCompleted).toHaveBeenCalledWith('tenant-1', {})
+      expect(updateSet).toHaveBeenCalledWith({ lifecycleNoticeAt: expect.anything() })
+      expect(scheduleLifecycleWelcome).toHaveBeenCalledWith({ tenantId: 'tenant-1' })
+      expect(markOnboardingCompleted).toHaveBeenCalledWith('tenant-1', { onboarding_draft: null })
+    })
+
+    it('leaves a clinic that saw the notice before alone: its welcome already went out', async () => {
+      vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: {}, lifecycleNoticeAt: new Date() } as never)
+
+      const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777', workingHours: DEFAULT_WORKING_HOURS })
+
+      expect(res.status).toBe(200)
+      expect(markOnboardingCompleted).toHaveBeenCalledWith('tenant-1', { onboarding_draft: null })
       expect(updateSet).not.toHaveBeenCalledWith({ lifecycleNoticeAt: expect.anything() })
       expect(scheduleLifecycleWelcome).not.toHaveBeenCalled()
     })

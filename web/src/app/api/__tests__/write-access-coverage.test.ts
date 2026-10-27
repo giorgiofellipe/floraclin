@@ -127,7 +127,6 @@ const EXEMPT_MUTATING_ROUTES: Record<string, string> = {
   // Email confirmation. The caller is a brand new owner who has not confirmed
   // yet, and blocking them would make the account unreachable: they need
   // these routes precisely to reach a usable state.
-  'auth/confirm/route.ts': 'email confirmation must work before the account is usable',
   'auth/confirm/resend/route.ts': 'email confirmation must work before the account is usable',
   'lifecycle/opt-out/route.ts': 'signed opt-out link from a lifecycle email, used without a session',
 

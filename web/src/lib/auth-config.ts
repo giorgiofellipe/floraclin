@@ -12,6 +12,7 @@ import { discardUnconfirmedPassword, markEmailVerifiedViaGoogle } from '@/db/que
 import { trackServerEvent } from '@/lib/analytics/server'
 import { loginMethodFromProvider } from '@/lib/analytics/events'
 import { rememberLastLogin } from '@/lib/last-login'
+import { confirmEmailWithToken } from '@/lib/confirm-email'
 
 const baseAdapter = DrizzleAdapter(db as any, {
   usersTable: users as any,
@@ -93,9 +94,9 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         const valid = await bcrypt.compare(password, user.passwordHash)
         if (!valid) return null
 
-        // Double opt-in is enforced here rather than only in middleware.
+        // Double opt-in is enforced here rather than only in proxy.
         // Signup no longer signs anyone in, so refusing here means the
-        // password never yields a session, and middleware lets every /api
+        // password never yields a session, and proxy lets every /api
         // request through before it looks at emailVerified: gating pages
         // alone would have left the whole API callable with a cookie.
         //
@@ -110,6 +111,29 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         if (!user.emailVerified) return null
 
         return { id: user.id, email: user.email, name: user.fullName }
+      },
+    }),
+    Credentials({
+      id: 'confirm-email',
+      credentials: {
+        email: { type: 'email' },
+        token: { type: 'text' },
+      },
+      async authorize(credentials) {
+        const email = credentials?.email as string
+        const token = credentials?.token as string
+        if (!email || !token) return null
+
+        const user = await confirmEmailWithToken(email, token)
+        if (!user) return null
+
+        // Loaded on demand so the proxy, which imports this file, does not
+        // bundle the lifecycle and analytics senders.
+        const { scheduleLifecycleWelcome } = await import('@/lib/lifecycle-sender')
+        const { trackEmailConfirmed } = await import('@/lib/analytics/server-events')
+        scheduleLifecycleWelcome({ ownerEmail: user.email })
+        trackEmailConfirmed(user.email)
+        return user
       },
     }),
     Google({
@@ -153,7 +177,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       // rejects any Google profile with email_verified: false), so once the
       // account is persisted we stamp our own emailVerified column to match.
       // This cannot happen in signIn: that callback runs before the adapter
-      // creates the user, so on a first Google sign-in markEmailVerified would
+      // creates the user, so on a first Google sign-in markEmailVerifiedViaGoogle would
       // update zero rows. Confirmed by reading handleLoginOrRegister in
       // @auth/core@0.41.0 (node_modules/.pnpm/@auth+core@0.41.0/node_modules/@auth/core/lib/actions/callback/handle-login.js):
       // it creates (or, for account linking, resolves) the user row, and only
@@ -168,7 +192,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       if (user || trigger === 'update') {
         // Inside the refresh block, not outside it. Assigned on every callback
         // run, this stamps the current version onto tokens that never carried
-        // the claims the version is meant to certify, and the middleware check
+        // the claims the version is meant to certify, and the proxy check
         // for an old version can then never fire.
         token.v = 3
 
@@ -205,7 +229,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             token.role = null
             token.isPlatformAdmin = userRow?.isPlatformAdmin ?? false
             // A branch that forgets this leaves the field undefined, and the
-            // middleware gate treats undefined as "do not gate" -- so every
+            // proxy gate treats undefined as "do not gate" -- so every
             // branch that assigns tenantStatus assigns this alongside it.
             token.emailVerified = !!userRow?.emailVerified
             token.subscriptionStatus = 'expired'

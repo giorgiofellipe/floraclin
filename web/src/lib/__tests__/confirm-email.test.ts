@@ -4,8 +4,8 @@
  * Pins two things that are easy to get wrong because a near-identical
  * mechanism (password reset) already exists in the same table:
  * identifiers are namespaced so a reset never wipes out a pending
- * confirmation, and consumption is atomic so a replay or a race
- * between two clicks can never succeed twice.
+ * confirmation, and issuing is one upsert so a resend race sends once.
+ * Consumption is covered against a real database in confirm-email-db.test.ts.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
@@ -48,18 +48,11 @@ import {
   confirmIdentifier,
   hashToken,
   issueConfirmationToken,
-  consumeConfirmationToken,
 } from '../confirm-email'
 
-// markEmailVerified lives in the users query module rather than beside the
-// tokens: `auth-config` calls it, and `auth-config` is imported by middleware,
-// which runs on the Edge Runtime where this module's `node:crypto` import is
-// unavailable.
-vi.mock('@/lib/email', () => ({ sendInviteEmail: vi.fn() }))
-vi.mock('@/lib/tenant', () => ({ withTransaction: vi.fn() }))
-import { markEmailVerified } from '@/db/queries/users'
 
 beforeEach(() => {
+  process.env.NEXTAUTH_SECRET ??= 'test-secret'
   vi.clearAllMocks()
   // Restore the upsert chain; clearAllMocks wipes return values.
   valuesMock.mockReturnValue({ onConflictDoUpdate: onConflictMock })
@@ -138,80 +131,3 @@ describe('issueConfirmationToken', () => {
   })
 })
 
-describe('consumeConfirmationToken', () => {
-  it('returns the lowercased email for a valid token', async () => {
-    const future = new Date(Date.now() + 60_000)
-    returningMock.mockResolvedValueOnce([
-      { identifier: 'confirm:a@b.com', token: hashToken('raw'), expires: future },
-    ])
-
-    const result = await consumeConfirmationToken('A@B.com', 'raw')
-
-    expect(result).toBe('a@b.com')
-  })
-
-  it('returns null for an expired token, and the row was still deleted', async () => {
-    const past = new Date(Date.now() - 60_000)
-    returningMock.mockResolvedValueOnce([
-      { identifier: 'confirm:a@b.com', token: hashToken('raw'), expires: past },
-    ])
-
-    const result = await consumeConfirmationToken('a@b.com', 'raw')
-
-    expect(result).toBeNull()
-    // The delete-returning statement already ran unconditionally; there is
-    // no separate delete step to skip. Asserting the call happened pins
-    // that expiry is checked on the row AFTER consuming it, not before.
-    expect(deleteMock).toHaveBeenCalledTimes(1)
-  })
-
-  it('returns null when no row matches (unknown or already-consumed token)', async () => {
-    returningMock.mockResolvedValueOnce([])
-
-    const result = await consumeConfirmationToken('a@b.com', 'raw')
-
-    expect(result).toBeNull()
-  })
-
-  it('rejects a replayed token on the second attempt', async () => {
-    const future = new Date(Date.now() + 60_000)
-    returningMock
-      .mockResolvedValueOnce([{ identifier: 'confirm:a@b.com', token: hashToken('raw'), expires: future }])
-      .mockResolvedValueOnce([])
-
-    const first = await consumeConfirmationToken('a@b.com', 'raw')
-    const second = await consumeConfirmationToken('a@b.com', 'raw')
-
-    expect(first).toBe('a@b.com')
-    expect(second).toBeNull()
-  })
-
-  it('yields exactly one success when two consumptions race', async () => {
-    const future = new Date(Date.now() + 60_000)
-    // The atomic DELETE ... RETURNING is what guarantees this: only one of
-    // two concurrent statements against the same row can return it.
-    returningMock
-      .mockResolvedValueOnce([{ identifier: 'confirm:a@b.com', token: hashToken('raw'), expires: future }])
-      .mockResolvedValueOnce([])
-
-    const [first, second] = await Promise.all([
-      consumeConfirmationToken('a@b.com', 'raw'),
-      consumeConfirmationToken('a@b.com', 'raw'),
-    ])
-
-    const results = [first, second]
-    expect(results.filter((r) => r === 'a@b.com')).toHaveLength(1)
-    expect(results.filter((r) => r === null)).toHaveLength(1)
-  })
-})
-
-describe('markEmailVerified', () => {
-  it('sets emailVerified on the lowercased email', async () => {
-    await markEmailVerified('Patient@Example.com')
-
-    expect(setMock).toHaveBeenCalledTimes(1)
-    const patch = setMock.mock.calls[0][0]
-    expect(patch.emailVerified).toBeInstanceOf(Date)
-    expect(updateWhereMock).toHaveBeenCalledTimes(1)
-  })
-})

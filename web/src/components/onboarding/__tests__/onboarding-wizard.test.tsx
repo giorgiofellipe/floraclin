@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { toast } from 'sonner'
 import { track } from '@/lib/analytics/client'
+import { DEFAULT_PROCEDURE_TYPES } from '@/lib/constants'
+import { onboardingDraftSchema, onboardingProgressSchema } from '@/validations/onboarding'
 import { OnboardingWizard } from '../onboarding-wizard'
 
 // ─── Mocks ─────────────────────────────────────────────────────────
@@ -163,7 +165,7 @@ describe('OnboardingWizard', () => {
       )
     })
 
-    const [, init] = fetchMock.mock.calls[0]!
+    const [, init] = fetchMock.mock.calls.find(([url]) => url === '/api/onboarding')!
     const body = JSON.parse((init as RequestInit).body as string)
 
     expect(Array.isArray(body.selectedProducts)).toBe(true)
@@ -243,8 +245,8 @@ describe('OnboardingWizard', () => {
     await user.click(screen.getByTestId('onboarding-next'))
     await user.click(screen.getByTestId('onboarding-complete'))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    const [, init] = fetchMock.mock.calls[0]!
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/onboarding', expect.objectContaining({ method: 'POST' })))
+    const [, init] = fetchMock.mock.calls.find(([url]) => url === '/api/onboarding')!
     const body = JSON.parse((init as RequestInit).body as string)
 
     expect(body.clinic).toMatchObject({ phone: '(47) 98844-3635', email: 'contato@clinica.com.br' })
@@ -395,6 +397,120 @@ describe('OnboardingWizard', () => {
         ['onboarding_step_submitted', { step_index: 3, step_name: 'team' }],
       ])
       expect(JSON.stringify(vi.mocked(track).mock.calls)).not.toMatch(/Bella|9888|98888/)
+    })
+  })
+
+  describe('autosave', () => {
+    const okResponse = async () => Response.json({ saved: true })
+    const progressSaves = (fetchMock: { mock: { calls: unknown[][] } }) =>
+      fetchMock.mock.calls
+        .filter(([url]) => url === '/api/onboarding/progress')
+        .map(([, init]) => init as RequestInit)
+    const lastSavedBody = (fetchMock: { mock: { calls: unknown[][] } }) =>
+      JSON.parse(progressSaves(fetchMock).at(-1)!.body as string)
+
+    function renderWizard(props: Partial<Parameters<typeof OnboardingWizard>[0]> = {}) {
+      return render(
+        wrap(
+          <OnboardingWizard
+            tenantName=""
+            tenantPhone={null}
+            tenantEmail={null}
+            existingProcedureTypes={[]}
+            existingProducts={[]}
+            phoneRequired
+            {...props}
+          />,
+        ),
+      )
+    }
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('resumes at the saved step with the saved selections', async () => {
+      const user = userEvent.setup()
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(okResponse)
+      const { unmount } = renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777' })
+      const firstProcedure = DEFAULT_PROCEDURE_TYPES[0].name
+
+      await user.click(screen.getByTestId('onboarding-next'))
+      await user.click(screen.getByRole('checkbox', { name: firstProcedure }))
+      await user.click(screen.getByTestId('onboarding-next'))
+      unmount()
+
+      // What the server stores, read back the way the onboarding page reads it.
+      const stored = onboardingProgressSchema.parse(lastSavedBody(fetchMock)).draft
+      renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777', draft: onboardingDraftSchema.parse(stored) })
+
+      expect(screen.getByRole('heading', { name: /^Produtos$/, level: 2 })).toBeInTheDocument()
+      await user.click(screen.getByTestId('onboarding-prev'))
+      expect(screen.getByRole('checkbox', { name: firstProcedure })).toHaveAttribute('aria-checked', 'false')
+    })
+
+    const atTeamStepDraft = () => onboardingDraftSchema.parse({
+      step: 2,
+      procedures: [],
+      selectedProductNames: [],
+      productsTouched: false,
+      customProducts: [],
+      customSlug: '',
+    })
+
+    async function goToTeamStepAndFinish(user: ReturnType<typeof userEvent.setup>) {
+      renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777', draft: atTeamStepDraft() })
+      await user.click(screen.getByTestId('onboarding-next'))
+      await user.click(screen.getByTestId('onboarding-complete'))
+    }
+
+    // Regression: an older autosave could land after the final submit wrote
+    // the clinic and overwrite it.
+    it('sends the final submit only after the autosave in flight answers', async () => {
+      const user = userEvent.setup()
+      let answerAutosave!: (res: Response) => void
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        if (url === '/api/onboarding/progress') return new Promise<Response>((r) => { answerAutosave = r })
+        return Response.json({ success: true })
+      })
+
+      await goToTeamStepAndFinish(user)
+      expect(fetchMock).not.toHaveBeenCalledWith('/api/onboarding', expect.anything())
+
+      await act(async () => { answerAutosave(Response.json({ saved: true })) })
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/onboarding', expect.objectContaining({ method: 'POST' })))
+    })
+
+    it('keeps unsaved progress for the next autosave when the final submit fails', async () => {
+      const user = userEvent.setup()
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+        Response.json({ error: 'Erro' }, { status: 500 }),
+      )
+
+      await goToTeamStepAndFinish(user)
+      await waitFor(() => expect(toast.error).toHaveBeenCalled())
+      const savesBefore = progressSaves(fetchMock).length
+      fireEvent(window, new Event('pagehide'))
+
+      expect(progressSaves(fetchMock)).toHaveLength(savesBefore + 1)
+      expect(lastSavedBody(fetchMock).draft.step).toBe(3)
+    })
+
+    // A later step without a saved phone would only fail at the final submit.
+    it('opens at the clinic step when its phone was never saved', () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(okResponse)
+      const draft = onboardingDraftSchema.parse({
+        step: 2,
+        procedures: [],
+        selectedProductNames: [],
+        productsTouched: false,
+        customProducts: [],
+        customSlug: '',
+      })
+
+      renderWizard({ tenantName: 'Clínica Bella', tenantPhone: null, draft })
+
+      expect(screen.getByText(/Dados da Clínica/i)).toBeInTheDocument()
     })
   })
 })

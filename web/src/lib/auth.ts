@@ -9,7 +9,7 @@ import { eq, and, isNull } from 'drizzle-orm'
 import type { AuthContext, Role } from '@/types'
 import { ForbiddenError } from '@/lib/errors'
 
-// Not /login: middleware sends a signed-in user on /login back to /dashboard, so
+// Not /login: proxy sends a signed-in user on /login back to /dashboard, so
 // the revoked cookie has to be cleared first.
 export const SESSION_REVOKED_PATH = '/api/session/revoked'
 
@@ -91,10 +91,10 @@ export async function getAuthContext(): Promise<AuthContext> {
   }
 
   // Not /login: a token minted before the clinic was suspended (or the
-  // membership removed) still carries its tenantId, and middleware sends a
+  // membership removed) still carries its tenantId, and proxy sends a
   // signed-in user with a tenant from /login straight back to /dashboard,
   // which lands here again: a redirect loop. Clinic details is where
-  // middleware sends tenantless tokens anyway, and it explains a suspension.
+  // proxy sends tenantless tokens anyway, and it explains a suspension.
   if (memberships.length === 0 && !isPlatformAdmin) {
     redirect('/signup/clinic-details')
   }
