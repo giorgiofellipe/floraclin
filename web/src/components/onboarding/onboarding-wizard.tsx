@@ -282,8 +282,7 @@ export function OnboardingWizard({
     }
   }, [customSlug, clinicName])
 
-  // The wizard saves everything in one POST at the end, so step-level
-  // drop-off is only visible from here. Field names only, never values.
+  // Field names only, never values.
   useEffect(() => {
     track('onboarding_step_viewed', stepProperties(currentStep))
   }, [currentStep])
