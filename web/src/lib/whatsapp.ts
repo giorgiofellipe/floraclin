@@ -344,9 +344,10 @@ export async function sendOrEnqueueDocument(
     getQueuedCount,
     createQueuedMessage,
     createMessage,
+    upsertConversation,
   } = await import('@/db/queries/whatsapp')
 
-  const conversation = await getConversationByPhone(tenantId, to)
+  let conversation = await getConversationByPhone(tenantId, to)
   if (conversation) credit = { ...credit, recipient: { ...credit.recipient, conversationId: conversation.id } }
 
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
@@ -369,22 +370,38 @@ export async function sendOrEnqueueDocument(
     return { sent: true, metaMessageId: result.metaMessageId }
   }
 
-  // No conversation exists yet — send template only, document must wait for patient reply
-  if (!conversation) {
-    const resumeTemplate = await getTemplateForTenant(tenantId, 'resume_conversation')
-    if (resumeTemplate?.status === 'APPROVED') {
-      await sendTemplateMessage(tenantId, credit, to, resumeTemplate.name, resumeTemplate.language, { '1': patientFirstName })
-    }
-    return { queued: true }
+  // Window closed (or no conversation yet) — check queue
+  const queueCount = conversation ? await getQueuedCount(tenantId, conversation.id) : 0
+  const resumeTemplate = queueCount === 0 ? await getTemplateForTenant(tenantId, 'resume_conversation') : null
+
+  // No conversation exists yet. The document can only go out once the patient
+  // replies, and on the shared number the webhook finds the tenant for that
+  // reply through the conversation, so one is created here and the send
+  // continues as a closed window. Without the resume template nothing would
+  // reopen the window, so a missing/unapproved template — like missing
+  // credits — fails before charging or creating anything, instead of
+  // reporting a queued document that never sends. A Meta failure sending the
+  // template after this point leaves the empty conversation in place; the
+  // next send reuses it.
+  if (!conversation && resumeTemplate?.status !== 'APPROVED') {
+    throw new WhatsAppTemplateNotFoundError('resume_conversation', resumeTemplate?.language ?? '')
   }
 
-  // Window closed — check queue
-  const queueCount = await getQueuedCount(tenantId, conversation.id)
   await requireCredits(tenantId, pendingQueueCost(queueCount))
+
+  if (!conversation) {
+    conversation = await upsertConversation(
+      tenantId,
+      to,
+      credit.recipient.name,
+      undefined,
+      credit.recipient.patientId ?? undefined,
+    )
+    credit = { ...credit, recipient: { ...credit.recipient, conversationId: conversation.id } }
+  }
 
   if (queueCount === 0) {
     // First message when window is closed → send resume template
-    const resumeTemplate = await getTemplateForTenant(tenantId, 'resume_conversation')
     let resumeMetaMessageId: string | null = null
     if (resumeTemplate?.status === 'APPROVED') {
       const resumeResult = await sendTemplateMessage(tenantId, credit, to, resumeTemplate.name, resumeTemplate.language, { '1': patientFirstName })
