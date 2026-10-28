@@ -4,7 +4,8 @@ import { db } from '@/db/client'
 import { procedureTypes, whatsappMessages, whatsappConversations } from '@/db/schema'
 import { findOwnPhoneNumberClaimants } from '@/db/queries/tenants'
 import { eq, and, sql } from 'drizzle-orm'
-import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage, sendTemplateMessage, sendMediaMessage, normalizeBrPhone } from '@/lib/whatsapp'
+import { verifyWebhookSignature, downloadAndStoreMedia, sendTextMessage, sendTemplateMessage, sendMediaMessage, normalizeBrPhone, whatsappMediaProxyUrl } from '@/lib/whatsapp'
+import { getSignedUrl } from '@/lib/storage'
 import {
   upsertConversation,
   createMessage,
@@ -481,6 +482,9 @@ async function updateMessageMedia(
 // ---------------------------------------------------------------------------
 // Drain queued messages when window opens
 // ---------------------------------------------------------------------------
+// Meta fetches the media within seconds of the send.
+const QUEUED_MEDIA_URL_TTL_S = 60 * 60
+
 async function drainQueuedMessages(
   tenantId: string,
   conversationId: string,
@@ -501,7 +505,7 @@ async function drainQueuedMessages(
 
   for (const qm of queued) {
     try {
-      if (!qm.body && !qm.mediaUrl) {
+      if (!qm.body && !qm.mediaPath) {
         await updateQueuedMessageStatus(tenantId, qm.id, 'expired')
         drainedQueueIds.push(qm.id)
         continue
@@ -514,8 +518,10 @@ async function drainQueuedMessages(
         : { actor: { type: 'system' }, recipient: { patientId: null, conversationId, name: null } }
 
       let result: { metaMessageId: string }
-      if (qm.mediaUrl && qm.mediaType) {
-        result = await sendMediaMessage(tenantId, credit, phoneNumber, qm.mediaType as 'document', qm.mediaUrl, qm.body ?? undefined)
+      if (qm.mediaPath && qm.mediaType) {
+        const signedUrl = await getSignedUrl(qm.mediaPath, QUEUED_MEDIA_URL_TTL_S)
+        if (!signedUrl) throw new Error('Failed to sign queued media')
+        result = await sendMediaMessage(tenantId, credit, phoneNumber, qm.mediaType as 'document', signedUrl, qm.body ?? undefined, qm.mediaFilename ?? undefined)
       } else {
         result = await sendTextMessage(tenantId, credit, phoneNumber, qm.body!)
       }
@@ -525,7 +531,8 @@ async function drainQueuedMessages(
         metaMessageId: result.metaMessageId,
         body: qm.body,
         mediaType: qm.mediaType,
-        mediaUrl: qm.mediaUrl,
+        mediaUrl: qm.mediaPath ? whatsappMediaProxyUrl(qm.mediaPath) : null,
+        mediaFilename: qm.mediaFilename,
         deliveryStatus: 'sent',
       })
 

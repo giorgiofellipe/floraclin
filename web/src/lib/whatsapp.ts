@@ -322,6 +322,11 @@ async function postMediaMessage(
   return { metaMessageId: sentMessageId(data) }
 }
 
+/** Where the inbox loads a stored file from, so the link never expires. */
+export function whatsappMediaProxyUrl(storagePath: string): string {
+  return `/api/whatsapp/media?path=${encodeURIComponent(storagePath)}`
+}
+
 // Credits a new queued message commits the clinic to: every message already
 // queued plus this one, and the resume template that reopens the window.
 export function pendingQueueCost(queueCount: number): number {
@@ -337,7 +342,7 @@ export async function sendOrEnqueueDocument(
   mediaUrl: string,
   caption: string,
   filename: string,
-  storagePath?: string,
+  storagePath: string,
 ) {
   const {
     getConversationByPhone,
@@ -345,6 +350,7 @@ export async function sendOrEnqueueDocument(
     createQueuedMessage,
     createMessage,
     upsertConversation,
+    deleteConversation,
   } = await import('@/db/queries/whatsapp')
 
   let conversation = await getConversationByPhone(tenantId, to)
@@ -363,77 +369,63 @@ export async function sendOrEnqueueDocument(
       metaMessageId: result.metaMessageId,
       body: caption,
       mediaType: 'document',
-      mediaUrl: storagePath ? `/api/whatsapp/media?path=${encodeURIComponent(storagePath)}` : mediaUrl,
+      mediaUrl: whatsappMediaProxyUrl(storagePath),
       mediaFilename: filename,
       deliveryStatus: 'sent',
     })
     return { sent: true, metaMessageId: result.metaMessageId }
   }
 
-  // Window closed (or no conversation yet) — check queue
   const queueCount = conversation ? await getQueuedCount(tenantId, conversation.id) : 0
   const resumeTemplate = queueCount === 0 ? await getTemplateForTenant(tenantId, 'resume_conversation') : null
 
-  // No conversation exists yet. The document can only go out once the patient
-  // replies, and on the shared number the webhook finds the tenant for that
-  // reply through the conversation, so one is created here and the send
-  // continues as a closed window. Without the resume template nothing would
-  // reopen the window, so a missing/unapproved template — like missing
-  // credits — fails before charging or creating anything, instead of
-  // reporting a queued document that never sends. A Meta failure sending the
-  // template after this point leaves the empty conversation in place; the
-  // next send reuses it.
-  if (!conversation && resumeTemplate?.status !== 'APPROVED') {
+  // Only the resume template reopens a closed window, so refuse before charging or creating anything.
+  if (queueCount === 0 && resumeTemplate?.status !== 'APPROVED') {
     throw new WhatsAppTemplateNotFoundError('resume_conversation', resumeTemplate?.language ?? '')
   }
 
   await requireCredits(tenantId, pendingQueueCost(queueCount))
 
+  const createdConversation = !conversation
   if (!conversation) {
-    conversation = await upsertConversation(
-      tenantId,
-      to,
-      credit.recipient.name,
-      undefined,
-      credit.recipient.patientId ?? undefined,
-    )
+    conversation = await upsertConversation(tenantId, to, credit.recipient.name, undefined, credit.recipient.patientId)
     credit = { ...credit, recipient: { ...credit.recipient, conversationId: conversation.id } }
   }
 
-  if (queueCount === 0) {
-    // First message when window is closed → send resume template
-    let resumeMetaMessageId: string | null = null
-    if (resumeTemplate?.status === 'APPROVED') {
-      const resumeResult = await sendTemplateMessage(tenantId, credit, to, resumeTemplate.name, resumeTemplate.language, { '1': patientFirstName })
-      resumeMetaMessageId = resumeResult.metaMessageId
+  const queued = {
+    body: caption,
+    mediaType: 'document',
+    mediaPath: storagePath,
+    mediaFilename: filename,
+    creditContext: credit,
+  }
 
-      await createMessage(tenantId, conversation.id, {
-        direction: 'outbound',
-        metaMessageId: resumeMetaMessageId,
-        body: resolveTemplateBody(resumeTemplate.components, { '1': patientFirstName }),
-        templateName: resumeTemplate.name,
-        deliveryStatus: 'sent',
-      })
-    }
-
-    // Enqueue the document
-    await createQueuedMessage(tenantId, conversation.id, {
-      body: caption,
-      mediaType: 'document',
-      mediaUrl,
-      resumeMetaMessageId,
-      creditContext: credit,
-    })
+  if (!resumeTemplate) {
+    await createQueuedMessage(tenantId, conversation.id, queued)
     return { queued: true }
   }
 
-  // Queue already has messages → just enqueue
-  await createQueuedMessage(tenantId, conversation.id, {
-    body: caption,
-    mediaType: 'document',
-    mediaUrl,
-    creditContext: credit,
+  let resume: { metaMessageId: string }
+  try {
+    resume = await sendTemplateMessage(tenantId, credit, to, resumeTemplate.name, resumeTemplate.language, { '1': patientFirstName })
+  } catch (err) {
+    // Left in place, this empty conversation would win shared-number routing for the patient's next context-free message.
+    if (createdConversation) {
+      await deleteConversation(tenantId, conversation.id).catch((deleteErr) =>
+        reportSideEffectFailure(deleteErr, { area: 'whatsapp', step: 'delete_unused_conversation', extra: { tenantId } }),
+      )
+    }
+    throw err
+  }
+
+  await createMessage(tenantId, conversation.id, {
+    direction: 'outbound',
+    metaMessageId: resume.metaMessageId,
+    body: resolveTemplateBody(resumeTemplate.components, { '1': patientFirstName }),
+    templateName: resumeTemplate.name,
+    deliveryStatus: 'sent',
   })
+  await createQueuedMessage(tenantId, conversation.id, { ...queued, resumeMetaMessageId: resume.metaMessageId })
   return { queued: true }
 }
 

@@ -28,6 +28,7 @@ const getQueuedCountMock = vi.fn()
 const createQueuedMessageMock = vi.fn(async () => ({}))
 const createMessageMock = vi.fn(async () => ({}))
 const upsertConversationMock = vi.fn()
+const deleteConversationMock = vi.fn(async () => undefined)
 const getTemplateByPurposeMock = vi.fn()
 
 vi.mock('@/db/queries/whatsapp', () => ({
@@ -39,12 +40,11 @@ vi.mock('@/db/queries/whatsapp', () => ({
   createQueuedMessage: createQueuedMessageMock,
   createMessage: createMessageMock,
   upsertConversation: upsertConversationMock,
+  deleteConversation: deleteConversationMock,
   getTemplateByPurpose: getTemplateByPurposeMock,
 }))
 
-// `getTemplateForTenant` reads system templates straight from the db on the
-// shared number. By default that lookup returns no rows; tests that need the
-// resume template call `mockSystemTemplateRows`.
+// `getTemplateForTenant` reads system templates straight from the db on the shared number.
 vi.mock('@/db/client', async () => {
   const { chain } = await import('@/tests/mocks/drizzle-chain')
   return { db: { select: vi.fn(() => chain([])) } }
@@ -80,7 +80,21 @@ import {
   downloadAndStoreMedia,
 } from '../whatsapp'
 import { CreditExhaustedError, WhatsAppTemplateNotFoundError } from '../whatsapp-credits'
-import { RESUME_TEMPLATE, mockSystemTemplateRows } from '@/tests/mocks/whatsapp-templates'
+import { db } from '@/db/client'
+import { chain } from '@/tests/mocks/drizzle-chain'
+
+const RESUME_TEMPLATE = {
+  name: 'resume_conversation',
+  language: 'pt_BR',
+  category: 'UTILITY',
+  status: 'APPROVED',
+  purposeKey: 'resume_conversation',
+  components: [{ type: 'BODY', text: 'Olá {{1}}, podemos retomar nossa conversa?' }],
+}
+
+function mockSystemTemplateRows(rows: unknown[]) {
+  vi.mocked(db.select).mockReturnValue(chain(rows) as never)
+}
 
 describe('verifyWebhookSignature', () => {
   it('returns true for valid signature', () => {
@@ -335,11 +349,28 @@ describe('credits on the shared number', () => {
       'https://x/doc.pdf',
       'Atestado',
       'atestado.pdf',
+      'tenant-1/atestado.pdf',
     )
 
     expect(createQueuedMessageMock).toHaveBeenCalledWith('tenant-1', 'conv-1', expect.objectContaining({
       creditContext: { ...CREDIT, recipient: { ...CREDIT.recipient, conversationId: 'conv-1' }, documentLabel: 'Atestado' },
     }))
+  })
+
+  it('refuses a document for a closed conversation when the resume template is missing', async () => {
+    getConversationByPhoneMock.mockResolvedValue({
+      id: 'conv-1',
+      lastInboundAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+    })
+    getQueuedCountMock.mockResolvedValue(0)
+    getOrCreateCurrentPeriodMock.mockResolvedValue({ creditsUsed: 0, creditsTotal: 300 })
+
+    await expect(
+      sendOrEnqueueDocument('tenant-1', { ...CREDIT, documentLabel: 'Atestado' }, '5511999990000', 'Maria', 'https://x/doc.pdf', 'Atestado', 'atestado.pdf', 'tenant-1/atestado.pdf'),
+    ).rejects.toBeInstanceOf(WhatsAppTemplateNotFoundError)
+
+    expect(createQueuedMessageMock).not.toHaveBeenCalled()
+    expect(spendCreditsMock).not.toHaveBeenCalled()
   })
 
   describe('a document for a patient with no conversation yet', () => {
@@ -350,8 +381,9 @@ describe('credits on the shared number', () => {
         '5511999990000',
         'Maria',
         'https://x/termo.pdf',
-        'Termo — FloraClin',
+        'Termo, FloraClin',
         'termo.pdf',
+        'tenant-1/termo.pdf',
       )
 
     beforeEach(() => {
@@ -384,9 +416,10 @@ describe('credits on the shared number', () => {
         deliveryStatus: 'sent',
       })
       expect(createQueuedMessageMock).toHaveBeenCalledWith('tenant-1', 'conv-new', {
-        body: 'Termo — FloraClin',
+        body: 'Termo, FloraClin',
         mediaType: 'document',
-        mediaUrl: 'https://x/termo.pdf',
+        mediaPath: 'tenant-1/termo.pdf',
+        mediaFilename: 'termo.pdf',
         resumeMetaMessageId: 'wamid.123',
         creditContext: {
           ...CREDIT,
@@ -422,7 +455,7 @@ describe('credits on the shared number', () => {
       expect(spendCreditsMock).not.toHaveBeenCalled()
     })
 
-    it('keeps the new conversation but queues nothing when Meta rejects the resume template', async () => {
+    it('deletes the new conversation and queues nothing when Meta rejects the resume template', async () => {
       mockSystemTemplateRows([RESUME_TEMPLATE])
       getSendableTemplateMock.mockResolvedValue(RESUME_TEMPLATE)
       global.fetch = vi.fn(async () =>
@@ -431,7 +464,7 @@ describe('credits on the shared number', () => {
 
       await expect(send()).rejects.toThrow('Meta API error')
 
-      expect(upsertConversationMock).toHaveBeenCalledTimes(1)
+      expect(deleteConversationMock).toHaveBeenCalledWith('tenant-1', 'conv-new')
       expect(createMessageMock).not.toHaveBeenCalled()
       expect(createQueuedMessageMock).not.toHaveBeenCalled()
     })
@@ -463,7 +496,7 @@ describe('credits on the shared number', () => {
       }))
       expect(createQueuedMessageMock).toHaveBeenCalledWith('tenant-1', 'conv-new', expect.objectContaining({
         mediaType: 'document',
-        mediaUrl: 'https://x/termo.pdf',
+        mediaPath: 'tenant-1/termo.pdf',
         resumeMetaMessageId: 'wamid.123',
       }))
       expect(result).toEqual({ queued: true })

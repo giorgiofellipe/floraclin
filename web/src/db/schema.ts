@@ -874,7 +874,9 @@ export const whatsappQueuedMessages = floraclinSchema.table('whatsapp_queued_mes
   conversationId: uuid('conversation_id').notNull().references(() => whatsappConversations.id),
   body: text('body'),
   mediaType: varchar('media_type', { length: 20 }),
-  mediaUrl: text('media_url'),
+  // A storage path, not a signed URL: the patient can reply hours later, after a URL signed now has expired.
+  mediaPath: text('media_path'),
+  mediaFilename: varchar('media_filename', { length: 255 }),
   status: varchar('status', { length: 20 }).notNull().default('queued'),
   resumeMetaMessageId: varchar('resume_meta_message_id', { length: 255 }),
   creditContext: jsonb('credit_context').$type<CreditContext>(),
