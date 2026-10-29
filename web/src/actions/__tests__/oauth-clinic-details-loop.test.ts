@@ -70,6 +70,10 @@ vi.mock('@/lib/confirm-email', () => ({ issueConfirmationToken: vi.fn() }))
 vi.mock('@/lib/meta/events', () => ({
   sendSignupCompleteRegistrationEvent: (...args: unknown[]) => sendSignupCompleteRegistrationEventMock(...args),
 }))
+vi.mock('@/lib/referral/attribution', () => ({
+  attributeReferral: vi.fn(),
+  pickSignupCode: vi.fn(() => null),
+}))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 vi.mock('@/lib/lifecycle-sender', () => ({
   scheduleLifecycleWelcome: (...a: unknown[]) => scheduleLifecycleWelcomeMock(...a),

@@ -23,8 +23,11 @@ function appRoutes(dir = APP_DIR, segments: string[] = []): string[] {
 describe('site page registry', () => {
   it('has no dynamic routes the registry cannot list', () => {
     // A [slug] route needs registry entries generated from its data source;
-    // listing the pattern would publish a literal "[slug]" URL.
-    expect(appRoutes().filter((route) => route.includes('['))).toEqual([])
+    // listing the pattern would publish a literal "[slug]" URL. A dynamic
+    // route explicitly marked non-indexable is never listed, so it is fine.
+    expect(
+      appRoutes().filter((route) => route.includes('[') && !NON_INDEXABLE_ROUTES.includes(route)),
+    ).toEqual([])
   })
 
   it('lists every page under src/app, unless it is marked non-indexable', () => {
@@ -38,8 +41,8 @@ describe('site page registry', () => {
     expect(SITE_PAGES.map((p) => p.path).filter((p) => !routes.has(p))).toEqual([])
   })
 
-  it('builds the sitemap from the registry with a lastModified per page', () => {
-    const entries = sitemap()
+  it('builds the sitemap from the registry with a lastModified per page', async () => {
+    const entries = await sitemap()
     expect(entries.map((e) => e.url)).toContain('https://floraclin.com.br/lgpd')
     expect(entries).toHaveLength(SITE_PAGES.length)
     expect(entries.every((e) => e.lastModified instanceof Date && !Number.isNaN(e.lastModified.getTime()))).toBe(true)

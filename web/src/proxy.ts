@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server'
 import { captureFirstTouch } from '@/lib/first-touch'
 import { CALLBACK_URL_PARAM, safeCallbackPath } from '@/lib/callback-url'
 
+import { captureReferralCode } from '@/lib/referral/cookie'
+
 export default auth((req) => {
   const { pathname } = req.nextUrl
   const isAuthenticated = !!req.auth
@@ -61,6 +63,7 @@ export default auth((req) => {
     // the reset token in /reset-password's query is never recorded.
     const response = NextResponse.next()
     captureFirstTouch(req, response)
+    if (pathname === '/signup') captureReferralCode(req, response)
     return response
   }
 

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import type { TrialRecap } from '@/lib/trial-recap'
 import type { PublicWinbackOffer } from '@/lib/winback'
+import type { PublicReferralOffer } from '@/lib/referral/offer-copy'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 const LOCK_REFRESH_WINDOW_MS = 24 * 60 * 60 * 1000
@@ -32,6 +33,8 @@ export interface SubscriptionAccess {
   canSubscribe: boolean
   plans: PaywallPlan[]
   winback: PublicWinbackOffer | null
+  /** The referral welcome offer; never set together with `winback`. */
+  referral: PublicReferralOffer | null
   /** The viewer's role in this clinic; decides which exports they can open. */
   role: string
   /** How the clinic gets access back: a new plan (checkout), or fixing the
@@ -57,6 +60,7 @@ const NOT_READ_ONLY: SubscriptionAccess = {
   canSubscribe: false,
   plans: [],
   winback: null,
+  referral: null,
   role: '',
   recovery: 'checkout',
   recap: null,
@@ -74,6 +78,7 @@ export function SubscriptionAccessProvider({
   canSubscribe,
   plans,
   winback,
+  referral = null,
   lockAt = null,
   role = '',
   recovery = 'checkout',
@@ -95,6 +100,7 @@ export function SubscriptionAccessProvider({
   canSubscribe: boolean
   plans: PaywallPlan[]
   winback: PublicWinbackOffer | null
+  referral?: PublicReferralOffer | null
 }) {
   const [paywallOpen, setPaywallOpen] = useState(false)
   const router = useRouter()
@@ -141,6 +147,7 @@ export function SubscriptionAccessProvider({
       canSubscribe,
       plans,
       winback,
+      referral,
       role,
       recovery,
       recap,
@@ -149,7 +156,7 @@ export function SubscriptionAccessProvider({
       openPaywall,
       closePaywall,
     }),
-    [readOnly, reason, tenantId, canSubscribe, plans, winback, role, recovery, recap, trialEndsAt, paywallOpen, openPaywall, closePaywall],
+    [readOnly, reason, tenantId, canSubscribe, plans, winback, referral, role, recovery, recap, trialEndsAt, paywallOpen, openPaywall, closePaywall],
   )
 
   return <SubscriptionAccessContext.Provider value={value}>{children}</SubscriptionAccessContext.Provider>

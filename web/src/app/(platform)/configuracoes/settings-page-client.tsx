@@ -18,6 +18,7 @@ import { ExpenseCategoriesManager } from '@/components/financial/settings/expens
 import { CardTerminalsManager } from '@/components/financial/settings/card-terminals-manager'
 import { WhatsAppSettingsForm } from '@/components/settings/whatsapp-settings-form'
 import { BillingSettings } from '@/components/settings/billing-settings'
+import { ReferralSettings } from '@/components/settings/referral-settings'
 import { PackageTemplateList } from '@/components/packages/package-template-list'
 import { usePackageTemplates } from '@/hooks/queries/use-packages'
 import { AnamnesisTemplateSettings } from '@/components/settings/anamnesis-template-settings'
@@ -45,6 +46,7 @@ import {
   ClipboardListIcon,
   UserCogIcon,
   CreditCardIcon,
+  GiftIcon,
   PlugIcon,
   ArrowLeftIcon,
   ChevronRightIcon,
@@ -120,13 +122,15 @@ interface SettingsPageClientProps {
   userRole: Role
   initialTab?: string
   templateStatusMap?: Record<string, boolean>
+  /** REFERRAL_ENROLLMENT_ENABLED, computed on the server; the 'indique' tab doesn't exist when off. */
+  referralEnabled?: boolean
 }
 
 type TabKey =
   | 'clinica' | 'equipe' | 'perfil'
   | 'procedimentos' | 'anamnese' | 'produtos' | 'pacotes' | 'termos' | 'documentos'
   | 'agendamento' | 'financeiro' | 'whatsapp'
-  | 'assinatura' | 'auditoria' | 'integracoes'
+  | 'assinatura' | 'indique' | 'auditoria' | 'integracoes'
 
 interface TabItem {
   key: TabKey
@@ -171,6 +175,7 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     label: 'Sistema',
     items: [
       { key: 'assinatura', label: 'Assinatura', icon: CreditCardIcon },
+      { key: 'indique', label: 'Indique e Ganhe', icon: GiftIcon },
       { key: 'auditoria', label: 'Auditoria', icon: ShieldCheckIcon },
       { key: 'integracoes', label: 'Integrações', icon: PlugIcon },
     ],
@@ -250,6 +255,7 @@ export function SettingsPageClient({
   userRole,
   initialTab,
   templateStatusMap,
+  referralEnabled = false,
 }: SettingsPageClientProps) {
   const settings = (tenant.settings || {}) as Record<string, unknown>
   const publicBookingEnabled = (settings.online_booking_enabled as boolean) ?? false
@@ -258,6 +264,7 @@ export function SettingsPageClient({
   const searchParams = useSearchParams()
 
   const visibleTabs = ALL_TABS.filter((tab) => {
+    if (tab.key === 'indique' && !referralEnabled) return false
     const allowed = TAB_ROLES[tab.key as TabKey]
     if (allowed === undefined) return userRole === 'owner'
     if (allowed.length === 0) return true
@@ -519,6 +526,8 @@ export function SettingsPageClient({
               )}
 
               {effectiveTab === 'assinatura' && <BillingSettings />}
+
+              {effectiveTab === 'indique' && <ReferralSettings />}
 
               {effectiveTab === 'auditoria' && (
                 <AuditLogViewer />

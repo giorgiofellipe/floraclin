@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { maskPhone } from '@/lib/masks'
 import { generateMetaEventId, trackMetaEvent } from '@/lib/marketing-attribution'
 import { SUSPENDED_CLINIC_MESSAGE } from '@/lib/clinic-suspended'
+import { ReferralCodeField } from '@/components/referral/referral-code-field'
 
 export const MAX_SESSION_REFRESH_ATTEMPTS = 3
 // Long enough for an in-flight session fetch (which makes update() a no-op) to finish.
@@ -34,9 +35,17 @@ type Props = {
    * shown if the server refuses (`needsDetails`).
    */
   autoStart?: boolean
+  referralEnabled: boolean
+  defaultReferralCode: string | null
 }
 
-export function ClinicDetailsForm({ hasClinic = false, suspended = false, autoStart = false }: Props) {
+export function ClinicDetailsForm({
+  hasClinic = false,
+  suspended = false,
+  autoStart = false,
+  referralEnabled,
+  defaultReferralCode,
+}: Props) {
   const [formState, formAction, isPending] = useActionState<ClinicDetailsState, FormData>(createClinicForOAuthUser, null)
   // The automatic start calls the action directly rather than through
   // useActionState, so a network or server failure lands here as a retry
@@ -284,6 +293,8 @@ export function ClinicDetailsForm({ hasClinic = false, suspended = false, autoSt
           {state?.error?.phone && <p className="text-xs text-red-600 mt-1">{state.error.phone[0]}</p>}
           <p className="text-xs text-mid mt-1">Você receberá dicas da FloraClin por WhatsApp e e-mail durante o teste.</p>
         </div>
+
+        {referralEnabled && <ReferralCodeField defaultCode={defaultReferralCode} />}
 
         <Button type="submit" disabled={isPending || refreshing} className="w-full bg-forest text-cream hover:bg-sage">
           {submitLabel}

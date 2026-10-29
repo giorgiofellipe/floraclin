@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
  * Middleware had no test at all before this change, which is uncomfortable
@@ -164,6 +164,75 @@ describe('proxy: the Sentry tunnel is public', () => {
   it('still sends unauthenticated requests for other pages to /login', () => {
     const res = run('/monitoring-dashboard', null)
     expect(locationOf(res)).toContain('/login')
+  })
+})
+
+describe('proxy: referral and first-touch cookies on /signup', () => {
+  const ENABLED = {
+    REFERRAL_ENROLLMENT_ENABLED: 'true',
+    STRIPE_REFERRAL_PROMOTION_CODE_ID: 'promo_1',
+    STRIPE_REFERRER_COUPON_IDS: 'c20,c40,c60,c80,c100',
+  }
+
+  function enable(over: Record<string, string> = {}) {
+    for (const [k, v] of Object.entries({ ...ENABLED, ...over })) vi.stubEnv(k, v)
+  }
+
+  async function signupRun(pathAndQuery: string, session: Record<string, unknown> | null = null) {
+    const { NextRequest } = await import('next/server')
+    const request = new NextRequest(`https://app.floraclin.com.br${pathAndQuery}`, {
+      headers: { 'sec-fetch-dest': 'document' },
+    })
+    const res = (proxy as unknown as (r: unknown, c: unknown) => Response)(
+      Object.assign(request, { auth: session }),
+      {},
+    ) as Response & { cookies: { get(n: string): { value: string } | undefined } }
+    return res
+  }
+
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('sets floraclin_ref on /signup?ref= with the switch on', async () => {
+    enable()
+    const res = await signupRun('/signup?ref=meca7k')
+    expect(res.cookies.get('floraclin_ref')?.value).toBe('MECA7K')
+  })
+
+  it('sets nothing with the switch off', async () => {
+    const res = await signupRun('/signup?ref=MECA7K')
+    expect(res.cookies.get('floraclin_ref')).toBeUndefined()
+  })
+
+  it('sets nothing when the switch is on but the promotion code is not configured', async () => {
+    enable({ STRIPE_REFERRAL_PROMOTION_CODE_ID: '' })
+    const res = await signupRun('/signup?ref=MECA7K')
+    expect(res.cookies.get('floraclin_ref')).toBeUndefined()
+  })
+
+  it('sets nothing for a malformed or missing code', async () => {
+    enable()
+    expect((await signupRun('/signup?ref=%21%21')).cookies.get('floraclin_ref')).toBeUndefined()
+    expect((await signupRun('/signup')).cookies.get('floraclin_ref')).toBeUndefined()
+  })
+
+  it('only captures on /signup, not on /login', async () => {
+    enable()
+    const res = await signupRun('/login?ref=MECA7K')
+    expect(res.cookies.get('floraclin_ref')).toBeUndefined()
+  })
+
+  it('does not capture for an authenticated user, who is redirected away', async () => {
+    enable()
+    const res = await signupRun('/signup?ref=MECA7K', session())
+    expect(locationOf(res)).toContain('/dashboard')
+    expect(res.cookies.get('floraclin_ref')).toBeUndefined()
+  })
+
+  it('keeps writing first-touch on /signup regardless of the referral switch', async () => {
+    const res = await signupRun('/signup?utm_source=google')
+    const touch = JSON.parse(res.cookies.get('floraclin_ft')!.value)
+    expect(touch).toMatchObject({ utmSource: 'google', landingPath: '/signup' })
+    expect(res.cookies.get('floraclin_ref')).toBeUndefined()
   })
 })
 
