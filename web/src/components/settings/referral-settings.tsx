@@ -51,7 +51,7 @@ function Hero({ data }: { data: ReferralDashboardResponse }) {
       <div className="flex items-center gap-4 rounded-xl border border-blush bg-gradient-to-br from-cream to-blush/30 p-4 sm:p-5">
         <ReferralGift size="lg" locked />
         <div>
-          <h3 className="font-display text-2xl leading-tight text-forest">Ganhe até 100% de desconto</h3>
+          <h3 className="font-display text-2xl font-semibold leading-tight text-forest">Ganhe até 100% de desconto</h3>
           <p className="mt-1 text-sm text-mid">
             Assine e indique colegas: {REFERRAL_PERCENT_PER_REFERRAL}% por clínica pagando, para sempre*. Com{' '}
             {REFERRAL_MAX_COUNTING_FOR_DISCOUNT}, seu FloraClin sai de graça.
@@ -69,7 +69,7 @@ function Hero({ data }: { data: ReferralDashboardResponse }) {
     <div className="flex flex-wrap items-center gap-4 rounded-xl border border-mint/40 bg-gradient-to-br from-cream to-mint/20 p-4 sm:p-5">
       <ReferralGift size="lg" />
       <div className="min-w-0 flex-1">
-        <h3 className="font-display text-2xl leading-tight text-forest">{title}</h3>
+        <h3 className="font-display text-2xl font-semibold leading-tight text-forest">{title}</h3>
         <p className="mt-1 text-sm text-mid">
           {data.inactiveMessage ??
             `Cada clínica indicada pagando vale ${REFERRAL_PERCENT_PER_REFERRAL}% de desconto, para sempre*.`}
@@ -77,7 +77,7 @@ function Hero({ data }: { data: ReferralDashboardResponse }) {
       </div>
       {data.discountPercent > 0 && (
         <div className="text-right">
-          <p className="font-display text-5xl leading-none text-sage">{data.discountPercent}%</p>
+          <p className="font-display text-5xl font-bold leading-none text-sage">{data.discountPercent}%</p>
           {data.monthlySavingsCents != null && (
             <p className="mt-1 text-xs text-mid">{brl(data.monthlySavingsCents)}/mês a menos</p>
           )}
