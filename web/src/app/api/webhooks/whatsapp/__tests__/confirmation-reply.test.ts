@@ -46,6 +46,7 @@ vi.mock('drizzle-orm', () => ({
   sql: vi.fn(),
 }))
 
+vi.mock('@/lib/storage', () => ({ getSignedUrl: vi.fn() }))
 vi.mock('@/lib/whatsapp', () => ({
   verifyWebhookSignature: vi.fn(),
   downloadAndStoreMedia: vi.fn(),

@@ -110,8 +110,11 @@ vi.mock('@/lib/whatsapp', async () => {
   sendTemplateMessage: vi.fn(),
   sendMediaMessage: vi.fn(),
   getTemplateForTenant: vi.fn(),
+  whatsappMediaProxyUrl: (path: string) => `/proxy/${path}`,
   }
 })
+
+vi.mock('@/lib/storage', () => ({ getSignedUrl: vi.fn() }))
 
 vi.mock('@/db/queries/whatsapp-credits', () => ({
   refundSpendByMetaMessageId: vi.fn(async () => true),
@@ -184,7 +187,8 @@ vi.mock('next/server', async () => {
 // ---------------------------------------------------------------------------
 
 import { db } from '@/db/client'
-import { verifyWebhookSignature, sendTextMessage } from '@/lib/whatsapp'
+import { verifyWebhookSignature, sendTextMessage, sendMediaMessage } from '@/lib/whatsapp'
+import { getSignedUrl } from '@/lib/storage'
 import { refundSpendByMetaMessageId } from '@/db/queries/whatsapp-credits'
 import { CreditExhaustedError } from '@/lib/whatsapp-credits'
 import {
@@ -550,6 +554,36 @@ describe('resolveSharedNumberTenant — phone history, ambiguous', () => {
       expect.any(String),
       'oi',
     )
+  })
+
+  // A link signed when the document was queued has expired by the time a patient replies hours later.
+  it('signs a queued document when it drains and sends it with its file name', async () => {
+    vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([convRow(TENANT_A, 5 * MINUTES)]) as never)
+    vi.mocked(getQueuedMessages).mockResolvedValueOnce([
+      {
+        id: 'q-1',
+        body: 'Termo, FloraClin',
+        mediaType: 'document',
+        mediaPath: 'tenant-a/termos/termo.pdf',
+        mediaFilename: 'termo.pdf',
+        creditContext: null,
+      },
+    ] as never)
+    vi.mocked(getSignedUrl).mockResolvedValue('https://storage/fresh.pdf')
+    vi.mocked(sendMediaMessage).mockResolvedValue({ metaMessageId: 'wamid.doc' })
+
+    await POST(makeRequest(makeInboundPayload({})))
+    await vi.waitFor(() => expect(upsertConversation).toHaveBeenCalled())
+    await flushAfter()
+
+    expect(getSignedUrl).toHaveBeenCalledWith('tenant-a/termos/termo.pdf', expect.any(Number))
+    expect(sendMediaMessage).toHaveBeenCalledWith(
+      TENANT_A, expect.anything(), expect.any(String), 'document', 'https://storage/fresh.pdf', 'Termo, FloraClin', 'termo.pdf',
+    )
+    expect(createMessage).toHaveBeenCalledWith(TENANT_A, CONVERSATION_ID, expect.objectContaining({
+      mediaUrl: '/proxy/tenant-a/termos/termo.pdf',
+      mediaFilename: 'termo.pdf',
+    }))
   })
 
   // Regression: rows queued before the ledger existed have no credit context.

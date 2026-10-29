@@ -930,13 +930,20 @@ export async function getUnreadCount(tenantId: string): Promise<number> {
 
 // ─── QUEUED MESSAGES ──────────────────────────────────────────────
 
+export async function deleteConversation(tenantId: string, conversationId: string): Promise<void> {
+  await db
+    .delete(whatsappConversations)
+    .where(and(eq(whatsappConversations.tenantId, tenantId), eq(whatsappConversations.id, conversationId)))
+}
+
 export async function createQueuedMessage(
   tenantId: string,
   conversationId: string,
   data: {
     body?: string | null
     mediaType?: string | null
-    mediaUrl?: string | null
+    mediaPath?: string | null
+    mediaFilename?: string | null
     resumeMetaMessageId?: string | null
     creditContext?: CreditContext | null
   },
@@ -948,7 +955,8 @@ export async function createQueuedMessage(
       conversationId,
       body: data.body ?? null,
       mediaType: data.mediaType ?? null,
-      mediaUrl: data.mediaUrl ?? null,
+      mediaPath: data.mediaPath ?? null,
+      mediaFilename: data.mediaFilename ?? null,
       resumeMetaMessageId: data.resumeMetaMessageId ?? null,
       creditContext: data.creditContext ?? null,
     })
