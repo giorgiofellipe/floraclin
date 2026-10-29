@@ -1,6 +1,7 @@
 // Centralized query keys for React Query cache management
 export const queryKeys = {
   dashboard: ['dashboard'] as const,
+  referral: ['referral'] as const,
   patients: {
     all: ['patients'] as const,
     list: (search: string, page: number) => ['patients', 'list', search, page] as const,

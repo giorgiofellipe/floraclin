@@ -22,6 +22,8 @@ const FREE_LABEL = `${REFERRAL_MAX_COUNTING_FOR_DISCOUNT} de ${REFERRAL_MAX_COUN
 export interface DashboardInput {
   canRefer: boolean
   enrollmentOpen: boolean
+  /** Trial or expired clinic while enrollment is open: subscribing unlocks the link. */
+  subscribeToUnlock: boolean
   code: string | null
   /** Retired codes that still resolve to the clinic, newest first. */
   previousCodes?: string[]
@@ -46,6 +48,11 @@ export interface DashboardInput {
 
 export interface ReferralDashboardResponse {
   canRefer: boolean
+  enrollmentOpen: boolean
+  subscribeToUnlock: boolean
+  discountPercent: number
+  /** What the current discount saves per month; null without a priced plan or at 0%. */
+  monthlySavingsCents: number | null
   inactiveMessage: string | null
   /** The clinic's code, editable on the tab; null when it cannot refer. */
   code: string | null
@@ -57,7 +64,14 @@ export interface ReferralDashboardResponse {
   /** `percent` is 0–100 (width of the bar). */
   progress: { counting: number; target: 5; percent: number; label: string; bonusLabel: string | null }
   discountLine: string
-  referrals: Array<{ id: string; name: string; signupDate: string; label: string; sublabel: string | null }>
+  referrals: Array<{
+    id: string
+    name: string
+    signupDate: string
+    status: ReferralStatus
+    label: string
+    sublabel: string | null
+  }>
   history: Array<{ date: string; text: string }>
   rulesUrl: typeof RULES_URL
 }
@@ -120,6 +134,11 @@ export function buildReferralDashboard(input: DashboardInput): ReferralDashboard
 
   return {
     canRefer: input.canRefer,
+    enrollmentOpen: input.enrollmentOpen,
+    subscribeToUnlock: input.subscribeToUnlock,
+    discountPercent: percent,
+    monthlySavingsCents:
+      percent > 0 && input.planPriceCents != null ? Math.round((input.planPriceCents * percent) / 100) : null,
     inactiveMessage: inactiveMessage(input),
     code: linkActive ? input.code : null,
     previousCodes: linkActive ? (input.previousCodes ?? []) : [],
@@ -137,6 +156,7 @@ export function buildReferralDashboard(input: DashboardInput): ReferralDashboard
       id: r.id,
       name: r.referredName,
       signupDate: formatBrDate(r.capturedAt),
+      status: r.status,
       ...referralStatusLabel(r),
     })),
     history: input.events.map((e) => ({

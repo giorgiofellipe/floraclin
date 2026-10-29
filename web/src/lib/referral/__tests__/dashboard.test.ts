@@ -5,6 +5,7 @@ import { buildReferralDashboard, referralShareText, type DashboardInput } from '
 const base: DashboardInput = {
   canRefer: true,
   enrollmentOpen: true,
+  subscribeToUnlock: false,
   code: 'MECA7K',
   rewardsActive: true,
   counting: 0,
@@ -29,6 +30,11 @@ describe('buildReferralDashboard progress copy', () => {
 })
 
 describe('discount line', () => {
+  it('gives the card and the screen the current percent and what it saves per month', () => {
+    expect(build({ counting: 3 })).toMatchObject({ discountPercent: 60, monthlySavingsCents: 5940 })
+    expect(build({ counting: 0 })).toMatchObject({ discountPercent: 0, monthlySavingsCents: null })
+  })
+
   it('shows amount saved out of the full price and the next invoice day', () => {
     expect(build({ counting: 3 }).discountLine).toBe(
       'Seu desconto atual: 60% (R$ 59,40 de R$ 99,00) a partir da próxima fatura, em 10/11.',
@@ -82,7 +88,7 @@ describe('canRefer=false', () => {
     expect(view.whatsappShareUrl).toBeNull()
     expect(view.inactiveMessage).toBe('Seu link de indicação fica ativo quando sua clínica tem uma assinatura paga.')
     expect(view.referrals).toEqual([
-      { id: 'r1', name: 'Clínica A', signupDate: '02/10/2026', label: 'em teste', sublabel: null },
+      { id: 'r1', name: 'Clínica A', signupDate: '02/10/2026', status: 'trial', label: 'em teste', sublabel: null },
     ])
   })
 })

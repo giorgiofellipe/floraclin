@@ -213,6 +213,30 @@
   animation: subtle-pulse 2.5s ease-in-out infinite;
 }
 
+/* Indique e Ganhe: a short wiggle every few seconds, and a light sweep over the progress bar */
+@keyframes gift-wiggle {
+  0%, 80%, 100% { transform: rotate(0); }
+  84% { transform: rotate(-10deg); }
+  88% { transform: rotate(9deg); }
+  92% { transform: rotate(-6deg); }
+  96% { transform: rotate(3deg); }
+}
+
+@keyframes bar-shine {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-gift-wiggle {
+    animation: gift-wiggle 3.2s ease-in-out infinite;
+  }
+
+  .animate-bar-shine {
+    animation: bar-shine 2.4s ease-in-out infinite;
+  }
+}
+
 .animate-botanical-sway {
   animation: botanical-sway 6s ease-in-out infinite;
 }
