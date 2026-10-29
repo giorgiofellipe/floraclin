@@ -80,6 +80,16 @@ describe('GET /api/referral', () => {
     expect(body.link).toBeNull()
   })
 
+  it.each([
+    ['a trial clinic', { source: 'trial', status: 'trialing', currentPeriodEnd: new Date('2099-01-01T12:00:00Z') }, true],
+    ['an expired trial', { source: 'trial', status: 'expired', currentPeriodEnd: new Date('2026-01-01T12:00:00Z') }, true],
+    ['a gifted clinic, which cannot refer by subscribing', { source: 'gift', status: 'active', currentPeriodEnd: new Date('2099-01-01T12:00:00Z') }, false],
+    ['a paying clinic', { source: 'stripe', status: 'active', currentPeriodEnd: new Date('2099-01-01T12:00:00Z') }, false],
+  ])('subscribeToUnlock for %s', async (_n, sub, expected) => {
+    vi.mocked(getSubscription).mockResolvedValue({ ...sub, plan } as never)
+    expect((await (await GET(request())).json()).subscribeToUnlock).toBe(expected)
+  })
+
   it('creates the code for a paying clinic and returns the dashboard', async () => {
     vi.mocked(getSubscription).mockResolvedValue({
       source: 'stripe',

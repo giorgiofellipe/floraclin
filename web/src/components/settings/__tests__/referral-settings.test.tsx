@@ -8,6 +8,10 @@ import { toast } from 'sonner'
 
 const ACTIVE = {
   canRefer: true,
+  enrollmentOpen: true,
+  subscribeToUnlock: false,
+  discountPercent: 40,
+  monthlySavingsCents: 3960,
   inactiveMessage: null,
   code: 'MECA7K',
   link: 'https://floraclin.com.br/indicacao/MECA7K',
@@ -15,13 +19,15 @@ const ACTIVE = {
   whatsappShareUrl: 'https://wa.me/?text=texto',
   progress: { counting: 2, target: 5, percent: 40, label: '2 de 5 clínicas pagantes, faltam 3 para FloraClin grátis', bonusLabel: null },
   discountLine: 'linha de desconto',
-  referrals: [{ id: 'r1', name: 'Clínica A', signupDate: '02/10/2026', label: 'pagante', sublabel: 'pagamento pendente' }],
+  referrals: [{ id: 'r1', name: 'Clínica A', signupDate: '02/10/2026', status: 'paused', label: 'pagante', sublabel: 'pagamento pendente' }],
   history: [{ date: '20/10/2026', text: 'desconto de 40% com 2 clínicas pagantes' }],
   rulesUrl: 'https://floraclin.com.br/indique',
 }
 const INACTIVE = {
   ...ACTIVE,
   canRefer: false,
+  discountPercent: 0,
+  monthlySavingsCents: null,
   inactiveMessage: 'Seu link de indicação fica ativo quando sua clínica tem uma assinatura paga.',
   code: null,
   link: null,
@@ -71,5 +77,24 @@ describe('ReferralSettings', () => {
     expect(screen.queryByRole('button', { name: 'Copiar link' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Personalizar código' })).toBeNull()
     expect(screen.getByText('Clínica A')).toBeTruthy()
+  })
+
+  it('leads with how many clinics are left, the current percent and what it saves', async () => {
+    mockResponse(ACTIVE)
+    render(<ReferralSettings />)
+    expect(await screen.findByText('Faltam 3 clínicas para o FloraClin grátis')).toBeTruthy()
+    expect(screen.getByText('R$ 39,60/mês a menos').parentElement?.textContent).toBe('40%R$ 39,60/mês a menos')
+    expect(screen.getByRole('listitem', { current: 'step' }).textContent).toContain('60%')
+  })
+
+  it('offers subscribing to unlock the link to a trial clinic, without a link or referral list', async () => {
+    mockResponse({ ...INACTIVE, subscribeToUnlock: true, referrals: [] })
+    render(<ReferralSettings />)
+    expect(await screen.findByText('Ganhe até 100% de desconto')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Assinar e desbloquear meu link' }).getAttribute('href')).toBe(
+      '/configuracoes?tab=assinatura',
+    )
+    expect(screen.queryByRole('button', { name: 'Copiar link' })).toBeNull()
+    expect(screen.queryByText('Clínicas indicadas')).toBeNull()
   })
 })

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { useImpersonate } from '@/hooks/mutations/use-impersonation'
 import { useAdminTenants } from '@/hooks/queries/use-admin-tenants'
+import { ReferralSidebarCard } from '@/components/referral/referral-sidebar-card'
 
 export interface TenantOption {
   tenantId: string
@@ -459,6 +460,11 @@ export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantI
       <div className="relative flex flex-1 flex-col min-h-0">
         <SidebarLogo />
         <SidebarNav userRole={userRole} isPlatformAdmin={isPlatformAdmin} impersonatingTenantName={impersonatingTenantName} whatsappEnabled={whatsappEnabled} />
+        {userRole === 'owner' && (
+          <div className="shrink-0 px-3 pb-3">
+            <ReferralSidebarCard />
+          </div>
+        )}
         {isPlatformAdmin && (
           <div className="shrink-0 border-t border-[#E8ECEF] pb-3 pt-1 relative overflow-visible">
             <TenantSwitcher currentTenantName={clinicName} impersonatingTenantName={impersonatingTenantName} />
@@ -498,6 +504,11 @@ export function MobileSidebarContent({
     <div className="relative flex h-full flex-1 flex-col min-h-0 bg-white overflow-hidden">
       <SidebarLogo />
       <SidebarNav onNavigate={onNavigate} userRole={userRole} isPlatformAdmin={isPlatformAdmin} impersonatingTenantName={impersonatingTenantName} whatsappEnabled={whatsappEnabled} />
+      {userRole === 'owner' && (
+        <div className="shrink-0 px-3 pb-3">
+          <ReferralSidebarCard onNavigate={onNavigate} />
+        </div>
+      )}
       {isPlatformAdmin && (
         <div className="shrink-0 border-t border-[#E8ECEF] pb-3 pt-1">
           <TenantSwitcher currentTenantName={clinicName} impersonatingTenantName={impersonatingTenantName} />
