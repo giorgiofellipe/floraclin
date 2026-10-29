@@ -26,6 +26,9 @@ import { FIRST_TOUCH_COOKIE, parseFirstTouch, type FirstTouch } from '@/lib/firs
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
 import { isPlatformAdminSession, placeholderClinicName } from '@/lib/clinic-placeholder'
 import { reportSideEffectFailure } from '@/lib/observability'
+import { attributeReferral, pickSignupCode } from '@/lib/referral/attribution'
+import { REFERRAL_COOKIE_NAME } from '@/lib/referral/rules'
+import { referralCookieDeleteOptions } from '@/lib/referral/cookie'
 import { sendSignupCompleteRegistrationEvent, type SendSignupCompleteRegistrationInput } from '@/lib/meta/events'
 import { trackServerEvent } from '@/lib/analytics/server'
 import { utmProperties } from '@/lib/analytics/events'
@@ -111,6 +114,7 @@ export async function signUp(
   if (tenantId) {
     trackServerEvent('signup_completed', { distinctId: userId, tenantId }, { method: 'email', ...utmProperties(firstTouch) })
     await persistSignupAttribution(tenantId, tenantAttribution)
+    await attributeSignupReferral(tenantId, formData, cookieStore, requestHeaders)
     scheduleSignupCompleteRegistration({
       eventId: metaEventId,
       email,
@@ -280,6 +284,7 @@ export async function createClinicForOAuthUser(
     )
   }
   await persistSignupAttribution(tenant.id, tenantAttribution)
+  await attributeSignupReferral(tenant.id, formData, cookieStore, requestHeaders)
   if (metaEventId && session.user.email) {
     scheduleSignupCompleteRegistration({
       eventId: metaEventId,
@@ -345,6 +350,28 @@ async function persistSignupAttribution(
 /** Kept with the signup so the later Subscribe event can match the same browser. */
 function browserIds({ fbc, fbp }: MetaBrowserSignals): { fbc?: string; fbp?: string } {
   return { ...(fbc ? { fbc } : {}), ...(fbp ? { fbp } : {}) }
+}
+
+/** Attribution must never block signup: any failure is reported and swallowed. */
+async function attributeSignupReferral(
+  tenantId: string,
+  formData: FormData,
+  cookieStore: Awaited<ReturnType<typeof cookies>>,
+  requestHeaders: Pick<Headers, 'get'>,
+): Promise<void> {
+  try {
+    const picked = pickSignupCode({
+      field: formData.get('referralCode'),
+      cookie: cookieStore.get(REFERRAL_COOKIE_NAME)?.value,
+    })
+    if (!picked) return
+    const result = await attributeReferral({ referredTenantId: tenantId, rawCode: picked.code, capturedVia: picked.via })
+    if (result.outcome === 'created') {
+      cookieStore.set(REFERRAL_COOKIE_NAME, '', referralCookieDeleteOptions(requestHeaders.get('host')))
+    }
+  } catch (err) {
+    reportSideEffectFailure(err, { area: 'referral', step: 'attribute_signup' })
+  }
 }
 
 function scheduleSignupCompleteRegistration(input: SendSignupCompleteRegistrationInput): void {

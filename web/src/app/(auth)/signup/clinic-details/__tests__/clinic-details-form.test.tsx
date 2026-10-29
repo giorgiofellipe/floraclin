@@ -68,7 +68,7 @@ afterEach(() => {
 
 describe('clinic details form submitted after Google sign-up', () => {
   it('refreshes the token with a POST-style update, fires CompleteRegistration once, then navigates', async () => {
-    const { container } = render(<ClinicDetailsForm />)
+    const { container } = render(<ClinicDetailsForm referralEnabled={false} defaultReferralCode={null} />)
     await act(async () => {
       fireEvent.submit(container.querySelector('form')!)
     })
@@ -88,7 +88,7 @@ describe('clinic details form submitted after Google sign-up', () => {
       h.rerenderSession?.()
       return null
     })
-    const { container } = render(<ClinicDetailsForm />)
+    const { container } = render(<ClinicDetailsForm referralEnabled={false} defaultReferralCode={null} />)
     await act(async () => {
       fireEvent.submit(container.querySelector('form')!)
     })
@@ -109,7 +109,7 @@ describe('clinic details form submitted after Google sign-up', () => {
     // tenant, so /dashboard bounces straight back here.
     h.createClinic.mockResolvedValue({ success: true, created: false })
     h.update.mockResolvedValue({ tenantId: null })
-    const { container, findByRole } = render(<ClinicDetailsForm />)
+    const { container, findByRole } = render(<ClinicDetailsForm referralEnabled={false} defaultReferralCode={null} />)
     await act(async () => {
       fireEvent.submit(container.querySelector('form')!)
     })
@@ -136,11 +136,11 @@ describe('clinic details form submitted after Google sign-up', () => {
     // which now finds a live clinic.
     let resolveUpdate: (v: unknown) => void = () => {}
     h.update.mockImplementation(() => new Promise((r) => { resolveUpdate = r }))
-    const { container, rerender, queryByRole } = render(<ClinicDetailsForm />)
+    const { container, rerender, queryByRole } = render(<ClinicDetailsForm referralEnabled={false} defaultReferralCode={null} />)
     await act(async () => {
       fireEvent.submit(container.querySelector('form')!)
     })
-    rerender(<ClinicDetailsForm hasClinic />)
+    rerender(<ClinicDetailsForm referralEnabled={false} defaultReferralCode={null} hasClinic />)
 
     expect(container.querySelector('form')).not.toBeNull()
     expect(queryByRole('button', { name: 'Entrar na clínica' })).toBeNull()
@@ -153,7 +153,7 @@ describe('clinic details form submitted after Google sign-up', () => {
 
   it('shows the suspension notice from the action and no form', async () => {
     h.createClinic.mockResolvedValue({ suspended: true, error: { general: [SUSPENDED_CLINIC_MESSAGE] } })
-    const { container, findByText } = render(<ClinicDetailsForm />)
+    const { container, findByText } = render(<ClinicDetailsForm referralEnabled={false} defaultReferralCode={null} />)
     await act(async () => {
       fireEvent.submit(container.querySelector('form')!)
     })
@@ -167,13 +167,13 @@ describe('clinic details form submitted after Google sign-up', () => {
 
 describe('clinic details for a user who is not new', () => {
   it('shows the suspension notice up front for a suspended-only user', () => {
-    const { container, getByText } = render(<ClinicDetailsForm suspended />)
+    const { container, getByText } = render(<ClinicDetailsForm referralEnabled={false} defaultReferralCode={null} suspended />)
     expect(getByText(SUSPENDED_CLINIC_MESSAGE)).toBeTruthy()
     expect(container.querySelector('form')).toBeNull()
   })
 
   it('signs out through the action that also drops the tenant cookie', async () => {
-    const { getByRole } = render(<ClinicDetailsForm suspended />)
+    const { getByRole } = render(<ClinicDetailsForm referralEnabled={false} defaultReferralCode={null} suspended />)
     await act(async () => {
       fireEvent.click(getByRole('button', { name: 'Sair' }))
     })
@@ -181,7 +181,7 @@ describe('clinic details for a user who is not new', () => {
   })
 
   it('offers to enter an existing clinic instead of asking for it again', async () => {
-    const { container, getByRole } = render(<ClinicDetailsForm hasClinic />)
+    const { container, getByRole } = render(<ClinicDetailsForm referralEnabled={false} defaultReferralCode={null} hasClinic />)
     expect(container.querySelector('form')).toBeNull()
     await act(async () => {
       fireEvent.click(getByRole('button', { name: 'Entrar na clínica' }))
@@ -193,7 +193,7 @@ describe('clinic details for a user who is not new', () => {
 
   it('after a failed refresh, offers one way to retry, not two buttons doing the same thing', async () => {
     h.update.mockResolvedValue({ tenantId: null })
-    const { getByRole, findByRole, queryByRole } = render(<ClinicDetailsForm hasClinic />)
+    const { getByRole, findByRole, queryByRole } = render(<ClinicDetailsForm referralEnabled={false} defaultReferralCode={null} hasClinic />)
     await act(async () => {
       fireEvent.click(getByRole('button', { name: 'Entrar na clínica' }))
     })
@@ -213,7 +213,7 @@ describe('one-step Google sign-up: the clinic is created on arrival', () => {
   it('creates it once without asking anything, fires CompleteRegistration once, and goes to onboarding', async () => {
     h.createClinic.mockResolvedValue({ success: true, created: true, metaEventId: 'complete_registration:1' })
     // StrictMode mounts effects twice in development: still one request.
-    const { container, getByText } = render(<StrictMode><ClinicDetailsForm autoStart /></StrictMode>)
+    const { container, getByText } = render(<StrictMode><ClinicDetailsForm referralEnabled={false} defaultReferralCode={null} autoStart /></StrictMode>)
 
     expect(getByText('Preparando sua clínica…')).toBeTruthy()
     expect(container.querySelector('form')).toBeNull()
@@ -235,10 +235,10 @@ describe('one-step Google sign-up: the clinic is created on arrival', () => {
   it('keeps the progress screen when the new clinic cookie re-renders the page', async () => {
     let resolveUpdate: (v: unknown) => void = () => {}
     h.update.mockImplementation(() => new Promise((r) => { resolveUpdate = r }))
-    const { container, rerender, getByText } = render(<ClinicDetailsForm autoStart />)
+    const { container, rerender, getByText } = render(<ClinicDetailsForm referralEnabled={false} defaultReferralCode={null} autoStart />)
     await waitFor(() => expect(h.update).toHaveBeenCalledTimes(1))
     // The account is a member now: the server page says hasClinic, no autoStart.
-    rerender(<ClinicDetailsForm hasClinic />)
+    rerender(<ClinicDetailsForm referralEnabled={false} defaultReferralCode={null} hasClinic />)
 
     expect(getByText('Preparando sua clínica…')).toBeTruthy()
     expect(container.querySelector('form')).toBeNull()
@@ -249,7 +249,7 @@ describe('one-step Google sign-up: the clinic is created on arrival', () => {
 
   it('shows the clinic form when the server wants the details asked', async () => {
     h.createClinic.mockResolvedValueOnce({ needsDetails: true })
-    const { container, findByText } = render(<ClinicDetailsForm autoStart />)
+    const { container, findByText } = render(<ClinicDetailsForm referralEnabled={false} defaultReferralCode={null} autoStart />)
 
     expect(await findByText('Dados da clínica')).toBeTruthy()
     expect(container.querySelector('form')).not.toBeNull()
@@ -259,7 +259,7 @@ describe('one-step Google sign-up: the clinic is created on arrival', () => {
 
   it('shows the suspension notice when the server says the clinic is suspended', async () => {
     h.createClinic.mockResolvedValueOnce({ suspended: true, error: { general: [SUSPENDED_CLINIC_MESSAGE] } })
-    const { findByText } = render(<ClinicDetailsForm autoStart />)
+    const { findByText } = render(<ClinicDetailsForm referralEnabled={false} defaultReferralCode={null} autoStart />)
 
     expect(await findByText('Clínica suspensa')).toBeTruthy()
     expect(h.replace).not.toHaveBeenCalled()
@@ -267,7 +267,7 @@ describe('one-step Google sign-up: the clinic is created on arrival', () => {
 
   it('does not retry a failure on its own; the user retries with the same event id', async () => {
     h.createClinic.mockRejectedValueOnce(new Error('network'))
-    const { findByRole, findByText } = render(<ClinicDetailsForm autoStart />)
+    const { findByRole, findByText } = render(<ClinicDetailsForm referralEnabled={false} defaultReferralCode={null} autoStart />)
 
     expect(await findByText(AUTO_START_FAILED_MESSAGE)).toBeTruthy()
     await act(async () => {
@@ -287,7 +287,7 @@ describe('one-step Google sign-up: the clinic is created on arrival', () => {
 
   it('goes to onboarding without an event when another tab already made the clinic', async () => {
     h.createClinic.mockResolvedValueOnce({ success: true, created: false })
-    render(<ClinicDetailsForm autoStart />)
+    render(<ClinicDetailsForm referralEnabled={false} defaultReferralCode={null} autoStart />)
 
     await waitFor(() => expect(h.replace).toHaveBeenCalledWith('/onboarding'))
     expect(h.trackMetaEvent).not.toHaveBeenCalled()

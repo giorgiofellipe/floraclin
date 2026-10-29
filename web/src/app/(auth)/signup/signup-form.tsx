@@ -12,8 +12,19 @@ import { SignupTermsNotice } from '@/components/auth/signup-terms-notice'
 import type { InAppBrowser } from '@/lib/in-app-browser'
 import { track } from '@/lib/analytics/client'
 import { inAppBrowserProperties, type SignupMethod, type UtmProperties } from '@/lib/analytics/events'
+import { ReferralCodeField } from '@/components/referral/referral-code-field'
 
-export function SignUpForm({ inAppBrowser, utm = {} }: { inAppBrowser: InAppBrowser | null; utm?: UtmProperties }) {
+export function SignUpForm({
+  inAppBrowser,
+  utm = {},
+  referralEnabled,
+  defaultReferralCode,
+}: {
+  inAppBrowser: InAppBrowser | null
+  utm?: UtmProperties
+  referralEnabled: boolean
+  defaultReferralCode: string | null
+}) {
   const [state, formAction, isPending] = useActionState<SignUpState, FormData>(signUp, null)
   // signup_started: the first focus inside the e-mail form, or the first tap
   // on Google. Once per method per page, so both paths show up in the funnel.
@@ -154,6 +165,14 @@ export function SignUpForm({ inAppBrowser, utm = {} }: { inAppBrowser: InAppBrow
             {state?.error?.phone && <p className="text-xs text-red-600 mt-1">{state.error.phone[0]}</p>}
             <p className="text-xs text-mid mt-1">Você receberá dicas da FloraClin por WhatsApp e e-mail durante o teste.</p>
           </div>
+
+          {referralEnabled && (
+            <ReferralCodeField
+              defaultCode={defaultReferralCode}
+              labelClassName="uppercase tracking-wider text-xs text-mid"
+              inputClassName="auth-input h-11 border-blush/60 bg-white/80 rounded-lg transition-all duration-200 focus:border-sage focus:ring-2 focus:ring-mint/20 placeholder:text-mid/40"
+            />
+          )}
 
           <div className="pt-1">
             <Button

@@ -16,7 +16,7 @@ afterEach(() => vi.clearAllMocks())
 describe('SignUpForm analytics', () => {
   it('reports signup_started once per method, with the first-touch UTMs', async () => {
     const user = userEvent.setup()
-    render(<SignUpForm inAppBrowser={null} utm={{ utm_source: 'instagram', utm_campaign: 'launch' }} />)
+    render(<SignUpForm inAppBrowser={null} referralEnabled={false} defaultReferralCode={null} utm={{ utm_source: 'instagram', utm_campaign: 'launch' }} />)
 
     await user.type(screen.getByLabelText('Nome completo'), 'Ana Souza')
     await user.type(screen.getByLabelText('E-mail'), 'ana@example.com')

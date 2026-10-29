@@ -15,6 +15,7 @@ import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { effectiveSubscriptionStatus, isStripeDriven, isSubscriptionRowActive } from '@/lib/subscription-access'
 import { publicWinbackOffer } from '@/lib/winback'
 import { getValidatedWinbackOffer } from '@/lib/winback-offer'
+import { getValidatedReferralOffer, publicReferralOffer } from '@/lib/referral/offer'
 import { getTrialRecap } from '@/db/queries/trial-recap'
 import { planBenefits, recommendedPlanSlug, sellablePlans } from '@/lib/plan-benefits'
 import { brCalendarDaysBetween } from '@/lib/dates'
@@ -85,6 +86,11 @@ export default async function PlatformLayout({ children }: { children: React.Rea
     recommended: p.slug === recommended,
   }))
   const winback = publicWinbackOffer(validatedWinback)
+  // Exactly one offer: the win-back (VOLTA30) wins over the referral one.
+  const referral =
+    !winback && ((readOnly && recovery === 'checkout') || trialEndsAt !== null)
+      ? publicReferralOffer(await getValidatedReferralOffer(subscription, paidPlans, now).catch(() => null))
+      : null
   // A running trial / gift / admin grant locks at an exact instant; the
   // provider re-renders this layout then. Stripe rows follow the webhook.
   const lockAt =
@@ -116,6 +122,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
       canSubscribe={auth.role === 'owner'}
       plans={paywallPlans}
       winback={winback}
+      referral={referral}
       lockAt={lockAt}
       role={auth.role}
       recovery={recovery}

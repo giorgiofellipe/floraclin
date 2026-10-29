@@ -1,32 +1,10 @@
-import { Navigation } from "@/components/navigation";
-import { Hero } from "@/components/hero";
-import { Problem } from "@/components/problem";
-import { HowItWorks } from "@/components/how-it-works";
-import { FeatureShowcase } from "@/components/feature-showcase";
-import { Testimonial } from "@/components/testimonial";
-import { Pricing } from "@/components/pricing";
-import { CtaBanner } from "@/components/cta-banner";
-import { Faq } from "@/components/faq";
-import { Contact } from "@/components/contact";
-import { Footer } from "@/components/footer";
+import { HomeSections } from "@/components/home-sections";
 import { HomeFaqStructuredData } from "@/components/structured-data";
 
 export default function Home() {
   return (
     <>
-      <Navigation />
-      <main>
-        <Hero />
-        <Problem />
-        <HowItWorks />
-        <FeatureShowcase />
-        <Testimonial />
-        <Pricing />
-        <CtaBanner />
-        <Faq />
-        <Contact />
-      </main>
-      <Footer />
+      <HomeSections />
       <HomeFaqStructuredData />
     </>
   );

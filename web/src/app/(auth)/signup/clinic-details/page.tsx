@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth-config'
 import { getClinicMemberships } from '@/db/queries/clinic-membership'
 import { isPlatformAdminSession } from '@/lib/clinic-placeholder'
+import { signupReferralDefaults } from '@/lib/referral/signup-default'
 import { ClinicDetailsForm } from './clinic-details-form'
 
 /**
@@ -15,19 +16,22 @@ import { ClinicDetailsForm } from './clinic-details-form'
  * once. Accounts that were in a clinic before, and platform admins, still
  * get the form.
  */
-export default async function ClinicDetailsPage() {
+export default async function ClinicDetailsPage({ searchParams }: { searchParams: Promise<{ ref?: string | string[] }> }) {
   const session = await auth()
   const memberships = session?.user?.id
     ? await getClinicMemberships(session.user.id)
     : { liveTenantIds: [], suspendedOnly: false, neverMember: false }
   const hasClinic = memberships.liveTenantIds.length > 0
   const isPlatformAdmin = isPlatformAdminSession(session)
+  const { referralEnabled, defaultReferralCode } = await signupReferralDefaults(searchParams)
 
   return (
     <ClinicDetailsForm
       hasClinic={hasClinic}
       suspended={memberships.suspendedOnly}
       autoStart={memberships.neverMember && !isPlatformAdmin}
+      referralEnabled={referralEnabled}
+      defaultReferralCode={defaultReferralCode}
     />
   )
 }

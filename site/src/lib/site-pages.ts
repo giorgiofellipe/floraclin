@@ -182,8 +182,13 @@ export const SITE_PAGES: readonly SitePage[] = [
   },
 ];
 
-/** Routes that exist under src/app but must stay out of the sitemap. */
-export const NON_INDEXABLE_ROUTES: readonly string[] = ["/motion-lab"];
+/**
+ * Routes that exist under src/app but must stay out of the registry.
+ * `/indique` is added to the sitemap only while the referral program is
+ * published (see sitemap.ts); `/indicacao/[code]` is a per-referrer landing
+ * that renders the home page and is never indexed.
+ */
+export const NON_INDEXABLE_ROUTES: readonly string[] = ["/motion-lab", "/indique", "/indicacao/[code]"];
 
 /** Guides and comparisons, in the order the footer lists them. */
 export const CONTENT_PAGES = SITE_PAGES.filter((page) => page.llmsSection === "Guias e comparativos");

@@ -6,7 +6,7 @@ import { CalendarClockIcon } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { brEndPhrase } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { PlanCards, QUIET_ACTION_CLASS, TrialRecapTiles, TrustRow, usePlanCheckout } from '@/components/layout/plan-checkout'
+import { PlanCards, QUIET_ACTION_CLASS, ReferralBadge, TrialRecapTiles, TrustRow, usePlanCheckout } from '@/components/layout/plan-checkout'
 import { useSubscriptionAccess } from '@/components/layout/subscription-access'
 
 /** Per trial end, not per clinic: an admin extension moves the end, so the
@@ -58,7 +58,7 @@ function markSeen(tenantId: string, trialEndsAt: string) {
 }
 
 export function TrialEndingModal() {
-  const { tenantId, trialEndsAt, recap, plans, canSubscribe, readOnly } = useSubscriptionAccess()
+  const { tenantId, trialEndsAt, recap, plans, canSubscribe, readOnly, referral } = useSubscriptionAccess()
   const pathname = usePathname()
   const popupRef = useRef<HTMLDivElement>(null)
   const { pending, subscribe } = usePlanCheckout()
@@ -102,7 +102,9 @@ export function TrialEndingModal() {
 
         <TrialRecapTiles recap={recap} title="O que você já montou no teste" />
 
-        <PlanCards plans={plans} offer={null} canSubscribe={canSubscribe} pending={pending} onSubscribe={subscribe} />
+        <ReferralBadge offer={referral} />
+
+        <PlanCards plans={plans} offer={referral} canSubscribe={canSubscribe} pending={pending} onSubscribe={subscribe} />
 
         {!canSubscribe && (
           <p className="text-center text-sm text-charcoal">

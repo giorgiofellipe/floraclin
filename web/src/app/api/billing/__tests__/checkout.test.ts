@@ -34,6 +34,17 @@ vi.mock('@/lib/stripe', () => ({
 vi.mock('@/db/queries/trial-recap', () => ({
   getTrialUsage: vi.fn(async () => ({ hasPatient: true, hasAppointment: true })),
 }))
+vi.mock('@/db/client', () => ({ db: {} }))
+vi.mock('@/db/queries/referrals', () => ({
+  getReferralAttribution: vi.fn(async () => null),
+  loadCandidateTenants: vi.fn(),
+  loadTenantSignals: vi.fn(),
+  markReferralIneligible: vi.fn(),
+}))
+vi.mock('@/lib/referral/offer', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/referral/offer')>()),
+  getValidatedReferralOffer: vi.fn(async () => null),
+}))
 vi.mock('@/db/queries/subscriptions', () => ({
   getSubscription: vi.fn(),
   getPlanBySlug: vi.fn(),
@@ -55,6 +66,8 @@ import {
   updateSubscriptionPlan,
   updateSubscriptionStatus,
 } from '@/db/queries/subscriptions'
+import { getReferralAttribution } from '@/db/queries/referrals'
+import { getValidatedReferralOffer } from '@/lib/referral/offer'
 import { POST } from '../checkout/route'
 
 const PRO_PLAN = {
@@ -128,7 +141,7 @@ describe('POST /api/billing/checkout', () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ url: 'https://checkout.stripe.com/cs_1' })
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null }))
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null, referralId: null }))
     expect(updateSubscriptionPrice).not.toHaveBeenCalled()
   })
 
@@ -217,7 +230,7 @@ describe('POST /api/billing/checkout', () => {
     const res = await POST(request())
 
     expect(res.status).toBe(200)
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_1', expect.objectContaining({ promotionCodeId: null }))
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_1', expect.objectContaining({ promotionCodeId: null, referralId: null }))
     expect(updateSubscriptionPrice).not.toHaveBeenCalled()
   })
 
@@ -288,7 +301,11 @@ describe('POST /api/billing/checkout', () => {
     const res = await POST(request('pro'))
 
     expect(res.status).toBe(200)
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: 'promo_winback' }))
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+      promotionCodeId: 'promo_winback',
+      discountKind: 'winback',
+      referralId: null,
+    }))
   })
 
   it("charges full price when the clinic's Stripe customer has paid before (first-time-only code)", async () => {
@@ -307,7 +324,7 @@ describe('POST /api/billing/checkout', () => {
     await POST(request('pro'))
 
     expect(customerHasPriorPurchase).toHaveBeenCalledWith('cus_old', expect.any(Date))
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_old', expect.objectContaining({ promotionCodeId: null }))
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_old', expect.objectContaining({ promotionCodeId: null, referralId: null }))
   })
 
   it('charges full price when the plan is under the code minimum amount', async () => {
@@ -332,7 +349,7 @@ describe('POST /api/billing/checkout', () => {
 
     await POST(request('pro'))
 
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null }))
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null, referralId: null }))
   })
 
   it.each([
@@ -354,7 +371,7 @@ describe('POST /api/billing/checkout', () => {
     await POST(request('pro'))
 
     expect(getTrialUsage).toHaveBeenCalledWith('tenant-1')
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null }))
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null, referralId: null }))
   })
 
   it('charges full price when Stripe says the win-back code is no longer usable', async () => {
@@ -371,7 +388,7 @@ describe('POST /api/billing/checkout', () => {
 
     await POST(request('pro'))
 
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null }))
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null, referralId: null }))
   })
 
   it('charges full price for a plan the win-back coupon does not cover', async () => {
@@ -396,7 +413,7 @@ describe('POST /api/billing/checkout', () => {
 
     await POST(request('pro'))
 
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null }))
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null, referralId: null }))
   })
 
   it('still applies the code to a plan a restricted coupon covers', async () => {
@@ -421,6 +438,108 @@ describe('POST /api/billing/checkout', () => {
 
     await POST(request('pro'))
 
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: 'promo_winback' }))
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+      promotionCodeId: 'promo_winback',
+      discountKind: 'winback',
+      referralId: null,
+    }))
+  })
+
+  describe('referral welcome coupon', () => {
+    const ATTRIBUTION = {
+      id: 'ref-1',
+      status: 'trial',
+      stripeSubscriptionId: null,
+      referrerTenantId: 'tenant-9',
+      referrerName: 'Clínica Bela',
+    }
+    const REFERRAL_OFFER = { promotionCodeId: 'promo_referral', referralId: 'ref-1' }
+
+    function switchOn() {
+      vi.stubEnv('REFERRAL_ENROLLMENT_ENABLED', 'true')
+      vi.stubEnv('STRIPE_REFERRAL_PROMOTION_CODE_ID', 'promo_referral')
+      vi.stubEnv('STRIPE_REFERRER_COUPON_IDS', 'c20,c40,c60,c80,c100')
+    }
+
+    function expiredTrial() {
+      vi.mocked(getSubscription).mockResolvedValue({
+        ...NO_SUBSCRIPTION,
+        status: 'expired',
+        source: 'trial',
+        firstPaidAt: null,
+        currentPeriodEnd: new Date(Date.now() - 60 * 60 * 1000),
+      } as never)
+    }
+
+    it('lets the win-back code win and still records the referral id', async () => {
+      switchOn()
+      vi.stubEnv('STRIPE_WINBACK_PROMOTION_CODE_ID', 'promo_winback')
+      vi.mocked(getReferralAttribution).mockResolvedValue(ATTRIBUTION as never)
+      expiredTrial()
+
+      await POST(request('pro'))
+
+      expect(getValidatedReferralOffer).not.toHaveBeenCalled()
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+        promotionCodeId: 'promo_winback',
+        discountKind: 'winback',
+        referralId: 'ref-1',
+      }))
+    })
+
+    it('applies the referral code when the clinic is not eligible for the win-back', async () => {
+      switchOn()
+      vi.mocked(getReferralAttribution).mockResolvedValue(ATTRIBUTION as never)
+      vi.mocked(getValidatedReferralOffer).mockResolvedValue(REFERRAL_OFFER as never)
+
+      await POST(request('pro'))
+
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+        promotionCodeId: 'promo_referral',
+        discountKind: 'referral',
+        referralId: 'ref-1',
+      }))
+    })
+
+    it('reads the attribution once and hands it to the offer', async () => {
+      switchOn()
+      vi.mocked(getReferralAttribution).mockResolvedValue(ATTRIBUTION as never)
+
+      await POST(request('pro'))
+
+      expect(getReferralAttribution).toHaveBeenCalledTimes(1)
+      expect(getValidatedReferralOffer).toHaveBeenCalledWith(
+        NO_SUBSCRIPTION,
+        [PRO_PLAN],
+        undefined,
+        undefined,
+        undefined,
+        { attribution: ATTRIBUTION },
+      )
+    })
+
+    it('makes no referral call at all with the switch off', async () => {
+      vi.mocked(getReferralAttribution).mockResolvedValue(ATTRIBUTION as never)
+
+      await POST(request('pro'))
+
+      expect(getReferralAttribution).not.toHaveBeenCalled()
+      expect(getValidatedReferralOffer).not.toHaveBeenCalled()
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+        promotionCodeId: null,
+        referralId: null,
+      }))
+    })
+
+    it('never looks at referrals when switching plans', async () => {
+      switchOn()
+      vi.mocked(getSubscription).mockResolvedValue(STARTER_ACTIVE as never)
+
+      await POST(request('pro'))
+
+      expect(updateSubscriptionPrice).toHaveBeenCalled()
+      expect(getReferralAttribution).not.toHaveBeenCalled()
+      expect(getValidatedReferralOffer).not.toHaveBeenCalled()
+    })
   })
 })

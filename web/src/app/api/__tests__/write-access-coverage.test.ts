@@ -145,6 +145,7 @@ const EXEMPT_MUTATING_ROUTES: Record<string, string> = {
   'billing/confirm/route.ts': 'billing is the way out of an expired subscription',
   'billing/reactivate/route.ts': 'billing is the way out of an expired subscription',
   'billing/portal/route.ts': 'billing is the way out of an expired subscription',
+  'referral/attach/route.ts': 'billing-page referral code entry, used before the first payment (including after the trial expired)',
 
   // POST-shaped but mutates nothing: it lists a business portfolio's pixels
   // from the Graph API. It is a POST only so the caller's access token travels
@@ -161,6 +162,7 @@ const EXEMPT_MUTATING_ROUTES: Record<string, string> = {
   'admin/impersonate/route.ts': 'platform-admin only',
   'admin/plans/[id]/route.ts': 'platform-admin only',
   'admin/plans/route.ts': 'platform-admin only',
+  'admin/referrals/[id]/ineligible/route.ts': 'platform-admin only',
   'admin/subscriptions/[tenantId]/extend-trial/route.ts': 'platform-admin only',
   'admin/subscriptions/[tenantId]/gift/route.ts': 'platform-admin only',
   'admin/subscriptions/[tenantId]/route.ts': 'platform-admin only',

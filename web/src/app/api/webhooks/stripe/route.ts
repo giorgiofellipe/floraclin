@@ -15,6 +15,8 @@ import { handleApiError } from '@/lib/api-error'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { scheduleSubscribeConversion } from '@/lib/meta/platform-conversions'
 
+import { handleReferralStripeEvent } from '@/lib/referral/events'
+
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
@@ -55,7 +57,14 @@ export async function POST(request: NextRequest) {
       case 'customer.subscription.deleted':
         await handleSubscriptionDeleted(event.data.object as Stripe.Subscription)
         break
+      // Nothing for the local row; the referral program reads these below.
+      case 'invoice.created':
+      case 'charge.dispute.created':
+        break
     }
+
+    // After the local handlers, so the row referral code reads is current.
+    await handleReferralStripeEvent(event)
   } catch (err) {
     return handleApiError(err, request, { body: { error: 'Webhook handler failed' } })
   }
