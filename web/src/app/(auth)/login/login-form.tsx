@@ -118,7 +118,6 @@ export function LoginForm({
           />
           {lastLogin === 'google' && <LastUsedBadge />}
         </div>
-        <SignupTermsNotice lead="Se for o seu primeiro acesso com Google, ao criar a conta" />
 
         {/* Separator */}
         <div className="relative my-6">
@@ -201,6 +200,7 @@ export function LoginForm({
             Criar conta
           </Link>
         </p>
+        <SignupTermsNotice lead="Ao acessar ou criar a conta" />
       </div>
     </div>
   )

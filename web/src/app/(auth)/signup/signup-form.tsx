@@ -59,7 +59,7 @@ export function SignUpForm({ inAppBrowser, utm = {} }: { inAppBrowser: InAppBrow
           emailInputId="email"
           onAttempt={() => markStarted('google')}
         />
-        <SignupTermsNotice lead="Ao criar sua conta, com e-mail ou Google" />
+        <SignupTermsNotice lead="Ao criar sua conta, com e-mail ou Google" withAdsNotice />
 
         {/* Separator */}
         <div className="relative my-6">
