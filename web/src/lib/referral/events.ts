@@ -23,13 +23,13 @@ export interface ReferralEventDeps {
   sync: typeof syncReferrerReward
   findByStripeSub: typeof findReferralByStripeSubscription
   findByReferred: typeof getReferralByReferredTenant
-  bindSubscription: typeof bindReferralSubscription // P-21
+  bindSubscription: typeof bindReferralSubscription
   tenantBySub: typeof getTenantIdByStripeSubscription
   tenantByCustomer: typeof getTenantIdByStripeCustomer
   isReferrer: typeof isReferrer
   disputeTarget: typeof retrieveDisputeTarget
   findEarliestSubscription: typeof findEarliestSubscriptionId
-  listUnits: typeof listReconcileUnits // P-23
+  listUnits: typeof listReconcileUnits
   markReconciled: typeof markReferralsReconciled
   report: typeof reportSideEffectFailure
 }
@@ -101,7 +101,7 @@ export async function handleReferralStripeEvent(
       const referral = await d.findByReferred(tenantId)
       const customerId = idOf(session.customer)
       if (referral && session.mode === 'subscription' && customerId) {
-        // P-21: the customer's earliest subscription, as refreshReferral binds; never just this session's,
+        // The customer's earliest subscription, as refreshReferral binds; never just this session's,
         // which may be a replacement whose webhook beat the first one's.
         const earliest = await d.findEarliestSubscription(customerId)
         if (earliest) await d.bindSubscription(referral.id, earliest)
@@ -150,7 +150,7 @@ export async function handleReferralStripeEvent(
       if (!tenantId) return
       const referral = await d.findByReferred(tenantId)
       if (!referral) return
-      // §5.3: only a dispute on an invoice of the referred subscription disqualifies.
+      // Only a dispute on an invoice of the referred subscription disqualifies.
       if (!subscriptionId) {
         d.report(new Error('dispute subscription unresolved'), {
           area: 'referral',
@@ -177,7 +177,7 @@ export interface ReconcileResult {
   skipped: number
 }
 
-/** P-23 / M7: per-referrer units, least recently reconciled first, deadline checked before each unit. */
+/** Per-referrer units, least recently reconciled first, deadline checked before each unit. */
 export async function reconcileReferrals(
   opts: { now?: Date; deadlineAt?: number } = {},
   deps: Partial<ReferralEventDeps> = {},
@@ -193,7 +193,11 @@ export async function reconcileReferrals(
       break
     }
     const unit = units[i]
+    const attempted: string[] = []
     for (const referralId of unit.referralIds) {
+      // At least one referral per unit per run, so a huge referrer still makes progress.
+      if (attempted.length > 0 && opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt) break
+      attempted.push(referralId)
       try {
         await d.refresh(referralId)
         result.refreshed++
@@ -211,9 +215,13 @@ export async function reconcileReferrals(
       d.report(error, { area: 'referral', step: 'reconcile_sync', extra: { referrerTenantId: unit.referrerTenantId } })
     }
     try {
-      await d.markReconciled(unit.referralIds, opts.now ?? new Date())
+      await d.markReconciled(attempted, opts.now ?? new Date())
     } catch (error) {
       d.report(error, { area: 'referral', step: 'reconcile_mark', extra: { referrerTenantId: unit.referrerTenantId } })
+    }
+    if (attempted.length < unit.referralIds.length) {
+      result.skipped = units.length - i
+      break
     }
   }
   return result

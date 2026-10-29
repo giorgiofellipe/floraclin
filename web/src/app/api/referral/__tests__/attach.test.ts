@@ -4,11 +4,13 @@ vi.mock('@/lib/auth', () => ({ getAuthContext: vi.fn() }))
 vi.mock('@/db/queries/subscriptions', () => ({ getSubscription: vi.fn() }))
 vi.mock('@/lib/referral/config', () => ({ isReferralEnrollmentEnabled: vi.fn() }))
 vi.mock('@/lib/referral/attribution', () => ({ attributeReferral: vi.fn() }))
+vi.mock('@/lib/stripe', () => ({ prepareReferralAttach: vi.fn() }))
 
 import { getAuthContext } from '@/lib/auth'
 import { getSubscription } from '@/db/queries/subscriptions'
 import { isReferralEnrollmentEnabled } from '@/lib/referral/config'
 import { attributeReferral, type AttributionResult } from '@/lib/referral/attribution'
+import { prepareReferralAttach } from '@/lib/stripe'
 import { POST } from '../attach/route'
 
 const request = (body: unknown = { code: 'MECA7K' }) =>
@@ -19,6 +21,7 @@ beforeEach(() => {
   vi.mocked(getAuthContext).mockResolvedValue({ tenantId: 'tenant-1', userId: 'u1', role: 'owner' } as never)
   vi.mocked(isReferralEnrollmentEnabled).mockReturnValue(true)
   vi.mocked(getSubscription).mockResolvedValue({ firstPaidAt: null, stripeSubscriptionId: null } as never)
+  vi.mocked(prepareReferralAttach).mockResolvedValue({ hasSubscription: false })
 })
 
 describe('POST /api/referral/attach', () => {
@@ -31,6 +34,13 @@ describe('POST /api/referral/attach', () => {
   it('404 with the switch off', async () => {
     vi.mocked(isReferralEnrollmentEnabled).mockReturnValue(false)
     expect((await POST(request())).status).toBe(404)
+    expect(attributeReferral).not.toHaveBeenCalled()
+  })
+
+  it('400 when Stripe already has a subscription whose webhook has not landed yet', async () => {
+    vi.mocked(prepareReferralAttach).mockResolvedValue({ hasSubscription: true })
+    const res = await POST(request())
+    expect(res.status).toBe(400)
     expect(attributeReferral).not.toHaveBeenCalled()
   })
 

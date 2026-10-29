@@ -6,7 +6,8 @@ import { normalizeReferralCode, shortClinicName } from '@/lib/referral/rules'
 import { clientIpKey, createRateLimiter } from '@/lib/rate-limit'
 import { CODE_LOOKUPS_PER_MINUTE } from '@/lib/referral/custom-code'
 
-const CACHE_CONTROL = 'public, s-maxage=300, stale-while-revalidate=600'
+// Short: a referrer who stops paying must not keep a 20% banner up for long.
+const CACHE_CONTROL = 'public, s-maxage=60, stale-while-revalidate=60'
 
 // Public and used by the signup field as the user types, so it is guessable by design. The CDN cache absorbs
 // repeats; this caps cache misses per client per instance. The answer never says more than active/inactive and

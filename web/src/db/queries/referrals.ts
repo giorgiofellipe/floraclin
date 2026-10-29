@@ -279,6 +279,12 @@ export async function getReferralSummary(
   return row ? { ...row, status: row.status as ReferralStatus } : null
 }
 
+/** Tenant id → clinic name, deleted tenants included. */
+export async function getTenantNames(ids: string[]): Promise<Record<string, string>> {
+  const rows = await db.select({ id: tenants.id, name: tenants.name }).from(tenants).where(inArray(tenants.id, ids))
+  return Object.fromEntries(rows.map((row) => [row.id, row.name]))
+}
+
 export async function getReferralByReferredTenant(referredTenantId: string): Promise<TenantReferral | null> {
   const [row] = await db
     .select()
@@ -331,7 +337,7 @@ function mergeChecks(checks: ReferralChecks | undefined) {
     : {}
 }
 
-/** Optimistic write (P-22): bumps `version`, applies only if `version` still equals `expectedVersion`. `checks` is merged (jsonb ||). */
+/** Optimistic write: bumps `version`, applies only if `version` still equals `expectedVersion`. `checks` is merged (jsonb ||). */
 export async function updateReferralState(
   id: string,
   expectedVersion: number,
@@ -372,6 +378,7 @@ export async function markReferralIneligible(
       status: 'ineligible',
       ineligibleReason: reason,
       pausedReason: null,
+      endedAt: sql`coalesce(${tenantReferrals.endedAt}, now())`,
       ...mergeChecks(patch),
       version: sql`${tenantReferrals.version} + 1`,
       updatedAt: sql`now()`,
@@ -381,7 +388,7 @@ export async function markReferralIneligible(
   return row ?? null
 }
 
-/** P-21: sets stripe_subscription_id only while it is null. Returns the bound id afterwards (the existing one when already bound). */
+/** Sets stripe_subscription_id only while it is null. Returns the bound id afterwards (the existing one when already bound). */
 export async function bindReferralSubscription(id: string, stripeSubscriptionId: string): Promise<string | null> {
   const [bound] = await db
     .update(tenantReferrals)
@@ -407,7 +414,7 @@ export interface ReferralContext {
   referral: TenantReferral
   referredDeleted: boolean
   referredSignupAt: Date // tenants.created_at
-  // referredSub.stripeSubscriptionId is for localTrialEnded only; it is NEVER used as the referral's subscription (P-21)
+  // referredSub.stripeSubscriptionId is for localTrialEnded only; it is NEVER used as the referral's subscription
   referredSub: null | {
     source: string
     status: string
@@ -757,7 +764,7 @@ export async function isReferrer(tenantId: string): Promise<boolean> {
 }
 
 /**
- * P-18. One transaction holding a per-referrer advisory lock; lock_timeout makes a stuck holder throw instead of
+ * One transaction holding a per-referrer advisory lock; lock_timeout makes a stuck holder throw instead of
  * hanging the webhook. `fn` must do ALL its DB access through `tx` (one pooled connection per sync).
  */
 export async function withReferrerRewardLock<T>(
@@ -921,10 +928,11 @@ export async function getTenantReferralAdminView(tenantId: string): Promise<{
 // ── reconcile / webhook lookups ──
 
 /**
- * P-23. One unit per referrer: referrers with a non-terminal referral (referralIds = those referrals), plus
+ * One unit per referrer: referrers with a non-terminal referral (referralIds = those referrals), plus
  * referrers whose latest event has discount_percent > 0 or bonus_credits > 0 (referralIds may be []).
  * Never-reconciled units (any referral with null reconciled_at, and event-only units) come first, then the
- * least recently reconciled, then referrer id.
+ * least recently reconciled, then referrer id. Within a unit, referrals also run least recently reconciled
+ * first, so a run cut mid-unit resumes with the ones it did not reach.
  */
 export async function listReconcileUnits(): Promise<Array<{ referrerTenantId: string; referralIds: string[] }>> {
   const referralRows = await db
@@ -935,6 +943,7 @@ export async function listReconcileUnits(): Promise<Array<{ referrerTenantId: st
     })
     .from(tenantReferrals)
     .where(notInArray(tenantReferrals.status, TERMINAL_STATUSES))
+    .orderBy(sql`${tenantReferrals.reconciledAt} asc nulls first`, tenantReferrals.id)
 
   const eventRows = rowsFromExecuteResult<{ referrer_tenant_id: string }>(
     await db.execute(sql`

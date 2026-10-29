@@ -7,6 +7,7 @@ const m = vi.hoisted(() => ({
   markReferralIneligible: vi.fn(),
   createAuditLog: vi.fn(),
   syncReferrerReward: vi.fn(),
+  announce: vi.fn(),
   captureException: vi.fn(() => 'evt'),
 }))
 
@@ -18,6 +19,7 @@ vi.mock('@/db/queries/referrals', () => ({
 }))
 vi.mock('@/lib/audit', () => ({ createAuditLog: m.createAuditLog }))
 vi.mock('@/lib/referral/reward', () => ({ syncReferrerReward: m.syncReferrerReward }))
+vi.mock('@/lib/referral/announce', () => ({ announceReferralStatusChange: m.announce }))
 
 import { POST } from '../route'
 
@@ -60,6 +62,7 @@ describe('POST /api/admin/referrals/[id]/ineligible', () => {
     expect(await res.json()).toEqual({ data: { status: 'ineligible' } })
     expect(order).toEqual(['mark', 'audit', 'sync'])
     expect(m.markReferralIneligible).toHaveBeenCalledWith('r1', 'admin', 'fraude')
+    expect(m.announce).toHaveBeenCalledWith(ROW, { ...ROW, status: 'ineligible' }, { note: 'fraude' })
     expect(m.createAuditLog).toHaveBeenCalledWith({
       tenantId: 'red-1',
       userId: 'admin-1',
@@ -102,10 +105,11 @@ describe('POST /api/admin/referrals/[id]/ineligible', () => {
     expect(m.syncReferrerReward).not.toHaveBeenCalled()
   })
 
-  it('answers 500 when the sync throws, with the mark and audit already done', async () => {
+  it('answers 200 and reports when the sync throws, with the mark and audit already done', async () => {
     m.syncReferrerReward.mockRejectedValue(new Error('stripe down'))
     const res = await post()
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(200)
+    expect(m.captureException).toHaveBeenCalledTimes(1)
     expect(m.markReferralIneligible).toHaveBeenCalledTimes(1)
     expect(m.createAuditLog).toHaveBeenCalledTimes(1)
   })

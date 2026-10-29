@@ -4,6 +4,7 @@ vi.mock('@/db/queries/referrals', () => ({
   countCountingReferrals: vi.fn(),
   getReferralSummary: vi.fn(),
   getReferrerBilling: vi.fn(),
+  getTenantNames: vi.fn(),
   recordRewardStateIfChanged: vi.fn(),
   withReferrerRewardLock: vi.fn(),
 }))
@@ -14,6 +15,7 @@ vi.mock('@/lib/stripe', () => ({
   retrieveSubscriptionOrMissing: vi.fn(),
   updateInvoiceDiscounts: vi.fn(),
   updateSubscriptionDiscounts: vi.fn(),
+  referrerCouponsMatchTerms: vi.fn(),
 }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 vi.mock('../emails', () => ({ sendReferralRewardEmail: vi.fn() }))
@@ -83,6 +85,9 @@ function makeDeps(over: Record<string, unknown> = {}) {
     notify: vi.fn().mockResolvedValue(undefined),
     getReferral: vi.fn().mockResolvedValue({ id: 'r1', referredName: 'Flor', status: 'counting' }),
     report: vi.fn(),
+    tenantNames: vi.fn().mockResolvedValue({ ref1: 'Clínica Mãe' }),
+    notifyDiscord: vi.fn().mockResolvedValue(undefined),
+    couponsMatchTerms: vi.fn().mockResolvedValue(true),
     ...over,
   }
   return deps
@@ -102,6 +107,14 @@ describe('syncReferrerReward', () => {
     expect(deps.countCounting).not.toHaveBeenCalled()
     expect(deps.retrieveSubscription).not.toHaveBeenCalled()
     expect(deps.recordState).not.toHaveBeenCalled()
+  })
+
+  it('touches nothing and reports when the coupon ids do not match their percents in Stripe', async () => {
+    const deps = makeDeps({ couponsMatchTerms: vi.fn().mockResolvedValue(false) })
+    expect(await run(deps)).toEqual({ skipped: 'misconfigured' })
+    expect(deps.withLock).not.toHaveBeenCalled()
+    expect(deps.updateSubscriptionDiscounts).not.toHaveBeenCalled()
+    expect(deps.report).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ step: 'referrer_coupons_misconfigured' }))
   })
 
   it('applies 40% for 2 counting, records the event and notifies after the lock resolved', async () => {
@@ -191,7 +204,7 @@ describe('syncReferrerReward', () => {
     expect(result).toMatchObject({ bonusTarget: 0 })
   })
 
-  it('H2: a stale local period end does not drop the coupon or touch the draft', async () => {
+  it('a stale local period end does not drop the coupon or touch the draft', async () => {
     const deps = makeDeps({
       getBilling: vi.fn().mockResolvedValue(billing({ currentPeriodEnd: new Date('2026-10-01T00:00:00Z') })),
       retrieveSubscription: vi.fn().mockResolvedValue(sub({ discounts: [discount('di_1', 'id40')] })),
@@ -203,7 +216,7 @@ describe('syncReferrerReward', () => {
     expect(result).toMatchObject({ targetPercent: 40, eligible: true })
   })
 
-  it('H3: a yearly subscription loses our coupon, on the sub and the open draft', async () => {
+  it('a yearly subscription loses our coupon, on the sub and the open draft', async () => {
     const deps = makeDeps({
       retrieveSubscription: vi.fn().mockResolvedValue(yearlySub([discount('di_1', 'id40')])),
       listOpenDrafts: vi.fn().mockResolvedValue([draft('in_1', [discount('di_2', 'id40')])]),
@@ -244,7 +257,7 @@ describe('syncReferrerReward', () => {
     )
   })
 
-  it('H4: judges each draft by its own creation instant after the program end', async () => {
+  it('judges each draft by its own creation instant after the program end', async () => {
     const end = new Date('2026-10-21T14:00:00.000Z')
     const sec = (d: Date) => Math.floor(d.getTime() / 1000)
     const before = draft('in_before', [discount('di_b', 'id40')], { created: sec(new Date(end.getTime() - 10 * 60_000)) })
@@ -262,7 +275,7 @@ describe('syncReferrerReward', () => {
     expect(result).toMatchObject({ targetPercent: 0, bonusTarget: 0 })
   })
 
-  it('H5: repairs an open draft when a later referral starts counting', async () => {
+  it('repairs an open draft when a later referral starts counting', async () => {
     const deps = makeDeps({
       retrieveSubscription: vi.fn().mockResolvedValue(sub({ discounts: [discount('di_1', 'id40')] })),
       listOpenDrafts: vi.fn().mockResolvedValue([draft('in_1', [discount('di_2', 'id20')])]),
@@ -310,7 +323,7 @@ describe('syncReferrerReward', () => {
     await expect(run(boom)).rejects.toThrow('stripe down')
   })
 
-  it('H6: 20 → 40 → 20 issues three subscription updates, none with an idempotency key', async () => {
+  it('20 → 40 → 20 issues three subscription updates, none with an idempotency key', async () => {
     const deps = makeDeps()
     const holding: Array<string | null> = [null, 'id20', 'id40']
     for (const [i, n] of [1, 2, 1].entries()) {
@@ -326,7 +339,7 @@ describe('syncReferrerReward', () => {
     ])
   })
 
-  describe('H1 serialization', () => {
+  describe('serialization under the reward lock', () => {
     function mutexLock() {
       const tails = new Map<string, Promise<unknown>>()
       return async <T,>(id: string, fn: (tx: DbExecutor) => Promise<T>): Promise<T> => {
@@ -397,10 +410,40 @@ describe('syncReferrerReward', () => {
 
   it('does not notify when only the subscription id changed', async () => {
     const deps = makeDeps({
-      recordState: vi.fn().mockResolvedValue({ inserted: true, previous: { discountPercent: 40, bonusCredits: 0 } }),
+      recordState: vi
+        .fn()
+        .mockResolvedValue({ inserted: true, previous: { counting: 2, discountPercent: 40, bonusCredits: 0 } }),
     })
     await run(deps)
     expect(deps.notify).not.toHaveBeenCalled()
+    expect(deps.notifyDiscord).not.toHaveBeenCalled()
+  })
+
+  it('posts the reward change to Discord once, after the lock resolved', async () => {
+    const order: string[] = []
+    const deps = makeDeps({
+      withLock: vi.fn(async (_id: string, fn: (tx: DbExecutor) => Promise<unknown>) => {
+        const r = await fn(fakeTx)
+        order.push('lock-resolved')
+        return r
+      }) as never,
+      recordState: vi
+        .fn()
+        .mockResolvedValue({ inserted: true, previous: { counting: 1, discountPercent: 20, bonusCredits: 0 } }),
+      notifyDiscord: vi.fn(async () => {
+        order.push('discord')
+      }),
+    })
+    await run(deps)
+    expect(deps.notifyDiscord).toHaveBeenCalledTimes(1)
+    expect(deps.notifyDiscord).toHaveBeenCalledWith({
+      kind: 'referral.reward_changed',
+      referrerName: 'Clínica Mãe',
+      referrerTenantId: 'ref1',
+      previous: { counting: 1, discountPercent: 20, bonusCredits: 0 },
+      current: { counting: 2, discountPercent: 40, bonusCredits: 0 },
+    })
+    expect(order).toEqual(['lock-resolved', 'discord'])
   })
 
   it('still syncs with the enrollment switch off', async () => {

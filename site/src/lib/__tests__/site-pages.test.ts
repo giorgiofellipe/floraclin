@@ -41,8 +41,8 @@ describe('site page registry', () => {
     expect(SITE_PAGES.map((p) => p.path).filter((p) => !routes.has(p))).toEqual([])
   })
 
-  it('builds the sitemap from the registry with a lastModified per page', () => {
-    const entries = sitemap()
+  it('builds the sitemap from the registry with a lastModified per page', async () => {
+    const entries = await sitemap()
     expect(entries.map((e) => e.url)).toContain('https://floraclin.com.br/lgpd')
     expect(entries).toHaveLength(SITE_PAGES.length)
     expect(entries.every((e) => e.lastModified instanceof Date && !Number.isNaN(e.lastModified.getTime()))).toBe(true)

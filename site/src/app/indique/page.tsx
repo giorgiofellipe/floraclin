@@ -16,7 +16,7 @@ import {
 } from "@/lib/referral-rules";
 
 export const metadata: Metadata = {
-  title: "Indique e Ganhe FloraClin — Regras",
+  title: "Indique e Ganhe FloraClin: Regras",
   description: "Regras do programa Indique e Ganhe FloraClin: quem pode indicar, como o desconto é calculado e o que não conta.",
   alternates: { canonical: "/indique" },
 };
@@ -25,8 +25,8 @@ function formatEndDate(at: Date): string {
   return new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo" }).format(at);
 }
 
-export default function IndiquePage() {
-  if (!isReferralRulesPagePublished()) notFound();
+export default async function IndiquePage() {
+  if (!(await isReferralRulesPagePublished())) notFound();
   const endAt = referralRewardsEndAt();
 
   return (
@@ -34,7 +34,7 @@ export default function IndiquePage() {
       <Navigation />
       <main className="bg-cream min-h-screen pt-32 pb-16">
         <div className="mx-auto max-w-[720px] px-6">
-          <h1 className="text-3xl md:text-4xl mb-4">Indique e Ganhe FloraClin — Regras</h1>
+          <h1 className="text-3xl md:text-4xl mb-4">Indique e Ganhe FloraClin: Regras</h1>
           <p className="text-charcoal/50 text-sm mb-8">Última atualização: 21 de outubro de 2026</p>
 
           {endAt && (

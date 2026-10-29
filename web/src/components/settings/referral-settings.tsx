@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { ReferralDashboardResponse } from '@/lib/referral/dashboard'
 import { ReferralCodeEditor } from './referral-code-editor'
 
-const CARD = 'rounded-[3px] border border-[#E8ECEF] bg-white p-4 sm:p-5'
+const CARD = 'rounded-[3px] border border-topbar-border bg-white p-4 sm:p-5'
 
 async function copy(text: string, message: string) {
   try {
@@ -41,7 +41,7 @@ export function ReferralSettings() {
         <h3 className="text-sm font-medium text-charcoal">Seu link de indicação</h3>
         {data.link && data.shareText && data.whatsappShareUrl ? (
           <div className="mt-3 space-y-3">
-            <p className="break-all rounded-[3px] bg-[#F4F6F8] px-3 py-2 text-sm text-charcoal">{data.link}</p>
+            <p className="break-all rounded-[3px] bg-content-bg px-3 py-2 text-sm text-charcoal">{data.link}</p>
             {data.code && <ReferralCodeEditor currentCode={data.code} previousCodes={data.previousCodes} />}
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={() => copy(data.link!, 'Link copiado')}>
@@ -68,10 +68,11 @@ export function ReferralSettings() {
         <h3 className="text-sm font-medium text-charcoal">Seu progresso</h3>
         <div
           role="progressbar"
+          aria-label="Progresso de indicações"
           aria-valuemin={0}
           aria-valuemax={progress.target}
           aria-valuenow={Math.min(progress.counting, progress.target)}
-          className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[#E8ECEF]"
+          className="mt-3 h-2 w-full overflow-hidden rounded-full bg-topbar-border"
         >
           <div className="h-full bg-sage" style={{ width: `${progress.percent}%` }} />
         </div>
@@ -88,7 +89,7 @@ export function ReferralSettings() {
         {data.referrals.length === 0 ? (
           <p className="mt-2 text-sm text-mid">Nenhuma clínica indicada ainda.</p>
         ) : (
-          <ul className="mt-3 divide-y divide-[#E8ECEF]">
+          <ul className="mt-3 divide-y divide-topbar-border">
             {data.referrals.map((r) => (
               <li key={r.id} className="flex items-start justify-between gap-3 py-2">
                 <div className="min-w-0">

@@ -14,7 +14,6 @@ import {
 import { handleApiError } from '@/lib/api-error'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { scheduleSubscribeConversion } from '@/lib/meta/platform-conversions'
-
 import { handleReferralStripeEvent } from '@/lib/referral/events'
 
 export const dynamic = 'force-dynamic'
@@ -63,8 +62,13 @@ export async function POST(request: NextRequest) {
         break
     }
 
-    // After the local handlers, so the row referral code reads is current.
-    await handleReferralStripeEvent(event)
+    // After the local handlers, so the row referral code reads is current. A referral failure must not make
+    // Stripe redeliver the whole event (re-running the handlers above); the daily reconcile corrects it.
+    try {
+      await handleReferralStripeEvent(event)
+    } catch (err) {
+      reportSideEffectFailure(err, { area: 'referral', step: 'stripe_webhook', extra: { eventId: event.id, type: event.type } })
+    }
   } catch (err) {
     return handleApiError(err, request, { body: { error: 'Webhook handler failed' } })
   }

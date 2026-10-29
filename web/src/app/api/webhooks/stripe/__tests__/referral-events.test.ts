@@ -35,6 +35,7 @@ vi.mock('@/lib/referral/events', () => ({
 }))
 
 import { POST } from '../route'
+import { reportSideEffectFailure } from '@/lib/observability'
 
 function deliver(type: string, object: Record<string, unknown>) {
   const event = { type, data: { object } }
@@ -93,11 +94,12 @@ describe('stripe webhook → referral events', () => {
     expect(order).toEqual(['referral'])
   })
 
-  it('answers 500 when the referral module throws, so Stripe redelivers', async () => {
+  it('answers 200 and reports when the referral module throws, so Stripe does not redeliver the whole event', async () => {
     deliver('invoice.paid', { parent: { subscription_details: { subscription: 'sub_1' } } })
     referralMock.mockRejectedValue(new Error('lock timeout'))
 
-    expect((await post()).status).toBe(500)
+    expect((await post()).status).toBe(200)
+    expect(reportSideEffectFailure).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ area: 'referral' }))
   })
 
   it('keeps answering 200 with { received: true } when the module returns normally', async () => {

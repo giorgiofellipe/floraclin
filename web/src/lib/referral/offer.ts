@@ -12,8 +12,9 @@ import { checkPromotionCode, customerHasPriorPurchase, type PromotionCodeTerms }
 import { winbackOfferLabel } from '@/lib/winback'
 import { isReferralEnrollmentEnabled, referralPromotionCodeId } from './config'
 import { runEligibilityChecks } from './eligibility'
+import { announceReferralStatusChange } from './announce'
 import type { PublicReferralOffer } from './offer-copy'
-import { isReferralEligiblePlan } from './rules'
+import { REFERRAL_WELCOME_MONTHS, REFERRAL_WELCOME_PERCENT, isReferralEligiblePlan } from './rules'
 
 export interface ReferralOfferRow {
   tenantId: string
@@ -45,6 +46,7 @@ export interface ReferralOfferDeps {
   loadSignals: typeof loadTenantSignals
   loadCandidates: typeof loadCandidateTenants
   markIneligible: typeof markReferralIneligible
+  announce: typeof announceReferralStatusChange
   check: (promotionCodeId: string, now: Date) => Promise<PromotionCodeTerms | null>
   priorPurchase: (customerId: string, now: Date) => Promise<boolean>
   report: typeof reportSideEffectFailure
@@ -61,6 +63,7 @@ const PRODUCTION_DEPS: ReferralOfferDeps = {
   loadSignals: loadTenantSignals,
   loadCandidates: loadCandidateTenants,
   markIneligible: markReferralIneligible,
+  announce: announceReferralStatusChange,
   check: checkPromotionCode,
   priorPurchase: customerHasPriorPurchase,
   report: reportSideEffectFailure,
@@ -104,7 +107,13 @@ export async function getValidatedReferralOffer(
       { loadSignals: d.loadSignals, loadCandidates: d.loadCandidates },
     )
     if (res.verdict) {
-      await d.markIneligible(attribution.id, res.verdict, undefined, { atCheckout: res })
+      const updated = await d.markIneligible(attribution.id, res.verdict, undefined, { atCheckout: res })
+      if (updated) {
+        await d.announce(
+          { ...updated, status: attribution.status, pausedReason: null, ineligibleReason: null },
+          updated,
+        )
+      }
       return null
     }
   } catch (err) {
@@ -116,11 +125,11 @@ export async function getValidatedReferralOffer(
   if (!promotionCodeId) return null
   const terms = await d.check(promotionCodeId, now)
   if (!terms) return null
-  if (terms.productIds !== null) {
-    d.report(new Error('Referral promotion code coupon uses applies_to'), {
+  if (!matchesWelcomeTerms(terms)) {
+    d.report(new Error('Referral promotion code does not match the advertised welcome offer'), {
       area: 'referral',
       step: 'referral_promo_misconfigured',
-      extra: { promotionCodeId },
+      extra: { promotionCodeId, terms },
     })
     return null
   }
@@ -140,6 +149,18 @@ export async function getValidatedReferralOffer(
     promotionCodeId,
     referralId: attribution.id,
   }
+}
+
+/** The site and the signup copy promise exactly this; any other coupon behind the env id is a misconfiguration. */
+function matchesWelcomeTerms(terms: PromotionCodeTerms): boolean {
+  return (
+    terms.productIds === null &&
+    terms.percentOff === REFERRAL_WELCOME_PERCENT &&
+    terms.amountOffCents === null &&
+    terms.duration === 'repeating' &&
+    terms.durationInMonths === REFERRAL_WELCOME_MONTHS &&
+    terms.firstTimeTransaction
+  )
 }
 
 /** The client-safe part of the offer: the promotion code id stays server-side. */
@@ -162,7 +183,7 @@ export type CheckoutDiscountChoice =
   | { kind: 'referral'; promotionCodeId: string }
   | { kind: null; promotionCodeId: null }
 
-/** §6.2: exactly one coupon; VOLTA30 wins. */
+/** Exactly one coupon; VOLTA30 wins. */
 export function chooseCheckoutDiscount(
   winback: { promotionCodeId: string } | null,
   referral: { promotionCodeId: string } | null,

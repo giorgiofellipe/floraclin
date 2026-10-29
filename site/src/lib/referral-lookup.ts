@@ -19,22 +19,46 @@ export function referralRewardsEndAt(env: Record<string, string | undefined> = p
   return Number.isNaN(at.getTime()) ? null : at
 }
 
-/** The rules page is public while the program is on, or while it winds down (an end date is set). */
-export function isReferralRulesPagePublished(env: Record<string, string | undefined> = process.env): boolean {
-  return isReferralSiteEnabled(env) || referralRewardsEndAt(env) !== null
+type LookupOpts = { origin?: string; fetchImpl?: typeof fetch }
+
+function appOrigin(opts: LookupOpts): string {
+  return opts.origin ?? (process.env.FLORACLIN_APP_ORIGIN || APP_ORIGIN_DEFAULT)
 }
 
-/** fetch(`${origin}/api/referral/codes/${code}`, { next: { revalidate: 300 } }); any failure → { active: false }. */
+/** Whether the app has enrollment fully configured (switch, promotion code, coupons); any failure → false. */
+export async function isAppEnrollmentOpen(opts: LookupOpts = {}): Promise<boolean> {
+  try {
+    const res = await (opts.fetchImpl ?? fetch)(`${appOrigin(opts)}/api/referral/program`, { next: { revalidate: 60 } })
+    if (!res.ok) return false
+    const body: unknown = await res.json()
+    return !!body && typeof body === 'object' && (body as { enrollmentOpen?: unknown }).enrollmentOpen === true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The rules page is public while it winds down (an end date is set), or while the site switch is on and the app
+ * agrees, so a half-configured app never has the offer advertised.
+ */
+export async function isReferralRulesPagePublished(
+  env: Record<string, string | undefined> = process.env,
+  opts: LookupOpts = {},
+): Promise<boolean> {
+  if (referralRewardsEndAt(env) !== null) return true
+  return isReferralSiteEnabled(env) && (await isAppEnrollmentOpen(opts))
+}
+
+/** fetch(`${origin}/api/referral/codes/${code}`, { next: { revalidate: 60 } }); any failure → { active: false }. */
 export async function lookupReferralCode(
   code: string,
-  opts: { origin?: string; fetchImpl?: typeof fetch } = {},
+  opts: LookupOpts = {},
 ): Promise<ReferralLookupResult> {
   const normalized = normalizeReferralCode(code)
   if (!normalized) return { active: false }
-  const origin = opts.origin ?? (process.env.FLORACLIN_APP_ORIGIN || APP_ORIGIN_DEFAULT)
   const fetchImpl = opts.fetchImpl ?? fetch
   try {
-    const res = await fetchImpl(`${origin}/api/referral/codes/${normalized}`, { next: { revalidate: 300 } })
+    const res = await fetchImpl(`${appOrigin(opts)}/api/referral/codes/${normalized}`, { next: { revalidate: 60 } })
     if (!res.ok) return { active: false }
     const body: unknown = await res.json()
     if (

@@ -1,12 +1,14 @@
 import { after } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { formatCurrency } from '@/lib/utils'
+import { referralStatusLabel } from '@/lib/referral/status'
+import type { CapturedVia, IneligibleReason, PausedReason, ReferralStatus } from '@/lib/referral/types'
 
 // Notifier for two Discord channels:
 //
 // - "floraclin" (DISCORD_WEBHOOK_EVENTS): business events -- the business
 //   grew. signup.started / onboarding.completed / clinic.approved /
-//   subscription.created / lifecycle.reply.
+//   subscription.created / lifecycle.reply / referral.*.
 // - "floraclin-logs" (DISCORD_WEBHOOK_LOGS): operational digests -- code
 //   reporting on itself, e.g. the daily whatsapp-automations cron digest
 //   or lifecycle.template_not_approved.
@@ -25,6 +27,14 @@ export type WhatsappDigestFailingTenant = {
 }
 
 export type SignupMethod = 'google' | 'email'
+
+export type ReferralStatusParts = {
+  status: ReferralStatus
+  pausedReason: PausedReason | null
+  ineligibleReason: IneligibleReason | null
+}
+
+export type ReferralRewardState = { counting: number; discountPercent: number; bonusCredits: number }
 
 export type DiscordEvent =
   // Step 1 of a self sign-up: the account and its clinic exist, onboarding
@@ -62,6 +72,35 @@ export type DiscordEvent =
       /** Meta status (PENDING, REJECTED, PAUSED, ...) or MISSING. */
       status: string
     }
+  // Indique e Ganhe: a clinic was linked to its referrer, possibly already ineligible.
+  | {
+      kind: 'referral.attributed'
+      referrerName: string
+      referrerTenantId: string
+      referredName: string
+      referredTenantId: string
+      code: string
+      capturedVia: CapturedVia
+      ineligibleReason: IneligibleReason | null
+    }
+  | {
+      kind: 'referral.status_changed'
+      referrerName: string
+      referrerTenantId: string
+      referredName: string
+      referredTenantId: string
+      from: ReferralStatusParts
+      to: ReferralStatusParts
+      /** Admin note when an admin marked it ineligible. */
+      note?: string | null
+    }
+  | {
+      kind: 'referral.reward_changed'
+      referrerName: string
+      referrerTenantId: string
+      previous: ReferralRewardState | null
+      current: ReferralRewardState
+    }
   | {
       kind: 'whatsapp_automations.digest'
       tenantsProcessed: number
@@ -93,7 +132,25 @@ const COLOR_SUBSCRIPTION = 0xf59e0b
 const COLOR_DIGEST_OK = 0x4a9d5f
 const COLOR_DIGEST_ALERT = 0xef4444
 const COLOR_REPLY = 0x8b5cf6
+const COLOR_REFERRAL = 0xec4899
 const REPLY_BODY_MAX = 1000
+
+const CAPTURED_VIA_LABELS: Record<CapturedVia, string> = {
+  link: 'Link de indicação',
+  signup_field: 'Código digitado no cadastro',
+  billing_page: 'Código digitado na assinatura',
+}
+
+function statusText(parts: ReferralStatusParts): string {
+  const { label, sublabel } = referralStatusLabel(parts)
+  return sublabel ? `${label} (${sublabel})` : label
+}
+
+function changeText(previous: number | null, current: number, suffix = ''): string {
+  return previous === null || previous === current
+    ? `${current}${suffix}`
+    : `${previous}${suffix} → ${current}${suffix}`
+}
 
 function digestReasonLabel(reason: WhatsappDigestFailingTenant['reason']): string {
   switch (reason) {
@@ -223,6 +280,80 @@ export function buildDiscordPayload(event: DiscordEvent): DiscordPayload {
             fields: [
               { name: 'Clínica', value: event.tenantName, inline: true },
               { name: 'Mensagem', value: event.messageKey, inline: true },
+              { name: 'Admin', value: adminLink },
+            ],
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      }
+    }
+    case 'referral.attributed': {
+      const ineligibleFields = event.ineligibleReason
+        ? [
+            {
+              name: 'Status',
+              value: statusText({ status: 'ineligible', pausedReason: null, ineligibleReason: event.ineligibleReason }),
+            },
+          ]
+        : []
+      return {
+        username: 'FloraClin',
+        embeds: [
+          {
+            title: event.ineligibleReason
+              ? 'Indique e Ganhe: nova indicação (não elegível)'
+              : 'Indique e Ganhe: nova indicação',
+            color: event.ineligibleReason ? COLOR_DIGEST_ALERT : COLOR_REFERRAL,
+            fields: [
+              { name: 'Quem indicou', value: asInlineCode(event.referrerName), inline: true },
+              { name: 'Clínica indicada', value: asInlineCode(event.referredName), inline: true },
+              { name: 'Código', value: asInlineCode(event.code), inline: true },
+              { name: 'Origem', value: CAPTURED_VIA_LABELS[event.capturedVia], inline: true },
+              ...ineligibleFields,
+              { name: 'Admin', value: adminLink },
+            ],
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      }
+    }
+    case 'referral.status_changed': {
+      const lost = event.to.status === 'canceled' || event.to.status === 'ineligible'
+      return {
+        username: 'FloraClin',
+        embeds: [
+          {
+            title: 'Indique e Ganhe: status da indicação mudou',
+            color: lost ? COLOR_DIGEST_ALERT : COLOR_REFERRAL,
+            fields: [
+              { name: 'Quem indicou', value: asInlineCode(event.referrerName), inline: true },
+              { name: 'Clínica indicada', value: asInlineCode(event.referredName), inline: true },
+              { name: 'Status', value: `${statusText(event.from)} → ${statusText(event.to)}` },
+              ...(event.note ? [{ name: 'Observação', value: asInlineCode(event.note) }] : []),
+              { name: 'Admin', value: adminLink },
+            ],
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      }
+    }
+    case 'referral.reward_changed': {
+      const { previous, current } = event
+      return {
+        username: 'FloraClin',
+        embeds: [
+          {
+            title: 'Indique e Ganhe: recompensa atualizada',
+            color: COLOR_REFERRAL,
+            fields: [
+              { name: 'Quem indicou', value: asInlineCode(event.referrerName), inline: true },
+              { name: 'Indicações contando', value: changeText(previous?.counting ?? null, current.counting), inline: true },
+              { name: 'Desconto', value: changeText(previous?.discountPercent ?? null, current.discountPercent, '%'), inline: true },
+              {
+                name: 'Bônus WhatsApp',
+                value: changeText(previous?.bonusCredits ?? null, current.bonusCredits, ' créditos'),
+                inline: true,
+              },
               { name: 'Admin', value: adminLink },
             ],
             timestamp: new Date().toISOString(),

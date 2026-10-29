@@ -4,10 +4,13 @@ import { tenants } from '@/db/schema'
 import {
   findReferrerByCode,
   getReferralByReferredTenant,
+  getTenantNames,
   insertReferral,
   loadCandidateTenants,
   loadTenantSignals,
 } from '@/db/queries/referrals'
+import { notifyDiscord } from '@/lib/discord'
+import { reportSideEffectFailure } from '@/lib/observability'
 import { isReferralEnrollmentEnabled } from './config'
 import { runEligibilityChecks } from './eligibility'
 import { normalizeReferralCode } from './rules'
@@ -23,6 +26,9 @@ export interface AttributionDeps {
   loadCandidates: typeof loadCandidateTenants
   runChecks: typeof runEligibilityChecks
   insert: typeof insertReferral
+  tenantNames: typeof getTenantNames
+  notifyDiscord: typeof notifyDiscord
+  report: typeof reportSideEffectFailure
 }
 
 export type AttributionResult =
@@ -48,10 +54,13 @@ const defaultDeps: AttributionDeps = {
   loadCandidates: loadCandidateTenants,
   runChecks: runEligibilityChecks,
   insert: insertReferral,
+  tenantNames: getTenantNames,
+  notifyDiscord,
+  report: reportSideEffectFailure,
 }
 
 /**
- * Links a clinic to the referrer who owns `rawCode`, and snapshots the identity checks (P-12).
+ * Links a clinic to the referrer who owns `rawCode`, and snapshots the identity checks.
  * Never throws for rule reasons; callers still wrap it, because attribution must never block signup.
  */
 export async function attributeReferral(
@@ -96,17 +105,35 @@ export async function attributeReferral(
   })
   if (!row) return { outcome: 'skipped', reason: 'already_attributed' }
 
+  try {
+    const names = await deps.tenantNames([input.referredTenantId])
+    await deps.notifyDiscord({
+      kind: 'referral.attributed',
+      referrerName: referrer.name,
+      referrerTenantId: referrer.tenantId,
+      referredName: names[input.referredTenantId] ?? input.referredTenantId,
+      referredTenantId: input.referredTenantId,
+      code,
+      capturedVia: input.capturedVia,
+      ineligibleReason: res.verdict,
+    })
+  } catch (err) {
+    deps.report(err, { area: 'referral', step: 'discord_attributed', extra: { referralId: row.id } })
+  }
+
   return { outcome: 'created', referralId: row.id, status: res.verdict ? 'ineligible' : 'trial' }
 }
 
 /**
- * P-4: the typed field wins over the cookie. A malformed field does not fall back to the cookie. A field equal to the
+ * The typed field wins over the cookie. A malformed field does not fall back to the cookie. A field equal to the
  * link cookie counts as 'link' (the form pre-fills it); without the cookie the field always counts as 'signup_field'.
  */
 export function pickSignupCode(input: { field: unknown; cookie: unknown }): { code: string; via: CapturedVia } | null {
-  const typed = typeof input.field === 'string' ? input.field.trim() : ''
   const fromCookie = normalizeReferralCode(input.cookie)
-  if (typed) {
+  // The field is only in the form when shown, and a link pre-fills it: emptied on purpose means no referral.
+  if (typeof input.field === 'string') {
+    const typed = input.field.trim()
+    if (!typed) return null
     const code = normalizeReferralCode(typed)
     if (!code) return null
     // The form pre-fills the field from ?ref or the cookie; a field still matching the cookie came through the link.

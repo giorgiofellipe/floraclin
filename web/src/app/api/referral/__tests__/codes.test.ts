@@ -23,7 +23,7 @@ describe('GET /api/referral/codes/[code]', () => {
     const res = await call('meca7k')
     expect(await res.json()).toEqual({ active: true, clinicName: 'Clínica Flora' })
     expect(findReferrerByCode).toHaveBeenCalledWith('MECA7K')
-    expect(res.headers.get('Cache-Control')).toBe('public, s-maxage=300, stale-while-revalidate=600')
+    expect(res.headers.get('Cache-Control')).toBe('public, s-maxage=60, stale-while-revalidate=60')
   })
 
   it('leaves the clinic name out for ?fields=active (the signup field), still cacheable', async () => {
@@ -32,7 +32,7 @@ describe('GET /api/referral/codes/[code]', () => {
       GET(new Request(`http://localhost/api/referral/codes/meca7k${query}`), { params: Promise.resolve({ code: 'meca7k' }) })
     const res = await get('?fields=active')
     expect(await res.json()).toEqual({ active: true })
-    expect(res.headers.get('Cache-Control')).toBe('public, s-maxage=300, stale-while-revalidate=600')
+    expect(res.headers.get('Cache-Control')).toBe('public, s-maxage=60, stale-while-revalidate=60')
     expect(await (await get('?fields=other')).json()).toEqual({ active: true, clinicName: 'Clínica Flora' })
   })
 
@@ -44,7 +44,7 @@ describe('GET /api/referral/codes/[code]', () => {
     const res = await call('MECA7K')
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ active: false })
-    expect(res.headers.get('Cache-Control')).toContain('s-maxage=300')
+    expect(res.headers.get('Cache-Control')).toContain('s-maxage=60')
   })
 
   it('does not touch the DB for a malformed code', async () => {

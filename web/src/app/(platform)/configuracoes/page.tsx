@@ -1,7 +1,7 @@
 import { Suspense } from 'react'
 import type { Metadata } from 'next'
 import { getAuthContext } from '@/lib/auth'
-import { isReferralEnrollmentEnabled } from '@/lib/referral/config'
+import { isReferralDashboardVisible } from '@/lib/referral/dashboard-access'
 import { ConfiguracoesPageClientWrapper } from './configuracoes-page-client'
 import ConfiguracoesLoading from './loading'
 
@@ -23,7 +23,7 @@ export default async function ConfiguracoesPage({ searchParams }: ConfiguracoesP
         currentUserId={auth.userId}
         userRole={auth.role}
         initialTab={tab}
-        referralEnabled={isReferralEnrollmentEnabled()}
+        referralEnabled={await isReferralDashboardVisible(auth.tenantId)}
       />
     </Suspense>
   )

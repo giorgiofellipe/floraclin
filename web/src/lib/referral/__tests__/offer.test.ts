@@ -57,6 +57,7 @@ function deps(over: Partial<Record<keyof ReferralOfferDeps, unknown>> = {}) {
     loadSignals: vi.fn(),
     loadCandidates: vi.fn(),
     markIneligible: vi.fn(async () => null),
+    announce: vi.fn(async () => undefined),
     check: vi.fn(async () => TERMS),
     priorPurchase: vi.fn(async () => false),
     report: vi.fn(),
@@ -100,6 +101,15 @@ describe('getValidatedReferralOffer', () => {
     expect(d.check).not.toHaveBeenCalled()
   })
 
+  it('announces the checkout-time ineligible mark once, from the previous status', async () => {
+    const res = { selfReferral: ['email_domain'], notNew: [], verdict: 'self_referral' as const }
+    const updated = { id: 'ref-1', status: 'ineligible', ineligibleReason: 'self_referral', pausedReason: null }
+    const d = deps({ runChecks: vi.fn(async () => res), markIneligible: vi.fn(async () => updated) })
+    await run(d)
+    expect(d.announce).toHaveBeenCalledTimes(1)
+    expect(d.announce).toHaveBeenCalledWith(expect.objectContaining({ status: 'trial', ineligibleReason: null }), updated)
+  })
+
   it('fails closed and reports when the checks throw', async () => {
     const d = deps({ runChecks: vi.fn(async () => { throw new Error('db down') }) })
     expect(await run(d)).toBeNull()
@@ -137,8 +147,15 @@ describe('getValidatedReferralOffer', () => {
     expect(await run(deps({ check: vi.fn(async () => null) }))).toBeNull()
   })
 
-  it('treats a coupon with applies_to as misconfigured and reports it', async () => {
-    const d = deps({ check: vi.fn(async () => ({ ...TERMS, productIds: ['prod_1'] })) })
+  it.each<[string, Partial<PromotionCodeTerms>]>([
+    ['applies_to', { productIds: ['prod_1'] }],
+    ['another percent', { percentOff: 100 }],
+    ['an amount off', { percentOff: null, amountOffCents: 2000 }],
+    ['forever', { duration: 'forever', durationInMonths: null }],
+    ['another month count', { durationInMonths: 12 }],
+    ['no first-time restriction', { firstTimeTransaction: false }],
+  ])('treats a promotion code with %s as misconfigured and reports it', async (_n, over) => {
+    const d = deps({ check: vi.fn(async () => ({ ...TERMS, ...over })) })
     expect(await run(d)).toBeNull()
     expect(d.report).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ step: 'referral_promo_misconfigured' }))
   })

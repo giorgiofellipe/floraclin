@@ -206,6 +206,89 @@ describe('buildDiscordPayload lifecycle.reply', () => {
   })
 })
 
+describe('buildDiscordPayload referral events', () => {
+  const tenants = {
+    referrerName: '[Mãe](https://evil.example)',
+    referrerTenantId: 'referrer',
+    referredName: 'Clínica Filha',
+    referredTenantId: 'referred',
+  }
+
+  it('formats referral.attributed with names and code as inline code and the capture origin', () => {
+    const embed = buildDiscordPayload({
+      kind: 'referral.attributed',
+      ...tenants,
+      code: 'MECA7K',
+      capturedVia: 'link',
+      ineligibleReason: null,
+    }).embeds[0]
+
+    expect(embed.title).toBe('Indique e Ganhe: nova indicação')
+    expect(embed.fields.map((f) => f.name)).toEqual(['Quem indicou', 'Clínica indicada', 'Código', 'Origem', 'Admin'])
+    expect(embed.fields).toContainEqual({ name: 'Quem indicou', value: '`[Mãe](https://evil.example)`', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'Código', value: '`MECA7K`', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'Origem', value: 'Link de indicação', inline: true })
+  })
+
+  it('flags a referral.attributed created ineligible, with the reason', () => {
+    const embed = buildDiscordPayload({
+      kind: 'referral.attributed',
+      ...tenants,
+      code: 'MECA7K',
+      capturedVia: 'billing_page',
+      ineligibleReason: 'self_referral',
+    }).embeds[0]
+
+    expect(embed.title).toBe('Indique e Ganhe: nova indicação (não elegível)')
+    expect(embed.fields).toContainEqual({ name: 'Origem', value: 'Código digitado na assinatura', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'Status', value: 'não elegível (mesma clínica ou profissional)' })
+  })
+
+  it('formats referral.status_changed as from → to labels, with the admin note as inline code', () => {
+    const embed = buildDiscordPayload({
+      kind: 'referral.status_changed',
+      ...tenants,
+      from: { status: 'paused', pausedReason: 'past_due', ineligibleReason: null },
+      to: { status: 'ineligible', pausedReason: null, ineligibleReason: 'admin' },
+      note: 'mesmo CNPJ',
+    }).embeds[0]
+
+    expect(embed.title).toBe('Indique e Ganhe: status da indicação mudou')
+    expect(embed.fields).toContainEqual({
+      name: 'Status',
+      value: 'pagante (pagamento pendente) → não elegível (não atende às regras do programa)',
+    })
+    expect(embed.fields).toContainEqual({ name: 'Observação', value: '`mesmo CNPJ`' })
+  })
+
+  it('formats referral.reward_changed showing only the values that moved as old → new', () => {
+    const embed = buildDiscordPayload({
+      kind: 'referral.reward_changed',
+      referrerName: 'Clínica Mãe',
+      referrerTenantId: 'referrer',
+      previous: { counting: 4, discountPercent: 80, bonusCredits: 0 },
+      current: { counting: 5, discountPercent: 100, bonusCredits: 0 },
+    }).embeds[0]
+
+    expect(embed.title).toBe('Indique e Ganhe: recompensa atualizada')
+    expect(embed.fields).toContainEqual({ name: 'Indicações contando', value: '4 → 5', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'Desconto', value: '80% → 100%', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'Bônus WhatsApp', value: '0 créditos', inline: true })
+  })
+
+  it('formats a first referral.reward_changed with the current values only', () => {
+    const embed = buildDiscordPayload({
+      kind: 'referral.reward_changed',
+      referrerName: 'Clínica Mãe',
+      referrerTenantId: 'referrer',
+      previous: null,
+      current: { counting: 1, discountPercent: 20, bonusCredits: 0 },
+    }).embeds[0]
+
+    expect(embed.fields).toContainEqual({ name: 'Desconto', value: '20%', inline: true })
+  })
+})
+
 describe('buildDiscordPayload whatsapp_automations.digest', () => {
   it('formats a routine run as a compact one-line totals description, with no tenant list', () => {
     const payload = buildDiscordPayload({

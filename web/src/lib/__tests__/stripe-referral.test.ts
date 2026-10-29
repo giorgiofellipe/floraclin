@@ -12,14 +12,19 @@ const m = vi.hoisted(() => ({
   chargesRetrieve: vi.fn(),
   invRetrieve: vi.fn(),
   invoicePaymentsList: vi.fn(),
+  customersSearch: vi.fn(),
+  sessionsList: vi.fn(),
+  sessionsExpire: vi.fn(),
+  couponsRetrieve: vi.fn(),
 }))
 
 vi.mock('stripe', async () => {
   const actual = await vi.importActual<typeof import('stripe')>('stripe')
   class FakeStripe {
     static errors = actual.default.errors
-    customers = { create: vi.fn() }
-    checkout = { sessions: { create: m.create } }
+    customers = { create: vi.fn(), search: m.customersSearch }
+    coupons = { retrieve: m.couponsRetrieve }
+    checkout = { sessions: { create: m.create, list: m.sessionsList, expire: m.sessionsExpire } }
     subscriptions = { retrieve: m.subsRetrieve, update: m.subsUpdate, list: m.subsList }
     invoices = { list: m.invList, update: m.invUpdate, retrieve: m.invRetrieve }
     invoicePayments = { list: m.invoicePaymentsList }
@@ -43,6 +48,8 @@ import {
   combineDiscounts,
   createCheckoutSession,
   findEarliestSubscriptionId,
+  prepareReferralAttach,
+  referrerCouponsMatchTerms,
   getSubscriptionDiscount,
   listCustomerCardSightings,
   listOpenCycleDrafts,
@@ -254,6 +261,16 @@ describe('discount updates', () => {
     expect(m.invUpdate).toHaveBeenCalledWith('in_1', { discounts: [{ coupon: 'c20' }] })
     expect(m.invUpdate.mock.calls[0]).toHaveLength(2)
   })
+
+  // Seen in Stripe test mode: discounts: [] is dropped from the request and the coupon stays.
+  it("removes the last discount with '' rather than an empty array", async () => {
+    m.subsUpdate.mockResolvedValue({})
+    m.invUpdate.mockResolvedValue({})
+    await updateSubscriptionDiscounts('sub_1', [])
+    await updateInvoiceDiscounts('in_1', [])
+    expect(m.subsUpdate).toHaveBeenCalledWith('sub_1', { discounts: '', proration_behavior: 'none' })
+    expect(m.invUpdate).toHaveBeenCalledWith('in_1', { discounts: '' })
+  })
 })
 
 describe('retrieveSubscriptionOrMissing', () => {
@@ -305,5 +322,43 @@ describe('retrieveDisputeTarget', () => {
       customerId: null,
       subscriptionId: null,
     })
+  })
+})
+
+describe('prepareReferralAttach', () => {
+  const page = <T,>(items: T[]) => ({ data: items, autoPagingToArray: async () => items })
+
+  beforeEach(() => {
+    m.customersSearch.mockReturnValue(page([{ id: 'cus_found' }]))
+    m.subsList.mockResolvedValue({ data: [] })
+    m.sessionsList.mockReturnValue(page([{ id: 'cs_open' }]))
+  })
+
+  it('expires the open full-price Checkout of a customer found only by metadata', async () => {
+    expect(await prepareReferralAttach('tenant-1', null)).toEqual({ hasSubscription: false })
+    expect(m.sessionsExpire).toHaveBeenCalledWith('cs_open')
+  })
+
+  it('reports a Stripe subscription whose webhook has not landed, and expires nothing', async () => {
+    m.subsList.mockImplementation(async ({ customer }: { customer: string }) => ({ data: customer === 'cus_found' ? [{ id: 'sub_1' }] : [] }))
+    expect(await prepareReferralAttach('tenant-1', 'cus_local')).toEqual({ hasSubscription: true })
+    expect(m.sessionsExpire).not.toHaveBeenCalled()
+  })
+})
+
+describe('referrerCouponsMatchTerms', () => {
+  const byId: Record<string, number> = { c20: 20, c40: 40, c60: 60, c80: 80, c100: 100 }
+  beforeEach(() => {
+    m.couponsRetrieve.mockImplementation(async (id: string) => ({
+      id, valid: true, percent_off: byId[id], amount_off: null, duration: 'forever', applies_to: null,
+    }))
+  })
+
+  it('accepts ids in ascending percent order', async () => {
+    expect(await referrerCouponsMatchTerms({ 20: 'c20', 40: 'c40', 60: 'c60', 80: 'c80', 100: 'c100' })).toBe(true)
+  })
+
+  it('rejects swapped ids, which would give 100% off for one referral', async () => {
+    expect(await referrerCouponsMatchTerms({ 20: 'c100', 40: 'c40', 60: 'c60', 80: 'c80', 100: 'c20' })).toBe(false)
   })
 })

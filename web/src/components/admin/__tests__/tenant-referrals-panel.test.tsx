@@ -40,7 +40,7 @@ beforeEach(() => {
 })
 
 describe('TenantReferralsPanel', () => {
-  it('renders the code, referrer, rows with B1 labels, checks and reward history', async () => {
+  it('renders the code, referrer, rows with status labels, checks and reward history', async () => {
     render(<TenantReferralsPanel tenantId="t1" />)
     expect(await screen.findByText('MECA7K')).toBeTruthy()
     expect(screen.getByText('Clínica Mãe')).toBeTruthy()

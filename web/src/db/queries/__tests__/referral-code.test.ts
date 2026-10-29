@@ -8,6 +8,7 @@ vi.mock('@/lib/referral/code', async (importOriginal) => ({
   generateReferralCode: () => generated.queue.shift() ?? 'ZQQQQQQQ',
 }))
 import { db } from '@/db/client'
+import { untilAdvisoryLockWaiter } from './advisory-lock-waiter'
 import { auditLogs, referralCodeAliases, tenantReferrals, tenants, users } from '@/db/schema'
 import { MAX_PREVIOUS_REFERRAL_CODES, REFERRAL_CODE_CHANGES_PER_DAY } from '@/lib/referral/custom-code'
 import {
@@ -189,8 +190,7 @@ describeIntegration('referral code customisation (integration, requires test DB)
     await lockTaken
 
     const claim = updateReferralCode({ tenantId: TENANT_B, userId: USER, code: 'ZQABC234' })
-    const early = await Promise.race([claim.then(() => 'answered'), new Promise((r) => setTimeout(() => r('waiting'), 300))])
-    expect(early).toBe('waiting')
+    await untilAdvisoryLockWaiter()
 
     release()
     await retiring

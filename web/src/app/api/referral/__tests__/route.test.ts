@@ -8,6 +8,7 @@ vi.mock('@/db/queries/referrals', () => ({
   listReferralsForReferrer: vi.fn(),
   listRewardEvents: vi.fn(),
   listPreviousReferralCodes: vi.fn(async () => []),
+  isReferrer: vi.fn(async () => false),
 }))
 vi.mock('@/lib/referral/config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/referral/config')>()),
@@ -20,6 +21,7 @@ import { getSubscription } from '@/db/queries/subscriptions'
 import {
   countCountingReferrals,
   getOrCreateReferralCode,
+  isReferrer,
   listReferralsForReferrer,
   listRewardEvents,
 } from '@/db/queries/referrals'
@@ -47,10 +49,25 @@ describe('GET /api/referral', () => {
     expect(getSubscription).not.toHaveBeenCalled()
   })
 
-  it('404 with the switch off', async () => {
+  it.each([
+    ['rewards are off too', false, true],
+    ['the clinic never referred anyone', true, false],
+  ])('404 with the switch off when %s', async (_n, rewardsActive, referrer) => {
     vi.mocked(isReferralEnrollmentEnabled).mockReturnValue(false)
+    vi.mocked(areReferralRewardsActive).mockReturnValue(rewardsActive)
+    vi.mocked(isReferrer).mockResolvedValue(referrer)
     expect((await GET(request())).status).toBe(404)
     expect(getSubscription).not.toHaveBeenCalled()
+  })
+
+  it('after enrollment closes, still shows a referrer the dashboard, without creating or showing a code', async () => {
+    vi.mocked(isReferralEnrollmentEnabled).mockReturnValue(false)
+    vi.mocked(isReferrer).mockResolvedValue(true)
+    vi.mocked(getSubscription).mockResolvedValue({ source: 'stripe', status: 'active', plan } as never)
+    const res = await GET(request())
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ code: null, link: null })
+    expect(getOrCreateReferralCode).not.toHaveBeenCalled()
   })
 
   it('does not create a code for a clinic that is not paying through Stripe', async () => {

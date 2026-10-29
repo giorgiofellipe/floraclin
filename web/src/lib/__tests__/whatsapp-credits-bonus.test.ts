@@ -101,7 +101,7 @@ describe('getOrCreateCurrentPeriod, existing row', () => {
     updateReturns.push([{ creditsTotal: 600, bonusCredits: 200 }])
     const period = await getOrCreateCurrentPeriod('t1')
     expect(updateSets[0].creditsTotal).toBeInstanceOf(SQL)
-    // M5: the read row said bonus 0, a raise landed in between
+    // the read row said bonus 0, a raise landed in between
     expect(period.creditsTotal).toBe(600)
     expect(period.bonusCredits).toBe(200)
   })
@@ -196,7 +196,7 @@ describe('raiseReferralBonus', () => {
     expect(updateSets[0].bonusCredits).toBeInstanceOf(SQL)
   })
 
-  it('seeds a new month from the fresh target, not the previous reward event (§7)', async () => {
+  it('seeds a new month from the fresh target, not the previous reward event', async () => {
     vi.stubEnv('STRIPE_REFERRER_COUPON_IDS', ACTIVE_ENV.STRIPE_REFERRER_COUPON_IDS)
     selectQueue.push([], PLAN(300))
     // Last month's event said 200; this sync's target dropped to 100.

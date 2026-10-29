@@ -312,11 +312,21 @@ export async function retrieveSubscriptionOrMissing(id: string): Promise<Stripe.
  * fixed key would replay a stale request for 20 → 40 → 20. The SDK's own
  * per-request retry key still covers network retries.
  */
+// stripe-node drops an empty array from the request, so `[]` leaves every discount in place; '' clears them.
+function clearableDiscounts<T>(discounts: T[]): T[] | '' {
+  return discounts.length > 0 ? discounts : ''
+}
+
 export async function updateSubscriptionDiscounts(
   id: string,
   discounts: Stripe.SubscriptionUpdateParams.Discount[],
 ): Promise<Stripe.Subscription> {
-  return getStripeClient().subscriptions.update(id, { discounts, proration_behavior: 'none' })
+  const updated = await getStripeClient().subscriptions.update(id, {
+    discounts: clearableDiscounts(discounts),
+    proration_behavior: 'none',
+  })
+  forgetSubscriptionDiscount(id)
+  return updated
 }
 
 /** Open cycle drafts of a subscription. One page is enough: a subscription has at most one. */
@@ -339,7 +349,7 @@ export async function updateInvoiceDiscounts(
   id: string,
   discounts: Stripe.InvoiceUpdateParams.Discount[],
 ): Promise<Stripe.Invoice> {
-  return getStripeClient().invoices.update(id, { discounts })
+  return getStripeClient().invoices.update(id, { discounts: clearableDiscounts(discounts) })
 }
 
 export interface PaidInvoiceSummary {
@@ -413,6 +423,60 @@ export async function findEarliestSubscriptionId(customerId: string): Promise<st
     if (!earliest || sub.created < earliest.created) earliest = sub
   }
   return earliest?.id ?? null
+}
+
+const verifiedReferrerCoupons = new Set<string>()
+
+/**
+ * True when each referrer coupon id is a forever percent-off coupon for the percent its env position says,
+ * with no product restriction. A swapped or wrong id would otherwise hand out the wrong discount forever.
+ * Only a successful check is cached; Stripe errors propagate so the caller retries later.
+ */
+export async function referrerCouponsMatchTerms(ids: Readonly<Record<20 | 40 | 60 | 80 | 100, string>>): Promise<boolean> {
+  const key = JSON.stringify(ids)
+  if (verifiedReferrerCoupons.has(key)) return true
+  const stripe = getStripeClient()
+  for (const [percent, id] of Object.entries(ids)) {
+    const coupon = await stripe.coupons.retrieve(id)
+    const ok =
+      coupon.valid &&
+      coupon.percent_off === Number(percent) &&
+      coupon.amount_off === null &&
+      coupon.duration === 'forever' &&
+      !coupon.applies_to?.products?.length
+    if (!ok) return false
+  }
+  verifiedReferrerCoupons.add(key)
+  return true
+}
+
+/**
+ * Before a referral code is attached: whether the clinic already has a Stripe subscription (paid, or a payment
+ * whose webhook has not landed yet), and if not, expires its open Checkout sessions so none of them can still be
+ * paid at full price. Checkout never stores the customer locally, so customers are also found by metadata
+ * (Stripe search lags writes by about a minute).
+ */
+export async function prepareReferralAttach(
+  tenantId: string,
+  knownCustomerId: string | null,
+): Promise<{ hasSubscription: boolean }> {
+  const stripe = getStripeClient()
+  const found = await stripe.customers
+    .search({ query: `metadata['tenantId']:'${tenantId}'`, limit: 100 })
+    .autoPagingToArray({ limit: STRIPE_LIST_CAP })
+  const customerIds = [...new Set([knownCustomerId, ...found.map((c) => c.id)].filter((id): id is string => !!id))]
+
+  for (const customer of customerIds) {
+    const subs = await stripe.subscriptions.list({ customer, status: 'all', limit: 1 })
+    if (subs.data.length > 0) return { hasSubscription: true }
+  }
+  for (const customer of customerIds) {
+    const open = await stripe.checkout.sessions
+      .list({ customer, status: 'open', limit: 100 })
+      .autoPagingToArray({ limit: STRIPE_LIST_CAP })
+    for (const session of open) await stripe.checkout.sessions.expire(session.id)
+  }
+  return { hasSubscription: false }
 }
 
 export interface DisputeTarget {
@@ -665,6 +729,12 @@ const subscriptionDiscountCache = new Map<string, { discount: SubscriptionDiscou
 /** Test hook. */
 export function clearSubscriptionDiscountCache(): void {
   subscriptionDiscountCache.clear()
+}
+
+function forgetSubscriptionDiscount(subscriptionId: string): void {
+  for (const key of subscriptionDiscountCache.keys()) {
+    if (key.startsWith(`${subscriptionId}:`)) subscriptionDiscountCache.delete(key)
+  }
 }
 
 export function discountCouponOf(d: string | Stripe.Discount | Stripe.DeletedDiscount): Stripe.Coupon | null {

@@ -66,7 +66,7 @@ async function initialReferralBonus(
       .select({ bonusCredits: referralRewardEvents.bonusCredits })
       .from(referralRewardEvents)
       .where(eq(referralRewardEvents.referrerTenantId, tenantId))
-      .orderBy(desc(referralRewardEvents.createdAt))
+      .orderBy(desc(referralRewardEvents.createdAt), desc(referralRewardEvents.id))
       .limit(1)
     return latest?.bonusCredits ?? 0
   } catch (error) {
@@ -77,7 +77,7 @@ async function initialReferralBonus(
 
 /**
  * `opts.initialBonus`: the bonus a row created by this call starts with. `raiseReferralBonus`
- * passes its freshly computed target (§7: a new month starts from the count at its creation);
+ * passes its freshly computed target (a new month starts from the count at its creation);
  * other callers fall back to the latest reward event.
  */
 export async function getOrCreateCurrentPeriod(
@@ -195,10 +195,10 @@ export async function getOrCreateCurrentPeriod(
 }
 
 /**
- * §7: the bonus only rises within a month. Ensures the current period exists (a new month's
+ * The bonus only rises within a month. Ensures the current period exists (a new month's
  * row is seeded with `target`, not the previous reward event), then raises
  * `bonus_credits` to `target` and moves `credits_total` by the difference (unlimited stays -1).
- * `exec` is the reward lock's tx (P-18).
+ * `exec` is the reward lock's tx.
  */
 export async function raiseReferralBonus(
   tenantId: string,

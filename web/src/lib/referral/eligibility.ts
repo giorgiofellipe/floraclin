@@ -2,7 +2,7 @@ import { subMonths } from 'date-fns'
 import { REFERRAL_NEW_CLINIC_WINDOW_MONTHS } from './rules'
 import type { CandidateTenant, CheckResult, NotNewSignalKind, SignalKind, TenantSignals } from './types'
 
-/** Webmail domains: a shared domain here is never evidence (doc §5.2). */
+/** Webmail domains: a shared domain here is never evidence. */
 export const PUBLIC_EMAIL_DOMAINS: ReadonlySet<string> = new Set([
   'gmail.com', 'googlemail.com', 'hotmail.com', 'hotmail.com.br', 'outlook.com', 'outlook.com.br',
   'live.com', 'msn.com', 'yahoo.com', 'yahoo.com.br', 'icloud.com', 'me.com', 'uol.com.br',
@@ -53,7 +53,7 @@ export function selfReferralMatches(referred: TenantSignals, referrer: TenantSig
 }
 
 /**
- * Other tenants that make the referred clinic not new (P-12). The referrer and the
+ * Other tenants that make the referred clinic not new. The referrer and the
  * referred tenant themselves are excluded by the caller and again here.
  */
 export function notNewMatches(
@@ -101,8 +101,8 @@ export function eligibilityVerdict(self: SignalKind[], notNew: Match[]): Verdict
 }
 
 /**
- * The one place that runs the checks (shared by C2, C3 and C4 so they can't diverge).
- * Loaders are injected so this file imports nothing from Group B.
+ * The one place that runs the checks, so its callers can't diverge.
+ * Loaders are injected so this file has no DB imports.
  */
 export async function runEligibilityChecks(
   input: {

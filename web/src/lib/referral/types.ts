@@ -9,7 +9,7 @@ export type RewardEventReason =
 export type SignalKind = 'owner_email' | 'email_domain' | 'phone' | 'registry' | 'shared_user' | 'card'
 export type NotNewSignalKind = 'owner_email' | 'phone' | 'registry' | 'card'
 
-/** The persisted state of one referral; the contract between B1 (machine), B3 (storage) and C2 (refresh). Lives here so no Group B task duplicates it. */
+/** The persisted state of one referral. */
 export interface ReferralState {
   status: ReferralStatus
   pausedReason: PausedReason | null

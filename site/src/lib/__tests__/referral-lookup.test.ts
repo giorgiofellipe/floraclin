@@ -15,7 +15,7 @@ describe('lookupReferralCode', () => {
   it('maps active and inactive responses', async () => {
     const active = vi.fn().mockResolvedValue(json({ active: true, clinicName: 'Clínica Flor' }))
     expect(await lookupReferralCode('meca7k', { fetchImpl: active })).toEqual({ active: true, clinicName: 'Clínica Flor' })
-    expect(active).toHaveBeenCalledWith(`${APP_ORIGIN_DEFAULT}/api/referral/codes/MECA7K`, { next: { revalidate: 300 } })
+    expect(active).toHaveBeenCalledWith(`${APP_ORIGIN_DEFAULT}/api/referral/codes/MECA7K`, { next: { revalidate: 60 } })
     const inactive = vi.fn().mockResolvedValue(json({ active: false }))
     expect(await lookupReferralCode('MECA7K', { fetchImpl: inactive })).toEqual({ active: false })
   })

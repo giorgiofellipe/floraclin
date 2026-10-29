@@ -142,6 +142,7 @@ export function ReferralCodeEditor({ currentCode, previousCodes = [] }: { curren
         spellCheck={false}
         placeholder="Ex.: DRAMICAELA"
         aria-describedby="customReferralCodeStatus"
+        aria-invalid={formatMessage !== null || availability.state === 'unavailable'}
         className={UPPERCASE_INPUT}
       />
       <p id="customReferralCodeStatus" aria-live="polite" className="text-xs text-mid">

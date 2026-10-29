@@ -4,6 +4,7 @@ import { handleApiError } from '@/lib/api-error'
 import { getSubscription } from '@/db/queries/subscriptions'
 import { isReferralEnrollmentEnabled } from '@/lib/referral/config'
 import { attributeReferral } from '@/lib/referral/attribution'
+import { prepareReferralAttach } from '@/lib/stripe'
 
 export async function POST(request: Request) {
   try {
@@ -19,7 +20,11 @@ export async function POST(request: Request) {
     const code = (body as { code?: unknown } | null)?.code
 
     const subscription = await getSubscription(ctx.tenantId)
-    if (subscription?.firstPaidAt || subscription?.stripeSubscriptionId) {
+    const alreadyPaying =
+      subscription?.firstPaidAt ||
+      subscription?.stripeSubscriptionId ||
+      (await prepareReferralAttach(ctx.tenantId, subscription?.stripeCustomerId ?? null)).hasSubscription
+    if (alreadyPaying) {
       return NextResponse.json(
         { error: 'O código de indicação só pode ser informado antes do primeiro pagamento.' },
         { status: 400 },

@@ -3,12 +3,14 @@ import {
   countCountingReferrals,
   getReferralSummary,
   getReferrerBilling,
+  getTenantNames,
   recordRewardStateIfChanged,
   withReferrerRewardLock,
   type DbExecutor,
   type ReferrerBilling,
 } from '@/db/queries/referrals'
 import { raiseReferralBonus } from '@/db/queries/whatsapp-credits'
+import { notifyDiscord } from '@/lib/discord'
 import { reportSideEffectFailure } from '@/lib/observability'
 import {
   listOpenCycleDrafts,
@@ -16,6 +18,7 @@ import {
   retrieveSubscriptionOrMissing,
   updateInvoiceDiscounts,
   updateSubscriptionDiscounts,
+  referrerCouponsMatchTerms,
 } from '@/lib/stripe'
 import {
   areReferralRewardsActive,
@@ -34,7 +37,7 @@ type Env = Record<string, string | undefined>
 export interface RewardDeps {
   now(): Date
   env: Env
-  /** B3 withReferrerRewardLock. The whole sync body runs inside it (P-18, review H1). */
+  /** The whole sync body runs inside this lock. */
   withLock<T>(referrerTenantId: string, fn: (tx: DbExecutor) => Promise<T>): Promise<T>
   countCounting(referrerTenantId: string, tx: DbExecutor): Promise<number>
   getBilling(tenantId: string, tx: DbExecutor): Promise<ReferrerBilling | null>
@@ -51,17 +54,20 @@ export interface RewardDeps {
   notify(input: RewardEmailInput): Promise<void>
   getReferral(id: string): Promise<{ id: string; referredName: string; status: ReferralStatus } | null>
   report: typeof reportSideEffectFailure
+  tenantNames: typeof getTenantNames
+  notifyDiscord: typeof notifyDiscord
+  couponsMatchTerms: typeof referrerCouponsMatchTerms
 }
 
 export interface SyncTrigger {
   reason: RewardEventReason
   referralId?: string | null
-  /** invoice.created (D1): this draft is repaired even if the draft list hasn't caught up yet. */
+  /** invoice.created: this draft is repaired even if the draft list hasn't caught up yet. */
   draftInvoiceId?: string | null
 }
 
 export type RewardSyncResult =
-  | { skipped: 'not_configured' }
+  | { skipped: 'not_configured' | 'misconfigured' }
   | {
       skipped?: undefined
       counting: number
@@ -92,9 +98,12 @@ const defaultDeps: RewardDeps = {
   notify: sendReferralRewardEmail,
   getReferral: getReferralSummary,
   report: reportSideEffectFailure,
+  tenantNames: getTenantNames,
+  notifyDiscord,
+  couponsMatchTerms: referrerCouponsMatchTerms,
 }
 
-/** Pure (P-20, review H4): the percent a given invoice instant is entitled to. */
+/** Pure: the percent a given invoice instant is entitled to. */
 export function percentAt(
   at: Date,
   input: { eligible: boolean; counting: number },
@@ -165,7 +174,7 @@ function isInvoiceNotEditable(err: unknown): boolean {
 }
 
 /**
- * Doc §6.3. Recomputes the referrer's reward from the DB count and the Stripe subscription, and makes Stripe
+ * Recomputes the referrer's reward from the DB count and the Stripe subscription, and makes Stripe
  * (subscription + open cycle drafts) and the WhatsApp bonus match. Runs entirely under the per-referrer lock.
  * Does not read REFERRAL_ENROLLMENT_ENABLED: rewards keep syncing when new enrollment is off.
  */
@@ -177,6 +186,14 @@ export async function syncReferrerReward(
   const d: RewardDeps = { ...defaultDeps, ...deps }
   const ids = referrerCouponIds(d.env)
   if (!ids) return { skipped: 'not_configured' }
+  if (!(await d.couponsMatchTerms(ids))) {
+    d.report(new Error('STRIPE_REFERRER_COUPON_IDS do not match their percents'), {
+      area: 'referral',
+      step: 'referrer_coupons_misconfigured',
+      extra: { referrerTenantId },
+    })
+    return { skipped: 'misconfigured' }
+  }
 
   const locked = await d.withLock(referrerTenantId, async (tx) => {
     const counting = await d.countCounting(referrerTenantId, tx)
@@ -279,6 +296,27 @@ export async function syncReferrerReward(
       })
     } catch (err) {
       d.report(err, { area: 'referral', step: 'reward_email', extra: { referrerTenantId } })
+    }
+  }
+  const current = { counting: result.counting, discountPercent: result.targetPercent, bonusCredits: result.bonusTarget }
+  const rewardMoved = previous
+    ? previous.counting !== current.counting || previous.discountPercent !== current.discountPercent ||
+      previous.bonusCredits !== current.bonusCredits
+    : current.counting > 0 || current.discountPercent > 0 || current.bonusCredits > 0
+  if (result.eventRecorded && rewardMoved) {
+    try {
+      const names = await d.tenantNames([referrerTenantId])
+      await d.notifyDiscord({
+        kind: 'referral.reward_changed',
+        referrerName: names[referrerTenantId] ?? referrerTenantId,
+        referrerTenantId,
+        previous: previous
+          ? { counting: previous.counting, discountPercent: previous.discountPercent, bonusCredits: previous.bonusCredits }
+          : null,
+        current,
+      })
+    } catch (err) {
+      d.report(err, { area: 'referral', step: 'discord_reward_changed', extra: { referrerTenantId } })
     }
   }
   return result

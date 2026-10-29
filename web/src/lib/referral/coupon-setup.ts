@@ -3,7 +3,7 @@ import type Stripe from 'stripe'
 /**
  * Spec and guarded creator for the referral program's Stripe coupons. Used only
  * by `scripts/create-referral-coupons.ts`; runtime code never creates Stripe
- * objects. None of these coupons use `applies_to` (doc §6.1).
+ * objects. None of these coupons use `applies_to`.
  */
 
 export const WELCOME_COUPON_ID = 'floraclin_referral_new_20x2'

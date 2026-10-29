@@ -17,7 +17,7 @@ export function HomeSections({ banner }: { banner?: ReactNode }) {
       <Navigation />
       {banner}
       <main>
-        <Hero />
+        <Hero belowBanner={banner !== undefined} />
         <Problem />
         <HowItWorks />
         <FeatureShowcase />

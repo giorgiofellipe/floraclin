@@ -31,7 +31,7 @@ async function main() {
 
   if (mode === 'live') {
     const account = await stripe.accounts.retrieveCurrent()
-    console.log(`LIVE MODE — account ${account.id}. Writing in 5 seconds (Ctrl+C to abort)...`)
+    console.log(`LIVE MODE: account ${account.id}. Writing in 5 seconds (Ctrl+C to abort)...`)
     await new Promise((resolve) => setTimeout(resolve, 5000))
   }
 

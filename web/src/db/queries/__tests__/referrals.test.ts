@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { db } from '@/db/client'
-import { rowsFromExecuteResult } from '@/db/queries/admin-tenants'
+import { untilAdvisoryLockWaiter } from './advisory-lock-waiter'
 import { billingCardFingerprints, referralRewardEvents, tenantReferrals, tenants } from '@/db/schema'
 import type { ReferralState } from '@/lib/referral/types'
 import {
@@ -30,21 +30,6 @@ function deferred() {
     resolve = r
   })
   return { promise, resolve }
-}
-
-/** Resolves once some session waits on an advisory lock in this database (fails after ~5 s). */
-async function untilAdvisoryLockWaiter(): Promise<void> {
-  for (let attempt = 0; attempt < 500; attempt++) {
-    const result = await db.execute(sql`
-      select 1 from pg_locks
-      where locktype = 'advisory' and not granted
-        and database = (select oid from pg_database where datname = current_database())
-      limit 1
-    `)
-    if (rowsFromExecuteResult(result).length > 0) return
-    await new Promise((r) => setTimeout(r, 10))
-  }
-  throw new Error('no session ever waited on the advisory lock')
 }
 
 function stateOf(row: typeof tenantReferrals.$inferSelect, patch: Partial<ReferralState>): ReferralState {

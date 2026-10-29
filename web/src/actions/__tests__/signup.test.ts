@@ -418,6 +418,16 @@ describe('signUp action', () => {
       expect(cookieSetMock).not.toHaveBeenCalledWith('floraclin_ref', expect.anything(), expect.anything())
     })
 
+    it('records no referral and drops the link cookie when the user emptied the pre-filled field', async () => {
+      withCookies({ floraclin_ref: 'MECA7K' })
+      const formData = validFormData({ email: 'ref-emptied@test.com' })
+      formData.set('referralCode', '')
+      await signUp(null, formData)
+
+      expect(attributeReferralMock).not.toHaveBeenCalled()
+      expect(cookieSetMock).toHaveBeenCalledWith('floraclin_ref', '', expect.objectContaining({ maxAge: 0, path: '/' }))
+    })
+
     it('does not call attribution without a code', async () => {
       await signUp(null, validFormData({ email: 'ref-none@test.com' }))
       expect(attributeReferralMock).not.toHaveBeenCalled()

@@ -360,11 +360,12 @@ async function attributeSignupReferral(
   requestHeaders: Pick<Headers, 'get'>,
 ): Promise<void> {
   try {
-    const picked = pickSignupCode({
-      field: formData.get('referralCode'),
-      cookie: cookieStore.get(REFERRAL_COOKIE_NAME)?.value,
-    })
-    if (!picked) return
+    const field = formData.get('referralCode')
+    const picked = pickSignupCode({ field, cookie: cookieStore.get(REFERRAL_COOKIE_NAME)?.value })
+    if (!picked) {
+      if (field === '') cookieStore.set(REFERRAL_COOKIE_NAME, '', referralCookieDeleteOptions(requestHeaders.get('host')))
+      return
+    }
     const result = await attributeReferral({ referredTenantId: tenantId, rawCode: picked.code, capturedVia: picked.via })
     if (result.outcome === 'created') {
       cookieStore.set(REFERRAL_COOKIE_NAME, '', referralCookieDeleteOptions(requestHeaders.get('host')))

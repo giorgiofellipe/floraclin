@@ -341,43 +341,35 @@ describe('reconcileReferrals', () => {
     expect(d.sync).not.toHaveBeenCalled()
   })
 
-  it('rotates through units across deadline-limited runs (M7)', async () => {
-    const stamps = new Map<string, number>([
-      ['A', 0],
-      ['B', 0],
-      ['C', 0],
-    ])
+  it('cuts a big referrer mid-way at the deadline, resumes it later, and still rotates to the others', async () => {
     const ids: Record<string, string[]> = { A: ['a1', 'a2'], B: ['b1'], C: ['c1'] }
+    const stamps = new Map<string, number>(Object.values(ids).flat().map((id) => [id, 0]))
     let clock = 1
     const base = makeDeps()
     const listUnits = vi.fn(async () =>
-      [...stamps.entries()]
-        .sort(([ka, a], [kb, b]) => a - b || ka.localeCompare(kb))
-        .map(([k]) => unit(k, ids[k])),
+      Object.entries(ids)
+        .map(([k, list]) => ({ k, list: [...list].sort((x, y) => stamps.get(x)! - stamps.get(y)!) }))
+        .sort((a, b) => stamps.get(a.list[0])! - stamps.get(b.list[0])! || a.k.localeCompare(b.k))
+        .map(({ k, list }) => unit(k, list)),
     )
     const markReconciled = vi.fn(async (idList: string[]) => {
-      for (const [k, v] of Object.entries(ids)) if (v.some((i) => idList.includes(i))) stamps.set(k, clock++)
+      for (const id of idList) stamps.set(id, clock++)
     })
-    // The deadline is checked before each unit; let exactly one unit through per run.
+    // The first clock read is before the deadline, every later one after it: one referral per run.
     const nowSpy = vi.spyOn(Date, 'now')
     const runOnce = async () => {
       let reads = 0
       nowSpy.mockImplementation(() => (reads++ === 0 ? 0 : 2_000))
       const deps = { ...base, listUnits, markReconciled, refresh: vi.fn(async () => null), sync: vi.fn(async () => ({ skipped: 'not_configured' })) }
       const res = await reconcileReferrals({ deadlineAt: 1_000 }, deps as never)
-      return { res, deps }
+      const first = (c: unknown[]) => c[0]
+      return { res, refreshed: deps.refresh.mock.calls.map(first), synced: deps.sync.mock.calls.map(first) }
     }
 
     const r1 = await runOnce()
-    expect(r1.res.skipped).toBe(2)
-    expect(r1.deps.refresh.mock.calls.map((c) => (c as unknown[])[0])).toEqual(['a1', 'a2'])
-    expect(r1.deps.sync.mock.calls.map((c) => (c as unknown[])[0])).toEqual(['A'])
-
-    const r2 = await runOnce()
-    expect(r2.deps.sync.mock.calls.map((c) => (c as unknown[])[0])).toEqual(['B'])
-
-    const r3 = await runOnce()
-    expect(r3.deps.sync.mock.calls.map((c) => (c as unknown[])[0])).toEqual(['C'])
-    nowSpy.mockRestore()
+    expect(r1).toMatchObject({ refreshed: ['a1'], synced: ['A'], res: { skipped: 3 } })
+    expect(await runOnce()).toMatchObject({ refreshed: ['a2'], synced: ['A'] })
+    expect(await runOnce()).toMatchObject({ refreshed: ['b1'], synced: ['B'] })
+    expect(await runOnce()).toMatchObject({ refreshed: ['c1'], synced: ['C'] })
   })
 })

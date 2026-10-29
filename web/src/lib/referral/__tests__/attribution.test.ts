@@ -4,6 +4,7 @@ vi.mock('@/db/client', () => ({ db: {} }))
 vi.mock('@/db/queries/referrals', () => ({
   findReferrerByCode: vi.fn(),
   getReferralByReferredTenant: vi.fn(),
+  getTenantNames: vi.fn(),
   insertReferral: vi.fn(),
   loadCandidateTenants: vi.fn(),
   loadTenantSignals: vi.fn(),
@@ -36,6 +37,9 @@ function makeDeps(over: Partial<AttributionDeps> = {}) {
     loadCandidates: vi.fn(async () => [] as CandidateTenant[]),
     runChecks: runEligibilityChecks,
     insert: vi.fn(async (input: { status: string }) => ({ id: 'ref-1', status: input.status })),
+    tenantNames: vi.fn(async () => ({ referred: 'Clínica Indicada' })),
+    notifyDiscord: vi.fn(async () => {}),
+    report: vi.fn(),
     ...over,
   }
   return deps as typeof deps & AttributionDeps
@@ -81,6 +85,7 @@ describe('attributeReferral skips', () => {
   it('already_attributed when the insert loses a race', async () => {
     const deps = makeDeps({ insert: vi.fn(async () => null) })
     expect(await attribute('MECA7K', deps)).toEqual({ outcome: 'skipped', reason: 'already_attributed' })
+    expect(deps.notifyDiscord).not.toHaveBeenCalled()
   })
 })
 
@@ -123,6 +128,17 @@ describe('attributeReferral outcomes', () => {
         checks: { atSignup: { selfReferral: ['shared_user'], notNew: [] } },
       }),
     )
+    expect(deps.notifyDiscord).toHaveBeenCalledTimes(1)
+    expect(deps.notifyDiscord).toHaveBeenCalledWith({
+      kind: 'referral.attributed',
+      referrerName: 'Ref',
+      referrerTenantId: 'referrer',
+      referredName: 'Clínica Indicada',
+      referredTenantId: 'referred',
+      code: 'MECA7K',
+      capturedVia: 'signup_field',
+      ineligibleReason: 'self_referral',
+    })
   })
 
   it('creates ineligible/not_new when another recent tenant shares the owner email', async () => {
@@ -148,9 +164,13 @@ describe('attributeReferral outcomes', () => {
 })
 
 describe('pickSignupCode', () => {
-  it('uses the cookie as a link when the field is empty', () => {
-    expect(pickSignupCode({ field: '', cookie: 'meca7k' })).toEqual({ code: 'MECA7K', via: 'link' })
-    expect(pickSignupCode({ field: null, cookie: 'MECA7K' })).toEqual({ code: 'MECA7K', via: 'link' })
+  it('uses the cookie as a link when the form has no field (collapsed, or the Google auto-start)', () => {
+    expect(pickSignupCode({ field: null, cookie: 'meca7k' })).toEqual({ code: 'MECA7K', via: 'link' })
+  })
+
+  it('treats a field the user emptied as no referral, even with the link cookie', () => {
+    expect(pickSignupCode({ field: '', cookie: 'MECA7K' })).toBeNull()
+    expect(pickSignupCode({ field: '   ', cookie: 'MECA7K' })).toBeNull()
   })
 
   it('lets the typed field win over the cookie, normalised', () => {

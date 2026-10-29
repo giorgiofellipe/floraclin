@@ -4,6 +4,7 @@ vi.mock('@/db/queries/referrals', () => ({
   bindReferralSubscription: vi.fn(),
   getReferralByReferredTenant: vi.fn(),
   getReferralContext: vi.fn(),
+  getTenantNames: vi.fn(),
   loadCandidateTenants: vi.fn(),
   loadTenantSignals: vi.fn(),
   markReferralIneligible: vi.fn(),
@@ -113,7 +114,10 @@ function makeDeps(o: Partial<LifecycleDeps> & { ctx?: ReferralContext } = {}) {
     runChecks: vi.fn(runEligibilityChecks),
     saveState: vi.fn(async () => true),
     findByReferredTenant: vi.fn(async () => referral({ status: 'counting' })),
-    markIneligible: vi.fn(async () => referral({ status: 'ineligible' })),
+    markIneligible: vi.fn(async () => referral({ status: 'ineligible', ineligibleReason: 'chargeback' })),
+    tenantNames: vi.fn(async () => ({ referrer: 'Clínica Mãe', referred: 'Clínica Filha' })),
+    notifyDiscord: vi.fn(async () => {}),
+    report: vi.fn(),
     ...rest,
   } satisfies LifecycleDeps
   return deps as Mocked<LifecycleDeps> & typeof deps
@@ -151,6 +155,7 @@ describe('refreshReferral: trial', () => {
     const second = await refreshReferral('ref_1', ended)
     expect(second?.changed).toBe(false)
     expect(ended.saveState).not.toHaveBeenCalled()
+    expect(ended.notifyDiscord).not.toHaveBeenCalled()
   })
 
   it('returns null when the context is missing', async () => {
@@ -232,7 +237,7 @@ describe('refreshReferral: qualification', () => {
     expect((await refreshReferral('ref_1', deps))?.changed).toBe(false)
   })
 
-  it('M3: runs checks at the qualification stage; a phone shared with a third tenant is not enough', async () => {
+  it('runs checks at the qualification stage; a phone shared with a third tenant is not enough', async () => {
     const deps = makeDeps({
       ctx: context({ referral: { status: 'first_paid', stripeSubscriptionId: 'sub_1', firstPaidAt: T1 } }),
       listPaidInvoices: vi.fn(async () => [create, cycle]),
@@ -254,7 +259,7 @@ describe('refreshReferral: qualification', () => {
     expect(res?.next).toBe('counting')
   })
 
-  it('M3: a card of the referred customer seen on a third tenant 2 months before signup is not_new', async () => {
+  it('a card of the referred customer seen on a third tenant 2 months before signup is not_new', async () => {
     const deps = makeDeps({
       ctx: context({ referral: { status: 'first_paid', stripeSubscriptionId: 'sub_1', firstPaidAt: T1 } }),
       listPaidInvoices: vi.fn(async () => [create, cycle]),
@@ -304,9 +309,20 @@ describe('refreshReferral: Stripe state', () => {
       expect.objectContaining({ status: 'paused', pausedReason: 'past_due' }),
       undefined,
     )
+    expect(deps.notifyDiscord).toHaveBeenCalledTimes(1)
+    expect(deps.notifyDiscord).toHaveBeenCalledWith({
+      kind: 'referral.status_changed',
+      referrerName: 'Clínica Mãe',
+      referrerTenantId: 'referrer',
+      referredName: 'Clínica Filha',
+      referredTenantId: 'referred',
+      from: { status: 'counting', pausedReason: null, ineligibleReason: null },
+      to: { status: 'paused', pausedReason: 'past_due', ineligibleReason: null },
+      note: null,
+    })
   })
 
-  it('H8: persisted firstPaidAt/qualifiedAt carry a counting referral when the invoice list is empty', async () => {
+  it('persisted firstPaidAt/qualifiedAt carry a counting referral when the invoice list is empty', async () => {
     const deps = makeDeps({
       ctx: countingCtx(),
       retrieveSubscription: vi.fn(async () => stripeSub({ status: 'past_due' })),
@@ -323,7 +339,7 @@ describe('refreshReferral: Stripe state', () => {
   })
 })
 
-describe('refreshReferral: optimistic writes (P-22)', () => {
+describe('refreshReferral: optimistic writes', () => {
   const pausedSetup = () => ({
     retrieveSubscription: vi.fn(async () => stripeSub({ status: 'past_due' })),
     listPaidInvoices: vi.fn(async () => [create, cycle]),
@@ -351,7 +367,7 @@ describe('refreshReferral: optimistic writes (P-22)', () => {
   })
 })
 
-describe('refreshReferral: first-subscription binding (P-21)', () => {
+describe('refreshReferral: first-subscription binding', () => {
   const unbound = (o: Partial<ReferralContext> = {}) =>
     context({
       referral: { status: 'trial', stripeSubscriptionId: null },
@@ -417,6 +433,14 @@ describe('markReferralChargeback', () => {
     const res = await markReferralChargeback('referred', deps)
     expect(deps.markIneligible).toHaveBeenCalledWith('ref_1', 'chargeback')
     expect(res).toMatchObject({ previous: 'counting', next: 'ineligible', changed: true, rewardReason: 'referral_canceled' })
+    expect(deps.notifyDiscord).toHaveBeenCalledTimes(1)
+    expect(deps.notifyDiscord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'referral.status_changed',
+        from: { status: 'counting', pausedReason: null, ineligibleReason: null },
+        to: { status: 'ineligible', pausedReason: null, ineligibleReason: 'chargeback' },
+      }),
+    )
   })
 
   it('returns null when the tenant was not referred', async () => {
@@ -429,6 +453,7 @@ describe('markReferralChargeback', () => {
     const res = await markReferralChargeback('referred', deps)
     expect(res?.changed).toBe(false)
     expect(deps.markIneligible).not.toHaveBeenCalled()
+    expect(deps.notifyDiscord).not.toHaveBeenCalled()
   })
 
   it('needs no reward sync when the referral was only first_paid', async () => {

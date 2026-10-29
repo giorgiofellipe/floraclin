@@ -4,6 +4,7 @@ import { buildReferralDashboard, referralShareText, type DashboardInput } from '
 
 const base: DashboardInput = {
   canRefer: true,
+  enrollmentOpen: true,
   code: 'MECA7K',
   rewardsActive: true,
   counting: 0,
@@ -51,6 +52,15 @@ describe('discount line', () => {
 })
 
 describe('canRefer=false', () => {
+  it('after enrollment closes, keeps the running discount but hides the link and code', () => {
+    const view = build({ enrollmentOpen: false, counting: 3, previousCodes: ['OLD1'] })
+    expect(view).toMatchObject({ link: null, code: null, previousCodes: [], whatsappShareUrl: null })
+    expect(view.inactiveMessage).toBe(
+      'O programa não aceita mais novas indicações. As indicações que você já fez continuam valendo até o encerramento.',
+    )
+    expect(view.discountLine).toContain('Seu desconto atual: 60%')
+  })
+
   it('has no link, shows the inactive message and still lists referrals', () => {
     const view = build({
       canRefer: false,

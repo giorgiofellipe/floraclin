@@ -1,9 +1,12 @@
 import Image from "next/image";
 import { SignupLink } from "@/components/signup-link";
 
-export function Hero() {
+// The default top padding clears the fixed navigation; below the referral banner, which already clears it,
+// the hero only needs normal spacing.
+export function Hero({ belowBanner = false }: { belowBanner?: boolean }) {
+  const top = belowBanner ? "pt-12 md:pt-20" : "pt-32 md:pt-44";
   return (
-    <section className="relative bg-cream pt-32 pb-20 md:pt-44 md:pb-40 overflow-hidden">
+    <section className={`relative bg-cream ${top} pb-20 md:pb-40 overflow-hidden`}>
       {/* Decorative botanical SVG — left */}
       <svg
         aria-hidden="true"

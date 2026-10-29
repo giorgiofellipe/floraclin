@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // The win-back discount must never stop a clinic from paying: a bad or
 // expired promotion code falls back to full price, and only that kind of
 // error does.
-const { create, report, retrievePromo, retrievePrice, listSubs, listCharges, listInvoices, retrieveSub } = vi.hoisted(() => ({
+const { create, report, retrievePromo, retrievePrice, listSubs, listCharges, listInvoices, retrieveSub, updateSub } = vi.hoisted(() => ({
+  updateSub: vi.fn(),
   retrieveSub: vi.fn(),
   create: vi.fn(),
   report: vi.fn(),
@@ -22,7 +23,7 @@ vi.mock('stripe', async () => {
     checkout = { sessions: { create } }
     promotionCodes = { retrieve: retrievePromo }
     prices = { retrieve: retrievePrice }
-    subscriptions = { list: listSubs, retrieve: retrieveSub }
+    subscriptions = { list: listSubs, retrieve: retrieveSub, update: updateSub }
     charges = { list: listCharges }
     invoices = { list: listInvoices }
   }
@@ -39,6 +40,7 @@ vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: report }))
 
 import Stripe from 'stripe'
 import {
+  updateSubscriptionDiscounts,
   checkPromotionCode,
   clearPromotionCodeCache,
   createCheckoutSession,
@@ -314,6 +316,14 @@ describe('getSubscriptionDiscount', () => {
   beforeEach(() => {
     retrieveSub.mockReset()
     clearSubscriptionDiscountCache()
+  })
+
+  it('reads Stripe again right after the referral sync changes the discounts, not the cached price', async () => {
+    retrieveSub.mockResolvedValueOnce(sub([])).mockResolvedValueOnce(sub([discount({ percent_off: 20 }, { end: null })]))
+    expect(await getSubscriptionDiscount('sub_1', NOW, 'plan-1')).toBeNull()
+    updateSub.mockResolvedValue({})
+    await updateSubscriptionDiscounts('sub_1', [{ coupon: 'c20' }])
+    expect((await getSubscriptionDiscount('sub_1', NOW, 'plan-1'))?.discountedCents).toBe(7920)
   })
 
   it('reads the discounted price and when it ends from the subscription discount', async () => {

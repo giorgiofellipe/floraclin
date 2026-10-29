@@ -31,6 +31,7 @@ import { brl, discountSummaryLine } from '@/lib/billing-discount-copy'
 import { durationPhrase, winbackPriceCents } from '@/lib/winback'
 import { Input } from '@/components/ui/input'
 import type { PublicReferralOffer } from '@/lib/referral/offer-copy'
+import { REFERRAL_CODE_MAX_LENGTH } from '@/lib/referral/rules'
 import { brCalendarDaysBetween, brEndPhrase } from '@/lib/dates'
 
 type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled' | 'expired'
@@ -69,6 +70,7 @@ interface BillingUsageResponse {
   referral?: {
     offer: ReferralOfferView | null
     canEnterCode: boolean
+    linkCode: string | null
   }
   usage: {
     users: UsageBucket
@@ -510,7 +512,7 @@ export function BillingSettings() {
     },
   })
 
-  const [referralCode, setReferralCode] = useState('')
+  const [referralCode, setReferralCode] = useState<string | null>(null)
   const attachMutation = useMutation({
     mutationFn: async (code: string) => {
       const res = await fetch('/api/referral/attach', {
@@ -531,6 +533,7 @@ export function BillingSettings() {
       }
       setReferralCode('')
       queryClient.invalidateQueries({ queryKey: ['billing', 'usage'] })
+      router.refresh()
     },
     onError: (err: Error) => {
       toast.error(err.message)
@@ -578,6 +581,7 @@ export function BillingSettings() {
     : null
   const referralOffer = usageData.referral?.offer ?? null
   const canEnterCode = usageData.referral?.canEnterCode ?? false
+  const codeInput = referralCode ?? usageData.referral?.linkCode ?? ''
   const statusConfig = STATUS_CONFIG[subscription.status]
   const plans = plansData?.data ?? []
   const canCancel =
@@ -673,24 +677,24 @@ export function BillingSettings() {
           data-testid="referral-code-card"
           onSubmit={(e) => {
             e.preventDefault()
-            const code = referralCode.trim()
+            const code = codeInput.trim()
             if (code) attachMutation.mutate(code)
           }}
         >
           <p className="text-sm font-medium text-charcoal">Tem um código de indicação?</p>
           <div className="flex gap-2">
             <Input
-              value={referralCode}
+              value={codeInput}
               onChange={(e) => setReferralCode(e.target.value)}
               placeholder="Código"
               aria-label="Código de indicação"
-              maxLength={12}
-              className="max-w-[200px] uppercase"
+              maxLength={REFERRAL_CODE_MAX_LENGTH}
+              className="max-w-[200px] uppercase placeholder:normal-case"
             />
             <Button
               type="submit"
               variant="outline"
-              disabled={attachMutation.isPending || !referralCode.trim()}
+              disabled={attachMutation.isPending || !codeInput.trim()}
             >
               {attachMutation.isPending ? 'Aplicando...' : 'Aplicar código'}
             </Button>

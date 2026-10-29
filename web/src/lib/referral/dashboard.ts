@@ -15,11 +15,13 @@ import {
 import type { IneligibleReason, PausedReason, ReferralStatus } from './types'
 
 const INACTIVE_MESSAGE = 'Seu link de indicação fica ativo quando sua clínica tem uma assinatura paga.'
+const CLOSED_MESSAGE = 'O programa não aceita mais novas indicações. As indicações que você já fez continuam valendo até o encerramento.'
 const RULES_URL = `${REFERRAL_SITE_ORIGIN}/indique` as const
 const FREE_LABEL = `${REFERRAL_MAX_COUNTING_FOR_DISCOUNT} de ${REFERRAL_MAX_COUNTING_FOR_DISCOUNT}: seu FloraClin está grátis 🎉`
 
 export interface DashboardInput {
   canRefer: boolean
+  enrollmentOpen: boolean
   code: string | null
   /** Retired codes that still resolve to the clinic, newest first. */
   previousCodes?: string[]
@@ -104,17 +106,23 @@ function displayedPercent(input: DashboardInput, counting: number): number {
   return input.planEligible ? referralDiscountPercent(counting) : 0
 }
 
+function inactiveMessage(input: DashboardInput): string | null {
+  if (!input.enrollmentOpen) return CLOSED_MESSAGE
+  return input.canRefer ? null : INACTIVE_MESSAGE
+}
+
 export function buildReferralDashboard(input: DashboardInput): ReferralDashboardResponse {
-  const link = input.canRefer && input.code ? referralLink(input.code) : null
+  const linkActive = input.canRefer && input.enrollmentOpen
+  const link = linkActive && input.code ? referralLink(input.code) : null
   const shareText = link ? referralShareText(link) : null
   const counting = Math.max(0, Math.floor(input.counting))
   const percent = displayedPercent(input, counting)
 
   return {
     canRefer: input.canRefer,
-    inactiveMessage: input.canRefer ? null : INACTIVE_MESSAGE,
-    code: input.canRefer ? input.code : null,
-    previousCodes: input.canRefer ? (input.previousCodes ?? []) : [],
+    inactiveMessage: inactiveMessage(input),
+    code: linkActive ? input.code : null,
+    previousCodes: linkActive ? (input.previousCodes ?? []) : [],
     link,
     shareText,
     whatsappShareUrl: shareText ? `https://wa.me/?text=${encodeURIComponent(shareText)}` : null,

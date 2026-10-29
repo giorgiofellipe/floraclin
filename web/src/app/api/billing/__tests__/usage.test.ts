@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/auth', () => ({ getAuthContext: vi.fn() }))
+const cookieJar = vi.hoisted(() => new Map<string, string>())
+vi.mock('next/headers', () => ({ cookies: async () => ({ get: (n: string) => (cookieJar.has(n) ? { value: cookieJar.get(n) } : undefined) }) }))
 vi.mock('@/db/client', () => ({
   db: {
     select: () => ({ from: () => ({ where: async () => [{ count: 1 }] }) }),
@@ -84,7 +86,7 @@ describe('GET /api/billing/usage referral fields', () => {
   it('does no referral work with the switch off', async () => {
     vi.mocked(isReferralEnrollmentEnabled).mockReturnValue(false)
     const body = await call()
-    expect(body.referral).toEqual({ offer: null, canEnterCode: false })
+    expect(body.referral).toEqual({ offer: null, canEnterCode: false, linkCode: null })
     expect(getReferralAttribution).not.toHaveBeenCalled()
     expect(getValidatedReferralOffer).not.toHaveBeenCalled()
   })
@@ -118,7 +120,7 @@ describe('GET /api/billing/usage referral fields', () => {
   })
 
   it.each([
-    ['after the first payment', { firstPaidAt: new Date('2026-09-01') }, 'owner', null],
+    ['after the first payment', { firstPaidAt: new Date('2026-09-01T12:00:00-03:00') }, 'owner', null],
     ['with a Stripe subscription', { stripeSubscriptionId: 'sub_1' }, 'owner', null],
     ['with an existing attribution', {}, 'owner', ATTRIBUTION],
     ['for a non-owner', {}, 'admin', null],
@@ -127,5 +129,13 @@ describe('GET /api/billing/usage referral fields', () => {
     vi.mocked(getAuthContext).mockResolvedValue({ tenantId: 't1', role } as never)
     vi.mocked(getReferralAttribution).mockResolvedValue(attribution as never)
     expect((await call()).referral.canEnterCode).toBe(false)
+  })
+
+  it('pre-fills the code from a link cookie that signup did not attribute, only while a code can be entered', async () => {
+    cookieJar.set('floraclin_ref', 'meca7k')
+    expect((await call()).referral.linkCode).toBe('MECA7K')
+    vi.mocked(getReferralAttribution).mockResolvedValue(ATTRIBUTION as never)
+    expect((await call()).referral.linkCode).toBeNull()
+    cookieJar.clear()
   })
 })

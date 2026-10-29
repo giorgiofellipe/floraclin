@@ -3,6 +3,7 @@ import {
   bindReferralSubscription,
   getReferralByReferredTenant,
   getReferralContext,
+  getTenantNames,
   loadCandidateTenants,
   loadTenantSignals,
   markReferralIneligible,
@@ -11,6 +12,8 @@ import {
   type ReferralContext,
   type TenantReferral,
 } from '@/db/queries/referrals'
+import { notifyDiscord } from '@/lib/discord'
+import { reportSideEffectFailure } from '@/lib/observability'
 import {
   findEarliestSubscriptionId,
   listCustomerCardSightings,
@@ -19,6 +22,7 @@ import {
   type PaidInvoiceSummary,
 } from '@/lib/stripe'
 import { effectiveSubscriptionStatus } from '@/lib/subscription-access'
+import { announceReferralStatusChange } from './announce'
 import { runEligibilityChecks } from './eligibility'
 import { computeReferralStatus, isTerminalStatus, type ReferredSnapshot } from './status'
 import { stripeSubscriptionIsMonthly } from './subscription-state'
@@ -52,6 +56,9 @@ export interface LifecycleDeps {
     note?: string,
     checks?: ReferralChecks,
   ): Promise<TenantReferral | null>
+  tenantNames: typeof getTenantNames
+  notifyDiscord: typeof notifyDiscord
+  report: typeof reportSideEffectFailure
 }
 
 export interface RefreshResult {
@@ -60,7 +67,7 @@ export interface RefreshResult {
   previous: ReferralStatus
   next: ReferralStatus
   changed: boolean
-  /** What D1 passes to syncReferrerReward. */
+  /** Reason passed to syncReferrerReward. */
   rewardReason: RewardEventReason | null
 }
 
@@ -79,6 +86,9 @@ const defaultDeps: LifecycleDeps = {
   saveState: updateReferralState,
   findByReferredTenant: getReferralByReferredTenant,
   markIneligible: markReferralIneligible,
+  tenantNames: getTenantNames,
+  notifyDiscord,
+  report: reportSideEffectFailure,
 }
 
 type StripePart = NonNullable<ReferredSnapshot['stripe']>
@@ -181,7 +191,7 @@ async function refreshOnce(referralId: string, d: LifecycleDeps): Promise<Refres
   const now = d.now()
   const customerId = ctx.referredSub?.stripeCustomerId ?? null
 
-  // P-21: bind the customer's earliest subscription; never the tenant row's current one.
+  // Bind the customer's earliest subscription; never the tenant row's current one.
   let subId = ctx.referral.stripeSubscriptionId ?? null
   if (!subId && customerId) {
     const earliest = await d.findEarliestSubscription(customerId)
@@ -246,6 +256,9 @@ async function refreshOnce(referralId: string, d: LifecycleDeps): Promise<Refres
 
   const saved = await d.saveState(referral.id, referral.version, next, checks)
   if (!saved) return 'lost'
+  if (prev.status !== next.status || prev.pausedReason !== next.pausedReason) {
+    await announceReferralStatusChange(referral, next, {}, d)
+  }
   return {
     referralId: referral.id,
     referrerTenantId: referral.referrerTenantId,
@@ -281,6 +294,7 @@ export async function markReferralChargeback(
   if (previous === 'ineligible') return unchanged(referral)
   const updated = await d.markIneligible(referral.id, 'chargeback')
   if (!updated) return unchanged(referral)
+  await announceReferralStatusChange(referral, updated, {}, d)
   return {
     referralId: referral.id,
     referrerTenantId: referral.referrerTenantId,

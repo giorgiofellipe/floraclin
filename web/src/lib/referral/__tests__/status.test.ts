@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   computeReferralStatus,
-  isCountingStatus,
   isTerminalStatus,
   referralStatusLabel,
   type ReferredSnapshot,
@@ -55,13 +54,13 @@ const counting = (o: Partial<ReferralState> = {}) =>
   })
 
 describe('computeReferralStatus rules', () => {
-  it('R0: ineligible is terminal', () => {
+  it('ineligible is terminal', () => {
     const prev = state({ status: 'ineligible', ineligibleReason: 'not_new', endedAt: T1 })
     const next = computeReferralStatus(prev, snap({ ineligible: 'admin', stripe: stripe() }))
     expect(next).toEqual(prev)
   })
 
-  it('R1: snapshot verdict makes it ineligible and keeps an earlier endedAt', () => {
+  it('snapshot verdict makes it ineligible and keeps an earlier endedAt', () => {
     const next = computeReferralStatus(
       counting({ endedAt: T1, pausedReason: 'past_due' }),
       snap({ ineligible: 'chargeback', stripe: stripe() }),
@@ -74,28 +73,28 @@ describe('computeReferralStatus rules', () => {
     })
   })
 
-  it('R1: sets endedAt to now when there was none', () => {
+  it('sets endedAt to now when there was none', () => {
     const next = computeReferralStatus(state(), snap({ ineligible: 'self_referral' }))
     expect(next.endedAt).toEqual(NOW)
   })
 
-  it('R2: canceled stays canceled when the clinic comes back', () => {
+  it('canceled stays canceled when the clinic comes back', () => {
     const prev = state({ status: 'canceled', endedAt: T1, stripeSubscriptionId: 'sub_1' })
     expect(computeReferralStatus(prev, snap({ stripe: stripe() }))).toEqual(prev)
   })
 
-  it('R2: canceled plus a chargeback becomes ineligible', () => {
+  it('canceled plus a chargeback becomes ineligible', () => {
     const prev = state({ status: 'canceled', endedAt: T1 })
     const next = computeReferralStatus(prev, snap({ ineligible: 'chargeback' }))
     expect(next).toMatchObject({ status: 'ineligible', ineligibleReason: 'chargeback', endedAt: T1 })
   })
 
-  it('R3: deleted tenant becomes canceled', () => {
+  it('deleted tenant becomes canceled', () => {
     const next = computeReferralStatus(counting(), snap({ tenantDeleted: true, stripe: stripe() }))
     expect(next).toMatchObject({ status: 'canceled', endedAt: NOW })
   })
 
-  describe('R4: no Stripe subscription', () => {
+  describe('no Stripe subscription', () => {
     it('trial stays trial', () => {
       expect(computeReferralStatus(state(), snap()).status).toBe('trial')
     })
@@ -111,7 +110,7 @@ describe('computeReferralStatus rules', () => {
     })
   })
 
-  describe('R5: dead Stripe subscription', () => {
+  describe('dead Stripe subscription', () => {
     const prevs: ReferralState[] = [
       state(),
       state({ status: 'trial_ended' }),
@@ -127,7 +126,7 @@ describe('computeReferralStatus rules', () => {
     }
   })
 
-  describe('R6: checkout in flight', () => {
+  describe('checkout in flight', () => {
     it('incomplete from trial stays trial, stamping the subscription id', () => {
       const next = computeReferralStatus(state(), snap({ stripe: stripe({ status: 'incomplete' }) }))
       expect(next).toEqual(state({ stripeSubscriptionId: 'sub_1' }))
@@ -141,7 +140,7 @@ describe('computeReferralStatus rules', () => {
     })
   })
 
-  describe('R7: paid subscription', () => {
+  describe('paid subscription', () => {
     it('first paid invoice, no cycle invoice: first_paid with stamps', () => {
       const next = computeReferralStatus(state(), snap({ stripe: stripe() }))
       expect(next).toMatchObject({
@@ -170,7 +169,7 @@ describe('computeReferralStatus rules', () => {
       expect(next.status).toBe('counting')
     })
 
-    it('P-9: qualifying invoice on a yearly sub stays first_paid and does not qualify', () => {
+    it('qualifying invoice on a yearly sub stays first_paid and does not qualify', () => {
       const next = computeReferralStatus(
         state({ status: 'first_paid', firstPaidAt: T1 }),
         snap({ stripe: stripe({ monthly: false, qualifyingInvoice: { id: 'in_2', paidAt: T2 } }) }),
@@ -178,7 +177,7 @@ describe('computeReferralStatus rules', () => {
       expect(next).toMatchObject({ status: 'first_paid', qualifiedAt: null, qualifyingInvoiceId: null })
     })
 
-    it('P-9: counting that moves to yearly shows first_paid and keeps qualifiedAt', () => {
+    it('counting that moves to yearly shows first_paid and keeps qualifiedAt', () => {
       const next = computeReferralStatus(counting(), snap({ stripe: stripe({ monthly: false }) }))
       expect(next).toMatchObject({ status: 'first_paid', qualifiedAt: T2, pausedReason: null })
     })
@@ -197,12 +196,12 @@ describe('computeReferralStatus rules', () => {
       expect(next).toEqual(prev)
     })
 
-    it.each(['past_due', 'unpaid', 'paused'] as const)('R7b: %s pauses with past_due', (status) => {
+    it.each(['past_due', 'unpaid', 'paused'] as const)('%s pauses with past_due', (status) => {
       const next = computeReferralStatus(counting(), snap({ stripe: stripe({ status }) }))
       expect(next).toMatchObject({ status: 'paused', pausedReason: 'past_due' })
     })
 
-    it('R7b wins over R7c when both apply', () => {
+    it('past_due wins over cancel at period end when both apply', () => {
       const next = computeReferralStatus(
         counting(),
         snap({ stripe: stripe({ status: 'past_due', cancelAtPeriodEnd: true }) }),
@@ -219,18 +218,18 @@ describe('computeReferralStatus rules', () => {
       expect(back).toMatchObject({ status: 'counting', pausedReason: null, qualifiedAt: T2, qualifyingInvoiceId: 'in_2' })
     })
 
-    it('R7c: cancel at period end pauses, reactivation returns to counting', () => {
+    it('cancel at period end pauses, reactivation returns to counting', () => {
       const paused = computeReferralStatus(counting(), snap({ stripe: stripe({ cancelAtPeriodEnd: true }) }))
       expect(paused).toMatchObject({ status: 'paused', pausedReason: 'cancel_scheduled' })
       const back = computeReferralStatus(paused, snap({ stripe: stripe() }))
       expect(back).toMatchObject({ status: 'counting', pausedReason: null })
     })
 
-    it('R7d: trialing counts like active', () => {
+    it('trialing counts like active', () => {
       expect(computeReferralStatus(counting(), snap({ stripe: stripe({ status: 'trialing' }) })).status).toBe('counting')
     })
 
-    it('H8: persisted evidence carries a paused referral with an empty invoice snapshot', () => {
+    it('persisted evidence carries a paused referral with an empty invoice snapshot', () => {
       const empty = { firstPaidAt: null, qualifyingInvoice: null }
       expect(
         computeReferralStatus(counting(), snap({ stripe: stripe({ ...empty, status: 'past_due' }) })),
@@ -257,10 +256,6 @@ describe('computeReferralStatus rules', () => {
 })
 
 describe('status predicates', () => {
-  it('isCountingStatus is true only for counting', () => {
-    expect(isCountingStatus('counting')).toBe(true)
-    expect(isCountingStatus('paused')).toBe(false)
-  })
   it('isTerminalStatus covers canceled and ineligible only', () => {
     const all: ReferralStatus[] = ['trial', 'trial_ended', 'first_paid', 'counting', 'paused', 'canceled', 'ineligible']
     expect(all.filter(isTerminalStatus)).toEqual(['canceled', 'ineligible'])

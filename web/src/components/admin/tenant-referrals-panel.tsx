@@ -172,8 +172,8 @@ export function TenantReferralsPanel({ tenantId }: { tenantId: string }) {
 
       {referredBy && (
         <p className="text-xs text-mid">
-          Indicada por <strong className="text-charcoal">{referredBy.referrerName}</strong>{' '}
-          — {statusText(referredBy)}
+          Indicada por <strong className="text-charcoal">{referredBy.referrerName}</strong>:{' '}
+          {statusText(referredBy)}
         </p>
       )}
 

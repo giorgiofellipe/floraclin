@@ -395,7 +395,7 @@ describe('BillingSettings — a running discount (win-back coupon)', () => {
   })
 })
 
-describe('BillingSettings — referral program', () => {
+describe('BillingSettings: referral program', () => {
   const OFFER = {
     kind: 'referral',
     referrerName: 'Clínica Flor',
@@ -482,6 +482,15 @@ describe('BillingSettings — referral program', () => {
     expect(toast.success).toHaveBeenCalledWith('Indicação registrada')
     await waitFor(() => expect(screen.queryByText('Tem um código de indicação?')).toBeNull())
     expect(await screen.findByTestId('referral-offer-banner')).toBeInTheDocument()
+  })
+
+  it('pre-fills the code field from the link cookie, still editable', async () => {
+    setup([{ ...TRIAL_USAGE, referral: { offer: null, canEnterCode: true, linkCode: 'MECA7K' } }])
+    const input = await screen.findByLabelText('Código de indicação')
+    expect(input).toHaveValue('MECA7K')
+    fireEvent.change(input, { target: { value: '' } })
+    expect(input).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Aplicar código' })).toBeDisabled()
   })
 
   it('explains an ineligible referral', async () => {
