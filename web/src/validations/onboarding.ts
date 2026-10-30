@@ -57,6 +57,10 @@ export const onboardingCompleteSchema = z.object({
 
 export type OnboardingCompleteInput = z.infer<typeof onboardingCompleteSchema>
 
+// The final save's 409 for a clinic that already finished onboarding; the
+// wizard reads it as done. A taken slug also answers 409, with a message.
+export const ONBOARDING_ALREADY_COMPLETED = 'onboarding_already_completed'
+
 // Autosave runs on every keystroke, so a half-typed value is dropped (not saved yet) instead of failing the save.
 const savedWhenComplete = <T extends z.ZodType>(schema: T) => schema.optional().catch(undefined)
 

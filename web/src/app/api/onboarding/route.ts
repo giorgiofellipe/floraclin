@@ -4,7 +4,7 @@ import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import {
   getTenant,
-  updateTenant,
+  saveOnboardingClinic,
   updateTenantSettings,
   markOnboardingCompleted,
   createProcedureType,
@@ -27,11 +27,18 @@ import { db } from '@/db/client'
 import { tenants, users } from '@/db/schema'
 import { eq, sql } from 'drizzle-orm'
 // withTransaction removed — helper functions use global db which deadlocks in transactions
-import { onboardingCompleteSchema } from '@/validations/onboarding'
+import { ONBOARDING_ALREADY_COMPLETED, onboardingCompleteSchema } from '@/validations/onboarding'
 import { handleApiError } from '@/lib/api-error'
 import { ForbiddenError, isUniqueViolation } from '@/lib/errors'
 
 const SLUG_TAKEN_MESSAGE = 'Este link já está em uso. Escolha outro.'
+
+const alreadyCompleted = () =>
+  NextResponse.json({ success: false, error: ONBOARDING_ALREADY_COMPLETED }, { status: 409 })
+
+function isOnboardingCompleted(settings: unknown): boolean {
+  return (settings as Record<string, unknown> | null | undefined)?.onboarding_completed === true
+}
 
 export async function GET(request: Request) {
   try {
@@ -40,8 +47,7 @@ export async function GET(request: Request) {
     if (!tenant) {
       return NextResponse.json({ completed: false })
     }
-    const settings = (tenant.settings as Record<string, unknown>) || {}
-    return NextResponse.json({ completed: settings.onboarding_completed === true })
+    return NextResponse.json({ completed: isOnboardingCompleted(tenant.settings) })
   } catch (error) {
     // The old fallthrough answered 200 `{ completed: false }` for *any*
     // failure, so a transient DB error read as "this clinic never onboarded"
@@ -71,9 +77,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: CLINIC_PHONE_REQUIRED_MESSAGE }, { status: 400 })
     }
 
-    // Check existing procedure types before entering transaction
-    const existingTypes = await listProcedureTypes(auth.tenantId)
     const current = await getTenant(auth.tenantId)
+    if (!current) {
+      return NextResponse.json({ success: false, error: 'tenant_not_found' }, { status: 404 })
+    }
+    // A save after completion (a stale wizard, a resubmit) changes nothing:
+    // the clinic may have edited its details in settings since.
+    if (isOnboardingCompleted(current.settings)) {
+      return alreadyCompleted()
+    }
+
+    const existingTypes = await listProcedureTypes(auth.tenantId)
     // Autosave may have cleared the stand-in flag already; it is still set
     // when this save is the first to hear the clinic's real name.
     const stillNamedPlaceholder = hasPlaceholderName(current?.settings)
@@ -82,35 +96,40 @@ export async function POST(request: Request) {
     const noticePending = !current?.lifecycleNoticeAt
 
     // NOTE: Not using withTransaction here because the helper functions
-    // (updateTenant, createProcedureType, etc.) all use the global `db` client.
-    // Wrapping them in a transaction would deadlock since the transaction holds
-    // a connection and the helpers try to use a separate connection from the pool.
-    // Onboarding is idempotent, so sequential execution is safe.
+    // (saveOnboardingClinic, createProcedureType, etc.) all use the global `db`
+    // client. Wrapping them in a transaction would deadlock since the
+    // transaction holds a connection and the helpers try to use a separate
+    // connection from the pool. So this is not fully race-safe: a save after
+    // completion answers 409 above, before any write; a save racing an open
+    // onboarding is gated by saveOnboardingClinic's conditional update and
+    // markOnboardingCompleted's compare-and-set. Two saves that both get past
+    // the clinic save while onboarding is open can both run the seeding below,
+    // which is idempotent.
 
     {
       // 1. Update tenant with clinic info, working hours, and slug
       const slug = data.clinic.slug
         || await findAvailableSlug(db, generateSlug(data.clinic.name), auth.tenantId)
 
+      // Written only while onboarding is open: if a concurrent save completed
+      // it after the check above, that one wins and this one writes nothing.
+      let saved: boolean
       try {
-        await db
-          .update(tenants)
-          .set({ slug, updatedAt: new Date() })
-          .where(eq(tenants.id, auth.tenantId))
+        saved = await saveOnboardingClinic(auth.tenantId, {
+          slug,
+          name: data.clinic.name,
+          phone: data.clinic.phone,
+          email: data.clinic.email,
+          address: data.clinic.address,
+          workingHours: data.clinic.workingHours,
+        })
       } catch (err) {
         if (isUniqueViolation(err, 'tenants_slug_unique')) {
           return NextResponse.json({ error: SLUG_TAKEN_MESSAGE }, { status: 409 })
         }
         throw err
       }
-
-      await updateTenant(auth.tenantId, {
-        name: data.clinic.name,
-        phone: data.clinic.phone || '',
-        email: data.clinic.email || '',
-        address: data.clinic.address,
-        workingHours: data.clinic.workingHours,
-      })
+      if (!saved) return alreadyCompleted()
 
       // 2. Create selected procedure types (only if none exist yet)
       if (existingTypes.length === 0 && data.procedureTypes.length > 0) {
@@ -250,8 +269,10 @@ export async function POST(request: Request) {
           signedUpAt: current?.createdAt ?? null,
         })
       }
-      // A repeated or concurrent save loses the compare-and-set above. It
-      // still clears a leftover stand-in flag (a no-op if the winner did).
+      // A concurrent save that also got past the open-onboarding checks loses
+      // the compare-and-set above (a repeat after completion got 409 before
+      // any of this). It still clears a leftover stand-in flag (a no-op if
+      // the winner did).
       if (!firstCompletion && stillNamedPlaceholder) {
         await updateTenantSettings(auth.tenantId, { onboarding_completed: true, [PLACEHOLDER_NAME_SETTING]: false })
       }

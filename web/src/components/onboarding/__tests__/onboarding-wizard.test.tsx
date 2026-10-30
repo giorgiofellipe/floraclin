@@ -280,6 +280,49 @@ describe('OnboardingWizard', () => {
     expect(router.push).not.toHaveBeenCalled()
   })
 
+  // A stale wizard (another tab finished first) has nothing left to save.
+  it('goes to the dashboard without an error when the server says onboarding is already completed', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      if (isCompletedCheck(url, init)) return Response.json({ completed: false })
+      if (url === '/api/onboarding') return Response.json({ success: false, error: 'onboarding_already_completed' }, { status: 409 })
+      return Response.json({})
+    })
+    render(
+      wrap(<OnboardingWizard tenantName="My Clinic" tenantPhone={null} tenantEmail={null} existingProcedureTypes={[]} existingProducts={[]} />),
+    )
+
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-complete'))
+
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/dashboard'))
+    expect(toast.error).not.toHaveBeenCalled()
+    expect(vi.mocked(track)).not.toHaveBeenCalledWith('onboarding_submit_failed', expect.anything())
+  })
+
+  it('stays on the wizard with the message when the booking link is taken', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      if (isCompletedCheck(url, init)) return Response.json({ completed: false })
+      if (url === '/api/onboarding') return Response.json({ error: 'Este link já está em uso. Escolha outro.' }, { status: 409 })
+      return Response.json({})
+    })
+    render(
+      wrap(<OnboardingWizard tenantName="My Clinic" tenantPhone={null} tenantEmail={null} existingProcedureTypes={[]} existingProducts={[]} />),
+    )
+
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-complete'))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Este link já está em uso. Escolha outro.'))
+    expect(vi.mocked(track)).toHaveBeenCalledWith('onboarding_submit_failed', expect.objectContaining({ reason: 'slug_taken', status: 409 }))
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
   // Regression: the link field showed the plain name slug another clinic held, and finishing onboarding failed.
   it('shows the free booking slug the server suggests for the clinic name', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>

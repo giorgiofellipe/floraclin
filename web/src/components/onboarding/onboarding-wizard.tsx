@@ -24,7 +24,7 @@ import { Input } from '@/components/ui/input'
 import { CLINIC_PHONE_REQUIRED_MESSAGE, hasClinicPhone } from '@/lib/clinic-phone'
 import { resetAnalytics, track } from '@/lib/analytics/client'
 import type { OnboardingStepName, OnboardingSubmitFailureReason } from '@/lib/analytics/events'
-import { ONBOARDING_STEPS, type OnboardingDraft, type OnboardingProgressInput } from '@/validations/onboarding'
+import { ONBOARDING_ALREADY_COMPLETED, ONBOARDING_STEPS, type OnboardingDraft, type OnboardingProgressInput } from '@/validations/onboarding'
 import { useOnboardingAutosave } from './use-onboarding-autosave'
 import { useRedirectWhenOnboardingCompleted } from './use-redirect-when-onboarding-completed'
 
@@ -373,6 +373,11 @@ export function OnboardingWizard({
         autosave.finish()
         toast.success('Configuração concluída! Bem-vindo ao FloraClin.')
         // Replace, so Back cannot return to the finished wizard.
+        router.replace('/dashboard')
+      } else if (res.status === 409 && result?.error === ONBOARDING_ALREADY_COMPLETED) {
+        // Finished elsewhere (another tab, a stale page): this submit saved nothing,
+        // and there is nothing left to do here.
+        autosave.finish()
         router.replace('/dashboard')
       } else {
         autosave.resume()
