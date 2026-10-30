@@ -70,6 +70,20 @@ describe('SubscriptionDetailDialog feedback discount', () => {
     await waitFor(() => expect(setFeedback).toHaveBeenCalledWith({ tenantId: 't1', granted: false }))
   })
 
+  it('says a flag left on a clinic that has since paid has no effect, and still lets it be removed', async () => {
+    const paid = { ...TRIAL, status: 'active', source: 'stripe', stripeSubscriptionId: 'sub_1' }
+    detail.value = {
+      ...paid,
+      feedbackDiscount: { grantedAt: '2026-10-29T15:00:00.000Z', grantedBy: 'u1', grantedByName: 'Admin Zero' },
+    }
+    render(<SubscriptionDetailDialog open onOpenChange={() => {}} subscription={paid} />)
+    const status = screen.getByTestId('admin-feedback-discount-status')
+    expect(status).toHaveTextContent(/^Sem efeito: .*assinatura paga no Stripe/)
+    expect(status).not.toHaveTextContent('Ativo')
+    fireEvent.click(screen.getByRole('button', { name: 'Remover desconto' }))
+    await waitFor(() => expect(setFeedback).toHaveBeenCalledWith({ tenantId: 't1', granted: false }))
+  })
+
   it('explains, without a button, why a Stripe-billed clinic cannot get it', () => {
     const stripe = { ...TRIAL, status: 'active', source: 'stripe', stripeSubscriptionId: 'sub_1' }
     detail.value = { ...stripe, feedbackDiscount: null }

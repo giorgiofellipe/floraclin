@@ -24,6 +24,13 @@ export function feedbackIneligibility(
   return status === 'trialing' || status === 'expired' ? null : 'not_trial'
 }
 
+/** The admin subscription GET's `feedbackDiscount` field, as JSON. */
+export interface AdminFeedbackDiscount {
+  grantedAt: string
+  grantedBy: string | null
+  grantedByName: string | null
+}
+
 export const FEEDBACK_INELIGIBLE_MESSAGES: Record<FeedbackIneligibility, string> = {
   stripe:
     'Esta clínica já tem ou já teve uma assinatura paga no Stripe. O desconto de feedback vale só para clínicas em teste ou com o teste encerrado.',

@@ -32,7 +32,7 @@ import {
   useExtendTrial,
   useSetFeedbackDiscount,
 } from '@/hooks/mutations/use-admin-subscription-mutations'
-import { FEEDBACK_INELIGIBLE_MESSAGES, feedbackIneligibility } from '@/lib/feedback-eligibility'
+import { FEEDBACK_INELIGIBLE_MESSAGES, feedbackIneligibility, type AdminFeedbackDiscount } from '@/lib/feedback-eligibility'
 import { toast } from 'sonner'
 import { cn, formatDate } from '@/lib/utils'
 import { Loader2Icon } from 'lucide-react'
@@ -594,11 +594,6 @@ function InfoField({ label, value }: { label: string; value: React.ReactNode }) 
   )
 }
 
-interface FeedbackDiscountInfo {
-  grantedAt: string
-  grantedByName: string | null
-}
-
 /** The feedback reward flag: who set it and when, and the toggle. The API
  *  enforces the same eligibility rule; clearing is always allowed. */
 function FeedbackDiscountPanel({
@@ -607,13 +602,15 @@ function FeedbackDiscountPanel({
   isPending,
   onToggle,
 }: {
-  discount: FeedbackDiscountInfo | null
+  discount: AdminFeedbackDiscount | null
   ineligible: ReturnType<typeof feedbackIneligibility>
   isPending: boolean
   onToggle: (granted: boolean) => void
 }) {
   let text: string
-  if (discount) {
+  if (discount && ineligible) {
+    text = `Sem efeito: ${FEEDBACK_INELIGIBLE_MESSAGES[ineligible]}`
+  } else if (discount) {
     const by = discount.grantedByName ? ` por ${discount.grantedByName}` : ''
     text = `Ativo: aplicado${by} em ${formatBrDate(discount.grantedAt)} às ${formatBrTime(discount.grantedAt)}. Vale no próximo pagamento da clínica.`
   } else if (ineligible) {

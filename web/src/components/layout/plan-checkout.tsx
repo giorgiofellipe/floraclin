@@ -269,30 +269,27 @@ export function WinbackBadge({ offer }: { offer: PublicWinbackOffer | null }) {
   )
 }
 
-export function ReferralBadge({ offer }: { offer: PublicReferralOffer | null }) {
-  if (!offer) return null
+/** A discount applied at checkout without a code: its headline, as a pill. */
+function AutoAppliedOfferPill({ testId, headline }: { testId: string; headline: string }) {
   return (
     <p
-      data-testid="referral-offer"
+      data-testid={testId}
       className="mx-auto inline-flex max-w-full flex-wrap items-center justify-center gap-x-1.5 rounded-full border border-sage/40 bg-white px-4 py-1.5 text-center text-sm text-forest"
     >
-      <span className="font-semibold">{referralOfferHeadline(offer)}</span>{' '}
+      <span className="font-semibold">{headline}</span>{' '}
       <span>Aplicado automaticamente no pagamento.</span>
     </p>
   )
 }
 
+export function ReferralBadge({ offer }: { offer: PublicReferralOffer | null }) {
+  if (!offer) return null
+  return <AutoAppliedOfferPill testId="referral-offer" headline={referralOfferHeadline(offer)} />
+}
+
 export function FeedbackBadge({ offer }: { offer: PublicFeedbackOffer | null }) {
   if (!offer) return null
-  return (
-    <p
-      data-testid="feedback-offer"
-      className="mx-auto inline-flex max-w-full flex-wrap items-center justify-center gap-x-1.5 rounded-full border border-sage/40 bg-white px-4 py-1.5 text-center text-sm text-forest"
-    >
-      <span className="font-semibold">{feedbackOfferHeadline(offer)}</span>{' '}
-      <span>Aplicado automaticamente no pagamento.</span>
-    </p>
-  )
+  return <AutoAppliedOfferPill testId="feedback-offer" headline={feedbackOfferHeadline(offer)} />
 }
 
 /** The one badge for whichever offer applies; the caller passes at most one. */

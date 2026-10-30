@@ -175,6 +175,15 @@ function UsageBar({ label, icon: Icon, used, limit, note }: {
   )
 }
 
+/** The offer this clinic gets at checkout, as a banner. */
+function OfferBanner({ testId, children }: { testId: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-[3px] border border-sage/30 bg-sage/10 p-4" data-testid={testId}>
+      <p className="text-sm text-forest">{children}</p>
+    </div>
+  )
+}
+
 function offerPlanPrice(
   plan: PlanItem,
   offer: ReferralOfferView | FeedbackOfferView | null,
@@ -671,16 +680,12 @@ export function BillingSettings() {
       </div>
 
       {feedbackOffer && (
-        <div className="rounded-[3px] border border-sage/30 bg-sage/10 p-4" data-testid="feedback-offer-banner">
-          <p className="text-sm text-forest">{feedbackOffer.headline} Aplicado automaticamente no pagamento.</p>
-        </div>
+        <OfferBanner testId="feedback-offer-banner">
+          {feedbackOffer.headline} Aplicado automaticamente no pagamento.
+        </OfferBanner>
       )}
 
-      {referralOffer && (
-        <div className="rounded-[3px] border border-sage/30 bg-sage/10 p-4" data-testid="referral-offer-banner">
-          <p className="text-sm text-forest">{referralOffer.headline}</p>
-        </div>
-      )}
+      {referralOffer && <OfferBanner testId="referral-offer-banner">{referralOffer.headline}</OfferBanner>}
 
       {canEnterCode && (
         <form

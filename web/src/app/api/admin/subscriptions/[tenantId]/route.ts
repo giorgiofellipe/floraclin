@@ -15,6 +15,7 @@ import { STRIPE_UNAVAILABLE_MESSAGE, stripeStateFor } from '@/lib/admin-stripe-s
 import { getCreditUsage } from '@/db/queries/whatsapp-credits'
 import { createAuditLog } from '@/lib/audit'
 import { handleApiError } from '@/lib/api-error'
+import type { AdminFeedbackDiscount } from '@/lib/feedback-eligibility'
 
 export async function GET(
   req: Request,
@@ -36,8 +37,8 @@ export async function GET(
       grantedBy ? getUserFullName(grantedBy) : Promise.resolve(null),
     ])
     const stripeState = state === 'unavailable' ? null : state
-    const feedbackDiscount = subscription.feedbackDiscountGrantedAt
-      ? { grantedAt: subscription.feedbackDiscountGrantedAt, grantedBy, grantedByName }
+    const feedbackDiscount: AdminFeedbackDiscount | null = subscription.feedbackDiscountGrantedAt
+      ? { grantedAt: subscription.feedbackDiscountGrantedAt.toISOString(), grantedBy, grantedByName }
       : null
 
     return NextResponse.json({ data: { ...subscription, creditUsage, stripeState, feedbackDiscount } })

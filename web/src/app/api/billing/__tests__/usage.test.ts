@@ -8,7 +8,11 @@ vi.mock('@/db/client', () => ({
     select: () => ({ from: () => ({ where: async () => [{ count: 1 }] }) }),
   },
 }))
-vi.mock('@/db/queries/subscriptions', () => ({ getSubscription: vi.fn(), listPlans: vi.fn(async () => [{ slug: 'pro' }]) }))
+const { PRO_PLAN, FREE_PLAN } = vi.hoisted(() => ({
+  PRO_PLAN: { slug: 'pro', priceCents: 9900, stripePriceId: 'price_pro' },
+  FREE_PLAN: { slug: 'trial', priceCents: 0, stripePriceId: null },
+}))
+vi.mock('@/db/queries/subscriptions', () => ({ getSubscription: vi.fn(), listPlans: vi.fn(async () => [PRO_PLAN, FREE_PLAN]) }))
 vi.mock('@/db/queries/whatsapp-credits', () => ({ getCreditUsage: vi.fn() }))
 vi.mock('@/db/queries/referrals', () => ({
   getReferralAttribution: vi.fn(async () => null),
@@ -177,6 +181,32 @@ describe('GET /api/billing/usage feedback offer', () => {
     expect(JSON.stringify(body)).not.toContain('promo_feedback_secret')
     expect(body.referral.offer).toBeNull()
     expect(getValidatedReferralOffer).not.toHaveBeenCalled()
+  })
+
+  it('still shows the referral offer when the clinic is flagged but the feedback offer does not validate', async () => {
+    vi.stubEnv('STRIPE_FEEDBACK_PROMOTION_CODE_ID', 'promo_feedback_secret')
+    vi.mocked(getSubscription).mockResolvedValue(FLAGGED as never)
+    vi.mocked(getValidatedFeedbackOffer).mockResolvedValue(null)
+    vi.mocked(getReferralAttribution).mockResolvedValue(ATTRIBUTION as never)
+    vi.mocked(getValidatedReferralOffer).mockResolvedValue(OFFER as never)
+
+    const body = await call()
+
+    expect(getValidatedFeedbackOffer).toHaveBeenCalledTimes(1)
+    expect(body.feedbackOffer).toBeNull()
+    expect(body.referral.offer.headline).toBe('Indicação de Clínica Flor: 20% de desconto nos 2 primeiros meses.')
+  })
+
+  it('reads the plans once, sellable only, for every offer', async () => {
+    vi.stubEnv('STRIPE_FEEDBACK_PROMOTION_CODE_ID', 'promo_feedback_secret')
+    vi.mocked(getSubscription).mockResolvedValue(FLAGGED as never)
+
+    await call()
+
+    expect(listPlans).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(getValidatedFeedbackOffer).mock.calls[0][1]).toEqual([PRO_PLAN])
+    expect(vi.mocked(getValidatedWinbackOffer).mock.calls[0][1]).toEqual([PRO_PLAN])
+    expect(vi.mocked(getValidatedReferralOffer).mock.calls[0][1]).toEqual([PRO_PLAN])
   })
 
   it('does no feedback work for a clinic nobody flagged', async () => {

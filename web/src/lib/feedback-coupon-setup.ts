@@ -49,6 +49,14 @@ export async function setupFeedbackCoupon(
     promo = await deps.createPromotionCode({ couponId: FEEDBACK_COUPON_ID, code: FEEDBACK_PROMOTION_CODE })
     deps.log(`promotion code ${FEEDBACK_PROMOTION_CODE}: created (${promo.id})`)
   }
+  // The code is reusable by design: only Stripe's first-purchase restriction
+  // keeps a paying clinic from getting it. A hand-made FEEDBACK50 without it
+  // must not be adopted.
+  if (promo.restrictions?.first_time_transaction !== true) {
+    throw new Error(
+      `promotion code ${FEEDBACK_PROMOTION_CODE} (${promo.id}) lacks restrictions.first_time_transaction; deactivate it in Stripe and re-run`,
+    )
+  }
 
   return { promotionCodeId: promo.id, envLines: [`STRIPE_FEEDBACK_PROMOTION_CODE_ID=${promo.id}`] }
 }

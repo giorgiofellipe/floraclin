@@ -77,6 +77,10 @@ export async function createCheckoutSession(
       // Feedback reward, win-back or referral welcome: the promotion code is applied for the clinic, never typed
       // by them. Stripe rejects `discounts` together with
       // `allow_promotion_codes`, which this session does not set.
+      // Keep it that way: FEEDBACK50 and VOLTA30 are guessable codes, guarded
+      // only by the server choosing who gets them. Enabling
+      // `allow_promotion_codes` here, or promotion codes in the billing
+      // portal, would let any clinic type them in.
       session = await stripe.checkout.sessions.create({
         ...base,
         metadata: { ...base.metadata, [kind]: 'true' },
@@ -684,7 +688,7 @@ export async function customerHasPriorPurchase(customerId: string, now: Date = n
       charges.data.some((charge) => charge.status === 'succeeded') ||
       invoices.data.length > 0
   } catch (err) {
-    reportSideEffectFailure(err, { area: 'billing', step: 'winback_prior_purchase', extra: { customerId } })
+    reportSideEffectFailure(err, { area: 'billing', step: 'promo_prior_purchase', extra: { customerId } })
     ttl = PROMO_CHECK_ERROR_TTL_MS
   }
   priorPurchaseCache.set(customerId, { prior, until: now.getTime() + ttl })
