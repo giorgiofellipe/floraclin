@@ -147,6 +147,42 @@ describe('FloraClin conversion events', () => {
     })
   })
 
+  // The LIA promises no patient data reaches Meta: user_data is the clinic's
+  // match keys and nothing else, and there is no custom_data to smuggle any in.
+  it('posts FirstPatient under the fixed per-clinic id with only the clinic professional match keys', async () => {
+    process.env.META_CAPI_ACCESS_TOKEN = 'signup-token'
+    const { sendFirstPatientEvent } = await import('../events')
+
+    const sent = await sendFirstPatientEvent({
+      eventId: 'first_patient:tenant-1',
+      email: 'Maria@Clinica.com',
+      phone: '(11) 99999-8888',
+      eventSourceUrl: 'https://app.floraclin.com.br/pacientes',
+      fbc: 'fb.1.1700000000000.click',
+      fbp: 'fb.1.1700000000000.browser',
+      clientIp: '203.0.113.10',
+      userAgent: 'Vitest Browser',
+    })
+
+    expect(sent).toBe(true)
+    const payload = postedPayload()
+    expect(payload).toMatchObject({
+      event_name: 'FirstPatient',
+      event_id: 'first_patient:tenant-1',
+      action_source: 'website',
+      event_source_url: 'https://app.floraclin.com.br/pacientes',
+    })
+    expect(payload).not.toHaveProperty('custom_data')
+    expect(payload.user_data).toEqual({
+      em: [hashEmail('maria@clinica.com')],
+      ph: [hashPhone('(11) 99999-8888')],
+      fbc: 'fb.1.1700000000000.click',
+      fbp: 'fb.1.1700000000000.browser',
+      client_ip_address: '203.0.113.10',
+      client_user_agent: 'Vitest Browser',
+    })
+  })
+
   it.each([
     ['production', 1],
     ['preview', 0],

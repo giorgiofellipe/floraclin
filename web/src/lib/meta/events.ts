@@ -267,14 +267,26 @@ export function sendSubscribeEvent({ paidCents, listPriceCents, planSlug, ...inp
   )
 }
 
+export type PlatformConversionInput = SendSignupCompleteRegistrationInput
+
+/**
+ * A custom event for the clinic's first patient: activation, not a sale.
+ * Carries the clinic professional's match keys only. Nothing about the
+ * patient goes in it, only the fact that the clinic registered one.
+ */
+export function sendFirstPatientEvent(input: PlatformConversionInput): Promise<boolean> {
+  return sendPlatformConversion('FirstPatient', undefined, input)
+}
+
 const PLATFORM_CONVERSION_STEP = {
   CompleteRegistration: 'signup_complete_registration',
   Subscribe: 'subscribe',
+  FirstPatient: 'first_patient',
 } as const
 
 async function sendPlatformConversion(
-  eventName: Extract<MetaEventName, 'CompleteRegistration' | 'Subscribe'>,
-  customData: MetaCustomData,
+  eventName: keyof typeof PLATFORM_CONVERSION_STEP,
+  customData: MetaCustomData | undefined,
   input: SendSignupCompleteRegistrationInput,
 ): Promise<boolean> {
   const target = platformCapiTarget()
@@ -303,7 +315,7 @@ async function sendPlatformConversion(
       action_source: 'website',
       event_source_url: input.eventSourceUrl,
       user_data: userData,
-      custom_data: customData,
+      ...(customData ? { custom_data: customData } : {}),
     }
 
     let result = await postEvents(target, [payload])

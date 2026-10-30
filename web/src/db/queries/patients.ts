@@ -125,6 +125,12 @@ export async function getPatientByPhone(tenantId: string, phone: string): Promis
   return patient ?? null
 }
 
+/**
+ * The only insert into patients in the app (the demo seed script also
+ * inserts). Callers follow it with
+ * trackFirstPatientCreated and scheduleFirstPatientConversion: both need the
+ * actor and the request, which this layer does not have.
+ */
 export async function createPatient(
   tenantId: string,
   data: CreatePatientInput,
