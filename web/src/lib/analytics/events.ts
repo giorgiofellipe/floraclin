@@ -40,7 +40,7 @@ export type OnboardingSubmitFailureReason =
   | 'network_error'
 
 /** Where an owner came from to the Indique e Ganhe tab: the `from` query param on links into it. */
-export const REFERRAL_PAGE_LINK_SOURCES = ['sidebar_card', 'launch_email', 'status_email'] as const
+export const REFERRAL_PAGE_LINK_SOURCES = ['sidebar_card', 'launch_email', 'launch_whatsapp', 'status_email'] as const
 export type ReferralPageSource = (typeof REFERRAL_PAGE_LINK_SOURCES)[number] | 'direct'
 export type ReferralPageState = 'sharing' | 'subscribe_to_unlock' | 'inactive'
 
