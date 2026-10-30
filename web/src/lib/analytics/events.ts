@@ -39,6 +39,11 @@ export type OnboardingSubmitFailureReason =
   | 'server_error'
   | 'network_error'
 
+/** Where an owner came from to the Indique e Ganhe tab: the `from` query param on links into it. */
+export const REFERRAL_PAGE_LINK_SOURCES = ['sidebar_card', 'launch_email', 'launch_whatsapp', 'status_email'] as const
+export type ReferralPageSource = (typeof REFERRAL_PAGE_LINK_SOURCES)[number] | 'direct'
+export type ReferralPageState = 'sharing' | 'subscribe_to_unlock' | 'inactive'
+
 export interface UtmProperties {
   utm_source?: string
   utm_medium?: string
@@ -71,6 +76,7 @@ export interface AnalyticsEventProperties {
   first_patient_created: Record<string, never>
   first_photo_uploaded: { kind: TimelineStage }
   first_appointment_created: Record<string, never>
+  referral_page_viewed: { source: ReferralPageSource; state: ReferralPageState; counting: number }
 }
 
 export type AnalyticsEventName = keyof AnalyticsEventProperties
@@ -94,6 +100,7 @@ export const EVENT_PROPERTY_KEYS: { [E in AnalyticsEventName]: readonly (keyof A
   first_patient_created: [],
   first_photo_uploaded: ['kind'],
   first_appointment_created: [],
+  referral_page_viewed: ['source', 'state', 'counting'],
 }
 
 // A form field name, never a value: `name`, `clinic.phone`, `address[0]`.
@@ -193,6 +200,7 @@ export const CLIENT_EVENT_NAMES = [
   'onboarding_step_submitted',
   'onboarding_step_validation_error',
   'onboarding_submit_failed',
+  'referral_page_viewed',
 ] as const satisfies readonly AnalyticsEventName[]
 
 export type ClientEventName = (typeof CLIENT_EVENT_NAMES)[number]

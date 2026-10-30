@@ -9,7 +9,7 @@ import type { ReferralDashboardResponse } from '@/lib/referral/dashboard'
 import { ReferralGift } from './referral-gift'
 
 const COLLAPSED_KEY = 'floraclin_referral_card_collapsed'
-const REFERRAL_TAB = '/configuracoes?tab=indique'
+const REFERRAL_TAB = '/configuracoes?tab=indique&from=sidebar_card'
 const BILLING_TAB = '/configuracoes?tab=assinatura'
 const COPIED_MS = 2000
 

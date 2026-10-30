@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -7,6 +8,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { brl } from '@/lib/billing-discount-copy'
 import { useReferralDashboard } from '@/hooks/queries/use-referral-dashboard'
+import { track } from '@/lib/analytics/client'
+import { REFERRAL_PAGE_LINK_SOURCES, type ReferralPageSource, type ReferralPageState } from '@/lib/analytics/events'
 import {
   REFERRAL_MAX_COUNTING_FOR_DISCOUNT,
   REFERRAL_PERCENT_PER_REFERRAL,
@@ -31,6 +34,30 @@ const CHIP: Record<ReferralStatus, string> = {
   paused: 'bg-amber-50 text-amber-700',
   canceled: 'bg-content-bg text-mid',
   ineligible: 'bg-red-50 text-red-700',
+}
+
+/** Reads `from` and drops it from the URL, so tab switches, reloads and shared URLs count as direct. */
+function takePageSource(): ReferralPageSource {
+  const url = new URL(window.location.href)
+  const from = url.searchParams.get('from')
+  if (from === null) return 'direct'
+  url.searchParams.delete('from')
+  window.history.replaceState(window.history.state, '', url)
+  return REFERRAL_PAGE_LINK_SOURCES.find((s) => s === from) ?? 'direct'
+}
+
+function pageState(data: ReferralDashboardResponse): ReferralPageState {
+  if (data.subscribeToUnlock) return 'subscribe_to_unlock'
+  return data.link ? 'sharing' : 'inactive'
+}
+
+function useTrackPageView(data: ReferralDashboardResponse | null | undefined) {
+  const tracked = useRef(false)
+  useEffect(() => {
+    if (!data || tracked.current) return
+    tracked.current = true
+    track('referral_page_viewed', { source: takePageSource(), state: pageState(data), counting: data.progress.counting })
+  }, [data])
 }
 
 async function copy(text: string, message: string) {
@@ -140,6 +167,7 @@ const HOW_IT_WORKS = [
 
 export function ReferralSettings() {
   const { data, isLoading, isError } = useReferralDashboard()
+  useTrackPageView(data)
 
   if (isLoading) return <Skeleton className="h-64 w-full" />
   if (isError || !data) {
