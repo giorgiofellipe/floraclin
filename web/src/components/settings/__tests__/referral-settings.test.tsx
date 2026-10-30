@@ -5,6 +5,8 @@ import { ReferralSettings } from '../referral-settings'
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 import { toast } from 'sonner'
+vi.mock('@/lib/analytics/client', () => ({ track: vi.fn() }))
+import { track } from '@/lib/analytics/client'
 
 const ACTIVE = {
   canRefer: true,
@@ -46,7 +48,10 @@ beforeEach(() => {
   writeText.mockResolvedValue(undefined)
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  window.history.replaceState(null, '', '/')
+})
 
 describe('ReferralSettings', () => {
   it('renders the link and buttons, copying the link and the share text', async () => {
@@ -96,5 +101,17 @@ describe('ReferralSettings', () => {
     )
     expect(screen.queryByRole('button', { name: 'Copiar link' })).toBeNull()
     expect(screen.queryByText('Clínicas indicadas')).toBeNull()
+  })
+
+  it.each([
+    ['?tab=indique&from=launch_email', ACTIVE, { source: 'launch_email', state: 'sharing', counting: 2 }],
+    ['?tab=indique', INACTIVE, { source: 'direct', state: 'inactive', counting: 2 }],
+    ['?tab=indique&from=somewhere', { ...INACTIVE, subscribeToUnlock: true }, { source: 'direct', state: 'subscribe_to_unlock', counting: 2 }],
+  ])('reports one page view for %s', async (search, body, expected) => {
+    window.history.replaceState(null, '', `/configuracoes${search}`)
+    mockResponse(body)
+    render(<ReferralSettings />)
+    await waitFor(() => expect(track).toHaveBeenCalledTimes(1))
+    expect(track).toHaveBeenCalledWith('referral_page_viewed', expected)
   })
 })

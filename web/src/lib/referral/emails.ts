@@ -20,7 +20,7 @@ function build(subject: string, paragraph: string, appUrl: string): { subject: s
       preheader: paragraph,
       heading: subject.replace('Indique e Ganhe: ', ''),
       paragraphs: [paragraph],
-      button: { label: 'Ver minhas indicações', url: `${appUrl}/configuracoes?tab=indique` },
+      button: { label: 'Ver minhas indicações', url: `${appUrl}/configuracoes?tab=indique&from=status_email` },
     },
   }
 }

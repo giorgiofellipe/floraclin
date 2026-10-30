@@ -21,7 +21,7 @@ describe('referralRewardEmailContent', () => {
     expect(mail.content.paragraphs).toEqual([
       'Sua indicação Clínica Flor começou a contar: seu desconto agora é de 40% a partir da próxima fatura.',
     ])
-    expect(mail.content.button).toEqual({ label: 'Ver minhas indicações', url: `${APP}/configuracoes?tab=indique` })
+    expect(mail.content.button).toEqual({ label: 'Ver minhas indicações', url: `${APP}/configuracoes?tab=indique&from=status_email` })
   })
 
   it('announces a referral that stopped counting', () => {
