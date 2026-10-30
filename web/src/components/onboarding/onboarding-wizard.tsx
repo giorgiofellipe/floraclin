@@ -375,8 +375,6 @@ export function OnboardingWizard({
         // Replace, so Back cannot return to the finished wizard.
         router.replace('/dashboard')
       } else if (res.status === 409 && result?.error === ONBOARDING_ALREADY_COMPLETED) {
-        // Finished elsewhere (another tab, a stale page): this submit saved nothing,
-        // and there is nothing left to do here.
         autosave.finish()
         router.replace('/dashboard')
       } else {

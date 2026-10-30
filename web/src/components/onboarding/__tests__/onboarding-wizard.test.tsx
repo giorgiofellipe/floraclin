@@ -697,5 +697,19 @@ describe('OnboardingWizard', () => {
       expect(completedChecks(fetchMock)).toBe(1)
       expect(router.replace).not.toHaveBeenCalled()
     })
+
+    it('does not redirect when the check answers after the wizard is gone', async () => {
+      let answer!: (res: Response) => void
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) =>
+        isCompletedCheck(url, init) ? new Promise<Response>((resolve) => { answer = resolve }) : Response.json({ success: true }),
+      )
+      const { unmount } = renderWizard()
+      await waitFor(() => expect(completedChecks(fetchMock)).toBe(1))
+      unmount()
+
+      await act(async () => answer(Response.json({ completed: true })))
+
+      expect(router.replace).not.toHaveBeenCalled()
+    })
   })
 })

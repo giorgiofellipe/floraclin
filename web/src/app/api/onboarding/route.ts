@@ -29,16 +29,13 @@ import { eq, sql } from 'drizzle-orm'
 // withTransaction removed — helper functions use global db which deadlocks in transactions
 import { ONBOARDING_ALREADY_COMPLETED, onboardingCompleteSchema } from '@/validations/onboarding'
 import { handleApiError } from '@/lib/api-error'
+import { isOnboardingCompleted } from '@/lib/onboarding-status'
 import { ForbiddenError, isUniqueViolation } from '@/lib/errors'
 
 const SLUG_TAKEN_MESSAGE = 'Este link já está em uso. Escolha outro.'
 
 const alreadyCompleted = () =>
   NextResponse.json({ success: false, error: ONBOARDING_ALREADY_COMPLETED }, { status: 409 })
-
-function isOnboardingCompleted(settings: unknown): boolean {
-  return (settings as Record<string, unknown> | null | undefined)?.onboarding_completed === true
-}
 
 export async function GET(request: Request) {
   try {
@@ -79,7 +76,7 @@ export async function POST(request: Request) {
 
     const current = await getTenant(auth.tenantId)
     if (!current) {
-      return NextResponse.json({ success: false, error: 'tenant_not_found' }, { status: 404 })
+      return NextResponse.json({ success: false }, { status: 404 })
     }
     // A save after completion (a stale wizard, a resubmit) changes nothing:
     // the clinic may have edited its details in settings since.
@@ -90,29 +87,22 @@ export async function POST(request: Request) {
     const existingTypes = await listProcedureTypes(auth.tenantId)
     // Autosave may have cleared the stand-in flag already; it is still set
     // when this save is the first to hear the clinic's real name.
-    const stillNamedPlaceholder = hasPlaceholderName(current?.settings)
+    const stillNamedPlaceholder = hasPlaceholderName(current.settings)
     // Pending for a clinic created on arrival after Google sign-up, unless
     // autosave already stamped it with the first saved phone.
-    const noticePending = !current?.lifecycleNoticeAt
+    const noticePending = !current.lifecycleNoticeAt
 
     // NOTE: Not using withTransaction here because the helper functions
-    // (saveOnboardingClinic, createProcedureType, etc.) all use the global `db`
-    // client. Wrapping them in a transaction would deadlock since the
-    // transaction holds a connection and the helpers try to use a separate
-    // connection from the pool. So this is not fully race-safe: a save after
-    // completion answers 409 above, before any write; a save racing an open
-    // onboarding is gated by saveOnboardingClinic's conditional update and
-    // markOnboardingCompleted's compare-and-set. Two saves that both get past
-    // the clinic save while onboarding is open can both run the seeding below,
-    // which is idempotent.
+    // (saveOnboardingClinic, createProcedureType, etc.) all use the global `db` client.
+    // Wrapping them in a transaction would deadlock since the transaction holds
+    // a connection and the helpers try to use a separate connection from the pool.
+    // Onboarding is idempotent, so sequential execution is safe.
 
     {
       // 1. Update tenant with clinic info, working hours, and slug
       const slug = data.clinic.slug
         || await findAvailableSlug(db, generateSlug(data.clinic.name), auth.tenantId)
 
-      // Written only while onboarding is open: if a concurrent save completed
-      // it after the check above, that one wins and this one writes nothing.
       let saved: boolean
       try {
         saved = await saveOnboardingClinic(auth.tenantId, {
@@ -266,13 +256,11 @@ export async function POST(request: Request) {
           tenantId: auth.tenantId,
           userId: auth.userId,
           clinic: data.clinic,
-          signedUpAt: current?.createdAt ?? null,
+          signedUpAt: current.createdAt,
         })
       }
-      // A concurrent save that also got past the open-onboarding checks loses
-      // the compare-and-set above (a repeat after completion got 409 before
-      // any of this). It still clears a leftover stand-in flag (a no-op if
-      // the winner did).
+      // A concurrent save loses the compare-and-set above. It still clears a
+      // leftover stand-in flag (a no-op if the winner did).
       if (!firstCompletion && stillNamedPlaceholder) {
         await updateTenantSettings(auth.tenantId, { onboarding_completed: true, [PLACEHOLDER_NAME_SETTING]: false })
       }

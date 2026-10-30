@@ -9,6 +9,7 @@ import { getTenant, listProcedureTypes } from '@/db/queries/tenants'
 import { listProducts } from '@/db/queries/products'
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard'
 import { hasPlaceholderName } from '@/lib/clinic-placeholder'
+import { isOnboardingCompleted } from '@/lib/onboarding-status'
 import { AnalyticsProvider } from '@/components/analytics/analytics-provider'
 import { onboardingDraftSchema } from '@/validations/onboarding'
 import { addressSchema, workingHoursSchema } from '@/validations/tenant'
@@ -26,9 +27,8 @@ export default async function OnboardingPage() {
     redirect('/login')
   }
 
-  // If onboarding is already completed, redirect to dashboard
   const settings = (tenant.settings as Record<string, unknown>) || {}
-  if (settings.onboarding_completed === true) {
+  if (isOnboardingCompleted(settings)) {
     redirect('/dashboard')
   }
 

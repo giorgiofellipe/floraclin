@@ -11,6 +11,7 @@ import {
 } from '@/db/schema'
 import type { SubscriptionStatus } from '@/db/queries/subscriptions'
 import { brCalendarDaysBetween } from '@/lib/dates'
+import { isOnboardingCompleted } from '@/lib/onboarding-status'
 import { MARKETING_MESSAGE_KEYS } from '@/lib/lifecycle-messages'
 
 export interface ActivationState {
@@ -59,10 +60,8 @@ export async function getActivationState(
 
   if (!row) return null
 
-  const settings = (row.settings ?? {}) as Record<string, unknown>
-
   return {
-    onboardingDone: settings.onboarding_completed === true,
+    onboardingDone: isOnboardingCompleted(row.settings),
     hasPatient: row.hasPatient,
     hasAppointment: row.hasAppointment,
     hasProcedureRecord: row.hasProcedureRecord,

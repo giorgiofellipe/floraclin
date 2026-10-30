@@ -121,7 +121,7 @@ describe('POST /api/onboarding', () => {
     const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777', workingHours: DEFAULT_WORKING_HOURS })
 
     expect(res.status).toBe(404)
-    expect(await res.json()).toEqual({ success: false, error: 'tenant_not_found' })
+    expect(await res.json()).toEqual({ success: false })
     expect(saveOnboardingClinic).not.toHaveBeenCalled()
     expectNothingWrittenAfterTheClinicSave()
   })
