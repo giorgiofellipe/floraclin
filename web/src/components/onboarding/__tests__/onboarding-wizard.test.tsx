@@ -11,8 +11,10 @@ import { OnboardingWizard } from '../onboarding-wizard'
 
 // ─── Mocks ─────────────────────────────────────────────────────────
 
+const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }))
+
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
+  useRouter: () => router,
   usePathname: () => '/onboarding',
   useSearchParams: () => new URLSearchParams(),
 }))
@@ -38,11 +40,25 @@ function wrap(ui: ReactNode) {
   return <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
 }
 
+// The wizard also GETs /api/onboarding on mount, so pick the final submit by method.
+function onboardingPost(fetchMock: { mock: { calls: unknown[][] } }) {
+  return fetchMock.mock.calls.find(
+    ([url, init]) => url === '/api/onboarding' && (init as RequestInit | undefined)?.method === 'POST',
+  )!
+}
+
+const isCompletedCheck = (url: unknown, init: unknown) =>
+  url === '/api/onboarding' && ((init as RequestInit | undefined)?.method ?? 'GET') === 'GET'
+
 // ─── Tests ─────────────────────────────────────────────────────────
 
 describe('OnboardingWizard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Tests that care about other calls replace this with their own mock.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) =>
+      Response.json(isCompletedCheck(url, init) ? { completed: false } : {}),
+    )
   })
 
   afterEach(() => {
@@ -131,12 +147,8 @@ describe('OnboardingWizard', () => {
 
   it('sends selectedProducts in the POST body without origin or isCustom', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ success: true }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+    // A fresh Response per call: the completed check on mount reads its own body.
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({ success: true }))
 
     render(
       wrap(
@@ -165,7 +177,7 @@ describe('OnboardingWizard', () => {
       )
     })
 
-    const [, init] = fetchMock.mock.calls.find(([url]) => url === '/api/onboarding')!
+    const [, init] = onboardingPost(fetchMock)
     const body = JSON.parse((init as RequestInit).body as string)
 
     expect(Array.isArray(body.selectedProducts)).toBe(true)
@@ -179,6 +191,7 @@ describe('OnboardingWizard', () => {
       expect(p).not.toHaveProperty('origin')
       expect(p).not.toHaveProperty('isCustom')
     }
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/dashboard'))
   })
 
   it.each([
@@ -221,12 +234,7 @@ describe('OnboardingWizard', () => {
   // Regression: finishing onboarding erased the signup phone, so lifecycle WhatsApp messages were skipped.
   it('keeps the tenant phone and email when the owner finishes without editing them', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ success: true }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({ success: true }))
 
     render(
       wrap(
@@ -246,10 +254,30 @@ describe('OnboardingWizard', () => {
     await user.click(screen.getByTestId('onboarding-complete'))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/onboarding', expect.objectContaining({ method: 'POST' })))
-    const [, init] = fetchMock.mock.calls.find(([url]) => url === '/api/onboarding')!
+    const [, init] = onboardingPost(fetchMock)
     const body = JSON.parse((init as RequestInit).body as string)
 
     expect(body.clinic).toMatchObject({ phone: '(47) 98844-3635', email: 'contato@clinica.com.br' })
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/dashboard'))
+  })
+
+  // Regression: after finishing, Back returned to the finished wizard.
+  it('replaces the wizard with the dashboard after a successful final submit', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) =>
+      Response.json(isCompletedCheck(url, init) ? { completed: false } : { success: true }),
+    )
+    render(
+      wrap(<OnboardingWizard tenantName="My Clinic" tenantPhone={null} tenantEmail={null} existingProcedureTypes={[]} existingProducts={[]} />),
+    )
+
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-complete'))
+
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/dashboard'))
+    expect(router.push).not.toHaveBeenCalled()
   })
 
   // Regression: the link field showed the plain name slug another clinic held, and finishing onboarding failed.
@@ -361,7 +389,7 @@ describe('OnboardingWizard', () => {
       await user.click(screen.getByTestId('onboarding-complete'))
 
       await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/onboarding', expect.objectContaining({ method: 'POST' })))
-      const call = fetchMock.mock.calls.find(([url]) => url === '/api/onboarding')!
+      const call = onboardingPost(fetchMock)
       const body = JSON.parse((call[1] as RequestInit).body as string)
       expect(body.clinic).toMatchObject({ name: 'Clínica Bella', phone: '(11) 98888-7777' })
     })
@@ -475,7 +503,7 @@ describe('OnboardingWizard', () => {
       })
 
       await goToTeamStepAndFinish(user)
-      expect(fetchMock).not.toHaveBeenCalledWith('/api/onboarding', expect.anything())
+      expect(fetchMock).not.toHaveBeenCalledWith('/api/onboarding', expect.objectContaining({ method: 'POST' }))
 
       await act(async () => { answerAutosave(Response.json({ saved: true })) })
       await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/onboarding', expect.objectContaining({ method: 'POST' })))
@@ -511,6 +539,120 @@ describe('OnboardingWizard', () => {
       renderWizard({ tenantName: 'Clínica Bella', tenantPhone: null, draft })
 
       expect(screen.getByText(/Dados da Clínica/i)).toBeInTheDocument()
+    })
+  })
+
+  // Regression: after finishing, Back showed the wizard again from the client
+  // cache, so the page's server redirect to the dashboard never ran.
+  describe('when onboarding is already completed', () => {
+    type CheckAnswer = { completed: unknown } | { status: number } | Error
+
+    // Answers the completed check with the given answers in order (the last
+    // one repeats) and everything else with the final submit's success.
+    let bodyReads: Promise<unknown>[] = []
+
+    beforeEach(() => {
+      bodyReads = []
+    })
+
+    function mockFetch(...answers: CheckAnswer[]) {
+      return vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+        if (!isCompletedCheck(url, init)) return Response.json({ success: true })
+        const checks = vi.mocked(fetch).mock.calls.filter(([u, i]) => isCompletedCheck(u, i)).length
+        const answer = answers[Math.min(checks, answers.length) - 1]
+        if (answer instanceof Error) throw answer
+        if ('status' in answer) return new Response('<html>Error</html>', { status: answer.status })
+        // A plain body read, so a test can wait for the exact promise the wizard awaits.
+        return {
+          ok: true,
+          status: 200,
+          json: () => {
+            const read = Promise.resolve(answer)
+            bodyReads.push(read)
+            return read
+          },
+        } as unknown as Response
+      })
+    }
+
+    const completedChecks = (fetchMock: ReturnType<typeof mockFetch>) =>
+      fetchMock.mock.calls.filter(([url, init]) => isCompletedCheck(url, init)).length
+
+    // Waits on the same promises the wizard awaits, after it, so its handling
+    // of each answer has run.
+    async function settleChecks(fetchMock: ReturnType<typeof mockFetch>) {
+      await waitFor(() => expect(completedChecks(fetchMock)).toBeGreaterThan(0))
+      await act(async () => {
+        for (const result of fetchMock.mock.results) await Promise.resolve(result.value).catch(() => {})
+        for (const read of bodyReads) await read
+      })
+    }
+
+    function renderWizard() {
+      return render(
+        wrap(<OnboardingWizard tenantName="My Clinic" tenantPhone={null} tenantEmail={null} existingProcedureTypes={[]} existingProducts={[]} />),
+      )
+    }
+
+    it('goes to the dashboard when the check on mount says completed, without hiding the wizard first', async () => {
+      mockFetch({ completed: true })
+      renderWizard()
+      expect(screen.getByText(/Dados da Clínica/i)).toBeInTheDocument()
+
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/dashboard'))
+      expect(router.replace).toHaveBeenCalledTimes(1)
+      expect(router.push).not.toHaveBeenCalled()
+    })
+
+    it.each<[string, CheckAnswer]>([
+      ['not completed', { completed: false }],
+      ['an unexpected payload', { completed: 'true' }],
+      ['a server error', { status: 500 }],
+      ['no connection', new TypeError('Failed to fetch')],
+    ])('stays on the wizard when the check answers %s', async (_, answer) => {
+      const fetchMock = mockFetch(answer)
+      renderWizard()
+      await settleChecks(fetchMock)
+
+      expect(router.replace).not.toHaveBeenCalled()
+      expect(router.push).not.toHaveBeenCalled()
+      expect(screen.getByText(/Dados da Clínica/i)).toBeInTheDocument()
+    })
+
+    it('checks again when the page comes back from the bfcache, and goes to the dashboard', async () => {
+      const fetchMock = mockFetch({ completed: false }, { completed: true })
+      renderWizard()
+      await settleChecks(fetchMock)
+      expect(router.replace).not.toHaveBeenCalled()
+
+      fireEvent(window, new PageTransitionEvent('pageshow', { persisted: true }))
+
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/dashboard'))
+      expect(completedChecks(fetchMock)).toBe(2)
+    })
+
+    it('does not check again on a pageshow that is not a bfcache restore', async () => {
+      const fetchMock = mockFetch({ completed: false }, { completed: true })
+      renderWizard()
+      await settleChecks(fetchMock)
+
+      fireEvent(window, new PageTransitionEvent('pageshow', { persisted: false }))
+      await settleChecks(fetchMock)
+
+      expect(completedChecks(fetchMock)).toBe(1)
+      expect(router.replace).not.toHaveBeenCalled()
+    })
+
+    it('stops listening for bfcache restores once the wizard is gone', async () => {
+      const fetchMock = mockFetch({ completed: false }, { completed: true })
+      const { unmount } = renderWizard()
+      await settleChecks(fetchMock)
+      unmount()
+
+      fireEvent(window, new PageTransitionEvent('pageshow', { persisted: true }))
+
+      expect(completedChecks(fetchMock)).toBe(1)
+      expect(router.replace).not.toHaveBeenCalled()
     })
   })
 })
