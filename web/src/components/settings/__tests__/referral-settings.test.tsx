@@ -107,11 +107,27 @@ describe('ReferralSettings', () => {
     ['?tab=indique&from=launch_email', ACTIVE, { source: 'launch_email', state: 'sharing', counting: 2 }],
     ['?tab=indique', INACTIVE, { source: 'direct', state: 'inactive', counting: 2 }],
     ['?tab=indique&from=somewhere', { ...INACTIVE, subscribeToUnlock: true }, { source: 'direct', state: 'subscribe_to_unlock', counting: 2 }],
-  ])('reports one page view for %s', async (search, body, expected) => {
+  ])('reports the page view with its source and state for %s', async (search, body, expected) => {
     window.history.replaceState(null, '', `/configuracoes${search}`)
     mockResponse(body)
     render(<ReferralSettings />)
     await waitFor(() => expect(track).toHaveBeenCalledTimes(1))
     expect(track).toHaveBeenCalledWith('referral_page_viewed', expected)
+  })
+
+  it('counts a link source once: the next visit in the same tab is direct', async () => {
+    window.history.replaceState(null, '', '/configuracoes?tab=indique&from=sidebar_card')
+    mockResponse(ACTIVE)
+    const first = render(<ReferralSettings />)
+    await waitFor(() => expect(track).toHaveBeenCalledTimes(1))
+    expect(window.location.search).toBe('?tab=indique')
+    first.unmount()
+
+    render(<ReferralSettings />)
+    await waitFor(() => expect(track).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(track).mock.calls).toEqual([
+      ['referral_page_viewed', expect.objectContaining({ source: 'sidebar_card' })],
+      ['referral_page_viewed', expect.objectContaining({ source: 'direct' })],
+    ])
   })
 })

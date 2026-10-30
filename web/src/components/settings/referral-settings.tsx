@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import { brl } from '@/lib/billing-discount-copy'
 import { useReferralDashboard } from '@/hooks/queries/use-referral-dashboard'
 import { track } from '@/lib/analytics/client'
-import type { ReferralPageSource, ReferralPageState } from '@/lib/analytics/events'
+import { REFERRAL_PAGE_LINK_SOURCES, type ReferralPageSource, type ReferralPageState } from '@/lib/analytics/events'
 import {
   REFERRAL_MAX_COUNTING_FOR_DISCOUNT,
   REFERRAL_PERCENT_PER_REFERRAL,
@@ -36,11 +36,14 @@ const CHIP: Record<ReferralStatus, string> = {
   ineligible: 'bg-red-50 text-red-700',
 }
 
-const SOURCES: readonly ReferralPageSource[] = ['sidebar_card', 'launch_email', 'status_email']
-
-function pageSource(): ReferralPageSource {
-  const from = new URLSearchParams(window.location.search).get('from')
-  return SOURCES.find((s) => s === from) ?? 'direct'
+/** Reads `from` and drops it from the URL, so tab switches, reloads and shared URLs count as direct. */
+function takePageSource(): ReferralPageSource {
+  const url = new URL(window.location.href)
+  const from = url.searchParams.get('from')
+  if (from === null) return 'direct'
+  url.searchParams.delete('from')
+  window.history.replaceState(window.history.state, '', url)
+  return REFERRAL_PAGE_LINK_SOURCES.find((s) => s === from) ?? 'direct'
 }
 
 function pageState(data: ReferralDashboardResponse): ReferralPageState {
@@ -53,7 +56,7 @@ function useTrackPageView(data: ReferralDashboardResponse | null | undefined) {
   useEffect(() => {
     if (!data || tracked.current) return
     tracked.current = true
-    track('referral_page_viewed', { source: pageSource(), state: pageState(data), counting: data.progress.counting })
+    track('referral_page_viewed', { source: takePageSource(), state: pageState(data), counting: data.progress.counting })
   }, [data])
 }
 
