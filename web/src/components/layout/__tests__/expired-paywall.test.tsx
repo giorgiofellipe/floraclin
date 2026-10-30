@@ -46,6 +46,16 @@ const REFERRAL = {
   planSlugs: ['starter', 'pro'],
 }
 
+const FEEDBACK = {
+  kind: 'feedback' as const,
+  label: '50% de desconto nos 3 primeiros meses',
+  percentOff: 50,
+  amountOffCents: null,
+  duration: 'repeating' as const,
+  durationInMonths: 3,
+  planSlugs: ['starter', 'pro'],
+}
+
 const PLANS = [
   {
     slug: 'starter',
@@ -217,6 +227,37 @@ describe('ExpiredPaywall', () => {
     expect(screen.queryByTestId('referral-offer')).not.toBeInTheDocument()
     // Prices follow the win-back (30%), not the referral (20%).
     expect(screen.getByTestId('paywall-plan-starter')).toHaveTextContent(/R\$\s?69,30/)
+  })
+
+  it('shows the feedback offer with the discounted price struck against the full one', async () => {
+    renderWith(true, { feedback: FEEDBACK })
+
+    expect(await screen.findByTestId('feedback-offer')).toHaveTextContent(
+      'Obrigado pelo feedback: 50% de desconto nos 3 primeiros meses. Aplicado automaticamente no pagamento.',
+    )
+    const pro = screen.getByTestId('paywall-plan-pro')
+    expect(pro).toHaveTextContent(/R\$\s?99,50/)
+    expect(pro.querySelector('s')).toHaveTextContent(/R\$\s?199,00/)
+    expect(screen.getByTestId('paywall-plan-pro-terms')).toHaveTextContent(/Nos 3 primeiros meses, depois R\$\s?199,00\/mês/)
+    expect(screen.getByTestId('paywall-entry-price')).toHaveTextContent(/Planos a partir de R\$\s?49,50\/mês com a oferta/)
+  })
+
+  it('shows only the feedback offer, and its prices, when the others are also set (checkout applies it first)', async () => {
+    renderWith(true, { feedback: FEEDBACK, winback: OFFER, referral: REFERRAL })
+
+    expect(await screen.findByTestId('feedback-offer')).toBeInTheDocument()
+    expect(screen.queryByTestId('winback-offer')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('referral-offer')).not.toBeInTheDocument()
+    // 50% off R$ 99, not the win-back's 30%.
+    expect(screen.getByTestId('paywall-plan-starter')).toHaveTextContent(/R\$\s?49,50/)
+  })
+
+  it('shows no feedback badge and full prices without the offer', async () => {
+    renderWith(true)
+
+    await screen.findByTestId('expired-paywall')
+    expect(screen.queryByTestId('feedback-offer')).not.toBeInTheDocument()
+    expect(screen.getByTestId('paywall-plan-pro').querySelector('s')).toBeNull()
   })
 
   it('discounts only the plans the coupon covers', async () => {

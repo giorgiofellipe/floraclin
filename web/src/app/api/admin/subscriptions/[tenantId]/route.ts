@@ -3,6 +3,7 @@ import { requirePlatformAdmin } from '@/lib/auth'
 import {
   getSubscription,
   getPlanBySlug,
+  getUserFullName,
   updateSubscriptionPeriod,
   updateSubscriptionPlan,
   updateSubscriptionStatus,
@@ -28,10 +29,18 @@ export async function GET(
       return NextResponse.json({ error: 'Subscription not found' }, { status: 404 })
     }
 
-    const [creditUsage, state] = await Promise.all([getCreditUsage(tenantId), stripeStateFor(subscription)])
+    const grantedBy = subscription.feedbackDiscountGrantedBy
+    const [creditUsage, state, grantedByName] = await Promise.all([
+      getCreditUsage(tenantId),
+      stripeStateFor(subscription),
+      grantedBy ? getUserFullName(grantedBy) : Promise.resolve(null),
+    ])
     const stripeState = state === 'unavailable' ? null : state
+    const feedbackDiscount = subscription.feedbackDiscountGrantedAt
+      ? { grantedAt: subscription.feedbackDiscountGrantedAt, grantedBy, grantedByName }
+      : null
 
-    return NextResponse.json({ data: { ...subscription, creditUsage, stripeState } })
+    return NextResponse.json({ data: { ...subscription, creditUsage, stripeState, feedbackDiscount } })
   } catch (error) {
     return handleApiError(error, req)
   }

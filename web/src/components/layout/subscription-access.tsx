@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import type { TrialRecap } from '@/lib/trial-recap'
 import type { PublicWinbackOffer } from '@/lib/winback'
 import type { PublicReferralOffer } from '@/lib/referral/offer-copy'
+import type { PublicFeedbackOffer } from '@/lib/feedback-offer-copy'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 const LOCK_REFRESH_WINDOW_MS = 24 * 60 * 60 * 1000
@@ -32,6 +33,8 @@ export interface SubscriptionAccess {
   tenantId: string
   canSubscribe: boolean
   plans: PaywallPlan[]
+  /** The feedback reward offer; when set, `winback` and `referral` are not. */
+  feedback: PublicFeedbackOffer | null
   winback: PublicWinbackOffer | null
   /** The referral welcome offer; never set together with `winback`. */
   referral: PublicReferralOffer | null
@@ -59,6 +62,7 @@ const NOT_READ_ONLY: SubscriptionAccess = {
   tenantId: '',
   canSubscribe: false,
   plans: [],
+  feedback: null,
   winback: null,
   referral: null,
   role: '',
@@ -77,6 +81,7 @@ export function SubscriptionAccessProvider({
   tenantId,
   canSubscribe,
   plans,
+  feedback = null,
   winback,
   referral = null,
   lockAt = null,
@@ -99,6 +104,7 @@ export function SubscriptionAccessProvider({
   tenantId: string
   canSubscribe: boolean
   plans: PaywallPlan[]
+  feedback?: PublicFeedbackOffer | null
   winback: PublicWinbackOffer | null
   referral?: PublicReferralOffer | null
 }) {
@@ -146,6 +152,7 @@ export function SubscriptionAccessProvider({
       tenantId,
       canSubscribe,
       plans,
+      feedback,
       winback,
       referral,
       role,
@@ -156,7 +163,7 @@ export function SubscriptionAccessProvider({
       openPaywall,
       closePaywall,
     }),
-    [readOnly, reason, tenantId, canSubscribe, plans, winback, referral, role, recovery, recap, trialEndsAt, paywallOpen, openPaywall, closePaywall],
+    [readOnly, reason, tenantId, canSubscribe, plans, feedback, winback, referral, role, recovery, recap, trialEndsAt, paywallOpen, openPaywall, closePaywall],
   )
 
   return <SubscriptionAccessContext.Provider value={value}>{children}</SubscriptionAccessContext.Provider>

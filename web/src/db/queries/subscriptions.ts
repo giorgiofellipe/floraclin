@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
-import { plans, tenantSubscriptions, tenants } from '@/db/schema'
-import { eq, and, or, ne, isNull, sql, asc, lt } from 'drizzle-orm'
+import { plans, tenantSubscriptions, tenants, users } from '@/db/schema'
+import { eq, and, or, ne, isNull, isNotNull, sql, asc, lt } from 'drizzle-orm'
 import { addDays, addMonths } from 'date-fns'
 
 // ─── TYPE EXPORTS ──────────────────────────────────────────────────
@@ -113,6 +113,8 @@ export async function getSubscription(tenantId: string): Promise<SubscriptionWit
       createdAt: tenantSubscriptions.createdAt,
       updatedAt: tenantSubscriptions.updatedAt,
       firstPaidAt: tenantSubscriptions.firstPaidAt,
+      feedbackDiscountGrantedAt: tenantSubscriptions.feedbackDiscountGrantedAt,
+      feedbackDiscountGrantedBy: tenantSubscriptions.feedbackDiscountGrantedBy,
       plan: {
         id: plans.id,
         slug: plans.slug,
@@ -321,6 +323,38 @@ export async function extendTrial(tenantId: string, days: number) {
     .returning()
 
   return result ?? null
+}
+
+/**
+ * Flags the tenant for the feedback reward coupon (see lib/feedback-offer). Only
+ * an unflagged row is written, so a repeated call keeps the original grant.
+ * Null when the row was already flagged (or does not exist).
+ */
+export async function grantFeedbackDiscount(tenantId: string, grantedBy: string, now: Date = new Date()) {
+  const [result] = await db
+    .update(tenantSubscriptions)
+    .set({ feedbackDiscountGrantedAt: now, feedbackDiscountGrantedBy: grantedBy, updatedAt: now })
+    .where(and(eq(tenantSubscriptions.tenantId, tenantId), isNull(tenantSubscriptions.feedbackDiscountGrantedAt)))
+    .returning()
+
+  return result ?? null
+}
+
+/** Clears the feedback reward flag. Null when there was none to clear. */
+export async function clearFeedbackDiscount(tenantId: string, now: Date = new Date()) {
+  const [result] = await db
+    .update(tenantSubscriptions)
+    .set({ feedbackDiscountGrantedAt: null, feedbackDiscountGrantedBy: null, updatedAt: now })
+    .where(and(eq(tenantSubscriptions.tenantId, tenantId), isNotNull(tenantSubscriptions.feedbackDiscountGrantedAt)))
+    .returning()
+
+  return result ?? null
+}
+
+/** The admin who flagged the feedback reward, for the admin screen. */
+export async function getUserFullName(userId: string): Promise<string | null> {
+  const [row] = await db.select({ fullName: users.fullName }).from(users).where(eq(users.id, userId)).limit(1)
+  return row?.fullName ?? null
 }
 
 // ─── ADMIN QUERIES ─────────────────────────────────────────────────

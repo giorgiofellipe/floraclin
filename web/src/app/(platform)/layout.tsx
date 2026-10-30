@@ -16,6 +16,7 @@ import { effectiveSubscriptionStatus, isStripeDriven, isSubscriptionRowActive } 
 import { publicWinbackOffer } from '@/lib/winback'
 import { getValidatedWinbackOffer } from '@/lib/winback-offer'
 import { getValidatedReferralOffer, publicReferralOffer } from '@/lib/referral/offer'
+import { getValidatedFeedbackOffer, publicFeedbackOffer } from '@/lib/feedback-offer'
 import { getTrialRecap } from '@/db/queries/trial-recap'
 import { planBenefits, recommendedPlanSlug, sellablePlans } from '@/lib/plan-benefits'
 import { brCalendarDaysBetween } from '@/lib/dates'
@@ -68,12 +69,21 @@ export default async function PlatformLayout({ children }: { children: React.Rea
 
   const paidPlansP =
     needsPlans && recovery === 'checkout' ? listPlans(true).then(sellablePlans) : Promise.resolve([])
-  const [paidPlans, recap, validatedWinback] = await Promise.all([
+  // The feedback reward wins over every other offer, as at checkout. Cheap
+  // (no Stripe call) unless an admin flagged this clinic.
+  const validatedFeedbackP =
+    needsPlans && recovery === 'checkout'
+      ? paidPlansP.then((plans) => getValidatedFeedbackOffer(subscription, plans, now))
+      : Promise.resolve(null)
+  const [paidPlans, recap, validatedFeedback, validatedWinback] = await Promise.all([
     paidPlansP,
     needsPlans && recovery === 'checkout' ? getTrialRecap(auth.tenantId) : Promise.resolve(null),
+    validatedFeedbackP,
     // Per plan: a coupon restricted to some products discounts only those.
     readOnly && recovery === 'checkout'
-      ? paidPlansP.then((plans) => getValidatedWinbackOffer(subscription, plans, now))
+      ? Promise.all([paidPlansP, validatedFeedbackP]).then(([plans, feedback]) =>
+          feedback ? null : getValidatedWinbackOffer(subscription, plans, now),
+        )
       : Promise.resolve(null),
   ])
   const recommended = recommendedPlanSlug(paidPlans)
@@ -85,10 +95,11 @@ export default async function PlatformLayout({ children }: { children: React.Rea
     benefits: planBenefits(p),
     recommended: p.slug === recommended,
   }))
+  const feedback = publicFeedbackOffer(validatedFeedback)
   const winback = publicWinbackOffer(validatedWinback)
-  // Exactly one offer: the win-back (VOLTA30) wins over the referral one.
+  // Exactly one offer, in checkout's order: feedback, win-back (VOLTA30), referral.
   const referral =
-    !winback && ((readOnly && recovery === 'checkout') || trialEndsAt !== null)
+    !feedback && !winback && ((readOnly && recovery === 'checkout') || trialEndsAt !== null)
       ? publicReferralOffer(await getValidatedReferralOffer(subscription, paidPlans, now).catch(() => null))
       : null
   // A running trial / gift / admin grant locks at an exact instant; the
@@ -121,6 +132,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
       tenantId={auth.tenantId}
       canSubscribe={auth.role === 'owner'}
       plans={paywallPlans}
+      feedback={feedback}
       winback={winback}
       referral={referral}
       lockAt={lockAt}

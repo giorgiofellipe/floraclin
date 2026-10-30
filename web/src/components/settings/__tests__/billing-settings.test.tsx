@@ -451,6 +451,25 @@ describe('BillingSettings: referral program', () => {
     expect(price).toHaveTextContent('nos 2 primeiros meses')
   })
 
+  it('shows the feedback offer banner and its struck plan price (what checkout charges)', async () => {
+    const feedback = {
+      kind: 'feedback',
+      label: '50% de desconto nos 3 primeiros meses',
+      percentOff: 50,
+      amountOffCents: null,
+      duration: 'repeating',
+      durationInMonths: 3,
+      planSlugs: ['starter'],
+      headline: 'Obrigado pelo feedback: 50% de desconto nos 3 primeiros meses.',
+    }
+    setup([{ ...TRIAL_USAGE, feedbackOffer: feedback, referral: { offer: null, canEnterCode: false } }])
+    expect(await screen.findByTestId('feedback-offer-banner')).toHaveTextContent(feedback.headline)
+    const price = await screen.findByTestId('referral-plan-price')
+    expect(price).toHaveTextContent('R$ 99,00')
+    expect(price).toHaveTextContent('R$ 49,50/mês')
+    expect(price).toHaveTextContent('nos 3 primeiros meses')
+  })
+
   it('renders the referral discount line', async () => {
     setup([
       {

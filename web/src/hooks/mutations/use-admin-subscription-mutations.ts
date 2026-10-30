@@ -48,3 +48,15 @@ export function useExtendTrial() {
     },
   })
 }
+
+/** Sets (`granted: true`) or clears the feedback reward flag. */
+export function useSetFeedbackDiscount() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ tenantId, granted }: { tenantId: string; granted: boolean }) =>
+      mutateJson(`/api/admin/subscriptions/${tenantId}/feedback-discount`, granted ? 'POST' : 'DELETE'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.subscriptions.all })
+    },
+  })
+}

@@ -87,7 +87,8 @@ export interface CouponSetupDeps {
   log(line: string): void
 }
 
-function assertSameTerms(existing: Stripe.Coupon, spec: CouponSpec): void {
+/** Throws when a coupon with this id already exists with other terms (ids are reused, never overwritten). */
+export function assertSameTerms(existing: Stripe.Coupon, spec: CouponSpec): void {
   const same =
     existing.percent_off === spec.percent_off &&
     existing.duration === spec.duration &&

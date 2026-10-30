@@ -30,7 +30,7 @@ export async function createCheckoutSession(
   stripeCustomerId?: string | null,
   opts?: {
     promotionCodeId?: string | null
-    discountKind?: 'winback' | 'referral'
+    discountKind?: 'feedback' | 'winback' | 'referral'
     referralId?: string | null
     browser?: MetaBrowserSignals
   },
@@ -74,7 +74,7 @@ export async function createCheckoutSession(
   let session: Stripe.Checkout.Session
   if (opts?.promotionCodeId) {
     try {
-      // Win-back or referral welcome: the promotion code is applied for the clinic, never typed
+      // Feedback reward, win-back or referral welcome: the promotion code is applied for the clinic, never typed
       // by them. Stripe rejects `discounts` together with
       // `allow_promotion_codes`, which this session does not set.
       session = await stripe.checkout.sessions.create({

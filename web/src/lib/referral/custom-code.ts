@@ -1,4 +1,5 @@
 import { WELCOME_PROMOTION_CODE } from './coupon-setup'
+import { FEEDBACK_PROMOTION_CODE } from '@/lib/feedback-coupon-setup'
 import { REFERRAL_CODE_MAX_LENGTH, REFERRAL_CODE_MIN_LENGTH, normalizeReferralCode } from './rules'
 
 /** A clinic may change its code this many times in a rolling 24 h window. */
@@ -24,6 +25,7 @@ export const RESERVED_REFERRAL_CODES: ReadonlySet<string> = new Set([
   'TESTE',
   WELCOME_PROMOTION_CODE,
   WINBACK_PROMOTION_CODE,
+  FEEDBACK_PROMOTION_CODE,
 ])
 
 /** Any code containing one of these reads as ours (FLORACLIN10, SUPORTEFLORA…). Substring match: PADMINI is blocked too, on purpose. */

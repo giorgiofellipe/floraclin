@@ -31,6 +31,7 @@ import { brl, discountSummaryLine } from '@/lib/billing-discount-copy'
 import { durationPhrase, winbackPriceCents } from '@/lib/winback'
 import { Input } from '@/components/ui/input'
 import type { PublicReferralOffer } from '@/lib/referral/offer-copy'
+import type { PublicFeedbackOffer } from '@/lib/feedback-offer-copy'
 import { REFERRAL_CODE_MAX_LENGTH } from '@/lib/referral/rules'
 import { brCalendarDaysBetween, brEndPhrase } from '@/lib/dates'
 
@@ -42,6 +43,7 @@ interface UsageBucket {
 }
 
 type ReferralOfferView = PublicReferralOffer & { headline: string }
+type FeedbackOfferView = PublicFeedbackOffer & { headline: string }
 
 interface BillingUsageResponse {
   subscription: {
@@ -66,6 +68,8 @@ interface BillingUsageResponse {
     afterEndsCents?: number | null
     referralPercent?: number | null
   } | null
+  /** The feedback reward checkout will apply; when set, `referral.offer` is null. */
+  feedbackOffer?: FeedbackOfferView | null
   /** Absent on payloads from before the referral program. */
   referral?: {
     offer: ReferralOfferView | null
@@ -171,9 +175,9 @@ function UsageBar({ label, icon: Icon, used, limit, note }: {
   )
 }
 
-function referralPlanPrice(
+function offerPlanPrice(
   plan: PlanItem,
-  offer: ReferralOfferView | null,
+  offer: ReferralOfferView | FeedbackOfferView | null,
 ) {
   const discounted = offer ? winbackPriceCents(plan, offer) : null
   if (!offer || discounted === null) return null
@@ -192,7 +196,7 @@ function PlanCard({
   plan: PlanItem
   /** What the clinic actually pays on this plan (a running discount). */
   priceOverride?: string | null
-  /** The referral welcome price on this plan: struck full price → discounted, for `phrase`. */
+  /** The offer price on this plan (feedback or referral): struck full price → discounted, for `phrase`. */
   referralPrice?: { fullCents: number; discountedCents: number; phrase: string } | null
   isCurrent: boolean
   isSwitch: boolean
@@ -579,6 +583,7 @@ export function BillingSettings() {
         cancelPending: subscription.status === 'canceled' && new Date(subscription.currentPeriodEnd) > new Date(),
       })
     : null
+  const feedbackOffer = usageData.feedbackOffer ?? null
   const referralOffer = usageData.referral?.offer ?? null
   const canEnterCode = usageData.referral?.canEnterCode ?? false
   const codeInput = referralCode ?? usageData.referral?.linkCode ?? ''
@@ -665,6 +670,12 @@ export function BillingSettings() {
         </div>
       </div>
 
+      {feedbackOffer && (
+        <div className="rounded-[3px] border border-sage/30 bg-sage/10 p-4" data-testid="feedback-offer-banner">
+          <p className="text-sm text-forest">{feedbackOffer.headline} Aplicado automaticamente no pagamento.</p>
+        </div>
+      )}
+
       {referralOffer && (
         <div className="rounded-[3px] border border-sage/30 bg-sage/10 p-4" data-testid="referral-offer-banner">
           <p className="text-sm text-forest">{referralOffer.headline}</p>
@@ -722,7 +733,7 @@ export function BillingSettings() {
                 plan={p}
                 isCurrent={p.slug === plan.slug && !isLapsed}
                 priceOverride={p.slug === plan.slug && !isLapsed ? discountLine : null}
-                referralPrice={referralPlanPrice(p, referralOffer)}
+                referralPrice={offerPlanPrice(p, feedbackOffer ?? referralOffer)}
                 isSwitch={isSwitching}
                 isCheckingOut={checkingOutSlug === p.slug}
                 onSubscribe={handleSubscribe}

@@ -20,7 +20,7 @@ describe('validateCustomReferralCode', () => {
     expect(validateCustomReferralCode(raw)).toEqual({ ok: false, reason: 'format', message: CUSTOM_CODE_MESSAGES.format })
   })
 
-  it.each(['FLORACLIN', 'floraclin', 'ADMIN', 'SUPORTE', 'INDICA20', 'VOLTA30', WELCOME_PROMOTION_CODE])(
+  it.each(['FLORACLIN', 'floraclin', 'ADMIN', 'SUPORTE', 'INDICA20', 'VOLTA30', 'FEEDBACK50', WELCOME_PROMOTION_CODE])(
     'rejects the reserved code %s',
     (raw) => {
       expect(validateCustomReferralCode(raw)).toEqual({

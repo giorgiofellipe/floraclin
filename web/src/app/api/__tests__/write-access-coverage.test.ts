@@ -164,6 +164,7 @@ const EXEMPT_MUTATING_ROUTES: Record<string, string> = {
   'admin/plans/route.ts': 'platform-admin only',
   'admin/referrals/[id]/ineligible/route.ts': 'platform-admin only',
   'admin/subscriptions/[tenantId]/extend-trial/route.ts': 'platform-admin only',
+  'admin/subscriptions/[tenantId]/feedback-discount/route.ts': 'platform-admin only',
   'admin/subscriptions/[tenantId]/gift/route.ts': 'platform-admin only',
   'admin/subscriptions/[tenantId]/route.ts': 'platform-admin only',
   'admin/tenants/[id]/suspend/route.ts': 'platform-admin only',
