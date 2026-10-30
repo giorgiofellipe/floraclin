@@ -10,6 +10,7 @@ import { createCheckoutSession, updateSubscriptionPrice } from '@/lib/stripe'
 import { handleApiError } from '@/lib/api-error'
 import { cookieFromHeader, metaBrowserSignals } from '@/lib/meta/request-signals'
 import { getValidatedWinbackOffer } from '@/lib/winback-offer'
+import { getValidatedFeedbackOffer } from '@/lib/feedback-offer'
 import { isStripeDriven } from '@/lib/subscription-access'
 import { getReferralAttribution } from '@/db/queries/referrals'
 import { isReferralEnrollmentEnabled } from '@/lib/referral/config'
@@ -92,18 +93,21 @@ export async function POST(request: Request) {
     // Eligibility is decided here, from the stored row, never from the client.
     // Only when the coupon covers this plan; otherwise checkout is full price,
     // exactly what the paywall showed for it.
-    const winback = await getValidatedWinbackOffer(subscription, [plan])
+    // The feedback reward (flagged by an admin) comes first; the others are
+    // only looked up when it does not apply.
+    const feedback = await getValidatedFeedbackOffer(subscription, [plan])
+    const winback = feedback ? null : await getValidatedWinbackOffer(subscription, [plan])
     // With the referral switch off no referral DB call happens at all; when on, the attribution is read once.
     const referralOn = isReferralEnrollmentEnabled()
     const attribution = referralOn ? await getReferralAttribution(ctx.tenantId) : null
     const referral =
-      winback || !attribution
+      feedback || winback || !attribution
         ? null
         : await getValidatedReferralOffer(subscription ?? null, [plan], undefined, undefined, undefined, {
             attribution,
           })
-    // Exactly one coupon at checkout; the win-back wins.
-    const choice = chooseCheckoutDiscount(winback, referral)
+    // Exactly one coupon at checkout: feedback, then win-back, then referral.
+    const choice = chooseCheckoutDiscount({ feedback, winback, referral })
     const { url } = await createCheckoutSession(ctx.tenantId, planSlug, subscription?.stripeCustomerId ?? null, {
       promotionCodeId: choice.promotionCodeId,
       discountKind: choice.kind ?? undefined,

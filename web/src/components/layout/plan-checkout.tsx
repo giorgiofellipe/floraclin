@@ -9,10 +9,11 @@ import { formatBrDayMonth } from '@/lib/dates'
 import type { TrialRecap } from '@/lib/trial-recap'
 import { durationPhrase, winbackPriceCents, type PublicWinbackOffer } from '@/lib/winback'
 import { referralOfferHeadline, type PublicReferralOffer } from '@/lib/referral/offer-copy'
+import { feedbackOfferHeadline, type PublicFeedbackOffer } from '@/lib/feedback-offer-copy'
 import type { PaywallPlan } from '@/components/layout/subscription-access'
 
-/** What the plan cards and the entry price read: the win-back or the referral offer. */
-export type EntryOffer = PublicWinbackOffer | PublicReferralOffer
+/** What the plan cards and the entry price read: the feedback, win-back or referral offer. */
+export type EntryOffer = PublicFeedbackOffer | PublicWinbackOffer | PublicReferralOffer
 
 /** The badge on the highlighted plan. A recommendation, not a popularity
  *  claim: we only say "most chosen" once the numbers say so. */
@@ -268,17 +269,42 @@ export function WinbackBadge({ offer }: { offer: PublicWinbackOffer | null }) {
   )
 }
 
-export function ReferralBadge({ offer }: { offer: PublicReferralOffer | null }) {
-  if (!offer) return null
+/** A discount applied at checkout without a code: its headline, as a pill. */
+function AutoAppliedOfferPill({ testId, headline }: { testId: string; headline: string }) {
   return (
     <p
-      data-testid="referral-offer"
+      data-testid={testId}
       className="mx-auto inline-flex max-w-full flex-wrap items-center justify-center gap-x-1.5 rounded-full border border-sage/40 bg-white px-4 py-1.5 text-center text-sm text-forest"
     >
-      <span className="font-semibold">{referralOfferHeadline(offer)}</span>{' '}
+      <span className="font-semibold">{headline}</span>{' '}
       <span>Aplicado automaticamente no pagamento.</span>
     </p>
   )
+}
+
+export function ReferralBadge({ offer }: { offer: PublicReferralOffer | null }) {
+  if (!offer) return null
+  return <AutoAppliedOfferPill testId="referral-offer" headline={referralOfferHeadline(offer)} />
+}
+
+export function FeedbackBadge({ offer }: { offer: PublicFeedbackOffer | null }) {
+  if (!offer) return null
+  return <AutoAppliedOfferPill testId="feedback-offer" headline={feedbackOfferHeadline(offer)} />
+}
+
+/** The one badge for whichever offer applies; the caller passes at most one. */
+export function OfferBadge({
+  feedback,
+  winback,
+  referral,
+}: {
+  feedback: PublicFeedbackOffer | null
+  winback: PublicWinbackOffer | null
+  referral: PublicReferralOffer | null
+}) {
+  if (feedback) return <FeedbackBadge offer={feedback} />
+  if (winback) return <WinbackBadge offer={winback} />
+  return <ReferralBadge offer={referral} />
 }
 
 /** Risk reducers. Each is true today: cancellation is self-serve in

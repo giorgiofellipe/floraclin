@@ -15,6 +15,9 @@ import { isReferralEnrollmentEnabled } from '@/lib/referral/config'
 import { REFERRAL_COOKIE_NAME, normalizeReferralCode } from '@/lib/referral/rules'
 import { getValidatedReferralOffer, publicReferralOffer } from '@/lib/referral/offer'
 import { referralOfferHeadline, type PublicReferralOffer } from '@/lib/referral/offer-copy'
+import { feedbackOfferApplies, getValidatedFeedbackOffer, publicFeedbackOffer } from '@/lib/feedback-offer'
+import { feedbackOfferHeadline, type PublicFeedbackOffer } from '@/lib/feedback-offer-copy'
+import { sellablePlans } from '@/lib/plan-benefits'
 
 type PlanLimits = Record<string, number>
 
@@ -61,6 +64,19 @@ export async function GET(request: Request) {
         : Promise.resolve(null)
     const [whatsappUsage, discount] = await Promise.all([getCreditUsage(ctx.tenantId), discountP])
 
+    // The paid plans, as the layout reads them, once for every offer below.
+    // Not read at all for an unflagged clinic with the referral switch off.
+    const referralEnabled = isReferralEnrollmentEnabled()
+    const flagged = feedbackOfferApplies(subscription)
+    const plans = flagged || referralEnabled ? sellablePlans(await listPlans(true)) : []
+
+    // The feedback reward wins at checkout over every other offer, so when it
+    // applies the page shows it (and no referral offer).
+    const feedbackValidated = flagged ? publicFeedbackOffer(await getValidatedFeedbackOffer(subscription, plans)) : null
+    const feedbackOffer: (PublicFeedbackOffer & { headline: string }) | null = feedbackValidated
+      ? { ...feedbackValidated, headline: feedbackOfferHeadline(feedbackValidated) }
+      : null
+
     // With the switch off there is no referral DB call at all; when on, the
     // attribution is read once and shared. The win-back wins at checkout, so
     // the page shows the referral offer only when there is no win-back.
@@ -69,15 +85,15 @@ export async function GET(request: Request) {
       canEnterCode: boolean
       linkCode: string | null
     } = { offer: null, canEnterCode: false, linkCode: null }
-    if (isReferralEnrollmentEnabled()) {
+    if (referralEnabled) {
       const attribution = await getReferralAttribution(ctx.tenantId)
-      const plans = await listPlans(true)
-      const winback = await getValidatedWinbackOffer(subscription, plans)
-      const validated = winback
-        ? null
-        : publicReferralOffer(
-            await getValidatedReferralOffer(subscription, plans, undefined, undefined, undefined, { attribution }),
-          )
+      const winback = feedbackOffer ? null : await getValidatedWinbackOffer(subscription, plans)
+      const validated =
+        feedbackOffer || winback
+          ? null
+          : publicReferralOffer(
+              await getValidatedReferralOffer(subscription, plans, undefined, undefined, undefined, { attribution }),
+            )
       const canEnterCode =
         ctx.role === 'owner' && !subscription.firstPaidAt && !subscription.stripeSubscriptionId && !attribution
       referral = {
@@ -108,6 +124,7 @@ export async function GET(request: Request) {
         features: subscription.plan.features,
       },
       discount,
+      feedbackOffer,
       referral,
       usage: {
         users: {

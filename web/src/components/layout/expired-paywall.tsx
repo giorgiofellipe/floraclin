@@ -12,9 +12,8 @@ import {
   PlanCards,
   QUIET_ACTION_CLASS,
   TrialRecapTiles,
-  ReferralBadge,
+  OfferBadge,
   TrustRow,
-  WinbackBadge,
   entryPriceLine,
   hasRecap,
   usePlanCheckout,
@@ -66,6 +65,7 @@ export function ExpiredPaywall() {
     tenantId,
     canSubscribe,
     plans,
+    feedback,
     winback,
     referral,
     recap,
@@ -108,8 +108,8 @@ export function ExpiredPaywall() {
     closePaywall()
   }
 
-  // One offer at most: the win-back wins over the referral one.
-  const offer = winback ?? referral
+  // One offer at most, in checkout's order: feedback, win-back, referral.
+  const offer = feedback ?? winback ?? referral
   const paymentUpdate = recovery === 'payment_update'
   const built = hasRecap(recap)
   const entryPrice = paymentUpdate ? null : entryPriceLine(plans, offer)
@@ -152,7 +152,7 @@ export function ExpiredPaywall() {
 
           {!paymentUpdate && <TrialRecapTiles recap={recap} title="O que sua clínica já tem aqui" />}
 
-          {!paymentUpdate && (winback ? <WinbackBadge offer={winback} /> : <ReferralBadge offer={referral} />)}
+          {!paymentUpdate && <OfferBadge feedback={feedback} winback={winback} referral={referral} />}
 
           {paymentUpdate && canSubscribe && (
               <Button

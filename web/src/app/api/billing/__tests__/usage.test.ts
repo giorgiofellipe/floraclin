@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/auth', () => ({ getAuthContext: vi.fn() }))
 const cookieJar = vi.hoisted(() => new Map<string, string>())
@@ -8,7 +8,11 @@ vi.mock('@/db/client', () => ({
     select: () => ({ from: () => ({ where: async () => [{ count: 1 }] }) }),
   },
 }))
-vi.mock('@/db/queries/subscriptions', () => ({ getSubscription: vi.fn(), listPlans: vi.fn(async () => [{ slug: 'pro' }]) }))
+const { PRO_PLAN, FREE_PLAN } = vi.hoisted(() => ({
+  PRO_PLAN: { slug: 'pro', priceCents: 9900, stripePriceId: 'price_pro' },
+  FREE_PLAN: { slug: 'trial', priceCents: 0, stripePriceId: null },
+}))
+vi.mock('@/db/queries/subscriptions', () => ({ getSubscription: vi.fn(), listPlans: vi.fn(async () => [PRO_PLAN, FREE_PLAN]) }))
 vi.mock('@/db/queries/whatsapp-credits', () => ({ getCreditUsage: vi.fn() }))
 vi.mock('@/db/queries/referrals', () => ({
   getReferralAttribution: vi.fn(async () => null),
@@ -22,6 +26,10 @@ vi.mock('@/lib/stripe', () => ({
   customerHasPriorPurchase: vi.fn(),
 }))
 vi.mock('@/lib/winback-offer', () => ({ getValidatedWinbackOffer: vi.fn(async () => null) }))
+vi.mock('@/lib/feedback-offer', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/feedback-offer')>()),
+  getValidatedFeedbackOffer: vi.fn(async () => null),
+}))
 vi.mock('@/lib/referral/config', () => ({ isReferralEnrollmentEnabled: vi.fn(() => true) }))
 vi.mock('@/lib/referral/offer', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/referral/offer')>()),
@@ -29,12 +37,13 @@ vi.mock('@/lib/referral/offer', async (importOriginal) => ({
 }))
 
 import { getAuthContext } from '@/lib/auth'
-import { getSubscription } from '@/db/queries/subscriptions'
+import { getSubscription, listPlans } from '@/db/queries/subscriptions'
 import { getCreditUsage } from '@/db/queries/whatsapp-credits'
 import { getReferralAttribution } from '@/db/queries/referrals'
 import { getValidatedWinbackOffer } from '@/lib/winback-offer'
 import { isReferralEnrollmentEnabled } from '@/lib/referral/config'
 import { getValidatedReferralOffer } from '@/lib/referral/offer'
+import { getValidatedFeedbackOffer } from '@/lib/feedback-offer'
 import { GET } from '../usage/route'
 
 const TRIAL = {
@@ -67,6 +76,10 @@ async function call() {
   return res.json()
 }
 
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(getAuthContext).mockResolvedValue({ tenantId: 't1', role: 'owner' } as never)
@@ -76,6 +89,7 @@ beforeEach(() => {
   vi.mocked(getReferralAttribution).mockResolvedValue(null)
   vi.mocked(getValidatedWinbackOffer).mockResolvedValue(null)
   vi.mocked(getValidatedReferralOffer).mockResolvedValue(null)
+  vi.mocked(getValidatedFeedbackOffer).mockResolvedValue(null)
 })
 
 describe('GET /api/billing/usage referral fields', () => {
@@ -137,5 +151,72 @@ describe('GET /api/billing/usage referral fields', () => {
     vi.mocked(getReferralAttribution).mockResolvedValue(ATTRIBUTION as never)
     expect((await call()).referral.linkCode).toBeNull()
     cookieJar.clear()
+  })
+})
+
+describe('GET /api/billing/usage feedback offer', () => {
+  const FEEDBACK = {
+    kind: 'feedback',
+    promotionCodeId: 'promo_feedback_secret',
+    label: '50% de desconto nos 3 primeiros meses',
+    percentOff: 50,
+    amountOffCents: null,
+    duration: 'repeating',
+    durationInMonths: 3,
+    planSlugs: ['pro'],
+  }
+  const FLAGGED = { ...TRIAL, feedbackDiscountGrantedAt: new Date('2026-10-29T15:00:00.000Z') }
+
+  it('shows the feedback offer, without its promotion code, and no referral offer', async () => {
+    vi.stubEnv('STRIPE_FEEDBACK_PROMOTION_CODE_ID', 'promo_feedback_secret')
+    vi.mocked(getSubscription).mockResolvedValue(FLAGGED as never)
+    vi.mocked(getValidatedFeedbackOffer).mockResolvedValue(FEEDBACK as never)
+    vi.mocked(getReferralAttribution).mockResolvedValue(ATTRIBUTION as never)
+    vi.mocked(getValidatedReferralOffer).mockResolvedValue(OFFER as never)
+
+    const body = await call()
+
+    expect(body.feedbackOffer.headline).toBe('Obrigado pelo feedback: 50% de desconto nos 3 primeiros meses.')
+    expect(body.feedbackOffer.planSlugs).toEqual(['pro'])
+    expect(JSON.stringify(body)).not.toContain('promo_feedback_secret')
+    expect(body.referral.offer).toBeNull()
+    expect(getValidatedReferralOffer).not.toHaveBeenCalled()
+  })
+
+  it('still shows the referral offer when the clinic is flagged but the feedback offer does not validate', async () => {
+    vi.stubEnv('STRIPE_FEEDBACK_PROMOTION_CODE_ID', 'promo_feedback_secret')
+    vi.mocked(getSubscription).mockResolvedValue(FLAGGED as never)
+    vi.mocked(getValidatedFeedbackOffer).mockResolvedValue(null)
+    vi.mocked(getReferralAttribution).mockResolvedValue(ATTRIBUTION as never)
+    vi.mocked(getValidatedReferralOffer).mockResolvedValue(OFFER as never)
+
+    const body = await call()
+
+    expect(getValidatedFeedbackOffer).toHaveBeenCalledTimes(1)
+    expect(body.feedbackOffer).toBeNull()
+    expect(body.referral.offer.headline).toBe('Indicação de Clínica Flor: 20% de desconto nos 2 primeiros meses.')
+  })
+
+  it('reads the plans once, sellable only, for every offer', async () => {
+    vi.stubEnv('STRIPE_FEEDBACK_PROMOTION_CODE_ID', 'promo_feedback_secret')
+    vi.mocked(getSubscription).mockResolvedValue(FLAGGED as never)
+
+    await call()
+
+    expect(listPlans).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(getValidatedFeedbackOffer).mock.calls[0][1]).toEqual([PRO_PLAN])
+    expect(vi.mocked(getValidatedWinbackOffer).mock.calls[0][1]).toEqual([PRO_PLAN])
+    expect(vi.mocked(getValidatedReferralOffer).mock.calls[0][1]).toEqual([PRO_PLAN])
+  })
+
+  it('does no feedback work for a clinic nobody flagged', async () => {
+    vi.stubEnv('STRIPE_FEEDBACK_PROMOTION_CODE_ID', 'promo_feedback_secret')
+    vi.mocked(isReferralEnrollmentEnabled).mockReturnValue(false)
+
+    const body = await call()
+
+    expect(body.feedbackOffer).toBeNull()
+    expect(getValidatedFeedbackOffer).not.toHaveBeenCalled()
+    expect(listPlans).not.toHaveBeenCalled()
   })
 })

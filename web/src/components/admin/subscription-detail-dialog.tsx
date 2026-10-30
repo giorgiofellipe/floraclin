@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { brToday, endOfBrDay } from '@/lib/dates'
+import { brToday, endOfBrDay, formatBrDate, formatBrTime } from '@/lib/dates'
 import { grantNeedsNewEnd } from '@/lib/subscription-access'
 import {
   stripeCancelMessage,
@@ -30,7 +30,9 @@ import {
   useUpdateSubscription,
   useGiftSubscription,
   useExtendTrial,
+  useSetFeedbackDiscount,
 } from '@/hooks/mutations/use-admin-subscription-mutations'
+import { FEEDBACK_INELIGIBLE_MESSAGES, feedbackIneligibility, type AdminFeedbackDiscount } from '@/lib/feedback-eligibility'
 import { toast } from 'sonner'
 import { cn, formatDate } from '@/lib/utils'
 import { Loader2Icon } from 'lucide-react'
@@ -105,6 +107,7 @@ export function SubscriptionDetailDialog({
   const updateSubscription = useUpdateSubscription()
   const giftSubscription = useGiftSubscription()
   const extendTrial = useExtendTrial()
+  const setFeedbackDiscount = useSetFeedbackDiscount()
 
   const detail = detailResult?.data
   const allPlans: Plan[] = plansResult?.data ?? []
@@ -126,7 +129,10 @@ export function SubscriptionDetailDialog({
   }, [open, subscription])
 
   const isPending =
-    updateSubscription.isPending || giftSubscription.isPending || extendTrial.isPending
+    updateSubscription.isPending ||
+    giftSubscription.isPending ||
+    extendTrial.isPending ||
+    setFeedbackDiscount.isPending
 
   const handleChangePlan = useCallback(async () => {
     if (!subscription || !selectedPlanSlug) return
@@ -182,6 +188,19 @@ export function SubscriptionDetailDialog({
       toast.error(err instanceof Error ? err.message : 'Erro ao estender teste')
     }
   }, [subscription, extendDays, extendTrial])
+
+  const handleFeedbackDiscount = useCallback(
+    async (granted: boolean) => {
+      if (!subscription) return
+      try {
+        await setFeedbackDiscount.mutateAsync({ tenantId: subscription.tenantId, granted })
+        toast.success(granted ? 'Desconto de feedback aplicado' : 'Desconto de feedback removido')
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Erro ao alterar o desconto de feedback')
+      }
+    },
+    [subscription, setFeedbackDiscount],
+  )
 
   const handleCancel = useCallback(async () => {
     if (!subscription) return
@@ -329,6 +348,15 @@ export function SubscriptionDetailDialog({
                 {subscription.notes && <p>{subscription.notes}</p>}
               </div>
             </div>
+          )}
+
+          {detail && (
+            <FeedbackDiscountPanel
+              discount={detail.feedbackDiscount ?? null}
+              ineligible={feedbackIneligibility(detail)}
+              isPending={isPending}
+              onToggle={handleFeedbackDiscount}
+            />
           )}
 
           <TenantReferralsPanel tenantId={subscription.tenantId} />
@@ -562,6 +590,54 @@ function InfoField({ label, value }: { label: string; value: React.ReactNode }) 
         {label}
       </span>
       <span className="text-sm text-charcoal">{value}</span>
+    </div>
+  )
+}
+
+/** The feedback reward flag: who set it and when, and the toggle. The API
+ *  enforces the same eligibility rule; clearing is always allowed. */
+function FeedbackDiscountPanel({
+  discount,
+  ineligible,
+  isPending,
+  onToggle,
+}: {
+  discount: AdminFeedbackDiscount | null
+  ineligible: ReturnType<typeof feedbackIneligibility>
+  isPending: boolean
+  onToggle: (granted: boolean) => void
+}) {
+  let text: string
+  if (discount && ineligible) {
+    text = `Sem efeito: ${FEEDBACK_INELIGIBLE_MESSAGES[ineligible]}`
+  } else if (discount) {
+    const by = discount.grantedByName ? ` por ${discount.grantedByName}` : ''
+    text = `Ativo: aplicado${by} em ${formatBrDate(discount.grantedAt)} às ${formatBrTime(discount.grantedAt)}. Vale no próximo pagamento da clínica.`
+  } else if (ineligible) {
+    text = FEEDBACK_INELIGIBLE_MESSAGES[ineligible]
+  } else {
+    text = 'Não aplicado. Ao aplicar, o próximo pagamento da clínica sai com o desconto.'
+  }
+  return (
+    <div className="space-y-1.5" data-testid="admin-feedback-discount">
+      <span className="text-[10px] uppercase tracking-[0.15em] text-mid font-medium">
+        Desconto feedback (50% por 3 meses)
+      </span>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-mid" data-testid="admin-feedback-discount-status">{text}</p>
+        {(discount || !ineligible) && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            disabled={isPending}
+            onClick={() => onToggle(!discount)}
+            data-testid="admin-feedback-discount-toggle"
+          >
+            {discount ? 'Remover desconto' : 'Aplicar desconto'}
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

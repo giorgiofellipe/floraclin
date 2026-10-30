@@ -542,4 +542,154 @@ describe('POST /api/billing/checkout', () => {
       expect(getValidatedReferralOffer).not.toHaveBeenCalled()
     })
   })
+
+  describe('feedback reward coupon', () => {
+    const FLAGGED_TRIAL = {
+      ...NO_SUBSCRIPTION,
+      source: 'trial',
+      firstPaidAt: null,
+      currentPeriodEnd: new Date('2026-09-05T12:00:00.000Z'),
+      feedbackDiscountGrantedAt: new Date('2026-08-30T12:00:00.000Z'),
+    }
+    const FLAGGED_EXPIRED = {
+      ...FLAGGED_TRIAL,
+      status: 'expired',
+      // An hour before the fixed "now" (2026-08-31T12:00Z).
+      currentPeriodEnd: new Date('2026-08-31T11:00:00.000Z'),
+    }
+    const FEEDBACK_TERMS = {
+      percentOff: 50,
+      amountOffCents: null,
+      duration: 'repeating',
+      durationInMonths: 3,
+      productIds: null,
+      firstTimeTransaction: true,
+      minimumAmountCents: null,
+    } as const
+
+    function feedbackOn() {
+      vi.stubEnv('STRIPE_FEEDBACK_PROMOTION_CODE_ID', 'promo_feedback')
+    }
+
+    it.each([
+      ['a running trial', FLAGGED_TRIAL],
+      ['an expired (read-only) trial', FLAGGED_EXPIRED],
+    ])('applies the feedback code to %s that an admin flagged', async (_, row) => {
+      feedbackOn()
+      vi.mocked(getSubscription).mockResolvedValue(row as never)
+
+      await POST(request('pro'))
+
+      expect(checkPromotionCode).toHaveBeenCalledWith('promo_feedback', expect.any(Date))
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+        promotionCodeId: 'promo_feedback',
+        discountKind: 'feedback',
+      }))
+    })
+
+    it('wins over the win-back code; only the feedback one is applied', async () => {
+      feedbackOn()
+      vi.stubEnv('STRIPE_WINBACK_PROMOTION_CODE_ID', 'promo_winback')
+      vi.mocked(getSubscription).mockResolvedValue(FLAGGED_EXPIRED as never)
+
+      await POST(request('pro'))
+
+      expect(checkPromotionCode).not.toHaveBeenCalledWith('promo_winback', expect.anything())
+      expect(createCheckoutSession).toHaveBeenCalledTimes(1)
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+        promotionCodeId: 'promo_feedback',
+        discountKind: 'feedback',
+      }))
+    })
+
+    it('wins over the referral code and still records the referral id', async () => {
+      feedbackOn()
+      vi.stubEnv('REFERRAL_ENROLLMENT_ENABLED', 'true')
+      vi.stubEnv('STRIPE_REFERRAL_PROMOTION_CODE_ID', 'promo_referral')
+      vi.stubEnv('STRIPE_REFERRER_COUPON_IDS', 'c20,c40,c60,c80,c100')
+      vi.mocked(getReferralAttribution).mockResolvedValue({ id: 'ref-1', status: 'trial', stripeSubscriptionId: null } as never)
+      vi.mocked(getSubscription).mockResolvedValue(FLAGGED_TRIAL as never)
+
+      await POST(request('pro'))
+
+      expect(getValidatedReferralOffer).not.toHaveBeenCalled()
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+        promotionCodeId: 'promo_feedback',
+        discountKind: 'feedback',
+        referralId: 'ref-1',
+      }))
+    })
+
+    it('falls back to the win-back code when Stripe says the feedback code is not usable', async () => {
+      feedbackOn()
+      vi.stubEnv('STRIPE_WINBACK_PROMOTION_CODE_ID', 'promo_winback')
+      vi.mocked(checkPromotionCode).mockImplementation(async (id: string) =>
+        id === 'promo_feedback' ? null : { ...FEEDBACK_TERMS, percentOff: 30 },
+      )
+      vi.mocked(getSubscription).mockResolvedValue(FLAGGED_EXPIRED as never)
+
+      await POST(request('pro'))
+
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+        promotionCodeId: 'promo_winback',
+        discountKind: 'winback',
+      }))
+    })
+
+    it('charges full price, without breaking checkout, when the feedback check throws', async () => {
+      feedbackOn()
+      vi.mocked(checkPromotionCode).mockRejectedValueOnce(new Error('stripe down'))
+      vi.mocked(getSubscription).mockResolvedValue(FLAGGED_TRIAL as never)
+
+      const res = await POST(request('pro'))
+
+      expect(res.status).toBe(200)
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+        promotionCodeId: null,
+      }))
+    })
+
+    it('gives a clinic nobody flagged the win-back, not the feedback code', async () => {
+      feedbackOn()
+      vi.stubEnv('STRIPE_WINBACK_PROMOTION_CODE_ID', 'promo_winback')
+      vi.mocked(getSubscription).mockResolvedValue({ ...FLAGGED_EXPIRED, feedbackDiscountGrantedAt: null } as never)
+
+      await POST(request('pro'))
+
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+        promotionCodeId: 'promo_winback',
+        discountKind: 'winback',
+      }))
+    })
+
+    it('does nothing while the promotion code id is unset', async () => {
+      vi.mocked(getSubscription).mockResolvedValue(FLAGGED_TRIAL as never)
+
+      await POST(request('pro'))
+
+      expect(checkPromotionCode).not.toHaveBeenCalled()
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+        promotionCodeId: null,
+      }))
+    })
+
+    it('charges full price to a flagged clinic whose Stripe subscription lapsed (it has paid before)', async () => {
+      feedbackOn()
+      vi.mocked(getSubscription).mockResolvedValue({
+        ...FLAGGED_EXPIRED,
+        source: 'stripe',
+        status: 'canceled',
+        stripeCustomerId: 'cus_1',
+        stripeSubscriptionId: 'sub_old',
+        firstPaidAt: new Date('2026-01-10T12:00:00.000Z'),
+      } as never)
+
+      await POST(request('pro'))
+
+      expect(checkPromotionCode).not.toHaveBeenCalledWith('promo_feedback', expect.anything())
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_1', expect.objectContaining({
+        promotionCodeId: null,
+      }))
+    })
+  })
 })

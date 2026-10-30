@@ -1134,6 +1134,10 @@ export const tenantSubscriptions = floraclinSchema.table('tenant_subscriptions',
   giftedBy: uuid('gifted_by').references(() => users.id),
   giftedMonths: integer('gifted_months'),
   notes: text('notes'),
+  /** Set by a platform admin for a trial clinic that sent feedback: its next checkout gets the feedback coupon
+   *  (STRIPE_FEEDBACK_PROMOTION_CODE_ID). Migration 0047. */
+  feedbackDiscountGrantedAt: timestamp('feedback_discount_granted_at', { withTimezone: true }),
+  feedbackDiscountGrantedBy: uuid('feedback_discount_granted_by').references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })

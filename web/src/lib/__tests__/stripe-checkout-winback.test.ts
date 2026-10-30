@@ -293,7 +293,7 @@ describe('customerHasPriorPurchase', () => {
   it('counts a Stripe error as a prior purchase (no offer), reports it and retries after a minute', async () => {
     listSubs.mockRejectedValueOnce(new Error('stripe down'))
     expect(await customerHasPriorPurchase('cus_1', NOW)).toBe(true)
-    expect(report).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ step: 'winback_prior_purchase' }))
+    expect(report).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ step: 'promo_prior_purchase' }))
     expect(await customerHasPriorPurchase('cus_1', new Date(NOW.getTime() + 61 * 1000))).toBe(false)
   })
 })

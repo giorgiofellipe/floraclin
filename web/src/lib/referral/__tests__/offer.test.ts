@@ -185,14 +185,19 @@ describe('publicReferralOffer', () => {
 })
 
 describe('chooseCheckoutDiscount', () => {
+  const f = { promotionCodeId: 'f' }
   const w = { promotionCodeId: 'w' }
   const r = { promotionCodeId: 'r' }
   it.each([
-    [w, null, { kind: 'winback', promotionCodeId: 'w' }],
-    [null, r, { kind: 'referral', promotionCodeId: 'r' }],
-    [w, r, { kind: 'winback', promotionCodeId: 'w' }],
-    [null, null, { kind: null, promotionCodeId: null }],
-  ])('%j + %j', (winback, referral, expected) => {
-    expect(chooseCheckoutDiscount(winback, referral)).toEqual(expected)
+    [null, w, null, { kind: 'winback', promotionCodeId: 'w' }],
+    [null, null, r, { kind: 'referral', promotionCodeId: 'r' }],
+    [null, w, r, { kind: 'winback', promotionCodeId: 'w' }],
+    [null, null, null, { kind: null, promotionCodeId: null }],
+    // The feedback reward beats both, and only its code is applied.
+    [f, w, r, { kind: 'feedback', promotionCodeId: 'f' }],
+    [f, null, r, { kind: 'feedback', promotionCodeId: 'f' }],
+    [f, w, null, { kind: 'feedback', promotionCodeId: 'f' }],
+  ])('feedback %j + winback %j + referral %j', (feedback, winback, referral, expected) => {
+    expect(chooseCheckoutDiscount({ feedback, winback, referral })).toEqual(expected)
   })
 })

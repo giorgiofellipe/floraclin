@@ -24,6 +24,7 @@ describe('client import boundary', () => {
     for (const { spec, typeOnly } of importsOf(source)) {
       expect(spec, `${file}: ${spec}`).not.toBe('@/lib/referral/offer')
       expect(spec, `${file}: ${spec}`).not.toBe('@/lib/referral/config')
+      expect(spec, `${file}: ${spec}`).not.toBe('@/lib/feedback-offer')
       expect(spec.startsWith('@/db'), `${file}: ${spec}`).toBe(false)
       if (spec === '@/lib/stripe') expect(typeOnly, `${file}: value import of ${spec}`).toBe(true)
     }
