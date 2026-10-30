@@ -1,6 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { appointments, patients, photoAssets, tenantUsers, users } from '@/db/schema'
+import { isTenantsFirst, type TenantFirstTable } from '@/db/queries/tenant-firsts'
 import type { TimelineStage } from '@/types'
 import type { AnalyticsEventProperties } from './events'
 import { trackServerEvent } from './server'
@@ -17,33 +18,13 @@ interface Actor {
   isPlatformAdmin: boolean
 }
 
-type TenantTable = typeof patients | typeof appointments | typeof photoAssets
-
-/**
- * True when no row of the tenant is older than the one just inserted, by
- * `(created_at, id)`. The request that inserted the earliest row fires;
- * concurrent first inserts can, rarely, both fire. Stops at the first older
- * row instead of sorting all of the tenant's rows. Soft-deleted rows count:
- * "first" means the first ever, so deleting and re-creating a patient does
- * not fire again.
- */
-async function isTenantsFirst(table: TenantTable, tenantId: string, insertedId: string) {
-  const inserted = db.select({ createdAt: table.createdAt }).from(table).where(eq(table.id, insertedId))
-  const [older] = await db
-    .select({ id: table.id })
-    .from(table)
-    .where(and(eq(table.tenantId, tenantId), sql`(${table.createdAt}, ${table.id}) < ((${inserted}), ${insertedId}::uuid)`))
-    .limit(1)
-  return !older
-}
-
 /**
  * Platform admins' rows (support work inside a customer's clinic) send
  * nothing, but still count as the tenant's first.
  */
 function trackTenantFirst<E extends 'first_patient_created' | 'first_appointment_created' | 'first_photo_uploaded'>(
   event: E,
-  table: TenantTable,
+  table: TenantFirstTable,
   actor: Actor,
   insertedId: string,
   properties: AnalyticsEventProperties[E],
