@@ -23,7 +23,7 @@ vi.mock('@/lib/observability', async (importOriginal) => ({
 }))
 vi.mock('@/db/queries/tenants', () => ({
   getTenant: vi.fn(),
-  updateTenant: vi.fn(),
+  saveOnboardingClinic: vi.fn(async () => true),
   updateTenantSettings: vi.fn(),
   markOnboardingCompleted: vi.fn(async () => true),
   createProcedureType: vi.fn(),
@@ -44,8 +44,21 @@ vi.mock('@/db/queries/clinical-documents', () => ({
   createClinicalDocumentTemplate: vi.fn(),
 }))
 vi.mock('@/db/queries/evaluation-templates', () => ({ createTemplate: vi.fn() }))
+vi.mock('@/lib/analytics/server', () => ({ trackServerEvent: vi.fn() }))
 
-import { getTenant, markOnboardingCompleted, updateTenant, updateTenantSettings } from '@/db/queries/tenants'
+import {
+  createProcedureType,
+  getTenant,
+  markOnboardingCompleted,
+  saveOnboardingClinic,
+  updateTenantSettings,
+} from '@/db/queries/tenants'
+import { findAvailableSlug } from '@/db/queries/admin-tenants'
+import { createProduct } from '@/db/queries/products'
+import { createConsentTemplate, listConsentTemplates } from '@/db/queries/consent'
+import { createClinicalDocumentTemplate, listClinicalDocumentTemplates } from '@/db/queries/clinical-documents'
+import { createTemplate } from '@/db/queries/evaluation-templates'
+import { trackServerEvent } from '@/lib/analytics/server'
 import { notifyDiscord } from '@/lib/discord'
 import { sendNewSignupNotification } from '@/lib/email'
 import { reportSideEffectFailure } from '@/lib/observability'
@@ -63,15 +76,35 @@ function postOnboarding(clinic: Record<string, unknown>) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: {} } as never)
   updateSet.mockImplementation(() => ({ where: updateWhere }))
   vi.mocked(markOnboardingCompleted).mockResolvedValue(true)
+  vi.mocked(saveOnboardingClinic).mockResolvedValue(true)
+  vi.mocked(listConsentTemplates).mockResolvedValue({ general: [{ id: 'c' }] } as never)
+  vi.mocked(listClinicalDocumentTemplates).mockResolvedValue([{ id: 'd' }] as never)
   ownerLookup.mockResolvedValue([{ fullName: 'Ana Souza', email: 'ana@b.com' }])
 })
 
+function expectNothingWrittenAfterTheClinicSave() {
+  expect(createProcedureType).not.toHaveBeenCalled()
+  expect(createTemplate).not.toHaveBeenCalled()
+  expect(createProduct).not.toHaveBeenCalled()
+  expect(createConsentTemplate).not.toHaveBeenCalled()
+  expect(createClinicalDocumentTemplate).not.toHaveBeenCalled()
+  expect(updateSet).not.toHaveBeenCalled()
+  expect(scheduleLifecycleWelcome).not.toHaveBeenCalled()
+  expect(markOnboardingCompleted).not.toHaveBeenCalled()
+  expect(updateTenantSettings).not.toHaveBeenCalled()
+  expect(trackServerEvent).not.toHaveBeenCalled()
+  expect(notifyDiscord).not.toHaveBeenCalled()
+  expect(sendNewSignupNotification).not.toHaveBeenCalled()
+  expect(createAuditLog).not.toHaveBeenCalled()
+}
+
 describe('POST /api/onboarding', () => {
   // Regression: a taken booking link failed onboarding with a generic 500.
-  it('answers 409 with a clear message when the slug is taken, before changing the clinic', async () => {
-    updateWhere.mockRejectedValue(
+  it('answers 409 with a clear message when the slug is taken, and goes no further', async () => {
+    vi.mocked(saveOnboardingClinic).mockRejectedValue(
       new Error('Failed query', { cause: { code: '23505', constraint_name: 'tenants_slug_unique' } }),
     )
 
@@ -79,7 +112,70 @@ describe('POST /api/onboarding', () => {
 
     expect(res.status).toBe(409)
     expect((await res.json()).error).toBe('Este link já está em uso. Escolha outro.')
-    expect(updateTenant).not.toHaveBeenCalled()
+    expectNothingWrittenAfterTheClinicSave()
+  })
+
+  it('answers 404 and writes nothing when the clinic is missing', async () => {
+    vi.mocked(getTenant).mockResolvedValue(null)
+
+    const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777', workingHours: DEFAULT_WORKING_HOURS })
+
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ success: false })
+    expect(saveOnboardingClinic).not.toHaveBeenCalled()
+    expectNothingWrittenAfterTheClinicSave()
+  })
+
+  describe('when onboarding was already completed', () => {
+    const realClinic = { name: 'Clínica Bella', phone: '(11) 98888-7777', workingHours: DEFAULT_WORKING_HOURS }
+    const postWithEverything = () =>
+      POST(new Request('http://localhost/api/onboarding', {
+        method: 'POST',
+        body: JSON.stringify({
+          clinic: realClinic,
+          procedureTypes: [{ name: 'Toxina', category: 'botox' }],
+          selectedProducts: [{ name: 'Botox', category: 'botox' }],
+        }),
+      }))
+
+    // Nothing seeded yet, so any step that got this far would write.
+    beforeEach(() => {
+      vi.mocked(listConsentTemplates).mockResolvedValue({} as never)
+      vi.mocked(listClinicalDocumentTemplates).mockResolvedValue([])
+    })
+
+    // Regression: a stale wizard's resubmit rewrote the clinic and re-ran every step.
+    it('answers 409 and writes nothing', async () => {
+      vi.mocked(getTenant).mockResolvedValue({
+        id: 'tenant-1',
+        settings: { onboarding_completed: true, clinic_name_placeholder: true },
+        lifecycleNoticeAt: null,
+      } as never)
+
+      const res = await postWithEverything()
+
+      expect(res.status).toBe(409)
+      expect(await res.json()).toEqual({ success: false, error: 'onboarding_already_completed' })
+      expect(findAvailableSlug).not.toHaveBeenCalled()
+      expect(saveOnboardingClinic).not.toHaveBeenCalled()
+      expectNothingWrittenAfterTheClinicSave()
+    })
+
+    it('answers 409 and goes no further when another save completed it after the check', async () => {
+      vi.mocked(getTenant).mockResolvedValue({
+        id: 'tenant-1',
+        settings: { clinic_name_placeholder: true },
+        lifecycleNoticeAt: null,
+      } as never)
+      vi.mocked(saveOnboardingClinic).mockResolvedValue(false)
+
+      const res = await postWithEverything()
+
+      expect(res.status).toBe(409)
+      expect(await res.json()).toEqual({ success: false, error: 'onboarding_already_completed' })
+      expect(saveOnboardingClinic).toHaveBeenCalledTimes(1)
+      expectNothingWrittenAfterTheClinicSave()
+    })
   })
 
   // The wizard checks the phone in the browser; a request that skips it must
@@ -96,7 +192,7 @@ describe('POST /api/onboarding', () => {
     expect(res.status).toBe(400)
     expect((await res.json()).error).toBe('Informe o telefone da clínica com DDD')
     expect(updateSet).not.toHaveBeenCalled()
-    expect(updateTenant).not.toHaveBeenCalled()
+    expect(saveOnboardingClinic).not.toHaveBeenCalled()
     expect(updateTenantSettings).not.toHaveBeenCalled()
     expect(markOnboardingCompleted).not.toHaveBeenCalled()
     expect(scheduleLifecycleWelcome).not.toHaveBeenCalled()
@@ -116,7 +212,7 @@ describe('POST /api/onboarding', () => {
     })
 
     expect(res.status).toBe(200)
-    expect(updateTenant).toHaveBeenCalledWith('tenant-1', expect.objectContaining({ address: null }))
+    expect(saveOnboardingClinic).toHaveBeenCalledWith('tenant-1', expect.objectContaining({ address: null }))
   })
 
   describe('a clinic created on arrival after Google sign-up', () => {
@@ -133,7 +229,7 @@ describe('POST /api/onboarding', () => {
       const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777', workingHours: DEFAULT_WORKING_HOURS })
 
       expect(res.status).toBe(200)
-      expect(updateTenant).toHaveBeenCalledWith('tenant-1', expect.objectContaining({
+      expect(saveOnboardingClinic).toHaveBeenCalledWith('tenant-1', expect.objectContaining({
         name: 'Clínica Bella',
         phone: '(11) 98888-7777',
       }))
@@ -148,7 +244,7 @@ describe('POST /api/onboarding', () => {
       expect(scheduleLifecycleWelcome).toHaveBeenCalledTimes(1)
       expect(scheduleLifecycleWelcome).toHaveBeenCalledWith({ tenantId: 'tenant-1' })
       // The welcome reads the phone from the clinic, so it is scheduled after the save.
-      expect(vi.mocked(updateTenant).mock.invocationCallOrder[0]).toBeLessThan(
+      expect(vi.mocked(saveOnboardingClinic).mock.invocationCallOrder[0]).toBeLessThan(
         vi.mocked(scheduleLifecycleWelcome).mock.invocationCallOrder[0],
       )
     })
@@ -249,7 +345,7 @@ describe('POST /api/onboarding', () => {
       })
     })
 
-    it('posts nothing when onboarding was already completed', async () => {
+    it('posts nothing when a concurrent save completed onboarding first', async () => {
       vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: {}, createdAt: fourMinutesAgo() } as never)
       vi.mocked(markOnboardingCompleted).mockResolvedValue(false)
 
@@ -260,7 +356,7 @@ describe('POST /api/onboarding', () => {
       expect(sendNewSignupNotification).not.toHaveBeenCalled()
     })
 
-    it('clears a leftover stand-in flag on a repeated save without posting again', async () => {
+    it('clears a leftover stand-in flag on a concurrent save without posting again', async () => {
       vi.mocked(getTenant).mockResolvedValue({
         id: 'tenant-1',
         settings: { clinic_name_placeholder: true },

@@ -171,6 +171,34 @@ export async function markOnboardingCompleted(
 }
 
 /**
+ * The final onboarding save of the clinic's slug and details, only while
+ * onboarding is still open: false when another save completed it first, and
+ * nothing was written. A taken slug throws the `tenants_slug_unique` violation.
+ */
+export async function saveOnboardingClinic(
+  tenantId: string,
+  clinic: Pick<UpdateTenantInput, 'name' | 'phone' | 'email' | 'workingHours'> & {
+    slug: string
+    address?: TenantAddress | null
+  },
+): Promise<boolean> {
+  const rows = await db
+    .update(tenants)
+    .set({
+      slug: clinic.slug,
+      name: clinic.name,
+      phone: clinic.phone || null,
+      email: clinic.email || null,
+      ...(clinic.address !== undefined && { address: clinic.address || null }),
+      workingHours: clinic.workingHours,
+      updatedAt: new Date(),
+    })
+    .where(onboardingOpen(tenantId))
+    .returning({ id: tenants.id })
+  return rows.length > 0
+}
+
+/**
  * Autosave from the onboarding wizard: writes the given clinic columns and
  * merges `settings`, only while onboarding is still open, so a save that lands
  * after completion cannot undo it. A saved phone also stamps the lifecycle

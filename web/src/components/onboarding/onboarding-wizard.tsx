@@ -24,8 +24,9 @@ import { Input } from '@/components/ui/input'
 import { CLINIC_PHONE_REQUIRED_MESSAGE, hasClinicPhone } from '@/lib/clinic-phone'
 import { resetAnalytics, track } from '@/lib/analytics/client'
 import type { OnboardingStepName, OnboardingSubmitFailureReason } from '@/lib/analytics/events'
-import { ONBOARDING_STEPS, type OnboardingDraft, type OnboardingProgressInput } from '@/validations/onboarding'
+import { ONBOARDING_ALREADY_COMPLETED, ONBOARDING_STEPS, type OnboardingDraft, type OnboardingProgressInput } from '@/validations/onboarding'
 import { useOnboardingAutosave } from './use-onboarding-autosave'
+import { useRedirectWhenOnboardingCompleted } from './use-redirect-when-onboarding-completed'
 
 interface ProcedureOverride {
   selected: boolean
@@ -187,6 +188,7 @@ export function OnboardingWizard({
     },
   }
   const autosave = useOnboardingAutosave(progress)
+  useRedirectWhenOnboardingCompleted()
 
   const handleClinicChange = useCallback((data: Record<string, unknown>) => {
     setClinicData(data)
@@ -370,7 +372,11 @@ export function OnboardingWizard({
       if (result?.success) {
         autosave.finish()
         toast.success('Configuração concluída! Bem-vindo ao FloraClin.')
-        router.push('/dashboard')
+        // Replace, so Back cannot return to the finished wizard.
+        router.replace('/dashboard')
+      } else if (res.status === 409 && result?.error === ONBOARDING_ALREADY_COMPLETED) {
+        autosave.finish()
+        router.replace('/dashboard')
       } else {
         autosave.resume()
         track('onboarding_submit_failed', { ...stepProperties(currentStep), reason: submitFailureReason(res.status), status: res.status })
