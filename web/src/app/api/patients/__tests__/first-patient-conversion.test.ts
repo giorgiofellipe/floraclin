@@ -98,16 +98,4 @@ describe('FirstPatient from the patient creation routes', () => {
       expect.objectContaining({ eventId: 'first_patient:tenant-1', userAgent: 'Clinic Browser' }),
     )
   })
-
-  it.each(ROUTES)('%s still creates the patient when the Meta send throws', async (_label, call) => {
-    const failure = new Error('graph.facebook.com unreachable')
-    sendFirstPatientEventMock.mockRejectedValue(failure)
-
-    const response = await call()
-    await Promise.all(afterTasks.splice(0))
-
-    expect(response.status).toBe(200)
-    expect(createPatientMock).toHaveBeenCalledTimes(1)
-    expect(reportSideEffectFailureMock).toHaveBeenCalledWith(failure, expect.objectContaining({ area: 'meta-capi', step: 'first_patient' }))
-  })
 })

@@ -267,14 +267,12 @@ export function sendSubscribeEvent({ paidCents, listPriceCents, planSlug, ...inp
   )
 }
 
-export type PlatformConversionInput = SendSignupCompleteRegistrationInput
-
 /**
  * A custom event for the clinic's first patient: activation, not a sale.
  * Carries the clinic professional's match keys only. Nothing about the
  * patient goes in it, only the fact that the clinic registered one.
  */
-export function sendFirstPatientEvent(input: PlatformConversionInput): Promise<boolean> {
+export function sendFirstPatientEvent(input: SendSignupCompleteRegistrationInput): Promise<boolean> {
   return sendPlatformConversion('FirstPatient', undefined, input)
 }
 

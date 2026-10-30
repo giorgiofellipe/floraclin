@@ -9,9 +9,9 @@ Documento interno (Art. 10 e Art. 37 da LGPD). Revisar anualmente ou a cada muda
 
 ## 1. Finalidade
 
-- **Dados enviados à Meta:** e-mail e telefone (hash SHA-256), IP, user agent, fbc (a partir do fbclid), `_fbp` (só existe após o aceite do Pixel) e, na assinatura, valor e plano. No FirstPatient, os mesmos dados do CompleteRegistration, do profissional responsável pela clínica (e-mail do titular da conta, telefone da clínica, IP e user agent de quem cadastrou o paciente, fbc e `_fbp` guardados no cadastro). Nenhum dado do paciente: só o fato de a clínica ter cadastrado o primeiro.
+- **Dados enviados à Meta:** e-mail e telefone (hash SHA-256), IP, user agent, fbc (a partir do fbclid), `_fbp` (só existe após o aceite do Pixel) e, na assinatura, valor e plano. No FirstPatient, os mesmos dados do CompleteRegistration, do profissional responsável pela clínica (e-mail do proprietário da conta, telefone da clínica, IP e user agent de quem cadastrou o paciente, fbc e `_fbp` guardados no cadastro), e o identificador interno da clínica, que forma o identificador do evento. Nenhum dado do paciente: só o fato de a clínica ter cadastrado o primeiro.
 - **Dados que ficam só no cookie e no cadastro:** UTMs, gclid, página de entrada, domínio de referência e data de captura.
-- **Titulares:** profissionais adultos que se cadastram diretamente na FloraClin. Sem dados de pacientes. Sem dados sensíveis.
+- **Titulares:** profissionais adultos que se cadastram diretamente na FloraClin e, no FirstPatient, o membro da equipe da clínica que cadastrou o primeiro paciente (IP e user agent). Sem dados de pacientes. Sem dados sensíveis.
 - **Interesse:** medir o retorno dos anúncios próprios da FloraClin e otimizar a entrega da Meta para perfis com chance de se tornar cliente. O FirstPatient mede a ativação: separa as clínicas que de fato começaram a usar o produto das que só se cadastraram, para qualificar a otimização.
 - **Situação concreta:** a FloraClin investe em Meta Ads. Entre 09/10 e 25/10/2026, a Meta registrou 11 dos 22 cadastros vindos de anúncios, porque o Pixel e o envio pelo servidor dependiam do banner de cookies.
 - **Finalidade específica:** medição e otimização dos anúncios da FloraClin. Sem venda de dados e sem uso para anúncios de terceiros.
@@ -36,6 +36,7 @@ Documento interno (Art. 10 e Art. 37 da LGPD). Revisar anualmente ou a cada muda
   - Transferência internacional (EUA).
   - A ANPD considera o consentimento, em geral, a base mais adequada para publicidade (Guia de Cookies, p. 24-25).
   - fbclid e gclid ficam registrados mesmo quando o visitante recusa o Pixel.
+  - No FirstPatient, o IP e o user agent podem ser de um membro da equipe, enviados junto com os dados do proprietário.
 - **Salvaguardas:**
   - Hash SHA-256 de e-mail e telefone.
   - Meta Pixel (cookies de terceiros) só com aceite.

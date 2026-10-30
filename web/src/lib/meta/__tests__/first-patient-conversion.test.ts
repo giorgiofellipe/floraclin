@@ -152,14 +152,4 @@ describe('scheduleFirstPatientConversion', () => {
       extra: { tenantId: 'tenant-1' },
     })
   })
-
-  it('reports and swallows after() throwing outside a request scope', () => {
-    const failure = new Error('after() was called outside a request scope')
-    afterMock.mockImplementation(() => {
-      throw failure
-    })
-
-    expect(() => scheduleFirstPatientConversion(ACTOR, 'patient-1', HEADERS)).not.toThrow()
-    expect(reportSideEffectFailureMock).toHaveBeenCalledWith(failure, expect.objectContaining({ step: 'first_patient' }))
-  })
 })

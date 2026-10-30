@@ -26,17 +26,8 @@ export function scheduleSubscribeConversion(
   if (!email || !session.livemode) return
   after(async () => {
     try {
-      const [tenant] = await db
-        .select({
-          phone: tenants.phone,
-          signupAttribution: tenants.signupAttribution,
-          optedOutAt: tenants.metaConversionsOptedOutAt,
-          deletedAt: tenants.deletedAt,
-        })
-        .from(tenants)
-        .where(eq(tenants.id, tenantId))
-        .limit(1)
-      if (!tenant || tenant.optedOutAt || tenant.deletedAt) return
+      const tenant = await conversionTenant(tenantId)
+      if (!tenant) return
       const browser = session.metadata ?? {}
       const signup = (tenant.signupAttribution ?? {}) as SignupIds
       await sendSubscribeEvent({
@@ -61,70 +52,58 @@ export function scheduleSubscribeConversion(
 
 /**
  * FirstPatient for FloraClin's own dataset: the clinic started actually using
- * the product. Called by every path that creates a patient, right after the
- * insert. Every read runs inside after(), so patient creation never waits on
- * it, and nothing that fails here reaches the caller.
- *
- * Once per clinic without a column of its own: only the tenant's earliest
- * patient ever (soft-deleted rows included) fires, and the event id is fixed
- * per tenant so Meta drops the rare duplicate two concurrent first inserts
- * can still produce.
+ * the product. The event id is fixed per tenant, so Meta drops the rare
+ * duplicate two concurrent first inserts can produce.
  */
 export function scheduleFirstPatientConversion(
   actor: { tenantId: string; isPlatformAdmin: boolean },
   patientId: string,
-  requestHeaders?: Pick<Headers, 'get'>,
+  requestHeaders: Pick<Headers, 'get'>,
 ): void {
   // Support work inside a customer's clinic is not the clinic activating.
   // The patient still counts as the first, as it does for analytics.
   if (actor.isPlatformAdmin) return
   const { tenantId } = actor
-  try {
-    const { clientIp, userAgent } = requestHeaders ? metaBrowserSignals(requestHeaders, () => undefined) : {}
-    after(async () => {
-      try {
-        if (!(await isTenantsFirst(patients, tenantId, patientId))) return
-        const [tenant] = await db
-          .select({
-            phone: tenants.phone,
-            signupAttribution: tenants.signupAttribution,
-            optedOutAt: tenants.metaConversionsOptedOutAt,
-            deletedAt: tenants.deletedAt,
-          })
-          .from(tenants)
-          .where(eq(tenants.id, tenantId))
-          .limit(1)
-        if (!tenant || tenant.optedOutAt || tenant.deletedAt) return
-        const signup = (tenant.signupAttribution ?? {}) as SignupIds
-        // Only a clinic that was itself a signup conversion gets the
-        // activation event, and the signup's metaEventId is the mark of one:
-        // both self-signup paths (e-mail and Google) store it, while a clinic
-        // a platform admin creates gets none (createClinicForOAuthUser skips
-        // it, the admin panel writes no signup attribution at all). Older
-        // clinics have one only if their signup recorded it then, which from
-        // #52 to #122 meant accepting marketing tracking; the rest are left
-        // out rather than measured on a basis they never saw.
-        if (!signup.metaEventId) return
-        const email = await ownerEmail(tenantId)
-        if (!email) return
-        await sendFirstPatientEvent({
-          eventId: `first_patient:${tenantId}`,
-          email,
-          phone: tenant.phone,
-          eventSourceUrl: `${getAppUrl()}/pacientes`,
-          clientIp,
-          userAgent,
-          fbc: signup.fbc ?? signupFbc(signup),
-          fbp: signup.fbp,
-        })
-      } catch (error) {
-        reportSideEffectFailure(error, { area: 'meta-capi', step: 'first_patient', extra: { tenantId } })
-      }
+  // No cookie reader: fbc and fbp come from the signup, not from whoever creates the patient.
+  const { clientIp, userAgent } = metaBrowserSignals(requestHeaders, () => undefined)
+  after(async () => {
+    try {
+      if (!(await isTenantsFirst(patients, tenantId, patientId))) return
+      const tenant = await conversionTenant(tenantId)
+      if (!tenant) return
+      const signup = (tenant.signupAttribution ?? {}) as SignupIds
+      // metaEventId marks a self-signup clinic: admin-created clinics never get one.
+      if (!signup.metaEventId) return
+      const email = await ownerEmail(tenantId)
+      if (!email) return
+      await sendFirstPatientEvent({
+        eventId: `first_patient:${tenantId}`,
+        email,
+        phone: tenant.phone,
+        eventSourceUrl: `${getAppUrl()}/pacientes`,
+        clientIp,
+        userAgent,
+        fbc: signup.fbc ?? signupFbc(signup),
+        fbp: signup.fbp,
+      })
+    } catch (error) {
+      reportSideEffectFailure(error, { area: 'meta-capi', step: 'first_patient', extra: { tenantId } })
+    }
+  })
+}
+
+async function conversionTenant(tenantId: string) {
+  const [tenant] = await db
+    .select({
+      phone: tenants.phone,
+      signupAttribution: tenants.signupAttribution,
+      optedOutAt: tenants.metaConversionsOptedOutAt,
+      deletedAt: tenants.deletedAt,
     })
-  } catch (error) {
-    // after() outside a request scope (a script, a test).
-    reportSideEffectFailure(error, { area: 'meta-capi', step: 'first_patient', extra: { tenantId } })
-  }
+    .from(tenants)
+    .where(eq(tenants.id, tenantId))
+    .limit(1)
+  return tenant && !tenant.optedOutAt && !tenant.deletedAt ? tenant : null
 }
 
 async function ownerEmail(tenantId: string): Promise<string | null> {
