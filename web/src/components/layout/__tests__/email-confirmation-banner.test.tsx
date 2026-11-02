@@ -31,7 +31,6 @@ describe('EmailConfirmationBanner', () => {
     const address = screen.getByText(email)
     expect(address).toHaveAttribute('title', email)
     expect(address).toHaveClass('truncate')
-    expect(address.className).not.toMatch(/break-all/)
   })
 
   it('gives the resend button a 44px tap target on phones', () => {

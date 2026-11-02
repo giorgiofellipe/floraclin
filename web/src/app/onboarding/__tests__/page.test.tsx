@@ -119,7 +119,7 @@ describe('onboarding page', () => {
     await expect(renderPage()).rejects.toThrow(/^redirect:\/dashboard$/)
   })
 
-  it('says "E-mail confirmado." once when the confirmation link lands here', async () => {
+  it('asks for the confirmed toast only when the confirmation link lands here with the parameter', async () => {
     await renderPage({ email_confirmed: '1' })
     expect(toastProps.current).toEqual({ show: true })
 
@@ -130,6 +130,12 @@ describe('onboarding page', () => {
   it('carries the confirmed toast on to the dashboard when the clinic is already set up', async () => {
     tenant.current = { ...tenant.current, settings: { onboarding_completed: true } }
     await expect(renderPage({ email_confirmed: '1' })).rejects.toThrow(/^redirect:\/dashboard\?email_confirmed=1$/)
+  })
+
+  it('does not say "E-mail confirmado." to an owner who is still unconfirmed', async () => {
+    authCtx.current = { ...authCtx.current, emailVerified: false }
+    await renderPage({ email_confirmed: '1' })
+    expect(toastProps.current).toEqual({ show: false })
   })
 
   it('ignores any other value of the parameter', async () => {

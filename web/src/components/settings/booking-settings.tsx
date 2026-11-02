@@ -182,7 +182,7 @@ export function BookingSettings({
                 autoCorrect="off"
                 spellCheck={false}
                 aria-invalid={!!slugError || undefined}
-                aria-describedby="booking-slug-hint"
+                aria-describedby={slugError ? 'booking-slug-error booking-slug-hint' : 'booking-slug-hint'}
                 className="h-9 min-w-32 flex-1 font-mono"
               />
             </div>
@@ -190,7 +190,7 @@ export function BookingSettings({
               {updateSlug.isPending ? 'Salvando...' : 'Salvar link'}
             </Button>
           </div>
-          {slugError && <p className="text-xs text-red-600">{slugError}</p>}
+          {slugError && <p id="booking-slug-error" className="text-xs text-red-600">{slugError}</p>}
           <p id="booking-slug-hint" className="text-xs text-mid">
             Criado a partir do nome da clínica. Ao mudar, o endereço antigo deixa de funcionar para quem já o recebeu.
           </p>

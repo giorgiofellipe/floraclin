@@ -64,6 +64,7 @@ describe('BookingSettings link editing', () => {
     await user.click(screen.getByRole('button', { name: 'Salvar link' }))
 
     expect(await screen.findByText('Este link já está em uso. Escolha outro.')).toBeInTheDocument()
+    expect(input).toHaveAccessibleDescription(expect.stringContaining('Este link já está em uso. Escolha outro.'))
     expect(screen.queryByText(/não pode ser alterado/)).toBeNull()
   })
 })

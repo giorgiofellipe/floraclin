@@ -10,6 +10,7 @@ import {
   confirmEmailStateCookieOptions,
   serializeConfirmEmailPageState,
 } from '@/lib/confirm-email-page-state'
+import { withEmailConfirmedParam } from '@/lib/email-confirmed-toast'
 
 /** Where a confirmed owner goes; /onboarding sends a finished clinic on to the dashboard. */
 const AFTER_CONFIRM_PATH = '/onboarding'
@@ -67,8 +68,9 @@ export async function GET(request: NextRequest) {
 async function confirmSignedInOwner(userId: string, email: string, token: string): Promise<void> {
   try {
     // Signing in again reissues the JWT, so the claims match the confirmed
-    // address, and fires the confirm-email provider's side effects once.
-    await signIn('confirm-email', { email, token, redirectTo: AFTER_CONFIRM_PATH })
+    // address, and fires the confirm-email provider's side effects once. The
+    // landing page says "E-mail confirmado." once, as after the confirm page.
+    await signIn('confirm-email', { email, token, redirectTo: withEmailConfirmedParam(AFTER_CONFIRM_PATH) })
   } catch (error) {
     if (isNextRedirectError(error)) throw error
     if (!(error instanceof CredentialsSignin)) {

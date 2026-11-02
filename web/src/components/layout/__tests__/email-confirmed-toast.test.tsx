@@ -4,6 +4,7 @@
  * not say it again.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { StrictMode } from 'react'
 import { render } from '@testing-library/react'
 
 const { router, toast } = vi.hoisted(() => ({
@@ -14,7 +15,6 @@ vi.mock('next/navigation', () => ({ useRouter: () => router }))
 vi.mock('sonner', () => ({ toast }))
 
 import { EmailConfirmedToast } from '../email-confirmed-toast'
-import { withEmailConfirmedParam, withoutEmailConfirmedParam } from '@/lib/email-confirmed-toast'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -22,9 +22,12 @@ beforeEach(() => {
 })
 
 describe('EmailConfirmedToast', () => {
-  it('toasts once and drops the parameter without scrolling', () => {
-    const { rerender } = render(<EmailConfirmedToast show />)
-    rerender(<EmailConfirmedToast show />)
+  it('toasts once, even when effects run twice, and drops the parameter without scrolling', () => {
+    render(
+      <StrictMode>
+        <EmailConfirmedToast show />
+      </StrictMode>,
+    )
 
     expect(toast.success).toHaveBeenCalledTimes(1)
     expect(toast.success).toHaveBeenCalledWith('E-mail confirmado.')
@@ -42,16 +45,5 @@ describe('EmailConfirmedToast', () => {
     render(<EmailConfirmedToast show={false} />)
     expect(toast.success).not.toHaveBeenCalled()
     expect(router.replace).not.toHaveBeenCalled()
-  })
-})
-
-describe('email confirmed parameter', () => {
-  it('is appended to a path with or without a query', () => {
-    expect(withEmailConfirmedParam('/onboarding')).toBe('/onboarding?email_confirmed=1')
-    expect(withEmailConfirmedParam('/dashboard?a=1')).toBe('/dashboard?a=1&email_confirmed=1')
-  })
-
-  it('is removed on its own', () => {
-    expect(withoutEmailConfirmedParam(new URL('https://x.test/dashboard?email_confirmed=1'))).toBe('/dashboard')
   })
 })

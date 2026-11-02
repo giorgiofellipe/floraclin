@@ -55,7 +55,7 @@ beforeEach(() => {
 })
 
 describe('GET /api/auth/confirm from the signed-in owner', () => {
-  it('confirms with the token and goes straight to onboarding', async () => {
+  it('confirms with the token and goes straight to onboarding, with the confirmed toast', async () => {
     authMock.mockResolvedValue({ user: { id: 'u1', email: 'ana@clinica.com' } })
 
     const digest = await digestOf(GET(new NextRequest(LINK)))
@@ -63,9 +63,9 @@ describe('GET /api/auth/confirm from the signed-in owner', () => {
     expect(signInMock).toHaveBeenCalledWith('confirm-email', {
       email: 'Ana@Clinica.com',
       token: 'raw123',
-      redirectTo: '/onboarding',
+      redirectTo: '/onboarding?email_confirmed=1',
     })
-    expect(digest).toContain(';/onboarding;')
+    expect(digest).toContain(';/onboarding?email_confirmed=1;')
   })
 
   it('goes on to onboarding when the link was already used but the address is confirmed', async () => {

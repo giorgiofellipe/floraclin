@@ -22,7 +22,8 @@ import { useHoldInstallBanner } from '@/components/layout/platform-chrome'
 
 // While the first-patient hint is up, "Novo Paciente" takes the primary style
 // and "Novo Agendamento" the outline one, so the eye goes where the hint says.
-const PRIMARY_ACTION = 'bg-forest text-cream hover:bg-sage'
+// Both carry a 1px border so the buttons keep the same height when they swap.
+const PRIMARY_ACTION = 'border border-transparent bg-forest text-cream hover:bg-sage'
 const OUTLINE_ACTION = 'border border-sage/30 text-charcoal hover:bg-confirmed-bg'
 
 function getGreeting(): string {

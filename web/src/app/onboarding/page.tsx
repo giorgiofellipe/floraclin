@@ -24,7 +24,8 @@ interface OnboardingPageProps {
 export default async function OnboardingPage({ searchParams }: OnboardingPageProps) {
   const auth = await getAuthContext()
   const { meta_event_id: metaEventId, email_confirmed: emailConfirmed } = await searchParams
-  const showEmailConfirmed = wantsEmailConfirmedToast(emailConfirmed)
+  // A hand-made ?email_confirmed=1 never says so next to the "Confirme seu e-mail" banner.
+  const showEmailConfirmed = wantsEmailConfirmedToast(emailConfirmed) && auth.emailVerified !== false
   // The confirmation link lands here; when onboarding is done (or not theirs
   // to run) the "E-mail confirmado." toast moves on to the dashboard with it.
   const dashboardPath = showEmailConfirmed ? withEmailConfirmedParam('/dashboard') : '/dashboard'
