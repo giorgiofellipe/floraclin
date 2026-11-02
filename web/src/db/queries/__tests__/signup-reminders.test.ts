@@ -43,7 +43,8 @@ interface Fixture {
   lifecycleNotice?: boolean
   onboardingCompleted?: boolean
   deleted?: boolean
-  reminders?: { key: string; status: ReminderStatus }[]
+  /** `sentAgo`: when it went out (completed_at); claimed then too. Default: just now. */
+  reminders?: { key: string; status: ReminderStatus; sentAgo?: string }[]
 }
 
 const email = (f: Fixture) => `${f.id}@signup-reminders.test`
@@ -78,6 +79,10 @@ async function insertFixtures(fixtures: Fixture[]) {
         channel: 'email',
         status: r.status,
         recipient: email(f),
+        ...(r.sentAgo && {
+          claimedAt: sql`now() - ${r.sentAgo}::interval`,
+          completedAt: r.status === 'pending' ? null : sql`now() - ${r.sentAgo}::interval`,
+        }),
       })
     }
   }
@@ -164,7 +169,7 @@ const CASES: Case[] = [
     name: 'unconfirmed signup 30h old, reminded at 1h',
     id: id(16),
     createdAgo: '30 hours',
-    reminders: [{ key: SIGNUP_CONFIRM_REMINDER_KEY, status: 'sent' }],
+    reminders: [{ key: SIGNUP_CONFIRM_REMINDER_KEY, status: 'sent', sentAgo: '29 hours' }],
     expected: 'final',
   },
   {
@@ -176,6 +181,28 @@ const CASES: Case[] = [
       { key: SIGNUP_CONFIRM_FINAL_REMINDER_KEY, status: 'sent' },
     ],
     expected: 'none',
+  },
+  // The last reminder waits 12 hours after the first.
+  {
+    name: 'unconfirmed signup 30h old, first reminder sent 7h ago',
+    id: id(21),
+    createdAgo: '30 hours',
+    reminders: [{ key: SIGNUP_CONFIRM_REMINDER_KEY, status: 'sent', sentAgo: '7 hours' }],
+    expected: 'none',
+  },
+  {
+    name: 'unconfirmed signup 30h old, first reminder sent 13h ago',
+    id: id(22),
+    createdAgo: '30 hours',
+    reminders: [{ key: SIGNUP_CONFIRM_REMINDER_KEY, status: 'sent', sentAgo: '13 hours' }],
+    expected: 'final',
+  },
+  {
+    name: 'unconfirmed signup 30h old, first reminder failed 2h ago',
+    id: id(23),
+    createdAgo: '30 hours',
+    reminders: [{ key: SIGNUP_CONFIRM_REMINDER_KEY, status: 'failed', sentAgo: '2 hours' }],
+    expected: 'final',
   },
   { name: 'confirmed signup 30h old', id: id(18), createdAgo: '30 hours', emailVerified: true, expected: 'none' },
   { name: 'unconfirmed signup 30h old on a deleted clinic', id: id(19), createdAgo: '30 hours', deleted: true, expected: 'none' },

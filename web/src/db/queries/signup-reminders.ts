@@ -14,6 +14,8 @@ const REMINDER_MIN_AGE = '1 hour'
 const FINAL_CONFIRM_REMINDER_AGE = '24 hours'
 // Also caps retries of a failed send.
 const REMINDER_MAX_AGE = '7 days'
+/** The last confirm reminder waits at least this long after the first one went out. */
+export const FINAL_CONFIRM_REMINDER_GAP = '12 hours'
 
 interface AgeWindow {
   /** Sent once the clinic is at least this old. */
@@ -79,9 +81,23 @@ export function findConfirmReminderRecipients(): Promise<SignupReminderRecipient
   })
 }
 
-/** For the ~24 hour reminder: clinics between 24 hours and 7 days old. */
+// A first reminder sent (or still being sent) under FINAL_CONFIRM_REMINDER_GAP
+// ago holds the last one back: one sent at 23 hours waits until 35. A failed
+// first one reached nobody and holds nothing back. completed_at is when it
+// went out; claimed_at stands in while it is in flight.
+const FIRST_CONFIRM_REMINDER_GAP = sql`and not exists (
+    select 1 from floraclin.tenant_lifecycle_messages f
+    where f.tenant_id = t.id and f.message_key = ${SIGNUP_CONFIRM_REMINDER_KEY} and f.channel = 'email'
+      and f.status <> 'failed'
+      and coalesce(f.completed_at, f.claimed_at) > now() - ${FINAL_CONFIRM_REMINDER_GAP}::interval
+  )`
+
+/**
+ * For the ~24 hour reminder: clinics between 24 hours and 7 days old, at least
+ * FINAL_CONFIRM_REMINDER_GAP after the first reminder.
+ */
 export function findFinalConfirmReminderRecipients(): Promise<SignupReminderRecipient[]> {
-  return findRecipients(SIGNUP_CONFIRM_FINAL_REMINDER_KEY, UNCONFIRMED_OWNER, {
+  return findRecipients(SIGNUP_CONFIRM_FINAL_REMINDER_KEY, sql`${UNCONFIRMED_OWNER} ${FIRST_CONFIRM_REMINDER_GAP}`, {
     from: FINAL_CONFIRM_REMINDER_AGE,
     until: REMINDER_MAX_AGE,
   })

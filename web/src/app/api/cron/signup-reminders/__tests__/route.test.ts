@@ -114,8 +114,9 @@ describe('signup-reminders cron: confirm reminders', () => {
 
     const windowOf = (key: string) => {
       const query = captured.find((q) => q.params.includes(key) && q.sql.includes('created_at <= now()'))!
+      // The two created_at bounds come first; a later interval is another rule.
       const intervals = query.params.filter((p) => typeof p === 'string' && /^\d+ (hour|hours|days)$/.test(p))
-      return intervals
+      return intervals.slice(0, 2)
     }
     expect(windowOf(SIGNUP_CONFIRM_REMINDER_KEY)).toEqual(['1 hour', '24 hours'])
     expect(windowOf(SIGNUP_CONFIRM_FINAL_REMINDER_KEY)).toEqual(['24 hours', '7 days'])
@@ -123,6 +124,21 @@ describe('signup-reminders cron: confirm reminders', () => {
     const finalQuery = captured.find((q) => q.params.includes(SIGNUP_CONFIRM_FINAL_REMINDER_KEY))!
     expect(finalQuery.sql).toMatch(/o\.password_hash is not null and o\.email_verified is null/)
     expect(finalQuery.sql).toMatch(/t\.deleted_at is null/)
+  })
+
+  // Catches the last reminder going out right after the first (one sent at 23 hours, the next at 24).
+  it('holds the last reminder back until 12 hours after the first one went out', async () => {
+    await run()
+
+    const finalQuery = captured.find((q) => q.params.includes(SIGNUP_CONFIRM_FINAL_REMINDER_KEY))!
+    expect(finalQuery.params).toContain(SIGNUP_CONFIRM_REMINDER_KEY)
+    expect(finalQuery.params).toContain('12 hours')
+    expect(finalQuery.sql).toMatch(
+      /and not exists \(\s*select 1 from floraclin\.tenant_lifecycle_messages f\s+where f\.tenant_id = t\.id and f\.message_key = \$\d+ and f\.channel = 'email'\s+and f\.status <> 'failed'\s+and coalesce\(f\.completed_at, f\.claimed_at\) > now\(\) - \$\d+::interval/,
+    )
+    // The first reminder's own query has no such rule.
+    const firstQuery = captured.find((q) => q.params.includes(SIGNUP_CONFIRM_REMINDER_KEY) && !q.params.includes(SIGNUP_CONFIRM_FINAL_REMINDER_KEY))!
+    expect(firstQuery.params).not.toContain('12 hours')
   })
 
   it('refuses a call without the cron secret', async () => {
