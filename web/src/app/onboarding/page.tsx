@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 
 export const metadata: Metadata = {
-  title: 'Bem-vindo | FloraClin',
+  title: 'Bem-vindo(a) | FloraClin',
 }
 import { getAuthContext } from '@/lib/auth'
 import { getTenant, listProcedureTypes } from '@/db/queries/tenants'

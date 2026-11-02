@@ -392,7 +392,7 @@ export function OnboardingWizard({
 
       if (result?.success) {
         autosave.finish()
-        toast.success('Configuração concluída! Bem-vindo ao FloraClin.')
+        toast.success('Configuração concluída! Bem-vindo(a) ao FloraClin.')
         // Replace, so Back cannot return to the finished wizard. The
         // dashboard points at the first patient once.
         router.replace(`/dashboard?${FIRST_PATIENT_HIGHLIGHT_PARAM}=1`)
@@ -416,7 +416,7 @@ export function OnboardingWizard({
         {/* Header */}
         <div className="mb-3 text-center sm:mb-12 animate-fade-in-up">
           <h1 className="text-3xl text-charcoal sm:text-5xl font-semibold tracking-tight">
-            Bem-vindo ao <span className="font-display text-forest">Flora</span><span className="font-display text-sage">Clin</span>
+            Bem-vindo(a) ao <span className="font-display text-forest">Flora</span><span className="font-display text-sage">Clin</span>
           </h1>
           <p className="mt-1 text-mid text-base sm:mt-3">
             Configure sua clínica em poucos passos

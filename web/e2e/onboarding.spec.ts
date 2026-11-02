@@ -42,7 +42,7 @@ test.describe('Onboarding', () => {
     skipIfNotOnboarding(page)
 
     // Welcome header visible
-    await expect(page.locator('text=Bem-vindo ao')).toBeVisible({ timeout: 10000 })
+    await expect(page.getByRole('heading', { name: 'Bem-vindo(a) ao FloraClin' })).toBeVisible({ timeout: 10000 })
 
     // Step 1 content visible
     await expect(page.locator('text=Dados da Clínica')).toBeVisible()

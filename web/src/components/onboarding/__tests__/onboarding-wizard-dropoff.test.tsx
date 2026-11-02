@@ -8,6 +8,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
+import { toast } from 'sonner'
 import { track } from '@/lib/analytics/client'
 import { DEFAULT_PROCEDURE_TYPES, DEFAULT_PRODUCTS } from '@/lib/constants'
 import { onboardingCompleteSchema } from '@/validations/onboarding'
@@ -191,6 +192,12 @@ describe('"Configurar depois"', () => {
     renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777' })
     await user.click(screen.getByTestId('onboarding-use-defaults'))
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/dashboard?primeiro_paciente=1'))
+    expect(toast.success).toHaveBeenCalledWith('Configuração concluída! Bem-vindo(a) ao FloraClin.')
+  })
+
+  it('welcomes without assuming a gender', () => {
+    renderWizard()
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Bem-vindo(a) ao FloraClin')
   })
 
   it('ignores the owner\'s edits to later steps: it is the defaults', async () => {
