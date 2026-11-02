@@ -12,7 +12,12 @@ import {
 } from '@/db/queries/tenants'
 import { findAvailableSlug, generateSlug } from '@/db/queries/admin-tenants'
 import { isBookingSlugFree } from '@/db/queries/booking-slugs'
-import { hasPlaceholderName, PLACEHOLDER_NAME_SETTING } from '@/lib/clinic-placeholder'
+import {
+  hasPlaceholderName,
+  hasPlaceholderSlug,
+  PLACEHOLDER_NAME_SETTING,
+  PLACEHOLDER_SLUG_SETTING,
+} from '@/lib/clinic-placeholder'
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
 import { notifyOnboardingCompleted } from '@/lib/signup-notifications'
 import { reportSideEffectFailure } from '@/lib/observability'
@@ -90,6 +95,10 @@ export async function POST(request: Request) {
     // Autosave may have cleared the stand-in flag already; it is still set
     // when this save is the first to hear the clinic's real name.
     const stillNamedPlaceholder = hasPlaceholderName(current.settings)
+    // The slug made from the stand-in name. Autosave does not clear this flag,
+    // so it holds after the real name was typed; the name flag covers clinics
+    // created before the slug flag existed that autosave has not reached.
+    const placeholderSlug = stillNamedPlaceholder || hasPlaceholderSlug(current.settings)
     // Pending for a clinic created on arrival after Google sign-up, unless
     // autosave already stamped it with the first saved phone.
     const noticePending = !current.lifecycleNoticeAt
@@ -110,7 +119,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: SLUG_TAKEN_MESSAGE }, { status: 409 })
       }
       const keepDraftSlug = !data.clinic.slug
-        && !stillNamedPlaceholder
+        && !placeholderSlug
         && !!current.slug
         && await isBookingSlugFree(db, current.slug, auth.tenantId)
       const slug = data.clinic.slug
@@ -252,6 +261,7 @@ export async function POST(request: Request) {
       const completionSettings = {
         onboarding_draft: null,
         ...(stillNamedPlaceholder ? { [PLACEHOLDER_NAME_SETTING]: false } : {}),
+        ...(placeholderSlug ? { [PLACEHOLDER_SLUG_SETTING]: false } : {}),
       }
       const firstCompletion = await markOnboardingCompleted(auth.tenantId, completionSettings)
       // Reported straight away: once the flag is set no later save reports
@@ -280,8 +290,12 @@ export async function POST(request: Request) {
       }
       // A concurrent save loses the compare-and-set above. It still clears a
       // leftover stand-in flag (a no-op if the winner did).
-      if (!firstCompletion && stillNamedPlaceholder) {
-        await updateTenantSettings(auth.tenantId, { onboarding_completed: true, [PLACEHOLDER_NAME_SETTING]: false })
+      if (!firstCompletion && placeholderSlug) {
+        await updateTenantSettings(auth.tenantId, {
+          onboarding_completed: true,
+          ...(stillNamedPlaceholder ? { [PLACEHOLDER_NAME_SETTING]: false } : {}),
+          [PLACEHOLDER_SLUG_SETTING]: false,
+        })
       }
 
       // 8. Audit log

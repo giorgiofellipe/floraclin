@@ -14,6 +14,19 @@ export function hasPlaceholderName(settings: unknown): boolean {
 }
 
 /**
+ * Settings key marking a booking slug made from the stand-in name. Unlike
+ * PLACEHOLDER_NAME_SETTING, autosave leaves it alone (it clears the name flag
+ * as soon as a real name is typed), so the onboarding save still knows to
+ * replace the slug with one from the real name, and clears it then.
+ */
+export const PLACEHOLDER_SLUG_SETTING = 'clinic_slug_placeholder'
+
+/** Whether the clinic's booking slug was made from the Google sign-up stand-in name. */
+export function hasPlaceholderSlug(settings: unknown): boolean {
+  return ((settings as Record<string, unknown> | null | undefined) ?? {})[PLACEHOLDER_SLUG_SETTING] === true
+}
+
+/**
  * Stand-in name for a clinic created right after Google sign-up, before the
  * owner has told us what it is called. Onboarding replaces it.
  */

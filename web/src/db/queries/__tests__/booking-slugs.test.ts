@@ -43,7 +43,9 @@ vi.mock('@/db/client', () => {
     if (sql.startsWith(`select ${H}."retired_at", ${T}."slug" from ${H} inner join`)) {
       const h = store.history.get(p[0])
       const t = h && store.tenants.get(h.tenantId)
-      return { rows: h && t && !t.deleted ? [[h.retiredAt, t.slug]] : [] }
+      // Deleted clinics drop out only when the query asks for it.
+      const hidden = t?.deleted && sql.includes(`${T}."deleted_at" is null`)
+      return { rows: h && t && !hidden ? [[h.retiredAt, t.slug]] : [] }
     }
     if (sql.startsWith(`delete from ${H}`)) {
       store.history.delete(p[0])

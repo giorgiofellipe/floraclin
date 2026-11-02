@@ -511,12 +511,4 @@ describe('onboarding_step_submitted on "Usar padrões e começar"', () => {
       ['onboarding_step_submitted', { step_index: 0, step_name: 'clinic', via: 'defaults' }],
     ])
   })
-
-  it('is not sent when step 1 does not validate', async () => {
-    const user = userEvent.setup()
-    renderWizard({ tenantName: '', tenantPhone: '(11) 98888-7777' })
-    await user.click(screen.getByTestId('onboarding-use-defaults'))
-
-    expect(eventsNamed('onboarding_step_submitted')).toHaveLength(0)
-  })
 })

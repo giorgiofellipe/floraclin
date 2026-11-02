@@ -48,6 +48,21 @@ describe('the sign-in time on the session token', () => {
     expect(token.authAt).toBe(Date.parse('2026-10-24T12:00:00Z'))
   })
 
+  // Catches a password sign-in that read a planted password just before the
+  // owner's Google sign-in discarded it surviving that discard: its authAt must
+  // be when authorize read the hash, not when the token was minted after bcrypt.
+  it('is when the password was read for a password sign-in', async () => {
+    vi.useFakeTimers({ now: new Date('2026-10-24T12:00:01Z') })
+    const readAt = Date.parse('2026-10-24T12:00:00Z')
+    const token = await jwt({
+      token: {},
+      user: { id: 'u1', email: 'a@b.com', authAt: readAt } as JwtArgs['user'],
+      account: { provider: 'credentials', type: 'credentials', providerAccountId: 'u1' },
+    })
+
+    expect(token.authAt).toBe(readAt)
+  })
+
   it('does not move when the session is refreshed', async () => {
     const authAt = Date.parse('2026-10-01T12:00:00Z')
 

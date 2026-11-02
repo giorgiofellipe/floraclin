@@ -237,7 +237,11 @@ describe('POST /api/onboarding', () => {
         name: 'Clínica Bella',
         phone: '(11) 98888-7777',
       }))
-      expect(markOnboardingCompleted).toHaveBeenCalledWith('tenant-1', { onboarding_draft: null, clinic_name_placeholder: false })
+      expect(markOnboardingCompleted).toHaveBeenCalledWith('tenant-1', {
+        onboarding_draft: null,
+        clinic_name_placeholder: false,
+        clinic_slug_placeholder: false,
+      })
       expect(updateTenantSettings).not.toHaveBeenCalled()
       // The lifecycle notice was first shown on the wizard's phone field.
       expect(updateSet).toHaveBeenCalledWith({ lifecycleNoticeAt: expect.anything() })
@@ -374,6 +378,7 @@ describe('POST /api/onboarding', () => {
       expect(updateTenantSettings).toHaveBeenCalledWith('tenant-1', {
         onboarding_completed: true,
         clinic_name_placeholder: false,
+        clinic_slug_placeholder: false,
       })
       expect(notifyDiscord).not.toHaveBeenCalled()
     })
@@ -542,6 +547,24 @@ describe('POST /api/onboarding', () => {
       await postOnboarding(clinic)
 
       expect(savedSlug()).toBe('clinica-bela')
+    })
+
+    // Catches the usual Google path: autosave clears the name flag as soon as
+    // the real name is typed, long before this save.
+    it('derives a new one after autosave cleared the stand-in name flag, and clears the slug flag', async () => {
+      vi.mocked(getTenant).mockResolvedValue({
+        id: 'tenant-1',
+        slug: 'clinica-de-ana',
+        settings: { clinic_name_placeholder: false, clinic_slug_placeholder: true },
+      } as never)
+
+      await postOnboarding(clinic)
+
+      expect(savedSlug()).toBe('clinica-bela')
+      expect(markOnboardingCompleted).toHaveBeenCalledWith('tenant-1', {
+        onboarding_draft: null,
+        clinic_slug_placeholder: false,
+      })
     })
 
     // Catches an older wizard's explicit slug skipping the 90-day reservation of another clinic's old link.

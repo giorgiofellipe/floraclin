@@ -1,5 +1,5 @@
 import { db } from '@/db/client'
-import { PLACEHOLDER_NAME_SETTING } from '@/lib/clinic-placeholder'
+import { PLACEHOLDER_NAME_SETTING, PLACEHOLDER_SLUG_SETTING } from '@/lib/clinic-placeholder'
 import { tenants, users, tenantUsers, patients, financialEntries, plans } from '@/db/schema'
 import { eq, and, ne, ilike, or, sql, desc, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
@@ -446,7 +446,7 @@ export async function createSelfSignupTenant(data: {
       // A clinic created on arrival skipped the form that shows the lifecycle
       // notice: onboarding shows it and stamps lifecycle_notice_at instead.
       ...(data.placeholderName
-        ? { settings: { [PLACEHOLDER_NAME_SETTING]: true }, lifecycleNoticeShown: false }
+        ? { settings: { [PLACEHOLDER_NAME_SETTING]: true, [PLACEHOLDER_SLUG_SETTING]: true }, lifecycleNoticeShown: false }
         : {}),
     })
 

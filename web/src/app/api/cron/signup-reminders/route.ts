@@ -76,19 +76,19 @@ function sendFinishReminder(recipient: SignupReminderRecipient) {
 }
 
 async function run() {
+  // Each batch is looked up only after the one before it was sent: a clinic
+  // turning 24 hours old between the lookups would otherwise be in both confirm
+  // batches, and the final one's 12 hour gap only sees a first reminder once
+  // it has been claimed.
   const batches = [
-    { key: SIGNUP_CONFIRM_REMINDER_KEY, recipients: await findConfirmReminderRecipients(), send: sendConfirmReminder },
-    {
-      key: SIGNUP_CONFIRM_FINAL_REMINDER_KEY,
-      recipients: await findFinalConfirmReminderRecipients(),
-      send: sendFinalConfirmReminder,
-    },
-    { key: SIGNUP_FINISH_REMINDER_KEY, recipients: await findFinishReminderRecipients(), send: sendFinishReminder },
+    { key: SIGNUP_CONFIRM_REMINDER_KEY, find: findConfirmReminderRecipients, send: sendConfirmReminder },
+    { key: SIGNUP_CONFIRM_FINAL_REMINDER_KEY, find: findFinalConfirmReminderRecipients, send: sendFinalConfirmReminder },
+    { key: SIGNUP_FINISH_REMINDER_KEY, find: findFinishReminderRecipients, send: sendFinishReminder },
   ]
   const outcomes: Outcome[] = []
 
-  for (const { key, recipients, send } of batches) {
-    for (const recipient of recipients) {
+  for (const { key, find, send } of batches) {
+    for (const recipient of await find()) {
       try {
         outcomes.push({ tenantId: recipient.tenantId, key, result: await send(recipient) })
       } catch (err) {

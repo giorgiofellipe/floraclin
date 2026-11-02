@@ -95,8 +95,8 @@ export type ChangeBookingSlugResult =
  * the audit rows this writes.
  *
  * Locks the tenant row (so the limit holds under concurrent saves) and both
- * slugs (lockSlugs). tenants_slug_unique and the history primary key back the
- * checks; either maps to 'taken'.
+ * slugs (lockSlugs). tenants_slug_unique backs the checks and maps to 'taken'
+ * (the history insert upserts, so its primary key never conflicts).
  */
 export async function changeBookingSlug(input: {
   tenantId: string
@@ -152,7 +152,7 @@ export async function changeBookingSlug(input: {
     })
   } catch (err) {
     // The violation aborted the transaction; it is rolled back by the time we get here.
-    if (isUniqueViolation(err, 'tenants_slug_unique') || isUniqueViolation(err, 'tenant_slug_history_pkey')) {
+    if (isUniqueViolation(err, 'tenants_slug_unique')) {
       return { outcome: 'taken' }
     }
     throw err

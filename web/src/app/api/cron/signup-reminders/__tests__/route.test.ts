@@ -141,6 +141,22 @@ describe('signup-reminders cron: confirm reminders', () => {
     expect(firstQuery.params).not.toContain('12 hours')
   })
 
+  // Catches both confirm reminders going out in one run to a clinic that turns
+  // 24 hours old between the two lookups: the last one's 12 hour rule only sees
+  // the first reminder once its claim is written.
+  it('looks up the last reminder only after the first ones were claimed', async () => {
+    rowsByKey[SIGNUP_CONFIRM_REMINDER_KEY] = [{ tenant_id: 't1', tenant_name: 'Clínica Um', owner_email: 'um@x.test' }]
+
+    await run()
+
+    const firstClaim = captured.findIndex(
+      (q) => q.sql.trimStart().startsWith('insert into floraclin.tenant_lifecycle_messages') && q.params[1] === SIGNUP_CONFIRM_REMINDER_KEY,
+    )
+    const finalLookup = captured.findIndex((q) => q.params.includes(SIGNUP_CONFIRM_FINAL_REMINDER_KEY))
+    expect(firstClaim).toBeGreaterThanOrEqual(0)
+    expect(finalLookup).toBeGreaterThan(firstClaim)
+  })
+
   it('refuses a call without the cron secret', async () => {
     const res = await GET(new Request('http://localhost/api/cron/signup-reminders'))
     expect(res.status).toBe(401)

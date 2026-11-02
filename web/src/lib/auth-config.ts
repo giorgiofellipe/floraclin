@@ -81,6 +81,11 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         const password = credentials?.password as string
         if (!email || !password) return null
 
+        // When the hash was read: the session's authAt (see jwt). A Google or
+        // magic-link sign-in that discards a planted password while bcrypt
+        // runs below is then later than this sign-in, and revokes it.
+        const readAt = Date.now()
+
         // Matched the way uq_users_email_lower indexes it. A row stored with
         // any uppercase (an invite, an OAuth adapter insert) is invisible to
         // an equality match on the raw column, so the account exists and can
@@ -111,7 +116,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         // marker lets login_succeeded say is_new_user like a Google signup does;
         // a just-created account is always unconfirmed.
         const isNewUser = credentials?.signup === '1' && !user.emailVerified
-        return { id: user.id, email: user.email, name: user.fullName, isNewUser }
+        return { id: user.id, email: user.email, name: user.fullName, isNewUser, authAt: readAt }
       },
     }),
     Credentials({
@@ -192,7 +197,8 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         // forward and would outlive a password change. Stamped after
         // markEmailVerifiedViaGoogle: discarding a planted password revokes the
         // sessions signed in before it, and this one must not be among them.
-        token.authAt = Date.now()
+        // A password sign-in counts from when its hash was read (authorize).
+        token.authAt = 'authAt' in user && typeof user.authAt === 'number' ? user.authAt : Date.now()
       }
 
       if (user || trigger === 'update') {
