@@ -5,7 +5,7 @@
  * driver, so the real queries run without a database: the 90-day reservation
  * of an old link, its redirect, and the rolling change limit.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { drizzle } from 'drizzle-orm/pg-proxy'
 
 const store = vi.hoisted(() => ({
@@ -62,6 +62,15 @@ vi.mock('@/db/client', () => {
       store.tenants.get(p[2])!.slug = p[0]
       return { rows: [] }
     }
+    // updateTenantAdmin's write of the other fields: the id, name and slug are enough here.
+    if (sql.startsWith(`update ${T} set "updated_at"`)) {
+      const id = p[p.length - 1]
+      const t = store.tenants.get(id)
+      return { rows: t ? [[id, 'Clínica', t.slug]] : [] }
+    }
+    // createTenantWithOwner's owner lookup and insert, before it picks the slug.
+    if (sql.startsWith('select "id" from "floraclin"."users"')) return { rows: [] }
+    if (sql.startsWith('insert into "floraclin"."users"')) return { rows: [] }
     if (sql.startsWith('insert into "floraclin"."audit_logs"')) {
       store.audits.push({ tenantId: p[0], entityType: p[3], createdAt: p[6] })
       return { rows: [] }
@@ -80,7 +89,7 @@ import {
   findBookingSlugRedirect,
   isBookingSlugFree,
 } from '../booking-slugs'
-import { findAvailableSlug } from '../admin-tenants'
+import { ADMIN_SLUG_TAKEN, createTenantWithOwner, findAvailableSlug, updateTenantAdmin } from '../admin-tenants'
 
 const DAY = 24 * 60 * 60 * 1000
 const T0 = new Date('2026-11-02T15:00:00Z')
@@ -182,5 +191,50 @@ describe('changing the booking link', () => {
     await change('ana', 'ana-estetica', T0)
     store.tenants.get('ana')!.deleted = true
     expect(await findBookingSlugRedirect('clinica-de-ana', at(1))).toBeNull()
+  })
+})
+
+describe('a platform admin changing the booking link', () => {
+  const adminChange = (tenantId: string, slug: string, now: Date) => {
+    vi.setSystemTime(now)
+    return updateTenantAdmin(tenantId, { slug }, 'admin-1')
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  // Catches an admin rename leaving the clinic's shared links on a 404.
+  it('redirects the old link to the new one and reserves it, like the owner\'s change', async () => {
+    expect(await adminChange('ana', 'ana-estetica', T0)).toMatchObject({ id: 'ana', slug: 'ana-estetica' })
+
+    expect(await findBookingSlugRedirect('clinica-de-ana', at(1))).toBe('ana-estetica')
+    expect(await isBookingSlugFree(db, 'clinica-de-ana', 'bia', at(1))).toBe(false)
+  })
+
+  it('is not held to the owner\'s daily limit', async () => {
+    for (let i = 0; i < BOOKING_SLUG_CHANGES_PER_DAY; i++) await change('ana', `ana-${i}`, T0)
+
+    expect(await adminChange('ana', 'ana-admin', at(0.1))).toMatchObject({ slug: 'ana-admin' })
+  })
+
+  // Catches an admin handing one clinic a link another clinic's patients still use.
+  it('refuses a link another clinic moved off less than 90 days ago', async () => {
+    await change('bia', 'bia-nova', T0)
+
+    await expect(adminChange('ana', 'studio-bia', at(1))).rejects.toMatchObject({ code: ADMIN_SLUG_TAKEN })
+    expect(store.tenants.get('ana')!.slug).toBe('clinica-de-ana')
+  })
+
+  it('refuses the same link when creating a clinic', async () => {
+    await change('bia', 'bia-nova', T0)
+    vi.setSystemTime(at(1))
+
+    await expect(
+      createTenantWithOwner({ name: 'Studio', slug: 'studio-bia', ownerEmail: 'a@b.com', ownerName: 'Ana' }),
+    ).rejects.toMatchObject({ code: ADMIN_SLUG_TAKEN })
   })
 })

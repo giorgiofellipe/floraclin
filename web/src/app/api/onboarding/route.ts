@@ -11,7 +11,7 @@ import {
   listProcedureTypes,
 } from '@/db/queries/tenants'
 import { findAvailableSlug, generateSlug } from '@/db/queries/admin-tenants'
-import { isBookingSlugFree } from '@/db/queries/booking-slugs'
+import { isBookingSlugFree, retireBookingSlug } from '@/db/queries/booking-slugs'
 import {
   hasPlaceholderName,
   hasPlaceholderSlug,
@@ -142,6 +142,12 @@ export async function POST(request: Request) {
         throw err
       }
       if (!saved) return alreadyCompleted()
+      // A real slug the clinic moves off (an older wizard's explicit one)
+      // redirects to the new one and stays reserved, as a change in Settings
+      // would. A stand-in was never meant to be shared.
+      if (current.slug && slug !== current.slug && !placeholderSlug) {
+        await retireBookingSlug(db, { tenantId: auth.tenantId, oldSlug: current.slug, newSlug: slug, now: new Date() })
+      }
 
       // 2. Create selected procedure types (only if none exist yet)
       if (existingTypes.length === 0 && data.procedureTypes.length > 0) {

@@ -33,7 +33,7 @@ vi.mock('@/db/queries/admin-tenants', () => ({
   findAvailableSlug: vi.fn(async () => 'clinica-bela'),
   generateSlug: vi.fn(),
 }))
-vi.mock('@/db/queries/booking-slugs', () => ({ isBookingSlugFree: vi.fn(async () => true) }))
+vi.mock('@/db/queries/booking-slugs', () => ({ isBookingSlugFree: vi.fn(async () => true), retireBookingSlug: vi.fn() }))
 vi.mock('@/lib/lifecycle-sender', () => ({ scheduleLifecycleWelcome: vi.fn() }))
 vi.mock('@/db/queries/products', () => ({ listProducts: vi.fn(async () => []), createProduct: vi.fn() }))
 vi.mock('@/db/queries/consent', () => ({
@@ -55,7 +55,7 @@ import {
   updateTenantSettings,
 } from '@/db/queries/tenants'
 import { findAvailableSlug } from '@/db/queries/admin-tenants'
-import { isBookingSlugFree } from '@/db/queries/booking-slugs'
+import { isBookingSlugFree, retireBookingSlug } from '@/db/queries/booking-slugs'
 import { db } from '@/db/client'
 import { createProduct } from '@/db/queries/products'
 import { createConsentTemplate, listConsentTemplates } from '@/db/queries/consent'
@@ -565,6 +565,34 @@ describe('POST /api/onboarding', () => {
         onboarding_draft: null,
         clinic_slug_placeholder: false,
       })
+    })
+
+    // Catches an older wizard's explicit slug dropping the sign-up link with no redirect and no reservation.
+    it('retires the sign-up slug when an explicit one replaces it', async () => {
+      const res = await postOnboarding({ ...clinic, slug: 'bella-estetica' })
+
+      expect(res.status).toBe(200)
+      expect(savedSlug()).toBe('bella-estetica')
+      expect(retireBookingSlug).toHaveBeenCalledWith(db, {
+        tenantId: 'tenant-1',
+        oldSlug: 'bella',
+        newSlug: 'bella-estetica',
+        now: expect.any(Date),
+      })
+    })
+
+    it('does not retire a stand-in slug, or a slug that is kept', async () => {
+      vi.mocked(getTenant).mockResolvedValue({
+        id: 'tenant-1',
+        slug: 'clinica-de-ana',
+        settings: { clinic_slug_placeholder: true },
+      } as never)
+      await postOnboarding({ ...clinic, slug: 'bella-estetica' })
+
+      vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', slug: 'bella', settings: {} } as never)
+      await postOnboarding(clinic)
+
+      expect(retireBookingSlug).not.toHaveBeenCalled()
     })
 
     // Catches an older wizard's explicit slug skipping the 90-day reservation of another clinic's old link.

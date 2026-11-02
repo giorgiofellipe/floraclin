@@ -77,6 +77,13 @@ export function useStepAbandonTracking(stepIndex: number) {
   useEffect(() => {
     mounted.current = true
     const onPageHide = () => fire('pagehide')
+    // Back from another page with the wizard restored from the back/forward
+    // cache: a new visit to the step, which can be abandoned again.
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return
+      startedAt.current = Date.now()
+      fired.current = false
+    }
     const onBeforeUnload = () => fire('beforeunload')
     const onVisibilityChange = () => {
       if (document.visibilityState !== 'hidden') {
@@ -92,10 +99,12 @@ export function useStepAbandonTracking(stepIndex: number) {
       )
     }
     window.addEventListener('pagehide', onPageHide)
+    window.addEventListener('pageshow', onPageShow)
     window.addEventListener('beforeunload', onBeforeUnload)
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
       window.removeEventListener('pagehide', onPageHide)
+      window.removeEventListener('pageshow', onPageShow)
       window.removeEventListener('beforeunload', onBeforeUnload)
       document.removeEventListener('visibilitychange', onVisibilityChange)
       mounted.current = false

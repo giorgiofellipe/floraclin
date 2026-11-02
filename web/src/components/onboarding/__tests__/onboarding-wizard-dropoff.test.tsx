@@ -457,6 +457,33 @@ describe('onboarding_step_abandoned', () => {
 
     expect(eventsNamed('onboarding_step_abandoned')).toHaveLength(1)
   })
+  // Catches a step restored from the back/forward cache that could never be abandoned again.
+  it('is sent again after a back/forward cache restore, timed from the restore', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
+    renderWizard({ tenantName: 'Clínica Bella' })
+
+    now.mockReturnValue(5_000)
+    fireEvent(window, Object.assign(new Event('pagehide'), { persisted: true }))
+    now.mockReturnValue(60_000)
+    fireEvent(window, Object.assign(new Event('pageshow'), { persisted: true }))
+    now.mockReturnValue(60_500)
+    fireEvent(window, new Event('pagehide'))
+
+    const sent = eventsNamed('onboarding_step_abandoned')
+    expect(sent).toHaveLength(2)
+    expect(sent[0][1]).toMatchObject({ step_index: 0, time_on_step_ms: 4_000 })
+    expect(sent[1][1]).toMatchObject({ step_index: 0, time_on_step_ms: 500 })
+  })
+
+  it('is not sent again after a pageshow that is not a cache restore', async () => {
+    renderWizard({ tenantName: 'Clínica Bella' })
+
+    fireEvent(window, new Event('pagehide'))
+    fireEvent(window, Object.assign(new Event('pageshow'), { persisted: false }))
+    fireEvent(window, new Event('pagehide'))
+
+    expect(eventsNamed('onboarding_step_abandoned')).toHaveLength(1)
+  })
 })
 
 describe('onboarding_step_backgrounded', () => {
@@ -510,5 +537,61 @@ describe('onboarding_step_submitted on "Usar padrões e começar"', () => {
     expect(eventsNamed('onboarding_step_submitted')).toEqual([
       ['onboarding_step_submitted', { step_index: 0, step_name: 'clinic', via: 'defaults' }],
     ])
+  })
+
+  // Catches a retried finish counting the step as submitted twice.
+  it('is sent once when the finish is retried after a failed save', async () => {
+    const user = userEvent.setup()
+    let failSave = true
+    vi.mocked(globalThis.fetch).mockImplementation(async (url, init) => {
+      if (isCompletedCheck(url, init)) return Response.json({ completed: false })
+      return failSave ? Response.json({ error: 'Erro' }, { status: 500 }) : Response.json({ success: true })
+    })
+    renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777' })
+    await user.click(screen.getByTestId('onboarding-use-defaults'))
+    await waitFor(() => expect(screen.getByTestId('onboarding-use-defaults')).toBeEnabled())
+
+    failSave = false
+    await user.click(screen.getByTestId('onboarding-use-defaults'))
+    await waitFor(() => expect(router.replace).toHaveBeenCalled())
+
+    expect(eventsNamed('onboarding_step_submitted')).toHaveLength(1)
+  })
+})
+
+describe('onboarding_step_submitted on the last step', () => {
+  // Catches a retried "Começar a usar" counting the last step as submitted twice.
+  it('is sent once when the finish is retried after a failed save', async () => {
+    const user = userEvent.setup()
+    let failSave = true
+    vi.mocked(globalThis.fetch).mockImplementation(async (url, init) => {
+      if (isCompletedCheck(url, init)) return Response.json({ completed: false })
+      if (url === '/api/onboarding' && failSave) return Response.json({ error: 'Erro' }, { status: 500 })
+      return Response.json({ success: true })
+    })
+    renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777' })
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(screen.getByTestId('onboarding-next'))
+    await screen.findByRole('heading', { name: /^Produtos$/, level: 2 })
+    await user.click(screen.getByTestId('onboarding-next'))
+    const lastStep = (call: unknown[]) => (call[1] as { step_index: number }).step_index === 3
+
+    await user.click(await screen.findByTestId('onboarding-complete'))
+    await waitFor(() => expect(screen.getByTestId('onboarding-complete')).toHaveTextContent('Começar a usar'))
+    failSave = false
+    await user.click(screen.getByTestId('onboarding-complete'))
+    await waitFor(() => expect(router.replace).toHaveBeenCalled())
+
+    expect(eventsNamed('onboarding_step_submitted').filter(lastStep)).toHaveLength(1)
+  })
+
+  it('is sent again for a new visit to the step', async () => {
+    const user = userEvent.setup()
+    renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777' })
+    await user.click(screen.getByTestId('onboarding-next'))
+    await user.click(await screen.findByTestId('onboarding-prev'))
+    await user.click(screen.getByTestId('onboarding-next'))
+
+    expect(eventsNamed('onboarding_step_submitted').filter((c) => (c[1] as { step_index: number }).step_index === 0)).toHaveLength(2)
   })
 })

@@ -3,7 +3,13 @@ import { PLACEHOLDER_NAME_SETTING, PLACEHOLDER_SLUG_SETTING } from '@/lib/clinic
 import { tenants, users, tenantUsers, patients, financialEntries, plans } from '@/db/schema'
 import { eq, and, ne, ilike, or, sql, desc, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
-import { isSlugReservedForAnotherTenant } from '@/db/queries/booking-slugs'
+import {
+  BOOKING_SLUG_MESSAGES,
+  changeBookingSlug,
+  isBookingSlugFree,
+  isSlugReservedForAnotherTenant,
+} from '@/db/queries/booking-slugs'
+import { BusinessError } from '@/lib/errors'
 import { sendInviteEmail } from '@/lib/email'
 import { createSubscription } from '@/db/queries/subscriptions'
 import { notifyDiscord } from '@/lib/discord'
@@ -104,6 +110,11 @@ export async function listAllTenants(
 
 // ─── Create tenant with owner ───────────────────────────────────────
 
+/** Code of the BusinessError thrown when an admin picks a slug another clinic holds or has reserved. */
+export const ADMIN_SLUG_TAKEN = 'booking_slug_taken'
+
+const slugTaken = () => new BusinessError(ADMIN_SLUG_TAKEN, BOOKING_SLUG_MESSAGES.taken)
+
 export async function createTenantWithOwner(data: {
   name: string
   slug?: string
@@ -153,10 +164,14 @@ export async function createTenantWithOwner(data: {
         .where(eq(users.id, userId))
     }
 
-    // 3. Insert tenant
+    // 3. Insert tenant. The slug must not be one another clinic moved off
+    // less than SLUG_RESERVATION_DAYS ago: its old links still point there.
+    const tenantId = crypto.randomUUID()
+    if (!(await isBookingSlugFree(tx, slug, tenantId))) throw slugTaken()
     const [t] = await tx
       .insert(tenants)
       .values({
+        id: tenantId,
         name: data.name,
         slug,
       })
@@ -204,12 +219,21 @@ export async function updateTenantAdmin(
     slug?: string
     settings?: Record<string, unknown>
     isActive?: boolean
-  }
+  },
+  actorUserId: string,
 ) {
+  // A slug change takes the owner's path (changeBookingSlug), without its
+  // rate limit: the old link redirects and stays reserved for this clinic,
+  // and a link another clinic holds or has reserved is refused.
+  if (data.slug !== undefined) {
+    const result = await changeBookingSlug({ tenantId, userId: actorUserId, slug: data.slug, skipRateLimit: true })
+    if (result.outcome === 'not_found') return null
+    if (result.outcome === 'taken') throw slugTaken()
+  }
+
   const updateData: Record<string, unknown> = { updatedAt: new Date() }
 
   if (data.name !== undefined) updateData.name = data.name
-  if (data.slug !== undefined) updateData.slug = data.slug
   if (data.settings !== undefined) updateData.settings = data.settings
   if (data.isActive !== undefined) {
     updateData.deletedAt = data.isActive ? null : new Date()

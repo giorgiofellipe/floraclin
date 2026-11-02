@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useTransition } from 'react'
+import { useState, useEffect, useRef, useTransition } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -286,14 +286,24 @@ export function OnboardingWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [procedureOverrides, productsTouched])
 
+  // `onboarding_step_submitted` is sent once per visit to a step: a retried
+  // finish after a failed save does not send it again.
+  const stepSubmitted = useRef(false)
   // Field names only, never values.
   useEffect(() => {
+    stepSubmitted.current = false
     track('onboarding_step_viewed', stepProperties(currentStep))
   }, [currentStep])
 
+  function trackStepSubmitted(extra?: { via: 'defaults' }) {
+    if (stepSubmitted.current) return
+    stepSubmitted.current = true
+    track('onboarding_step_submitted', { ...stepProperties(currentStep), ...extra })
+  }
+
   function handleNext() {
     if (currentStep === 0 && !validateClinicStep()) return
-    track('onboarding_step_submitted', stepProperties(currentStep))
+    trackStepSubmitted()
     setCurrentStep(prev => Math.min(prev + 1, STEPS.length - 1))
   }
 
@@ -320,7 +330,7 @@ export function OnboardingWizard({
   function handleComplete() {
     // onboarding_completed itself is sent by the server, once, when the save
     // succeeds (api/onboarding).
-    track('onboarding_step_submitted', stepProperties(currentStep))
+    trackStepSubmitted()
     complete('wizard', procedureTypesPayload(procedureOverrides), selectedProductsPayload(selectedProductNames, customProducts))
   }
 
@@ -332,7 +342,7 @@ export function OnboardingWizard({
   function handleUseDefaults() {
     if (!validateClinicStep()) return
     // Step 1 is submitted either way; `via` tells the shortcut from "Próximo".
-    track('onboarding_step_submitted', { ...stepProperties(0), via: 'defaults' })
+    trackStepSubmitted({ via: 'defaults' })
     const overrides = defaultProcedureOverrides()
     complete(
       'defaults',

@@ -80,6 +80,24 @@ async function lockSlugs(tx: Pick<DbExecutor, 'execute'>, slugs: string[]): Prom
   }
 }
 
+/**
+ * Records that the clinic moved from `oldSlug` to `newSlug`: the old link
+ * redirects to the current one and stays reserved for this clinic for
+ * SLUG_RESERVATION_DAYS. Whatever history `newSlug` had (this clinic's own old
+ * link, or another clinic's whose reservation is over) is dropped, so it no
+ * longer redirects. Does not change tenants.slug; the caller does.
+ */
+export async function retireBookingSlug(
+  executor: Pick<DbExecutor, 'delete' | 'insert'>,
+  input: { tenantId: string; oldSlug: string; newSlug: string; now: Date },
+): Promise<void> {
+  await executor.delete(tenantSlugHistory).where(eq(tenantSlugHistory.slug, input.newSlug))
+  await executor
+    .insert(tenantSlugHistory)
+    .values({ slug: input.oldSlug, tenantId: input.tenantId, retiredAt: input.now })
+    .onConflictDoUpdate({ target: tenantSlugHistory.slug, set: { tenantId: input.tenantId, retiredAt: input.now } })
+}
+
 export type ChangeBookingSlugResult =
   | { outcome: 'updated'; slug: string; previousSlug: string }
   | { outcome: 'unchanged'; slug: string }
@@ -92,7 +110,7 @@ export type ChangeBookingSlugResult =
  * The old one goes to tenant_slug_history: it redirects to the new one and stays
  * reserved for this clinic for SLUG_RESERVATION_DAYS. At most
  * BOOKING_SLUG_CHANGES_PER_DAY changes in a rolling 24 h window, counted from
- * the audit rows this writes.
+ * the audit rows this writes; `skipRateLimit` (platform admins) lifts it.
  *
  * Locks the tenant row (so the limit holds under concurrent saves) and both
  * slugs (lockSlugs). tenants_slug_unique backs the checks and maps to 'taken'
@@ -103,6 +121,7 @@ export async function changeBookingSlug(input: {
   userId: string
   slug: string
   now?: Date
+  skipRateLimit?: boolean
 }): Promise<ChangeBookingSlugResult> {
   const now = input.now ?? new Date()
   try {
@@ -115,29 +134,25 @@ export async function changeBookingSlug(input: {
       if (!tenant) return { outcome: 'not_found' } as const
       if (tenant.slug === input.slug) return { outcome: 'unchanged', slug: input.slug } as const
 
-      const [recent] = await tx
-        .select({ n: count() })
-        .from(auditLogs)
-        .where(
-          and(
-            eq(auditLogs.tenantId, input.tenantId),
-            eq(auditLogs.entityType, BOOKING_SLUG_AUDIT_ENTITY),
-            eq(auditLogs.action, 'update'),
-            gt(auditLogs.createdAt, new Date(now.getTime() - BOOKING_SLUG_CHANGE_WINDOW_MS)),
-          ),
-        )
-      if ((recent?.n ?? 0) >= BOOKING_SLUG_CHANGES_PER_DAY) return { outcome: 'rate_limited' } as const
+      if (!input.skipRateLimit) {
+        const [recent] = await tx
+          .select({ n: count() })
+          .from(auditLogs)
+          .where(
+            and(
+              eq(auditLogs.tenantId, input.tenantId),
+              eq(auditLogs.entityType, BOOKING_SLUG_AUDIT_ENTITY),
+              eq(auditLogs.action, 'update'),
+              gt(auditLogs.createdAt, new Date(now.getTime() - BOOKING_SLUG_CHANGE_WINDOW_MS)),
+            ),
+          )
+        if ((recent?.n ?? 0) >= BOOKING_SLUG_CHANGES_PER_DAY) return { outcome: 'rate_limited' } as const
+      }
 
       await lockSlugs(tx, [tenant.slug, input.slug])
       if (!(await isBookingSlugFree(tx, input.slug, input.tenantId, now))) return { outcome: 'taken' } as const
 
-      // Whatever the new link left behind (this clinic's own old link, or
-      // another clinic's whose reservation is over) no longer redirects.
-      await tx.delete(tenantSlugHistory).where(eq(tenantSlugHistory.slug, input.slug))
-      await tx
-        .insert(tenantSlugHistory)
-        .values({ slug: tenant.slug, tenantId: input.tenantId, retiredAt: now })
-        .onConflictDoUpdate({ target: tenantSlugHistory.slug, set: { tenantId: input.tenantId, retiredAt: now } })
+      await retireBookingSlug(tx, { tenantId: input.tenantId, oldSlug: tenant.slug, newSlug: input.slug, now })
       await tx.update(tenants).set({ slug: input.slug, updatedAt: now }).where(eq(tenants.id, input.tenantId))
       await tx.insert(auditLogs).values({
         tenantId: input.tenantId,
