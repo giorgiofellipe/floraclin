@@ -411,7 +411,7 @@ describe('POST /api/onboarding', () => {
     })
   })
 
-  describe('the slim first step and "Usar padrões e começar"', () => {
+  describe('the slim first step and "Configurar depois"', () => {
     const fourMinutesAgo = () => new Date(Date.now() - 4 * 60_000 - 5_000)
     const defaults = {
       procedureTypes: [{ name: 'Toxina Botulínica', category: 'botox', estimatedDurationMin: 30 }],

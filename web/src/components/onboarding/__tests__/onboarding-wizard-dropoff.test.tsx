@@ -1,6 +1,6 @@
 /**
- * The drop-off changes to the wizard: a two-field first step, "Usar padrões e
- * começar", the action bar pinned to the bottom on phones, and the funnel
+ * The drop-off changes to the wizard: a two-field first step, "Configurar
+ * depois" (the defaults shortcut), the action bar pinned to the bottom on phones, and the funnel
  * events for field interactions and abandoned steps.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -123,7 +123,26 @@ describe('clinic name suggested from the Google account', () => {
   })
 })
 
-describe('"Usar padrões e começar"', () => {
+describe('"Configurar depois"', () => {
+  it('reads as a skip: a quiet text action named "Configurar depois", while Próximo stays the primary', () => {
+    renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777' })
+    const skip = screen.getByRole('button', { name: 'Configurar depois' })
+    expect(skip).toBe(screen.getByTestId('onboarding-use-defaults'))
+    expect(skip).toHaveAccessibleDescription('Usa os procedimentos padrão, você ajusta quando quiser.')
+    // Link-style, not a filled or outlined button competing with Próximo.
+    expect(skip.className).not.toMatch(/\bbg-forest\b|\bbg-primary\b|\bborder-border\b/)
+    expect(skip).toHaveClass('h-11')
+    expect(screen.queryByText('Quer começar agora?')).toBeNull()
+    expect(screen.getByTestId('onboarding-next')).toHaveTextContent('Próximo')
+  })
+
+  it('says why it is unavailable while the clinic step is incomplete', () => {
+    renderWizard()
+    expect(screen.getByTestId('onboarding-use-defaults')).toHaveAccessibleDescription(
+      'Preencha o nome e o telefone para configurar depois.',
+    )
+  })
+
   it('is unavailable until the name and a phone with DDD are filled', async () => {
     const user = userEvent.setup()
     renderWizard()
@@ -526,7 +545,7 @@ describe('onboarding_step_backgrounded', () => {
   })
 })
 
-describe('onboarding_step_submitted on "Usar padrões e começar"', () => {
+describe('onboarding_step_submitted on "Configurar depois"', () => {
   // Catches the shortcut skipping the step-1 submit, so the funnel showed defaults users as stuck on step 1.
   it('is sent for step 1 with the same properties as "Próximo", marked via defaults', async () => {
     const user = userEvent.setup()

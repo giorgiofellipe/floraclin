@@ -31,7 +31,7 @@ export type LoginFailureReason =
 
 export type OnboardingStepName = 'clinic' | 'procedures' | 'products' | 'team'
 
-/** `wizard`: through every step. `defaults`: "Usar padrões e começar" from the clinic step. */
+/** `wizard`: through every step. `defaults`: "Configurar depois" from the clinic step. */
 export type OnboardingCompletionMethod = 'wizard' | 'defaults'
 
 /** Step-1 fields whose first focus and first input are tracked. Names only, never values. */
@@ -83,7 +83,7 @@ export interface AnalyticsEventProperties {
   login_succeeded: { method: LoginMethod; is_new_user: boolean }
   login_failed: { method: LoginMethod; reason: LoginFailureReason } & InAppBrowserProperties
   onboarding_step_viewed: OnboardingStepProperties
-  /** `via: 'defaults'` when submitted by "Usar padrões e começar" instead of "Próximo". */
+  /** `via: 'defaults'` when submitted by "Configurar depois" instead of "Próximo". */
   onboarding_step_submitted: OnboardingStepProperties & { via?: 'defaults' }
   onboarding_step_validation_error: OnboardingStepProperties & { fields: string[] }
   onboarding_submit_failed: OnboardingStepProperties & { reason: OnboardingSubmitFailureReason; status?: number }

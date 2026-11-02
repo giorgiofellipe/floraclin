@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { DEFAULT_PROCEDURE_TYPES, DEFAULT_PRODUCTS, PROCEDURE_CATEGORY_LABELS as CATEGORY_LABEL } from '@/lib/constants'
 import { toast } from 'sonner'
-import { CheckIcon, Building2Icon, SyringeIcon, PackageIcon, UsersIcon, LogOutIcon, PlusIcon, SparklesIcon } from 'lucide-react'
+import { CheckIcon, Building2Icon, SyringeIcon, PackageIcon, UsersIcon, LogOutIcon, PlusIcon } from 'lucide-react'
 import { logout } from '@/actions/auth'
 import type { CustomProductInput } from './custom-product-form'
 import type { Product } from '@/db/queries/products'
@@ -335,7 +335,7 @@ export function OnboardingWizard({
   }
 
   /**
-   * "Usar padrões e começar": the procedures and products the wizard offers
+   * "Configurar depois": the procedures and products the wizard offers
    * preselected, no invites, and the same final save (and so the same
    * completion side effects) as the last step, marked `method: defaults`.
    */
@@ -528,25 +528,26 @@ export function OnboardingWizard({
                 nameSuggested={nameSuggested}
               />
 
-              <div className="mt-6 sm:mt-8 rounded-[3px] border border-sage/20 bg-confirmed-bg p-4">
-                <p className="text-sm font-medium text-charcoal">Quer começar agora?</p>
-                <p id="use-defaults-hint" className="mt-1 text-xs text-mid">
-                  {clinicStepValid
-                    ? 'Usamos os procedimentos e produtos mais comuns em harmonização. Você muda tudo depois em Configurações.'
-                    : 'Preencha o nome e o telefone da clínica para usar os padrões.'}
-                </p>
+              {/* A skip, not a second way forward: a quiet text action under
+                  the fields, so Próximo stays the only primary button. */}
+              <div className="mt-6 flex flex-col items-center text-center sm:mt-8">
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="link"
                   onClick={handleUseDefaults}
                   disabled={isPending || !clinicStepValid}
                   aria-describedby="use-defaults-hint"
                   data-testid="onboarding-use-defaults"
-                  className="mt-3 h-11 w-full border-sage/40 text-forest hover:bg-white sm:w-auto"
+                  // Disabled reads as plain grey text, not a faded primary.
+                  className="h-11 px-3 text-sm text-forest underline decoration-forest/40 underline-offset-4 hover:decoration-forest disabled:text-mid disabled:no-underline disabled:opacity-100"
                 >
-                  <SparklesIcon className="h-4 w-4" />
-                  {isPending ? 'Finalizando...' : 'Usar padrões e começar'}
+                  {isPending ? 'Finalizando...' : 'Configurar depois'}
                 </Button>
+                <p id="use-defaults-hint" className="text-xs text-mid">
+                  {clinicStepValid
+                    ? 'Usa os procedimentos padrão, você ajusta quando quiser.'
+                    : 'Preencha o nome e o telefone para configurar depois.'}
+                </p>
               </div>
             </div>
           )}

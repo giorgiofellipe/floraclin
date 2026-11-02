@@ -45,7 +45,7 @@ const clinicDataSchema = z.object({
   workingHours: workingHoursSchema.optional(),
 })
 
-/** How onboarding was finished: through the steps, or "Usar padrões e começar". */
+/** How onboarding was finished: through the steps, or "Configurar depois". */
 export const ONBOARDING_COMPLETION_METHODS = ['wizard', 'defaults'] as const
 export type OnboardingCompletionMethod = (typeof ONBOARDING_COMPLETION_METHODS)[number]
 
