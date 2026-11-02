@@ -27,10 +27,11 @@ import {
   CreditCardIcon,
   AlertTriangleIcon,
 } from 'lucide-react'
-import { brl, discountSummaryLine } from '@/lib/billing-discount-copy'
+import { DISCOUNT_UNAVAILABLE_CODE, brl, discountSummaryLine } from '@/lib/billing-discount-copy'
 import { durationPhrase, winbackPriceCents } from '@/lib/winback'
 import { Input } from '@/components/ui/input'
 import type { PublicReferralOffer } from '@/lib/referral/offer-copy'
+import type { PublicFeedbackOffer } from '@/lib/feedback-offer-copy'
 import { REFERRAL_CODE_MAX_LENGTH } from '@/lib/referral/rules'
 import { brCalendarDaysBetween, brEndPhrase } from '@/lib/dates'
 
@@ -41,14 +42,14 @@ interface UsageBucket {
   limit: number
 }
 
-type ReferralOfferView = PublicReferralOffer & { headline: string }
+type BillingOfferView = (PublicReferralOffer | PublicFeedbackOffer) & { headline: string }
 
 interface BillingUsageResponse {
   subscription: {
     status: SubscriptionStatus
     currentPeriodEnd: string
     stripeSubscriptionId: string | null
-    hasStripeCustomer: boolean
+    hasPaid: boolean
     source: string
   }
   plan: {
@@ -66,9 +67,10 @@ interface BillingUsageResponse {
     afterEndsCents?: number | null
     referralPercent?: number | null
   } | null
+  /** The discount checkout will apply (feedback or referral). */
+  offer?: BillingOfferView | null
   /** Absent on payloads from before the referral program. */
   referral?: {
-    offer: ReferralOfferView | null
     canEnterCode: boolean
     linkCode: string | null
   }
@@ -171,9 +173,18 @@ function UsageBar({ label, icon: Icon, used, limit, note }: {
   )
 }
 
-function referralPlanPrice(
+/** The offer this clinic gets at checkout, as a banner. */
+function OfferBanner({ testId, headline }: { testId: string; headline: string }) {
+  return (
+    <div className="rounded-[3px] border border-sage/30 bg-sage/10 p-4" data-testid={testId}>
+      <p className="text-sm text-forest">{headline} Aplicado automaticamente no pagamento.</p>
+    </div>
+  )
+}
+
+function offerPlanPrice(
   plan: PlanItem,
-  offer: ReferralOfferView | null,
+  offer: BillingOfferView | null,
 ) {
   const discounted = offer ? winbackPriceCents(plan, offer) : null
   if (!offer || discounted === null) return null
@@ -187,13 +198,13 @@ function PlanCard({
   isCheckingOut,
   onSubscribe,
   priceOverride,
-  referralPrice,
+  offerPrice,
 }: {
   plan: PlanItem
   /** What the clinic actually pays on this plan (a running discount). */
   priceOverride?: string | null
-  /** The referral welcome price on this plan: struck full price → discounted, for `phrase`. */
-  referralPrice?: { fullCents: number; discountedCents: number; phrase: string } | null
+  /** The offer price on this plan (feedback or referral): struck full price → discounted, for `phrase`. */
+  offerPrice?: { fullCents: number; discountedCents: number; phrase: string } | null
   isCurrent: boolean
   isSwitch: boolean
   isCheckingOut: boolean
@@ -216,13 +227,13 @@ function PlanCard({
       <div className="flex items-start justify-between mb-3">
         <div>
           <h3 className="text-base font-medium text-charcoal">{plan.name}</h3>
-          {referralPrice && !isFree ? (
+          {offerPrice && !isFree ? (
             <div className="mt-0.5" data-testid="referral-plan-price">
               <p className="text-lg font-semibold text-forest">
-                <span className="text-sm font-normal text-mid line-through mr-1.5">{brl(referralPrice.fullCents)}</span>
-                {brl(referralPrice.discountedCents)}/mês
+                <span className="text-sm font-normal text-mid line-through mr-1.5">{brl(offerPrice.fullCents)}</span>
+                {brl(offerPrice.discountedCents)}/mês
               </p>
-              <p className="text-xs text-mid">{referralPrice.phrase.trim()}</p>
+              <p className="text-xs text-mid">{offerPrice.phrase.trim()}</p>
             </div>
           ) : (
             <p className="text-lg font-semibold text-forest mt-0.5">{price}</p>
@@ -433,6 +444,11 @@ export function BillingSettings() {
         body: JSON.stringify({ planSlug }),
       })
       if (!res.ok) {
+        const body = await res.clone().json().catch(() => ({}))
+        if (body.code === DISCOUNT_UNAVAILABLE_CODE) {
+          queryClient.invalidateQueries({ queryKey: ['billing'] })
+          router.refresh()
+        }
         throw new Error(await errorMessage(res, 'Erro ao criar sessão de pagamento'))
       }
       return res.json() as Promise<{ url: string | null; updated?: boolean }>
@@ -579,7 +595,7 @@ export function BillingSettings() {
         cancelPending: subscription.status === 'canceled' && new Date(subscription.currentPeriodEnd) > new Date(),
       })
     : null
-  const referralOffer = usageData.referral?.offer ?? null
+  const offer = usageData.offer ?? null
   const canEnterCode = usageData.referral?.canEnterCode ?? false
   const codeInput = referralCode ?? usageData.referral?.linkCode ?? ''
   const statusConfig = STATUS_CONFIG[subscription.status]
@@ -614,9 +630,9 @@ export function BillingSettings() {
 
   const canReactivate = Boolean(subscription.stripeSubscriptionId) && cancelPending
 
-  // Anyone Stripe has a customer record for, including a lapsed one: their
-  // invoices live there too, not just the card.
-  const canManagePayment = subscription.hasStripeCustomer
+  // Anyone who has paid, including a lapsed one: their invoices live there
+  // too, not just the card.
+  const canManagePayment = subscription.hasPaid
 
   let statusLabel = statusConfig.label
   if (subscription.status === 'trialing') {
@@ -665,11 +681,7 @@ export function BillingSettings() {
         </div>
       </div>
 
-      {referralOffer && (
-        <div className="rounded-[3px] border border-sage/30 bg-sage/10 p-4" data-testid="referral-offer-banner">
-          <p className="text-sm text-forest">{referralOffer.headline}</p>
-        </div>
-      )}
+      {offer && <OfferBanner testId={`${offer.kind}-offer-banner`} headline={offer.headline} />}
 
       {canEnterCode && (
         <form
@@ -722,7 +734,7 @@ export function BillingSettings() {
                 plan={p}
                 isCurrent={p.slug === plan.slug && !isLapsed}
                 priceOverride={p.slug === plan.slug && !isLapsed ? discountLine : null}
-                referralPrice={referralPlanPrice(p, referralOffer)}
+                offerPrice={offerPlanPrice(p, offer)}
                 isSwitch={isSwitching}
                 isCheckingOut={checkingOutSlug === p.slug}
                 onSubscribe={handleSubscribe}

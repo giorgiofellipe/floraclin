@@ -25,12 +25,26 @@ const REFERRAL = {
   planSlugs: ['starter', 'pro'],
 }
 
+const FEEDBACK = {
+  kind: 'feedback' as const,
+  label: '50% de desconto nos 3 primeiros meses',
+  percentOff: 50,
+  amountOffCents: null,
+  duration: 'repeating' as const,
+  durationInMonths: 3,
+  planSlugs: ['starter', 'pro'],
+}
+
 const PLANS = [
   { slug: 'starter', name: 'Starter', priceCents: 9900, billingInterval: 'month', benefits: ['A'], recommended: false },
   { slug: 'pro', name: 'Pro', priceCents: 19900, billingInterval: 'month', benefits: ['B'], recommended: true },
 ]
 
-function renderModal(trialEndsAt: string | null, readOnly = false, referral: typeof REFERRAL | null = null) {
+function renderModal(
+  trialEndsAt: string | null,
+  readOnly = false,
+  offer: typeof REFERRAL | typeof FEEDBACK | null = null,
+) {
   return render(
     <SubscriptionAccessProvider
       readOnly={readOnly}
@@ -38,8 +52,7 @@ function renderModal(trialEndsAt: string | null, readOnly = false, referral: typ
       tenantId="t1"
       canSubscribe
       plans={PLANS}
-      winback={null}
-      referral={referral}
+      offer={offer}
       recap={{ patients: 8, appointments: 15, procedureRecords: 0, photos: 3, diagrams: 0 }}
       trialEndsAt={trialEndsAt}
     >
@@ -82,11 +95,20 @@ describe('TrialEndingModal', () => {
     expect(modal.querySelector('s')).toHaveTextContent(/R\$\s?99,00/)
   })
 
+  it('shows the feedback badge and the discounted price when that is the offer', async () => {
+    renderModal(TOMORROW_1830, false, FEEDBACK)
+
+    await screen.findByTestId('trial-ending-modal')
+    expect(screen.getByTestId('feedback-offer')).toHaveTextContent('Obrigado pelo feedback: 50% de desconto nos 3 primeiros meses.')
+    expect(screen.getByTestId('paywall-plan-starter')).toHaveTextContent(/R\$\s?49,50/)
+  })
+
   it('has no badge and full prices without an offer', async () => {
     renderModal(TOMORROW_1830)
 
     await screen.findByTestId('trial-ending-modal')
     expect(screen.queryByTestId('referral-offer')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('feedback-offer')).not.toBeInTheDocument()
     expect(screen.getByTestId('paywall-plan-starter')).toHaveTextContent(/R\$\s?99,00/)
     expect(screen.getByTestId('paywall-plan-starter').querySelector('s')).toBeNull()
   })

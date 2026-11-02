@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 const pathnameMock = vi.hoisted(() => vi.fn(() => '/dashboard'))
+const refreshMock = vi.hoisted(() => vi.fn())
 vi.mock('next/navigation', () => ({
   usePathname: pathnameMock,
-  useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ refresh: refreshMock, push: vi.fn(), replace: vi.fn() }),
 }))
 vi.mock('next/link', () => ({
   default: ({ href, children, onClick, ...rest }: { href: string; children: React.ReactNode; onClick?: () => void }) => (
@@ -26,6 +27,7 @@ const NOW = new Date('2026-10-21T12:00:00.000Z')
 const TODAY = '2026-10-21'
 
 const OFFER = {
+  kind: 'winback' as const,
   label: '30% de desconto nos 3 primeiros meses',
   endsAt: '2026-11-04T02:59:59.999Z',
   percentOff: 30,
@@ -43,6 +45,16 @@ const REFERRAL = {
   amountOffCents: null,
   duration: 'repeating' as const,
   durationInMonths: 2,
+  planSlugs: ['starter', 'pro'],
+}
+
+const FEEDBACK = {
+  kind: 'feedback' as const,
+  label: '50% de desconto nos 3 primeiros meses',
+  percentOff: 50,
+  amountOffCents: null,
+  duration: 'repeating' as const,
+  durationInMonths: 3,
   planSlugs: ['starter', 'pro'],
 }
 
@@ -74,7 +86,6 @@ function renderWith(readOnly: boolean, extra: Partial<Parameters<typeof Subscrip
       tenantId="t1"
       canSubscribe
       plans={PLANS}
-      winback={null}
       role="owner"
       {...extra}
     >
@@ -92,6 +103,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW)
   window.localStorage.clear()
   pathnameMock.mockReturnValue('/dashboard')
+  refreshMock.mockClear()
 })
 afterEach(() => {
   vi.useRealTimers()
@@ -166,7 +178,7 @@ describe('ExpiredPaywall', () => {
 
     pathnameMock.mockReturnValue('/agenda')
     rerender(
-      <SubscriptionAccessProvider readOnly reason="trial" tenantId="t1" canSubscribe plans={PLANS} winback={null} role="owner">
+      <SubscriptionAccessProvider readOnly reason="trial" tenantId="t1" canSubscribe plans={PLANS} role="owner">
         <ExpiredPaywall />
       </SubscriptionAccessProvider>,
     )
@@ -184,7 +196,7 @@ describe('ExpiredPaywall', () => {
   })
 
   it('shows the win-back offer with the discounted price struck against the full one', async () => {
-    renderWith(true, { winback: OFFER })
+    renderWith(true, { offer: OFFER })
 
     expect(await screen.findByTestId('winback-offer')).toHaveTextContent(
       'Oferta para voltar: 30% de desconto nos 3 primeiros meses. Aplicada automaticamente no pagamento até 03/11',
@@ -199,7 +211,7 @@ describe('ExpiredPaywall', () => {
   })
 
   it('shows the referral offer with the discounted price struck against the full one', async () => {
-    renderWith(true, { referral: REFERRAL })
+    renderWith(true, { offer: REFERRAL })
 
     expect(await screen.findByTestId('referral-offer')).toHaveTextContent(
       'Indicação de Clínica Bela: 20% de desconto nos 2 primeiros meses. Aplicado automaticamente no pagamento.',
@@ -210,17 +222,44 @@ describe('ExpiredPaywall', () => {
     expect(screen.getByTestId('paywall-entry-price')).toHaveTextContent(/Planos a partir de R\$\s?79,20\/mês com a oferta/)
   })
 
-  it('never shows the referral badge next to a win-back offer', async () => {
-    renderWith(true, { winback: OFFER, referral: REFERRAL })
+  it('shows the feedback offer with the discounted price struck against the full one', async () => {
+    renderWith(true, { offer: FEEDBACK })
 
-    expect(await screen.findByTestId('winback-offer')).toBeInTheDocument()
-    expect(screen.queryByTestId('referral-offer')).not.toBeInTheDocument()
-    // Prices follow the win-back (30%), not the referral (20%).
-    expect(screen.getByTestId('paywall-plan-starter')).toHaveTextContent(/R\$\s?69,30/)
+    expect(await screen.findByTestId('feedback-offer')).toHaveTextContent(
+      'Obrigado pelo feedback: 50% de desconto nos 3 primeiros meses. Aplicado automaticamente no pagamento.',
+    )
+    const pro = screen.getByTestId('paywall-plan-pro')
+    expect(pro).toHaveTextContent(/R\$\s?99,50/)
+    expect(pro.querySelector('s')).toHaveTextContent(/R\$\s?199,00/)
+    expect(screen.getByTestId('paywall-plan-pro-terms')).toHaveTextContent(/Nos 3 primeiros meses, depois R\$\s?199,00\/mês/)
+    expect(screen.getByTestId('paywall-entry-price')).toHaveTextContent(/Planos a partir de R\$\s?49,50\/mês com a oferta/)
+  })
+
+  // Regression: when Stripe refused the shown discount, checkout opened at full price; now it answers 409 and the
+  // paywall reloads so the clinic sees the real price.
+  it('reloads the offers when checkout says the discount is no longer available', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ error: 'O desconto não está mais disponível.', code: 'discount_unavailable' }), { status: 409 })),
+    )
+    renderWith(true, { offer: FEEDBACK })
+
+    fireEvent.click(await screen.findByTestId('paywall-subscribe-pro'))
+
+    await waitFor(() => expect(refreshMock).toHaveBeenCalled())
+    expect(screen.getByTestId('paywall-subscribe-pro')).not.toBeDisabled()
+  })
+
+  it('shows no feedback badge and full prices without the offer', async () => {
+    renderWith(true)
+
+    await screen.findByTestId('expired-paywall')
+    expect(screen.queryByTestId('feedback-offer')).not.toBeInTheDocument()
+    expect(screen.getByTestId('paywall-plan-pro').querySelector('s')).toBeNull()
   })
 
   it('discounts only the plans the coupon covers', async () => {
-    renderWith(true, { winback: { ...OFFER, label: '30% de desconto nos 3 primeiros meses no plano Pro', planSlugs: ['pro'] } })
+    renderWith(true, { offer: { ...OFFER, label: '30% de desconto nos 3 primeiros meses no plano Pro', planSlugs: ['pro'] } })
 
     await screen.findByTestId('expired-paywall')
     expect(screen.getByTestId('paywall-plan-pro').querySelector('s')).not.toBeNull()

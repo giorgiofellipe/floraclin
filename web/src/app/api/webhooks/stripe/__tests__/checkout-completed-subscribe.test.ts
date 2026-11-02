@@ -19,6 +19,8 @@ vi.mock('@/lib/stripe', async (importOriginal) => ({
   retrieveSubscription: (...a: unknown[]) => retrieveSubscriptionMock(...a),
 }))
 vi.mock('@/db/queries/subscriptions', () => ({
+  clearCheckoutSessionId: vi.fn(),
+  getSubscription: vi.fn(async () => null),
   getPlanBySlug: (...a: unknown[]) => getPlanBySlugMock(...a),
   updateSubscriptionPlan: vi.fn(),
   updateSubscriptionPeriod: vi.fn(),

@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
-import { plans, tenantSubscriptions, tenants } from '@/db/schema'
-import { eq, and, or, ne, isNull, sql, asc, lt } from 'drizzle-orm'
+import { plans, tenantSubscriptions, tenants, users } from '@/db/schema'
+import { eq, and, or, ne, isNull, isNotNull, sql, asc, lt } from 'drizzle-orm'
 import { addDays, addMonths } from 'date-fns'
 
 // ─── TYPE EXPORTS ──────────────────────────────────────────────────
@@ -113,6 +113,9 @@ export async function getSubscription(tenantId: string): Promise<SubscriptionWit
       createdAt: tenantSubscriptions.createdAt,
       updatedAt: tenantSubscriptions.updatedAt,
       firstPaidAt: tenantSubscriptions.firstPaidAt,
+      feedbackDiscountGrantedAt: tenantSubscriptions.feedbackDiscountGrantedAt,
+      feedbackDiscountGrantedBy: tenantSubscriptions.feedbackDiscountGrantedBy,
+      checkoutSessionId: tenantSubscriptions.checkoutSessionId,
       plan: {
         id: plans.id,
         slug: plans.slug,
@@ -321,6 +324,83 @@ export async function extendTrial(tenantId: string, days: number) {
     .returning()
 
   return result ?? null
+}
+
+/**
+ * Flags the tenant for the feedback reward coupon (see lib/feedback-offer). Only
+ * an unflagged row is written, so a repeated call keeps the original grant.
+ * Null when the row was already flagged (or does not exist).
+ */
+export async function grantFeedbackDiscount(tenantId: string, grantedBy: string, now: Date = new Date()) {
+  const [result] = await db
+    .update(tenantSubscriptions)
+    .set({ feedbackDiscountGrantedAt: now, feedbackDiscountGrantedBy: grantedBy, updatedAt: now })
+    .where(and(eq(tenantSubscriptions.tenantId, tenantId), isNull(tenantSubscriptions.feedbackDiscountGrantedAt)))
+    .returning()
+
+  return result ?? null
+}
+
+/** Clears the feedback reward flag. Null when there was none to clear. */
+export async function clearFeedbackDiscount(tenantId: string, now: Date = new Date()) {
+  const [result] = await db
+    .update(tenantSubscriptions)
+    .set({ feedbackDiscountGrantedAt: null, feedbackDiscountGrantedBy: null, updatedAt: now })
+    .where(and(eq(tenantSubscriptions.tenantId, tenantId), isNotNull(tenantSubscriptions.feedbackDiscountGrantedAt)))
+    .returning()
+
+  return result ?? null
+}
+
+/**
+ * Stores the clinic's Stripe customer unless one is already stored, and returns the stored one: when two
+ * checkouts race, both end up on the customer that won. Null when the tenant has no subscription row.
+ */
+export async function claimStripeCustomerId(tenantId: string, customerId: string): Promise<string | null> {
+  const [claimed] = await db
+    .update(tenantSubscriptions)
+    .set({ stripeCustomerId: customerId, updatedAt: new Date() })
+    .where(and(eq(tenantSubscriptions.tenantId, tenantId), isNull(tenantSubscriptions.stripeCustomerId)))
+    .returning({ stripeCustomerId: tenantSubscriptions.stripeCustomerId })
+  if (claimed) return claimed.stripeCustomerId
+
+  const [row] = await db
+    .select({ stripeCustomerId: tenantSubscriptions.stripeCustomerId })
+    .from(tenantSubscriptions)
+    .where(eq(tenantSubscriptions.tenantId, tenantId))
+    .limit(1)
+  return row?.stripeCustomerId ?? null
+}
+
+/** Records the clinic's new Checkout Session and returns the one it replaces, so the caller can expire it. */
+export async function swapCheckoutSessionId(tenantId: string, sessionId: string): Promise<string | null> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ previous: tenantSubscriptions.checkoutSessionId })
+      .from(tenantSubscriptions)
+      .where(eq(tenantSubscriptions.tenantId, tenantId))
+      .for('update')
+    if (!row) return null
+    await tx
+      .update(tenantSubscriptions)
+      .set({ checkoutSessionId: sessionId, updatedAt: new Date() })
+      .where(eq(tenantSubscriptions.tenantId, tenantId))
+    return row.previous
+  })
+}
+
+/** Forgets a Checkout Session that completed or expired, unless a newer one replaced it. */
+export async function clearCheckoutSessionId(tenantId: string, sessionId: string): Promise<void> {
+  await db
+    .update(tenantSubscriptions)
+    .set({ checkoutSessionId: null, updatedAt: new Date() })
+    .where(and(eq(tenantSubscriptions.tenantId, tenantId), eq(tenantSubscriptions.checkoutSessionId, sessionId)))
+}
+
+/** The admin who flagged the feedback reward, for the admin screen. */
+export async function getUserFullName(userId: string): Promise<string | null> {
+  const [row] = await db.select({ fullName: users.fullName }).from(users).where(eq(users.id, userId)).limit(1)
+  return row?.fullName ?? null
 }
 
 // ─── ADMIN QUERIES ─────────────────────────────────────────────────

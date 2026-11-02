@@ -2,6 +2,14 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from './query-keys'
+import type { AdminFeedbackDiscount, FeedbackEligibilityRow } from '@/lib/feedback-eligibility'
+
+/** The fields of the admin subscription GET the detail dialog reads. */
+export interface AdminSubscriptionDetail extends FeedbackEligibilityRow {
+  creditUsage?: { used?: number; total?: number } | null
+  stripeState?: string | null
+  feedbackDiscount: AdminFeedbackDiscount | null
+}
 
 export function useAdminSubscriptions(status?: string, plan?: string, search?: string) {
   return useQuery({
@@ -31,7 +39,7 @@ export function useAdminSubscriptionDetail(tenantId: string) {
         const err = await res.json().catch(() => ({}))
         throw new Error(err.error || 'Erro ao carregar assinatura')
       }
-      return res.json()
+      return res.json() as Promise<{ data: AdminSubscriptionDetail }>
     },
     enabled: !!tenantId,
   })

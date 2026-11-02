@@ -9,9 +9,13 @@ vi.mock('@/lib/auth', () => ({
 vi.mock('@/lib/stripe', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/stripe')>()),
   retrieveCheckoutSession: vi.fn(),
+  getStripeSubscriptionState: vi.fn(),
+  cancelStripeSubscriptionNow: vi.fn(),
 }))
+vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn(), maskPath: (p: string) => p }))
 
 vi.mock('@/db/queries/subscriptions', () => ({
+  getSubscription: vi.fn(),
   getPlanBySlug: vi.fn(),
   updateSubscriptionPlan: vi.fn(),
 }))
@@ -19,8 +23,8 @@ vi.mock('@/db/queries/subscriptions', () => ({
 // ─── Imports (after mocks) ───────────────────────────────────────────
 
 import { getAuthContext } from '@/lib/auth'
-import { retrieveCheckoutSession } from '@/lib/stripe'
-import { getPlanBySlug, updateSubscriptionPlan } from '@/db/queries/subscriptions'
+import { cancelStripeSubscriptionNow, getStripeSubscriptionState, retrieveCheckoutSession } from '@/lib/stripe'
+import { getPlanBySlug, getSubscription, updateSubscriptionPlan } from '@/db/queries/subscriptions'
 import { POST } from '../confirm/route'
 import type Stripe from 'stripe'
 
@@ -97,6 +101,7 @@ beforeEach(() => {
   })
   vi.mocked(getPlanBySlug).mockResolvedValue(SAMPLE_PLAN as never)
   vi.mocked(updateSubscriptionPlan).mockResolvedValue(undefined as never)
+  vi.mocked(getSubscription).mockResolvedValue(null)
 })
 
 describe('POST /api/billing/confirm', () => {
@@ -146,6 +151,20 @@ describe('POST /api/billing/confirm', () => {
         stripeCustomerId: 'cus_123',
       }),
     )
+  })
+
+  // Regression: confirming a second paid checkout replaced the tenant's live subscription, which kept billing unseen.
+  it('keeps the live subscription and cancels the duplicate instead of storing it', async () => {
+    vi.mocked(getSubscription).mockResolvedValue({ stripeSubscriptionId: 'sub_live' } as never)
+    vi.mocked(getStripeSubscriptionState).mockResolvedValue('live')
+    vi.mocked(retrieveCheckoutSession).mockResolvedValue(makeSession())
+
+    const json = await (await POST(makeRequest({ sessionId: 'cs_test_123' }))).json()
+
+    expect(json).toEqual({ activated: false })
+    expect(getStripeSubscriptionState).toHaveBeenCalledWith('sub_live')
+    expect(cancelStripeSubscriptionNow).toHaveBeenCalledWith('sub_123')
+    expect(updateSubscriptionPlan).not.toHaveBeenCalled()
   })
 
   it('returns 403 for a non-owner', async () => {
