@@ -13,7 +13,7 @@ import { whatsappSettingsSchema } from '@/validations/whatsapp'
 import { handleApiError } from '@/lib/api-error'
 import { checkPlanFeature } from '@/lib/plans'
 import { verifyCredentials } from '@/lib/whatsapp'
-import { isUniqueViolation } from '@/lib/errors'
+import { BOOKING_SLUG_MESSAGES, changeBookingSlug } from '@/db/queries/booking-slugs'
 
 type Settings = Record<string, unknown> | undefined
 
@@ -187,8 +187,9 @@ export async function PUT(request: Request) {
       return NextResponse.json({ success: true })
     }
 
-    // The public booking link. Chosen in onboarding before; now set here,
-    // any time. The unique index is the collision check, race included.
+    // The public booking link. Chosen in onboarding before; now set here, any
+    // time. The old link redirects to the new one, and stays reserved for this
+    // clinic, for SLUG_RESERVATION_DAYS (changeBookingSlug).
     if (body._action === 'booking_slug') {
       const current = await getTenant(ctx.tenantId)
       if (!current) return NextResponse.json({ error: 'Clínica não encontrada' }, { status: 404 })
@@ -205,25 +206,17 @@ export async function PUT(request: Request) {
         )
       }
 
-      try {
-        await db.update(tenants).set({ slug: parsed.data.slug, updatedAt: new Date() }).where(eq(tenants.id, ctx.tenantId))
-      } catch (err) {
-        if (isUniqueViolation(err, 'tenants_slug_unique')) {
-          return NextResponse.json({ error: 'Este link já está em uso. Escolha outro.' }, { status: 409 })
-        }
-        throw err
+      const result = await changeBookingSlug({ tenantId: ctx.tenantId, userId: ctx.userId, slug: parsed.data.slug })
+      switch (result.outcome) {
+        case 'not_found':
+          return NextResponse.json({ error: 'Clínica não encontrada' }, { status: 404 })
+        case 'taken':
+          return NextResponse.json({ error: BOOKING_SLUG_MESSAGES.taken }, { status: 409 })
+        case 'rate_limited':
+          return NextResponse.json({ error: BOOKING_SLUG_MESSAGES.rateLimited }, { status: 429 })
+        default:
+          return NextResponse.json({ success: true, slug: result.slug })
       }
-
-      await createAuditLog({
-        tenantId: ctx.tenantId,
-        userId: ctx.userId,
-        action: 'update',
-        entityType: 'tenant',
-        entityId: ctx.tenantId,
-        changes: { slug: { old: current.slug, new: parsed.data.slug } },
-      })
-
-      return NextResponse.json({ success: true, slug: parsed.data.slug })
     }
 
     // Regular tenant update

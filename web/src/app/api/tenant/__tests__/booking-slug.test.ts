@@ -1,14 +1,14 @@
 // @vitest-environment node
 /**
  * The booking link left onboarding for Settings, so PUT /api/tenant sets it:
- * validated, collision-safe through the unique index (a race included), and
- * audited.
+ * validated here, then changed by changeBookingSlug (reservation, redirect,
+ * change limit and audit; see db/queries/__tests__/booking-slugs.test.ts),
+ * whose outcomes map to the answers the form shows.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { updateWhereMock, createAuditLogMock, getTenantMock } = vi.hoisted(() => ({
-  updateWhereMock: vi.fn(),
-  createAuditLogMock: vi.fn(),
+const { changeBookingSlugMock, getTenantMock } = vi.hoisted(() => ({
+  changeBookingSlugMock: vi.fn(),
   getTenantMock: vi.fn(),
 }))
 
@@ -23,14 +23,15 @@ vi.mock('@/db/queries/tenants', () => ({
   updateTenantSettings: vi.fn(),
   isPhoneNumberIdClaimedByAnotherTenant: vi.fn(),
 }))
-vi.mock('@/lib/audit', () => ({ createAuditLog: createAuditLogMock }))
+vi.mock('@/lib/audit', () => ({ createAuditLog: vi.fn() }))
+vi.mock('@/db/queries/booking-slugs', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/db/queries/booking-slugs')>()),
+  changeBookingSlug: changeBookingSlugMock,
+}))
 vi.mock('@/lib/logo', () => ({ signLogoPath: vi.fn() }))
 vi.mock('@/lib/whatsapp', () => ({ verifyCredentials: vi.fn() }))
-vi.mock('@/db/client', () => ({
-  db: { update: vi.fn(() => ({ set: vi.fn(() => ({ where: updateWhereMock })) })) },
-}))
+vi.mock('@/db/client', () => ({ db: {} }))
 
-import { db } from '@/db/client'
 import { PUT } from '../route'
 
 const put = (body: Record<string, unknown>) =>
@@ -39,42 +40,47 @@ const put = (body: Record<string, unknown>) =>
 beforeEach(() => {
   vi.clearAllMocks()
   getTenantMock.mockResolvedValue({ id: 'tenant-1', slug: 'clinica-de-ana', settings: {} })
-  updateWhereMock.mockResolvedValue(undefined)
+  changeBookingSlugMock.mockImplementation(async ({ slug }: { slug: string }) => ({
+    outcome: 'updated',
+    slug,
+    previousSlug: 'clinica-de-ana',
+  }))
 })
 
 describe('PUT /api/tenant booking_slug', () => {
-  it('saves a valid link and records old and new in the audit log', async () => {
+  it('changes the link for the signed-in clinic, normalised', async () => {
     const res = await put({ slug: 'Studio-Bella' })
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ success: true, slug: 'studio-bella' })
-    const set = vi.mocked(db.update).mock.results[0].value.set
-    expect(set).toHaveBeenCalledWith(expect.objectContaining({ slug: 'studio-bella' }))
-    expect(createAuditLogMock).toHaveBeenCalledWith(
-      expect.objectContaining({ changes: { slug: { old: 'clinica-de-ana', new: 'studio-bella' } } }),
-    )
+    expect(changeBookingSlugMock).toHaveBeenCalledWith({ tenantId: 'tenant-1', userId: 'user-1', slug: 'studio-bella' })
   })
 
   it.each([['ab'], ['com espaço'], ['-bella'], ['bella-'], ['açaí']])('refuses %j without writing', async (slug) => {
     const res = await put({ slug })
     expect(res.status).toBe(400)
-    expect(db.update).not.toHaveBeenCalled()
+    expect(changeBookingSlugMock).not.toHaveBeenCalled()
   })
 
-  it('answers 409 when another clinic holds the link', async () => {
-    updateWhereMock.mockRejectedValue(
-      new Error('Failed query', { cause: { code: '23505', constraint_name: 'tenants_slug_unique' } }),
-    )
+  it('answers 409 when another clinic holds the link or has it reserved', async () => {
+    changeBookingSlugMock.mockResolvedValue({ outcome: 'taken' })
     const res = await put({ slug: 'taken' })
     expect(res.status).toBe(409)
     expect((await res.json()).error).toBe('Este link já está em uso. Escolha outro.')
-    expect(createAuditLogMock).not.toHaveBeenCalled()
+  })
+
+  // Catches the limit being enforced only by the form, or failing as a generic error.
+  it('answers 429 with a message the form can show once the daily change limit is reached', async () => {
+    changeBookingSlugMock.mockResolvedValue({ outcome: 'rate_limited' })
+    const res = await put({ slug: 'mais-um' })
+    expect(res.status).toBe(429)
+    expect((await res.json()).error).toBe('Você já trocou o link 3 vezes nas últimas 24 horas. Tente de novo mais tarde.')
   })
 
   it('writes nothing when the link is unchanged', async () => {
     const res = await put({ slug: 'clinica-de-ana' })
     expect(res.status).toBe(200)
-    expect(db.update).not.toHaveBeenCalled()
+    expect(changeBookingSlugMock).not.toHaveBeenCalled()
   })
 
   it('accepts an older link shorter than today\'s minimum when it is unchanged', async () => {
@@ -82,6 +88,6 @@ describe('PUT /api/tenant booking_slug', () => {
     const res = await put({ slug: 'ab' })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ success: true, slug: 'ab' })
-    expect(db.update).not.toHaveBeenCalled()
+    expect(changeBookingSlugMock).not.toHaveBeenCalled()
   })
 })

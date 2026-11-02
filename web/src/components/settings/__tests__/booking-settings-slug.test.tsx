@@ -44,6 +44,7 @@ describe('BookingSettings link editing', () => {
     await user.clear(input)
     await user.type(input, 'studio-bella')
     await user.click(screen.getByRole('button', { name: 'Salvar link' }))
+    await user.click(await screen.findByRole('button', { name: 'Alterar link' }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     const [url, init] = fetchMock.mock.calls[0]
@@ -62,9 +63,42 @@ describe('BookingSettings link editing', () => {
     await user.clear(input)
     await user.type(input, 'taken')
     await user.click(screen.getByRole('button', { name: 'Salvar link' }))
+    await user.click(await screen.findByRole('button', { name: 'Alterar link' }))
 
     expect(await screen.findByText('Este link já está em uso. Escolha outro.')).toBeInTheDocument()
     expect(input).toHaveAccessibleDescription(expect.stringContaining('Este link já está em uso. Escolha outro.'))
     expect(screen.queryByText(/não pode ser alterado/)).toBeNull()
+  })
+
+  // Catches a click on "Salvar link" moving the link (and starting the 90-day redirect) without a warning.
+  it('asks before saving, saying the old link redirects to the new one for 90 days', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ success: true, slug: 'studio-bella' }))
+    renderSettings()
+    const input = screen.getByLabelText('Endereço do link')
+    await user.clear(input)
+    await user.type(input, 'studio-bella')
+    await user.click(screen.getByRole('button', { name: 'Salvar link' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Alterar o link de agendamento?')
+    expect(dialog).toHaveTextContent(/\/c\/studio-bella/)
+    expect(dialog).toHaveTextContent(/link antigo \(.*\/c\/clinica-de-ana\) será redirecionado para o novo por 90 dias/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('saves nothing when the change is cancelled', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ success: true, slug: 'studio-bella' }))
+    renderSettings()
+    const input = screen.getByLabelText('Endereço do link')
+    await user.clear(input)
+    await user.type(input, 'studio-bella')
+    await user.click(screen.getByRole('button', { name: 'Salvar link' }))
+    await user.click(await screen.findByRole('button', { name: 'Cancelar' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(input).toHaveValue('studio-bella')
   })
 })

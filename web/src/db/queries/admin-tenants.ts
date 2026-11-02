@@ -3,6 +3,7 @@ import { PLACEHOLDER_NAME_SETTING } from '@/lib/clinic-placeholder'
 import { tenants, users, tenantUsers, patients, financialEntries, plans } from '@/db/schema'
 import { eq, and, ne, ilike, or, sql, desc, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
+import { isSlugReservedForAnotherTenant } from '@/db/queries/booking-slugs'
 import { sendInviteEmail } from '@/lib/email'
 import { createSubscription } from '@/db/queries/subscriptions'
 import { notifyDiscord } from '@/lib/discord'
@@ -308,7 +309,7 @@ export async function findAvailableSlug(
       .from(tenants)
       .where(and(...conditions))
       .limit(1)
-    if (!existing) return slug
+    if (!existing && !(await isSlugReservedForAnotherTenant(executor, slug, excludeTenantId))) return slug
   }
 }
 

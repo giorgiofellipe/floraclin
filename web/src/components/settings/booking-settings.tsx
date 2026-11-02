@@ -6,6 +6,16 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { BOOKING_SLUG_CHANGES_PER_DAY, SLUG_RESERVATION_DAYS } from '@/lib/booking-slug'
 import { useUpdateBookingSettings, useUpdateBookingSlug } from '@/hooks/mutations/use-tenant-mutations'
 import { toast } from 'sonner'
 import { CopyIcon, CheckIcon, ExternalLinkIcon } from 'lucide-react'
@@ -32,6 +42,7 @@ export function BookingSettings({
   const [slug, setSlug] = useState(initialSlug)
   const [slugDraft, setSlugDraft] = useState(initialSlug)
   const [slugError, setSlugError] = useState<string | null>(null)
+  const [confirmSlugOpen, setConfirmSlugOpen] = useState(false)
   const slugChanged = slugDraft.trim() !== slug
 
   const appUrl = typeof window !== 'undefined'
@@ -62,9 +73,16 @@ export function BookingSettings({
     }
   }
 
-  async function handleSaveSlug(e: React.FormEvent) {
+  // The change takes effect at once, so it is confirmed first.
+  function handleSubmitSlug(e: React.FormEvent) {
     e.preventDefault()
+    if (!slugChanged) return
     setSlugError(null)
+    setConfirmSlugOpen(true)
+  }
+
+  async function handleSaveSlug() {
+    setConfirmSlugOpen(false)
     try {
       const result = (await updateSlug.mutateAsync(slugDraft.trim())) as { slug?: string } | undefined
       const saved = result?.slug ?? slugDraft.trim()
@@ -159,7 +177,7 @@ export function BookingSettings({
       )}
 
       {!embedded && (
-        <form onSubmit={handleSaveSlug} className="space-y-2" data-testid="booking-slug-form">
+        <form onSubmit={handleSubmitSlug} className="space-y-2" data-testid="booking-slug-form">
           <Label htmlFor="booking-slug" className="uppercase tracking-wider text-xs text-mid font-medium">
             Endereço do link
           </Label>
@@ -192,9 +210,31 @@ export function BookingSettings({
           </div>
           {slugError && <p id="booking-slug-error" className="text-xs text-red-600">{slugError}</p>}
           <p id="booking-slug-hint" className="text-xs text-mid">
-            Criado a partir do nome da clínica. Ao mudar, o endereço antigo deixa de funcionar para quem já o recebeu.
+            Criado a partir do nome da clínica. Ao mudar, o endereço antigo redireciona para o novo por {SLUG_RESERVATION_DAYS} dias.
           </p>
         </form>
+      )}
+
+      {!embedded && (
+        <Dialog open={confirmSlugOpen} onOpenChange={setConfirmSlugOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Alterar o link de agendamento?</DialogTitle>
+              <DialogDescription>
+                O novo link será {bookingHost}/c/{slugDraft.trim()}. Quem abrir o link antigo
+                ({bookingHost}/c/{slug}) será redirecionado para o novo por {SLUG_RESERVATION_DAYS} dias; depois
+                disso, o link antigo deixa de funcionar e pode ser usado por outra clínica. Você pode trocar o link
+                até {BOOKING_SLUG_CHANGES_PER_DAY} vezes a cada 24 horas.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <DialogClose render={<Button variant="outline" />}>Cancelar</DialogClose>
+              <Button onClick={handleSaveSlug} disabled={updateSlug.isPending}>
+                Alterar link
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   )
