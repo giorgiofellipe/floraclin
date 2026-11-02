@@ -8,6 +8,10 @@ vi.mock('@/lib/whatsapp-automated-send', () => ({ sendAndRecordTemplate: vi.fn()
 vi.mock('@/lib/plans', () => ({ isSubscriptionActive: vi.fn() }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 vi.mock('@sentry/nextjs', () => ({ captureMessage: vi.fn() }))
+vi.mock('@/lib/email-confirmation-gate', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/email-confirmation-gate')>()),
+  isTenantAwaitingEmailConfirmation: vi.fn(),
+}))
 
 import { getTenant } from '@/db/queries/tenants'
 import { listAutomations } from '@/db/queries/whatsapp'
@@ -15,6 +19,7 @@ import { getPaymentRecipients } from '@/db/queries/financial'
 import { getTemplateForTenant } from '@/lib/whatsapp'
 import { sendAndRecordTemplate } from '@/lib/whatsapp-automated-send'
 import { isSubscriptionActive } from '@/lib/plans'
+import { isTenantAwaitingEmailConfirmation } from '@/lib/email-confirmation-gate'
 import { CreditExhaustedError } from '@/lib/whatsapp-credits'
 import { reportSideEffectFailure } from '@/lib/observability'
 import * as Sentry from '@sentry/nextjs'
@@ -31,6 +36,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW)
   vi.mocked(getTenant).mockResolvedValue({ id: 't1', name: 'Clínica Lume', settings: { whatsapp_enabled: true } } as never)
   vi.mocked(isSubscriptionActive).mockResolvedValue(true)
+  vi.mocked(isTenantAwaitingEmailConfirmation).mockResolvedValue(false)
   vi.mocked(listAutomations).mockResolvedValue([{ trigger: 'payment_confirmation', enabled: true }] as never)
   vi.mocked(getTemplateForTenant).mockResolvedValue({
     name: 'payment_confirmation',
@@ -83,6 +89,17 @@ describe('sendPaymentConfirmations', () => {
     await sendPaymentConfirmations('t1', [{ installmentId: 'i1', amount: '350.00', paidAt: NOW }])
 
     expect(sendAndRecordTemplate).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing, and reports nothing, while the clinic owner has not confirmed the e-mail', async () => {
+    vi.mocked(isTenantAwaitingEmailConfirmation).mockResolvedValue(true)
+
+    await sendPaymentConfirmations('t1', [{ installmentId: 'i1', amount: '350.00', paidAt: NOW }])
+
+    expect(getPaymentRecipients).not.toHaveBeenCalled()
+    expect(sendAndRecordTemplate).not.toHaveBeenCalled()
+    expect(Sentry.captureMessage).not.toHaveBeenCalled()
+    expect(reportSideEffectFailure).not.toHaveBeenCalled()
   })
 
   // Regression: a clinic template with an extra variable reporting one error per payer instead of one warning.
